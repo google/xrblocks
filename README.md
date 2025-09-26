@@ -8,7 +8,13 @@
 
 [Manual](https://xrblocks.github.io/docs/) &mdash;
 [Templates](https://xrblocks.github.io/docs/templates/Basic) &mdash;
-[Samples](https://xrblocks.github.io/docs/samples/ModelViewer) &mdash;
+[Samples](https://xrblocks.github.io/docs/samples/ModelViewer)
+
+<p align="center">
+ <a href="https://xrblocks.github.io/docs/samples/Ballpit" target="_blank"><img width="32.3%" src="assets/ballpit-demo.webp" alt="Ballpit" /></a>
+  <a href="https://xrblocks.github.io/docs/samples/XR-Emoji" target="_blank"><img width="32.3%" src="assets/xremoji-demo.webp" alt="XR Emoji" /></a>
+ <a href="https://xrblocks.github.io/docs/samples/Gemini-Icebreakers" target="_blank"><img width="32.3%" src="assets/gemini-icebreakers-demo.webp" alt="Gemini Icebreakers" /></a>
+</p>
 
 ### Description
 
