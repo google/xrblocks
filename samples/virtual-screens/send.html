@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en"
+      class="h-full bg-gray-50 text-gray-800">
+
+<head>
+  <title>Screen Viewer</title>
+  <meta charset="utf-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Cache-Control"
+        content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma"
+        content="no-cache" />
+  <meta http-equiv="Expires"
+        content="0" />
+  <script>window.litDisableBundleWarning = true;</script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+      {
+        "imports": {
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/"
+        }
+      }
+  </script>
+</head>
+
+<body class="h-full font-sans p-4">
+  <div
+       class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-2xl text-center border border-gray-100 flex flex-col mx-auto">
+    <h1 class="text-3xl font-bold text-gray-800 mb-2">Share a Window</h1>
+    <p class="text-gray-400 mb-6">Select a window or screen to begin sharing to your AndroidXR
+      device.</p>
+    <div id="sharedWindowsContainer"
+         class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 items-start w-full">
+    </div>
+    <div class="mt-auto">
+      <button id="selectScreenButton"
+              class="inline-block bg-gradient-to-r from-[#346bf1] to-[#4fa0ff] text-white font-semibold px-8 py-3 rounded-full transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 hover:brightness-105">
+        Select Window or Screen to Share
+      </button>
+    </div>
+  </div>
+  <script type="module"
+          src="js/main_send.js"></script>
+</body>
+
+</html>

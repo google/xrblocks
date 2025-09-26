@@ -1,0 +1,234 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevents scroll bars if the image overflows slightly */
+}
+
+body {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #fff;
+  font-family: Monospace;
+  font-size: 13px;
+  line-height: 24px;
+  overscroll-behavior: none;
+}
+
+
+.content {
+  position: relative;
+  color: #fff;
+  font-family: Monospace;
+  font-size: 13px;
+  line-height: 24px;
+  overscroll-behavior: none;
+}
+
+a {
+	color: #ff0;
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+button {
+	cursor: pointer;
+	text-transform: uppercase;
+}
+
+#info {
+	position: absolute;
+	top: 0px;
+	width: 100%;
+	padding: 10px;
+	box-sizing: border-box;
+	text-align: center;
+	-moz-user-select: none;
+	-webkit-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+	pointer-events: none;
+	z-index: 1; /* TODO Solve this in HTML */
+}
+
+a, button, input, select {
+	pointer-events: auto;
+}
+
+.lil-gui {
+	z-index: 2 !important; /* TODO Solve this in HTML */
+}
+
+@media all and ( max-width: 640px ) {
+	.lil-gui.root {
+		right: auto;
+		top: auto;
+		max-height: 50%;
+		max-width: 80%;
+		bottom: 0;
+		left: 0;
+	}
+}
+
+#overlay {
+	position: absolute;
+	font-size: 16px;
+	z-index: 2;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-direction: column;
+	background: rgba(0,0,0,0.7);
+}
+
+#overlay button {
+  background: transparent;
+  border: 0;
+  border: 1px solid rgb(255, 255, 255);
+  border-radius: 4px;
+  color: #ffffff;
+  padding: 12px 18px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#notSupported {
+	width: 50%;
+	margin: auto;
+	background-color: #f00;
+	margin-top: 20px;
+	padding: 10px;
+}
+
+
+header {
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  width: 100%;
+  padding: 0.8rem 1.6rem;
+  color: rgb(255, 255, 255);
+  mix-blend-mode: exclusion;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 101;
+  pointer-events: none;
+}
+
+.logo {
+  font-family: "Google Sans Text", system-ui, sans-serif;
+  font-size: 1.8rem;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: -0.018rem;
+  transform: translate(0px, 0.05rem);
+}
+
+.logo-link {
+  display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    pointer-events: all;
+    flex: 0.55 1 0%;
+}
+
+.logo-text {
+  font-family: "Google Sans Text", system-ui, sans-serif;
+  color: white;
+    font-size: 1.8rem;
+    font-style: normal;
+    font-weight: 500;
+    letter-spacing: -0.018rem;
+    transform: translate(0px, 0.05rem);
+}
+
+.logo-icon{
+  color: white;
+  width: 1.6rem;
+    height: 1.6rem;
+    margin-left: 0.2rem;
+    margin-right: 0.2rem;
+}
+
+.slogan {
+  flex: 0.25 1 0%;
+  font-family: "Google Sans Mono", system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 1rem;
+  line-height: 120%;
+  letter-spacing: 0.06rem;
+  display: block;
+}
+
+#XRButtonWrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background-color: transparent;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  cursor: pointer;
+  font-size: 2rem;
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 30rem;
+  height: 16rem;
+  gap: 1rem;
+}
+
+.XRButton {
+  color: white;
+  background-color: #e74c3c;
+  border: 0;
+  flex-grow: 1;
+  font : 'normal sans-serif';
+  font-size: 2rem;
+  width: 100%;
+  cursor: pointer;
+  border-radius: 3rem;
+}
+
+.XRButton svg {
+  margin-right: 8px; /* Space between the icon and text */
+}
+
+.XRButton:hover {
+  background-color: #c0392b; /* Darken the background on hover */
+}
+
+#xrlogo {
+  display: inline-block;
+  width: 2.4rem; /* Adjust width based on your logo size */
+  height: 2.4rem; /* Adjust height based on your logo size */
+  margin-right: 0.8rem;
+  background-image: url('xrlogo.png');
+  background-size: contain; /* Ensures the image fits within the defined size */
+  background-repeat: no-repeat;
+  vertical-align: middle; /* Aligns with the text */
+}
+
+.background-image {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1; /* Sends the background behind the content */
+  background-size: cover; /* Keeps aspect ratio and covers the screen */
+  background-position: center;
+}

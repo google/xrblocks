@@ -1,0 +1,8 @@
+{
+  "files": [], // This prevents the root from compiling any files itself
+  "references": [
+    {
+      "path": "./drone"
+    },
+  ]
+}

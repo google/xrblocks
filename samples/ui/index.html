@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>UI Panels Showcase</title>
+  <meta charset="utf-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <link type="text/css"
+        rel="stylesheet"
+        href="https://xr-labs.web.app/site/css/main.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+      "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+      "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+      "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+      "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+      "xrblocks": "../../build/xrblocks.js"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <canvas id="barChartCanvas"
+          width="512"
+          height="340"
+          style="display:none;"></canvas>
+  <script type="module">
+    import * as THREE from 'three';
+    import * as xb from 'xrblocks';
+
+    class MainScript extends xb.Script {
+      createProfilePanel() {
+        const profilePanel = new xb.SpatialPanel({
+          width: 0.8,
+          height: 1.0,
+          backgroundColor: '#282c3488'
+        });
+        profilePanel.rotation.set(0, 45, 0);
+        profilePanel.position.set(-1.5, 1.5, -2.0);
+        this.add(profilePanel);
+
+        const profileGrid = profilePanel.addGrid();
+        profileGrid.addRow({ weight: 0.1 }).addText({ text: 'UI Samples', fontSize: 0.07, fontColor: '#61dafb' });
+
+        const avatarRow = profileGrid.addRow({ weight: 0.4 });
+        avatarRow.addCol({ weight: 0.15 });
+        const avatarCol = avatarRow.addCol({ weight: 0.7 });
+        avatarCol.addImage({ src: 'https://placehold.co/256x128/61dafb/282c34.png?text=XRBlocks' });
+
+        profileGrid.addRow({ weight: 0.15 }).addText({ text: 'Spatial Panel', fontSize: 0.08 });
+        profileGrid.addRow({ weight: 0.25 }).addText({ text: 'You may drag borders of this spatial panel to move it around.', fontSize: 0.07, fontColor: '#abb2bf' });
+      }
+
+      createProfilePanelFromJSON() {
+        const profilePanelJson = {
+          type: 'Panel',
+          options: {
+            name: 'JSON Panel',
+            width: 0.8,
+            height: 1.0,
+            backgroundColor: '#282c3488',
+          },
+          position: { x: 1.0, y: 1.5, z: -1.5 },
+          rotation: { x: 0, y: -45, z: 0 },
+          children: [{
+            name: 'JSON Grid',
+            type: 'Grid',
+            children: [
+              { // Padding Row
+                type: 'Row',
+                options: { weight: 0.1 }
+              },
+              { // Title Row
+                type: 'Row',
+                options: { weight: 0.1 },
+                children: [{
+                  type: 'Text',
+                  options: { text: 'Panel', fontSize: 0.07, fontColor: '#61dafb' }
+                }]
+              },
+              { // Avatar Row
+                type: 'Row',
+                options: { weight: 0.4, name: "AvatarRow" },
+                children: [
+                  {
+                    type: 'Col', options: { weight: 0.15 },
+                  }, // Left spacer
+                  {
+                    type: 'Col',
+                    options: { weight: 0.7 },
+                    children: [{
+                      type: 'Image',
+                      options: {
+                        name: 'PlaceHolderImage', src: 'https://placehold.co/256x128/61dafb/282c34.png?text=XRBlocks'
+                      }
+                    }]
+                  },
+                  {
+                    type: 'Col', options: { weight: 0.15 },
+                  }  // Right spacer
+                ]
+              },
+              { // Name Row
+                type: 'Row',
+                options: { weight: 0.15 },
+                children: [{
+                  type: 'Text',
+                  options: { text: 'Panel from JSON', fontSize: 0.08 }
+                }]
+              },
+              { // Subtitle Row
+                type: 'Row',
+                options: { weight: 0.25 },
+                children: [{
+                  type: 'Text',
+                  options: { text: 'This panel cannot be dragged around.', fontSize: 0.07, fontColor: '#abb2bf' }
+                }]
+              }
+            ]
+          }]
+        };
+
+        const profileUI = xb.core.ui.compose(profilePanelJson);
+        this.add(profileUI);
+      }
+
+      createPlayerPanel() {
+        // Panel 2: Interactive Media Player (Top-Center)
+        const playerPanel = new xb.SpatialPanel({
+          width: 1.2,
+          height: 1.0,
+          backgroundColor: '#21252baa',
+        });
+        playerPanel.position.set(0, xb.user.height * 2.0, -xb.user.panelDistance - 1.0);
+        this.add(playerPanel);
+
+        const playerGrid = playerPanel.addGrid();
+        const videoRow = playerGrid.addRow({ weight: 0.6 });
+        videoRow.addVideo({ src: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' });
+
+        const progressRow = playerGrid.addRow({ weight: 0.1 });
+
+        const controlsRow = playerGrid.addRow({ weight: 0.3 });
+        controlsRow.addCol({ weight: 0.2 });
+        controlsRow.addCol({ weight: 0.2 }).addIconButton({ text: 'skip_previous', fontSize: 0.6 });
+        controlsRow.addCol({ weight: 0.2 }).addIconButton({ text: 'play_arrow', fontSize: 0.8 });
+        controlsRow.addCol({ weight: 0.2 }).addIconButton({ text: 'skip_next', fontSize: 0.6 });
+        controlsRow.addCol({ weight: 0.2 });
+      }
+
+      createSettingsPanel() {
+        // Panel 3: Settings Menu (Top-Right)
+        const settingsPanel = new xb.SpatialPanel({
+          width: 1.0,
+          height: 1.2,
+          backgroundColor: '#282c3488'
+        });
+        settingsPanel.position.set(1.5, xb.user.height, -xb.user.panelDistance + 2.0);
+        settingsPanel.rotation.set(0, -Math.PI / 2.0, 0);
+
+        this.add(settingsPanel);
+        const settingsGrid = settingsPanel.addGrid();
+        settingsGrid.addRow({ weight: 0.15 }).addText({ text: 'Fake Settings', fontSize: 0.1, fontColor: '#61dafb' });
+
+        const addSettingRow = (grid, label, type) => {
+          const row = grid.addRow({ weight: 0.2 });
+          row.addCol({ weight: 0.6 }).addText({ text: label, anchorX: 'left', textAlign: 'left', fontSize: 0.07 });
+          const controlCol = row.addCol({ weight: 0.4 });
+          if (type === 'toggle') {
+            const toggleBg = controlCol.addPanel({ backgroundColor: '#61dafb', width: 0.3, height: 0.06 });
+            toggleBg.addGrid().addPanel({ backgroundColor: '#ffffff', width: 0.05, height: 0.05, x: 0.04 });
+          } else if (type === 'slider') {
+            const sliderBg = controlCol.addPanel({ backgroundColor: '#3a3f4b', width: 0.35, height: 0.02 });
+            sliderBg.addGrid().addPanel({ backgroundColor: '#61dafb', width: 0.04, height: 0.04, x: 0.05 });
+          }
+        };
+
+        addSettingRow(settingsGrid, 'Enable Hand Tracking', 'toggle');
+        addSettingRow(settingsGrid, 'Show Notifications', 'toggle');
+        addSettingRow(settingsGrid, 'Master Volume', 'slider');
+        addSettingRow(settingsGrid, 'UI Scale', 'slider');
+      }
+
+      createGalleryPanel() {
+        // Panel 4: Photo Gallery (Bottom-Right)
+        const galleryPanel = new xb.SpatialPanel({ width: 1.5, height: 1.0, backgroundColor: '#21252b88' });
+        galleryPanel.position.set(0.0, xb.user.height, -xb.user.panelDistance - 1.0);
+        this.add(galleryPanel);
+        const galleryGrid = galleryPanel.addGrid();
+        galleryGrid.addRow({ weight: 0.25 }).addText({ text: "Photo Gallery", fontSize: 0.07, fontColor: '#61dafb' });
+        const photoRow1 = galleryGrid.addRow({ weight: 0.375 });
+        photoRow1.addCol({ weight: 1 / 3 }).addImage({ src: "https://placehold.co/150x150/92c5fd/333?text=Img1", paddingX: 0.02, paddingY: 0.02 });
+        photoRow1.addCol({ weight: 1 / 3 }).addImage({ src: "https://placehold.co/150x150/6ee7b7/333?text=Img2", paddingX: 0.02, paddingY: 0.02 });
+        photoRow1.addCol({ weight: 1 / 3 }).addImage({ src: "https://placehold.co/150x150/fca5a5/333?text=Img3", paddingX: 0.02, paddingY: 0.02 });
+        galleryGrid.addRow({ weight: 0.05 });
+        const photoRow2 = galleryGrid.addRow({ weight: 0.375 });
+        photoRow2.addCol({ weight: 1 / 3 }).addImage({ src: "https://placehold.co/150x150/fde047/333?text=Img4", paddingX: 0.02, paddingY: 0.02 });
+        photoRow2.addCol({ weight: 1 / 3 }).addImage({ src: "https://placehold.co/150x150/c4b5fd/333?text=Img5", paddingX: 0.02, paddingY: 0.02 });
+        photoRow2.addCol({ weight: 1 / 3 }).addImage({ src: "https://placehold.co/150x150/f9a8d4/333?text=Img6", paddingX: 0.02, paddingY: 0.02 });
+      }
+
+      createFormPanel() {
+        // Panel 5: Complex Form (Bottom-Left)
+        const formPanel = new xb.SpatialPanel({ width: 1.2, height: 1.4, backgroundColor: '#282c34' });
+        formPanel.position.set(-1.8, 0.7, -2.5);
+        this.add(formPanel);
+        const formGrid = formPanel.addGrid();
+        formGrid.addRow({ weight: 0.1 }).addText({ text: "Feedback Form", fontSize: 0.07, fontColor: '#61dafb' });
+        const addFormField = (grid, label) => {
+          const row = grid.addRow({ weight: 0.12 });
+          row.addCol({ weight: 0.3 }).addText({ text: label, anchorX: 'left', fontSize: 0.05 });
+          row.addCol({ weight: 0.7 }).addPanel({ backgroundColor: '#3a3f4b', height: 0.06 });
+        }
+        addFormField(formGrid, "Name");
+        addFormField(formGrid, "Email");
+        const categoryRow = formGrid.addRow({ weight: 0.12 });
+        categoryRow.addCol({ weight: 0.3 }).addText({ text: 'Category', anchorX: 'left', fontSize: 0.05 });
+        const dropdown = categoryRow.addCol({ weight: 0.7 }).addPanel({ backgroundColor: '#3a3f4b', height: 0.06 });
+        dropdown.addGrid().addText({ text: 'General Feedback  ▼', fontSize: 0.045 });
+
+        const messageRow = formGrid.addRow({ weight: 0.3 });
+        messageRow.addCol({ weight: 0.3 }).addText({ text: 'Message', anchorX: 'left', anchorY: 'top', fontSize: 0.05 });
+        messageRow.addCol({ weight: 0.7 }).addPanel({ backgroundColor: '#3a3f4b', height: 0.2 });
+
+        formGrid.addRow({ weight: 0.18 }).addTextButton({ text: 'Submit', backgroundColor: '#61dafb', fontColor: '#282c34', height: 0.08, width: 0.3 });
+      }
+
+      createChartPanel() {
+        // Panel 6: Dynamic Chart with Canvas (Bottom-Center)
+        const chartPanel = new xb.SpatialPanel({ width: 0.8, height: 0.6, backgroundColor: '#21252b88' });
+        chartPanel.position.set(-1.5, xb.user.height, -xb.user.panelDistance + 2.0);
+        chartPanel.rotation.set(0, Math.PI / 2.0, 0);
+
+        this.add(chartPanel);
+        const chartGrid = chartPanel.addGrid();
+        chartGrid.addRow({ weight: 0.15 }).addText({ text: "Performance Metrics", fontSize: 0.07, fontColor: '#61dafb' });
+
+        // --- Canvas Chart ---
+        const canvas = document.getElementById('barChartCanvas');
+        const ctx = canvas.getContext('2d');
+        const barData = [0.4, 0.7, 0.5, 0.8, 0.6];
+        const colors = ['#92c5fd', '#6ee7b7', '#fca5a5', '#fde047', '#c4b5fd'];
+        const padding = 40;
+        const barWidth = (canvas.width - padding * (barData.length + 1)) / barData.length;
+        const maxBarHeight = canvas.height - padding * 2;
+
+        ctx.fillStyle = '#282c34'; // background
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        barData.forEach((value, index) => {
+          const barHeight = value * maxBarHeight;
+          const x = padding + index * (barWidth + padding);
+          const y = canvas.height - padding - barHeight;
+          ctx.fillStyle = colors[index];
+          ctx.fillRect(x, y, barWidth, barHeight);
+        });
+
+        const canvasTexture = new THREE.CanvasTexture(canvas);
+        canvasTexture.needsUpdate = true;
+
+        const chartArea = chartGrid.addRow({ weight: 0.85 });
+        const chartMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, 1),
+          new THREE.MeshBasicMaterial({ map: canvasTexture })
+        );
+        chartArea.add(chartMesh);
+      }
+
+      init() {
+        this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
+
+        this.createProfilePanel();
+        this.createProfilePanelFromJSON();
+        this.createPlayerPanel();
+        this.createGalleryPanel();
+        this.createChartPanel();
+        this.createSettingsPanel();
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const options = new xb.Options();
+      options.enableUI();
+      xb.add(new MainScript());
+      xb.init(options);
+    });
+  </script>
+</body>
+
+</html>
