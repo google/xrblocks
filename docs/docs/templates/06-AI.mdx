@@ -1,0 +1,24 @@
+---
+title: AI
+---
+
+This template features AI functionality powered by Google's Gemini model and requires an API key to work, with AI queries managed by GeminiQueryManager.js.
+## Set Up Your API Key
+
+To get started, you'll need a Gemini API key. You can create one for free at [Google AI Studio](https://aistudio.google.com/app/apikey).
+
+## How to Use Your Key
+
+To use the demo, you can add your API key to the input box below.\
+During local development, one can add API key as a URL param:
+```
+?key=YOUR_API_KEY_HERE
+```
+For deployment, please set up a proper server and avoid exposing API keys externally.
+
+import { DocsIFrame } from '../DocsIFrame.jsx';
+import { DocsSource } from '../DocsSource.jsx';
+
+<DocsIFrame template="6_ai" requiresApiKey={true}></DocsIFrame>
+<DocsSource template="6_ai"></DocsSource>
+<DocsSource template="6_ai" filename="GeminiQueryManager.js"></DocsSource>

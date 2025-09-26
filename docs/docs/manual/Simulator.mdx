@@ -1,0 +1,109 @@
+---
+sidebar_position: 7
+---
+
+XR Blocks features a simulator to support building experiences across desktop and WebXR.
+The simulator allows XR Blocks APIs to seamlessly interface between desktop controls and WebXR controls.
+
+The simulator does not emulate WebXR APIs.
+
+## Getting started
+
+To support all features of the simulator, please add the following dependencies to your import map:
+
+```js
+{
+  "imports": {
+    "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+    "xrblocks": "sdk/xrblocks.js",
+    "xrblocks/addons/": "sdk/addons/"
+  }
+}
+```
+
+Or using npm:
+```bash
+npm i lit
+```
+
+Then in your script please add the following import which adds lit components to show HTML-based UI elements when running the simulator, such as simulator instructions and the mode indicator.
+
+```js
+import 'xrblocks/addons/simulator/SimulatorAddons.js';
+```
+
+Upon launching an XR Blocks experience in a desktop browser, a run in simulator button should appear:
+<div style={{maxWidth: "30rem"}}>
+![Run in simulator button](assets/run_in_simulator_button.webp)
+</div>
+
+## Simulator Control Modes
+
+The XR Blocks simulator supports control three modes: User mode, Navigation Mode, and Hands Mode.
+
+To switch between modes, press the <kbd>Left Shift</kbd> key on the keyboard.
+
+### User Mode
+In user mode, WASD on the keyboard controls the forward, left, backwards, and right movement respectively.
+The mouse cursor is respresented to the application through a `MouseController` object which moves based on the camera and rotates based on the pose position in the window.
+Holding down the primary mouse button represents a selection on the `MouseController` object.
+Holding down the secondary mouse button allows the mouse cursor to rotate the camera.
+
+### Navigation Mode
+In navigation mode, WASD on the keyboard controls the forward, left, backwards, and right movement respectively.
+Holding down the primary mouse button allows the mouse cursor to rotate the camera.
+
+### User Mode
+In navigation mode, WASD on the keyboard controls the forward, left, backwards, and right movement respectively.
+Holding down the primary mouse button allows the mouse cursor to rotate the camera.
+
+## Supported Features
+Currently, the simulator supports the following features:
+* Depth simulation.
+* Hands simulation.
+
+Notably, the following features are not supported.
+
+## UI Addons
+### Simulator Instructions
+When launching the simulator, a modal with instructions will be shown to the user:
+<div style={{maxWidth: "30rem"}}>
+![Simulator instructions](assets/simulator_instructions.webp)
+</div>
+
+This modal is created by adding a `<xrblocks-simulator-instructions></xrblocks-simulator-instructions>` component into the document body.
+See `sdk/addons/simulator/instructions/SimulatorInstructions.js` for the source code of this web component.
+
+To customize the simulator instructions, use the following options when initializing `Core`:
+```js
+{
+  //...
+  simulator: {
+    //...
+    instructions: {
+      enabled: true, // Whether to show the simulator instructions.
+      element: `xrblocks-simulator-intstructions` // Name of the simulator instructions web component.
+    }
+  }
+}
+```
+
+### Simulator Mode Indicator
+When launching the simulator, a mode indicator will be shown to the user in the bottom right corner:
+<div style={{maxWidth: "20rem"}}>
+![Simulator mode indicator](assets/simulator_mode_indicator.webp)
+</div>
+
+To customize the simulator mode indicator, use the following options when initializing `Core`:
+```js
+{
+  //...
+  simulator: {
+    //...
+    modeIndicator: {
+      enabled: true, // Whether to show the simulator mode indicator.
+      element: `xrblocks-simulator-mode-indicator` // Name of the simulator instructions mode indicator web component.
+    }
+  }
+}
+```

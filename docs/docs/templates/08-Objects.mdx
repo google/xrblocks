@@ -1,0 +1,22 @@
+---
+title: Objects
+---
+
+This template demonstrates how to build an object detection experience. It captures a frame from your device's camera, sends it to Google's Gemini model for analysis, and then projects the 2D locations of any identified objects back into your 3D space. The template visualizes these positions using debug visualizations: a wireframe box is placed in the 3D scene, and an image is downloaded showing the detections in 2D image space.
+
+These debug visualizations can be replaced with other objects or interactions. For a more advanced example, see the Gemini XR-Object demo, which explores creating more interactive and visually rich experiences.
+
+## Using the Template
+
+To run this template, you'll need a Gemini API key.
+
+1.  **Get a Key**: You can create a free API key at [Google AI Studio](https://aistudio.google.com/app/apikey).
+2.  **Use the Key**: Add your API key to the input box below to activate the template. When developing locally, you can also pass the key as a URL parameter:
+    `?key=YOUR_API_KEY_HERE`
+3.  **Run Detection**: Once the template is running, **click** in the simulator or **pinch** if you using an XR device to trigger object detection.
+
+import { DocsIFrame } from '../DocsIFrame.jsx';
+import { DocsSource } from '../DocsSource.jsx';
+
+<DocsIFrame template="8_objects" requiresApiKey={true}></DocsIFrame>
+<DocsSource template="8_objects"></DocsSource>

@@ -1,0 +1,51 @@
+---
+slug: /
+sidebar_position: 1
+---
+
+import { CodeSearchLink } from './components/CodeSearchLink.jsx';
+
+# Getting Started
+
+XR Blocks is a lightweight, cross-platform library for rapidly prototyping
+advanced XR and AI experiences. Built upon [three.js](https://threejs.org), it
+targets Chrome v136+ with WebXR support on Android XR. XR Blocks supports XR
+and desktop platforms, emphasizing a user-centric, developer-friendly SDK.
+
+## Importing XR Blocks
+
+For a starter template, take a look at <CodeSearchLink path="templates/0_basic/index.html"/>.
+
+XR Blocks can be imported directly into a webpage using a importmap or a bundler.
+
+To use an importmap, simply add the following importmap to your `index.html` page.
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "xrblocks": "https://xr-labs.web.app/sdk/build/xrblocks.js",
+      "xrblocks/addons/": "https://xr-labs.web.app/sdk/build/addons/"
+    }
+  }
+</script>
+```
+
+Upon importing, XR Blocks automatically creates an `Core` singleton which will initialize a basic renderer and manage the lifecycle of the app.
+
+## Setting up the scene.
+
+Create a JS module which imports the XR Blocks to access the scene:
+
+```javascript
+import * as xb from "xrblocks";
+
+// Initialize the XR Core object to create a renderer and scene.
+xb.init();
+
+// Now we can access the scene from `xb.scene`;
+// This is a standard THREE.Scene object.
+xb.scene;
+```

@@ -1,0 +1,72 @@
+.iframeOuterContainer {
+    height: calc(100vh - var(--ifm-navbar-height));
+    position: absolute;
+    top: var(--ifm-navbar-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+.keyContainer {
+    padding: 2rem;
+    height: 100%;
+    background: #111111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+}
+
+.samplesIframe {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0px;
+    border: none;
+    z-index: 0;
+}
+
+.codeButtonContainer {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+}
+
+.codeButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    background-color: #333;
+    color: white;
+    border-radius: 50%;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.codeButton:hover {
+    background-color: #555;
+    transform: scale(1.05);
+}
+
+.codeButton:active {
+    transform: scale(0.98);
+}
+
+.codeIcon {
+    width: 24px;
+    height: 24px;
+    stroke: currentColor;
+}
+
+@media (min-width: 997px) {
+    .iframeOuterContainer {
+        width: calc(100% - var(--doc-sidebar-width));
+        left: var(--doc-sidebar-width);
+    }
+}

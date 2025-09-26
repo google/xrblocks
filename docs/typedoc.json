@@ -1,0 +1,20 @@
+{
+  "plugin": [
+    "typedoc-plugin-three-links",
+    "typedoc-plugin-mdn-links",
+    "typedoc-plugin-markdown",
+    "typedoc-docusaurus-theme"
+  ],
+  "entryPoints": [
+    "../src/xrblocks.ts"
+  ],
+  "out": "./docs/api/",
+  "tsconfig": "../tsconfig.json",
+  "excludeExternals": true,
+  "sourceLinkTemplate": "https://github.com/google/xrblocks/blob/main/{path}#L{line}",
+  "additionalModuleSources": [
+    "@types/dom-speech-recognition",
+    "@types/webxr"
+  ],
+  "useCustomAnchors": true,
+}

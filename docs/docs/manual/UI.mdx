@@ -1,0 +1,72 @@
+XR Blocks includes a 2D UI toolkit to create 2D UI elements in a panel within the scene.
+
+## View
+The `View` class extends the `Script` class with utilities methods to facilities rendering 2D UI:
+1. Relative positioning and sizing
+2. Setting the render order based on the scene graph depth
+
+### Relative positioning and sizing.
+Object extending the view class are positioned and sized relative to their parent. \
+1. `x` and `y` set the relative position the view where `-0.5` and `0.5` represent the left and right edges of the parent view.
+2. `width` and `height` set the relative size of the view where `1.0` represents the full width or height of the parent view.
+
+The `updateLayout()` function applies the relative position to the `position` and `scale` properties of the view and computes a new `aspectRatio` property based on the parent view.
+It is automatically called when the view is added to another view or when `updateLayoutsBFS` is called from any parent view.
+
+Child classes may override `updateLayout` to respond to changes in position or scale.
+
+### Coordinate system
+The coordinate system within a view is uniformely scaled such that the origin `(0, 0, 0)` represents the center of the view and the range `[-0.5,0.5] x [-0.5,0.5]` represents the largest square which fits within the view.
+View objects provide a `aspectRatio` property which provides a true ratio of width over height.
+
+As a helper utility, each view provides two getter properties, `rangeX` and `rangeY`, which provide the height and width of the view within it's own coordinate system based on the aspect ratio.
+For example, a landscape view with a `16:9` aspect ratio will have a `rangeX == 16/9` and a `rangeY == 1`.
+
+## Available Views
+The following views are provided as initial building blocks:
+
+### Panel
+The `Panel` class provides a root view with a rounded rectangle mesh to serve as a background. It also positions itself in front of the user by default.
+
+For example:
+```js
+const panel = new xb.Panel({
+  width: 1.0,
+  height: 1.0,
+  backgroundColor: '#00000000',
+  useDefaultPosition: true
+});
+```
+
+### Spatial Panel
+A `SpatialPanel` is a draggable version of the `Panel` class.
+
+For example:
+```js
+const panel = new xb.SpatialPanel({
+  backgroundColor: '#00000000',
+  useDefaultPosition: true,
+  showEdge: true
+});
+```
+
+### Grid View
+The `GridView` class allows splitting up a view into multiple sections.
+
+### Image View
+The `ImageView` class displays a image from a URL.
+
+### Text View
+The `TextView` class adds text using the [`troika-three-text` library](https://github.com/protectwise/troika).
+
+### Horizontal and Vertical Pagers
+The `HorizontalPager` and `VerticalPager` classes provide scrolling pages to your views.
+
+They can be combined with the following additional classes:
+* `PagerState` which holds the current page and automatically scrolls to the nearest page.
+* `PageIndicator` adds a small page indicator ◦◦•◦◦ based on the pager state.
+
+### Scrolling Text View
+The `ScrollingTroikaTextView` class provides a text view where the text moves upwards out of the view when a new line is added.
+
+
