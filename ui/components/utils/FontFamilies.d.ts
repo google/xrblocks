@@ -1,0 +1,20 @@
+export declare const FONT_FAMILIES: {
+    Roboto: string;
+    'Noto Sans': string;
+    Comfortaa: string;
+    Cookie: string;
+    Philosopher: string;
+    Quicksand: string;
+    Trirong: string;
+    Trocchi: string;
+    'Advent Pro': string;
+    'Henny Penny': string;
+    Orbitron: string;
+    Sacramento: string;
+    'Snowburst One': string;
+    Syncopate: string;
+    Wallpoet: string;
+    'Sirin Stencil': string;
+    'Roboto Slab': string;
+};
+export declare const MATERIAL_ICONS_FONT_FILE = "https://cdn.jsdelivr.net/gh/marella/material-icons@v1.13.14/iconfont/material-icons.woff";

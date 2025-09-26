@@ -1,0 +1,16 @@
+import './instructions/SimulatorInstructions.js';
+import './ui/HandPosePanel.js';
+import './ui/ModeIndicator.js';
+import '../../tslib.es6--gQC4x5c.js';
+import './instructions/CustomInstruction.js';
+import 'lit';
+import 'lit/decorators/custom-element.js';
+import 'lit/decorators/property.js';
+import './instructions/SimulatorInstructionsCard.js';
+import './instructions/SimulatorInstructionsEvents.js';
+import './instructions/HandsInstructions.js';
+import 'xrblocks';
+import './instructions/NavigationInstructions.js';
+import './instructions/UserInstructions.js';
+import 'lit/directives/class-map.js';
+import 'lit/directives/ref.js';
