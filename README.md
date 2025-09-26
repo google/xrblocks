@@ -54,15 +54,15 @@ cylinder's color.
     <link
       type="text/css"
       rel="stylesheet"
-      href="[https://xrblocks.github.io/site/css/main.css](https://xrblocks.github.io/site/css/main.css)"
+      href="https://cdn.jsdelivr.net/gh/google/xrblocks@main/samples/main.css"
     />
     <script type="importmap">
       {
         "imports": {
           "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
           "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
-          "xrblocks": "https://xrblocks.github.io/sdk/build/xrblocks.js",
-          "xrblocks/addons/": "https://xrblocks.github.io/sdk/build/addons/"
+          "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
+          "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/"
         }
       }
     </script>
