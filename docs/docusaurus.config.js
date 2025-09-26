@@ -42,8 +42,8 @@ const config = {
 
   customFields: {
     xrblocksBaseUrl: process.env.XRBLOCKS_BASE_URL || 'http://localhost:8080/',
-    codeSearchBaseUrl: process.env.CODE_SEARCH_BASE_URL || 'https://github.com/google/xrblocks/blob/main/src/',
-    codeSearchLinkSuffix: process.env.CODE_SEARCH_LINK_SUFFIX
+    codeSearchBaseUrl: process.env.CODE_SEARCH_BASE_URL || 'https://github.com/google/xrblocks/blob/main/',
+    codeSearchLinkSuffix: process.env.CODE_SEARCH_LINK_SUFFIX || ""
   },
 
   headTags: [
