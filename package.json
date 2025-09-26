@@ -1,0 +1,52 @@
+{
+  "name": "xrblocks",
+  "version": "0.1.0",
+  "description": "XR Blocks SDK",
+  "main": "build/xrblocks.js",
+  "types": "build/xrblocks.d.ts",
+  "type": "module",
+  "scripts": {
+    "start": "rollup -c -w",
+    "build": "echo \"Building xrblocks.js...\" && rollup -c",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/google/xrblocks.git"
+  },
+  "author": "XR Blocks authors",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./build/xrblocks.js",
+    "./addons/*": "./build/addons/*"
+  },
+  "homepage": "https://xrblocks.github.io",
+  "devDependencies": {
+    "@dimforge/rapier3d": "^0.17.0",
+    "@eslint/js": "^9.35.0",
+    "@google/genai": "^1.15.0",
+    "@rollup/plugin-inject": "^5.0.5",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-replace": "^6.0.2",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.1.4",
+    "@sparkjsdev/spark": "^0.1.8",
+    "@types/dom-speech-recognition": "^0.0.6",
+    "@types/three": "^0.180.0",
+    "@types/webxr": "^0.5.23",
+    "eslint": "^9.35.0",
+    "eslint-plugin-tsdoc": "^0.4.0",
+    "glob": "^11.0.3",
+    "lit": "^3.3.1",
+    "openai": "^5.16.0",
+    "rollup": "^4.41.0",
+    "troika-three-text": "^0.52.4",
+    "troika-types": "^0.0.6",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.43.0"
+  },
+  "peerDependencies": {
+    "three": "^0.180.0"
+  }
+}

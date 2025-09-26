@@ -1,0 +1,10 @@
+{
+  "gemini": {
+    "apiKey": "YOUR_GEMINI_API_KEY_HERE",
+    "_note": "Get your Gemini API key from: https://aistudio.google.com/app/apikey"
+  },
+  "openai": {
+    "apiKey": "YOUR_OPENAI_API_KEY_HERE",
+    "_note": "Get your OpenAI API key from: https://platform.openai.com/api-keys"
+  }
+}
