@@ -10,6 +10,9 @@
     "build": "echo \"Building xrblocks.js...\" && rollup -c",
     "prepublishOnly": "npm run build"
   },
+  "files": [
+    "build"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/google/xrblocks.git"
