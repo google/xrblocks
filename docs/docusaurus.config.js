@@ -153,10 +153,6 @@ const config = {
               position: 'left',
               label: 'Samples',
             },
-            {
-              href: 'https://xr-labs.web.app/gallery/',
-              label: 'Gallery',
-            },
           ],
         },
         prism: {
