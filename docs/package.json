@@ -15,8 +15,8 @@
     "typedoc": "typedoc"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.9.0",
-    "@docusaurus/preset-classic": "^3.9.0",
+    "@docusaurus/core": "^3.9.1",
+    "@docusaurus/preset-classic": "^3.9.1",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
     "prism-react-renderer": "^2.3.0",
@@ -24,8 +24,8 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.9.0",
-    "@docusaurus/types": "^3.9.0",
+    "@docusaurus/module-type-aliases": "^3.9.1",
+    "@docusaurus/types": "^3.9.1",
     "docusaurus-plugin-typedoc": "^1.4.2",
     "typedoc": "^0.28.12",
     "typedoc-plugin-markdown": "^4.8.1",
