@@ -45,13 +45,17 @@ export declare class IconButton extends TextView {
      */
     constructor(options?: IconButtonOptions);
     /**
+     * Initializes the component and sets the render order.
+     */
+    init(_?: object): Promise<void>;
+    /**
+  
+    /**
      * Handles behavior when the cursor hovers over the button.
-     * @override
      */
     onHoverOver(): void;
     /**
      * Handles behavior when the cursor moves off the button.
-     * @override
      */
     onHoverOut(): void;
     /**

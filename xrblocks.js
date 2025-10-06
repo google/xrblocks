@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.1.0
- * @commitid 7770d86
- * @builddate 2025-09-26T18:49:50.549Z
+ * @commitid 8589011
+ * @builddate 2025-10-06T17:40:41.613Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9931,8 +9931,21 @@ class IconButton extends TextView {
         Object.assign(this, options);
     }
     /**
+     * Initializes the component and sets the render order.
+     */
+    async init(_) {
+        await super.init();
+        if (this.mesh) {
+            this.mesh.renderOrder = this.renderOrder;
+        }
+        if (this.textObj) {
+            this.textObj.renderOrder = this.renderOrder + 1;
+        }
+    }
+    /**
+  
+    /**
      * Handles behavior when the cursor hovers over the button.
-     * @override
      */
     onHoverOver() {
         if (!this.ux)
@@ -9941,7 +9954,6 @@ class IconButton extends TextView {
     }
     /**
      * Handles behavior when the cursor moves off the button.
-     * @override
      */
     onHoverOut() {
         if (!this.ux)
@@ -10291,14 +10303,19 @@ class TextButton extends TextView {
         // Applies our own overrides to the default values.
         this.fontSize = options.fontSize ?? this.fontSize;
         this.fontColor = options.fontColor ?? this.fontColor;
+        this.width = options.width ?? this.width;
+        this.height = options.height ?? this.height;
     }
     /**
      * Initializes the text object after async dependencies are loaded.
-     * @override
      */
     async init() {
         await super.init();
         this.textObj.position.set(0, 0, VIEW_DEPTH_GAP);
+        if (this.mesh) {
+            this.mesh.renderOrder = this.renderOrder;
+        }
+        this.textObj.renderOrder = this.renderOrder + 1;
         // Disable raycasting on the text part so it doesn't interfere
         // with the main button geometry's interaction.
         this.textObj.raycast = () => { };

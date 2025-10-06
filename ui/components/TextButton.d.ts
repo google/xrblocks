@@ -46,7 +46,6 @@ export declare class TextButton extends TextView {
     constructor(options?: TextButtonOptions);
     /**
      * Initializes the text object after async dependencies are loaded.
-     * @override
      */
     init(): Promise<void>;
     update(): void;
