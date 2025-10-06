@@ -1,0 +1,19 @@
+name: Update xrblocks.github.io
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'docs/**'
+
+jobs:
+  dispatch-to-xrblocks-github-io:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger build in xrblocks.github.io
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.XRBLOCKS_GITHUB_IO_PAT }}
+          repository: xrblocks/xrblocks.github.io
+          event-type: xrblocks_update
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
