@@ -80,8 +80,24 @@ export class IconButton extends TextView {
   }
 
   /**
+   * Initializes the component and sets the render order.
+   */
+  override async init(_?: object) {
+    await super.init();
+
+    if (this.mesh) {
+      this.mesh.renderOrder = this.renderOrder;
+    }
+
+    if (this.textObj) {
+      this.textObj.renderOrder = this.renderOrder + 1;
+    }
+  }
+
+  /**
+
+  /**
    * Handles behavior when the cursor hovers over the button.
-   * @override
    */
   onHoverOver() {
     if (!this.ux) return;
@@ -90,7 +106,6 @@ export class IconButton extends TextView {
 
   /**
    * Handles behavior when the cursor moves off the button.
-   * @override
    */
   onHoverOut() {
     if (!this.ux) return;

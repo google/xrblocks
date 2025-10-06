@@ -44,7 +44,7 @@ export class ExitButton extends IconButton {
    * Initializes the component and stores the injected renderer dependency.
    * @param dependencies - The injected dependencies.
    */
-  async init({renderer}: {renderer: THREE.WebGLRenderer;}) {
+  override async init({renderer}: {renderer: THREE.WebGLRenderer;}) {
     await super.init();
     this.renderer = renderer;
   }

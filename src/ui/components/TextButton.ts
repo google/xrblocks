@@ -92,15 +92,21 @@ export class TextButton extends TextView {
     // Applies our own overrides to the default values.
     this.fontSize = options.fontSize ?? this.fontSize;
     this.fontColor = options.fontColor ?? this.fontColor;
+    this.width = options.width ?? this.width;
+    this.height = options.height ?? this.height;
   }
 
   /**
    * Initializes the text object after async dependencies are loaded.
-   * @override
    */
-  async init() {
+  override async init() {
     await super.init();
     this.textObj!.position.set(0, 0, VIEW_DEPTH_GAP);
+
+    if (this.mesh) {
+      this.mesh.renderOrder = this.renderOrder;
+    }
+    this.textObj!.renderOrder = this.renderOrder + 1;
 
     // Disable raycasting on the text part so it doesn't interfere
     // with the main button geometry's interaction.
