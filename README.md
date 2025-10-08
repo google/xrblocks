@@ -183,6 +183,80 @@ To remove XR Blocks from your code, simple remove the lines from your `<script
 type="importmap">` tag in HTML, or `import * from xrblocks` in JavaScript, or
 use `npm uninstall xrblocks` from your project directory.
 
+### References
+
+If you find XR Blocks inspiring or useful in your research, please reference it
+as:
+
+```bibtex
+@misc{Li2025XR,
+  title={{XR Blocks: Accelerating Human-centered AI + XR Innovation}},
+  author={Li, David and Numan, Nels and Qian, Xun and Chen, Yanhe and Zhou, Zhongyi and Alekseev, Evgenii and Lee, Geonsun and Cooper, Alex and Xia, Min and Chung, Scott and Nelson, Jeremy and Yuan, Xiuxiu and Dias, Jolica and Bettridge, Tim and Hersh, Benjamin and Huynh, Michelle and Piascik, Konrad and Cabello, Ricardo and Kim, David and Du, Ruofei},
+  year={2025},
+  eprint={2509.25504},
+  archivePrefix={arXiv},
+  primaryClass={cs.HC},
+  url={https://arxiv.org/abs/2509.25504},
+}
+```
+
+### Key Works Built with XR Blocks
+
+These references are built with XR Blocks:
+
+```bibtex
+@inproceedings{Lee2025Sensible,
+  title = {{Sensible Agent: A Framework for Unobtrusive Interaction with Proactive AR Agent}},
+  author = {Lee, Geonsun and Xia, Min and Numan, Nels and Qian, Xun and Li, David and Chen, Yanhe and Kulshrestha, Achin and Chatterjee, Ishan and Zhang, Yinda and Manocha, Dinesh and Kim, David and Du, Ruofei},
+  booktitle = {Proceedings of the 39th Annual ACM Symposium on User Interface Software and Technology},
+  year = {2025},
+  publisher = {ACM},
+  numpages = {22},
+  series = {UIST},
+  doi = {10.1145/3746059.3747748},
+}
+```
+
+### Inspiring Related Works
+
+We call for contributors to integrate our prior art into XR Blocks to enhance
+reproducibility and knowledge sharing:
+
+E.g., integrating models from https://visualblocks.withgoogle.com to XR Blocks:
+
+```bibtex
+@inproceedings{Du2023Rapsai,
+  title = {{Rapsai: Accelerating Machine Learning Prototyping of Multimedia Applications Through Visual Programming}},
+  author = {Du, Ruofei and Li, Na and Jin, Jing and Carney, Michelle and Miles, Scott and Kleiner, Maria and Yuan, Xiuxiu and Zhang, Yinda and Kulkarni, Anuva and Liu, XingyuBruce and Sabie, Ahmed and Orts-Escolano, Sergio and Kar, Abhishek and Yu, Ping and Iyengar, Ram and Kowdle, Adarsh and Olwal, Alex},
+  booktitle = {Proceedings of the 2023 CHI Conference on Human Factors in Computing Systems},
+  year = {2023},
+  publisher = {ACM},
+  month = {Apr.},
+  day = {22-29},
+  number = {125},
+  pages = {1--23},
+  series = {CHI},
+  doi = {10.1145/3544548.3581338},
+}
+```
+
+Extending XR Blocks to XR communication:
+
+```bibtex
+@inproceedings{Hu2025DialogLab,
+  title = {{DialogLab: Authoring, Simulating, and Testing Dynamic Group Conversations in Hybrid Human-AI Conversations}},
+  author = {Hu, Erzhen and Chen, Yanhe and Li, Mingyi and Phadnis, Vrushank and Xu, Pingmei and Qian, Xun and Olwal, Alex and Kim, David and Heo, Seongkook and Du, Ruofei},
+  booktitle = {Proceedings of the 39th Annual ACM Symposium on User Interface Software and Technology},
+  year = {2025},
+  number = {210},
+  publisher = {ACM},
+  number = {210},
+  pages = {1--20},
+  series = {UIST},
+  doi = {10.1145/3746059.3747696},
+}
+```
+
 ### Terms of Service
 
 -   Please follow
