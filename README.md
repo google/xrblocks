@@ -11,9 +11,9 @@
 [Samples](https://xrblocks.github.io/docs/samples/ModelViewer)
 
 <p align="center">
- <a href="https://xrblocks.github.io/docs/samples/Ballpit" target="_blank"><img width="32.3%" src="assets/ballpit-demo.webp" alt="Ballpit" /></a>
-  <a href="https://xrblocks.github.io/docs/samples/XR-Emoji" target="_blank"><img width="32.3%" src="assets/xremoji-demo.webp" alt="XR Emoji" /></a>
- <a href="https://xrblocks.github.io/docs/samples/Gemini-Icebreakers" target="_blank"><img width="32.3%" src="assets/gemini-icebreakers-demo.webp" alt="Gemini Icebreakers" /></a>
+ <a href="https://xrblocks.github.io/docs/samples/Ballpit" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/ballpit-demo.webp" alt="Ballpit" /></a>
+  <a href="https://xrblocks.github.io/docs/samples/XR-Emoji" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/xremoji-demo.webp" alt="XR Emoji" /></a>
+ <a href="https://xrblocks.github.io/docs/samples/Gemini-Icebreakers" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/gemini-icebreakers-demo.webp" alt="Gemini Icebreakers" /></a>
 </p>
 
 ### Description
