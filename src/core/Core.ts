@@ -184,6 +184,7 @@ export class Core {
     this.registry.register(this.camera, THREE.Camera);
     this.registry.register(this.camera, THREE.PerspectiveCamera);
     this.renderer = new THREE.WebGLRenderer({
+      canvas: options.canvas,
       antialias: options.antialias,
       stencil: options.stencil,
       alpha: true,
@@ -198,9 +199,11 @@ export class Core {
     // "local" sets the scene origin near their head.
     this.renderer.xr.setReferenceSpaceType('local-floor');
 
-    const xrContainer = document.createElement('div');
-    document.body.appendChild(xrContainer);
-    xrContainer.appendChild(this.renderer.domElement);
+    if (!options.canvas) {
+      const xrContainer = document.createElement('div');
+      document.body.appendChild(xrContainer);
+      xrContainer.appendChild(this.renderer.domElement);
+    }
 
     this.options = options;
 

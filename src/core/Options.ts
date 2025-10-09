@@ -68,6 +68,11 @@ export class Options {
    * Whether to request a stencil buffer.
    */
   stencil = false;
+  /**
+   * Canvas element to use for rendering.
+   * If not defined, a new element will be added to document body.
+   */
+  canvas?: HTMLCanvasElement;
 
   controllers = new InputOptions();
   depth = new DepthOptions();
