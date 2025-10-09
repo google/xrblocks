@@ -5,6 +5,11 @@ on:
   push:
     paths:
       - 'docs/**'
+      - 'README.md'
+      - 'src/**'
+      - 'demos/**'
+      - 'templates/**'
+      - 'samples/**'
 
 jobs:
   dispatch-to-xrblocks-github-io:
