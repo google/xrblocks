@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.1.0
- * @commitid 8589011
- * @builddate 2025-10-06T17:40:41.613Z
+ * @commitid 584aff4
+ * @builddate 2025-10-09T23:02:20.522Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13221,6 +13221,7 @@ class Core {
         this.registry.register(this.camera, THREE.Camera);
         this.registry.register(this.camera, THREE.PerspectiveCamera);
         this.renderer = new THREE.WebGLRenderer({
+            canvas: options.canvas,
             antialias: options.antialias,
             stencil: options.stencil,
             alpha: true,
@@ -13233,9 +13234,11 @@ class Core {
         // "local-floor" sets the scene origin at the user's feet,
         // "local" sets the scene origin near their head.
         this.renderer.xr.setReferenceSpaceType('local-floor');
-        const xrContainer = document.createElement('div');
-        document.body.appendChild(xrContainer);
-        xrContainer.appendChild(this.renderer.domElement);
+        if (!options.canvas) {
+            const xrContainer = document.createElement('div');
+            document.body.appendChild(xrContainer);
+            xrContainer.appendChild(this.renderer.domElement);
+        }
         this.options = options;
         // Sets up controllers.
         if (options.controllers.enabled) {

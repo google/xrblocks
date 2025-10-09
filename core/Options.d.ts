@@ -63,6 +63,11 @@ export declare class Options {
      * Whether to request a stencil buffer.
      */
     stencil: boolean;
+    /**
+     * Canvas element to use for rendering.
+     * If not defined, a new element will be added to document body.
+     */
+    canvas?: HTMLCanvasElement;
     controllers: InputOptions;
     depth: DepthOptions;
     lighting: LightingOptions;
