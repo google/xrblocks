@@ -95,7 +95,14 @@ const config = {
         rel: 'manifest',
         href: '/img/site.webmanifest',
       },
-    }
+    },
+    {
+      tagName: 'meta',
+      attributes: {
+        name: 'algolia-site-verification',
+        content: 'C7A25C1609F793C8',
+      },
+    },
   ],
 
   presets: [
