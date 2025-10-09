@@ -51,4 +51,4 @@ model.setupPlatform();
 
 ### Sample
 
-See [`samples/modelviewer/`](/docs/samples/ModelViewer) for a sample of model viewer with both a GLTF model and a loaded three.js object.
+See [`samples/modelviewer/`](/samples/ModelViewer) for a sample of model viewer with both a GLTF model and a loaded three.js object.
