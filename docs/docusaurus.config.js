@@ -171,6 +171,19 @@ const config = {
           theme: prismThemes.github,
           darkTheme: prismThemes.dracula,
         },
+        algolia: {
+          appId: 'WRVGZCGOJP',
+          apiKey: '40150cc2c638b09de8ebbfefd50b80a4',
+          indexName: 'XR Blocks Docs Crawler',
+          contextualSearch: true,
+          // Optional: Replace parts of the item URLs from Algolia. Useful when using the same search index for multiple deployments using a different baseUrl. You can use regexp or string in the `from` param. For example: localhost:3000 vs myCompany.com/docs
+          replaceSearchResultPathname: {
+            from: '/docs/', // or as RegExp: /\/docs\//
+            to: '/',
+          },
+          // Optional: path for search page that enabled by default (`false` to disable it)
+          searchPagePath: 'search',
+        },
       }),
   markdown: {format: 'detect', hooks: {onBrokenMarkdownLinks: 'warn'}},
   plugins: [
