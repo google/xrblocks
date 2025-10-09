@@ -165,6 +165,11 @@ const config = {
               position: 'left',
               label: 'Samples',
             },
+            {
+              href: 'https://github.com/google/xrblocks',
+              label: 'GitHub',
+              position: 'right',
+            },
           ],
         },
         prism: {
