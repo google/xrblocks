@@ -37,16 +37,16 @@ XR Blocks supports the different 3D variants of RAPIER by using a virtual import
 
 ## Physics
 
-The `Physics` controller will initialize `RAPIER`, create a RAPIER world, and call `world.step` for every physics step.
+The [`Physics`](/api/classes/Physics) controller will initialize `RAPIER`, create a RAPIER world, and call [`world.step`](https://rapier.rs/javascript3d/classes/World.html#step) for every physics step.
 Is is accessible from `xb.core.physics` and has the following properties:
 1. `RAPIER` - the global `RAPIER` object.
-2. `world` - the global `RAPIER.world` object.
+2. `blendedWorld` - the global `RAPIER.world` object.
 3. `fps` - the fixed physics update rate.
 4. `options` - physics options.
 
 ## Adding physics to objects
-In the `initPhysics` method, you can create rigid bodies corresponding to your object.
-Then in the `physicsStep` method, copy the translation and rotation of the rigid body to your object.
+In the [`Script.initPhysics`](/api/classes/Script#initphysics) method, you can create rigid bodies corresponding to your object.
+Then in the [`Script.physicsStep`](/api/classes/Script#physicsStep) method, copy the translation and rotation of the rigid body to your object.
 
 For example:
 ```js
@@ -71,7 +71,7 @@ export class Ball extends xb.Script {
 
 ## Physics Options
 
-By default, we uses the following options in `PhysicsOptions.js`:
+By default, we uses the following options in [`PhysicsOptions`](/api/classes/PhysicsOptions) in the initial [`xb.init`](/api/functions/init) call:
 ```js
 {
   fps: 45,

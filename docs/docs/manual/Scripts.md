@@ -2,14 +2,14 @@
 sidebar_position: 2
 ---
 
-The `Script` class facilities development by providing useful life cycle functions similar to MonoBehaviors in Unity.
+The [`Script`](/api/classes/Script) class facilities development by providing useful life cycle functions similar to MonoBehaviors in Unity.
 
-Each `Script` object is an independent `THREE.Object3D` entity within the scene graph. XR Blocks does not provide an entity component system (ECS).
+Each [`Script`](/api/classes/Script) object is an independent `THREE.Object3D` entity within the scene graph. XR Blocks does not provide an entity component system (ECS).
 
 ## Usage
 
-To take advantage of these life cycle functions, simply create a class extending `Script` and add it somewhere to the scene graph.
-The `Core` will iterate over the scene graph each frame to find `Script`s and call their corresponding life cycle functions.
+To take advantage of these life cycle functions, simply create a class extending [`Script`](/api/classes/Script) and add it somewhere to the scene graph.
+The [`Script`](/api/classes/Core) will iterate over the scene graph each frame to find [`Script`](/api/classes/Script)s and call their corresponding life cycle functions.
 
 ```javascript
 import * as xb from "xrblocks";

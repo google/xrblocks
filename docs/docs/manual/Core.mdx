@@ -3,15 +3,15 @@ sidebar_position: 3
 ---
 import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
-XR Blocks SDK is wrapped around a singleton instance of `Core` exported as `core`.
+XR Blocks SDK is wrapped around a singleton instance of [`Core`](/api/classes/Core) exported as [`xb.core`](/api/variables/core).
 
-The `Core` object is resposible for:
+The [`Core`](/api/classes/Core) object is resposible for:
 1. Setup of all components such as the renderer, scene, input, depth, physics, simulator, etc.
 2. Calling lifecycle functions in all [`Script`](Scripts.md) entities and XR Blocks components.
 
 ## Init
 
-To initialize the `Core` object, call `xb.init()` or `xb.init(options)` with a provided set of options.
+To initialize the [`Core`](/api/classes/Core) object, call [`xb.init()`](/api/functions/init) or [`xb.init(options)`](/api/functions/init) with a provided set of options.
 
 For a set of options, see <CodeSearchLink path="src/core/Options.ts"/>.
 
