@@ -46,7 +46,7 @@ Is is accessible from `xb.core.physics` and has the following properties:
 
 ## Adding physics to objects
 In the [`Script.initPhysics`](/api/classes/Script#initphysics) method, you can create rigid bodies corresponding to your object.
-Then in the [`Script.physicsStep`](/api/classes/Script#physicsStep) method, copy the translation and rotation of the rigid body to your object.
+Then in the [`Script.physicsStep`](/api/classes/Script#physicsstep) method, copy the translation and rotation of the rigid body to your object.
 
 For example:
 ```js
