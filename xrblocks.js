@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.1.0
- * @commitid 584aff4
- * @builddate 2025-10-09T23:02:20.522Z
+ * @commitid 9a1eaa4
+ * @builddate 2025-10-10T18:04:56.161Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3912,7 +3912,6 @@ class XRButton {
         this.sessionManager.addEventListener(WebXRSessionEventType.READY, () => this.onSessionReady());
         this.sessionManager.addEventListener(WebXRSessionEventType.SESSION_START, () => this.onSessionStarted());
         this.sessionManager.addEventListener(WebXRSessionEventType.SESSION_END, this.onSessionEnded.bind(this));
-        this.sessionManager.initialize();
     }
     createSimulatorButton() {
         this.simulatorButtonElement.classList.add(XRBUTTON_CLASS);
@@ -5700,6 +5699,13 @@ class Options {
          * Whether to request a stencil buffer.
          */
         this.stencil = false;
+        /**
+         * Any additional required features when initializing webxr.
+         */
+        this.webxrRequiredFeatures = [];
+        // "local-floor" sets the scene origin at the user's feet,
+        // "local" sets the scene origin near their head.
+        this.referenceSpaceType = 'local-floor';
         this.controllers = new InputOptions();
         this.depth = new DepthOptions();
         this.lighting = new LightingOptions();
@@ -13231,9 +13237,7 @@ class Core {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.xr.enabled = true;
         this.registry.register(this.renderer);
-        // "local-floor" sets the scene origin at the user's feet,
-        // "local" sets the scene origin near their head.
-        this.renderer.xr.setReferenceSpaceType('local-floor');
+        this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
         if (!options.canvas) {
             const xrContainer = document.createElement('div');
             document.body.appendChild(xrContainer);
@@ -13258,7 +13262,7 @@ class Core {
             await this.deviceCamera.init();
             this.registry.register(this.deviceCamera);
         }
-        const webXRRequiredFeatures = [];
+        const webXRRequiredFeatures = options.webxrRequiredFeatures;
         this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
         // Sets up depth.
         if (options.depth.enabled) {

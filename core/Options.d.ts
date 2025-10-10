@@ -68,6 +68,11 @@ export declare class Options {
      * If not defined, a new element will be added to document body.
      */
     canvas?: HTMLCanvasElement;
+    /**
+     * Any additional required features when initializing webxr.
+     */
+    webxrRequiredFeatures: string[];
+    referenceSpaceType: XRReferenceSpaceType;
     controllers: InputOptions;
     depth: DepthOptions;
     lighting: LightingOptions;
