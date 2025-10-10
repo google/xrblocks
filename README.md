@@ -11,9 +11,9 @@
 [Samples](https://xrblocks.github.io/docs/samples/ModelViewer/)
 
 <p align="center">
- <a href="https://xrblocks.github.io/docs/samples/Ballpit/" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/ballpit-demo.webp" alt="Ballpit" /></a>
+  <a href="https://xrblocks.github.io/docs/samples/Ballpit/" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/ballpit-demo.webp" alt="Ballpit" /></a>
   <a href="https://xrblocks.github.io/docs/samples/XR-Emoji/" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/xremoji-demo.webp" alt="XR Emoji" /></a>
- <a href="https://xrblocks.github.io/docs/samples/Gemini-Icebreakers/" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/gemini-icebreakers-demo.webp" alt="Gemini Icebreakers" /></a>
+  <a href="https://xrblocks.github.io/docs/samples/Gemini-Icebreakers/" target="_blank"><img width="32.3%" src="https://cdn.jsdelivr.net/gh/google/xrblocks@main/assets/gemini-icebreakers-demo.webp" alt="Gemini Icebreakers" /></a>
 </p>
 
 ### Description
@@ -25,14 +25,14 @@ powerful desktop simulator for development. The framework emphasizes a
 user-centric, developer-friendly SDK designed to simplify the creation of
 immersive applications with features like:
 
--   **Hand Tracking & Gestures:** Access advanced hand tracking, custom
-    gestures with TensorFlow Lite / LiteRT models, and interaction events.
--   **World Understanding:** Present samples with depth sensing, geometry-aware
-    physics, and object recognition with Gemini in both XR and desktop.
--   **AI Integration:** Seamlessly connect to Gemini for multimodal
-    understanding and live conversational experiences.
--   **Cross-Platform:** Write once and deploy to both XR devices and desktop
-    browsers.
+- **Hand Tracking & Gestures:** Access advanced hand tracking, custom
+  gestures with TensorFlow Lite / LiteRT models, and interaction events.
+- **World Understanding:** Present samples with depth sensing, geometry-aware
+  physics, and object recognition with Gemini in both XR and desktop.
+- **AI Integration:** Seamlessly connect to Gemini for multimodal
+  understanding and live conversational experiences.
+- **Cross-Platform:** Write once and deploy to both XR devices and desktop
+  browsers.
 
 ### Usage
 
@@ -259,9 +259,9 @@ Extending XR Blocks to XR communication:
 
 ### Terms of Service
 
--   Please follow
-    [Google's Privacy & Terms](https://ai.google.dev/gemini-api/terms) when
-    using this SDK.
+- Please follow
+  [Google's Privacy & Terms](https://ai.google.dev/gemini-api/terms) when
+  using this SDK.
 
--   When using AI features in this SDK, please follow
-    [Gemini's Privacy & Terms](https://ai.google.dev/gemini-api/terms).
+- When using AI features in this SDK, please follow
+  [Gemini's Privacy & Terms](https://ai.google.dev/gemini-api/terms).
