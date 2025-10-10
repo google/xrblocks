@@ -195,9 +195,7 @@ export class Core {
     this.renderer.xr.enabled = true;
     this.registry.register(this.renderer);
 
-    // "local-floor" sets the scene origin at the user's feet,
-    // "local" sets the scene origin near their head.
-    this.renderer.xr.setReferenceSpaceType('local-floor');
+    this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
 
     if (!options.canvas) {
       const xrContainer = document.createElement('div');
@@ -228,7 +226,7 @@ export class Core {
       this.registry.register(this.deviceCamera);
     }
 
-    const webXRRequiredFeatures: string[] = [];
+    const webXRRequiredFeatures: string[] = options.webxrRequiredFeatures;
     this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
     // Sets up depth.
     if (options.depth.enabled) {

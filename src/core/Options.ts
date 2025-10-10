@@ -74,6 +74,15 @@ export class Options {
    */
   canvas?: HTMLCanvasElement;
 
+  /**
+   * Any additional required features when initializing webxr.
+   */
+  webxrRequiredFeatures: string[] = [];
+
+  // "local-floor" sets the scene origin at the user's feet,
+  // "local" sets the scene origin near their head.
+  referenceSpaceType: XRReferenceSpaceType = 'local-floor';
+
   controllers = new InputOptions();
   depth = new DepthOptions();
   lighting = new LightingOptions();

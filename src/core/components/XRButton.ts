@@ -44,8 +44,6 @@ export class XRButton {
         WebXRSessionEventType.SESSION_END,
         this.onSessionEnded.bind(this),
     );
-
-    this.sessionManager.initialize();
   }
 
   private createSimulatorButton() {
