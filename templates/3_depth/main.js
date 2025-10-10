@@ -3,7 +3,7 @@ import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
-const pawnModelPath = 'arcore_pawn_compressed.glb';
+const pawnModelPath = 'https://cdn.jsdelivr.net/gh/xrblocks/assets@main/models/arcore_pawn_compressed.glb';
 
 class PawnPlacer extends xb.Script {
   async init() {
