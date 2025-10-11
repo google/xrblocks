@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.1.0
- * @commitid 9a1eaa4
- * @builddate 2025-10-10T18:04:56.161Z
+ * @commitid 1c484ee
+ * @builddate 2025-10-11T09:26:33.405Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5502,6 +5502,8 @@ class SimulatorOptions {
         // canvas.
         // This is a temporary option until we figure out why splats look faded.
         this.renderToRenderTexture = true;
+        // Blending mode when rendering the virtual scene.
+        this.blendingMode = 'normal';
         deepMerge(this, options);
     }
 }
@@ -8259,8 +8261,17 @@ class Simulator extends Script {
             this.setupStereoCameras(camera);
         }
         this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(renderer.domElement.width, renderer.domElement.height, { stencilBuffer: options.stencil });
+        const virtualSceneMaterial = new THREE.MeshBasicMaterial({ map: this.virtualSceneRenderTarget.texture, transparent: true });
+        if (this.options.blendingMode === 'screen') {
+            virtualSceneMaterial.blending = THREE.CustomBlending;
+            virtualSceneMaterial.blendSrc = THREE.OneFactor;
+            virtualSceneMaterial.blendDst =
+                THREE.OneMinusSrcColorFactor;
+            virtualSceneMaterial.blendEquation =
+                THREE.AddEquation;
+        }
         this.virtualSceneFullScreenQuad =
-            new FullScreenQuad(new THREE.MeshBasicMaterial({ map: this.virtualSceneRenderTarget.texture, transparent: true }));
+            new FullScreenQuad(virtualSceneMaterial);
         this.renderer = renderer;
         this.mainCamera = camera;
         this.mainScene = scene;

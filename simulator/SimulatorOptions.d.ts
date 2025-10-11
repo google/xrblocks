@@ -48,5 +48,6 @@ export declare class SimulatorOptions {
         enabled: boolean;
     };
     renderToRenderTexture: boolean;
+    blendingMode: 'normal' | 'screen';
     constructor(options?: DeepReadonly<DeepPartial<SimulatorOptions>>);
 }
