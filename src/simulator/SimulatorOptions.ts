@@ -51,6 +51,8 @@ export class SimulatorOptions {
   // canvas.
   // This is a temporary option until we figure out why splats look faded.
   renderToRenderTexture = true;
+  // Blending mode when rendering the virtual scene.
+  blendingMode: 'normal'|'screen' = 'normal';
 
   constructor(options?: DeepReadonly<DeepPartial<SimulatorOptions>>) {
     deepMerge(this, options);

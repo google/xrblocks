@@ -124,9 +124,18 @@ export class Simulator extends Script {
     this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(
         renderer.domElement.width, renderer.domElement.height,
         {stencilBuffer: options.stencil});
+    const virtualSceneMaterial = new THREE.MeshBasicMaterial(
+            {map: this.virtualSceneRenderTarget.texture, transparent: true});
+    if (this.options.blendingMode === 'screen') {
+      virtualSceneMaterial.blending = THREE.CustomBlending;
+      virtualSceneMaterial.blendSrc = THREE.OneFactor;
+      virtualSceneMaterial.blendDst =
+          THREE.OneMinusSrcColorFactor;
+      virtualSceneMaterial.blendEquation =
+          THREE.AddEquation;
+    }
     this.virtualSceneFullScreenQuad =
-        new FullScreenQuad(new THREE.MeshBasicMaterial(
-            {map: this.virtualSceneRenderTarget.texture, transparent: true}));
+        new FullScreenQuad(virtualSceneMaterial);
 
     this.renderer = renderer;
     this.mainCamera = camera;
