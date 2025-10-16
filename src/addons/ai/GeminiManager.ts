@@ -24,7 +24,7 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
 
   // Audio playback setup
   audioQueue: AudioBuffer[] = [];
-  isPlayingAudio: boolean = false;
+  nextAudioStartTime = 0;
 
   // Screenshot setInterval identifier
   private screenshotInterval?: ReturnType<typeof setInterval>;
@@ -219,31 +219,30 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
 
       this.audioQueue.push(audioBuffer);
 
-      if (!this.isPlayingAudio) {
-        this.playNextAudioBuffer();
-      }
+      this.scheduleAudioBuffers();
     } catch (error) {
       console.error('Error playing audio chunk:', error);
     }
   }
 
-  playNextAudioBuffer() {
-    if (this.audioQueue.length === 0) {
-      this.isPlayingAudio = false;
-      return;
+  scheduleAudioBuffers() {
+    const SCHEDULE_AHEAD_TIME = 0.2;
+    while (this.audioQueue.length > 0 &&
+           this.nextAudioStartTime <=
+               this.audioContext!.currentTime + SCHEDULE_AHEAD_TIME) {
+      const audioBuffer = this.audioQueue.shift()!;
+      const source = this.audioContext!.createBufferSource();
+      source.buffer = audioBuffer!;
+      source.connect(this.audioContext!.destination);
+      source.onended = () => {
+        this.scheduleAudioBuffers();
+      };
+
+      const startTime =
+          Math.max(this.nextAudioStartTime, this.audioContext!.currentTime);
+      source.start(startTime);
+      this.nextAudioStartTime = startTime + audioBuffer.duration;
     }
-
-    this.isPlayingAudio = true;
-    const audioBuffer = this.audioQueue.shift();
-    const source = this.audioContext!.createBufferSource();
-    source.buffer = audioBuffer!;
-    source.connect(this.audioContext!.destination);
-
-    source.onended = () => {
-      this.playNextAudioBuffer();
-    };
-
-    source.start();
   }
 
   cleanup() {
@@ -254,7 +253,6 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
 
     // Clear audio queue and stop playback
     this.audioQueue = [];
-    this.isPlayingAudio = false;
 
     if (this.processorNode) {
       this.processorNode.disconnect();
