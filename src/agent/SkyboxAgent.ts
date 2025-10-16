@@ -93,7 +93,7 @@ export class SkyboxAgent extends Agent {
    * Starts a live AI session for real-time conversation.
    * 
    * @param callbacks - Optional callbacks for session events. Can also be set using ai.setLiveCallbacks()
-   * @throws {Error} If AI model is not initialized or live session is not available
+   * @throws If AI model is not initialized or live session is not available
    * 
    * @remarks
    * Audio must be enabled separately using `xb.core.sound.enableAudio()` before starting the session.

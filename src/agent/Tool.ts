@@ -7,7 +7,7 @@ export interface ToolCall {
 
 /**
  * Standardized result type for tool execution.
- * @template T The type of data returned on success.
+ * @typeParam T - The type of data returned on success.
  */
 export interface ToolResult<T = unknown> {
   /** Whether the tool execution succeeded */

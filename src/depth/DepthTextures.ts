@@ -60,7 +60,10 @@ export class DepthTextures {
       this.nativeTextures[view_id].sourceTexture = depthData.texture;
     }
     // fixed in newer revision of three
-    const textureProperties = renderer.properties.get(this.nativeTextures[view_id]) as any;
+    const textureProperties = renderer.properties.get(this.nativeTextures[view_id]) as {
+      __webglTexture: WebGLTexture;
+      __version: number;
+    };
     textureProperties.__webglTexture = depthData.texture;
     textureProperties.__version = 1;
   }

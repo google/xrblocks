@@ -7,7 +7,6 @@ import {clamp} from '../utils/utils';
 import {DepthMeshTexturedShader} from './DepthMeshTexturedShader';
 import {DepthMeshOptions, DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
-import { instance } from 'three/src/nodes/TSL.js';
 
 export class DepthMesh extends MeshScript {
   static dependencies = {
@@ -144,15 +143,20 @@ export class DepthMesh extends MeshScript {
     const depthTextureLeft = this.depthTextures?.get(0);
     if (depthTextureLeft && this.depthTextureMaterialUniforms) {
       const isTextureArray = depthTextureLeft instanceof THREE.ExternalTexture;
-      this.depthTextureMaterialUniforms.uIsTextureArray.value = isTextureArray?1.0:0;
+      this.depthTextureMaterialUniforms.uIsTextureArray.value =
+          isTextureArray ? 1.0 : 0;
       if (isTextureArray)
-        this.depthTextureMaterialUniforms.uDepthTextureArray.value = depthTextureLeft;
+        this.depthTextureMaterialUniforms.uDepthTextureArray.value =
+            depthTextureLeft;
       else
-        this.depthTextureMaterialUniforms.uDepthTexture.value = depthTextureLeft;
+        this.depthTextureMaterialUniforms.uDepthTexture.value =
+            depthTextureLeft;
       this.depthTextureMaterialUniforms.uMinDepth.value = this.minDepth;
       this.depthTextureMaterialUniforms.uMaxDepth.value = this.maxDepth;
       this.depthTextureMaterialUniforms.uRawValueToMeters.value =
-          this.depthTextures!.depthData.length?this.depthTextures!.depthData[0].rawValueToMeters:1.0;
+          this.depthTextures!.depthData.length ?
+          this.depthTextures!.depthData[0].rawValueToMeters :
+          1.0;
       (this.material as THREE.Material).needsUpdate = true;
     }
 
@@ -169,21 +173,26 @@ export class DepthMesh extends MeshScript {
 
   convertGPUToGPU(depthData: XRWebGLDepthInformation) {
     if (!this.depthTarget) {
-      this.depthTarget = new THREE.WebGLRenderTarget(depthData.width, depthData.height,{
-                  format: THREE.RedFormat,
-                  type: THREE.FloatType,
-                  internalFormat: 'R32F',
-                  minFilter: THREE.NearestFilter,
-                  magFilter: THREE.NearestFilter,
-                  depthBuffer: false
-                });
+      this.depthTarget =
+          new THREE.WebGLRenderTarget(depthData.width, depthData.height, {
+            format: THREE.RedFormat,
+            type: THREE.FloatType,
+            internalFormat: 'R32F',
+            minFilter: THREE.NearestFilter,
+            magFilter: THREE.NearestFilter,
+            depthBuffer: false
+          });
       this.depthTexture = new THREE.ExternalTexture(depthData.texture);
-      const textureProperties = this.renderer.properties.get(this.depthTexture) as any;
+      const textureProperties =
+          this.renderer.properties.get(this.depthTexture) as {
+        __webglTexture: WebGLTexture;
+        __version: number;
+      };
       textureProperties.__webglTexture = depthData.texture;
       this.gpuPixels = new Float32Array(depthData.width * depthData.height);
 
       const depthShader = new THREE.ShaderMaterial({
-            vertexShader: `
+        vertexShader: `
                 varying vec2 vUv;
                 void main() {
                     vUv = uv;
@@ -191,7 +200,7 @@ export class DepthMesh extends MeshScript {
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
             `,
-            fragmentShader: `
+        fragmentShader: `
                 precision highp float;
                 precision highp sampler2DArray;
 
@@ -207,16 +216,18 @@ export class DepthMesh extends MeshScript {
                   gl_FragColor = vec4(z, 0, 0, 1.0);
                 }
             `,
-            uniforms: {
-                uTexture: { value: this.depthTexture },
-						    uCameraNear: { value: (depthData as any).depthNear }
-            },
-            blending: THREE.NoBlending,
-            depthTest: false,
-            depthWrite: false,
-            side: THREE.DoubleSide
-        });
-      const depthMesh = new THREE.Mesh(new THREE.PlaneGeometry( 2, 2 ), depthShader);
+        uniforms: {
+          uTexture: {value: this.depthTexture},
+          uCameraNear:
+              {value: (depthData as unknown as {depthNear: number}).depthNear}
+        },
+        blending: THREE.NoBlending,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      const depthMesh =
+          new THREE.Mesh(new THREE.PlaneGeometry(2, 2), depthShader);
       this.depthScene = new THREE.Scene();
       this.depthScene.add(depthMesh);
       this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -225,12 +236,19 @@ export class DepthMesh extends MeshScript {
     const originalRenderTarget = this.renderer.getRenderTarget();
     this.renderer.xr.enabled = false;
     this.renderer.setRenderTarget(this.depthTarget);
-    this.renderer.render( this.depthScene, this.depthCamera );
-    this.renderer.readRenderTargetPixels(this.depthTarget, 0, 0, depthData.width, depthData.height,  this.gpuPixels, 0);
+    this.renderer.render(this.depthScene, this.depthCamera);
+    this.renderer.readRenderTargetPixels(
+        this.depthTarget, 0, 0, depthData.width, depthData.height,
+        this.gpuPixels, 0);
     this.renderer.xr.enabled = true;
     this.renderer.setRenderTarget(originalRenderTarget);
 
-    return {width: depthData.width, height: depthData.height, data: this.gpuPixels, rawValueToMeters: depthData.rawValueToMeters} as any as XRCPUDepthInformation;
+    return {
+      width: depthData.width,
+      height: depthData.height,
+      data: this.gpuPixels,
+      rawValueToMeters: depthData.rawValueToMeters
+    } as unknown as XRCPUDepthInformation;
   }
 
   /**
