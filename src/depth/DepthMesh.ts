@@ -212,7 +212,6 @@ export class DepthMesh extends MeshScript {
                   float z = texture(uTexture, vec3(vUv, 0)).r;
                   z = uCameraNear / (1.0 - z);
                   z = clamp(z, 0.0, 20.0);
-                  
                   gl_FragColor = vec4(z, 0, 0, 1.0);
                 }
             `,
@@ -246,9 +245,9 @@ export class DepthMesh extends MeshScript {
     return {
       width: depthData.width,
       height: depthData.height,
-      data: this.gpuPixels,
+      data: this.gpuPixels.buffer,
       rawValueToMeters: depthData.rawValueToMeters
-    } as unknown as XRCPUDepthInformation;
+    } as XRCPUDepthInformation;
   }
 
   /**
