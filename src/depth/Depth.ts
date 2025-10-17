@@ -184,6 +184,25 @@ export class Depth {
       this.rawValueToMeters = 1.0;
     }
 
+    // For now, assume that we need cpu depth only if depth mesh is enabled.
+    // In the future, add a separate option.
+    const needCpuDepth = this.options.depthMesh.enabled;
+    if (needCpuDepth && this.depthMesh) {
+      const cpuDepth = this.depthMesh.convertGPUToGPU(depthData);
+      if (this.depthArray[view_id] == null) {
+        this.depthArray[view_id] = this.options.useFloat32 ?
+            new Float32Array(cpuDepth.data) :
+            new Uint16Array(cpuDepth.data);
+        this.width = cpuDepth.width;
+        this.height = cpuDepth.height;
+      } else {
+        // Copies the data from an ArrayBuffer to the existing TypedArray.
+        this.depthArray[view_id].set(
+            this.options.useFloat32 ? new Float32Array(cpuDepth.data) :
+                                      new Uint16Array(cpuDepth.data));
+      }
+    }
+
     // Updates Depth Texture.
     if (this.options.depthTexture.enabled && this.depthTextures) {
       this.depthTextures.updateNativeTexture(depthData, this.renderer, view_id);
