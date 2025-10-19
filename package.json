@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "start": "rollup -c -w",
-    "build": "echo \"Building xrblocks.js...\" && rollup -c",
+    "build": "echo \"Building xrblocks.js...\" && rollup -c --failAfterWarnings",
     "prepare": "npm run build"
   },
   "files": [
