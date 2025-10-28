@@ -48,7 +48,7 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
     liveParams,
     model,
   }: {
-    liveParams?: xb.GeminiStartLiveSessionParams;
+    liveParams?: GoogleGenAITypes.LiveConnectConfig;
     model?: string;
   } = {}) {
     if (this.isAIRunning || !this.ai) {
@@ -58,9 +58,9 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
 
     liveParams = liveParams || {};
     liveParams.tools = liveParams.tools || [];
-    for (const tool of this.tools) {
-      liveParams.tools.push(tool.toJSON());
-    }
+    liveParams.tools.push({
+      functionDeclarations: this.tools.map((tool) => tool.toJSON()),
+    });
     try {
       await this.setupAudioCapture();
       await this.startLiveAI(liveParams, model);
@@ -130,7 +130,10 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
     this.processorNode.connect(this.audioContext.destination);
   }
 
-  async startLiveAI(params: xb.GeminiStartLiveSessionParams, model?: string) {
+  async startLiveAI(
+    params: GoogleGenAITypes.LiveConnectConfig,
+    model?: string
+  ) {
     return new Promise<void>((resolve, reject) => {
       this.ai.setLiveCallbacks({
         onopen: () => {

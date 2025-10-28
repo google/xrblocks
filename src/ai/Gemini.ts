@@ -54,11 +54,6 @@ export interface GeminiQueryInput {
   data?: GoogleGenAITypes.LiveSendRealtimeInputParameters;
 }
 
-export type GeminiStartLiveSessionParams = {
-  tools?: GoogleGenAITypes.FunctionDeclaration[];
-  systemInstruction?: GoogleGenAITypes.ContentUnion | string;
-};
-
 export class Gemini extends BaseAIModel {
   inited = false;
   liveSession?: GoogleGenAITypes.Session;
@@ -90,7 +85,7 @@ export class Gemini extends BaseAIModel {
   }
 
   async startLiveSession(
-    params: GeminiStartLiveSessionParams = {},
+    params: GoogleGenAITypes.LiveConnectConfig = {},
     model = 'gemini-2.5-flash-native-audio-preview-09-2025'
   ) {
     if (!this.isLiveAvailable()) {
@@ -110,20 +105,8 @@ export class Gemini extends BaseAIModel {
       },
       outputAudioTranscription: {},
       inputAudioTranscription: {},
+      ...params,
     };
-
-    if (params.tools && params.tools.length > 0) {
-      defaultConfig.tools = [{functionDeclarations: params.tools}];
-    }
-    if (params.systemInstruction) {
-      if (typeof params.systemInstruction === 'string') {
-        defaultConfig.systemInstruction = createUserContent!(
-          params.systemInstruction
-        );
-      } else {
-        defaultConfig.systemInstruction = params.systemInstruction;
-      }
-    }
 
     const callbacks: GoogleGenAITypes.LiveCallbacks = {
       onopen: () => {

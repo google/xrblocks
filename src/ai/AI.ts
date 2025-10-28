@@ -5,7 +5,7 @@ import {getUrlParameter} from '../utils/utils';
 
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
 import {GeminiResponse} from './AITypes';
-import {Gemini, GeminiStartLiveSessionParams} from './Gemini';
+import {Gemini} from './Gemini';
 import {OpenAI} from './OpenAI';
 
 export type ModelClass = Gemini | OpenAI;
@@ -188,7 +188,7 @@ export class AI extends Script {
   }
 
   async startLiveSession(
-    config: GeminiStartLiveSessionParams = {},
+    config: GoogleGenAITypes.LiveConnectConfig = {},
     model?: string
   ) {
     if (!this.model) {

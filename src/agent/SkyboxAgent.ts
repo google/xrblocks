@@ -119,7 +119,7 @@ export class SkyboxAgent extends Agent {
     };
 
     await this.ai.startLiveSession({
-      tools: functionDeclarations,
+      tools: [{functionDeclarations}],
       systemInstruction: systemInstruction,
     });
 
