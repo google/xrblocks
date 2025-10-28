@@ -376,7 +376,7 @@ export class Input {
     obj: THREE.Object3D
   ): THREE.Intersection[] {
     controller.updateMatrixWorld();
-    this.raycaster.setFromXRController(controller as THREE.XRTargetRaySpace);
+    this._setRaycasterFromController(controller);
     return this.raycaster.intersectObject(obj, false);
   }
 
