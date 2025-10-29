@@ -1,6 +1,6 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
-import RAPIER from 'https://cdn.skypack.dev/@dimforge/rapier3d-simd-compat@0.17.0';
+import RAPIER from '@dimforge/rapier3d-simd-compat';
 import * as xb from 'xrblocks';
 
 import {SplashScript} from './SplashScript.js';

@@ -10,12 +10,14 @@ To use physics in your scene, import the RAPIER physics engine, then pass the RA
 
 ```javascript
 import * as xb from 'xrblocks';
-import RAPIER from 'https://cdn.skypack.dev/@dimforge/rapier3d-simd-compat@0.17.0';
+import RAPIER from '@dimforge/rapier3d-simd-compat';
 
 const options = new xb.Options();
 options.physics.RAPIER = RAPIER;
 xb.init(options);
 ```
+
+See [/samples/Ballpit](/samples/Ballpit/) and [/samples/Drone](/samples/Drone) for examples of using physics.
 
 ### TypeScript Setup
 

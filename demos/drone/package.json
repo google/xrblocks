@@ -4,7 +4,7 @@
     "watch": "tsc -b -w"
   },
   "devDependencies": {
-    "@dimforge/rapier3d-simd-compat": "^0.17.0",
+    "@dimforge/rapier3d-simd-compat": "^0.19.2",
     "@types/three": "^0.180.0",
     "typescript": "^5.9.2",
     "xrblocks": "file:../../"
