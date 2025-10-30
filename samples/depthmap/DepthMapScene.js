@@ -17,7 +17,7 @@ export class DepthMapScene extends xb.Script {
       );
     }
 
-    this.depthMeshAlphaSlider = new xb.FreestandingSlider(1.0, 0.0, 1.0, 10);
+    this.depthMeshAlphaSlider = new xb.FreestandingSlider(1.0, 0.0, 1.0, 5.0);
     // Which controller is currently controlling depthMeshAlphaSlider.
     this.currentSliderController = null;
 
@@ -40,9 +40,11 @@ export class DepthMapScene extends xb.Script {
     const controller = event.target;
     controller.userData.selected = false;
     if (this.currentSliderController == controller) {
-      this.depthMeshAlphaSlider.updateValue(
-        this.depthMeshAlphaSlider.getValue(controller.position)
+      const opacity = this.depthMeshAlphaSlider.getValueFromController(
+        this.currentSliderController
       );
+      this.depthVisualizationPass.setAlpha(opacity);
+      this.depthMeshAlphaSlider.updateValue(opacity);
     }
     this.currentSliderController = null;
   }

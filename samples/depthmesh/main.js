@@ -3,7 +3,7 @@ import * as xb from 'xrblocks';
 
 class DepthMeshVisualizer extends xb.Script {
   currentSliderController = null;
-  depthMeshAlphaSlider = new xb.FreestandingSlider(1.0, 0.0, 1.0, 10);
+  depthMeshAlphaSlider = new xb.FreestandingSlider(1.0, 0.0, 1.0, 5.0);
 
   constructor() {
     super();
@@ -27,9 +27,11 @@ class DepthMeshVisualizer extends xb.Script {
   onSelectEnd(event) {
     const controller = event.target;
     if (this.currentSliderController == controller) {
-      this.depthMeshAlphaSlider.updateValue(
-        this.depthMeshAlphaSlider.getValueFromController(controller)
+      const opacity = this.depthMeshAlphaSlider.getValueFromController(
+        this.currentSliderController
       );
+      xb.core.depth.depthMesh.material.uniforms.uOpacity.value = opacity;
+      this.depthMeshAlphaSlider.updateValue(opacity);
     }
     this.currentSliderController = null;
   }
