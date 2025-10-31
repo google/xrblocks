@@ -20,7 +20,7 @@ export class ImageView extends View {
   /** The mesh that renders the image. */
   mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 
-  private texture?: THREE.Texture;
+  private texture?: THREE.Texture<HTMLImageElement>;
   private initCalled = false;
   private textureLoader = new THREE.TextureLoader();
 

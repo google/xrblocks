@@ -55,7 +55,7 @@ export class VideoView extends View {
     };
   }) => void;
 
-  private texture?: THREE.Texture;
+  private texture?: THREE.Texture<HTMLVideoElement>;
   private videoAspectRatio: number = 0.0;
 
   /**
