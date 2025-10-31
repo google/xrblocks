@@ -7,6 +7,7 @@ export interface GeminiManagerEventMap extends THREE.Object3DEventMap {
   inputTranscription: {message: string};
   outputTranscription: {message: string};
   turnComplete: object;
+  interrupted: object;
 }
 
 export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
@@ -19,6 +20,7 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
   audioContext: AudioContext | null = null;
   sourceNode: MediaStreamAudioSourceNode | null = null;
   processorNode: AudioWorkletNode | null = null;
+  queuedSourceNodes = new Set<AudioScheduledSourceNode>();
 
   // AI state
   isAIRunning: boolean = false;
@@ -254,6 +256,8 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
       source.buffer = audioBuffer!;
       source.connect(this.audioContext!.destination);
       source.onended = () => {
+        source.disconnect();
+        this.queuedSourceNodes.delete(source);
         this.scheduleAudioBuffers();
       };
 
@@ -262,8 +266,19 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
         this.audioContext!.currentTime
       );
       source.start(startTime);
+      this.queuedSourceNodes.add(source);
       this.nextAudioStartTime = startTime + audioBuffer.duration;
     }
+  }
+
+  stopPlayingAudio() {
+    this.audioQueue = [];
+    this.nextAudioStartTime = 0;
+    for (const source of this.queuedSourceNodes) {
+      source.stop();
+      source.disconnect();
+    }
+    this.queuedSourceNodes.clear();
   }
 
   cleanup() {
@@ -335,6 +350,11 @@ export class GeminiManager extends xb.Script<GeminiManagerEventMap> {
         if (text) {
           this.dispatchEvent({type: 'outputTranscription', message: text});
         }
+      }
+
+      if (message.serverContent.interrupted) {
+        this.stopPlayingAudio();
+        this.dispatchEvent({type: 'interrupted'});
       }
 
       if (message.serverContent.turnComplete) {
