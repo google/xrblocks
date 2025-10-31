@@ -57,10 +57,6 @@ export class ScreenshotSynthesizer {
       return;
     }
 
-    const renderTarget = renderer.getRenderTarget();
-    if (renderTarget == null) {
-      throw new Error('Expecting render target');
-    }
     const haveVirtualOnlyRequests = this.pendingScreenshotRequests.every(
       (request) => !request.overlayOnCamera
     );
@@ -185,14 +181,20 @@ export class ScreenshotSynthesizer {
       console.debug('Waiting for device camera to be loaded');
       return null;
     }
-    const mainRenderTarget = renderer.getRenderTarget()!;
+    const mainRenderTarget = renderer.getRenderTarget();
     const isRenderingStereo =
       renderer.xr.isPresenting && renderer.xr.getCamera().cameras.length == 2;
+    const mainRenderTargetSize = new THREE.Vector2();
+    if (mainRenderTarget) {
+      mainRenderTargetSize.set(mainRenderTarget.width, mainRenderTarget.height);
+    } else {
+      renderer.getSize(mainRenderTargetSize);
+    }
     const mainRenderTargetSingleViewWidth = isRenderingStereo
-      ? mainRenderTarget.width / 2
-      : mainRenderTarget.width;
+      ? mainRenderTargetSize.x / 2
+      : mainRenderTargetSize.y;
     const scaledHeight = Math.round(
-      mainRenderTarget.height *
+      mainRenderTargetSize.y *
         (this.renderTargetWidth / mainRenderTargetSingleViewWidth)
     );
     if (
