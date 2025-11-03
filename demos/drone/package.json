@@ -5,7 +5,8 @@
   },
   "devDependencies": {
     "@dimforge/rapier3d-simd-compat": "^0.19.2",
-    "@types/three": "^0.180.0",
+    "@types/three": "^0.181.0",
+    "three": "^0.181.0",
     "typescript": "^5.9.2",
     "xrblocks": "file:../../"
   }
