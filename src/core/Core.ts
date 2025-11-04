@@ -17,7 +17,6 @@ import {SimulatorOptions} from '../simulator/SimulatorOptions';
 import {CoreSound} from '../sound/CoreSound';
 import {SoundOptions} from '../sound/SoundOptions';
 import {UI} from '../ui/UI';
-import {onDesktopUserAgent} from '../utils/BrowserUtils';
 import {callInitWithDependencyInjection} from '../utils/DependencyInjection';
 import {loadingSpinnerManager} from '../utils/LoadingSpinnerManager';
 import {traverseUtil} from '../utils/SceneGraphUtils';
@@ -321,11 +320,8 @@ export class Core {
     );
 
     // Sets up xrButton.
-    const shouldAutostartSimulator =
-      this.options.xrButton.autostartSimulator ||
-      (this.options.xrButton.autostartSimulatorOnDesktop &&
-        this.options.xrButton.enableSimulator &&
-        onDesktopUserAgent());
+    let shouldAutostartSimulator =
+      this.options.xrButton.alwaysAutostartSimulator;
     if (!shouldAutostartSimulator && options.xrButton.enabled) {
       this.xrButton = new XRButton(
         this.webXRSessionManager,
@@ -334,11 +330,20 @@ export class Core {
         options.xrButton?.invalidText,
         options.xrButton?.startSimulatorText,
         options.xrButton?.enableSimulator,
-        options.xrButton?.showSimulatorButtonOnMobile,
         this.startSimulator.bind(this)
       );
       document.body.appendChild(this.xrButton.domElement);
     }
+
+    this.webXRSessionManager.addEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      () => {
+        if (this.options.xrButton.enableSimulator) {
+          this.xrButton?.domElement.remove();
+          shouldAutostartSimulator = true;
+        }
+      }
+    );
 
     await this.webXRSessionManager.initialize();
 

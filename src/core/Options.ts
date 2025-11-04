@@ -121,10 +121,8 @@ export class Options {
     invalidText: 'XR Not Supported',
     startSimulatorText: 'Enter Simulator',
     enableSimulator: true,
-    showSimulatorButtonOnMobile: false,
-    autostartSimulatorOnDesktop: true,
-    // Whether to always autostart the simulator.
-    autostartSimulator: false,
+    // Whether to autostart the simulator even if WebXR is available.
+    alwaysAutostartSimulator: false,
   };
 
   /**

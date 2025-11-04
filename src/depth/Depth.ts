@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 
 import {Registry} from '../core/components/Registry';
-import {onDesktopUserAgent} from '../utils/BrowserUtils';
 import type {Shader} from '../utils/Types';
 import {clamp} from '../utils/utils';
 
@@ -244,9 +243,9 @@ export class Depth {
     return this.depthTextures?.get(view_id);
   }
 
-  update(frame: XRFrame) {
+  update(frame?: XRFrame) {
     if (!this.options.enabled) return;
-
+    if (!frame) return;
     this.updateLocalDepth(frame);
     if (this.options.occlusion.enabled) {
       this.renderOcclusionPass();
@@ -254,17 +253,12 @@ export class Depth {
   }
 
   updateLocalDepth(frame: XRFrame) {
-    if (onDesktopUserAgent()) {
-      return;
-    }
-
     const leftCamera = this.renderer.xr?.getCamera?.()?.cameras?.[0];
     if (leftCamera && this.depthMesh && this.depthMesh.parent != leftCamera) {
       leftCamera.add(this.depthMesh);
       this.scene.add(leftCamera);
     }
 
-    if (!frame) return;
     const session = frame.session;
     const binding = this.renderer.xr.getBinding();
 

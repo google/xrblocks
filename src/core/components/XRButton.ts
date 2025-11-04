@@ -1,5 +1,3 @@
-import {onDesktopUserAgent} from '../../utils/BrowserUtils';
-
 import {
   WebXRSessionEventType,
   WebXRSessionManager,
@@ -20,16 +18,12 @@ export class XRButton {
     private invalidText = 'XR NOT SUPPORTED',
     private startSimulatorText = 'START SIMULATOR',
     enableSimulator = false,
-    showSimulatorButtonOnMobile = false,
     public startSimulator = () => {}
   ) {
     this.domElement.id = XRBUTTON_WRAPPER_ID;
     this.createXRButtonElement();
 
-    if (
-      enableSimulator &&
-      (onDesktopUserAgent() || showSimulatorButtonOnMobile)
-    ) {
+    if (enableSimulator) {
       this.createSimulatorButton();
     }
 
