@@ -111,6 +111,8 @@ export class Options {
    */
   usePostprocessing = false;
 
+  enableSimulator = true;
+
   /**
    * Configuration for the XR session button.
    */
@@ -120,7 +122,7 @@ export class Options {
     endText: 'Exit XR',
     invalidText: 'XR Not Supported',
     startSimulatorText: 'Enter Simulator',
-    enableSimulator: true,
+    showEnterSimulatorButton: false,
     // Whether to autostart the simulator even if WebXR is available.
     alwaysAutostartSimulator: false,
   };

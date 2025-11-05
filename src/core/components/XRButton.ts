@@ -17,13 +17,13 @@ export class XRButton {
     private endText = 'END XR',
     private invalidText = 'XR NOT SUPPORTED',
     private startSimulatorText = 'START SIMULATOR',
-    enableSimulator = false,
+    showEnterSimulatorButton = false,
     public startSimulator = () => {}
   ) {
     this.domElement.id = XRBUTTON_WRAPPER_ID;
     this.createXRButtonElement();
 
-    if (enableSimulator) {
+    if (showEnterSimulatorButton) {
       this.createSimulatorButton();
     }
 

@@ -329,7 +329,7 @@ export class Core {
         options.xrButton?.endText,
         options.xrButton?.invalidText,
         options.xrButton?.startSimulatorText,
-        options.xrButton?.enableSimulator,
+        options.xrButton?.showEnterSimulatorButton,
         this.startSimulator.bind(this)
       );
       document.body.appendChild(this.xrButton.domElement);
@@ -338,7 +338,7 @@ export class Core {
     this.webXRSessionManager.addEventListener(
       WebXRSessionEventType.UNSUPPORTED,
       () => {
-        if (this.options.xrButton.enableSimulator) {
+        if (this.options.enableSimulator) {
           this.xrButton?.domElement.remove();
           shouldAutostartSimulator = true;
         }
