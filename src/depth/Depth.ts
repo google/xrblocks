@@ -245,8 +245,9 @@ export class Depth {
 
   update(frame?: XRFrame) {
     if (!this.options.enabled) return;
-    if (!frame) return;
-    this.updateLocalDepth(frame);
+    if (frame) {
+      this.updateLocalDepth(frame);
+    }
     if (this.options.occlusion.enabled) {
       this.renderOcclusionPass();
     }
