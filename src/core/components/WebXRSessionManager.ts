@@ -114,14 +114,13 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     } else if (this.waitingForXRSession) {
       throw new Error('Waiting for session to start');
     }
-    try {
-      this.waitingForXRSession = true;
-      navigator
-        .xr!.requestSession(this.mode, this.sessionOptions)
-        .then(this.onSessionStartedInternal.bind(this));
-    } finally {
-      this.waitingForXRSession = false;
-    }
+    this.waitingForXRSession = true;
+    navigator
+      .xr!.requestSession(this.mode, this.sessionOptions)
+      .finally(() => {
+        this.waitingForXRSession = false;
+      })
+      .then(this.onSessionStartedInternal.bind(this));
   }
 
   /**
