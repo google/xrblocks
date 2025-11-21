@@ -33,6 +33,7 @@ export class DepthOptions {
   // Occlusion pass.
   occlusion = {enabled: false};
   useFloat32 = true;
+  depthTypeRequest: XRDepthType[] = ['raw'];
 
   constructor(options?: DeepReadonly<DeepPartial<DepthOptions>>) {
     deepMerge(this, options);

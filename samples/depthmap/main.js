@@ -7,6 +7,7 @@ import {DepthMapScene} from './DepthMapScene.js';
 const options = new xb.Options();
 options.depth.enabled = true;
 options.depth.depthTexture.enabled = true;
+options.depth.depthTypeRequest = [xb.getUrlParameter('depthType') ?? 'raw'];
 options.usePostprocessing = true;
 
 function start() {

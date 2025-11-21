@@ -257,6 +257,7 @@ export class Core {
         dataFormatPreference: [
           this.options.depth.useFloat32 ? 'float32' : 'luminance-alpha',
         ],
+        depthTypeRequest: options.depth.depthTypeRequest,
       };
       this.depth.init(
         this.camera,
