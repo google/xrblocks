@@ -4,6 +4,7 @@ sidebar_position: 1
 ---
 
 import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+import {CDNUrls} from './components/CDNUrls.jsx';
 
 # Getting Started
 
@@ -34,9 +35,10 @@ To use an importmap, simply add the following importmap to your `index.html` pag
 ```
 
 :::tip
-Using `xrblocks@build` loads the latest version of XR Blocks every time your web app loads.
-To pin a build of XR Blocks, replace `build` with an SHA from the [build branch](https://github.com/google/xrblocks/commits/build/).
-Alternatively, you can use version from the [xrblocks npm package](https://www.npmjs.com/package/xrblocks?activeTab=versions) using a URL such as https://cdn.jsdelivr.net/npm/xrblocks@0.1.0/build/xrblocks.js.
+Using `xrblocks@build` loads the latest development version of XR Blocks every time your web app loads.
+To pin a build of XR Blocks, replace `build` with an SHA from the [build branch](https://github.com/google/xrblocks/commits/build/) or load a version from the [xrblocks npm package](https://www.npmjs.com/package/xrblocks?activeTab=versions) using a URL such as https://cdn.jsdelivr.net/npm/xrblocks@0.1.0/build/xrblocks.js.
+
+<CDNUrls />
 :::
 
 Upon importing, XR Blocks automatically creates an `Core` singleton which will initialize a basic renderer and manage the lifecycle of the app.
