@@ -1,3 +1,4 @@
+import {PermissionsManager} from './PermissionsManager';
 import {
   WebXRSessionEventType,
   WebXRSessionManager,
@@ -13,12 +14,18 @@ export class XRButton {
 
   constructor(
     private sessionManager: WebXRSessionManager,
+    private permissionsManager: PermissionsManager,
     private startText = 'ENTER XR',
     private endText = 'END XR',
     private invalidText = 'XR NOT SUPPORTED',
     private startSimulatorText = 'START SIMULATOR',
     showEnterSimulatorButton = false,
-    public startSimulator = () => {}
+    public startSimulator = () => {},
+    private permissions = {
+      geolocation: false,
+      camera: false,
+      microphone: false,
+    }
   ) {
     this.domElement.id = XRBUTTON_WRAPPER_ID;
     this.createXRButtonElement();
@@ -68,7 +75,16 @@ export class XRButton {
     button.disabled = false;
 
     button.onclick = () => {
-      this.sessionManager.startSession();
+      this.permissionsManager
+        .checkAndRequestPermissions(this.permissions)
+        .then((result) => {
+          if (result.granted) {
+            this.sessionManager.startSession();
+          } else {
+            this.xrButtonElement.textContent =
+              'Error:' + result.error + '\nPlease try again.';
+          }
+        });
     };
   }
 

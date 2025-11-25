@@ -128,6 +128,15 @@ export class Options {
   };
 
   /**
+   * Which permissions to request before entering the XR session.
+   */
+  permissions = {
+    geolocation: false,
+    camera: false,
+    microphone: false,
+  };
+
+  /**
    * Constructs the Options object by merging default values with provided
    * custom options.
    * @param options - A custom options object to override the defaults.
@@ -178,6 +187,7 @@ export class Options {
    * @returns The instance for chaining.
    */
   enableObjectDetection() {
+    this.permissions.camera = true;
     this.world.enableObjectDetection();
     return this;
   }
@@ -189,6 +199,7 @@ export class Options {
    * @returns The instance for chaining.
    */
   enableCamera(facingMode: 'environment' | 'user' = 'environment') {
+    this.permissions.camera = true;
     this.deviceCamera = new DeviceCameraOptions(
       facingMode === 'environment'
         ? xrDeviceCameraEnvironmentOptions

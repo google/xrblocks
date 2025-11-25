@@ -12,6 +12,7 @@ options.deviceCamera.videoConstraints = {
   height: {ideal: 480},
   facingMode: 'environment',
 };
+options.permissions.camera = true;
 options.reticles.enabled = false;
 options.controllers.visualizeRays = false;
 options.world.enableObjectDetection();
@@ -37,7 +38,6 @@ function start() {
   const triggerManager = new TriggerManager(
     xrObjectManager.queryObjectionDetection.bind(xrObjectManager)
   );
-  window.xrObject = xrObjectManager;
   xb.add(xrObjectManager);
   xb.add(triggerManager);
   xb.init(options);

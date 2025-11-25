@@ -39,6 +39,7 @@ import {XRTransition} from './components/XRTransition';
 import {Options} from './Options';
 import {Script} from './Script';
 import {User} from './User';
+import {PermissionsManager} from './components/PermissionsManager';
 
 /**
  * Core is the central engine of the XR Blocks framework, acting as a
@@ -127,6 +128,7 @@ export class Core {
     camera: THREE.Camera
   ) => void;
   webXRSessionManager?: WebXRSessionManager;
+  permissionsManager = new PermissionsManager();
 
   /**
    * Core is a singleton manager that manages all XR "blocks".
@@ -326,12 +328,14 @@ export class Core {
     if (!shouldAutostartSimulator && options.xrButton.enabled) {
       this.xrButton = new XRButton(
         this.webXRSessionManager,
+        this.permissionsManager,
         options.xrButton?.startText,
         options.xrButton?.endText,
         options.xrButton?.invalidText,
         options.xrButton?.startSimulatorText,
         options.xrButton?.showEnterSimulatorButton,
-        this.startSimulator.bind(this)
+        this.startSimulator.bind(this),
+        options.permissions
       );
       document.body.appendChild(this.xrButton.domElement);
     }
