@@ -57,8 +57,10 @@ export class SimulatorInterface {
   }
 
   showGeminiLivePanel(simulatorOptions: SimulatorOptions) {
-    if (simulatorOptions.geminilive) {
-      const element = document.createElement('xrblocks-simulator-geminilive');
+    if (simulatorOptions.geminiLivePanel.enabled) {
+      const element = document.createElement(
+        simulatorOptions.geminiLivePanel.element
+      );
       document.body.appendChild(element);
       this.elements.push(element);
     }

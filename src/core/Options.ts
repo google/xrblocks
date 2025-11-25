@@ -237,15 +237,6 @@ export class Options {
   }
 
   /**
-   * Enables the Gemini Live feature.
-   * @returns The instance for chaining.
-   */
-  enableGeminiLive() {
-    this.simulator.geminilive = true;
-    return this;
-  }
-
-  /**
    * Enables a standard set of AI features, including Gemini Live.
    * @returns The instance for chaining.
    */

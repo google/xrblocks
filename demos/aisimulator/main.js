@@ -6,7 +6,7 @@ import * as xb from 'xrblocks';
 import {AISimulator} from './AISimulator.js';
 
 const options = new xb.Options();
-options.enableGeminiLive();
+options.simulator.geminiLivePanel.enabled = true;
 options.depth.enabled = true;
 options.depth.depthTexture.enabled = true;
 options.depth.occlusion.enabled = true;

@@ -43,7 +43,10 @@ export class SimulatorOptions {
     enabled: true,
     element: 'xrblocks-simulator-hand-pose-panel',
   };
-  geminilive = false;
+  geminiLivePanel = {
+    enabled: false,
+    element: 'xrblocks-simulator-geminilive',
+  };
   stereo = {
     enabled: false,
   };
