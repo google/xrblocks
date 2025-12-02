@@ -1,6 +1,6 @@
 {
   "name": "xrblocks",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "XR Blocks SDK",
   "main": "build/xrblocks.js",
   "types": "build/xrblocks.d.ts",
