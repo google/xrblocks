@@ -154,7 +154,7 @@ export class Simulator extends Script {
       const videoTexture = new THREE.VideoTexture(this.videoElement);
       videoTexture.colorSpace = THREE.SRGBColorSpace;
       this.backgroundVideoQuad = new FullScreenQuad(
-        new THREE.MeshBasicMaterial({ map: videoTexture })
+        new THREE.MeshBasicMaterial({map: videoTexture})
       );
     }
 
