@@ -13,6 +13,9 @@ export class SimulatorScene extends THREE.Scene {
 
   async init(simulatorOptions: SimulatorOptions) {
     this.addLights();
+    if (simulatorOptions.videoPath) {
+      return;
+    }
     if (simulatorOptions.scenePath) {
       await this.loadGLTF(
         simulatorOptions.scenePath,

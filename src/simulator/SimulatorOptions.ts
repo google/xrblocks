@@ -27,6 +27,7 @@ export class SimulatorOptions {
   initialCameraPosition = {x: 0, y: 1.5, z: 0};
   scenePath =
     XR_BLOCKS_ASSETS_PATH + 'simulator/scenes/XREmulatorsceneV5_livingRoom.glb';
+  videoPath?: string = undefined;
   initialScenePosition = {x: -1.6, y: 0.3, z: 0};
   defaultMode = SimulatorMode.USER;
   defaultHand = Handedness.LEFT;

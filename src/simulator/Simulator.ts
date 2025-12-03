@@ -60,6 +60,8 @@ export class Simulator extends Script {
   // Render target for the virtual scene.
   virtualSceneRenderTarget?: THREE.WebGLRenderTarget;
   virtualSceneFullScreenQuad?: FullScreenQuad;
+  backgroundVideoQuad?: FullScreenQuad;
+  videoElement?: HTMLVideoElement;
 
   camera?: SimulatorCamera;
   options!: SimulatorOptions;
@@ -129,6 +131,31 @@ export class Simulator extends Script {
 
     if (this.options.stereo.enabled) {
       this.setupStereoCameras(camera);
+    }
+
+    if (this.options.videoPath) {
+      this.videoElement = document.createElement('video');
+      this.videoElement.src = this.options.videoPath;
+      this.videoElement.loop = true;
+      this.videoElement.muted = true;
+      this.videoElement.play().catch((e) => {
+        console.error(
+          `Simulator: Failed to play video at ${this.options.videoPath}`,
+          e
+        );
+      });
+      this.videoElement.addEventListener('error', () => {
+        console.error(
+          `Simulator: Error loading video at ${this.options.videoPath}`,
+          this.videoElement?.error
+        );
+      });
+
+      const videoTexture = new THREE.VideoTexture(this.videoElement);
+      videoTexture.colorSpace = THREE.SRGBColorSpace;
+      this.backgroundVideoQuad = new FullScreenQuad(
+        new THREE.MeshBasicMaterial({ map: videoTexture })
+      );
     }
 
     this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(
@@ -262,6 +289,9 @@ export class Simulator extends Script {
       this.sparkRenderer.defaultView.encodeLinear = false;
     }
     this.renderer.setRenderTarget(null);
+    if (this.backgroundVideoQuad) {
+      this.backgroundVideoQuad.render(this.renderer);
+    }
     this.renderer.render(this.simulatorScene, camera);
     this.renderer.clearDepth();
   }
