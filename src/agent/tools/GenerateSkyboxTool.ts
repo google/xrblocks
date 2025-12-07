@@ -41,8 +41,7 @@ export class GenerateSkyboxTool extends Tool {
         'Generate a 360 equirectangular skybox image for the prompt of:' +
           args.prompt,
         'image',
-        'Generate a 360 equirectangular skybox image for the prompt',
-        'gemini-2.5-flash-image-preview'
+        'Generate a 360 equirectangular skybox image for the prompt'
       );
       if (image) {
         console.log('Applying texture...');

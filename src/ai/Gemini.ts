@@ -274,7 +274,7 @@ export class Gemini extends BaseAIModel {
     prompt: string | string[],
     type: 'image' = 'image',
     systemInstruction = 'Generate an image',
-    model = 'gemini-2.5-flash-image-preview'
+    model = 'gemini-2.5-flash-image'
   ) {
     if (!this.isAvailable()) return;
 

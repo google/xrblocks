@@ -261,7 +261,7 @@ export class AI extends Script {
     prompt: string | string[],
     type: 'image' = 'image',
     systemInstruction = 'Generate an image',
-    model = 'gemini-2.5-flash-image-preview'
+    model = undefined
   ) {
     return this.model!.generate(prompt, type, systemInstruction, model);
   }
