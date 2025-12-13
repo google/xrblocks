@@ -18,13 +18,13 @@ export const aspectRatios = {
  *
  * @param rgbUv - The RGB UV coordinate, e.g., \{ u: 0.5, v: 0.5 \}.
  * @param xrDeviceCamera - The device camera instance.
- * @returns The transformed UV coordinate in the depth image space, or null if
+ * @returns The transformed UV coordinate in the render camera clip space, or null if
  *     inputs are invalid.
  */
-export function transformRgbToDepthUv(
+export function transformRgbToRenderCameraClip(
   rgbUv: {u: number; v: number},
   xrDeviceCamera?: XRDeviceCamera
-) {
+): THREE.Vector2 | null {
   if (xrDeviceCamera?.simulatorCamera) {
     // The simulator camera crops the viewport image to match its aspect ratio,
     // while the depth map covers the entire viewport, so we adjust for this.
@@ -43,9 +43,9 @@ export function transformRgbToDepthUv(
       const relativeHeight = viewportAspect / cameraAspect;
       v = v * relativeHeight + (1.0 - relativeHeight) / 2.0;
     }
-    return {u, v: 1.0 - v};
-  }
 
+    return new THREE.Vector2(2 * u - 1, 2 * v - 1);
+  }
   if (!aspectRatios || !aspectRatios.depth || !aspectRatios.RGB) {
     console.error('Invalid aspect ratios provided.');
     return null;
@@ -92,11 +92,42 @@ export function transformRgbToDepthUv(
   const finalNormX = u_fitted * params.scale * params.scaleX;
   const finalNormY = v_fitted * params.scale * params.scaleY;
 
-  // Convert the final normalized coordinate back to a UV coordinate [0, 1].
-  const finalU = finalNormX + 0.5;
-  const finalV = finalNormY + 0.5;
+  return new THREE.Vector2(2 * finalNormX, 2 * finalNormY);
+}
 
-  return {u: finalU, v: 1.0 - finalV};
+/**
+ * Maps a UV coordinate from a RGB space to a destination depth space,
+ * applying Brown-Conrady distortion and affine transformations based on
+ * aspect ratios. If the simulator camera is used, no transformation is applied.
+ *
+ * @param rgbUv - The RGB UV coordinate, e.g., \{ u: 0.5, v: 0.5 \}.
+ * @param renderCameraWorldFromClip - Render camera world from clip, i.e. inverse of the View Projection matrix.
+ * @param depthCameraClipFromWorld - Depth camera clip from world, i.e.
+ * @param xrDeviceCamera - The device camera instance.
+ * @returns The transformed UV coordinate in the depth image space, or null if
+ *     inputs are invalid.
+ */
+export function transformRgbToDepthUv(
+  rgbUv: {u: number; v: number},
+  renderCameraWorldFromClip: THREE.Matrix4,
+  depthCameraClipFromWorld: THREE.Matrix4,
+  xrDeviceCamera?: XRDeviceCamera
+) {
+  // Render camera clip space coordinates.
+  const clipCoords = transformRgbToRenderCameraClip(rgbUv, xrDeviceCamera);
+  if (!clipCoords) {
+    return null;
+  }
+
+  // Backwards project from the render camera to depth camera.
+  const depthClipCoord = new THREE.Vector4(clipCoords.x, clipCoords.y, 1, 1);
+  depthClipCoord.applyMatrix4(renderCameraWorldFromClip);
+  depthClipCoord.applyMatrix4(depthCameraClipFromWorld);
+  depthClipCoord.multiplyScalar(1 / depthClipCoord.w);
+  const finalU = 0.5 * depthClipCoord.x + 0.5;
+  const finalV = 1.0 - (0.5 * depthClipCoord.y + 0.5);
+
+  return {u: finalU, v: finalV};
 }
 
 /**
@@ -107,9 +138,9 @@ export function transformRgbToDepthUv(
  *
  * @param rgbUv - The RGB UV coordinate, e.g., \{ u: 0.5, v: 0.5 \}.
  * @param depthArray - Array containing depth data.
- * @param viewProjectionMatrix - XRView object with corresponding
+ * @param projectionMatrix - XRView object with corresponding
  * projection matrix.
- * @param matrixWorld - Matrix for view-to-world translation.
+ * @param matrixWorld - Rendering camera's model matrix.
  * @param xrDeviceCamera - The device camera instance.
  * @param xrDepth - The SDK's Depth module.
  * @returns Vertex at (u, v) in world space.
@@ -117,16 +148,32 @@ export function transformRgbToDepthUv(
 export function transformRgbUvToWorld(
   rgbUv: {u: number; v: number},
   depthArray: number[] | Uint16Array | Float32Array,
-  viewProjectionMatrix: THREE.Matrix4,
+  projectionMatrix: THREE.Matrix4,
   matrixWorld: THREE.Matrix4,
   xrDeviceCamera?: XRDeviceCamera,
-  xrDepth = Depth.instance
-) {
-  if (!depthArray || !viewProjectionMatrix || !matrixWorld || !xrDepth)
-    return null;
-  const depthUV = transformRgbToDepthUv(rgbUv, xrDeviceCamera);
+  xrDepth: Depth | undefined = Depth.instance
+): THREE.Vector3 {
+  if (!depthArray || !projectionMatrix || !matrixWorld || !xrDepth) {
+    throw new Error('Missing parameter in transformRgbUvToWorld');
+  }
+  const worldFromClip = matrixWorld
+    .clone()
+    .invert()
+    .premultiply(projectionMatrix)
+    .invert();
+  const depthProjectionMatrixInverse = xrDepth.depthProjectionMatrices[0]
+    .clone()
+    .invert();
+  const depthClipFromWorld = xrDepth.depthViewProjectionMatrices[0];
+  const depthModelMatrix = xrDepth.depthViewMatrices[0].clone().invert();
+  const depthUV = transformRgbToDepthUv(
+    rgbUv,
+    worldFromClip,
+    depthClipFromWorld,
+    xrDeviceCamera
+  );
   if (!depthUV) {
-    return null;
+    throw new Error('Failed to get depth UV');
   }
 
   const {u: depthU, v: depthV} = depthUV;
@@ -149,14 +196,14 @@ export function transformRgbUvToWorld(
     -1
   );
 
-  const viewProjectionMatrixInverse = viewProjectionMatrix.clone().invert();
-
   // Unproject the point from clip space to view space and scale it along the
   // ray from the camera to the correct depth. Camera looks down -Z axis.
-  viewSpacePosition.applyMatrix4(viewProjectionMatrixInverse);
+  viewSpacePosition.applyMatrix4(depthProjectionMatrixInverse);
   viewSpacePosition.multiplyScalar(-depthInMeters / viewSpacePosition.z);
 
-  const worldPosition = viewSpacePosition.clone().applyMatrix4(matrixWorld);
+  const worldPosition = viewSpacePosition
+    .clone()
+    .applyMatrix4(depthModelMatrix);
   return worldPosition;
 }
 
