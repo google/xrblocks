@@ -84,15 +84,17 @@ export class ObjectDetector extends Script {
 
   /**
    * Runs the object detection process based on the configured backend.
+   * @param options - Optional configuration for the detection run.
+   * @param options.prompt - A custom text prompt for the AI.
    * @returns A promise that resolves with an
    * array of detected `DetectedObject` instances.
    */
-  async runDetection() {
+  async runDetection(options?: {prompt?: string}) {
     this.clear(); // Clear previous results before starting a new detection.
 
     switch (this.options.objects.backendConfig.activeBackend) {
       case 'gemini':
-        return this._runGeminiDetection();
+        return this._runGeminiDetection(options?.prompt);
       // Future backends like 'mediapipe' will be handled here.
       // case 'mediapipe':
       //   return this._runMediaPipeDetection();
@@ -108,8 +110,9 @@ export class ObjectDetector extends Script {
 
   /**
    * Runs object detection using the Gemini backend.
+   * @param prompt - Optional custom prompt to guide the detection.
    */
-  private async _runGeminiDetection() {
+  private async _runGeminiDetection(prompt?: string) {
     if (!this.ai.isAvailable()) {
       console.error('Gemini is unavailable for object detection.');
       return [];
@@ -131,8 +134,26 @@ export class ObjectDetector extends Script {
 
     // Temporarily set the Gemini config for this specific query type.
     const originalGeminiConfig = this.aiOptions.gemini.config;
-    this.aiOptions.gemini.config = this._geminiConfig;
-    const textPrompt = 'What do you see in this image?';
+    
+    let configToUse = this._geminiConfig;
+
+    if (prompt) {
+      // If a prompt is provided, modify the system instruction to focus on that object.
+      // We retrieve the latest instruction string from options (in case it was modified externally like in main.ts)
+      const baseInstruction = this.options.objects.backendConfig.gemini.systemInstruction;
+      const modifiedInstruction = baseInstruction.replace(
+        'the primary objects',
+        `the object described as "${prompt}"`
+      );
+
+      configToUse = {
+        ...this._geminiConfig,
+        systemInstruction: [{text: modifiedInstruction}],
+      };
+    }
+
+    this.aiOptions.gemini.config = configToUse;
+    const textPrompt = prompt || 'What do you see in this image?';
 
     try {
       const rawResponse = await (this.ai.model as Gemini).query({
