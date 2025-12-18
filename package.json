@@ -11,8 +11,8 @@
     "prepare": "npm run build",
     "lint": "eslint src",
     "format": "npm run format:fix",
-    "format:check": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts}\" --check",
-    "format:fix": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts}\" --write"
+    "format:check": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --check",
+    "format:fix": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --write"
   },
   "files": [
     "build"

@@ -1,75 +1,78 @@
 body {
-	margin: 0;
+  margin: 0;
   padding: 0;
-	background-color: #000;
-	color: #fff;
-	font-family: Monospace;
-	font-size: 13px;
-	line-height: 24px;
-	overscroll-behavior: none;
+  background-color: #000;
+  color: #fff;
+  font-family: Monospace;
+  font-size: 13px;
+  line-height: 24px;
+  overscroll-behavior: none;
 }
 
 a {
-	color: #ff0;
-	text-decoration: none;
+  color: #ff0;
+  text-decoration: none;
 }
 
 a:hover {
-	text-decoration: underline;
+  text-decoration: underline;
 }
 
 button {
-	cursor: pointer;
-	text-transform: uppercase;
+  cursor: pointer;
+  text-transform: uppercase;
 }
 
 #info {
-	position: absolute;
-	top: 0px;
-	width: 100%;
-	padding: 10px;
-	box-sizing: border-box;
-	text-align: center;
-	-moz-user-select: none;
-	-webkit-user-select: none;
-	-ms-user-select: none;
-	user-select: none;
-	pointer-events: none;
-	z-index: 1; /* TODO Solve this in HTML */
+  position: absolute;
+  top: 0px;
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  text-align: center;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  pointer-events: none;
+  z-index: 1; /* TODO Solve this in HTML */
 }
 
-a, button, input, select {
-	pointer-events: auto;
+a,
+button,
+input,
+select {
+  pointer-events: auto;
 }
 
 .lil-gui {
-	z-index: 2 !important; /* TODO Solve this in HTML */
+  z-index: 2 !important; /* TODO Solve this in HTML */
 }
 
-@media all and ( max-width: 640px ) {
-	.lil-gui.root {
-		right: auto;
-		top: auto;
-		max-height: 50%;
-		max-width: 80%;
-		bottom: 0;
-		left: 0;
-	}
+@media all and (max-width: 640px) {
+  .lil-gui.root {
+    right: auto;
+    top: auto;
+    max-height: 50%;
+    max-width: 80%;
+    bottom: 0;
+    left: 0;
+  }
 }
 
 #overlay {
-	position: absolute;
-	font-size: 16px;
-	z-index: 2;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-direction: column;
-	background: rgba(0,0,0,0.7);
+  position: absolute;
+  font-size: 16px;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.7);
 }
 
 #overlay button {
@@ -84,11 +87,11 @@ a, button, input, select {
 }
 
 #notSupported {
-	width: 50%;
-	margin: auto;
-	background-color: #f00;
-	margin-top: 20px;
-	padding: 10px;
+  width: 50%;
+  margin: auto;
+  background-color: #f00;
+  margin-top: 20px;
+  padding: 10px;
 }
 
 #XRButtonWrapper {
@@ -100,7 +103,7 @@ a, button, input, select {
   gap: 1rem;
   transform: translate(-50%, -50%);
   width: 50%;
-	height: 50%;
+  height: 50%;
   z-index: 1000;
   background-color: rgba(0, 0, 0, 0.1);
   color: white;
@@ -119,7 +122,7 @@ a, button, input, select {
   background: transparent;
   border: 1px solid rgb(255, 255, 255);
   flex-grow: 1;
-  font : 'normal sans-serif';
+  font: 'normal sans-serif';
   font-size: 5vh;
   width: 100%;
   cursor: pointer;
@@ -128,7 +131,7 @@ a, button, input, select {
 
 .XRButton:hover,
 .XRButton:active {
-  opacity: 1.0;
+  opacity: 1;
 }
 
 /* Custom styles for the buttons */
@@ -161,7 +164,7 @@ header {
 }
 
 .logo {
-  font-family: "Google Sans Text", system-ui, sans-serif;
+  font-family: 'Google Sans Text', system-ui, sans-serif;
   font-size: 1.8rem;
   font-style: normal;
   font-weight: 500;
@@ -171,33 +174,33 @@ header {
 
 .logo-link {
   display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    pointer-events: all;
-    flex: 0.55 1 0%;
+  align-items: center;
+  gap: 0.4rem;
+  pointer-events: all;
+  flex: 0.55 1 0%;
 }
 
 .logo-text {
-  font-family: "Google Sans Text", system-ui, sans-serif;
+  font-family: 'Google Sans Text', system-ui, sans-serif;
   color: white;
-    font-size: 1.8rem;
-    font-style: normal;
-    font-weight: 500;
-    letter-spacing: -0.018rem;
-    transform: translate(0px, 0.05rem);
+  font-size: 1.8rem;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: -0.018rem;
+  transform: translate(0px, 0.05rem);
 }
 
 .logo-icon {
   color: white;
   width: 1.6rem;
-    height: 1.6rem;
-    margin-left: 0.2rem;
-    margin-right: 0.2rem;
+  height: 1.6rem;
+  margin-left: 0.2rem;
+  margin-right: 0.2rem;
 }
 
 .slogan {
   flex: 0.25 1 0%;
-  font-family: "Google Sans Mono", system-ui, sans-serif;
+  font-family: 'Google Sans Mono', system-ui, sans-serif;
   font-weight: 400;
   font-size: 1rem;
   line-height: 120%;
