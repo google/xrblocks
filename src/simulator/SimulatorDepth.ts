@@ -38,7 +38,14 @@ export class SimulatorDepth {
     this.camera = camera;
     this.depth = depth;
 
-    this.depthCamera = this.camera.clone();
+    if (this.camera instanceof THREE.PerspectiveCamera) {
+      this.depthCamera = new THREE.PerspectiveCamera();
+    } else if (this.camera instanceof THREE.OrthographicCamera) {
+      this.depthCamera = new THREE.OrthographicCamera();
+    } else {
+      throw new Error('Unknown camera type');
+    }
+    this.depthCamera.copy(this.camera, /*recursive=*/ false);
     this.createRenderTarget();
     this.depthMaterial = new SimulatorDepthMaterial();
   }
