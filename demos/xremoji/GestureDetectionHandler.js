@@ -126,7 +126,7 @@ export class GestureDetectionHandler {
       await tf.ready();
 
       // Initialize LiteRT.js's WASM files
-      const wasmPath = 'https://unpkg.com/@litertjs/core/wasm/';
+      const wasmPath = 'https://unpkg.com/@litertjs/core0.2.1/wasm/';
       const liteRt = await loadLiteRt(wasmPath);
 
       // Make LiteRt use the same GPU device as TFJS (for tensor conversion)

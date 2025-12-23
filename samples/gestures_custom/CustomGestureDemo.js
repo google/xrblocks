@@ -169,7 +169,7 @@ export class CustomGestureDemo extends xb.Script {
       await tf.ready();
 
       // Initializes LiteRT.js's WASM files.
-      const wasmPath = 'https://unpkg.com/@litertjs/core/wasm/';
+      const wasmPath = 'https://unpkg.com/@litertjs/core@0.2.1/wasm/';
       const liteRt = await loadLiteRt(wasmPath);
 
       // Makes LiteRt use the same GPU device as TF.js (for tensor conversion).
