@@ -39,6 +39,7 @@
     "@rollup/plugin-typescript": "^12.1.4",
     "@sparkjsdev/spark": "^0.1.10",
     "@types/dom-speech-recognition": "^0.0.7",
+    "@types/node": "^25.0.8",
     "@types/three": "^0.182.0",
     "@types/webxr": "^0.5.23",
     "eslint": "^9.35.0",

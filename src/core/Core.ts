@@ -165,6 +165,7 @@ export class Core {
     this.registry.register(this.simulator);
     this.registry.register(this.scriptsManager);
     this.registry.register(this.depth);
+    this.registry.register(this.world);
   }
 
   /**

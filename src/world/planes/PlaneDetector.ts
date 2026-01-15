@@ -4,6 +4,7 @@ import {Script} from '../../core/Script';
 import {WorldOptions} from '../WorldOptions';
 
 import {DetectedPlane} from './DetectedPlane';
+import {SimulatorPlane} from './SimulatorPlane';
 
 /**
  * Detects and manages real-world planes provided by the WebXR Plane Detection
@@ -27,6 +28,8 @@ export class PlaneDetector extends Script {
    */
   private _xrRefSpace?: XRReferenceSpace;
   private renderer!: THREE.WebGLRenderer;
+
+  private usingSimulatorPlanes = false;
 
   /**
    * Initializes the PlaneDetector.
@@ -52,7 +55,7 @@ export class PlaneDetector extends Script {
    * Processes the XRFrame to update plane information.
    */
   override update(_: number, frame: XRFrame) {
-    if (!frame || !frame.detectedPlanes) return;
+    if (!frame || !frame.detectedPlanes || this.usingSimulatorPlanes) return;
 
     this._xrRefSpace =
       this._xrRefSpace || this.renderer.xr.getReferenceSpace() || undefined;
@@ -71,7 +74,7 @@ export class PlaneDetector extends Script {
         // Plane already exists, check if it needs an update.
         if (
           xrPlane.lastChangedTime >
-          (existingPlaneMesh.xrPlane.lastChangedTime || 0)
+          (existingPlaneMesh.xrPlane?.lastChangedTime || 0)
         ) {
           this._updatePlaneMesh(frame, existingPlaneMesh, xrPlane);
         }
@@ -101,6 +104,7 @@ export class PlaneDetector extends Script {
 
     this._detectedPlanes.set(xrPlane, planeMesh);
     this.add(planeMesh);
+    return planeMesh;
   }
 
   /**
@@ -184,6 +188,22 @@ export class PlaneDetector extends Script {
   showDebugVisualizations(visible = true) {
     if (this._debugMaterial) {
       this.visible = visible;
+    }
+  }
+
+  private _addSimulatorPlaneMesh(plane: SimulatorPlane) {
+    const material =
+      this._debugMaterial || new THREE.MeshBasicMaterial({visible: false});
+    const planeMesh = new DetectedPlane(null, material, plane);
+    this.add(planeMesh);
+    return planeMesh;
+  }
+
+  setSimulatorPlanes(planes: SimulatorPlane[]) {
+    this.usingSimulatorPlanes = true;
+    this._detectedPlanes.clear();
+    for (const plane of planes) {
+      this._addSimulatorPlaneMesh(plane);
     }
   }
 }

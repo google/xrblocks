@@ -119,6 +119,7 @@ export * from './world/objects/ObjectsOptions';
 export * from './world/planes/DetectedPlane';
 export * from './world/planes/PlaneDetector';
 export * from './world/planes/PlanesOptions';
+export * from './world/planes/SimulatorPlane';
 export * from './world/World';
 export * from './world/WorldOptions';
 

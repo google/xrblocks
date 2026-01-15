@@ -21,7 +21,9 @@ import {SimulatorInterface} from './SimulatorInterface';
 import {SimulatorOptions} from './SimulatorOptions';
 import {SimulatorScene} from './SimulatorScene';
 import {SimulatorUser} from './SimulatorUser';
-import {SparkRendererHolder} from '../utils/SparkRendererHolder.js';
+import {SimulatorWorld} from './SimulatorWorld';
+import {SparkRendererHolder} from '../utils/SparkRendererHolder';
+import {World} from '../world/World';
 
 export class Simulator extends Script {
   static dependencies = {
@@ -34,9 +36,11 @@ export class Simulator extends Script {
     registry: Registry,
     options: Options,
     depth: Depth,
+    world: World,
   };
 
   simulatorScene = new SimulatorScene();
+  simulatorWorld = new SimulatorWorld();
   depth = new SimulatorDepth(this.simulatorScene);
   // Controller poses relative to the camera.
   simulatorControllerState = new SimulatorControllerState();
@@ -92,6 +96,7 @@ export class Simulator extends Script {
     registry,
     options,
     depth,
+    world,
   }: {
     simulatorOptions: SimulatorOptions;
     input: Input;
@@ -102,6 +107,7 @@ export class Simulator extends Script {
     registry: Registry;
     options: Options;
     depth: Depth;
+    world: World;
   }) {
     if (this.initialized) return;
     // Get optional dependencies from the registry.
@@ -112,6 +118,7 @@ export class Simulator extends Script {
     this.userInterface.init(simulatorOptions, this.controls, this.hands);
     renderer.autoClearColor = false;
     await this.simulatorScene.init(simulatorOptions);
+    await this.simulatorWorld.init(options, world);
     this.hands.init({input});
     this.controls.init({camera, input, timer, renderer, simulatorOptions});
     if (deviceCamera && !this.camera) {
