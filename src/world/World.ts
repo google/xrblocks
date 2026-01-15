@@ -62,6 +62,8 @@ export class World extends Script {
 
   private camera!: THREE.Camera;
 
+  private needsRoomCapture = false;
+
   /**
    * Initializes the world-sensing modules based on the provided configuration.
    * This method is called automatically by the XRCore.
@@ -79,6 +81,8 @@ export class World extends Script {
     if (!this.options || !this.options.enabled) {
       return;
     }
+
+    this.needsRoomCapture = this.options.initiateRoomCapture;
 
     // Conditionally initialize each perception module based on options.
     if (this.options.planes.enabled) {
@@ -125,6 +129,11 @@ export class World extends Script {
   update(_timestamp: number, frame?: XRFrame) {
     if (!this.options?.enabled || !frame) {
       return;
+    }
+
+    if (this.needsRoomCapture && frame.session.initiateRoomCapture) {
+      this.needsRoomCapture = false;
+      frame.session.initiateRoomCapture();
     }
 
     // Note: Object detection is not run per-frame by default as it's a

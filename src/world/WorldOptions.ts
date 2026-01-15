@@ -7,6 +7,7 @@ import {PlanesOptions} from './planes/PlanesOptions';
 export class WorldOptions {
   debugging = false;
   enabled = false;
+  initiateRoomCapture = false;
   planes = new PlanesOptions();
   objects = new ObjectsOptions();
 
