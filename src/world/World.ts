@@ -6,6 +6,7 @@ import {placeObjectAtIntersectionFacingTarget} from '../utils/ObjectPlacement';
 import {ObjectDetector} from './objects/ObjectDetector';
 import {PlaneDetector} from './planes/PlaneDetector';
 import {WorldOptions} from './WorldOptions';
+import {MeshDetector} from './mesh/MeshDetector';
 // Import other modules as they are implemented in future.
 // import { SceneMesh } from '/depth/SceneMesh.js';
 // import { LightEstimation } from '/lighting/LightEstimation.js';
@@ -45,15 +46,14 @@ export class World extends Script {
   planes?: PlaneDetector;
 
   /**
-   * The scene mesh module instance. Null if not enabled.
-   * TODO: Not yet supported in Chrome.
-   */
-  // meshes = null;
-
-  /**
    * The object recognition module instance. Null if not enabled.
    */
   objects?: ObjectDetector;
+
+  /**
+   * The mesh detection module instance. Null if not enabled.
+   */
+  meshes?: MeshDetector;
 
   /**
    * A Three.js Raycaster for performing intersection tests.
@@ -61,6 +61,9 @@ export class World extends Script {
   private raycaster = new THREE.Raycaster();
 
   private camera!: THREE.Camera;
+
+  // Whether we need to initiate a room capture.
+  private needsRoomCapture = false;
 
   /**
    * Initializes the world-sensing modules based on the provided configuration.
@@ -80,6 +83,8 @@ export class World extends Script {
       return;
     }
 
+    this.needsRoomCapture = this.options.initiateRoomCapture;
+
     // Conditionally initialize each perception module based on options.
     if (this.options.planes.enabled) {
       this.planes = new PlaneDetector();
@@ -91,11 +96,13 @@ export class World extends Script {
       this.add(this.objects);
     }
 
+    if (this.options.meshes.enabled) {
+      this.meshes = new MeshDetector();
+      this.add(this.meshes);
+    }
+
     // TODO: Initialize other modules as they are available & implemented.
     /*
-    if (this.options.sceneMesh.enabled) {
-      this.meshes = new SceneMesh();
-    }
 
     if (this.options.lighting.enabled) {
       this.lighting = new LightEstimation();
@@ -127,14 +134,12 @@ export class World extends Script {
       return;
     }
 
-    // Note: Object detection is not run per-frame by default as it's a
-    // costly operation. It should be triggered manually via
-    // `this.world.objects.runDetection()`.
+    if (this.needsRoomCapture && frame.session.initiateRoomCapture) {
+      this.needsRoomCapture = false;
+      frame.session.initiateRoomCapture();
+    }
 
-    // TODO: Update other modules as they are available & implemented.
-    // this.meshes?.update(frame);
-    // this.lighting?.update(frame);
-    // this.humans?.update(frame);
+    this.meshes?.updateMeshes(_timestamp, frame);
   }
 
   /**
@@ -187,6 +192,5 @@ export class World extends Script {
   showDebugVisualizations(visible = true) {
     this.planes?.showDebugVisualizations(visible);
     this.objects?.showDebugVisualizations(visible);
-    // this.meshes?.showDebugVisualizations(visible);
   }
 }
