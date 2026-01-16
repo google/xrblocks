@@ -293,7 +293,7 @@ export class GameRps extends xb.Script {
       // Show 1-2-3-GO
       this.startImageRow.show();
       // Reset result images
-      this.imageGesture1.load('images/gestureEmtpy.webp');
+      this.imageGesture1.load('images/gestureEmpty.webp');
       this.imageGesture2.load('images/gestureEmpty.webp');
       this.resultImage.load('images/gestureEmpty.webp');
       // hide result
