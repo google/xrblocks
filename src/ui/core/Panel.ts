@@ -246,6 +246,17 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
     });
   }
 
+  private _setMaterialOpacity(opacityValue: number, material: THREE.Material) {
+    if (
+      material instanceof THREE.ShaderMaterial &&
+      material.uniforms.uOpacity
+    ) {
+      material.uniforms.uOpacity.value = opacityValue;
+    } else {
+      material.opacity = opacityValue;
+    }
+  }
+
   /**
    * Applies the given opacity to all materials in the hierarchy.
    */
@@ -253,16 +264,13 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
     this.traverse((child) => {
       if (child instanceof View) child.opacity = opacityValue;
       if (child instanceof THREE.Mesh && child.material) {
-        const materials: THREE.Material[] = Array.isArray(child.material)
-          ? child.material
-          : [child.material];
-        materials.forEach((material) => {
-          if (material instanceof THREE.ShaderMaterial) {
-            material.uniforms.uOpacity.value = opacityValue;
-          } else {
-            material.opacity = opacityValue;
+        if (Array.isArray(child.material)) {
+          for (const material of child.material) {
+            this._setMaterialOpacity(opacityValue, material);
           }
-        });
+        } else {
+          this._setMaterialOpacity(opacityValue, child.material);
+        }
       }
     });
   }
