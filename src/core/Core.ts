@@ -10,6 +10,7 @@ import {Hands} from '../input/Hands';
 import {GestureRecognition} from '../input/gestures/GestureRecognition';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
 import {Input} from '../input/Input';
+import {MudraLinkOptions} from '../input/mudra/MudraLinkOptions';
 import {Lighting} from '../lighting/Lighting';
 import {Physics} from '../physics/Physics';
 import {Simulator} from '../simulator/Simulator';
@@ -187,6 +188,7 @@ export class Core {
     this.registry.register(options.ai, AIOptions);
     this.registry.register(options.sound, SoundOptions);
     this.registry.register(options.gestures, GestureRecognitionOptions);
+    this.registry.register(options.mudraLink, MudraLinkOptions);
 
     if (options.transition.enabled) {
       this.transition = new XRTransition();

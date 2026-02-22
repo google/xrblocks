@@ -7,6 +7,7 @@ import {
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
 import {HandsOptions} from '../input/HandsOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
+import {MudraLinkOptions} from '../input/mudra/MudraLinkOptions.js';
 import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
 import {SimulatorOptions} from '../simulator/SimulatorOptions';
@@ -96,6 +97,7 @@ export class Options {
   deviceCamera = new DeviceCameraOptions();
   hands = new HandsOptions();
   gestures = new GestureRecognitionOptions();
+  mudraLink = new MudraLinkOptions();
   reticles = new ReticleOptions();
   sound = new SoundOptions();
   ai = new AIOptions();
@@ -228,6 +230,17 @@ export class Options {
   enableGestures() {
     this.enableHands();
     this.gestures.enable();
+    return this;
+  }
+
+  /**
+   * Enables the Mudra Link addon for neural input via the Mudra Band /
+   * Mudra Link wearable. Requires the Mudra Companion app running locally.
+   * @returns The instance for chaining.
+   * @see https://mudra-studio.com
+   */
+  enableMudraLink() {
+    this.mudraLink.enable();
     return this;
   }
 
