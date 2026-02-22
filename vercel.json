@@ -1,0 +1,4 @@
+{
+  "buildCommand": "npm run build && mkdir -p public && cp -r build demos samples templates assets docs public/",
+  "outputDirectory": "public"
+}

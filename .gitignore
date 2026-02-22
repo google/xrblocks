@@ -146,6 +146,7 @@ dist
 
 # Build
 build
+public
 .DS_Store
 
 # Keys
