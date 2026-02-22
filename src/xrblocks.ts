@@ -38,6 +38,8 @@ export * from './input/gestures/GestureRecognitionOptions';
 export * from './input/gestures/GestureEvents';
 export * from './input/Input';
 export * from './input/MouseController';
+export * from './input/mudra/MudraLinkOptions';
+export * from './input/mudra/MudraSignals';
 export * from './lighting/Lighting';
 export * from './lighting/LightingOptions';
 export * from './physics/Physics';
