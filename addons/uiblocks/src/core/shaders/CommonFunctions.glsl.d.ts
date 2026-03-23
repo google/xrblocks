@@ -1,0 +1,1 @@
+export declare const CommonFunctionsShader = "\n// SDF for a rounded box in 2D.\nfloat sdRoundedBox(vec2 p, vec2 b, float r) {\n    vec2 d = abs(p) - (b - r);\n    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r;\n}\n";
