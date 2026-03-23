@@ -35,7 +35,7 @@
   "homepage": "https://xrblocks.github.io",
   "devDependencies": {
     "@dimforge/rapier3d": "^0.19.2",
-    "@eslint/js": "^9.35.0",
+    "@eslint/js": "^10.0.1",
     "@google/genai": "^1.28.0",
     "@rollup/plugin-inject": "^5.0.5",
     "@rollup/plugin-node-resolve": "^16.0.1",
