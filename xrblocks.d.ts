@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid 296143c
- * @builddate 2026-03-10T23:23:28.562Z
+ * @commitid 5334b36
+ * @builddate 2026-03-23T16:17:31.731Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2873,7 +2873,7 @@ declare class VideoStream<T extends VideoStreamDetails = VideoStreamDetails> ext
     width?: number;
     height?: number;
     aspectRatio?: number;
-    texture: THREE.VideoTexture;
+    texture: THREE.Texture;
     state: StreamState;
     protected stream_: MediaStream | null;
     protected video_: HTMLVideoElement;
@@ -2938,6 +2938,9 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     private availableDevices_;
     private currentDeviceIndex_;
     private currentTrackSettings_?;
+    private renderer_?;
+    private useXRCameraAccess_;
+    private xrCameraTexture_?;
     /**
      * @param options - The configuration options.
      */
@@ -2948,6 +2951,10 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
      * array of video devices.
      */
     getAvailableVideoDevices(): Promise<MediaOrSimulatorMediaDeviceInfo[]>;
+    /**
+     * Sets the renderer reference, needed for WebXR camera access fallback.
+     */
+    setRenderer(renderer: THREE.WebGLRenderer): void;
     /**
      * Initializes the camera based on the initial constraints.
      */
@@ -2986,6 +2993,15 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
      * Gets the index of the currently active device.
      */
     getCurrentDeviceIndex(): number;
+    /**
+     * Whether the camera is using the WebXR Raw Camera Access API fallback.
+     */
+    get isUsingXRCameraAccess(): boolean;
+    /**
+     * Updates the camera texture from the WebXR Raw Camera Access API.
+     * Must be called each frame from the render loop when in XR camera mode.
+     */
+    updateXRCamera(frame: XRFrame): void;
     registerSimulatorCamera(simulatorCamera: SimulatorCamera): void;
 }
 
@@ -6299,7 +6315,7 @@ declare class VideoView extends View {
      * @param source - The video source (URL, HTMLVideoElement, VideoTexture, or
      * VideoStream).
      */
-    load(source: string | HTMLVideoElement | THREE.VideoTexture | VideoStream): void;
+    load(source: string | HTMLVideoElement | THREE.Texture | VideoStream): void;
     /**
      * Loads video content from an VideoStream, handling the 'ready' event
      * to correctly display the stream and set the aspect ratio.
@@ -6321,6 +6337,12 @@ declare class VideoView extends View {
      * @param videoTextureInstance - The texture to display.
      */
     loadFromVideoTexture(videoTextureInstance: THREE.VideoTexture): void;
+    /**
+     * Configures the view to use a generic texture, such as an ExternalTexture
+     * produced by WebXR camera access.
+     * @param textureInstance - The texture to display.
+     */
+    loadFromTexture(textureInstance: THREE.Texture): void;
     /** Starts video playback. */
     play(): void;
     /** Pauses video playback. */

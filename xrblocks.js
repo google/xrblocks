@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid 296143c
- * @builddate 2026-03-10T23:23:28.562Z
+ * @commitid 5334b36
+ * @builddate 2026-03-23T16:17:31.731Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2182,6 +2182,14 @@ class VideoStream extends Script {
         this.texture.colorSpace = THREE.SRGBColorSpace;
         this.texture.minFilter = THREE.LinearFilter;
         this.texture.magFilter = THREE.LinearFilter;
+        // Keep the texture updating when srcObject changes.
+        const texture = this.texture;
+        const videoEl = this.video_;
+        texture.update = function () {
+            if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
+                texture.needsUpdate = true;
+            }
+        };
     }
     /**
      * Sets the stream's state and dispatches a 'statechange' event.
@@ -2320,6 +2328,7 @@ class XRDeviceCamera extends VideoStream {
         this.isInitializing_ = false;
         this.availableDevices_ = [];
         this.currentDeviceIndex_ = -1;
+        this.useXRCameraAccess_ = false;
         this.videoConstraints_ = options.videoConstraints ?? {
             facingMode: 'environment',
         };
@@ -2346,9 +2355,16 @@ class XRDeviceCamera extends VideoStream {
         return devices.filter((device) => device.kind === 'videoinput');
     }
     /**
+     * Sets the renderer reference, needed for WebXR camera access fallback.
+     */
+    setRenderer(renderer) {
+        this.renderer_ = renderer;
+    }
+    /**
      * Initializes the camera based on the initial constraints.
      */
     async init() {
+        this.useXRCameraAccess_ = false;
         this.setState_(StreamState.INITIALIZING);
         try {
             this.availableDevices_ = await this.getAvailableVideoDevices();
@@ -2361,6 +2377,14 @@ class XRDeviceCamera extends VideoStream {
             }
         }
         catch (error) {
+            if (this.renderer_) {
+                console.warn('Camera initialization failed. ' +
+                    'Falling back to WebXR Raw Camera Access API.', error);
+                this.useXRCameraAccess_ = true;
+                this.loaded = false;
+                this.setState_(StreamState.INITIALIZING, { force: true });
+                return;
+            }
             this.setState_(StreamState.ERROR, { error: error });
             console.error('Error initializing XRDeviceCamera:', error);
             throw error;
@@ -2413,7 +2437,6 @@ class XRDeviceCamera extends VideoStream {
                 }
             }
             else {
-                // Otherwise, request the stream from the browser.
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: this.videoConstraints_,
                 });
@@ -2422,7 +2445,6 @@ class XRDeviceCamera extends VideoStream {
             if (!videoTracks.length) {
                 throw new Error('MediaStream has no video tracks.');
             }
-            // After the stream is active, we can get the track ID.
             const activeTrack = videoTracks[0];
             this.currentTrackSettings_ = activeTrack.getSettings();
             console.debug('Active track settings:', this.currentTrackSettings_);
@@ -2432,22 +2454,21 @@ class XRDeviceCamera extends VideoStream {
             else {
                 console.warn('Stream started without deviceId as it was unavailable');
             }
+            // Clear handlers before resetting the element.
+            this.video_.onerror = null;
+            this.video_.onloadedmetadata = null;
             this.stop_(); // Stop any previous stream before starting new one.
             this.stream_ = stream;
             this.video_.srcObject = stream;
-            this.video_.src = ''; // Required for some browsers to reset the src.
             await new Promise((resolve, reject) => {
                 this.video_.onloadedmetadata = () => {
                     this.handleVideoStreamLoadedMetadata(resolve, reject, true);
                 };
-                this.video_.onerror = () => {
-                    const error = new Error('Error playing camera stream.');
-                    this.setState_(StreamState.ERROR, { error });
-                    reject(error);
-                };
-                this.video_.play();
+                // Autoplay policy can still reject play() here.
+                this.video_.play().catch((playError) => {
+                    console.warn('video.play() rejected (may still autoplay):', playError);
+                });
             });
-            // Once stream is loaded and dimensions are known, set the final state.
             const details = {
                 width: this.width,
                 height: this.height,
@@ -2457,10 +2478,6 @@ class XRDeviceCamera extends VideoStream {
                 trackSettings: this.currentTrackSettings_,
             };
             this.setState_(StreamState.STREAMING, details);
-        }
-        catch (error) {
-            this.setState_(StreamState.ERROR, { error: error });
-            throw error;
         }
         finally {
             this.isInitializing_ = false;
@@ -2520,6 +2537,62 @@ class XRDeviceCamera extends VideoStream {
      */
     getCurrentDeviceIndex() {
         return this.currentDeviceIndex_;
+    }
+    /**
+     * Whether the camera is using the WebXR Raw Camera Access API fallback.
+     */
+    get isUsingXRCameraAccess() {
+        return this.useXRCameraAccess_;
+    }
+    /**
+     * Updates the camera texture from the WebXR Raw Camera Access API.
+     * Must be called each frame from the render loop when in XR camera mode.
+     */
+    updateXRCamera(frame) {
+        if (!this.useXRCameraAccess_ || !this.renderer_ || !frame)
+            return;
+        const binding = this.renderer_.xr.getBinding();
+        const refSpace = this.renderer_.xr.getReferenceSpace();
+        if (!binding || !refSpace)
+            return;
+        const pose = frame.getViewerPose(refSpace);
+        if (!pose)
+            return;
+        for (const view of pose.views) {
+            const xrCamera = view.camera;
+            if (!xrCamera)
+                continue;
+            const glTexture = binding.getCameraImage?.(xrCamera);
+            if (!glTexture)
+                continue;
+            if (!this.xrCameraTexture_) {
+                this.xrCameraTexture_ = new THREE.ExternalTexture(glTexture);
+                this.xrCameraTexture_.minFilter = THREE.LinearFilter;
+                this.xrCameraTexture_.magFilter = THREE.LinearFilter;
+                this.xrCameraTexture_.colorSpace = THREE.SRGBColorSpace;
+                this.xrCameraTexture_.generateMipmaps = false;
+            }
+            else {
+                this.xrCameraTexture_.sourceTexture = glTexture;
+            }
+            this.width = xrCamera.width;
+            this.height = xrCamera.height;
+            this.aspectRatio = this.width / this.height;
+            const texProperties = this.renderer_.properties.get(this.xrCameraTexture_);
+            texProperties.__webglTexture = glTexture;
+            texProperties.__version = 1;
+            this.texture = this.xrCameraTexture_;
+            if (!this.loaded) {
+                this.loaded = true;
+                this.setState_(StreamState.STREAMING, {
+                    force: true,
+                    width: this.width,
+                    height: this.height,
+                    aspectRatio: this.aspectRatio,
+                });
+            }
+            break;
+        }
     }
     registerSimulatorCamera(simulatorCamera) {
         this.simulatorCamera = simulatorCamera;
@@ -13717,7 +13790,9 @@ class VideoView extends View {
         const videoGeometry = new THREE.PlaneGeometry(1, 1);
         const videoMaterial = new THREE.MeshBasicMaterial({
             transparent: true,
-            depthWrite: false,
+            blending: THREE.NoBlending,
+            toneMapped: false,
+            depthWrite: true,
             side: THREE.DoubleSide,
             // `map` will be set based on options.texture or during load
         });
@@ -13758,6 +13833,9 @@ class VideoView extends View {
         else if (source instanceof THREE.VideoTexture) {
             this.loadFromVideoTexture(source);
         }
+        else if (source instanceof THREE.Texture) {
+            this.loadFromTexture(source);
+        }
         else if (typeof source === 'string') {
             this.loadFromURL(source);
         }
@@ -13781,10 +13859,16 @@ class VideoView extends View {
                 console.warn('Stream is ready, but its texture is not available.');
                 return;
             }
-            this.loadFromVideoTexture(this.stream_.texture);
+            if (this.stream_.texture instanceof THREE.VideoTexture) {
+                this.loadFromVideoTexture(this.stream_.texture);
+            }
+            else {
+                this.loadFromTexture(this.stream_.texture);
+            }
             // The event from VideoStream provides the definitive aspect ratio
-            if (event.details?.aspectRatio !== undefined) {
-                this.videoAspectRatio = event.details?.aspectRatio;
+            const aspectRatio = event.aspectRatio ?? event.details?.aspectRatio;
+            if (aspectRatio !== undefined) {
+                this.videoAspectRatio = aspectRatio;
             }
             this.updateLayout();
         };
@@ -13856,7 +13940,7 @@ class VideoView extends View {
     loadFromVideoTexture(videoTextureInstance) {
         this.texture = videoTextureInstance;
         this.material.map = this.texture;
-        this.video = this.texture.image; // Underlying HTMLVideoElement
+        this.video = this.texture.image; // Underlying video
         if (this.video && this.video.videoWidth && this.video.videoHeight) {
             this.videoAspectRatio = this.video.videoWidth / this.video.videoHeight;
             this.updateLayout();
@@ -13878,6 +13962,17 @@ class VideoView extends View {
             this.videoAspectRatio = 0;
             this.updateLayout();
         }
+    }
+    /**
+     * Configures the view to use a generic texture, such as an ExternalTexture
+     * produced by WebXR camera access.
+     * @param textureInstance - The texture to display.
+     */
+    loadFromTexture(textureInstance) {
+        this.texture = textureInstance;
+        this.material.map = this.texture ?? null;
+        this.video = undefined;
+        this.updateLayout();
     }
     /** Starts video playback. */
     play() {
@@ -15638,9 +15733,17 @@ class Core {
         // Sets up device camera.
         if (options.deviceCamera?.enabled) {
             this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
+            this.deviceCamera.setRenderer(this.renderer);
             this.registry.register(this.deviceCamera);
         }
         const webXRRequiredFeatures = options.webxrRequiredFeatures;
+        // Use camera-access when the browser supports it.
+        if (options.deviceCamera?.enabled) {
+            if (!this.webXRSettings.optionalFeatures) {
+                this.webXRSettings.optionalFeatures = [];
+            }
+            this.webXRSettings.optionalFeatures.push('camera-access');
+        }
         this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
         // Sets up depth.
         if (options.depth.enabled) {
@@ -15750,6 +15853,10 @@ class Core {
             this.simulator.simulatorUpdate();
         }
         this.depth.update(frame);
+        // Update XR camera fallback textures.
+        if (this.deviceCamera?.isUsingXRCameraAccess) {
+            this.deviceCamera.updateXRCamera(frame);
+        }
         if (this.lighting) {
             this.lighting.update();
         }
