@@ -45,7 +45,7 @@
     "@sparkjsdev/spark": "^0.1.10",
     "@types/dom-speech-recognition": "^0.0.7",
     "@types/node": "^25.0.8",
-    "@types/three": "^0.182.0",
+    "@types/three": "^0.183.1",
     "@types/webxr": "^0.5.23",
     "concurrently": "^9.2.1",
     "eslint": "^9.35.0",
