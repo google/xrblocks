@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid 98d885c
- * @builddate 2026-03-26T23:09:28.856Z
+ * @commitid a17ab18
+ * @builddate 2026-03-26T23:35:59.437Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1883,6 +1883,12 @@ function deepMerge(obj1, obj2) {
                 typeof val2 === 'object') {
                 // If both values are objects, recurse
                 deepMerge(val1, val2);
+            }
+            else if (val2 && typeof val2 === 'object') {
+                // Clone val2 if val1 is not an object
+                const clone = Array.isArray(val2) ? [] : {};
+                deepMerge(clone, val2);
+                merged[key] = clone;
             }
             else {
                 // Otherwise, overwrite
