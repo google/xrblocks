@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid b7d9a0e
- * @builddate 2026-03-26T22:48:51.544Z
+ * @commitid 98d885c
+ * @builddate 2026-03-26T23:09:28.856Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2319,6 +2319,7 @@ class VideoStream extends Script {
  * and reports its state using VideoStream's event model.
  */
 class XRDeviceCamera extends VideoStream {
+    static { this.XR_CAMERA_ACCESS_TIMEOUT_MS = 5000; }
     /**
      * @param options - The configuration options.
      */
@@ -2329,6 +2330,7 @@ class XRDeviceCamera extends VideoStream {
         this.availableDevices_ = [];
         this.currentDeviceIndex_ = -1;
         this.useXRCameraAccess_ = false;
+        this.xrCameraAccessTimeout_ = null;
         this.videoConstraints_ = options.videoConstraints ?? {
             facingMode: 'environment',
         };
@@ -2365,11 +2367,16 @@ class XRDeviceCamera extends VideoStream {
      */
     async init() {
         this.useXRCameraAccess_ = false;
+        this.clearXRCameraAccessTimeout_();
         this.setState_(StreamState.INITIALIZING);
         try {
             this.availableDevices_ = await this.getAvailableVideoDevices();
             if (this.availableDevices_.length > 0) {
                 await this.initStream_();
+            }
+            else if (this.renderer_) {
+                this.startXRCameraAccessFallback_('No video devices found.');
+                return;
             }
             else {
                 this.setState_(StreamState.NO_DEVICES_FOUND);
@@ -2378,11 +2385,7 @@ class XRDeviceCamera extends VideoStream {
         }
         catch (error) {
             if (this.renderer_) {
-                console.warn('Camera initialization failed. ' +
-                    'Falling back to WebXR Raw Camera Access API.', error);
-                this.useXRCameraAccess_ = true;
-                this.loaded = false;
-                this.setState_(StreamState.INITIALIZING, { force: true });
+                this.startXRCameraAccessFallback_('Camera initialization failed.', error);
                 return;
             }
             this.setState_(StreamState.ERROR, { error: error });
@@ -2583,6 +2586,7 @@ class XRDeviceCamera extends VideoStream {
             texProperties.__version = 1;
             this.texture = this.xrCameraTexture_;
             if (!this.loaded) {
+                this.clearXRCameraAccessTimeout_();
                 this.loaded = true;
                 this.setState_(StreamState.STREAMING, {
                     force: true,
@@ -2597,6 +2601,43 @@ class XRDeviceCamera extends VideoStream {
     registerSimulatorCamera(simulatorCamera) {
         this.simulatorCamera = simulatorCamera;
         this.init();
+    }
+    startXRCameraAccessFallback_(reason, error) {
+        if (!this.isXRCameraAccessGranted_()) {
+            this.useXRCameraAccess_ = false;
+            this.loaded = false;
+            this.setState_(StreamState.NO_DEVICES_FOUND, { force: true });
+            console.warn(`${reason} WebXR Raw Camera Access API is not available in this session.`, error);
+            return;
+        }
+        console.warn(`${reason} Falling back to WebXR Raw Camera Access API.`, error);
+        this.useXRCameraAccess_ = true;
+        this.loaded = false;
+        this.setState_(StreamState.INITIALIZING, { force: true });
+        this.clearXRCameraAccessTimeout_();
+        this.xrCameraAccessTimeout_ = setTimeout(() => {
+            if (!this.useXRCameraAccess_ || this.loaded)
+                return;
+            this.useXRCameraAccess_ = false;
+            this.setState_(StreamState.NO_DEVICES_FOUND, { force: true });
+            console.warn('WebXR Raw Camera Access API did not provide frames in time.');
+        }, XRDeviceCamera.XR_CAMERA_ACCESS_TIMEOUT_MS);
+    }
+    isXRCameraAccessGranted_() {
+        const session = this.renderer_?.xr.getSession();
+        if (!session) {
+            return true;
+        }
+        if (!('enabledFeatures' in session) || !session.enabledFeatures) {
+            return true;
+        }
+        return session.enabledFeatures.includes('camera-access');
+    }
+    clearXRCameraAccessTimeout_() {
+        if (!this.xrCameraAccessTimeout_)
+            return;
+        clearTimeout(this.xrCameraAccessTimeout_);
+        this.xrCameraAccessTimeout_ = null;
     }
 }
 
@@ -3178,6 +3219,9 @@ class WebXRSessionManager extends THREE.EventDispatcher {
     isXRSupported() {
         return this.xrModeSupported;
     }
+    getSessionOptions() {
+        return this.sessionOptions;
+    }
     /** Internal callback for when a session successfully starts. */
     async onSessionStartedInternal(session) {
         session.addEventListener('end', this.onSessionEndedBound);
@@ -3267,9 +3311,14 @@ class XRButton {
         button.style.display = '';
         button.innerHTML = this.startText;
         button.disabled = false;
+        const allowsVideoFallback = this.sessionManager
+            .getSessionOptions()
+            ?.optionalFeatures?.includes('camera-access');
         button.onclick = () => {
             this.permissionsManager
-                .checkAndRequestPermissions(this.permissions)
+                .checkAndRequestPermissions(this.permissions, {
+                allowVideoFallback: allowsVideoFallback,
+            })
                 .then((result) => {
                 if (result.granted) {
                     this.sessionManager.startSession();
@@ -15404,8 +15453,8 @@ class PermissionsManager {
      * Requests permission to access the camera.
      * Opens a stream to trigger the prompt, then immediately closes it.
      */
-    async requestCameraPermission() {
-        return this.requestMediaPermission({ video: true });
+    async requestCameraPermission(options) {
+        return this.requestMediaPermission({ video: true }, options);
     }
     /**
      * Requests permission for both camera and microphone simultaneously.
@@ -15418,7 +15467,7 @@ class PermissionsManager {
      * Crucially, this stops the tracks immediately after permission is granted
      * so the hardware doesn't remain active.
      */
-    async requestMediaPermission(constraints) {
+    async requestMediaPermission(constraints, options) {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             return {
                 granted: false,
@@ -15433,6 +15482,9 @@ class PermissionsManager {
             return { granted: true, status: 'granted' };
         }
         catch (err) {
+            if (this.shouldAllowVideoFallback(err, constraints, options)) {
+                return { granted: true, status: 'granted' };
+            }
             // Handle common getUserMedia errors
             const status = 'denied';
             let errorMessage = 'Permission denied';
@@ -15450,11 +15502,23 @@ class PermissionsManager {
             return { granted: false, status: status, error: errorMessage };
         }
     }
+    shouldAllowVideoFallback(err, constraints, options) {
+        if (!options?.allowVideoFallback || !this.isVideoOnlyRequest(constraints)) {
+            return false;
+        }
+        return (err instanceof Error &&
+            (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError'));
+    }
+    isVideoOnlyRequest(constraints) {
+        const requestsVideo = constraints.video !== undefined && constraints.video !== false;
+        const requestsAudio = constraints.audio !== undefined && constraints.audio !== false;
+        return requestsVideo && !requestsAudio;
+    }
     /**
      * Requests multiple permissions sequentially.
      * Returns a single result: granted is true only if ALL requested permissions are granted.
      */
-    async checkAndRequestPermissions({ geolocation = false, camera = false, microphone = false, }) {
+    async checkAndRequestPermissions({ geolocation = false, camera = false, microphone = false, }, options) {
         const results = [];
         // 1. Handle Location
         if (geolocation) {
@@ -15480,7 +15544,7 @@ class PermissionsManager {
             }
             else if (micStatus === 'granted') {
                 // Only need camera
-                results.push(await this.requestCameraPermission());
+                results.push(await this.requestCameraPermission(options));
             }
             else {
                 // Need both
@@ -15493,7 +15557,7 @@ class PermissionsManager {
                 results.push({ granted: true, status: 'granted' });
             }
             else {
-                results.push(await this.requestCameraPermission());
+                results.push(await this.requestCameraPermission(options));
             }
         }
         else if (microphone) {

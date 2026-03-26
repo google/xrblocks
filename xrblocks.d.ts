@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid b7d9a0e
- * @builddate 2026-03-26T22:48:51.544Z
+ * @commitid 98d885c
+ * @builddate 2026-03-26T23:09:28.856Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2931,6 +2931,7 @@ type XRDeviceCameraDetails = VideoStreamDetails & {
  */
 declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     private options;
+    private static readonly XR_CAMERA_ACCESS_TIMEOUT_MS;
     simulatorCamera?: SimulatorCamera;
     rgbToDepthParams: RgbToDepthParams;
     protected videoConstraints_: MediaTrackConstraints;
@@ -2941,6 +2942,7 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     private renderer_?;
     private useXRCameraAccess_;
     private xrCameraTexture_?;
+    private xrCameraAccessTimeout_;
     /**
      * @param options - The configuration options.
      */
@@ -3003,6 +3005,9 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
      */
     updateXRCamera(frame: XRFrame): void;
     registerSimulatorCamera(simulatorCamera: SimulatorCamera): void;
+    private startXRCameraAccessFallback_;
+    private isXRCameraAccessGranted_;
+    private clearXRCameraAccessTimeout_;
 }
 
 type DeviceCameraParameters = {
@@ -3213,6 +3218,9 @@ interface PermissionResult {
     status: PermissionState | 'unknown' | 'error';
     error?: string;
 }
+interface PermissionRequestOptions {
+    allowVideoFallback?: boolean;
+}
 /**
  * A utility class to manage and request browser permissions for
  * Location, Camera, and Microphone.
@@ -3232,7 +3240,7 @@ declare class PermissionsManager {
      * Requests permission to access the camera.
      * Opens a stream to trigger the prompt, then immediately closes it.
      */
-    requestCameraPermission(): Promise<PermissionResult>;
+    requestCameraPermission(options?: PermissionRequestOptions): Promise<PermissionResult>;
     /**
      * Requests permission for both camera and microphone simultaneously.
      */
@@ -3243,6 +3251,8 @@ declare class PermissionsManager {
      * so the hardware doesn't remain active.
      */
     private requestMediaPermission;
+    private shouldAllowVideoFallback;
+    private isVideoOnlyRequest;
     /**
      * Requests multiple permissions sequentially.
      * Returns a single result: granted is true only if ALL requested permissions are granted.
@@ -3251,7 +3261,7 @@ declare class PermissionsManager {
         geolocation?: boolean;
         camera?: boolean;
         microphone?: boolean;
-    }): Promise<PermissionResult>;
+    }, options?: PermissionRequestOptions): Promise<PermissionResult>;
     /**
      * Checks the current status of a permission without triggering a prompt.
      * Useful for UI state (e.g., disabling buttons if already denied).
@@ -3309,6 +3319,7 @@ declare class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionMana
      * complete.
      */
     isXRSupported(): boolean | undefined;
+    getSessionOptions(): XRSessionInit | undefined;
     /** Internal callback for when a session successfully starts. */
     private onSessionStartedInternal;
     /** Internal callback for when the session ends. */
