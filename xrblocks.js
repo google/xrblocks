@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid a17ab18
- * @builddate 2026-03-26T23:35:59.437Z
+ * @commitid c2d0cb7
+ * @builddate 2026-03-27T00:26:41.172Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3989,6 +3989,8 @@ class DepthMeshOptions {
         // Whether to always update the full resolution geometry.
         this.updateFullResolutionGeometry = false;
         this.colliderUpdateFps = 5;
+        /** FPS cap for depth mesh geometry updates. 0 = update every frame. */
+        this.depthMeshUpdateFps = 0;
         this.depthFullResolution = 160;
         this.ignoreEdgePixels = 3;
     }
@@ -4625,6 +4627,7 @@ class OcclusionPass extends Pass {
 const DEFAULT_DEPTH_WIDTH = 160;
 const DEFAULT_DEPTH_HEIGHT = DEFAULT_DEPTH_WIDTH;
 const clipSpacePosition = new THREE.Vector3();
+const normViewCoord = new THREE.Vector3();
 class Depth {
     get rawValueToMeters() {
         if (this.cpuDepthData.length) {
@@ -4658,6 +4661,13 @@ class Depth {
         this.depthViewProjectionMatrices = [];
         this.depthCameraPositions = [];
         this.depthCameraRotations = [];
+        /**
+         * Transforms from normalized view coordinates to normalized depth buffer
+         * coordinates. Identity when matchDepthView is true.
+         */
+        this.normDepthBufferFromNormViewMatrices = [];
+        /** Timestamp of the last depth mesh geometry update. */
+        this.lastDepthMeshUpdateTime = 0;
         if (Depth.instance) {
             return Depth.instance;
         }
@@ -4690,6 +4700,7 @@ class Depth {
     }
     /**
      * Retrieves the depth at normalized coordinates (u, v).
+     * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
      * @param u - Normalized horizontal coordinate.
      * @param v - Normalized vertical coordinate.
      * @returns Depth value at the specified coordinates.
@@ -4697,6 +4708,14 @@ class Depth {
     getDepth(u, v) {
         if (!this.depthArray[0])
             return 0.0;
+        // When matchDepthView is false, transform from view-space UVs to
+        // depth buffer UVs using normDepthBufferFromNormView.
+        if (this.normDepthBufferFromNormViewMatrices.length > 0) {
+            normViewCoord.set(u, v, 0);
+            normViewCoord.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
+            u = normViewCoord.x;
+            v = normViewCoord.y;
+        }
         const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
         const depthY = Math.round(clamp((1.0 - v) * this.height, 0, this.height - 1));
         const rawDepth = this.depthArray[0][depthY * this.width + depthX];
@@ -4715,7 +4734,13 @@ class Depth {
             .applyMatrix4(this.depthProjectionMatrices[0]);
         const u = 0.5 * (clipSpacePosition.x + 1.0);
         const v = 0.5 * (clipSpacePosition.y + 1.0);
-        const depth = this.getDepth(u, v);
+        let depth = 0.0;
+        if (this.depthArray[0]) {
+            const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
+            const depthY = Math.round(clamp((1.0 - v) * this.height, 0, this.height - 1));
+            const rawDepth = this.depthArray[0][depthY * this.width + depthX];
+            depth = this.rawValueToMeters * rawDepth;
+        }
         target.set(2.0 * (u - 0.5), 2.0 * (v - 0.5), -1);
         target.applyMatrix4(this.depthProjectionInverseMatrices[0]);
         target.multiplyScalar(-depth / target.z);
@@ -4723,6 +4748,7 @@ class Depth {
     }
     /**
      * Retrieves the depth at normalized coordinates (u, v).
+     * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
      * @param u - Normalized horizontal coordinate.
      * @param v - Normalized vertical coordinate.
      * @returns Vertex at (u, v)
@@ -4730,6 +4756,14 @@ class Depth {
     getVertex(u, v) {
         if (!this.depthArray[0])
             return null;
+        // When matchDepthView is false, transform from view-space UVs to
+        // depth buffer UVs using normDepthBufferFromNormView.
+        if (this.normDepthBufferFromNormViewMatrices.length > 0) {
+            normViewCoord.set(u, v, 0);
+            normViewCoord.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
+            u = normViewCoord.x;
+            v = normViewCoord.y;
+        }
         const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
         const depthY = Math.round(clamp((1.0 - v) * this.height, 0, this.height - 1));
         const rawDepth = this.depthArray[0][depthY * this.width + depthX];
@@ -4748,6 +4782,14 @@ class Depth {
             this.depthProjectionInverseMatrices.push(new THREE.Matrix4());
             this.depthCameraPositions.push(new THREE.Vector3());
             this.depthCameraRotations.push(new THREE.Quaternion());
+            this.normDepthBufferFromNormViewMatrices.push(new THREE.Matrix4());
+        }
+        // Store the view-to-depth-buffer coordinate transform.
+        if (depthData.normDepthBufferFromNormView) {
+            this.normDepthBufferFromNormViewMatrices[viewId].fromArray(depthData.normDepthBufferFromNormView.matrix);
+        }
+        else {
+            this.normDepthBufferFromNormViewMatrices[viewId].identity();
         }
         if (depthData.projectionMatrix && depthData.transform) {
             this.depthProjectionMatrices[viewId].fromArray(depthData.projectionMatrix);
@@ -4781,7 +4823,9 @@ class Depth {
             this.depthTextures.updateData(depthData, viewId);
         }
         if (this.options.depthMesh.enabled && this.depthMesh && viewId == 0) {
-            this.depthMesh.updateDepth(depthData, this.depthProjectionInverseMatrices[0]);
+            if (this.shouldUpdateDepthMesh()) {
+                this.depthMesh.updateDepth(depthData, this.depthProjectionInverseMatrices[0]);
+            }
             this.depthMesh.updatePose(this.depthCameraPositions[0], this.depthCameraRotations[0]);
         }
     }
@@ -4814,14 +4858,33 @@ class Depth {
             this.depthTextures.updateNativeTexture(depthData, this.renderer, viewId);
         }
         if (this.options.depthMesh.enabled && this.depthMesh && viewId == 0) {
-            if (cpuDepth) {
-                this.depthMesh.updateDepth(cpuDepth, this.depthProjectionInverseMatrices[0]);
-            }
-            else {
-                this.depthMesh.updateGPUDepth(depthData, this.depthProjectionInverseMatrices[0]);
+            if (this.shouldUpdateDepthMesh()) {
+                if (cpuDepth) {
+                    this.depthMesh.updateDepth(cpuDepth, this.depthProjectionInverseMatrices[0]);
+                }
+                else {
+                    this.depthMesh.updateGPUDepth(depthData, this.depthProjectionInverseMatrices[0]);
+                }
             }
             this.depthMesh.updatePose(this.depthCameraPositions[0], this.depthCameraRotations[0]);
         }
+    }
+    /**
+     * Checks whether the depth mesh geometry should be updated this frame,
+     * based on the configured depthMeshUpdateFps. The pose is always updated
+     * every frame so the mesh tracks the depth camera smoothly, but the
+     * expensive geometry rebuild can be throttled.
+     */
+    shouldUpdateDepthMesh() {
+        const fps = this.options.depthMesh.depthMeshUpdateFps;
+        if (fps <= 0)
+            return true;
+        const now = performance.now();
+        if (now - this.lastDepthMeshUpdateTime < 1000 / fps) {
+            return false;
+        }
+        this.lastDepthMeshUpdateTime = now;
+        return true;
     }
     getTexture(viewId) {
         if (!this.options.depthTexture.enabled)

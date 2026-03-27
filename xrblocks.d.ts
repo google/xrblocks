@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid a17ab18
- * @builddate 2026-03-26T23:35:59.437Z
+ * @commitid c2d0cb7
+ * @builddate 2026-03-27T00:26:41.172Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3402,6 +3402,8 @@ declare class DepthMeshOptions {
     useDownsampledGeometry: boolean;
     updateFullResolutionGeometry: boolean;
     colliderUpdateFps: number;
+    /** FPS cap for depth mesh geometry updates. 0 = update every frame. */
+    depthMeshUpdateFps: number;
     depthFullResolution: number;
     ignoreEdgePixels: number;
 }
@@ -3440,6 +3442,7 @@ declare const xrDepthMeshOptions: {
         readonly useDownsampledGeometry: boolean;
         readonly updateFullResolutionGeometry: boolean;
         readonly colliderUpdateFps: number;
+        readonly depthMeshUpdateFps: number;
         readonly depthFullResolution: number;
         readonly ignoreEdgePixels: number;
     };
@@ -3473,6 +3476,7 @@ declare const xrDepthMeshVisualizationOptions: {
         readonly useDownsampledGeometry: boolean;
         readonly updateFullResolutionGeometry: boolean;
         readonly colliderUpdateFps: number;
+        readonly depthMeshUpdateFps: number;
         readonly depthFullResolution: number;
         readonly ignoreEdgePixels: number;
     };
@@ -3506,6 +3510,7 @@ declare const xrDepthMeshPhysicsOptions: {
         readonly useDownsampledGeometry: boolean;
         readonly updateFullResolutionGeometry: boolean;
         readonly colliderUpdateFps: number;
+        readonly depthMeshUpdateFps: number;
         readonly depthFullResolution: number;
         readonly ignoreEdgePixels: number;
     };
@@ -3637,6 +3642,13 @@ declare class Depth {
     depthCameraPositions: THREE.Vector3[];
     depthCameraRotations: THREE.Quaternion[];
     /**
+     * Transforms from normalized view coordinates to normalized depth buffer
+     * coordinates. Identity when matchDepthView is true.
+     */
+    normDepthBufferFromNormViewMatrices: THREE.Matrix4[];
+    /** Timestamp of the last depth mesh geometry update. */
+    private lastDepthMeshUpdateTime;
+    /**
      * Depth is a lightweight manager based on three.js to simply prototyping
      * with Depth in WebXR.
      */
@@ -3647,6 +3659,7 @@ declare class Depth {
     init(camera: THREE.PerspectiveCamera, options: DepthOptions, renderer: THREE.WebGLRenderer, registry: Registry, scene: THREE.Scene): void;
     /**
      * Retrieves the depth at normalized coordinates (u, v).
+     * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
      * @param u - Normalized horizontal coordinate.
      * @param v - Normalized vertical coordinate.
      * @returns Depth value at the specified coordinates.
@@ -3661,6 +3674,7 @@ declare class Depth {
     getProjectedDepthViewPositionFromWorldPosition(position: THREE.Vector3, target?: THREE.Vector3): THREE.Vector3;
     /**
      * Retrieves the depth at normalized coordinates (u, v).
+     * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
      * @param u - Normalized horizontal coordinate.
      * @param v - Normalized vertical coordinate.
      * @returns Vertex at (u, v)
@@ -3669,6 +3683,13 @@ declare class Depth {
     private updateDepthMatrices;
     updateCPUDepthData(depthData: XRCPUDepthInformation, viewId?: number): void;
     updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId?: number): void;
+    /**
+     * Checks whether the depth mesh geometry should be updated this frame,
+     * based on the configured depthMeshUpdateFps. The pose is always updated
+     * every frame so the mesh tracks the depth camera smoothly, but the
+     * expensive geometry rebuild can be throttled.
+     */
+    private shouldUpdateDepthMesh;
     getTexture(viewId: number): THREE.DataTexture | THREE.ExternalTexture | undefined;
     update(frame?: XRFrame): void;
     updateLocalDepth(frame: XRFrame): void;
