@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.11.0
- * @commitid 7ea68fa
- * @builddate 2026-03-27T00:30:42.956Z
+ * @commitid 3b06514
+ * @builddate 2026-03-30T15:45:54.006Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4137,6 +4137,12 @@ declare class InputOptions {
  */
 declare class ReticleOptions {
     enabled: boolean;
+    /**
+     * When set to a positive value, the reticle is placed at this distance
+     * (in meters) along the controller ray when no intersection is found,
+     * instead of being hidden. Set to 0 to hide the reticle on miss.
+     */
+    defaultDistance: number;
 }
 /**
  * Options for the XR transition effect.
