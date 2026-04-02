@@ -12,4 +12,4 @@ It depends on @pmndrs/uikit and uiblocks.
 
 ## Usage
 
-Please see samples/glasses-ui/ for a working example. Note that this is a work in progress and the API may change significantly without notice.
+Please see samples/glasses_ui/ for a working example. Note that this is a work in progress and the API may change significantly without notice.

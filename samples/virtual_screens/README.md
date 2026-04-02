@@ -45,8 +45,8 @@ To change default display size and curvature, please update the parameters of `W
    the repository from `http://localhost:8080`.
 
 5. Open sender and receiver:
-   - _On your computer_, navigate to http://localhost:8080/samples/virtual-screens/send.html.
-   - _On your AndroidXR device_, navigate to http://localhost:8080/samples/virtual-screens/index.html.
+   - _On your computer_, navigate to http://localhost:8080/samples/virtual_screens/send.html.
+   - _On your AndroidXR device_, navigate to http://localhost:8080/samples/virtual_screens/index.html.
 
 6. Start sharing:
    On the sender page (your computer), click the "Select Window or Screen to Share" button and choose the content you wish to stream. The stream will appear on your AndroidXR device.
