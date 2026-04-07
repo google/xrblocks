@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid b8acc37
- * @builddate 2026-04-06T23:11:33.557Z
+ * @commitid d47bca2
+ * @builddate 2026-04-07T21:51:04.117Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2606,7 +2606,6 @@ class XRDeviceCamera extends VideoStream {
     }
     registerSimulatorCamera(simulatorCamera) {
         this.simulatorCamera = simulatorCamera;
-        this.init();
     }
     startXRCameraAccessFallback_(reason, error) {
         if (!this.isXRCameraAccessGranted_()) {
@@ -7759,6 +7758,11 @@ class SimulatorOptions {
         this.stereo = {
             enabled: false,
         };
+        this.deviceCamera = {
+            // Whether to enable the simulator camera feed.
+            // If disabled, the actual device camera will be used instead.
+            enabled: true,
+        };
         // Whether to render the main scene to a render texture before rendering the simulator scene
         // or directly to the canvas after rendering the simulator scene.
         this.renderToRenderTexture = true;
@@ -11588,11 +11592,14 @@ class Simulator extends Script {
         await this.simulatorWorld.init(options, world);
         this.hands.init({ input });
         this.controls.init({ camera, input, timer, renderer, simulatorOptions });
-        if (deviceCamera && !this.camera) {
-            this.camera = new SimulatorCamera(renderer);
-            this.camera.init();
-            deviceCamera.registerSimulatorCamera(this.camera);
+        if (deviceCamera &&
+            !this.simulatorCamera &&
+            this.options.deviceCamera.enabled) {
+            this.simulatorCamera = new SimulatorCamera(renderer);
+            this.simulatorCamera.init();
+            deviceCamera.registerSimulatorCamera(this.simulatorCamera);
         }
+        deviceCamera?.init();
         if (options.depth.enabled) {
             this.renderDepthPass = true;
             this.depth.init(renderer, camera, depth);
@@ -11665,14 +11672,10 @@ class Simulator extends Script {
         this.setStereoRenderMode(SimulatorRenderMode.STEREO_LEFT);
     }
     onBeforeSimulatorSceneRender() {
-        if (this.camera) {
-            this.camera.onBeforeSimulatorSceneRender(this.mainCamera, this.renderSimulatorSceneToCanvasBound);
-        }
+        this.simulatorCamera?.onBeforeSimulatorSceneRender(this.mainCamera, this.renderSimulatorSceneToCanvasBound);
     }
     onSimulatorSceneRendered() {
-        if (this.camera) {
-            this.camera.onSimulatorSceneRendered();
-        }
+        this.simulatorCamera?.onSimulatorSceneRendered();
     }
     getRenderCamera() {
         return {

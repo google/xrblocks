@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid b8acc37
- * @builddate 2026-04-06T23:11:33.557Z
+ * @commitid d47bca2
+ * @builddate 2026-04-07T21:51:04.117Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4014,6 +4014,9 @@ declare class SimulatorOptions {
     stereo: {
         enabled: boolean;
     };
+    deviceCamera: {
+        enabled: boolean;
+    };
     renderToRenderTexture: boolean;
     blendingMode: 'normal' | 'screen';
     constructor(options?: DeepReadonly<DeepPartial<SimulatorOptions>>);
@@ -5777,7 +5780,7 @@ declare class Simulator extends Script {
     virtualSceneFullScreenQuad?: FullScreenQuad;
     backgroundVideoQuad?: FullScreenQuad;
     videoElement?: HTMLVideoElement;
-    camera?: SimulatorCamera;
+    simulatorCamera?: SimulatorCamera;
     options: SimulatorOptions;
     renderer: THREE.WebGLRenderer;
     mainCamera: THREE.Camera;
