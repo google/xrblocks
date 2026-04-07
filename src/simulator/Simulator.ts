@@ -66,7 +66,7 @@ export class Simulator extends Script {
   backgroundVideoQuad?: FullScreenQuad;
   videoElement?: HTMLVideoElement;
 
-  camera?: SimulatorCamera;
+  simulatorCamera?: SimulatorCamera;
   options!: SimulatorOptions;
   renderer!: THREE.WebGLRenderer;
   mainCamera!: THREE.Camera;
@@ -119,11 +119,16 @@ export class Simulator extends Script {
     await this.simulatorWorld.init(options, world);
     this.hands.init({input});
     this.controls.init({camera, input, timer, renderer, simulatorOptions});
-    if (deviceCamera && !this.camera) {
-      this.camera = new SimulatorCamera(renderer);
-      this.camera.init();
-      deviceCamera.registerSimulatorCamera(this.camera);
+    if (
+      deviceCamera &&
+      !this.simulatorCamera &&
+      this.options.deviceCamera.enabled
+    ) {
+      this.simulatorCamera = new SimulatorCamera(renderer);
+      this.simulatorCamera.init();
+      deviceCamera.registerSimulatorCamera(this.simulatorCamera);
     }
+    deviceCamera?.init();
 
     if (options.depth.enabled) {
       this.renderDepthPass = true;
@@ -218,18 +223,14 @@ export class Simulator extends Script {
   }
 
   onBeforeSimulatorSceneRender() {
-    if (this.camera) {
-      this.camera.onBeforeSimulatorSceneRender(
-        this.mainCamera,
-        this.renderSimulatorSceneToCanvasBound
-      );
-    }
+    this.simulatorCamera?.onBeforeSimulatorSceneRender(
+      this.mainCamera,
+      this.renderSimulatorSceneToCanvasBound
+    );
   }
 
   onSimulatorSceneRendered() {
-    if (this.camera) {
-      this.camera.onSimulatorSceneRendered();
-    }
+    this.simulatorCamera?.onSimulatorSceneRendered();
   }
 
   getRenderCamera() {

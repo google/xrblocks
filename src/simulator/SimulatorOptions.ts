@@ -59,6 +59,11 @@ export class SimulatorOptions {
   stereo = {
     enabled: false,
   };
+  deviceCamera = {
+    // Whether to enable the simulator camera feed.
+    // If disabled, the actual device camera will be used instead.
+    enabled: true,
+  };
   // Whether to render the main scene to a render texture before rendering the simulator scene
   // or directly to the canvas after rendering the simulator scene.
   renderToRenderTexture = true;

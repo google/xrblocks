@@ -370,7 +370,6 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
 
   registerSimulatorCamera(simulatorCamera: SimulatorCamera) {
     this.simulatorCamera = simulatorCamera;
-    this.init();
   }
 
   private startXRCameraAccessFallback_(reason: string, error?: unknown) {
