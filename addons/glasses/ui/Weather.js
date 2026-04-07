@@ -34,6 +34,9 @@ class Weather extends Container {
                 return !this.locationPermissionReceived.value;
             }),
             width: 32,
+            display: computed(() => {
+                return this.wmoCode.value !== -1 ? 'flex' : 'none';
+            }),
         });
         this.add(weatherIcon);
         const weatherDegrees = new Text({
@@ -43,6 +46,9 @@ class Weather extends Container {
                     : this.temperature.value.toFixed(0) + DEGREE_SYMBOL;
             }),
             fontSize: 24,
+            display: computed(() => {
+                return this.wmoCode.value !== -1 ? 'flex' : 'none';
+            }),
         });
         weatherDegrees.name = 'Temperature Degrees Text';
         this.add(weatherDegrees);
