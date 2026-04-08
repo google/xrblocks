@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid 582c86d
- * @builddate 2026-04-07T23:17:47.081Z
+ * @commitid 6517109
+ * @builddate 2026-04-08T00:15:51.905Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -11288,6 +11288,10 @@ class PlaneDetector extends Script {
 }
 
 class DetectedMesh extends THREE.Mesh {
+    // Expose rigidBody for pose updates
+    get getRigidBody() {
+        return this.rigidBody;
+    }
     constructor(mesh, material) {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(mesh.vertices, 3));
@@ -11314,12 +11318,38 @@ class DetectedMesh extends THREE.Mesh {
         if (mesh.lastChangedTime === this.lastChangedTime)
             return;
         this.lastChangedTime = mesh.lastChangedTime;
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(mesh.vertices, 3));
-        geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-        geometry.computeVertexNormals();
-        this.geometry.dispose();
-        this.geometry = geometry;
+        // Update existing geometry attributes instead of creating new geometry
+        const positionAttribute = this.geometry.attributes.position;
+        const indexAttribute = this.geometry.getIndex();
+        const newVertexCount = mesh.vertices.length / 3;
+        const newIndexCount = mesh.indices.length;
+        if (positionAttribute.count !== newVertexCount ||
+            (indexAttribute && indexAttribute.count !== newIndexCount)) {
+            // Vertex or index count changed - recreate geometry
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(mesh.vertices, 3));
+            geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+            geometry.computeVertexNormals();
+            this.geometry.dispose();
+            this.geometry = geometry;
+        }
+        else {
+            // Same vertex count - update in place (more efficient)
+            const positions = positionAttribute.array;
+            if (positions.length === mesh.vertices.length) {
+                positions.set(mesh.vertices);
+                positionAttribute.needsUpdate = true;
+            }
+            if (indexAttribute) {
+                const indices = indexAttribute.array;
+                if (indices.length === mesh.indices.length) {
+                    indices.set(mesh.indices);
+                    indexAttribute.needsUpdate = true;
+                }
+            }
+            this.geometry.computeVertexNormals();
+        }
+        // Update collider
         if (this.RAPIER && this.collider) {
             const RAPIER = this.RAPIER;
             this.blendedWorld.removeCollider(this.collider, false);
@@ -11327,10 +11357,21 @@ class DetectedMesh extends THREE.Mesh {
             this.collider = this.blendedWorld.createCollider(colliderDesc, this.rigidBody);
         }
     }
+    dispose() {
+        if (this.blendedWorld && this.collider) {
+            this.blendedWorld.removeCollider(this.collider, false);
+            this.collider = undefined;
+        }
+        if (this.blendedWorld && this.rigidBody) {
+            this.blendedWorld.removeRigidBody(this.rigidBody);
+            this.rigidBody = undefined;
+        }
+        this.geometry.dispose();
+    }
 }
 
-const SEMANTIC_LABELS = ['Floor', 'Ceiling', 'Wall', 'Table'];
-const SEMANTIC_COLORS = [0x00ff00, 0xff0000, 0x0000ff, 0xffff00];
+const SEMANTIC_LABELS = ['floor', 'ceiling', 'wall'];
+const SEMANTIC_COLORS = [0x00ff00, 0xffff00, 0x0000ff];
 // Wrapper around WebXR Mesh Detection API
 // https://immersive-web.github.io/real-world-meshing/
 class MeshDetector extends Script {
@@ -11341,6 +11382,19 @@ class MeshDetector extends Script {
         this.xrMeshToThreeMesh = new Map();
         this.threeMeshToXrMesh = new Map();
         this.defaultMaterial = new THREE.MeshBasicMaterial({ visible: false });
+        this.meshTimedata = new Map();
+        // Optimization1: Mesh update throttling (similar to ARCore reflection cube map in /usr/local/google/home/adamren/Desktop/xrlabs/arlabs/xrblocks/samples/lighting)
+        this.MESH_UPDATE_INTERVAL_MS = 1000; //0 -> 1000
+        this.lastMeshUpdateTime = 0;
+        // Optimization2: Periodic cleanup of stale/distant meshes
+        this.MESH_STALE_TIME_MS = 3000; //1000000000 -> 3000
+        this.CLEANUP_INTERVAL_MS = this.MESH_STALE_TIME_MS + 1000;
+        // Optimization3: Camera culling constants
+        this.kMaxViewDistance = 3.0; //1000000000.0 -> 3.0
+        this.kFOVCosThreshold = 0.25; //0.0 -> 0.25
+        this.lastCleanupTime = 0;
+        // Profiling
+        this.frameCount = 0;
     }
     static { this.dependencies = {
         options: MeshDetectionOptions,
@@ -11370,33 +11424,102 @@ class MeshDetector extends Script {
         }
     }
     updateMeshes(_timestamp, frame) {
+        this.frameCount++;
+        // Profiling1: Time spent in accessing detectedMeshes
+        const t0 = performance.now();
         const meshes = frame?.detectedMeshes;
-        if (!meshes)
+        performance.now() - t0;
+        // console.log(
+        //   `[MeshDetector Frame ${this.frameCount}] ` +
+        //   `detectedMeshes access: ${_detectedMeshesTime.toFixed(3)}ms, ` +
+        //   `timestamp: ${_timestamp.toFixed(3)}, ` +
+        //   `meshCount: ${meshes?.size || 0}`
+        // );
+        if (!meshes || !frame)
             return;
-        // Delete old meshes
-        for (const [xrMesh, threeMesh] of this.xrMeshToThreeMesh.entries()) {
-            if (!meshes.has(xrMesh)) {
-                this.xrMeshToThreeMesh.delete(xrMesh);
-                this.threeMeshToXrMesh.delete(threeMesh);
-                threeMesh.geometry.dispose();
-                this.remove(threeMesh);
-            }
+        // Optimization1: Mesh update throttling
+        const now = performance.now();
+        const timeSinceLastUpdate = now - this.lastMeshUpdateTime;
+        if (timeSinceLastUpdate < this.MESH_UPDATE_INTERVAL_MS) {
+            return;
         }
-        // Add new meshes
+        this.lastMeshUpdateTime = now;
+        // Process meshes
+        const referenceSpace = this.renderer.xr.getReferenceSpace();
+        if (!referenceSpace)
+            return;
+        const { position: cameraPosition, forward: cameraForward } = this.getCameraInfo(frame, referenceSpace);
         for (const xrMesh of meshes) {
-            if (!this.xrMeshToThreeMesh.has(xrMesh)) {
+            // Optimization2: Check if mesh is in view and get distance
+            const isVisible = this.shouldShowMeshInViewWithDistance(xrMesh, cameraPosition, cameraForward, frame, referenceSpace);
+            if (!isVisible) {
+                continue;
+            }
+            // Create or update mesh
+            const cachedChangedTime = this.meshTimedata.get(xrMesh)?.lastChangedTime;
+            const currentChangedTime = xrMesh.lastChangedTime;
+            const isNewMesh = cachedChangedTime === undefined;
+            const isUpdated = cachedChangedTime !== undefined &&
+                cachedChangedTime !== currentChangedTime;
+            const isUnchanged = cachedChangedTime !== undefined &&
+                cachedChangedTime === currentChangedTime;
+            if (isNewMesh) {
                 const threeMesh = this.createMesh(frame, xrMesh);
                 this.xrMeshToThreeMesh.set(xrMesh, threeMesh);
                 this.threeMeshToXrMesh.set(threeMesh, xrMesh);
+                this.meshTimedata.set(xrMesh, {
+                    lastChangedTime: currentChangedTime,
+                    lastSeenTime: now,
+                });
                 this.add(threeMesh);
                 if (this.physics) {
                     threeMesh.initRapierPhysics(this.physics.RAPIER, this.physics.blendedWorld);
                 }
             }
-            else {
+            else if (isUpdated) {
                 const threeMesh = this.xrMeshToThreeMesh.get(xrMesh);
                 threeMesh.updateVertices(xrMesh);
+                // Update needed in case we have drift correction.
                 this.updateMeshPose(frame, xrMesh, threeMesh);
+                this.meshTimedata.set(xrMesh, {
+                    lastChangedTime: currentChangedTime,
+                    lastSeenTime: now,
+                });
+            }
+            else if (isUnchanged) {
+                this.meshTimedata.set(xrMesh, {
+                    lastChangedTime: currentChangedTime,
+                    lastSeenTime: now,
+                });
+            }
+        }
+        // Optimization3: Periodic cleanup of stale/distant meshes
+        if (now - this.lastCleanupTime >= this.CLEANUP_INTERVAL_MS) {
+            this.cleanupStaleMeshes(now);
+            this.lastCleanupTime = now;
+        }
+    }
+    removeMesh(xrMesh, threeMesh) {
+        this.xrMeshToThreeMesh.delete(xrMesh);
+        this.threeMeshToXrMesh.delete(threeMesh);
+        this.meshTimedata.delete(xrMesh);
+        threeMesh.dispose();
+        this.remove(threeMesh);
+    }
+    cleanupStaleMeshes(now) {
+        const meshesToRemove = [];
+        for (const [xrMesh] of this.xrMeshToThreeMesh.entries()) {
+            const cachedSeenTime = this.meshTimedata.get(xrMesh)?.lastSeenTime;
+            const timeSinceLastSeen = now - (cachedSeenTime || 0);
+            const isStale = timeSinceLastSeen >= this.MESH_STALE_TIME_MS;
+            if (isStale) {
+                meshesToRemove.push(xrMesh);
+            }
+        }
+        for (const xrMesh of meshesToRemove) {
+            const threeMesh = this.xrMeshToThreeMesh.get(xrMesh);
+            if (threeMesh) {
+                this.removeMesh(xrMesh, threeMesh);
             }
         }
     }
@@ -11414,7 +11537,155 @@ class MeshDetector extends Script {
         if (pose) {
             mesh.position.copy(pose.transform.position);
             mesh.quaternion.copy(pose.transform.orientation);
+            // Update physics rigid body pose if it exists
+            if (mesh instanceof DetectedMesh) {
+                const rigidBody = mesh.getRigidBody;
+                rigidBody?.setTranslation(mesh.position, false);
+                rigidBody?.setRotation(mesh.quaternion, false);
+            }
         }
+    }
+    getCameraInfo(frame, referenceSpace) {
+        const viewerPose = frame.getViewerPose(referenceSpace);
+        const cameraPosition = new THREE.Vector3(0, 0, 0);
+        let cameraForward = new THREE.Vector3(0, 0, -1);
+        if (viewerPose && viewerPose.views && viewerPose.views.length > 0) {
+            // Get camera position from first view's transform
+            const viewTransform = viewerPose.views[0].transform;
+            const viewMatrix = new THREE.Matrix4().fromArray(viewTransform.matrix);
+            cameraPosition.setFromMatrixPosition(viewMatrix);
+            // Extract forward vector from matrix (typically -Z axis)
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyMatrix4(viewMatrix);
+            forward.sub(cameraPosition).normalize();
+            cameraForward = forward;
+        }
+        return { position: cameraPosition, forward: cameraForward };
+    }
+    computeMeshBoundingBox(xrMesh) {
+        const vertices = xrMesh.vertices;
+        if (vertices.length < 3)
+            return null;
+        return new THREE.Box3().setFromArray(vertices);
+    }
+    /** Six clip planes from the view-projection matrix (left, right, bottom, top, near, far). */
+    buildFrustumPlanes(viewMatrix, projectionMatrix) {
+        const viewProjectionMatrix = new THREE.Matrix4();
+        viewProjectionMatrix.multiplyMatrices(projectionMatrix, viewMatrix);
+        const e = viewProjectionMatrix.elements;
+        const planes = [
+            new THREE.Plane().setComponents(e[3] + e[0], e[7] + e[4], e[11] + e[8], e[15] + e[12]),
+            new THREE.Plane().setComponents(e[3] - e[0], e[7] - e[4], e[11] - e[8], e[15] - e[12]),
+            new THREE.Plane().setComponents(e[3] + e[1], e[7] + e[5], e[11] + e[9], e[15] + e[13]),
+            new THREE.Plane().setComponents(e[3] - e[1], e[7] - e[5], e[11] - e[9], e[15] - e[13]),
+            new THREE.Plane().setComponents(e[3] + e[2], e[7] + e[6], e[11] + e[10], e[15] + e[14]),
+            new THREE.Plane().setComponents(e[3] - e[2], e[7] - e[6], e[11] - e[10], e[15] - e[14]),
+        ];
+        for (const plane of planes) {
+            if (plane.normal.length() > 0.0001) {
+                plane.normalize();
+            }
+        }
+        return planes;
+    }
+    // Check if AABB intersects the frustum (based on C++ IntersectsBox)
+    frustumIntersectsBox(planes, box) {
+        const boxMin = box.min;
+        const boxMax = box.max;
+        const axisVert = new THREE.Vector3();
+        for (const plane of planes) {
+            const n = plane.normal;
+            axisVert.x = n.x < 0.0 ? boxMin.x : boxMax.x;
+            axisVert.y = n.y < 0.0 ? boxMin.y : boxMax.y;
+            axisVert.z = n.z < 0.0 ? boxMin.z : boxMax.z;
+            if (plane.distanceToPoint(axisVert) < 0.0) {
+                return false;
+            }
+        }
+        return true;
+    }
+    // New method: Frustum culling
+    shouldShowMeshInViewWithFrustum(mesh, frame, referenceSpace) {
+        // Get mesh pose
+        const meshPose = frame.getPose(mesh.meshSpace, referenceSpace);
+        if (!meshPose) {
+            return true; // If pose is unavailable, show by default
+        }
+        // Get viewer pose and the first view
+        const viewerPose = frame.getViewerPose(referenceSpace);
+        if (!viewerPose || !viewerPose.views || viewerPose.views.length === 0) {
+            return true;
+        }
+        const view = viewerPose.views[0];
+        if (!view.projectionMatrix) {
+            return true; // If no projection matrix, fall back to default behavior
+        }
+        // Compute mesh bounding box in local space
+        const localBoundingBox = this.computeMeshBoundingBox(mesh);
+        if (!localBoundingBox) {
+            return true; // If bounding box cannot be computed, show by default
+        }
+        const meshTransform = new THREE.Matrix4().fromArray(meshPose.transform.matrix);
+        const meshPosition = new THREE.Vector3();
+        const meshQuaternion = new THREE.Quaternion();
+        const meshScale = new THREE.Vector3();
+        meshTransform.decompose(meshPosition, meshQuaternion, meshScale);
+        // Transform bounding box 8 corners to reference space
+        const corners = [
+            new THREE.Vector3(localBoundingBox.min.x, localBoundingBox.min.y, localBoundingBox.min.z),
+            new THREE.Vector3(localBoundingBox.max.x, localBoundingBox.min.y, localBoundingBox.min.z),
+            new THREE.Vector3(localBoundingBox.min.x, localBoundingBox.max.y, localBoundingBox.min.z),
+            new THREE.Vector3(localBoundingBox.max.x, localBoundingBox.max.y, localBoundingBox.min.z),
+            new THREE.Vector3(localBoundingBox.min.x, localBoundingBox.min.y, localBoundingBox.max.z),
+            new THREE.Vector3(localBoundingBox.max.x, localBoundingBox.min.y, localBoundingBox.max.z),
+            new THREE.Vector3(localBoundingBox.min.x, localBoundingBox.max.y, localBoundingBox.max.z),
+            new THREE.Vector3(localBoundingBox.max.x, localBoundingBox.max.y, localBoundingBox.max.z),
+        ];
+        // Apply mesh transform (order: scale, then rotate, then translate)
+        for (const corner of corners) {
+            corner.multiply(meshScale);
+            corner.applyQuaternion(meshQuaternion);
+            corner.add(meshPosition);
+        }
+        const worldBox = new THREE.Box3().setFromPoints(corners);
+        // Build view matrix (from view transform)
+        const viewTransform = view.transform;
+        const viewMatrix = new THREE.Matrix4()
+            .fromArray(viewTransform.matrix)
+            .invert();
+        // Build projection matrix
+        const projectionMatrix = new THREE.Matrix4().fromArray(view.projectionMatrix);
+        // Build frustum planes
+        const frustumPlanes = this.buildFrustumPlanes(viewMatrix, projectionMatrix);
+        return this.frustumIntersectsBox(frustumPlanes, worldBox);
+    }
+    shouldShowMeshInViewWithDistance(mesh, cameraPosition, cameraForward, frame, referenceSpace) {
+        // Distance check
+        const meshPose = frame.getPose(mesh.meshSpace, referenceSpace);
+        if (!meshPose) {
+            return true;
+        }
+        const meshPosition = new THREE.Vector3();
+        meshPosition.setFromMatrixPosition(new THREE.Matrix4().fromArray(meshPose.transform.matrix));
+        const dx = meshPosition.x - cameraPosition.x;
+        const dy = meshPosition.y - cameraPosition.y;
+        const dz = meshPosition.z - cameraPosition.z;
+        const distanceSq = dx * dx + dy * dy + dz * dz;
+        const distance = Math.sqrt(distanceSq);
+        if (distance > this.kMaxViewDistance) {
+            return false;
+        }
+        // FOV check
+        if (distance > 0.001) {
+            const invDistance = 1.0 / distance;
+            const dotForward = dx * invDistance * cameraForward.x +
+                dy * invDistance * cameraForward.y +
+                dz * invDistance * cameraForward.z;
+            if (dotForward < this.kFOVCosThreshold) {
+                return false;
+            }
+        }
+        return true;
     }
 }
 
