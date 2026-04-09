@@ -7,6 +7,7 @@ import { AIOptions } from '../../ai/AIOptions';
 import { Gemini } from '../../ai/Gemini';
 import {
   cropImage,
+  cropImageData,
   getCameraParametersSnapshot,
   transformRgbUvToWorld,
 } from '../../camera/CameraUtils';
@@ -428,7 +429,7 @@ abstract class BaseDetector<T> {
         
         let objectImage: string;
         if (snapshot.imageData) {
-          objectImage = await this._cropImageData(snapshot.imageData, cropBox);
+          objectImage = await cropImageData(snapshot.imageData, cropBox);
         } else if (snapshot.base64) {
           objectImage = await cropImage(snapshot.base64, cropBox);
         } else {
@@ -526,31 +527,6 @@ abstract class BaseDetector<T> {
     }
   }
 
-  private async _cropImageData(imageData: ImageData, boundingBox: THREE.Box2): Promise<string> {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-
-    const unitBox = new THREE.Box2(new THREE.Vector2(0, 0), new THREE.Vector2(1, 1));
-    const clampedBox = boundingBox.clone().intersect(unitBox);
-    const cropSize = new THREE.Vector2();
-    clampedBox.getSize(cropSize);
-
-    if (cropSize.x === 0 || cropSize.y === 0) {
-        return 'data:image/png;base64,';
-    }
-
-    const sourceX = Math.floor(imageData.width * clampedBox.min.x);
-    const sourceY = Math.floor(imageData.height * clampedBox.min.y);
-    const sourceWidth = Math.ceil(imageData.width * cropSize.x);
-    const sourceHeight = Math.ceil(imageData.height * cropSize.y);
-
-    canvas.width = sourceWidth;
-    canvas.height = sourceHeight;
-
-    ctx.putImageData(imageData, -sourceX, -sourceY, sourceX, sourceY, sourceWidth, sourceHeight);
-
-    return canvas.toDataURL('image/png');
-  }
 }
 
 class MediaPipeDetector<T> extends BaseDetector<T> {
