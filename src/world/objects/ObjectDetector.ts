@@ -19,14 +19,6 @@ import { WorldOptions } from '../WorldOptions';
 
 import { DetectedObject } from './DetectedObject';
 
-interface DetectedObjectBoundingBox {
-  ymin: number;
-  xmin: number;
-  ymax: number;
-  xmax: number;
-  objectName: string;
-}
-
 /**
  * Detects objects in the user's environment using a specified backend.
  * It queries an AI model with the device camera feed and returns located
@@ -50,10 +42,6 @@ export class ObjectDetector extends Script {
 
   private _debugVisualsGroup?: THREE.Group;
 
-  /**
-   * The configuration for the Gemini backend.
-   */
-  private _geminiConfig!: object;
 
   // Injected dependencies
   private options!: WorldOptions;
@@ -94,7 +82,6 @@ export class ObjectDetector extends Script {
     this.depth = depth;
     this.camera = camera;
     this.renderer = renderer;
-    this._geminiConfig = this._buildGeminiConfig();
 
     if (this.options.objects.showDebugVisualizations) {
       this._debugVisualsGroup = new THREE.Group();
@@ -112,15 +99,23 @@ export class ObjectDetector extends Script {
   async runDetection<T = null>(): Promise<DetectedObject<T>[]> {
     this.clear(); // Clear previous results before starting a new detection.
 
+    const depthMeshSnapshot = this._getDepthMeshSnapshot();
+    const cameraParametersSnapshot = getCameraParametersSnapshot(
+      this.camera,
+      this.renderer.xr.getCamera(),
+      this.deviceCamera,
+      this.targetDevice
+    );
+
     const context = this._getDetectorContext();
-    let detector: BaseDetector<T>;
+    let detectorBackend: BaseDetectorBackend<T>;
 
     switch (this.options.objects.backendConfig.activeBackend) {
       case 'gemini':
-        detector = new GeminiDetector<T>(context);
+        detectorBackend = new GeminiDetectorBackend<T>(context);
         break;
       case 'mediapipe':
-        detector = new MediaPipeDetector<T>(context);
+        detectorBackend = new MediaPipeDetectorBackend<T>(context);
         break;
       default:
         console.warn(
@@ -129,7 +124,11 @@ export class ObjectDetector extends Script {
         );
         return [];
     }
-    return detector.run();
+    const detectedObjects = await detectorBackend.run(depthMeshSnapshot, cameraParametersSnapshot);
+    for (const obj of detectedObjects) {
+      this.add(obj);
+    }
+    return detectedObjects;
   }
 
   private _getDetectorContext(): IDetectorContext {
@@ -138,19 +137,13 @@ export class ObjectDetector extends Script {
       ai: this.ai,
       aiOptions: this.aiOptions,
       deviceCamera: this.deviceCamera,
-      depth: this.depth,
       camera: this.camera,
-      renderer: this.renderer,
-      targetDevice: this.targetDevice,
       detectedObjects: this._detectedObjects,
       debugVisualsGroup: this._debugVisualsGroup,
-      add: (obj) => this.add(obj),
-      getDepthMeshSnapshot: () => this.getDepthMeshSnapshot(),
-      createDebugVisual: (obj) => this._createDebugVisual(obj),
     };
   }
 
-  private getDepthMeshSnapshot() {
+  private _getDepthMeshSnapshot() {
     const clonedGeometry = this.depth.depthMesh!.geometry.clone();
     clonedGeometry.computeBoundingSphere();
     clonedGeometry.computeBoundingBox();
@@ -164,12 +157,6 @@ export class ObjectDetector extends Script {
     depthMeshSnapshot.updateMatrixWorld(true);
     return depthMeshSnapshot;
   }
-
-  // Removed simplifyDetections (moved to specialized classes)
-
-  // Removed _runMediaPipeDetection (moved to MediaPipeDetector class)
-
-  // Removed _runGeminiDetection (moved to GeminiDetector class)
 
   /**
    * Retrieves a list of currently detected objects.
@@ -212,22 +199,6 @@ export class ObjectDetector extends Script {
       this._debugVisualsGroup.visible = visible;
     }
   }
-
-  /**
-   * Draws the detected bounding boxes on the input image and triggers a
-   * download for debugging.
-   * @param base64Image - The base64 encoded input image.
-   * @param detections - The array of detected objects from the AI response.
-   */
-  // Removed _visualizeBoundingBoxesForMediaPipeOnImage
-
-  /**
-   * Draws the detected bounding boxes on the input image and triggers a
-   * download for debugging.
-   * @param base64Image - The base64 encoded input image.
-   * @param detections - The array of detected objects from the AI response.
-   */
-  // Removed _visualizeBoundingBoxesOnImage
 
   /**
    * Generates a visual representation of the depth map, normalized to 0-1 range,
@@ -302,50 +273,7 @@ export class ObjectDetector extends Script {
     link.click();
   }
 
-  /**
-   * Creates a simple debug visualization for an object based on its position
-   * (center of its 2D detection bounding box).
-   * @param object - The detected object to visualize.
-   */
-  private async _createDebugVisual(object: DetectedObject<unknown>) {
-    // Create sphere.
-    const sphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.03, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xff4285f4 })
-    );
-    sphere.position.copy(object.position);
 
-    // Create and configure the text label using Troika.
-    const { Text } = await import('troika-three-text');
-    const textLabel = new Text();
-    textLabel.text = object.label;
-    textLabel.fontSize = 0.07;
-    textLabel.color = 0xffffff;
-    textLabel.anchorX = 'center';
-    textLabel.anchorY = 'bottom';
-
-    // Position the label above the sphere
-    textLabel.position.copy(sphere.position);
-    textLabel.position.y += 0.04; // Offset above the sphere.
-
-    this._debugVisualsGroup!.add(sphere, textLabel);
-    textLabel.sync(); // Required for Troika text to appear.
-  }
-
-  /**
-   * Builds the Gemini configuration object from the world options.
-   */
-  private _buildGeminiConfig() {
-    const geminiOptions = this.options.objects.backendConfig.gemini;
-    return {
-      thinkingConfig: {
-        thinkingBudget: 0,
-      },
-      responseMimeType: 'application/json',
-      responseSchema: geminiOptions.responseSchema,
-      systemInstruction: [{ text: geminiOptions.systemInstruction }],
-    };
-  }
 }
 
 // --- Specialized Detector Classes ---
@@ -364,33 +292,18 @@ interface IDetectorContext {
   readonly ai: AI;
   readonly aiOptions: AIOptions;
   readonly deviceCamera: XRDeviceCamera;
-  readonly depth: Depth;
   readonly camera: THREE.PerspectiveCamera;
-  readonly renderer: THREE.WebGLRenderer;
-  readonly targetDevice: string;
   readonly detectedObjects: Map<string, DetectedObject<any>>;
   readonly debugVisualsGroup?: THREE.Group;
-  
-  add(object: THREE.Object3D): void;
-  getDepthMeshSnapshot(): THREE.Mesh;
-  createDebugVisual(object: DetectedObject<unknown>): void;
 }
 
-abstract class BaseDetector<T> {
+abstract class BaseDetectorBackend<T> {
   constructor(protected context: IDetectorContext) {}
 
-  async run(): Promise<DetectedObject<T>[]> {
+  async run(depthMeshSnapshot: THREE.Mesh, cameraParametersSnapshot: any): Promise<DetectedObject<T>[]> {
     if (!this.isAvailable()) {
       return [];
     }
-
-    const depthMeshSnapshot = this.context.getDepthMeshSnapshot();
-    const cameraParametersSnapshot = getCameraParametersSnapshot(
-      this.context.camera,
-      this.context.renderer.xr.getCamera(),
-      this.context.deviceCamera,
-      this.context.targetDevice
-    );
 
     const snapshot = await this.getSnapshot();
     if (!snapshot) return [];
@@ -444,11 +357,10 @@ abstract class BaseDetector<T> {
         );
         object.position.copy(worldPosition);
 
-        this.context.add(object);
         this.context.detectedObjects.set(object.uuid, object);
 
         if (this.context.debugVisualsGroup) {
-          this.context.createDebugVisual(object);
+          this.createDebugVisual(object);
         }
         return object;
       }
@@ -461,10 +373,30 @@ abstract class BaseDetector<T> {
     return detectedObjects;
   }
 
-  protected abstract isAvailable(): boolean;
-  protected abstract getSnapshot(): Promise<{ base64?: string; imageData?: ImageData } | null>;
-  protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any>;
-  protected abstract simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[];
+  protected async createDebugVisual(object: DetectedObject<unknown>) {
+    // Create sphere.
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.03, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff4285f4 })
+    );
+    sphere.position.copy(object.position);
+
+    // Create and configure the text label using Troika.
+    const { Text } = await import('troika-three-text');
+    const textLabel = new Text();
+    textLabel.text = object.label;
+    textLabel.fontSize = 0.07;
+    textLabel.color = 0xffffff;
+    textLabel.anchorX = 'center';
+    textLabel.anchorY = 'bottom';
+
+    // Position the label above the sphere
+    textLabel.position.copy(sphere.position);
+    textLabel.position.y += 0.04; // Offset above the sphere.
+
+    this.context.debugVisualsGroup!.add(sphere, textLabel);
+    textLabel.sync(); // Required for Troika text to appear.
+  }
 
   protected visualize(snapshot: { base64?: string; imageData?: ImageData }, detections: SimplifiedDetection[]) {
     const canvas = document.createElement('canvas');
@@ -527,9 +459,16 @@ abstract class BaseDetector<T> {
     }
   }
 
+  protected abstract isAvailable(): boolean;
+  protected abstract getSnapshot(): Promise<{ base64?: string; imageData?: ImageData } | null>;
+  protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any>;
+  protected abstract simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[];
 }
 
-class MediaPipeDetector<T> extends BaseDetector<T> {
+class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
+  private static readonly WASM_FILES_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
+  private static readonly MODEL_ASSET_PATH = 'https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite';
+
   protected isAvailable(): boolean {
     return true;
   }
@@ -544,11 +483,11 @@ class MediaPipeDetector<T> extends BaseDetector<T> {
 
   protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any> {
     const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      MediaPipeDetectorBackend.WASM_FILES_URL
     );
     const objectDetector = await MEDIAPIPE.ObjectDetector.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite`
+        modelAssetPath: MediaPipeDetectorBackend.MODEL_ASSET_PATH
       },
       scoreThreshold: 0.5,
     });
@@ -579,7 +518,7 @@ class MediaPipeDetector<T> extends BaseDetector<T> {
   }
 }
 
-class GeminiDetector<T> extends BaseDetector<T> {
+class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
   protected isAvailable(): boolean {
     return !!this.context.ai.isAvailable();
   }
@@ -592,16 +531,22 @@ class GeminiDetector<T> extends BaseDetector<T> {
     return { base64: base64Image };
   }
 
-  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any> {
-    const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64!);
-
+  private _buildGeminiConfig() {
     const geminiOptions = this.context.options.objects.backendConfig.gemini;
-    const config = {
-      thinkingConfig: { thinkingBudget: 0 },
+    return {
+      thinkingConfig: {
+        thinkingBudget: 0,
+      },
       responseMimeType: 'application/json',
       responseSchema: geminiOptions.responseSchema,
       systemInstruction: [{ text: geminiOptions.systemInstruction }],
     };
+  }
+
+  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any> {
+    const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64!);
+
+    const config = this._buildGeminiConfig();
 
     const originalGeminiConfig = this.context.aiOptions.gemini.config;
     this.context.aiOptions.gemini.config = config;
