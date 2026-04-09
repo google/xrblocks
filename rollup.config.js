@@ -67,6 +67,7 @@ const externalPackages = [
   /three\/addons\//,
   'troika-three-text',
   '@google/genai',
+  '@mediapipe/tasks-vision',
   'openai',
   '@sparkjsdev/spark',
   /^lit(\/.*)?$/,

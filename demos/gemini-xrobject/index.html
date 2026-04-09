@@ -1,23 +1,18 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <title>Gemini XR-Objects</title>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=no"
-    />
-    <meta
-      http-equiv="Cache-Control"
-      content="no-cache, no-store, must-revalidate"
-    />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    <link type="text/css" rel="stylesheet" href="../../samples/main.css" />
-    <script>
-      window.litDisableBundleWarning = true;
-    </script>
-    <script type="importmap">
+
+<head>
+  <title>Gemini XR-Objects</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <link type="text/css" rel="stylesheet" href="../../samples/main.css" />
+  <script>
+    window.litDisableBundleWarning = true;
+  </script>
+  <script type="importmap">
       {
         "imports": {
           "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
@@ -31,13 +26,15 @@
           "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
           "xrblocks": "../../build/xrblocks.js",
           "xrblocks/addons/": "../../build/addons/",
-          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm"
+          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm",
+          "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs"
         }
       }
     </script>
-  </head>
+</head>
 
-  <body>
-    <script type="module" src="main.js"></script>
-  </body>
+<body>
+  <script type="module" src="main.js"></script>
+</body>
+
 </html>

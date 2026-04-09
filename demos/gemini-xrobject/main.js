@@ -35,6 +35,8 @@ options.sound.speechRecognizer.playSimulatorActivationSounds = true;
 options.ai.enabled = true;
 options.ai.gemini.enabled = true;
 options.ai.gemini.model = 'gemini-2.5-flash';
+options.world.objects.backendConfig.activeBackend = 'mediapipe';
+options.world.objects.showDebugVisualizations = true;
 options.setAppTitle('Gemini XR-Objects');
 options.setAppDescription(
   'Recognize objects with Gemini and ask questions about them. Perform a long pinch / press to start!'
