@@ -111,11 +111,16 @@ export class ObjectDetector extends Script {
   async runDetection<T = null>(): Promise<DetectedObject<T>[]> {
     this.clear(); // Clear previous results before starting a new detection.
 
+    const context = this._getDetectorContext();
+    let detector: BaseDetector<T>;
+
     switch (this.options.objects.backendConfig.activeBackend) {
       case 'gemini':
-        return this._runGeminiDetection<T>();
+        detector = new GeminiDetector<T>(context);
+        break;
       case 'mediapipe':
-        return this._runMediaPipeDetection<T>();
+        detector = new MediaPipeDetector<T>(context);
+        break;
       default:
         console.warn(
           `ObjectDetector backend '${this.options.objects.backendConfig.activeBackend
@@ -123,6 +128,25 @@ export class ObjectDetector extends Script {
         );
         return [];
     }
+    return detector.run();
+  }
+
+  private _getDetectorContext(): IDetectorContext {
+    return {
+      options: this.options,
+      ai: this.ai,
+      aiOptions: this.aiOptions,
+      deviceCamera: this.deviceCamera,
+      depth: this.depth,
+      camera: this.camera,
+      renderer: this.renderer,
+      targetDevice: this.targetDevice,
+      detectedObjects: this._detectedObjects,
+      debugVisualsGroup: this._debugVisualsGroup,
+      add: (obj) => this.add(obj),
+      getDepthMeshSnapshot: () => this.getDepthMeshSnapshot(),
+      createDebugVisual: (obj) => this._createDebugVisual(obj),
+    };
   }
 
   private getDepthMeshSnapshot() {
@@ -140,299 +164,11 @@ export class ObjectDetector extends Script {
     return depthMeshSnapshot;
   }
 
-  private simplifyDetections(detections: MEDIAPIPE.Detection[] | null | undefined): DetectedObjectBoundingBox[] {
-    // Return empty array if input is nullish
-    if (!detections) return [];
+  // Removed simplifyDetections (moved to specialized classes)
 
-    return detections.reduce<DetectedObjectBoundingBox[]>((acc, detection) => {
-      // 1. Validate boundingBox exists
-      const box = detection.boundingBox;
+  // Removed _runMediaPipeDetection (moved to MediaPipeDetector class)
 
-      if (box) {
-        // 2. Extract name safely (default to "unknown")
-        const category = detection.categories?.[0];
-        const objectName = category?.categoryName || category?.displayName || "unknown";
-
-        // 3. Map to your coordinate system
-        acc.push({
-          ymin: box.originY,
-          xmin: box.originX,
-          ymax: box.originY + box.height,
-          xmax: box.originX + box.width,
-          objectName: objectName
-        });
-      }
-
-      return acc;
-    }, []);
-  }
-
-  /**
-   * Runs object detection using the MediaPipe backend.
-   */
-  private async _runMediaPipeDetection<T>(): Promise<DetectedObject<T>[]> {
-    const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-    );
-    const objectDetector = await MEDIAPIPE.ObjectDetector.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite`
-      },
-      scoreThreshold: 0.5,
-    });
-    if (!objectDetector) {
-      console.error('Mediapipe is unavailable for object detection.');
-      return [];
-    }
-    console.log("Mediapipe Object detector: " + objectDetector);
-
-    // Cache depth and camera data to align with the captured image frame.
-    const depthMeshSnapshot = this.getDepthMeshSnapshot();
-    const cameraParametersSnapshot = getCameraParametersSnapshot(
-      this.camera,
-      this.renderer.xr.getCamera(),
-      this.deviceCamera,
-      this.targetDevice
-    );
-
-    const imageData = await this.deviceCamera.getSnapshot({
-      outputFormat: 'imageData',
-    });
-    if (!imageData) {
-      console.warn('Could not get device camera snapshot.');
-      return [];
-    }
-
-    const base64Image = await this.deviceCamera.getSnapshot({
-      outputFormat: 'base64',
-    });
-    if (!base64Image) {
-      console.warn('Could not get device camera snapshot.');
-      return [];
-    }
-
-    try {
-      const detectorResponse = objectDetector.detect(imageData);
-      console.log("HAHA Detections: " + JSON.stringify(detectorResponse, null, 2));
-
-      if ('detections' in detectorResponse && !Array.isArray(detectorResponse['detections'])) {
-        console.error('Parsed Mediapipe response is not an array:', detectorResponse);
-        return [];
-      }
-
-      if (this.options.objects.showDebugVisualizations) {
-        this._visualizeBoundingBoxesForMediaPipeOnImage(base64Image, detectorResponse.detections);
-      }
-
-      const detectionPromises = detectorResponse.detections.map(async (item) => {
-        if (!item.boundingBox || !item.categories) {
-          return null;
-        }
-        const category = item.categories?.[0];
-        const objectName = category?.categoryName || category?.displayName || "unknown";
-
-
-        const ymin = item.boundingBox.originY;
-        const xmin = item.boundingBox.originX;
-        const ymax = item.boundingBox.originY + item.boundingBox.height;
-        const xmax = item.boundingBox.originX + item.boundingBox.width;
-
-        // MediaPipe returns coordinates in pixels, convert to normalized 0-1.
-        const boundingBox = new THREE.Box2(
-          new THREE.Vector2(xmin / imageData.width, ymin / imageData.height),
-          new THREE.Vector2(xmax / imageData.width, ymax / imageData.height)
-        );
-
-        console.log("THREE boundingBox" + JSON.stringify(boundingBox));
-
-        const center = new THREE.Vector2();
-        boundingBox.getCenter(center);
-
-        const worldCoordinates = transformRgbUvToWorld(
-          center,
-          depthMeshSnapshot,
-          cameraParametersSnapshot
-        );
-
-        if (worldCoordinates) {
-          const { worldPosition } = worldCoordinates;
-          const margin = this.options.objects.objectImageMargin;
-
-          // Create a new bounding box for cropping that includes the margin.
-          const cropBox = boundingBox.clone();
-          cropBox.min.subScalar(margin);
-          cropBox.max.addScalar(margin);
-          const objectImage = await cropImage(base64Image, cropBox);
-
-          const additionalData = "Unknown";
-          const object = new DetectedObject<T>(
-            objectName,
-            objectImage,
-            boundingBox,
-            additionalData as T
-          );
-          object.position.copy(worldPosition);
-
-          this.add(object);
-          this._detectedObjects.set(object.uuid, object);
-
-          if (this._debugVisualsGroup) {
-            this._createDebugVisual(object);
-          }
-          return object;
-        }
-      });
-
-      const detectedObjects = (await Promise.all(detectionPromises)).filter(
-        (obj): obj is DetectedObject<T> => obj !== null && obj !== undefined
-      );
-      return detectedObjects;
-    } catch (error) {
-      console.error('Mediapipe query for object detection failed:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Runs object detection using the Gemini backend.
-   */
-  private async _runGeminiDetection<T>(): Promise<DetectedObject<T>[]> {
-    if (!this.ai.isAvailable()) {
-      console.error('Gemini is unavailable for object detection.');
-      return [];
-    }
-
-    // Cache depth and camera data to align with the captured image frame.
-    const depthMeshSnapshot = this.getDepthMeshSnapshot();
-    const cameraParametersSnapshot = getCameraParametersSnapshot(
-      this.camera,
-      this.renderer.xr.getCamera(),
-      this.deviceCamera,
-      this.targetDevice
-    );
-
-    const base64Image = await this.deviceCamera.getSnapshot({
-      outputFormat: 'base64',
-    });
-    if (!base64Image) {
-      console.warn('Could not get device camera snapshot.');
-      return [];
-    }
-
-    const { mimeType, strippedBase64 } = parseBase64DataURL(base64Image);
-
-    // Temporarily set the Gemini config for this specific query type.
-    const originalGeminiConfig = this.aiOptions.gemini.config;
-    this.aiOptions.gemini.config = this._geminiConfig;
-    const textPrompt = 'What do you see in this image?';
-
-    try {
-      const rawResponse = await (this.ai.model as Gemini).query({
-        type: 'multiPart',
-        parts: [
-          { inlineData: { mimeType: mimeType || undefined, data: strippedBase64 } },
-          { text: textPrompt },
-        ],
-      });
-
-      let parsedResponse;
-      try {
-        if (rawResponse && rawResponse.text) {
-          parsedResponse = JSON.parse(rawResponse.text);
-        } else {
-          console.error(
-            'AI response is missing text field:',
-            rawResponse,
-            'Raw response was:',
-            rawResponse
-          );
-          return [];
-        }
-      } catch (e) {
-        console.error(
-          'Failed to parse AI response JSON:',
-          e,
-          'Raw response was:',
-          rawResponse
-        );
-        return [];
-      }
-
-      if (!Array.isArray(parsedResponse)) {
-        console.error('Parsed AI response is not an array:', parsedResponse);
-        return [];
-      }
-
-      if (this.options.objects.showDebugVisualizations) {
-        this._visualizeBoundingBoxesOnImage(base64Image, parsedResponse);
-      }
-
-      const detectionPromises = parsedResponse.map(async (item) => {
-        const { ymin, xmin, ymax, xmax, objectName, ...additionalData } =
-          item || {};
-        if (
-          [ymin, xmin, ymax, xmax].some((coord) => typeof coord !== 'number')
-        ) {
-          return null;
-        }
-
-        // Bounding box from AI is 0-1000, convert to normalized 0-1.
-        const boundingBox = new THREE.Box2(
-          new THREE.Vector2(xmin / 1000, ymin / 1000),
-          new THREE.Vector2(xmax / 1000, ymax / 1000)
-        );
-        console.log("Object: " + objectName);
-        console.log("THREE boundingBox" + JSON.stringify(boundingBox));
-
-        const center = new THREE.Vector2();
-        boundingBox.getCenter(center);
-
-        const worldCoordinates = transformRgbUvToWorld(
-          center,
-          depthMeshSnapshot,
-          cameraParametersSnapshot
-        );
-
-        if (worldCoordinates) {
-          const { worldPosition } = worldCoordinates;
-          const margin = this.options.objects.objectImageMargin;
-
-          // Create a new bounding box for cropping that includes the margin.
-          const cropBox = boundingBox.clone();
-          cropBox.min.subScalar(margin);
-          cropBox.max.addScalar(margin);
-          const objectImage = await cropImage(base64Image, cropBox);
-
-          const object = new DetectedObject<T>(
-            objectName,
-            objectImage,
-            boundingBox,
-            additionalData as T
-          );
-          object.position.copy(worldPosition);
-
-          this.add(object);
-          this._detectedObjects.set(object.uuid, object);
-
-          if (this._debugVisualsGroup) {
-            this._createDebugVisual(object);
-          }
-          return object;
-        }
-      });
-
-      const detectedObjects = (await Promise.all(detectionPromises)).filter(
-        (obj): obj is DetectedObject<T> => obj !== null && obj !== undefined
-      );
-      return detectedObjects;
-    } catch (error) {
-      console.error('AI query for object detection failed:', error);
-      return [];
-    } finally {
-      // Restore the original config after the query.
-      this.aiOptions.gemini.config = originalGeminiConfig;
-    }
-  }
+  // Removed _runGeminiDetection (moved to GeminiDetector class)
 
   /**
    * Retrieves a list of currently detected objects.
@@ -482,76 +218,7 @@ export class ObjectDetector extends Script {
    * @param base64Image - The base64 encoded input image.
    * @param detections - The array of detected objects from the AI response.
    */
-  private _visualizeBoundingBoxesForMediaPipeOnImage(
-    base64Image: string,
-    detections: MEDIAPIPE.Detection[]
-  ) {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d')!;
-
-      ctx.drawImage(img, 0, 0);
-
-      detections.forEach((item) => {
-        if (!item.boundingBox || !item.categories) {
-          return null;
-        }
-        const category = item.categories?.[0];
-        const objectName = category?.categoryName || category?.displayName || "unknown";
-
-
-        const ymin = item.boundingBox.originY;
-        const xmin = item.boundingBox.originX;
-        const ymax = item.boundingBox.originY + item.boundingBox.height;
-        const xmax = item.boundingBox.originX + item.boundingBox.width;
-
-        // MediaPipe returns coordinates in pixels.
-        const rectX = xmin;
-        const rectY = ymin;
-        const rectWidth = xmax - xmin;
-        const rectHeight = ymax - ymin;
-
-        ctx.strokeStyle = '#FF0000';
-        ctx.lineWidth = Math.max(2, canvas.width / 400);
-        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
-
-        // Draw label.
-        const text = objectName || 'unknown';
-        const fontSize = Math.max(16, canvas.width / 80);
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.textBaseline = 'bottom';
-        const textMetrics = ctx.measureText(text);
-
-        // Draw a background for the text for better readability.
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(
-          rectX,
-          rectY - fontSize,
-          textMetrics.width + 8,
-          fontSize + 4
-        );
-
-        // Draw the text itself.
-        ctx.fillStyle = '#FFFFFF'; // White text
-        ctx.fillText(text, rectX + 4, rectY + 2);
-      });
-
-      // Create a link and trigger the download.
-      const timestamp = new Date()
-        .toISOString()
-        .slice(0, 19)
-        .replace('T', '_')
-        .replace(/:/g, '-');
-      const link = document.createElement('a');
-      link.download = `detection_debug_${timestamp}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    };
-    img.src = base64Image;
-  }
+  // Removed _visualizeBoundingBoxesForMediaPipeOnImage
 
   /**
    * Draws the detected bounding boxes on the input image and triggers a
@@ -559,77 +226,7 @@ export class ObjectDetector extends Script {
    * @param base64Image - The base64 encoded input image.
    * @param detections - The array of detected objects from the AI response.
    */
-  private _visualizeBoundingBoxesOnImage(
-    base64Image: string,
-    detections: object[]
-  ) {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d')!;
-
-      ctx.drawImage(img, 0, 0);
-
-      detections.forEach((item) => {
-        const { ymin, xmin, ymax, xmax, objectName } = (item || {}) as {
-          ymin?: number;
-          xmin?: number;
-          ymax?: number;
-          xmax?: number;
-          objectName?: string;
-        };
-        if (
-          [ymin, xmin, ymax, xmax].some((coord) => typeof coord !== 'number')
-        ) {
-          return;
-        }
-
-        // Bounding box from AI is 0-1000, scale it to image dimensions.
-        const rectX = (xmin! / 1000) * canvas.width;
-        const rectY = (ymin! / 1000) * canvas.height;
-        const rectWidth = ((xmax! - xmin!) / 1000) * canvas.width;
-        const rectHeight = ((ymax! - ymin!) / 1000) * canvas.height;
-
-        ctx.strokeStyle = '#FF0000';
-        ctx.lineWidth = Math.max(2, canvas.width / 400);
-        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
-
-        // Draw label.
-        const text = objectName || 'unknown';
-        const fontSize = Math.max(16, canvas.width / 80);
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.textBaseline = 'bottom';
-        const textMetrics = ctx.measureText(text);
-
-        // Draw a background for the text for better readability.
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(
-          rectX,
-          rectY - fontSize,
-          textMetrics.width + 8,
-          fontSize + 4
-        );
-
-        // Draw the text itself.
-        ctx.fillStyle = '#FFFFFF'; // White text
-        ctx.fillText(text, rectX + 4, rectY + 2);
-      });
-
-      // Create a link and trigger the download.
-      const timestamp = new Date()
-        .toISOString()
-        .slice(0, 19)
-        .replace('T', '_')
-        .replace(/:/g, '-');
-      const link = document.createElement('a');
-      link.download = `detection_debug_${timestamp}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    };
-    img.src = base64Image;
-  }
+  // Removed _visualizeBoundingBoxesOnImage
 
   /**
    * Generates a visual representation of the depth map, normalized to 0-1 range,
@@ -747,5 +344,335 @@ export class ObjectDetector extends Script {
       responseSchema: geminiOptions.responseSchema,
       systemInstruction: [{ text: geminiOptions.systemInstruction }],
     };
+  }
+}
+
+// --- Specialized Detector Classes ---
+
+interface SimplifiedDetection {
+  ymin: number;
+  xmin: number;
+  ymax: number;
+  xmax: number;
+  objectName: string;
+  additionalData?: any;
+}
+
+interface IDetectorContext {
+  readonly options: WorldOptions;
+  readonly ai: AI;
+  readonly aiOptions: AIOptions;
+  readonly deviceCamera: XRDeviceCamera;
+  readonly depth: Depth;
+  readonly camera: THREE.PerspectiveCamera;
+  readonly renderer: THREE.WebGLRenderer;
+  readonly targetDevice: string;
+  readonly detectedObjects: Map<string, DetectedObject<any>>;
+  readonly debugVisualsGroup?: THREE.Group;
+  
+  add(object: THREE.Object3D): void;
+  getDepthMeshSnapshot(): THREE.Mesh;
+  createDebugVisual(object: DetectedObject<unknown>): void;
+}
+
+abstract class BaseDetector<T> {
+  constructor(protected context: IDetectorContext) {}
+
+  async run(): Promise<DetectedObject<T>[]> {
+    if (!this.isAvailable()) {
+      return [];
+    }
+
+    const depthMeshSnapshot = this.context.getDepthMeshSnapshot();
+    const cameraParametersSnapshot = getCameraParametersSnapshot(
+      this.context.camera,
+      this.context.renderer.xr.getCamera(),
+      this.context.deviceCamera,
+      this.context.targetDevice
+    );
+
+    const snapshot = await this.getSnapshot();
+    if (!snapshot) return [];
+
+    const rawDetections = await this.detect(snapshot);
+    if (!rawDetections) return [];
+
+    const simplifiedDetections = this.simplifyDetections(rawDetections, snapshot);
+
+    if (this.context.options.objects.showDebugVisualizations) {
+      this.visualize(snapshot, simplifiedDetections);
+    }
+
+    const detectionPromises = simplifiedDetections.map(async (item) => {
+      const boundingBox = new THREE.Box2(
+        new THREE.Vector2(item.xmin, item.ymin),
+        new THREE.Vector2(item.xmax, item.ymax)
+      );
+
+      const center = new THREE.Vector2();
+      boundingBox.getCenter(center);
+
+      const worldCoordinates = transformRgbUvToWorld(
+        center,
+        depthMeshSnapshot,
+        cameraParametersSnapshot
+      );
+
+      if (worldCoordinates) {
+        const { worldPosition } = worldCoordinates;
+        const margin = this.context.options.objects.objectImageMargin;
+
+        const cropBox = boundingBox.clone();
+        cropBox.min.subScalar(margin);
+        cropBox.max.addScalar(margin);
+        
+        let objectImage: string;
+        if (snapshot.imageData) {
+          objectImage = await this._cropImageData(snapshot.imageData, cropBox);
+        } else if (snapshot.base64) {
+          objectImage = await cropImage(snapshot.base64, cropBox);
+        } else {
+          throw new Error('No valid snapshot data for cropping');
+        }
+
+        const object = new DetectedObject<T>(
+          item.objectName,
+          objectImage,
+          boundingBox,
+          item.additionalData as T
+        );
+        object.position.copy(worldPosition);
+
+        this.context.add(object);
+        this.context.detectedObjects.set(object.uuid, object);
+
+        if (this.context.debugVisualsGroup) {
+          this.context.createDebugVisual(object);
+        }
+        return object;
+      }
+      return null;
+    });
+
+    const detectedObjects = (await Promise.all(detectionPromises)).filter(
+      (obj): obj is DetectedObject<T> => obj !== null && obj !== undefined
+    );
+    return detectedObjects;
+  }
+
+  protected abstract isAvailable(): boolean;
+  protected abstract getSnapshot(): Promise<{ base64?: string; imageData?: ImageData } | null>;
+  protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any>;
+  protected abstract simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[];
+
+  protected visualize(snapshot: { base64?: string; imageData?: ImageData }, detections: SimplifiedDetection[]) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+
+    const drawDetectionsAndDownload = () => {
+      detections.forEach((item) => {
+        const rectX = item.xmin * canvas.width;
+        const rectY = item.ymin * canvas.height;
+        const rectWidth = (item.xmax - item.xmin) * canvas.width;
+        const rectHeight = (item.ymax - item.ymin) * canvas.height;
+
+        ctx.strokeStyle = '#FF0000';
+        ctx.lineWidth = Math.max(2, canvas.width / 400);
+        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
+
+        const text = item.objectName;
+        const fontSize = Math.max(16, canvas.width / 80);
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textBaseline = 'bottom';
+        const textMetrics = ctx.measureText(text);
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(
+          rectX,
+          rectY - fontSize,
+          textMetrics.width + 8,
+          fontSize + 4
+        );
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(text, rectX + 4, rectY + 2);
+      });
+
+      const timestamp = new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace('T', '_')
+        .replace(/:/g, '-');
+      const link = document.createElement('a');
+      link.download = `detection_debug_${timestamp}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
+
+    if (snapshot.imageData) {
+      canvas.width = snapshot.imageData.width;
+      canvas.height = snapshot.imageData.height;
+      ctx.putImageData(snapshot.imageData, 0, 0);
+      drawDetectionsAndDownload();
+    } else if (snapshot.base64) {
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        ctx.drawImage(img, 0, 0);
+        drawDetectionsAndDownload();
+      };
+      img.src = snapshot.base64;
+    }
+  }
+
+  private async _cropImageData(imageData: ImageData, boundingBox: THREE.Box2): Promise<string> {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+
+    const unitBox = new THREE.Box2(new THREE.Vector2(0, 0), new THREE.Vector2(1, 1));
+    const clampedBox = boundingBox.clone().intersect(unitBox);
+    const cropSize = new THREE.Vector2();
+    clampedBox.getSize(cropSize);
+
+    if (cropSize.x === 0 || cropSize.y === 0) {
+        return 'data:image/png;base64,';
+    }
+
+    const sourceX = Math.floor(imageData.width * clampedBox.min.x);
+    const sourceY = Math.floor(imageData.height * clampedBox.min.y);
+    const sourceWidth = Math.ceil(imageData.width * cropSize.x);
+    const sourceHeight = Math.ceil(imageData.height * cropSize.y);
+
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
+
+    ctx.putImageData(imageData, -sourceX, -sourceY, sourceX, sourceY, sourceWidth, sourceHeight);
+
+    return canvas.toDataURL('image/png');
+  }
+}
+
+class MediaPipeDetector<T> extends BaseDetector<T> {
+  protected isAvailable(): boolean {
+    return true;
+  }
+
+  protected async getSnapshot(): Promise<{ imageData: ImageData } | null> {
+    const imageData = await this.context.deviceCamera.getSnapshot({
+      outputFormat: 'imageData',
+    });
+    if (!imageData) return null;
+    return { imageData };
+  }
+
+  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any> {
+    const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    );
+    const objectDetector = await MEDIAPIPE.ObjectDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: `https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite`
+      },
+      scoreThreshold: 0.5,
+    });
+    if (!objectDetector) return null;
+    return objectDetector.detect(snapshot.imageData!);
+  }
+
+  protected simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[] {
+    const response = raw as { detections: any[] };
+    const width = snapshot.imageData!.width;
+    const height = snapshot.imageData!.height;
+
+    return response.detections.reduce<SimplifiedDetection[]>((acc: SimplifiedDetection[], detection: any) => {
+      const box = detection.boundingBox;
+      if (box) {
+        const category = detection.categories?.[0];
+        const objectName = category?.categoryName || category?.displayName || "unknown";
+        acc.push({
+          ymin: box.originY / height,
+          xmin: box.originX / width,
+          ymax: (box.originY + box.height) / height,
+          xmax: (box.originX + box.width) / width,
+          objectName: objectName
+        });
+      }
+      return acc;
+    }, []);
+  }
+}
+
+class GeminiDetector<T> extends BaseDetector<T> {
+  protected isAvailable(): boolean {
+    return !!this.context.ai.isAvailable();
+  }
+
+  protected async getSnapshot(): Promise<{ base64: string } | null> {
+    const base64Image = await this.context.deviceCamera.getSnapshot({
+      outputFormat: 'base64',
+    });
+    if (!base64Image) return null;
+    return { base64: base64Image };
+  }
+
+  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any> {
+    const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64!);
+
+    const geminiOptions = this.context.options.objects.backendConfig.gemini;
+    const config = {
+      thinkingConfig: { thinkingBudget: 0 },
+      responseMimeType: 'application/json',
+      responseSchema: geminiOptions.responseSchema,
+      systemInstruction: [{ text: geminiOptions.systemInstruction }],
+    };
+
+    const originalGeminiConfig = this.context.aiOptions.gemini.config;
+    this.context.aiOptions.gemini.config = config;
+    const textPrompt = 'What do you see in this image?';
+
+    try {
+      const rawResponse = await (this.context.ai.model as Gemini).query({
+        type: 'multiPart',
+        parts: [
+          { inlineData: { mimeType: mimeType || undefined, data: strippedBase64 } },
+          { text: textPrompt },
+        ],
+      });
+      return rawResponse;
+    } finally {
+      this.context.aiOptions.gemini.config = originalGeminiConfig;
+    }
+  }
+
+  protected simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[] {
+    const rawResponse = raw;
+    let parsedResponse;
+    try {
+      if (rawResponse && rawResponse.text) {
+        parsedResponse = JSON.parse(rawResponse.text);
+      } else {
+        return [];
+      }
+    } catch (e) {
+      return [];
+    }
+
+    if (!Array.isArray(parsedResponse)) return [];
+
+    return parsedResponse.reduce<SimplifiedDetection[]>((acc, item) => {
+      const { ymin, xmin, ymax, xmax, objectName, ...additionalData } = item || {};
+      if ([ymin, xmin, ymax, xmax].every(coord => typeof coord === 'number')) {
+        acc.push({
+          ymin: ymin / 1000,
+          xmin: xmin / 1000,
+          ymax: ymax / 1000,
+          xmax: xmax / 1000,
+          objectName: objectName || "unknown",
+          additionalData
+        });
+      }
+      return acc;
+    }, []);
   }
 }
