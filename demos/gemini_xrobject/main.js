@@ -36,11 +36,7 @@ options.ai.enabled = true;
 options.ai.gemini.enabled = true;
 options.ai.gemini.model = 'gemini-2.5-flash';
 options.world.objects.backendConfig.activeBackend = 'gemini';
-<<<<<<< HEAD
 options.world.objects.showDebugVisualizations = false;
-=======
-options.world.objects.showDebugVisualizations = true;
->>>>>>> 5655435 (Refactored code to include GeminiDetector and MediaPipeDetector)
 options.setAppTitle('Gemini XR-Objects');
 options.setAppDescription(
   'Recognize objects with Gemini and ask questions about them. Perform a long pinch / press to start!'
