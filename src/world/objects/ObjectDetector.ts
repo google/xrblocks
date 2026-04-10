@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 
-import { AI } from '../../ai/AI';
-import { AIOptions } from '../../ai/AIOptions';
-import { getCameraParametersSnapshot } from '../../camera/CameraUtils';
-import { XRDeviceCamera } from '../../camera/XRDeviceCamera';
-import { Script } from '../../core/Script';
-import { Depth } from '../../depth/Depth';
-import { WorldOptions } from '../WorldOptions';
+import {AI} from '../../ai/AI';
+import {AIOptions} from '../../ai/AIOptions';
+import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
+import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {Script} from '../../core/Script';
+import {Depth} from '../../depth/Depth';
+import {WorldOptions} from '../WorldOptions';
 
-import { DetectedObject } from './DetectedObject';
+import {DetectedObject} from './DetectedObject';
 import {
   BaseDetectorBackend,
   GeminiDetectorBackend,
@@ -38,7 +38,6 @@ export class ObjectDetector extends Script {
   private _detectedObjects = new Map<string, DetectedObject<unknown>>();
 
   private _debugVisualsGroup?: THREE.Group;
-
 
   // Injected dependencies
   private options!: WorldOptions;
@@ -83,7 +82,7 @@ export class ObjectDetector extends Script {
     if (this.options.objects.showDebugVisualizations) {
       this._debugVisualsGroup = new THREE.Group();
       // Disable raycasting for the debug group to prevent interaction errors.
-      this._debugVisualsGroup.raycast = () => { };
+      this._debugVisualsGroup.raycast = () => {};
       this.add(this._debugVisualsGroup);
     }
   }
@@ -116,12 +115,16 @@ export class ObjectDetector extends Script {
         break;
       default:
         console.warn(
-          `ObjectDetector backend '${this.options.objects.backendConfig.activeBackend
+          `ObjectDetector backend '${
+            this.options.objects.backendConfig.activeBackend
           }' is not supported.`
         );
         return [];
     }
-    const detectedObjects = await detectorBackend.run(depthMeshSnapshot, cameraParametersSnapshot);
+    const detectedObjects = await detectorBackend.run(
+      depthMeshSnapshot,
+      cameraParametersSnapshot
+    );
     for (const obj of detectedObjects) {
       this._detectedObjects.set(obj.uuid, obj);
       this.add(obj);
@@ -268,8 +271,4 @@ export class ObjectDetector extends Script {
     link.href = canvas.toDataURL('image/png');
     link.click();
   }
-
-
 }
-
-

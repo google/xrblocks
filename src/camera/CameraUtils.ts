@@ -259,17 +259,23 @@ export async function cropImage(base64Image: string, boundingBox: THREE.Box2) {
  * @param boundingBox - The bounding box with relative coordinates (0-1) for cropping.
  * @returns A promise that resolves with the base64 string of the cropped image.
  */
-export async function cropImageData(imageData: ImageData, boundingBox: THREE.Box2): Promise<string> {
+export async function cropImageData(
+  imageData: ImageData,
+  boundingBox: THREE.Box2
+): Promise<string> {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
 
-  const unitBox = new THREE.Box2(new THREE.Vector2(0, 0), new THREE.Vector2(1, 1));
+  const unitBox = new THREE.Box2(
+    new THREE.Vector2(0, 0),
+    new THREE.Vector2(1, 1)
+  );
   const clampedBox = boundingBox.clone().intersect(unitBox);
   const cropSize = new THREE.Vector2();
   clampedBox.getSize(cropSize);
 
   if (cropSize.x === 0 || cropSize.y === 0) {
-      return 'data:image/png;base64,';
+    return 'data:image/png;base64,';
   }
 
   const sourceX = Math.floor(imageData.width * clampedBox.min.x);
@@ -280,8 +286,15 @@ export async function cropImageData(imageData: ImageData, boundingBox: THREE.Box
   canvas.width = sourceWidth;
   canvas.height = sourceHeight;
 
-  ctx.putImageData(imageData, -sourceX, -sourceY, sourceX, sourceY, sourceWidth, sourceHeight);
+  ctx.putImageData(
+    imageData,
+    -sourceX,
+    -sourceY,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight
+  );
 
   return canvas.toDataURL('image/png');
 }
-
