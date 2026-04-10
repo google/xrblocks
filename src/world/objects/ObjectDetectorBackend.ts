@@ -17,12 +17,13 @@ import { WorldOptions } from '../WorldOptions';
 
 import { DetectedObject } from './DetectedObject';
 
-export interface StandardizedDetectedObject {
+export interface StandardizedDetectedObject<T> {
   ymin: number;
   xmin: number;
   ymax: number;
   xmax: number;
   objectName: string;
+  additionalData?: T;
 }
 
 export interface DetectorBackendContext {
@@ -89,7 +90,7 @@ export abstract class BaseDetectorBackend<T, D = unknown> {
           item.objectName,
           objectImage,
           boundingBox,
-          undefined as unknown as T
+          item.additionalData as T
         );
         object.position.copy(worldPosition);
 
@@ -132,7 +133,7 @@ export abstract class BaseDetectorBackend<T, D = unknown> {
     textLabel.sync(); // Required for Troika text to appear.
   }
 
-  protected visualize(snapshot: { base64?: string; imageData?: ImageData }, detections: StandardizedDetectedObject[]) {
+  protected visualize(snapshot: { base64?: string; imageData?: ImageData }, detections: StandardizedDetectedObject<T>[]) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
 
@@ -196,7 +197,7 @@ export abstract class BaseDetectorBackend<T, D = unknown> {
   protected abstract isAvailable(): boolean;
   protected abstract getSnapshot(): Promise<{ base64?: string; imageData?: ImageData } | null>;
   protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<D>;
-  protected abstract standardizeDetections(backendResponse: D, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[];
+  protected abstract standardizeDetections(backendResponse: D, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject<T>[];
 }
 
 export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T, MEDIAPIPE.ObjectDetectorResult | null> {
@@ -227,11 +228,11 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T, MEDIAPIP
     return objectDetector.detect(snapshot.imageData!);
   }
 
-  protected standardizeDetections(backendResponse: MEDIAPIPE.ObjectDetectorResult, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
+  protected standardizeDetections(backendResponse: MEDIAPIPE.ObjectDetectorResult, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject<T>[] {
     const width = snapshot.imageData!.width;
     const height = snapshot.imageData!.height;
 
-    return backendResponse.detections.reduce<StandardizedDetectedObject[]>((acc: StandardizedDetectedObject[], detection: MEDIAPIPE.Detection) => {
+    return backendResponse.detections.reduce<StandardizedDetectedObject<T>[]>((acc: StandardizedDetectedObject<T>[], detection: MEDIAPIPE.Detection) => {
       const box = detection.boundingBox;
       if (box) {
         const category = detection.categories?.[0];
@@ -297,7 +298,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T, GeminiRespo
     }
   }
 
-  protected standardizeDetections(backendResponse: GeminiResponse | null, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
+  protected standardizeDetections(backendResponse: GeminiResponse | null, _snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject<T>[] {
     let parsedResponse;
     try {
       if (backendResponse && backendResponse.text) {
@@ -312,15 +313,16 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T, GeminiRespo
 
     if (!Array.isArray(parsedResponse)) return [];
 
-    return parsedResponse.reduce<StandardizedDetectedObject[]>((acc, item) => {
-      const { ymin, xmin, ymax, xmax, objectName } = item || {};
+    return parsedResponse.reduce<StandardizedDetectedObject<T>[]>((acc, item) => {
+      const { ymin, xmin, ymax, xmax, objectName, ...additionalData } = item || {};
       if ([ymin, xmin, ymax, xmax].every(coord => typeof coord === 'number')) {
         acc.push({
           ymin: ymin / 1000,
           xmin: xmin / 1000,
           ymax: ymax / 1000,
           xmax: xmax / 1000,
-          objectName: objectName || "unknown"
+          objectName: objectName || "unknown",
+          additionalData: additionalData as T
         });
       }
       return acc;
