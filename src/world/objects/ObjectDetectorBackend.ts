@@ -15,13 +15,12 @@ import { WorldOptions } from '../WorldOptions';
 
 import { DetectedObject } from './DetectedObject';
 
-export interface SimplifiedDetection {
+export interface StandardizedDetectedObject {
   ymin: number;
   xmin: number;
   ymax: number;
   xmax: number;
   objectName: string;
-  additionalData?: any;
 }
 
 export interface IDetectorContext {
@@ -46,13 +45,13 @@ export abstract class BaseDetectorBackend<T> {
     const rawDetections = await this.detect(snapshot);
     if (!rawDetections) return [];
 
-    const simplifiedDetections = this.simplifyDetections(rawDetections, snapshot);
+    const standardizedDetections = this.standardizeDetections(rawDetections, snapshot);
 
     if (this.context.options.objects.showDebugVisualizations) {
-      this.visualize(snapshot, simplifiedDetections);
+      this.visualize(snapshot, standardizedDetections);
     }
 
-    const detectionPromises = simplifiedDetections.map(async (item) => {
+    const detectionPromises = standardizedDetections.map(async (item) => {
       const boundingBox = new THREE.Box2(
         new THREE.Vector2(item.xmin, item.ymin),
         new THREE.Vector2(item.xmax, item.ymax)
@@ -88,7 +87,7 @@ export abstract class BaseDetectorBackend<T> {
           item.objectName,
           objectImage,
           boundingBox,
-          item.additionalData as T
+          undefined as unknown as T
         );
         object.position.copy(worldPosition);
 
@@ -131,7 +130,7 @@ export abstract class BaseDetectorBackend<T> {
     textLabel.sync(); // Required for Troika text to appear.
   }
 
-  protected visualize(snapshot: { base64?: string; imageData?: ImageData }, detections: SimplifiedDetection[]) {
+  protected visualize(snapshot: { base64?: string; imageData?: ImageData }, detections: StandardizedDetectedObject[]) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
 
@@ -195,7 +194,7 @@ export abstract class BaseDetectorBackend<T> {
   protected abstract isAvailable(): boolean;
   protected abstract getSnapshot(): Promise<{ base64?: string; imageData?: ImageData } | null>;
   protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any>;
-  protected abstract simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[];
+  protected abstract standardizeDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[];
 }
 
 export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
@@ -228,12 +227,12 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
     return objectDetector.detect(snapshot.imageData!);
   }
 
-  protected simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[] {
+  protected standardizeDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
     const response = raw as { detections: any[] };
     const width = snapshot.imageData!.width;
     const height = snapshot.imageData!.height;
 
-    return response.detections.reduce<SimplifiedDetection[]>((acc: SimplifiedDetection[], detection: any) => {
+    return response.detections.reduce<StandardizedDetectedObject[]>((acc: StandardizedDetectedObject[], detection: any) => {
       const box = detection.boundingBox;
       if (box) {
         const category = detection.categories?.[0];
@@ -299,7 +298,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     }
   }
 
-  protected simplifyDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): SimplifiedDetection[] {
+  protected standardizeDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
     const rawResponse = raw;
     let parsedResponse;
     try {
@@ -314,16 +313,15 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
 
     if (!Array.isArray(parsedResponse)) return [];
 
-    return parsedResponse.reduce<SimplifiedDetection[]>((acc, item) => {
-      const { ymin, xmin, ymax, xmax, objectName, ...additionalData } = item || {};
+    return parsedResponse.reduce<StandardizedDetectedObject[]>((acc, item) => {
+      const { ymin, xmin, ymax, xmax, objectName } = item || {};
       if ([ymin, xmin, ymax, xmax].every(coord => typeof coord === 'number')) {
         acc.push({
           ymin: ymin / 1000,
           xmin: xmin / 1000,
           ymax: ymax / 1000,
           xmax: xmax / 1000,
-          objectName: objectName || "unknown",
-          additionalData
+          objectName: objectName || "unknown"
         });
       }
       return acc;
