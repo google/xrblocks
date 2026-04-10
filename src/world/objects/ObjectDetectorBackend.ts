@@ -1,21 +1,21 @@
 import * as THREE from 'three';
 import * as MEDIAPIPE from '@mediapipe/tasks-vision';
 
-import { AI } from '../../ai/AI';
-import { AIOptions } from '../../ai/AIOptions';
-import { Gemini } from '../../ai/Gemini';
-import { GeminiResponse } from '../../ai/AITypes';
+import {AI} from '../../ai/AI';
+import {AIOptions} from '../../ai/AIOptions';
+import {Gemini} from '../../ai/Gemini';
+import {GeminiResponse} from '../../ai/AITypes';
 import {
   CameraParametersSnapshot,
   cropImage,
   cropImageData,
   transformRgbUvToWorld,
 } from '../../camera/CameraUtils';
-import { XRDeviceCamera } from '../../camera/XRDeviceCamera';
-import { parseBase64DataURL } from '../../utils/utils';
-import { WorldOptions } from '../WorldOptions';
+import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {parseBase64DataURL} from '../../utils/utils';
+import {WorldOptions} from '../WorldOptions';
 
-import { DetectedObject } from './DetectedObject';
+import {DetectedObject} from './DetectedObject';
 
 /**
  * Represents a detected object in a normalized format, independent of the specific detector backend used.
@@ -31,8 +31,6 @@ export interface NormalizedDetectedObject<T> {
   objectName: string;
   additionalData?: T;
 }
-
-export type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
 /**
  * Represents a snapshot taken from the device camera.
@@ -63,7 +61,7 @@ export interface DetectorBackendContext {
  * T - The type of additional data associated with the detected object.
  */
 export abstract class BaseDetectorBackend<T> {
-  constructor(protected context: DetectorBackendContext) { }
+  constructor(protected context: DetectorBackendContext) {}
 
   async run(
     depthMeshSnapshot: THREE.Mesh,
@@ -98,7 +96,7 @@ export abstract class BaseDetectorBackend<T> {
       );
 
       if (worldCoordinates) {
-        const { worldPosition } = worldCoordinates;
+        const {worldPosition} = worldCoordinates;
         const margin = this.context.options.objects.objectImageMargin;
 
         const cropBox = boundingBox.clone();
@@ -153,7 +151,9 @@ export abstract class BaseDetectorBackend<T> {
    * @param snapshot - The snapshot containing base64 or imageData.
    * @returns A promise that resolves to an array of normalized detected objects.
    */
-  protected abstract detect(snapshot: CameraSnapshot): Promise<NormalizedDetectedObject<T>[]>;
+  protected abstract detect(
+    snapshot: CameraSnapshot
+  ): Promise<NormalizedDetectedObject<T>[]>;
 
   /**
    * Creates a debug visual representation for a detected object in the 3D scene.
@@ -164,12 +164,12 @@ export abstract class BaseDetectorBackend<T> {
     // Create sphere.
     const sphere = new THREE.Mesh(
       new THREE.SphereGeometry(0.03, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xff4285f4 })
+      new THREE.MeshBasicMaterial({color: 0xff4285f4})
     );
     sphere.position.copy(object.position);
 
     // Create and configure the text label using Troika.
-    const { Text } = await import('troika-three-text');
+    const {Text} = await import('troika-three-text');
     const textLabel = new Text();
     textLabel.text = object.label;
     textLabel.fontSize = 0.07;
@@ -268,15 +268,17 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
     return true;
   }
 
-  protected async getSnapshot(): Promise<{ imageData: ImageData } | null> {
+  protected async getSnapshot(): Promise<{imageData: ImageData} | null> {
     const imageData = await this.context.deviceCamera.getSnapshot({
       outputFormat: 'imageData',
     });
     if (!imageData) return null;
-    return { imageData };
+    return {imageData};
   }
 
-  protected async detect(snapshot: CameraSnapshot): Promise<NormalizedDetectedObject<T>[]> {
+  protected async detect(
+    snapshot: CameraSnapshot
+  ): Promise<NormalizedDetectedObject<T>[]> {
     const mediapipeOptions =
       this.context.options.objects.backendConfig.mediapipe;
     const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
@@ -310,10 +312,7 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
     // Map MediaPipe detections to NormalizedDetectedObject format.
     // We normalize the bounding box coordinates by the image dimensions.
     return backendResponse.detections.reduce<NormalizedDetectedObject<T>[]>(
-      (
-        acc: NormalizedDetectedObject<T>[],
-        detection: MEDIAPIPE.Detection
-      ) => {
+      (acc: NormalizedDetectedObject<T>[], detection: MEDIAPIPE.Detection) => {
         const box = detection.boundingBox;
         if (box) {
           const category = detection.categories?.[0];
@@ -345,12 +344,12 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     return !!this.context.ai.isAvailable();
   }
 
-  protected async getSnapshot(): Promise<{ base64: string } | null> {
+  protected async getSnapshot(): Promise<{base64: string} | null> {
     const base64Image = await this.context.deviceCamera.getSnapshot({
       outputFormat: 'base64',
     });
     if (!base64Image) return null;
-    return { base64: base64Image };
+    return {base64: base64Image};
   }
 
   private buildGeminiConfig() {
@@ -361,12 +360,14 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
       },
       responseMimeType: 'application/json',
       responseSchema: geminiOptions.responseSchema,
-      systemInstruction: [{ text: geminiOptions.systemInstruction }],
+      systemInstruction: [{text: geminiOptions.systemInstruction}],
     };
   }
 
-  protected async detect(snapshot: CameraSnapshot): Promise<NormalizedDetectedObject<T>[]> {
-    const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64!);
+  protected async detect(
+    snapshot: CameraSnapshot
+  ): Promise<NormalizedDetectedObject<T>[]> {
+    const {mimeType, strippedBase64} = parseBase64DataURL(snapshot.base64!);
 
     const config = this.buildGeminiConfig();
 
@@ -379,8 +380,8 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
       backendResponse = await (this.context.ai.model as Gemini).query({
         type: 'multiPart',
         parts: [
-          { inlineData: { mimeType: mimeType || undefined, data: strippedBase64 } },
-          { text: textPrompt },
+          {inlineData: {mimeType: mimeType || undefined, data: strippedBase64}},
+          {text: textPrompt},
         ],
       });
     } catch (e) {
@@ -393,7 +394,9 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     return this.normalizeDetections(backendResponse);
   }
 
-  private normalizeDetections(backendResponse: GeminiResponse | null): NormalizedDetectedObject<T>[] {
+  private normalizeDetections(
+    backendResponse: GeminiResponse | null
+  ): NormalizedDetectedObject<T>[] {
     let parsedResponse;
     try {
       if (backendResponse && backendResponse.text) {
@@ -402,10 +405,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
         return [];
       }
     } catch (e) {
-      console.warn(
-        'Error while normalizing detections in Gemini Response',
-        e
-      );
+      console.warn('Error while normalizing detections in Gemini Response', e);
       return [];
     }
 
@@ -413,25 +413,22 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
 
     // Map Gemini JSON response to NormalizedDetectedObject format.
     // Gemini returns coordinates in the range [0, 1000], so we divide by 1000 to normalize.
-    return parsedResponse.reduce<NormalizedDetectedObject<T>[]>(
-      (acc, item) => {
-        const { ymin, xmin, ymax, xmax, objectName, ...additionalData } =
-          item || {};
-        if (
-          [ymin, xmin, ymax, xmax].every((coord) => typeof coord === 'number')
-        ) {
-          acc.push({
-            ymin: ymin / 1000,
-            xmin: xmin / 1000,
-            ymax: ymax / 1000,
-            xmax: xmax / 1000,
-            objectName: objectName || 'unknown',
-            additionalData: additionalData as T,
-          });
-        }
-        return acc;
-      },
-      []
-    );
+    return parsedResponse.reduce<NormalizedDetectedObject<T>[]>((acc, item) => {
+      const {ymin, xmin, ymax, xmax, objectName, ...additionalData} =
+        item || {};
+      if (
+        [ymin, xmin, ymax, xmax].every((coord) => typeof coord === 'number')
+      ) {
+        acc.push({
+          ymin: ymin / 1000,
+          xmin: xmin / 1000,
+          ymax: ymax / 1000,
+          xmax: xmax / 1000,
+          objectName: objectName || 'unknown',
+          additionalData: additionalData as T,
+        });
+      }
+      return acc;
+    }, []);
   }
 }
