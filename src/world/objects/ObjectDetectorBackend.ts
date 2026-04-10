@@ -196,13 +196,10 @@ export abstract class BaseDetectorBackend<T, D = unknown> {
   protected abstract isAvailable(): boolean;
   protected abstract getSnapshot(): Promise<{ base64?: string; imageData?: ImageData } | null>;
   protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<D>;
-  protected abstract standardizeDetections(raw: D, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[];
+  protected abstract standardizeDetections(backendResponse: D, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[];
 }
 
 export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T, MEDIAPIPE.ObjectDetectorResult | null> {
-  private static readonly WASM_FILES_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
-  private static readonly MODEL_ASSET_PATH = 'https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite';
-
   protected isAvailable(): boolean {
     return true;
   }
@@ -216,25 +213,25 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T, MEDIAPIP
   }
 
   protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<MEDIAPIPE.ObjectDetectorResult | null> {
+    const mediapipeOptions = this.context.options.objects.backendConfig.mediapipe;
     const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
-      MediaPipeDetectorBackend.WASM_FILES_URL
+      mediapipeOptions.wasmFilesUrl
     );
     const objectDetector = await MEDIAPIPE.ObjectDetector.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: MediaPipeDetectorBackend.MODEL_ASSET_PATH
+        modelAssetPath: mediapipeOptions.modelAssetPath
       },
-      scoreThreshold: 0.5,
+      scoreThreshold: mediapipeOptions.scoreThreshold,
     });
     if (!objectDetector) return null;
     return objectDetector.detect(snapshot.imageData!);
   }
 
-  protected standardizeDetections(raw: MEDIAPIPE.ObjectDetectorResult, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
-    const response = raw as { detections: any[] };
+  protected standardizeDetections(backendResponse: MEDIAPIPE.ObjectDetectorResult, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
     const width = snapshot.imageData!.width;
     const height = snapshot.imageData!.height;
 
-    return response.detections.reduce<StandardizedDetectedObject[]>((acc: StandardizedDetectedObject[], detection: any) => {
+    return backendResponse.detections.reduce<StandardizedDetectedObject[]>((acc: StandardizedDetectedObject[], detection: MEDIAPIPE.Detection) => {
       const box = detection.boundingBox;
       if (box) {
         const category = detection.categories?.[0];
@@ -265,7 +262,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T, GeminiRespo
     return { base64: base64Image };
   }
 
-  private _buildGeminiConfig() {
+  private buildGeminiConfig() {
     const geminiOptions = this.context.options.objects.backendConfig.gemini;
     return {
       thinkingConfig: {
@@ -280,7 +277,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T, GeminiRespo
   protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<GeminiResponse | null> {
     const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64!);
 
-    const config = this._buildGeminiConfig();
+    const config = this.buildGeminiConfig();
 
     const originalGeminiConfig = this.context.aiOptions.gemini.config;
     this.context.aiOptions.gemini.config = config;
@@ -300,16 +297,16 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T, GeminiRespo
     }
   }
 
-  protected standardizeDetections(raw: GeminiResponse | null, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
-    const rawResponse = raw;
+  protected standardizeDetections(backendResponse: GeminiResponse | null, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
     let parsedResponse;
     try {
-      if (rawResponse && rawResponse.text) {
-        parsedResponse = JSON.parse(rawResponse.text);
+      if (backendResponse && backendResponse.text) {
+        parsedResponse = JSON.parse(backendResponse.text);
       } else {
         return [];
       }
     } catch (e) {
+      console.warn("Error while standardizing detections in Gemini Response", e);
       return [];
     }
 
