@@ -13,7 +13,7 @@ import {
   BaseDetectorBackend,
   GeminiDetectorBackend,
   MediaPipeDetectorBackend,
-  IDetectorContext,
+  DetectorBackendContext,
 } from './ObjectDetectorBackend';
 
 /**
@@ -96,7 +96,7 @@ export class ObjectDetector extends Script {
   async runDetection<T = null>(): Promise<DetectedObject<T>[]> {
     this.clear(); // Clear previous results before starting a new detection.
 
-    const depthMeshSnapshot = this._getDepthMeshSnapshot();
+    const depthMeshSnapshot = this.getDepthMeshSnapshot();
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
       this.renderer.xr.getCamera(),
@@ -104,7 +104,7 @@ export class ObjectDetector extends Script {
       this.targetDevice
     );
 
-    const context = this._getDetectorContext();
+    const context = this.getDetectorContext();
     let detectorBackend: BaseDetectorBackend<T>;
 
     switch (this.options.objects.backendConfig.activeBackend) {
@@ -129,7 +129,7 @@ export class ObjectDetector extends Script {
     return detectedObjects;
   }
 
-  private _getDetectorContext(): IDetectorContext {
+  private getDetectorContext(): DetectorBackendContext {
     return {
       options: this.options,
       ai: this.ai,
@@ -139,7 +139,7 @@ export class ObjectDetector extends Script {
     };
   }
 
-  private _getDepthMeshSnapshot() {
+  private getDepthMeshSnapshot() {
     const clonedGeometry = this.depth.depthMesh!.geometry.clone();
     clonedGeometry.computeBoundingSphere();
     clonedGeometry.computeBoundingBox();

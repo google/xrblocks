@@ -4,7 +4,9 @@ import * as MEDIAPIPE from '@mediapipe/tasks-vision';
 import { AI } from '../../ai/AI';
 import { AIOptions } from '../../ai/AIOptions';
 import { Gemini } from '../../ai/Gemini';
+import { GeminiResponse } from '../../ai/AITypes';
 import {
+  CameraParametersSnapshot,
   cropImage,
   cropImageData,
   transformRgbUvToWorld,
@@ -23,7 +25,7 @@ export interface StandardizedDetectedObject {
   objectName: string;
 }
 
-export interface IDetectorContext {
+export interface DetectorBackendContext {
   readonly options: WorldOptions;
   readonly ai: AI;
   readonly aiOptions: AIOptions;
@@ -31,10 +33,10 @@ export interface IDetectorContext {
   readonly debugVisualsGroup?: THREE.Group;
 }
 
-export abstract class BaseDetectorBackend<T> {
-  constructor(protected context: IDetectorContext) {}
+export abstract class BaseDetectorBackend<T, D = unknown> {
+  constructor(protected context: DetectorBackendContext) { }
 
-  async run(depthMeshSnapshot: THREE.Mesh, cameraParametersSnapshot: any): Promise<DetectedObject<T>[]> {
+  async run(depthMeshSnapshot: THREE.Mesh, cameraParametersSnapshot: CameraParametersSnapshot): Promise<DetectedObject<T>[]> {
     if (!this.isAvailable()) {
       return [];
     }
@@ -73,7 +75,7 @@ export abstract class BaseDetectorBackend<T> {
         const cropBox = boundingBox.clone();
         cropBox.min.subScalar(margin);
         cropBox.max.addScalar(margin);
-        
+
         let objectImage: string;
         if (snapshot.imageData) {
           objectImage = await cropImageData(snapshot.imageData, cropBox);
@@ -193,11 +195,11 @@ export abstract class BaseDetectorBackend<T> {
 
   protected abstract isAvailable(): boolean;
   protected abstract getSnapshot(): Promise<{ base64?: string; imageData?: ImageData } | null>;
-  protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any>;
-  protected abstract standardizeDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[];
+  protected abstract detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<D>;
+  protected abstract standardizeDetections(raw: D, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[];
 }
 
-export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
+export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T, MEDIAPIPE.ObjectDetectorResult | null> {
   private static readonly WASM_FILES_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
   private static readonly MODEL_ASSET_PATH = 'https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite';
 
@@ -213,7 +215,7 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
     return { imageData };
   }
 
-  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any> {
+  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<MEDIAPIPE.ObjectDetectorResult | null> {
     const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
       MediaPipeDetectorBackend.WASM_FILES_URL
     );
@@ -227,7 +229,7 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
     return objectDetector.detect(snapshot.imageData!);
   }
 
-  protected standardizeDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
+  protected standardizeDetections(raw: MEDIAPIPE.ObjectDetectorResult, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
     const response = raw as { detections: any[] };
     const width = snapshot.imageData!.width;
     const height = snapshot.imageData!.height;
@@ -250,7 +252,7 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
   }
 }
 
-export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
+export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T, GeminiResponse | null> {
   protected isAvailable(): boolean {
     return !!this.context.ai.isAvailable();
   }
@@ -275,7 +277,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     };
   }
 
-  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<any> {
+  protected async detect(snapshot: { base64?: string; imageData?: ImageData }): Promise<GeminiResponse | null> {
     const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64!);
 
     const config = this._buildGeminiConfig();
@@ -298,7 +300,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     }
   }
 
-  protected standardizeDetections(raw: any, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
+  protected standardizeDetections(raw: GeminiResponse | null, snapshot: { base64?: string; imageData?: ImageData }): StandardizedDetectedObject[] {
     const rawResponse = raw;
     let parsedResponse;
     try {
