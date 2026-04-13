@@ -42,8 +42,9 @@ export class ObjectsOptions {
     mediapipe: {
       wasmFilesUrl:
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm',
+      // Check https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector#models for other models.
       modelAssetPath:
-        'https://storage.googleapis.com/mediapipe-tasks/object_detector/efficientdet_lite0_uint8.tflite',
+        'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite',
       scoreThreshold: 0.5,
     },
   };
