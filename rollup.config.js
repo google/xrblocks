@@ -89,6 +89,7 @@ export default [
       format: 'esm',
       banner: bannerText,
       sourcemap: true,
+      inlineDynamicImports: true,
     },
     plugins: [
       typescript({
@@ -116,6 +117,7 @@ export default [
       file: 'build/xrblocks.min.js',
       format: 'esm',
       sourcemap: true,
+      inlineDynamicImports: true,
     },
     plugins: [
       typescript({
