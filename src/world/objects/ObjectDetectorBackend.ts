@@ -73,7 +73,13 @@ export abstract class BaseDetectorBackend<T> {
     const snapshot = await this.getSnapshot();
     if (!snapshot) return [];
 
-    const normalizedDetections = await this.detect(snapshot);
+    let normalizedDetections: NormalizedDetectedObject<T>[] = [];
+    try {
+      normalizedDetections = await this.detect(snapshot);
+    } catch (error) {
+      console.error('Object detection backend failed:', error);
+      return [];
+    }
 
     if (this.context.options.objects.showDebugVisualizations) {
       this.visualize(snapshot, normalizedDetections);
