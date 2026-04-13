@@ -221,7 +221,7 @@ function createBoundingBoxCanvasResult(
   canvas.height = sourceHeight;
   const ctx = canvas.getContext('2d')!;
 
-  return { canvas, ctx, sourceX, sourceY, sourceWidth, sourceHeight };
+  return {canvas, ctx, sourceX, sourceY, sourceWidth, sourceHeight};
 }
 
 /**

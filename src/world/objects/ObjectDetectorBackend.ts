@@ -260,6 +260,8 @@ export abstract class BaseDetectorBackend<T> {
  * T - The type of additional data associated with the detected object (not used currently).
  */
 export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
+  private objectDetector: MEDIAPIPE.ObjectDetector | null = null;
+
   protected isAvailable(): boolean {
     return true;
   }
@@ -275,23 +277,11 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
   protected async detect(
     snapshot: CameraSnapshot
   ): Promise<NormalizedDetectedObject<T>[]> {
-    const mediapipeOptions =
-      this.context.options.objects.backendConfig.mediapipe;
-    const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
-      mediapipeOptions.wasmFilesUrl
-    );
-    const objectDetector = await MEDIAPIPE.ObjectDetector.createFromOptions(
-      vision,
-      {
-        baseOptions: {
-          modelAssetPath: mediapipeOptions.modelAssetPath,
-        },
-        scoreThreshold: mediapipeOptions.scoreThreshold,
-      }
-    );
-    if (!objectDetector) return [];
+    await this.tryInitializeObjectDetector();
 
-    const backendResponse = objectDetector.detect(snapshot.imageData!);
+    if (!this.objectDetector) return [];
+
+    const backendResponse = this.objectDetector.detect(snapshot.imageData!);
     if (!backendResponse) return [];
 
     const width = snapshot.imageData!.width;
@@ -325,6 +315,30 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
         return acc;
       },
       []
+    );
+  }
+
+  /**
+   * Initializes the MediaPipe Object Detector if it has not already been initialized.
+   * Loads the fileset resolver for vision tasks and creates the detector instance
+   * with the configured model asset path and score threshold.
+   */
+  private async tryInitializeObjectDetector(): Promise<void> {
+    if (this.objectDetector) return;
+
+    const mediapipeOptions =
+      this.context.options.objects.backendConfig.mediapipe;
+    const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
+      mediapipeOptions.wasmFilesUrl
+    );
+    this.objectDetector = await MEDIAPIPE.ObjectDetector.createFromOptions(
+      vision,
+      {
+        baseOptions: {
+          modelAssetPath: mediapipeOptions.modelAssetPath,
+        },
+        scoreThreshold: mediapipeOptions.scoreThreshold,
+      }
     );
   }
 }
