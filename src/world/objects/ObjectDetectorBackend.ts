@@ -8,7 +8,6 @@ import {GeminiResponse} from '../../ai/AITypes';
 import {
   CameraParametersSnapshot,
   cropImage,
-  cropImageData,
   transformRgbUvToWorld,
 } from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
@@ -103,14 +102,11 @@ export abstract class BaseDetectorBackend<T> {
         cropBox.min.subScalar(margin);
         cropBox.max.addScalar(margin);
 
-        let objectImage: string;
-        if (snapshot.imageData) {
-          objectImage = await cropImageData(snapshot.imageData, cropBox);
-        } else if (snapshot.base64) {
-          objectImage = await cropImage(snapshot.base64, cropBox);
-        } else {
+        const imageSource = snapshot.imageData || snapshot.base64;
+        if (!imageSource) {
           throw new Error('No valid snapshot data for cropping');
         }
+        const objectImage = await cropImage(imageSource, cropBox);
 
         const object = new DetectedObject<T>(
           item.objectName,
