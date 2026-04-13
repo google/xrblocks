@@ -2,6 +2,7 @@ import * as MEDIAPIPE from '@mediapipe/tasks-vision';
 import {
   BaseDetectorBackend,
   CameraSnapshot,
+  DetectorBackendContext,
   NormalizedDetectedObject,
 } from '../ObjectDetector';
 
@@ -13,9 +14,21 @@ import {
  */
 export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
   private objectDetector: MEDIAPIPE.ObjectDetector | null = null;
+  private initializationPromise: Promise<void>;
 
-  protected isAvailable(): boolean {
-    return true;
+  constructor(context: DetectorBackendContext) {
+    super(context);
+    this.initializationPromise = this.tryInitializeObjectDetector();
+  }
+
+  protected async isAvailable(): Promise<boolean> {
+    try {
+      await this.initializationPromise;
+      return true;
+    } catch (e) {
+      console.error('MediaPipe Object Detector is not available:', e);
+      return false;
+    }
   }
 
   protected async getSnapshot(): Promise<{imageData: ImageData} | null> {
@@ -29,7 +42,7 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
   protected async detect(
     snapshot: CameraSnapshot
   ): Promise<NormalizedDetectedObject<T>[]> {
-    await this.tryInitializeObjectDetector();
+    await this.initializationPromise;
 
     if (!this.objectDetector) return [];
 

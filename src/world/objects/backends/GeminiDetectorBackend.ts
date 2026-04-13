@@ -14,7 +14,7 @@ import {
  * T - The type of additional data associated with the detected object.
  */
 export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
-  protected isAvailable(): boolean {
+  protected async isAvailable(): Promise<boolean> {
     return !!this.context.ai.isAvailable();
   }
 

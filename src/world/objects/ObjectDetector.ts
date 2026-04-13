@@ -65,7 +65,7 @@ export abstract class BaseDetectorBackend<T> {
     depthMeshSnapshot: THREE.Mesh,
     cameraParametersSnapshot: CameraParametersSnapshot
   ): Promise<DetectedObject<T>[]> {
-    if (!this.isAvailable()) {
+    if (!(await this.isAvailable())) {
       return [];
     }
 
@@ -139,7 +139,7 @@ export abstract class BaseDetectorBackend<T> {
    * Checks if the detector backend is available for use.
    * @returns true if the backend is available, false otherwise.
    */
-  protected abstract isAvailable(): boolean;
+  protected abstract isAvailable(): Promise<boolean>;
 
   /**
    * Captures a snapshot from the device camera.
