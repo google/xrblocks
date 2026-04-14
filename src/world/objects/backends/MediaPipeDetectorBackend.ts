@@ -1,10 +1,28 @@
-import * as MEDIAPIPE from '@mediapipe/tasks-vision';
+import type * as MEDIAPIPE from '@mediapipe/tasks-vision';
 import {
   BaseDetectorBackend,
-  CameraSnapshot,
   DetectorBackendContext,
-  NormalizedDetectedObject,
-} from '../ObjectDetector';
+} from '../ObjectDetectorBackend';
+import {CameraSnapshot, NormalizedDetectedObject} from '../ObjectDetector';
+
+let FilesetResolver: typeof MEDIAPIPE.FilesetResolver | undefined;
+let ObjectDetector: typeof MEDIAPIPE.ObjectDetector | undefined;
+
+// --- Attempt Dynamic Import ---
+async function loadMediaPipeModule() {
+  if (FilesetResolver && ObjectDetector) {
+    return;
+  }
+  try {
+    const mediapipeModule = await import('@mediapipe/tasks-vision');
+    FilesetResolver = mediapipeModule.FilesetResolver;
+    ObjectDetector = mediapipeModule.ObjectDetector;
+    console.log("'@mediapipe/tasks-vision' module loaded successfully.");
+  } catch (error) {
+    console.error('Failed to load MediaPipe module:', error);
+    throw error;
+  }
+}
 
 /**
  * Object detector backend implementation using MediaPipe's Object Detector.
@@ -91,19 +109,18 @@ export class MediaPipeDetectorBackend<T> extends BaseDetectorBackend<T> {
   private async tryInitializeObjectDetector(): Promise<void> {
     if (this.objectDetector) return;
 
+    await loadMediaPipeModule();
+
     const mediapipeOptions =
       this.context.options.objects.backendConfig.mediapipe;
-    const vision = await MEDIAPIPE.FilesetResolver.forVisionTasks(
+    const vision = await FilesetResolver!.forVisionTasks(
       mediapipeOptions.wasmFilesUrl
     );
-    this.objectDetector = await MEDIAPIPE.ObjectDetector.createFromOptions(
-      vision,
-      {
-        baseOptions: {
-          modelAssetPath: mediapipeOptions.modelAssetPath,
-        },
-        scoreThreshold: mediapipeOptions.scoreThreshold,
-      }
-    );
+    this.objectDetector = await ObjectDetector!.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: mediapipeOptions.modelAssetPath,
+      },
+      scoreThreshold: mediapipeOptions.scoreThreshold,
+    });
   }
 }

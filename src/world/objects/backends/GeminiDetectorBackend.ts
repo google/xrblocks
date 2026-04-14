@@ -1,11 +1,8 @@
 import {Gemini} from '../../../ai/Gemini';
 import {GeminiResponse} from '../../../ai/AITypes';
 import {parseBase64DataURL} from '../../../utils/utils';
-import {
-  BaseDetectorBackend,
-  CameraSnapshot,
-  NormalizedDetectedObject,
-} from '../ObjectDetector';
+import {BaseDetectorBackend} from '../ObjectDetectorBackend';
+import {CameraSnapshot, NormalizedDetectedObject} from '../ObjectDetector';
 
 /**
  * Object detector backend implementation using Gemini via the AI service.
