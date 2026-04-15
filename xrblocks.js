@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid 6517109
- * @builddate 2026-04-08T00:15:51.905Z
+ * @commitid 0f73df0
+ * @builddate 2026-04-15T08:28:03.202Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2091,54 +2091,77 @@ function transformRgbUvToWorld(rgbUv, depthMeshSnapshot, cameraParametersSnapsho
     };
 }
 /**
- * Asynchronously crops a base64 encoded image using a THREE.Box2 bounding box.
- * This function creates an in-memory image, draws a specified portion of it to
- * a canvas, and then returns the canvas content as a new base64 string.
- * @param base64Image - The base64 string of the source image. Can be a raw
- *     string or a full data URI.
- * @param boundingBox - The bounding box with relative coordinates (0-1) for
- *     cropping.
- * @returns A promise that resolves with the base64 string of the cropped image.
+ * Helper function to prepare a canvas for the bounding box for rendering purposes.
+ * Calculates the clamped bounding box and returns the canvas, context, and dimensions.
  */
-async function cropImage(base64Image, boundingBox) {
-    if (!base64Image) {
-        throw new Error('No image data provided for cropping.');
-    }
-    const img = new Image();
-    await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = (err) => {
-            console.error('Error loading image for cropping:', err);
-            reject(new Error('Failed to load image for cropping.'));
-        };
-        img.src = base64Image.startsWith('data:image')
-            ? base64Image
-            : `data:image/png;base64,${base64Image}`;
-    });
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    // Create a unit box and find the intersection to clamp coordinates.
+function createBoundingBoxCanvasResult(width, height, boundingBox) {
     const unitBox = new THREE.Box2(new THREE.Vector2(0, 0), new THREE.Vector2(1, 1));
     const clampedBox = boundingBox.clone().intersect(unitBox);
     const cropSize = new THREE.Vector2();
     clampedBox.getSize(cropSize);
-    // If the resulting crop area has no size, return an empty image.
     if (cropSize.x === 0 || cropSize.y === 0) {
-        return 'data:image/png;base64,';
+        return null;
     }
-    // Calculate absolute pixel values from relative coordinates.
-    const sourceX = img.width * clampedBox.min.x;
-    const sourceY = img.height * clampedBox.min.y;
-    const sourceWidth = img.width * cropSize.x;
-    const sourceHeight = img.height * cropSize.y;
-    // Set canvas size to the cropped image size.
+    const sourceX = Math.floor(width * clampedBox.min.x);
+    const sourceY = Math.floor(height * clampedBox.min.y);
+    const sourceWidth = Math.ceil(width * cropSize.x);
+    const sourceHeight = Math.ceil(height * cropSize.y);
+    const canvas = document.createElement('canvas');
     canvas.width = sourceWidth;
     canvas.height = sourceHeight;
-    // Draw the cropped portion of the source image onto the canvas.
-    ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, // Source rectangle
-    0, 0, sourceWidth, sourceHeight // Destination rectangle
-    );
-    return canvas.toDataURL('image/png');
+    const ctx = canvas.getContext('2d');
+    return { canvas, ctx, sourceX, sourceY, sourceWidth, sourceHeight };
+}
+/**
+ * Asynchronously crops an image (provided as a base64 string or ImageData) using a THREE.Box2 bounding box.
+ * This function draws a specified portion of the image to a canvas and returns the canvas content as a new base64 string.
+ * @param imageSource - The source image as a base64 string or ImageData object.
+ * @param boundingBox - The bounding box with relative coordinates (0-1) for cropping.
+ * @returns A promise that resolves with the base64 string of the cropped image.
+ */
+async function cropImage(imageSource, boundingBox) {
+    if (!imageSource) {
+        throw new Error('No image data provided for cropping.');
+    }
+    let width;
+    let height;
+    let drawOp;
+    if (typeof imageSource === 'string') {
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = (err) => {
+                console.error('Error loading image for cropping:', err);
+                reject(new Error('Failed to load image for cropping.'));
+            };
+            img.src = imageSource.startsWith('data:image')
+                ? imageSource
+                : `data:image/png;base64,${imageSource}`;
+        });
+        width = img.width;
+        height = img.height;
+        drawOp = (ctx, canvasResult) => {
+            ctx.drawImage(img, canvasResult.sourceX, canvasResult.sourceY, canvasResult.sourceWidth, canvasResult.sourceHeight, 0, 0, canvasResult.sourceWidth, canvasResult.sourceHeight);
+        };
+    }
+    else if (imageSource instanceof ImageData) {
+        width = imageSource.width;
+        height = imageSource.height;
+        drawOp = (ctx, canvasResult) => {
+            ctx.putImageData(imageSource, -canvasResult.sourceX, -canvasResult.sourceY, canvasResult.sourceX, canvasResult.sourceY, canvasResult.sourceWidth, canvasResult.sourceHeight);
+        };
+    }
+    else {
+        console.warn('Unsupported image source type for cropping.');
+        return 'data:image/png;base64,';
+    }
+    const canvasResult = createBoundingBoxCanvasResult(width, height, boundingBox);
+    if (!canvasResult) {
+        console.warn('Unable to create CanvasResult for cropping.');
+        return 'data:image/png;base64,';
+    }
+    drawOp(canvasResult.ctx, canvasResult);
+    return canvasResult.canvas.toDataURL('image/png');
 }
 
 /**
@@ -7856,8 +7879,13 @@ class ObjectsOptions {
                     },
                 },
             },
-            /** Placeholder for a future MediaPipe backend configuration. */
-            mediapipe: {},
+            /** Configuration for MediaPipe backend. */
+            mediapipe: {
+                wasmFilesUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm',
+                // Check https://ai.google.dev/edge/mediapipe/solutions/vision/object_detector#models for other models.
+                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite',
+                scoreThreshold: 0.5,
+            },
         };
         if (options) {
             deepMerge(this, options);
@@ -10724,6 +10752,331 @@ class DetectedObject extends THREE.Object3D {
 }
 
 /**
+ * Base class for object detector backends.
+ * Handles the orchestration of capturing snapshots, running detection,
+ * and creating visual representations.
+ *
+ * T - The type of additional data associated with the detected object.
+ */
+class BaseDetectorBackend {
+    constructor(context) {
+        this.context = context;
+    }
+    async run(depthMeshSnapshot, cameraParametersSnapshot) {
+        if (!(await this.isAvailable())) {
+            return [];
+        }
+        const snapshot = await this.getSnapshot();
+        if (!snapshot)
+            return [];
+        let normalizedDetections = [];
+        try {
+            normalizedDetections = await this.detect(snapshot);
+        }
+        catch (error) {
+            console.error('Object detection backend failed:', error);
+            return [];
+        }
+        if (this.context.options.objects.showDebugVisualizations) {
+            this.visualize(snapshot, normalizedDetections);
+        }
+        const detectionPromises = normalizedDetections.map(async (item) => {
+            const boundingBox = new THREE.Box2(new THREE.Vector2(item.xmin, item.ymin), new THREE.Vector2(item.xmax, item.ymax));
+            const center = new THREE.Vector2();
+            boundingBox.getCenter(center);
+            const worldCoordinates = transformRgbUvToWorld(center, depthMeshSnapshot, cameraParametersSnapshot);
+            if (worldCoordinates) {
+                const { worldPosition } = worldCoordinates;
+                const margin = this.context.options.objects.objectImageMargin;
+                const cropBox = boundingBox.clone();
+                cropBox.min.subScalar(margin);
+                cropBox.max.addScalar(margin);
+                const imageSource = snapshot.imageData || snapshot.base64;
+                if (!imageSource) {
+                    throw new Error('No valid snapshot data for cropping');
+                }
+                const objectImage = await cropImage(imageSource, cropBox);
+                const object = new DetectedObject(item.objectName, objectImage, boundingBox, item.additionalData);
+                object.position.copy(worldPosition);
+                if (this.context.debugVisualsGroup) {
+                    this.createDebugVisual(object);
+                }
+                return object;
+            }
+            return null;
+        });
+        const detectedObjects = (await Promise.all(detectionPromises)).filter((obj) => obj !== null && obj !== undefined);
+        return detectedObjects;
+    }
+    /**
+     * Creates a debug visual representation for a detected object in the 3D scene.
+     *
+     * @param object - The detected object to visualize.
+     */
+    async createDebugVisual(object) {
+        // Create sphere.
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff4285f4 }));
+        sphere.position.copy(object.position);
+        // Create and configure the text label using Troika.
+        const { Text } = await import('troika-three-text');
+        const textLabel = new Text();
+        textLabel.text = object.label;
+        textLabel.fontSize = 0.07;
+        textLabel.color = 0xffffff;
+        textLabel.anchorX = 'center';
+        textLabel.anchorY = 'bottom';
+        // Position the label above the sphere
+        textLabel.position.copy(sphere.position);
+        textLabel.position.y += 0.04; // Offset above the sphere.
+        this.context.debugVisualsGroup.add(sphere, textLabel);
+        textLabel.sync(); // Required for Troika text to appear.
+    }
+    /**
+     * Visualizes the detections by drawing bounding boxes on a canvas and downloading the image.
+     * This is used for debugging detection results.
+     *
+     * @param snapshot - The camera snapshot used for detection.
+     * @param detections - The array of normalized detections to draw.
+     */
+    visualize(snapshot, detections) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const drawDetectionsAndDownload = () => {
+            detections.forEach((item) => {
+                const rectX = item.xmin * canvas.width;
+                const rectY = item.ymin * canvas.height;
+                const rectWidth = (item.xmax - item.xmin) * canvas.width;
+                const rectHeight = (item.ymax - item.ymin) * canvas.height;
+                ctx.strokeStyle = '#FF0000';
+                ctx.lineWidth = Math.max(2, canvas.width / 400);
+                ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
+                const text = item.objectName;
+                const fontSize = Math.max(16, canvas.width / 80);
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.textBaseline = 'bottom';
+                const textMetrics = ctx.measureText(text);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(rectX, rectY - fontSize, textMetrics.width + 8, fontSize + 4);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillText(text, rectX + 4, rectY + 2);
+            });
+            const timestamp = new Date()
+                .toISOString()
+                .slice(0, 19)
+                .replace('T', '_')
+                .replace(/:/g, '-');
+            const link = document.createElement('a');
+            link.download = `detection_debug_${timestamp}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        };
+        if (snapshot.imageData) {
+            canvas.width = snapshot.imageData.width;
+            canvas.height = snapshot.imageData.height;
+            ctx.putImageData(snapshot.imageData, 0, 0);
+            drawDetectionsAndDownload();
+        }
+        else if (snapshot.base64) {
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                ctx.drawImage(img, 0, 0);
+                drawDetectionsAndDownload();
+            };
+            img.src = snapshot.base64;
+        }
+    }
+}
+
+/**
+ * Object detector backend implementation using Gemini via the AI service.
+ * Sends image data to a remote model for detection.
+ *
+ * T - The type of additional data associated with the detected object.
+ */
+class GeminiDetectorBackend extends BaseDetectorBackend {
+    async isAvailable() {
+        return !!this.context.ai.isAvailable();
+    }
+    async getSnapshot() {
+        const base64Image = await this.context.deviceCamera.getSnapshot({
+            outputFormat: 'base64',
+        });
+        if (!base64Image)
+            return null;
+        return { base64: base64Image };
+    }
+    buildGeminiConfig() {
+        const geminiOptions = this.context.options.objects.backendConfig.gemini;
+        return {
+            thinkingConfig: {
+                thinkingBudget: 0,
+            },
+            responseMimeType: 'application/json',
+            responseSchema: geminiOptions.responseSchema,
+            systemInstruction: [{ text: geminiOptions.systemInstruction }],
+        };
+    }
+    async detect(snapshot) {
+        const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64);
+        const config = this.buildGeminiConfig();
+        const originalGeminiConfig = this.context.aiOptions.gemini.config;
+        this.context.aiOptions.gemini.config = config;
+        const textPrompt = 'What do you see in this image?';
+        let backendResponse = null;
+        try {
+            backendResponse = await this.context.ai.model.query({
+                type: 'multiPart',
+                parts: [
+                    { inlineData: { mimeType: mimeType || undefined, data: strippedBase64 } },
+                    { text: textPrompt },
+                ],
+            });
+        }
+        catch (e) {
+            console.error('Gemini detection failed', e);
+            return [];
+        }
+        finally {
+            this.context.aiOptions.gemini.config = originalGeminiConfig;
+        }
+        return this.normalizeDetections(backendResponse);
+    }
+    normalizeDetections(backendResponse) {
+        let parsedResponse;
+        try {
+            if (backendResponse && backendResponse.text) {
+                parsedResponse = JSON.parse(backendResponse.text);
+            }
+            else {
+                return [];
+            }
+        }
+        catch (e) {
+            console.warn('Error while normalizing detections in Gemini Response', e);
+            return [];
+        }
+        if (!Array.isArray(parsedResponse))
+            return [];
+        // Map Gemini JSON response to NormalizedDetectedObject format.
+        // Gemini returns coordinates in the range [0, 1000], so we divide by 1000 to normalize.
+        return parsedResponse.reduce((acc, item) => {
+            const { ymin, xmin, ymax, xmax, objectName, ...additionalData } = item || {};
+            if ([ymin, xmin, ymax, xmax].every((coord) => typeof coord === 'number')) {
+                acc.push({
+                    ymin: ymin / 1000,
+                    xmin: xmin / 1000,
+                    ymax: ymax / 1000,
+                    xmax: xmax / 1000,
+                    objectName: objectName || 'unknown',
+                    additionalData: additionalData,
+                });
+            }
+            return acc;
+        }, []);
+    }
+}
+
+let FilesetResolver;
+let ObjectDetector$1;
+// --- Attempt Dynamic Import ---
+async function loadMediaPipeModule() {
+    if (FilesetResolver && ObjectDetector$1) {
+        return;
+    }
+    try {
+        const mediapipeModule = await import('@mediapipe/tasks-vision');
+        FilesetResolver = mediapipeModule.FilesetResolver;
+        ObjectDetector$1 = mediapipeModule.ObjectDetector;
+        console.log("'@mediapipe/tasks-vision' module loaded successfully.");
+    }
+    catch (error) {
+        console.error('Failed to load MediaPipe module:', error);
+        throw error;
+    }
+}
+/**
+ * Object detector backend implementation using MediaPipe's Object Detector.
+ * Runs locally on the device.
+ *
+ * T - The type of additional data associated with the detected object (not used currently).
+ */
+class MediaPipeDetectorBackend extends BaseDetectorBackend {
+    constructor(context) {
+        super(context);
+        this.objectDetector = null;
+        this.initializationPromise = this.tryInitializeObjectDetector();
+    }
+    async isAvailable() {
+        try {
+            await this.initializationPromise;
+            return true;
+        }
+        catch (e) {
+            console.error('MediaPipe Object Detector is not available:', e);
+            return false;
+        }
+    }
+    async getSnapshot() {
+        const imageData = await this.context.deviceCamera.getSnapshot({
+            outputFormat: 'imageData',
+        });
+        if (!imageData)
+            return null;
+        return { imageData };
+    }
+    async detect(snapshot) {
+        await this.initializationPromise;
+        if (!this.objectDetector)
+            return [];
+        const backendResponse = this.objectDetector.detect(snapshot.imageData);
+        if (!backendResponse)
+            return [];
+        const width = snapshot.imageData.width;
+        const height = snapshot.imageData.height;
+        return this.normalizeDetections(backendResponse, width, height);
+    }
+    normalizeDetections(backendResponse, width, height) {
+        // Map MediaPipe detections to NormalizedDetectedObject format.
+        // We normalize the bounding box coordinates by the image dimensions.
+        return backendResponse.detections.reduce((acc, detection) => {
+            const box = detection.boundingBox;
+            if (box) {
+                const category = detection.categories?.[0];
+                const objectName = category?.categoryName || category?.displayName || 'unknown';
+                acc.push({
+                    ymin: box.originY / height,
+                    xmin: box.originX / width,
+                    ymax: (box.originY + box.height) / height,
+                    xmax: (box.originX + box.width) / width,
+                    objectName: objectName,
+                });
+            }
+            return acc;
+        }, []);
+    }
+    /**
+     * Initializes the MediaPipe Object Detector if it has not already been initialized.
+     * Loads the fileset resolver for vision tasks and creates the detector instance
+     * with the configured model asset path and score threshold.
+     */
+    async tryInitializeObjectDetector() {
+        if (this.objectDetector)
+            return;
+        await loadMediaPipeModule();
+        const mediapipeOptions = this.context.options.objects.backendConfig.mediapipe;
+        const vision = await FilesetResolver.forVisionTasks(mediapipeOptions.wasmFilesUrl);
+        this.objectDetector = await ObjectDetector$1.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: mediapipeOptions.modelAssetPath,
+            },
+            scoreThreshold: mediapipeOptions.scoreThreshold,
+        });
+    }
+}
+
+/**
  * Detects objects in the user's environment using a specified backend.
  * It queries an AI model with the device camera feed and returns located
  * objects with 2D and 3D positioning data.
@@ -10735,6 +11088,7 @@ class ObjectDetector extends Script {
          * A map from the object's UUID to our custom `DetectedObject` instance.
          */
         this._detectedObjects = new Map();
+        this._detectorBackends = new Map();
         this.targetDevice = 'galaxyxr';
     }
     static { this.dependencies = {
@@ -10758,7 +11112,6 @@ class ObjectDetector extends Script {
         this.depth = depth;
         this.camera = camera;
         this.renderer = renderer;
-        this._geminiConfig = this._buildGeminiConfig();
         if (this.options.objects.showDebugVisualizations) {
             this._debugVisualsGroup = new THREE.Group();
             // Disable raycasting for the debug group to prevent interaction errors.
@@ -10773,16 +11126,51 @@ class ObjectDetector extends Script {
      */
     async runDetection() {
         this.clear(); // Clear previous results before starting a new detection.
-        switch (this.options.objects.backendConfig.activeBackend) {
-            case 'gemini':
-                return this._runGeminiDetection();
-            // Future backends like 'mediapipe' will be handled here.
-            // case 'mediapipe':
-            //   return this._runMediaPipeDetection();
-            default:
-                console.warn(`ObjectDetector backend '${this.options.objects.backendConfig.activeBackend}' is not supported.`);
-                return [];
+        const depthMeshSnapshot = this.getDepthMeshSnapshot();
+        const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
+        const context = this.getDetectorContext();
+        const activeBackend = this.options.objects.backendConfig.activeBackend;
+        const detectorBackendPromise = this.getOrCreateDetectorBackend(activeBackend, context);
+        let detectorBackend;
+        try {
+            detectorBackend = await detectorBackendPromise;
         }
+        catch (error) {
+            console.warn(`Failed to load or initialize ObjectDetector backend '${activeBackend}':`, error);
+            return [];
+        }
+        const detectedObjects = await detectorBackend.run(depthMeshSnapshot, cameraParametersSnapshot);
+        for (const obj of detectedObjects) {
+            this._detectedObjects.set(obj.uuid, obj);
+            this.add(obj);
+        }
+        return detectedObjects;
+    }
+    getDetectorContext() {
+        return {
+            options: this.options,
+            ai: this.ai,
+            aiOptions: this.aiOptions,
+            deviceCamera: this.deviceCamera,
+            debugVisualsGroup: this._debugVisualsGroup,
+        };
+    }
+    getOrCreateDetectorBackend(activeBackend, context) {
+        let detectorBackendPromise = this._detectorBackends.get(activeBackend);
+        if (!detectorBackendPromise) {
+            detectorBackendPromise = (async () => {
+                switch (activeBackend) {
+                    case 'gemini':
+                        return new GeminiDetectorBackend(context);
+                    case 'mediapipe':
+                        return new MediaPipeDetectorBackend(context);
+                    default:
+                        throw new Error(`ObjectDetector backend '${activeBackend}' is not supported.`);
+                }
+            })();
+            this._detectorBackends.set(activeBackend, detectorBackendPromise);
+        }
+        return detectorBackendPromise;
     }
     getDepthMeshSnapshot() {
         const clonedGeometry = this.depth.depthMesh.geometry.clone();
@@ -10794,98 +11182,6 @@ class ObjectDetector extends Script {
         this.depth.depthMesh.getWorldScale(depthMeshSnapshot.scale);
         depthMeshSnapshot.updateMatrixWorld(true);
         return depthMeshSnapshot;
-    }
-    /**
-     * Runs object detection using the Gemini backend.
-     */
-    async _runGeminiDetection() {
-        if (!this.ai.isAvailable()) {
-            console.error('Gemini is unavailable for object detection.');
-            return [];
-        }
-        // Cache depth and camera data to align with the captured image frame.
-        const depthMeshSnapshot = this.getDepthMeshSnapshot();
-        const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
-        const base64Image = await this.deviceCamera.getSnapshot({
-            outputFormat: 'base64',
-        });
-        if (!base64Image) {
-            console.warn('Could not get device camera snapshot.');
-            return [];
-        }
-        const { mimeType, strippedBase64 } = parseBase64DataURL(base64Image);
-        // Temporarily set the Gemini config for this specific query type.
-        const originalGeminiConfig = this.aiOptions.gemini.config;
-        this.aiOptions.gemini.config = this._geminiConfig;
-        const textPrompt = 'What do you see in this image?';
-        try {
-            const rawResponse = await this.ai.model.query({
-                type: 'multiPart',
-                parts: [
-                    { inlineData: { mimeType: mimeType || undefined, data: strippedBase64 } },
-                    { text: textPrompt },
-                ],
-            });
-            let parsedResponse;
-            try {
-                if (rawResponse && rawResponse.text) {
-                    parsedResponse = JSON.parse(rawResponse.text);
-                }
-                else {
-                    console.error('AI response is missing text field:', rawResponse, 'Raw response was:', rawResponse);
-                    return [];
-                }
-            }
-            catch (e) {
-                console.error('Failed to parse AI response JSON:', e, 'Raw response was:', rawResponse);
-                return [];
-            }
-            if (!Array.isArray(parsedResponse)) {
-                console.error('Parsed AI response is not an array:', parsedResponse);
-                return [];
-            }
-            if (this.options.objects.showDebugVisualizations) {
-                this._visualizeBoundingBoxesOnImage(base64Image, parsedResponse);
-            }
-            const detectionPromises = parsedResponse.map(async (item) => {
-                const { ymin, xmin, ymax, xmax, objectName, ...additionalData } = item || {};
-                if ([ymin, xmin, ymax, xmax].some((coord) => typeof coord !== 'number')) {
-                    return null;
-                }
-                // Bounding box from AI is 0-1000, convert to normalized 0-1.
-                const boundingBox = new THREE.Box2(new THREE.Vector2(xmin / 1000, ymin / 1000), new THREE.Vector2(xmax / 1000, ymax / 1000));
-                const center = new THREE.Vector2();
-                boundingBox.getCenter(center);
-                const worldCoordinates = transformRgbUvToWorld(center, depthMeshSnapshot, cameraParametersSnapshot);
-                if (worldCoordinates) {
-                    const { worldPosition } = worldCoordinates;
-                    const margin = this.options.objects.objectImageMargin;
-                    // Create a new bounding box for cropping that includes the margin.
-                    const cropBox = boundingBox.clone();
-                    cropBox.min.subScalar(margin);
-                    cropBox.max.addScalar(margin);
-                    const objectImage = await cropImage(base64Image, cropBox);
-                    const object = new DetectedObject(objectName, objectImage, boundingBox, additionalData);
-                    object.position.copy(worldPosition);
-                    this.add(object);
-                    this._detectedObjects.set(object.uuid, object);
-                    if (this._debugVisualsGroup) {
-                        this._createDebugVisual(object);
-                    }
-                    return object;
-                }
-            });
-            const detectedObjects = (await Promise.all(detectionPromises)).filter((obj) => obj !== null && obj !== undefined);
-            return detectedObjects;
-        }
-        catch (error) {
-            console.error('AI query for object detection failed:', error);
-            return [];
-        }
-        finally {
-            // Restore the original config after the query.
-            this.aiOptions.gemini.config = originalGeminiConfig;
-        }
     }
     /**
      * Retrieves a list of currently detected objects.
@@ -10923,59 +11219,6 @@ class ObjectDetector extends Script {
         if (this._debugVisualsGroup) {
             this._debugVisualsGroup.visible = visible;
         }
-    }
-    /**
-     * Draws the detected bounding boxes on the input image and triggers a
-     * download for debugging.
-     * @param base64Image - The base64 encoded input image.
-     * @param detections - The array of detected objects from the AI response.
-     */
-    _visualizeBoundingBoxesOnImage(base64Image, detections) {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            detections.forEach((item) => {
-                const { ymin, xmin, ymax, xmax, objectName } = (item || {});
-                if ([ymin, xmin, ymax, xmax].some((coord) => typeof coord !== 'number')) {
-                    return;
-                }
-                // Bounding box from AI is 0-1000, scale it to image dimensions.
-                const rectX = (xmin / 1000) * canvas.width;
-                const rectY = (ymin / 1000) * canvas.height;
-                const rectWidth = ((xmax - xmin) / 1000) * canvas.width;
-                const rectHeight = ((ymax - ymin) / 1000) * canvas.height;
-                ctx.strokeStyle = '#FF0000';
-                ctx.lineWidth = Math.max(2, canvas.width / 400);
-                ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
-                // Draw label.
-                const text = objectName || 'unknown';
-                const fontSize = Math.max(16, canvas.width / 80);
-                ctx.font = `bold ${fontSize}px sans-serif`;
-                ctx.textBaseline = 'bottom';
-                const textMetrics = ctx.measureText(text);
-                // Draw a background for the text for better readability.
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-                ctx.fillRect(rectX, rectY - fontSize, textMetrics.width + 8, fontSize + 4);
-                // Draw the text itself.
-                ctx.fillStyle = '#FFFFFF'; // White text
-                ctx.fillText(text, rectX + 4, rectY + 2);
-            });
-            // Create a link and trigger the download.
-            const timestamp = new Date()
-                .toISOString()
-                .slice(0, 19)
-                .replace('T', '_')
-                .replace(/:/g, '-');
-            const link = document.createElement('a');
-            link.download = `detection_debug_${timestamp}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-        };
-        img.src = base64Image;
     }
     /**
      * Generates a visual representation of the depth map, normalized to 0-1 range,
@@ -11041,43 +11284,6 @@ class ObjectDetector extends Script {
         link.download = `depth_debug_${timestamp}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
-    }
-    /**
-     * Creates a simple debug visualization for an object based on its position
-     * (center of its 2D detection bounding box).
-     * @param object - The detected object to visualize.
-     */
-    async _createDebugVisual(object) {
-        // Create sphere.
-        const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff4285f4 }));
-        sphere.position.copy(object.position);
-        // Create and configure the text label using Troika.
-        const { Text } = await import('troika-three-text');
-        const textLabel = new Text();
-        textLabel.text = object.label;
-        textLabel.fontSize = 0.07;
-        textLabel.color = 0xffffff;
-        textLabel.anchorX = 'center';
-        textLabel.anchorY = 'bottom';
-        // Position the label above the sphere
-        textLabel.position.copy(sphere.position);
-        textLabel.position.y += 0.04; // Offset above the sphere.
-        this._debugVisualsGroup.add(sphere, textLabel);
-        textLabel.sync(); // Required for Troika text to appear.
-    }
-    /**
-     * Builds the Gemini configuration object from the world options.
-     */
-    _buildGeminiConfig() {
-        const geminiOptions = this.options.objects.backendConfig.gemini;
-        return {
-            thinkingConfig: {
-                thinkingBudget: 0,
-            },
-            responseMimeType: 'application/json',
-            responseSchema: geminiOptions.responseSchema,
-            systemInstruction: [{ text: geminiOptions.systemInstruction }],
-        };
     }
 }
 

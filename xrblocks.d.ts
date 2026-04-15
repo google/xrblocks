@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid 6517109
- * @builddate 2026-04-08T00:15:51.905Z
+ * @commitid 0f73df0
+ * @builddate 2026-04-15T08:28:03.202Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3043,16 +3043,13 @@ declare function transformRgbUvToWorld(rgbUv: THREE.Vector2, depthMeshSnapshot: 
     depthInMeters: number;
 } | null;
 /**
- * Asynchronously crops a base64 encoded image using a THREE.Box2 bounding box.
- * This function creates an in-memory image, draws a specified portion of it to
- * a canvas, and then returns the canvas content as a new base64 string.
- * @param base64Image - The base64 string of the source image. Can be a raw
- *     string or a full data URI.
- * @param boundingBox - The bounding box with relative coordinates (0-1) for
- *     cropping.
+ * Asynchronously crops an image (provided as a base64 string or ImageData) using a THREE.Box2 bounding box.
+ * This function draws a specified portion of the image to a canvas and returns the canvas content as a new base64 string.
+ * @param imageSource - The source image as a base64 string or ImageData object.
+ * @param boundingBox - The bounding box with relative coordinates (0-1) for cropping.
  * @returns A promise that resolves with the base64 string of the cropped image.
  */
-declare function cropImage(base64Image: string, boundingBox: THREE.Box2): Promise<string>;
+declare function cropImage(imageSource: string | ImageData, boundingBox: THREE.Box2): Promise<string>;
 
 declare function intrinsicsToProjectionMatrix(K: number[], width: number, height: number, near: number, far: number, target: THREE.Matrix4): THREE.Matrix4;
 
@@ -4077,8 +4074,12 @@ declare class ObjectsOptions {
                 };
             };
         };
-        /** Placeholder for a future MediaPipe backend configuration. */
-        mediapipe: {};
+        /** Configuration for MediaPipe backend. */
+        mediapipe: {
+            wasmFilesUrl: string;
+            modelAssetPath: string;
+            scoreThreshold: number;
+        };
     };
     constructor(options?: DeepPartial<ObjectsOptions>);
     /**
@@ -5400,6 +5401,28 @@ declare class DetectedObject<T> extends THREE.Object3D {
 }
 
 /**
+ * Represents a detected object in a normalized format, independent of the specific detector backend used.
+ * Coordinates are normalized typically in the range [0, 1].
+ *
+ * T - The type of additional data associated with the detected object.
+ */
+interface NormalizedDetectedObject<T> {
+    ymin: number;
+    xmin: number;
+    ymax: number;
+    xmax: number;
+    objectName: string;
+    additionalData?: T;
+}
+/**
+ * Represents a snapshot taken from the device camera.
+ * Can contain either a base64 encoded image string or raw ImageData.
+ */
+interface CameraSnapshot {
+    base64?: string;
+    imageData?: ImageData;
+}
+/**
  * Detects objects in the user's environment using a specified backend.
  * It queries an AI model with the device camera feed and returns located
  * objects with 2D and 3D positioning data.
@@ -5418,11 +5441,8 @@ declare class ObjectDetector extends Script {
      * A map from the object's UUID to our custom `DetectedObject` instance.
      */
     private _detectedObjects;
+    private _detectorBackends;
     private _debugVisualsGroup?;
-    /**
-     * The configuration for the Gemini backend.
-     */
-    private _geminiConfig;
     private options;
     private ai;
     private aiOptions;
@@ -5450,11 +5470,9 @@ declare class ObjectDetector extends Script {
      * array of detected `DetectedObject` instances.
      */
     runDetection<T = null>(): Promise<DetectedObject<T>[]>;
+    private getDetectorContext;
+    private getOrCreateDetectorBackend;
     private getDepthMeshSnapshot;
-    /**
-     * Runs object detection using the Gemini backend.
-     */
-    private _runGeminiDetection;
     /**
      * Retrieves a list of currently detected objects.
      *
@@ -5474,28 +5492,11 @@ declare class ObjectDetector extends Script {
      */
     showDebugVisualizations(visible?: boolean): void;
     /**
-     * Draws the detected bounding boxes on the input image and triggers a
-     * download for debugging.
-     * @param base64Image - The base64 encoded input image.
-     * @param detections - The array of detected objects from the AI response.
-     */
-    private _visualizeBoundingBoxesOnImage;
-    /**
      * Generates a visual representation of the depth map, normalized to 0-1 range,
      * and triggers a download for debugging.
      * @param depthArray - The raw depth data array.
      */
     private _visualizeDepthMap;
-    /**
-     * Creates a simple debug visualization for an object based on its position
-     * (center of its 2D detection bounding box).
-     * @param object - The detected object to visualize.
-     */
-    private _createDebugVisual;
-    /**
-     * Builds the Gemini configuration object from the world options.
-     */
-    private _buildGeminiConfig;
 }
 
 type SimulatorPlaneType = 'horizontal' | 'vertical';
@@ -8117,4 +8118,4 @@ declare class VideoFileStream extends VideoStream<VideoFileStreamDetails> {
 }
 
 export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScrollingTroikaTextView, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
-export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, BuiltInGestureName, CameraParametersSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, Draggable, FormFactor, GLTFData, GeminiQueryInput, GestureConfiguration, GestureConfigurations, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureProvider, GetWeatherArgs, GridOptions, HasDraggingMode, HasIgnoreReticleRaycast, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, KeyEvent, KeysJson, LabelViewOptions, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, PagerOptions, PanelFadeState, PanelOptions, PlaySoundOptions, RAPIERCompat, RgbToDepthParams, RowOptions, ScrollingTroikaTextViewOptions, SelectEvent, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorModeIndicatorElement, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, WeatherData };
+export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, BuiltInGestureName, CameraParametersSnapshot, CameraSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, Draggable, FormFactor, GLTFData, GeminiQueryInput, GestureConfiguration, GestureConfigurations, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureProvider, GetWeatherArgs, GridOptions, HasDraggingMode, HasIgnoreReticleRaycast, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, KeyEvent, KeysJson, LabelViewOptions, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, NormalizedDetectedObject, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, PagerOptions, PanelFadeState, PanelOptions, PlaySoundOptions, RAPIERCompat, RgbToDepthParams, RowOptions, ScrollingTroikaTextViewOptions, SelectEvent, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorModeIndicatorElement, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, WeatherData };
