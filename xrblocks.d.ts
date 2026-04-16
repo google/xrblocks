@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid 9f8cb8a
- * @builddate 2026-04-15T18:59:31.372Z
+ * @commitid 9fc1075
+ * @builddate 2026-04-16T22:30:19.759Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2904,10 +2904,10 @@ declare class VideoStream<T extends VideoStreamDetails = VideoStreamDetails> ext
      * @param options - The options for the snapshot.
      * @returns The captured data.
      */
-    getSnapshot(_: VideoStreamGetSnapshotImageDataOptions): ImageData;
-    getSnapshot(_: VideoStreamGetSnapshotBase64Options): Promise<string | null>;
-    getSnapshot(_: VideoStreamGetSnapshotTextureOptions): THREE.Texture;
-    getSnapshot(_: VideoStreamGetSnapshotBlobOptions): Promise<Blob | null>;
+    getSnapshot(options: VideoStreamGetSnapshotImageDataOptions): ImageData;
+    getSnapshot(options: VideoStreamGetSnapshotBase64Options): Promise<string | null>;
+    getSnapshot(options: VideoStreamGetSnapshotTextureOptions): THREE.Texture;
+    getSnapshot(options: VideoStreamGetSnapshotBlobOptions): Promise<Blob | null>;
     /**
      * Stops the current video stream tracks.
      */
@@ -3031,7 +3031,7 @@ declare function getCameraParametersSnapshot(camera: THREE.PerspectiveCamera, xr
  * Raycasts to the depth mesh to find the world position and normal at a given UV coordinate.
  * @param rgbUv - The UV coordinate to raycast from.
  * @param depthMeshSnapshot - The depth mesh to raycast against.
- * @param depthTransformParameters - The depth transform parameters.
+ * @param cameraParametersSnapshot - Parameters of the device camera relative to the render camera's world.
  * @returns The world position, normal, and depth at the given UV coordinate.
  */
 declare function transformRgbUvToWorld(rgbUv: THREE.Vector2, depthMeshSnapshot: THREE.Mesh, cameraParametersSnapshot: {
@@ -3108,9 +3108,21 @@ declare const XR_BLOCKS_ASSETS_PATH = "https://cdn.jsdelivr.net/gh/xrblocks/asse
 
 declare class Raycaster extends THREE.Raycaster {
     sortFunction: (a: THREE.Intersection, b: THREE.Intersection) => number;
-    /** {@inheritDoc three#Raycaster.intersectObjects} */
+    /**
+     * Intersects a single object with the raycaster, using the custom sort function.
+     * @param object - The object to intersect with.
+     * @param recursive - Whether to intersect with the object's children.
+     * @param intersects - The array to store the intersections in.
+     * @returns The intersections found.
+     */
     intersectObject<TIntersected extends THREE.Object3D>(object: THREE.Object3D, recursive?: boolean, intersects?: Array<THREE.Intersection<TIntersected>>): Array<THREE.Intersection<TIntersected>>;
-    /** {@inheritDoc three#Raycaster.intersectObjects} */
+    /**
+     * Intersects multiple objects with the raycaster, using the custom sort function.
+     * @param objects - The objects to intersect with.
+     * @param recursive - Whether to intersect with the objects' children.
+     * @param intersects - The array to store the intersections in.
+     * @returns The intersections found.
+     */
     intersectObjects<TIntersected extends THREE.Object3D>(objects: THREE.Object3D[], recursive?: boolean, intersects?: Array<THREE.Intersection<TIntersected>>): Array<THREE.Intersection<TIntersected>>;
 }
 

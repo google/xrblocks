@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid 9f8cb8a
- * @builddate 2026-04-15T18:59:31.372Z
+ * @commitid 9fc1075
+ * @builddate 2026-04-16T22:30:19.759Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2066,7 +2066,7 @@ function getCameraParametersSnapshot(camera, xrCameras, deviceCamera, targetDevi
  * Raycasts to the depth mesh to find the world position and normal at a given UV coordinate.
  * @param rgbUv - The UV coordinate to raycast from.
  * @param depthMeshSnapshot - The depth mesh to raycast against.
- * @param depthTransformParameters - The depth transform parameters.
+ * @param cameraParametersSnapshot - Parameters of the device camera relative to the render camera's world.
  * @returns The world position, normal, and depth at the given UV coordinate.
  */
 function transformRgbUvToWorld(rgbUv, depthMeshSnapshot, cameraParametersSnapshot) {
@@ -2707,13 +2707,25 @@ class Raycaster extends THREE.Raycaster {
         // Sorting function for the raycaster. Should return items from closest to furthest.
         this.sortFunction = defaultSortFunction;
     }
-    /** {@inheritDoc three#Raycaster.intersectObjects} */
+    /**
+     * Intersects a single object with the raycaster, using the custom sort function.
+     * @param object - The object to intersect with.
+     * @param recursive - Whether to intersect with the object's children.
+     * @param intersects - The array to store the intersections in.
+     * @returns The intersections found.
+     */
     intersectObject(object, recursive = true, intersects = []) {
         intersect(object, this, intersects, recursive);
         intersects.sort(this.sortFunction);
         return intersects;
     }
-    /** {@inheritDoc three#Raycaster.intersectObjects} */
+    /**
+     * Intersects multiple objects with the raycaster, using the custom sort function.
+     * @param objects - The objects to intersect with.
+     * @param recursive - Whether to intersect with the objects' children.
+     * @param intersects - The array to store the intersections in.
+     * @returns The intersections found.
+     */
     intersectObjects(objects, recursive = true, intersects = []) {
         for (let i = 0, l = objects.length; i < l; i++) {
             intersect(objects[i], this, intersects, recursive);
