@@ -49,7 +49,13 @@ export class Raycaster extends THREE.Raycaster {
   sortFunction: (a: THREE.Intersection, b: THREE.Intersection) => number =
     defaultSortFunction;
 
-  /** {@inheritDoc three#Raycaster.intersectObjects} */
+  /**
+   * Intersects a single object with the raycaster, using the custom sort function.
+   * @param object - The object to intersect with.
+   * @param recursive - Whether to intersect with the object's children.
+   * @param intersects - The array to store the intersections in.
+   * @returns The intersections found.
+   */
   override intersectObject<TIntersected extends THREE.Object3D>(
     object: THREE.Object3D,
     recursive = true,
@@ -60,7 +66,13 @@ export class Raycaster extends THREE.Raycaster {
     return intersects;
   }
 
-  /** {@inheritDoc three#Raycaster.intersectObjects} */
+  /**
+   * Intersects multiple objects with the raycaster, using the custom sort function.
+   * @param objects - The objects to intersect with.
+   * @param recursive - Whether to intersect with the objects' children.
+   * @param intersects - The array to store the intersections in.
+   * @returns The intersections found.
+   */
   override intersectObjects<TIntersected extends THREE.Object3D>(
     objects: THREE.Object3D[],
     recursive = true,

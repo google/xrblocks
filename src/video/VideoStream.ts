@@ -184,10 +184,12 @@ export class VideoStream<
    * @param options - The options for the snapshot.
    * @returns The captured data.
    */
-  getSnapshot(_: VideoStreamGetSnapshotImageDataOptions): ImageData;
-  getSnapshot(_: VideoStreamGetSnapshotBase64Options): Promise<string | null>;
-  getSnapshot(_: VideoStreamGetSnapshotTextureOptions): THREE.Texture;
-  getSnapshot(_: VideoStreamGetSnapshotBlobOptions): Promise<Blob | null>;
+  getSnapshot(options: VideoStreamGetSnapshotImageDataOptions): ImageData;
+  getSnapshot(
+    options: VideoStreamGetSnapshotBase64Options
+  ): Promise<string | null>;
+  getSnapshot(options: VideoStreamGetSnapshotTextureOptions): THREE.Texture;
+  getSnapshot(options: VideoStreamGetSnapshotBlobOptions): Promise<Blob | null>;
   getSnapshot({
     width = this.width,
     height = this.height,

@@ -146,7 +146,7 @@ export function getCameraParametersSnapshot(
  * Raycasts to the depth mesh to find the world position and normal at a given UV coordinate.
  * @param rgbUv - The UV coordinate to raycast from.
  * @param depthMeshSnapshot - The depth mesh to raycast against.
- * @param depthTransformParameters - The depth transform parameters.
+ * @param cameraParametersSnapshot - Parameters of the device camera relative to the render camera's world.
  * @returns The world position, normal, and depth at the given UV coordinate.
  */
 export function transformRgbUvToWorld(
