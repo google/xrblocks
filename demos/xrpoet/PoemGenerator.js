@@ -65,7 +65,9 @@ export class PoemGenerator extends xb.Script {
     if (this.isProcessing || !this.ai?.isAvailable()) return;
     this.isProcessing = true;
 
-    const snapshot = this.deviceCamera.getSnapshot({outputFormat: 'base64'});
+    const snapshot = await this.deviceCamera.getSnapshot({
+      outputFormat: 'base64',
+    });
     if (!snapshot) {
       throw new Error('Failed to capture video snapshot.');
     }
