@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid 9fc1075
- * @builddate 2026-04-16T22:30:19.759Z
+ * @commitid a821a58
+ * @builddate 2026-04-17T23:43:12.224Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13962,6 +13962,8 @@ class IconButton extends TextView {
         this.hoverOpacity = 0.2;
         /** The background opacity when the button is actively being pressed. */
         this.selectedOpacity = 0.4;
+        /** Indicates if the button is disabled and should not respond to interaction. */
+        this.disabled = false;
         /** The icon font file to use. Defaults to Material Icons. */
         this.font = MATERIAL_ICONS_FONT_FILE;
         // Applies all provided options to this instance.
@@ -14003,6 +14005,10 @@ class IconButton extends TextView {
     update() {
         if (!this.ux)
             return;
+        if (this.disabled) {
+            this.mesh.material.opacity = 0.1; // Dimmed opacity when disabled
+            return;
+        }
         if (this.ux.isHovered() || this.ux.isSelected()) {
             this.mesh.material.opacity = this.ux.isSelected()
                 ? this.selectedOpacity * this.opacity
@@ -14011,6 +14017,14 @@ class IconButton extends TextView {
         else {
             this.mesh.material.opacity = this.defaultOpacity * this.opacity;
         }
+    }
+    /**
+     * Overrides the parent's triggered behavior to block it when disabled.
+     */
+    onTriggered(id) {
+        if (this.disabled)
+            return;
+        super.onTriggered(id);
     }
     /**
      * Overrides the parent's private initialization method. This is called by the

@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.12.0
- * @commitid 9fc1075
- * @builddate 2026-04-16T22:30:19.759Z
+ * @commitid a821a58
+ * @builddate 2026-04-17T23:43:12.224Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6142,6 +6142,7 @@ type IconButtonOptions = TextViewOptions & {
     hoverOpacity?: number;
     selectedOpacity?: number;
     opacity?: number;
+    disabled?: boolean;
 };
 declare class IconButton extends TextView {
     /** The overall opacity when the button is not being interacted with. */
@@ -6154,6 +6155,8 @@ declare class IconButton extends TextView {
     hoverOpacity: number;
     /** The background opacity when the button is actively being pressed. */
     selectedOpacity: number;
+    /** Indicates if the button is disabled and should not respond to interaction. */
+    disabled: boolean;
     /** The icon font file to use. Defaults to Material Icons. */
     font: string;
     /** The underlying mesh for the button's background. */
@@ -6192,6 +6195,10 @@ declare class IconButton extends TextView {
      * Updates the button's visual state based on hover and selection status.
      */
     update(): void;
+    /**
+     * Overrides the parent's triggered behavior to block it when disabled.
+     */
+    onTriggered(id: number): void;
     /**
      * Overrides the parent's private initialization method. This is called by the
      * parent's `init()` method after the Troika module is confirmed to be loaded.
