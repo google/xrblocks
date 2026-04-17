@@ -17,6 +17,7 @@ export type IconButtonOptions = TextViewOptions & {
   hoverOpacity?: number;
   selectedOpacity?: number;
   opacity?: number;
+  disabled?: boolean;
 };
 
 export class IconButton extends TextView {
@@ -30,6 +31,8 @@ export class IconButton extends TextView {
   hoverOpacity = 0.2;
   /** The background opacity when the button is actively being pressed. */
   selectedOpacity = 0.4;
+  /** Indicates if the button is disabled and should not respond to interaction. */
+  disabled = false;
 
   /** The icon font file to use. Defaults to Material Icons. */
   font = MATERIAL_ICONS_FONT_FILE;
@@ -117,6 +120,12 @@ export class IconButton extends TextView {
    */
   update() {
     if (!this.ux) return;
+
+    if (this.disabled) {
+      this.mesh!.material.opacity = 0.1; // Dimmed opacity when disabled
+      return;
+    }
+
     if (this.ux.isHovered() || this.ux.isSelected()) {
       this.mesh!.material.opacity = this.ux.isSelected()
         ? this.selectedOpacity * this.opacity
@@ -124,6 +133,14 @@ export class IconButton extends TextView {
     } else {
       this.mesh!.material.opacity = this.defaultOpacity * this.opacity;
     }
+  }
+
+  /**
+   * Overrides the parent's triggered behavior to block it when disabled.
+   */
+  override onTriggered(id: number) {
+    if (this.disabled) return;
+    super.onTriggered(id);
   }
 
   /**

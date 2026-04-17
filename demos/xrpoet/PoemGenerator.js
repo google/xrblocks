@@ -1,4 +1,5 @@
 import * as xb from 'xrblocks';
+import {TorusKnotLoadingAnimation} from './TorusKnotLoadingAnimation.js';
 
 export class PoemGenerator extends xb.Script {
   constructor() {
@@ -6,6 +7,10 @@ export class PoemGenerator extends xb.Script {
     this.panel = null;
     this.isProcessing = false;
     this.responseDisplay = null;
+    this.button = null;
+    this.loadingSpinner = null;
+    this.poemGenerated = false;
+    this.hasError = false;
   }
 
   init() {
@@ -47,46 +52,76 @@ export class PoemGenerator extends xb.Script {
       backgroundColor: '#00000000',
       showEdge: false,
     });
-    buttonPanel.addGrid().addIconButton({
+    this.button = buttonPanel.addGrid().addIconButton({
       text: 'photo_camera',
       fontSize: 0.6,
       backgroundColor: '#FFFFFF',
       defaultOpacity: 0.2,
       hoverOpacity: 0.8,
       selectedOpacity: 1.0,
-    }).onTriggered = () => this.captureAndGeneratePoem();
+    });
+    this.button.onTriggered = () => this.captureAndGeneratePoem();
 
     if (this.deviceCamera) {
       this.videoView.load(this.deviceCamera);
     }
+
+    // Create 3D loading spinner
+    this.loadingSpinner = new TorusKnotLoadingAnimation();
+    this.panel.add(this.loadingSpinner);
   }
 
   async captureAndGeneratePoem() {
     if (this.isProcessing || !this.ai?.isAvailable()) return;
-    this.isProcessing = true;
 
-    const snapshot = await this.deviceCamera.getSnapshot({
-      outputFormat: 'base64',
-    });
-    if (!snapshot) {
-      throw new Error('Failed to capture video snapshot.');
+    this.isProcessing = true;
+    this.hasError = false;
+
+    // Disable button
+    if (this.button) {
+      this.button.disabled = true;
     }
-    const {strippedBase64, mimeType} = xb.parseBase64DataURL(snapshot);
-    const image = {inlineData: {mimeType: mimeType, data: strippedBase64}};
-    const question =
-      'Can you write a 12 lined, lighthearted poem about what you see?';
-    const parts = [image, {text: question}];
+
+    // Show loading spinner
+    if (this.loadingSpinner) {
+      this.loadingSpinner.show();
+    }
 
     try {
+      const snapshot = await this.deviceCamera.getSnapshot({
+        outputFormat: 'base64',
+      });
+      if (!snapshot) {
+        throw new Error('Failed to capture video snapshot.');
+      }
+      const {strippedBase64, mimeType} = xb.parseBase64DataURL(snapshot);
+      const image = {inlineData: {mimeType: mimeType, data: strippedBase64}};
+      const question =
+        'Can you write a 12 lined, lighthearted poem about what you see?';
+      const parts = [image, {text: question}];
+
       const response = await this.ai.query({
         type: 'multiPart',
         parts: parts,
       });
-      this.responseDisplay.addText(`${response.text}\n\n`);
+      this.responseDisplay.setText(`${response.text}\n\n`);
+      this.poemGenerated = true;
     } catch (error) {
-      this.responseDisplay.addText(`Error: ${error.message}\n\n`);
+      this.responseDisplay.setText(`Error: ${error.message}\n\n`);
+      this.hasError = true;
+    } finally {
+      this.isProcessing = false;
+      // Re-enable button
+      if (this.button) {
+        this.button.disabled = false;
+        this.button.update();
+      }
     }
+  }
 
-    this.isProcessing = false;
+  update() {
+    if (this.loadingSpinner) {
+      this.loadingSpinner.update(this.isProcessing);
+    }
   }
 }
