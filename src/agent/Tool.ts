@@ -24,9 +24,10 @@ export interface ToolResult<T = unknown> {
 // strings so tools don't need to import the types from @google/genai.
 export type ToolSchema = Omit<
   GoogleGenAITypes.Schema,
-  'type' | 'properties'
+  'type' | 'properties' | 'items'
 > & {
   properties?: Record<string, ToolSchema>;
+  items?: ToolSchema;
   type?: keyof typeof GoogleGenAITypes.Type;
 };
 
