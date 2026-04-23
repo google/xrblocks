@@ -236,6 +236,7 @@ export class GeminiLivePanel extends LitElement {
     if (event.key === 'Enter') {
       const text = event.target.value;
       this.responseText += '\n' + text;
+      this.geminiLive.sendRealtimeText(text);
       event.target.value = '';
     }
     event.stopPropagation();

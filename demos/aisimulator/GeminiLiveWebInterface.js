@@ -3,7 +3,7 @@ import {GoogleGenAI, Modality} from '@google/genai';
 export class GeminiLiveWebInterface {
   constructor(apiKey) {
     this.ai = new GoogleGenAI({apiKey: apiKey});
-    this.model = 'gemini-2.0-flash-live-001';
+    this.model = 'gemini-3.1-flash-live-preview';
     this.config = {
       responseModalities: [Modality.AUDIO],
       speechConfig: {voiceConfig: {prebuiltVoiceConfig: {voiceName: 'Aoede'}}},
@@ -363,6 +363,17 @@ export class GeminiLiveWebInterface {
       bytes[i] = binaryString.charCodeAt(i);
     }
     return bytes.buffer;
+  }
+
+  sendRealtimeText(text) {
+    if (!this.session || !text || !text.trim()) return;
+    try {
+      this.session.sendRealtimeInput({
+        text: text,
+      });
+    } catch (error) {
+      console.error('❌ Error sending text:', error);
+    }
   }
 
   async playAudioChunk(audioData) {
