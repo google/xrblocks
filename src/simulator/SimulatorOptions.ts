@@ -44,7 +44,7 @@ export class SimulatorOptions {
     element: 'xrblocks-simulator-mode-indicator',
   };
   instructions = {
-    enabled: true,
+    enabled: false,
     element: 'xrblocks-simulator-instructions',
     customInstructions: [] as SimulatorCustomInstruction[],
   };
