@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid 035a54d
- * @builddate 2026-04-29T21:38:24.282Z
+ * @commitid 9ecedfe
+ * @builddate 2026-05-07T22:32:26.425Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4109,6 +4109,24 @@ declare class PlanesOptions {
     enable(): this;
 }
 
+declare class SoundsOptions {
+    enabled: boolean;
+    showDebugInfo: boolean;
+    backendConfig: {
+        activeBackend: string;
+        mediapipe: {
+            wasmFilesUrl: string;
+            modelAssetPath: string;
+            chunkSamples: number;
+        };
+    };
+    constructor(options?: DeepPartial<SoundsOptions>);
+    /**
+     * Enables sound detection.
+     */
+    enable(): this;
+}
+
 declare class WorldOptions {
     debugging: boolean;
     enabled: boolean;
@@ -4116,6 +4134,7 @@ declare class WorldOptions {
     planes: PlanesOptions;
     objects: ObjectsOptions;
     meshes: MeshDetectionOptions;
+    sounds: SoundsOptions;
     constructor(options?: DeepPartial<WorldOptions>);
     /**
      * Enables plane detection.
@@ -4129,6 +4148,10 @@ declare class WorldOptions {
      * Enables mesh detection.
      */
     enableMeshDetection(): this;
+    /**
+     * Enables sound detection.
+     */
+    enableSoundDetection(): this;
 }
 
 /**
@@ -5692,6 +5715,90 @@ declare class MeshDetector extends Script {
 }
 
 /**
+ * Represents a sound category with its associated confidence score.
+ */
+interface Category {
+    /** The name of the detected category (e.g., "Speech", "Music"). */
+    categoryName: string;
+    /** The confidence score of the detection, typically between 0 and 1. */
+    score: number;
+    /** Optional human-readable name for the category. */
+    displayName?: string;
+}
+/**
+ * Contains a list of categories for a specific detection.
+ */
+interface Classification {
+    /** Array of detected categories, typically sorted by score. */
+    categories: Category[];
+}
+/**
+ * A single result item from the audio classifier.
+ */
+interface AudioClassifierResultItem {
+    /** List of classifications for this result item since there could
+     * be multiple types of sounds overlapping in the same time interval. */
+    classifications: Classification[];
+}
+/**
+ * Debugging information about the audio processing.
+ */
+interface DebugData {
+    /** Root Mean Square, representing the volume/energy of the audio. */
+    rms: number;
+    /** The size of the audio buffer processed. */
+    bufferSize: number;
+    /** The sample rate of the audio data. */
+    sampleRate: number;
+}
+/**
+ * The overall result returned by the audio classifier.
+ */
+interface AudioClassifierResult {
+    /** List of result items containing classifications. */
+    items: AudioClassifierResultItem[];
+    /** Optional debug data. */
+    debug?: DebugData;
+}
+
+interface SoundDetectorEventMap extends THREE.Object3DEventMap {
+    soundDetected: {
+        audioClassifierResult: AudioClassifierResult;
+    };
+}
+/**
+ * Detects and classifies sounds in the user's environment using a specified backend.
+ * It queries an audio classifier model with the device mic input stream and returns
+ * classifications over specific time intervals along with confidence scores.
+ */
+declare class SoundDetector extends Script<SoundDetectorEventMap> {
+    static dependencies: {
+        options: typeof WorldOptions;
+    };
+    private _detectorBackends;
+    private audioListener?;
+    private _isListening;
+    get isListening(): boolean;
+    private options?;
+    /**
+     * Initializes the SoundDetector.
+     */
+    init({ options }: {
+        options: WorldOptions;
+    }): Promise<void>;
+    /**
+     * Starts listening to the default mic input stream.
+     */
+    startListening(): Promise<void>;
+    /**
+     * Stops listening and releases resources.
+     */
+    stopListening(): void;
+    update(_timestamp: number, _frame?: XRFrame): void;
+    private getOrCreateDetectorBackend;
+}
+
+/**
  * Manages all interactions with the real-world environment perceived by the XR
  * device. This class abstracts the complexity of various perception APIs
  * (Depth, Planes, Meshes, etc.) and provides a simple, event-driven interface
@@ -5726,6 +5833,10 @@ declare class World extends Script {
      * The mesh detection module instance. Null if not enabled.
      */
     meshes?: MeshDetector;
+    /**
+     * The sound detection module instance. Null if not enabled.
+     */
+    sounds?: SoundDetector;
     /**
      * A Three.js Raycaster for performing intersection tests.
      */

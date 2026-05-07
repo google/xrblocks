@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid 035a54d
- * @builddate 2026-04-29T21:38:24.282Z
+ * @commitid 9ecedfe
+ * @builddate 2026-05-07T22:32:26.425Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7927,6 +7927,34 @@ class PlanesOptions {
     }
 }
 
+class SoundsOptions {
+    constructor(options) {
+        this.enabled = false;
+        this.showDebugInfo = false;
+        this.backendConfig = {
+            activeBackend: 'mediapipe',
+            mediapipe: {
+                wasmFilesUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@0.10.35/wasm',
+                modelAssetPath: 'https://tfhub.dev/google/lite-model/yamnet/classification/tflite/1?lite-format=tflite',
+                // Control the number of samples that should be accumulated before the MediaPipe Classifier
+                // can classify. Choosing a value that is too low would result in high occurrences of
+                // "Silence" classifications.
+                chunkSamples: 16000,
+            },
+        };
+        if (options) {
+            deepMerge(this, options);
+        }
+    }
+    /**
+     * Enables sound detection.
+     */
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+}
+
 class WorldOptions {
     constructor(options) {
         this.debugging = false;
@@ -7935,6 +7963,7 @@ class WorldOptions {
         this.planes = new PlanesOptions();
         this.objects = new ObjectsOptions();
         this.meshes = new MeshDetectionOptions();
+        this.sounds = new SoundsOptions();
         if (options) {
             deepMerge(this, options);
         }
@@ -7961,6 +7990,14 @@ class WorldOptions {
     enableMeshDetection() {
         this.enabled = true;
         this.meshes.enable();
+        return this;
+    }
+    /**
+     * Enables sound detection.
+     */
+    enableSoundDetection() {
+        this.enabled = true;
+        this.sounds.enable();
         return this;
     }
 }
@@ -10770,7 +10807,7 @@ class DetectedObject extends THREE.Object3D {
  *
  * T - The type of additional data associated with the detected object.
  */
-class BaseDetectorBackend {
+let BaseDetectorBackend$1 = class BaseDetectorBackend {
     constructor(context) {
         this.context = context;
     }
@@ -10899,7 +10936,7 @@ class BaseDetectorBackend {
             img.src = snapshot.base64;
         }
     }
-}
+};
 
 /**
  * Object detector backend implementation using Gemini via the AI service.
@@ -10907,7 +10944,7 @@ class BaseDetectorBackend {
  *
  * T - The type of additional data associated with the detected object.
  */
-class GeminiDetectorBackend extends BaseDetectorBackend {
+class GeminiDetectorBackend extends BaseDetectorBackend$1 {
     async isAvailable() {
         return !!this.context.ai.isAvailable();
     }
@@ -10990,16 +11027,16 @@ class GeminiDetectorBackend extends BaseDetectorBackend {
     }
 }
 
-let FilesetResolver;
+let FilesetResolver$1;
 let ObjectDetector$1;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule() {
-    if (FilesetResolver && ObjectDetector$1) {
+async function loadMediaPipeModule$1() {
+    if (FilesetResolver$1 && ObjectDetector$1) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver = mediapipeModule.FilesetResolver;
+        FilesetResolver$1 = mediapipeModule.FilesetResolver;
         ObjectDetector$1 = mediapipeModule.ObjectDetector;
         console.log("'@mediapipe/tasks-vision' module loaded successfully.");
     }
@@ -11014,7 +11051,7 @@ async function loadMediaPipeModule() {
  *
  * T - The type of additional data associated with the detected object (not used currently).
  */
-class MediaPipeDetectorBackend extends BaseDetectorBackend {
+let MediaPipeDetectorBackend$1 = class MediaPipeDetectorBackend extends BaseDetectorBackend$1 {
     constructor(context) {
         super(context);
         this.objectDetector = null;
@@ -11076,9 +11113,9 @@ class MediaPipeDetectorBackend extends BaseDetectorBackend {
     async tryInitializeObjectDetector() {
         if (this.objectDetector)
             return;
-        await loadMediaPipeModule();
+        await loadMediaPipeModule$1();
         const mediapipeOptions = this.context.options.objects.backendConfig.mediapipe;
-        const vision = await FilesetResolver.forVisionTasks(mediapipeOptions.wasmFilesUrl);
+        const vision = await FilesetResolver$1.forVisionTasks(mediapipeOptions.wasmFilesUrl);
         this.objectDetector = await ObjectDetector$1.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: mediapipeOptions.modelAssetPath,
@@ -11086,7 +11123,7 @@ class MediaPipeDetectorBackend extends BaseDetectorBackend {
             scoreThreshold: mediapipeOptions.scoreThreshold,
         });
     }
-}
+};
 
 /**
  * Detects objects in the user's environment using a specified backend.
@@ -11175,7 +11212,7 @@ class ObjectDetector extends Script {
                     case 'gemini':
                         return new GeminiDetectorBackend(context);
                     case 'mediapipe':
-                        return new MediaPipeDetectorBackend(context);
+                        return new MediaPipeDetectorBackend$1(context);
                     default:
                         throw new Error(`ObjectDetector backend '${activeBackend}' is not supported.`);
                 }
@@ -11907,6 +11944,403 @@ class MeshDetector extends Script {
     }
 }
 
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+class AudioListener extends Script {
+    static { this.dependencies = { registry: Registry }; }
+    constructor(options = {}) {
+        super();
+        this.isCapturing = false;
+        this.latestAudioBuffer = null;
+        this.accumulatedChunks = [];
+        this.isAccumulating = false;
+        this.options = {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...options,
+        };
+    }
+    /**
+     * Init the AudioListener.
+     */
+    init({ registry }) {
+        this.registry = registry;
+    }
+    async startCapture(callbacks = {}) {
+        if (this.isCapturing)
+            return;
+        this.onAudioData = callbacks.onAudioData;
+        this.onError = callbacks.onError;
+        this.isAccumulating = callbacks.accumulate || false;
+        if (this.isAccumulating) {
+            this.accumulatedChunks = [];
+        }
+        try {
+            await this.setupAudioCapture();
+            this.isCapturing = true;
+        }
+        catch (error) {
+            console.error('Failed to start audio capture:', error);
+            this.onError?.(error);
+            this.cleanup();
+        }
+    }
+    stopCapture() {
+        if (!this.isCapturing)
+            return;
+        this.cleanup();
+        this.isCapturing = false;
+    }
+    async setupAudioCapture() {
+        this.audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: this.options.echoCancellation,
+                noiseSuppression: this.options.noiseSuppression,
+                autoGainControl: this.options.autoGainControl,
+            },
+            video: false,
+        });
+        const actualSampleRate = this.audioStream
+            .getAudioTracks()[0]
+            .getSettings().sampleRate;
+        this.audioContext = new AudioContext({ sampleRate: actualSampleRate });
+        await this.setupAudioWorklet();
+        this.sourceNode = this.audioContext.createMediaStreamSource(this.audioStream);
+        this.processorNode = new AudioWorkletNode(this.audioContext, 'audio-capture-processor');
+        this.processorNode.port.onmessage = (event) => {
+            if (event.data.type === 'audioData') {
+                this.latestAudioBuffer = event.data.data;
+                // Accumulate chunks if requested
+                if (this.isAccumulating) {
+                    this.accumulatedChunks.push(event.data.data);
+                }
+                this.onAudioData?.(event.data.data);
+                this.streamToAI(event.data.data);
+            }
+        };
+        // Check if the AudioContext is running, resume if necessary
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+        }
+        this.sourceNode.connect(this.processorNode);
+    }
+    async setupAudioWorklet() {
+        const processorCode = `
+      class AudioCaptureProcessor extends AudioWorkletProcessor {
+        process(inputs, outputs, parameters) {
+          const input = inputs[0];
+          if (input && input[0]) {
+            const inputData = input[0];
+            const pcmData = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+            }
+            this.port.postMessage({type: 'audioData', data: pcmData.buffer});
+          }
+          return true;
+        }
+      }
+      registerProcessor('audio-capture-processor', AudioCaptureProcessor);
+    `;
+        const blob = new Blob([processorCode], { type: 'application/javascript' });
+        const processorURL = URL.createObjectURL(blob);
+        await this.audioContext.audioWorklet.addModule(processorURL);
+        URL.revokeObjectURL(processorURL);
+    }
+    streamToAI(audioBuffer) {
+        if (!this.aiService?.sendRealtimeInput)
+            return;
+        const base64Audio = arrayBufferToBase64(audioBuffer);
+        const actualSampleRate = this.audioContext?.sampleRate || this.options.sampleRate;
+        this.aiService.sendRealtimeInput({
+            audio: {
+                data: base64Audio,
+                mimeType: `audio/pcm;rate=${actualSampleRate}`,
+            },
+        });
+    }
+    setAIStreaming(enabled) {
+        this.aiService = enabled ? this.registry.get(AI) : undefined;
+    }
+    cleanup() {
+        this.processorNode?.disconnect();
+        this.sourceNode?.disconnect();
+        if (this.audioContext && this.audioContext.state !== 'closed') {
+            this.audioContext.close();
+        }
+        this.audioStream?.getTracks().forEach((track) => track.stop());
+        this.processorNode = undefined;
+        this.sourceNode = undefined;
+        this.audioContext = undefined;
+        this.audioStream = undefined;
+        this.onAudioData = undefined;
+        this.onError = undefined;
+        this.latestAudioBuffer = null;
+        this.accumulatedChunks = [];
+        this.isAccumulating = false;
+        this.aiService = undefined;
+    }
+    static isSupported() {
+        return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    }
+    getIsCapturing() {
+        return this.isCapturing;
+    }
+    getLatestAudioBuffer() {
+        return this.latestAudioBuffer;
+    }
+    clearLatestAudioBuffer() {
+        this.latestAudioBuffer = null;
+    }
+    /**
+     * Gets all accumulated audio chunks as a single combined buffer
+     */
+    getAccumulatedBuffer() {
+        if (this.accumulatedChunks.length === 0)
+            return null;
+        const totalLength = this.accumulatedChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+        const combined = new ArrayBuffer(totalLength);
+        const combinedArray = new Uint8Array(combined);
+        let offset = 0;
+        for (const chunk of this.accumulatedChunks) {
+            combinedArray.set(new Uint8Array(chunk), offset);
+            offset += chunk.byteLength;
+        }
+        return combined;
+    }
+    /**
+     * Clears accumulated chunks
+     */
+    clearAccumulatedBuffer() {
+        this.accumulatedChunks = [];
+    }
+    /**
+     * Gets the number of accumulated chunks
+     */
+    getAccumulatedChunkCount() {
+        return this.accumulatedChunks.length;
+    }
+    dispose() {
+        this.stopCapture();
+        super.dispose();
+    }
+}
+
+/**
+ * Base class for sound detector backends.
+ * Handles the orchestration of normalizing audio, running classifiers and creating results.
+ */
+class BaseDetectorBackend {
+    constructor(context) {
+        this.context = context;
+    }
+    /**
+     * Calculates debug information for the given audio data.
+     * @param audio - The normalized audio data.
+     * @returns An object containing RMS, buffer size, and sample rate.
+     */
+    populateDebugData(audio) {
+        let sumSquares = 0;
+        const audioData = audio.data;
+        for (let i = 0; i < audioData.length; i++) {
+            sumSquares += audioData[i] * audioData[i];
+        }
+        const rms = Math.sqrt(sumSquares / audioData.length);
+        return {
+            rms: rms,
+            bufferSize: audioData.length,
+            sampleRate: this.context.sampleRate,
+        };
+    }
+}
+
+let FilesetResolver;
+let AudioClassifier;
+// --- Attempt Dynamic Import ---
+async function loadMediaPipeModule() {
+    if (FilesetResolver && AudioClassifier) {
+        return;
+    }
+    try {
+        const mediapipeModule = await import('@mediapipe/tasks-audio');
+        FilesetResolver = mediapipeModule.FilesetResolver;
+        AudioClassifier = mediapipeModule.AudioClassifier;
+        console.log("'@mediapipe/tasks-audio' module loaded successfully.");
+    }
+    catch (error) {
+        console.error('Failed to load MediaPipe module:', error);
+        throw error;
+    }
+}
+class MediaPipeDetectorBackend extends BaseDetectorBackend {
+    constructor(context) {
+        super(context);
+        this.chunkSamples = 16000;
+        this.accumulatedAudio = [];
+        this.audioClassifier = null;
+        const mediapipeConfig = this.context.options.sounds.backendConfig.mediapipe;
+        this.chunkSamples = mediapipeConfig.chunkSamples;
+        this.tryInitializeAudioClassifier();
+    }
+    async tryInitializeAudioClassifier() {
+        if (this.audioClassifier)
+            return;
+        await loadMediaPipeModule();
+        const mediapipeConfig = this.context.options.sounds.backendConfig.mediapipe;
+        const audioTasks = await FilesetResolver.forAudioTasks(mediapipeConfig.wasmFilesUrl);
+        this.audioClassifier = await AudioClassifier.createFromOptions(audioTasks, {
+            baseOptions: { modelAssetPath: mediapipeConfig.modelAssetPath },
+        });
+    }
+    /**
+     * Normalizes audio data received as an ArrayBuffer (containing Int16 samples)
+     * into a Float32Array with values in the range [-1.0, 1.0] that the MediaPipe
+     * classifier can understand.
+     * @param arrayBuffer - The raw audio data buffer.
+     * @returns The normalized audio data.
+     */
+    normalizeAudio(arrayBuffer) {
+        const int16Data = new Int16Array(arrayBuffer);
+        const normalizedAudio = new Float32Array(int16Data.length);
+        for (let i = 0; i < int16Data.length; i++) {
+            normalizedAudio[i] = int16Data[i] / 32768.0;
+        }
+        return { data: normalizedAudio };
+    }
+    classify(audio) {
+        if (!this.audioClassifier)
+            return null;
+        const audioData = audio.data;
+        for (let i = 0; i < audioData.length; i++) {
+            this.accumulatedAudio.push(audioData[i]);
+        }
+        // chunkSamples is required because the MediaPipe AudioClassifier operates on
+        // discrete chunks of audio data. We accumulate samples until we reach this
+        // threshold before performing classification. If we do not accumulate enough samples,
+        // the MediaPipe AudioClassifier returns a classification of "Silence" which is not
+        // useful.
+        if (this.accumulatedAudio.length >= this.chunkSamples) {
+            const chunk = new Float32Array(this.accumulatedAudio.slice(0, this.chunkSamples));
+            this.accumulatedAudio = this.accumulatedAudio.slice(this.chunkSamples); // simple non-overlapping window
+            const mediaPipeResult = this.audioClassifier.classify(chunk, this.context.sampleRate);
+            const debugData = this.context.options.sounds.showDebugInfo
+                ? this.populateDebugData({ data: chunk })
+                : undefined;
+            return {
+                items: mediaPipeResult,
+                debug: debugData,
+            };
+        }
+        return null;
+    }
+}
+
+const DEFAULT_SAMPLE_RATE = 44000;
+/**
+ * Detects and classifies sounds in the user's environment using a specified backend.
+ * It queries an audio classifier model with the device mic input stream and returns
+ * classifications over specific time intervals along with confidence scores.
+ */
+class SoundDetector extends Script {
+    constructor() {
+        super(...arguments);
+        this._detectorBackends = new Map();
+        this._isListening = false;
+    }
+    static { this.dependencies = { options: WorldOptions }; }
+    get isListening() {
+        return this._isListening;
+    }
+    /**
+     * Initializes the SoundDetector.
+     */
+    async init({ options }) {
+        this.options = options;
+    }
+    /**
+     * Starts listening to the default mic input stream.
+     */
+    async startListening() {
+        if (this._isListening)
+            return;
+        if (!this.audioListener) {
+            this.audioListener = new AudioListener({
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            });
+        }
+        const sampleRate = this.audioListener?.audioContext?.sampleRate || DEFAULT_SAMPLE_RATE;
+        const backend = await this.getOrCreateDetectorBackend(sampleRate);
+        try {
+            this._isListening = true;
+            await this.audioListener.startCapture({
+                onAudioData: async (buffer) => {
+                    if (!backend)
+                        return;
+                    const normalizedAudio = backend.normalizeAudio(buffer);
+                    const audioClassifierResult = backend.classify(normalizedAudio);
+                    if (audioClassifierResult) {
+                        this.dispatchEvent({
+                            type: 'soundDetected',
+                            audioClassifierResult: audioClassifierResult,
+                        });
+                    }
+                },
+            });
+            console.log('SoundDetector: Started listening using AudioListener.');
+        }
+        catch (error) {
+            console.error('SoundDetector: Failed to start audio classification:', error);
+            this._isListening = false;
+        }
+    }
+    /**
+     * Stops listening and releases resources.
+     */
+    stopListening() {
+        if (!this._isListening)
+            return;
+        this.audioListener?.stopCapture();
+        this._isListening = false;
+        console.log('SoundDetector: Stopped listening.');
+    }
+    update(_timestamp, _frame) {
+        // No per-frame update logic needed, audio is handled asynchronously via streams.
+    }
+    getOrCreateDetectorBackend(sampleRate) {
+        if (!this.options) {
+            throw new Error('SoundDetector: Options not initialized. Call init first.');
+        }
+        const activeBackend = this.options.sounds.backendConfig.activeBackend;
+        let detectorBackendPromise = this._detectorBackends.get(activeBackend);
+        if (!detectorBackendPromise) {
+            detectorBackendPromise = (async () => {
+                switch (activeBackend) {
+                    case 'mediapipe':
+                        return new MediaPipeDetectorBackend({
+                            options: this.options,
+                            sampleRate,
+                        });
+                    default:
+                        throw new Error(`SoundDetector backend '${activeBackend}' is not supported.`);
+                }
+            })();
+            this._detectorBackends.set(activeBackend, detectorBackendPromise);
+        }
+        return detectorBackendPromise;
+    }
+}
+
 // Import other modules as they are implemented in future.
 // import { SceneMesh } from '/depth/SceneMesh.js';
 // import { LightEstimation } from '/lighting/LightEstimation.js';
@@ -11955,6 +12389,10 @@ class World extends Script {
         if (this.options.meshes.enabled) {
             this.meshes = new MeshDetector();
             this.add(this.meshes);
+        }
+        if (this.options.sounds.enabled) {
+            this.sounds = new SoundDetector();
+            this.add(this.sounds);
         }
         // TODO: Initialize other modules as they are available & implemented.
         /*
@@ -12222,193 +12660,6 @@ class Simulator extends Script {
         }
         this.renderer.render(this.simulatorScene, camera);
         this.renderer.clearDepth();
-    }
-}
-
-function arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-}
-class AudioListener extends Script {
-    static { this.dependencies = { registry: Registry }; }
-    constructor(options = {}) {
-        super();
-        this.isCapturing = false;
-        this.latestAudioBuffer = null;
-        this.accumulatedChunks = [];
-        this.isAccumulating = false;
-        this.options = {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            ...options,
-        };
-    }
-    /**
-     * Init the AudioListener.
-     */
-    init({ registry }) {
-        this.registry = registry;
-    }
-    async startCapture(callbacks = {}) {
-        if (this.isCapturing)
-            return;
-        this.onAudioData = callbacks.onAudioData;
-        this.onError = callbacks.onError;
-        this.isAccumulating = callbacks.accumulate || false;
-        if (this.isAccumulating) {
-            this.accumulatedChunks = [];
-        }
-        try {
-            await this.setupAudioCapture();
-            this.isCapturing = true;
-        }
-        catch (error) {
-            console.error('Failed to start audio capture:', error);
-            this.onError?.(error);
-            this.cleanup();
-        }
-    }
-    stopCapture() {
-        if (!this.isCapturing)
-            return;
-        this.cleanup();
-        this.isCapturing = false;
-    }
-    async setupAudioCapture() {
-        this.audioStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: false,
-        });
-        const actualSampleRate = this.audioStream
-            .getAudioTracks()[0]
-            .getSettings().sampleRate;
-        this.audioContext = new AudioContext({ sampleRate: actualSampleRate });
-        await this.setupAudioWorklet();
-        this.sourceNode = this.audioContext.createMediaStreamSource(this.audioStream);
-        this.processorNode = new AudioWorkletNode(this.audioContext, 'audio-capture-processor');
-        this.processorNode.port.onmessage = (event) => {
-            if (event.data.type === 'audioData') {
-                this.latestAudioBuffer = event.data.data;
-                // Accumulate chunks if requested
-                if (this.isAccumulating) {
-                    this.accumulatedChunks.push(event.data.data);
-                }
-                this.onAudioData?.(event.data.data);
-                this.streamToAI(event.data.data);
-            }
-        };
-        // Check if the AudioContext is running, resume if necessary
-        if (this.audioContext.state === 'suspended') {
-            await this.audioContext.resume();
-        }
-        this.sourceNode.connect(this.processorNode);
-    }
-    async setupAudioWorklet() {
-        const processorCode = `
-      class AudioCaptureProcessor extends AudioWorkletProcessor {
-        process(inputs, outputs, parameters) {
-          const input = inputs[0];
-          if (input && input[0]) {
-            const inputData = input[0];
-            const pcmData = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-            }
-            this.port.postMessage({type: 'audioData', data: pcmData.buffer});
-          }
-          return true;
-        }
-      }
-      registerProcessor('audio-capture-processor', AudioCaptureProcessor);
-    `;
-        const blob = new Blob([processorCode], { type: 'application/javascript' });
-        const processorURL = URL.createObjectURL(blob);
-        await this.audioContext.audioWorklet.addModule(processorURL);
-        URL.revokeObjectURL(processorURL);
-    }
-    streamToAI(audioBuffer) {
-        if (!this.aiService?.sendRealtimeInput)
-            return;
-        const base64Audio = arrayBufferToBase64(audioBuffer);
-        const actualSampleRate = this.audioContext?.sampleRate || this.options.sampleRate;
-        this.aiService.sendRealtimeInput({
-            audio: {
-                data: base64Audio,
-                mimeType: `audio/pcm;rate=${actualSampleRate}`,
-            },
-        });
-    }
-    setAIStreaming(enabled) {
-        this.aiService = enabled ? this.registry.get(AI) : undefined;
-    }
-    cleanup() {
-        this.processorNode?.disconnect();
-        this.sourceNode?.disconnect();
-        if (this.audioContext && this.audioContext.state !== 'closed') {
-            this.audioContext.close();
-        }
-        this.audioStream?.getTracks().forEach((track) => track.stop());
-        this.processorNode = undefined;
-        this.sourceNode = undefined;
-        this.audioContext = undefined;
-        this.audioStream = undefined;
-        this.onAudioData = undefined;
-        this.onError = undefined;
-        this.latestAudioBuffer = null;
-        this.accumulatedChunks = [];
-        this.isAccumulating = false;
-        this.aiService = undefined;
-    }
-    static isSupported() {
-        return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-    }
-    getIsCapturing() {
-        return this.isCapturing;
-    }
-    getLatestAudioBuffer() {
-        return this.latestAudioBuffer;
-    }
-    clearLatestAudioBuffer() {
-        this.latestAudioBuffer = null;
-    }
-    /**
-     * Gets all accumulated audio chunks as a single combined buffer
-     */
-    getAccumulatedBuffer() {
-        if (this.accumulatedChunks.length === 0)
-            return null;
-        const totalLength = this.accumulatedChunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-        const combined = new ArrayBuffer(totalLength);
-        const combinedArray = new Uint8Array(combined);
-        let offset = 0;
-        for (const chunk of this.accumulatedChunks) {
-            combinedArray.set(new Uint8Array(chunk), offset);
-            offset += chunk.byteLength;
-        }
-        return combined;
-    }
-    /**
-     * Clears accumulated chunks
-     */
-    clearAccumulatedBuffer() {
-        this.accumulatedChunks = [];
-    }
-    /**
-     * Gets the number of accumulated chunks
-     */
-    getAccumulatedChunkCount() {
-        return this.accumulatedChunks.length;
-    }
-    dispose() {
-        this.stopCapture();
-        super.dispose();
     }
 }
 
