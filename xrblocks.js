@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid 88f4c7f
- * @builddate 2026-05-09T02:40:30.815Z
+ * @commitid b512e1c
+ * @builddate 2026-05-09T04:35:17.960Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5474,6 +5474,262 @@ class ControllerRayVisual extends THREE.Line {
     raycast() { }
 }
 
+const STORAGE_KEY = 'xrblocks:simulator:gamepad-bindings:v1';
+const DEFAULT_BINDINGS = {
+    select: 0, // A / Cross
+    cycleHandPoseLeft: 14, // D-pad left
+    cycleHandPoseRight: 15, // D-pad right
+    cycleSimulatorMode: 3, // Y
+    toggleUI: 5, // RB / R1
+    toggleHand: 4, // LB / L1
+    moveDown: 6, // LT (analog)
+    moveUp: 7, // RT (analog)
+    openSettings: 9, // Start / Menu
+};
+/**
+ * Manages gamepad button-to-action mappings with localStorage persistence.
+ * One button per action — assigning a button removes it from any previous action.
+ */
+class GamepadBindings {
+    constructor() {
+        this.bindings = { ...DEFAULT_BINDINGS };
+        this.load();
+    }
+    getBinding(action) {
+        return this.bindings[action];
+    }
+    getAllBindings() {
+        return { ...this.bindings };
+    }
+    setBinding(action, buttonIndex) {
+        // openSettings must always be bound so users can never lock themselves
+        // out of the menu — silently ignore attempts to rebind or unbind it,
+        // and refuse to assign its button to any other action.
+        if (action === 'openSettings')
+            return;
+        if (buttonIndex === this.bindings.openSettings)
+            return;
+        // Auto-unbind any other action using this button, except openSettings
+        // (same lock-out reason).
+        for (const key of Object.keys(this.bindings)) {
+            if (key !== action &&
+                key !== 'openSettings' &&
+                this.bindings[key] === buttonIndex) {
+                this.bindings[key] = -1;
+            }
+        }
+        this.bindings[action] = buttonIndex;
+        this.save();
+    }
+    resetDefaults() {
+        this.bindings = { ...DEFAULT_BINDINGS };
+        this.save();
+    }
+    load() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw)
+                return;
+            const parsed = JSON.parse(raw);
+            if (parsed?.version !== 1 || typeof parsed.bindings !== 'object')
+                return;
+            for (const key of Object.keys(DEFAULT_BINDINGS)) {
+                if (typeof parsed.bindings[key] === 'number') {
+                    this.bindings[key] = parsed.bindings[key];
+                }
+            }
+        }
+        catch {
+            // localStorage unavailable or corrupted — keep defaults.
+        }
+    }
+    save() {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, bindings: this.bindings }));
+        }
+        catch {
+            // localStorage unavailable — silently continue.
+        }
+    }
+}
+
+const DEADZONE = 0.15;
+/**
+ * Simulates an XR controller using a connected gamepad (Xbox/PS).
+ * The controller ray always points forward from the camera center,
+ * similar to GazeController but with button-driven selection.
+ */
+class GamepadController extends Script {
+    static { this.dependencies = {
+        camera: THREE.Camera,
+    }; }
+    constructor() {
+        super();
+        this.type = 'GamepadController';
+        this.name = 'Gamepad Controller';
+        this.userData = { id: 4, connected: false, selected: false };
+        this.bindings = new GamepadBindings();
+        /** True if the toast has been shown this session. */
+        this.hasShownToast = false;
+        /** When true, normal gamepad UI/select actions are suppressed (modal menu). */
+        this.menuActive = false;
+        this._prevButtons = [];
+        this._risingEdges = [];
+        this._captureCallback = null;
+    }
+    init({ camera }) {
+        this.camera = camera;
+    }
+    /**
+     * Enters capture mode — the next button press will invoke the callback
+     * instead of triggering normal actions, then exit capture mode.
+     */
+    captureNextButtonPress(callback) {
+        this._captureCallback = callback;
+    }
+    cancelCapture() {
+        this._captureCallback = null;
+    }
+    get captureActive() {
+        return this._captureCallback !== null;
+    }
+    update() {
+        super.update();
+        const gp = this._pollGamepad();
+        if (gp && !this.userData.connected) {
+            this.activeGamepad = gp;
+            this.gamepad = gp;
+            this.dispatchEvent({ type: 'connected', target: this });
+        }
+        else if (!gp && this.userData.connected) {
+            this._onDisconnect();
+            return;
+        }
+        if (!gp || !this.userData.connected)
+            return;
+        this.activeGamepad = gp;
+        // Compute rising edges for this frame (before any consumption).
+        for (let i = 0; i < gp.buttons.length; i++) {
+            const down = gp.buttons[i]?.pressed ?? false;
+            const wasDown = this._prevButtons[i] ?? false;
+            this._risingEdges[i] = down && !wasDown;
+        }
+        // Sync pose with camera (center-screen ray, like GazeController).
+        this.position.copy(this.camera.position);
+        this.quaternion.copy(this.camera.quaternion);
+        this.updateMatrixWorld();
+        // Check for capture mode on any rising edge.
+        if (this._captureCallback) {
+            for (let i = 0; i < gp.buttons.length; i++) {
+                if (this._risingEdges[i]) {
+                    const cb = this._captureCallback;
+                    this._captureCallback = null;
+                    cb(i);
+                    this._updatePrevButtons(gp);
+                    return; // Consume all input this frame.
+                }
+            }
+        }
+        // Normal select handling via bindings (suppressed when a modal menu is
+        // active so A-button activates UI rather than firing scene selects).
+        if (!this.menuActive) {
+            const selectBtn = this.bindings.getBinding('select');
+            const selectDown = gp.buttons[selectBtn]?.pressed ?? false;
+            const selectWas = this._prevButtons[selectBtn] ?? false;
+            if (selectDown && !selectWas)
+                this.callSelectStart();
+            if (!selectDown && selectWas)
+                this.callSelectEnd();
+        }
+        this._updatePrevButtons(gp);
+    }
+    callSelectStart() {
+        this.dispatchEvent({ type: 'selectstart', target: this });
+    }
+    callSelectEnd() {
+        this.dispatchEvent({ type: 'selectend', target: this });
+    }
+    connect() {
+        this.dispatchEvent({ type: 'connected', target: this });
+    }
+    disconnect() {
+        this.dispatchEvent({ type: 'disconnected', target: this });
+    }
+    /**
+     * Returns the axes of the active gamepad with deadzone applied.
+     * [leftX, leftY, rightX, rightY]
+     */
+    getAxes() {
+        const gp = this.activeGamepad;
+        if (!gp)
+            return [0, 0, 0, 0];
+        return [
+            GamepadController.applyDeadzone(gp.axes[0] ?? 0),
+            GamepadController.applyDeadzone(gp.axes[1] ?? 0),
+            GamepadController.applyDeadzone(gp.axes[2] ?? 0),
+            GamepadController.applyDeadzone(gp.axes[3] ?? 0),
+        ];
+    }
+    static applyDeadzone(value) {
+        if (!Number.isFinite(value))
+            return 0;
+        if (Math.abs(value) < DEADZONE)
+            return 0;
+        const sign = Math.sign(value);
+        return sign * ((Math.abs(value) - DEADZONE) / (1 - DEADZONE));
+    }
+    /**
+     * Returns the analog value (0..1) of the given button index, or 0 if
+     * unbound or no gamepad. Useful for triggers (which expose .value).
+     */
+    getButtonValue(index) {
+        if (index < 0)
+            return 0;
+        return this.activeGamepad?.buttons[index]?.value ?? 0;
+    }
+    /**
+     * Returns the analog values of the left and right triggers (LT, RT) on a
+     * standard-mapped gamepad, in [0, 1]. Returns [0, 0] when no gamepad.
+     */
+    getTriggers() {
+        const gp = this.activeGamepad;
+        if (!gp)
+            return [0, 0];
+        return [gp.buttons[6]?.value ?? 0, gp.buttons[7]?.value ?? 0];
+    }
+    /**
+     * Returns true if the given button index had a rising edge this frame.
+     * Safe to call from any update order — uses pre-computed edges.
+     */
+    isButtonJustPressed(buttonIndex) {
+        return this._risingEdges[buttonIndex] ?? false;
+    }
+    _updatePrevButtons(gp) {
+        for (let i = 0; i < gp.buttons.length; i++) {
+            this._prevButtons[i] = gp.buttons[i]?.pressed ?? false;
+        }
+    }
+    _pollGamepad() {
+        const gamepads = navigator.getGamepads?.();
+        if (!gamepads)
+            return null;
+        for (const pad of gamepads) {
+            if (pad && pad.connected && pad.mapping === 'standard')
+                return pad;
+        }
+        return null;
+    }
+    _onDisconnect() {
+        if (this.userData.selected) {
+            this.callSelectEnd();
+        }
+        this._prevButtons = [];
+        this._captureCallback = null;
+        this.activeGamepad = null;
+        this.dispatchEvent({ type: 'disconnected', target: this });
+    }
+}
+
 /**
  * A simple utility class for linearly animating a numeric value over
  * time. It clamps the value within a specified min/max range and updates it
@@ -5734,6 +5990,7 @@ class Input {
         this.pivotsEnabled = false;
         this.gazeController = new GazeController();
         this.mouseController = new MouseController();
+        this.gamepadController = new GamepadController();
         this.controllersEnabled = true;
         this.listeners = new Map();
         this.intersectionsForController = new Map();
@@ -5760,6 +6017,8 @@ class Input {
         controllers.push(this.gazeController);
         controllers.push(this.mouseController);
         this.activeControllers.add(this.mouseController);
+        controllers.push(this.gamepadController);
+        this.activeControllers.add(this.gamepadController);
         for (const controller of controllers) {
             this.intersectionsForController.set(controller, []);
         }
@@ -8470,486 +8729,6 @@ class SimulatorControllerState {
     }
 }
 
-const { A_CODE: A_CODE$1, D_CODE: D_CODE$1, E_CODE: E_CODE$1, Q_CODE: Q_CODE$1, S_CODE: S_CODE$1, W_CODE: W_CODE$1 } = Keycodes;
-const vector3$6 = new THREE.Vector3();
-const euler$2 = new THREE.Euler();
-class SimulatorControlMode {
-    /**
-     * Create a SimulatorControlMode
-     */
-    constructor(simulatorControllerState, downKeys, hands, setStereoRenderMode, toggleUserInterface) {
-        this.simulatorControllerState = simulatorControllerState;
-        this.downKeys = downKeys;
-        this.hands = hands;
-        this.setStereoRenderMode = setStereoRenderMode;
-        this.toggleUserInterface = toggleUserInterface;
-    }
-    /**
-     * Initialize the simulator control mode.
-     */
-    init({ camera, input, timer, }) {
-        this.camera = camera;
-        this.input = input;
-        this.timer = timer;
-    }
-    onPointerDown(_) { }
-    onPointerUp(_) { }
-    onPointerMove(_) { }
-    onKeyDown(event) {
-        if (event.code == Keycodes.DIGIT_1) {
-            this.setStereoRenderMode(SimulatorRenderMode.STEREO_LEFT);
-        }
-        else if (event.code == Keycodes.DIGIT_2) {
-            this.setStereoRenderMode(SimulatorRenderMode.STEREO_RIGHT);
-        }
-        else if (event.code == Keycodes.BACKQUOTE) {
-            this.toggleUserInterface();
-        }
-    }
-    onModeActivated() { }
-    onModeDeactivated() { }
-    update() {
-        this.updateCameraPosition();
-        this.updateControllerPositions();
-    }
-    updateCameraPosition() {
-        const deltaTime = this.timer.getDelta();
-        const cameraRotation = this.camera.quaternion;
-        const cameraPosition = this.camera.position;
-        const downKeys = this.downKeys;
-        vector3$6
-            .set(Number(downKeys.has(D_CODE$1)) - Number(downKeys.has(A_CODE$1)), Number(downKeys.has(Q_CODE$1)) - Number(downKeys.has(E_CODE$1)), Number(downKeys.has(S_CODE$1)) - Number(downKeys.has(W_CODE$1)))
-            .multiplyScalar(deltaTime)
-            .applyQuaternion(cameraRotation);
-        cameraPosition.add(vector3$6);
-    }
-    updateControllerPositions() {
-        this.camera.updateMatrixWorld();
-        for (let i = 0; i < 2 && i < this.input.controllers.length; i++) {
-            const controller = this.input.controllers[i];
-            controller.position
-                .copy(this.simulatorControllerState.localControllerPositions[i])
-                .applyMatrix4(this.camera.matrixWorld);
-            controller.quaternion
-                .copy(this.simulatorControllerState.localControllerOrientations[i])
-                .premultiply(this.camera.quaternion);
-            controller.updateMatrix();
-            const mesh = i == 0 ? this.hands.leftController : this.hands.rightController;
-            mesh.position.copy(controller.position);
-            mesh.quaternion.copy(controller.quaternion);
-        }
-    }
-    rotateOnPointerMove(event, objectQuaternion, multiplier = 0.002) {
-        euler$2.setFromQuaternion(objectQuaternion, 'YXZ');
-        euler$2.y += event.movementX * multiplier;
-        euler$2.x += event.movementY * multiplier;
-        // Clamp camera pitch to +/-90 deg (+/-1.57 rad) with a 0.01 rad (0.573 deg)
-        // buffer to prevent gimbal lock.
-        const PI_2 = Math.PI / 2;
-        euler$2.x = Math.max(-PI_2 + 0.01, Math.min(PI_2 - 0.01, euler$2.x));
-        objectQuaternion.setFromEuler(euler$2);
-    }
-    enableSimulatorHands() {
-        this.hands.showHands();
-        this.input.dispatchEvent({
-            type: 'connected',
-            target: this.input.controllers[0],
-            data: { handedness: 'left' },
-        });
-        this.input.dispatchEvent({
-            type: 'connected',
-            target: this.input.controllers[1],
-            data: { handedness: 'right' },
-        });
-    }
-    disableSimulatorHands() {
-        this.hands.hideHands();
-        this.input.dispatchEvent({
-            type: 'disconnected',
-            target: this.input.controllers[0],
-            data: { handedness: 'left' },
-        });
-        this.input.dispatchEvent({
-            type: 'disconnected',
-            target: this.input.controllers[1],
-            data: { handedness: 'right' },
-        });
-    }
-}
-
-const vector3$5 = new THREE.Vector3();
-const { A_CODE, D_CODE, E_CODE, Q_CODE, S_CODE, SPACE_CODE, T_CODE, W_CODE } = Keycodes;
-class SimulatorControllerMode extends SimulatorControlMode {
-    onPointerMove(event) {
-        if (event.buttons) {
-            const controllerOrientation = this.simulatorControllerState.localControllerOrientations[this.simulatorControllerState.currentControllerIndex];
-            this.rotateOnPointerMove(event, controllerOrientation, -2e-3);
-        }
-    }
-    update() {
-        this.updateControllerPositions();
-    }
-    onModeActivated() {
-        this.enableSimulatorHands();
-    }
-    updateControllerPositions() {
-        const deltaTime = this.timer.getDelta();
-        const downKeys = this.downKeys;
-        vector3$5
-            .set(Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)), Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)), Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)))
-            .multiplyScalar(deltaTime);
-        this.simulatorControllerState.localControllerPositions[this.simulatorControllerState.currentControllerIndex].add(vector3$5);
-        super.updateControllerPositions();
-    }
-    toggleControllerIndex() {
-        this.hands.toggleHandedness();
-    }
-    onKeyDown(event) {
-        super.onKeyDown(event);
-        if (event.code == T_CODE) {
-            this.toggleControllerIndex();
-        }
-        else if (event.code == SPACE_CODE) {
-            const controllerSelecting = this.input.controllers[this.simulatorControllerState.currentControllerIndex].userData?.selected;
-            const newSelectingState = !controllerSelecting;
-            if (this.simulatorControllerState.currentControllerIndex == 0) {
-                this.hands.setLeftHandPinching(newSelectingState);
-            }
-            else {
-                this.hands.setRightHandPinching(newSelectingState);
-            }
-        }
-    }
-}
-
-class SimulatorPoseMode extends SimulatorControlMode {
-    onModeActivated() {
-        this.enableSimulatorHands();
-    }
-    onPointerMove(event) {
-        if (event.buttons) {
-            this.rotateOnPointerMove(event, this.camera.quaternion);
-        }
-    }
-}
-
-class SimulatorUserMode extends SimulatorControlMode {
-    onModeActivated() {
-        this.disableSimulatorHands();
-        this.input.mouseController.connect();
-    }
-    onModeDeactivated() {
-        this.input.mouseController.disconnect();
-    }
-    onPointerDown(event) {
-        if (event.buttons & 1) {
-            this.input.mouseController.callSelectStart();
-        }
-    }
-    onPointerUp() {
-        if (this.input.mouseController.userData.selected) {
-            this.input.mouseController.callSelectEnd();
-        }
-    }
-    onPointerMove(event) {
-        this.input.mouseController.updateMousePositionFromEvent(event);
-        if (event.buttons & 2) {
-            this.rotateOnPointerMove(event, this.camera.quaternion);
-        }
-    }
-}
-
-class SetSimulatorModeEvent extends Event {
-    static { this.type = 'setSimulatorMode'; }
-    constructor(simulatorMode) {
-        super(SetSimulatorModeEvent.type, { bubbles: true, composed: true });
-        this.simulatorMode = simulatorMode;
-    }
-}
-
-function preventDefault(event) {
-    event.preventDefault();
-}
-class SimulatorControls {
-    #enabled;
-    get enabled() {
-        return this.#enabled;
-    }
-    set enabled(value) {
-        this.setEnabled(value);
-    }
-    /**
-     * Create the simulator controls.
-     * @param hands - The simulator hands manager.
-     * @param setStereoRenderMode - A function to set the stereo mode.
-     * @param userInterface - The simulator user interface manager.
-     */
-    constructor(simulatorControllerState, hands, setStereoRenderMode, userInterface) {
-        this.simulatorControllerState = simulatorControllerState;
-        this.hands = hands;
-        this.userInterface = userInterface;
-        this.pointerDown = false;
-        this.downKeys = new Set();
-        this.simulatorMode = SimulatorMode.USER;
-        this.#enabled = true;
-        this._onPointerDown = this.onPointerDown.bind(this);
-        this._onPointerUp = this.onPointerUp.bind(this);
-        this._onKeyDown = this.onKeyDown.bind(this);
-        this._onKeyUp = this.onKeyUp.bind(this);
-        this._onPointerMove = this.onPointerMove.bind(this);
-        this._onBlur = this.onBlur.bind(this);
-        const toggleUserInterface = () => {
-            this.userInterface.toggleInterfaceVisible();
-        };
-        this.simulatorModes = {
-            [SimulatorMode.USER]: new SimulatorUserMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface),
-            [SimulatorMode.POSE]: new SimulatorPoseMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface),
-            [SimulatorMode.CONTROLLER]: new SimulatorControllerMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface),
-        };
-        this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
-    }
-    /**
-     * Initialize the simulator controls.
-     */
-    init({ camera, input, timer, renderer, simulatorOptions, }) {
-        for (const mode in this.simulatorModes) {
-            this.simulatorModes[mode].init({ camera, input, timer });
-        }
-        this.renderer = renderer;
-        this.setSimulatorMode(simulatorOptions.defaultMode);
-        this.simulatorControllerState.currentControllerIndex =
-            simulatorOptions.defaultHand === Handedness.LEFT ? 0 : 1;
-        this.simulatorOptions = simulatorOptions;
-        this.connect();
-    }
-    connect() {
-        const domElement = this.renderer.domElement;
-        document.addEventListener('keyup', this._onKeyUp);
-        document.addEventListener('keydown', this._onKeyDown);
-        domElement.addEventListener('pointermove', this._onPointerMove);
-        domElement.addEventListener('pointerdown', this._onPointerDown);
-        domElement.addEventListener('pointerup', this._onPointerUp);
-        domElement.addEventListener('contextmenu', preventDefault);
-        window.addEventListener('blur', this._onBlur);
-        document.addEventListener('visibilitychange', this._onBlur);
-    }
-    update() {
-        this.simulatorModeControls.update();
-    }
-    onPointerMove(event) {
-        if (!this.enabled)
-            return;
-        this.simulatorModeControls.onPointerMove(event);
-    }
-    onPointerDown(event) {
-        if (!this.enabled)
-            return;
-        this.simulatorModeControls.onPointerDown(event);
-        this.pointerDown = true;
-    }
-    onPointerUp(event) {
-        if (!this.enabled)
-            return;
-        this.simulatorModeControls.onPointerUp(event);
-        this.pointerDown = false;
-    }
-    onKeyDown(event) {
-        if (!this.enabled)
-            return;
-        // On macOS, keyup events are not fired for keys held when Command (Meta)
-        // is pressed. Clear all keys to prevent stuck movement.
-        if (event.metaKey ||
-            event.code === 'MetaLeft' ||
-            event.code === 'MetaRight') {
-            this.downKeys.clear();
-            return;
-        }
-        this.downKeys.add(event.code);
-        if (this.simulatorOptions &&
-            event.code === this.simulatorOptions.modeToggle.toggleKey) {
-            this.setSimulatorMode(this.simulatorOptions.modeToggle.toggleOrder[this.simulatorMode]);
-        }
-        this.simulatorModeControls.onKeyDown(event);
-    }
-    onKeyUp(event) {
-        if (!this.enabled)
-            return;
-        this.downKeys.delete(event.code);
-    }
-    onBlur() {
-        this.downKeys.clear();
-    }
-    setSimulatorMode(mode) {
-        this.simulatorMode = mode;
-        this.simulatorModeControls.onModeDeactivated();
-        this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
-        this.simulatorModeControls.onModeActivated();
-        if (this.modeIndicatorElement) {
-            this.modeIndicatorElement.simulatorMode = mode;
-        }
-    }
-    setModeIndicatorElement(element) {
-        element.simulatorMode = this.simulatorMode;
-        element.addEventListener('setSimulatorMode', (event) => {
-            if (event instanceof SetSimulatorModeEvent) {
-                this.setSimulatorMode(event.simulatorMode);
-            }
-        });
-        this.modeIndicatorElement = element;
-    }
-    setEnabled(value) {
-        if (value == this.#enabled) {
-            return;
-        }
-        this.#enabled = value;
-        if (!value) {
-            this.downKeys.clear();
-        }
-    }
-}
-
-class SimulatorDepthMaterial extends THREE.MeshBasicMaterial {
-    onBeforeCompile(shader) {
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <clipping_planes_pars_vertex>', [
-            '#include <clipping_planes_pars_vertex>',
-            'varying vec4 vViewCoordinates;',
-        ].join('\n'))
-            .replace('#include <project_vertex>', ['#include <project_vertex>', 'vViewCoordinates = mvPosition;'].join('\n'));
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <clipping_planes_pars_fragment>', [
-            '#include <clipping_planes_pars_fragment>',
-            'varying vec4 vViewCoordinates;',
-        ].join('\n'))
-            .replace('#include <dithering_fragment>', [
-            '#include <dithering_fragment>',
-            'gl_FragColor = vec4(-vViewCoordinates.z, 0.0, 0.0, 1.0);',
-        ].join('\n'));
-    }
-}
-
-class SimulatorDepth {
-    constructor(simulatorScene) {
-        this.simulatorScene = simulatorScene;
-        this.depthWidth = 160;
-        this.depthHeight = 160;
-        this.depthBufferSlice = new Float32Array();
-        /**
-         * If true, copies the rendering camera's projection matrix each frame.
-         */
-        this.autoUpdateDepthCameraProjection = true;
-        /**
-         * If true, copies the rendering camera's transform each frame.
-         */
-        this.autoUpdateDepthCameraTransform = true;
-        this.projectionMatrixArray = new Float32Array(16);
-    }
-    /**
-     * Initialize Simulator Depth.
-     */
-    init(renderer, camera, depth) {
-        this.renderer = renderer;
-        this.camera = camera;
-        this.depth = depth;
-        if (this.camera instanceof THREE.PerspectiveCamera) {
-            this.depthCamera = new THREE.PerspectiveCamera();
-        }
-        else if (this.camera instanceof THREE.OrthographicCamera) {
-            this.depthCamera = new THREE.OrthographicCamera();
-        }
-        else {
-            throw new Error('Unknown camera type');
-        }
-        this.depthCamera.copy(this.camera, /*recursive=*/ false);
-        this.createRenderTarget();
-        this.depthMaterial = new SimulatorDepthMaterial();
-    }
-    createRenderTarget() {
-        this.depthRenderTarget = new THREE.WebGLRenderTarget(this.depthWidth, this.depthHeight, {
-            format: THREE.RedFormat,
-            type: THREE.FloatType,
-        });
-        this.depthBuffer = new Float32Array(this.depthWidth * this.depthHeight);
-    }
-    update() {
-        this.updateDepthCamera();
-        this.renderDepthScene();
-        this.updateDepth();
-    }
-    updateDepthCamera() {
-        const renderingCamera = this.camera;
-        const depthCamera = this.depthCamera;
-        if (this.autoUpdateDepthCameraProjection) {
-            depthCamera.projectionMatrix.copy(renderingCamera.projectionMatrix);
-            depthCamera.projectionMatrixInverse.copy(renderingCamera.projectionMatrixInverse);
-        }
-        if (this.autoUpdateDepthCameraTransform) {
-            depthCamera.position.copy(renderingCamera.position);
-            depthCamera.rotation.order = renderingCamera.rotation.order;
-            depthCamera.quaternion.copy(renderingCamera.quaternion);
-            depthCamera.scale.copy(renderingCamera.scale);
-            depthCamera.matrix.copy(renderingCamera.matrix);
-            depthCamera.matrixWorld.copy(renderingCamera.matrixWorld);
-            depthCamera.matrixWorldInverse.copy(renderingCamera.matrixWorldInverse);
-        }
-    }
-    renderDepthScene() {
-        const originalRenderTarget = this.renderer.getRenderTarget();
-        this.renderer.setRenderTarget(this.depthRenderTarget);
-        this.simulatorScene.overrideMaterial = this.depthMaterial;
-        this.renderer.render(this.simulatorScene, this.depthCamera);
-        this.simulatorScene.overrideMaterial = null;
-        this.renderer.setRenderTarget(originalRenderTarget);
-    }
-    async updateDepth() {
-        // We preventively unbind the PIXEL_PACK_BUFFER before reading from the
-        // render target in case external libraries (Spark.js) left it bound.
-        const context = this.renderer.getContext();
-        context.bindBuffer(context.PIXEL_PACK_BUFFER, null);
-        // Cache the projection matrix and transform of the rendered depth.
-        const projectionMatrix = this.depthCamera.projectionMatrix.clone();
-        const transform = new XRRigidTransform(this.depthCamera.position, this.depthCamera.quaternion);
-        await this.renderer.readRenderTargetPixelsAsync(this.depthRenderTarget, 0, 0, this.depthWidth, this.depthHeight, this.depthBuffer);
-        // Flip the depth buffer.
-        if (this.depthBufferSlice.length != this.depthWidth) {
-            this.depthBufferSlice = new Float32Array(this.depthWidth);
-        }
-        for (let i = 0; i < this.depthHeight / 2; ++i) {
-            const j = this.depthHeight - 1 - i;
-            const i_offset = i * this.depthWidth;
-            const j_offset = j * this.depthWidth;
-            // Copy row i to a temp slice
-            this.depthBufferSlice.set(this.depthBuffer.subarray(i_offset, i_offset + this.depthWidth));
-            // Copy row j to row i
-            this.depthBuffer.copyWithin(i_offset, j_offset, j_offset + this.depthWidth);
-            // Copy the temp slice (original row i) to row j
-            this.depthBuffer.set(this.depthBufferSlice, j_offset);
-        }
-        projectionMatrix.toArray(this.projectionMatrixArray);
-        const depthData = {
-            width: this.depthWidth,
-            height: this.depthHeight,
-            data: this.depthBuffer.buffer,
-            rawValueToMeters: 1.0,
-            projectionMatrix: this.projectionMatrixArray,
-            transform: transform,
-        };
-        this.depth.updateCPUDepthData(depthData, 0);
-    }
-}
-
-// Request to change the hand pose.
-class SimulatorHandPoseChangeRequestEvent extends Event {
-    static { this.type = 'SimulatorHandPoseChangeRequestEvent'; }
-    constructor(pose) {
-        super(SimulatorHandPoseChangeRequestEvent.type, {
-            bubbles: true,
-            composed: true,
-        });
-        this.pose = pose;
-    }
-}
-
 const LEFT_HAND_FIST = [
     { t: [-0.0933, -0.0266, -0.1338], r: [0.1346, -0.1437, 0.0038, 0.9804] },
     { t: [-0.0648, -0.0265, -0.1529], r: [0.0354, -0.3351, -0.1786, 0.9244] },
@@ -10225,6 +10004,597 @@ const SIMULATOR_HAND_POSE_NAMES = Object.freeze({
     [SimulatorHandPose.VICTORY]: 'Victory',
 });
 
+const { A_CODE: A_CODE$1, D_CODE: D_CODE$1, E_CODE: E_CODE$1, Q_CODE: Q_CODE$1, S_CODE: S_CODE$1, W_CODE: W_CODE$1 } = Keycodes;
+const vector3$6 = new THREE.Vector3();
+const euler$2 = new THREE.Euler();
+const HAND_POSES = Object.values(SimulatorHandPose);
+class SimulatorControlMode {
+    /**
+     * Create a SimulatorControlMode
+     */
+    constructor(simulatorControllerState, downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode = () => { }) {
+        this.simulatorControllerState = simulatorControllerState;
+        this.downKeys = downKeys;
+        this.hands = hands;
+        this.setStereoRenderMode = setStereoRenderMode;
+        this.toggleUserInterface = toggleUserInterface;
+        this.cycleSimulatorMode = cycleSimulatorMode;
+    }
+    /**
+     * Initialize the simulator control mode.
+     */
+    init({ camera, input, timer, }) {
+        this.camera = camera;
+        this.input = input;
+        this.timer = timer;
+        input.gamepadController.init({ camera });
+    }
+    onPointerDown(_) { }
+    onPointerUp(_) { }
+    onPointerMove(_) { }
+    onKeyDown(event) {
+        if (event.code == Keycodes.DIGIT_1) {
+            this.setStereoRenderMode(SimulatorRenderMode.STEREO_LEFT);
+        }
+        else if (event.code == Keycodes.DIGIT_2) {
+            this.setStereoRenderMode(SimulatorRenderMode.STEREO_RIGHT);
+        }
+        else if (event.code == Keycodes.BACKQUOTE) {
+            this.toggleUserInterface();
+        }
+    }
+    onModeActivated() { }
+    onModeDeactivated() { }
+    update() {
+        this.updateGamepad();
+        this.updateCameraPosition();
+        this.updateControllerPositions();
+    }
+    /**
+     * Poll the gamepad and handle button actions. Called from all modes.
+     */
+    updateGamepad() {
+        const gp = this.input.gamepadController;
+        gp.update();
+        if (gp.userData.connected) {
+            this.updateGamepadUI(gp);
+        }
+    }
+    updateCameraPosition() {
+        const gp = this.input.gamepadController;
+        // While a modal menu owns gamepad input, don't move the camera.
+        if (gp.menuActive)
+            return;
+        const deltaTime = this.timer.getDelta();
+        const cameraRotation = this.camera.quaternion;
+        const cameraPosition = this.camera.position;
+        const downKeys = this.downKeys;
+        vector3$6
+            .set(Number(downKeys.has(D_CODE$1)) - Number(downKeys.has(A_CODE$1)), Number(downKeys.has(Q_CODE$1)) - Number(downKeys.has(E_CODE$1)), Number(downKeys.has(S_CODE$1)) - Number(downKeys.has(W_CODE$1)))
+            .multiplyScalar(deltaTime)
+            .applyQuaternion(cameraRotation);
+        cameraPosition.add(vector3$6);
+        // Gamepad stick input (if connected).
+        if (gp.userData.connected) {
+            const [lx, ly, rx, ry] = gp.getAxes();
+            // Left stick → move camera.
+            if (lx !== 0 || ly !== 0) {
+                vector3$6
+                    .set(lx, 0, ly)
+                    .multiplyScalar(deltaTime)
+                    .applyQuaternion(cameraRotation);
+                cameraPosition.add(vector3$6);
+            }
+            // Right stick → look (yaw + pitch).
+            if (rx !== 0 || ry !== 0) {
+                const LOOK_SPEED = 2.0;
+                euler$2.setFromQuaternion(cameraRotation, 'YXZ');
+                euler$2.y -= rx * LOOK_SPEED * deltaTime;
+                euler$2.x -= ry * LOOK_SPEED * deltaTime;
+                const PI_2 = Math.PI / 2;
+                euler$2.x = Math.max(-PI_2 + 0.01, Math.min(PI_2 - 0.01, euler$2.x));
+                cameraRotation.setFromEuler(euler$2);
+            }
+            // Configurable vertical movement bindings (defaults LT/RT, analog).
+            const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
+            const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
+            const verticalDelta = (upVal - downVal) * deltaTime;
+            if (verticalDelta !== 0) {
+                cameraPosition.y += verticalDelta;
+            }
+        }
+    }
+    /**
+     * Handle gamepad buttons for simulator UI using configurable bindings.
+     */
+    updateGamepadUI(gp) {
+        // Suppress normal actions during rebind or while a modal menu owns input.
+        if (gp.captureActive || gp.menuActive)
+            return;
+        const b = gp.bindings;
+        if (gp.isButtonJustPressed(b.getBinding('cycleHandPoseLeft'))) {
+            this.cycleHandPose(-1);
+        }
+        if (gp.isButtonJustPressed(b.getBinding('cycleHandPoseRight'))) {
+            this.cycleHandPose(1);
+        }
+        if (gp.isButtonJustPressed(b.getBinding('cycleSimulatorMode'))) {
+            this.cycleSimulatorMode();
+        }
+        if (gp.isButtonJustPressed(b.getBinding('toggleUI'))) {
+            this.toggleUserInterface();
+        }
+        if (gp.isButtonJustPressed(b.getBinding('toggleHand'))) {
+            this.hands.toggleHandedness();
+        }
+        if (gp.isButtonJustPressed(b.getBinding('openSettings'))) {
+            gp.onOpenSettings?.();
+        }
+    }
+    cycleHandPose(direction) {
+        const idx = this.simulatorControllerState.currentControllerIndex;
+        const currentPose = idx === 0 ? this.hands.leftHandPose : this.hands.rightHandPose;
+        const currentIdx = HAND_POSES.indexOf(currentPose ?? HAND_POSES[0]);
+        const nextIdx = (currentIdx + direction + HAND_POSES.length) % HAND_POSES.length;
+        const nextPose = HAND_POSES[nextIdx];
+        if (idx === 0) {
+            this.hands.setLeftHandLerpPose(nextPose);
+        }
+        else {
+            this.hands.setRightHandLerpPose(nextPose);
+        }
+    }
+    updateControllerPositions() {
+        this.camera.updateMatrixWorld();
+        for (let i = 0; i < 2 && i < this.input.controllers.length; i++) {
+            const controller = this.input.controllers[i];
+            controller.position
+                .copy(this.simulatorControllerState.localControllerPositions[i])
+                .applyMatrix4(this.camera.matrixWorld);
+            controller.quaternion
+                .copy(this.simulatorControllerState.localControllerOrientations[i])
+                .premultiply(this.camera.quaternion);
+            controller.updateMatrix();
+            const mesh = i == 0 ? this.hands.leftController : this.hands.rightController;
+            mesh.position.copy(controller.position);
+            mesh.quaternion.copy(controller.quaternion);
+        }
+    }
+    rotateOnPointerMove(event, objectQuaternion, multiplier = 0.002) {
+        euler$2.setFromQuaternion(objectQuaternion, 'YXZ');
+        euler$2.y += event.movementX * multiplier;
+        euler$2.x += event.movementY * multiplier;
+        // Clamp camera pitch to +/-90 deg (+/-1.57 rad) with a 0.01 rad (0.573 deg)
+        // buffer to prevent gimbal lock.
+        const PI_2 = Math.PI / 2;
+        euler$2.x = Math.max(-PI_2 + 0.01, Math.min(PI_2 - 0.01, euler$2.x));
+        objectQuaternion.setFromEuler(euler$2);
+    }
+    enableSimulatorHands() {
+        this.hands.showHands();
+        this.input.dispatchEvent({
+            type: 'connected',
+            target: this.input.controllers[0],
+            data: { handedness: 'left' },
+        });
+        this.input.dispatchEvent({
+            type: 'connected',
+            target: this.input.controllers[1],
+            data: { handedness: 'right' },
+        });
+    }
+    disableSimulatorHands() {
+        this.hands.hideHands();
+        this.input.dispatchEvent({
+            type: 'disconnected',
+            target: this.input.controllers[0],
+            data: { handedness: 'left' },
+        });
+        this.input.dispatchEvent({
+            type: 'disconnected',
+            target: this.input.controllers[1],
+            data: { handedness: 'right' },
+        });
+    }
+}
+
+const vector3$5 = new THREE.Vector3();
+const { A_CODE, D_CODE, E_CODE, Q_CODE, S_CODE, SPACE_CODE, T_CODE, W_CODE } = Keycodes;
+class SimulatorControllerMode extends SimulatorControlMode {
+    onPointerMove(event) {
+        if (event.buttons) {
+            const controllerOrientation = this.simulatorControllerState.localControllerOrientations[this.simulatorControllerState.currentControllerIndex];
+            this.rotateOnPointerMove(event, controllerOrientation, -2e-3);
+        }
+    }
+    update() {
+        this.updateGamepad();
+        this.updateControllerPositions();
+    }
+    onModeActivated() {
+        this.enableSimulatorHands();
+    }
+    updateControllerPositions() {
+        const deltaTime = this.timer.getDelta();
+        const downKeys = this.downKeys;
+        const localPos = this.simulatorControllerState.localControllerPositions[this.simulatorControllerState.currentControllerIndex];
+        vector3$5
+            .set(Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)), Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)), Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)))
+            .multiplyScalar(deltaTime);
+        localPos.add(vector3$5);
+        // Gamepad: left stick moves hand on XZ; configurable buttons on Y.
+        const gp = this.input.gamepadController;
+        if (gp.userData.connected && !gp.menuActive) {
+            const [lx, ly] = gp.getAxes();
+            const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
+            const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
+            vector3$5.set(lx, upVal - downVal, ly).multiplyScalar(deltaTime);
+            localPos.add(vector3$5);
+        }
+        super.updateControllerPositions();
+    }
+    toggleControllerIndex() {
+        this.hands.toggleHandedness();
+    }
+    onKeyDown(event) {
+        super.onKeyDown(event);
+        if (event.code == T_CODE) {
+            this.toggleControllerIndex();
+        }
+        else if (event.code == SPACE_CODE) {
+            const controllerSelecting = this.input.controllers[this.simulatorControllerState.currentControllerIndex].userData?.selected;
+            const newSelectingState = !controllerSelecting;
+            if (this.simulatorControllerState.currentControllerIndex == 0) {
+                this.hands.setLeftHandPinching(newSelectingState);
+            }
+            else {
+                this.hands.setRightHandPinching(newSelectingState);
+            }
+        }
+    }
+}
+
+class SimulatorPoseMode extends SimulatorControlMode {
+    onModeActivated() {
+        this.enableSimulatorHands();
+    }
+    onPointerMove(event) {
+        if (event.buttons) {
+            this.rotateOnPointerMove(event, this.camera.quaternion);
+        }
+    }
+}
+
+class SimulatorUserMode extends SimulatorControlMode {
+    onModeActivated() {
+        this.disableSimulatorHands();
+        this.input.mouseController.connect();
+    }
+    onModeDeactivated() {
+        this.input.mouseController.disconnect();
+    }
+    /**
+     * In User mode, hands are hidden — switch to a hand-visible mode
+     * before cycling so the change is visible.
+     */
+    cycleHandPose(direction) {
+        this.cycleSimulatorMode();
+        super.cycleHandPose(direction);
+    }
+    onPointerDown(event) {
+        if (event.buttons & 1) {
+            this.input.mouseController.callSelectStart();
+        }
+    }
+    onPointerUp() {
+        if (this.input.mouseController.userData.selected) {
+            this.input.mouseController.callSelectEnd();
+        }
+    }
+    onPointerMove(event) {
+        this.input.mouseController.updateMousePositionFromEvent(event);
+        if (event.buttons & 2) {
+            this.rotateOnPointerMove(event, this.camera.quaternion);
+        }
+    }
+}
+
+class SetSimulatorModeEvent extends Event {
+    static { this.type = 'setSimulatorMode'; }
+    constructor(simulatorMode) {
+        super(SetSimulatorModeEvent.type, { bubbles: true, composed: true });
+        this.simulatorMode = simulatorMode;
+    }
+}
+
+function preventDefault(event) {
+    event.preventDefault();
+}
+class SimulatorControls {
+    #enabled;
+    get enabled() {
+        return this.#enabled;
+    }
+    set enabled(value) {
+        this.setEnabled(value);
+    }
+    /**
+     * Create the simulator controls.
+     * @param hands - The simulator hands manager.
+     * @param setStereoRenderMode - A function to set the stereo mode.
+     * @param userInterface - The simulator user interface manager.
+     */
+    constructor(simulatorControllerState, hands, setStereoRenderMode, userInterface) {
+        this.simulatorControllerState = simulatorControllerState;
+        this.hands = hands;
+        this.userInterface = userInterface;
+        this.pointerDown = false;
+        this.downKeys = new Set();
+        this.simulatorMode = SimulatorMode.USER;
+        this.#enabled = true;
+        this._onPointerDown = this.onPointerDown.bind(this);
+        this._onPointerUp = this.onPointerUp.bind(this);
+        this._onKeyDown = this.onKeyDown.bind(this);
+        this._onKeyUp = this.onKeyUp.bind(this);
+        this._onPointerMove = this.onPointerMove.bind(this);
+        this._onBlur = this.onBlur.bind(this);
+        const toggleUserInterface = () => {
+            this.userInterface.toggleInterfaceVisible();
+        };
+        const cycleSimulatorMode = () => {
+            if (!this.simulatorOptions)
+                return;
+            this.setSimulatorMode(this.simulatorOptions.modeToggle.toggleOrder[this.simulatorMode]);
+        };
+        this.simulatorModes = {
+            [SimulatorMode.USER]: new SimulatorUserMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.POSE]: new SimulatorPoseMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.CONTROLLER]: new SimulatorControllerMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+        };
+        this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
+    }
+    /**
+     * Initialize the simulator controls.
+     */
+    init({ camera, input, timer, renderer, simulatorOptions, }) {
+        for (const mode in this.simulatorModes) {
+            this.simulatorModes[mode].init({ camera, input, timer });
+        }
+        this.renderer = renderer;
+        this.setSimulatorMode(simulatorOptions.defaultMode);
+        this.simulatorControllerState.currentControllerIndex =
+            simulatorOptions.defaultHand === Handedness.LEFT ? 0 : 1;
+        this.simulatorOptions = simulatorOptions;
+        this.connect();
+    }
+    connect() {
+        const domElement = this.renderer.domElement;
+        document.addEventListener('keyup', this._onKeyUp);
+        document.addEventListener('keydown', this._onKeyDown);
+        domElement.addEventListener('pointermove', this._onPointerMove);
+        domElement.addEventListener('pointerdown', this._onPointerDown);
+        domElement.addEventListener('pointerup', this._onPointerUp);
+        domElement.addEventListener('contextmenu', preventDefault);
+        window.addEventListener('blur', this._onBlur);
+        document.addEventListener('visibilitychange', this._onBlur);
+    }
+    update() {
+        this.simulatorModeControls.update();
+    }
+    onPointerMove(event) {
+        if (!this.enabled)
+            return;
+        this.simulatorModeControls.onPointerMove(event);
+    }
+    onPointerDown(event) {
+        if (!this.enabled)
+            return;
+        this.simulatorModeControls.onPointerDown(event);
+        this.pointerDown = true;
+    }
+    onPointerUp(event) {
+        if (!this.enabled)
+            return;
+        this.simulatorModeControls.onPointerUp(event);
+        this.pointerDown = false;
+    }
+    onKeyDown(event) {
+        if (!this.enabled)
+            return;
+        // On macOS, keyup events are not fired for keys held when Command (Meta)
+        // is pressed. Clear all keys to prevent stuck movement.
+        if (event.metaKey ||
+            event.code === 'MetaLeft' ||
+            event.code === 'MetaRight') {
+            this.downKeys.clear();
+            return;
+        }
+        this.downKeys.add(event.code);
+        if (this.simulatorOptions &&
+            event.code === this.simulatorOptions.modeToggle.toggleKey) {
+            this.setSimulatorMode(this.simulatorOptions.modeToggle.toggleOrder[this.simulatorMode]);
+        }
+        this.simulatorModeControls.onKeyDown(event);
+    }
+    onKeyUp(event) {
+        if (!this.enabled)
+            return;
+        this.downKeys.delete(event.code);
+    }
+    onBlur() {
+        this.downKeys.clear();
+    }
+    setSimulatorMode(mode) {
+        this.simulatorMode = mode;
+        this.simulatorModeControls.onModeDeactivated();
+        this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
+        this.simulatorModeControls.onModeActivated();
+        if (this.modeIndicatorElement) {
+            this.modeIndicatorElement.simulatorMode = mode;
+        }
+    }
+    setModeIndicatorElement(element) {
+        element.simulatorMode = this.simulatorMode;
+        element.addEventListener('setSimulatorMode', (event) => {
+            if (event instanceof SetSimulatorModeEvent) {
+                this.setSimulatorMode(event.simulatorMode);
+            }
+        });
+        this.modeIndicatorElement = element;
+    }
+    setEnabled(value) {
+        if (value == this.#enabled) {
+            return;
+        }
+        this.#enabled = value;
+        if (!value) {
+            this.downKeys.clear();
+        }
+    }
+}
+
+class SimulatorDepthMaterial extends THREE.MeshBasicMaterial {
+    onBeforeCompile(shader) {
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <clipping_planes_pars_vertex>', [
+            '#include <clipping_planes_pars_vertex>',
+            'varying vec4 vViewCoordinates;',
+        ].join('\n'))
+            .replace('#include <project_vertex>', ['#include <project_vertex>', 'vViewCoordinates = mvPosition;'].join('\n'));
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <clipping_planes_pars_fragment>', [
+            '#include <clipping_planes_pars_fragment>',
+            'varying vec4 vViewCoordinates;',
+        ].join('\n'))
+            .replace('#include <dithering_fragment>', [
+            '#include <dithering_fragment>',
+            'gl_FragColor = vec4(-vViewCoordinates.z, 0.0, 0.0, 1.0);',
+        ].join('\n'));
+    }
+}
+
+class SimulatorDepth {
+    constructor(simulatorScene) {
+        this.simulatorScene = simulatorScene;
+        this.depthWidth = 160;
+        this.depthHeight = 160;
+        this.depthBufferSlice = new Float32Array();
+        /**
+         * If true, copies the rendering camera's projection matrix each frame.
+         */
+        this.autoUpdateDepthCameraProjection = true;
+        /**
+         * If true, copies the rendering camera's transform each frame.
+         */
+        this.autoUpdateDepthCameraTransform = true;
+        this.projectionMatrixArray = new Float32Array(16);
+    }
+    /**
+     * Initialize Simulator Depth.
+     */
+    init(renderer, camera, depth) {
+        this.renderer = renderer;
+        this.camera = camera;
+        this.depth = depth;
+        if (this.camera instanceof THREE.PerspectiveCamera) {
+            this.depthCamera = new THREE.PerspectiveCamera();
+        }
+        else if (this.camera instanceof THREE.OrthographicCamera) {
+            this.depthCamera = new THREE.OrthographicCamera();
+        }
+        else {
+            throw new Error('Unknown camera type');
+        }
+        this.depthCamera.copy(this.camera, /*recursive=*/ false);
+        this.createRenderTarget();
+        this.depthMaterial = new SimulatorDepthMaterial();
+    }
+    createRenderTarget() {
+        this.depthRenderTarget = new THREE.WebGLRenderTarget(this.depthWidth, this.depthHeight, {
+            format: THREE.RedFormat,
+            type: THREE.FloatType,
+        });
+        this.depthBuffer = new Float32Array(this.depthWidth * this.depthHeight);
+    }
+    update() {
+        this.updateDepthCamera();
+        this.renderDepthScene();
+        this.updateDepth();
+    }
+    updateDepthCamera() {
+        const renderingCamera = this.camera;
+        const depthCamera = this.depthCamera;
+        if (this.autoUpdateDepthCameraProjection) {
+            depthCamera.projectionMatrix.copy(renderingCamera.projectionMatrix);
+            depthCamera.projectionMatrixInverse.copy(renderingCamera.projectionMatrixInverse);
+        }
+        if (this.autoUpdateDepthCameraTransform) {
+            depthCamera.position.copy(renderingCamera.position);
+            depthCamera.rotation.order = renderingCamera.rotation.order;
+            depthCamera.quaternion.copy(renderingCamera.quaternion);
+            depthCamera.scale.copy(renderingCamera.scale);
+            depthCamera.matrix.copy(renderingCamera.matrix);
+            depthCamera.matrixWorld.copy(renderingCamera.matrixWorld);
+            depthCamera.matrixWorldInverse.copy(renderingCamera.matrixWorldInverse);
+        }
+    }
+    renderDepthScene() {
+        const originalRenderTarget = this.renderer.getRenderTarget();
+        this.renderer.setRenderTarget(this.depthRenderTarget);
+        this.simulatorScene.overrideMaterial = this.depthMaterial;
+        this.renderer.render(this.simulatorScene, this.depthCamera);
+        this.simulatorScene.overrideMaterial = null;
+        this.renderer.setRenderTarget(originalRenderTarget);
+    }
+    async updateDepth() {
+        // We preventively unbind the PIXEL_PACK_BUFFER before reading from the
+        // render target in case external libraries (Spark.js) left it bound.
+        const context = this.renderer.getContext();
+        context.bindBuffer(context.PIXEL_PACK_BUFFER, null);
+        // Cache the projection matrix and transform of the rendered depth.
+        const projectionMatrix = this.depthCamera.projectionMatrix.clone();
+        const transform = new XRRigidTransform(this.depthCamera.position, this.depthCamera.quaternion);
+        await this.renderer.readRenderTargetPixelsAsync(this.depthRenderTarget, 0, 0, this.depthWidth, this.depthHeight, this.depthBuffer);
+        // Flip the depth buffer.
+        if (this.depthBufferSlice.length != this.depthWidth) {
+            this.depthBufferSlice = new Float32Array(this.depthWidth);
+        }
+        for (let i = 0; i < this.depthHeight / 2; ++i) {
+            const j = this.depthHeight - 1 - i;
+            const i_offset = i * this.depthWidth;
+            const j_offset = j * this.depthWidth;
+            // Copy row i to a temp slice
+            this.depthBufferSlice.set(this.depthBuffer.subarray(i_offset, i_offset + this.depthWidth));
+            // Copy row j to row i
+            this.depthBuffer.copyWithin(i_offset, j_offset, j_offset + this.depthWidth);
+            // Copy the temp slice (original row i) to row j
+            this.depthBuffer.set(this.depthBufferSlice, j_offset);
+        }
+        projectionMatrix.toArray(this.projectionMatrixArray);
+        const depthData = {
+            width: this.depthWidth,
+            height: this.depthHeight,
+            data: this.depthBuffer.buffer,
+            rawValueToMeters: 1.0,
+            projectionMatrix: this.projectionMatrixArray,
+            transform: transform,
+        };
+        this.depth.updateCPUDepthData(depthData, 0);
+    }
+}
+
+// Request to change the hand pose.
+class SimulatorHandPoseChangeRequestEvent extends Event {
+    static { this.type = 'SimulatorHandPoseChangeRequestEvent'; }
+    constructor(pose) {
+        super(SimulatorHandPoseChangeRequestEvent.type, {
+            bubbles: true,
+            composed: true,
+        });
+        this.pose = pose;
+    }
+}
+
 class SimulatorXRHand {
 }
 
@@ -10520,9 +10890,34 @@ class SimulatorHands {
         this.simulatorControllerState.currentControllerIndex =
             (this.simulatorControllerState.currentControllerIndex + 1) % 2;
         this.updateHandPosePanel();
+        this.onHandednessChanged?.(this.simulatorControllerState.currentControllerIndex === 0
+            ? 'left'
+            : 'right');
     }
 }
 
+/** Standard gamepad button names for display. */
+const BUTTON_NAMES = {
+    0: 'A',
+    1: 'B',
+    2: 'X',
+    3: 'Y',
+    4: 'LB',
+    5: 'RB',
+    6: 'LT',
+    7: 'RT',
+    8: 'Back',
+    9: 'Start',
+    10: 'L3',
+    11: 'R3',
+    12: 'D-Up',
+    13: 'D-Down',
+    14: 'D-Left',
+    15: 'D-Right',
+};
+function btnName(index) {
+    return BUTTON_NAMES[index] ?? `Btn ${index}`;
+}
 class SimulatorInterface {
     constructor() {
         this.elements = [];
@@ -10531,11 +10926,16 @@ class SimulatorInterface {
     /**
      * Initialize the simulator interface.
      */
-    init(simulatorOptions, simulatorControls, simulatorHands) {
+    init(simulatorOptions, simulatorControls, simulatorHands, input) {
         this.createModeIndicator(simulatorOptions, simulatorControls);
         this.showGeminiLivePanel(simulatorOptions);
         this.createHandPosePanel(simulatorOptions, simulatorHands);
+        simulatorHands.onHandednessChanged = (handedness) => {
+            this._ensureGamepadToast().flash(`Active Hand: ${handedness === 'left' ? 'Left' : 'Right'}`);
+        };
         this.showInstructions(simulatorOptions);
+        if (input)
+            this._initGamepadUI(input);
     }
     createModeIndicator(simulatorOptions, simulatorControls) {
         if (simulatorOptions.modeIndicator.enabled) {
@@ -10590,6 +10990,57 @@ class SimulatorInterface {
         }
         else {
             this.showUiElements();
+        }
+    }
+    _initGamepadUI(input) {
+        const gp = input.gamepadController;
+        gp.addEventListener('connected', () => {
+            if (!gp.hasShownToast) {
+                gp.hasShownToast = true;
+                this.showGamepadToast(gp);
+            }
+        });
+        gp.onOpenSettings = () => this.toggleGamepadSettings(gp);
+    }
+    _ensureGamepadToast() {
+        if (!this._gamepadToast) {
+            this._gamepadToast = document.createElement('xrblocks-gamepad-toast');
+            document.body.appendChild(this._gamepadToast);
+        }
+        return this._gamepadToast;
+    }
+    showGamepadToast(gp) {
+        const toast = this._ensureGamepadToast();
+        const b = gp.bindings;
+        toast.show({
+            'Left Stick': 'Move (or Hand in Controller mode)',
+            'Right Stick': 'Look',
+            [btnName(b.getBinding('moveDown')) +
+                ' / ' +
+                btnName(b.getBinding('moveUp'))]: 'Down / Up',
+            [btnName(b.getBinding('select'))]: 'Select / Interact',
+            [btnName(b.getBinding('cycleHandPoseLeft')) +
+                ' / ' +
+                btnName(b.getBinding('cycleHandPoseRight'))]: 'Cycle Hand Pose',
+            [btnName(b.getBinding('cycleSimulatorMode'))]: 'Cycle Simulator Mode',
+            [btnName(b.getBinding('toggleUI'))]: 'Toggle UI',
+            [btnName(b.getBinding('toggleHand'))]: 'Swap Active Hand',
+            [btnName(b.getBinding('openSettings'))]: 'Gamepad Settings',
+        });
+    }
+    toggleGamepadSettings(gp) {
+        if (!this._gamepadSettings) {
+            this._gamepadSettings = document.createElement('xrblocks-gamepad-settings');
+            this._gamepadSettings.bindings = gp.bindings;
+            this._gamepadSettings.gamepadController = gp;
+            this._gamepadSettings.hidden = true;
+            document.body.appendChild(this._gamepadSettings);
+        }
+        if (this._gamepadSettings.hidden) {
+            this._gamepadSettings.show();
+        }
+        else {
+            this._gamepadSettings.hide();
         }
     }
 }
@@ -12513,7 +12964,7 @@ class Simulator extends Script {
         const deviceCamera = registry.get(XRDeviceCamera);
         this.options = simulatorOptions;
         camera.position.copy(this.options.initialCameraPosition);
-        this.userInterface.init(simulatorOptions, this.controls, this.hands);
+        this.userInterface.init(simulatorOptions, this.controls, this.hands, input);
         renderer.autoClearColor = false;
         await this.simulatorScene.init(simulatorOptions);
         await this.simulatorWorld.init(options, world);
@@ -18997,5 +19448,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScrollingTroikaTextView, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScrollingTroikaTextView, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
