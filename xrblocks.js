@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid d4dc942
- * @builddate 2026-05-09T01:30:40.123Z
+ * @commitid 88f4c7f
+ * @builddate 2026-05-09T02:40:30.815Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -14067,10 +14067,37 @@ class TextView extends View {
             : (this.fontSize ?? 0.06);
         ctx.font = `${fontSize * resolution}px ${this.font}`;
         ctx.fillStyle = `#${getColorHex(this.fontColor).toString(16).padStart(6, '0')}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        // Use the configured textAlign and compute anchor positions accordingly.
+        const align = this.textAlign;
+        ctx.textAlign = align;
+        let drawX;
+        switch (align) {
+            case 'left':
+                drawX = 0;
+                break;
+            case 'right':
+                drawX = canvas.width;
+                break;
+            default:
+                drawX = canvas.width / 2;
+                break;
+        }
+        // Map anchorY to canvas textBaseline and Y position.
+        let baseline = 'middle';
+        let drawY = canvas.height / 2;
+        if (typeof this.anchorY === 'string') {
+            if (this.anchorY.startsWith('top')) {
+                baseline = 'top';
+                drawY = 0;
+            }
+            else if (this.anchorY.startsWith('bottom')) {
+                baseline = 'bottom';
+                drawY = canvas.height;
+            }
+        }
+        ctx.textBaseline = baseline;
         // TODO: add line-break for canvas-based text.
-        ctx.fillText(this.text, canvas.width / 2, canvas.height / 2);
+        ctx.fillText(this.text, drawX, drawY);
         if (this.textObj?.material.map) {
             this.textObj.material.map.needsUpdate = true;
         }
