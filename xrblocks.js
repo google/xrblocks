@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid 6d774d8
- * @builddate 2026-05-11T18:59:48.047Z
+ * @commitid 324b1b6
+ * @builddate 2026-05-11T20:29:36.101Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13122,7 +13122,7 @@ class Simulator extends Script {
         this.sparkRenderer =
             this.sparkRenderer || this.registry.get(SparkRendererHolder)?.renderer;
         if (this.sparkRenderer) {
-            this.sparkRenderer.defaultView.encodeLinear = true;
+            this.sparkRenderer.encodeLinear = true;
         }
         this.renderer.setRenderTarget(this.virtualSceneRenderTarget);
         this.renderer.clear();
@@ -13146,7 +13146,7 @@ class Simulator extends Script {
     }
     renderSimulatorSceneToCanvas(camera) {
         if (this.sparkRenderer) {
-            this.sparkRenderer.defaultView.encodeLinear = false;
+            this.sparkRenderer.encodeLinear = false;
         }
         this.renderer.setRenderTarget(null);
         if (this.backgroundVideoQuad) {
@@ -19173,7 +19173,7 @@ class ModelViewer extends Script {
     }
     async createSparkRendererIfNeeded() {
         // We insert our own SparkRenderer configured to show Gaussians up to
-        // Math.sqrt(5) standard deviations from the center, recommended for XR.
+        // Math.sqrt(4) standard deviations from the center, recommended for XR.
         const { SparkRenderer } = await import('@sparkjsdev/spark');
         let sparkRendererExists = false;
         this.scene.traverse((child) => {
@@ -19182,7 +19182,7 @@ class ModelViewer extends Script {
         if (!sparkRendererExists) {
             const sparkRenderer = new SparkRenderer({
                 renderer: this.renderer,
-                maxStdDev: Math.sqrt(5),
+                maxStdDev: Math.sqrt(4),
             });
             this.registry.register(new SparkRendererHolder(sparkRenderer));
             this.scene.add(sparkRenderer);
