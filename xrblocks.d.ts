@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid d4bccf5
- * @builddate 2026-05-11T00:06:05.097Z
+ * @commitid 7b4045a
+ * @builddate 2026-05-11T17:44:45.786Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3997,6 +3997,7 @@ declare class SimulatorOptions {
     defaultMode: SimulatorMode;
     defaultHand: Handedness;
     modeToggle: {
+        enabled: boolean;
         toggleKey: Keycodes | null;
         toggleOrder: {
             User: SimulatorMode;
