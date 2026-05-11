@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid 7b4045a
- * @builddate 2026-05-11T17:44:45.786Z
+ * @commitid 6d774d8
+ * @builddate 2026-05-11T18:59:48.047Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -8021,10 +8021,16 @@ const DEFAULT_MODE_TOGGLE_ORDER = {
 class SimulatorOptions {
     constructor(options) {
         this.initialCameraPosition = { x: 0, y: 1.5, z: 0 };
-        this.scenePath = XR_BLOCKS_ASSETS_PATH + 'simulator/scenes/XREmulatorsceneV5_livingRoom.glb';
-        this.scenePlanesPath = XR_BLOCKS_ASSETS_PATH +
-            'simulator/scenes/XREmulatorsceneV5_livingRoom_planes.json';
-        this.videoPath = undefined;
+        this.environments = [
+            {
+                name: 'Living Room',
+                scenePath: XR_BLOCKS_ASSETS_PATH +
+                    'simulator/scenes/XREmulatorsceneV5_livingRoom.glb',
+                scenePlanesPath: XR_BLOCKS_ASSETS_PATH +
+                    'simulator/scenes/XREmulatorsceneV5_livingRoom_planes.json',
+            },
+        ];
+        this.activeEnvironmentIndex = 0;
         this.initialScenePosition = { x: -1.6, y: 0.3, z: 0 };
         this.defaultMode = SimulatorMode.USER;
         this.defaultHand = Handedness.LEFT;
@@ -8033,9 +8039,9 @@ class SimulatorOptions {
             toggleKey: Keycodes.LEFT_SHIFT_CODE,
             toggleOrder: DEFAULT_MODE_TOGGLE_ORDER,
         };
-        this.modeIndicator = {
-            enabled: false,
-            element: 'xrblocks-simulator-mode-indicator',
+        this.simulatorSettingsPanel = {
+            enabled: true,
+            element: 'xrblocks-simulator-settings',
         };
         this.instructions = {
             enabled: false,
@@ -8426,8 +8432,10 @@ class Options {
      */
     enableVR() {
         this.xrSessionMode = 'immersive-vr';
-        this.simulator.scenePath = null;
-        this.simulator.scenePlanesPath = null;
+        if (this.simulator.environments[this.simulator.activeEnvironmentIndex]) {
+            this.simulator.environments[this.simulator.activeEnvironmentIndex].scenePath = null;
+            this.simulator.environments[this.simulator.activeEnvironmentIndex].scenePlanesPath = null;
+        }
         return this;
     }
     /**
@@ -10430,18 +10438,18 @@ class SimulatorControls {
         this.simulatorModeControls.onModeDeactivated();
         this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
         this.simulatorModeControls.onModeActivated();
-        if (this.modeIndicatorElement) {
-            this.modeIndicatorElement.simulatorMode = mode;
+        if (this.simulatorSettingsPanelElement) {
+            this.simulatorSettingsPanelElement.simulatorMode = mode;
         }
     }
-    setModeIndicatorElement(element) {
+    setSimulatorSettingsPanelElement(element) {
         element.simulatorMode = this.simulatorMode;
         element.addEventListener('setSimulatorMode', (event) => {
             if (event instanceof SetSimulatorModeEvent) {
                 this.setSimulatorMode(event.simulatorMode);
             }
         });
-        this.modeIndicatorElement = element;
+        this.simulatorSettingsPanelElement = element;
     }
     setEnabled(value) {
         if (value == this.#enabled) {
@@ -10897,6 +10905,14 @@ class SimulatorHands {
     }
 }
 
+class SetSimulatorEnvironmentEvent extends Event {
+    static { this.type = 'setSimulatorEnvironment'; }
+    constructor(environmentIndex) {
+        super(SetSimulatorEnvironmentEvent.type, { bubbles: true, composed: true });
+        this.environmentIndex = environmentIndex;
+    }
+}
+
 /** Standard gamepad button names for display. */
 const BUTTON_NAMES = {
     0: 'A',
@@ -10927,8 +10943,10 @@ class SimulatorInterface {
     /**
      * Initialize the simulator interface.
      */
-    init(simulatorOptions, simulatorControls, simulatorHands, input) {
-        this.createModeIndicator(simulatorOptions, simulatorControls);
+    init(simulatorOptions, simulatorControls, simulatorHands, input, simulatorScene) {
+        if (simulatorScene) {
+            this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene);
+        }
         this.showGeminiLivePanel(simulatorOptions);
         this.createHandPosePanel(simulatorOptions, simulatorHands);
         simulatorHands.onHandednessChanged = (handedness) => {
@@ -10938,12 +10956,22 @@ class SimulatorInterface {
         if (input)
             this._initGamepadUI(input);
     }
-    createModeIndicator(simulatorOptions, simulatorControls) {
-        if (simulatorOptions.modeIndicator.enabled) {
-            const modeIndicatorElement = document.createElement(simulatorOptions.modeIndicator.element);
-            document.body.appendChild(modeIndicatorElement);
-            simulatorControls.setModeIndicatorElement(modeIndicatorElement);
-            this.elements.push(modeIndicatorElement);
+    createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene) {
+        if (simulatorOptions.simulatorSettingsPanel.enabled) {
+            const settingsElement = document.createElement(simulatorOptions.simulatorSettingsPanel.element);
+            settingsElement.environments = simulatorOptions.environments;
+            settingsElement.activeEnvironmentIndex =
+                simulatorOptions.activeEnvironmentIndex;
+            document.body.appendChild(settingsElement);
+            simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
+            settingsElement.addEventListener(SetSimulatorEnvironmentEvent.type, (event) => {
+                if (event instanceof SetSimulatorEnvironmentEvent) {
+                    simulatorOptions.activeEnvironmentIndex = event.environmentIndex;
+                    const activeEnv = simulatorOptions.environments[event.environmentIndex];
+                    simulatorScene.setEnvironment(activeEnv?.scenePath ?? null, new THREE.Vector3(simulatorOptions.initialScenePosition.x, simulatorOptions.initialScenePosition.y, simulatorOptions.initialScenePosition.z));
+                }
+            });
+            this.elements.push(settingsElement);
         }
     }
     showInstructions(simulatorOptions) {
@@ -11052,11 +11080,23 @@ class SimulatorScene extends THREE.Scene {
     }
     async init(simulatorOptions) {
         this.addLights();
-        if (simulatorOptions.videoPath) {
+        const activeEnv = simulatorOptions.environments[simulatorOptions.activeEnvironmentIndex];
+        if (!activeEnv)
+            return;
+        if (activeEnv.videoPath) {
             return;
         }
-        if (simulatorOptions.scenePath) {
-            await this.loadGLTF(simulatorOptions.scenePath, new THREE.Vector3(simulatorOptions.initialScenePosition.x, simulatorOptions.initialScenePosition.y, simulatorOptions.initialScenePosition.z));
+        if (activeEnv.scenePath) {
+            await this.loadGLTF(activeEnv.scenePath, new THREE.Vector3(simulatorOptions.initialScenePosition.x, simulatorOptions.initialScenePosition.y, simulatorOptions.initialScenePosition.z));
+        }
+    }
+    async setEnvironment(path, initialPosition) {
+        if (this.gltf) {
+            this.remove(this.gltf.scene);
+            this.gltf = undefined;
+        }
+        if (path) {
+            await this.loadGLTF(path, initialPosition);
         }
     }
     addLights() {
@@ -11133,8 +11173,9 @@ class SimulatorWorld {
     async init(options, world) {
         this.options = options;
         this.world = world;
-        if (options.world.planes.enabled && options.simulator.scenePlanesPath) {
-            await this.loadPlanes(options.simulator.scenePlanesPath);
+        const activeEnv = options.simulator.environments[options.simulator.activeEnvironmentIndex];
+        if (options.world.planes.enabled && activeEnv?.scenePlanesPath) {
+            await this.loadPlanes(activeEnv.scenePlanesPath);
         }
     }
     async loadPlanes(path) {
@@ -12965,7 +13006,7 @@ class Simulator extends Script {
         const deviceCamera = registry.get(XRDeviceCamera);
         this.options = simulatorOptions;
         camera.position.copy(this.options.initialCameraPosition);
-        this.userInterface.init(simulatorOptions, this.controls, this.hands, input);
+        this.userInterface.init(simulatorOptions, this.controls, this.hands, input, this.simulatorScene);
         renderer.autoClearColor = false;
         await this.simulatorScene.init(simulatorOptions);
         await this.simulatorWorld.init(options, world);
@@ -12987,16 +13028,17 @@ class Simulator extends Script {
         if (this.options.stereo.enabled) {
             this.setupStereoCameras(camera);
         }
-        if (this.options.videoPath) {
+        const activeEnv = this.options.environments[this.options.activeEnvironmentIndex];
+        if (activeEnv?.videoPath) {
             this.videoElement = document.createElement('video');
-            this.videoElement.src = this.options.videoPath;
+            this.videoElement.src = activeEnv.videoPath;
             this.videoElement.loop = true;
             this.videoElement.muted = true;
             this.videoElement.play().catch((e) => {
-                console.error(`Simulator: Failed to play video at ${this.options.videoPath}`, e);
+                console.error(`Simulator: Failed to play video at ${activeEnv.videoPath}`, e);
             });
             this.videoElement.addEventListener('error', () => {
-                console.error(`Simulator: Error loading video at ${this.options.videoPath}`, this.videoElement?.error);
+                console.error(`Simulator: Error loading video at ${activeEnv.videoPath}`, this.videoElement?.error);
             });
             const videoTexture = new THREE.VideoTexture(this.videoElement);
             videoTexture.colorSpace = THREE.SRGBColorSpace;
@@ -19449,5 +19491,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScrollingTroikaTextView, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
