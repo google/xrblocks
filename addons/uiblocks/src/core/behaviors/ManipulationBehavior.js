@@ -30,7 +30,8 @@ class ManipulationBehavior extends UICardBehavior {
         // If not draggable, no interaction/expansion applies.
         if (!this.properties.draggable)
             return;
-        const marginPx = DEFAULT_MANIPULATION_PANEL_PROPS.manipulationMargin;
+        const marginPx = this.properties.manipulationMargin ??
+            DEFAULT_MANIPULATION_PANEL_PROPS.manipulationMargin;
         const marginMeters = marginPx * card.cardPixelSize;
         const overrides = {};
         if (card.baseWidth !== undefined) {
@@ -64,7 +65,8 @@ class ManipulationBehavior extends UICardBehavior {
             card.position.copy(newPos);
         }
         card.setManipulationMargin(marginPx);
-        card.setManipulationCornerRadius(DEFAULT_MANIPULATION_PANEL_PROPS.manipulationCornerRadius);
+        card.setManipulationCornerRadius(this.properties.manipulationCornerRadius ??
+            DEFAULT_MANIPULATION_PANEL_PROPS.manipulationCornerRadius);
         card.setCursorSpotlightBlur(DEFAULT_MANIPULATION_PANEL_PROPS.cursorSpotlightBlur);
     }
     update() {

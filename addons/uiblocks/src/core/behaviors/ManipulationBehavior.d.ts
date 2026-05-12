@@ -8,6 +8,10 @@ export interface ManipulationConfig {
     draggable?: boolean;
     /** Forces layout automatic updates maintaining face alignments viewport. */
     faceCamera?: boolean;
+    /** Custom manipulation margin in pixels. */
+    manipulationMargin?: number;
+    /** Custom manipulation corner radius in pixels. */
+    manipulationCornerRadius?: number;
 }
 /**
  * ManipulationBehavior
