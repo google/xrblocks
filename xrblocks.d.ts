@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.13.0
- * @commitid 809bce4
- * @builddate 2026-05-11T23:20:57.232Z
+ * @commitid 07e6c1a
+ * @builddate 2026-05-12T17:30:48.859Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1082,8 +1082,8 @@ declare class MeshScript<TGeometry extends THREE.BufferGeometry = THREE.BufferGe
     constructor(geometry?: TGeometry, material?: TMaterial);
 }
 
-declare const GEMINI_DEFAULT_FLASH_MODEL = "gemini-2.5-flash";
-declare const GEMINI_DEFAULT_LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
+declare const GEMINI_DEFAULT_FLASH_MODEL = "gemini-3-flash-preview";
+declare const GEMINI_DEFAULT_LIVE_MODEL = "gemini-3.1-flash-live-preview";
 declare class GeminiOptions {
     apiKey: string;
     urlParam: string;
