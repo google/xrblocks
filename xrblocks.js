@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.0
- * @commitid 4b54df1
- * @builddate 2026-05-13T16:19:49.571Z
+ * @commitid 7b0cb44
+ * @builddate 2026-05-13T17:52:04.027Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -17072,6 +17072,15 @@ class Core {
             }
         });
         this.permissionsManager = new PermissionsManager();
+        /**
+         * Handles browser window resize events to keep the camera and renderer
+         * synchronized.
+         */
+        this.onWindowResize = () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        };
         if (Core.instance) {
             return Core.instance;
         }
@@ -17139,6 +17148,8 @@ class Core {
         };
         this.registry.register(this.renderer);
         this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
+        // For desktop simulator:
+        window.addEventListener('resize', this.onWindowResize);
         if (!options.canvas) {
             const xrContainer = document.createElement('div');
             document.body.appendChild(xrContainer);
@@ -17250,8 +17261,6 @@ class Core {
             await this.scriptsManager.initScript(this.ai);
         }
         await this.scriptsManager.syncScriptsWithScene(this.scene);
-        // For desktop only:
-        window.addEventListener('resize', this.onWindowResize.bind(this));
         this.renderer.setAnimationLoop(this.update.bind(this));
         if (this.physics) {
             setInterval(this.physicsStep.bind(this), 1000 * this.physics.timestep);
@@ -17370,15 +17379,6 @@ class Core {
         if (this.lighting) {
             this.lighting.simulatorRunning = true;
         }
-    }
-    /**
-     * Handles browser window resize events to keep the camera and renderer
-     * synchronized.
-     */
-    onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
     renderSimulatorAndScene() {
         if (this.simulatorRunning) {
