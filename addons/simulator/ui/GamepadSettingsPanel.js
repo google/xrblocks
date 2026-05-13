@@ -12,8 +12,8 @@ const ACTION_LABELS = {
     cycleSimulatorMode: 'Cycle Simulator Mode',
     toggleUI: 'Toggle UI',
     toggleHand: 'Swap Active Hand',
-    moveDown: 'Move Down',
     moveUp: 'Move Up',
+    moveDown: 'Move Down',
     openSettings: 'Open Settings',
 };
 // Actions hidden from the rebind list. openSettings must always stay bound

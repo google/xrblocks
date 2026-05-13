@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.0
- * @commitid 6b8b102
- * @builddate 2026-05-12T21:42:34.096Z
+ * @commitid 4b54df1
+ * @builddate 2026-05-13T16:19:49.571Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5482,8 +5482,8 @@ const DEFAULT_BINDINGS = {
     cycleSimulatorMode: 3, // Y
     toggleUI: 5, // RB / R1
     toggleHand: 4, // LB / L1
-    moveDown: 6, // LT (analog)
-    moveUp: 7, // RT (analog)
+    moveUp: 6, // LT (analog) — matches keyboard Q
+    moveDown: 7, // RT (analog) — matches keyboard E
     openSettings: 9, // Start / Menu
 };
 /**
@@ -10083,8 +10083,11 @@ class SimulatorControlMode {
             .multiplyScalar(deltaTime)
             .applyQuaternion(cameraRotation);
         cameraPosition.add(vector3$6);
-        // Gamepad stick input (if connected).
-        if (gp.userData.connected) {
+        // Gamepad stick input (if connected). Skip while the tab isn't
+        // focused — the Gamepad API delivers state to every tab, so without
+        // this guard the camera moves in background tabs whenever the user
+        // touches the stick in the foreground tab.
+        if (gp.userData.connected && document.hasFocus()) {
             const [lx, ly, rx, ry] = gp.getAxes();
             // Left stick → move camera.
             if (lx !== 0 || ly !== 0) {
@@ -10232,8 +10235,10 @@ class SimulatorControllerMode extends SimulatorControlMode {
             .multiplyScalar(deltaTime);
         localPos.add(vector3$5);
         // Gamepad: left stick moves hand on XZ; configurable buttons on Y.
+        // Skip when the tab isn't focused so background tabs don't react to
+        // stick input meant for the foreground tab.
         const gp = this.input.gamepadController;
-        if (gp.userData.connected && !gp.menuActive) {
+        if (gp.userData.connected && !gp.menuActive && document.hasFocus()) {
             const [lx, ly] = gp.getAxes();
             const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
             const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
@@ -11044,9 +11049,9 @@ class SimulatorInterface {
         toast.show({
             'Left Stick': 'Move (or Hand in Controller mode)',
             'Right Stick': 'Look',
-            [btnName(b.getBinding('moveDown')) +
+            [btnName(b.getBinding('moveUp')) +
                 ' / ' +
-                btnName(b.getBinding('moveUp'))]: 'Down / Up',
+                btnName(b.getBinding('moveDown'))]: 'Up / Down',
             [btnName(b.getBinding('select'))]: 'Select / Interact',
             [btnName(b.getBinding('cycleHandPoseLeft')) +
                 ' / ' +
