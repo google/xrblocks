@@ -73,7 +73,7 @@ export class AudioVisualizer extends xb.Script {
   }
 
   _buildUi() {
-    const panel = new xb.SpatialPanel({
+    const panel = new xb.Panel({
       backgroundColor: '#101218e6',
       width: 0.8,
       height: 0.18,
@@ -207,7 +207,7 @@ export class AudioVisualizer extends xb.Script {
     }
   }
 
-  destroy() {
+  dispose() {
     this._stop();
   }
 }
