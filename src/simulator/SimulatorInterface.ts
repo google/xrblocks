@@ -213,9 +213,9 @@ export class SimulatorInterface {
     toast.show({
       'Left Stick': 'Move (or Hand in Controller mode)',
       'Right Stick': 'Look',
-      [btnName(b.getBinding('moveDown')) +
+      [btnName(b.getBinding('moveUp')) +
       ' / ' +
-      btnName(b.getBinding('moveUp'))]: 'Down / Up',
+      btnName(b.getBinding('moveDown'))]: 'Up / Down',
       [btnName(b.getBinding('select'))]: 'Select / Interact',
       [btnName(b.getBinding('cycleHandPoseLeft')) +
       ' / ' +

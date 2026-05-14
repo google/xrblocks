@@ -7,6 +7,7 @@ import {
   ApiKeyEnteredEvent,
   MicButtonPressedEvent,
 } from 'xrblocks/addons/simulator/ui/GeminiLiveEvents.js';
+import * as xb from 'xrblocks';
 
 import {GeminiLiveWebInterface} from './GeminiLiveWebInterface.js';
 
@@ -137,7 +138,10 @@ export class GeminiLivePanel extends LitElement {
 
     try {
       console.log('Connecting to Gemini Live...');
-      this.geminiLive = new GeminiLiveWebInterface(apiKey);
+      this.geminiLive = new GeminiLiveWebInterface(
+        apiKey,
+        xb.GEMINI_DEFAULT_LIVE_MODEL
+      );
       this.geminiLive.setCallbacks({
         onTranscription: (data) => this.handleTranscription(data),
       });

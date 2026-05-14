@@ -13,6 +13,10 @@ export interface ManipulationConfig {
   draggable?: boolean;
   /** Forces layout automatic updates maintaining face alignments viewport. */
   faceCamera?: boolean;
+  /** Custom manipulation margin in pixels. */
+  manipulationMargin?: number;
+  /** Custom manipulation corner radius in pixels. */
+  manipulationCornerRadius?: number;
 }
 
 /**
@@ -44,7 +48,9 @@ export class ManipulationBehavior extends UICardBehavior<ManipulationConfig> {
     // If not draggable, no interaction/expansion applies.
     if (!this.properties.draggable) return;
 
-    const marginPx = DEFAULT_MANIPULATION_PANEL_PROPS.manipulationMargin;
+    const marginPx =
+      this.properties.manipulationMargin ??
+      DEFAULT_MANIPULATION_PANEL_PROPS.manipulationMargin;
     const marginMeters = marginPx * card.cardPixelSize;
 
     type MutableProperties = {
@@ -88,7 +94,8 @@ export class ManipulationBehavior extends UICardBehavior<ManipulationConfig> {
 
     card.setManipulationMargin(marginPx);
     card.setManipulationCornerRadius(
-      DEFAULT_MANIPULATION_PANEL_PROPS.manipulationCornerRadius
+      this.properties.manipulationCornerRadius ??
+        DEFAULT_MANIPULATION_PANEL_PROPS.manipulationCornerRadius
     );
     card.setCursorSpotlightBlur(
       DEFAULT_MANIPULATION_PANEL_PROPS.cursorSpotlightBlur

@@ -13,8 +13,8 @@ const ACTION_LABELS: Record<xb.GamepadAction, string> = {
   cycleSimulatorMode: 'Cycle Simulator Mode',
   toggleUI: 'Toggle UI',
   toggleHand: 'Swap Active Hand',
-  moveDown: 'Move Down',
   moveUp: 'Move Up',
+  moveDown: 'Move Down',
   openSettings: 'Open Settings',
 };
 

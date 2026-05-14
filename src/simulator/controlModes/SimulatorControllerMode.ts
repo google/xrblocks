@@ -45,8 +45,10 @@ export class SimulatorControllerMode extends SimulatorControlMode {
     localPos.add(vector3);
 
     // Gamepad: left stick moves hand on XZ; configurable buttons on Y.
+    // Skip when the tab isn't focused so background tabs don't react to
+    // stick input meant for the foreground tab.
     const gp = this.input.gamepadController;
-    if (gp.userData.connected && !gp.menuActive) {
+    if (gp.userData.connected && !gp.menuActive && document.hasFocus()) {
       const [lx, ly] = gp.getAxes();
       const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
       const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));

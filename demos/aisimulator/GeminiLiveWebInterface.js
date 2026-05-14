@@ -1,9 +1,9 @@
 import {GoogleGenAI, Modality} from '@google/genai';
 
 export class GeminiLiveWebInterface {
-  constructor(apiKey) {
+  constructor(apiKey, model) {
     this.ai = new GoogleGenAI({apiKey: apiKey});
-    this.model = 'gemini-3.1-flash-live-preview';
+    this.model = model;
     this.config = {
       responseModalities: [Modality.AUDIO],
       speechConfig: {voiceConfig: {prebuiltVoiceConfig: {voiceName: 'Aoede'}}},
@@ -839,7 +839,7 @@ export class GeminiLiveWebInterface {
 
   async generateSpeech(text) {
     const response = await this.ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-tts',
+      model: this.model,
       contents: [{parts: [{text: `Say cheerfully: ${text}`}]}],
       config: {
         responseModalities: ['AUDIO'],

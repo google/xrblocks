@@ -18,8 +18,8 @@ const DEFAULT_BINDINGS: Record<GamepadAction, number> = {
   cycleSimulatorMode: 3, // Y
   toggleUI: 5, // RB / R1
   toggleHand: 4, // LB / L1
-  moveDown: 6, // LT (analog)
-  moveUp: 7, // RT (analog)
+  moveUp: 6, // LT (analog) — matches keyboard Q
+  moveDown: 7, // RT (analog) — matches keyboard E
   openSettings: 9, // Start / Menu
 };
 

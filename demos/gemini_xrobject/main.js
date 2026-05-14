@@ -34,7 +34,6 @@ options.sound.speechRecognizer.playSimulatorActivationSounds = true;
 // or provided with `keys.json` in the same directory.
 options.ai.enabled = true;
 options.ai.gemini.enabled = true;
-options.ai.gemini.model = 'gemini-2.5-flash';
 options.world.objects.backendConfig.activeBackend = 'gemini';
 options.world.objects.showDebugVisualizations = false;
 options.setAppTitle('Gemini XR-Objects');
@@ -42,6 +41,7 @@ options.setAppDescription(
   'Recognize objects with Gemini and ask questions about them. Perform a long pinch / press to start!'
 );
 options.xrButton.showEnterSimulatorButton = true;
+options.simulator.defaultMode = xb.SimulatorMode.CONTROLLER;
 
 function start() {
   const xrObjectManager = new XRObjectManager();

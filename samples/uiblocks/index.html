@@ -41,7 +41,7 @@
         UIText,
         UIImage,
         UIIcon,
-        HeadLeashBehavior,
+        ManipulationBehavior,
         raycastSortFunction,
       } from 'uiblocks';
       import * as xb from 'xrblocks';
@@ -73,10 +73,10 @@
             sizeY: 1.0,
             position: new THREE.Vector3(0, 1.5, -1.5),
             behaviors: [
-              new HeadLeashBehavior({
-                offset: new THREE.Vector3(0, 0, -1.5),
-                posLerp: 0.1,
-                rotLerp: 0.1,
+              new ManipulationBehavior({
+                draggable: true,
+                manipulationMargin: 100,
+                manipulationCornerRadius: 60,
               }),
             ],
           });
@@ -84,7 +84,19 @@
           const panel = new UIPanel({
             width: '100%',
             height: '100%',
-            fillColor: '#282c34',
+            fillColor: 'rgba(5, 5, 5, 0.6)',
+            innerShadowColor: 'rgba(150, 150, 150, 0.05)',
+            innerShadowBlur: 96,
+            strokeWidth: 4,
+            strokeColor: {
+              gradientType: 'linear',
+              rotation: 90,
+              stops: [
+                {position: 0, color: 'rgba(255, 255, 255, 0.5)'},
+                {position: 0.5, color: 'rgba(255, 255, 255, 0.25)'},
+                {position: 1, color: 'rgba(255, 255, 255, 0.35)'},
+              ],
+            },
             cornerRadius: 50,
             padding: 50,
             flexDirection: 'column',

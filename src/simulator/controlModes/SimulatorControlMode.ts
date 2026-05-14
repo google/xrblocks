@@ -99,8 +99,11 @@ export class SimulatorControlMode {
       .applyQuaternion(cameraRotation);
     cameraPosition.add(vector3);
 
-    // Gamepad stick input (if connected).
-    if (gp.userData.connected) {
+    // Gamepad stick input (if connected). Skip while the tab isn't
+    // focused — the Gamepad API delivers state to every tab, so without
+    // this guard the camera moves in background tabs whenever the user
+    // touches the stick in the foreground tab.
+    if (gp.userData.connected && document.hasFocus()) {
       const [lx, ly, rx, ry] = gp.getAxes();
 
       // Left stick → move camera.

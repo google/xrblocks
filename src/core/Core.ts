@@ -225,6 +225,8 @@ export class Core {
     this.registry.register(this.renderer);
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
+    // For desktop simulator:
+    window.addEventListener('resize', this.onWindowResize);
 
     if (!options.canvas) {
       const xrContainer = document.createElement('div');
@@ -392,9 +394,6 @@ export class Core {
 
     await this.scriptsManager.syncScriptsWithScene(this.scene);
 
-    // For desktop only:
-    window.addEventListener('resize', this.onWindowResize.bind(this));
-
     this.renderer.setAnimationLoop(this.update.bind(this));
 
     if (this.physics) {
@@ -542,11 +541,11 @@ export class Core {
    * Handles browser window resize events to keep the camera and renderer
    * synchronized.
    */
-  private onWindowResize() {
+  private onWindowResize = () => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-  }
+  };
 
   private renderSimulatorAndScene() {
     if (this.simulatorRunning) {
