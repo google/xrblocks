@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 2f01336
- * @builddate 2026-05-13T22:23:54.674Z
+ * @commitid 76a5f30
+ * @builddate 2026-05-14T19:51:50.504Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3430,7 +3430,8 @@ declare class DepthOptions {
     occlusion: {
         enabled: boolean;
     };
-    useFloat32: boolean;
+    usagePreference: XRDepthUsage[];
+    dataFormatPreference: XRDepthDataFormat[];
     depthTypeRequest: XRDepthType[];
     matchDepthView: boolean;
     constructor(options?: DeepReadonly<DeepPartial<DepthOptions>>);
@@ -3465,7 +3466,8 @@ declare const xrDepthMeshOptions: {
     readonly occlusion: {
         readonly enabled: boolean;
     };
-    readonly useFloat32: boolean;
+    readonly usagePreference: readonly XRDepthUsage[];
+    readonly dataFormatPreference: readonly XRDepthDataFormat[];
     readonly depthTypeRequest: readonly XRDepthType[];
     readonly matchDepthView: boolean;
 };
@@ -3499,7 +3501,8 @@ declare const xrDepthMeshVisualizationOptions: {
     readonly occlusion: {
         readonly enabled: boolean;
     };
-    readonly useFloat32: boolean;
+    readonly usagePreference: readonly XRDepthUsage[];
+    readonly dataFormatPreference: readonly XRDepthDataFormat[];
     readonly depthTypeRequest: readonly XRDepthType[];
     readonly matchDepthView: boolean;
 };
@@ -3533,7 +3536,8 @@ declare const xrDepthMeshPhysicsOptions: {
     readonly occlusion: {
         readonly enabled: boolean;
     };
-    readonly useFloat32: boolean;
+    readonly usagePreference: readonly XRDepthUsage[];
+    readonly dataFormatPreference: readonly XRDepthDataFormat[];
     readonly depthTypeRequest: readonly XRDepthType[];
     readonly matchDepthView: boolean;
 };
@@ -3547,7 +3551,7 @@ declare class DepthTextures {
     depthData: XRCPUDepthInformation[];
     constructor(options: DepthOptions);
     private createDataDepthTextures;
-    updateData(depthData: XRCPUDepthInformation, viewId: number): void;
+    updateData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
     updateNativeTexture(depthData: XRWebGLDepthInformation, renderer: THREE.WebGLRenderer, viewId: number): void;
     get(viewId: number): THREE.DataTexture | THREE.ExternalTexture;
 }
@@ -3597,15 +3601,15 @@ declare class DepthMesh extends MeshScript {
      * Updates the depth data and geometry positions based on the provided camera
      * and depth data.
      */
-    updateDepth(depthData: Readonly<XRCPUDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>): void;
+    updateDepth(depthData: Readonly<XRCPUDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>, depthDataFormat: XRDepthDataFormat): void;
     updatePose(translation: THREE.Vector3, quaternion: THREE.Quaternion): void;
-    updateGPUDepth(depthData: Readonly<XRWebGLDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>): void;
+    updateGPUDepth(depthData: Readonly<XRWebGLDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>, depthDataFormat: XRDepthDataFormat): void;
     convertGPUToGPU(depthData: Readonly<XRWebGLDepthInformation>): XRCPUDepthInformation;
     /**
      * Method to manually update the full resolution geometry.
      * Only needed if options.updateFullResolutionGeometry is false.
      */
-    updateFullResolutionGeometry(depthData: XRCPUDepthInformation): void;
+    updateFullResolutionGeometry(depthData: XRCPUDepthInformation, depthDataFormat: XRDepthDataFormat): void;
     /**
      * Internal method to update the geometry of the depth mesh.
      */
@@ -3691,8 +3695,8 @@ declare class Depth {
      */
     getVertex(u: number, v: number): THREE.Vector3 | null;
     private updateDepthMatrices;
-    updateCPUDepthData(depthData: XRCPUDepthInformation, viewId?: number): void;
-    updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId?: number): void;
+    updateCPUDepthData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
+    updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
     /**
      * Checks whether the depth mesh geometry should be updated this frame,
      * based on the configured depthMeshUpdateFps. The pose is always updated

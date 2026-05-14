@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 2f01336
- * @builddate 2026-05-13T22:23:54.674Z
+ * @commitid 76a5f30
+ * @builddate 2026-05-14T19:51:50.504Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3240,7 +3240,10 @@ class WebXRSessionManager extends THREE.EventDispatcher {
             .finally(() => {
             this.waitingForXRSession = false;
         })
-            .then(this.onSessionStartedInternal.bind(this));
+            .then(this.onSessionStartedInternal.bind(this))
+            .catch((err) => {
+            console.error('Error requesting session', err, 'mode:', this.mode, 'sesionOptions:', this.sessionOptions);
+        });
     }
     /**
      * Ends the WebXR session.
@@ -3460,8 +3463,9 @@ class XREffects {
         renderer.xr.cameraAutoUpdate = false;
         renderer.xr.enabled = false;
         const deltaTime = this.timer.getDelta();
-        if (renderer.xr.getCamera().cameras.length == 2) {
-            for (let camIndex = 0; camIndex < 2; ++camIndex) {
+        const numCameras = renderer.xr.getCamera().cameras.length;
+        if (numCameras > 0) {
+            for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
                 const cam = renderer.xr.getCamera().cameras[camIndex];
                 renderer.setViewport(cam.viewport);
                 renderer.setRenderTarget(renderTargets[camIndex]);
@@ -3473,18 +3477,18 @@ class XREffects {
             renderer.clear();
             renderer.xr.isPresenting = false;
             renderer.autoClearColor = false;
-            for (let eye = 0; eye < 2; eye++) {
+            for (let eye = 0; eye < numCameras; eye++) {
                 for (let i = 0; i < this.passes.length - 1; ++i) {
                     const lastRenderTargetIndex = i % 2;
                     const nextRenderTargetIndex = (i + 1) % 2;
-                    defaultTarget.viewport.set((eye * this.dimensions.x) / 2, 0, this.dimensions.x / 2, this.dimensions.y);
+                    defaultTarget.viewport.set((eye * this.dimensions.x) / numCameras, 0, this.dimensions.x / numCameras, this.dimensions.y);
                     this.passes[i].render(renderer, this.renderTargets[2 * nextRenderTargetIndex + eye], this.renderTargets[2 * lastRenderTargetIndex + eye], deltaTime, 
                     /*maskActive=*/ false, 
                     /*viewId=*/ eye);
                 }
                 if (this.passes.length > 0) {
                     const lastRenderTargetIndex = (this.passes.length - 1) % 2;
-                    defaultTarget.viewport.set((eye * this.dimensions.x) / 2, 0, this.dimensions.x / 2, this.dimensions.y);
+                    defaultTarget.viewport.set((eye * this.dimensions.x) / numCameras, 0, this.dimensions.x / numCameras, this.dimensions.y);
                     this.passes[this.passes.length - 1].render(renderer, defaultTarget, this.renderTargets[2 * lastRenderTargetIndex + eye], deltaTime, 
                     /*maskActive=*/ false, 
                     /*viewId=*/ eye);
@@ -3565,6 +3569,7 @@ uniform float uDebug;
 uniform float uOpacity;
 uniform bool uUsingFloatDepth;
 uniform bool uIsTextureArray;
+uniform mat4 uNormDepthBufferFromNormView;
 
 float saturate(in float x) {
   return clamp(x, 0.0, 1.0);
@@ -3635,13 +3640,13 @@ void main() {
     return;
   }
 
-  vec2 depth_uv = uv;
-  depth_uv.y = 1.0 - depth_uv.y;
+  vec2 view_uv = vec2(uv.x, 1.0 - uv.y);
+  vec2 depth_uv = (uNormDepthBufferFromNormView * vec4(view_uv, 0.0, 1.0)).xy;
 
   float depth = (uIsTextureArray ? DepthArrayGetMeters(uDepthTextureArray, depth_uv) : DepthGetMeters(uDepthTexture, depth_uv)) * 8.0;
   float normalized_depth =
     saturate((depth - uMinDepth) / (uMaxDepth - uMinDepth));
-  gl_FragColor = uOpacity * vec4(TurboColormap(normalized_depth), 1.0);
+  gl_FragColor =  vec4(TurboColormap(normalized_depth), 1.0);
 }
 `,
 };
@@ -3681,13 +3686,16 @@ class DepthMesh extends MeshScript {
                 uOpacity: { value: options.opacity },
                 uDebug: { value: options.showDebugTexture ? 1.0 : 0.0 },
                 uLightDirection: { value: new THREE.Vector3(1.0, 1.0, 1.0).normalize() },
-                uUsingFloatDepth: { value: depthOptions.useFloat32 },
+                uUsingFloatDepth: {
+                    value: depthOptions.dataFormatPreference[0] === 'float32',
+                },
+                uNormDepthBufferFromNormView: { value: new THREE.Matrix4() },
             };
             material = new THREE.ShaderMaterial({
                 uniforms: uniforms,
                 vertexShader: DepthMeshTexturedShader.vertexShader,
                 fragmentShader: DepthMeshTexturedShader.fragmentShader,
-                side: THREE.FrontSide,
+                side: THREE.DoubleSide,
                 transparent: true,
             });
         }
@@ -3742,21 +3750,29 @@ class DepthMesh extends MeshScript {
      * Updates the depth data and geometry positions based on the provided camera
      * and depth data.
      */
-    updateDepth(depthData, projectionMatrixInverse) {
+    updateDepth(depthData, projectionMatrixInverse, depthDataFormat) {
         this.projectionMatrixInverse = projectionMatrixInverse;
         this.minDepth = 8;
         this.maxDepth = 0;
         if (this.options.updateFullResolutionGeometry) {
-            this.updateFullResolutionGeometry(depthData);
+            this.updateFullResolutionGeometry(depthData, depthDataFormat);
         }
         if (this.downsampledGeometry) {
-            this.updateGeometry(depthData, this.downsampledGeometry);
+            this.updateGeometry(depthData, this.downsampledGeometry, depthDataFormat);
         }
         this.minDepthPrev = this.minDepth;
         this.maxDepthPrev = this.maxDepth;
         this.geometry.attributes.position.needsUpdate = true;
         const depthTextureLeft = this.depthTextures?.get(0);
         if (depthTextureLeft && this.depthTextureMaterialUniforms) {
+            this.depthTextureMaterialUniforms.uUsingFloatDepth.value =
+                depthDataFormat === 'float32';
+            if (depthData.normDepthBufferFromNormView) {
+                this.depthTextureMaterialUniforms.uNormDepthBufferFromNormView.value.fromArray(depthData.normDepthBufferFromNormView.matrix);
+            }
+            else {
+                this.depthTextureMaterialUniforms.uNormDepthBufferFromNormView.value.identity();
+            }
             const isTextureArray = depthTextureLeft instanceof THREE.ExternalTexture;
             this.depthTextureMaterialUniforms.uIsTextureArray.value = isTextureArray
                 ? 1.0
@@ -3788,8 +3804,8 @@ class DepthMesh extends MeshScript {
             this.downsampledMesh.updateMatrixWorld();
         }
     }
-    updateGPUDepth(depthData, projectionMatrixInverse) {
-        this.updateDepth(this.convertGPUToGPU(depthData), projectionMatrixInverse);
+    updateGPUDepth(depthData, projectionMatrixInverse, depthDataFormat) {
+        this.updateDepth(this.convertGPUToGPU(depthData), projectionMatrixInverse, depthDataFormat);
     }
     convertGPUToGPU(depthData) {
         if (!this.depthTarget) {
@@ -3863,25 +3879,40 @@ class DepthMesh extends MeshScript {
      * Method to manually update the full resolution geometry.
      * Only needed if options.updateFullResolutionGeometry is false.
      */
-    updateFullResolutionGeometry(depthData) {
-        this.updateGeometry(depthData, this.geometry);
+    updateFullResolutionGeometry(depthData, depthDataFormat) {
+        this.updateGeometry(depthData, this.geometry, depthDataFormat);
     }
     /**
      * Internal method to update the geometry of the depth mesh.
      */
-    updateGeometry(depthData, geometry) {
+    updateGeometry(depthData, geometry, depthDataFormat) {
         const width = depthData.width;
         const height = depthData.height;
-        const depthArray = this.depthOptions.useFloat32
+        const depthArray = depthDataFormat === 'float32'
             ? new Float32Array(depthData.data)
             : new Uint16Array(depthData.data);
         const vertexPosition = new THREE.Vector3();
+        const normViewCoord = new THREE.Vector3();
+        const normDepthBufferFromNormView = depthData.normDepthBufferFromNormView
+            ? new THREE.Matrix4().fromArray(depthData.normDepthBufferFromNormView.matrix)
+            : new THREE.Matrix4().identity();
         for (let i = 0; i < geometry.attributes.position.count; ++i) {
             const u = geometry.attributes.uv.array[2 * i];
             const v = geometry.attributes.uv.array[2 * i + 1];
+            let sampleU = u;
+            let sampleV = v;
+            if (depthData.normDepthBufferFromNormView) {
+                normViewCoord.set(u, 1.0 - v, 0);
+                normViewCoord.applyMatrix4(normDepthBufferFromNormView);
+                sampleU = normViewCoord.x;
+                sampleV = normViewCoord.y;
+            }
+            else {
+                sampleV = 1.0 - v;
+            }
             // Grabs the nearest for now.
-            const depthX = Math.round(clamp(u * (width - 1), 0, width - 1));
-            const depthY = Math.round(clamp((1.0 - v) * (height - 1), 0, height - 1));
+            const depthX = Math.round(clamp(sampleU * (width - 1), 0, width - 1));
+            const depthY = Math.round(clamp(sampleV * (height - 1), 0, height - 1));
             const rawDepth = depthArray[depthY * width + depthX];
             let depth = depthData.rawValueToMeters * rawDepth;
             // Finds global min/max.
@@ -4042,7 +4073,8 @@ class DepthOptions {
         };
         // Occlusion pass.
         this.occlusion = { enabled: false };
-        this.useFloat32 = true;
+        this.usagePreference = [];
+        this.dataFormatPreference = ['float32', 'luminance-alpha'];
         this.depthTypeRequest = ['raw'];
         this.matchDepthView = true;
         deepMerge(this, options);
@@ -4118,11 +4150,11 @@ class DepthTextures {
         this.nativeTextures = [];
         this.depthData = [];
     }
-    createDataDepthTextures(depthData, viewId) {
+    createDataDepthTextures(depthData, viewId, depthDataFormat) {
         if (this.dataTextures[viewId]) {
             this.dataTextures[viewId].dispose();
         }
-        if (this.options.useFloat32) {
+        if (depthDataFormat === 'float32') {
             const typedArray = new Float32Array(depthData.width * depthData.height);
             const format = THREE.RedFormat;
             const type = THREE.FloatType;
@@ -4137,13 +4169,13 @@ class DepthTextures {
             this.dataTextures[viewId] = new THREE.DataTexture(typedArray, depthData.width, depthData.height, format, type);
         }
     }
-    updateData(depthData, viewId) {
+    updateData(depthData, viewId, depthDataFormat) {
         if (this.dataTextures.length < viewId + 1 ||
             this.dataTextures[viewId].image.width !== depthData.width ||
             this.dataTextures[viewId].image.height !== depthData.height) {
-            this.createDataDepthTextures(depthData, viewId);
+            this.createDataDepthTextures(depthData, viewId, depthDataFormat);
         }
-        if (this.options.useFloat32) {
+        if (depthDataFormat === 'float32') {
             this.float32Arrays[viewId].set(new Float32Array(depthData.data));
         }
         else {
@@ -4843,27 +4875,28 @@ class Depth {
             .invert();
         this.depthViewProjectionMatrices[viewId].multiplyMatrices(this.depthProjectionMatrices[viewId], this.depthViewMatrices[viewId]);
     }
-    updateCPUDepthData(depthData, viewId = 0) {
+    updateCPUDepthData(depthData, viewId, depthDataFormat) {
         this.cpuDepthData[viewId] = depthData;
         this.updateDepthMatrices(depthData, viewId);
         // Updates Depth Array.
-        this.depthArray[viewId] = this.options.useFloat32
-            ? new Float32Array(depthData.data)
-            : new Uint16Array(depthData.data);
+        this.depthArray[viewId] =
+            depthDataFormat === 'float32'
+                ? new Float32Array(depthData.data)
+                : new Uint16Array(depthData.data);
         this.width = depthData.width;
         this.height = depthData.height;
         // Updates Depth Texture.
         if (this.options.depthTexture.enabled && this.depthTextures) {
-            this.depthTextures.updateData(depthData, viewId);
+            this.depthTextures.updateData(depthData, viewId, depthDataFormat);
         }
         if (this.options.depthMesh.enabled && this.depthMesh && viewId == 0) {
             if (this.shouldUpdateDepthMesh()) {
-                this.depthMesh.updateDepth(depthData, this.depthProjectionInverseMatrices[0]);
+                this.depthMesh.updateDepth(depthData, this.depthProjectionInverseMatrices[0], depthDataFormat);
             }
             this.depthMesh.updatePose(this.depthCameraPositions[0], this.depthCameraRotations[0]);
         }
     }
-    updateGPUDepthData(depthData, viewId = 0) {
+    updateGPUDepthData(depthData, viewId, depthDataFormat) {
         this.gpuDepthData[viewId] = depthData;
         this.updateDepthMatrices(depthData, viewId);
         // For now, assume that we need cpu depth only if depth mesh is enabled.
@@ -4874,15 +4907,16 @@ class Depth {
             : null;
         if (cpuDepth) {
             if (this.depthArray[viewId] == null) {
-                this.depthArray[viewId] = this.options.useFloat32
-                    ? new Float32Array(cpuDepth.data)
-                    : new Uint16Array(cpuDepth.data);
+                this.depthArray[viewId] =
+                    depthDataFormat === 'float32'
+                        ? new Float32Array(cpuDepth.data)
+                        : new Uint16Array(cpuDepth.data);
                 this.width = cpuDepth.width;
                 this.height = cpuDepth.height;
             }
             else {
                 // Copies the data from an ArrayBuffer to the existing TypedArray.
-                this.depthArray[viewId].set(this.options.useFloat32
+                this.depthArray[viewId].set(depthDataFormat === 'float32'
                     ? new Float32Array(cpuDepth.data)
                     : new Uint16Array(cpuDepth.data));
             }
@@ -4894,10 +4928,10 @@ class Depth {
         if (this.options.depthMesh.enabled && this.depthMesh && viewId == 0) {
             if (this.shouldUpdateDepthMesh()) {
                 if (cpuDepth) {
-                    this.depthMesh.updateDepth(cpuDepth, this.depthProjectionInverseMatrices[0]);
+                    this.depthMesh.updateDepth(cpuDepth, this.depthProjectionInverseMatrices[0], depthDataFormat);
                 }
                 else {
-                    this.depthMesh.updateGPUDepth(depthData, this.depthProjectionInverseMatrices[0]);
+                    this.depthMesh.updateGPUDepth(depthData, this.depthProjectionInverseMatrices[0], depthDataFormat);
                 }
             }
             this.depthMesh.updatePose(this.depthCameraPositions[0], this.depthCameraRotations[0]);
@@ -4964,14 +4998,14 @@ class Depth {
                         if (!depthData) {
                             return;
                         }
-                        this.updateGPUDepthData(depthData, viewId);
+                        this.updateGPUDepthData(depthData, viewId, session.depthDataFormat ?? 'luminance-alpha');
                     }
                     else {
                         const depthData = frame.getDepthInformation(view);
                         if (!depthData) {
                             return;
                         }
-                        this.updateCPUDepthData(depthData, viewId);
+                        this.updateCPUDepthData(depthData, viewId, session.depthDataFormat ?? 'luminance-alpha');
                     }
                 }
             }
@@ -10593,7 +10627,7 @@ class SimulatorDepth {
             projectionMatrix: this.projectionMatrixArray,
             transform: transform,
         };
-        this.depth.updateCPUDepthData(depthData, 0);
+        this.depth.updateCPUDepthData(depthData, 0, 'float32');
     }
 }
 
@@ -17193,10 +17227,8 @@ class Core {
             webXRRequiredFeatures.push('depth-sensing');
             webXRRequiredFeatures.push('local-floor');
             this.webXRSettings.depthSensing = {
-                usagePreference: [],
-                dataFormatPreference: [
-                    this.options.depth.useFloat32 ? 'float32' : 'luminance-alpha',
-                ],
+                usagePreference: options.depth.usagePreference,
+                dataFormatPreference: options.depth.dataFormatPreference,
                 depthTypeRequest: options.depth.depthTypeRequest,
                 matchDepthView: options.depth.matchDepthView,
             };
