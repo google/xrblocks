@@ -1,0 +1,3 @@
+const _PRESENCETYPES_MODULE_ = true;
+
+export { _PRESENCETYPES_MODULE_ };
