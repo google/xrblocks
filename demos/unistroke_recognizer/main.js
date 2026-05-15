@@ -4,12 +4,17 @@ import * as THREE from 'three';
 import {Text} from 'troika-three-text';
 
 class PinchTracker extends xb.Script {
-  static dependencies = {camera: THREE.Camera};
+  static dependencies = {camera: THREE.Camera, scene: THREE.Scene};
 
-  init({camera}) {
+  init({camera, scene}) {
     this.camera = camera;
+    this.scene = scene;
     console.log('PinchTracker initialized');
+
     this.initHudText();
+    this.initDrawing();
+
+    this.isPinching = false;
   }
 
   initHudText() {
@@ -25,6 +30,53 @@ class PinchTracker extends xb.Script {
 
     this.add(this.hudText);
     this.hudText.sync();
+  }
+
+  initDrawing() {
+    this.maxPoints = 1000;
+    this.points = [];
+
+    this.lineGeometry = new THREE.BufferGeometry();
+    this.linePositions = new Float32Array(this.maxPoints * 3);
+    this.lineGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.linePositions, 3)
+    );
+
+    this.lineMaterial = new THREE.LineBasicMaterial({
+      color: 0xff0000,
+      linewidth: 1,
+      depthTest: false, // Render on top of everything
+    });
+
+    this.line = new THREE.Line(this.lineGeometry, this.lineMaterial);
+    this.line.renderOrder = 999; // Render last
+
+    // Add directly to scene to avoid local transform issues
+    this.scene.add(this.line);
+
+    this.lineGeometry.setDrawRange(0, 0);
+  }
+
+  clearLine() {
+    this.points = [];
+    this.lineGeometry.setDrawRange(0, 0);
+  }
+
+  addPointToLine(pos) {
+    if (this.points.length < this.maxPoints) {
+      this.points.push(pos.clone());
+      const index = this.points.length - 1;
+      this.linePositions[index * 3] = pos.x;
+      this.linePositions[index * 3 + 1] = pos.y;
+      this.linePositions[index * 3 + 2] = pos.z;
+
+      this.lineGeometry.attributes.position.needsUpdate = true;
+      this.lineGeometry.setDrawRange(0, this.points.length);
+
+      // Update bounding sphere for frustum culling
+      this.lineGeometry.computeBoundingSphere();
+    }
   }
 
   update() {
@@ -63,12 +115,21 @@ class PinchTracker extends xb.Script {
 
           this.hudText.text = `Pinching!\n${coordsStr}`;
           this.hudText.sync();
+
+          // Handle line drawing
+          if (!this.isPinching) {
+            this.isPinching = true;
+            this.clearLine();
+          }
+          this.addPointToLine(worldPos);
         } else {
           this.hudText.text = 'Pinching, but tip not found';
           this.hudText.sync();
         }
       }
     } else {
+      this.isPinching = false;
+
       if (this.hudText.text !== 'Pinch to start') {
         this.hudText.text = 'Pinch to start';
         this.hudText.sync();
