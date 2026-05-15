@@ -209,12 +209,12 @@ class DollarRecognizer {
       {x: 0, y: 100},
       {x: 50, y: 0},
       {x: 100, y: 100},
-    ]);
+    ], false);
     this.addTemplate('Caret', [
       {x: 0, y: 0},
       {x: 50, y: 100},
       {x: 100, y: 0},
-    ]);
+    ], false);
 
     // Circle: Add 4 variations for different starting points
     for (let offset = 0; offset < 4; offset++) {
@@ -228,38 +228,47 @@ class DollarRecognizer {
     }
   }
 
-  addTemplate(name, points) {
+  addTemplate(name, points, useRotation = true) {
     this.templates.push({
       name: name,
-      points: this.preprocess(points),
+      points: this.preprocess(points, useRotation),
+      useRotation: useRotation,
     });
   }
 
-  preprocess(points) {
+  preprocess(points, useRotation = true) {
     points = resample(points, 64);
-    points = rotateToZero(points);
+    if (useRotation) {
+      points = rotateToZero(points);
+    }
     points = scaleTo(points, 250);
     points = translateTo(points, {x: 0, y: 0});
     return points;
   }
 
   recognize(points) {
-    const pointsForward = this.preprocess(points);
-    const pointsBackward = this.preprocess(points.slice().reverse());
+    const pointsForwardRotated = this.preprocess(points, true);
+    const pointsBackwardRotated = this.preprocess(points.slice().reverse(), true);
+    const pointsForwardUnrotated = this.preprocess(points, false);
+    const pointsBackwardUnrotated = this.preprocess(points.slice().reverse(), false);
 
     let b = Infinity;
     let u = -1;
 
     for (let i = 0; i < this.templates.length; i++) {
+      const useRotation = this.templates[i].useRotation;
+      const ptsForward = useRotation ? pointsForwardRotated : pointsForwardUnrotated;
+      const ptsBackward = useRotation ? pointsBackwardRotated : pointsBackwardUnrotated;
+
       const dForward = distanceAtBestAngle(
-        pointsForward,
+        ptsForward,
         this.templates[i],
         (-45 * Math.PI) / 180,
         (45 * Math.PI) / 180,
         (2 * Math.PI) / 180
       );
       const dBackward = distanceAtBestAngle(
-        pointsBackward,
+        ptsBackward,
         this.templates[i],
         (-45 * Math.PI) / 180,
         (45 * Math.PI) / 180,
@@ -359,7 +368,7 @@ class PinchTracker extends xb.Script {
     this.shootingLines = [];
 
     // Delays to ignore erratic movements (in seconds)
-    this.startDelay = 0.4;
+    this.startDelay = 0.2;
     this.endDelay = 0.2;
   }
 
@@ -389,8 +398,8 @@ class PinchTracker extends xb.Script {
     );
 
     this.lineMaterial = new THREE.LineBasicMaterial({
-      color: 0xff0000,
-      linewidth: 1,
+      color: 0xaa0000,
+      linewidth: 5,
       depthTest: false,
       transparent: true,
       opacity: 1,
@@ -451,6 +460,7 @@ class PinchTracker extends xb.Script {
 
       if (result.name !== 'Unknown' && result.score > 0.6) {
         this.spawnShootingShape(result.name, points3D);
+        this.clearLine();
       }
     } else {
       this.hudText.text = 'Gesture too short';
