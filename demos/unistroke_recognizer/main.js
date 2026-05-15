@@ -205,16 +205,24 @@ class DollarRecognizer {
       {x: 100, y: 0},
     ]);
 
-    this.addTemplate('V', [
-      {x: 0, y: 100},
-      {x: 50, y: 0},
-      {x: 100, y: 100},
-    ], false);
-    this.addTemplate('Caret', [
-      {x: 0, y: 0},
-      {x: 50, y: 100},
-      {x: 100, y: 0},
-    ], false);
+    this.addTemplate(
+      'V',
+      [
+        {x: 0, y: 100},
+        {x: 50, y: 0},
+        {x: 100, y: 100},
+      ],
+      false
+    );
+    this.addTemplate(
+      'Caret',
+      [
+        {x: 0, y: 0},
+        {x: 50, y: 100},
+        {x: 100, y: 0},
+      ],
+      false
+    );
 
     // Circle: Add 4 variations for different starting points
     for (let offset = 0; offset < 4; offset++) {
@@ -248,17 +256,27 @@ class DollarRecognizer {
 
   recognize(points) {
     const pointsForwardRotated = this.preprocess(points, true);
-    const pointsBackwardRotated = this.preprocess(points.slice().reverse(), true);
+    const pointsBackwardRotated = this.preprocess(
+      points.slice().reverse(),
+      true
+    );
     const pointsForwardUnrotated = this.preprocess(points, false);
-    const pointsBackwardUnrotated = this.preprocess(points.slice().reverse(), false);
+    const pointsBackwardUnrotated = this.preprocess(
+      points.slice().reverse(),
+      false
+    );
 
     let b = Infinity;
     let u = -1;
 
     for (let i = 0; i < this.templates.length; i++) {
       const useRotation = this.templates[i].useRotation;
-      const ptsForward = useRotation ? pointsForwardRotated : pointsForwardUnrotated;
-      const ptsBackward = useRotation ? pointsBackwardRotated : pointsBackwardUnrotated;
+      const ptsForward = useRotation
+        ? pointsForwardRotated
+        : pointsForwardUnrotated;
+      const ptsBackward = useRotation
+        ? pointsBackwardRotated
+        : pointsBackwardUnrotated;
 
       const dForward = distanceAtBestAngle(
         ptsForward,
@@ -346,6 +364,46 @@ function getPerfectShapeGeometry(name) {
 
   geom.setFromPoints(points);
   return geom;
+}
+
+function getPerfectShapeFillGeometry(name) {
+  const size = 0.05;
+  const shape = new THREE.Shape();
+
+  switch (name) {
+    case 'Circle':
+      shape.absarc(0, 0, size, 0, Math.PI * 2, false);
+      break;
+    case 'Rectangle':
+      shape.moveTo(-size * 1.5, -size);
+      shape.lineTo(-size * 1.5, size);
+      shape.lineTo(size * 1.5, size);
+      shape.lineTo(size * 1.5, -size);
+      shape.lineTo(-size * 1.5, -size);
+      break;
+    case 'Triangle':
+      shape.moveTo(0, size);
+      shape.lineTo(-size, -size);
+      shape.lineTo(size, -size);
+      shape.lineTo(0, size);
+      break;
+    case 'V':
+      shape.moveTo(-size, size);
+      shape.lineTo(0, -size);
+      shape.lineTo(size, size);
+      shape.closePath();
+      break;
+    case 'Caret':
+      shape.moveTo(-size, -size);
+      shape.lineTo(0, size);
+      shape.lineTo(size, -size);
+      shape.closePath();
+      break;
+    default:
+      return null;
+  }
+
+  return new THREE.ShapeGeometry(shape);
 }
 
 // --- PinchTracker Script ---
@@ -474,7 +532,7 @@ class PinchTracker extends xb.Script {
 
     const mat = new THREE.LineBasicMaterial({
       color: 0x00ff00,
-      linewidth: 1,
+      linewidth: 5,
       depthTest: false,
       transparent: true,
       opacity: 1,
@@ -482,6 +540,20 @@ class PinchTracker extends xb.Script {
 
     const shootLine = new THREE.Line(geom, mat);
     shootLine.renderOrder = 999;
+
+    const fillGeom = getPerfectShapeFillGeometry(shapeName);
+    if (fillGeom) {
+      const fillMat = new THREE.MeshBasicMaterial({
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 0.3,
+        depthTest: false,
+        side: THREE.DoubleSide,
+      });
+      const fillMesh = new THREE.Mesh(fillGeom, fillMat);
+      fillMesh.renderOrder = 998;
+      shootLine.add(fillMesh);
+    }
 
     // Position at the last filtered point
     const handPos = points[points.length - 1];
@@ -528,12 +600,24 @@ class PinchTracker extends xb.Script {
       item.line.position.addScaledVector(item.dir, speed * delta);
       item.age += delta;
 
-      item.line.material.opacity = 1 - item.age / item.maxAge;
+      const opacity = 1 - item.age / item.maxAge;
+      item.line.material.opacity = opacity;
+
+      if (item.line.children.length > 0) {
+        item.line.children[0].material.opacity = 0.3 * opacity;
+      }
 
       if (item.age >= item.maxAge) {
         this.scene.remove(item.line);
         item.line.geometry.dispose();
         item.line.material.dispose();
+
+        if (item.line.children.length > 0) {
+          const child = item.line.children[0];
+          child.geometry.dispose();
+          child.material.dispose();
+        }
+
         this.shootingLines.splice(i, 1);
       }
     }
