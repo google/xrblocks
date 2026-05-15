@@ -155,37 +155,49 @@ class DollarRecognizer {
   constructor() {
     this.templates = [];
 
-    // Add default templates
+    // Triangle: Add 3 variations for different starting corners
     this.addTemplate('Triangle', [
       {x: 0, y: 0},
       {x: 50, y: 100},
       {x: 100, y: 0},
       {x: 0, y: 0},
     ]);
+    this.addTemplate('Triangle', [
+      {x: 50, y: 100},
+      {x: 100, y: 0},
+      {x: 0, y: 0},
+      {x: 50, y: 100},
+    ]);
+    this.addTemplate('Triangle', [
+      {x: 100, y: 0},
+      {x: 0, y: 0},
+      {x: 50, y: 100},
+      {x: 100, y: 0},
+    ]);
 
-    // Square: Add 4 variations for different starting corners
-    this.addTemplate('Square', [
+    // Rectangle: Add 4 variations for different starting corners
+    this.addTemplate('Rectangle', [
       {x: 0, y: 0},
       {x: 0, y: 100},
       {x: 100, y: 100},
       {x: 100, y: 0},
       {x: 0, y: 0},
     ]);
-    this.addTemplate('Square', [
+    this.addTemplate('Rectangle', [
       {x: 0, y: 100},
       {x: 100, y: 100},
       {x: 100, y: 0},
       {x: 0, y: 0},
       {x: 0, y: 100},
     ]);
-    this.addTemplate('Square', [
+    this.addTemplate('Rectangle', [
       {x: 100, y: 100},
       {x: 100, y: 0},
       {x: 0, y: 0},
       {x: 0, y: 100},
       {x: 100, y: 100},
     ]);
-    this.addTemplate('Square', [
+    this.addTemplate('Rectangle', [
       {x: 100, y: 0},
       {x: 0, y: 0},
       {x: 0, y: 100},
@@ -232,19 +244,34 @@ class DollarRecognizer {
   }
 
   recognize(points) {
-    points = this.preprocess(points);
+    const pointsForward = this.preprocess(points);
+    const pointsBackward = this.preprocess(points.slice().reverse());
+
     let b = Infinity;
     let u = -1;
+
     for (let i = 0; i < this.templates.length; i++) {
-      const d = distanceAtBestAngle(
-        points,
+      const dForward = distanceAtBestAngle(
+        pointsForward,
         this.templates[i],
         (-45 * Math.PI) / 180,
         (45 * Math.PI) / 180,
         (2 * Math.PI) / 180
       );
-      if (d < b) {
-        b = d;
+      const dBackward = distanceAtBestAngle(
+        pointsBackward,
+        this.templates[i],
+        (-45 * Math.PI) / 180,
+        (45 * Math.PI) / 180,
+        (2 * Math.PI) / 180
+      );
+
+      if (dForward < b) {
+        b = dForward;
+        u = i;
+      }
+      if (dBackward < b) {
+        b = dBackward;
         u = i;
       }
     }
@@ -273,13 +300,13 @@ function getPerfectShapeGeometry(name) {
         );
       }
       break;
-    case 'Square':
+    case 'Rectangle':
       points = [
-        new THREE.Vector3(-size, -size, 0),
-        new THREE.Vector3(-size, size, 0),
-        new THREE.Vector3(size, size, 0),
-        new THREE.Vector3(size, -size, 0),
-        new THREE.Vector3(-size, -size, 0),
+        new THREE.Vector3(-size * 1.5, -size, 0),
+        new THREE.Vector3(-size * 1.5, size, 0),
+        new THREE.Vector3(size * 1.5, size, 0),
+        new THREE.Vector3(size * 1.5, -size, 0),
+        new THREE.Vector3(-size * 1.5, -size, 0),
       ];
       break;
     case 'Triangle':
