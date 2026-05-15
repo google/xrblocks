@@ -162,6 +162,8 @@ class DollarRecognizer {
       {x: 100, y: 0},
       {x: 0, y: 0},
     ]);
+
+    // Square: Add 4 variations for different starting corners
     this.addTemplate('Square', [
       {x: 0, y: 0},
       {x: 0, y: 100},
@@ -169,6 +171,28 @@ class DollarRecognizer {
       {x: 100, y: 0},
       {x: 0, y: 0},
     ]);
+    this.addTemplate('Square', [
+      {x: 0, y: 100},
+      {x: 100, y: 100},
+      {x: 100, y: 0},
+      {x: 0, y: 0},
+      {x: 0, y: 100},
+    ]);
+    this.addTemplate('Square', [
+      {x: 100, y: 100},
+      {x: 100, y: 0},
+      {x: 0, y: 0},
+      {x: 0, y: 100},
+      {x: 100, y: 100},
+    ]);
+    this.addTemplate('Square', [
+      {x: 100, y: 0},
+      {x: 0, y: 0},
+      {x: 0, y: 100},
+      {x: 100, y: 100},
+      {x: 100, y: 0},
+    ]);
+
     this.addTemplate('V', [
       {x: 0, y: 100},
       {x: 50, y: 0},
@@ -180,14 +204,16 @@ class DollarRecognizer {
       {x: 100, y: 0},
     ]);
 
-    // Circle
-    const circlePoints = [];
-    for (let i = 0; i < 20; i++) {
-      const angle = (i / 20) * Math.PI * 2;
-      circlePoints.push({x: Math.cos(angle) * 100, y: Math.sin(angle) * 100});
+    // Circle: Add 4 variations for different starting points
+    for (let offset = 0; offset < 4; offset++) {
+      const circlePoints = [];
+      const startAngle = (offset / 4) * Math.PI * 2;
+      for (let i = 0; i <= 20; i++) {
+        const angle = startAngle + (i / 20) * Math.PI * 2;
+        circlePoints.push({x: Math.cos(angle) * 100, y: Math.sin(angle) * 100});
+      }
+      this.addTemplate('Circle', circlePoints);
     }
-    circlePoints.push(circlePoints[0]); // Close circle
-    this.addTemplate('Circle', circlePoints);
   }
 
   addTemplate(name, points) {
@@ -300,9 +326,14 @@ class PinchTracker extends xb.Script {
     this.initDrawing();
 
     this.isPinching = false;
+    this.isRecording = false;
     this.recognizer = new DollarRecognizer();
-    this.capturedPoints = [];
+    this.capturedPoints = []; // Stores {pos, timestamp}
     this.shootingLines = [];
+
+    // Delays to ignore erratic movements (in seconds)
+    this.startDelay = 0.4;
+    this.endDelay = 0.2;
   }
 
   initHudText() {
@@ -350,9 +381,10 @@ class PinchTracker extends xb.Script {
     this.lineGeometry.setDrawRange(0, 0);
   }
 
-  addPointToLine(pos) {
+  addPointToLine(pos, timestamp) {
     if (this.capturedPoints.length < this.maxPoints) {
-      this.capturedPoints.push(pos.clone());
+      this.capturedPoints.push({pos: pos.clone(), timestamp: timestamp});
+
       const index = this.capturedPoints.length - 1;
       this.linePositions[index * 3] = pos.x;
       this.linePositions[index * 3 + 1] = pos.y;
@@ -365,13 +397,21 @@ class PinchTracker extends xb.Script {
   }
 
   recognizeGesture() {
-    if (this.capturedPoints.length > 10) {
-      console.log(
-        `Recognizing gesture with ${this.capturedPoints.length} points`
-      );
+    // Filter out points captured in the last 'endDelay' seconds
+    const cutoffTime = this.pinchEndTime - this.endDelay;
+    const filteredPoints = this.capturedPoints.filter(
+      (p) => p.timestamp <= cutoffTime
+    );
+
+    console.log(
+      `Total points: ${this.capturedPoints.length}, Filtered points: ${filteredPoints.length}`
+    );
+
+    if (filteredPoints.length > 10) {
+      const points3D = filteredPoints.map((p) => p.pos);
 
       // Project 3D points to 2D camera local space
-      const points2D = this.capturedPoints.map((p) => {
+      const points2D = points3D.map((p) => {
         const localPos = p.clone().applyMatrix4(this.camera.matrixWorldInverse);
         return {x: localPos.x, y: localPos.y};
       });
@@ -382,9 +422,8 @@ class PinchTracker extends xb.Script {
       this.hudText.text = `Recognized: ${result.name}\nScore: ${Math.round(result.score * 100)}%`;
       this.hudText.sync();
 
-      // Spawn shooting perfect shape
       if (result.name !== 'Unknown' && result.score > 0.6) {
-        this.spawnShootingShape(result.name);
+        this.spawnShootingShape(result.name, points3D);
       }
     } else {
       this.hudText.text = 'Gesture too short';
@@ -392,12 +431,12 @@ class PinchTracker extends xb.Script {
     }
   }
 
-  spawnShootingShape(shapeName) {
+  spawnShootingShape(shapeName, points) {
     const geom = getPerfectShapeGeometry(shapeName);
     if (!geom) return;
 
     const mat = new THREE.LineBasicMaterial({
-      color: 0x00ff00, // Green for recognized perfect shapes
+      color: 0x00ff00,
       linewidth: 1,
       depthTest: false,
       transparent: true,
@@ -407,8 +446,8 @@ class PinchTracker extends xb.Script {
     const shootLine = new THREE.Line(geom, mat);
     shootLine.renderOrder = 999;
 
-    // Position at the hand position (last captured point)
-    const handPos = this.capturedPoints[this.capturedPoints.length - 1];
+    // Position at the last filtered point
+    const handPos = points[points.length - 1];
     shootLine.position.copy(handPos);
 
     // Rotate to face the camera
@@ -425,7 +464,7 @@ class PinchTracker extends xb.Script {
       line: shootLine,
       dir: dir,
       age: 0,
-      maxAge: 2.0, // 2 seconds
+      maxAge: 2.0,
     });
   }
 
@@ -445,7 +484,7 @@ class PinchTracker extends xb.Script {
 
     // Update shooting lines
     const delta = xb.getDeltaTime ? xb.getDeltaTime() : 0.016;
-    const speed = 2.0; // meters per second
+    const speed = 2.0;
 
     for (let i = this.shootingLines.length - 1; i >= 0; i--) {
       const item = this.shootingLines[i];
@@ -463,6 +502,7 @@ class PinchTracker extends xb.Script {
     }
 
     const leftHandIndex = 0;
+    const currentTime = Date.now() / 1000; // Use seconds
 
     if (xb.user && xb.user.isSelecting(leftHandIndex)) {
       const hands = xb.user.hands;
@@ -473,19 +513,32 @@ class PinchTracker extends xb.Script {
           const worldPos = new THREE.Vector3();
           indexTip.getWorldPosition(worldPos);
 
-          // Handle line drawing and point capture
           if (!this.isPinching) {
             this.isPinching = true;
+            this.pinchStartTime = currentTime;
             this.clearLine();
-            this.hudText.text = 'Drawing...';
+            this.hudText.text = 'Pinch detected...';
             this.hudText.sync();
           }
-          this.addPointToLine(worldPos);
+
+          const elapsedSincePinch = currentTime - this.pinchStartTime;
+
+          // Only record and draw after the start delay
+          if (elapsedSincePinch > this.startDelay) {
+            if (!this.isRecording) {
+              this.isRecording = true;
+              this.hudText.text = 'Drawing...';
+              this.hudText.sync();
+            }
+            this.addPointToLine(worldPos, currentTime);
+          }
         }
       }
     } else {
       if (this.isPinching) {
         this.isPinching = false;
+        this.isRecording = false;
+        this.pinchEndTime = currentTime;
         this.recognizeGesture();
       }
     }
@@ -500,7 +553,7 @@ options.xrButton.showEnterSimulatorButton = true;
 
 options.setAppTitle('Unistroke Recognizer');
 options.setAppDescription(
-  'Tracks left hand pinch, recognizes shapes, and shoots out perfect geometric versions.'
+  'Tracks left hand pinch, recognizes shapes accurately, and shoots them out.'
 );
 
 function start() {
