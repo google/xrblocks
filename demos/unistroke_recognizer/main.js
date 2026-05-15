@@ -231,6 +231,61 @@ class DollarRecognizer {
   }
 }
 
+// --- Helper for Perfect Shapes ---
+
+function getPerfectShapeGeometry(name) {
+  const geom = new THREE.BufferGeometry();
+  let points = [];
+  const size = 0.05; // 5cm radius
+
+  switch (name) {
+    case 'Circle':
+      for (let i = 0; i <= 32; i++) {
+        const angle = (i / 32) * Math.PI * 2;
+        points.push(
+          new THREE.Vector3(Math.cos(angle) * size, Math.sin(angle) * size, 0)
+        );
+      }
+      break;
+    case 'Square':
+      points = [
+        new THREE.Vector3(-size, -size, 0),
+        new THREE.Vector3(-size, size, 0),
+        new THREE.Vector3(size, size, 0),
+        new THREE.Vector3(size, -size, 0),
+        new THREE.Vector3(-size, -size, 0),
+      ];
+      break;
+    case 'Triangle':
+      points = [
+        new THREE.Vector3(0, size, 0),
+        new THREE.Vector3(-size, -size, 0),
+        new THREE.Vector3(size, -size, 0),
+        new THREE.Vector3(0, size, 0),
+      ];
+      break;
+    case 'V':
+      points = [
+        new THREE.Vector3(-size, size, 0),
+        new THREE.Vector3(0, -size, 0),
+        new THREE.Vector3(size, size, 0),
+      ];
+      break;
+    case 'Caret':
+      points = [
+        new THREE.Vector3(-size, -size, 0),
+        new THREE.Vector3(0, size, 0),
+        new THREE.Vector3(size, -size, 0),
+      ];
+      break;
+    default:
+      return null;
+  }
+
+  geom.setFromPoints(points);
+  return geom;
+}
+
 // --- PinchTracker Script ---
 
 class PinchTracker extends xb.Script {
@@ -247,6 +302,7 @@ class PinchTracker extends xb.Script {
     this.isPinching = false;
     this.recognizer = new DollarRecognizer();
     this.capturedPoints = [];
+    this.shootingLines = [];
   }
 
   initHudText() {
@@ -278,6 +334,8 @@ class PinchTracker extends xb.Script {
       color: 0xff0000,
       linewidth: 1,
       depthTest: false,
+      transparent: true,
+      opacity: 1,
     });
 
     this.line = new THREE.Line(this.lineGeometry, this.lineMaterial);
@@ -323,10 +381,52 @@ class PinchTracker extends xb.Script {
 
       this.hudText.text = `Recognized: ${result.name}\nScore: ${Math.round(result.score * 100)}%`;
       this.hudText.sync();
+
+      // Spawn shooting perfect shape
+      if (result.name !== 'Unknown' && result.score > 0.6) {
+        this.spawnShootingShape(result.name);
+      }
     } else {
       this.hudText.text = 'Gesture too short';
       this.hudText.sync();
     }
+  }
+
+  spawnShootingShape(shapeName) {
+    const geom = getPerfectShapeGeometry(shapeName);
+    if (!geom) return;
+
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x00ff00, // Green for recognized perfect shapes
+      linewidth: 1,
+      depthTest: false,
+      transparent: true,
+      opacity: 1,
+    });
+
+    const shootLine = new THREE.Line(geom, mat);
+    shootLine.renderOrder = 999;
+
+    // Position at the hand position (last captured point)
+    const handPos = this.capturedPoints[this.capturedPoints.length - 1];
+    shootLine.position.copy(handPos);
+
+    // Rotate to face the camera
+    shootLine.quaternion.copy(this.camera.quaternion);
+
+    this.scene.add(shootLine);
+
+    // Calculate direction: from camera to hand position
+    const cameraPos = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPos);
+    const dir = new THREE.Vector3().subVectors(handPos, cameraPos).normalize();
+
+    this.shootingLines.push({
+      line: shootLine,
+      dir: dir,
+      age: 0,
+      maxAge: 2.0, // 2 seconds
+    });
   }
 
   update() {
@@ -341,6 +441,25 @@ class PinchTracker extends xb.Script {
       const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
       this.hudText.position.copy(position).addScaledVector(forward, 0.5);
       this.hudText.quaternion.copy(quaternion);
+    }
+
+    // Update shooting lines
+    const delta = xb.getDeltaTime ? xb.getDeltaTime() : 0.016;
+    const speed = 2.0; // meters per second
+
+    for (let i = this.shootingLines.length - 1; i >= 0; i--) {
+      const item = this.shootingLines[i];
+      item.line.position.addScaledVector(item.dir, speed * delta);
+      item.age += delta;
+
+      item.line.material.opacity = 1 - item.age / item.maxAge;
+
+      if (item.age >= item.maxAge) {
+        this.scene.remove(item.line);
+        item.line.geometry.dispose();
+        item.line.material.dispose();
+        this.shootingLines.splice(i, 1);
+      }
     }
 
     const leftHandIndex = 0;
@@ -381,7 +500,7 @@ options.xrButton.showEnterSimulatorButton = true;
 
 options.setAppTitle('Unistroke Recognizer');
 options.setAppDescription(
-  'Tracks left hand pinch and recognizes shapes (Triangle, Square, V, Caret, Circle).'
+  'Tracks left hand pinch, recognizes shapes, and shoots out perfect geometric versions.'
 );
 
 function start() {
