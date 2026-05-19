@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 3852a81
- * @builddate 2026-05-14T22:06:59.587Z
+ * @commitid 8856ab4
+ * @builddate 2026-05-19T21:34:16.307Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2984,24 +2984,298 @@ class ScreenshotSynthesizer {
     }
 }
 
-class ScriptsManager {
+var ScriptsManagerEventType;
+(function (ScriptsManagerEventType) {
+    ScriptsManagerEventType["EXCEPTION"] = "exception";
+})(ScriptsManagerEventType || (ScriptsManagerEventType = {}));
+class ScriptsManager extends THREE.EventDispatcher {
     constructor(initScriptFunction) {
+        super();
         this.initScriptFunction = initScriptFunction;
         /** The set of all currently initialized scripts. */
         this.scripts = new Set();
-        this.callSelectStartBound = this.callSelectStart.bind(this);
-        this.callSelectEndBound = this.callSelectEnd.bind(this);
-        this.callSelectBound = this.callSelect.bind(this);
-        this.callSqueezeStartBound = this.callSqueezeStart.bind(this);
-        this.callSqueezeEndBound = this.callSqueezeEnd.bind(this);
-        this.callSqueezeBound = this.callSqueeze.bind(this);
-        this.callKeyDownBound = this.callKeyDown.bind(this);
-        this.callKeyUpBound = this.callKeyUp.bind(this);
         /** The set of scripts currently being initialized. */
         this.initializingScripts = new Set();
         this.seenScripts = new Set();
         this.syncPromises = [];
-        this.checkScriptBound = this.checkScript.bind(this);
+        /** Whether to catch all exceptions thrown by developer scripts. */
+        this.catchExceptions = true;
+        /**
+         * Helper for scene traversal to avoid closure allocation.
+         */
+        this.checkScript = (obj) => {
+            if (obj.isXRScript) {
+                const script = obj;
+                this.syncPromises.push(this.initScript(script));
+                this.seenScripts.add(script);
+            }
+        };
+        this.resetUX = () => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.ux.reset();
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'ux.reset');
+                    }
+                }
+                else {
+                    script.ux.reset();
+                }
+            }
+        };
+        this.callSelecting = (controller) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSelecting({ target: controller });
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSelecting');
+                    }
+                }
+                else {
+                    script.onSelecting({ target: controller });
+                }
+            }
+        };
+        this.callSqueezing = (controller) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSqueezing({ target: controller });
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSqueezing');
+                    }
+                }
+                else {
+                    script.onSqueezing({ target: controller });
+                }
+            }
+        };
+        this.update = (time, frame) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.update(time, frame);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'update');
+                    }
+                }
+                else {
+                    script.update(time, frame);
+                }
+            }
+        };
+        this.physicsStep = () => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.physicsStep();
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'physicsStep');
+                    }
+                }
+                else {
+                    script.physicsStep();
+                }
+            }
+        };
+        this.callSelectStart = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSelectStart(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSelectStart');
+                    }
+                }
+                else {
+                    script.onSelectStart(event);
+                }
+            }
+        };
+        this.callSelectEnd = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSelectEnd(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSelectEnd');
+                    }
+                }
+                else {
+                    script.onSelectEnd(event);
+                }
+            }
+        };
+        this.callSelect = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSelect(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSelect');
+                    }
+                }
+                else {
+                    script.onSelect(event);
+                }
+            }
+        };
+        this.callSqueezeStart = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSqueezeStart(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSqueezeStart');
+                    }
+                }
+                else {
+                    script.onSqueezeStart(event);
+                }
+            }
+        };
+        this.callSqueezeEnd = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSqueezeEnd(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSqueezeEnd');
+                    }
+                }
+                else {
+                    script.onSqueezeEnd(event);
+                }
+            }
+        };
+        this.callSqueeze = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSqueeze(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSqueeze');
+                    }
+                }
+                else {
+                    script.onSqueeze(event);
+                }
+            }
+        };
+        this.callKeyDown = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onKeyDown(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onKeyDown');
+                    }
+                }
+                else {
+                    script.onKeyDown(event);
+                }
+            }
+        };
+        this.callKeyUp = (event) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onKeyUp(event);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onKeyUp');
+                    }
+                }
+                else {
+                    script.onKeyUp(event);
+                }
+            }
+        };
+        this.onXRSessionStarted = (session) => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onXRSessionStarted(session);
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onXRSessionStarted');
+                    }
+                }
+                else {
+                    script.onXRSessionStarted(session);
+                }
+            }
+        };
+        this.onXRSessionEnded = () => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onXRSessionEnded();
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onXRSessionEnded');
+                    }
+                }
+                else {
+                    script.onXRSessionEnded();
+                }
+            }
+        };
+        this.onSimulatorStarted = () => {
+            const catchExceptions = this.catchExceptions;
+            for (const script of this.scripts) {
+                if (catchExceptions) {
+                    try {
+                        script.onSimulatorStarted();
+                    }
+                    catch (error) {
+                        this.handleException(error instanceof Error ? error : new Error(String(error)), script, 'onSimulatorStarted');
+                    }
+                }
+                else {
+                    script.onSimulatorStarted();
+                }
+            }
+        };
+    }
+    handleException(error, script, context) {
+        console.error(`An error occurred in script ${script.name || script.constructor.name} [${context}]:`, error);
+        this.dispatchEvent({
+            type: ScriptsManagerEventType.EXCEPTION,
+            scriptName: script.name || script.constructor.name,
+            context,
+            error,
+            timestamp: performance.now(),
+        });
     }
     /**
      * Initializes a script and adds it to the set of scripts which will receive
@@ -3033,16 +3307,6 @@ class ScriptsManager {
         this.initializingScripts.delete(script);
     }
     /**
-     * Helper for scene traversal to avoid closure allocation.
-     */
-    checkScript(obj) {
-        if (obj.isXRScript) {
-            const script = obj;
-            this.syncPromises.push(this.initScript(script));
-            this.seenScripts.add(script);
-        }
-    }
-    /**
      * Finds all scripts in the scene and initializes them or uninitailizes them.
      * Returns a promise which resolves when all new scripts are finished
      * initalizing.
@@ -3051,7 +3315,7 @@ class ScriptsManager {
     syncScriptsWithScene(scene) {
         this.seenScripts.clear();
         this.syncPromises.length = 0;
-        scene.traverse(this.checkScriptBound);
+        scene.traverse(this.checkScript);
         // Delete missing scripts.
         for (const script of this.scripts) {
             if (!this.seenScripts.has(script)) {
@@ -3059,61 +3323,6 @@ class ScriptsManager {
             }
         }
         return Promise.allSettled(this.syncPromises);
-    }
-    callSelectStart(event) {
-        for (const script of this.scripts) {
-            script.onSelectStart(event);
-        }
-    }
-    callSelectEnd(event) {
-        for (const script of this.scripts) {
-            script.onSelectEnd(event);
-        }
-    }
-    callSelect(event) {
-        for (const script of this.scripts) {
-            script.onSelect(event);
-        }
-    }
-    callSqueezeStart(event) {
-        for (const script of this.scripts) {
-            script.onSqueezeStart(event);
-        }
-    }
-    callSqueezeEnd(event) {
-        for (const script of this.scripts) {
-            script.onSqueezeEnd(event);
-        }
-    }
-    callSqueeze(event) {
-        for (const script of this.scripts) {
-            script.onSqueeze(event);
-        }
-    }
-    callKeyDown(event) {
-        for (const script of this.scripts) {
-            script.onKeyDown(event);
-        }
-    }
-    callKeyUp(event) {
-        for (const script of this.scripts) {
-            script.onKeyUp(event);
-        }
-    }
-    onXRSessionStarted(session) {
-        for (const script of this.scripts) {
-            script.onXRSessionStarted(session);
-        }
-    }
-    onXRSessionEnded() {
-        for (const script of this.scripts) {
-            script.onXRSessionEnded();
-        }
-    }
-    onSimulatorStarted() {
-        for (const script of this.scripts) {
-            script.onSimulatorStarted();
-        }
     }
 }
 
@@ -8426,6 +8635,12 @@ class Options {
          */
         this.usePostprocessing = false;
         this.enableSimulator = true;
+        /**
+         * Whether to catch all exceptions thrown by developer scripts in the main update loop
+         * and physics step, and log them using console.error instead of crashing the application.
+         * When enabled, exceptions in one script will not prevent other scripts or subsystems from updating.
+         */
+        this.catchScriptExceptions = true;
         /**
          * Configuration for the XR session button.
          */
@@ -17190,6 +17405,7 @@ class Core {
             xrContainer.appendChild(this.renderer.domElement);
         }
         this.options = options;
+        this.scriptsManager.catchExceptions = options.catchScriptExceptions;
         // Sets up controllers.
         if (options.controllers.enabled) {
             this.input.init({
@@ -17198,14 +17414,14 @@ class Core {
                 options: options,
                 renderer: this.renderer,
             });
-            this.input.bindSelectStart(this.scriptsManager.callSelectStartBound);
-            this.input.bindSelectEnd(this.scriptsManager.callSelectEndBound);
-            this.input.bindSelect(this.scriptsManager.callSelectBound);
-            this.input.bindSqueezeStart(this.scriptsManager.callSqueezeStartBound);
-            this.input.bindSqueezeEnd(this.scriptsManager.callSqueezeEndBound);
-            this.input.bindSqueeze(this.scriptsManager.callSqueezeBound);
-            this.input.bindKeyDown(this.scriptsManager.callKeyDownBound);
-            this.input.bindKeyUp(this.scriptsManager.callKeyUpBound);
+            this.input.bindSelectStart(this.scriptsManager.callSelectStart);
+            this.input.bindSelectEnd(this.scriptsManager.callSelectEnd);
+            this.input.bindSelect(this.scriptsManager.callSelect);
+            this.input.bindSqueezeStart(this.scriptsManager.callSqueezeStart);
+            this.input.bindSqueezeEnd(this.scriptsManager.callSqueezeEnd);
+            this.input.bindSqueeze(this.scriptsManager.callSqueeze);
+            this.input.bindKeyDown(this.scriptsManager.callKeyDown);
+            this.input.bindKeyUp(this.scriptsManager.callKeyUp);
         }
         // Sets up device camera.
         if (options.deviceCamera?.enabled) {
@@ -17336,31 +17552,23 @@ class Core {
         // Traverse the scene to find all scripts.
         this.scriptsManager.syncScriptsWithScene(this.scene);
         // Updates reticles and UIs.
-        for (const script of this.scriptsManager.scripts) {
-            script.ux.reset();
-        }
+        this.scriptsManager.resetUX();
         this.input.update();
         // Updates scripts with user interactions.
         for (const controller of this.input.controllers) {
             if (controller.userData.selected) {
-                for (const script of this.scriptsManager.scripts) {
-                    script.onSelecting({ target: controller });
-                }
+                this.scriptsManager.callSelecting(controller);
             }
         }
         for (const controller of this.input.controllers) {
             if (controller.userData.squeezing) {
-                for (const script of this.scriptsManager.scripts) {
-                    script.onSqueezing({ target: controller });
-                }
+                this.scriptsManager.callSqueezing(controller);
             }
         }
         // Run callbacks that use wait frame.
         this.waitFrame.onFrame();
         // Updates renderings.
-        for (const script of this.scriptsManager.scripts) {
-            script.update(time, frame);
-        }
+        this.scriptsManager.update(time, frame);
         this.renderSimulatorAndScene();
         this.screenshotSynthesizer.onAfterRender(this.renderer, this.renderSceneBound, this.deviceCamera);
         if (this.simulatorRunning) {
@@ -17373,9 +17581,7 @@ class Core {
      */
     physicsStep() {
         this.physics.physicsStep();
-        for (const script of this.scriptsManager.scripts) {
-            script.physicsStep();
-        }
+        this.scriptsManager.physicsStep();
     }
     /**
      * Lifecycle callback executed when an XR session starts. Notifies all active
@@ -19528,5 +19734,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
