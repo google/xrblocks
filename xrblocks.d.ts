@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 8856ab4
- * @builddate 2026-05-19T21:34:16.307Z
+ * @commitid 734730a
+ * @builddate 2026-05-19T21:48:30.405Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1778,10 +1778,6 @@ declare class SpeechRecognizer extends Script<SpeechRecognizerEventMap> {
     lastConfidence: number;
     error?: string;
     playActivationSounds: boolean;
-    private handleStartBound;
-    private handleResultBound;
-    private handleEndBound;
-    private handleErrorBound;
     constructor(soundSynthesizer: SoundSynthesizer);
     init({ soundOptions }: {
         soundOptions: SoundOptions;
@@ -1794,8 +1790,8 @@ declare class SpeechRecognizer extends Script<SpeechRecognizerEventMap> {
     getLastConfidence(): number;
     private _handleStart;
     private _handleResult;
-    _handleEnd(): void;
-    _handleError(event: SpeechRecognitionErrorEvent): void;
+    private _handleEnd;
+    private _handleError;
     destroy(): void;
 }
 
@@ -1819,7 +1815,7 @@ declare class SpeechSynthesizer extends Script {
     init({ soundOptions }: {
         soundOptions: SoundOptions;
     }): void;
-    loadVoices(): void;
+    loadVoices: () => void;
     setVolume(level: number): void;
     speak(text: string, lang?: string, pitch?: number, rate?: number): Promise<void>;
     tts(text: string, lang?: string, pitch?: number, rate?: number): void;
@@ -3316,7 +3312,6 @@ declare class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionMana
     private mode;
     currentSession?: XRSession;
     private sessionOptions?;
-    private onSessionEndedBound;
     private xrModeSupported?;
     private waitingForXRSession;
     constructor(renderer: THREE.WebGLRenderer, sessionInit: XRSessionInit, mode: XRSessionMode);
@@ -5318,7 +5313,6 @@ declare class SimulatorHands {
     rightHandTargetJoints: DeepReadonly<SimulatorHandPoseJoints>;
     lerpSpeed: number;
     handPosePanelElement?: SimulatorHandPoseHTMLElement;
-    onHandPoseChangeRequestBound: (event: Event) => void;
     input: Input;
     loader: GLTFLoader;
     private leftXRHand;
@@ -5345,7 +5339,7 @@ declare class SimulatorHands {
     hideHands(): void;
     updateHandPosePanel(): void;
     setHandPosePanelElement(element: HTMLElement): void;
-    onHandPoseChangeRequest(event: Event): void;
+    onHandPoseChangeRequest: (event: Event) => void;
     toggleHandedness(): void;
     /** Optional callback fired after the active hand changes. */
     onHandednessChanged?: (handedness: 'left' | 'right') => void;
@@ -5451,12 +5445,6 @@ declare class SimulatorControls {
     private simulatorOptions?;
     get enabled(): boolean;
     set enabled(value: boolean);
-    private _onPointerDown;
-    private _onPointerUp;
-    private _onKeyDown;
-    private _onKeyUp;
-    private _onPointerMove;
-    private _onBlur;
     /**
      * Create the simulator controls.
      * @param hands - The simulator hands manager.
@@ -5476,12 +5464,12 @@ declare class SimulatorControls {
     }): void;
     connect(): void;
     update(): void;
-    onPointerMove(event: MouseEvent): void;
-    onPointerDown(event: MouseEvent): void;
-    onPointerUp(event: MouseEvent): void;
-    onKeyDown(event: KeyboardEvent): void;
-    onKeyUp(event: KeyboardEvent): void;
-    onBlur(): void;
+    onPointerMove: (event: MouseEvent) => void;
+    onPointerDown: (event: MouseEvent) => void;
+    onPointerUp: (event: MouseEvent) => void;
+    onKeyDown: (event: KeyboardEvent) => void;
+    onKeyUp: (event: KeyboardEvent) => void;
+    onBlur: () => void;
     setSimulatorMode(mode: SimulatorMode): void;
     setSimulatorSettingsPanelElement(element: ISimulatorSettingsPanelElement): void;
     setEnabled(value: boolean): void;
@@ -6333,7 +6321,6 @@ declare class TextView extends View<TextViewEventMap> {
     lineHeight: number;
     /** The total number of lines after text wrapping. */
     lineCount: number;
-    private _onSyncCompleteBound;
     private _initializeTextCalled;
     private _text;
     set text(text: string);
@@ -6380,7 +6367,7 @@ declare class TextView extends View<TextViewEventMap> {
      * Callback executed when Troika's text sync is complete.
      * It captures layout data like total height and line count.
      */
-    onSyncComplete(): void;
+    onSyncComplete: () => void;
     /**
      * Private method to perform the actual initialization after the async
      * import has resolved.
@@ -7309,7 +7296,7 @@ declare class Core {
     sound: CoreSound;
     /** A container to hold all the systems in the scene hierarchy. */
     xrSystemsGroup: XRSystems;
-    private renderSceneBound;
+    private renderSceneCallback;
     /** Manages the desktop XR simulator. */
     simulator: Simulator;
     /** Manages drag-and-drop interactions. */
@@ -7772,13 +7759,12 @@ declare class ScrollingTroikaTextView extends View {
     private pager;
     private textViewWrapper;
     private textView;
-    private onTextSyncCompleteBound;
     private currentText;
     constructor({ text, textAlign, scrollerState, fontSize, }?: ScrollingTroikaTextViewOptions);
     update(): void;
     addText(text: string): void;
     setText(text: string): void;
-    onTextSyncComplete(): void;
+    onTextSyncComplete: () => void;
     clipToLineHeight(): void;
 }
 

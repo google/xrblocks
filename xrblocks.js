@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 8856ab4
- * @builddate 2026-05-19T21:34:16.307Z
+ * @commitid 734730a
+ * @builddate 2026-05-19T21:48:30.405Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3372,8 +3372,25 @@ class WebXRSessionManager extends THREE.EventDispatcher {
         this.renderer = renderer;
         this.sessionInit = sessionInit;
         this.mode = mode;
-        this.onSessionEndedBound = this.onSessionEndedInternal.bind(this);
         this.waitingForXRSession = false;
+        /** Internal callback for when a session successfully starts. */
+        this.onSessionStartedInternal = async (session) => {
+            session.addEventListener('end', this.onSessionEndedInternal);
+            await this.renderer.xr.setSession(session);
+            this.currentSession = session;
+            // Fire the 'sessionstart' event with the session in the data payload
+            this.dispatchEvent({
+                type: WebXRSessionEventType.SESSION_START,
+                session: session,
+            });
+        };
+        /** Internal callback for when the session ends. */
+        this.onSessionEndedInternal = () => {
+            // Fire the 'sessionend' event
+            this.dispatchEvent({ type: WebXRSessionEventType.SESSION_END });
+            this.currentSession?.removeEventListener('end', this.onSessionEndedInternal);
+            this.currentSession = undefined;
+        };
     }
     /**
      * Checks for WebXR support and availability of the requested session mode.
@@ -3415,7 +3432,7 @@ class WebXRSessionManager extends THREE.EventDispatcher {
             // Automatically start session if 'offerSession' is available
             if (navigator.xr.offerSession !== undefined) {
                 navigator.xr.offerSession(this.mode, this.sessionOptions)
-                    .then(this.onSessionStartedInternal.bind(this))
+                    .then(this.onSessionStartedInternal)
                     .catch((err) => {
                     console.warn(err);
                 });
@@ -3449,7 +3466,7 @@ class WebXRSessionManager extends THREE.EventDispatcher {
             .finally(() => {
             this.waitingForXRSession = false;
         })
-            .then(this.onSessionStartedInternal.bind(this))
+            .then(this.onSessionStartedInternal)
             .catch((err) => {
             console.error('Error requesting session', err, 'mode:', this.mode, 'sesionOptions:', this.sessionOptions);
         });
@@ -3473,24 +3490,6 @@ class WebXRSessionManager extends THREE.EventDispatcher {
     }
     getSessionOptions() {
         return this.sessionOptions;
-    }
-    /** Internal callback for when a session successfully starts. */
-    async onSessionStartedInternal(session) {
-        session.addEventListener('end', this.onSessionEndedBound);
-        await this.renderer.xr.setSession(session);
-        this.currentSession = session;
-        // Fire the 'sessionstart' event with the session in the data payload
-        this.dispatchEvent({
-            type: WebXRSessionEventType.SESSION_START,
-            session: session,
-        });
-    }
-    /** Internal callback for when the session ends. */
-    onSessionEndedInternal( /*event*/) {
-        // Fire the 'sessionend' event
-        this.dispatchEvent({ type: WebXRSessionEventType.SESSION_END });
-        this.currentSession?.removeEventListener('end', this.onSessionEndedBound);
-        this.currentSession = undefined;
     }
 }
 
@@ -10595,12 +10594,49 @@ class SimulatorControls {
         this.downKeys = new Set();
         this.simulatorMode = SimulatorMode.USER;
         this.#enabled = true;
-        this._onPointerDown = this.onPointerDown.bind(this);
-        this._onPointerUp = this.onPointerUp.bind(this);
-        this._onKeyDown = this.onKeyDown.bind(this);
-        this._onKeyUp = this.onKeyUp.bind(this);
-        this._onPointerMove = this.onPointerMove.bind(this);
-        this._onBlur = this.onBlur.bind(this);
+        this.onPointerMove = (event) => {
+            if (!this.enabled)
+                return;
+            this.simulatorModeControls.onPointerMove(event);
+        };
+        this.onPointerDown = (event) => {
+            if (!this.enabled)
+                return;
+            this.simulatorModeControls.onPointerDown(event);
+            this.pointerDown = true;
+        };
+        this.onPointerUp = (event) => {
+            if (!this.enabled)
+                return;
+            this.simulatorModeControls.onPointerUp(event);
+            this.pointerDown = false;
+        };
+        this.onKeyDown = (event) => {
+            if (!this.enabled)
+                return;
+            // On macOS, keyup events are not fired for keys held when Command (Meta)
+            // is pressed. Clear all keys to prevent stuck movement.
+            if (event.metaKey ||
+                event.code === 'MetaLeft' ||
+                event.code === 'MetaRight') {
+                this.downKeys.clear();
+                return;
+            }
+            this.downKeys.add(event.code);
+            if (this.simulatorOptions?.modeToggle.enabled &&
+                event.code === this.simulatorOptions.modeToggle.toggleKey) {
+                this.setSimulatorMode(this.simulatorOptions.modeToggle.toggleOrder[this.simulatorMode]);
+            }
+            this.simulatorModeControls.onKeyDown(event);
+        };
+        this.onKeyUp = (event) => {
+            if (!this.enabled)
+                return;
+            this.downKeys.delete(event.code);
+        };
+        this.onBlur = () => {
+            this.downKeys.clear();
+        };
         const toggleUserInterface = () => {
             this.userInterface.toggleInterfaceVisible();
         };
@@ -10632,60 +10668,17 @@ class SimulatorControls {
     }
     connect() {
         const domElement = this.renderer.domElement;
-        document.addEventListener('keyup', this._onKeyUp);
-        document.addEventListener('keydown', this._onKeyDown);
-        domElement.addEventListener('pointermove', this._onPointerMove);
-        domElement.addEventListener('pointerdown', this._onPointerDown);
-        domElement.addEventListener('pointerup', this._onPointerUp);
+        document.addEventListener('keyup', this.onKeyUp);
+        document.addEventListener('keydown', this.onKeyDown);
+        domElement.addEventListener('pointermove', this.onPointerMove);
+        domElement.addEventListener('pointerdown', this.onPointerDown);
+        domElement.addEventListener('pointerup', this.onPointerUp);
         domElement.addEventListener('contextmenu', preventDefault);
-        window.addEventListener('blur', this._onBlur);
-        document.addEventListener('visibilitychange', this._onBlur);
+        window.addEventListener('blur', this.onBlur);
+        document.addEventListener('visibilitychange', this.onBlur);
     }
     update() {
         this.simulatorModeControls.update();
-    }
-    onPointerMove(event) {
-        if (!this.enabled)
-            return;
-        this.simulatorModeControls.onPointerMove(event);
-    }
-    onPointerDown(event) {
-        if (!this.enabled)
-            return;
-        this.simulatorModeControls.onPointerDown(event);
-        this.pointerDown = true;
-    }
-    onPointerUp(event) {
-        if (!this.enabled)
-            return;
-        this.simulatorModeControls.onPointerUp(event);
-        this.pointerDown = false;
-    }
-    onKeyDown(event) {
-        if (!this.enabled)
-            return;
-        // On macOS, keyup events are not fired for keys held when Command (Meta)
-        // is pressed. Clear all keys to prevent stuck movement.
-        if (event.metaKey ||
-            event.code === 'MetaLeft' ||
-            event.code === 'MetaRight') {
-            this.downKeys.clear();
-            return;
-        }
-        this.downKeys.add(event.code);
-        if (this.simulatorOptions?.modeToggle.enabled &&
-            event.code === this.simulatorOptions.modeToggle.toggleKey) {
-            this.setSimulatorMode(this.simulatorOptions.modeToggle.toggleOrder[this.simulatorMode]);
-        }
-        this.simulatorModeControls.onKeyDown(event);
-    }
-    onKeyUp(event) {
-        if (!this.enabled)
-            return;
-        this.downKeys.delete(event.code);
-    }
-    onBlur() {
-        this.downKeys.clear();
     }
     setSimulatorMode(mode) {
         this.simulatorMode = mode;
@@ -10877,9 +10870,19 @@ class SimulatorHands {
         this.leftHandTargetJoints = SIMULATOR_HAND_POSE_TO_JOINTS_LEFT[SimulatorHandPose.RELAXED];
         this.rightHandTargetJoints = SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT[SimulatorHandPose.RELAXED];
         this.lerpSpeed = 0.1;
-        this.onHandPoseChangeRequestBound = this.onHandPoseChangeRequest.bind(this);
         this.leftXRHand = new SimulatorXRHand();
         this.rightXRHand = new SimulatorXRHand();
+        this.onHandPoseChangeRequest = (event) => {
+            if (event.type != SimulatorHandPoseChangeRequestEvent.type)
+                return;
+            const handPoseChangeEvent = event;
+            if (this.simulatorControllerState.currentControllerIndex === 0) {
+                this.setLeftHandLerpPose(handPoseChangeEvent.pose);
+            }
+            else {
+                this.setRightHandLerpPose(handPoseChangeEvent.pose);
+            }
+        };
     }
     /**
      * Initialize Simulator Hands.
@@ -11132,22 +11135,11 @@ class SimulatorHands {
     }
     setHandPosePanelElement(element) {
         if (this.handPosePanelElement) {
-            this.handPosePanelElement.removeEventListener(SimulatorHandPoseChangeRequestEvent.type, this.onHandPoseChangeRequestBound);
+            this.handPosePanelElement.removeEventListener(SimulatorHandPoseChangeRequestEvent.type, this.onHandPoseChangeRequest);
         }
-        element.addEventListener(SimulatorHandPoseChangeRequestEvent.type, this.onHandPoseChangeRequestBound);
+        element.addEventListener(SimulatorHandPoseChangeRequestEvent.type, this.onHandPoseChangeRequest);
         this.handPosePanelElement = element;
         this.updateHandPosePanel();
-    }
-    onHandPoseChangeRequest(event) {
-        if (event.type != SimulatorHandPoseChangeRequestEvent.type)
-            return;
-        const handPoseChangeEvent = event;
-        if (this.simulatorControllerState.currentControllerIndex === 0) {
-            this.setLeftHandLerpPose(handPoseChangeEvent.pose);
-        }
-        else {
-            this.setRightHandLerpPose(handPoseChangeEvent.pose);
-        }
     }
     toggleHandedness() {
         this.simulatorControllerState.currentControllerIndex =
@@ -13909,10 +13901,75 @@ class SpeechRecognizer extends Script {
         this.lastTranscript = '';
         this.lastConfidence = 0;
         this.playActivationSounds = false;
-        this.handleStartBound = this._handleStart.bind(this);
-        this.handleResultBound = this._handleResult.bind(this);
-        this.handleEndBound = this._handleEnd.bind(this);
-        this.handleErrorBound = this._handleError.bind(this);
+        // Private handler for the 'start' event
+        this._handleStart = () => {
+            console.debug('SpeechRecognizer: Listening started.');
+            this.dispatchEvent({ type: 'start' });
+            if (this.playActivationSounds) {
+                this.soundSynthesizer.playPresetTone('ACTIVATE');
+            }
+        };
+        // Private handler for the 'result' event
+        this._handleResult = (event) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+            let currentConfidence = 0;
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const result = event.results[i];
+                const transcript = result[0].transcript;
+                if (result.isFinal) {
+                    finalTranscript += transcript;
+                    currentConfidence = result[0].confidence;
+                }
+                else {
+                    interimTranscript += transcript;
+                }
+            }
+            this.lastTranscript = finalTranscript.trim() || interimTranscript.trim();
+            this.lastConfidence = currentConfidence;
+            this.lastCommand = undefined;
+            if (finalTranscript && this.options.commands.length > 0) {
+                const upperTranscript = finalTranscript.trim().toUpperCase();
+                for (const command of this.options.commands) {
+                    if (upperTranscript.includes(command.toUpperCase()) &&
+                        this.lastConfidence >= this.options.commandConfidenceThreshold) {
+                        this.lastCommand = command;
+                        console.debug(`SpeechRecognizer Detected Command: ${this.lastCommand}`);
+                        break;
+                    }
+                }
+            }
+            // Dispatch a 'result' event with all the relevant data
+            this.dispatchEvent({
+                type: 'result',
+                originalEvent: event,
+                transcript: this.lastTranscript,
+                confidence: this.lastConfidence,
+                command: this.lastCommand,
+                isFinal: !!finalTranscript,
+            });
+        };
+        // Private handler for the 'end' event (e.g., when silence is detected)
+        this._handleEnd = () => {
+            this.isListening = false;
+            this.dispatchEvent({ type: 'end' });
+            if (this.options.continuous &&
+                this.error !== 'aborted' &&
+                this.error !== 'no-speech') {
+                console.debug('SpeechRecognizer: Restarting continuous listening...');
+                setTimeout(() => this.start(), 100);
+            }
+            else if (this.playActivationSounds) {
+                this.soundSynthesizer.playPresetTone('DEACTIVATE');
+            }
+        };
+        // Private handler for the 'error' event
+        this._handleError = (event) => {
+            console.error('SpeechRecognizer: Error:', event.error);
+            this.error = event.error;
+            this.isListening = false;
+            this.dispatchEvent({ type: 'error', error: event.error });
+        };
     }
     init({ soundOptions }) {
         this.options = soundOptions.speechRecognizer;
@@ -13928,10 +13985,10 @@ class SpeechRecognizer extends Script {
         this.recognition.continuous = this.options.continuous;
         this.recognition.interimResults = this.options.interimResults;
         // Setup native event listeners
-        this.recognition.onstart = this.handleStartBound;
-        this.recognition.onresult = this.handleResultBound;
-        this.recognition.onend = this.handleEndBound;
-        this.recognition.onerror = this.handleErrorBound;
+        this.recognition.onstart = this._handleStart;
+        this.recognition.onresult = this._handleResult;
+        this.recognition.onend = this._handleEnd;
+        this.recognition.onerror = this._handleError;
     }
     onSimulatorStarted() {
         this.playActivationSounds = this.options.playSimulatorActivationSounds;
@@ -13984,75 +14041,6 @@ class SpeechRecognizer extends Script {
     getLastConfidence() {
         return this.lastConfidence;
     }
-    // Private handler for the 'start' event
-    _handleStart() {
-        console.debug('SpeechRecognizer: Listening started.');
-        this.dispatchEvent({ type: 'start' });
-        if (this.playActivationSounds) {
-            this.soundSynthesizer.playPresetTone('ACTIVATE');
-        }
-    }
-    // Private handler for the 'result' event
-    _handleResult(event) {
-        let interimTranscript = '';
-        let finalTranscript = '';
-        let currentConfidence = 0;
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const result = event.results[i];
-            const transcript = result[0].transcript;
-            if (result.isFinal) {
-                finalTranscript += transcript;
-                currentConfidence = result[0].confidence;
-            }
-            else {
-                interimTranscript += transcript;
-            }
-        }
-        this.lastTranscript = finalTranscript.trim() || interimTranscript.trim();
-        this.lastConfidence = currentConfidence;
-        this.lastCommand = undefined;
-        if (finalTranscript && this.options.commands.length > 0) {
-            const upperTranscript = finalTranscript.trim().toUpperCase();
-            for (const command of this.options.commands) {
-                if (upperTranscript.includes(command.toUpperCase()) &&
-                    this.lastConfidence >= this.options.commandConfidenceThreshold) {
-                    this.lastCommand = command;
-                    console.debug(`SpeechRecognizer Detected Command: ${this.lastCommand}`);
-                    break;
-                }
-            }
-        }
-        // Dispatch a 'result' event with all the relevant data
-        this.dispatchEvent({
-            type: 'result',
-            originalEvent: event,
-            transcript: this.lastTranscript,
-            confidence: this.lastConfidence,
-            command: this.lastCommand,
-            isFinal: !!finalTranscript,
-        });
-    }
-    // Private handler for the 'end' event (e.g., when silence is detected)
-    _handleEnd() {
-        this.isListening = false;
-        this.dispatchEvent({ type: 'end' });
-        if (this.options.continuous &&
-            this.error !== 'aborted' &&
-            this.error !== 'no-speech') {
-            console.debug('SpeechRecognizer: Restarting continuous listening...');
-            setTimeout(() => this.start(), 100);
-        }
-        else if (this.playActivationSounds) {
-            this.soundSynthesizer.playPresetTone('DEACTIVATE');
-        }
-    }
-    // Private handler for the 'error' event
-    _handleError(event) {
-        console.error('SpeechRecognizer: Error:', event.error);
-        this.error = event.error;
-        this.isListening = false;
-        this.dispatchEvent({ type: 'error', error: event.error });
-    }
     destroy() {
         this.stop();
         if (this.recognition) {
@@ -14079,13 +14067,31 @@ class SpeechSynthesizer extends Script {
         this.debug = false;
         this.specificVolume = 1.0;
         this.speechCategory = 'speech';
+        this.loadVoices = () => {
+            if (!this.synth)
+                return;
+            this.voices = this.synth.getVoices();
+            if (this.debug) {
+                console.log('SpeechSynthesizer: Voices loaded:', this.voices.length);
+            }
+            this.selectedVoice =
+                this.voices.find((voice) => voice.name.includes('Google') && voice.lang.startsWith('en')) || this.voices.find((voice) => voice.lang.startsWith('en'));
+            if (this.selectedVoice) {
+                if (this.debug) {
+                    console.log('SpeechSynthesizer: Selected voice:', this.selectedVoice.name);
+                }
+            }
+            else {
+                console.warn('SpeechSynthesizer: No suitable default voice found.');
+            }
+        };
         if (!this.synth) {
             console.error('SpeechSynthesizer: Speech Synthesis API not supported.');
         }
         else {
             this.loadVoices();
             if (this.synth.onvoiceschanged !== undefined) {
-                this.synth.onvoiceschanged = this.loadVoices.bind(this);
+                this.synth.onvoiceschanged = this.loadVoices;
             }
         }
         if (!this.categoryVolumes && this.synth) {
@@ -14096,24 +14102,6 @@ class SpeechSynthesizer extends Script {
         this.options = soundOptions.speechSynthesizer;
         if (this.debug) {
             console.log('SpeechSynthesizer initialized.');
-        }
-    }
-    loadVoices() {
-        if (!this.synth)
-            return;
-        this.voices = this.synth.getVoices();
-        if (this.debug) {
-            console.log('SpeechSynthesizer: Voices loaded:', this.voices.length);
-        }
-        this.selectedVoice =
-            this.voices.find((voice) => voice.name.includes('Google') && voice.lang.startsWith('en')) || this.voices.find((voice) => voice.lang.startsWith('en'));
-        if (this.selectedVoice) {
-            if (this.debug) {
-                console.log('SpeechSynthesizer: Selected voice:', this.selectedVoice.name);
-            }
-        }
-        else {
-            console.warn('SpeechSynthesizer: No suitable default voice found.');
         }
     }
     setVolume(level) {
@@ -14695,9 +14683,37 @@ class TextView extends View {
         this.lineHeight = 0;
         /** The total number of lines after text wrapping. */
         this.lineCount = 0;
-        this._onSyncCompleteBound = this.onSyncComplete.bind(this);
         this._initializeTextCalled = false;
         this._text = 'TextView';
+        /**
+         * Callback executed when Troika's text sync is complete.
+         * It captures layout data like total height and line count.
+         */
+        this.onSyncComplete = () => {
+            if (!this.useSDFText ||
+                !(this.textObj instanceof Text) ||
+                !this.textObj.textRenderInfo) {
+                return;
+            }
+            const caretPositions = this.textObj.textRenderInfo.caretPositions;
+            const numberOfChars = caretPositions.length / 4;
+            let lineCount = 0;
+            const firstBottom = numberOfChars > 0 ? caretPositions[0] : 0;
+            let lastBottom = 999999;
+            for (let i = 0; i < numberOfChars; i++) {
+                const bottom = caretPositions[i * 4 + 2];
+                const top = caretPositions[i * 4 + 3];
+                const lineHeight = top - bottom;
+                if (bottom < lastBottom - lineHeight / 2) {
+                    lineCount++;
+                    lastBottom = bottom;
+                }
+            }
+            this.lineHeight =
+                numberOfChars > 0 ? (firstBottom - lastBottom) / lineCount : 0;
+            this.lineCount = lineCount;
+            this.dispatchEvent({ type: 'synccomplete' });
+        };
         this.useSDFText = options.useSDFText ?? this.useSDFText;
         this.font = options.font ?? this.font;
         this.fontSize = options.fontSize ?? this.fontSize;
@@ -14851,35 +14867,6 @@ class TextView extends View {
         }
     }
     /**
-     * Callback executed when Troika's text sync is complete.
-     * It captures layout data like total height and line count.
-     */
-    onSyncComplete() {
-        if (!this.useSDFText ||
-            !(this.textObj instanceof Text) ||
-            !this.textObj.textRenderInfo) {
-            return;
-        }
-        const caretPositions = this.textObj.textRenderInfo.caretPositions;
-        const numberOfChars = caretPositions.length / 4;
-        let lineCount = 0;
-        const firstBottom = numberOfChars > 0 ? caretPositions[0] : 0;
-        let lastBottom = 999999;
-        for (let i = 0; i < numberOfChars; i++) {
-            const bottom = caretPositions[i * 4 + 2];
-            const top = caretPositions[i * 4 + 3];
-            const lineHeight = top - bottom;
-            if (bottom < lastBottom - lineHeight / 2) {
-                lineCount++;
-                lastBottom = bottom;
-            }
-        }
-        this.lineHeight =
-            numberOfChars > 0 ? (firstBottom - lastBottom) / lineCount : 0;
-        this.lineCount = lineCount;
-        this.dispatchEvent({ type: 'synccomplete' });
-    }
-    /**
      * Private method to perform the actual initialization after the async
      * import has resolved.
      */
@@ -14904,7 +14891,7 @@ class TextView extends View {
         if (this.useSDFText && Text && this.textObj instanceof Text) {
             this.textObj.addEventListener(
             // @ts-expect-error Missing type in Troika
-            'synccomplete', this._onSyncCompleteBound);
+            'synccomplete', this.onSyncComplete);
             if (this.imageOverlay) {
                 new THREE.TextureLoader().load(this.imageOverlay, (texture) => {
                     texture.colorSpace = THREE.SRGBColorSpace;
@@ -14937,7 +14924,7 @@ class TextView extends View {
             this.textObj instanceof Text) {
             this.textObj.removeEventListener(
             // @ts-expect-error Missing type in Troika
-            'synccomplete', this._onSyncCompleteBound);
+            'synccomplete', this.onSyncComplete);
         }
         super.dispose();
     }
@@ -17300,9 +17287,9 @@ class Core {
         this.sound = new CoreSound();
         /** A container to hold all the systems in the scene hierarchy. */
         this.xrSystemsGroup = new XRSystems();
-        this.renderSceneBound = this.renderScene.bind(this);
+        this.renderSceneCallback = (cameraOverride) => this.renderScene(cameraOverride);
         /** Manages the desktop XR simulator. */
-        this.simulator = new Simulator(this.renderSceneBound);
+        this.simulator = new Simulator(this.renderSceneCallback);
         /** Manages drag-and-drop interactions. */
         this.dragManager = new DragManager();
         /** Manages drag-and-drop interactions. */
@@ -17321,6 +17308,79 @@ class Core {
             }
         });
         this.permissionsManager = new PermissionsManager();
+        /**
+         * The main update loop, called every frame by the renderer. It orchestrates
+         * all per-frame updates for subsystems and scripts.
+         *
+         * Order:
+         * 1. Depth
+         * 2. World Perception
+         * 3. Input / Reticles / UIs
+         * 4. Scripts
+         * @param time - The current time in milliseconds.
+         * @param frame - The WebXR frame object, if in an XR session.
+         */
+        this.update = (time, frame) => {
+            this.currentFrame = frame;
+            this.timer.update(time);
+            if (this.simulatorRunning) {
+                this.simulator.simulatorUpdate();
+            }
+            this.depth.update(frame);
+            // Update XR camera fallback textures.
+            if (this.deviceCamera?.isUsingXRCameraAccess) {
+                this.deviceCamera.updateXRCamera(frame);
+            }
+            if (this.lighting) {
+                this.lighting.update();
+            }
+            // Traverse the scene to find all scripts.
+            this.scriptsManager.syncScriptsWithScene(this.scene);
+            // Updates reticles and UIs.
+            this.scriptsManager.resetUX();
+            this.input.update();
+            // Updates scripts with user interactions.
+            for (const controller of this.input.controllers) {
+                if (controller.userData.selected) {
+                    this.scriptsManager.callSelecting(controller);
+                }
+            }
+            for (const controller of this.input.controllers) {
+                if (controller.userData.squeezing) {
+                    this.scriptsManager.callSqueezing(controller);
+                }
+            }
+            // Run callbacks that use wait frame.
+            this.waitFrame.onFrame();
+            // Updates renderings.
+            this.scriptsManager.update(time, frame);
+            this.renderSimulatorAndScene();
+            this.screenshotSynthesizer.onAfterRender(this.renderer, this.renderSceneCallback, this.deviceCamera);
+            if (this.simulatorRunning) {
+                this.simulator.renderSimulatorScene();
+            }
+        };
+        /**
+         * Advances the physics simulation by a fixed timestep and calls the
+         * corresponding physics update on all active scripts.
+         */
+        this.physicsStep = () => {
+            this.physics.physicsStep();
+            this.scriptsManager.physicsStep();
+        };
+        this.startSimulator = async () => {
+            this.xrButton?.domElement.remove();
+            this.xrSystemsGroup.add(this.simulator);
+            await this.scriptsManager.initScript(this.simulator);
+            this.onSimulatorStarted();
+        };
+        /**
+         * Lifecycle callback executed when an XR session ends. Notifies all active
+         * scripts.
+         */
+        this.onXRSessionEnded = () => {
+            this.scriptsManager.onXRSessionEnded();
+        };
         /**
          * Handles browser window resize events to keep the camera and renderer
          * synchronized.
@@ -17482,11 +17542,11 @@ class Core {
         }
         this.webXRSessionManager = new WebXRSessionManager(this.renderer, this.webXRSettings, options.xrSessionMode);
         this.webXRSessionManager.addEventListener(WebXRSessionEventType.SESSION_START, (event) => this.onXRSessionStarted(event.session));
-        this.webXRSessionManager.addEventListener(WebXRSessionEventType.SESSION_END, this.onXRSessionEnded.bind(this));
+        this.webXRSessionManager.addEventListener(WebXRSessionEventType.SESSION_END, this.onXRSessionEnded);
         // Sets up xrButton.
         let shouldAutostartSimulator = this.options.xrButton.alwaysAutostartSimulator;
         if (!shouldAutostartSimulator && options.xrButton.enabled) {
-            this.xrButton = new XRButton(this.webXRSessionManager, this.permissionsManager, options.xrButton?.appTitle, options.xrButton?.appDescription, options.xrButton?.startText, options.xrButton?.endText, options.xrButton?.invalidText, options.xrButton?.startSimulatorText, options.xrButton?.showEnterSimulatorButton, this.startSimulator.bind(this), options.permissions);
+            this.xrButton = new XRButton(this.webXRSessionManager, this.permissionsManager, options.xrButton?.appTitle, options.xrButton?.appDescription, options.xrButton?.startText, options.xrButton?.endText, options.xrButton?.invalidText, options.xrButton?.startSimulatorText, options.xrButton?.showEnterSimulatorButton, this.startSimulator, options.permissions);
             document.body.appendChild(this.xrButton.domElement);
         }
         this.webXRSessionManager.addEventListener(WebXRSessionEventType.UNSUPPORTED, () => {
@@ -17509,9 +17569,9 @@ class Core {
             await this.scriptsManager.initScript(this.ai);
         }
         await this.scriptsManager.syncScriptsWithScene(this.scene);
-        this.renderer.setAnimationLoop(this.update.bind(this));
+        this.renderer.setAnimationLoop(this.update);
         if (this.physics) {
-            setInterval(this.physicsStep.bind(this), 1000 * this.physics.timestep);
+            setInterval(this.physicsStep, 1000 * this.physics.timestep);
         }
         if (this.options.reticles.enabled) {
             this.input.addReticles();
@@ -17524,66 +17584,6 @@ class Core {
         }
     }
     /**
-     * The main update loop, called every frame by the renderer. It orchestrates
-     * all per-frame updates for subsystems and scripts.
-     *
-     * Order:
-     * 1. Depth
-     * 2. World Perception
-     * 3. Input / Reticles / UIs
-     * 4. Scripts
-     * @param time - The current time in milliseconds.
-     * @param frame - The WebXR frame object, if in an XR session.
-     */
-    update(time, frame) {
-        this.currentFrame = frame;
-        this.timer.update(time);
-        if (this.simulatorRunning) {
-            this.simulator.simulatorUpdate();
-        }
-        this.depth.update(frame);
-        // Update XR camera fallback textures.
-        if (this.deviceCamera?.isUsingXRCameraAccess) {
-            this.deviceCamera.updateXRCamera(frame);
-        }
-        if (this.lighting) {
-            this.lighting.update();
-        }
-        // Traverse the scene to find all scripts.
-        this.scriptsManager.syncScriptsWithScene(this.scene);
-        // Updates reticles and UIs.
-        this.scriptsManager.resetUX();
-        this.input.update();
-        // Updates scripts with user interactions.
-        for (const controller of this.input.controllers) {
-            if (controller.userData.selected) {
-                this.scriptsManager.callSelecting(controller);
-            }
-        }
-        for (const controller of this.input.controllers) {
-            if (controller.userData.squeezing) {
-                this.scriptsManager.callSqueezing(controller);
-            }
-        }
-        // Run callbacks that use wait frame.
-        this.waitFrame.onFrame();
-        // Updates renderings.
-        this.scriptsManager.update(time, frame);
-        this.renderSimulatorAndScene();
-        this.screenshotSynthesizer.onAfterRender(this.renderer, this.renderSceneBound, this.deviceCamera);
-        if (this.simulatorRunning) {
-            this.simulator.renderSimulatorScene();
-        }
-    }
-    /**
-     * Advances the physics simulation by a fixed timestep and calls the
-     * corresponding physics update on all active scripts.
-     */
-    physicsStep() {
-        this.physics.physicsStep();
-        this.scriptsManager.physicsStep();
-    }
-    /**
      * Lifecycle callback executed when an XR session starts. Notifies all active
      * scripts.
      * @param session - The newly started WebXR session.
@@ -17593,19 +17593,6 @@ class Core {
             await this.deviceCamera.init();
         }
         this.scriptsManager.onXRSessionStarted(session);
-    }
-    async startSimulator() {
-        this.xrButton?.domElement.remove();
-        this.xrSystemsGroup.add(this.simulator);
-        await this.scriptsManager.initScript(this.simulator);
-        this.onSimulatorStarted();
-    }
-    /**
-     * Lifecycle callback executed when an XR session ends. Notifies all active
-     * scripts.
-     */
-    onXRSessionEnded() {
-        this.scriptsManager.onXRSessionEnded();
     }
     /**
      * Lifecycle callback executed when the desktop simulator starts. Notifies
@@ -18568,8 +18555,17 @@ class VerticalPager extends Pager {
 class ScrollingTroikaTextView extends View {
     constructor({ text = 'ScrollingTroikaTextView', textAlign = 'left', scrollerState = new TextScrollerState(), fontSize = 0.06, } = {}) {
         super();
-        this.onTextSyncCompleteBound = this.onTextSyncComplete.bind(this);
         this.currentText = '';
+        this.onTextSyncComplete = () => {
+            if (this.textView.lineCount > 0) {
+                this.textView.y =
+                    -0.5 + this.textView.lineHeight * this.textView.aspectRatio;
+                this.textView.updateLayout();
+                this.scrollerState.lineCount = this.textView.lineCount;
+                this.scrollerState.targetLine = this.textView.lineCount - 1;
+                this.clipToLineHeight();
+            }
+        };
         this.scrollerState = scrollerState || new TextScrollerState();
         this.pager = new VerticalPager();
         this.textViewWrapper = new View();
@@ -18582,7 +18578,7 @@ class ScrollingTroikaTextView extends View {
             anchorY: 0,
         });
         this.textView.x = -0.5;
-        this.textView.addEventListener('synccomplete', this.onTextSyncCompleteBound);
+        this.textView.addEventListener('synccomplete', this.onTextSyncComplete);
         this.textViewWrapper.add(this.textView);
         this.add(this.scrollerState);
         this.add(this.pager);
@@ -18600,16 +18596,6 @@ class ScrollingTroikaTextView extends View {
     setText(text) {
         this.currentText = text;
         this.textView.setText(this.currentText);
-    }
-    onTextSyncComplete() {
-        if (this.textView.lineCount > 0) {
-            this.textView.y =
-                -0.5 + this.textView.lineHeight * this.textView.aspectRatio;
-            this.textView.updateLayout();
-            this.scrollerState.lineCount = this.textView.lineCount;
-            this.scrollerState.targetLine = this.textView.lineCount - 1;
-            this.clipToLineHeight();
-        }
     }
     clipToLineHeight() {
         const lineHeight = this.textView.lineHeight * this.textView.aspectRatio;
