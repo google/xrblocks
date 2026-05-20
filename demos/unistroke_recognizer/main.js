@@ -120,12 +120,12 @@ class PinchTracker extends xb.Script {
 
     this.shootingLines = [];
 
-    // Instantiate and add UnistrokeRecognizer as a script
-    this.unistrokeRecognizer = new xb.UnistrokeRecognizer();
+    // Instantiate and add StrokeRecognizer as a script
+    this.unistrokeRecognizer = new xb.StrokeRecognizer();
     xb.add(this.unistrokeRecognizer);
     this.unistrokeRecognizer.activate();
 
-    // Attach listeners to UnistrokeRecognizer
+    // Attach listeners to StrokeRecognizer
     this.unistrokeRecognizer.addEventListener('unistroke_started', (e) => {
       this.capturedPointsCount = 0;
       this.lineGeometry.setDrawRange(0, 0);
