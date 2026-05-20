@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import {GestureRecognition} from '../gestures/GestureRecognition';
+import {User} from '../../core/User';
+import {Script} from '../../core/Script';
 
 // --- Dollar $1 Recognizer Implementation ---
 
@@ -329,15 +332,26 @@ class DollarRecognizer {
   }
 }
 
-export interface UnistrokeEventMap {
-  unistroke_started: {};
-  unistroke_updated: {point: THREE.Vector3};
-  unistroke_ended: {
+export interface UnistrokeEventMap extends THREE.Object3DEventMap {
+  unistroke_started: THREE.Event & {type: 'unistroke_started'};
+  unistroke_updated: THREE.Event & {
+    type: 'unistroke_updated';
+    point: THREE.Vector3;
+  };
+  unistroke_ended: THREE.Event & {
+    type: 'unistroke_ended';
     result: {name: string; score: number; points3D: THREE.Vector3[]} | null;
   };
 }
 
-export class UnistrokeRecognizer extends THREE.EventDispatcher<UnistrokeEventMap> {
+export class UnistrokeRecognizer extends Script<UnistrokeEventMap> {
+  static dependencies = {
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    gestureRecognition: GestureRecognition,
+    user: User,
+  };
+
   private recognizer = new DollarRecognizer();
   private maxPoints = 1000;
   private capturedPoints: Array<{pos: THREE.Vector3; timestamp: number}> = [];
@@ -347,13 +361,63 @@ export class UnistrokeRecognizer extends THREE.EventDispatcher<UnistrokeEventMap
   private pinchEndTime = 0;
   private startDelay = 0.2;
   private endDelay = 0.2;
+  private isPinching = false;
+  private activeHandLabel: 'left' | 'right' | null = null;
 
-  constructor(
-    private scene: THREE.Scene,
-    private camera: THREE.Camera
-  ) {
-    super();
+  private scene!: THREE.Scene;
+  private camera!: THREE.Camera;
+  private gestureRecognition!: GestureRecognition;
+  private user!: User;
+
+  init({
+    scene,
+    camera,
+    gestureRecognition,
+    user,
+  }: {
+    scene: THREE.Scene;
+    camera: THREE.Camera;
+    gestureRecognition: GestureRecognition;
+    user: User;
+  }) {
+    this.scene = scene;
+    this.camera = camera;
+    this.gestureRecognition = gestureRecognition;
+    this.user = user;
+
+    this.gestureRecognition.addEventListener(
+      'gesturestart',
+      this.onGestureStart
+    );
+    this.gestureRecognition.addEventListener('gestureend', this.onGestureEnd);
   }
+
+  dispose() {
+    this.gestureRecognition.removeEventListener(
+      'gesturestart',
+      this.onGestureStart
+    );
+    this.gestureRecognition.removeEventListener(
+      'gestureend',
+      this.onGestureEnd
+    );
+  }
+
+  private onGestureStart = (e: any) => {
+    if (e.detail.name === 'pinch') {
+      if (!this.isPinching) {
+        this.isPinching = true;
+        this.activeHandLabel = e.detail.hand;
+      }
+    }
+  };
+
+  private onGestureEnd = (e: any) => {
+    if (e.detail.name === 'pinch' && e.detail.hand === this.activeHandLabel) {
+      this.isPinching = false;
+      this.activeHandLabel = null;
+    }
+  };
 
   activate() {
     this.isActive = true;
@@ -374,29 +438,50 @@ export class UnistrokeRecognizer extends THREE.EventDispatcher<UnistrokeEventMap
     }
   }
 
-  update(currentTime: number, isPinching: boolean, handPos: THREE.Vector3) {
+  update() {
     if (!this.isActive) return;
+
+    const currentTime = Date.now() / 1000; // Use seconds
+    const isSimulatorPinching =
+      this.user.isSelecting?.(0) || this.user.isSelecting?.(1);
+    const isPinching = this.isPinching || isSimulatorPinching;
 
     if (isPinching) {
       if (!this.isRecording) {
         this.isRecording = true;
         this.pinchStartTime = currentTime;
         this.clearPoints();
-        this.dispatchEvent({type: 'unistroke_started'});
+        this.dispatchEvent({type: 'unistroke_started', target: this});
       }
 
       const elapsedSincePinch = currentTime - this.pinchStartTime;
 
       if (elapsedSincePinch > this.startDelay) {
-        this.addPoint(handPos, currentTime);
-        this.dispatchEvent({type: 'unistroke_updated', point: handPos});
+        let handEnum = this.activeHandLabel === 'left' ? 0 : 1;
+        if (!this.isPinching && isSimulatorPinching) {
+          if (this.user.isSelecting?.(0)) handEnum = 0;
+          else if (this.user.isSelecting?.(1)) handEnum = 1;
+        }
+
+        const hand = this.user.hands?.hands[handEnum];
+        const indexTip = hand?.joints['index-finger-tip'];
+        if (indexTip) {
+          const worldPos = new THREE.Vector3();
+          indexTip.getWorldPosition(worldPos);
+          this.addPoint(worldPos, currentTime);
+          this.dispatchEvent({
+            type: 'unistroke_updated',
+            target: this,
+            point: worldPos,
+          });
+        }
       }
     } else {
       if (this.isRecording) {
         this.isRecording = false;
         this.pinchEndTime = currentTime;
         const result = this.recognizeGesture();
-        this.dispatchEvent({type: 'unistroke_ended', result});
+        this.dispatchEvent({type: 'unistroke_ended', target: this, result});
       }
     }
   }

@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 
 import {HAND_JOINT_NAMES} from './components/HandJointNames.js';
-import {UnistrokeRecognizer} from './unistrokes/UnistrokeRecognizer';
 
 type JointName = (typeof HAND_JOINT_NAMES)[number];
 
@@ -25,19 +24,11 @@ export enum Handedness {
  */
 export class Hands {
   dominant = Handedness.RIGHT;
-  unistrokeRecognizer?: UnistrokeRecognizer;
 
   /**
    * @param hands - An array containing XRHandSpace objects from Three.js.
    */
   constructor(public hands: THREE.XRHandSpace[]) {}
-
-  /**
-   * Enables the unistroke recognizer.
-   */
-  enableUnistrokeRecognizer(scene: THREE.Scene, camera: THREE.Camera) {
-    this.unistrokeRecognizer = new UnistrokeRecognizer(scene, camera);
-  }
 
   /**
    * Retrieves a specific joint object for a given hand.

@@ -103,17 +103,61 @@ function getPerfectShapeFillGeometry(name) {
 // --- PinchTracker Script ---
 
 class PinchTracker extends xb.Script {
-  static dependencies = {camera: THREE.Camera, scene: THREE.Scene};
+  static dependencies = {
+    camera: THREE.Camera,
+    scene: THREE.Scene,
+    gestureRecognition: xb.GestureRecognition,
+  };
 
-  init({camera, scene}) {
+  init({camera, scene, gestureRecognition}) {
     this.camera = camera;
     this.scene = scene;
+    this.gestureRecognition = gestureRecognition;
     console.log('PinchTracker initialized');
 
     this.initHudText();
     this.initDrawing();
 
     this.shootingLines = [];
+
+    // Instantiate and add UnistrokeRecognizer as a script
+    this.unistrokeRecognizer = new xb.UnistrokeRecognizer();
+    xb.add(this.unistrokeRecognizer);
+    this.unistrokeRecognizer.activate();
+
+    // Attach listeners to UnistrokeRecognizer
+    this.unistrokeRecognizer.addEventListener('unistroke_started', (e) => {
+      this.capturedPointsCount = 0;
+      this.lineGeometry.setDrawRange(0, 0);
+    });
+
+    this.unistrokeRecognizer.addEventListener('unistroke_updated', (e) => {
+      const pos = e.point;
+      if (this.capturedPointsCount < this.maxPoints) {
+        const index = this.capturedPointsCount;
+        this.linePositions[index * 3] = pos.x;
+        this.linePositions[index * 3 + 1] = pos.y;
+        this.linePositions[index * 3 + 2] = pos.z;
+
+        this.lineGeometry.attributes.position.needsUpdate = true;
+        this.capturedPointsCount++;
+        this.lineGeometry.setDrawRange(0, this.capturedPointsCount);
+        this.lineGeometry.computeBoundingSphere();
+      }
+    });
+
+    this.unistrokeRecognizer.addEventListener('unistroke_ended', (e) => {
+      const result = e.result;
+      if (result) {
+        console.log(`Recognized: ${result.name} with score ${result.score}`);
+        this.hudText.text = `Recognized: ${result.name}\nScore: ${Math.round(result.score * 100)}%`;
+        this.hudText.sync();
+
+        if (result.name !== 'Unknown' && result.score > 0.6) {
+          this.spawnShootingShape(result.name, result.points3D);
+        }
+      }
+    });
   }
 
   initHudText() {
@@ -127,7 +171,7 @@ class PinchTracker extends xb.Script {
     this.hudText.anchorX = 'center';
     this.hudText.anchorY = 'middle';
 
-    this.add(this.hudText);
+    this.scene.add(this.hudText);
     this.hudText.sync();
   }
 
@@ -252,69 +296,13 @@ class PinchTracker extends xb.Script {
         this.shootingLines.splice(i, 1);
       }
     }
-
-    const leftHandIndex = 0;
-    const currentTime = Date.now() / 1000; // Use seconds
-
-    if (xb.user && xb.user.hands) {
-      const hands = xb.user.hands;
-
-      if (!hands.unistrokeRecognizer) {
-        hands.enableUnistrokeRecognizer(this.scene, this.camera);
-        hands.unistrokeRecognizer.activate();
-
-        hands.unistrokeRecognizer.addEventListener('unistroke_started', (e) => {
-          this.capturedPointsCount = 0;
-          this.lineGeometry.setDrawRange(0, 0);
-        });
-
-        hands.unistrokeRecognizer.addEventListener('unistroke_updated', (e) => {
-          const pos = e.point;
-          if (this.capturedPointsCount < this.maxPoints) {
-            const index = this.capturedPointsCount;
-            this.linePositions[index * 3] = pos.x;
-            this.linePositions[index * 3 + 1] = pos.y;
-            this.linePositions[index * 3 + 2] = pos.z;
-
-            this.lineGeometry.attributes.position.needsUpdate = true;
-            this.capturedPointsCount++;
-            this.lineGeometry.setDrawRange(0, this.capturedPointsCount);
-            this.lineGeometry.computeBoundingSphere();
-          }
-        });
-
-        hands.unistrokeRecognizer.addEventListener('unistroke_ended', (e) => {
-          const result = e.result;
-          if (result) {
-            console.log(
-              `Recognized: ${result.name} with score ${result.score}`
-            );
-            this.hudText.text = `Recognized: ${result.name}\nScore: ${Math.round(result.score * 100)}%`;
-            this.hudText.sync();
-
-            if (result.name !== 'Unknown' && result.score > 0.6) {
-              this.spawnShootingShape(result.name, result.points3D);
-            }
-          }
-        });
-      }
-
-      const isPinching = xb.user.isSelecting(leftHandIndex);
-      const indexTip = hands.getIndexTip(0);
-
-      if (indexTip) {
-        const worldPos = new THREE.Vector3();
-        indexTip.getWorldPosition(worldPos);
-
-        hands.unistrokeRecognizer.update(currentTime, isPinching, worldPos);
-      }
-    }
   }
 }
 
 const options = new xb.Options();
 options.world.enabled = true;
 options.hands.enabled = true;
+options.enableGestures();
 options.simulator.modeToggle.enabled = true;
 options.xrButton.showEnterSimulatorButton = true;
 
