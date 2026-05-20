@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 51c5d3f
- * @builddate 2026-05-19T23:51:06.651Z
+ * @commitid 6cdf729
+ * @builddate 2026-05-20T16:37:34.716Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4013,9 +4013,10 @@ class DepthMesh extends MeshScript {
             this.downsampledMesh.updateMatrixWorld();
         }
     }
-    updateGPUDepth(depthData, projectionMatrixInverse, depthDataFormat) {
-        this.updateDepth(this.convertGPUToGPU(depthData), projectionMatrixInverse, depthDataFormat);
+    updateGPUDepth(depthData, projectionMatrixInverse) {
+        this.updateDepth(this.convertGPUToGPU(depthData), projectionMatrixInverse, 'float32');
     }
+    // Converts unsigned short GPU depth from Quest 3 to float32 CPU depth.
     convertGPUToGPU(depthData) {
         if (!this.depthTarget) {
             this.depthTarget = new THREE.WebGLRenderTarget(depthData.width, depthData.height, {
@@ -4394,7 +4395,7 @@ class DepthTextures {
         this.depthData[viewId] = depthData;
     }
     updateNativeTexture(depthData, renderer, viewId) {
-        if (this.dataTextures.length < viewId + 1) {
+        if (this.nativeTextures.length < viewId + 1) {
             this.nativeTextures[viewId] = new THREE.ExternalTexture(depthData.texture);
         }
         else {
@@ -5105,7 +5106,7 @@ class Depth {
             this.depthMesh.updatePose(this.depthCameraPositions[0], this.depthCameraRotations[0]);
         }
     }
-    updateGPUDepthData(depthData, viewId, depthDataFormat) {
+    updateGPUDepthData(depthData, viewId) {
         this.gpuDepthData[viewId] = depthData;
         this.updateDepthMatrices(depthData, viewId);
         // For now, assume that we need cpu depth only if depth mesh is enabled.
@@ -5115,20 +5116,14 @@ class Depth {
             ? this.depthMesh.convertGPUToGPU(depthData)
             : null;
         if (cpuDepth) {
-            if (this.depthArray[viewId] == null) {
-                this.depthArray[viewId] =
-                    depthDataFormat === 'float32'
-                        ? new Float32Array(cpuDepth.data)
-                        : new Uint16Array(cpuDepth.data);
-                this.width = cpuDepth.width;
-                this.height = cpuDepth.height;
+            if (this.depthArray[viewId] instanceof Float32Array) {
+                this.depthArray[viewId].set(new Float32Array(cpuDepth.data));
             }
             else {
-                // Copies the data from an ArrayBuffer to the existing TypedArray.
-                this.depthArray[viewId].set(depthDataFormat === 'float32'
-                    ? new Float32Array(cpuDepth.data)
-                    : new Uint16Array(cpuDepth.data));
+                this.depthArray[viewId] = new Float32Array(cpuDepth.data);
             }
+            this.width = cpuDepth.width;
+            this.height = cpuDepth.height;
         }
         // Updates Depth Texture.
         if (this.options.depthTexture.enabled && this.depthTextures) {
@@ -5137,10 +5132,10 @@ class Depth {
         if (this.options.depthMesh.enabled && this.depthMesh && viewId == 0) {
             if (this.shouldUpdateDepthMesh()) {
                 if (cpuDepth) {
-                    this.depthMesh.updateDepth(cpuDepth, this.depthProjectionInverseMatrices[0], depthDataFormat);
+                    this.depthMesh.updateDepth(cpuDepth, this.depthProjectionInverseMatrices[0], 'float32');
                 }
                 else {
-                    this.depthMesh.updateGPUDepth(depthData, this.depthProjectionInverseMatrices[0], depthDataFormat);
+                    this.depthMesh.updateGPUDepth(depthData, this.depthProjectionInverseMatrices[0]);
                 }
             }
             this.depthMesh.updatePose(this.depthCameraPositions[0], this.depthCameraRotations[0]);
@@ -5207,7 +5202,7 @@ class Depth {
                         if (!depthData) {
                             return;
                         }
-                        this.updateGPUDepthData(depthData, viewId, session.depthDataFormat ?? 'luminance-alpha');
+                        this.updateGPUDepthData(depthData, viewId);
                     }
                     else {
                         const depthData = frame.getDepthInformation(view);

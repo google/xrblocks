@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 51c5d3f
- * @builddate 2026-05-19T23:51:06.651Z
+ * @commitid 6cdf729
+ * @builddate 2026-05-20T16:37:34.716Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3609,7 +3609,7 @@ declare class DepthMesh extends MeshScript {
      */
     updateDepth(depthData: Readonly<XRCPUDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>, depthDataFormat: XRDepthDataFormat): void;
     updatePose(translation: THREE.Vector3, quaternion: THREE.Quaternion): void;
-    updateGPUDepth(depthData: Readonly<XRWebGLDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>, depthDataFormat: XRDepthDataFormat): void;
+    updateGPUDepth(depthData: Readonly<XRWebGLDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>): void;
     convertGPUToGPU(depthData: Readonly<XRWebGLDepthInformation>): XRCPUDepthInformation;
     /**
      * Method to manually update the full resolution geometry.
@@ -3702,7 +3702,7 @@ declare class Depth {
     getVertex(u: number, v: number): THREE.Vector3 | null;
     private updateDepthMatrices;
     updateCPUDepthData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
-    updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
+    updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number): void;
     /**
      * Checks whether the depth mesh geometry should be updated this frame,
      * based on the configured depthMeshUpdateFps. The pose is always updated
