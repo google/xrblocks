@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import {GestureRecognition} from '../gestures/GestureRecognition';
-import {GestureEvent} from '../gestures/GestureEvents';
+
 import {User} from '../../core/User';
 import {Script} from '../../core/Script';
 
 import {OneDollarUnistrokeRecognizer} from './providers/OneDollarUnistrokeRecognizer';
 import {StrokeRecognitionOptions} from './StrokeRecognitionOptions';
+import {Handedness} from '../Hands';
 import {
   StrokeRecognizerBackend,
   StrokeRecognitionResult,
@@ -63,7 +63,6 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   static dependencies = {
     scene: THREE.Scene,
     camera: THREE.Camera,
-    gestureRecognition: GestureRecognition,
     user: User,
     options: StrokeRecognitionOptions,
   };
@@ -75,30 +74,25 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   private isRecording = false;
   private gestureStartTime = 0;
   private gestureEndTime = 0;
-  private isGestureActive = false;
-  private activeHandLabel: 'left' | 'right' | null = null;
+  private activeHand: Handedness = Handedness.LEFT;
 
   private scene!: THREE.Scene;
   private camera!: THREE.Camera;
-  private gestureRecognition!: GestureRecognition;
   private user!: User;
 
   init({
     scene,
     camera,
-    gestureRecognition,
     user,
     options,
   }: {
     scene: THREE.Scene;
     camera: THREE.Camera;
-    gestureRecognition: GestureRecognition;
     user: User;
     options: StrokeRecognitionOptions;
   }) {
     this.scene = scene;
     this.camera = camera;
-    this.gestureRecognition = gestureRecognition;
     this.user = user;
     this.options = options;
 
@@ -109,24 +103,9 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
         'StrokeRecognizer initialized but disabled. Call options.enableStrokes() to activate.'
       );
     }
-
-    this.gestureRecognition.addEventListener(
-      'gesturestart',
-      this.onGestureStart
-    );
-    this.gestureRecognition.addEventListener('gestureend', this.onGestureEnd);
   }
 
-  dispose() {
-    this.gestureRecognition.removeEventListener(
-      'gesturestart',
-      this.onGestureStart
-    );
-    this.gestureRecognition.removeEventListener(
-      'gestureend',
-      this.onGestureEnd
-    );
-  }
+  dispose() {}
 
   private configureProvider() {
     const provider = this.options.providerConfig.provider;
@@ -154,31 +133,6 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   }
 
   /**
-   * Handler for gesture start events. Activates tracking if the gesture matches the configured one.
-   */
-  private onGestureStart = (e: GestureEvent) => {
-    if (e.detail.name === this.options.gesture) {
-      if (!this.isGestureActive) {
-        this.isGestureActive = true;
-        this.activeHandLabel = e.detail.hand;
-      }
-    }
-  };
-
-  /**
-   * Handler for gesture end events. Deactivates tracking if the active hand ends the gesture.
-   */
-  private onGestureEnd = (e: GestureEvent) => {
-    if (
-      e.detail.name === this.options.gesture &&
-      e.detail.hand === this.activeHandLabel
-    ) {
-      this.isGestureActive = false;
-      this.activeHandLabel = null;
-    }
-  };
-
-  /**
    * Activates the stroke recognizer, enabling gesture tracking and recording.
    */
   activate() {
@@ -202,8 +156,8 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
 
   /**
    * Adds a point to the current stroke if the maximum point limit has not been reached.
-   * @param pos The world position of the point.
-   * @param timestamp The timestamp when the point was captured.
+   * @param pos - The world position of the point.
+   * @param timestamp - The timestamp when the point was captured.
    */
   addPoint(pos: THREE.Vector3, timestamp: number) {
     if (this.capturedPoints.length < this.options.maxPoints) {
@@ -216,38 +170,44 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
    * and triggers recognition when the gesture ends.
    */
   update() {
+    // Ignore updates if the feature is disabled or recognizer is not active.
     if (!this.options.enabled) return;
     if (!this.isActive) return;
 
     const currentTime = Date.now() / 1000; // Use seconds
-    const isSimulatorPinching =
-      this.user.isSelecting?.(0) || this.user.isSelecting?.(1);
-    const isGestureActive = this.isGestureActive || isSimulatorPinching;
 
-    if (isGestureActive) {
+    // Check if the user is currently pinching (simulated or physical).
+    if (this.user.isSelecting?.()) {
+      // If this is the first frame of the pinch, initialize recording state.
       if (!this.isRecording) {
         this.isRecording = true;
         this.gestureStartTime = currentTime;
         this.clearPoints();
+
+        // Identify which hand is actively pinching at the start of the gesture.
+        this.activeHand = Handedness.LEFT;
+        if (this.user.isSelecting?.(Handedness.LEFT))
+          this.activeHand = Handedness.LEFT;
+        else if (this.user.isSelecting?.(Handedness.RIGHT))
+          this.activeHand = Handedness.RIGHT;
+
         this.dispatchEvent({type: 'unistrokestart', target: this, detail: {}});
       }
 
       const elapsedSincePinch = currentTime - this.gestureStartTime;
 
+      // Wait for the start delay to avoid capturing the initial jitter of the pinch motion.
       if (elapsedSincePinch > this.options.startDelay) {
-        let handEnum = this.activeHandLabel === 'left' ? 0 : 1;
-        if (!this.isGestureActive && isSimulatorPinching) {
-          if (this.user.isSelecting?.(0)) handEnum = 0;
-          else if (this.user.isSelecting?.(1)) handEnum = 1;
-        }
-
+        // Retrieve the configured joint for tracking (e.g., index finger tip).
         const trackingJoint = this.user.hands?.getJoint(
           this.options.joint,
-          handEnum
+          this.activeHand
         );
         if (trackingJoint) {
           const worldPos = new THREE.Vector3();
           trackingJoint.getWorldPosition(worldPos);
+
+          // Capture the point and notify listeners.
           this.addPoint(worldPos, currentTime);
           this.dispatchEvent({
             type: 'unistrokeupdate',
@@ -257,9 +217,12 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
         }
       }
     } else {
+      // If the user stopped pinching while we were recording, finalize the gesture.
       if (this.isRecording) {
         this.isRecording = false;
         this.gestureEndTime = currentTime;
+
+        // Perform recognition and notify listeners of the result.
         const result = this.recognizeGesture();
         this.dispatchEvent({
           type: 'unistrokeend',

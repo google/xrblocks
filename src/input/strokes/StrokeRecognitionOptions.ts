@@ -38,11 +38,6 @@ export class StrokeRecognitionOptions {
   endDelay = 0.2;
 
   /**
-   * The gesture that triggers stroke recording.
-   */
-  gesture = 'pinch';
-
-  /**
    * The hand joint to track for stroke recognition.
    */
   joint: JointName = 'index-finger-tip';

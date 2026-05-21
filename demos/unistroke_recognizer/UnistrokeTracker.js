@@ -8,13 +8,11 @@ export class UnistrokeTracker extends xb.Script {
   static dependencies = {
     camera: THREE.Camera,
     scene: THREE.Scene,
-    gestureRecognition: xb.GestureRecognition,
   };
 
-  init({camera, scene, gestureRecognition}) {
+  init({camera, scene}) {
     this.camera = camera;
     this.scene = scene;
-    this.gestureRecognition = gestureRecognition;
     console.log('UnistrokeTracker initialized');
 
     this.uiCore = new UICore(this);
@@ -29,7 +27,7 @@ export class UnistrokeTracker extends xb.Script {
     this.unistrokeRecognizer.activate();
 
     // Attach listeners to StrokeRecognizer
-    this.unistrokeRecognizer.addEventListener('unistrokestart', (e) => {
+    this.unistrokeRecognizer.addEventListener('unistrokestart', () => {
       this.strokeRenderer.clear();
       this.hudText.setText('Capturing...');
       this.hudTextScore.setText('');
