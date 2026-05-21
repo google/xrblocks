@@ -12,7 +12,7 @@ options.xrButton.showEnterSimulatorButton = true;
 
 options.setAppTitle('Unistroke Recognizer');
 options.setAppDescription(
-  'Tracks left hand pinch, recognizes shapes accurately, and shoots them out.'
+  'Tracks hand pinch, recognizes shapes accurately, and shoots them out.'
 );
 
 function start() {

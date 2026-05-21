@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 
+/**
+ * Handles rendering the raw stroke path drawn by the user in 3D space.
+ * Uses a dynamic BufferGeometry for efficient line updates.
+ */
 export class StrokeRenderer {
+  /**
+   * @param {THREE.Scene} scene - The scene to add the line to.
+   * @param {number} [maxPoints=1000] - Maximum number of points in the stroke.
+   */
   constructor(scene, maxPoints = 1000) {
     this.scene = scene;
     this.maxPoints = maxPoints;
@@ -11,6 +19,9 @@ export class StrokeRenderer {
     this.init();
   }
 
+  /**
+   * Initializes the line geometry and material, and adds the line to the scene.
+   */
   init() {
     this.lineGeometry = new THREE.BufferGeometry();
     this.lineGeometry.setAttribute(
@@ -33,6 +44,10 @@ export class StrokeRenderer {
     this.scene.add(this.line);
   }
 
+  /**
+   * Adds a point to the stroke path and updates the geometry.
+   * @param {THREE.Vector3} pos - The world position of the point to add.
+   */
   addPoint(pos) {
     if (this.capturedPointsCount < this.maxPoints) {
       const index = this.capturedPointsCount;
@@ -49,12 +64,19 @@ export class StrokeRenderer {
     }
   }
 
+  /**
+   * Clears the stroke path.
+   */
   clear() {
     this.capturedPointsCount = 0;
     this.lineGeometry.setDrawRange(0, 0);
     this.trackedPoints = [];
   }
 
+  /**
+   * Returns the array of tracked points.
+   * @returns {THREE.Vector3[]} Array of captured points.
+   */
   getPoints() {
     return this.trackedPoints;
   }

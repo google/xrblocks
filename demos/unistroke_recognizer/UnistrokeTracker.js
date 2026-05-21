@@ -2,7 +2,7 @@ import * as xb from 'xrblocks';
 import * as THREE from 'three';
 import {UICore, UIText, UIPanel, HeadLeashBehavior} from 'uiblocks';
 import {StrokeRenderer} from './StrokeRenderer.js';
-import {ShootingShape} from './ShootingShape.js';
+import {PerfectShapeRenderer} from './PerfectShapeRenderer.js';
 
 export class UnistrokeTracker extends xb.Script {
   static dependencies = {
@@ -10,6 +10,12 @@ export class UnistrokeTracker extends xb.Script {
     scene: THREE.Scene,
   };
 
+  /**
+   * Initializes the tracker, sets up UI, stroke renderer, and activates the recognizer.
+   * @param {Object} context - The initialization context.
+   * @param {THREE.Camera} context.camera - The camera for projection.
+   * @param {THREE.Scene} context.scene - The scene to add objects to.
+   */
   init({camera, scene}) {
     this.camera = camera;
     this.scene = scene;
@@ -63,6 +69,9 @@ export class UnistrokeTracker extends xb.Script {
     });
   }
 
+  /**
+   * Initializes the HUD display using uiblocks components.
+   */
   initHudText() {
     const card = this.uiCore.createCard({
       name: 'HUDCard',
@@ -116,13 +125,18 @@ export class UnistrokeTracker extends xb.Script {
     panel.add(this.hudTextCoords);
   }
 
+  /**
+   * Spawns a shooting shape that travels from the hand position in the direction of the camera view.
+   * @param {string} shapeName - The name of the shape to spawn.
+   * @param {THREE.Vector3} handPos - The position to spawn the shape at.
+   */
   spawnShootingShape(shapeName, handPos) {
     // Calculate direction: from camera to hand position
     const cameraPos = new THREE.Vector3();
     this.camera.getWorldPosition(cameraPos);
     const dir = new THREE.Vector3().subVectors(handPos, cameraPos).normalize();
 
-    const shape = new ShootingShape(
+    const shape = new PerfectShapeRenderer(
       this.scene,
       shapeName,
       handPos,
@@ -133,6 +147,9 @@ export class UnistrokeTracker extends xb.Script {
     this.shootingShapes.push(shape);
   }
 
+  /**
+   * Updates all active shooting shapes, removing dead ones.
+   */
   update() {
     // Update shooting shapes
     const delta = xb.getDeltaTime ? xb.getDeltaTime() : 0.016;
