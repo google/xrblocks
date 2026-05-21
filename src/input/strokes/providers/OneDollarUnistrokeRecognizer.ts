@@ -5,6 +5,14 @@ import {
   Point2D,
 } from '../StrokeRecognizerBackend';
 
+export const DEFAULT_SUPPORTED_SHAPES = [
+  'Triangle',
+  'Rectangle',
+  'Circle',
+  'V',
+  'Caret',
+];
+
 export interface Template {
   name: string;
   points: Point2D[];
@@ -173,13 +181,8 @@ export class OneDollarUnistrokeRecognizer implements StrokeRecognizerBackend {
 
   constructor(context: StrokeRecognizerContext) {
     this.context = context;
-    const enabledTemplates = context.supportedShapes || [
-      'Triangle',
-      'Rectangle',
-      'Circle',
-      'V',
-      'Caret',
-    ];
+    const enabledTemplates =
+      context.supportedShapes || DEFAULT_SUPPORTED_SHAPES;
 
     if (enabledTemplates.includes('Triangle')) {
       // Triangle: Automatically generates 3 variations

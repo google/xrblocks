@@ -1,5 +1,7 @@
 import {deepMerge} from '../../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../../utils/Types';
+import {DEFAULT_SUPPORTED_SHAPES} from './providers/OneDollarUnistrokeRecognizer';
+import {JointName} from '../Hands';
 
 export type StrokeProvider = 'onedollar';
 
@@ -21,7 +23,7 @@ export class StrokeRecognitionOptions {
      * Options specific to the 'onedollar' provider.
      */
     onedollar: {
-      templates: ['Triangle', 'Rectangle', 'Circle', 'V', 'Caret'],
+      supportedShapes: DEFAULT_SUPPORTED_SHAPES,
     },
   };
 
@@ -39,6 +41,11 @@ export class StrokeRecognitionOptions {
    * The gesture that triggers stroke recording.
    */
   gesture = 'pinch';
+
+  /**
+   * The hand joint to track for stroke recognition.
+   */
+  joint: JointName = 'index-finger-tip';
 
   /**
    * Maximum number of points to capture in a single stroke.
