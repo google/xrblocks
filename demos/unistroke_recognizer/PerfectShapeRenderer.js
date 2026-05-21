@@ -32,7 +32,7 @@ export class PerfectShapeRenderer {
   init() {
     const geometries = PerfectShapeRenderer.getGeometries(this.shapeName);
     if (!geometries) return;
-    const { lineGeom, fillGeom } = geometries;
+    const {lineGeom, fillGeom} = geometries;
 
     this.material = new THREE.LineBasicMaterial({
       color: 0x00ff00,
@@ -161,7 +161,7 @@ export class PerfectShapeRenderer {
     if (!shape) return null;
 
     // Generate line geometry
-    const points = (name === 'Circle') ? shape.getPoints(32) : shape.getPoints();
+    const points = name === 'Circle' ? shape.getPoints(32) : shape.getPoints();
     const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
 
     // Generate fill geometry
@@ -170,6 +170,6 @@ export class PerfectShapeRenderer {
     }
     const fillGeom = new THREE.ShapeGeometry(shape);
 
-    return { lineGeom, fillGeom };
+    return {lineGeom, fillGeom};
   }
 }
