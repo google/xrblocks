@@ -1,21 +1,33 @@
 import * as THREE from 'three';
 import {GestureRecognition} from '../gestures/GestureRecognition';
+import {GestureEvent} from '../gestures/GestureEvents';
 import {User} from '../../core/User';
 import {Script} from '../../core/Script';
 
 import {OneDollarUnistrokeRecognizer} from './providers/OneDollarUnistrokeRecognizer';
 import {StrokeRecognitionOptions} from './StrokeRecognitionOptions';
+import {
+  StrokeRecognizerBackend,
+  StrokeRecognitionResult,
+} from './StrokeRecognizerBackend';
+
+type UnistrokeEventType = 'unistrokestart' | 'unistrokeupdate' | 'unistrokeend';
+
+interface UnistrokeEventDetail {
+  point?: THREE.Vector3;
+  result?: StrokeRecognitionResult;
+}
+
+type UnistrokeEvent = THREE.Event & {
+  type: UnistrokeEventType;
+  target: StrokeRecognizer;
+  detail: UnistrokeEventDetail;
+};
 
 export interface StrokeEventMap extends THREE.Object3DEventMap {
-  unistroke_started: THREE.Event & {type: 'unistroke_started'};
-  unistroke_updated: THREE.Event & {
-    type: 'unistroke_updated';
-    point: THREE.Vector3;
-  };
-  unistroke_ended: THREE.Event & {
-    type: 'unistroke_ended';
-    result: {name: string; score: number; points3D: THREE.Vector3[]} | null;
-  };
+  unistrokestart: UnistrokeEvent;
+  unistrokeupdate: UnistrokeEvent;
+  unistrokeend: UnistrokeEvent;
 }
 
 export class StrokeRecognizer extends Script<StrokeEventMap> {
@@ -28,7 +40,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   };
 
   private options!: StrokeRecognitionOptions;
-  private recognizer!: OneDollarUnistrokeRecognizer;
+  private recognizer!: StrokeRecognizerBackend;
   private capturedPoints: Array<{pos: THREE.Vector3; timestamp: number}> = [];
   private isActive = false;
   private isRecording = false;
@@ -91,22 +103,26 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
     const provider = this.options.providerConfig.provider;
     switch (provider) {
       case 'onedollar':
-        this.recognizer = new OneDollarUnistrokeRecognizer(
-          this.options.providerConfig.onedollar
-        );
+        this.recognizer = new OneDollarUnistrokeRecognizer({
+          camera: this.camera,
+          scene: this.scene,
+          supportedShapes: this.options.providerConfig.onedollar.templates,
+        });
         break;
       default:
         console.warn(
           `StrokeRecognizer: provider '${provider}' is unknown; falling back to 'onedollar'.`
         );
-        this.recognizer = new OneDollarUnistrokeRecognizer(
-          this.options.providerConfig.onedollar
-        );
+        this.recognizer = new OneDollarUnistrokeRecognizer({
+          camera: this.camera,
+          scene: this.scene,
+          supportedShapes: this.options.providerConfig.onedollar.templates,
+        });
         break;
     }
   }
 
-  private onGestureStart = (e: any) => {
+  private onGestureStart = (e: GestureEvent) => {
     if (e.detail.name === this.options.gesture) {
       if (!this.isPinching) {
         this.isPinching = true;
@@ -115,7 +131,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
     }
   };
 
-  private onGestureEnd = (e: any) => {
+  private onGestureEnd = (e: GestureEvent) => {
     if (
       e.detail.name === this.options.gesture &&
       e.detail.hand === this.activeHandLabel
@@ -158,7 +174,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
         this.isRecording = true;
         this.pinchStartTime = currentTime;
         this.clearPoints();
-        this.dispatchEvent({type: 'unistroke_started', target: this});
+        this.dispatchEvent({type: 'unistrokestart', target: this, detail: {}});
       }
 
       const elapsedSincePinch = currentTime - this.pinchStartTime;
@@ -177,9 +193,9 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
           indexTip.getWorldPosition(worldPos);
           this.addPoint(worldPos, currentTime);
           this.dispatchEvent({
-            type: 'unistroke_updated',
+            type: 'unistrokeupdate',
             target: this,
-            point: worldPos,
+            detail: {point: worldPos},
           });
         }
       }
@@ -188,7 +204,11 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
         this.isRecording = false;
         this.pinchEndTime = currentTime;
         const result = this.recognizeGesture();
-        this.dispatchEvent({type: 'unistroke_ended', target: this, result});
+        this.dispatchEvent({
+          type: 'unistrokeend',
+          target: this,
+          detail: result ? {result} : {},
+        });
       }
     }
   }
@@ -208,12 +228,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
         return {x: localPos.x, y: localPos.y};
       });
 
-      const result = this.recognizer.recognize(points2D);
-      return {
-        name: result.name,
-        score: result.score,
-        points3D: points3D, // Return points for shooting shape
-      };
+      return this.recognizer.recognize(points2D);
     }
     return null;
   }

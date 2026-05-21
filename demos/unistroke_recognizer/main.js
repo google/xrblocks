@@ -126,13 +126,14 @@ class PinchTracker extends xb.Script {
     this.unistrokeRecognizer.activate();
 
     // Attach listeners to StrokeRecognizer
-    this.unistrokeRecognizer.addEventListener('unistroke_started', (e) => {
+    this.unistrokeRecognizer.addEventListener('unistrokestart', (e) => {
       this.capturedPointsCount = 0;
       this.lineGeometry.setDrawRange(0, 0);
+      this.trackedPoints = [];
     });
 
-    this.unistrokeRecognizer.addEventListener('unistroke_updated', (e) => {
-      const pos = e.point;
+    this.unistrokeRecognizer.addEventListener('unistrokeupdate', (e) => {
+      const pos = e.detail.point;
       if (this.capturedPointsCount < this.maxPoints) {
         const index = this.capturedPointsCount;
         this.linePositions[index * 3] = pos.x;
@@ -143,18 +144,23 @@ class PinchTracker extends xb.Script {
         this.capturedPointsCount++;
         this.lineGeometry.setDrawRange(0, this.capturedPointsCount);
         this.lineGeometry.computeBoundingSphere();
+
+        this.trackedPoints.push(pos.clone());
       }
     });
 
-    this.unistrokeRecognizer.addEventListener('unistroke_ended', (e) => {
-      const result = e.result;
+    this.unistrokeRecognizer.addEventListener('unistrokeend', (e) => {
+      const {result} = e.detail;
       if (result) {
-        console.log(`Recognized: ${result.name} with score ${result.score}`);
-        this.hudText.text = `Recognized: ${result.name}\nScore: ${Math.round(result.score * 100)}%`;
+        const {recognizedShape, confidence} = result;
+        console.log(
+          `Recognized: ${recognizedShape} with confidence ${confidence}`
+        );
+        this.hudText.text = `Recognized: ${recognizedShape}\nScore: ${Math.round(confidence * 100)}%`;
         this.hudText.sync();
 
-        if (result.name !== 'Unknown' && result.score > 0.6) {
-          this.spawnShootingShape(result.name, result.points3D);
+        if (recognizedShape !== 'Unknown' && confidence > 0.6) {
+          this.spawnShootingShape(recognizedShape, this.trackedPoints);
         }
       }
     });

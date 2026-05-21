@@ -1,7 +1,9 @@
-export interface Point2D {
-  x: number;
-  y: number;
-}
+import {
+  StrokeRecognizerBackend,
+  StrokeRecognizerContext,
+  StrokeRecognitionResult,
+  Point2D,
+} from '../StrokeRecognizerBackend';
 
 export interface Template {
   name: string;
@@ -165,11 +167,13 @@ function distanceAtBestAngle(
   return Math.min(f1, f2);
 }
 
-export class OneDollarUnistrokeRecognizer {
+export class OneDollarUnistrokeRecognizer implements StrokeRecognizerBackend {
   templates: Template[] = [];
+  private context: StrokeRecognizerContext;
 
-  constructor(options?: {templates?: string[]}) {
-    const enabledTemplates = options?.templates || [
+  constructor(context: StrokeRecognizerContext) {
+    this.context = context;
+    const enabledTemplates = context.supportedShapes || [
       'Triangle',
       'Rectangle',
       'Circle',
@@ -266,7 +270,7 @@ export class OneDollarUnistrokeRecognizer {
     return points;
   }
 
-  recognize(points: Point2D[]) {
+  recognize(points: Point2D[]): StrokeRecognitionResult {
     const pointsForwardRotated = this.preprocess(points, true);
     const pointsBackwardRotated = this.preprocess(
       points.slice().reverse(),
@@ -316,9 +320,9 @@ export class OneDollarUnistrokeRecognizer {
     }
     return u !== -1
       ? {
-          name: this.templates[u].name,
-          score: 1 - b / (0.5 * Math.sqrt(250 * 250 + 250 * 250)),
+          recognizedShape: this.templates[u].name,
+          confidence: 1 - b / (0.5 * Math.sqrt(250 * 250 + 250 * 250)),
         }
-      : {name: 'Unknown', score: 0};
+      : {recognizedShape: 'Unknown', confidence: 0};
   }
 }
