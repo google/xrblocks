@@ -4,6 +4,7 @@ import {User} from '../../core/User';
 import {Script} from '../../core/Script';
 
 import {OneDollarUnistrokeRecognizer} from './providers/OneDollarUnistrokeRecognizer';
+import {StrokeRecognitionOptions} from './StrokeRecognitionOptions';
 
 export interface StrokeEventMap extends THREE.Object3DEventMap {
   unistroke_started: THREE.Event & {type: 'unistroke_started'};
@@ -23,17 +24,16 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
     camera: THREE.Camera,
     gestureRecognition: GestureRecognition,
     user: User,
+    options: StrokeRecognitionOptions,
   };
 
-  private recognizer = new OneDollarUnistrokeRecognizer();
-  private maxPoints = 1000;
+  private options!: StrokeRecognitionOptions;
+  private recognizer!: OneDollarUnistrokeRecognizer;
   private capturedPoints: Array<{pos: THREE.Vector3; timestamp: number}> = [];
   private isActive = false;
   private isRecording = false;
   private pinchStartTime = 0;
   private pinchEndTime = 0;
-  private startDelay = 0.2;
-  private endDelay = 0.2;
   private isPinching = false;
   private activeHandLabel: 'left' | 'right' | null = null;
 
@@ -47,16 +47,27 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
     camera,
     gestureRecognition,
     user,
+    options,
   }: {
     scene: THREE.Scene;
     camera: THREE.Camera;
     gestureRecognition: GestureRecognition;
     user: User;
+    options: StrokeRecognitionOptions;
   }) {
     this.scene = scene;
     this.camera = camera;
     this.gestureRecognition = gestureRecognition;
     this.user = user;
+    this.options = options;
+
+    this.configureProvider();
+
+    if (!this.options.enabled) {
+      console.info(
+        'StrokeRecognizer initialized but disabled. Call options.enableStrokes() to activate.'
+      );
+    }
 
     this.gestureRecognition.addEventListener(
       'gesturestart',
@@ -76,8 +87,27 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
     );
   }
 
+  private configureProvider() {
+    const provider = this.options.providerConfig.provider;
+    switch (provider) {
+      case 'onedollar':
+        this.recognizer = new OneDollarUnistrokeRecognizer(
+          this.options.providerConfig.onedollar
+        );
+        break;
+      default:
+        console.warn(
+          `StrokeRecognizer: provider '${provider}' is unknown; falling back to 'onedollar'.`
+        );
+        this.recognizer = new OneDollarUnistrokeRecognizer(
+          this.options.providerConfig.onedollar
+        );
+        break;
+    }
+  }
+
   private onGestureStart = (e: any) => {
-    if (e.detail.name === 'pinch') {
+    if (e.detail.name === this.options.gesture) {
       if (!this.isPinching) {
         this.isPinching = true;
         this.activeHandLabel = e.detail.hand;
@@ -86,7 +116,10 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   };
 
   private onGestureEnd = (e: any) => {
-    if (e.detail.name === 'pinch' && e.detail.hand === this.activeHandLabel) {
+    if (
+      e.detail.name === this.options.gesture &&
+      e.detail.hand === this.activeHandLabel
+    ) {
       this.isPinching = false;
       this.activeHandLabel = null;
     }
@@ -106,12 +139,13 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   }
 
   addPoint(pos: THREE.Vector3, timestamp: number) {
-    if (this.capturedPoints.length < this.maxPoints) {
+    if (this.capturedPoints.length < this.options.maxPoints) {
       this.capturedPoints.push({pos: pos.clone(), timestamp: timestamp});
     }
   }
 
   update() {
+    if (!this.options.enabled) return;
     if (!this.isActive) return;
 
     const currentTime = Date.now() / 1000; // Use seconds
@@ -129,7 +163,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
 
       const elapsedSincePinch = currentTime - this.pinchStartTime;
 
-      if (elapsedSincePinch > this.startDelay) {
+      if (elapsedSincePinch > this.options.startDelay) {
         let handEnum = this.activeHandLabel === 'left' ? 0 : 1;
         if (!this.isPinching && isSimulatorPinching) {
           if (this.user.isSelecting?.(0)) handEnum = 0;
@@ -160,7 +194,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   }
 
   private recognizeGesture() {
-    const cutoffTime = this.pinchEndTime - this.endDelay;
+    const cutoffTime = this.pinchEndTime - this.options.endDelay;
     const filteredPoints = this.capturedPoints.filter(
       (p) => p.timestamp <= cutoffTime
     );

@@ -168,85 +168,83 @@ function distanceAtBestAngle(
 export class OneDollarUnistrokeRecognizer {
   templates: Template[] = [];
 
-  constructor() {
-    // Triangle: Add 3 variations for different starting corners
-    this.addTemplate('Triangle', [
-      {x: 0, y: 0},
-      {x: 50, y: 100},
-      {x: 100, y: 0},
-      {x: 0, y: 0},
-    ]);
-    this.addTemplate('Triangle', [
-      {x: 50, y: 100},
-      {x: 100, y: 0},
-      {x: 0, y: 0},
-      {x: 50, y: 100},
-    ]);
-    this.addTemplate('Triangle', [
-      {x: 100, y: 0},
-      {x: 0, y: 0},
-      {x: 50, y: 100},
-      {x: 100, y: 0},
-    ]);
-
-    // Rectangle: Add 4 variations for different starting corners
-    this.addTemplate('Rectangle', [
-      {x: 0, y: 0},
-      {x: 0, y: 100},
-      {x: 100, y: 100},
-      {x: 100, y: 0},
-      {x: 0, y: 0},
-    ]);
-    this.addTemplate('Rectangle', [
-      {x: 0, y: 100},
-      {x: 100, y: 100},
-      {x: 100, y: 0},
-      {x: 0, y: 0},
-      {x: 0, y: 100},
-    ]);
-    this.addTemplate('Rectangle', [
-      {x: 100, y: 100},
-      {x: 100, y: 0},
-      {x: 0, y: 0},
-      {x: 0, y: 100},
-      {x: 100, y: 100},
-    ]);
-    this.addTemplate('Rectangle', [
-      {x: 100, y: 0},
-      {x: 0, y: 0},
-      {x: 0, y: 100},
-      {x: 100, y: 100},
-      {x: 100, y: 0},
-    ]);
-
-    this.addTemplate(
+  constructor(options?: {templates?: string[]}) {
+    const enabledTemplates = options?.templates || [
+      'Triangle',
+      'Rectangle',
+      'Circle',
       'V',
-      [
-        {x: 0, y: 100},
-        {x: 50, y: 0},
-        {x: 100, y: 100},
-      ],
-      false
-    );
-    this.addTemplate(
       'Caret',
-      [
+    ];
+
+    if (enabledTemplates.includes('Triangle')) {
+      // Triangle: Automatically generates 3 variations
+      this.addClosedTemplate('Triangle', [
         {x: 0, y: 0},
         {x: 50, y: 100},
         {x: 100, y: 0},
-      ],
-      false
-    );
+      ]);
+    }
 
-    // Circle: Add 4 variations for different starting points
-    for (let offset = 0; offset < 4; offset++) {
-      const circlePoints = [];
-      const startAngle = (offset / 4) * Math.PI * 2;
-      for (let i = 0; i <= 20; i++) {
-        const angle = startAngle + (i / 20) * Math.PI * 2;
-        circlePoints.push({x: Math.cos(angle) * 100, y: Math.sin(angle) * 100});
+    if (enabledTemplates.includes('Rectangle')) {
+      // Rectangle: Automatically generates 4 variations
+      this.addClosedTemplate('Rectangle', [
+        {x: 0, y: 0},
+        {x: 0, y: 100},
+        {x: 100, y: 100},
+        {x: 100, y: 0},
+      ]);
+    }
+
+    if (enabledTemplates.includes('V')) {
+      this.addTemplate(
+        'V',
+        [
+          {x: 0, y: 100},
+          {x: 50, y: 0},
+          {x: 100, y: 100},
+        ],
+        false
+      );
+    }
+
+    if (enabledTemplates.includes('Caret')) {
+      this.addTemplate(
+        'Caret',
+        [
+          {x: 0, y: 0},
+          {x: 50, y: 100},
+          {x: 100, y: 0},
+        ],
+        false
+      );
+    }
+
+    if (enabledTemplates.includes('Circle')) {
+      // Circle: Add 4 variations for different starting points
+      for (let offset = 0; offset < 4; offset++) {
+        const circlePoints = [];
+        const startAngle = (offset / 4) * Math.PI * 2;
+        for (let i = 0; i <= 20; i++) {
+          const angle = startAngle + (i / 20) * Math.PI * 2;
+          circlePoints.push({
+            x: Math.cos(angle) * 100,
+            y: Math.sin(angle) * 100,
+          });
+        }
+        this.addTemplate('Circle', circlePoints);
       }
-      this.addTemplate('Circle', circlePoints);
+    }
+  }
+
+  addClosedTemplate(name: string, points: Point2D[], useRotation = true) {
+    const n = points.length;
+    for (let i = 0; i < n; i++) {
+      const permutedPoints = [];
+      for (let j = 0; j <= n; j++) {
+        permutedPoints.push(points[(i + j) % n]);
+      }
+      this.addTemplate(name, permutedPoints, useRotation);
     }
   }
 

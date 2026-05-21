@@ -9,6 +9,7 @@ import {DepthOptions} from '../depth/DepthOptions';
 import {Hands} from '../input/Hands';
 import {GestureRecognition} from '../input/gestures/GestureRecognition';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
+import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {Input} from '../input/Input';
 import {Lighting} from '../lighting/Lighting';
 import {Physics} from '../physics/Physics';
@@ -191,6 +192,7 @@ export class Core {
     this.registry.register(options.ai, AIOptions);
     this.registry.register(options.sound, SoundOptions);
     this.registry.register(options.gestures, GestureRecognitionOptions);
+    this.registry.register(options.strokes, StrokeRecognitionOptions);
 
     if (options.transition.enabled) {
       this.transition = new XRTransition();

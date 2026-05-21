@@ -302,7 +302,7 @@ class PinchTracker extends xb.Script {
 const options = new xb.Options();
 options.world.enabled = true;
 options.hands.enabled = true;
-options.enableGestures();
+options.enableStrokes();
 options.simulator.modeToggle.enabled = true;
 options.xrButton.showEnterSimulatorButton = true;
 
