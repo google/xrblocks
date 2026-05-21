@@ -1,6 +1,6 @@
 import * as xb from 'xrblocks';
 import * as THREE from 'three';
-import {Text} from 'troika-three-text';
+import {UICore, UIText, UIPanel, HeadLeashBehavior} from 'uiblocks';
 import {StrokeRenderer} from './StrokeRenderer.js';
 import {ShootingShape} from './ShootingShape.js';
 
@@ -17,6 +17,7 @@ export class UnistrokeTracker extends xb.Script {
     this.gestureRecognition = gestureRecognition;
     console.log('UnistrokeTracker initialized');
 
+    this.uiCore = new UICore(this);
     this.initHudText();
 
     this.strokeRenderer = new StrokeRenderer(this.scene);
@@ -30,10 +31,16 @@ export class UnistrokeTracker extends xb.Script {
     // Attach listeners to StrokeRecognizer
     this.unistrokeRecognizer.addEventListener('unistrokestart', (e) => {
       this.strokeRenderer.clear();
+      this.hudText.setText('Capturing...');
+      this.hudTextScore.setText('');
     });
 
     this.unistrokeRecognizer.addEventListener('unistrokeupdate', (e) => {
-      this.strokeRenderer.addPoint(e.detail.point);
+      const pt = e.detail.point;
+      this.strokeRenderer.addPoint(pt);
+      this.hudTextCoords.setText(
+        `Coords: ${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)}`
+      );
     });
 
     this.unistrokeRecognizer.addEventListener('unistrokeend', (e) => {
@@ -43,8 +50,10 @@ export class UnistrokeTracker extends xb.Script {
         console.log(
           `Recognized: ${recognizedShape} with confidence ${confidence}`
         );
-        this.hudText.text = `Recognized: ${recognizedShape}\nScore: ${Math.round(confidence * 100)}%`;
-        this.hudText.sync();
+        this.hudText.setText(`Recognized: ${recognizedShape}`);
+        this.hudTextScore.setText(
+          `Confidence: ${Math.round(confidence * 100)}%`
+        );
 
         if (recognizedShape !== 'Unknown' && confidence > 0.6) {
           const points = this.strokeRenderer.getPoints();
@@ -57,18 +66,56 @@ export class UnistrokeTracker extends xb.Script {
   }
 
   initHudText() {
-    this.hudText = new Text();
-    this.hudText.text = 'Pinch to start';
-    this.hudText.fontSize = 0.03;
-    this.hudText.color = 0x00ffff;
-    this.hudText.maxWidth = 0.5;
-    this.hudText.position.set(0, 0, -0.5); // 50cm in front of camera
-    this.hudText.textAlign = 'center';
-    this.hudText.anchorX = 'center';
-    this.hudText.anchorY = 'middle';
+    const card = this.uiCore.createCard({
+      name: 'HUDCard',
+      sizeX: 0.5,
+      sizeY: 0.2,
+      position: new THREE.Vector3(0, 0.3, -1.0),
+      behaviors: [
+        new HeadLeashBehavior({
+          offset: new THREE.Vector3(0, 0.3, -1.0),
+          posLerp: 0.1,
+          rotLerp: 0.1,
+        }),
+      ],
+    });
 
-    this.scene.add(this.hudText);
-    this.hudText.sync();
+    const panel = new UIPanel({
+      flexDirection: 'column',
+      padding: 20,
+      gap: 10,
+      fillColor: '#1a1a1acc', // Semi-transparent dark bg
+      cornerRadius: 20,
+      strokeWidth: 2,
+      strokeColor: '#ffffff33',
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: '100%',
+      height: '100%',
+    });
+    card.add(panel);
+
+    this.hudText = new UIText('Pinch to start', {
+      color: '#00ffff',
+      fontSize: 24,
+      fontWeight: 'bold',
+      textAlign: 'center',
+    });
+    panel.add(this.hudText);
+
+    this.hudTextScore = new UIText('', {
+      color: '#00ffff',
+      fontSize: 20,
+      textAlign: 'center',
+    });
+    panel.add(this.hudTextScore);
+
+    this.hudTextCoords = new UIText('', {
+      color: '#00ffff',
+      fontSize: 16,
+      textAlign: 'center',
+    });
+    panel.add(this.hudTextCoords);
   }
 
   spawnShootingShape(shapeName, handPos) {
@@ -89,19 +136,6 @@ export class UnistrokeTracker extends xb.Script {
   }
 
   update() {
-    // Update HUD position to follow camera
-    if (this.hudText && this.camera) {
-      const position = new THREE.Vector3();
-      const quaternion = new THREE.Quaternion();
-
-      this.camera.getWorldPosition(position);
-      this.camera.getWorldQuaternion(quaternion);
-
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
-      this.hudText.position.copy(position).addScaledVector(forward, 0.5);
-      this.hudText.quaternion.copy(quaternion);
-    }
-
     // Update shooting shapes
     const delta = xb.getDeltaTime ? xb.getDeltaTime() : 0.016;
 
