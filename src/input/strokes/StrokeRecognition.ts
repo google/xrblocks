@@ -178,19 +178,33 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
     }
   };
 
+  /**
+   * Activates the stroke recognizer, enabling gesture tracking and recording.
+   */
   activate() {
     this.isActive = true;
   }
 
+  /**
+   * Deactivates the stroke recognizer and clears any captured points.
+   */
   deactivate() {
     this.isActive = false;
     this.clearPoints();
   }
 
+  /**
+   * Clears the list of captured points.
+   */
   clearPoints() {
     this.capturedPoints = [];
   }
 
+  /**
+   * Adds a point to the current stroke if the maximum point limit has not been reached.
+   * @param pos The world position of the point.
+   * @param timestamp The timestamp when the point was captured.
+   */
   addPoint(pos: THREE.Vector3, timestamp: number) {
     if (this.capturedPoints.length < this.options.maxPoints) {
       this.capturedPoints.push({pos: pos.clone(), timestamp: timestamp});
