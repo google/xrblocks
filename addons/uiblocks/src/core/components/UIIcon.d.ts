@@ -76,9 +76,11 @@ declare const UIIcon_base: {
         frustumCulled: boolean;
         renderOrder: number;
         animations: import("three").AnimationClip[];
-        userData: Record<string, any>;
         customDepthMaterial?: import("three").Material | undefined;
         customDistanceMaterial?: import("three").Material | undefined;
+        static: boolean;
+        userData: Record<string, any>;
+        pivot: import("three").Vector3 | null;
         onBeforeShadow: ((renderer: import("three").WebGLRenderer, scene: import("three").Scene, camera: import("three").Camera, shadowCamera: import("three").Camera, geometry: import("three").BufferGeometry, depthMaterial: import("three").Material, group: import("three").Group) => void) & ((renderer: import("three").WebGLRenderer, scene: import("three").Scene, camera: import("three").Camera, shadowCamera: import("three").Camera, geometry: import("three").BufferGeometry, depthMaterial: import("three").Material, group: import("three").Group) => void);
         onAfterShadow: ((renderer: import("three").WebGLRenderer, scene: import("three").Scene, camera: import("three").Camera, shadowCamera: import("three").Camera, geometry: import("three").BufferGeometry, depthMaterial: import("three").Material, group: import("three").Group) => void) & ((renderer: import("three").WebGLRenderer, scene: import("three").Scene, camera: import("three").Camera, shadowCamera: import("three").Camera, geometry: import("three").BufferGeometry, depthMaterial: import("three").Material, group: import("three").Group) => void);
         onBeforeRender: ((renderer: import("three").WebGLRenderer, scene: import("three").Scene, camera: import("three").Camera, geometry: import("three").BufferGeometry, material: import("three").Material, group: import("three").Group) => void) & ((renderer: import("three").WebGLRenderer, scene: import("three").Scene, camera: import("three").Camera, geometry: import("three").BufferGeometry, material: import("three").Material, group: import("three").Group) => void);
@@ -132,7 +134,6 @@ declare const UIIcon_base: {
         copy: ((object: import("three").Object3D, recursive?: boolean) => any) & ((object: import("three").Object3D, recursive?: boolean) => /*elided*/ any);
         count?: number | undefined;
         occlusionTest?: boolean | undefined;
-        static?: boolean | undefined;
         addEventListener: (<T extends keyof import("three").Object3DEventMap>(type: T, listener: import("three").EventListener<import("three").Object3DEventMap[T], T, any>) => void) & (<T extends keyof import("three").Object3DEventMap>(type: T, listener: import("three").EventListener<import("three").Object3DEventMap[T], T, /*elided*/ any>) => void);
         hasEventListener: (<T extends keyof import("three").Object3DEventMap>(type: T, listener: import("three").EventListener<import("three").Object3DEventMap[T], T, any>) => boolean) & (<T extends keyof import("three").Object3DEventMap>(type: T, listener: import("three").EventListener<import("three").Object3DEventMap[T], T, /*elided*/ any>) => boolean);
         removeEventListener: (<T extends keyof import("three").Object3DEventMap>(type: T, listener: import("three").EventListener<import("three").Object3DEventMap[T], T, any>) => void) & (<T extends keyof import("three").Object3DEventMap>(type: T, listener: import("three").EventListener<import("three").Object3DEventMap[T], T, /*elided*/ any>) => void);

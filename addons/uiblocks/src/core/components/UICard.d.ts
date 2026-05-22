@@ -90,9 +90,11 @@ declare const UICard_base: {
         frustumCulled: boolean;
         renderOrder: number;
         animations: THREE.AnimationClip[];
-        userData: Record<string, any>;
         customDepthMaterial?: THREE.Material | undefined;
         customDistanceMaterial?: THREE.Material | undefined;
+        static: boolean;
+        userData: Record<string, any>;
+        pivot: THREE.Vector3 | null;
         onBeforeShadow: ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group) => void) & ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group) => void);
         onAfterShadow: ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group) => void) & ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group) => void);
         onBeforeRender: ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material, group: THREE.Group) => void) & ((renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material, group: THREE.Group) => void);
@@ -146,7 +148,6 @@ declare const UICard_base: {
         copy: ((object: THREE.Object3D, recursive?: boolean) => any) & ((object: THREE.Object3D, recursive?: boolean) => /*elided*/ any);
         count?: number | undefined;
         occlusionTest?: boolean | undefined;
-        static?: boolean | undefined;
         addEventListener: (<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, any>) => void) & (<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>) => void);
         hasEventListener: (<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, any>) => boolean) & (<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>) => boolean);
         removeEventListener: (<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, any>) => void) & (<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>) => void);

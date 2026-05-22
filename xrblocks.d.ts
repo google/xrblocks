@@ -15,14 +15,14 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 448ac1c
- * @builddate 2026-05-22T21:08:14.111Z
+ * @commitid dcce191
+ * @builddate 2026-05-22T21:50:38.519Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
  * 1. Include the following importmap for maximum compatibility:
-    "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
     "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
     "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
     "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
@@ -581,9 +581,11 @@ declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(base: TB
         frustumCulled: boolean;
         renderOrder: number;
         animations: THREE.AnimationClip[];
-        userData: Record<string, any>;
         customDepthMaterial?: THREE.Material | undefined;
         customDistanceMaterial?: THREE.Material | undefined;
+        static: boolean;
+        userData: Record<string, any>;
+        pivot: THREE.Vector3 | null;
         onBeforeShadow(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group): void;
         onAfterShadow(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group): void;
         onBeforeRender(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material, group: THREE.Group): void;
@@ -632,7 +634,6 @@ declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(base: TB
         copy(object: THREE.Object3D, recursive?: boolean): /*elided*/ any;
         count?: number | undefined;
         occlusionTest?: boolean | undefined;
-        static?: boolean | undefined;
         addEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
         hasEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): boolean;
         removeEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
@@ -796,9 +797,11 @@ declare const ScriptMixinObject3D: {
         frustumCulled: boolean;
         renderOrder: number;
         animations: THREE.AnimationClip[];
-        userData: Record<string, any>;
         customDepthMaterial?: THREE.Material | undefined;
         customDistanceMaterial?: THREE.Material | undefined;
+        static: boolean;
+        userData: Record<string, any>;
+        pivot: THREE.Vector3 | null;
         onBeforeShadow(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group): void;
         onAfterShadow(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group): void;
         onBeforeRender(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material, group: THREE.Group): void;
@@ -847,7 +850,6 @@ declare const ScriptMixinObject3D: {
         copy(object: THREE.Object3D, recursive?: boolean): /*elided*/ any;
         count?: number | undefined;
         occlusionTest?: boolean | undefined;
-        static?: boolean | undefined;
         addEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
         hasEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): boolean;
         removeEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
@@ -1017,9 +1019,11 @@ declare const ScriptMixinMeshScript: {
         frustumCulled: boolean;
         renderOrder: number;
         animations: THREE.AnimationClip[];
-        userData: Record<string, any>;
         customDepthMaterial?: THREE.Material | undefined;
         customDistanceMaterial?: THREE.Material | undefined;
+        static: boolean;
+        userData: Record<string, any>;
+        pivot: THREE.Vector3 | null;
         onBeforeShadow(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group): void;
         onAfterShadow(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, shadowCamera: THREE.Camera, geometry: THREE.BufferGeometry, depthMaterial: THREE.Material, group: THREE.Group): void;
         onBeforeRender(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, geometry: THREE.BufferGeometry, material: THREE.Material, group: THREE.Group): void;
@@ -1068,7 +1072,6 @@ declare const ScriptMixinMeshScript: {
         copy(object: THREE.Object3D, recursive?: boolean): /*elided*/ any;
         count?: number | undefined;
         occlusionTest?: boolean | undefined;
-        static?: boolean | undefined;
         addEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
         hasEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): boolean;
         removeEventListener<T extends keyof THREE.Object3DEventMap>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
@@ -4972,12 +4975,12 @@ declare class User extends Script {
     /**
      * Maps a hand index (0 or 1) to a set of meshes it is currently touching.
      */
-    touchedObjects: Map<number, Set<THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes, THREE.BufferGeometryEventMap>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>>;
+    touchedObjects: Map<number, Set<THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes, THREE.BufferGeometryEventMap>, THREE.Material<THREE.MaterialEventMap> | THREE.Material<THREE.MaterialEventMap>[], THREE.Object3DEventMap>>>;
     /**
      * Maps a hand index to another map that associates a grabbed mesh with its
      * initial grab event data.
      */
-    grabbedObjects: Map<number, Map<THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes, THREE.BufferGeometryEventMap>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>, ObjectGrabEvent>>;
+    grabbedObjects: Map<number, Map<THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes, THREE.BufferGeometryEventMap>, THREE.Material<THREE.MaterialEventMap> | THREE.Material<THREE.MaterialEventMap>[], THREE.Object3DEventMap>, ObjectGrabEvent>>;
     input: Input;
     scene: THREE.Scene;
     controllers: Controller[];
@@ -7817,7 +7820,7 @@ declare function showOnlyInRightEye<T extends THREE.Object3D>(obj: T): T;
  * @returns A promise that resolves to an array containing the left and right
  *     eye textures.
  */
-declare function loadStereoImageAsTextures(url: string): Promise<THREE.Texture<unknown>[]>;
+declare function loadStereoImageAsTextures(url: string): Promise<THREE.Texture<unknown, THREE.TextureEventMap>[]>;
 
 type MaterialSymbolsViewOptions = {
     /** The name of the icon (e.g., 'sunny', 'home'). */
