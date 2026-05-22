@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 0550ffc
- * @builddate 2026-05-22T00:24:20.059Z
+ * @commitid 448ac1c
+ * @builddate 2026-05-22T21:08:14.111Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7913,6 +7913,393 @@ class GestureRecognition extends Script {
     }
 }
 
+/**
+ * Abstract base class for stroke recognition backends.
+ */
+class StrokeRecognizerBackend {
+    constructor(context) {
+        this.context = context;
+    }
+}
+
+const DEFAULT_SUPPORTED_SHAPES = [
+    'Triangle',
+    'Rectangle',
+    'Circle',
+    'V',
+    'Caret',
+];
+/** Calculates the Euclidean distance between two 2D points. */
+function distance(p1, p2) {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+/** Calculates the total length of a path defined by a list of points. */
+function pathLength(points) {
+    let d = 0;
+    for (let i = 1; i < points.length; i++) {
+        d += distance(points[i - 1], points[i]);
+    }
+    return d;
+}
+/** Resamples a path into n evenly spaced points. */
+function resample(points, n) {
+    const interval = pathLength(points) / (n - 1);
+    let D = 0;
+    const newPoints = [points[0]];
+    const pts = points.slice();
+    let i = 1;
+    while (i < pts.length) {
+        const pt1 = pts[i - 1];
+        const pt2 = pts[i];
+        const d = distance(pt1, pt2);
+        if (D + d >= interval) {
+            const t = (interval - D) / d;
+            const q = {
+                x: pt1.x + t * (pt2.x - pt1.x),
+                y: pt1.y + t * (pt2.y - pt1.y),
+            };
+            newPoints.push(q);
+            pts.splice(i, 0, q);
+            D = 0;
+        }
+        else {
+            D += d;
+        }
+        i++;
+    }
+    if (newPoints.length === n - 1) {
+        newPoints.push(pts[pts.length - 1]);
+    }
+    return newPoints;
+}
+/** Calculates the centroid (center of mass) of a list of points. */
+function getCentroid(points) {
+    let x = 0, y = 0;
+    for (let i = 0; i < points.length; i++) {
+        x += points[i].x;
+        y += points[i].y;
+    }
+    return { x: x / points.length, y: y / points.length };
+}
+/** Calculates the bounding box of a list of points. */
+function boundingBox(points) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < points.length; i++) {
+        minX = Math.min(minX, points[i].x);
+        maxX = Math.max(maxX, points[i].x);
+        minY = Math.min(minY, points[i].y);
+        maxY = Math.max(maxY, points[i].y);
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+/** Rotates a list of points by a given angle in radians around their centroid. */
+function rotateBy(points, radians, centroid = getCentroid(points)) {
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const newPoints = [];
+    for (let i = 0; i < points.length; i++) {
+        const qx = (points[i].x - centroid.x) * cos -
+            (points[i].y - centroid.y) * sin +
+            centroid.x;
+        const qy = (points[i].x - centroid.x) * sin +
+            (points[i].y - centroid.y) * cos +
+            centroid.y;
+        newPoints.push({ x: qx, y: qy });
+    }
+    return newPoints;
+}
+/** Rotates a list of points so that the angle between the first point and the centroid is zero. */
+function rotateToZero(points) {
+    const centroid = getCentroid(points);
+    const theta = Math.atan2(points[0].y - centroid.y, points[0].x - centroid.x);
+    return rotateBy(points, -theta, centroid);
+}
+/** Scales a list of points to a standard size (bounding box width/height becomes size). */
+function scaleTo(points, size) {
+    const B = boundingBox(points);
+    const newPoints = [];
+    const EPSILON = 1e-5;
+    const width = Math.max(B.width, EPSILON);
+    const height = Math.max(B.height, EPSILON);
+    for (let i = 0; i < points.length; i++) {
+        const qx = points[i].x * (size / width);
+        const qy = points[i].y * (size / height);
+        newPoints.push({ x: qx, y: qy });
+    }
+    return newPoints;
+}
+/** Translates a list of points so that their centroid matches the given point. */
+function translateTo(points, pt) {
+    const centroid = getCentroid(points);
+    const newPoints = [];
+    for (let i = 0; i < points.length; i++) {
+        const qx = points[i].x + pt.x - centroid.x;
+        const qy = points[i].y + pt.y - centroid.y;
+        newPoints.push({ x: qx, y: qy });
+    }
+    return newPoints;
+}
+/** Calculates the average distance between corresponding points in two paths. */
+function pathDistance(pts1, pts2) {
+    let d = 0;
+    for (let i = 0; i < pts1.length; i++) {
+        d += distance(pts1[i], pts2[i]);
+    }
+    return d / pts1.length;
+}
+/** Calculates the path distance between a candidate path and a template at a specific angle. */
+function distanceAtAngle(points, template, radians, centroid = getCentroid(points)) {
+    const newPoints = rotateBy(points, radians, centroid);
+    return pathDistance(newPoints, template.points);
+}
+/** Finds the minimum path distance between a candidate path and a template by searching for the best angle using Golden Section Search. */
+function distanceAtBestAngle(points, template, a, b, threshold) {
+    const phi = 0.5 * (Math.sqrt(5) - 1);
+    const centroid = getCentroid(points);
+    let x1 = phi * a + (1 - phi) * b;
+    let x2 = (1 - phi) * a + phi * b;
+    let f1 = distanceAtAngle(points, template, x1, centroid);
+    let f2 = distanceAtAngle(points, template, x2, centroid);
+    while (Math.abs(b - a) > threshold) {
+        if (f1 < f2) {
+            b = x2;
+            x2 = x1;
+            f2 = f1;
+            x1 = phi * a + (1 - phi) * b;
+            f1 = distanceAtAngle(points, template, x1, centroid);
+        }
+        else {
+            a = x1;
+            x1 = x2;
+            f1 = f2;
+            x2 = (1 - phi) * a + phi * b;
+            f2 = distanceAtAngle(points, template, x2, centroid);
+        }
+    }
+    return Math.min(f1, f2);
+}
+/**
+ * Implementation of the $1 Unistroke recognizer algorithm.
+ * It recognizes 2D strokes by comparing them against a set of predefined templates
+ * (e.g., Triangle, Rectangle, Circle) after preprocessing them (resampling, rotating, scaling).
+ * Supports bi-directional strokes by checking both forward and backward directions.
+ * Based on https://depts.washington.edu/acelab/proj/dollar/index.html.
+ */
+class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
+    constructor(context) {
+        super(context);
+        this.templates = [];
+        const enabledTemplates = context.supportedShapes || DEFAULT_SUPPORTED_SHAPES;
+        this.populateTemplates(enabledTemplates);
+    }
+    /**
+     * Recognizes a stroke from a list of 2D points by comparing it against stored templates.
+     * Supports both forward and backward matching to handle bi-directional strokes.
+     * @param points - The list of points captured during the stroke.
+     * @returns The recognition result containing the shape name and confidence score.
+     */
+    recognize(points) {
+        const resampledForward = resample(points, 64);
+        const resampledBackward = resampledForward.slice().reverse();
+        const pointsForwardUnrotated = this.scaleAndTranslate(resampledForward);
+        const pointsBackwardUnrotated = pointsForwardUnrotated.slice().reverse();
+        const pointsForwardRotated = this.scaleAndTranslate(rotateToZero(resampledForward));
+        const pointsBackwardRotated = this.scaleAndTranslate(rotateToZero(resampledBackward));
+        let bestDistance = Infinity;
+        let bestTemplateIndex = -1;
+        for (let i = 0; i < this.templates.length; i++) {
+            const useRotation = this.templates[i].useRotation;
+            const ptsForward = useRotation
+                ? pointsForwardRotated
+                : pointsForwardUnrotated;
+            const ptsBackward = useRotation
+                ? pointsBackwardRotated
+                : pointsBackwardUnrotated;
+            // Find the best matching angle for the stroke drawn in the forward direction.
+            // We search within +/- 45 degrees with a step threshold of 2 degrees.
+            const forwardDistance = distanceAtBestAngle(ptsForward, this.templates[i], (-45 * Math.PI) / 180, (45 * Math.PI) / 180, (2 * Math.PI) / 180);
+            // Find the best matching angle for the stroke drawn in the reverse direction.
+            // This allows the user to draw shapes in either direction (e.g. clockwise or counter-clockwise).
+            const backwardDistance = distanceAtBestAngle(ptsBackward, this.templates[i], (-45 * Math.PI) / 180, (45 * Math.PI) / 180, (2 * Math.PI) / 180);
+            if (forwardDistance < bestDistance) {
+                bestDistance = forwardDistance;
+                bestTemplateIndex = i;
+            }
+            if (backwardDistance < bestDistance) {
+                bestDistance = backwardDistance;
+                bestTemplateIndex = i;
+            }
+        }
+        return bestTemplateIndex !== -1
+            ? {
+                recognizedShape: this.templates[bestTemplateIndex].name,
+                confidence: this.calculateConfidence(bestDistance),
+            }
+            : { recognizedShape: 'Unknown', confidence: 0 };
+    }
+    /**
+     * Populates the templates based on the enabled shapes.
+     * @param enabledTemplates - List of shape names to enable.
+     */
+    populateTemplates(enabledTemplates) {
+        if (enabledTemplates.includes('Triangle')) {
+            // Triangle: Automatically generates 3 variations
+            this.addClosedTemplate('Triangle', [
+                { x: 0, y: 0 },
+                { x: 50, y: 100 },
+                { x: 100, y: 0 },
+            ]);
+        }
+        if (enabledTemplates.includes('Rectangle')) {
+            // Rectangle: Automatically generates 4 variations
+            this.addClosedTemplate('Rectangle', [
+                { x: 0, y: 0 },
+                { x: 0, y: 100 },
+                { x: 100, y: 100 },
+                { x: 100, y: 0 },
+            ]);
+        }
+        if (enabledTemplates.includes('V')) {
+            this.addTemplate('V', [
+                { x: 0, y: 100 },
+                { x: 50, y: 0 },
+                { x: 100, y: 100 },
+            ], false);
+        }
+        if (enabledTemplates.includes('Caret')) {
+            this.addTemplate('Caret', [
+                { x: 0, y: 0 },
+                { x: 50, y: 100 },
+                { x: 100, y: 0 },
+            ], false);
+        }
+        if (enabledTemplates.includes('Circle')) {
+            // Circle: Add 4 variations for different starting points
+            for (let offset = 0; offset < 4; offset++) {
+                const circlePoints = [];
+                const startAngle = (offset / 4) * Math.PI * 2;
+                for (let i = 0; i <= 20; i++) {
+                    const angle = startAngle + (i / 20) * Math.PI * 2;
+                    circlePoints.push({
+                        x: Math.cos(angle) * 100,
+                        y: Math.sin(angle) * 100,
+                    });
+                }
+                this.addTemplate('Circle', circlePoints);
+            }
+        }
+    }
+    /**
+     * Adds a template for a closed shape by automatically generating cyclic permutations
+     * of the points to support different starting points.
+     * @param name - The name of the shape.
+     * @param points -  The points defining the shape.
+     * @param useRotation - Whether to use rotation invariance.
+     */
+    addClosedTemplate(name, points, useRotation = true) {
+        const n = points.length;
+        for (let i = 0; i < n; i++) {
+            const permutedPoints = [];
+            for (let j = 0; j <= n; j++) {
+                permutedPoints.push(points[(i + j) % n]);
+            }
+            this.addTemplate(name, permutedPoints, useRotation);
+        }
+    }
+    /**
+     * Adds a template to the recognizer.
+     * @param name - The name of the shape.
+     * @param points - The points defining the shape.
+     * @param useRotation - Whether to use rotation invariance.
+     */
+    addTemplate(name, points, useRotation = true) {
+        this.templates.push({
+            name: name,
+            points: this.preprocess(points, useRotation),
+            useRotation: useRotation,
+        });
+    }
+    /**
+     * Preprocesses a list of points by resampling, optionally rotating to zero,
+     * scaling to a standard size, and translating to the origin.
+     * @param points - The list of points to preprocess.
+     * @param useRotation - Whether to rotate the points to zero.
+     * @returns The preprocessed list of points.
+     */
+    preprocess(points, useRotation = true) {
+        points = resample(points, 64);
+        if (useRotation) {
+            points = rotateToZero(points);
+        }
+        return this.scaleAndTranslate(points);
+    }
+    /**
+     * Scales points to a standard size and translates them to the origin.
+     * @param points - The list of points to scale and translate.
+     * @returns The scaled and translated list of points.
+     */
+    scaleAndTranslate(points) {
+        return translateTo(scaleTo(points, 250), { x: 0, y: 0 });
+    }
+    /**
+     * Calculates the confidence score based on the distance to the best matching template.
+     * @param distance - The distance to the best matching template.
+     * @returns The confidence score between 0 and 1.
+     */
+    calculateConfidence(distance) {
+        const size = 250; // Matching the size in preprocess
+        const diagonal = Math.sqrt(size * size + size * size);
+        const halfDiagonal = 0.5 * diagonal;
+        return 1 - distance / halfDiagonal;
+    }
+}
+
+class StrokeRecognitionOptions {
+    constructor(options) {
+        /** Master switch for the stroke recognition block. */
+        this.enabled = true;
+        /**
+         * Configuration for the stroke recognition provider.
+         */
+        this.providerConfig = {
+            /**
+             * Backing provider that recognizes strokes.
+             *  - 'onedollar': $1 Unistroke recognizer.
+             */
+            provider: 'onedollar',
+            /**
+             * Options specific to the 'onedollar' provider.
+             */
+            onedollar: {
+                supportedShapes: DEFAULT_SUPPORTED_SHAPES,
+            },
+        };
+        /**
+         * Delay in seconds after gesture start before recording points.
+         */
+        this.startDelay = 0.2;
+        /**
+         * Delay in seconds to ignore points before gesture end.
+         */
+        this.endDelay = 0.2;
+        /**
+         * The hand joint to track for stroke recognition.
+         */
+        this.joint = 'index-finger-tip';
+        /**
+         * Maximum number of points to capture in a single stroke.
+         */
+        this.maxPoints = 1000;
+        deepMerge(this, options);
+    }
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+}
+
 const DEBUGGING = false;
 /**
  * Lighting provides XR lighting capabilities within the XR Blocks framework.
@@ -8630,6 +9017,7 @@ class Options {
         this.deviceCamera = new DeviceCameraOptions();
         this.hands = new HandsOptions();
         this.gestures = new GestureRecognitionOptions();
+        this.strokes = new StrokeRecognitionOptions();
         this.reticles = new ReticleOptions();
         this.sound = new SoundOptions();
         this.ai = new AIOptions();
@@ -8768,6 +9156,15 @@ class Options {
     enableGestures() {
         this.enableHands();
         this.gestures.enable();
+        return this;
+    }
+    /**
+     * Enables the stroke recognition block and ensures gestures are available.
+     * @returns The instance for chaining.
+     */
+    enableStrokes() {
+        this.enableGestures();
+        this.strokes.enable();
         return this;
     }
     /**
@@ -17442,6 +17839,7 @@ class Core {
         this.registry.register(options.ai, AIOptions);
         this.registry.register(options.sound, SoundOptions);
         this.registry.register(options.gestures, GestureRecognitionOptions);
+        this.registry.register(options.strokes, StrokeRecognitionOptions);
         if (options.transition.enabled) {
             this.transition = new XRTransition();
             this.user.add(this.transition);
@@ -17690,6 +18088,223 @@ class OcclusionUtils {
             'float occlusion_value = clamp(occlusion_sample.r, 0.0, 1.0);',
             'diffuseColor.a *= occlusionEnabled ? occlusion_value : 1.0;',
         ].join('\n'));
+    }
+}
+
+/**
+ * StrokeRecognizer is a framework Script that handles recording hand stroke gestures
+ * and recognizing them as geometric shapes using a configured provider.
+ * It listens to gesture events and tracks specified hand joints to record the path.
+ */
+class StrokeRecognizer extends Script {
+    constructor() {
+        super(...arguments);
+        this.capturedPoints = [];
+        this.isActive = false;
+        this.isRecording = false;
+        this.gestureStartTime = 0;
+        this.gestureEndTime = 0;
+        this.activeHand = Handedness.LEFT;
+    }
+    static { this.dependencies = {
+        scene: THREE.Scene,
+        camera: THREE.Camera,
+        user: User,
+        options: StrokeRecognitionOptions,
+    }; }
+    init({ scene, camera, user, options, }) {
+        this.scene = scene;
+        this.camera = camera;
+        this.user = user;
+        this.options = options;
+        this.configureProvider();
+        if (!this.options.enabled) {
+            console.info('StrokeRecognizer initialized but disabled. Call options.enableStrokes() to activate.');
+        }
+    }
+    dispose() { }
+    configureProvider() {
+        const provider = this.options.providerConfig.provider;
+        switch (provider) {
+            case 'onedollar':
+                this.recognizer = new OneDollarUnistrokeRecognizer({
+                    camera: this.camera,
+                    scene: this.scene,
+                    supportedShapes: this.options.providerConfig.onedollar.supportedShapes,
+                });
+                break;
+            default:
+                console.warn(`StrokeRecognizer: provider '${provider}' is unknown; falling back to 'onedollar'.`);
+                this.recognizer = new OneDollarUnistrokeRecognizer({
+                    camera: this.camera,
+                    scene: this.scene,
+                    supportedShapes: this.options.providerConfig.onedollar.supportedShapes,
+                });
+                break;
+        }
+    }
+    /**
+     * Activates the stroke recognizer, enabling gesture tracking and recording.
+     */
+    activate() {
+        this.isActive = true;
+    }
+    /**
+     * Deactivates the stroke recognizer and clears any captured points.
+     */
+    deactivate() {
+        this.isActive = false;
+        this.clearPoints();
+    }
+    /**
+     * Clears the list of captured points.
+     */
+    clearPoints() {
+        this.capturedPoints = [];
+    }
+    /**
+     * Adds a point to the current stroke if the maximum point limit has not been reached.
+     * @param pos - The world position of the point.
+     * @param timestamp - The timestamp when the point was captured.
+     */
+    addPoint(pos, timestamp) {
+        if (this.capturedPoints.length < this.options.maxPoints) {
+            this.capturedPoints.push({ pos: pos.clone(), timestamp: timestamp });
+        }
+    }
+    /**
+     * Main update loop. Handles recording points during an active gesture
+     * and triggers recognition when the gesture ends.
+     */
+    update() {
+        // Ignore updates if the feature is disabled or recognizer is not active.
+        if (!this.options.enabled)
+            return;
+        if (!this.isActive)
+            return;
+        const currentTime = Date.now() / 1000; // Use seconds
+        // Check if the user is currently pinching (simulated or physical).
+        if (this.user.isSelecting?.()) {
+            // If this is the first frame of the pinch, initialize recording state.
+            if (!this.isRecording) {
+                this.isRecording = true;
+                this.gestureStartTime = currentTime;
+                this.clearPoints();
+                // Identify which hand is actively pinching at the start of the gesture.
+                this.activeHand = Handedness.LEFT;
+                if (this.user.isSelecting?.(Handedness.LEFT))
+                    this.activeHand = Handedness.LEFT;
+                else if (this.user.isSelecting?.(Handedness.RIGHT))
+                    this.activeHand = Handedness.RIGHT;
+                this.dispatchEvent({ type: 'unistrokestart', target: this, detail: {} });
+            }
+            const elapsedSincePinch = currentTime - this.gestureStartTime;
+            // Wait for the start delay to avoid capturing the initial jitter of the pinch motion.
+            if (elapsedSincePinch > this.options.startDelay) {
+                // Retrieve the configured joint for tracking (e.g., index finger tip).
+                const trackingJoint = this.user.hands?.getJoint(this.options.joint, this.activeHand);
+                if (trackingJoint) {
+                    const worldPos = new THREE.Vector3();
+                    trackingJoint.getWorldPosition(worldPos);
+                    // Capture the point and notify listeners.
+                    this.addPoint(worldPos, currentTime);
+                    this.dispatchEvent({
+                        type: 'unistrokeupdate',
+                        target: this,
+                        detail: { point: worldPos },
+                    });
+                }
+            }
+        }
+        else {
+            // If the user stopped pinching while we were recording, finalize the gesture.
+            if (this.isRecording) {
+                this.isRecording = false;
+                this.gestureEndTime = currentTime;
+                // Perform recognition and notify listeners of the result.
+                const result = this.recognizeGesture();
+                this.dispatchEvent({
+                    type: 'unistrokeend',
+                    target: this,
+                    detail: result ? { result } : {},
+                });
+            }
+        }
+    }
+    /**
+     * Calculates the best-fitting plane for a set of 3D points using a simple 3-point estimator.
+     * Falls back to camera plane if points are collinear.
+     */
+    calculateBestFittingPlane(points) {
+        if (points.length < 3)
+            return null;
+        const p0 = points[0];
+        // Find point furthest from p0
+        let p1 = p0;
+        let maxDistSq = 0;
+        for (const p of points) {
+            const d = p.distanceToSquared(p0);
+            if (d > maxDistSq) {
+                maxDistSq = d;
+                p1 = p;
+            }
+        }
+        if (maxDistSq < 0.0001)
+            return null; // All points are the same
+        // Find point furthest from line p0-p1
+        let p2 = p0;
+        let maxLineDistSq = 0;
+        const line = new THREE.Line3(p0, p1);
+        const closestPoint = new THREE.Vector3();
+        for (const p of points) {
+            line.closestPointToPoint(p, false, closestPoint);
+            const distSq = p.distanceToSquared(closestPoint);
+            if (distSq > maxLineDistSq) {
+                maxLineDistSq = distSq;
+                p2 = p;
+            }
+        }
+        // If maxLineDistSq is very small, points are collinear
+        if (maxLineDistSq < 0.0001) {
+            return null;
+        }
+        const origin = p0;
+        const u = new THREE.Vector3().subVectors(p1, p0).normalize();
+        // Use Three.Plane to calculate the normal from 3 coplanar points
+        const plane = new THREE.Plane().setFromCoplanarPoints(p0, p1, p2);
+        const v = new THREE.Vector3().crossVectors(plane.normal, u).normalize();
+        return { origin, u, v };
+    }
+    /**
+     * Filters captured points, projects them to a 2D plane, and calls the backend recognizer.
+     * Uses best-fitting plane if possible, otherwise falls back to camera viewport plane.
+     * @returns The recognition result or null if not enough points were captured.
+     */
+    recognizeGesture() {
+        const cutoffTime = this.gestureEndTime - this.options.endDelay;
+        const filteredPoints = this.capturedPoints.filter((p) => p.timestamp <= cutoffTime);
+        if (filteredPoints.length > 10) {
+            const points3D = filteredPoints.map((p) => p.pos);
+            const bestFittingPlane = this.calculateBestFittingPlane(points3D);
+            let points2D;
+            if (bestFittingPlane) {
+                points2D = points3D.map((p) => {
+                    const v = new THREE.Vector3().subVectors(p, bestFittingPlane.origin);
+                    return { x: v.dot(bestFittingPlane.u), y: v.dot(bestFittingPlane.v) };
+                });
+            }
+            else {
+                // Fallback to camera plane projection
+                points2D = points3D.map((p) => {
+                    const localPos = p
+                        .clone()
+                        .applyMatrix4(this.camera.matrixWorldInverse);
+                    return { x: localPos.x, y: localPos.y };
+                });
+            }
+            return this.recognizer.recognize(points2D);
+        }
+        return null;
     }
 }
 
@@ -19732,5 +20347,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
