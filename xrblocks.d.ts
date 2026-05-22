@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 6cdf729
- * @builddate 2026-05-20T16:37:34.716Z
+ * @commitid 0550ffc
+ * @builddate 2026-05-22T00:24:20.059Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3587,11 +3587,6 @@ declare class DepthMesh extends MeshScript {
     private lastColliderUpdateTime;
     private options;
     private depthTextureMaterialUniforms?;
-    private depthTarget;
-    private depthTexture;
-    private depthScene;
-    private depthCamera;
-    private gpuPixels;
     private RAPIER?;
     private blendedWorld?;
     private rigidBody?;
@@ -3609,8 +3604,6 @@ declare class DepthMesh extends MeshScript {
      */
     updateDepth(depthData: Readonly<XRCPUDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>, depthDataFormat: XRDepthDataFormat): void;
     updatePose(translation: THREE.Vector3, quaternion: THREE.Quaternion): void;
-    updateGPUDepth(depthData: Readonly<XRWebGLDepthInformation>, projectionMatrixInverse: Readonly<THREE.Matrix4>): void;
-    convertGPUToGPU(depthData: Readonly<XRWebGLDepthInformation>): XRCPUDepthInformation;
     /**
      * Method to manually update the full resolution geometry.
      * Only needed if options.updateFullResolutionGeometry is false.
@@ -3640,11 +3633,13 @@ declare class Depth {
     static instance?: Depth;
     private camera;
     private renderer;
+    private gpuDepthConverter?;
     enabled: boolean;
     view: XRView[];
     cpuDepthData: XRCPUDepthInformation[];
     gpuDepthData: XRWebGLDepthInformation[];
     depthArray: DepthArray[];
+    depthDataFormat?: XRDepthDataFormat;
     depthMesh?: DepthMesh;
     private depthTextures?;
     options: DepthOptions;
@@ -3717,6 +3712,10 @@ declare class Depth {
     debugLog(): void;
     resumeDepth(client: object): void;
     pauseDepth(client: object): void;
+    /**
+     * Manually updates the depth mesh geometry using the cached depth.
+     */
+    updateFullResolutionDepthMesh(): void;
 }
 
 declare class HandsOptions {

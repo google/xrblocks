@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.14.1
- * @commitid 6cdf729
- * @builddate 2026-05-20T16:37:34.716Z
+ * @commitid 0550ffc
+ * @builddate 2026-05-22T00:24:20.059Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4013,78 +4013,6 @@ class DepthMesh extends MeshScript {
             this.downsampledMesh.updateMatrixWorld();
         }
     }
-    updateGPUDepth(depthData, projectionMatrixInverse) {
-        this.updateDepth(this.convertGPUToGPU(depthData), projectionMatrixInverse, 'float32');
-    }
-    // Converts unsigned short GPU depth from Quest 3 to float32 CPU depth.
-    convertGPUToGPU(depthData) {
-        if (!this.depthTarget) {
-            this.depthTarget = new THREE.WebGLRenderTarget(depthData.width, depthData.height, {
-                format: THREE.RedFormat,
-                type: THREE.FloatType,
-                internalFormat: 'R32F',
-                minFilter: THREE.NearestFilter,
-                magFilter: THREE.NearestFilter,
-                depthBuffer: false,
-            });
-            this.depthTexture = new THREE.ExternalTexture(depthData.texture);
-            const textureProperties = this.renderer.properties.get(this.depthTexture);
-            textureProperties.__webglTexture = depthData.texture;
-            this.gpuPixels = new Float32Array(depthData.width * depthData.height);
-            const depthShader = new THREE.ShaderMaterial({
-                vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    vUv.y = 1.0-vUv.y;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-                fragmentShader: `
-                precision highp float;
-                precision highp sampler2DArray;
-
-                uniform sampler2DArray uTexture;
-                uniform float uCameraNear;
-                varying vec2 vUv;
-
-                void main() {
-                  float z = texture(uTexture, vec3(vUv, 0)).r;
-                  z = uCameraNear / (1.0 - z);
-                  z = clamp(z, 0.0, 20.0);
-                  gl_FragColor = vec4(z, 0, 0, 1.0);
-                }
-            `,
-                uniforms: {
-                    uTexture: { value: this.depthTexture },
-                    uCameraNear: {
-                        value: depthData.depthNear,
-                    },
-                },
-                blending: THREE.NoBlending,
-                depthTest: false,
-                depthWrite: false,
-                side: THREE.DoubleSide,
-            });
-            const depthMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), depthShader);
-            this.depthScene = new THREE.Scene();
-            this.depthScene.add(depthMesh);
-            this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        }
-        const originalRenderTarget = this.renderer.getRenderTarget();
-        this.renderer.xr.enabled = false;
-        this.renderer.setRenderTarget(this.depthTarget);
-        this.renderer.render(this.depthScene, this.depthCamera);
-        this.renderer.readRenderTargetPixels(this.depthTarget, 0, 0, depthData.width, depthData.height, this.gpuPixels, 0);
-        this.renderer.xr.enabled = true;
-        this.renderer.setRenderTarget(originalRenderTarget);
-        return {
-            width: depthData.width,
-            height: depthData.height,
-            data: this.gpuPixels.buffer,
-            rawValueToMeters: depthData.rawValueToMeters,
-        };
-    }
     /**
      * Method to manually update the full resolution geometry.
      * Only needed if options.updateFullResolutionGeometry is false.
@@ -4411,6 +4339,83 @@ class DepthTextures {
             return this.dataTextures[viewId];
         }
         return this.nativeTextures[viewId];
+    }
+}
+
+class GPUDepthConverter {
+    constructor(renderer) {
+        this.renderer = renderer;
+    }
+    /**
+     * Converts unsigned short GPU depth from Quest 3 to float32 CPU depth.
+     */
+    convertGPUToCPU(depthData) {
+        if (!this.depthTarget) {
+            this.depthTarget = new THREE.WebGLRenderTarget(depthData.width, depthData.height, {
+                format: THREE.RedFormat,
+                type: THREE.FloatType,
+                internalFormat: 'R32F',
+                minFilter: THREE.NearestFilter,
+                magFilter: THREE.NearestFilter,
+                depthBuffer: false,
+            });
+            this.depthTexture = new THREE.ExternalTexture(depthData.texture);
+            const textureProperties = this.renderer.properties.get(this.depthTexture);
+            textureProperties.__webglTexture = depthData.texture;
+            this.gpuPixels = new Float32Array(depthData.width * depthData.height);
+            const depthShader = new THREE.ShaderMaterial({
+                vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    vUv.y = 1.0-vUv.y;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+                fragmentShader: `
+                precision highp float;
+                precision highp sampler2DArray;
+
+                uniform sampler2DArray uTexture;
+                uniform float uCameraNear;
+                varying vec2 vUv;
+
+                void main() {
+                  float z = texture(uTexture, vec3(vUv, 0)).r;
+                  z = uCameraNear / (1.0 - z);
+                  z = clamp(z, 0.0, 20.0);
+                  gl_FragColor = vec4(z, 0, 0, 1.0);
+                }
+            `,
+                uniforms: {
+                    uTexture: { value: this.depthTexture },
+                    uCameraNear: {
+                        value: depthData.depthNear,
+                    },
+                },
+                blending: THREE.NoBlending,
+                depthTest: false,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+            });
+            const depthMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), depthShader);
+            this.depthScene = new THREE.Scene();
+            this.depthScene.add(depthMesh);
+            this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        }
+        const originalRenderTarget = this.renderer.getRenderTarget();
+        this.renderer.xr.enabled = false;
+        this.renderer.setRenderTarget(this.depthTarget);
+        this.renderer.render(this.depthScene, this.depthCamera);
+        this.renderer.readRenderTargetPixels(this.depthTarget, 0, 0, depthData.width, depthData.height, this.gpuPixels, 0);
+        this.renderer.xr.enabled = true;
+        this.renderer.setRenderTarget(originalRenderTarget);
+        return {
+            width: depthData.width,
+            height: depthData.height,
+            data: this.gpuPixels.buffer,
+            rawValueToMeters: depthData.rawValueToMeters,
+        };
     }
 }
 
@@ -4957,6 +4962,7 @@ class Depth {
         this.options = options;
         this.renderer = renderer;
         this.enabled = options.enabled;
+        this.gpuDepthConverter = new GPUDepthConverter(renderer);
         if (this.options.depthTexture.enabled) {
             this.depthTextures = new DepthTextures(options);
             registry.register(this.depthTextures);
@@ -5087,6 +5093,7 @@ class Depth {
     }
     updateCPUDepthData(depthData, viewId, depthDataFormat) {
         this.cpuDepthData[viewId] = depthData;
+        this.depthDataFormat = depthDataFormat;
         this.updateDepthMatrices(depthData, viewId);
         // Updates Depth Array.
         this.depthArray[viewId] =
@@ -5112,10 +5119,12 @@ class Depth {
         // For now, assume that we need cpu depth only if depth mesh is enabled.
         // In the future, add a separate option.
         const needCpuDepth = this.options.depthMesh.enabled;
-        const cpuDepth = needCpuDepth && this.depthMesh
-            ? this.depthMesh.convertGPUToGPU(depthData)
+        const cpuDepth = needCpuDepth && this.gpuDepthConverter
+            ? this.gpuDepthConverter.convertGPUToCPU(depthData)
             : null;
         if (cpuDepth) {
+            this.cpuDepthData[viewId] = cpuDepth;
+            this.depthDataFormat = 'float32';
             if (this.depthArray[viewId] instanceof Float32Array) {
                 this.depthArray[viewId].set(new Float32Array(cpuDepth.data));
             }
@@ -5133,9 +5142,6 @@ class Depth {
             if (this.shouldUpdateDepthMesh()) {
                 if (cpuDepth) {
                     this.depthMesh.updateDepth(cpuDepth, this.depthProjectionInverseMatrices[0], 'float32');
-                }
-                else {
-                    this.depthMesh.updateGPUDepth(depthData, this.depthProjectionInverseMatrices[0]);
                 }
             }
             this.depthMesh.updatePose(this.depthCameraPositions[0], this.depthCameraRotations[0]);
@@ -5253,6 +5259,16 @@ class Depth {
     pauseDepth(client) {
         this.depthClientsInitialized = true;
         this.depthClients.delete(client);
+    }
+    /**
+     * Manually updates the depth mesh geometry using the cached depth.
+     */
+    updateFullResolutionDepthMesh() {
+        if (this.depthMesh &&
+            this.cpuDepthData.length > 0 &&
+            this.depthDataFormat) {
+            this.depthMesh.updateFullResolutionGeometry(this.cpuDepthData[0], this.depthDataFormat);
+        }
     }
 }
 
