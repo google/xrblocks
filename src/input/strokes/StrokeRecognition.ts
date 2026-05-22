@@ -55,6 +55,15 @@ interface CapturedPoint {
 }
 
 /**
+ * Represents the basis vectors and origin of a plane.
+ */
+interface PlaneBasis {
+  origin: THREE.Vector3;
+  u: THREE.Vector3;
+  v: THREE.Vector3;
+}
+
+/**
  * StrokeRecognizer is a framework Script that handles recording hand stroke gestures
  * and recognizing them as geometric shapes using a configured provider.
  * It listens to gesture events and tracks specified hand joints to record the path.
@@ -234,7 +243,62 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   }
 
   /**
-   * Filters captured points, projects them to 2D camera space, and calls the backend recognizer.
+   * Calculates the best-fitting plane for a set of 3D points using a simple 3-point estimator.
+   * Falls back to camera plane if points are collinear.
+   */
+  private calculateBestFittingPlane(
+    points: THREE.Vector3[]
+  ): PlaneBasis | null {
+    if (points.length < 3) return null;
+
+    const p0 = points[0];
+
+    // Find point furthest from p0
+    let p1 = p0;
+    let maxDistSq = 0;
+    for (const p of points) {
+      const d = p.distanceToSquared(p0);
+      if (d > maxDistSq) {
+        maxDistSq = d;
+        p1 = p;
+      }
+    }
+
+    if (maxDistSq < 0.0001) return null; // All points are the same
+
+    // Find point furthest from line p0-p1
+    let p2 = p0;
+    let maxLineDistSq = 0;
+    const line = new THREE.Line3(p0, p1);
+    const closestPoint = new THREE.Vector3();
+
+    for (const p of points) {
+      line.closestPointToPoint(p, false, closestPoint);
+      const distSq = p.distanceToSquared(closestPoint);
+      if (distSq > maxLineDistSq) {
+        maxLineDistSq = distSq;
+        p2 = p;
+      }
+    }
+
+    // If maxLineDistSq is very small, points are collinear
+    if (maxLineDistSq < 0.0001) {
+      return null;
+    }
+
+    const origin = p0;
+    const u = new THREE.Vector3().subVectors(p1, p0).normalize();
+
+    // Use Three.Plane to calculate the normal from 3 coplanar points
+    const plane = new THREE.Plane().setFromCoplanarPoints(p0, p1, p2);
+    const v = new THREE.Vector3().crossVectors(plane.normal, u).normalize();
+
+    return {origin, u, v};
+  }
+
+  /**
+   * Filters captured points, projects them to a 2D plane, and calls the backend recognizer.
+   * Uses best-fitting plane if possible, otherwise falls back to camera viewport plane.
    * @returns The recognition result or null if not enough points were captured.
    */
   private recognizeGesture() {
@@ -246,11 +310,23 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
     if (filteredPoints.length > 10) {
       const points3D = filteredPoints.map((p) => p.pos);
 
-      // Project 3D points to 2D camera local space
-      const points2D = points3D.map((p) => {
-        const localPos = p.clone().applyMatrix4(this.camera.matrixWorldInverse);
-        return {x: localPos.x, y: localPos.y};
-      });
+      const bestFittingPlane = this.calculateBestFittingPlane(points3D);
+
+      let points2D;
+      if (bestFittingPlane) {
+        points2D = points3D.map((p) => {
+          const v = new THREE.Vector3().subVectors(p, bestFittingPlane.origin);
+          return {x: v.dot(bestFittingPlane.u), y: v.dot(bestFittingPlane.v)};
+        });
+      } else {
+        // Fallback to camera plane projection
+        points2D = points3D.map((p) => {
+          const localPos = p
+            .clone()
+            .applyMatrix4(this.camera.matrixWorldInverse);
+          return {x: localPos.x, y: localPos.y};
+        });
+      }
 
       return this.recognizer.recognize(points2D);
     }
