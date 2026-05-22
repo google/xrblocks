@@ -5,6 +5,9 @@ import * as THREE from 'three';
  * after a gesture is recognized. Handles both outline and fill geometries, and fades out over time.
  */
 export class PerfectShapeRenderer {
+  // Caches geometries to avoid recreation and GPU upload overhead.
+  static geometryCache = new Map();
+
   /**
    * @param {THREE.Scene} scene - The scene to add the shape to.
    * @param {string} shapeName - The name of the shape to render (e.g., 'Circle', 'Rectangle').
@@ -97,12 +100,10 @@ export class PerfectShapeRenderer {
     if (!this.line) return;
 
     this.scene.remove(this.line);
-    this.line.geometry.dispose();
+    // Geometries are cached and shared, so we don't dispose them here.
     this.material.dispose();
 
     if (this.line.children.length > 0) {
-      const child = this.line.children[0];
-      child.geometry.dispose();
       this.fillMaterial.dispose();
     }
 
@@ -157,19 +158,21 @@ export class PerfectShapeRenderer {
    * @returns {Object|null} An object containing lineGeom and fillGeom, or null if shape is unknown.
    */
   static getGeometries(name) {
+    if (PerfectShapeRenderer.geometryCache.has(name)) {
+      return PerfectShapeRenderer.geometryCache.get(name);
+    }
     const shape = this.getShape(name);
     if (!shape) return null;
-
-    // Generate line geometry
+    // Generates line geometry.
     const points = name === 'Circle' ? shape.getPoints(32) : shape.getPoints();
     const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
-
-    // Generate fill geometry
+    // Generates fill geometry.
     if (name === 'V' || name === 'Caret') {
       shape.closePath();
     }
     const fillGeom = new THREE.ShapeGeometry(shape);
-
-    return {lineGeom, fillGeom};
+    const geometries = {lineGeom, fillGeom};
+    PerfectShapeRenderer.geometryCache.set(name, geometries);
+    return geometries;
   }
 }

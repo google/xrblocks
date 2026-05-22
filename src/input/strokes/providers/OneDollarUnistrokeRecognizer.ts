@@ -123,9 +123,12 @@ function rotateToZero(points: Point2D[]): Point2D[] {
 function scaleTo(points: Point2D[], size: number): Point2D[] {
   const B = boundingBox(points);
   const newPoints = [];
+  const EPSILON = 1e-5;
+  const width = Math.max(B.width, EPSILON);
+  const height = Math.max(B.height, EPSILON);
   for (let i = 0; i < points.length; i++) {
-    const qx = points[i].x * (size / B.width);
-    const qy = points[i].y * (size / B.height);
+    const qx = points[i].x * (size / width);
+    const qy = points[i].y * (size / height);
     newPoints.push({x: qx, y: qy});
   }
   return newPoints;
