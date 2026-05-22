@@ -1,6 +1,6 @@
 import * as xb from 'xrblocks';
-import {Text} from 'troika-three-text';
 import * as THREE from 'three';
+import {UICore, UIText, UIPanel} from 'uiblocks';
 
 export class SoundDisplay extends xb.Script {
   static dependencies = {camera: THREE.Camera, world: xb.World};
@@ -8,6 +8,8 @@ export class SoundDisplay extends xb.Script {
   init({camera, world}) {
     this.camera = camera;
     this.world = world;
+
+    this.uiCore = new UICore(this);
 
     this.lastClassification = '';
 
@@ -28,33 +30,74 @@ export class SoundDisplay extends xb.Script {
 
         const debugStr = this.getDebugString(result);
         const baseText = this.lastClassification || 'Listening...';
-        this.hudText.text = debugStr ? `${baseText}\n${debugStr}` : baseText;
-        this.hudText.sync();
+        this.hudText.setText(debugStr ? `${baseText}\n${debugStr}` : baseText);
       });
 
-      console.log('SoundDisplay: attached. Waiting for long pinch to listen.');
+      console.log('SoundDisplay: attached. Pinch to listen.');
     } else {
-      this.hudText.text = 'Sound Classifier not initialized';
-      this.hudText.sync();
+      this.hudText.setText('Sound Classifier not initialized');
+    }
+  }
+
+  onSelectEnd(event) {
+    if (this.world.sounds) {
+      if (this.world.sounds.isListening) {
+        this.world.sounds.stopListening();
+        this.setStatusText('Stopped listening');
+      } else {
+        this.setStatusText('Listening...');
+        this.world.sounds.startListening();
+      }
     }
   }
 
   initHudText() {
-    this.hudText = new Text();
-    this.hudText.text = 'Pinch to start';
-    this.hudText.fontSize = 0.05;
-    this.hudText.color = 0x00ffff;
-    this.hudText.maxWidth = 0.5;
-    this.hudText.position.set(0, 0, -0.5); // 50cm in front of camera
-    this.hudText.textAlign = 'center';
-    this.hudText.anchorX = 'center';
-    this.hudText.anchorY = 'middle';
+    this.hudCard = this.uiCore.createCard({
+      name: 'HUDCard',
+      sizeX: 0.5,
+      sizeY: 0.2,
+      position: new THREE.Vector3(0, 0, -0.5),
+    });
 
-    // Add directly to this script's scene object instead of camera, to ensure WebXR renders it
-    this.add(this.hudText);
+    const hudPanel = new UIPanel({
+      width: '100%',
+      height: '100%',
+      fillColor: 'rgba(5, 5, 5, 0.6)',
+      innerShadowColor: 'rgba(150, 150, 150, 0.05)',
+      innerShadowBlur: 96,
+      strokeWidth: 4,
+      strokeColor: {
+        gradientType: 'linear',
+        rotation: 90,
+        stops: [
+          {position: 0, color: 'rgba(255, 255, 255, 0.5)'},
+          {position: 0.5, color: 'rgba(255, 255, 255, 0.25)'},
+          {position: 1, color: 'rgba(255, 255, 255, 0.35)'},
+        ],
+      },
+      cornerRadius: 50,
+      padding: 50,
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+    });
 
-    // Need to call sync() on troika text to process geometry.
-    this.hudText.sync();
+    this.hudText = new UIText('Pinch to start', {
+      fontSize: 50, // 50mm = 0.05m
+      fontWeight: 'bold',
+      color: '#4796e3',
+      textAlign: 'center',
+      width: '100%',
+    });
+
+    hudPanel.add(this.hudText);
+    this.hudCard.add(hudPanel);
+  }
+
+  setStatusText(text) {
+    if (this.hudText) {
+      this.hudText.setText(text);
+    }
   }
 
   getBestCategory(result) {
@@ -85,8 +128,8 @@ export class SoundDisplay extends xb.Script {
   }
 
   update() {
-    // Manually update the position and rotation to keep the text 50 cm in front of camera
-    if (this.hudText && this.camera) {
+    // Manually update the position and rotation to keep the card in front of camera
+    if (this.hudCard && this.camera) {
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
 
@@ -96,9 +139,9 @@ export class SoundDisplay extends xb.Script {
       // Get forward direction
       const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
 
-      // Position text 0.5m in front of camera
-      this.hudText.position.copy(position).addScaledVector(forward, 1.0);
-      this.hudText.quaternion.copy(quaternion);
+      // Position card 1.0m in front of camera.
+      this.hudCard.position.copy(position).addScaledVector(forward, 1.0);
+      this.hudCard.quaternion.copy(quaternion);
     }
   }
 }

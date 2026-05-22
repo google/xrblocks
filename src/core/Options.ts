@@ -128,6 +128,13 @@ export class Options {
   enableSimulator = true;
 
   /**
+   * Whether to catch all exceptions thrown by developer scripts in the main update loop
+   * and physics step, and log them using console.error instead of crashing the application.
+   * When enabled, exceptions in one script will not prevent other scripts or subsystems from updating.
+   */
+  catchScriptExceptions = true;
+
+  /**
    * Configuration for the XR session button.
    */
   xrButton = {

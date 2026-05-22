@@ -72,7 +72,7 @@ export class DepthTextures {
     renderer: THREE.WebGLRenderer,
     viewId: number
   ) {
-    if (this.dataTextures.length < viewId + 1) {
+    if (this.nativeTextures.length < viewId + 1) {
       this.nativeTextures[viewId] = new THREE.ExternalTexture(
         depthData.texture
       );

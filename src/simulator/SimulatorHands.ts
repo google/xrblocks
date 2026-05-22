@@ -41,7 +41,6 @@ export class SimulatorHands {
     SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT[SimulatorHandPose.RELAXED];
   lerpSpeed = 0.1;
   handPosePanelElement?: SimulatorHandPoseHTMLElement;
-  onHandPoseChangeRequestBound = this.onHandPoseChangeRequest.bind(this);
   input!: Input;
   loader!: GLTFLoader;
 
@@ -329,18 +328,18 @@ export class SimulatorHands {
     if (this.handPosePanelElement) {
       this.handPosePanelElement.removeEventListener(
         SimulatorHandPoseChangeRequestEvent.type,
-        this.onHandPoseChangeRequestBound
+        this.onHandPoseChangeRequest
       );
     }
     element.addEventListener(
       SimulatorHandPoseChangeRequestEvent.type,
-      this.onHandPoseChangeRequestBound
+      this.onHandPoseChangeRequest
     );
     this.handPosePanelElement = element as SimulatorHandPoseHTMLElement;
     this.updateHandPosePanel();
   }
 
-  onHandPoseChangeRequest(event: Event) {
+  onHandPoseChangeRequest = (event: Event) => {
     if (event.type != SimulatorHandPoseChangeRequestEvent.type) return;
     const handPoseChangeEvent = event as SimulatorHandPoseChangeRequestEvent;
     if (this.simulatorControllerState.currentControllerIndex === 0) {
@@ -348,7 +347,7 @@ export class SimulatorHands {
     } else {
       this.setRightHandLerpPose(handPoseChangeEvent.pose);
     }
-  }
+  };
 
   toggleHandedness() {
     this.simulatorControllerState.currentControllerIndex =

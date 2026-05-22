@@ -22,7 +22,6 @@ export type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
 export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManagerEventMap> {
   public currentSession?: XRSession;
   private sessionOptions?: XRSessionInit;
-  private onSessionEndedBound = this.onSessionEndedInternal.bind(this);
   private xrModeSupported?: boolean;
   private waitingForXRSession = false;
 
@@ -77,7 +76,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       // Automatically start session if 'offerSession' is available
       if (navigator.xr!.offerSession !== undefined) {
         navigator.xr!.offerSession!(this.mode, this.sessionOptions)
-          .then(this.onSessionStartedInternal.bind(this))
+          .then(this.onSessionStartedInternal)
           .catch((err) => {
             console.warn(err);
           });
@@ -108,7 +107,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       .finally(() => {
         this.waitingForXRSession = false;
       })
-      .then(this.onSessionStartedInternal.bind(this))
+      .then(this.onSessionStartedInternal)
       .catch((err) => {
         console.error(
           'Error requesting session',
@@ -145,8 +144,8 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   }
 
   /** Internal callback for when a session successfully starts. */
-  private async onSessionStartedInternal(session: XRSession) {
-    session.addEventListener('end', this.onSessionEndedBound);
+  private onSessionStartedInternal = async (session: XRSession) => {
+    session.addEventListener('end', this.onSessionEndedInternal);
     await this.renderer.xr.setSession(session);
     this.currentSession = session;
 
@@ -155,14 +154,17 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       type: WebXRSessionEventType.SESSION_START,
       session: session,
     });
-  }
+  };
 
   /** Internal callback for when the session ends. */
-  private onSessionEndedInternal(/*event*/) {
+  private onSessionEndedInternal = () => {
     // Fire the 'sessionend' event
     this.dispatchEvent({type: WebXRSessionEventType.SESSION_END});
 
-    this.currentSession?.removeEventListener('end', this.onSessionEndedBound);
+    this.currentSession?.removeEventListener(
+      'end',
+      this.onSessionEndedInternal
+    );
     this.currentSession = undefined;
-  }
+  };
 }
