@@ -73,7 +73,7 @@ function resample(points: Point2D[], n: number): Point2D[] {
 }
 
 /** Calculates the centroid (center of mass) of a list of points. */
-function centroid(points: Point2D[]): Point2D {
+function getCentroid(points: Point2D[]): Point2D {
   let x = 0,
     y = 0;
   for (let i = 0; i < points.length; i++) {
@@ -99,14 +99,23 @@ function boundingBox(points: Point2D[]) {
 }
 
 /** Rotates a list of points by a given angle in radians around their centroid. */
-function rotateBy(points: Point2D[], radians: number): Point2D[] {
-  const c = centroid(points);
+function rotateBy(
+  points: Point2D[],
+  radians: number,
+  centroid: Point2D = getCentroid(points)
+): Point2D[] {
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   const newPoints = [];
   for (let i = 0; i < points.length; i++) {
-    const qx = (points[i].x - c.x) * cos - (points[i].y - c.y) * sin + c.x;
-    const qy = (points[i].x - c.x) * sin + (points[i].y - c.y) * cos + c.y;
+    const qx =
+      (points[i].x - centroid.x) * cos -
+      (points[i].y - centroid.y) * sin +
+      centroid.x;
+    const qy =
+      (points[i].x - centroid.x) * sin +
+      (points[i].y - centroid.y) * cos +
+      centroid.y;
     newPoints.push({x: qx, y: qy});
   }
   return newPoints;
@@ -114,9 +123,9 @@ function rotateBy(points: Point2D[], radians: number): Point2D[] {
 
 /** Rotates a list of points so that the angle between the first point and the centroid is zero. */
 function rotateToZero(points: Point2D[]): Point2D[] {
-  const c = centroid(points);
-  const theta = Math.atan2(points[0].y - c.y, points[0].x - c.x);
-  return rotateBy(points, -theta);
+  const centroid = getCentroid(points);
+  const theta = Math.atan2(points[0].y - centroid.y, points[0].x - centroid.x);
+  return rotateBy(points, -theta, centroid);
 }
 
 /** Scales a list of points to a standard size (bounding box width/height becomes size). */
@@ -136,11 +145,11 @@ function scaleTo(points: Point2D[], size: number): Point2D[] {
 
 /** Translates a list of points so that their centroid matches the given point. */
 function translateTo(points: Point2D[], pt: Point2D): Point2D[] {
-  const c = centroid(points);
+  const centroid = getCentroid(points);
   const newPoints = [];
   for (let i = 0; i < points.length; i++) {
-    const qx = points[i].x + pt.x - c.x;
-    const qy = points[i].y + pt.y - c.y;
+    const qx = points[i].x + pt.x - centroid.x;
+    const qy = points[i].y + pt.y - centroid.y;
     newPoints.push({x: qx, y: qy});
   }
   return newPoints;
@@ -159,9 +168,10 @@ function pathDistance(pts1: Point2D[], pts2: Point2D[]): number {
 function distanceAtAngle(
   points: Point2D[],
   template: Template,
-  radians: number
+  radians: number,
+  centroid: Point2D = getCentroid(points)
 ): number {
-  const newPoints = rotateBy(points, radians);
+  const newPoints = rotateBy(points, radians, centroid);
   return pathDistance(newPoints, template.points);
 }
 
@@ -174,23 +184,24 @@ function distanceAtBestAngle(
   threshold: number
 ): number {
   const phi = 0.5 * (Math.sqrt(5) - 1);
+  const centroid = getCentroid(points);
   let x1 = phi * a + (1 - phi) * b;
   let x2 = (1 - phi) * a + phi * b;
-  let f1 = distanceAtAngle(points, template, x1);
-  let f2 = distanceAtAngle(points, template, x2);
+  let f1 = distanceAtAngle(points, template, x1, centroid);
+  let f2 = distanceAtAngle(points, template, x2, centroid);
   while (Math.abs(b - a) > threshold) {
     if (f1 < f2) {
       b = x2;
       x2 = x1;
       f2 = f1;
       x1 = phi * a + (1 - phi) * b;
-      f1 = distanceAtAngle(points, template, x1);
+      f1 = distanceAtAngle(points, template, x1, centroid);
     } else {
       a = x1;
       x1 = x2;
       f1 = f2;
       x2 = (1 - phi) * a + phi * b;
-      f2 = distanceAtAngle(points, template, x2);
+      f2 = distanceAtAngle(points, template, x2, centroid);
     }
   }
   return Math.min(f1, f2);
@@ -220,15 +231,16 @@ export class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
    * @returns The recognition result containing the shape name and confidence score.
    */
   override recognize(points: Point2D[]): StrokeRecognitionResult {
-    const pointsForwardRotated = this.preprocess(points, true);
-    const pointsBackwardRotated = this.preprocess(
-      points.slice().reverse(),
-      true
+    const resampledForward = resample(points, 64);
+    const resampledBackward = resampledForward.slice().reverse();
+
+    const pointsForwardUnrotated = this.scaleAndTranslate(resampledForward);
+    const pointsBackwardUnrotated = pointsForwardUnrotated.slice().reverse();
+    const pointsForwardRotated = this.scaleAndTranslate(
+      rotateToZero(resampledForward)
     );
-    const pointsForwardUnrotated = this.preprocess(points, false);
-    const pointsBackwardUnrotated = this.preprocess(
-      points.slice().reverse(),
-      false
+    const pointsBackwardRotated = this.scaleAndTranslate(
+      rotateToZero(resampledBackward)
     );
 
     let bestDistance = Infinity;
@@ -388,9 +400,16 @@ export class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
     if (useRotation) {
       points = rotateToZero(points);
     }
-    points = scaleTo(points, 250);
-    points = translateTo(points, {x: 0, y: 0});
-    return points;
+    return this.scaleAndTranslate(points);
+  }
+
+  /**
+   * Scales points to a standard size and translates them to the origin.
+   * @param points - The list of points to scale and translate.
+   * @returns The scaled and translated list of points.
+   */
+  private scaleAndTranslate(points: Point2D[]): Point2D[] {
+    return translateTo(scaleTo(points, 250), {x: 0, y: 0});
   }
 
   /**
