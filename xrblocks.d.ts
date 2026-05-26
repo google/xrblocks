@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid e2f2f8b
- * @builddate 2026-05-22T22:43:13.734Z
+ * @commitid a6c29e7
+ * @builddate 2026-05-26T17:13:27.892Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4588,6 +4588,7 @@ interface GazeControllerEventMap extends THREE.Object3DEventMap {
 declare class GazeController extends Script<GazeControllerEventMap> implements Controller {
     static dependencies: {
         camera: typeof THREE.Camera;
+        timer: typeof THREE.Timer;
     };
     /**
      * User data for the controller, including its connection status, unique ID,
@@ -4617,13 +4618,14 @@ declare class GazeController extends Script<GazeControllerEventMap> implements C
      */
     lastReticlePosition: THREE.Vector3;
     /**
-     * A clock to measure the time delta between frames for smooth animation and
+     * A timer to measure the time delta between frames for smooth animation and
      * movement calculation.
      */
-    clock: THREE.Clock;
+    timer: THREE.Timer;
     camera: THREE.Camera;
-    init({ camera }: {
+    init({ camera, timer }: {
         camera: THREE.Camera;
+        timer: THREE.Timer;
     }): void;
     /**
      * The main update loop, called every frame by the core engine.
@@ -7328,7 +7330,7 @@ declare class Core {
      */
     registry: Registry;
     /**
-     * A clock for tracking time deltas. Call clock.getDeltaTime().
+     * A timer for tracking time deltas. Call timer.getDelta() or getDeltaTime().
      */
     timer: THREE.Timer;
     /** Manages hand, mouse, gaze inputs. */
@@ -8018,6 +8020,7 @@ declare class ModelViewer extends Script implements Draggable {
         scene: typeof THREE.Scene;
         renderer: typeof THREE.WebGLRenderer;
         registry: typeof Registry;
+        timer: typeof THREE.Timer;
     };
     draggable: boolean;
     rotatable: boolean;
@@ -8029,7 +8032,7 @@ declare class ModelViewer extends Script implements Draggable {
     startAnimationOnLoad: boolean;
     clipActions: THREE.AnimationAction[];
     private data?;
-    private clock;
+    private timer;
     private animationMixer?;
     private gltfMesh?;
     private splatMesh?;
@@ -8051,12 +8054,13 @@ declare class ModelViewer extends Script implements Draggable {
         receiveShadow?: boolean | undefined;
         raycastToChildren?: boolean | undefined;
     });
-    init({ camera, depth, scene, renderer, registry, }: {
+    init({ camera, depth, scene, renderer, registry, timer, }: {
         camera: THREE.Camera;
         depth: Depth;
         scene: THREE.Scene;
         renderer: THREE.WebGLRenderer;
         registry: Registry;
+        timer: THREE.Timer;
     }): Promise<void>;
     loadSplatModel({ data, onSceneLoaded, platformMargin, setupRaycastCylinder, setupRaycastBox, setupPlatform, }: {
         data: SplatData;

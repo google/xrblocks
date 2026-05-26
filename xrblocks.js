@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid e2f2f8b
- * @builddate 2026-05-22T22:43:13.734Z
+ * @commitid a6c29e7
+ * @builddate 2026-05-26T17:13:27.892Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6046,15 +6046,11 @@ class GazeController extends Script {
          * speed.
          */
         this.lastReticlePosition = new THREE.Vector3();
-        /**
-         * A clock to measure the time delta between frames for smooth animation and
-         * movement calculation.
-         */
-        this.clock = new THREE.Clock();
     }
-    static { this.dependencies = { camera: THREE.Camera }; }
-    init({ camera }) {
+    static { this.dependencies = { camera: THREE.Camera, timer: THREE.Timer }; }
+    init({ camera, timer }) {
         this.camera = camera;
+        this.timer = timer;
     }
     /**
      * The main update loop, called every frame by the core engine.
@@ -6066,7 +6062,7 @@ class GazeController extends Script {
         this.position.copy(this.camera.position);
         this.quaternion.copy(this.camera.quaternion);
         this.updateMatrixWorld();
-        const delta = this.clock.getDelta();
+        const delta = this.timer.getDelta();
         this.activationAmount.update(delta);
         const movement = this.lastReticlePosition.distanceTo(this.reticle.position) / delta;
         if (movement > PRESS_MOVEMENT_THRESHOLD) {
@@ -17679,7 +17675,7 @@ class Core {
          */
         this.registry = new Registry();
         /**
-         * A clock for tracking time deltas. Call clock.getDeltaTime().
+         * A timer for tracking time deltas. Call timer.getDelta() or getDeltaTime().
          */
         this.timer = new THREE.Timer();
         /** Manages hand, mouse, gaze inputs. */
@@ -19652,6 +19648,7 @@ class ModelViewer extends Script {
         scene: THREE.Scene,
         renderer: THREE.WebGLRenderer,
         registry: Registry,
+        timer: THREE.Timer,
     }; }
     constructor({ castShadow = true, receiveShadow = true, raycastToChildren = false, }) {
         super();
@@ -19664,7 +19661,6 @@ class ModelViewer extends Script {
         this.initialScale = new THREE.Vector3().setScalar(1);
         this.startAnimationOnLoad = true;
         this.clipActions = [];
-        this.clock = new THREE.Clock();
         this.hoveringControllers = new Set();
         this.occludableShaders = new Set();
         this.bbox = new THREE.Box3();
@@ -19672,12 +19668,13 @@ class ModelViewer extends Script {
         this.receiveShadow = receiveShadow;
         this.raycastToChildren = raycastToChildren;
     }
-    async init({ camera, depth, scene, renderer, registry, }) {
+    async init({ camera, depth, scene, renderer, registry, timer, }) {
         this.camera = camera;
         this.depth = depth;
         this.scene = scene;
         this.renderer = renderer;
         this.registry = registry;
+        this.timer = timer;
         for (const shader of this.occludableShaders) {
             this.depth.occludableShaders.add(shader);
         }
@@ -19891,7 +19888,7 @@ class ModelViewer extends Script {
         this.add(this.platform);
     }
     update() {
-        const delta = this.clock.getDelta();
+        const delta = this.timer.getDelta();
         if (this.animationMixer) {
             this.animationMixer.update(delta);
         }
