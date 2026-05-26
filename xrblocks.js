@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid ecdd840
- * @builddate 2026-05-26T21:50:33.021Z
+ * @commitid 9729b0c
+ * @builddate 2026-05-26T22:21:53.210Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -12366,13 +12366,17 @@ class ObjectDetector extends Script {
         return detectorBackendPromise;
     }
     getDepthMeshSnapshot() {
-        const clonedGeometry = this.depth.depthMesh.geometry.clone();
+        const depthMesh = this.depth.depthMesh;
+        const geometry = this.depth.options.depthMesh.updateFullResolutionGeometry
+            ? depthMesh.geometry
+            : depthMesh.downsampledGeometry || depthMesh.geometry;
+        const clonedGeometry = geometry.clone();
         clonedGeometry.computeBoundingSphere();
         clonedGeometry.computeBoundingBox();
         const depthMeshSnapshot = new THREE.Mesh(clonedGeometry, new THREE.MeshBasicMaterial());
-        this.depth.depthMesh.getWorldPosition(depthMeshSnapshot.position);
-        this.depth.depthMesh.getWorldQuaternion(depthMeshSnapshot.quaternion);
-        this.depth.depthMesh.getWorldScale(depthMeshSnapshot.scale);
+        depthMesh.getWorldPosition(depthMeshSnapshot.position);
+        depthMesh.getWorldQuaternion(depthMeshSnapshot.quaternion);
+        depthMesh.getWorldScale(depthMeshSnapshot.scale);
         depthMeshSnapshot.updateMatrixWorld(true);
         return depthMeshSnapshot;
     }
