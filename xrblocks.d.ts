@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 9729b0c
- * @builddate 2026-05-26T22:21:53.210Z
+ * @commitid 7c7f07c
+ * @builddate 2026-05-27T20:06:29.474Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2135,9 +2135,9 @@ declare const xrDeviceCameraEnvironmentOptions: {
                 readonly exact?: string | readonly string[] | undefined;
                 readonly ideal?: string | readonly string[] | undefined;
             } | undefined;
-            readonly echoCancellation?: boolean | {
-                readonly exact?: boolean | undefined;
-                readonly ideal?: boolean | undefined;
+            readonly echoCancellation?: string | boolean | {
+                readonly exact?: boolean | string | undefined;
+                readonly ideal?: boolean | string | undefined;
             } | undefined;
             readonly facingMode?: string | readonly string[] | {
                 readonly exact?: string | readonly string[] | undefined;
@@ -2210,9 +2210,9 @@ declare const xrDeviceCameraEnvironmentOptions: {
             readonly exact?: string | readonly string[] | undefined;
             readonly ideal?: string | readonly string[] | undefined;
         } | undefined;
-        readonly echoCancellation?: boolean | {
-            readonly exact?: boolean | undefined;
-            readonly ideal?: boolean | undefined;
+        readonly echoCancellation?: string | boolean | {
+            readonly exact?: boolean | string | undefined;
+            readonly ideal?: boolean | string | undefined;
         } | undefined;
         readonly facingMode?: string | readonly string[] | {
             readonly exact?: string | readonly string[] | undefined;
@@ -2306,9 +2306,9 @@ declare const xrDeviceCameraUserOptions: {
                 readonly exact?: string | readonly string[] | undefined;
                 readonly ideal?: string | readonly string[] | undefined;
             } | undefined;
-            readonly echoCancellation?: boolean | {
-                readonly exact?: boolean | undefined;
-                readonly ideal?: boolean | undefined;
+            readonly echoCancellation?: string | boolean | {
+                readonly exact?: boolean | string | undefined;
+                readonly ideal?: boolean | string | undefined;
             } | undefined;
             readonly facingMode?: string | readonly string[] | {
                 readonly exact?: string | readonly string[] | undefined;
@@ -2381,9 +2381,9 @@ declare const xrDeviceCameraUserOptions: {
             readonly exact?: string | readonly string[] | undefined;
             readonly ideal?: string | readonly string[] | undefined;
         } | undefined;
-        readonly echoCancellation?: boolean | {
-            readonly exact?: boolean | undefined;
-            readonly ideal?: boolean | undefined;
+        readonly echoCancellation?: string | boolean | {
+            readonly exact?: boolean | string | undefined;
+            readonly ideal?: boolean | string | undefined;
         } | undefined;
         readonly facingMode?: string | readonly string[] | {
             readonly exact?: string | readonly string[] | undefined;
@@ -2477,9 +2477,9 @@ declare const xrDeviceCameraEnvironmentContinuousOptions: {
                 readonly exact?: string | readonly string[] | undefined;
                 readonly ideal?: string | readonly string[] | undefined;
             } | undefined;
-            readonly echoCancellation?: boolean | {
-                readonly exact?: boolean | undefined;
-                readonly ideal?: boolean | undefined;
+            readonly echoCancellation?: string | boolean | {
+                readonly exact?: boolean | string | undefined;
+                readonly ideal?: boolean | string | undefined;
             } | undefined;
             readonly facingMode?: string | readonly string[] | {
                 readonly exact?: string | readonly string[] | undefined;
@@ -2552,9 +2552,9 @@ declare const xrDeviceCameraEnvironmentContinuousOptions: {
             readonly exact?: string | readonly string[] | undefined;
             readonly ideal?: string | readonly string[] | undefined;
         } | undefined;
-        readonly echoCancellation?: boolean | {
-            readonly exact?: boolean | undefined;
-            readonly ideal?: boolean | undefined;
+        readonly echoCancellation?: string | boolean | {
+            readonly exact?: boolean | string | undefined;
+            readonly ideal?: boolean | string | undefined;
         } | undefined;
         readonly facingMode?: string | readonly string[] | {
             readonly exact?: string | readonly string[] | undefined;
@@ -2648,9 +2648,9 @@ declare const xrDeviceCameraUserContinuousOptions: {
                 readonly exact?: string | readonly string[] | undefined;
                 readonly ideal?: string | readonly string[] | undefined;
             } | undefined;
-            readonly echoCancellation?: boolean | {
-                readonly exact?: boolean | undefined;
-                readonly ideal?: boolean | undefined;
+            readonly echoCancellation?: string | boolean | {
+                readonly exact?: boolean | string | undefined;
+                readonly ideal?: boolean | string | undefined;
             } | undefined;
             readonly facingMode?: string | readonly string[] | {
                 readonly exact?: string | readonly string[] | undefined;
@@ -2723,9 +2723,9 @@ declare const xrDeviceCameraUserContinuousOptions: {
             readonly exact?: string | readonly string[] | undefined;
             readonly ideal?: string | readonly string[] | undefined;
         } | undefined;
-        readonly echoCancellation?: boolean | {
-            readonly exact?: boolean | undefined;
-            readonly ideal?: boolean | undefined;
+        readonly echoCancellation?: string | boolean | {
+            readonly exact?: boolean | string | undefined;
+            readonly ideal?: boolean | string | undefined;
         } | undefined;
         readonly facingMode?: string | readonly string[] | {
             readonly exact?: string | readonly string[] | undefined;
