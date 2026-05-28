@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 7c7f07c
- * @builddate 2026-05-27T20:06:29.474Z
+ * @commitid 7193773
+ * @builddate 2026-05-28T18:06:44.685Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3105,7 +3105,7 @@ declare const DEFAULT_DEVICE_CAMERA_WIDTH = 1280;
  * Corresponds to a 720p resolution.
  */
 declare const DEFAULT_DEVICE_CAMERA_HEIGHT = 720;
-declare const XR_BLOCKS_ASSETS_PATH = "https://cdn.jsdelivr.net/gh/xrblocks/assets@a500427f2dfc12312df1a75860460244bab3a146/";
+declare const XR_BLOCKS_ASSETS_PATH = "https://cdn.jsdelivr.net/gh/xrblocks/assets@02bbbf2093d20bcefdac18c65d3ff0f2b94b7535/";
 
 declare class Raycaster extends THREE.Raycaster {
     sortFunction: (a: THREE.Intersection, b: THREE.Intersection) => number;
@@ -5730,6 +5730,8 @@ type SimulatorPlaneType = 'horizontal' | 'vertical';
 interface SimulatorPlane {
     /** 'horizontal' or 'vertical' */
     type: SimulatorPlaneType;
+    /** Optional semantic label for the plane (e.g., 'table', 'floor') */
+    label?: string;
     /** Total surface area in square meters */
     area: number;
     /** * The center point of the plane in World Space.
@@ -5999,6 +6001,8 @@ declare class World extends Script {
     static dependencies: {
         options: typeof WorldOptions;
         camera: typeof THREE.Camera;
+        waitFrame: typeof WaitFrame;
+        timer: typeof THREE.Timer;
     };
     editorIcon: string;
     /**
@@ -6033,14 +6037,20 @@ declare class World extends Script {
      */
     private raycaster;
     private camera;
+    private waitFrame;
+    private timer;
     private needsRoomCapture;
+    private resolveInitialized;
+    readonly initializedPromise: Promise<void>;
     /**
      * Initializes the world-sensing modules based on the provided configuration.
      * This method is called automatically by the XRCore.
      */
-    init({ options, camera, }: {
+    init({ options, camera, waitFrame, timer, }: {
         options: WorldOptions;
         camera: THREE.Camera;
+        waitFrame: WaitFrame;
+        timer: THREE.Timer;
     }): Promise<void>;
     /**
      * Places an object at the reticle.
@@ -6071,6 +6081,17 @@ declare class World extends Script {
      * otherwise.
      */
     placeOnSurface(objectToPlace: THREE.Object3D, controller: THREE.Object3D): boolean;
+    /**
+     * Places an object onto a suitable horizontal plane in the environment.
+     * It prioritizes planes in front of the user, prefers tables/elevated surfaces over floors,
+     * and ensures the object does not intersect other existing objects or other planes in the scene.
+     * If placement fails in the current frame, it continues retrying frame-by-frame until the timeout is reached.
+     *
+     * @param objectToPlace - The Three.js Object3D to place.
+     * @param timeout - Optional timeout duration as a Temporal.Duration or Temporal.DurationLike object (defaults to 500ms).
+     * @returns A promise resolving to true if successfully placed, false otherwise.
+     */
+    placeOnHorizontalSurface(objectToPlace: THREE.Object3D, timeout?: Temporal.Duration | Temporal.DurationLike): Promise<boolean>;
     /**
      * Toggles the visibility of all debug visualizations for world features.
      * @param visible - Whether the visualizations should be visible.
