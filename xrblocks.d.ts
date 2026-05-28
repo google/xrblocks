@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid ec02110
- * @builddate 2026-05-28T20:49:44.492Z
+ * @commitid b269afe
+ * @builddate 2026-05-28T22:53:00.930Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -48,7 +48,7 @@ import { TemplateResult } from 'lit';
 import { GLTFLoader, GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import TroikaThreeText from 'troika-three-text';
 import * as _sparkjsdev_spark from '@sparkjsdev/spark';
-import { SparkRenderer } from '@sparkjsdev/spark';
+import { SplatMesh, SparkRenderer } from '@sparkjsdev/spark';
 
 /**
  * A 3D visual marker used to indicate a user's aim or interaction
@@ -8005,6 +8005,19 @@ declare class FreestandingSlider {
     updateValue(value: number): void;
 }
 
+/**
+ * A specialized `THREE.Mesh` that serves as the interactive base for
+ * a `ModelViewer`. It has a distinct visual appearance and handles the logic
+ * for fading in and out on hover. Its `draggingMode` is set to `TRANSLATING` to
+ * enable movement.
+ */
+declare class ModelViewerPlatform extends THREE.Mesh<THREE.BufferGeometry, THREE.Material[]> {
+    draggingMode: DragMode;
+    opacity: AnimatableNumber;
+    constructor(width: number, depth: number, thickness: number);
+    update(deltaTime: number): void;
+}
+
 interface GLTFData {
     model: string;
     path: string;
@@ -8053,24 +8066,24 @@ declare class ModelViewer extends Script implements Draggable {
     initialScale: THREE.Vector3;
     startAnimationOnLoad: boolean;
     clipActions: THREE.AnimationAction[];
-    private data?;
-    private timer;
-    private animationMixer?;
-    private gltfMesh?;
-    private splatMesh?;
-    private splatAnchor?;
-    private hoveringControllers;
-    private raycastToChildren;
-    private occludableShaders;
-    private camera?;
-    private depth?;
-    private scene?;
-    private renderer?;
-    private bbox;
-    private platform?;
-    private controlBar?;
-    private rotationRaycastMesh?;
-    private registry?;
+    bbox: THREE.Box3;
+    protected data?: GLTFData | SplatData;
+    protected timer: THREE.Timer;
+    protected animationMixer?: THREE.AnimationMixer;
+    protected gltfMesh?: GLTF;
+    protected splatMesh?: SplatMesh;
+    protected splatAnchor?: SplatAnchor;
+    protected hoveringControllers: Set<unknown>;
+    protected raycastToChildren: boolean;
+    protected occludableShaders: Set<Shader>;
+    protected camera?: THREE.Camera;
+    protected depth?: Depth;
+    protected scene?: THREE.Scene;
+    protected renderer?: THREE.WebGLRenderer;
+    protected platform?: ModelViewerPlatform;
+    protected controlBar?: THREE.Mesh;
+    protected rotationRaycastMesh?: RotationRaycastMesh;
+    protected registry?: Registry;
     constructor({ castShadow, receiveShadow, raycastToChildren, }: {
         castShadow?: boolean | undefined;
         receiveShadow?: boolean | undefined;
