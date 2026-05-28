@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 7193773
- * @builddate 2026-05-28T18:06:44.685Z
+ * @commitid ec02110
+ * @builddate 2026-05-28T20:49:44.492Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6089,9 +6089,10 @@ declare class World extends Script {
      *
      * @param objectToPlace - The Three.js Object3D to place.
      * @param timeout - Optional timeout duration as a Temporal.Duration or Temporal.DurationLike object (defaults to 500ms).
+     * @param gridSteps - Optional number of steps along each axis for grid sampling candidate positions (defaults to 5).
      * @returns A promise resolving to true if successfully placed, false otherwise.
      */
-    placeOnHorizontalSurface(objectToPlace: THREE.Object3D, timeout?: Temporal.Duration | Temporal.DurationLike): Promise<boolean>;
+    placeOnHorizontalSurface(objectToPlace: THREE.Object3D, timeout?: Temporal.Duration | Temporal.DurationLike, gridSteps?: number): Promise<boolean>;
     /**
      * Toggles the visibility of all debug visualizations for world features.
      * @param visible - Whether the visualizations should be visible.

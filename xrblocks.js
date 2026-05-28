@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 7193773
- * @builddate 2026-05-28T18:06:44.685Z
+ * @commitid ec02110
+ * @builddate 2026-05-28T20:49:44.492Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13556,10 +13556,11 @@ function durationToMs(duration) {
  * @param planes - The PlaneDetector instance providing detected real-world planes.
  * @param meshes - The MeshDetector instance providing environmental mesh obstacles.
  * @param waitFrame - The WaitFrame component to yield execution between frames.
- * @param timeout - Optional timeout duration as a Temporal.Duration or Temporal.DurationLike object (defaults to 500ms).
+ * @param timeout - Timeout duration as a Temporal.Duration or Temporal.DurationLike object (defaults to 500ms).
+ * @param gridSteps - Number of steps along each axis for grid sampling candidate positions (defaults to 10).
  * @returns A promise resolving to true if successfully placed, false otherwise.
  */
-async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, meshes, waitFrame, timer, timeout = { milliseconds: 500 }) {
+async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, meshes, waitFrame, timer, timeout, gridSteps) {
     const timeoutSeconds = durationToMs(timeout) / 1000;
     const startElapsed = timer.getElapsed();
     while (true) {
@@ -13645,7 +13646,6 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
                 continue;
             }
             // Grid sampling within restricted bounding box
-            const gridSteps = 15;
             const localPoints = [];
             // Try user's local projection point first if it is inside the polygon
             if (isPointInPolygon(localProjected, polygon)) {
@@ -13983,9 +13983,10 @@ class World extends Script {
      *
      * @param objectToPlace - The Three.js Object3D to place.
      * @param timeout - Optional timeout duration as a Temporal.Duration or Temporal.DurationLike object (defaults to 500ms).
+     * @param gridSteps - Optional number of steps along each axis for grid sampling candidate positions (defaults to 5).
      * @returns A promise resolving to true if successfully placed, false otherwise.
      */
-    async placeOnHorizontalSurface(objectToPlace, timeout = { milliseconds: 500 }) {
+    async placeOnHorizontalSurface(objectToPlace, timeout = { milliseconds: 500 }, gridSteps = 9) {
         // Wait for World script initialization to complete first
         await this.initializedPromise;
         // Walk up parent hierarchy to find the root THREE.Scene
@@ -13994,7 +13995,7 @@ class World extends Script {
             sceneObj = sceneObj.parent;
         }
         const rootScene = sceneObj || this;
-        return placeOnHorizontalSurface(objectToPlace, this.camera, rootScene, this.planes, this.meshes, this.waitFrame, this.timer, timeout);
+        return placeOnHorizontalSurface(objectToPlace, this.camera, rootScene, this.planes, this.meshes, this.waitFrame, this.timer, timeout, gridSteps);
     }
     /**
      * Toggles the visibility of all debug visualizations for world features.
