@@ -5,8 +5,8 @@ import {
   contentDefaults,
   Image,
   InProperties,
-  Text,
 } from '@pmndrs/uikit';
+import {TextWithEmoji} from '../../uiblocks/src/core/primitives/TextWithEmoji';
 import {computed} from '@preact/signals-core';
 
 import {ActionButton} from './ActionButton';
@@ -129,7 +129,7 @@ export class Card extends Container<CardProperties> {
     });
     contentArea.add(textArea);
 
-    const titleText = new Text({
+    const titleText = new TextWithEmoji({
       text: computed(() => this.properties.signal.title.value ?? ''),
       fontSize: 24,
       lineHeight: '32px',
@@ -144,7 +144,7 @@ export class Card extends Container<CardProperties> {
     });
     textArea.add(titleText);
 
-    const subtitleText = new Text({
+    const subtitleText = new TextWithEmoji({
       text: computed(() => this.properties.signal.subtitle.value ?? ''),
       fontSize: 18,
       lineHeight: '32px',
@@ -159,7 +159,7 @@ export class Card extends Container<CardProperties> {
     });
     textArea.add(subtitleText);
 
-    const bodyText = new Text({
+    const bodyText = new TextWithEmoji({
       text: computed(() => this.properties.signal.body.value ?? ''),
       fontSize: 20,
       lineHeight: '32px',

@@ -3,9 +3,9 @@ import {
   Container,
   InProperties,
   RenderContext,
-  Text,
   WithSignal,
 } from '@pmndrs/uikit';
+import {TextWithEmoji} from '../../uiblocks/src/core/primitives/TextWithEmoji';
 import {computed} from '@preact/signals-core';
 
 import {HighlightMaterial} from './HighlightMaterial';
@@ -66,7 +66,7 @@ export class ActionButton<
     });
     this.add(icon);
 
-    const text = new Text({
+    const text = new TextWithEmoji({
       text: this.properties.signal.text,
       fontSize: 24,
       color: 'white',
