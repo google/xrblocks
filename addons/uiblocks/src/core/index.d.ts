@@ -23,6 +23,7 @@ export * from './primitives/layers/PanelLayer';
 export * from './primitives/layers/StrokeLayer';
 export * from './primitives/ManipulationPanel';
 export * from './primitives/ShaderPanel';
+export * from './primitives/TextWithEmoji';
 export * from './types/ShaderTypes';
 export * from './types/UXTypes';
 export * from './utils/ColorUtils';

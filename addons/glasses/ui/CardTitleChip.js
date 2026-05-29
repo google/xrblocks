@@ -1,4 +1,6 @@
-import { Container, Text } from '@pmndrs/uikit';
+import { Container } from '@pmndrs/uikit';
+import { TextWithEmoji } from '../../uiblocks/src/core/primitives/TextWithEmoji.js';
+import '@preact/signals-core';
 
 class CardTitleChip extends Container {
     constructor(properties, initialClasses, config) {
@@ -16,7 +18,7 @@ class CardTitleChip extends Container {
             ...config,
         });
         this.name = 'Card Title Chip';
-        const text = new Text({
+        const text = new TextWithEmoji({
             text: this.properties.signal.text,
             fontSize: 24,
             color: 'white',

@@ -1,4 +1,5 @@
-import { Container, Text } from '@pmndrs/uikit';
+import { Container } from '@pmndrs/uikit';
+import { TextWithEmoji } from '../../uiblocks/src/core/primitives/TextWithEmoji.js';
 import { computed } from '@preact/signals-core';
 import { HighlightMaterial } from './HighlightMaterial.js';
 import { MaterialSymbolsIcon } from './MaterialSymbolsIcon.js';
@@ -39,7 +40,7 @@ class ActionButton extends Container {
             display: computed(() => this.properties.signal.icon ? 'initial' : 'none'),
         });
         this.add(icon);
-        const text = new Text({
+        const text = new TextWithEmoji({
             text: this.properties.signal.text,
             fontSize: 24,
             color: 'white',

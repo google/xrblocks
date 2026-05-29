@@ -2,6 +2,7 @@ import { signal } from '@preact/signals-core';
 import * as xb from 'xrblocks';
 import { Card } from './Card.js';
 import '@pmndrs/uikit';
+import '../../uiblocks/src/core/primitives/TextWithEmoji.js';
 import './ActionButton.js';
 import './HighlightMaterial.js';
 import 'three';

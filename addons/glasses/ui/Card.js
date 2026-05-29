@@ -1,4 +1,5 @@
-import { contentDefaults, Container, Image, abortableEffect, Text } from '@pmndrs/uikit';
+import { contentDefaults, Container, Image, abortableEffect } from '@pmndrs/uikit';
+import { TextWithEmoji } from '../../uiblocks/src/core/primitives/TextWithEmoji.js';
 import { computed } from '@preact/signals-core';
 import { ActionButton } from './ActionButton.js';
 import { CardActionButton } from './CardActionButton.js';
@@ -101,7 +102,7 @@ class Card extends Container {
             gap: 3,
         });
         contentArea.add(textArea);
-        const titleText = new Text({
+        const titleText = new TextWithEmoji({
             text: computed(() => this.properties.signal.title.value ?? ''),
             fontSize: 24,
             lineHeight: '32px',
@@ -113,7 +114,7 @@ class Card extends Container {
             whiteSpace: 'pre',
         });
         textArea.add(titleText);
-        const subtitleText = new Text({
+        const subtitleText = new TextWithEmoji({
             text: computed(() => this.properties.signal.subtitle.value ?? ''),
             fontSize: 18,
             lineHeight: '32px',
@@ -125,7 +126,7 @@ class Card extends Container {
             whiteSpace: 'pre',
         });
         textArea.add(subtitleText);
-        const bodyText = new Text({
+        const bodyText = new TextWithEmoji({
             text: computed(() => this.properties.signal.body.value ?? ''),
             fontSize: 20,
             lineHeight: '32px',

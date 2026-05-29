@@ -3,6 +3,7 @@ import { computed } from '@preact/signals-core';
 import * as THREE from 'three';
 import { ActionButton } from './ActionButton.js';
 import { BoxShadow } from './BoxShadow.js';
+import '../../uiblocks/src/core/primitives/TextWithEmoji.js';
 import './HighlightMaterial.js';
 import './MaterialSymbolsIcon.js';
 import './utils.js';

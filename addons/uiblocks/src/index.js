@@ -23,6 +23,7 @@ export { PanelLayer, PanelShaderMaterial } from './core/primitives/layers/PanelL
 export { StrokeLayer } from './core/primitives/layers/StrokeLayer.js';
 export { ManipulationPanel } from './core/primitives/ManipulationPanel.js';
 export { ShaderPanel } from './core/primitives/ShaderPanel.js';
+export { TextWithEmoji } from './core/primitives/TextWithEmoji.js';
 export { GradientTypeIds, PaintTypeIds } from './core/types/ShaderTypes.js';
 export { _UXTYPES_MODULE_ } from './core/types/UXTypes.js';
 export { parseColorWithAlpha } from './core/utils/ColorUtils.js';
