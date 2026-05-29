@@ -57,11 +57,7 @@ export class SplashScript extends xb.Script {
 
     const scaleMultiplier = 0.4;
 
-    if (xb.core.depth.depthData.length > 0) {
-      xb.core.depth.depthMesh.updateFullResolutionGeometry(
-        xb.core.depth.depthData[0]
-      );
-    }
+    xb.core.depth.updateFullResolutionDepthMesh();
     paintball.splatFromIntersection(
       intersection /*scale=*/,
       xb.lerp(scaleMultiplier * 0.3, scaleMultiplier * 0.5, Math.random())
@@ -82,15 +78,7 @@ export class SplashScript extends xb.Script {
       scaleMultiplier * 0.5,
       Math.random()
     );
-    if (xb.core.depth.cpuDepthData.length > 0) {
-      xb.core.depth.depthMesh.updateFullResolutionGeometry(
-        xb.core.depth.cpuDepthData[0]
-      );
-    } else if (xb.core.depth.gpuDepthData.length > 0) {
-      xb.core.depth.depthMesh.updateFullResolutionGeometry(
-        xb.core.depth.depthMesh.convertGPUToGPU(xb.core.depth.gpuDepthData[0])
-      );
-    }
+    xb.core.depth.updateFullResolutionDepthMesh();
     paintball.splatOnMesh(
       xb.core.depth.depthMesh,
       position,
@@ -156,7 +144,7 @@ export class SplashScript extends xb.Script {
         this.physics.blendedWorld.contactPair(
           depthMeshCollider,
           ballShooter.colliders[ballIndex],
-          (manifold, flipped) => {
+          (manifold) => {
             if (!generatedDecal && manifold.numSolverContacts() > 0) {
               contactPoint.copy(manifold.solverContactPoint(0));
               forceDirection.copy(event.maxForceDirection());
@@ -186,7 +174,7 @@ export class SplashScript extends xb.Script {
     this.add(light);
   }
 
-  onPointerUp(event) {
+  onPointerUp() {
     this.mouseReticle.setPressed(false);
   }
 }

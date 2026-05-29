@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import {Script} from '../core/Script';
+import {WaitFrame} from '../core/components/WaitFrame';
 import {placeObjectAtIntersectionFacingTarget} from '../utils/ObjectPlacement';
 
 import {ObjectDetector} from './objects/ObjectDetector';
@@ -8,8 +9,9 @@ import {PlaneDetector} from './planes/PlaneDetector';
 import {WorldOptions} from './WorldOptions';
 import {MeshDetector} from './mesh/MeshDetector';
 import {SoundDetector} from './sounds/SoundDetector';
+import {placeOnHorizontalSurface} from './HorizontalPlacement';
+
 // Import other modules as they are implemented in future.
-// import { SceneMesh } from '/depth/SceneMesh.js';
 // import { LightEstimation } from '/lighting/LightEstimation.js';
 // import { HumanRecognizer } from '/human/HumanRecognizer.js';
 
@@ -23,6 +25,8 @@ export class World extends Script {
   static dependencies = {
     options: WorldOptions,
     camera: THREE.Camera,
+    waitFrame: WaitFrame,
+    timer: THREE.Timer,
   };
 
   editorIcon = 'sensors';
@@ -69,9 +73,16 @@ export class World extends Script {
   private raycaster = new THREE.Raycaster();
 
   private camera!: THREE.Camera;
+  private waitFrame!: WaitFrame;
+  private timer!: THREE.Timer;
 
   // Whether we need to initiate a room capture.
   private needsRoomCapture = false;
+
+  private resolveInitialized!: () => void;
+  readonly initializedPromise = new Promise<void>((resolve) => {
+    this.resolveInitialized = resolve;
+  });
 
   /**
    * Initializes the world-sensing modules based on the provided configuration.
@@ -80,14 +91,21 @@ export class World extends Script {
   override async init({
     options,
     camera,
+    waitFrame,
+    timer,
   }: {
     options: WorldOptions;
     camera: THREE.Camera;
+    waitFrame: WaitFrame;
+    timer: THREE.Timer;
   }) {
     this.options = options;
     this.camera = camera;
+    this.waitFrame = waitFrame;
+    this.timer = timer;
 
     if (!this.options || !this.options.enabled) {
+      this.resolveInitialized();
       return;
     }
 
@@ -125,6 +143,7 @@ export class World extends Script {
       this.humans = new HumanRecognizer();
     }
     */
+    this.resolveInitialized();
   }
 
   /**
@@ -196,6 +215,45 @@ export class World extends Script {
     }
 
     return false;
+  }
+
+  /**
+   * Places an object onto a suitable horizontal plane in the environment.
+   * It prioritizes planes in front of the user, prefers tables/elevated surfaces over floors,
+   * and ensures the object does not intersect other existing objects or other planes in the scene.
+   * If placement fails in the current frame, it continues retrying frame-by-frame until the timeout is reached.
+   *
+   * @param objectToPlace - The Three.js Object3D to place.
+   * @param timeout - Optional timeout duration as a Temporal.Duration or Temporal.DurationLike object (defaults to 500ms).
+   * @param gridSteps - Optional number of steps along each axis for grid sampling candidate positions (defaults to 5).
+   * @returns A promise resolving to true if successfully placed, false otherwise.
+   */
+  async placeOnHorizontalSurface(
+    objectToPlace: THREE.Object3D,
+    timeout: Temporal.Duration | Temporal.DurationLike = {milliseconds: 500},
+    gridSteps: number = 9
+  ): Promise<boolean> {
+    // Wait for World script initialization to complete first
+    await this.initializedPromise;
+
+    // Walk up parent hierarchy to find the root THREE.Scene
+    let sceneObj: THREE.Object3D | null = this.parent;
+    while (sceneObj && !(sceneObj instanceof THREE.Scene)) {
+      sceneObj = sceneObj.parent;
+    }
+    const rootScene = (sceneObj as THREE.Scene) || this;
+
+    return placeOnHorizontalSurface(
+      objectToPlace,
+      this.camera,
+      rootScene,
+      this.planes,
+      this.meshes,
+      this.waitFrame,
+      this.timer,
+      timeout,
+      gridSteps
+    );
   }
 
   /**

@@ -53,7 +53,6 @@ export class PortalGalleryScene extends xb.Script {
   portals = [];
   labels = [];
   immersives = []; // index -> ImmersiveInstance | null
-  clock = new THREE.Clock();
   _held = null;
   _activeIndex = -1; // Portal index user has walked into, or -1.
   _activeImmersive = null;
@@ -222,7 +221,7 @@ export class PortalGalleryScene extends xb.Script {
   }
 
   update() {
-    const dt = Math.min(this.clock.getDelta(), 0.05);
+    const dt = Math.min(xb.getDeltaTime(), 0.05);
     const cam = xb.core.camera;
 
     // Animate fade transition and keep it centered on camera.

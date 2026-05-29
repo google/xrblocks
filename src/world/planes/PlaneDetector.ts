@@ -16,7 +16,7 @@ export class PlaneDetector extends Script {
   /**
    * A map from the WebXR `XRPlane` object to our custom `DetectedPlane` mesh.
    */
-  private _detectedPlanes = new Map<XRPlane, DetectedPlane>();
+  private _detectedPlanes = new Map<XRPlane | SimulatorPlane, DetectedPlane>();
 
   /**
    * The material used for visualizing planes when debugging.
@@ -134,7 +134,7 @@ export class PlaneDetector extends Script {
    * Removes a `Plane` mesh from the scene and disposes of its resources.
    * @param xrPlane - The WebXR plane object to remove.
    */
-  private _removePlaneMesh(xrPlane: XRPlane) {
+  private _removePlaneMesh(xrPlane: XRPlane | SimulatorPlane) {
     const planeMesh = this._detectedPlanes.get(xrPlane);
     if (planeMesh) {
       planeMesh.geometry.dispose();
@@ -195,6 +195,7 @@ export class PlaneDetector extends Script {
     const material =
       this._debugMaterial || new THREE.MeshBasicMaterial({visible: false});
     const planeMesh = new DetectedPlane(null, material, plane);
+    this._detectedPlanes.set(plane, planeMesh);
     this.add(planeMesh);
     return planeMesh;
   }

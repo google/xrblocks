@@ -44,7 +44,6 @@ export class AudioAnalyser {
     // Beat detection state
     this._bassEma = 0;
     this._lastBeatTime = -Infinity;
-    this._beatActive = false;
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -90,7 +89,6 @@ export class AudioAnalyser {
     this._freqData = null;
     this._waveData = null;
     this._bassEma = 0;
-    this._beatActive = false;
   }
 
   /**

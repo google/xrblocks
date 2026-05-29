@@ -45,11 +45,18 @@ export class FrequencyBars {
 
   _buildGeometry() {
     // Shared bar geometry — unit height, pivot at base via translate
-    const barGeo = new THREE.BoxGeometry(BAR_WIDTH, 1, BAR_DEPTH);
-    barGeo.translate(0, 0.5, 0);
+    this._barGeo = new THREE.BoxGeometry(BAR_WIDTH, 1, BAR_DEPTH);
+    this._barGeo.translate(0, 0.5, 0);
 
     // Shared peak geometry — flat strip
-    const peakGeo = new THREE.BoxGeometry(BAR_WIDTH * 1.2, PEAK_BAR_HEIGHT, BAR_DEPTH * 1.2);
+    this._peakGeo = new THREE.BoxGeometry(
+      BAR_WIDTH * 1.2,
+      PEAK_BAR_HEIGHT,
+      BAR_DEPTH * 1.2
+    );
+
+    const barGeo = this._barGeo;
+    const peakGeo = this._peakGeo;
 
     for (let i = 0; i < this._numBars; i++) {
       const angle = (i / this._numBars) * Math.PI * 2;
@@ -89,11 +96,7 @@ export class FrequencyBars {
       this.group.add(peakMesh);
     }
 
-    // Lights local to the bar group
-    this.group.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-    dir.position.set(0, 2, 1);
-    this.group.add(dir);
+    // Note: lighting is provided by the parent AudioVisualizer scene.
   }
 
   /**
@@ -163,7 +166,8 @@ export class FrequencyBars {
   }
 
   dispose() {
-    // Geometries are shared; materials are per-bar
+    this._barGeo?.dispose();
+    this._peakGeo?.dispose();
     for (const m of this._barMaterials) m.dispose();
     for (const m of this._peakMaterials) m.dispose();
   }

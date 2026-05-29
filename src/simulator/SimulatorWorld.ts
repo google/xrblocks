@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import {Options} from '../core/Options';
-import {SimulatorPlane} from '../world/planes/SimulatorPlane';
+import {
+  SimulatorPlane,
+  SimulatorPlaneType,
+} from '../world/planes/SimulatorPlane';
 import {World} from '../world/World';
 
 // World sensing for the simulator.
@@ -12,6 +15,8 @@ export class SimulatorWorld {
   async init(options: Options, world: World) {
     this.options = options;
     this.world = world;
+    // Wait for World script initialization to complete first
+    await world.initializedPromise;
     const activeEnv =
       options.simulator.environments[options.simulator.activeEnvironmentIndex];
     if (options.world.planes.enabled && activeEnv?.scenePlanesPath) {
@@ -28,7 +33,8 @@ export class SimulatorWorld {
         response.json()
       )) as {
         planes: {
-          type: string;
+          type: SimulatorPlaneType;
+          label?: string;
           area: number;
           position: {
             x: number;
@@ -42,7 +48,7 @@ export class SimulatorWorld {
           }[];
         }[];
       };
-      const planes = planesData.planes.map((plane) => {
+      const planes: SimulatorPlane[] = planesData.planes.map((plane) => {
         return {
           type: plane.type,
           area: plane.area,
@@ -57,8 +63,9 @@ export class SimulatorWorld {
             plane.quaternion[2],
             plane.quaternion[3]
           ),
-          polygon: plane.polygon,
-        } as unknown as SimulatorPlane;
+          polygon: plane.polygon.map((p) => new THREE.Vector2(p.x, p.y)),
+          label: plane.label,
+        };
       });
       this.world.planes!.setSimulatorPlanes(planes);
     } catch (error) {

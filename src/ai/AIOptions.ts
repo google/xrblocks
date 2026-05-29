@@ -1,7 +1,8 @@
 import * as GoogleGenAITypes from '@google/genai';
 
-export const GEMINI_DEFAULT_FLASH_MODEL = 'gemini-3-flash-preview';
+export const GEMINI_DEFAULT_FLASH_MODEL = 'gemini-3.5-flash';
 export const GEMINI_DEFAULT_LIVE_MODEL = 'gemini-3.1-flash-live-preview';
+export const GEMINI_DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
 
 export class GeminiOptions {
   apiKey = '';

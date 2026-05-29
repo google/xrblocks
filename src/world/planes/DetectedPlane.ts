@@ -56,7 +56,7 @@ export class DetectedPlane extends THREE.Mesh {
       this.label = xrPlane.semanticLabel;
       this.orientation = xrPlane.orientation;
     } else if (simulatorPlane) {
-      this.label = simulatorPlane.type;
+      this.label = simulatorPlane.label || simulatorPlane.type;
       this.orientation = simulatorPlane.type;
       this.position.copy(simulatorPlane.position);
       this.quaternion.copy(simulatorPlane.quaternion);

@@ -95,6 +95,11 @@ export class AudioVisualizer extends xb.Script {
     this._themeIdx = 0;
     this._panelMoved = false;
 
+    // Reusable objects to avoid per-frame allocations in _followCamera
+    this._camPos = new THREE.Vector3();
+    this._camQuat = new THREE.Quaternion();
+    this._camForward = new THREE.Vector3();
+
     // UI panel (added in init after camera is available)
     this._panel = null;
   }
@@ -108,6 +113,7 @@ export class AudioVisualizer extends xb.Script {
     this._setMode(MODE_BARS);
     this._buildUi();
     this._addLights();
+    this._registerGestures();
   }
 
   update(time) {
@@ -122,8 +128,6 @@ export class AudioVisualizer extends xb.Script {
     if (this._mode === MODE_BARS) {
       this._barsViz.update(this._analyser);
     } else if (this._mode === MODE_WAVE) {
-      // WaveformRing needs frequency data read first for isBeat() side-effects
-      this._analyser.getFrequencyData();
       this._waveViz.update(this._analyser);
     } else if (this._mode === MODE_SPHERE) {
       this._updateSphere();
@@ -135,6 +139,7 @@ export class AudioVisualizer extends xb.Script {
     this._barsViz.dispose();
     this._waveViz.dispose();
     this._sphereMaterial?.dispose();
+    this._unregisterGestures();
   }
 
   // ─── Camera following ──────────────────────────────────────────────────────
@@ -142,22 +147,22 @@ export class AudioVisualizer extends xb.Script {
   _followCamera() {
     if (!this._camera) return;
 
-    const pos = new THREE.Vector3();
-    const quat = new THREE.Quaternion();
-    this._camera.getWorldPosition(pos);
-    this._camera.getWorldQuaternion(quat);
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
+    this._camera.getWorldPosition(this._camPos);
+    this._camera.getWorldQuaternion(this._camQuat);
+    this._camForward.set(0, 0, -1).applyQuaternion(this._camQuat);
 
     // Visualisation group: 1 m in front, slightly below eye level
-    this._vizGroup.position.copy(pos).addScaledVector(forward, 1.0);
+    this._vizGroup.position
+      .copy(this._camPos)
+      .addScaledVector(this._camForward, 1.0);
     this._vizGroup.position.y -= 0.05;
-    this._vizGroup.quaternion.copy(quat);
+    this._vizGroup.quaternion.copy(this._camQuat);
 
     // Panel: only follow if user hasn't moved it manually
     if (!this._panelMoved && this._panel) {
       this._panel.position.copy(this._vizGroup.position);
       this._panel.position.y -= 0.56;
-      this._panel.quaternion.copy(quat);
+      this._panel.quaternion.copy(this._camQuat);
     }
   }
 
@@ -240,9 +245,10 @@ export class AudioVisualizer extends xb.Script {
     for (let i = 0; i < modes.length; i++) {
       const btn = this._modeButtons[i];
       if (!btn) continue;
-      // Highlight active mode button
       btn.fontColor = modes[i] === this._mode ? '#ffffff' : '#4b5563';
     }
+    // Propagate fontColor changes to the underlying troika text objects
+    this._panel?.updateLayouts();
   }
 
   // ─── Theme switching ───────────────────────────────────────────────────────
@@ -410,5 +416,66 @@ export class AudioVisualizer extends xb.Script {
 
   _setStatus(text) {
     if (this._statusText) this._statusText.setText(text);
+  }
+
+  // ─── Gesture control ───────────────────────────────────────────────────────
+
+  /**
+   * Map hand gestures to visualization modes and theme cycling.
+   * Requires options.enableGestures() + per-gesture enables in main.js.
+   *
+   *  ✊ fist      → bars mode
+   *  👆 point     → wave mode
+   *  🖐 spread    → sphere mode
+   *  👍 thumbs-up → cycle color theme
+   */
+  _registerGestures() {
+    const gestures = xb.core.gestureRecognition;
+    if (!gestures) return; // not enabled — panel buttons still work
+
+    this._gestureHandler = (event) => {
+      const {name} = event.detail;
+      switch (name) {
+        case 'fist':
+          this._setMode(MODE_BARS);
+          this._gestureToast('✊  Bars');
+          break;
+        case 'point':
+          this._setMode(MODE_WAVE);
+          this._gestureToast('☝  Wave');
+          break;
+        case 'spread':
+          this._setMode(MODE_SPHERE);
+          this._gestureToast('🖐  Sphere');
+          break;
+        case 'thumbs-up':
+          this._cycleTheme();
+          this._gestureToast('👍  Theme: ' + THEME_ORDER[this._themeIdx]);
+          break;
+      }
+    };
+
+    gestures.addEventListener('gesturestart', this._gestureHandler);
+  }
+
+  _unregisterGestures() {
+    const gestures = xb.core.gestureRecognition;
+    if (gestures && this._gestureHandler) {
+      gestures.removeEventListener('gesturestart', this._gestureHandler);
+    }
+  }
+
+  /**
+   * Briefly show a gesture confirmation in the status bar, then revert.
+   * @param {string} message
+   */
+  _gestureToast(message) {
+    this._setStatus(message);
+    if (this._toastTimer) clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      this._toastTimer = null;
+      // Revert to the appropriate idle or listening status
+      this._setStatus(this._analyser.isListening ? '● Listening' : 'Pinch mic to start');
+    }, 1500);
   }
 }

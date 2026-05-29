@@ -30,7 +30,7 @@ export class SpeechSynthesizer extends Script {
     } else {
       this.loadVoices();
       if (this.synth.onvoiceschanged !== undefined) {
-        this.synth.onvoiceschanged = this.loadVoices.bind(this);
+        this.synth.onvoiceschanged = this.loadVoices;
       }
     }
     if (!this.categoryVolumes && this.synth) {
@@ -47,7 +47,7 @@ export class SpeechSynthesizer extends Script {
     }
   }
 
-  loadVoices() {
+  loadVoices = () => {
     if (!this.synth) return;
     this.voices = this.synth.getVoices();
     if (this.debug) {
@@ -67,7 +67,7 @@ export class SpeechSynthesizer extends Script {
     } else {
       console.warn('SpeechSynthesizer: No suitable default voice found.');
     }
-  }
+  };
 
   setVolume(level: number) {
     this.specificVolume = THREE.MathUtils.clamp(level, 0.0, 1.0);

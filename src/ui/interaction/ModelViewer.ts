@@ -72,6 +72,7 @@ export class ModelViewer extends Script implements Draggable {
     scene: THREE.Scene,
     renderer: THREE.WebGLRenderer,
     registry: Registry,
+    timer: THREE.Timer,
   };
 
   draggable = true;
@@ -83,26 +84,26 @@ export class ModelViewer extends Script implements Draggable {
   initialScale = new THREE.Vector3().setScalar(1);
   startAnimationOnLoad = true;
   clipActions: THREE.AnimationAction[] = [];
+  bbox = new THREE.Box3();
 
-  private data?: GLTFData | SplatData;
-  private clock = new THREE.Clock();
-  private animationMixer?: THREE.AnimationMixer;
-  private gltfMesh?: GLTF;
-  private splatMesh?: SplatMesh;
+  protected data?: GLTFData | SplatData;
+  protected timer!: THREE.Timer;
+  protected animationMixer?: THREE.AnimationMixer;
+  protected gltfMesh?: GLTF;
+  protected splatMesh?: SplatMesh;
   // Anchor to act as a proxy for the splat mesh
-  private splatAnchor?: SplatAnchor;
-  private hoveringControllers = new Set();
-  private raycastToChildren: boolean;
-  private occludableShaders = new Set<Shader>();
-  private camera?: THREE.Camera;
-  private depth?: Depth;
-  private scene?: THREE.Scene;
-  private renderer?: THREE.WebGLRenderer;
-  private bbox = new THREE.Box3();
-  private platform?: ModelViewerPlatform;
-  private controlBar?: THREE.Mesh;
-  private rotationRaycastMesh?: RotationRaycastMesh;
-  private registry?: Registry;
+  protected splatAnchor?: SplatAnchor;
+  protected hoveringControllers = new Set();
+  protected raycastToChildren: boolean;
+  protected occludableShaders = new Set<Shader>();
+  protected camera?: THREE.Camera;
+  protected depth?: Depth;
+  protected scene?: THREE.Scene;
+  protected renderer?: THREE.WebGLRenderer;
+  protected platform?: ModelViewerPlatform;
+  protected controlBar?: THREE.Mesh;
+  protected rotationRaycastMesh?: RotationRaycastMesh;
+  protected registry?: Registry;
 
   constructor({
     castShadow = true,
@@ -121,18 +122,21 @@ export class ModelViewer extends Script implements Draggable {
     scene,
     renderer,
     registry,
+    timer,
   }: {
     camera: THREE.Camera;
     depth: Depth;
     scene: THREE.Scene;
     renderer: THREE.WebGLRenderer;
     registry: Registry;
+    timer: THREE.Timer;
   }) {
     this.camera = camera;
     this.depth = depth;
     this.scene = scene;
     this.renderer = renderer;
     this.registry = registry;
+    this.timer = timer;
 
     for (const shader of this.occludableShaders) {
       this.depth!.occludableShaders.add(shader);
@@ -424,7 +428,7 @@ export class ModelViewer extends Script implements Draggable {
   }
 
   update() {
-    const delta = this.clock.getDelta();
+    const delta = this.timer.getDelta();
     if (this.animationMixer) {
       this.animationMixer.update(delta);
     }

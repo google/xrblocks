@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 import {HAND_JOINT_NAMES} from './components/HandJointNames.js';
 
-type JointName = (typeof HAND_JOINT_NAMES)[number];
+export type JointName = (typeof HAND_JOINT_NAMES)[number];
 
 /**
  * Utility class for managing WebXR hand tracking data based on

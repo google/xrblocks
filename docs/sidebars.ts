@@ -57,6 +57,7 @@ const sidebars: SidebarsConfig = {
         'samples/XR-Emoji',
         'samples/Custom-Gestures',
         'samples/RockPaperScissors',
+        'samples/Netblocks',
       ],
     },
     {

@@ -144,7 +144,8 @@ export class CustomGestureDemo extends xb.Script {
     }
 
     // Model
-    this.modelPath = './custom_gestures_model.tflite';
+    this.modelPath =
+      'https://cdn.jsdelivr.net/gh/xrblocks/assets@main/tflite_models/gestures/xr_emoji.tflite';
     this.modelState = 'None';
 
     this.frameId = 0;

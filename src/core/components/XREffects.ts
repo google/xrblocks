@@ -96,8 +96,9 @@ export class XREffects {
     renderer.xr.cameraAutoUpdate = false;
     renderer.xr.enabled = false;
     const deltaTime = this.timer.getDelta();
-    if (renderer.xr.getCamera().cameras.length == 2) {
-      for (let camIndex = 0; camIndex < 2; ++camIndex) {
+    const numCameras = renderer.xr.getCamera().cameras.length;
+    if (numCameras > 0) {
+      for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
         const cam = renderer.xr.getCamera().cameras[camIndex];
         renderer.setViewport(cam.viewport);
         renderer.setRenderTarget(renderTargets[camIndex]);
@@ -109,14 +110,14 @@ export class XREffects {
       renderer.clear();
       renderer.xr.isPresenting = false;
       renderer.autoClearColor = false;
-      for (let eye = 0; eye < 2; eye++) {
+      for (let eye = 0; eye < numCameras; eye++) {
         for (let i = 0; i < this.passes.length - 1; ++i) {
           const lastRenderTargetIndex = i % 2;
           const nextRenderTargetIndex = (i + 1) % 2;
           defaultTarget.viewport.set(
-            (eye * this.dimensions.x) / 2,
+            (eye * this.dimensions.x) / numCameras,
             0,
-            this.dimensions.x / 2,
+            this.dimensions.x / numCameras,
             this.dimensions.y
           );
           this.passes[i].render(
@@ -131,9 +132,9 @@ export class XREffects {
         if (this.passes.length > 0) {
           const lastRenderTargetIndex = (this.passes.length - 1) % 2;
           defaultTarget.viewport.set(
-            (eye * this.dimensions.x) / 2,
+            (eye * this.dimensions.x) / numCameras,
             0,
-            this.dimensions.x / 2,
+            this.dimensions.x / numCameras,
             this.dimensions.y
           );
           this.passes[this.passes.length - 1].render(

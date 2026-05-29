@@ -11,9 +11,18 @@ const smoothing = xb.getUrlParamFloat('smoothing', 0.8);
 const options = new xb.Options();
 options.hands.enabled = true;
 
+// Enable gesture recognition so users can switch modes hands-free.
+// fist → bars | point → wave | spread → sphere | thumbs-up → cycle theme
+options.enableGestures();
+options.gestures.setGestureEnabled('fist', true);
+options.gestures.setGestureEnabled('point', true);
+options.gestures.setGestureEnabled('spread', true);
+options.gestures.setGestureEnabled('thumbs-up', true);
+
 options.setAppTitle('Audio Visualizer');
 options.setAppDescription(
-  'Real-time 3D audio visualization — frequency bars, waveform ring, and pulse sphere.'
+  'Real-time 3D audio visualization — frequency bars, waveform ring, and pulse sphere. ' +
+  'Use hand gestures to switch modes: fist=bars, point=wave, spread=sphere, thumbs-up=theme.'
 );
 options.xrButton.showEnterSimulatorButton = true;
 

@@ -15,8 +15,8 @@
     "typedoc": "typedoc"
   },
   "dependencies": {
-    "@docusaurus/faster": "^3.10.1",
     "@docusaurus/core": "^3.10.1",
+    "@docusaurus/faster": "^3.10.1",
     "@docusaurus/preset-classic": "^3.10.1",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
@@ -30,11 +30,11 @@
     "@docusaurus/types": "^3.10.1",
     "baseline-browser-mapping": "^2.9.18",
     "docusaurus-plugin-typedoc": "^1.4.2",
-    "typedoc": "^0.28.12",
+    "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.8.1",
     "typedoc-plugin-mdn-links": "^5.0.9",
     "typedoc-plugin-three-links": "^1.0.5",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   },
   "browserslist": {
     "production": [

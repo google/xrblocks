@@ -1,5 +1,5 @@
 import * as GoogleGenAITypes from '@google/genai';
-import {GeminiOptions} from './AIOptions';
+import {GEMINI_DEFAULT_IMAGE_MODEL, GeminiOptions} from './AIOptions';
 import {GeminiResponse} from './AITypes';
 import {BaseAIModel} from './BaseAIModel';
 import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
@@ -309,7 +309,7 @@ export class Gemini extends BaseAIModel {
     prompt: string | string[],
     type: 'image' = 'image',
     systemInstruction = 'Generate an image',
-    model = 'gemini-2.5-flash-image'
+    model = GEMINI_DEFAULT_IMAGE_MODEL
   ) {
     if (!this.isAvailable()) return;
 

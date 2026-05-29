@@ -35,6 +35,7 @@ export * from './input/GamepadBindings';
 export * from './input/GazeController';
 export * from './input/Hands';
 export * from './input/HandsOptions';
+export * from './input/strokes/StrokeRecognition';
 export * from './input/gestures/GestureRecognition';
 export * from './input/gestures/GestureRecognitionOptions';
 export * from './input/gestures/GestureEvents';

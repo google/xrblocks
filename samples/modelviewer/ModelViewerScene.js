@@ -10,15 +10,16 @@ const PROPRIETARY_ASSETS_BASE_URL =
   'https://cdn.jsdelivr.net/gh/xrblocks/proprietary-assets@main/';
 
 export class ModelViewerScene extends xb.Script {
-  constructor() {
-    super();
-  }
+  loadedObjects = [];
+  placedObjects = new Set();
+  sessionStarted = false;
+  torusMesh = null;
 
   async init() {
     xb.core.input.addReticles();
     this.addLights();
     this.createModelFromObject();
-    await Promise.all([
+    return Promise.all([
       this.createModelFromGLTF(),
       this.createModelFromAnimatedGLTF(),
       this.createModelFromSplat(),
@@ -33,19 +34,58 @@ export class ModelViewerScene extends xb.Script {
     this.add(light);
   }
 
+  update() {
+    if (this.torusMesh) {
+      this.torusMesh.rotation.x += 0.015;
+      this.torusMesh.rotation.y += 0.015;
+    }
+  }
+
+  onSimulatorStarted() {
+    this.onXRSessionStarted();
+  }
+
+  onXRSessionStarted() {
+    this.sessionStarted = true;
+    this.placeLoadedObjects();
+  }
+
+  placeLoadedObjects() {
+    for (const model of this.loadedObjects) {
+      this.placeObject(model);
+    }
+  }
+
+  placeObject(model) {
+    if (!this.sessionStarted || this.placedObjects.has(model)) return;
+    this.placedObjects.add(model);
+    return xb.world.placeOnHorizontalSurface(
+      model,
+      /*timeout*/ {
+        seconds: 30,
+      }
+    );
+  }
+
   createModelFromObject() {
     const model = new xb.ModelViewer({});
-    model.add(
-      new THREE.Mesh(
-        new THREE.CylinderGeometry(0.15, 0.15, 0.4),
-        new THREE.MeshPhongMaterial({color: 0xdb5461})
-      )
+    const torusMesh = new THREE.Mesh(
+      new THREE.TorusKnotGeometry(0.1, 0.03, 100, 16),
+      new THREE.MeshPhongMaterial({
+        color: 0x34a853,
+        shininess: 30,
+        specular: 0x888888,
+      })
     );
+    this.torusMesh = torusMesh;
+    model.add(torusMesh);
     model.setupBoundingBox();
     model.setupRaycastCylinder();
     model.setupPlatform();
-    model.position.set(-0.15, 0.75, -1.65);
+    model.position.set(-0.6, 0.5, -1.5);
     this.add(model);
+    this.loadedObjects.push(model);
+    this.placeObject(model);
   }
 
   async createModelFromGLTF() {
@@ -59,7 +99,9 @@ export class ModelViewerScene extends xb.Script {
       },
       renderer: xb.core.renderer,
     });
-    model.position.set(0, 0.78, -1.1);
+    model.position.set(-0.2, 0.5, -1.5);
+    this.loadedObjects.push(model);
+    this.placeObject(model);
   }
 
   async createModelFromAnimatedGLTF() {
@@ -86,15 +128,16 @@ export class ModelViewerScene extends xb.Script {
         rotation: {x: 0, y: 180, z: 0},
       },
     });
-    model.position.set(0.4, 0.78, -1.1);
-    model.rotation.set(0, -Math.PI / 6, 0);
+    model.position.set(0.6, 0.5, -1.5);
+    this.loadedObjects.push(model);
+    this.placeObject(model);
   }
 
   async createModelInPanel() {
     const panel = new xb.SpatialPanel({
       backgroundColor: '#00000000',
-      width: 0.5,
-      height: 0.25,
+      width: 0.6,
+      height: 0.6,
       useDefaultPosition: false,
     });
     panel.isRoot = true;
@@ -115,5 +158,13 @@ export class ModelViewerScene extends xb.Script {
       setupPlatform: false,
       renderer: xb.core.renderer,
     });
+    // Position and scale the model to fill a 1x1x1 space uniformly, centered on the panel.
+    const size = new THREE.Vector3();
+    model.bbox.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) {
+      model.scale.setScalar(1 / maxDim);
+      model.position.set(0, -(size.y / 2) / maxDim, 0);
+    }
   }
 }

@@ -78,8 +78,8 @@ code below:
     <script type="importmap">
       {
         "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
           "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
           "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/"
         }
@@ -92,7 +92,7 @@ code below:
       import * as xb from 'xrblocks';
 
       /**
-       * A basic example of XRBlocks to render a cylinder and pinch to change its color.
+       * A basic example of XR Blocks to render a cylinder and pinch to change its color.
        */
       class MainScript extends xb.Script {
         init() {

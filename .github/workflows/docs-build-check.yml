@@ -4,6 +4,13 @@ on:
   push:
     branches-ignore:
       - 'build'
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - '.github/workflows/docs-build-check.yml'
   pull_request:
 
 jobs:
@@ -23,10 +30,26 @@ jobs:
             package-lock.json
             docs/package-lock.json
 
+      - name: Cache Root Node Modules
+        id: cache-root-modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-root-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.cache-root-modules.outputs.cache-hit != 'true'
         run: npm ci
 
+      - name: Cache Docs Node Modules
+        id: cache-docs-modules
+        uses: actions/cache@v5
+        with:
+          path: docs/node_modules
+          key: ${{ runner.os }}-node-docs-${{ hashFiles('docs/package-lock.json') }}
+
       - name: Install docs dependencies
+        if: steps.cache-docs-modules.outputs.cache-hit != 'true'
         run: npm ci
         working-directory: ./docs
 

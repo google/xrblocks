@@ -1,6 +1,5 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import * as xb from 'xrblocks';
-import {LongSelectHandler} from 'xrblocks/addons/ui/LongSelectHandler.js';
 import {SoundDisplay} from './SoundDisplay.js';
 
 const options = new xb.Options();
@@ -20,21 +19,7 @@ options.xrButton.showEnterSimulatorButton = true;
 function start() {
   const display = new SoundDisplay();
 
-  const longSelectHandler = new LongSelectHandler(() => {
-    if (display.world.sounds) {
-      if (display.world.sounds.isListening) {
-        display.world.sounds.stopListening();
-        display.hudText.text = 'Stopped listening';
-      } else {
-        display.hudText.text = 'Listening...';
-        display.world.sounds.startListening();
-      }
-      display.hudText.sync();
-    }
-  });
-
   xb.add(display);
-  xb.add(longSelectHandler);
   xb.init(options);
 }
 

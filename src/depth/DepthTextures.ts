@@ -13,12 +13,13 @@ export class DepthTextures {
 
   private createDataDepthTextures(
     depthData: XRCPUDepthInformation,
-    viewId: number
+    viewId: number,
+    depthDataFormat: XRDepthDataFormat
   ) {
     if (this.dataTextures[viewId]) {
       this.dataTextures[viewId].dispose();
     }
-    if (this.options.useFloat32) {
+    if (depthDataFormat === 'float32') {
       const typedArray = new Float32Array(depthData.width * depthData.height);
       const format = THREE.RedFormat;
       const type = THREE.FloatType;
@@ -45,15 +46,19 @@ export class DepthTextures {
     }
   }
 
-  updateData(depthData: XRCPUDepthInformation, viewId: number) {
+  updateData(
+    depthData: XRCPUDepthInformation,
+    viewId: number,
+    depthDataFormat: XRDepthDataFormat
+  ) {
     if (
       this.dataTextures.length < viewId + 1 ||
       this.dataTextures[viewId].image.width !== depthData.width ||
       this.dataTextures[viewId].image.height !== depthData.height
     ) {
-      this.createDataDepthTextures(depthData, viewId);
+      this.createDataDepthTextures(depthData, viewId, depthDataFormat);
     }
-    if (this.options.useFloat32) {
+    if (depthDataFormat === 'float32') {
       this.float32Arrays[viewId].set(new Float32Array(depthData.data));
     } else {
       this.uint8Arrays[viewId].set(new Uint8Array(depthData.data));
@@ -67,7 +72,7 @@ export class DepthTextures {
     renderer: THREE.WebGLRenderer,
     viewId: number
   ) {
-    if (this.dataTextures.length < viewId + 1) {
+    if (this.nativeTextures.length < viewId + 1) {
       this.nativeTextures[viewId] = new THREE.ExternalTexture(
         depthData.texture
       );

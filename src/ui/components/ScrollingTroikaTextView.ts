@@ -30,7 +30,6 @@ export class ScrollingTroikaTextView extends View {
   private pager: VerticalPager;
   private textViewWrapper: View;
   private textView: TextView;
-  private onTextSyncCompleteBound = this.onTextSyncComplete.bind(this);
   private currentText = '';
 
   constructor({
@@ -52,10 +51,7 @@ export class ScrollingTroikaTextView extends View {
       anchorY: 0,
     });
     this.textView.x = -0.5;
-    this.textView.addEventListener(
-      'synccomplete',
-      this.onTextSyncCompleteBound
-    );
+    this.textView.addEventListener('synccomplete', this.onTextSyncComplete);
     this.textViewWrapper.add(this.textView);
 
     this.add(this.scrollerState);
@@ -79,7 +75,7 @@ export class ScrollingTroikaTextView extends View {
     this.textView.setText(this.currentText);
   }
 
-  onTextSyncComplete() {
+  onTextSyncComplete = () => {
     if (this.textView.lineCount > 0) {
       this.textView.y =
         -0.5 + this.textView.lineHeight * this.textView.aspectRatio;
@@ -89,7 +85,7 @@ export class ScrollingTroikaTextView extends View {
 
       this.clipToLineHeight();
     }
-  }
+  };
 
   clipToLineHeight() {
     const lineHeight = this.textView.lineHeight * this.textView.aspectRatio;

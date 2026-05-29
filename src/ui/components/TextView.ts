@@ -146,7 +146,6 @@ export class TextView extends View<TextViewEventMap> {
   /** The total number of lines after text wrapping. */
   lineCount = 0;
 
-  private _onSyncCompleteBound = this.onSyncComplete.bind(this);
   private _initializeTextCalled = false;
   private _text = 'TextView';
   set text(text) {
@@ -345,7 +344,7 @@ export class TextView extends View<TextViewEventMap> {
    * Callback executed when Troika's text sync is complete.
    * It captures layout data like total height and line count.
    */
-  onSyncComplete() {
+  onSyncComplete = () => {
     if (
       !this.useSDFText ||
       !(this.textObj instanceof Text) ||
@@ -371,7 +370,7 @@ export class TextView extends View<TextViewEventMap> {
       numberOfChars > 0 ? (firstBottom - lastBottom) / lineCount : 0;
     this.lineCount = lineCount;
     this.dispatchEvent({type: 'synccomplete'});
-  }
+  };
 
   /**
    * Private method to perform the actual initialization after the async
@@ -402,7 +401,7 @@ export class TextView extends View<TextViewEventMap> {
       this.textObj.addEventListener(
         // @ts-expect-error Missing type in Troika
         'synccomplete',
-        this._onSyncCompleteBound
+        this.onSyncComplete
       );
 
       if (this.imageOverlay) {
@@ -443,7 +442,7 @@ export class TextView extends View<TextViewEventMap> {
       this.textObj.removeEventListener(
         // @ts-expect-error Missing type in Troika
         'synccomplete',
-        this._onSyncCompleteBound
+        this.onSyncComplete
       );
     }
     super.dispose();

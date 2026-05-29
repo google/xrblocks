@@ -202,16 +202,20 @@ export class ObjectDetector extends Script {
   }
 
   private getDepthMeshSnapshot() {
-    const clonedGeometry = this.depth.depthMesh!.geometry.clone();
+    const depthMesh = this.depth.depthMesh!;
+    const geometry = this.depth.options.depthMesh.updateFullResolutionGeometry
+      ? depthMesh.geometry
+      : depthMesh.downsampledGeometry || depthMesh.geometry;
+    const clonedGeometry = geometry.clone();
     clonedGeometry.computeBoundingSphere();
     clonedGeometry.computeBoundingBox();
     const depthMeshSnapshot = new THREE.Mesh(
       clonedGeometry,
       new THREE.MeshBasicMaterial()
     );
-    this.depth.depthMesh!.getWorldPosition(depthMeshSnapshot.position);
-    this.depth.depthMesh!.getWorldQuaternion(depthMeshSnapshot.quaternion);
-    this.depth.depthMesh!.getWorldScale(depthMeshSnapshot.scale);
+    depthMesh.getWorldPosition(depthMeshSnapshot.position);
+    depthMesh.getWorldQuaternion(depthMeshSnapshot.quaternion);
+    depthMesh.getWorldScale(depthMeshSnapshot.scale);
     depthMeshSnapshot.updateMatrixWorld(true);
     return depthMeshSnapshot;
   }

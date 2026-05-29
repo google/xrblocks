@@ -36,11 +36,6 @@ export class SpeechRecognizer extends Script<SpeechRecognizerEventMap> {
   error?: string;
   playActivationSounds = false;
 
-  private handleStartBound = this._handleStart.bind(this);
-  private handleResultBound = this._handleResult.bind(this);
-  private handleEndBound = this._handleEnd.bind(this);
-  private handleErrorBound = this._handleError.bind(this);
-
   constructor(private soundSynthesizer: SoundSynthesizer) {
     super();
   }
@@ -64,10 +59,10 @@ export class SpeechRecognizer extends Script<SpeechRecognizerEventMap> {
     this.recognition.interimResults = this.options.interimResults;
 
     // Setup native event listeners
-    this.recognition.onstart = this.handleStartBound;
-    this.recognition.onresult = this.handleResultBound;
-    this.recognition.onend = this.handleEndBound;
-    this.recognition.onerror = this.handleErrorBound;
+    this.recognition.onstart = this._handleStart;
+    this.recognition.onresult = this._handleResult;
+    this.recognition.onend = this._handleEnd;
+    this.recognition.onerror = this._handleError;
   }
 
   onSimulatorStarted() {
@@ -126,16 +121,16 @@ export class SpeechRecognizer extends Script<SpeechRecognizerEventMap> {
   }
 
   // Private handler for the 'start' event
-  private _handleStart() {
+  private _handleStart = () => {
     console.debug('SpeechRecognizer: Listening started.');
     this.dispatchEvent({type: 'start'});
     if (this.playActivationSounds) {
       this.soundSynthesizer.playPresetTone('ACTIVATE');
     }
-  }
+  };
 
   // Private handler for the 'result' event
-  private _handleResult(event: SpeechRecognitionEvent) {
+  private _handleResult = (event: SpeechRecognitionEvent) => {
     let interimTranscript = '';
     let finalTranscript = '';
     let currentConfidence = 0;
@@ -180,10 +175,10 @@ export class SpeechRecognizer extends Script<SpeechRecognizerEventMap> {
       command: this.lastCommand,
       isFinal: !!finalTranscript,
     });
-  }
+  };
 
   // Private handler for the 'end' event (e.g., when silence is detected)
-  _handleEnd() {
+  private _handleEnd = () => {
     this.isListening = false;
     this.dispatchEvent({type: 'end'});
 
@@ -197,15 +192,15 @@ export class SpeechRecognizer extends Script<SpeechRecognizerEventMap> {
     } else if (this.playActivationSounds) {
       this.soundSynthesizer.playPresetTone('DEACTIVATE');
     }
-  }
+  };
 
   // Private handler for the 'error' event
-  _handleError(event: SpeechRecognitionErrorEvent) {
+  private _handleError = (event: SpeechRecognitionErrorEvent) => {
     console.error('SpeechRecognizer: Error:', event.error);
     this.error = event.error;
     this.isListening = false;
     this.dispatchEvent({type: 'error', error: event.error});
-  }
+  };
 
   destroy() {
     this.stop();

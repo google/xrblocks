@@ -18,5 +18,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
   ];
   options.setAppTitle('Model Viewer');
+  options.world.enablePlaneDetection();
   await xb.init(options);
 });

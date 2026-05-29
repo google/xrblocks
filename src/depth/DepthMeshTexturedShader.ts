@@ -38,6 +38,7 @@ uniform float uDebug;
 uniform float uOpacity;
 uniform bool uUsingFloatDepth;
 uniform bool uIsTextureArray;
+uniform mat4 uNormDepthBufferFromNormView;
 
 float saturate(in float x) {
   return clamp(x, 0.0, 1.0);
@@ -108,13 +109,13 @@ void main() {
     return;
   }
 
-  vec2 depth_uv = uv;
-  depth_uv.y = 1.0 - depth_uv.y;
+  vec2 view_uv = vec2(uv.x, 1.0 - uv.y);
+  vec2 depth_uv = (uNormDepthBufferFromNormView * vec4(view_uv, 0.0, 1.0)).xy;
 
   float depth = (uIsTextureArray ? DepthArrayGetMeters(uDepthTextureArray, depth_uv) : DepthGetMeters(uDepthTexture, depth_uv)) * 8.0;
   float normalized_depth =
     saturate((depth - uMinDepth) / (uMaxDepth - uMinDepth));
-  gl_FragColor = uOpacity * vec4(TurboColormap(normalized_depth), 1.0);
+  gl_FragColor =  vec4(TurboColormap(normalized_depth), 1.0);
 }
 `,
 };

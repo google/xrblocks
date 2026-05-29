@@ -21,6 +21,10 @@ export class DepthVisualizationPass extends xb.XRPass {
       uIsTextureArray: {value: 0},
       // Used to interpret Quest 3 depth.
       uDepthNear: {value: 0},
+      uUsingFloatDepth: {
+        value: xb.core.options.depth.dataFormatPreference[0] === 'float32',
+      },
+      uNormDepthBufferFromNormView: {value: new THREE.Matrix4()},
     };
     this.depthMapQuad = new FullScreenQuad(
       new THREE.ShaderMaterial({
@@ -45,6 +49,8 @@ export class DepthVisualizationPass extends xb.XRPass {
         .isExternalTexture
         ? 1.0
         : 0;
+      this.uniforms.uUsingFloatDepth.value =
+        this.depthTextures[0].type === THREE.FloatType;
     }
   }
 
@@ -57,6 +63,11 @@ export class DepthVisualizationPass extends xb.XRPass {
       this.uniforms.uDepthNear.value = depthNear;
     } else {
       this.uniforms.uDepthTexture.value = texture;
+    }
+    if (xb.core.depth.normDepthBufferFromNormViewMatrices.length > viewId) {
+      this.uniforms.uNormDepthBufferFromNormView.value.copy(
+        xb.core.depth.normDepthBufferFromNormViewMatrices[viewId]
+      );
     }
     this.uniforms.tDiffuse.value = readBuffer.texture;
     this.uniforms.uView.value = viewId;

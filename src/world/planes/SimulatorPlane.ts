@@ -6,6 +6,9 @@ export interface SimulatorPlane {
   /** 'horizontal' or 'vertical' */
   type: SimulatorPlaneType;
 
+  /** Optional semantic label for the plane (e.g., 'table', 'floor') */
+  label?: string;
+
   /** Total surface area in square meters */
   area: number;
 

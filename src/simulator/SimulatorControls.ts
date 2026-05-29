@@ -41,13 +41,6 @@ export class SimulatorControls {
     this.setEnabled(value);
   }
 
-  private _onPointerDown = this.onPointerDown.bind(this);
-  private _onPointerUp = this.onPointerUp.bind(this);
-  private _onKeyDown = this.onKeyDown.bind(this);
-  private _onKeyUp = this.onKeyUp.bind(this);
-  private _onPointerMove = this.onPointerMove.bind(this);
-  private _onBlur = this.onBlur.bind(this);
-
   /**
    * Create the simulator controls.
    * @param hands - The simulator hands manager.
@@ -128,38 +121,38 @@ export class SimulatorControls {
 
   connect() {
     const domElement = this.renderer.domElement;
-    document.addEventListener('keyup', this._onKeyUp);
-    document.addEventListener('keydown', this._onKeyDown);
-    domElement.addEventListener('pointermove', this._onPointerMove);
-    domElement.addEventListener('pointerdown', this._onPointerDown);
-    domElement.addEventListener('pointerup', this._onPointerUp);
+    document.addEventListener('keyup', this.onKeyUp);
+    document.addEventListener('keydown', this.onKeyDown);
+    domElement.addEventListener('pointermove', this.onPointerMove);
+    domElement.addEventListener('pointerdown', this.onPointerDown);
+    domElement.addEventListener('pointerup', this.onPointerUp);
     domElement.addEventListener('contextmenu', preventDefault);
-    window.addEventListener('blur', this._onBlur);
-    document.addEventListener('visibilitychange', this._onBlur);
+    window.addEventListener('blur', this.onBlur);
+    document.addEventListener('visibilitychange', this.onBlur);
   }
 
   update() {
     this.simulatorModeControls.update();
   }
 
-  onPointerMove(event: MouseEvent) {
+  onPointerMove = (event: MouseEvent) => {
     if (!this.enabled) return;
     this.simulatorModeControls.onPointerMove(event);
-  }
+  };
 
-  onPointerDown(event: MouseEvent) {
+  onPointerDown = (event: MouseEvent) => {
     if (!this.enabled) return;
     this.simulatorModeControls.onPointerDown(event);
     this.pointerDown = true;
-  }
+  };
 
-  onPointerUp(event: MouseEvent) {
+  onPointerUp = (event: MouseEvent) => {
     if (!this.enabled) return;
     this.simulatorModeControls.onPointerUp(event);
     this.pointerDown = false;
-  }
+  };
 
-  onKeyDown(event: KeyboardEvent) {
+  onKeyDown = (event: KeyboardEvent) => {
     if (!this.enabled) return;
     // On macOS, keyup events are not fired for keys held when Command (Meta)
     // is pressed. Clear all keys to prevent stuck movement.
@@ -181,16 +174,16 @@ export class SimulatorControls {
       );
     }
     this.simulatorModeControls.onKeyDown(event);
-  }
+  };
 
-  onKeyUp(event: KeyboardEvent) {
+  onKeyUp = (event: KeyboardEvent) => {
     if (!this.enabled) return;
     this.downKeys.delete(event.code as Keycodes);
-  }
+  };
 
-  onBlur() {
+  onBlur = () => {
     this.downKeys.clear();
-  }
+  };
 
   setSimulatorMode(mode: SimulatorMode) {
     this.simulatorMode = mode;

@@ -8,7 +8,8 @@
         "../../node_modules/troika-types/packages/troika-three-text/dist/src/index"
       ],
       "xrblocks": ["../xrblocks.ts"],
-      "uiblocks": ["./uiblocks/src/index.ts"]
+      "uiblocks": ["./uiblocks/src/index.ts"],
+      "netblocks": ["./netblocks/src/index.ts"]
     }
   },
   "include": ["**/*.ts"],

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>netblocks Samples</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 24px;
+        background: #111;
+        color: #eee;
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        color: #4796e3;
+        border-bottom: 2px solid #4796e3;
+        padding-bottom: 10px;
+      }
+      h2 {
+        color: #ca6673;
+        margin-top: 28px;
+      }
+      a {
+        color: #9177c7;
+        text-decoration: none;
+        display: block;
+        padding: 10px 12px;
+        margin: 6px 0;
+        border-radius: 8px;
+        background: rgba(145, 119, 199, 0.08);
+        font-size: 1.05em;
+      }
+      a:hover {
+        text-decoration: underline;
+        background: rgba(145, 119, 199, 0.16);
+      }
+      .desc {
+        color: #aaa;
+        font-size: 0.9em;
+        display: block;
+        margin-top: 4px;
+      }
+      .tip {
+        background: #2a2030;
+        padding: 12px 14px;
+        border-radius: 8px;
+        margin: 16px 0;
+        font-size: 0.95em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>netblocks Samples</h1>
+    <p>
+      Multiplayer XR for xrblocks. Each sample below is best opened in
+      <strong>two browser tabs</strong> so you can see yourself across both.
+    </p>
+    <div class="tip">
+      💡 Every sample starts in <strong>local mode</strong> (<code
+        >BroadcastChannelTransport</code
+      >
+      — two tabs, same origin, no signaling server). Click
+      <strong>Start new room</strong> in the top-left HUD to generate a join
+      code; the framework switches to <code>WebRTCTransport</code> and friends
+      with the same code land in the same mesh. Voice signaling rides on
+      whichever transport you pick, while audio always flows directly via WebRTC
+      peer connections.
+    </div>
+
+    <h2>Basic</h2>
+
+    <a href="basic/presence/index.html">
+      Presence
+      <span class="desc"
+        >See remote heads as live avatars (plus hands in XR with hand
+        tracking).</span
+      >
+    </a>
+
+    <a href="basic/objects/index.html">
+      Shared objects
+      <span class="desc"
+        >A draggable cube whose transform replicates to all peers, with
+        cooperative grab/release ownership.</span
+      >
+    </a>
+
+    <a href="basic/events/index.html">
+      RPC events
+      <span class="desc"
+        >Click anywhere to send an emoji burst broadcast to everyone in the
+        room.</span
+      >
+    </a>
+
+    <a href="basic/chat/index.html">
+      Chat
+      <span class="desc"
+        >Plain text chat using the typed events bus — type a message in one tab
+        and watch it appear in the others.</span
+      >
+    </a>
+
+    <a href="basic/voice/index.html">
+      Spatial voice
+      <span class="desc"
+        >Push-to-talk WebRTC audio that pans with each peer's head. WASD /
+        gamepad to walk around in 2D.</span
+      >
+    </a>
+
+    <a href="basic/transports/index.html">
+      Transports
+      <span class="desc"
+        >Switch between BroadcastChannel, WebRTC, and WebSocket transports at
+        runtime.</span
+      >
+    </a>
+
+    <h2>Integration</h2>
+
+    <a href="../../../../samples/netblocks/index.html">
+      Shared room
+      <span class="desc"
+        >Everything together — presence + shared objects + chat + spatial voice
+        in a single room. The "kitchen sink" demo.</span
+      >
+    </a>
+  </body>
+</html>

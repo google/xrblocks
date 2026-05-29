@@ -151,6 +151,10 @@ export class SimulatorDepth {
       transform: transform,
     };
 
-    this.depth.updateCPUDepthData(depthData as XRCPUDepthInformation, 0);
+    this.depth.updateCPUDepthData(
+      depthData as XRCPUDepthInformation,
+      0,
+      'float32'
+    );
   }
 }

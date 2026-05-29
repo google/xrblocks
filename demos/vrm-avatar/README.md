@@ -68,7 +68,7 @@ On device, `onSelectEnd` raycasts against `xb.core.depth.depthMesh` for accurate
 
 - **`.vrma` format** — `@pixiv/three-vrm-animation` (VRM Animation format) is not used. Mixamo FBX retargeting is sufficient for walk/idle.
 - **First-person mode** — VRM first-person metadata (head mesh hiding) is not configured.
-- **MToon** — MToon anime-style materials load correctly at `three@0.182.0` but may render as standard material fallback on some devices.
+- **MToon** — MToon anime-style materials load correctly at `three@0.184.0` but may render as standard material fallback on some devices.
 - **Quest test** — simulator tested and working. Depth sensing is enabled via `options.enableDepth()` using the standard WebXR Depth Sensing API, which Quest 3 supports, but on-device testing has not been done yet.
 
 ---
@@ -77,7 +77,7 @@ On device, `onSelectEnd` raycasts against `xb.core.depth.depthMesh` for accurate
 
 | Package            | Version   | Source      |
 | ------------------ | --------- | ----------- |
-| `three`            | `0.182.0` | CDN         |
+| `three`            | `0.184.0` | CDN         |
 | `@pixiv/three-vrm` | `^3`      | CDN         |
 | `xrblocks`         | `0.12.0`  | Local build |
 | `xrblocks/addons/` | `0.12.0`  | Local build |
