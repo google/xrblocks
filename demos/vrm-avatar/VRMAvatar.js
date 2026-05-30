@@ -1,8 +1,8 @@
 /**
  * VRMAvatar.js
  *
- * Utility class that wraps VRM loading, per-frame update, and Mixamo animation
- * retargeting. Designed as a proto-addon following the RainParticles pattern:
+ * Utility class that wraps VRM loading, per-frame update, and Mesh2Motion GLB
+ * animation retargeting. Designed as a proto-addon following the RainParticles pattern:
  * plain JS class, no XRBlocks lifecycle dependencies, fully reusable.
  *
  * Usage:
@@ -15,156 +15,174 @@
 
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
 import {VRMLoaderPlugin, VRMUtils} from '@pixiv/three-vrm';
 
 // ---------------------------------------------------------------------------
-// Mixamo → VRM HumanoidBone name map
-// Sourced from three-vrm examples/humanoidAnimation/mixamoVRMRigMap.js
+// Mesh2Motion → VRM HumanoidBone name map
+// Fully populated for CC0 Mesh2Motion humanoid bone naming conventions.
 // ---------------------------------------------------------------------------
-const MIXAMO_VRM_RIG_MAP = {
-  mixamorigHips: 'hips',
-  mixamorigSpine: 'spine',
-  mixamorigSpine1: 'chest',
-  mixamorigSpine2: 'upperChest',
-  mixamorigNeck: 'neck',
-  mixamorigHead: 'head',
-  mixamorigLeftShoulder: 'leftShoulder',
-  mixamorigLeftArm: 'leftUpperArm',
-  mixamorigLeftForeArm: 'leftLowerArm',
-  mixamorigLeftHand: 'leftHand',
-  mixamorigLeftHandThumb1: 'leftThumbMetacarpal',
-  mixamorigLeftHandThumb2: 'leftThumbProximal',
-  mixamorigLeftHandThumb3: 'leftThumbDistal',
-  mixamorigLeftHandIndex1: 'leftIndexProximal',
-  mixamorigLeftHandIndex2: 'leftIndexIntermediate',
-  mixamorigLeftHandIndex3: 'leftIndexDistal',
-  mixamorigLeftHandMiddle1: 'leftMiddleProximal',
-  mixamorigLeftHandMiddle2: 'leftMiddleIntermediate',
-  mixamorigLeftHandMiddle3: 'leftMiddleDistal',
-  mixamorigLeftHandRing1: 'leftRingProximal',
-  mixamorigLeftHandRing2: 'leftRingIntermediate',
-  mixamorigLeftHandRing3: 'leftRingDistal',
-  mixamorigLeftHandPinky1: 'leftLittleProximal',
-  mixamorigLeftHandPinky2: 'leftLittleIntermediate',
-  mixamorigLeftHandPinky3: 'leftLittleDistal',
-  mixamorigRightShoulder: 'rightShoulder',
-  mixamorigRightArm: 'rightUpperArm',
-  mixamorigRightForeArm: 'rightLowerArm',
-  mixamorigRightHand: 'rightHand',
-  mixamorigRightHandThumb1: 'rightThumbMetacarpal',
-  mixamorigRightHandThumb2: 'rightThumbProximal',
-  mixamorigRightHandThumb3: 'rightThumbDistal',
-  mixamorigRightHandIndex1: 'rightIndexProximal',
-  mixamorigRightHandIndex2: 'rightIndexIntermediate',
-  mixamorigRightHandIndex3: 'rightIndexDistal',
-  mixamorigRightHandMiddle1: 'rightMiddleProximal',
-  mixamorigRightHandMiddle2: 'rightMiddleIntermediate',
-  mixamorigRightHandMiddle3: 'rightMiddleDistal',
-  mixamorigRightHandRing1: 'rightRingProximal',
-  mixamorigRightHandRing2: 'rightRingIntermediate',
-  mixamorigRightHandRing3: 'rightRingDistal',
-  mixamorigRightHandPinky1: 'rightLittleProximal',
-  mixamorigRightHandPinky2: 'rightLittleIntermediate',
-  mixamorigRightHandPinky3: 'rightLittleDistal',
-  mixamorigLeftUpLeg: 'leftUpperLeg',
-  mixamorigLeftLeg: 'leftLowerLeg',
-  mixamorigLeftFoot: 'leftFoot',
-  mixamorigLeftToeBase: 'leftToes',
-  mixamorigRightUpLeg: 'rightUpperLeg',
-  mixamorigRightLeg: 'rightLowerLeg',
-  mixamorigRightFoot: 'rightFoot',
-  mixamorigRightToeBase: 'rightToes',
+const MESH2MOTION_VRM_RIG_MAP = {
+  pelvis: 'hips',
+  spine_01: 'spine',
+  spine_02: 'chest',
+  spine_03: 'upperChest',
+  neck_01: 'neck',
+  head: 'head',
+
+  clavicle_l: 'leftShoulder',
+  upperarm_l: 'leftUpperArm',
+  lowerarm_l: 'leftLowerArm',
+  hand_l: 'leftHand',
+  thumb_01_l: 'leftThumbMetacarpal',
+  thumb_02_l: 'leftThumbProximal',
+  thumb_03_l: 'leftThumbDistal',
+  index_01_l: 'leftIndexProximal',
+  index_02_l: 'leftIndexIntermediate',
+  index_03_l: 'leftIndexDistal',
+  middle_01_l: 'leftMiddleProximal',
+  middle_02_l: 'leftMiddleIntermediate',
+  middle_03_l: 'leftMiddleDistal',
+  ring_01_l: 'leftRingProximal',
+  ring_02_l: 'leftRingIntermediate',
+  ring_03_l: 'leftRingDistal',
+  pinky_01_l: 'leftLittleProximal',
+  pinky_02_l: 'leftLittleIntermediate',
+  pinky_03_l: 'leftLittleDistal',
+
+  clavicle_r: 'rightShoulder',
+  upperarm_r: 'rightUpperArm',
+  lowerarm_r: 'rightLowerArm',
+  hand_r: 'rightHand',
+  thumb_01_r: 'rightThumbMetacarpal',
+  thumb_02_r: 'rightThumbProximal',
+  thumb_03_r: 'rightThumbDistal',
+  index_01_r: 'rightIndexProximal',
+  index_02_r: 'rightIndexIntermediate',
+  index_03_r: 'rightIndexDistal',
+  middle_01_r: 'rightMiddleProximal',
+  middle_02_r: 'rightMiddleIntermediate',
+  middle_03_r: 'rightMiddleDistal',
+  ring_01_r: 'rightRingProximal',
+  ring_02_r: 'rightRingIntermediate',
+  ring_03_r: 'rightRingDistal',
+  pinky_01_r: 'rightLittleProximal',
+  pinky_02_r: 'rightLittleIntermediate',
+  pinky_03_r: 'rightLittleDistal',
+
+  thigh_l: 'leftUpperLeg',
+  calf_l: 'leftLowerLeg',
+  foot_l: 'leftFoot',
+  ball_l: 'leftToes',
+
+  thigh_r: 'rightUpperLeg',
+  calf_r: 'rightLowerLeg',
+  foot_r: 'rightFoot',
+  ball_r: 'rightToes',
 };
 
 // ---------------------------------------------------------------------------
-// Retarget a Mixamo FBX AnimationClip onto a loaded VRM's humanoid skeleton.
+// Retarget a GLB AnimationClip onto a loaded VRM's humanoid skeleton.
 // Returns a new AnimationClip compatible with the VRM's bone names.
-// Based on three-vrm examples/humanoidAnimation/loadMixamoAnimation.js
 // ---------------------------------------------------------------------------
 /**
- * Retargets a Mixamo FBX AnimationClip onto a loaded VRM's humanoid skeleton.
+ * Retargets a GLB AnimationClip onto a loaded VRM's humanoid skeleton.
  * Returns a new AnimationClip compatible with the VRM's bone names.
- * @param {THREE.AnimationClip} clip The Mixamo animation clip.
- * @param {THREE.Group} fbxScene The loaded FBX scene containing the rig.
+ * @param {THREE.AnimationClip} clip The source GLB animation clip.
+ * @param {THREE.Group} gltfScene The loaded GLTF scene containing the rig.
  * @param {object} vrm The loaded VRM instance.
+ * @param {string} [rootBoneName=null] Optional specific root/hips bone name.
  * @returns {THREE.AnimationClip} A new AnimationClip compatible with the VRM's bone names.
  */
-function retargetMixamoClip(clip, fbxScene, vrm) {
+function retargetGLBClip(
+  clip,
+  gltfScene,
+  vrm,
+  restGlbScene = null,
+  rootBoneName = null
+) {
   const tracks = [];
   const restRotationInverse = new THREE.Quaternion();
   const parentRestWorldRotation = new THREE.Quaternion();
   const _quatA = new THREE.Quaternion();
 
-  // Find hips with the actual name in the FBX
+  // Use the shared rest scene (Idle) if available to guarantee a perfectly symmetric rest pose evaluation.
+  // This prevents the asymmetric split-step pose of Walking.glb Frame 0 from causing limping.
+  const referenceScene = restGlbScene || gltfScene;
+
+  // Locate hips node specifically
   let hipsNode = null;
-  fbxScene.traverse((obj) => {
-    if (!hipsNode && obj.name.match(/^mixamorig\d*Hips$/)) {
-      hipsNode = obj;
+  referenceScene.traverse((obj) => {
+    if (!hipsNode) {
+      if (rootBoneName && obj.name === rootBoneName) {
+        hipsNode = obj;
+      } else if (!rootBoneName && obj.name.match(/^(pelvis|Hips|hips)$/i)) {
+        hipsNode = obj;
+      }
     }
   });
-  const motionHipsHeight = hipsNode?.position.y || 1;
+
+  const motionHipsHeight = Math.max(0.1, hipsNode?.position.z || 1);
   const vrmHipsHeight = vrm.humanoid.normalizedRestPose.hips.position[1];
   const hipsPositionScale = vrmHipsHeight / motionHipsHeight;
 
-  // Force world matrix computation
-  fbxScene.updateMatrixWorld(true);
+  referenceScene.updateMatrixWorld(true);
 
   for (const track of clip.tracks) {
     const nameParts = track.name.split('.');
-    const mixamoRigName = nameParts[0];
+    const nodeNameOrUuid = nameParts[0];
     const propertyName = nameParts[1];
 
-    // Normalize bone name for rig map lookup
-    const normalizedName = mixamoRigName.replace(/^mixamorig\d*/, 'mixamorig');
-    const vrmBoneName = MIXAMO_VRM_RIG_MAP[normalizedName];
+    // Look up the node in the symmetric reference scene to compute correct rest quaternions
+    let sourceNode = referenceScene.getObjectByName(nodeNameOrUuid);
+    if (!sourceNode) {
+      sourceNode = referenceScene.getObjectByProperty('uuid', nodeNameOrUuid);
+    }
+    if (!sourceNode) continue;
+
+    const vrmBoneName = MESH2MOTION_VRM_RIG_MAP[sourceNode.name];
     if (!vrmBoneName) continue;
 
-    const vrmNodeName = vrm.humanoid?.getNormalizedBoneNode(vrmBoneName)?.name;
-    if (!vrmNodeName) continue;
+    const vrmNode = vrm.humanoid?.getNormalizedBoneNode(vrmBoneName);
+    if (!vrmNode) continue;
+    const vrmNodeName = vrmNode.name;
 
-    // Use actual FBX bone name (with number prefix)
-    const mixamoRigNode = fbxScene.getObjectByName(mixamoRigName);
-    if (!mixamoRigNode) continue;
-
-    // Store rotations of rest-pose using world quaternions (official approach)
-    mixamoRigNode.getWorldQuaternion(restRotationInverse).invert();
-    mixamoRigNode.parent.getWorldQuaternion(parentRestWorldRotation);
+    // Store rotations of the proven rest-pose using world quaternions (exactly as in Test 1 & 3 when the avatar looked normal)
+    sourceNode.getWorldQuaternion(restRotationInverse).invert();
+    sourceNode.parent.getWorldQuaternion(parentRestWorldRotation);
 
     if (track instanceof THREE.QuaternionKeyframeTrack) {
+      const values = new Float32Array(track.values.length);
       for (let i = 0; i < track.values.length; i += 4) {
-        const flatQuaternion = track.values.slice(i, i + 4);
-        _quatA.fromArray(flatQuaternion);
+        _quatA.fromArray(track.values, i);
 
+        // Transform rotation using proven premultiply/multiply math
         _quatA
           .premultiply(parentRestWorldRotation)
           .multiply(restRotationInverse);
 
-        _quatA.toArray(flatQuaternion);
-        flatQuaternion.forEach((v, index) => {
-          track.values[index + i] = v;
-        });
+        _quatA.toArray(values, i);
       }
 
-      // VRM1: no sign flip needed
       tracks.push(
         new THREE.QuaternionKeyframeTrack(
           `${vrmNodeName}.${propertyName}`,
           track.times,
-          track.values.slice()
+          values
         )
       );
     } else if (track instanceof THREE.VectorKeyframeTrack) {
-      // VRM1: keep Y (vertical bob) but zero X/Z on hips to strip root motion.
-      // Without this, Mixamo walk animations snap back on every loop cycle.
-      const value = track.values.map((v, i) =>
-        vrmBoneName === 'hips' && i % 3 !== 1 ? 0 : v * hipsPositionScale
-      );
+      const values = [];
+      for (let i = 0; i < track.values.length; i += 3) {
+        const z = track.values[i + 2];
+        // Map GLB Z to VRM Y, and add 0.25m (25cm) adjustment to keep feet perfectly on the floor
+        values.push(0, z * hipsPositionScale + 0.25, 0);
+      }
+
       tracks.push(
         new THREE.VectorKeyframeTrack(
           `${vrmNodeName}.${propertyName}`,
           track.times,
-          value
+          values
         )
       );
     }
@@ -245,24 +263,39 @@ export class VRMAvatar {
   }
 
   /**
-   * Loads a Mixamo FBX, retargets it onto the VRM skeleton, and registers it
+   * Loads a Mesh2Motion GLB, retargets it onto the VRM skeleton, and registers it
    * as a named action. Call after load().
    * @param {string} name Logical name, e.g., 'idle' or 'walk'.
-   * @param {string} fbxUrl URL to the Mixamo .fbx file.
+   * @param {string} glbUrl URL to the Mesh2Motion .glb file.
+   * @param {string} tposeUrl URL to the Tpose GLB.
    * @returns {Promise<void>}
    */
-  async loadMixamoAnimation(name, fbxUrl) {
-    if (!this.vrm) throw new Error('Call load() before loadMixamoAnimation().');
+  async loadGLBAnimation(name, glbUrl, tposeUrl) {
+    if (!this.vrm) throw new Error('Call load() before loadGLBAnimation().');
 
-    const fbxLoader = new FBXLoader();
-    const fbxScene = await fbxLoader.loadAsync(fbxUrl);
+    const loader = new GLTFLoader();
 
-    if (!fbxScene.animations || fbxScene.animations.length === 0) {
-      throw new Error(`No animations found in FBX: ${fbxUrl}`);
+    // Load the pristine T-pose reference scene exactly once to guarantee perfect rest pose evaluation
+    if (!this._restGlbScene) {
+      if (!tposeUrl)
+        throw new Error('[VRMAvatar] tposeUrl is required to load animations.');
+      const tposeGltf = await loader.loadAsync(tposeUrl);
+      this._restGlbScene = tposeGltf.scene;
     }
 
-    const rawClip = fbxScene.animations[0];
-    const retargeted = retargetMixamoClip(rawClip, fbxScene, this.vrm);
+    const gltf = await loader.loadAsync(glbUrl);
+
+    if (!gltf.animations || gltf.animations.length === 0) {
+      throw new Error(`No animations found in GLB: ${glbUrl}`);
+    }
+
+    const rawClip = gltf.animations[0];
+    const retargeted = retargetGLBClip(
+      rawClip,
+      gltf.scene,
+      this.vrm,
+      this._restGlbScene
+    );
     const action = this.mixer.clipAction(retargeted);
 
     this._actions[name] = action;
@@ -275,7 +308,7 @@ export class VRMAvatar {
 
   /**
    * Crossfades to a named animation.
-   * @param {string} name Clip name registered via loadMixamoAnimation.
+   * @param {string} name Clip name registered via loadGLBAnimation.
    * @param {number} [fadeDuration=0.3] Duration of the fade in seconds.
    * @returns {void}
    */
@@ -313,6 +346,7 @@ export class VRMAvatar {
 
     this.vrm.update(delta);
   }
+
   // -------------------------------------------------------------------------
   // Expression helpers
   // -------------------------------------------------------------------------

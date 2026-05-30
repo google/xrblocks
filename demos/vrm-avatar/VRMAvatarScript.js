@@ -8,8 +8,8 @@
  *
  * Options (passed to constructor):
  *   vrmUrl        {string}  URL to the .vrm file
- *   idleUrl       {string}  URL to the Mixamo idle FBX
- *   walkUrl       {string}  URL to the Mixamo walk FBX
+ *   idleUrl       {string}  URL to the idle GLB
+ *   walkUrl       {string}  URL to the walk GLB
  *   walkSpeed     {number}  m/s avatar walking speed; default 1.0
  *   arrivalDist   {number}  metres from target to count as arrived; default 0.25
  *   rotateLerp    {number}  slerp factor per frame for turning; default 0.08
@@ -26,8 +26,9 @@ export class VRMAvatarScript extends xb.Script {
    * Constructs a new VRMAvatarScript.
    * @param {object} [opts={}] Initialization options.
    * @param {string} [opts.vrmUrl=''] URL to the .vrm file.
-   * @param {string} [opts.idleUrl=''] URL to the Mixamo idle FBX.
-   * @param {string} [opts.walkUrl=''] URL to the Mixamo walk FBX.
+   * @param {string} [opts.idleUrl=''] URL to the idle GLB.
+   * @param {string} [opts.walkUrl=''] URL to the walk GLB.
+   * @param {string} [opts.tposeUrl=''] URL to the Tpose GLB.
    * @param {number} [opts.walkSpeed=1.0] Avatar walking speed in m/s.
    * @param {number} [opts.arrivalDist=0.25] Metres from target to count as arrived.
    * @param {number} [opts.rotateLerp=0.08] Slerp factor per frame for turning.
@@ -39,8 +40,9 @@ export class VRMAvatarScript extends xb.Script {
     this._vrmUrl = opts.vrmUrl ?? '';
     this._idleUrl = opts.idleUrl ?? '';
     this._walkUrl = opts.walkUrl ?? '';
+    this._tposeUrl = opts.tposeUrl ?? '';
 
-    this._walkSpeed = opts.walkSpeed ?? 1.0; // m/s
+    this._walkSpeed = opts.walkSpeed ?? 0.6; // m/s
     this._arrivalDist = opts.arrivalDist ?? 0.25; // m
     this._rotateLerp = opts.rotateLerp ?? 0.08;
     this._spawnDistance = opts.spawnDistance ?? 1.8; // m ahead of user at spawn
@@ -73,17 +75,29 @@ export class VRMAvatarScript extends xb.Script {
       console.error('[VRMAvatarScript] vrmUrl is required.');
       return;
     }
+    if (!this._tposeUrl) {
+      console.error('[VRMAvatarScript] tposeUrl is required.');
+      return;
+    }
 
     console.log('[VRMAvatarScript] Loading VRM…');
     await this._avatar.load(this._vrmUrl);
 
     if (this._idleUrl) {
       console.log('[VRMAvatarScript] Loading idle animation…');
-      await this._avatar.loadMixamoAnimation('idle', this._idleUrl);
+      await this._avatar.loadGLBAnimation(
+        'idle',
+        this._idleUrl,
+        this._tposeUrl
+      );
     }
     if (this._walkUrl) {
       console.log('[VRMAvatarScript] Loading walk animation…');
-      await this._avatar.loadMixamoAnimation('walk', this._walkUrl);
+      await this._avatar.loadGLBAnimation(
+        'walk',
+        this._walkUrl,
+        this._tposeUrl
+      );
     }
 
     this.add(this._avatar.root);

@@ -19,8 +19,8 @@
       {
         "imports": {
           "@dimforge/rapier3d-simd-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-simd-compat@0.19.2/rapier.mjs",
-          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.182.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.182.0/examples/jsm/",
           "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
           "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
           "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
@@ -37,65 +37,6 @@
   </head>
 
   <body>
-    <script type="module">
-      // Provides 2D simulator UI on desktop — always import first.
-      import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
-      import * as THREE from 'three';
-      import * as xb from 'xrblocks';
-
-      import {VRMAvatarScript} from './VRMAvatarScript.js';
-
-      // ---------------------------------------------------------------------------
-      // Asset URLs — swap these for your own VRM / FBX files.
-      // VRM: the sample model bundled in the three-vrm repository.
-      // FBX: free Mixamo downloads (no character needed, just animations).
-      // ---------------------------------------------------------------------------
-      const VRM_URL =
-        'https://cdn.jsdelivr.net/gh/pixiv/three-vrm@3.5.1/packages/three-vrm-animation/examples/models/VRM1_Constraint_Twist_Sample.vrm';
-      const IDLE_URL = 'animations/Idle.fbx'; // ← put your Mixamo idle FBX here
-      const WALK_URL = 'animations/Walking.fbx'; // ← put your Mixamo walk FBX here
-
-      // ---------------------------------------------------------------------------
-      // Minimal scene setup (lights + ground grid for visual reference)
-      // ---------------------------------------------------------------------------
-      class SceneSetup extends xb.Script {
-        init() {
-          this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
-
-          const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-          dirLight.position.set(1, 3, 1).normalize();
-          this.add(dirLight);
-
-          // Ground grid for spatial reference in the simulator.
-          const grid = new THREE.GridHelper(10, 20, 0x888888, 0x444444);
-          grid.position.y = 0;
-          this.add(grid);
-        }
-      }
-
-      // ---------------------------------------------------------------------------
-      // Entry point
-      // ---------------------------------------------------------------------------
-      document.addEventListener('DOMContentLoaded', async () => {
-        xb.add(new SceneSetup());
-
-        xb.add(
-          new VRMAvatarScript({
-            vrmUrl: VRM_URL,
-            idleUrl: IDLE_URL,
-            walkUrl: WALK_URL,
-
-            rotateLerp: 0.08,
-          })
-        );
-
-        const options = new xb.Options();
-        options.enableDepth();
-        options.setAppTitle('VRM Avatar Companion');
-
-        await xb.init(options);
-      });
-    </script>
+    <script type="module" src="main.js"></script>
   </body>
 </html>
