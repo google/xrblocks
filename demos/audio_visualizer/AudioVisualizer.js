@@ -18,8 +18,8 @@ const SPHERE_MAX_DISPLACE = 0.18;
 // Each theme is an array of THREE.Color stop-points; bars/ring lerp across them.
 const THEMES = {
   spectrum: _buildSpectrum(), // full HSL sweep
-  ember: _buildEmber(),       // yellow → orange → red
-  frost: _buildFrost(),       // cyan → blue → purple
+  ember: _buildEmber(), // yellow → orange → red
+  frost: _buildFrost(), // cyan → blue → purple
 };
 const THEME_ORDER = ['spectrum', 'ember', 'frost'];
 const THEME_ICONS = ['gradient', 'local_fire_department', 'ac_unit'];
