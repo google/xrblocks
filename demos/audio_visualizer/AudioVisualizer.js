@@ -475,7 +475,9 @@ export class AudioVisualizer extends xb.Script {
     this._toastTimer = setTimeout(() => {
       this._toastTimer = null;
       // Revert to the appropriate idle or listening status
-      this._setStatus(this._analyser.isListening ? '● Listening' : 'Pinch mic to start');
+      this._setStatus(
+        this._analyser.isListening ? '● Listening' : 'Pinch mic to start'
+      );
     }, 1500);
   }
 }

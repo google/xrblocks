@@ -21,8 +21,8 @@ options.gestures.setGestureEnabled('thumbs-up', true);
 
 options.setAppTitle('Audio Visualizer');
 options.setAppDescription(
-  'Real-time 3D audio visualization — frequency bars, waveform ring, and pulse sphere. ' +
-  'Use hand gestures to switch modes: fist=bars, point=wave, spread=sphere, thumbs-up=theme.'
+  'Real-time 3D audio visualization — bars, waveform ring, and pulse sphere. ' +
+  'Gestures: fist=bars, point=wave, spread=sphere, thumbs-up=theme.'
 );
 options.xrButton.showEnterSimulatorButton = true;
 

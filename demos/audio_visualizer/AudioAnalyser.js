@@ -155,7 +155,8 @@ export class AudioAnalyser {
 
     const now = performance.now();
     const cooldownOk = now - this._lastBeatTime > this._beatCooldownMs;
-    const isSpike = bassAvg > this._bassEma * this._beatThreshold && bassAvg > 0.1;
+    const isSpike =
+      bassAvg > this._bassEma * this._beatThreshold && bassAvg > 0.1;
 
     if (isSpike && cooldownOk) {
       this._lastBeatTime = now;
@@ -166,6 +167,8 @@ export class AudioAnalyser {
 
   /** Number of frequency bins (= fftSize / 2). */
   get binCount() {
-    return this._analyserNode ? this._analyserNode.frequencyBinCount : this._fftSize / 2;
+    return this._analyserNode
+      ? this._analyserNode.frequencyBinCount
+      : this._fftSize / 2;
   }
 }
