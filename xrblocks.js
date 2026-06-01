@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 759a438
- * @builddate 2026-05-29T23:53:36.703Z
+ * @commitid fe98f0a
+ * @builddate 2026-06-01T17:35:53.232Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9446,6 +9446,261 @@ const RIGHT_HAND_FIST = [
     { t: [0.0488, -0.0485, -0.1773], r: [0.9518, -0.3056, -0.0236, 0.0063] },
 ];
 
+const LEFT_HAND_NEUTRAL = [
+    {
+        t: [-0.05, -0.08, -0.1],
+        r: [0.53411, 0.018204, -0.222429, 0.815436],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.027338, -0.067039, -0.122241],
+        r: [0.394372, -0.415858, -0.220458, 0.789271],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.017754, -0.043135, -0.143554],
+        r: [0.514492, -0.382382, -0.392596, 0.659546],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.043077, -0.032545, -0.149159],
+        r: [0.56159, -0.206804, -0.487, 0.636248],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.067278, -0.017229, -0.159647],
+        r: [0.56161, -0.206811, -0.487017, 0.636271],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.032269, -0.059371, -0.115777],
+        r: [0.567561, -0.097691, -0.203196, 0.791889],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-5609e-6, 0.002735, -0.153999],
+        r: [0.507186, -0.063324, -0.203911, 0.83502],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.007245, 0.035597, -0.172199],
+        r: [0.458663, -0.049313, -0.205676, 0.86312],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.013177, 0.052938, -0.185024],
+        r: [0.397899, -2456e-6, -0.189554, 0.897684],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.016515, 0.069224, -0.201788],
+        r: [0.397916, -2456e-6, -0.189562, 0.897722],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.043623, -0.053662, -0.112719],
+        r: [0.553746, -7309e-6, -0.191796, 0.810263],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.028562, 0.010251, -0.145199],
+        r: [0.472064, 0.017109, -0.111029, 0.874356],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.02549, 0.045618, -0.168513],
+        r: [0.441765, -0.01643, -0.133573, 0.886956],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.021146, 0.069622, -0.187059],
+        r: [0.310755, -5124e-6, -0.143074, 0.939638],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.019044, 0.083146, -0.207534],
+        r: [0.310762, -5124e-6, -0.143078, 0.939662],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.055288, -0.052779, -0.110872],
+        r: [0.521068, 0.080546, -0.193884, 0.827277],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.051159, 0.007143, -0.141754],
+        r: [0.461693, 0.031862, -0.045643, 0.885256],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.051676, 0.039517, -0.165253],
+        r: [0.378491, 0.011831, -0.061086, 0.923512],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.051113, 0.062013, -0.187766],
+        r: [0.260819, 0.021358, -0.083438, 0.961583],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.051187, 0.072388, -0.207475],
+        r: [0.260827, 0.021359, -0.083441, 0.961614],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.066037, -0.054584, -0.108849],
+        r: [0.488069, 0.176432, -0.171185, 0.837447],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.074056, -635e-6, -0.137437],
+        r: [0.440891, 0.100924, 0.027575, 0.891356],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.080655, 0.025614, -0.159345],
+        r: [0.437071, 0.097627, 0.021249, 0.893713],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.085037, 0.043556, -0.172445],
+        r: [0.3904, 0.08214, -0.029839, 0.916297],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.08881, 0.056942, -0.18567],
+        r: [0.390393, 0.082139, -0.029838, 0.916279],
+        s: [1, 1, 1],
+    },
+];
+const RIGHT_HAND_NEUTRAL = [
+    {
+        t: [0.05, -0.08, -0.1],
+        r: [0.53411, -0.018204, 0.222429, 0.815436],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.02714, -0.066906, -0.122492],
+        r: [0.390827, 0.303443, 0.211954, 0.842754],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.012951, -0.037875, -0.148455],
+        r: [0.456561, 0.261457, 0.42092, 0.738834],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.034444, -0.025126, -0.16151],
+        r: [0.531996, 0.128649, 0.517554, 0.657452],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-0.055852, -8059e-6, -0.175472],
+        r: [0.531942, 0.128636, 0.517501, 0.657385],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.032341, -0.059135, -0.115948],
+        r: [0.560925, 0.108731, 0.182482, 0.800152],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.005279, 0.003447, -0.154551],
+        r: [0.501803, 0.014742, 0.185614, 0.844655],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-3678e-6, 0.037362, -0.173626],
+        r: [0.440465, -1003e-6, 0.184485, 0.878535],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-7055e-6, 0.054976, -0.187353],
+        r: [0.439723, -0.035383, 0.16791, 0.881478],
+        s: [1, 1, 1],
+    },
+    {
+        t: [-8779e-6, 0.073092, -0.202432],
+        r: [0.439692, -0.035381, 0.167898, 0.881417],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.043703, -0.053527, -0.112791],
+        r: [0.558877, 0.019041, 0.1763, 0.810031],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.028511, 0.010965, -0.145572],
+        r: [0.432239, -6021e-6, 0.115346, 0.894241],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.024687, 0.044316, -0.172183],
+        r: [0.440799, 0.034254, 0.1351, 0.886651],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.019373, 0.06842, -0.190857],
+        r: [0.424278, 0.040476, 0.143145, 0.893232],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.0149, 0.08625, -0.207445],
+        r: [0.42431, 0.040479, 0.143156, 0.8933],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.055416, -0.052725, -0.110626],
+        r: [0.54139, -0.067994, 0.183816, 0.817666],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.051144, 0.007776, -0.142131],
+        r: [0.43212, -2596e-6, 0.053462, 0.900259],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.049513, 0.038866, -0.167958],
+        r: [0.43004, 0.023258, 0.068866, 0.899852],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.046401, 0.063754, -0.188051],
+        r: [0.405791, 0.02026, 0.093674, 0.908878],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.04415, 0.07964, -0.203715],
+        r: [0.40578, 0.02026, 0.093671, 0.908852],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.066378, -0.054668, -0.108764],
+        r: [0.519054, -0.162615, 0.164965, 0.822762],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.074255, -33e-6, -0.137755],
+        r: [0.373958, -0.03966, -0.015715, 0.926469],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.076808, 0.023101, -0.164096],
+        r: [0.459067, -0.036703, -5892e-6, 0.887605],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.078415, 0.042099, -0.176711],
+        r: [0.469121, -0.020332, 0.049975, 0.881495],
+        s: [1, 1, 1],
+    },
+    {
+        t: [0.079492, 0.057874, -0.187862],
+        r: [0.469173, -0.020334, 0.04998, 0.881592],
+        s: [1, 1, 1],
+    },
+];
+
 const LEFT_HAND_PINCHING = [
     { t: [-0.05, -0.08, -0.1], r: [0.5373, 0, 0, 0.8434], s: [1, 1, 1] },
     {
@@ -10626,6 +10881,7 @@ const RIGHT_HAND_VICTORY = [
 // Enum of hand poses.
 var SimulatorHandPose;
 (function (SimulatorHandPose) {
+    SimulatorHandPose["NEUTRAL"] = "neutral";
     SimulatorHandPose["RELAXED"] = "relaxed";
     SimulatorHandPose["PINCHING"] = "pinching";
     SimulatorHandPose["FIST"] = "fist";
@@ -10636,6 +10892,7 @@ var SimulatorHandPose;
     SimulatorHandPose["VICTORY"] = "victory";
 })(SimulatorHandPose || (SimulatorHandPose = {}));
 const SIMULATOR_HAND_POSE_TO_JOINTS_LEFT = Object.freeze({
+    [SimulatorHandPose.NEUTRAL]: LEFT_HAND_NEUTRAL,
     [SimulatorHandPose.RELAXED]: LEFT_HAND_RELAXED,
     [SimulatorHandPose.PINCHING]: LEFT_HAND_PINCHING,
     [SimulatorHandPose.FIST]: LEFT_HAND_FIST,
@@ -10646,6 +10903,7 @@ const SIMULATOR_HAND_POSE_TO_JOINTS_LEFT = Object.freeze({
     [SimulatorHandPose.VICTORY]: LEFT_HAND_VICTORY,
 });
 const SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT = Object.freeze({
+    [SimulatorHandPose.NEUTRAL]: RIGHT_HAND_NEUTRAL,
     [SimulatorHandPose.RELAXED]: RIGHT_HAND_RELAXED,
     [SimulatorHandPose.PINCHING]: RIGHT_HAND_PINCHING,
     [SimulatorHandPose.FIST]: RIGHT_HAND_FIST,
@@ -10656,6 +10914,7 @@ const SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT = Object.freeze({
     [SimulatorHandPose.VICTORY]: RIGHT_HAND_VICTORY,
 });
 const SIMULATOR_HAND_POSE_NAMES = Object.freeze({
+    [SimulatorHandPose.NEUTRAL]: 'Neutral',
     [SimulatorHandPose.RELAXED]: 'Relaxed',
     [SimulatorHandPose.PINCHING]: 'Pinching',
     [SimulatorHandPose.FIST]: 'Fist',
@@ -11256,6 +11515,120 @@ class SimulatorHandPoseChangeRequestEvent extends Event {
     }
 }
 
+const HAND_JOINT_PARENT = {
+    'thumb-metacarpal': 'wrist',
+    'thumb-phalanx-proximal': 'thumb-metacarpal',
+    'thumb-phalanx-distal': 'thumb-phalanx-proximal',
+    'thumb-tip': 'thumb-phalanx-distal',
+    'index-finger-metacarpal': 'wrist',
+    'index-finger-phalanx-proximal': 'index-finger-metacarpal',
+    'index-finger-phalanx-intermediate': 'index-finger-phalanx-proximal',
+    'index-finger-phalanx-distal': 'index-finger-phalanx-intermediate',
+    'index-finger-tip': 'index-finger-phalanx-distal',
+    'middle-finger-metacarpal': 'wrist',
+    'middle-finger-phalanx-proximal': 'middle-finger-metacarpal',
+    'middle-finger-phalanx-intermediate': 'middle-finger-phalanx-proximal',
+    'middle-finger-phalanx-distal': 'middle-finger-phalanx-intermediate',
+    'middle-finger-tip': 'middle-finger-phalanx-distal',
+    'ring-finger-metacarpal': 'wrist',
+    'ring-finger-phalanx-proximal': 'ring-finger-metacarpal',
+    'ring-finger-phalanx-intermediate': 'ring-finger-phalanx-proximal',
+    'ring-finger-phalanx-distal': 'ring-finger-phalanx-intermediate',
+    'ring-finger-tip': 'ring-finger-phalanx-distal',
+    'pinky-finger-metacarpal': 'wrist',
+    'pinky-finger-phalanx-proximal': 'pinky-finger-metacarpal',
+    'pinky-finger-phalanx-intermediate': 'pinky-finger-phalanx-proximal',
+    'pinky-finger-phalanx-distal': 'pinky-finger-phalanx-intermediate',
+    'pinky-finger-tip': 'pinky-finger-phalanx-distal',
+};
+function createRestJoints(joints) {
+    const restJoints = new Map();
+    HAND_JOINT_NAMES.forEach((jointName, index) => {
+        const joint = joints[index];
+        const position = new THREE.Vector3(joint.t[0], joint.t[1], joint.t[2]);
+        const rotation = new THREE.Quaternion(joint.r[0], joint.r[1], joint.r[2], joint.r[3]);
+        const parentName = HAND_JOINT_PARENT[jointName];
+        if (!parentName) {
+            restJoints.set(jointName, {
+                position,
+                rotation,
+                localOffset: position.clone(),
+                localRotation: rotation.clone(),
+            });
+            return;
+        }
+        const parentRestJoint = restJoints.get(parentName);
+        const inverseParentRotation = parentRestJoint.rotation.clone().invert();
+        const localOffset = position
+            .clone()
+            .sub(parentRestJoint.position)
+            .applyQuaternion(inverseParentRotation);
+        const localRotation = parentRestJoint.rotation
+            .clone()
+            .invert()
+            .multiply(rotation);
+        restJoints.set(jointName, {
+            position,
+            rotation,
+            localOffset,
+            localRotation,
+        });
+    });
+    return restJoints;
+}
+const LEFT_REST_JOINTS = createRestJoints(LEFT_HAND_NEUTRAL);
+const RIGHT_REST_JOINTS = createRestJoints(RIGHT_HAND_NEUTRAL);
+function getHandednessRotation(handedness, rotation = [0, 0, 0]) {
+    if (handedness !== Handedness.RIGHT) {
+        return rotation;
+    }
+    return [rotation[0], -rotation[1], -rotation[2]];
+}
+function resolveHandPoseRotations(handedness, restJoints, rotations) {
+    const finalPositions = new Map();
+    const finalRotations = new Map();
+    const resolvedJoints = [];
+    for (const jointName of HAND_JOINT_NAMES) {
+        const restJoint = restJoints.get(jointName);
+        const rotation = getHandednessRotation(handedness, rotations[jointName]);
+        const offsetRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2], 'XYZ'));
+        const parentName = HAND_JOINT_PARENT[jointName];
+        if (!parentName) {
+            const finalPosition = restJoint.position.clone();
+            const finalRotation = restJoint.rotation.clone().multiply(offsetRotation);
+            finalPositions.set(jointName, finalPosition);
+            finalRotations.set(jointName, finalRotation);
+            resolvedJoints.push({
+                t: finalPosition.toArray(),
+                r: finalRotation.toArray(),
+                s: [1, 1, 1],
+            });
+            continue;
+        }
+        const parentPosition = finalPositions.get(parentName);
+        const parentRotation = finalRotations.get(parentName);
+        const finalPosition = restJoint.localOffset
+            .clone()
+            .applyQuaternion(parentRotation)
+            .add(parentPosition);
+        const finalRotation = parentRotation
+            .clone()
+            .multiply(restJoint.localRotation)
+            .multiply(offsetRotation);
+        finalPositions.set(jointName, finalPosition);
+        finalRotations.set(jointName, finalRotation);
+        resolvedJoints.push({
+            t: finalPosition.toArray(),
+            r: finalRotation.toArray(),
+            s: [1, 1, 1],
+        });
+    }
+    return resolvedJoints;
+}
+function resolveSimulatorHandPoseRotations(handedness, rotations) {
+    return resolveHandPoseRotations(handedness, handedness === Handedness.LEFT ? LEFT_REST_JOINTS : RIGHT_REST_JOINTS, rotations);
+}
+
 class SimulatorXRHand {
 }
 
@@ -11386,6 +11759,34 @@ class SimulatorHands {
         }
         this.rightHandPose = pose;
         this.rightHandTargetJoints = SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT[pose];
+        this.updateHandPosePanel();
+    }
+    setLeftHandRotations(rotations) {
+        if (this.leftHandPose === SimulatorHandPose.PINCHING) {
+            this.input.dispatchEvent({
+                type: 'selectend',
+                target: this.input.controllers[0],
+                data: {
+                    handedness: 'left',
+                },
+            });
+        }
+        this.leftHandPose = undefined;
+        this.leftHandTargetJoints = resolveSimulatorHandPoseRotations(Handedness.LEFT, rotations);
+        this.updateHandPosePanel();
+    }
+    setRightHandRotations(rotations) {
+        if (this.rightHandPose === SimulatorHandPose.PINCHING) {
+            this.input.dispatchEvent({
+                type: 'selectend',
+                target: this.input.controllers[1],
+                data: {
+                    handedness: 'right',
+                },
+            });
+        }
+        this.rightHandPose = undefined;
+        this.rightHandTargetJoints = resolveSimulatorHandPoseRotations(Handedness.RIGHT, rotations);
         this.updateHandPosePanel();
     }
     setLeftHandJoints(joints) {
@@ -18694,6 +19095,25 @@ class StrokeRecognizer extends Script {
     }
 }
 
+const HAND_JOINT_NAME_SET = new Set(HAND_JOINT_NAMES);
+function parseSimulatorHandPoseRotations(json) {
+    if (!json || typeof json !== 'object' || Array.isArray(json)) {
+        return {};
+    }
+    const rotations = {};
+    for (const [jointName, value] of Object.entries(json)) {
+        if (!HAND_JOINT_NAME_SET.has(jointName))
+            continue;
+        if (!Array.isArray(value) ||
+            value.length !== 3 ||
+            !value.every((axisValue) => typeof axisValue === 'number')) {
+            continue;
+        }
+        rotations[jointName] = [value[0], value[1], value[2]];
+    }
+    return rotations;
+}
+
 // Reusable instances to avoid creating new objects in the render loop.
 const euler$1 = new THREE.Euler();
 const matrix4$1 = new THREE.Matrix4();
@@ -20734,5 +21154,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, placeObjectAtIntersectionFacingTarget, print, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_TO_JOINTS_LEFT, SIMULATOR_HAND_POSE_TO_JOINTS_RIGHT, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, TextButton, TextScrollerState, TextView, Tool, UI, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
