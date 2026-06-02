@@ -13,7 +13,7 @@ import {placeOnHorizontalSurface} from './HorizontalPlacement';
 
 // Import other modules as they are implemented in future.
 // import { LightEstimation } from '/lighting/LightEstimation.js';
-// import { HumanRecognizer } from '/human/HumanRecognizer.js';
+import {HumanRecognizer} from './humans/HumanRecognizer';
 
 /**
  * Manages all interactions with the real-world environment perceived by the XR
@@ -66,6 +66,11 @@ export class World extends Script {
    * The sound detection module instance. Null if not enabled.
    */
   sounds?: SoundDetector;
+
+  /**
+   * The human recognition/pose module instance. Null if not enabled.
+   */
+  humans?: HumanRecognizer;
 
   /**
    * A Three.js Raycaster for performing intersection tests.
@@ -132,15 +137,16 @@ export class World extends Script {
       this.add(this.sounds);
     }
 
+    if (this.options.humans.enabled) {
+      this.humans = new HumanRecognizer();
+      this.add(this.humans);
+    }
+
     // TODO: Initialize other modules as they are available & implemented.
     /*
 
     if (this.options.lighting.enabled) {
       this.lighting = new LightEstimation();
-    }
-
-    if (this.options.humans.enabled) {
-      this.humans = new HumanRecognizer();
     }
     */
     this.resolveInitialized();
@@ -263,5 +269,6 @@ export class World extends Script {
   showDebugVisualizations(visible = true) {
     this.planes?.showDebugVisualizations(visible);
     this.objects?.showDebugVisualizations(visible);
+    this.humans?.showDebugVisualizations(visible);
   }
 }

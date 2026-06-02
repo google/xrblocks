@@ -5,6 +5,7 @@ import {MeshDetectionOptions} from './mesh/MeshDetectionOptions';
 import {ObjectsOptions} from './objects/ObjectsOptions';
 import {PlanesOptions} from './planes/PlanesOptions';
 import {SoundsOptions} from './sounds/SoundsOptions';
+import {HumansOptions} from './humans/HumansOptions';
 
 export class WorldOptions {
   debugging = false;
@@ -14,6 +15,7 @@ export class WorldOptions {
   objects = new ObjectsOptions();
   meshes = new MeshDetectionOptions();
   sounds = new SoundsOptions();
+  humans = new HumansOptions();
 
   constructor(options?: DeepPartial<WorldOptions>) {
     if (options) {
@@ -56,4 +58,14 @@ export class WorldOptions {
     this.sounds.enable();
     return this;
   }
+
+  /**
+   * Enables human detection.
+   */
+  enableHumanDetection() {
+    this.enabled = true;
+    this.humans.enable();
+    return this;
+  }
 }
+

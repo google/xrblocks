@@ -141,6 +141,9 @@ export * from './world/planes/PlanesOptions';
 export * from './world/planes/SimulatorPlane';
 export * from './world/World';
 export * from './world/WorldOptions';
+export * from './world/humans/DetectedBodyPose';
+export * from './world/humans/HumanRecognizer';
+export * from './world/humans/HumansOptions';
 
 export type {IconButtonOptions} from './ui/components/IconButton';
 export type {IconViewOptions} from './ui/components/IconView';
