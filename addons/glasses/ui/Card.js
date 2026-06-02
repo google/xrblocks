@@ -10,6 +10,7 @@ import './MaterialSymbolsIcon.js';
 import './utils.js';
 import './BoxShadow.js';
 
+/** Default properties for the Card component. */
 const cardDefaults = {
     titleChip: undefined,
     title: undefined,
@@ -22,6 +23,7 @@ const cardDefaults = {
     buttons: [],
     ...contentDefaults,
 };
+/** A card component that displays content with title, icon, text, and actions. */
 class Card extends Container {
     constructor(properties) {
         super({
@@ -40,7 +42,7 @@ class Card extends Container {
         const borderWidth = 3;
         const cardContainer = new Container({
             flexDirection: 'column',
-            borderWidth: borderWidth,
+            borderWidth,
             borderRadius: 40,
             borderColor: 0x606460,
             // For some reason uikit counts padding from the end of the border.
@@ -136,6 +138,7 @@ class Card extends Container {
             display: computed(() => this.properties.signal.body.value !== undefined ? undefined : 'none'),
             flexGrow: 1,
             whiteSpace: 'pre',
+            overflow: 'hidden',
         });
         textArea.add(bodyText);
         const actionButtonWrapper = new Container();

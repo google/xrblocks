@@ -1,5 +1,6 @@
 import { BaseOutProperties, Container, InProperties } from '@pmndrs/uikit';
 import { ButtonProperties } from './ButtonProperties';
+/** Default properties for the Card component. */
 export declare const cardDefaults: {
     depthAlign: keyof typeof import("@pmndrs/uikit/dist/utils").alignmentZMap;
     keepAspectRatio: boolean;
@@ -34,7 +35,9 @@ export declare const cardDefaults: {
     trailingEntityIcon: boolean;
     buttons: ButtonProperties[];
 };
+/** Properties for the Card component. */
 export type CardProperties = typeof cardDefaults & BaseOutProperties;
+/** A card component that displays content with title, icon, text, and actions. */
 export declare class Card extends Container<CardProperties> {
     constructor(properties: InProperties<CardProperties>);
 }
