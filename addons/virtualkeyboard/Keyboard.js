@@ -1,23 +1,18 @@
 import * as xb from 'xrblocks';
 
-/**
- * This script defines a virtual keyboard component (gBoard) for XR
- * environments using the XR Blocks SDK. It creates a responsive keyboard UI
- * with alphabetic keys, a backspace, and an enter key.
- */
-const COLUMN_WEIGHT = 0.074;
-const ROW_TOP_PADDING = 0.04;
-const COLUMN_LEFT_PADDING = 0.02;
+// --- Constants ---
+const KEY_WIDTH = 0.07;
+const KEY_HEIGHT = 0.08;
 const FONT_SIZE = 0.45;
-const KEYBOARD_COLOR = '#060606';
-const DEFAULT_KEY_COLOR = '#121212';
-const SPECIAL_KEY_COLOR = '#292929';
+const KEYBOARD_COLOR = '#1a1a1b';
+const DEFAULT_KEY_COLOR = '#333334';
+const SPECIAL_KEY_COLOR = '#3e4a59';
+const ACTION_KEY_COLOR = '#449eb9';
+const COL_SPACER = 0.01;
+const ROW_SPACER = 0.015;
 const KEY_LAYOUT = [
-    {
-        textKeys: '`1234567890-+',
-        shiftKeys: '~!@#$%^&*()_+',
-        specialKeys: [],
-    },
+    { textKeys: '~!@#$%^&*()_+', specialKeys: [] },
+    { textKeys: '`1234567890<>', specialKeys: [] },
     {
         textKeys: 'qwertyuiop',
         specialKeys: [
@@ -25,7 +20,7 @@ const KEY_LAYOUT = [
                 position: 'left',
                 type: 'tab',
                 iconName: 'keyboard_tab',
-                weight: COLUMN_WEIGHT * 1.2,
+                weight: KEY_WIDTH * 1.2,
             },
             { position: 'right', type: 'backspace', iconName: 'backspace' },
         ],
@@ -37,25 +32,24 @@ const KEY_LAYOUT = [
                 position: 'left',
                 type: 'shift_lock',
                 iconName: 'lock',
-                weight: COLUMN_WEIGHT * 1.5,
+                weight: KEY_WIDTH * 1.5,
             },
             {
                 position: 'right',
                 type: 'enter',
                 iconName: 'keyboard_return',
-                backgroundColor: '#449eb9',
+                backgroundColor: ACTION_KEY_COLOR,
             },
         ],
     },
     {
         textKeys: 'zxcvbnm,.',
-        shiftKeys: 'ZXCVBNM/?',
         specialKeys: [
             {
                 position: 'left',
                 type: 'shift',
                 iconName: 'keyboard_capslock',
-                weight: COLUMN_WEIGHT * 2.1,
+                weight: KEY_WIDTH * 2.1,
             },
             { position: 'right', type: 'shift', iconName: 'keyboard_capslock' },
         ],
@@ -66,11 +60,14 @@ const KEY_LAYOUT = [
                 position: 'center',
                 type: 'space',
                 iconName: 'space_bar',
-                weight: COLUMN_WEIGHT * 9,
+                weight: KEY_WIDTH * 9,
             },
         ],
     },
 ];
+const TOTAL_KEYBOARD_WIDTH = 1.0;
+const TOTAL_KEYBOARD_HEIGHT = KEY_LAYOUT.length * KEY_HEIGHT + (KEY_LAYOUT.length - 1) * ROW_SPACER;
+// --- Classes ---
 class KeyboardButton extends xb.TextButton {
     constructor(options) {
         super(options);
@@ -85,145 +82,124 @@ class Keyboard extends xb.Script {
         this.isShifted = false;
         this.isCapsLockOn = false;
         this.textButtons = [];
-        this.onEnterPressed = null;
         this.onTextChanged = null;
-        this.keyRows = [];
+        this.onEnterPressed = null;
         this.subspace = new xb.SpatialPanel({
-            useDefaultPosition: false,
-            showEdge: false,
+            showEdge: true,
+            backgroundColor: KEYBOARD_COLOR,
+            width: TOTAL_KEYBOARD_WIDTH,
+            height: TOTAL_KEYBOARD_HEIGHT,
         });
         this.subspace.isRoot = true;
         this.add(this.subspace);
-        this.mainPanel = this.subspace.add(new xb.Panel({ backgroundColor: KEYBOARD_COLOR }));
-        this.mainGrid = new xb.Grid();
-        this.mainPanel.add(this.mainGrid);
-        this.mainGrid.addRow({ weight: ROW_TOP_PADDING });
+        this.mainGrid = new xb.Grid({ height: TOTAL_KEYBOARD_WIDTH });
+        this.subspace.add(this.mainGrid);
         this.createKeyboard();
+        this.applyZOrder(this.subspace, 1000);
         this.subspace.updateLayouts();
     }
     init() {
-        xb.core.renderer.localClippingEnabled = true;
         this.subspace.position.set(0, 1.2, -1);
     }
-    getText() {
-        return this.keyText;
-    }
-    setText(newText) {
-        this.keyText = newText;
-        if (this.onTextChanged) {
-            this.onTextChanged(this.keyText);
+    applyZOrder(entity, order = 1000) {
+        entity.renderOrder = order;
+        if ('object3D' in entity) {
+            entity.object3D.renderOrder =
+                order;
         }
-    }
-    clearText() {
-        this.keyText = '';
-        if (this.onTextChanged) {
-            this.onTextChanged(this.keyText);
+        if (entity.children) {
+            entity.children.forEach((child) => this.applyZOrder(child, order + 1));
         }
     }
     createKeyboard() {
-        this.keyRows = [];
-        const dynamicRowWeight = 0.93 / KEY_LAYOUT.length;
-        KEY_LAYOUT.forEach((rowData) => this.createRow(rowData, this.mainGrid, dynamicRowWeight));
+        KEY_LAYOUT.forEach((rowData, index) => {
+            this.createRow(rowData);
+            if (index < KEY_LAYOUT.length - 1) {
+                this.mainGrid.addRow({ weight: ROW_SPACER });
+            }
+        });
     }
-    createRow(rowData, parentGrid, rowWeight) {
-        const row = parentGrid.addRow({ weight: rowWeight });
-        row.addCol({ weight: COLUMN_LEFT_PADDING });
-        this.keyRows.push(row);
-        const textKeys = rowData.textKeys ? rowData.textKeys.split('') : [];
-        const shiftKeys = rowData.shiftKeys ? rowData.shiftKeys.split('') : [];
-        const specialKeys = rowData.specialKeys || [];
-        const TARGET_COLUMN_WEIGHT = 12 * COLUMN_WEIGHT;
-        if (textKeys.length === 0) {
-            let currentColumnWeight = 0;
-            row.addCol({ weight: 0.145 });
-            specialKeys.forEach((key) => {
-                currentColumnWeight += key.weight || COLUMN_WEIGHT;
-            });
-            const missingWeight = TARGET_COLUMN_WEIGHT - currentColumnWeight;
-            if (missingWeight > 1) {
-                const leftKeys = specialKeys.filter((key) => key.position === 'left');
-                const rightKeys = specialKeys.filter((key) => key.position === 'right');
-                const weightForLeftKeys = missingWeight / 3 / (leftKeys.length || 1);
-                const weightForRightKeys = (missingWeight * 2) / 3 / (rightKeys.length || 1);
-                specialKeys.forEach((key) => {
-                    let finalWeight = key.weight || COLUMN_WEIGHT;
-                    if (key.position === 'left') {
-                        finalWeight += weightForLeftKeys;
-                    }
-                    else if (key.position === 'right') {
-                        finalWeight += weightForRightKeys;
-                    }
-                    this.createSpecialButtons(row, { ...key, weight: finalWeight });
-                });
-            }
-            else {
-                specialKeys.forEach((key) => this.createSpecialButtons(row, key));
-            }
+    createRow(rowData) {
+        const row = this.mainGrid.addRow({ weight: KEY_HEIGHT * (1.0 / 0.56) });
+        if (rowData.specialKeys.some((k) => k.type === 'space')) {
+            const spaceKey = rowData.specialKeys.find((k) => k.type === 'space');
+            const sidePadding = (TOTAL_KEYBOARD_WIDTH - (spaceKey.weight || 0)) / 2;
+            row.addCol({ weight: sidePadding });
+            this.addKey(row, spaceKey);
+            row.addCol({ weight: sidePadding });
             return;
         }
-        const leftSpecialKeys = specialKeys.filter((key) => key.position === 'left');
-        const rightSpecialKeys = specialKeys.filter((key) => key.position === 'right');
-        let remainingWeight = TARGET_COLUMN_WEIGHT;
-        leftSpecialKeys.forEach((key) => {
-            this.createSpecialButtons(row, key);
-            remainingWeight -= key.weight;
+        const leftSpecial = rowData.specialKeys.filter((k) => k.position === 'left' || k.position === 'center');
+        const rightSpecial = rowData.specialKeys.filter((k) => k.position === 'right');
+        const textKeys = rowData.textKeys ? rowData.textKeys.split('') : [];
+        let usedWidth = 0;
+        leftSpecial.forEach((keyData) => {
+            const w = keyData.weight || KEY_WIDTH;
+            this.addKey(row, keyData);
+            usedWidth += w + COL_SPACER;
+            row.addCol({ weight: COL_SPACER });
         });
-        textKeys.forEach((key, index) => {
-            const shiftKey = shiftKeys[index];
-            this.createTextButtons(row, key, shiftKey);
-            remainingWeight -= COLUMN_WEIGHT;
+        textKeys.forEach((char, i) => {
+            this.addKey(row, char);
+            usedWidth += KEY_WIDTH;
+            if (i < textKeys.length - 1 || rightSpecial.length > 0) {
+                row.addCol({ weight: COL_SPACER });
+                usedWidth += COL_SPACER;
+            }
         });
-        rightSpecialKeys.forEach((key) => {
-            const finalWeight = (key.weight || COLUMN_WEIGHT) + remainingWeight;
-            this.createSpecialButtons(row, { ...key, weight: finalWeight });
+        rightSpecial.forEach((keyData) => {
+            const remainingWidth = TOTAL_KEYBOARD_WIDTH + 0.03 - usedWidth;
+            this.addKey(row, { ...keyData, weight: remainingWidth });
         });
     }
-    createTextButtons(row, key, shiftKey) {
-        const keyPanel = row.addCol({ weight: COLUMN_WEIGHT }).addPanel({
-            backgroundColor: DEFAULT_KEY_COLOR,
-        });
-        const textButton = new KeyboardButton({
-            text: key,
-            fontSize: FONT_SIZE,
-            backgroundColor: DEFAULT_KEY_COLOR,
-            originalKey: key,
-            shiftKey: shiftKey,
-        });
-        keyPanel.add(textButton);
-        this.textButtons.push(textButton);
-        textButton.onTriggered = () => {
-            this.handleKeyPress(textButton.text);
-        };
-    }
-    createSpecialButtons(row, key) {
-        const finalWeight = key.weight || COLUMN_WEIGHT;
-        const backgroundColor = key.backgroundColor || SPECIAL_KEY_COLOR;
-        const keyPanel = row.addCol({ weight: finalWeight }).addPanel({
+    addKey(row, data, shiftChar = null) {
+        const isObject = typeof data === 'object';
+        const weight = isObject ? data.weight || KEY_WIDTH : KEY_WIDTH;
+        const backgroundColor = isObject
+            ? data.backgroundColor || SPECIAL_KEY_COLOR
+            : DEFAULT_KEY_COLOR;
+        const keyPanel = row.addCol({ weight: weight }).addPanel({
             backgroundColor: backgroundColor,
         });
-        if (key.type !== 'space') {
-            const btn = keyPanel.add(new xb.IconButton({
-                text: key.iconName,
+        keyPanel.useBorderlessShader = true;
+        if (isObject && data.iconName) {
+            const btn = new xb.IconButton({
+                text: data.iconName,
                 fontSize: FONT_SIZE,
-                backgroundColor: backgroundColor,
-                paddingZ: 0.05,
-                opacity: 0,
-            }));
-            btn.onTriggered = () => {
-                this.handleSpecialKey(key.type);
-            };
+                backgroundColor: '#00000000',
+            });
+            btn.onTriggered = () => this.handleSpecialKey(data.type);
+            keyPanel.add(btn);
         }
-        keyPanel.onTriggered = () => {
-            this.handleSpecialKey(key.type);
-        };
+        else {
+            const char = typeof data === 'string' ? data : data.text || '';
+            const btn = new KeyboardButton({
+                text: char,
+                fontSize: FONT_SIZE,
+                originalKey: char,
+                shiftKey: shiftChar,
+                backgroundColor: '#00000000',
+            });
+            this.textButtons.push(btn);
+            btn.onTriggered = () => this.handleKeyPress(btn.text);
+            keyPanel.add(btn);
+        }
+    }
+    handleKeyPress(char) {
+        this.keyText += char;
+        this.onTextChanged?.(this.keyText);
+        if (this.isShifted) {
+            this.isShifted = false;
+            this.refreshKeyboard();
+        }
     }
     handleSpecialKey(type) {
         switch (type) {
             case 'backspace':
-                this.handleBackspace();
+                this.keyText = this.keyText.slice(0, -1);
                 break;
-            case 'enter':
-                this.handleEnter();
+            case 'space':
+                this.handleKeyPress(' ');
                 break;
             case 'shift':
                 this.isShifted = !this.isShifted;
@@ -233,24 +209,20 @@ class Keyboard extends xb.Script {
                 this.isCapsLockOn = !this.isCapsLockOn;
                 this.refreshKeyboard();
                 break;
-            case 'space':
-                this.handleKeyPress(' ');
+            case 'tab':
+                this.handleKeyPress('\t');
                 break;
+            case 'enter':
+                this.onEnterPressed?.(this.keyText);
+                break;
+            default:
+                console.warn(`Unhandled special key type: ${type}`);
         }
-    }
-    handleBackspace() {
-        this.keyText = this.keyText.slice(0, -1);
-        if (this.onTextChanged)
-            this.onTextChanged(this.keyText);
-    }
-    handleEnter() {
-        if (this.onEnterPressed) {
-            this.onEnterPressed(this.keyText);
-        }
+        this.onTextChanged?.(this.keyText);
     }
     refreshKeyboard() {
         this.textButtons.forEach((button) => {
-            const isLetter = button.originalKey.length === 1 && button.originalKey.match(/[a-z]/i);
+            const isLetter = button.originalKey.length === 1 && /[a-z]/i.test(button.originalKey);
             let newText;
             const produceUpper = this.isShifted !== this.isCapsLockOn;
             if (isLetter) {
@@ -266,15 +238,9 @@ class Keyboard extends xb.Script {
             button.setText(newText);
         });
     }
-    handleKeyPress(char) {
-        this.keyText += char;
-        if (this.onTextChanged)
-            this.onTextChanged(this.keyText);
-        console.log('Key pressed. Sentence: ', this.keyText);
-        if (this.isShifted) {
-            this.isShifted = false;
-            this.refreshKeyboard();
-        }
+    setText(text) {
+        this.keyText = text;
+        this.onTextChanged?.(this.keyText);
     }
 }
 

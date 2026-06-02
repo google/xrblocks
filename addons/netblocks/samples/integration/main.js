@@ -496,7 +496,7 @@ class IntegrationSample extends NetSample {
             };
             session.events.emit('chat-message', payload);
             this._appendLine(payload, true);
-            keyboard.clearText();
+            keyboard.setText('');
         };
     }
     async _toggleVoice(session) {
