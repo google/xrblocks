@@ -95,21 +95,10 @@ class Keyboard extends xb.Script {
         this.mainGrid = new xb.Grid({ height: TOTAL_KEYBOARD_WIDTH });
         this.subspace.add(this.mainGrid);
         this.createKeyboard();
-        this.applyZOrder(this.subspace, 1000);
         this.subspace.updateLayouts();
     }
     init() {
         this.subspace.position.set(0, 1.2, -1);
-    }
-    applyZOrder(entity, order = 1000) {
-        entity.renderOrder = order;
-        if ('object3D' in entity) {
-            entity.object3D.renderOrder =
-                order;
-        }
-        if (entity.children) {
-            entity.children.forEach((child) => this.applyZOrder(child, order + 1));
-        }
     }
     createKeyboard() {
         KEY_LAYOUT.forEach((rowData, index) => {
@@ -166,7 +155,7 @@ class Keyboard extends xb.Script {
             const btn = new xb.IconButton({
                 text: data.iconName,
                 fontSize: FONT_SIZE,
-                backgroundColor: '#00000000',
+                backgroundColor: 0x00000000,
             });
             btn.onTriggered = () => this.handleSpecialKey(data.type);
             keyPanel.add(btn);

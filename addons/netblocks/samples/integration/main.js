@@ -123,10 +123,6 @@ class IntegrationSample extends NetSample {
                 transparent: true,
                 opacity: 0.5,
             }));
-            // Lines have no surface normal, so if the platform reticle picks
-            // them up first it gets stuck at the fallback distance. Skip them
-            // for raycasts so the reticle locks onto the cube body instead.
-            edges.ignoreReticleRaycast = true;
             mesh.add(edges);
             cube.add(mesh);
             this._cubes.push(cube);

@@ -1,5 +1,5 @@
 import * as xb from 'xrblocks';
-declare class Keyboard extends xb.Script {
+export declare class Keyboard extends xb.Script {
     private keyText;
     private isShifted;
     private isCapsLockOn;
@@ -10,7 +10,6 @@ declare class Keyboard extends xb.Script {
     private mainGrid;
     constructor();
     init(): void;
-    private applyZOrder;
     private createKeyboard;
     private createRow;
     private addKey;
@@ -19,4 +18,3 @@ declare class Keyboard extends xb.Script {
     private refreshKeyboard;
     setText(text: string): void;
 }
-export { Keyboard };

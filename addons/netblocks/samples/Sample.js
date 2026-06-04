@@ -22,6 +22,7 @@ class NetSample extends xb.Script {
     /** Called after `joinRoom` resolves. Override to attach handlers. */
     onSession(_session) { }
     async init() {
+        xb.core.input.raycaster.params.Line.threshold = 0.0001;
         this.net = enableNet();
         const code = getRoomCodeFromUrl();
         let { roomId, options } = this.getJoinOptions();
