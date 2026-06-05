@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 94fdf92
- * @builddate 2026-06-05T19:14:31.619Z
+ * @commitid 3052845
+ * @builddate 2026-06-05T20:01:40.562Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -18998,9 +18998,10 @@ class MaterialSymbolsView extends View {
         });
         this.loadingSvgPath = undefined;
         this.loadedSvgPath = svgPath;
-        const [viewMinX, viewMinY, viewWidth, viewHeight] = 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        svgData.xml.attributes.viewBox.value.split(' ');
+        const viewBox = svgData.xml.getAttribute('viewBox');
+        const [viewMinX, viewMinY, viewWidth, viewHeight] = viewBox
+            .split(' ')
+            .map(Number);
         const paths = svgData.paths;
         const group = new THREE.Group();
         const scale = 1 / Math.max(viewWidth, viewHeight);
