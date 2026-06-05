@@ -38,8 +38,27 @@ class RemoteUserAvatar extends THREE.Group {
     set displayName(name) {
         this.setDisplayName(name);
     }
+    /**
+     * Whether this peer currently has their microphone enabled. Driven by
+     * the `netblocks/voice-state` event NetSession listens for; when true,
+     * the floating name label gets a 🎙️ suffix so observers know the peer
+     * is in the voice chat without depending on the mouth animation.
+     */
+    get voiceActive() {
+        return this._voiceActive;
+    }
+    set voiceActive(on) {
+        if (this._voiceActive === on)
+            return;
+        this._voiceActive = on;
+        if (this._nameLabel) {
+            this._nameLabel.text = this._labelString();
+            this._nameLabel.sync?.();
+        }
+    }
     constructor(opts) {
         super();
+        this._voiceActive = false;
         /** Smoothed pose buffer fed by NetSession. */
         this.pose = new InterpolatedPose();
         /**
@@ -53,6 +72,14 @@ class RemoteUserAvatar extends THREE.Group {
         ];
         /** The default ball-and-stick avatar group. Hide to use your own meshes. */
         this.defaultMesh = new THREE.Group();
+        /**
+         * The face on the default avatar — eyes + a parametric mouth that
+         * any lipsync/blendshape driver can target via `face.setVisemes()`.
+         * Parented to the default head sphere so it inherits the head pose
+         * automatically AND disappears with `defaultMesh.visible = false`
+         * when a host app supplies a custom avatar.
+         */
+        this.face = new xb.StylizedFace();
         this._nameLabelText = '';
         this.name = `RemoteUserAvatar(${opts.peerId})`;
         this.peerId = opts.peerId;
@@ -83,6 +110,10 @@ class RemoteUserAvatar extends THREE.Group {
             this._handGroups[h].visible = false;
         }
         this.defaultMesh.add(this._headSphere, this._handGroups[0], this._handGroups[1]);
+        // Parent the face to the head sphere itself so it tracks head pose
+        // automatically and hides when the host app does
+        // `avatar.defaultMesh.visible = false` to swap in a custom avatar.
+        this._headSphere.add(this.face);
         this.add(this.defaultMesh);
         this._headSphere.visible = false; // until a pose arrives
         // Lazy-load troika SDF text for the name label so we don't pay the
@@ -163,7 +194,8 @@ class RemoteUserAvatar extends THREE.Group {
         }
     }
     _labelString() {
-        return this._displayName || this.peerId.slice(0, 6);
+        const base = this._displayName || this.peerId.slice(0, 6);
+        return this._voiceActive ? `${base} 🎙️` : base;
     }
     dispose() {
         this._disposed = true;
@@ -177,6 +209,7 @@ class RemoteUserAvatar extends THREE.Group {
                 dot.material.dispose();
             }
         }
+        this.face.dispose();
         this._nameLabel?.dispose?.();
     }
 }

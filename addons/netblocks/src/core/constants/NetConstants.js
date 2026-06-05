@@ -19,6 +19,15 @@ const DEFAULT_PRESENCE_HZ = 20;
 const PRESENCE_RENDER_DELAY_MS = 100;
 /** Frequency at which net object transforms are broadcast (Hz). */
 const DEFAULT_NETOBJECT_HZ = 20;
+/**
+ * Default tau-style smoothing rate for the per-frame
+ * `1 - exp(-rate * dt)` blend that pulls a remote NetObject's local
+ * pose toward the most recently received network pose. Larger values
+ * track faster but jitter more on noisy wifi; 12 lands the avatar
+ * within ~150 ms of the network pose at 90 Hz refresh, which feels
+ * snappy without amplifying single-packet noise.
+ */
+const DEFAULT_NETOBJECT_INTERP_RATE = 12;
 /** Maximum message payload size (bytes). Larger payloads must be chunked. */
 const MAX_MESSAGE_BYTES = 60_000;
 /**
@@ -41,4 +50,4 @@ const DEFAULT_ICE_SERVERS = [
     { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-export { DEFAULT_ICE_SERVERS, DEFAULT_NETOBJECT_HZ, DEFAULT_PEERJS_BROKER, DEFAULT_PRESENCE_HZ, DEFAULT_ROOM_ID, KEEPALIVE_HZ, MAX_MESSAGE_BYTES, NET_PROTOCOL_VERSION, PEER_TIMEOUT_SECONDS, PRESENCE_RENDER_DELAY_MS };
+export { DEFAULT_ICE_SERVERS, DEFAULT_NETOBJECT_HZ, DEFAULT_NETOBJECT_INTERP_RATE, DEFAULT_PEERJS_BROKER, DEFAULT_PRESENCE_HZ, DEFAULT_ROOM_ID, KEEPALIVE_HZ, MAX_MESSAGE_BYTES, NET_PROTOCOL_VERSION, PEER_TIMEOUT_SECONDS, PRESENCE_RENDER_DELAY_MS };

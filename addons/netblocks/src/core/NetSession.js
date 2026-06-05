@@ -1,7 +1,7 @@
 import * as xb from 'xrblocks';
 import { encodeMessage, decodeMessage } from './codec/MessageCodec.js';
 import { decodePose, base64ToBytes } from './codec/PoseCodec.js';
-import { DEFAULT_NETOBJECT_HZ, NET_PROTOCOL_VERSION, PRESENCE_RENDER_DELAY_MS } from './constants/NetConstants.js';
+import { DEFAULT_NETOBJECT_INTERP_RATE, DEFAULT_NETOBJECT_HZ, DEFAULT_PRESENCE_HZ, NET_PROTOCOL_VERSION, PRESENCE_RENDER_DELAY_MS } from './constants/NetConstants.js';
 import { NetObject } from './objects/NetObject.js';
 import { NetObjectRegistry } from './objects/NetObjectRegistry.js';
 import { NetUser } from './NetUser.js';
@@ -33,21 +33,58 @@ class NetSession extends EventTarget {
         this._isOpen = false;
         this._lastUpdateMs = 0;
         this._capabilities = { ...DEFAULT_CAPABILITIES };
+        // Send a final `bye` over the data channel so remote peers tear
+        // down their per-peer state immediately, instead of waiting for
+        // WebRTC ICE to time out (~15-30s) before noticing we're gone.
+        // Use `pagehide` rather than `beforeunload` because it also fires
+        // when the tab is bfcached on iOS Safari.
+        this._onPageHide = () => {
+            if (this._isOpen)
+                this.close();
+        };
         this.transport = transport;
         this._root = root;
         this._opts = {
-            presenceHz: opts.presenceHz ?? 20,
+            presenceHz: opts.presenceHz ?? DEFAULT_PRESENCE_HZ,
             netObjectHz: opts.netObjectHz ?? DEFAULT_NETOBJECT_HZ,
-            netObjectInterpRate: opts.netObjectInterpRate ?? 12,
+            netObjectInterpRate: opts.netObjectInterpRate ?? DEFAULT_NETOBJECT_INTERP_RATE,
             voice: opts.voice ?? false,
             displayName: opts.displayName,
             role: opts.role ?? 'user',
         };
         this.presence = new PresenceBroadcaster((msg) => this._sendNet(msg), this._opts.presenceHz);
         this.events = new NetEvents((msg) => this._sendNet(msg));
-        this.voice = new VoiceChat((msg) => this._sendNet(msg));
+        this.voice = new VoiceChat((msg) => this._sendNet(msg), {
+            onLocalStateChange: (on) => {
+                // Broadcast our intent so other peers can show a reliable "in
+                // voice chat" affordance that doesn't depend on per-browser
+                // WebRTC track event timing.
+                this.events.emit('netblocks/voice-state', on);
+                // Also surface the change as a local CustomEvent so UI state
+                // (mic button label, status text) tracks the authoritative
+                // VoiceChat state rather than an optimistic flag in the app.
+                this.dispatchEvent(new CustomEvent('local-voice-state', { detail: { on } }));
+            },
+        });
         this.voice.onTrack((peerId, stream) => this._onVoiceTrack(peerId, stream));
-        this.voice.onTrackRemoved((peerId) => this._spatialVoice?.detach(peerId));
+        this.voice.onTrackRemoved((peerId) => this._onVoiceTrackRemoved(peerId));
+        // Track remote voice state from the data-channel signal. WebRTC's
+        // own track events fire inconsistently across browsers on mute, so
+        // this app-level intent is the source of truth for "is this peer
+        // currently in voice chat".
+        this.events.on('netblocks/voice-state', (on, fromPeerId) => {
+            const user = this._users.get(fromPeerId);
+            if (user)
+                user.avatar.voiceActive = !!on;
+        });
+        // When a new peer joins after we're already in voice, send them a
+        // snapshot so they don't display us as muted.
+        this.addEventListener('user-join', (e) => {
+            if (!this.voice.isEnabled())
+                return;
+            const peerId = e.detail.user.peerId;
+            this.events.emitTo(peerId, 'netblocks/voice-state', true);
+        });
         this.transport.addEventListener('peer-join', (this._onTransportPeerJoin = (e) => this._onPeerJoin(e.detail.peerId)));
         this.transport.addEventListener('peer-leave', (this._onTransportPeerLeave = (e) => this._onPeerLeave(e.detail.peerId)));
         this.transport.addEventListener('message', (this._onTransportMessage = (e) => this._onMessage(e.detail)));
@@ -74,6 +111,13 @@ class NetSession extends EventTarget {
         await this.transport.connect({ roomId });
         this._isOpen = true;
         this.voice.setLocalPeerId(this.transport.localPeerId);
+        // Send a final `bye` on tab close so remote peers tear down
+        // immediately. Without this, WebRTC peers wait for ICE failure
+        // (15-30s) before noticing we've gone — long enough that the
+        // departed avatar reads as a "frozen ghost" in the room.
+        if (typeof window !== 'undefined') {
+            window.addEventListener('pagehide', this._onPageHide);
+        }
         // Lazy-init spatial voice. Reuse CoreSound's THREE.AudioListener
         // (already attached to the camera) so we don't run two listeners /
         // two AudioContexts on the same camera.
@@ -104,8 +148,17 @@ class NetSession extends EventTarget {
         if (!this._isOpen)
             return;
         this._isOpen = false;
-        this._sendNet({ type: 'bye' });
+        if (typeof window !== 'undefined') {
+            window.removeEventListener('pagehide', this._onPageHide);
+        }
+        // Voice first so the per-peer voice `bye` and the
+        // `netblocks/voice-state=false` broadcast arrive at remote peers
+        // BEFORE the session-level `bye`. Otherwise the session bye
+        // removes the local user on each remote, and the later voice
+        // messages — routed through `_onMessage` — would create a
+        // brand-new ghost `NetUser` for the (now-departed) sender.
         this.voice.disable();
+        this._sendNet({ type: 'bye' });
         this.transport.close();
         // Detach our transport listeners so the transport (which may outlive
         // the session — e.g., a sample that re-opens with a fresh session)
@@ -497,6 +550,9 @@ class NetSession extends EventTarget {
             return;
         this._spatialVoice.attach(peerId, user.avatar.headPivot, stream);
         this.dispatchEvent(new CustomEvent('voice-state', { detail: { peerId, on: true } }));
+    }
+    _onVoiceTrackRemoved(peerId) {
+        this._spatialVoice?.detach(peerId);
     }
 }
 

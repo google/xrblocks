@@ -5,7 +5,7 @@ export { NetUser } from './NetUser.js';
 export { LocalUser, Peers } from './Peers.js';
 export { decodeMessage, encodeMessage, makeHello } from './codec/MessageCodec.js';
 export { base64ToBytes, bytesToBase64, decodePose, encodePose } from './codec/PoseCodec.js';
-export { DEFAULT_ICE_SERVERS, DEFAULT_NETOBJECT_HZ, DEFAULT_PEERJS_BROKER, DEFAULT_PRESENCE_HZ, DEFAULT_ROOM_ID, KEEPALIVE_HZ, MAX_MESSAGE_BYTES, NET_PROTOCOL_VERSION, PEER_TIMEOUT_SECONDS, PRESENCE_RENDER_DELAY_MS } from './constants/NetConstants.js';
+export { DEFAULT_ICE_SERVERS, DEFAULT_NETOBJECT_HZ, DEFAULT_NETOBJECT_INTERP_RATE, DEFAULT_PEERJS_BROKER, DEFAULT_PRESENCE_HZ, DEFAULT_ROOM_ID, KEEPALIVE_HZ, MAX_MESSAGE_BYTES, NET_PROTOCOL_VERSION, PEER_TIMEOUT_SECONDS, PRESENCE_RENDER_DELAY_MS } from './constants/NetConstants.js';
 export { NetObject } from './objects/NetObject.js';
 export { NetObjectRegistry } from './objects/NetObjectRegistry.js';
 export { InterpolatedPose } from './presence/InterpolatedPose.js';

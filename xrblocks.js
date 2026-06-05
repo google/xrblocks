@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 59c4525
- * @builddate 2026-06-04T02:12:47.852Z
+ * @commitid 0801ef1
+ * @builddate 2026-06-05T17:41:57.865Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -17989,6 +17989,200 @@ class Core {
     }
 }
 
+/** Zero-weight viseme set; useful as a rest pose initialiser. */
+const ZERO_VISEME = Object.freeze({
+    jawOpen: 0,
+    aa: 0,
+    oo: 0,
+    oh: 0,
+    ee: 0,
+    consonant: 0,
+});
+
+/**
+ * StylizedFace: a tiny face primitive that any avatar can adopt. Draws
+ * a pair of static eyes and a parametric mouth onto a single canvas
+ * texture mapped to a forward-facing plane. The mouth morphs from a
+ * thin closed line into a wider oval as the speaker opens up; the eyes
+ * occasionally blink so the host head reads as alive.
+ *
+ * Extends `Script` so the xrblocks scripts manager calls `update()`
+ * every frame — that's how the blink loop keeps animating even when
+ * nothing is driving the mouth (no incoming lipsync stream, no
+ * `setVisemes()` calls). A face with neither audio nor blendshape feed
+ * is still a face that blinks.
+ *
+ * The plane sits flush with the front of the host head sphere on the
+ * local -Z side (WebXR head-forward convention) and never z-fights with
+ * the head itself. Construct, parent to a head pivot, done. To remove
+ * the face from the scene call `parent.remove(face)`; `dispose()`
+ * releases the canvas texture and geometry.
+ */
+class StylizedFace extends Script {
+    // Total duration of one blink (eyelid down + back up).
+    static { this.BLINK_MS = 140; }
+    constructor(opts = {}) {
+        super();
+        /** Last viseme weights applied; useful for testing and debugging. */
+        this.visemes = { ...ZERO_VISEME };
+        /** Computed lip metrics from the most recent setVisemes call. */
+        this.metrics = { width: 1, openHeight: 0 };
+        // Cached state from the last actual redraw, used to short-circuit
+        // setVisemes and update() when neither the lip shape nor the blink
+        // frame would produce a visually different texture. Avoids 256x256
+        // canvas redraws and CanvasTexture re-uploads while the face is at
+        // rest.
+        this.lastDrawnWidth = NaN;
+        this.lastDrawnOpenHeight = NaN;
+        this.lastDrawnBlinkScale = NaN;
+        // Schedule for the next blink (wall-clock ms via performance.now). The
+        // initial value is set in the constructor so the very first blink
+        // happens a few seconds after the face appears, not instantly.
+        this.nextBlinkAt = 0;
+        // Wall-clock ms when the current blink started. -Infinity means "no
+        // blink in progress".
+        this.blinkStartAt = -Infinity;
+        // Guards dispose() against being called more than once. xrblocks'
+        // ScriptsManager calls dispose on every Script removed from the
+        // scene graph; if a host (e.g. RemoteUserAvatar.dispose) also
+        // disposes manually, the double-call could double-free GPU
+        // resources or fire `dispose` events twice on listeners.
+        this._disposed = false;
+        this.headRadius = opts.headRadius ?? 0.1;
+        this.showEyes = opts.showEyes ?? true;
+        const size = opts.textureSize ?? 256;
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = size;
+        this.canvas.height = size;
+        this.ctx = this.canvas.getContext('2d');
+        this.texture = new THREE.CanvasTexture(this.canvas);
+        this.texture.colorSpace = THREE.SRGBColorSpace;
+        this.texture.anisotropy = 4;
+        // Quad covers roughly the lower half of the host face.
+        const planeSize = this.headRadius * 1.4;
+        const geom = new THREE.PlaneGeometry(planeSize, planeSize);
+        const mat = new THREE.MeshBasicMaterial({
+            map: this.texture,
+            transparent: true,
+            depthWrite: false,
+        });
+        this.mesh = new THREE.Mesh(geom, mat);
+        // Flush with the head sphere on the face (-Z) side.
+        this.mesh.position.z = -this.headRadius * 1.001;
+        // PlaneGeometry's normal is +Z; rotate so it faces -Z (out the
+        // front of the head) instead of into the sphere.
+        this.mesh.rotation.y = Math.PI;
+        this.add(this.mesh);
+        this.nextBlinkAt = performance.now() + 2000 + Math.random() * 3000;
+        this.drawIfDirty();
+    }
+    /**
+     * Drive the mouth drawing from a viseme weight set. Cheap enough to
+     * call every frame; redraws and re-uploads the canvas texture only
+     * when the lip shape or blink frame would actually change pixels.
+     */
+    setVisemes(v) {
+        this.visemes = v;
+        this.metrics = computeMetrics(v);
+        this.drawIfDirty();
+    }
+    /**
+     * Frame hook — keeps the blink animation running independently of
+     * any external `setVisemes` driver. A face that isn't being driven
+     * (no lipsync stream, no blendshape feed) still blinks on its own.
+     */
+    update() {
+        this.drawIfDirty();
+    }
+    /** Free the texture, geometry, and material. Idempotent. */
+    dispose() {
+        if (this._disposed)
+            return;
+        this._disposed = true;
+        this.texture.dispose();
+        this.mesh.geometry.dispose();
+        this.mesh.material.dispose();
+    }
+    drawIfDirty() {
+        const blinkScale = this.showEyes
+            ? this.currentBlinkScale(performance.now())
+            : 1;
+        const EPS = 0.005;
+        if (Math.abs(this.metrics.width - this.lastDrawnWidth) < EPS &&
+            Math.abs(this.metrics.openHeight - this.lastDrawnOpenHeight) < EPS &&
+            Math.abs(blinkScale - this.lastDrawnBlinkScale) < EPS) {
+            return;
+        }
+        this.lastDrawnWidth = this.metrics.width;
+        this.lastDrawnOpenHeight = this.metrics.openHeight;
+        this.lastDrawnBlinkScale = blinkScale;
+        this.drawFace(blinkScale);
+        this.texture.needsUpdate = true;
+    }
+    drawFace(blinkScale) {
+        const ctx = this.ctx;
+        if (!ctx)
+            return;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        const m = this.metrics;
+        const cx = w / 2;
+        // Mouth sits slightly below canvas centre so eyes have room above
+        // it; if eyes are off, keep the mouth dead-centre.
+        const mouthY = this.showEyes ? h * 0.6 : h * 0.5;
+        const halfW = w * 0.22 * m.width;
+        // Small base height so the closed mouth is a thin line, growing
+        // into an oval as the speaker opens up.
+        const halfH = h * 0.012 + h * 0.13 * m.openHeight;
+        ctx.fillStyle = '#1a0808';
+        ctx.beginPath();
+        ctx.ellipse(cx, mouthY, halfW, halfH, 0, 0, Math.PI * 2);
+        ctx.fill();
+        if (this.showEyes) {
+            // Two static dark eye dots above the mouth so the host head
+            // sphere reads as a face. Eyes occasionally blink (eyelid squish
+            // on the Y axis) at a random interval; otherwise they're fixed so
+            // they don't compete with the mouth's motion signal.
+            const eyeY = h * 0.36;
+            const eyeOffset = w * 0.16;
+            const eyeR = w * 0.07;
+            for (const ex of [cx - eyeOffset, cx + eyeOffset]) {
+                ctx.beginPath();
+                ctx.ellipse(ex, eyeY, eyeR, eyeR * blinkScale, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+    /**
+     * Returns the vertical scale (0..1) for the eyes at the given wall
+     * clock time. 1 = fully open; near 0 = mid-blink. Also advances the
+     * blink schedule as a side effect (starts a new blink when due).
+     */
+    currentBlinkScale(now) {
+        const t = (now - this.blinkStartAt) / StylizedFace.BLINK_MS;
+        if (t >= 0 && t < 1) {
+            // Triangle wave 0..1..0 across the blink; scale 1 - 0.95 * tri
+            // means eyelid drops to ~5% open at midpoint, never fully zero so
+            // the eye doesn't visually disappear.
+            const tri = 4 * t * (1 - t);
+            return 1 - 0.95 * tri;
+        }
+        if (now >= this.nextBlinkAt) {
+            this.blinkStartAt = now;
+            // Random interval between blinks: 2.5–6.5 seconds, in the
+            // ballpark of natural human blink rate (15–20 per minute).
+            this.nextBlinkAt = now + 2500 + Math.random() * 4000;
+        }
+        return 1;
+    }
+}
+function computeMetrics(v) {
+    const openHeight = clamp$1(v.jawOpen * 0.9 + v.aa * 0.5 + v.oh * 0.5, 0, 1);
+    const width = clamp$1(1 + v.ee * 0.45 - v.oo * 0.55 - v.oh * 0.2, 0.35, 1.4);
+    return { width, openHeight };
+}
+
 class OcclusionUtils {
     /**
      * Creates a simple material used for rendering objects into the occlusion
@@ -20295,5 +20489,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, applySimulatorHandPoseRotationConstraints, callInitWithDependencyInjection, camera, clamp$1 as clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, callInitWithDependencyInjection, camera, clamp$1 as clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map

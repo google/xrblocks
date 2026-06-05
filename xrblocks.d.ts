@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 59c4525
- * @builddate 2026-06-04T02:12:47.852Z
+ * @commitid 0801ef1
+ * @builddate 2026-06-05T17:41:57.865Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7533,6 +7533,126 @@ declare class Core {
 }
 
 /**
+ * VisemeWeights: the small mouth-shape vocabulary {@link StylizedFace}
+ * consumes. Anything that wants to drive a face — a lipsync addon, an
+ * ARKit blendshape feed, a hand-authored animation — produces a value
+ * of this shape and passes it to `face.setVisemes(...)`.
+ *
+ * Lives in core (not in any addon) so addons that produce visemes and
+ * addons that consume them never have to depend on each other.
+ *
+ * Each field is a 0..1 weight; values outside that range are clamped
+ * by the consumer. The set is deliberately small — it covers the four
+ * cardinal vowel shapes plus a generic consonant/closed lip — so it
+ * can be driven cheaply from formants, blendshapes, or simple
+ * heuristics without needing the full 15-viseme ARKit set.
+ */
+interface VisemeWeights {
+    /** Jaw drop, independent of lip rounding. */
+    jawOpen: number;
+    /** /aa/ as in "father". Wide and open. */
+    aa: number;
+    /** /oo/ as in "boot". Narrow and rounded. */
+    oo: number;
+    /** /oh/ as in "go". Mid-round. */
+    oh: number;
+    /** /ee/ as in "see". Wide and closed. */
+    ee: number;
+    /** Generic consonant / lips closed. */
+    consonant: number;
+}
+/** Zero-weight viseme set; useful as a rest pose initialiser. */
+declare const ZERO_VISEME: Readonly<VisemeWeights>;
+
+/**
+ * StylizedFace: a tiny face primitive that any avatar can adopt. Draws
+ * a pair of static eyes and a parametric mouth onto a single canvas
+ * texture mapped to a forward-facing plane. The mouth morphs from a
+ * thin closed line into a wider oval as the speaker opens up; the eyes
+ * occasionally blink so the host head reads as alive.
+ *
+ * Extends `Script` so the xrblocks scripts manager calls `update()`
+ * every frame — that's how the blink loop keeps animating even when
+ * nothing is driving the mouth (no incoming lipsync stream, no
+ * `setVisemes()` calls). A face with neither audio nor blendshape feed
+ * is still a face that blinks.
+ *
+ * The plane sits flush with the front of the host head sphere on the
+ * local -Z side (WebXR head-forward convention) and never z-fights with
+ * the head itself. Construct, parent to a head pivot, done. To remove
+ * the face from the scene call `parent.remove(face)`; `dispose()`
+ * releases the canvas texture and geometry.
+ */
+
+interface StylizedFaceOptions {
+    /**
+     * Approximate radius (metres) of the host head this face attaches to.
+     * Used to scale the face quad and place it just outside the head
+     * sphere. Defaults to 0.1, matching netblocks `RemoteUserAvatar`'s
+     * head sphere; pass 0.18 (for example) if attaching to a bigger
+     * custom head.
+     */
+    headRadius?: number;
+    /** Square canvas dimension in pixels. Defaults to 256. */
+    textureSize?: number;
+    /**
+     * Draw the pair of static eyes above the mouth on the same canvas.
+     * Defaults to true. Set false when the host avatar already provides
+     * its own eye geometry (e.g. a custom puppet head) to avoid
+     * doubled-up eyes.
+     */
+    showEyes?: boolean;
+}
+interface LipMetrics {
+    /** Horizontal mouth width, normalised. Wider for /ee/, narrower for /oo/. */
+    width: number;
+    /** Vertical mouth opening, 0 (closed line) to ~1 (fully agape). */
+    openHeight: number;
+}
+declare class StylizedFace extends Script {
+    readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+    readonly texture: THREE.CanvasTexture;
+    private readonly canvas;
+    private readonly ctx;
+    private readonly headRadius;
+    private readonly showEyes;
+    /** Last viseme weights applied; useful for testing and debugging. */
+    visemes: VisemeWeights;
+    /** Computed lip metrics from the most recent setVisemes call. */
+    metrics: LipMetrics;
+    private lastDrawnWidth;
+    private lastDrawnOpenHeight;
+    private lastDrawnBlinkScale;
+    private nextBlinkAt;
+    private blinkStartAt;
+    private static readonly BLINK_MS;
+    private _disposed;
+    constructor(opts?: StylizedFaceOptions);
+    /**
+     * Drive the mouth drawing from a viseme weight set. Cheap enough to
+     * call every frame; redraws and re-uploads the canvas texture only
+     * when the lip shape or blink frame would actually change pixels.
+     */
+    setVisemes(v: VisemeWeights): void;
+    /**
+     * Frame hook — keeps the blink animation running independently of
+     * any external `setVisemes` driver. A face that isn't being driven
+     * (no lipsync stream, no blendshape feed) still blinks on its own.
+     */
+    update(): void;
+    /** Free the texture, geometry, and material. Idempotent. */
+    dispose(): void;
+    private drawIfDirty;
+    private drawFace;
+    /**
+     * Returns the vertical scale (0..1) for the eyes at the given wall
+     * clock time. 1 = fully open; near 0 = mid-blink. Also advances the
+     * blink schedule as a side effect (starts a new blink when due).
+     */
+    private currentBlinkScale;
+}
+
+/**
  * Occlusion postprocessing shader pass.
  * This is used to generate an occlusion map.
  * There are two modes:
@@ -8668,5 +8788,5 @@ declare class VideoFileStream extends VideoStream<VideoFileStreamDetails> {
     setSource(videoFile: string | File): Promise<void>;
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, add, ai, applySimulatorHandPoseRotationConstraints, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
-export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, BuiltInGestureName, CameraParametersSnapshot, CameraSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, Draggable, FormFactor, GLTFData, GamepadAction, GeminiQueryInput, GestureConfiguration, GestureConfigurations, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureProvider, GetWeatherArgs, GridOptions, HasDraggingMode, HasIgnoreReticleRaycast, ISimulatorSettingsPanelElement, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, JointName, KeyEvent, KeysJson, LabelViewOptions, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, NormalizedDetectedObject, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, PagerOptions, PanelFadeState, PanelOptions, PlaySoundOptions, RAPIERCompat, RgbToDepthParams, RowOptions, ScriptsManagerEventMap, ScrollingTroikaTextViewOptions, SelectEvent, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, StrokeEventMap, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, WeatherData };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, BuiltInGestureName, CameraParametersSnapshot, CameraSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, Draggable, FormFactor, GLTFData, GamepadAction, GeminiQueryInput, GestureConfiguration, GestureConfigurations, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureProvider, GetWeatherArgs, GridOptions, HasDraggingMode, HasIgnoreReticleRaycast, ISimulatorSettingsPanelElement, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, JointName, KeyEvent, KeysJson, LabelViewOptions, LipMetrics, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, NormalizedDetectedObject, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, PagerOptions, PanelFadeState, PanelOptions, PlaySoundOptions, RAPIERCompat, RgbToDepthParams, RowOptions, ScriptsManagerEventMap, ScrollingTroikaTextViewOptions, SelectEvent, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, StrokeEventMap, StylizedFaceOptions, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, VisemeWeights, WeatherData };

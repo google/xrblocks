@@ -9,6 +9,7 @@
  * their own meshes to `avatar.headPivot` / `avatar.handPivots[h]`.
  */
 import * as THREE from 'three';
+import * as xb from 'xrblocks';
 import { InterpolatedPose } from './InterpolatedPose';
 /**
  * Eight well-separated colors so two peers in the same room are easy to
@@ -25,8 +26,17 @@ export interface RemoteUserAvatarOptions {
 export declare class RemoteUserAvatar extends THREE.Group {
     readonly peerId: string;
     private _displayName?;
+    private _voiceActive;
     get displayName(): string | undefined;
     set displayName(name: string | undefined);
+    /**
+     * Whether this peer currently has their microphone enabled. Driven by
+     * the `netblocks/voice-state` event NetSession listens for; when true,
+     * the floating name label gets a 🎙️ suffix so observers know the peer
+     * is in the voice chat without depending on the mouth animation.
+     */
+    get voiceActive(): boolean;
+    set voiceActive(on: boolean);
     /** Smoothed pose buffer fed by NetSession. */
     readonly pose: InterpolatedPose;
     /** Per-peer color derived from peerId, used to tint the default avatar. */
@@ -39,6 +49,14 @@ export declare class RemoteUserAvatar extends THREE.Group {
     readonly handPivots: [THREE.Group, THREE.Group];
     /** The default ball-and-stick avatar group. Hide to use your own meshes. */
     readonly defaultMesh: THREE.Group<THREE.Object3DEventMap>;
+    /**
+     * The face on the default avatar — eyes + a parametric mouth that
+     * any lipsync/blendshape driver can target via `face.setVisemes()`.
+     * Parented to the default head sphere so it inherits the head pose
+     * automatically AND disappears with `defaultMesh.visible = false`
+     * when a host app supplies a custom avatar.
+     */
+    readonly face: xb.StylizedFace;
     private _headSphere;
     private _handGroups;
     private _wristSpheres;

@@ -52,7 +52,7 @@ export interface NetSessionOptions {
     /** Whether to enable voice chat at session start. Defaults to false. */
     voice?: boolean;
 }
-export type NetSessionEventName = 'open' | 'close' | 'user-join' | 'user-leave' | 'voice-state';
+export type NetSessionEventName = 'open' | 'close' | 'user-join' | 'user-leave' | 'voice-state' | 'local-voice-state';
 export interface UserEventDetail {
     user: NetUser;
 }
@@ -78,6 +78,7 @@ export declare class NetSession extends EventTarget {
     private _onTransportPeerJoin;
     private _onTransportPeerLeave;
     private _onTransportMessage;
+    private _onPageHide;
     constructor(transport: Transport, root: THREE.Object3D, opts?: NetSessionOptions);
     get isOpen(): boolean;
     get localPeerId(): string;
@@ -105,4 +106,5 @@ export declare class NetSession extends EventTarget {
     private _onPeerLeave;
     private _onMessage;
     private _onVoiceTrack;
+    private _onVoiceTrackRemoved;
 }

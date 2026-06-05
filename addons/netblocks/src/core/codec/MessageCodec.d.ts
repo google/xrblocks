@@ -104,6 +104,10 @@ export interface VoiceSignalMessage extends BaseMessage {
     } | {
         kind: 'ice';
         candidate: RTCIceCandidateInit;
+    } | {
+        kind: 'bye';
+    } | {
+        kind: 'hello';
     };
 }
 export interface PeerCapabilities {

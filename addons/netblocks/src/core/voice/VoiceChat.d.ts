@@ -20,21 +20,38 @@ export interface VoiceChatOptions {
     iceServers?: RTCIceServer[];
     /** Constraints passed to getUserMedia.audio. */
     audioConstraints?: MediaTrackConstraints | true;
+    /**
+     * Fired when the local user's voice is enabled or disabled. NetSession
+     * uses this to broadcast the intent over the data channel so other
+     * peers can show a reliable "in voice chat" affordance that doesn't
+     * depend on browser-specific WebRTC track events.
+     */
+    onLocalStateChange?: (enabled: boolean) => void;
 }
 export type VoiceSendFn = (msg: VoiceSignalMessage) => void;
 export declare class VoiceChat {
     private _opts;
     private _send;
-    private _onTrack?;
-    private _onTrackRemoved?;
+    private _onTrack;
+    private _onTrackRemoved;
     private _localStream?;
     private _peers;
     private _enabled;
     private _localId;
+    private _generation;
     constructor(send: VoiceSendFn, opts?: VoiceChatOptions);
     setLocalPeerId(id: string): void;
-    onTrack(handler: VoiceTrackHandler): void;
-    onTrackRemoved(handler: VoiceTrackRemovedHandler): void;
+    /**
+     * Subscribe to remote voice tracks. Multiple listeners can register;
+     * each gets called once per remote `MediaStream`. Returns a function
+     * that removes this listener (idempotent).
+     */
+    onTrack(handler: VoiceTrackHandler): () => void;
+    /**
+     * Subscribe to remote voice track removals. Multiple listeners can
+     * register. Returns a function that removes this listener.
+     */
+    onTrackRemoved(handler: VoiceTrackRemovedHandler): () => void;
     isEnabled(): boolean;
     /** Request mic + start negotiating with all currently-connected peers. */
     enable(currentPeers: ReadonlySet<string>): Promise<void>;
