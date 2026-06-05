@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 3052845
- * @builddate 2026-06-05T20:01:40.562Z
+ * @commitid 2395de6
+ * @builddate 2026-06-05T20:09:14.015Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1713,7 +1713,13 @@ class AI extends Script {
      */
     triggerKeyPopup() { }
     async generate(prompt, type = 'image', systemInstruction = 'Generate an image', model = undefined) {
-        return this.model.generate(prompt, type, systemInstruction, model);
+        if (!this.isAvailable()) {
+            throw new Error("AI is not available. Check if it's enabled and properly initialized.");
+        }
+        if (this.model instanceof Gemini) {
+            return this.model.generate(prompt, type, systemInstruction, model);
+        }
+        throw new Error(`${this.options.model} does not support generate().`);
     }
     /**
      * Create a sample keys.json file structure for reference

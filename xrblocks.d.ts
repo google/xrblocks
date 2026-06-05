@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 3052845
- * @builddate 2026-06-05T20:01:40.562Z
+ * @commitid 2395de6
+ * @builddate 2026-06-05T20:09:14.015Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1321,7 +1321,7 @@ declare class AI extends Script {
      * In XR mode, show a 3D UI to instruct users to get an API key.
      */
     triggerKeyPopup(): void;
-    generate(prompt: string | string[], type?: 'image', systemInstruction?: string, model?: undefined): Promise<string | void | undefined>;
+    generate(prompt: string | string[], type?: 'image', systemInstruction?: string, model?: undefined): Promise<string | undefined>;
     /**
      * Create a sample keys.json file structure for reference
      * @returns Sample keys.json structure
