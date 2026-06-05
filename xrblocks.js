@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 869f945
- * @builddate 2026-06-05T23:04:18.708Z
+ * @commitid a8df102
+ * @builddate 2026-06-05T23:13:13.707Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7315,60 +7315,6 @@ class User extends Script {
     }
 }
 
-class GestureRecognitionOptions {
-    constructor(options) {
-        /** Master switch for the gesture recognition block. */
-        this.enabled = false;
-        /**
-         * Backing provider that extracts gesture information.
-         *  - 'heuristics': WebXR joint heuristics only (no external ML dependency).
-         *  - 'mediapipe': MediaPipe Hands running via Web APIs / wasm.
-         *  - 'tfjs': TensorFlow.js hand-pose-detection models.
-         */
-        this.provider = 'heuristics';
-        /**
-         * Minimum confidence score to emit gesture events. Different providers map to
-         * different score domains so this value is normalised to [0-1].
-         */
-        this.minimumConfidence = 0.6;
-        /**
-         * Optional throttle window for expensive providers.
-         */
-        this.updateIntervalMs = 33;
-        /**
-         * Default gesture catalogue.
-         */
-        this.gestures = {
-            pinch: { enabled: true, threshold: 0.025 },
-            'open-palm': { enabled: true },
-            fist: { enabled: true },
-            'thumbs-up': { enabled: true },
-            point: { enabled: false },
-            spread: { enabled: false, threshold: 0.04 },
-        };
-        deepMerge(this, options);
-        if (options?.gestures) {
-            for (const [name, config] of Object.entries(options.gestures)) {
-                const gestureName = name;
-                this.gestures[gestureName] = deepMerge({ ...this.gestures[gestureName] }, config);
-            }
-        }
-    }
-    enable() {
-        this.enabled = true;
-        return this;
-    }
-    /**
-     * Convenience helper to toggle specific gestures.
-     */
-    setGestureEnabled(name, enabled) {
-        this.gestures[name] ??= { enabled };
-        this.gestures[name].enabled = enabled;
-        return this;
-    }
-}
-
-const EPSILON = 1e-6;
 const FINGER_ORDER = ['index', 'middle', 'ring', 'pinky'];
 const FINGER_PREFIX = {
     index: 'index-finger',
@@ -7376,279 +7322,56 @@ const FINGER_PREFIX = {
     ring: 'ring-finger',
     pinky: 'pinky-finger',
 };
-const heuristicDetectors = {
-    pinch: computePinch,
-    'open-palm': computeOpenPalm,
-    fist: computeFist,
-    'thumbs-up': computeThumbsUp,
-    point: computePoint,
-    spread: computeSpread,
+const DIGIT_JOINTS = {
+    thumb: [
+        'thumb-metacarpal',
+        'thumb-phalanx-proximal',
+        'thumb-phalanx-distal',
+        'thumb-tip',
+    ],
+    index: [
+        'index-finger-metacarpal',
+        'index-finger-phalanx-proximal',
+        'index-finger-phalanx-intermediate',
+        'index-finger-phalanx-distal',
+        'index-finger-tip',
+    ],
+    middle: [
+        'middle-finger-metacarpal',
+        'middle-finger-phalanx-proximal',
+        'middle-finger-phalanx-intermediate',
+        'middle-finger-phalanx-distal',
+        'middle-finger-tip',
+    ],
+    ring: [
+        'ring-finger-metacarpal',
+        'ring-finger-phalanx-proximal',
+        'ring-finger-phalanx-intermediate',
+        'ring-finger-phalanx-distal',
+        'ring-finger-tip',
+    ],
+    pinky: [
+        'pinky-finger-metacarpal',
+        'pinky-finger-phalanx-proximal',
+        'pinky-finger-phalanx-intermediate',
+        'pinky-finger-phalanx-distal',
+        'pinky-finger-tip',
+    ],
 };
-function computePinch(context, config) {
-    const thumb = getJoint(context, 'thumb-tip');
-    const index = getJoint(context, 'index-finger-tip');
-    if (!thumb || !index)
-        return undefined;
-    const supportMetrics = ['middle', 'ring', 'pinky']
-        .map((finger) => computeFingerMetric(context, finger))
-        .filter(Boolean);
-    const supportCurl = supportMetrics.length > 0
-        ? average(supportMetrics.map((metrics) => metrics.curlRatio))
-        : 1;
-    const supportPenalty = clamp01((supportCurl - 1.05) / 0.35);
-    const handScale = estimateHandScale(context);
-    const threshold = config.threshold ?? Math.max(0.018, handScale * 0.35);
-    const distance = thumb.distanceTo(index);
-    if (!Number.isFinite(distance) || distance < EPSILON) {
-        return { confidence: 0 };
-    }
-    const tightness = clamp01(1 - distance / (threshold * 0.85));
-    const loosePenalty = clamp01(1 - distance / (threshold * 1.4));
-    let confidence = clamp01(distance <= threshold ? tightness : loosePenalty * 0.4);
-    confidence *= 1 - supportPenalty * 0.45;
-    confidence = clamp01(confidence);
-    return {
-        confidence,
-        data: { distance, threshold, supportPenalty },
-    };
-}
-function computeOpenPalm(context, config) {
-    const fingerMetrics = getFingerMetrics(context);
-    if (!fingerMetrics.length)
-        return undefined;
-    const handScale = estimateHandScale(context);
-    const palmWidth = getPalmWidth(context) ?? handScale * 0.85;
-    const palmUp = getPalmUp(context);
-    const extensionScores = fingerMetrics.map(({ tipDistance }) => clamp01((tipDistance - handScale * 0.5) / (handScale * 0.45)));
-    const straightnessScores = fingerMetrics.map(({ curlRatio }) => clamp01((curlRatio - 1.1) / 0.5));
-    const orientationScore = palmUp && fingerMetrics.length
-        ? average(fingerMetrics.map((metrics) => fingerAlignmentScore(context, metrics, palmUp)))
-        : 0.5;
-    const neighbors = getAdjacentFingerDistances(context);
-    const spreadScore = neighbors.average !== Infinity && palmWidth > EPSILON
-        ? clamp01((neighbors.average - palmWidth * 0.55) / (palmWidth * 0.35))
-        : 0;
-    const extensionScore = average(extensionScores);
-    const straightScore = average(straightnessScores);
-    const confidence = clamp01(extensionScore * 0.4 +
-        straightScore * 0.25 +
-        spreadScore * 0.2 +
-        orientationScore * 0.15);
-    return {
-        confidence,
-        data: {
-            extensionScore,
-            straightScore,
-            spreadScore,
-            orientationScore,
-            threshold: config.threshold,
-        },
-    };
-}
-function computeFist(context, config) {
-    const fingerMetrics = getFingerMetrics(context);
-    if (!fingerMetrics.length)
-        return undefined;
-    const handScale = estimateHandScale(context);
-    const palmWidth = getPalmWidth(context) ?? handScale * 0.85;
-    const tipAverage = average(fingerMetrics.map((metrics) => metrics.tipDistance));
-    const curlAverage = average(fingerMetrics.map((metrics) => metrics.curlRatio));
-    const neighbors = getAdjacentFingerDistances(context);
-    const clusterScore = neighbors.average !== Infinity && palmWidth > EPSILON
-        ? clamp01((palmWidth * 0.5 - neighbors.average) / (palmWidth * 0.35))
-        : 0;
-    const thumbTip = getJoint(context, 'thumb-tip');
-    const indexBase = getFingerJoint(context, 'index', 'phalanx-proximal') ??
-        getFingerJoint(context, 'index', 'metacarpal');
-    const thumbWrapScore = thumbTip && indexBase && palmWidth > EPSILON
-        ? clamp01((palmWidth * 0.55 - thumbTip.distanceTo(indexBase)) /
-            (palmWidth * 0.35))
-        : 0;
-    const tipScore = clamp01((handScale * 0.55 - tipAverage) / (handScale * 0.25));
-    const curlScore = clamp01((1.08 - curlAverage) / 0.25);
-    const confidence = clamp01(tipScore * 0.45 +
-        curlScore * 0.3 +
-        clusterScore * 0.1 +
-        thumbWrapScore * 0.15);
-    return {
-        confidence,
-        data: {
-            tipAverage,
-            curlAverage,
-            clusterScore,
-            thumbWrapScore,
-            threshold: config.threshold,
-        },
-    };
-}
-function computeThumbsUp(context, config) {
-    const thumbMetrics = getThumbMetrics(context);
-    const fingerMetrics = getFingerMetrics(context);
-    if (!thumbMetrics || fingerMetrics.length < 2)
-        return undefined;
-    const handScale = estimateHandScale(context);
-    const palmWidth = getPalmWidth(context) ?? handScale * 0.85;
-    const palmUp = getPalmUp(context);
-    const otherCurls = fingerMetrics.map((m) => m.curlRatio);
-    const curledScore = clamp01((1.05 - average(otherCurls)) / 0.25);
-    const thumbReachRatio = thumbMetrics.referenceDistance > EPSILON
-        ? thumbMetrics.tipDistance / thumbMetrics.referenceDistance
-        : 0;
-    const thumbExtendedScore = clamp01((thumbReachRatio - 1.15) / 0.5);
-    const indexTip = getJoint(context, 'index-finger-tip');
-    const thumbIndexDistance = indexTip
-        ? thumbMetrics.tip.distanceTo(indexTip)
-        : 0;
-    const separationScore = palmWidth > EPSILON
-        ? clamp01((thumbIndexDistance - palmWidth * 0.4) / (palmWidth * 0.25))
-        : 0;
-    let orientationScore = 0;
-    if (palmUp) {
-        const thumbVector = new THREE.Vector3()
-            .copy(thumbMetrics.tip)
-            .sub(thumbMetrics.metacarpal ?? thumbMetrics.tip);
-        if (thumbVector.lengthSq() > EPSILON) {
-            thumbVector.normalize();
-            const alignment = thumbVector.dot(palmUp);
-            orientationScore = clamp01((alignment - 0.35) / 0.35);
-        }
-    }
-    const confidence = clamp01(thumbExtendedScore * 0.3 +
-        curledScore * 0.35 +
-        orientationScore * 0.2 +
-        separationScore * 0.15);
-    return {
-        confidence,
-        data: {
-            thumbReachRatio,
-            curledScore,
-            orientationScore,
-            separationScore,
-            threshold: config.threshold,
-        },
-    };
-}
-function computePoint(context, config) {
-    const indexMetrics = computeFingerMetric(context, 'index');
-    if (!indexMetrics)
-        return undefined;
-    const otherMetrics = FINGER_ORDER.slice(1)
-        .map((finger) => computeFingerMetric(context, finger))
-        .filter(Boolean);
-    if (!otherMetrics.length)
-        return undefined;
-    const handScale = estimateHandScale(context);
-    const palmWidth = getPalmWidth(context) ?? handScale * 0.85;
-    const palmUp = getPalmUp(context);
-    const indexCurlScore = clamp01((indexMetrics.curlRatio - 1.2) / 0.35);
-    const indexReachScore = clamp01((indexMetrics.tipDistance - handScale * 0.6) / (handScale * 0.25));
-    const indexDirectionScore = palmUp && indexMetrics
-        ? fingerAlignmentScore(context, indexMetrics, palmUp)
-        : 0.4;
-    const othersCurl = average(otherMetrics.map((metrics) => metrics.curlRatio));
-    const othersCurledScore = clamp01((1.05 - othersCurl) / 0.25);
-    const thumbTip = getJoint(context, 'thumb-tip');
-    const thumbTuckedScore = thumbTip && indexMetrics.metacarpal && palmWidth > EPSILON
-        ? clamp01((palmWidth * 0.75 - thumbTip.distanceTo(indexMetrics.metacarpal)) /
-            (palmWidth * 0.4))
-        : 0.5;
-    const confidence = clamp01(indexCurlScore * 0.35 +
-        indexReachScore * 0.25 +
-        othersCurledScore * 0.2 +
-        indexDirectionScore * 0.1 +
-        thumbTuckedScore * 0.1);
-    return {
-        confidence,
-        data: {
-            indexCurlScore,
-            indexReachScore,
-            othersCurledScore,
-            indexDirectionScore,
-            thumbTuckedScore,
-            threshold: config.threshold,
-        },
-    };
-}
-function computeSpread(context, config) {
-    const fingerMetrics = getFingerMetrics(context);
-    if (!fingerMetrics.length)
-        return undefined;
-    const handScale = estimateHandScale(context);
-    const palmWidth = getPalmWidth(context) ?? handScale * 0.85;
-    const neighbors = getAdjacentFingerDistances(context);
-    const palmUp = getPalmUp(context);
-    const spreadScore = neighbors.average !== Infinity && palmWidth > EPSILON
-        ? clamp01((neighbors.average - palmWidth * 0.6) / (palmWidth * 0.35))
-        : 0;
-    const extensionScore = clamp01((average(fingerMetrics.map((metrics) => metrics.curlRatio)) - 1.15) / 0.45);
-    const orientationScore = palmUp && fingerMetrics.length
-        ? average(fingerMetrics.map((metrics) => fingerAlignmentScore(context, metrics, palmUp)))
-        : 0.5;
-    const confidence = clamp01(spreadScore * 0.55 + extensionScore * 0.3 + orientationScore * 0.15);
-    return {
-        confidence,
-        data: {
-            spreadScore,
-            extensionScore,
-            orientationScore,
-            threshold: config.threshold,
-        },
-    };
-}
-function computeFingerMetric(context, finger) {
-    const tip = getFingerJoint(context, finger, 'tip');
-    const proximal = getFingerJoint(context, finger, 'phalanx-proximal');
-    const metacarpal = getFingerJoint(context, finger, 'metacarpal');
-    const wrist = getJoint(context, 'wrist');
-    if (!tip || !wrist)
-        return null;
-    const reference = proximal ?? metacarpal;
-    if (!reference)
-        return null;
-    const referenceDistance = reference.distanceTo(wrist);
-    const tipDistance = tip.distanceTo(wrist);
-    const curlRatio = referenceDistance > EPSILON ? tipDistance / referenceDistance : 0;
-    return {
-        tip,
-        metacarpal,
-        referenceDistance,
-        tipDistance,
-        curlRatio,
-    };
-}
-function getFingerMetrics(context) {
-    return FINGER_ORDER.map((finger) => computeFingerMetric(context, finger)).filter(Boolean);
-}
-function getThumbMetrics(context) {
-    const tip = getJoint(context, 'thumb-tip');
-    const wrist = getJoint(context, 'wrist');
-    if (!tip || !wrist)
-        return undefined;
-    const metacarpal = getJoint(context, 'thumb-metacarpal') ??
-        getJoint(context, 'thumb-phalanx-proximal');
-    if (!metacarpal)
-        return undefined;
-    const referenceDistance = metacarpal.distanceTo(wrist);
-    const tipDistance = tip.distanceTo(wrist);
-    return {
-        tip,
-        metacarpal,
-        referenceDistance,
-        tipDistance,
-    };
+const EPSILON$1 = 1e-6;
+function getFingerJoint(context, finger, suffix) {
+    const prefix = FINGER_PREFIX[finger];
+    return context.getJoint(`${prefix}-${suffix}`);
 }
 function estimateHandScale(context) {
-    const wrist = getJoint(context, 'wrist');
-    const middleTip = getJoint(context, 'middle-finger-tip');
-    const middleBase = getJoint(context, 'middle-finger-metacarpal');
+    const wrist = context.getJoint('wrist');
+    const middleTip = context.getJoint('middle-finger-tip');
     const palmWidth = getPalmWidth(context);
     const measurements = [];
     if (wrist && middleTip)
         measurements.push(middleTip.distanceTo(wrist));
     if (palmWidth)
         measurements.push(palmWidth);
-    if (wrist && middleBase)
-        measurements.push(middleBase.distanceTo(wrist) * 2);
     if (!measurements.length)
         return 0.08;
     return average(measurements);
@@ -7661,7 +7384,7 @@ function getPalmWidth(context) {
     return indexBase.distanceTo(pinkyBase);
 }
 function getPalmNormal(context) {
-    const wrist = getJoint(context, 'wrist');
+    const wrist = context.getJoint('wrist');
     const indexBase = getFingerJoint(context, 'index', 'metacarpal');
     const pinkyBase = getFingerJoint(context, 'pinky', 'metacarpal');
     if (!wrist || !indexBase || !pinkyBase)
@@ -7699,49 +7422,561 @@ function getPalmUp(context) {
         return null;
     return up.normalize();
 }
-function getAdjacentFingerDistances(context) {
-    const tips = FINGER_ORDER.map((finger) => getFingerJoint(context, finger, 'tip'));
-    if (tips.some((tip) => !tip)) {
-        return { average: Infinity };
+function getPalmPose(context) {
+    const wrist = context.getJoint('wrist');
+    const indexBase = getFingerJoint(context, 'index', 'metacarpal');
+    const pinkyBase = getFingerJoint(context, 'pinky', 'metacarpal');
+    const width = getPalmWidth(context);
+    const normal = getPalmNormal(context);
+    const right = getPalmRight(context);
+    const up = getPalmUp(context);
+    if (!wrist ||
+        !indexBase ||
+        !pinkyBase ||
+        !width ||
+        !normal ||
+        !right ||
+        !up) {
+        return null;
     }
-    const distances = [
-        tips[0].distanceTo(tips[1]),
-        tips[1].distanceTo(tips[2]),
-        tips[2].distanceTo(tips[3]),
-    ];
-    return { average: average(distances) };
+    const center = new THREE.Vector3()
+        .add(wrist)
+        .add(indexBase)
+        .add(pinkyBase)
+        .multiplyScalar(1 / 3);
+    return { center, width, normal, right, up };
 }
-function getJoint(context, jointName) {
-    return context.joints.get(jointName);
+function getFingerBendAngles(context, finger) {
+    return getDigitBendAngles(context, finger);
 }
-function getFingerJoint(context, finger, suffix) {
-    const prefix = FINGER_PREFIX[finger];
-    return getJoint(context, `${prefix}-${suffix}`);
+function getFingerStraightness(context, finger) {
+    return getDigitStraightness(context, finger);
 }
-function fingerAlignmentScore(context, metrics, palmUp) {
-    const base = metrics.metacarpal ?? getJoint(context, 'wrist');
-    if (!base)
+function getFingerCurl(context, finger) {
+    return 1 - getFingerStraightness(context, finger);
+}
+function getFingerDirection(context, finger) {
+    return getDigitDirection(context, finger);
+}
+function getFingerPalmAlignment(context, finger) {
+    const direction = getFingerDirection(context, finger);
+    const palmUp = getPalmUp(context);
+    if (!direction || !palmUp)
         return 0;
-    const direction = new THREE.Vector3().subVectors(metrics.tip, base);
-    if (direction.lengthSq() === 0)
-        return 0;
-    direction.normalize();
-    return clamp01((direction.dot(palmUp) - 0.35) / 0.5);
+    return clamp01((direction.dot(palmUp) - 0.2) / 0.8);
 }
-function clamp01(value) {
-    return THREE.MathUtils.clamp(value, 0, 1);
+function getFingerSpread(context, fingerA, fingerB) {
+    const directionA = getFingerDirection(context, fingerA);
+    const directionB = getFingerDirection(context, fingerB);
+    if (!directionA || !directionB)
+        return 0;
+    return clamp01((1 - directionA.dot(directionB)) / 0.45);
+}
+function getAdjacentFingerSpreads(context) {
+    return {
+        indexMiddle: getFingerSpread(context, 'index', 'middle'),
+        middleRing: getFingerSpread(context, 'middle', 'ring'),
+        ringPinky: getFingerSpread(context, 'ring', 'pinky'),
+    };
+}
+function getThumbBendAngles(context) {
+    return getDigitBendAngles(context, 'thumb');
+}
+function getThumbStraightness(context) {
+    return getDigitStraightness(context, 'thumb');
+}
+function getThumbCurl(context) {
+    return 1 - getThumbStraightness(context);
+}
+function getThumbDirection(context) {
+    return getDigitDirection(context, 'thumb');
+}
+function getThumbOpposition(context, finger = 'index') {
+    const distance = getFingertipDistance(context, 'thumb', finger);
+    const scale = getPalmWidth(context) ?? estimateHandScale(context);
+    if (distance === null || scale < EPSILON$1)
+        return 0;
+    return clamp01(1 - distance / (scale * 0.7));
+}
+function getThumbVerticalDirection(context) {
+    const direction = getThumbDirection(context);
+    if (!direction)
+        return 0;
+    return direction.y;
+}
+function getFingertipDistance(context, digitA, digitB) {
+    const tipA = getDigitTip(context, digitA);
+    const tipB = getDigitTip(context, digitB);
+    if (!tipA || !tipB)
+        return null;
+    return tipA.distanceTo(tipB);
+}
+function getFingertipPalmDistance(context, digit) {
+    const tip = getDigitTip(context, digit);
+    const palmPose = getPalmPose(context);
+    if (!tip || !palmPose)
+        return null;
+    return tip.distanceTo(palmPose.center);
+}
+function getBoneVectors(context) {
+    return HAND_JOINT_IDX_CONNECTION_MAP.map(([joint1, joint2]) => {
+        const start = context.getJoint(HAND_JOINT_NAMES[joint1]);
+        const end = context.getJoint(HAND_JOINT_NAMES[joint2]);
+        if (!start || !end)
+            return new THREE.Vector3();
+        const boneVector = new THREE.Vector3().subVectors(end, start);
+        if (boneVector.lengthSq() === 0)
+            return boneVector;
+        return boneVector.normalize();
+    });
+}
+function getRelativeBoneAngles(context) {
+    const boneVectors = getBoneVectors(context);
+    const angles = new Float32Array(HAND_BONE_IDX_CONNECTION_MAP.length);
+    HAND_BONE_IDX_CONNECTION_MAP.forEach(([bone1, bone2], index) => {
+        angles[index] = boneVectors[bone1].dot(boneVectors[bone2]);
+    });
+    return angles;
 }
 function average(values) {
     if (!values.length)
         return 0;
     return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
+function clamp01(value) {
+    return THREE.MathUtils.clamp(value, 0, 1);
+}
+function getDigitBendAngles(context, digit) {
+    const segments = getDigitSegmentDirections(context, digit);
+    if (!segments || segments.length < 2)
+        return [];
+    const angles = [];
+    for (let i = 0; i < segments.length - 1; i++) {
+        angles.push(segments[i].dot(segments[i + 1]));
+    }
+    return angles;
+}
+function getDigitStraightness(context, digit) {
+    const bendAngles = getDigitBendAngles(context, digit);
+    if (!bendAngles.length)
+        return 0;
+    return average(bendAngles.map(normalizeStraightness));
+}
+function getDigitDirection(context, digit) {
+    const base = getDigitBase(context, digit);
+    const tip = getDigitTip(context, digit);
+    if (!base || !tip)
+        return null;
+    const direction = new THREE.Vector3().subVectors(tip, base);
+    if (direction.lengthSq() === 0)
+        return null;
+    return direction.normalize();
+}
+function getDigitBase(context, digit) {
+    return context.getJoint(DIGIT_JOINTS[digit][0]);
+}
+function getDigitTip(context, digit) {
+    return context.getJoint(DIGIT_JOINTS[digit][DIGIT_JOINTS[digit].length - 1]);
+}
+function getDigitSegmentDirections(context, digit) {
+    const joints = DIGIT_JOINTS[digit]
+        .map((jointName) => context.getJoint(jointName))
+        .filter(Boolean);
+    if (joints.length !== DIGIT_JOINTS[digit].length)
+        return null;
+    const segments = [];
+    for (let i = 0; i < joints.length - 1; i++) {
+        const segment = new THREE.Vector3().subVectors(joints[i + 1], joints[i]);
+        if (segment.lengthSq() === 0)
+            return null;
+        segments.push(segment.normalize());
+    }
+    return segments;
+}
+function normalizeStraightness(bendCosine) {
+    return clamp01((bendCosine - 0.55) / 0.4);
+}
+
+const EPSILON = 1e-6;
+function detectPinch(context, config) {
+    const distance = getFingertipDistance(context, 'thumb', 'index');
+    if (distance === null || !Number.isFinite(distance))
+        return undefined;
+    const scale = getPalmWidth(context) ?? estimateHandScale(context);
+    if (scale < EPSILON)
+        return { confidence: 0 };
+    const threshold = Math.max(config.threshold ?? 0, scale * 0.32, 0.025);
+    const distanceScore = clamp01((threshold * 1.8 - distance) / (threshold * 1.2));
+    const supportExtension = average(['middle', 'ring', 'pinky'].map((finger) => getFingerStraightness(context, finger)));
+    const supportPenalty = clamp01((supportExtension - 0.55) / 0.45);
+    const confidence = clamp01(distanceScore * (1 - supportPenalty * 0.35));
+    return {
+        confidence,
+        data: { distance, threshold, supportPenalty },
+    };
+}
+function detectOpenPalm(context, config) {
+    const straightnessScores = FINGER_ORDER.map((finger) => getFingerStraightness(context, finger));
+    const extensionScores = FINGER_ORDER.map((finger) => getFingerExtensionScore(context, finger));
+    const straightness = average(straightnessScores);
+    const extension = average(extensionScores);
+    const allFingersStraight = Math.min(...straightnessScores);
+    const allFingersExtended = Math.min(...extensionScores);
+    const palmAlignment = average(FINGER_ORDER.map((finger) => getFingerPalmAlignment(context, finger)));
+    const spread = getTipSpreadScore(context);
+    const openGate = Math.min(allFingersStraight, allFingersExtended);
+    const confidence = clamp01(openGate *
+        (straightness * 0.3 +
+            extension * 0.35 +
+            spread * 0.15 +
+            palmAlignment * 0.2));
+    return {
+        confidence,
+        data: {
+            straightness,
+            extension,
+            allFingersStraight,
+            allFingersExtended,
+            openGate,
+            palmAlignment,
+            spread,
+            threshold: config.threshold,
+        },
+    };
+}
+function detectFist(context, config) {
+    const closedScores = FINGER_ORDER.map((finger) => getFingerClosedScore(context, finger));
+    const closed = average(closedScores);
+    const scale = getPalmWidth(context) ?? estimateHandScale(context);
+    const palmDistances = FINGER_ORDER.map((finger) => getFingertipPalmDistance(context, finger)).filter((distance) => distance !== null);
+    const palmDistanceAverage = average(palmDistances);
+    const palmDistanceScore = scale > EPSILON ? clamp01(1 - palmDistanceAverage / (scale * 1.35)) : 0;
+    const thumbWrap = Math.max(getThumbOpposition(context, 'index'), getThumbOpposition(context, 'middle'));
+    const thumbStraightness = getThumbStraightness(context);
+    const thumbVertical = getThumbVerticalDirection(context);
+    const verticalThumbPenalty = thumbStraightness * clamp01((Math.abs(thumbVertical) - 0.25) / 0.5);
+    const baseConfidence = clamp01(closed * 0.7 + palmDistanceScore * 0.2 + thumbWrap * 0.1);
+    const confidence = clamp01(baseConfidence * (1 - verticalThumbPenalty * 0.85));
+    return {
+        confidence,
+        data: {
+            closed,
+            palmDistanceScore,
+            thumbWrap,
+            thumbStraightness,
+            thumbVertical,
+            verticalThumbPenalty,
+            threshold: config.threshold,
+        },
+    };
+}
+function detectThumbsUp(context, config) {
+    const thumbStraightness = getThumbStraightness(context);
+    const thumbVertical = clamp01((getThumbVerticalDirection(context) - 0.35) / 0.5);
+    const otherCurl = average(FINGER_ORDER.map((finger) => getFingerClosedScore(context, finger)));
+    const indexDistance = getFingertipDistance(context, 'thumb', 'index');
+    const scale = getPalmWidth(context) ?? estimateHandScale(context);
+    const separation = indexDistance !== null && scale > EPSILON
+        ? clamp01((indexDistance - scale * 0.65) / (scale * 0.5))
+        : 0;
+    const thumbWrapPenalty = Math.max(getThumbOpposition(context, 'index'), getThumbOpposition(context, 'middle'));
+    const thumbPose = thumbStraightness * thumbVertical;
+    const confidence = clamp01(thumbPose *
+        (otherCurl * 0.45 + separation * 0.35 + (1 - thumbWrapPenalty) * 0.2));
+    return {
+        confidence,
+        data: {
+            thumbStraightness,
+            thumbVertical,
+            otherCurl,
+            separation,
+            thumbWrapPenalty,
+            threshold: config.threshold,
+        },
+    };
+}
+function detectThumbsDown(context, config) {
+    const thumbStraightness = getThumbStraightness(context);
+    const thumbVertical = clamp01((-getThumbVerticalDirection(context) - 0.35) / 0.5);
+    const otherCurl = average(FINGER_ORDER.map((finger) => getFingerClosedScore(context, finger)));
+    const indexDistance = getFingertipDistance(context, 'thumb', 'index');
+    const scale = getPalmWidth(context) ?? estimateHandScale(context);
+    const separation = indexDistance !== null && scale > EPSILON
+        ? clamp01((indexDistance - scale * 0.65) / (scale * 0.5))
+        : 0;
+    const thumbWrapPenalty = Math.max(getThumbOpposition(context, 'index'), getThumbOpposition(context, 'middle'));
+    const thumbPose = thumbStraightness * thumbVertical;
+    const confidence = clamp01(thumbPose *
+        (otherCurl * 0.45 + separation * 0.35 + (1 - thumbWrapPenalty) * 0.2));
+    return {
+        confidence,
+        data: {
+            thumbStraightness,
+            thumbVertical,
+            otherCurl,
+            separation,
+            thumbWrapPenalty,
+            threshold: config.threshold,
+        },
+    };
+}
+function detectPoint(context, config) {
+    const indexStraightness = getFingerStraightness(context, 'index');
+    const indexAlignment = getFingerPalmAlignment(context, 'index');
+    const indexExtension = getFingerExtensionScore(context, 'index');
+    const middleClosed = getFingerClosedScore(context, 'middle');
+    const ringClosed = getFingerClosedScore(context, 'ring');
+    const pinkyClosed = getFingerClosedScore(context, 'pinky');
+    const otherCurl = average([middleClosed, ringClosed, pinkyClosed]);
+    const allOtherFingersClosed = Math.min(middleClosed, ringClosed, pinkyClosed);
+    const indexPose = average([
+        indexStraightness,
+        indexExtension,
+        Math.max(indexAlignment, 0.5),
+    ]);
+    const confidence = clamp01(indexPose * (otherCurl * 0.65 + allOtherFingersClosed * 0.35));
+    return {
+        confidence,
+        data: {
+            indexStraightness,
+            indexExtension,
+            indexAlignment,
+            otherCurl,
+            allOtherFingersClosed,
+            threshold: config.threshold,
+        },
+    };
+}
+function getFingerClosedScore(context, finger) {
+    return Math.max(getFingerCurl(context, finger), 1 - getFingerExtensionScore(context, finger));
+}
+function getFingerExtensionScore(context, finger) {
+    const distance = getFingertipPalmDistance(context, finger);
+    const scale = getPalmWidth(context) ?? estimateHandScale(context);
+    if (distance === null || scale < EPSILON)
+        return 0;
+    return clamp01((distance - scale * 0.45) / (scale * 0.85));
+}
+function detectSpread(context, config) {
+    const straightnessScores = FINGER_ORDER.map((finger) => getFingerStraightness(context, finger));
+    const extensionScores = FINGER_ORDER.map((finger) => getFingerExtensionScore(context, finger));
+    const straightness = average(straightnessScores);
+    const extension = average(extensionScores);
+    const allFingersStraight = Math.min(...straightnessScores);
+    const allFingersExtended = Math.min(...extensionScores);
+    const adjacentSpreads = getAdjacentFingerSpreads(context);
+    const directionSpread = average(Object.values(adjacentSpreads));
+    const tipSpread = getTipSpreadScore(context);
+    const spread = Math.max(directionSpread, tipSpread);
+    const palmAlignment = average(FINGER_ORDER.map((finger) => getFingerPalmAlignment(context, finger)));
+    const indexPinkySpread = getFingerSpread(context, 'index', 'pinky');
+    const openGate = average([allFingersStraight, allFingersExtended]);
+    const confidence = clamp01(openGate *
+        (straightness * 0.2 +
+            extension * 0.2 +
+            spread * 0.45 +
+            Math.max(indexPinkySpread, palmAlignment) * 0.15));
+    return {
+        confidence,
+        data: {
+            straightness,
+            extension,
+            allFingersStraight,
+            allFingersExtended,
+            openGate,
+            spread,
+            indexPinkySpread,
+            palmAlignment,
+            threshold: config.threshold,
+        },
+    };
+}
+function getTipSpreadScore(context) {
+    const scale = getPalmWidth(context) ?? estimateHandScale(context);
+    if (scale < EPSILON)
+        return 0;
+    const distances = [
+        getFingertipDistance(context, 'index', 'middle'),
+        getFingertipDistance(context, 'middle', 'ring'),
+        getFingertipDistance(context, 'ring', 'pinky'),
+    ].filter((distance) => distance !== null);
+    if (!distances.length)
+        return 0;
+    return clamp01((average(distances) - scale * 0.25) / (scale * 0.45));
+}
+
+class HeuristicGestureRecognizer {
+    constructor(initBuiltInGestures = true) {
+        this.gestures = new Map();
+        if (initBuiltInGestures) {
+            this.registerBuiltInGestures();
+        }
+    }
+    registerGesture(name, detector, config = {}) {
+        this.gestures.set(name, {
+            detector,
+            config: {
+                enabled: true,
+                ...config,
+            },
+        });
+        return this;
+    }
+    unregisterGesture(name) {
+        this.gestures.delete(name);
+        return this;
+    }
+    getGestureConfigurations() {
+        const configs = {};
+        for (const [name, gesture] of this.gestures.entries()) {
+            configs[name] = { ...gesture.config };
+        }
+        return configs;
+    }
+    recognize(context) {
+        const scores = {};
+        for (const [name, gesture] of this.gestures.entries()) {
+            scores[name] = gesture.detector(context, gesture.config);
+        }
+        return scores;
+    }
+    registerBuiltInGestures() {
+        this.registerGesture('pinch', detectPinch, {
+            enabled: true,
+            threshold: 0.025,
+        });
+        this.registerGesture('open-palm', detectOpenPalm);
+        this.registerGesture('fist', detectFist);
+        this.registerGesture('thumbs-up', detectThumbsUp);
+        this.registerGesture('thumbs-down', detectThumbsDown);
+        this.registerGesture('point', detectPoint, { enabled: false });
+        this.registerGesture('spread', detectSpread, {
+            enabled: false,
+            threshold: 0.04,
+        });
+    }
+}
 
 const HAND_INDEX_TO_LABEL = {
     [Handedness.LEFT]: 'left',
     [Handedness.RIGHT]: 'right',
 };
-const JOINT_TEMP_POOL = new Map();
+
+class WebXRHandContext {
+    constructor(handedness, handLabel, joints, jointRotations) {
+        this.handedness = handedness;
+        this.handLabel = handLabel;
+        this.joints = joints;
+        this.jointRotations = jointRotations;
+    }
+    getJoint(jointName) {
+        return this.joints.get(jointName);
+    }
+}
+class WebXRHandPoseEstimator {
+    constructor(user) {
+        this.user = user;
+    }
+    init({ user } = {}) {
+        if (user)
+            this.user = user;
+        return Promise.resolve();
+    }
+    getHandContext(handedness) {
+        if (!this.user?.hands)
+            return null;
+        const hand = this.user.hands.hands[handedness];
+        const handLabel = HAND_INDEX_TO_LABEL[handedness];
+        if (!hand?.joints || !handLabel)
+            return null;
+        const joints = new Map();
+        const jointRotations = new Map();
+        const position = new THREE.Vector3();
+        const rotation = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        for (const jointName of HAND_JOINT_NAMES) {
+            const joint = hand.joints[jointName];
+            if (!joint)
+                continue;
+            joint.matrixWorld.decompose(position, rotation, scale);
+            joints.set(jointName, position.clone());
+            jointRotations.set(jointName, rotation.clone());
+        }
+        if (!joints.size)
+            return null;
+        return new WebXRHandContext(handedness, handLabel, joints, jointRotations);
+    }
+    getHandContexts() {
+        return {
+            left: this.getHandContext(Handedness.LEFT) ?? undefined,
+            right: this.getHandContext(Handedness.RIGHT) ?? undefined,
+        };
+    }
+}
+
+class GestureRecognitionOptions {
+    constructor(options) {
+        this.enabled = false;
+        this.minimumConfidence = 0.6;
+        this.updateIntervalMs = 33;
+        this.poseEstimator = new WebXRHandPoseEstimator();
+        this.gestureRecognizer = new HeuristicGestureRecognizer();
+        this.gestures = {};
+        if (options) {
+            const { poseEstimator, gestureRecognizer, gestures, ...baseOptions } = options;
+            deepMerge(this, baseOptions);
+            if (poseEstimator) {
+                this.poseEstimator = poseEstimator;
+            }
+            if (gestureRecognizer) {
+                this.gestureRecognizer = gestureRecognizer;
+            }
+            this.applyGestureRecognizerConfigurations();
+            if (gestures) {
+                for (const [name, config] of Object.entries(gestures)) {
+                    this.setGestureConfig(name, config);
+                }
+            }
+            return;
+        }
+        this.applyGestureRecognizerConfigurations();
+    }
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+    setGestureEnabled(name, enabled) {
+        this.gestures[name] ??= { enabled };
+        this.gestures[name].enabled = enabled;
+        return this;
+    }
+    setPoseEstimator(poseEstimator) {
+        this.poseEstimator = poseEstimator;
+        return this;
+    }
+    setGestureRecognizer(gestureRecognizer) {
+        this.gestureRecognizer = gestureRecognizer;
+        this.gestures = {};
+        this.applyGestureRecognizerConfigurations();
+        return this;
+    }
+    setGestureConfig(name, config) {
+        const mergedConfig = {
+            ...this.gestures[name],
+            enabled: this.gestures[name]?.enabled ?? true,
+        };
+        deepMerge(mergedConfig, config);
+        this.gestures[name] = mergedConfig;
+        return this;
+    }
+    applyGestureRecognizerConfigurations() {
+        const configs = this.gestureRecognizer.getGestureConfigurations?.() ?? {};
+        for (const [name, config] of Object.entries(configs)) {
+            this.setGestureConfig(name, config);
+        }
+    }
+}
+
 class GestureRecognition extends Script {
     constructor() {
         super(...arguments);
@@ -7749,21 +7984,24 @@ class GestureRecognition extends Script {
             left: new Map(),
             right: new Map(),
         };
+        this.latestScores = {
+            left: null,
+            right: null,
+        };
+        this.pendingRecognition = {
+            left: false,
+            right: false,
+        };
         this.lastEvaluation = 0;
-        this.detectors = new Map();
-        this.activeProvider = null;
-        this.providerWarned = false;
     }
     static { this.dependencies = {
-        input: Input,
         user: User,
         options: GestureRecognitionOptions,
     }; }
-    async init({ options, user, input, }) {
+    async init({ options, user, }) {
         this.options = options;
-        this.user = user;
-        this.input = input;
-        this.configureProvider(true);
+        await this.options.poseEstimator.init?.({ user });
+        await this.options.gestureRecognizer.init?.();
         if (!this.options.enabled) {
             console.info('GestureRecognition initialized but disabled. Call options.enableGestures() to activate.');
         }
@@ -7771,11 +8009,8 @@ class GestureRecognition extends Script {
     update() {
         if (!this.options.enabled)
             return;
-        if (!this.user.hands?.isValid?.())
-            return;
-        this.configureProvider();
         const now = performance.now();
-        const interval = this.activeProvider === 'heuristics' ? 0 : this.options.updateIntervalMs;
+        const interval = this.options.updateIntervalMs;
         if (interval > 0 && now - this.lastEvaluation < interval) {
             return;
         }
@@ -7783,47 +8018,12 @@ class GestureRecognition extends Script {
         this.evaluateHand(Handedness.LEFT);
         this.evaluateHand(Handedness.RIGHT);
     }
-    configureProvider(force = false) {
-        const provider = this.options.provider;
-        if (!force && provider === this.activeProvider)
-            return;
-        this.detectors.clear();
-        switch (provider) {
-            case 'heuristics':
-                this.assignDetectors(heuristicDetectors);
-                this.providerWarned = false;
-                break;
-            case 'mediapipe':
-            case 'tfjs':
-                this.assignDetectors(heuristicDetectors);
-                if (!this.providerWarned) {
-                    console.warn(`GestureRecognition: provider '${provider}' is not yet implemented; falling back to heuristics.`);
-                    this.providerWarned = true;
-                }
-                break;
-            default:
-                this.assignDetectors(heuristicDetectors);
-                if (!this.providerWarned) {
-                    console.warn(`GestureRecognition: provider '${provider}' is unknown; falling back to heuristics.`);
-                    this.providerWarned = true;
-                }
-                break;
-        }
-        this.activeProvider = provider;
-    }
-    assignDetectors(detectors) {
-        for (const [name, detector] of Object.entries(detectors)) {
-            if (!detector)
-                continue;
-            this.detectors.set(name, detector);
-        }
-    }
     evaluateHand(handedness) {
         const handLabel = HAND_INDEX_TO_LABEL[handedness];
-        const activeMap = this.activeGestures[handLabel];
         if (!handLabel)
             return;
-        const context = this.buildHandContext(handedness, handLabel);
+        const activeMap = this.activeGestures[handLabel];
+        const context = this.options.poseEstimator.getHandContext(handedness);
         if (!context) {
             for (const [name] of activeMap.entries()) {
                 this.emitGesture('gestureend', { name, hand: handLabel, confidence: 0 });
@@ -7831,15 +8031,41 @@ class GestureRecognition extends Script {
             activeMap.clear();
             return;
         }
+        this.recognizeHand(context);
+        const scores = this.latestScores[handLabel];
+        if (!scores)
+            return;
+        this.emitFromScores(handLabel, scores);
+    }
+    recognizeHand(context) {
+        const handLabel = context.handLabel;
+        if (this.pendingRecognition[handLabel])
+            return;
+        const result = this.options.gestureRecognizer.recognize(context);
+        if (result instanceof Promise) {
+            this.pendingRecognition[handLabel] = true;
+            result
+                .then((scores) => {
+                this.latestScores[handLabel] = scores;
+            })
+                .catch((error) => {
+                console.error('GestureRecognition recognizer failed:', error);
+            })
+                .finally(() => {
+                this.pendingRecognition[handLabel] = false;
+            });
+            return;
+        }
+        this.latestScores[handLabel] = result;
+    }
+    emitFromScores(handLabel, scores) {
+        const activeMap = this.activeGestures[handLabel];
         const processed = new Set();
         for (const [name, config] of Object.entries(this.options.gestures)) {
             const gestureName = name;
             if (!config?.enabled)
                 continue;
-            const detector = this.detectors.get(gestureName);
-            if (!detector)
-                continue;
-            const result = detector(context, config);
+            const result = scores[gestureName];
             const isActive = result && result.confidence >= this.options.minimumConfidence;
             processed.add(gestureName);
             const previousState = activeMap.get(gestureName);
@@ -7883,41 +8109,13 @@ class GestureRecognition extends Script {
             }
         }
     }
-    buildHandContext(handedness, handLabel) {
-        if (!this.user.hands)
-            return null;
-        const hand = this.user.hands.hands[handedness];
-        if (!hand?.joints)
-            return null;
-        let jointCache = JOINT_TEMP_POOL.get(handLabel);
-        if (!jointCache) {
-            jointCache = new Map();
-            JOINT_TEMP_POOL.set(handLabel, jointCache);
-        }
-        const joints = jointCache;
-        joints.clear();
-        for (const jointName of HAND_JOINT_NAMES) {
-            const joint = hand.joints[jointName];
-            if (!joint)
-                continue;
-            let vector = joints.get(jointName);
-            if (!vector) {
-                vector = new THREE.Vector3();
-                joints.set(jointName, vector);
-            }
-            vector.setFromMatrixPosition(joint.matrixWorld);
-        }
-        if (!joints.size)
-            return null;
-        return {
-            handedness,
-            handLabel,
-            joints,
-        };
-    }
     emitGesture(type, detail) {
         const event = { type, detail, target: this };
         this.dispatchEvent(event);
+    }
+    dispose() {
+        this.options.poseEstimator.dispose?.();
+        this.options.gestureRecognizer.dispose?.();
     }
 }
 
@@ -17883,8 +18081,10 @@ class Core {
             webXRRequiredFeatures.push('hand-tracking');
             this.user.hands = new Hands(this.input.hands);
             if (options.gestures.enabled) {
+                this.poseEstimation = options.gestures.poseEstimator;
                 this.gestureRecognition = new GestureRecognition();
                 this.xrSystemsGroup.add(this.gestureRecognition);
+                this.registry.register(this.poseEstimation);
                 this.registry.register(this.gestureRecognition);
             }
         }
@@ -18458,6 +18658,94 @@ class StrokeRecognizer extends Script {
             return this.recognizer.recognize(points2D);
         }
         return null;
+    }
+}
+
+const MEDIAPIPE_JOINT_INDEX = {
+    wrist: 0,
+    'thumb-metacarpal': 1,
+    'thumb-phalanx-proximal': 2,
+    'thumb-phalanx-distal': 3,
+    'thumb-tip': 4,
+    'index-finger-phalanx-proximal': 5,
+    'index-finger-phalanx-intermediate': 6,
+    'index-finger-phalanx-distal': 7,
+    'index-finger-tip': 8,
+    'middle-finger-phalanx-proximal': 9,
+    'middle-finger-phalanx-intermediate': 10,
+    'middle-finger-phalanx-distal': 11,
+    'middle-finger-tip': 12,
+    'ring-finger-phalanx-proximal': 13,
+    'ring-finger-phalanx-intermediate': 14,
+    'ring-finger-phalanx-distal': 15,
+    'ring-finger-tip': 16,
+    'pinky-finger-phalanx-proximal': 17,
+    'pinky-finger-phalanx-intermediate': 18,
+    'pinky-finger-phalanx-distal': 19,
+    'pinky-finger-tip': 20,
+};
+const ESTIMATED_METACARPALS = {
+    'index-finger-metacarpal': 5,
+    'middle-finger-metacarpal': 9,
+    'ring-finger-metacarpal': 13,
+    'pinky-finger-metacarpal': 17,
+};
+const METACARPAL_INTERPOLATION = 0.65;
+class MediaPipeHandContext {
+    constructor(handedness, handLabel, landmarks) {
+        this.handedness = handedness;
+        this.handLabel = handLabel;
+        this.joints = createJointMapFromLandmarks(landmarks);
+    }
+    getJoint(jointName) {
+        return this.joints.get(jointName);
+    }
+}
+class MediaPipeHandPoseEstimator {
+    async init() { }
+    getHandContext(_handedness) {
+        // TODO: map MediaPipe landmarks into canonical XR Blocks JointName positions.
+        return null;
+    }
+    getHandContexts() {
+        // TODO: return canonical contexts once MediaPipe landmark mapping is wired.
+        return {};
+    }
+}
+function createJointMapFromLandmarks(landmarks) {
+    const joints = new Map();
+    for (const [jointName, index] of Object.entries(MEDIAPIPE_JOINT_INDEX)) {
+        const landmark = landmarks[index];
+        if (!landmark)
+            continue;
+        joints.set(jointName, landmarkToVector(landmark));
+    }
+    const wristLandmark = landmarks[0];
+    if (!wristLandmark)
+        return joints;
+    for (const [jointName, index] of Object.entries(ESTIMATED_METACARPALS)) {
+        const knuckleLandmark = landmarks[index];
+        if (!knuckleLandmark)
+            continue;
+        const wrist = landmarkToVector(wristLandmark);
+        const knuckle = landmarkToVector(knuckleLandmark);
+        joints.set(jointName, wrist.lerp(knuckle, METACARPAL_INTERPOLATION));
+    }
+    return joints;
+}
+function landmarkToVector(landmark) {
+    return new THREE.Vector3(0.5 - landmark.x, 0.5 - landmark.y, -(landmark.z ?? 0));
+}
+
+class TensorFlowHandPoseEstimator {
+    async init() { }
+    getHandContext(_handedness) {
+        // TODO: map TensorFlow hand-pose outputs into canonical XR Blocks JointName positions.
+        return null;
+    }
+    getHandContexts() {
+        // TODO: return canonical contexts once TensorFlow output mapping is wired.
+        return {};
     }
 }
 
@@ -20502,5 +20790,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, callInitWithDependencyInjection, camera, clamp$1 as clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map

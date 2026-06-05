@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.15.0
- * @commitid 869f945
- * @builddate 2026-06-05T23:04:18.708Z
+ * @commitid a8df102
+ * @builddate 2026-06-05T23:13:13.707Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3722,68 +3722,6 @@ declare class Depth {
     updateFullResolutionDepthMesh(): void;
 }
 
-declare class HandsOptions {
-    /** Whether hand tracking is enabled. */
-    enabled: boolean;
-    /** Whether to show any hand visualization. */
-    visualization: boolean;
-    /** Whether to show the tracked hand joints. */
-    visualizeJoints: boolean;
-    /** Whether to show the virtual hand meshes. */
-    visualizeMeshes: boolean;
-    debugging: boolean;
-    constructor(options?: DeepReadonly<DeepPartial<HandsOptions>>);
-    /**
-     * Enables hands tracking.
-     * @returns The instance for chaining.
-     */
-    enableHands(): this;
-    enableHandsVisualization(): this;
-}
-
-type GestureProvider = 'heuristics' | 'mediapipe' | 'tfjs';
-type BuiltInGestureName = 'pinch' | 'open-palm' | 'fist' | 'thumbs-up' | 'point' | 'spread';
-type GestureConfiguration = {
-    enabled: boolean;
-    /**
-     * Optional override for gesture-specific score thresholds. For distance based
-     * gestures this is treated as a maximum distance; for confidence based
-     * gestures it is treated as a minimum score.
-     */
-    threshold?: number;
-};
-type GestureConfigurations = Partial<Record<BuiltInGestureName, Partial<GestureConfiguration>>>;
-declare class GestureRecognitionOptions {
-    /** Master switch for the gesture recognition block. */
-    enabled: boolean;
-    /**
-     * Backing provider that extracts gesture information.
-     *  - 'heuristics': WebXR joint heuristics only (no external ML dependency).
-     *  - 'mediapipe': MediaPipe Hands running via Web APIs / wasm.
-     *  - 'tfjs': TensorFlow.js hand-pose-detection models.
-     */
-    provider: GestureProvider;
-    /**
-     * Minimum confidence score to emit gesture events. Different providers map to
-     * different score domains so this value is normalised to [0-1].
-     */
-    minimumConfidence: number;
-    /**
-     * Optional throttle window for expensive providers.
-     */
-    updateIntervalMs: number;
-    /**
-     * Default gesture catalogue.
-     */
-    gestures: Record<BuiltInGestureName, GestureConfiguration>;
-    constructor(options?: DeepReadonly<DeepPartial<GestureRecognitionOptions>>);
-    enable(): this;
-    /**
-     * Convenience helper to toggle specific gestures.
-     */
-    setGestureEnabled(name: BuiltInGestureName, enabled: boolean): this;
-}
-
 declare const HAND_JOINT_NAMES: readonly ["wrist", "thumb-metacarpal", "thumb-phalanx-proximal", "thumb-phalanx-distal", "thumb-tip", "index-finger-metacarpal", "index-finger-phalanx-proximal", "index-finger-phalanx-intermediate", "index-finger-phalanx-distal", "index-finger-tip", "middle-finger-metacarpal", "middle-finger-phalanx-proximal", "middle-finger-phalanx-intermediate", "middle-finger-phalanx-distal", "middle-finger-tip", "ring-finger-metacarpal", "ring-finger-phalanx-proximal", "ring-finger-phalanx-intermediate", "ring-finger-phalanx-distal", "ring-finger-tip", "pinky-finger-metacarpal", "pinky-finger-phalanx-proximal", "pinky-finger-phalanx-intermediate", "pinky-finger-phalanx-distal", "pinky-finger-tip"];
 
 type JointName = (typeof HAND_JOINT_NAMES)[number];
@@ -3899,6 +3837,75 @@ declare class Hands {
      *     otherwise.
      */
     isValid(handIndex?: number): boolean;
+}
+
+declare class HandsOptions {
+    /** Whether hand tracking is enabled. */
+    enabled: boolean;
+    /** Whether to show any hand visualization. */
+    visualization: boolean;
+    /** Whether to show the tracked hand joints. */
+    visualizeJoints: boolean;
+    /** Whether to show the virtual hand meshes. */
+    visualizeMeshes: boolean;
+    debugging: boolean;
+    constructor(options?: DeepReadonly<DeepPartial<HandsOptions>>);
+    /**
+     * Enables hands tracking.
+     * @returns The instance for chaining.
+     */
+    enableHands(): this;
+    enableHandsVisualization(): this;
+}
+
+type HandLabel = 'left' | 'right';
+declare const HAND_INDEX_TO_LABEL: Partial<Record<Handedness, HandLabel>>;
+type JointPositions = Map<JointName, THREE.Vector3>;
+interface HandContext {
+    handedness: Handedness;
+    handLabel: HandLabel;
+    joints: JointPositions;
+    getJoint(jointName: JointName): THREE.Vector3 | undefined;
+}
+type GestureDetectionResult = {
+    confidence: number;
+    data?: Record<string, unknown>;
+};
+type GestureScoreMap = Record<string, GestureDetectionResult | undefined>;
+type HeuristicGestureDetector = (context: HandContext, config: GestureConfiguration) => GestureDetectionResult | undefined;
+interface GestureRecognizer {
+    init?(): Promise<void>;
+    recognize(context: HandContext): GestureScoreMap | Promise<GestureScoreMap>;
+    getGestureConfigurations?(): Record<string, GestureConfiguration>;
+    dispose?(): void;
+}
+interface PoseEstimator {
+    init?(dependencies?: {
+        user?: User;
+    }): Promise<void>;
+    getHandContext(handedness: Handedness): HandContext | null;
+    getHandContexts(): Partial<Record<HandLabel, HandContext>>;
+    dispose?(): void;
+}
+
+type GestureConfiguration = {
+    enabled: boolean;
+    threshold?: number;
+};
+declare class GestureRecognitionOptions {
+    enabled: boolean;
+    minimumConfidence: number;
+    updateIntervalMs: number;
+    poseEstimator: PoseEstimator;
+    gestureRecognizer: GestureRecognizer;
+    gestures: Record<string, GestureConfiguration>;
+    constructor(options?: DeepReadonly<DeepPartial<GestureRecognitionOptions>>);
+    enable(): this;
+    setGestureEnabled(name: string, enabled: boolean): this;
+    setPoseEstimator(poseEstimator: PoseEstimator): this;
+    setGestureRecognizer(gestureRecognizer: GestureRecognizer): this;
+    setGestureConfig(name: string, config: Partial<GestureConfiguration>): this;
+    private applyGestureRecognizerConfigurations;
 }
 
 type StrokeProvider = 'onedollar';
@@ -5227,16 +5234,15 @@ type GestureEventType = 'gesturestart' | 'gestureupdate' | 'gestureend';
 type GestureHandedness = 'left' | 'right';
 interface GestureEventDetail {
     /**
-     * The canonical gesture identifier. Built-in gestures map to
-     * `BuiltInGestureName` while custom providers may surface arbitrary strings.
+     * The canonical gesture identifier from the configured gesture recognizer.
      */
-    name: BuiltInGestureName | string;
+    name: string;
     /** Which hand triggered the gesture. */
     hand: GestureHandedness;
-    /** Provider specific confidence score, normalized to [0, 1]. */
+    /** Gesture recognizer confidence score, normalized to [0, 1]. */
     confidence: number;
     /**
-     * Optional payload for provider specific values (e.g. pinch distance,
+     * Optional payload for recognizer specific values (e.g. pinch distance,
      * velocity vectors).
      */
     data?: Record<string, unknown>;
@@ -5258,29 +5264,24 @@ interface GestureRecognitionEventMap extends THREE.Object3DEventMap {
 }
 declare class GestureRecognition extends Script<GestureRecognitionEventMap> {
     static dependencies: {
-        input: typeof Input;
         user: typeof User;
         options: typeof GestureRecognitionOptions;
     };
     private options;
-    private user;
-    private input;
     private activeGestures;
+    private latestScores;
+    private pendingRecognition;
     private lastEvaluation;
-    private detectors;
-    private activeProvider;
-    private providerWarned;
-    init({ options, user, input, }: {
+    init({ options, user, }: {
         options: GestureRecognitionOptions;
         user: User;
-        input: Input;
     }): Promise<void>;
     update(): void;
-    private configureProvider;
-    private assignDetectors;
     private evaluateHand;
-    private buildHandContext;
+    private recognizeHand;
+    private emitFromScores;
     private emitGesture;
+    dispose(): void;
 }
 
 /**
@@ -7467,6 +7468,7 @@ declare class Core {
     xrButton?: XRButton;
     effects?: XREffects;
     ai: AI;
+    poseEstimation?: PoseEstimator;
     gestureRecognition?: GestureRecognition;
     transition?: XRTransition;
     currentFrame?: XRFrame;
@@ -7818,6 +7820,103 @@ declare class StrokeRecognizer extends Script<StrokeEventMap> {
      * @returns The recognition result or null if not enough points were captured.
      */
     private recognizeGesture;
+}
+
+type FingerName = 'index' | 'middle' | 'ring' | 'pinky';
+type DigitName = 'thumb' | FingerName;
+type PalmPose = {
+    center: THREE.Vector3;
+    width: number;
+    normal: THREE.Vector3;
+    right: THREE.Vector3;
+    up: THREE.Vector3;
+};
+declare const FINGER_ORDER: FingerName[];
+declare function getFingerJoint(context: HandContext, finger: FingerName, suffix: string): THREE.Vector3 | undefined;
+declare function estimateHandScale(context: HandContext): number;
+declare function getPalmWidth(context: HandContext): number | null;
+declare function getPalmNormal(context: HandContext): THREE.Vector3 | null;
+declare function getPalmRight(context: HandContext): THREE.Vector3 | null;
+declare function getPalmUp(context: HandContext): THREE.Vector3 | null;
+declare function getPalmPose(context: HandContext): PalmPose | null;
+declare function getFingerBendAngles(context: HandContext, finger: FingerName): number[];
+declare function getFingerStraightness(context: HandContext, finger: FingerName): number;
+declare function getFingerCurl(context: HandContext, finger: FingerName): number;
+declare function getFingerDirection(context: HandContext, finger: FingerName): THREE.Vector3 | null;
+declare function getFingerPalmAlignment(context: HandContext, finger: FingerName): number;
+declare function getFingerSpread(context: HandContext, fingerA: FingerName, fingerB: FingerName): number;
+declare function getAdjacentFingerSpreads(context: HandContext): {
+    indexMiddle: number;
+    middleRing: number;
+    ringPinky: number;
+};
+declare function getThumbBendAngles(context: HandContext): number[];
+declare function getThumbStraightness(context: HandContext): number;
+declare function getThumbCurl(context: HandContext): number;
+declare function getThumbDirection(context: HandContext): THREE.Vector3 | null;
+declare function getThumbOpposition(context: HandContext, finger?: FingerName): number;
+declare function getThumbVerticalDirection(context: HandContext): number;
+declare function getFingertipDistance(context: HandContext, digitA: DigitName, digitB: DigitName): number | null;
+declare function getFingertipPalmDistance(context: HandContext, digit: DigitName): number | null;
+declare function getBoneVectors(context: HandContext): THREE.Vector3[];
+declare function getRelativeBoneAngles(context: HandContext): Float32Array<ArrayBuffer>;
+declare function average(values: number[]): number;
+declare function clamp01(value: number): number;
+
+type WebXRJointRotations = Map<JointName, THREE.Quaternion>;
+declare class WebXRHandContext implements HandContext {
+    handedness: Handedness;
+    handLabel: HandLabel;
+    joints: JointPositions;
+    jointRotations: WebXRJointRotations;
+    constructor(handedness: Handedness, handLabel: HandLabel, joints: JointPositions, jointRotations: WebXRJointRotations);
+    getJoint(jointName: JointName): THREE.Vector3 | undefined;
+}
+declare class WebXRHandPoseEstimator implements PoseEstimator {
+    private user?;
+    constructor(user?: User);
+    init({ user }?: {
+        user?: User;
+    }): Promise<void>;
+    getHandContext(handedness: Handedness): WebXRHandContext | null;
+    getHandContexts(): {
+        left: WebXRHandContext | undefined;
+        right: WebXRHandContext | undefined;
+    };
+}
+
+type MediaPipeHandLandmark = {
+    x: number;
+    y: number;
+    z?: number;
+};
+declare class MediaPipeHandContext implements HandContext {
+    handedness: Handedness;
+    handLabel: HandLabel;
+    joints: JointPositions;
+    constructor(handedness: Handedness, handLabel: HandLabel, landmarks: MediaPipeHandLandmark[]);
+    getJoint(jointName: JointName): THREE.Vector3 | undefined;
+}
+declare class MediaPipeHandPoseEstimator implements PoseEstimator {
+    init(): Promise<void>;
+    getHandContext(_handedness: Handedness): HandContext | null;
+    getHandContexts(): Partial<Record<'left' | 'right', HandContext>>;
+}
+
+declare class TensorFlowHandPoseEstimator implements PoseEstimator {
+    init(): Promise<void>;
+    getHandContext(_handedness: Handedness): HandContext | null;
+    getHandContexts(): Partial<Record<'left' | 'right', HandContext>>;
+}
+
+declare class HeuristicGestureRecognizer implements GestureRecognizer {
+    private gestures;
+    constructor(initBuiltInGestures?: boolean);
+    registerGesture(name: string, detector: HeuristicGestureDetector, config?: DeepReadonly<Partial<GestureConfiguration>>): this;
+    unregisterGesture(name: string): this;
+    getGestureConfigurations(): Record<string, GestureConfiguration>;
+    recognize(context: HandContext): GestureScoreMap;
+    private registerBuiltInGestures;
 }
 
 declare class SetSimulatorEnvironmentEvent extends Event {
@@ -8788,5 +8887,5 @@ declare class VideoFileStream extends VideoStream<VideoFileStreamDetails> {
     setSource(videoFile: string | File): Promise<void>;
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, callInitWithDependencyInjection, camera, clamp, clampRotationToAngle, core, cropImage, depth, extractYaw, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
-export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, BuiltInGestureName, CameraParametersSnapshot, CameraSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, Draggable, FormFactor, GLTFData, GamepadAction, GeminiQueryInput, GestureConfiguration, GestureConfigurations, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureProvider, GetWeatherArgs, GridOptions, HasDraggingMode, HasIgnoreReticleRaycast, ISimulatorSettingsPanelElement, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, JointName, KeyEvent, KeysJson, LabelViewOptions, LipMetrics, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, NormalizedDetectedObject, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, PagerOptions, PanelFadeState, PanelOptions, PlaySoundOptions, RAPIERCompat, RgbToDepthParams, RowOptions, ScriptsManagerEventMap, ScrollingTroikaTextViewOptions, SelectEvent, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, StrokeEventMap, StylizedFaceOptions, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, VisemeWeights, WeatherData };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, CameraParametersSnapshot, CameraSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, DigitName, Draggable, FingerName, FormFactor, GLTFData, GamepadAction, GeminiQueryInput, GestureConfiguration, GestureDetectionResult, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureRecognizer, GestureScoreMap, GetWeatherArgs, GridOptions, HandContext, HandLabel, HasDraggingMode, HasIgnoreReticleRaycast, HeuristicGestureDetector, ISimulatorSettingsPanelElement, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, JointName, JointPositions, KeyEvent, KeysJson, LabelViewOptions, LipMetrics, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, MediaPipeHandLandmark, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, NormalizedDetectedObject, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, PagerOptions, PalmPose, PanelFadeState, PanelOptions, PlaySoundOptions, PoseEstimator, RAPIERCompat, RgbToDepthParams, RowOptions, ScriptsManagerEventMap, ScrollingTroikaTextViewOptions, SelectEvent, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, StrokeEventMap, StylizedFaceOptions, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, VisemeWeights, WeatherData, WebXRJointRotations };
