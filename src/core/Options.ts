@@ -270,6 +270,18 @@ export class Options {
   }
 
   /**
+   * Enables human pose detection.
+   * @returns The instance for chaining.
+   */
+  enableHumanDetection() {
+    this.permissions.camera = true;
+    this.enableCamera();
+    this.enableDepth();
+    this.world.enableHumanDetection();
+    return this;
+  }
+
+  /**
    * Enables device camera (passthrough) with a specific facing mode.
    * @param facingMode - The desired camera facing mode, either 'environment' or
    *     'user'.

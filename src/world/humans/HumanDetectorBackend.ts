@@ -13,13 +13,14 @@ import {DetectedBodyPose, PoseLandmark} from './DetectedBodyPose';
 
 export interface HumanBackendContext {
   readonly options: WorldOptions;
-  readonly ai: AI;
-  readonly aiOptions: AIOptions;
+  readonly ai?: AI;
+  readonly aiOptions?: AIOptions;
   readonly deviceCamera: XRDeviceCamera;
   readonly debugVisualsGroup?: THREE.Group;
 }
 
 export abstract class BaseHumanBackend {
+  public lastDebugStatus = 'Initialized';
   constructor(protected context: HumanBackendContext) {}
 
   abstract run(
@@ -41,7 +42,9 @@ async function loadMediaPipeModule() {
     const mediapipeModule = await import('@mediapipe/tasks-vision');
     FilesetResolver = mediapipeModule.FilesetResolver;
     PoseLandmarker = mediapipeModule.PoseLandmarker;
-    console.log("'@mediapipe/tasks-vision' MediaPipe Pose Module loaded successfully.");
+    console.log(
+      "'@mediapipe/tasks-vision' MediaPipe Pose Module loaded successfully."
+    );
   } catch (error) {
     console.error('Failed to load MediaPipe Tasks Vision module:', error);
     throw error;
@@ -80,26 +83,40 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
     cameraParametersSnapshot: CameraParametersSnapshot
   ): Promise<DetectedBodyPose[]> {
     if (!(await this.isAvailable())) {
+      this.lastDebugStatus =
+        '[Backend]: PoseLandmarker failed to load (Check WASM/Model URL)';
       return [];
     }
 
     const snapshot = await this.getSnapshot();
-    if (!snapshot) return [];
+    if (!snapshot) {
+      this.lastDebugStatus =
+        '[Backend]: DeviceCamera snapshot capture returned null';
+      return [];
+    }
 
     await this.initializationPromise;
-    if (!this.poseLandmarker) return [];
+    if (!this.poseLandmarker) {
+      this.lastDebugStatus = '[Backend]: PoseLandmarker instance is null';
+      return [];
+    }
 
     let result: MEDIAPIPE.PoseLandmarkerResult;
     try {
       result = this.poseLandmarker.detect(snapshot.imageData);
-    } catch (error) {
+    } catch (error: unknown) {
+      this.lastDebugStatus = `[Backend]: detect() error: ${error instanceof Error ? error.message : String(error)}`;
       console.error('MediaPipe Pose detection run failed:', error);
       return [];
     }
 
     if (!result || !result.landmarks || result.landmarks.length === 0) {
+      this.lastDebugStatus =
+        '[Backend]: Snapshot analyzed successfully (0 persons detected)';
       return [];
     }
+
+    this.lastDebugStatus = `[Backend]: Success: Detected ${result.landmarks.length} person(s)`;
 
     const detectedPoses: DetectedBodyPose[] = [];
 
@@ -149,7 +166,10 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
 
       const bodyPose = new DetectedBodyPose(i, landmarks, boundingBox, score);
 
-      if (this.context.options.humans.showDebugVisualizations && this.context.debugVisualsGroup) {
+      if (
+        this.context.options.humans.showDebugVisualizations &&
+        this.context.debugVisualsGroup
+      ) {
         this.createDebugVisual(bodyPose);
       }
 
@@ -182,7 +202,11 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
     if (!this.context.debugVisualsGroup) return;
 
     // Draw simple joints as spheres
-    const jointNames: (typeof pose.getJointPosition extends (name: infer N) => any ? N : never)[] = [
+    const jointNames: (typeof pose.getJointPosition extends (
+      name: infer N
+    ) => any
+      ? N
+      : never)[] = [
       'hips',
       'chest',
       'neck',

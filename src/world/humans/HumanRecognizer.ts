@@ -16,8 +16,6 @@ import {
 export class HumanRecognizer extends Script {
   static dependencies = {
     options: WorldOptions,
-    ai: AI,
-    aiOptions: AIOptions,
     deviceCamera: XRDeviceCamera,
     depth: Depth,
     camera: THREE.Camera,
@@ -25,15 +23,16 @@ export class HumanRecognizer extends Script {
   };
 
   public body_poses: DetectedBodyPose[] = [];
+  public lastDebugString = 'Initializing...';
   private _detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
   private _debugVisualsGroup?: THREE.Group;
 
   // Injected dependencies
   private options!: WorldOptions;
-  private ai!: AI;
-  private aiOptions!: AIOptions;
+  private ai?: AI;
+  private aiOptions?: AIOptions;
   private deviceCamera!: XRDeviceCamera;
-  private depth!: Depth;
+  public depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer;
 
@@ -53,8 +52,8 @@ export class HumanRecognizer extends Script {
     renderer,
   }: {
     options: WorldOptions;
-    ai: AI;
-    aiOptions: AIOptions;
+    ai?: AI;
+    aiOptions?: AIOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
@@ -83,7 +82,11 @@ export class HumanRecognizer extends Script {
     this.clear();
 
     if (!this.depth || !this.depth.depthMesh) {
-      console.warn('Cannot run Human Detection: Depth module / depthMesh is not enabled or initialized.');
+      this.lastDebugString =
+        '[Recognizer]: Depth module or depthMesh uninitialized.';
+      console.warn(
+        'Cannot run Human Detection: Depth module / depthMesh is not enabled or initialized.'
+      );
       return [];
     }
 
@@ -102,7 +105,8 @@ export class HumanRecognizer extends Script {
     let backend: BaseHumanBackend;
     try {
       backend = await backendPromise;
-    } catch (error) {
+    } catch (error: unknown) {
+      this.lastDebugString = `[Recognizer]: Backend load failed: ${error instanceof Error ? error.message : String(error)}`;
       console.warn(
         `Failed to load or initialize HumanRecognizer backend '${activeBackend}':`,
         error
@@ -114,6 +118,8 @@ export class HumanRecognizer extends Script {
       depthMeshSnapshot,
       cameraParametersSnapshot
     );
+
+    this.lastDebugString = backend.lastDebugStatus;
 
     for (const pose of poses) {
       this.body_poses.push(pose);

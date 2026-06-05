@@ -68,4 +68,3 @@ export class WorldOptions {
     return this;
   }
 }
-

@@ -36,7 +36,7 @@ export interface PoseLandmark {
 
 export class DetectedBodyPose extends THREE.Object3D {
   constructor(
-    public id: number,
+    public poseId: number,
     public landmarks: PoseLandmark[],
     public detection2DBoundingBox: THREE.Box2,
     public score: number
@@ -113,7 +113,9 @@ export class DetectedBodyPose extends THREE.Object3D {
         const hips = this.getJointPosition('hips');
         const chest = this.getJointPosition('chest');
         if (hips && chest) {
-          return new THREE.Vector3().addVectors(hips, chest).multiplyScalar(0.5);
+          return new THREE.Vector3()
+            .addVectors(hips, chest)
+            .multiplyScalar(0.5);
         }
         return hips || chest || null;
       }
@@ -121,7 +123,9 @@ export class DetectedBodyPose extends THREE.Object3D {
         const lShoulder = getMPWorldPos(11);
         const rShoulder = getMPWorldPos(12);
         if (lShoulder && rShoulder) {
-          return new THREE.Vector3().addVectors(lShoulder, rShoulder).multiplyScalar(0.5);
+          return new THREE.Vector3()
+            .addVectors(lShoulder, rShoulder)
+            .multiplyScalar(0.5);
         }
         return lShoulder || rShoulder || null;
       }
@@ -129,7 +133,9 @@ export class DetectedBodyPose extends THREE.Object3D {
         const chest = this.getJointPosition('chest');
         const nose = getMPWorldPos(0);
         if (chest && nose) {
-          return new THREE.Vector3().addVectors(chest, nose).multiplyScalar(0.5);
+          return new THREE.Vector3()
+            .addVectors(chest, nose)
+            .multiplyScalar(0.5);
         }
         return chest || nose || null;
       }
@@ -138,8 +144,12 @@ export class DetectedBodyPose extends THREE.Object3D {
         const lEar = getMPWorldPos(7);
         const rEar = getMPWorldPos(8);
         if (nose && lEar && rEar) {
-          const midEar = new THREE.Vector3().addVectors(lEar, rEar).multiplyScalar(0.5);
-          return new THREE.Vector3().addVectors(nose, midEar).multiplyScalar(0.5);
+          const midEar = new THREE.Vector3()
+            .addVectors(lEar, rEar)
+            .multiplyScalar(0.5);
+          return new THREE.Vector3()
+            .addVectors(nose, midEar)
+            .multiplyScalar(0.5);
         }
         return nose || lEar || rEar || null;
       }

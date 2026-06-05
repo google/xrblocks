@@ -58,4 +58,3 @@ declare module '@sparkjsdev/spark' {
     [key: string]: any;
   }
 }
-

@@ -7,8 +7,10 @@ export class HumansOptions {
   backendConfig = {
     activeBackend: 'mediapipe',
     mediapipe: {
-      wasmFilesUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
-      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+      wasmFilesUrl:
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+      modelAssetPath:
+        'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
       scoreThreshold: 0.5,
     },
   };
