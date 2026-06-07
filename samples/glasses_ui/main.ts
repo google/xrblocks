@@ -1,12 +1,13 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
-import {reversePainterSortStable} from '@pmndrs/uikit';
+import * as uikit from '@pmndrs/uikit';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 import {SystemUI} from 'xrblocks/addons/glasses/ui/SystemUI.js';
 import {CardStack} from 'xrblocks/addons/glasses/ui/CardStack.js';
 import {CardManager} from 'xrblocks/addons/glasses/ui/CardManager.js';
 import {GlassesRenderer} from 'xrblocks/addons/glasses/ui/GlassesRenderer.js';
+import {GlassesModelManager} from 'xrblocks/addons/glasses/ui/GlassesModelManager.js';
 
 // prettier-ignore
 const EMOJIS = ['🚀', '😂', '🔥', '💡', '🎉', '🤖', '✨', '🦖', '🍕', '🌍', '🍔', '👾', '🎨', '🎸', '🎲', '🥑'];
@@ -15,7 +16,7 @@ class GlassesUISample extends xb.Script {
   private runningInXr = false;
   private systemUiGroup = new THREE.Group();
   private systemUi!: SystemUI;
-
+  private glassesModelManager = new GlassesModelManager();
   private glassesRenderer?: GlassesRenderer;
 
   // Card Display.
@@ -37,6 +38,7 @@ class GlassesUISample extends xb.Script {
       })
     );
 
+    this.add(this.glassesModelManager);
     this.add(this.cardManager);
 
     this.createNewCard();
@@ -52,7 +54,7 @@ class GlassesUISample extends xb.Script {
     const randomEmoji1 = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
     const randomEmoji2 = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
     cardTitleSignal.value = `Card ${this.cardNumber} ${randomEmoji1}`;
-    cardBodySignal.value = `This is card ${this.cardNumber} ${randomEmoji2}.`;
+    cardBodySignal.value = `This is \ncard ${this.cardNumber} ${randomEmoji2}.`;
   }
 
   private onRightXrCamera(rightCamera: THREE.Camera) {
@@ -86,10 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   options.simulator.instructions.enabled = false;
   options.simulator.handPosePanel.enabled = false;
   options.simulator.renderToRenderTexture = false;
+  options.uikit.enable(uikit);
   xb.add(new GlassesUISample());
   await xb.init(options);
-  // Setup for @pmndrs/uikit.
-  const renderer = xb.core.renderer;
-  renderer.localClippingEnabled = true;
-  renderer.setTransparentSort(reversePainterSortStable);
 });

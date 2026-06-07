@@ -24,6 +24,16 @@ export const PRESENCE_RENDER_DELAY_MS = 100;
 /** Frequency at which net object transforms are broadcast (Hz). */
 export const DEFAULT_NETOBJECT_HZ = 20;
 
+/**
+ * Default tau-style smoothing rate for the per-frame
+ * `1 - exp(-rate * dt)` blend that pulls a remote NetObject's local
+ * pose toward the most recently received network pose. Larger values
+ * track faster but jitter more on noisy wifi; 12 lands the avatar
+ * within ~150 ms of the network pose at 90 Hz refresh, which feels
+ * snappy without amplifying single-packet noise.
+ */
+export const DEFAULT_NETOBJECT_INTERP_RATE = 12;
+
 /** Maximum message payload size (bytes). Larger payloads must be chunked. */
 export const MAX_MESSAGE_BYTES = 60_000;
 

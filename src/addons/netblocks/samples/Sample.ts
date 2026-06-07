@@ -32,6 +32,7 @@ export abstract class NetSample extends xb.Script {
   protected onSession(_session: NonNullable<NetCore['session']>): void {}
 
   async init() {
+    xb.core.input.raycaster.params.Line.threshold = 0.0001;
     this.net = enableNet();
     const code = getRoomCodeFromUrl();
     let {roomId, options} = this.getJoinOptions();

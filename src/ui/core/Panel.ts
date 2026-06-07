@@ -319,7 +319,7 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
   /**
    * Updates the panel's visual dimensions based on its layout properties.
    */
-  updateLayout() {
+  override updateLayout() {
     super.updateLayout();
     this.mesh.setAspectRatio(this.aspectRatio);
     const parentAspectRatio =
@@ -328,6 +328,7 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
       this.width * Math.max(parentAspectRatio, 1.0),
       this.height * Math.max(1.0 / parentAspectRatio, 1.0)
     );
+    this.mesh.renderOrder = this.renderOrder;
   }
 
   /**

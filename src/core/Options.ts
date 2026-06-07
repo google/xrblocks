@@ -14,6 +14,7 @@ import {SimulatorOptions} from '../simulator/SimulatorOptions';
 import {SoundOptions} from '../sound/SoundOptions';
 import {deepMerge} from '../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../utils/Types';
+import {UIKitOptions} from './UIKitOptions.js';
 import {WorldOptions} from '../world/WorldOptions';
 import {getUrlParameter} from '../utils/utils';
 
@@ -113,6 +114,7 @@ export class Options {
   ai = new AIOptions();
   simulator = new SimulatorOptions();
   world = new WorldOptions();
+  uikit = new UIKitOptions();
   physics = new PhysicsOptions();
   transition = new XRTransitionOptions();
   camera = {

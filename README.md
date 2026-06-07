@@ -53,6 +53,8 @@ and [white paper](https://arxiv.org/abs/2509.25504) for a visionary roadmap.
 
 ### Usage
 
+[![Build Size](https://badgen.net/bundlephobia/minzip/xrblocks)](https://bundlephobia.com/result?p=xrblocks)
+
 XR Blocks can be imported directly into a webpage using an importmap. This code
 creates a basic XR scene containing a cylinder. When you view the scene, you can
 pinch your fingers (in XR) or click (in the desktop simulator) to change the

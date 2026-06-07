@@ -138,7 +138,9 @@ export interface VoiceSignalMessage extends BaseMessage {
   signal:
     | {kind: 'offer'; sdp: string}
     | {kind: 'answer'; sdp: string}
-    | {kind: 'ice'; candidate: RTCIceCandidateInit};
+    | {kind: 'ice'; candidate: RTCIceCandidateInit}
+    | {kind: 'bye'}
+    | {kind: 'hello'};
 }
 
 export interface PeerCapabilities {

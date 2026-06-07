@@ -1,110 +1,81 @@
-# VirtualKeyBoard Component
+# Virtual Keyboard (`Keyboard.ts`)
 
-A reusable virtual keyboard component for XR environments using the XR Blocks SDK.
+A 3D on-screen virtual keyboard component for **xrblocks**. It allows users to type text using a customizable spatial interface in virtual or augmented reality.
 
-## Usage
+---
 
-### Basic Usage
+## Overview
 
-```javascript
-import {VirtualKeyBoard} from 'xrblocks/addons/virtualkeyboard/VirtualKeyBoard.js';
+The `Keyboard` component is a spatial UI panel that displays a full virtual QWERTY keyboard. It supports standard typing, shifted characters, caps lock, and special operations like backspace, tab, and enter.
 
-// Create a keyboard with default settings
-const keyboard = new VirtualKeyBoard();
-this.add(keyboard);
-```
+---
 
-### Advanced Usage with Custom Options
+## Keyboard Layout
 
-```javascript
-import {VirtualKeyBoard} from 'xrblocks/addons/virtualkeyboard/VirtualKeyBoard.js';
+The keyboard has **6 rows** structured using a grid layout:
 
-const keyboard = new VirtualKeyBoard({
-  onKeyPress: (key) => {
-    console.log('Key pressed:', key);
-    // Handle key press (e.g., add to input field)
-  },
-  onBackspace: () => {
-    console.log('Backspace pressed');
-    // Handle backspace (e.g., remove last character)
-  },
-  onEnter: () => {
-    console.log('Enter pressed');
-    // Handle enter (e.g., submit form, send message)
-  },
-  position: {x: 0, y: 0.8, z: -1},
-  scale: {x: 1.5, y: 1.5, z: 1.5},
-  backgroundColor: '#222222aa',
-  keyColor: '#444444',
-  specialKeyColor: '#666666',
-  backspaceColor: '#dc3545',
-  enterColor: '#28a745',
-  fontColor: '#ffffff',
-  titleColor: '#4285f4',
-  title: '⌨️ Virtual Keyboard',
-  showTitle: true,
-  visible: true,
-});
+- **Row 1:** Symbols (`~!@#$%^&*()_+`)
+- **Row 2:** Numbers and brackets (`` `1234567890<> ``)
+- **Row 3:** Top letter row (`qwertyuiop`) with a **Tab** key on the left and a **Backspace** key on the right.
+- **Row 4:** Middle letter row (`asdfghjkl`) with a **Caps Lock** key on the left and an **Enter** key on the right.
+- **Row 5:** Bottom letter row (`zxcvbnm,.`) with **Shift** keys on both the left and right.
+- **Row 6:** A centered **Space** bar.
 
-this.add(keyboard);
-```
+---
 
-## Configuration Options
+## How It Works
 
-| Option            | Type     | Default                          | Description                             |
-| ----------------- | -------- | -------------------------------- | --------------------------------------- |
-| `onKeyPress`      | Function | `(key) => console.log(key)`      | Callback when a key is pressed          |
-| `onBackspace`     | Function | `() => console.log('Backspace')` | Callback when backspace is pressed      |
-| `onEnter`         | Function | `() => console.log('Enter')`     | Callback when enter is pressed          |
-| `position`        | Object   | `{x: 0, y: 0.8, z: -1}`          | 3D position of the keyboard             |
-| `scale`           | Object   | `{x: 1.5, y: 1.5, z: 1.5}`       | 3D scale of the keyboard                |
-| `backgroundColor` | String   | `'#222222aa'`                    | Background color of the keyboard panel  |
-| `keyColor`        | String   | `'#444444'`                      | Color of regular alphabet keys          |
-| `specialKeyColor` | String   | `'#666666'`                      | Color of the space key                  |
-| `backspaceColor`  | String   | `'#dc3545'`                      | Color of the backspace key              |
-| `enterColor`      | String   | `'#28a745'`                      | Color of the enter key                  |
-| `fontColor`       | String   | `'#ffffff'`                      | Text color for key labels               |
-| `titleColor`      | String   | `'#4285f4'`                      | Color of the keyboard title             |
-| `title`           | String   | `'⌨️ Virtual Keyboard'`          | Title text displayed above the keyboard |
-| `showTitle`       | Boolean  | `true`                           | Whether to show the title               |
-| `visible`         | Boolean  | `true`                           | Initial visibility of the keyboard      |
+### 1. UI Structure
 
-## Public Methods
+- **Root Panel:** The entire keyboard is contained within a `SpatialPanel` (called `subspace`), which has a dark background and optional borders.
+- **Grid Layout:** The keys are organized using a `Grid` component. Columns and rows are sized dynamically using relative layout weights.
+- **Buttons:**
+  - **Regular keys** are created as `KeyboardButton` (a custom class extending `TextButton`).
+  - **Special keys** (like Tab, Enter, Space, Backspace, Caps Lock, Shift) use `IconButton` to display descriptive icons.
 
-### `show()`
+### 2. Typing and State Management
 
-Makes the keyboard visible.
+- **Transient Shift:** Pressing a **Shift** key toggles a temporary shifted state. After you type any character, the shifted state automatically turns off.
+- **Caps Lock:** Pressing the **Caps Lock** key toggles permanent uppercase.
+- **Upper/Lower Case Logic:** Letter buttons automatically switch between uppercase and lowercase based on an XOR logic: they display uppercase when `Shift` is active **or** `Caps Lock` is active, but not both.
+- **Buffer Updates:** Every key press updates an internal text buffer (`keyText`).
 
-### `hide()`
+---
 
-Hides the keyboard.
+## Public API
 
-### `setPosition(x, y, z)`
+### Properties & Callbacks
 
-Sets the position of the keyboard in 3D space.
+| Property         | Type                               | Description                                                                                                                     |
+| :--------------- | :--------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `onTextChanged`  | `((text: string) => void) \| null` | Triggered every time the typed text changes (e.g., on character addition, backspace, space, or tab). Passes the updated string. |
+| `onEnterPressed` | `((text: string) => void) \| null` | Triggered when the user presses the **Enter** key. Passes the current typed text buffer.                                        |
 
-### `setScale(x, y, z)`
+### Methods
 
-Sets the scale of the keyboard.
+#### `setText(text: string): void`
 
-### `updateLayouts()`
+Manually updates the internal text buffer and triggers the `onTextChanged` callback.
 
-Updates the internal layout calculations (call this if needed after dynamic changes).
+#### `init(): void`
 
-### `dispose()`
+Positions the keyboard in the 3D scene (by default, placed at `(0, 1.2, -1)`).
 
-Cleans up the keyboard and removes it from the scene.
+---
 
-## Layout
+## Visual Options & Constants
 
-The keyboard uses a standard QWERTY layout:
+Below are the default sizes and colors defined in the component:
 
-```
-Q W E R T Y U I O P [⌫]
- A S D F G H J K L [↵]
-  Z X C V B N M [SPACE]
-```
-
-- **Row 1**: QWERTYUIOP + Backspace key
-- **Row 2**: ASDFGHJKL + Enter key
-- **Row 3**: ZXCVBNM + Space key
+- **Dimensions:**
+  - `KEY_WIDTH` = `0.07`
+  - `KEY_HEIGHT` = `0.08`
+  - `TOTAL_KEYBOARD_WIDTH` = `1.0`
+  - `TOTAL_KEYBOARD_HEIGHT` = `0.555` (calculated dynamically)
+- **Colors:**
+  - Keyboard Panel Background: Dark Charcoal (`#1a1a1b`)
+  - Regular Keys: Dark Gray (`#333334`)
+  - Special Keys: Slate Gray (`#3e4a59`)
+  - Action Key (Enter): Blue-Teal (`#449eb9`)
+- **Typography:**
+  - `FONT_SIZE` = `0.45`

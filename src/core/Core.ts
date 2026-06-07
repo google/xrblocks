@@ -9,6 +9,7 @@ import {DepthOptions} from '../depth/DepthOptions';
 import {Hands} from '../input/Hands';
 import {GestureRecognition} from '../input/gestures/GestureRecognition';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
+import type {PoseEstimator} from '../input/gestures/GestureTypes';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {Input} from '../input/Input';
 import {Lighting} from '../lighting/Lighting';
@@ -38,6 +39,7 @@ import {XRButton} from './components/XRButton';
 import {XREffects} from './components/XREffects';
 import {XRTransition} from './components/XRTransition';
 import {Options} from './Options';
+import {UIKitOptions} from './UIKitOptions';
 import {Script} from './Script';
 import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
@@ -119,6 +121,7 @@ export class Core {
   xrButton?: XRButton;
   effects?: XREffects;
   ai = new AI();
+  poseEstimation?: PoseEstimator;
   gestureRecognition?: GestureRecognition;
   transition?: XRTransition;
   currentFrame?: XRFrame;
@@ -190,6 +193,7 @@ export class Core {
     this.registry.register(options.simulator, SimulatorOptions);
     this.registry.register(options.world, WorldOptions);
     this.registry.register(options.world.meshes, MeshDetectionOptions);
+    this.registry.register(options.uikit, UIKitOptions);
     this.registry.register(options.ai, AIOptions);
     this.registry.register(options.sound, SoundOptions);
     this.registry.register(options.gestures, GestureRecognitionOptions);
@@ -226,6 +230,15 @@ export class Core {
       return null;
     };
     this.registry.register(this.renderer);
+
+    if (options.uikit.enabled) {
+      this.renderer.localClippingEnabled = true;
+      if (options.uikit.reversePainterSortStable) {
+        this.renderer.setTransparentSort(
+          options.uikit.reversePainterSortStable
+        );
+      }
+    }
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
     // For desktop simulator:
@@ -296,8 +309,10 @@ export class Core {
       webXRRequiredFeatures.push('hand-tracking');
       this.user.hands = new Hands(this.input.hands);
       if (options.gestures.enabled) {
+        this.poseEstimation = options.gestures.poseEstimator;
         this.gestureRecognition = new GestureRecognition();
         this.xrSystemsGroup.add(this.gestureRecognition);
+        this.registry.register(this.poseEstimation);
         this.registry.register(this.gestureRecognition);
       }
     }

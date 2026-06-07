@@ -14,7 +14,7 @@ options.depth.depthMesh.shadowOpacity = 0.6;
 options.depth.occlusion.enabled = true;
 
 // Set up lighting options.
-options.lighting = new xb.LightingOptions(xb.xrLightingOptions);
+options.lighting = new xb.LightingOptions();
 options.lighting.enabled = true;
 options.lighting.useAmbientSH = true;
 options.lighting.useDirectionalLight = true;

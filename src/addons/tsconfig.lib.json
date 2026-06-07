@@ -9,7 +9,8 @@
       ],
       "xrblocks": ["../xrblocks.ts"],
       "uiblocks": ["./uiblocks/src/index.ts"],
-      "netblocks": ["./netblocks/src/index.ts"]
+      "netblocks": ["./netblocks/src/index.ts"],
+      "lipsync": ["./lipsync/index.ts"]
     }
   },
   "include": ["**/*.ts"],

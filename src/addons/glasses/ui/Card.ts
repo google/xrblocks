@@ -14,6 +14,7 @@ import {ButtonProperties} from './ButtonProperties';
 import {CardActionButton} from './CardActionButton';
 import {CardTitleChip} from './CardTitleChip';
 
+/** Default properties for the Card component. */
 export const cardDefaults = {
   titleChip: undefined as string | undefined,
   title: undefined as string | undefined,
@@ -27,8 +28,10 @@ export const cardDefaults = {
   ...contentDefaults,
 };
 
+/** Properties for the Card component. */
 export type CardProperties = typeof cardDefaults & BaseOutProperties;
 
+/** A card component that displays content with title, icon, text, and actions. */
 export class Card extends Container<CardProperties> {
   constructor(properties: InProperties<CardProperties>) {
     super(
@@ -55,7 +58,7 @@ export class Card extends Container<CardProperties> {
     const borderWidth = 3;
     const cardContainer = new Container({
       flexDirection: 'column',
-      borderWidth: borderWidth,
+      borderWidth,
       borderRadius: 40,
       borderColor: 0x606460,
       // For some reason uikit counts padding from the end of the border.
@@ -171,6 +174,7 @@ export class Card extends Container<CardProperties> {
       ),
       flexGrow: 1,
       whiteSpace: 'pre',
+      overflow: 'hidden',
     });
     textArea.add(bodyText);
 

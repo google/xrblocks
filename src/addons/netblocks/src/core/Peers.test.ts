@@ -1,7 +1,18 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
 
-vi.mock('xrblocks', () => ({core: undefined}));
+vi.mock('xrblocks', async () => {
+  const T = await import('three');
+  return {
+    core: undefined,
+    // RemoteUserAvatar constructs `new xb.StylizedFace()` in its
+    // constructor; stub it with a bare Object3D so the test scaffolding
+    // doesn't need a real canvas/WebGL pipeline.
+    StylizedFace: class extends T.Object3D {
+      dispose() {}
+    },
+  };
+});
 
 import {encodeMessage, HelloMessage, NetMessage} from './codec/MessageCodec';
 import {NET_PROTOCOL_VERSION} from './constants/NetConstants';

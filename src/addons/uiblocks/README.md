@@ -85,8 +85,8 @@ To build your own application outside of the `samples/` workspace, configure the
           "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.56/dist/index.min.js",
           "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.12.1/dist/signals-core.mjs",
           "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
-          "uiblocks": "https://cdn.jsdelivr.net/npm/xrblocks@0.9.0/build/addons/uiblocks/src/index.js",
-          "xrblocks": "https://cdn.jsdelivr.net/npm/xrblocks@0.9.0/build/xrblocks.js"
+          "uiblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/uiblocks/src/index.js",
+          "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js"
         }
       }
     </script>
@@ -127,10 +127,10 @@ Create a base document mounting an entry `main.js` module script:
 
 #### 2. Initialize the UI Framework (`main.js`)
 
-Compose layout blocks extending `xb.Script` using standard transparency depth filters overriding ambient sort structures accurately:
+Compose layout blocks extending `xb.Script` and use the uikit option for automatic renderer configuration:
 
 ```javascript
-import {reversePainterSortStable} from '@pmndrs/uikit';
+import * as uikit from '@pmndrs/uikit';
 import * as THREE from 'three';
 import {UICore, UIPanel, UIText, raycastSortFunction} from 'uiblocks';
 import * as xb from 'xrblocks';
@@ -142,10 +142,6 @@ class CustomScript extends xb.Script {
   }
 
   async init() {
-    // Configure Depth Filters for transparency sorting
-    const renderer = xb.core.renderer;
-    renderer.localClippingEnabled = true;
-    renderer.setTransparentSort(reversePainterSortStable);
     // This is a must-have for raycasting to work.
     if (xb.core.input.raycaster) {
       xb.core.input.raycaster.sortFunction = raycastSortFunction;
@@ -190,16 +186,11 @@ class CustomScript extends xb.Script {
 
 // Bootstrap immersive loop
 async function start() {
-  await xb.core.init({
-    canvas: document.createElement('canvas'),
-  });
-  document.body.appendChild(xb.core.canvas);
-
-  xb.core.scene.add(new THREE.AmbientLight(0xffffff, 1));
-  xb.core.scene.add(new THREE.DirectionalLight(0xffffff, 1));
-
-  xb.core.addScript(new CustomScript());
-  xb.core.start();
+  const options = new xb.Options();
+  options.enableUI();
+  options.uikit.enable(uikit);
+  xb.add(new CustomScript());
+  await xb.init(options);
 }
 document.addEventListener('DOMContentLoaded', start);
 ```

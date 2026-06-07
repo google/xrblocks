@@ -20,6 +20,18 @@ const GESTURE_LABELS = [
   'GESTURE_LABEL_MAX_ENUM',
 ];
 
+const GESTURE_NAMES = [
+  'other',
+  'fist',
+  'thumbs-up',
+  'thumbs-down',
+  'point',
+  'victory',
+  'rock',
+  'shaka',
+  'unknown',
+];
+
 const GESTURE_IMAGES = [
   'images/empty.png',
   'images/fist.png',
@@ -32,10 +44,127 @@ const GESTURE_IMAGES = [
   'images/error.png',
 ];
 
-const LEFT_HAND_INDEX = 0;
-const RIGHT_HAND_INDEX = 1;
-
 const UNKNOWN_GESTURE = 8;
+
+export class CustomGestureRecognizer {
+  constructor() {
+    this.modelPath =
+      'https://cdn.jsdelivr.net/gh/xrblocks/assets@main/tflite_models/gestures/xr_emoji.tflite';
+    this.modelState = 'None';
+    this.model = null;
+    this.loadingPromise = null;
+  }
+
+  async init() {
+    this.loadingPromise ??= this.setBackendAndLoadModel();
+  }
+
+  getGestureConfigurations() {
+    return {
+      fist: {enabled: true},
+      'thumbs-up': {enabled: true},
+      'thumbs-down': {enabled: true},
+      point: {enabled: true},
+      victory: {enabled: true},
+      rock: {enabled: true},
+      shaka: {enabled: true},
+    };
+  }
+
+  async setBackendAndLoadModel() {
+    this.modelState = 'Loading';
+    try {
+      await tf.setBackend('webgpu');
+      await tf.ready();
+
+      const wasmPath = 'https://unpkg.com/@litertjs/core@0.2.1/wasm/';
+      const liteRt = await loadLiteRt(wasmPath);
+      const backend = tf.backend();
+      setWebGpuDevice(backend.device);
+
+      await this.loadModel(liteRt);
+
+      if (this.model) {
+        console.log('Model Details: ', this.model.getInputDetails());
+      }
+      this.modelState = 'Ready';
+    } catch (error) {
+      this.modelState = 'Error';
+      console.error('Failed to load model or backend:', error);
+    }
+  }
+
+  async loadModel(liteRt) {
+    try {
+      this.model = await liteRt.loadAndCompile(this.modelPath, {
+        accelerator: 'webgpu',
+      });
+    } catch (error) {
+      this.model = null;
+      console.error('Error loading model:', error);
+    }
+  }
+
+  async detectGesture(context) {
+    if (!this.model || !context) {
+      return UNKNOWN_GESTURE;
+    }
+
+    try {
+      const relativeBoneAngles = xb.getRelativeBoneAngles(context);
+      const tensor = tf.tensor1d(relativeBoneAngles);
+      const tensorReshaped = tensor.reshape([1, relativeBoneAngles.length, 1]);
+      const result = runWithTfjsTensors(this.model, tensorReshaped);
+
+      const scores = result[0].as1D().arraySync();
+      if (scores.length == 7) {
+        let maxScore = scores[0];
+        let idx = 0;
+        for (let t = 0; t < 7; ++t) {
+          if (scores[t] > maxScore) {
+            idx = t;
+            maxScore = scores[t];
+          }
+        }
+        return idx;
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    }
+    return UNKNOWN_GESTURE;
+  }
+
+  async recognize(context) {
+    const scores = {};
+    for (const name of Object.keys(this.getGestureConfigurations())) {
+      scores[name] = {confidence: 0};
+    }
+
+    if (!this.model) return scores;
+
+    let result = await this.detectGesture(context);
+    result = this.shiftIndexIfNeeded(context, result);
+
+    const gestureName = GESTURE_NAMES[result];
+    if (gestureName && scores[gestureName]) {
+      scores[gestureName] = {confidence: 1};
+    }
+    return scores;
+  }
+
+  shiftIndexIfNeeded(context, result) {
+    result += result > 2 ? 1 : 0;
+    if (result === 2) {
+      const thumbDirection = xb.getThumbVerticalDirection(context);
+      if (Math.abs(thumbDirection) < 0.25) {
+        result = 0;
+      } else if (thumbDirection < 0) {
+        result += 1;
+      }
+    }
+    return result;
+  }
+}
 
 /**
  * A demo scene that uses a custom ML model to detect and display static hand
@@ -143,16 +272,10 @@ export class CustomGestureDemo extends xb.Script {
       this.panel = panel;
     }
 
-    // Model
-    this.modelPath =
-      'https://cdn.jsdelivr.net/gh/xrblocks/assets@main/tflite_models/gestures/xr_emoji.tflite';
-    this.modelState = 'None';
-
-    this.frameId = 0;
-
-    setTimeout(() => {
-      this.setBackendAndLoadModel();
-    }, 1);
+    this.activeGestures = {
+      left: new Map(),
+      right: new Map(),
+    };
   }
 
   init() {
@@ -161,238 +284,58 @@ export class CustomGestureDemo extends xb.Script {
     const light = new THREE.DirectionalLight(0xffffff, 1.5);
     light.position.set(0, 4, 0);
     this.add(light);
-  }
 
-  async setBackendAndLoadModel() {
-    this.modelState = 'Loading';
-    try {
-      await tf.setBackend('webgpu');
-      await tf.ready();
+    const gestures = xb.core.gestureRecognition;
+    if (!gestures) return;
 
-      // Initializes LiteRT.js's WASM files.
-      const wasmPath = 'https://unpkg.com/@litertjs/core@0.2.1/wasm/';
-      const liteRt = await loadLiteRt(wasmPath);
-
-      // Makes LiteRt use the same GPU device as TF.js (for tensor conversion).
-      const backend = tf.backend();
-      setWebGpuDevice(backend.device);
-
-      // Loads model via LiteRt.
-      await this.loadModel(liteRt);
-
-      if (this.model) {
-        // Prints model details to the log.
-        console.log('Model Details: ', this.model.getInputDetails());
-      }
-      this.modelState = 'Ready';
-    } catch (error) {
-      console.error('Failed to load model or backend:', error);
-    }
-  }
-
-  async loadModel(liteRt) {
-    try {
-      this.model = await liteRt.loadAndCompile(this.modelPath, {
-        // Currently, only 'webgpu' is supported.
-        accelerator: 'webgpu',
-      });
-    } catch (error) {
-      this.model = null;
-      console.error('Error loading model:', error);
-    }
-  }
-
-  calculateRelativeHandBoneAngles(jointPositions) {
-    // Reshape jointPositions
-    let jointPositionsReshaped = [];
-
-    jointPositionsReshaped = jointPositions.reshape([xb.HAND_JOINT_COUNT, 3]);
-
-    // Calculate bone vectors
-    const boneVectors = [];
-    xb.HAND_JOINT_IDX_CONNECTION_MAP.forEach(([joint1, joint2]) => {
-      const boneVector = jointPositionsReshaped
-        .slice([joint2, 0], [1, 3])
-        .sub(jointPositionsReshaped.slice([joint1, 0], [1, 3]))
-        .squeeze();
-      const norm = boneVector.norm();
-      const normalizedBoneVector = boneVector.div(norm);
-      boneVectors.push(normalizedBoneVector);
-    });
-
-    // Calculate relative hand bone angles
-    const relativeHandBoneAngles = [];
-    xb.HAND_BONE_IDX_CONNECTION_MAP.forEach(([bone1, bone2]) => {
-      const angle = boneVectors[bone1].dot(boneVectors[bone2]);
-      relativeHandBoneAngles.push(angle);
-    });
-
-    // Stack the angles into a tensor.
-    return tf.stack(relativeHandBoneAngles);
-  }
-
-  async detectGesture(handJoints) {
-    if (!this.model || !handJoints || handJoints.length !== 25 * 3) {
-      console.log('Invalid hand joints or model load error.');
-      return UNKNOWN_GESTURE;
-    }
-
-    try {
-      const tensor = this.calculateRelativeHandBoneAngles(
-        tf.tensor1d(handJoints)
-      );
-
-      let tensorReshaped = tensor.reshape([
-        1,
-        xb.HAND_BONE_IDX_CONNECTION_MAP.length,
-        1,
-      ]);
-      var result = -1;
-
-      result = runWithTfjsTensors(this.model, tensorReshaped);
-
-      let integerLabel = result[0].as1D().arraySync();
-      if (integerLabel.length == 7) {
-        let x = integerLabel[0];
-        let idx = 0;
-        for (let t = 0; t < 7; ++t) {
-          if (integerLabel[t] > x) {
-            idx = t;
-            x = integerLabel[t];
-          }
-        }
-        return idx;
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    }
-    return UNKNOWN_GESTURE;
-  }
-
-  async #detectHandGestures(joints) {
-    if (Object.keys(joints).length !== 25) {
-      return UNKNOWN_GESTURE;
-    }
-
-    let handJointPositions = [];
-    for (const i in joints) {
-      handJointPositions.push(joints[i].position.x);
-      handJointPositions.push(joints[i].position.y);
-      handJointPositions.push(joints[i].position.z);
-    }
-
-    if (handJointPositions.length !== 25 * 3) {
-      return UNKNOWN_GESTURE;
-    }
-
-    let result = await this.detectGesture(handJointPositions);
-    return result;
-  }
-
-  #shiftIndexIfNeeded(joints, result) {
-    // no need to shift before thumb which is 2
-    result += result > 2 ? 1 : 0;
-    // check thumb direction
-    if (result === 2) {
-      // console.log(joints["thumb-phalanx-distal"], joints["thumb-tip"]);
-      let tmp = this.isThumbUpOrDown(
-        joints['thumb-phalanx-distal'].position,
-        joints['thumb-tip'].position
-      );
-      // 1 -up; -1 down; 0 - other
-      result = tmp === 0 ? 0 : tmp < 0 ? result + 1 : result;
-    }
-    return result;
-  }
-
-  async update() {
-    if (this.frameId % 5 === 0) {
-      const hands = xb.user.hands;
-      if (hands != null && hands.hands && hands.hands.length == 2) {
-        // Left hand.
-        const leftJoints = hands.hands[LEFT_HAND_INDEX].joints;
-        let leftHandResult = await this.#detectHandGestures(leftJoints);
-        leftHandResult = this.#shiftIndexIfNeeded(leftJoints, leftHandResult);
-
-        // Update image and label.
-        this.leftHandImage.load(GESTURE_IMAGES[leftHandResult]);
-        this.leftHandLabel.setText(GESTURE_LABELS[leftHandResult]);
-
-        // Right hand.
-        const rightJoints = hands.hands[RIGHT_HAND_INDEX].joints;
-        let rightHandResult = await this.#detectHandGestures(rightJoints);
-        rightHandResult = this.#shiftIndexIfNeeded(
-          rightJoints,
-          rightHandResult
-        );
-
-        // Update image and label.
-        this.rightHandImage.load(GESTURE_IMAGES[rightHandResult]);
-        this.rightHandLabel.setText(GESTURE_LABELS[rightHandResult]);
-      }
-    }
-    this.frameId++;
-  }
-
-  isThumbUpOrDown(p1, p2) {
-    // Assuming p1 is the base of the thumb and p2 is the tip.
-
-    // Vector from base to tip.
-    const vector = {
-      x: p2.x - p1.x,
-      y: p2.y - p1.y,
-      z: p2.z - p1.z,
+    this.onGestureUpdate = (event) => {
+      const {hand, name, confidence = 0} = event.detail;
+      this.activeGestures[hand].set(name, confidence);
+      this.refreshHand(hand);
+    };
+    this.onGestureEnd = (event) => {
+      const {hand, name} = event.detail;
+      this.activeGestures[hand].delete(name);
+      this.refreshHand(hand);
     };
 
-    // Calculate the magnitude of the vector.
-    const magnitude = Math.sqrt(
-      vector.x * vector.x + vector.y * vector.y + vector.z * vector.z
-    );
+    gestures.addEventListener('gesturestart', this.onGestureUpdate);
+    gestures.addEventListener('gestureupdate', this.onGestureUpdate);
+    gestures.addEventListener('gestureend', this.onGestureEnd);
+  }
 
-    // If the magnitude is very small, it's likely not a significant gesture
-    if (magnitude < 0.001) {
-      return 0; // Otherwise
+  refreshHand(hand) {
+    const active = this.activeGestures[hand];
+    let bestName = 'other';
+    let bestConfidence = 0;
+    for (const [name, confidence] of active.entries()) {
+      if (confidence >= bestConfidence) {
+        bestName = name;
+        bestConfidence = confidence;
+      }
     }
+    const index = GESTURE_NAMES.indexOf(bestName);
+    const image = GESTURE_IMAGES[index >= 0 ? index : 0];
+    const label = GESTURE_LABELS[index >= 0 ? index : 0];
 
-    // Normalize the vector to get its direction.
-    const normalizedVector = {
-      x: vector.x / magnitude,
-      y: vector.y / magnitude,
-      z: vector.z / magnitude,
-    };
-
-    // Define the "up" and "down" direction vectors (positive and negative
-    // Y-axis)
-    const upVector = {x: 0, y: 1, z: 0};
-    const downVector = {x: 0, y: -1, z: 0};
-
-    // Angle threshold (cosine) for "up" (within 45 degrees of vertical)
-    const cosUpThreshold = Math.cos((45 * Math.PI) / 180); // Approximately 0.707
-
-    // Angle threshold (cosine) for "down" (within 45 degrees of negative
-    // vertical) We need the dot product with the *down* vector to be >= cos(45
-    // degrees)
-    const dotDownThreshold = cosUpThreshold;
-
-    // Calculates the dot product with the "up" vector.
-    const dotUp =
-      normalizedVector.x * upVector.x +
-      normalizedVector.y * upVector.y +
-      normalizedVector.z * upVector.z;
-
-    // Calculates the dot product with the "down" vector (negate the y component
-    // of normalized vector).
-    const dotDown =
-      normalizedVector.x * downVector.x +
-      normalizedVector.y * downVector.y +
-      normalizedVector.z * downVector.z;
-
-    if (dotUp >= cosUpThreshold) {
-      return 1; // Thumb up
-    } else if (dotDown >= dotDownThreshold) {
-      return -1; // Thumb down
+    if (hand === 'left') {
+      this.leftHandImage.load(image);
+      this.leftHandLabel.setText(label);
     } else {
-      return 0; // Otherwise
+      this.rightHandImage.load(image);
+      this.rightHandLabel.setText(label);
+    }
+  }
+
+  dispose() {
+    const gestures = xb.core.gestureRecognition;
+    if (!gestures) return;
+    if (this.onGestureUpdate) {
+      gestures.removeEventListener('gesturestart', this.onGestureUpdate);
+      gestures.removeEventListener('gestureupdate', this.onGestureUpdate);
+    }
+    if (this.onGestureEnd) {
+      gestures.removeEventListener('gestureend', this.onGestureEnd);
     }
   }
 }

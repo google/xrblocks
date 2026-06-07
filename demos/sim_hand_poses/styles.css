@@ -1,0 +1,350 @@
+.manual-sim-hand-prompt-bubble {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  z-index: 30;
+  box-sizing: border-box;
+  width: min(46rem, calc(100vw - 2rem));
+  padding: 0.55rem;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.86);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+
+.manual-sim-hand-prompt {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  padding: 0.65rem 0.9rem;
+}
+
+.manual-sim-hand-prompt:focus {
+  outline: 1px solid rgba(255, 255, 255, 0.44);
+}
+
+.manual-sim-hand-generate {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.65rem 0.85rem;
+}
+
+.manual-sim-hand-generate:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.manual-sim-hand-generate:disabled {
+  color: rgba(255, 255, 255, 0.42);
+  cursor: progress;
+}
+
+.manual-sim-hand-status {
+  min-width: 5.5rem;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.manual-sim-hand-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  box-sizing: border-box;
+  width: min(24rem, 100vw);
+  height: 100vh;
+  padding: 1rem;
+  background: rgba(8, 12, 18, 0.86);
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  backdrop-filter: blur(12px);
+}
+
+.manual-sim-hand-header {
+  position: static;
+  width: auto;
+  padding: 0;
+  display: block;
+  pointer-events: auto;
+  mix-blend-mode: normal;
+}
+
+.manual-sim-hand-header h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.manual-sim-hand-header p {
+  margin: 0.2rem 0 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.manual-sim-hand-reset {
+  margin-top: 0.75rem;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.55rem 0.75rem;
+  text-transform: none;
+}
+
+.manual-sim-hand-reset:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.manual-sim-hand-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.manual-sim-hand-tab,
+.manual-sim-hand-copy {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.5rem 0.45rem;
+}
+
+.manual-sim-hand-tab[aria-selected='true'] {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.36);
+}
+
+.manual-sim-hand-tab:hover,
+.manual-sim-hand-copy:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.manual-sim-hand-panels {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+}
+
+.manual-sim-hand-panel {
+  min-height: 0;
+  width: 100%;
+}
+
+.manual-sim-hand-panel[hidden] {
+  display: none;
+}
+
+.manual-sim-hand-controls {
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.manual-sim-hand-joint {
+  padding: 0.8rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.manual-sim-hand-joint h2 {
+  margin: 0 0 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.manual-sim-hand-slider {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(7rem, 1fr) 4.2rem;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.35rem 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.manual-sim-hand-axis {
+  font-weight: 500;
+}
+
+.manual-sim-hand-slider input[type='range'] {
+  width: 100%;
+}
+
+.manual-sim-hand-value {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+  font-family: Arial, sans-serif;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 0.28rem 0.35rem;
+  text-align: right;
+}
+
+.manual-sim-hand-value:focus {
+  border-color: rgba(255, 255, 255, 0.48);
+  outline: none;
+}
+
+.manual-sim-hand-json-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.manual-sim-hand-json-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.manual-sim-hand-json-header h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.manual-sim-hand-copy {
+  flex: 0 0 auto;
+  min-width: 4.25rem;
+}
+
+.manual-sim-hand-json {
+  box-sizing: border-box;
+  min-height: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.86);
+  font-family: Arial, sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.manual-sim-hand-gesture-panel {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  box-sizing: border-box;
+  width: 14rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.45rem;
+  background: rgba(8, 12, 18, 0.86);
+  color: #fff;
+  font-family: Arial, sans-serif;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+}
+
+.manual-sim-hand-gesture-panel h2 {
+  margin: 0 0 0.65rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.manual-sim-hand-gesture-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.manual-sim-hand-gesture-row span {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.manual-sim-hand-gesture-row strong {
+  color: #fff;
+  font-weight: 500;
+  text-align: right;
+}
+
+.manual-sim-hand-gesture-row strong[data-active='false'] {
+  color: rgba(255, 255, 255, 0.48);
+}
+
+@media all and (max-width: 640px) {
+  .manual-sim-hand-prompt-bubble {
+    left: 0.75rem;
+    width: calc(100vw - 1.5rem);
+    transform: none;
+    grid-template-columns: minmax(0, 1fr) auto;
+    border-radius: 0.45rem;
+  }
+
+  .manual-sim-hand-status {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .manual-sim-hand-sidebar {
+    top: auto;
+    bottom: 0;
+    width: 100vw;
+    height: 45vh;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .manual-sim-hand-gesture-panel {
+    top: 0.75rem;
+    left: 0.75rem;
+    width: min(14rem, calc(100vw - 1.5rem));
+  }
+}

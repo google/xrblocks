@@ -119,9 +119,12 @@ export class MaterialSymbolsView extends View {
     });
     this.loadingSvgPath = undefined;
     this.loadedSvgPath = svgPath;
-    const [viewMinX, viewMinY, viewWidth, viewHeight] =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (svgData.xml as any).attributes.viewBox.value.split(' ');
+    const viewBox = (svgData.xml as unknown as Element).getAttribute(
+      'viewBox'
+    )!;
+    const [viewMinX, viewMinY, viewWidth, viewHeight] = viewBox
+      .split(' ')
+      .map(Number);
     const paths = svgData.paths;
     const group = new THREE.Group();
 

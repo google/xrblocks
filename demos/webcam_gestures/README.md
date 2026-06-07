@@ -5,10 +5,11 @@ Control XR simulator hand gestures using your webcam and MediaPipe hand tracking
 ## Features
 
 - **Real-time hand gesture detection** using MediaPipe
+- **Demo-local pose estimator** that maps webcam landmarks into `HandContext`
+- **Demo-local gesture recognizer** that emits normal XR Blocks gesture events
 - **Custom gesture recognition**: PINCH, FIST, ROCK, THUMBS_UP, THUMBS_DOWN
 - **Native gesture support**: POINTING, VICTORY, RELAXED
 - **XR simulator integration** with stereo view
-- **100ms cooldown** to prevent gesture jitter
 
 ## Supported Gestures
 
@@ -23,7 +24,8 @@ Control XR simulator hand gestures using your webcam and MediaPipe hand tracking
 
 ## How it Works
 
-1. MediaPipe detects hand landmarks from webcam feed
-2. Custom heuristics detect gestures from landmark positions
-3. Fallback to MediaPipe's native gesture recognition
-4. Detected gestures trigger corresponding XR simulator hand poses
+1. MediaPipe detects hand landmarks from the webcam feed.
+2. The demo-local pose estimator maps those landmarks into XR Blocks joint names.
+3. `GestureRecognition` passes the resulting `HandContext` into the demo-local recognizer.
+4. The recognizer combines hand-pose helper scores with MediaPipe native gesture labels.
+5. Standard `gesturestart`, `gestureupdate`, and `gestureend` events drive simulator hand poses.

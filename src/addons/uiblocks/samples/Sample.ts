@@ -1,4 +1,4 @@
-import {reversePainterSortStable} from '@pmndrs/uikit';
+import * as uikit from '@pmndrs/uikit';
 import * as THREE from 'three';
 import {UICard, UICore, UIPanel, UIText, raycastSortFunction} from 'uiblocks';
 import * as xb from 'xrblocks';
@@ -21,9 +21,6 @@ export abstract class Sample extends xb.Script {
   }
 
   async init() {
-    const renderer = xb.core.renderer;
-    renderer.localClippingEnabled = true;
-    renderer.setTransparentSort(reversePainterSortStable);
     (xb.core.input.raycaster as RaycasterWithSort).sortFunction =
       raycastSortFunction;
 
@@ -89,6 +86,7 @@ export abstract class Sample extends xb.Script {
     async function start() {
       const options = new xb.Options();
       options.enableUI();
+      options.uikit.enable(uikit);
       options.reticles.enabled = true;
       options.controllers.visualizeRays = false;
       options.simulator.instructions.enabled = false;

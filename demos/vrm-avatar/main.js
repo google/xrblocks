@@ -13,7 +13,8 @@ import {VRMAvatarScript} from './VRMAvatarScript.js';
 // ---------------------------------------------------------------------------
 const VRM_URL =
   'https://cdn.jsdelivr.net/gh/pixiv/three-vrm@3.5.1/packages/three-vrm-animation/examples/models/VRM1_Constraint_Twist_Sample.vrm';
-const ASSETS_BASE_URL = 'https://cdn.jsdelivr.net/gh/xrblocks/assets@main/';
+const ASSETS_BASE_URL =
+  'https://cdn.jsdelivr.net/gh/xrblocks/proprietary-assets@main/';
 const TPOSE_URL = ASSETS_BASE_URL + 'avatars/Tpose.glb';
 const IDLE_URL = ASSETS_BASE_URL + 'avatars/IdleListening.glb';
 const WALK_URL = ASSETS_BASE_URL + 'avatars/Walking.glb';

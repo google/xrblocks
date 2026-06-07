@@ -33,7 +33,7 @@ import * as xb from 'xrblocks';
 import {
   enableNet,
   BroadcastChannelTransport,
-} from 'xrblocks/addons/netblocks/src';
+} from 'xrblocks/addons/netblocks/src/index.js';
 
 class MyApp extends xb.Script {
   async init() {

@@ -1,112 +1,117 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
+
 import * as xb from 'xrblocks';
 import {
-  FilesetResolver,
-  GestureRecognizer,
   DrawingUtils,
+  FilesetResolver,
+  GestureRecognizer as MediaPipeGestureRecognizer,
 } from '@mediapipe/tasks-vision';
 
-class HandTrackingService {
+const MEDIAPIPE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task';
+const MEDIAPIPE_WASM_URL =
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm';
+
+const WEBCAM_HAND = xb.Handedness.RIGHT;
+const WEBCAM_HAND_LABEL = 'right';
+
+const GESTURE_CONFIGURATIONS = {
+  pinch: {enabled: true},
+  fist: {enabled: true},
+  'thumbs-up': {enabled: true},
+  'thumbs-down': {enabled: true},
+  point: {enabled: true},
+  victory: {enabled: true},
+  rock: {enabled: true},
+  'open-palm': {enabled: true},
+};
+
+const NATIVE_GESTURE_NAMES = {
+  Closed_Fist: 'fist',
+  Open_Palm: 'open-palm',
+  Pointing_Up: 'point',
+  Thumb_Down: 'thumbs-down',
+  Thumb_Up: 'thumbs-up',
+  Victory: 'victory',
+};
+
+const GESTURE_TO_SIMULATOR_POSE = {
+  pinch: xb.SimulatorHandPose.PINCHING,
+  fist: xb.SimulatorHandPose.FIST,
+  'thumbs-up': xb.SimulatorHandPose.THUMBS_UP,
+  'thumbs-down': xb.SimulatorHandPose.THUMBS_DOWN,
+  point: xb.SimulatorHandPose.POINTING,
+  victory: xb.SimulatorHandPose.VICTORY,
+  rock: xb.SimulatorHandPose.ROCK,
+  'open-palm': xb.SimulatorHandPose.RELAXED,
+};
+
+class WebcamMediaPipeSource {
   constructor() {
-    this.gestureRecognizer = null;
     this.videoElement = document.getElementById('webcam-video');
     this.canvasElement = document.getElementById('output-canvas');
     this.canvasCtx = this.canvasElement.getContext('2d');
     this.gestureLabel = document.getElementById('gesture-label');
+    this.mediaPipeRecognizer = null;
+    this.latestResults = null;
     this.lastVideoTime = -1;
-    this.currentGesture = 'NONE';
+    this.initPromise = null;
   }
 
-  async initialize() {
-    const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm'
-    );
+  init() {
+    this.initPromise ??= this.loadAndStart();
+    return this.initPromise;
+  }
 
-    this.gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath:
-          'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task',
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numHands: 1,
-    });
+  async loadAndStart() {
+    const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
+    this.mediaPipeRecognizer =
+      await MediaPipeGestureRecognizer.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: MEDIAPIPE_MODEL_URL,
+          delegate: 'GPU',
+        },
+        runningMode: 'VIDEO',
+        numHands: 1,
+      });
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({video: true});
       this.videoElement.srcObject = stream;
-      this.videoElement.addEventListener('loadeddata', () => {
-        this.gestureLabel.innerText = 'Show Hand';
-        this.predictWebcam();
+      await new Promise((resolve) => {
+        this.videoElement.addEventListener('loadeddata', resolve, {once: true});
       });
-    } catch (err) {
-      console.error(err);
+      this.gestureLabel.innerText = 'Show Hand';
+      this.predictWebcam();
+    } catch (error) {
+      console.error(error);
       this.gestureLabel.innerText = 'Camera Error';
     }
   }
 
-  async predictWebcam() {
+  predictWebcam() {
     requestAnimationFrame(() => this.predictWebcam());
-    if (!this.gestureRecognizer) return;
+    if (!this.mediaPipeRecognizer) return;
+    if (this.videoElement.currentTime === this.lastVideoTime) return;
 
-    if (this.videoElement.currentTime !== this.lastVideoTime) {
-      this.lastVideoTime = this.videoElement.currentTime;
-      const results = this.gestureRecognizer.recognizeForVideo(
-        this.videoElement,
-        performance.now()
-      );
-      this.drawResults(results);
-    }
+    this.lastVideoTime = this.videoElement.currentTime;
+    this.latestResults = this.mediaPipeRecognizer.recognizeForVideo(
+      this.videoElement,
+      performance.now()
+    );
+    this.drawResults();
   }
 
-  detectCustomGestures(landmarks) {
-    const wrist = landmarks[0],
-      thumbTip = landmarks[4],
-      indexKnuckle = landmarks[5];
-    const indexTip = landmarks[8],
-      indexPip = landmarks[6];
-    const middleTip = landmarks[12],
-      middlePip = landmarks[10];
-    const ringTip = landmarks[16],
-      ringPip = landmarks[14];
-    const pinkyTip = landmarks[20],
-      pinkyPip = landmarks[18];
-
-    const dist = (p1, p2) =>
-      Math.sqrt(
-        Math.pow(p1.x - p2.x, 2) +
-          Math.pow(p1.y - p2.y, 2) +
-          Math.pow(p1.z - p2.z, 2)
-      );
-    const isExtended = (tip, pip) => dist(tip, wrist) > dist(pip, wrist) * 1.1;
-
-    const indexOpen = isExtended(indexTip, indexPip);
-    const middleOpen = isExtended(middleTip, middlePip);
-    const ringOpen = isExtended(ringTip, ringPip);
-    const pinkyOpen = isExtended(pinkyTip, pinkyPip);
-
-    // Check fist-based gestures first
-    if (!indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
-      if (thumbTip.y > indexKnuckle.y + 0.1) return 'THUMB_DOWN';
-      if (thumbTip.y < indexKnuckle.y - 0.1) return 'THUMB_UP';
-      return 'FIST';
-    }
-
-    // PINCH requires index finger partially extended
-    const indexExtension = dist(indexTip, wrist) / dist(indexKnuckle, wrist);
-    if (dist(thumbTip, indexTip) < 0.05 && indexExtension > 1.3) {
-      return 'PINCH';
-    }
-
-    // ROCK gesture
-    if (indexOpen && !middleOpen && !ringOpen && pinkyOpen) {
-      return 'ROCK';
-    }
-
-    return null;
+  getLandmarks() {
+    return this.latestResults?.landmarks?.[0] ?? null;
   }
 
-  drawResults(results) {
+  getNativeGestureName() {
+    const categoryName = this.latestResults?.gestures?.[0]?.[0]?.categoryName;
+    return categoryName ? NATIVE_GESTURE_NAMES[categoryName] : undefined;
+  }
+
+  drawResults() {
     this.canvasElement.width = this.videoElement.videoWidth;
     this.canvasElement.height = this.videoElement.videoHeight;
     this.canvasCtx.clearRect(
@@ -116,95 +121,236 @@ class HandTrackingService {
       this.canvasElement.height
     );
 
-    if (!results || !results.landmarks.length) {
-      this.currentGesture = 'NONE';
+    const landmarks = this.getLandmarks();
+    if (!landmarks) {
       this.gestureLabel.innerText = 'No Hand';
       this.gestureLabel.style.color = '#fff';
       return;
     }
 
-    const landmarks = results.landmarks[0];
     const drawingUtils = new DrawingUtils(this.canvasCtx);
-    drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, {
-      color: '#00FF00',
-      lineWidth: 3,
-    });
+    drawingUtils.drawConnectors(
+      landmarks,
+      MediaPipeGestureRecognizer.HAND_CONNECTIONS,
+      {
+        color: '#00FF00',
+        lineWidth: 3,
+      }
+    );
     drawingUtils.drawLandmarks(landmarks, {
       color: '#FF0000',
       lineWidth: 1,
       radius: 3,
     });
-
-    let gesture = this.detectCustomGestures(landmarks);
-
-    // Fallback to MediaPipe native gestures
-    if (!gesture && results.gestures.length > 0) {
-      const name = results.gestures[0][0].categoryName;
-      const mapping = {
-        Pointing_Up: 'POINTING',
-        Victory: 'VICTORY',
-        Thumb_Up: 'THUMB_UP',
-        Closed_Fist: 'FIST',
-        Open_Palm: 'RELAXED',
-      };
-      gesture = mapping[name] || name;
-    }
-
-    gesture = gesture || 'NONE';
-    this.currentGesture = gesture;
-    this.gestureLabel.innerText = gesture.replace(/_/g, ' ');
-    this.gestureLabel.style.color =
-      gesture !== 'NONE' && gesture !== 'RELAXED' ? '#0f0' : '#ccc';
   }
 }
 
-const handTracking = new HandTrackingService();
-handTracking.initialize();
+class WebcamMediaPipePoseEstimator {
+  constructor(source) {
+    this.source = source;
+  }
 
-class GestureToSimulatorBridge extends xb.Script {
-  constructor() {
-    super();
-    this.lastGesture = 'NONE';
-    this.lastTriggerTime = 0;
-    this.cooldownMs = 100;
-    this.gestureToSimulatorPose = {
-      PINCH: xb.SimulatorHandPose.PINCHING,
-      FIST: xb.SimulatorHandPose.FIST,
-      THUMB_UP: xb.SimulatorHandPose.THUMBS_UP,
-      THUMB_DOWN: xb.SimulatorHandPose.THUMBS_DOWN,
-      POINTING: xb.SimulatorHandPose.POINTING,
-      VICTORY: xb.SimulatorHandPose.VICTORY,
-      ROCK: xb.SimulatorHandPose.ROCK,
-      RELAXED: xb.SimulatorHandPose.RELAXED,
-      NONE: xb.SimulatorHandPose.RELAXED,
+  init() {
+    return this.source.init();
+  }
+
+  getHandContext(handedness) {
+    if (handedness !== WEBCAM_HAND) return null;
+    const landmarks = this.source.getLandmarks();
+    if (!landmarks) return null;
+    return new xb.MediaPipeHandContext(
+      WEBCAM_HAND,
+      WEBCAM_HAND_LABEL,
+      landmarks
+    );
+  }
+
+  getHandContexts() {
+    return {
+      right: this.getHandContext(WEBCAM_HAND) ?? undefined,
     };
   }
+}
 
-  update() {
-    const gesture = handTracking.currentGesture;
-    const currentTime = performance.now();
+class WebcamGestureRecognizer {
+  constructor(source) {
+    this.source = source;
+  }
 
-    if (
-      gesture !== this.lastGesture &&
-      currentTime - this.lastTriggerTime >= this.cooldownMs
-    ) {
-      this.lastGesture = gesture;
-      this.lastTriggerTime = currentTime;
-      const simulatorPose = this.gestureToSimulatorPose[gesture];
-      if (simulatorPose && xb.core.simulator?.hands) {
-        xb.core.simulator.hands.setRightHandLerpPose(simulatorPose);
-      }
+  init() {
+    return this.source.init();
+  }
+
+  getGestureConfigurations() {
+    return GESTURE_CONFIGURATIONS;
+  }
+
+  recognize(context) {
+    const scores = createEmptyScores();
+    this.applyHandContextScores(context, scores);
+    this.applyNativeGestureScore(scores);
+    return scores;
+  }
+
+  applyHandContextScores(context, scores) {
+    const indexStraight = xb.getFingerStraightness(context, 'index');
+    const middleStraight = xb.getFingerStraightness(context, 'middle');
+    const ringStraight = xb.getFingerStraightness(context, 'ring');
+    const pinkyStraight = xb.getFingerStraightness(context, 'pinky');
+    const indexCurl = xb.getFingerCurl(context, 'index');
+    const middleCurl = xb.getFingerCurl(context, 'middle');
+    const ringCurl = xb.getFingerCurl(context, 'ring');
+    const pinkyCurl = xb.getFingerCurl(context, 'pinky');
+    const closedFingers = xb.average([
+      indexCurl,
+      middleCurl,
+      ringCurl,
+      pinkyCurl,
+    ]);
+    const openFingers = xb.average([
+      indexStraight,
+      middleStraight,
+      ringStraight,
+      pinkyStraight,
+    ]);
+
+    const thumbVertical = xb.getThumbVerticalDirection(context);
+    const thumbIndexDistance = xb.getFingertipDistance(
+      context,
+      'thumb',
+      'index'
+    );
+    const scale = xb.getPalmWidth(context) ?? xb.estimateHandScale(context);
+    const pinch =
+      thumbIndexDistance !== null && scale > 0
+        ? xb.clamp01(1 - thumbIndexDistance / (scale * 0.55))
+        : 0;
+
+    scores.pinch.confidence = Math.max(scores.pinch.confidence, pinch);
+    scores.fist.confidence = Math.max(scores.fist.confidence, closedFingers);
+    scores['thumbs-up'].confidence = Math.max(
+      scores['thumbs-up'].confidence,
+      closedFingers * xb.clamp01((thumbVertical - 0.25) / 0.5)
+    );
+    scores['thumbs-down'].confidence = Math.max(
+      scores['thumbs-down'].confidence,
+      closedFingers * xb.clamp01((-thumbVertical - 0.25) / 0.5)
+    );
+    scores.point.confidence = Math.max(
+      scores.point.confidence,
+      indexStraight * xb.average([middleCurl, ringCurl, pinkyCurl])
+    );
+    scores.victory.confidence = Math.max(
+      scores.victory.confidence,
+      xb.average([indexStraight, middleStraight, ringCurl, pinkyCurl])
+    );
+    scores.rock.confidence = Math.max(
+      scores.rock.confidence,
+      xb.average([indexStraight, middleCurl, ringCurl, pinkyStraight])
+    );
+    scores['open-palm'].confidence = Math.max(
+      scores['open-palm'].confidence,
+      openFingers
+    );
+  }
+
+  applyNativeGestureScore(scores) {
+    const gestureName = this.source.getNativeGestureName();
+    if (gestureName && scores[gestureName]) {
+      scores[gestureName].confidence = Math.max(
+        scores[gestureName].confidence,
+        0.9
+      );
     }
   }
 }
 
+class GestureToSimulatorBridge extends xb.Script {
+  constructor(source) {
+    super();
+    this.source = source;
+    this.activeGestures = new Map();
+  }
+
+  init() {
+    const gestureRecognition = xb.core.gestureRecognition;
+    if (!gestureRecognition) return;
+
+    this.onGestureStart = (event) => {
+      const {name, confidence = 0} = event.detail;
+      this.activeGestures.set(name, confidence);
+      this.applyBestGesture();
+    };
+    this.onGestureUpdate = this.onGestureStart;
+    this.onGestureEnd = (event) => {
+      this.activeGestures.delete(event.detail.name);
+      this.applyBestGesture();
+    };
+
+    gestureRecognition.addEventListener('gesturestart', this.onGestureStart);
+    gestureRecognition.addEventListener('gestureupdate', this.onGestureUpdate);
+    gestureRecognition.addEventListener('gestureend', this.onGestureEnd);
+  }
+
+  applyBestGesture() {
+    const [name] = getBestGesture(this.activeGestures);
+    const simulatorPose = GESTURE_TO_SIMULATOR_POSE[name];
+    if (simulatorPose && xb.core.simulator?.hands) {
+      xb.core.simulator.hands.setRightHandLerpPose(simulatorPose);
+    }
+
+    const label = name ?? 'none';
+    this.source.gestureLabel.innerText = label.replace(/-/g, ' ');
+    this.source.gestureLabel.style.color = name ? '#0f0' : '#ccc';
+  }
+
+  dispose() {
+    const gestureRecognition = xb.core.gestureRecognition;
+    if (!gestureRecognition) return;
+    gestureRecognition.removeEventListener('gesturestart', this.onGestureStart);
+    gestureRecognition.removeEventListener(
+      'gestureupdate',
+      this.onGestureUpdate
+    );
+    gestureRecognition.removeEventListener('gestureend', this.onGestureEnd);
+  }
+}
+
+function createEmptyScores() {
+  const scores = {};
+  for (const name of Object.keys(GESTURE_CONFIGURATIONS)) {
+    scores[name] = {confidence: 0};
+  }
+  return scores;
+}
+
+function getBestGesture(activeGestures) {
+  let bestName = null;
+  let bestConfidence = 0;
+  for (const [name, confidence] of activeGestures.entries()) {
+    if (confidence > bestConfidence) {
+      bestName = name;
+      bestConfidence = confidence;
+    }
+  }
+  return [bestName, bestConfidence];
+}
+
+const webcamSource = new WebcamMediaPipeSource();
 const options = new xb.Options();
 options.enableUI();
+options.enableGestures();
+options.gestures.setPoseEstimator(
+  new WebcamMediaPipePoseEstimator(webcamSource)
+);
+options.gestures.setGestureRecognizer(
+  new WebcamGestureRecognizer(webcamSource)
+);
 options.simulator.defaultMode = xb.SimulatorMode.POSE;
 options.simulator.stereo.enabled = true;
 options.xrButton.alwaysAutostartSimulator = true;
 
 document.addEventListener('DOMContentLoaded', () => {
-  xb.add(new GestureToSimulatorBridge());
+  xb.add(new GestureToSimulatorBridge(webcamSource));
   xb.init(options);
 });

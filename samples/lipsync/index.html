@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>lipsync · puppet</title>
+    <link rel="stylesheet" href="../main.css" />
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #181a20;
+        color: #eee;
+        font-family: sans-serif;
+      }
+      #hud {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: rgba(20, 20, 30, 0.7);
+        font-size: 13px;
+        pointer-events: none;
+        max-width: 360px;
+      }
+      #hud a.picker {
+        color: #9177c7;
+        text-decoration: none;
+        pointer-events: auto;
+        opacity: 0.85;
+      }
+      #hud a.picker:hover {
+        opacity: 1;
+        text-decoration: underline;
+      }
+      #hud b {
+        color: #9177c7;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="hud">
+      <a class="picker" href="../../src/addons/lipsync/samples/">← lipsync</a>
+      · <b>puppet</b><br />
+      Tap Start mic and talk to the puppet head in front of you.
+    </div>
+    <script type="importmap">
+      {
+        "imports": {
+          "lipsync": "../../build/addons/lipsync/index.js",
+          "uiblocks": "../../build/addons/uiblocks/src/index.js",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.56/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.56/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.56/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.12.1/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/"
+        }
+      }
+    </script>
+    <script
+      type="module"
+      src="../../build/addons/lipsync/samples/puppet/main.js"
+    ></script>
+  </body>
+</html>

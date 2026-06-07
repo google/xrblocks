@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>lipsync Samples</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 24px;
+        background: #111;
+        color: #eee;
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        color: #4796e3;
+        border-bottom: 2px solid #4796e3;
+        padding-bottom: 10px;
+      }
+      h2 {
+        color: #ca6673;
+        margin-top: 28px;
+      }
+      a {
+        color: #9177c7;
+        text-decoration: none;
+        display: block;
+        padding: 10px 12px;
+        margin: 6px 0;
+        border-radius: 8px;
+        background: rgba(145, 119, 199, 0.08);
+        font-size: 1.05em;
+      }
+      a:hover {
+        text-decoration: underline;
+        background: rgba(145, 119, 199, 0.16);
+      }
+      .desc {
+        color: #aaa;
+        font-size: 0.9em;
+        display: block;
+        margin-top: 4px;
+      }
+      .tip {
+        background: #2a2030;
+        padding: 12px 14px;
+        border-radius: 8px;
+        margin: 16px 0;
+        font-size: 0.95em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>lipsync Samples</h1>
+    <p>
+      Audio-driven mouth animation for xrblocks avatars. Drop a
+      <code>LipsyncMouth</code> into any avatar's head pivot and it animates
+      from a <code>MediaStream</code> in real time.
+    </p>
+    <div class="tip">
+      💡 The default mapper is a formant-based heuristic that works for any
+      voice with zero per-user setup. Pass an optional
+      <code>audioContext</code> to share a single Web Audio context across many
+      peer mouths.
+    </div>
+
+    <h2>Basic</h2>
+
+    <a href="puppet/index.html">
+      Puppet
+      <span class="desc"
+        >A stylised head sits in front of you; its mouth follows your mic. Works
+        in the desktop simulator and in immersive XR.</span
+      >
+    </a>
+
+    <h2>Multiplayer</h2>
+
+    <a href="netblocks/index.html">
+      Netblocks integration
+      <span class="desc"
+        >Open in two tabs, enable voice, and each peer's avatar mouths their
+        speech to the other peer. Uses <code>NetSession.voice.onTrack</code> to
+        wire one <code>LipsyncMouth</code> per remote peer.</span
+      >
+    </a>
+  </body>
+</html>

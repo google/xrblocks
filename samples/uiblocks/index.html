@@ -33,7 +33,7 @@
 
   <body>
     <script type="module">
-      import {reversePainterSortStable} from '@pmndrs/uikit';
+      import * as uikit from '@pmndrs/uikit';
       import * as THREE from 'three';
       import {
         UICore,
@@ -53,10 +53,6 @@
         }
 
         async init() {
-          const renderer = xb.core.renderer;
-          renderer.localClippingEnabled = true;
-          renderer.setTransparentSort(reversePainterSortStable);
-
           if (xb.core.input.raycaster) {
             xb.core.input.raycaster.sortFunction = raycastSortFunction;
           }
@@ -198,6 +194,7 @@
       document.addEventListener('DOMContentLoaded', () => {
         const options = new xb.Options();
         options.enableUI();
+        options.uikit.enable(uikit);
         options.setAppTitle('uiblocks Sample');
         xb.add(new MainScript());
         xb.init(options);

@@ -92,11 +92,15 @@ export class Math3D extends xb.Script {
     light.position.set(-0.5, 4, 1.0);
     this.add(light);
 
-    this.panel.position.set(0, 1.9, -1.0);
+    this.panel.position.set(0, 2.0, -1.0);
 
     this.keyboard = new Keyboard();
     this.add(this.keyboard);
     this.keyboard.position.set(0, -0.3, 0);
+
+    const startFn = this.mathObjects[0].functionText;
+
+    this.keyboard.setText?.(startFn) || (this.keyboard.keyText = startFn);
 
     this.keyboard.onEnterPressed = (newFunctionText) => {
       this.mathObjects[this.descriptionPagerState.currentPage].functionText =
@@ -105,8 +109,10 @@ export class Math3D extends xb.Script {
     };
 
     this.keyboard.onTextChanged = (currentText) => {
-      if (this.functionDisplay) {
-        this.functionDisplay.text = currentText;
+      const index = this.descriptionPagerState.currentPage;
+      const currentDisplay = this.descriptionPager.children[index].children[0];
+      if (currentDisplay && currentDisplay.setText) {
+        currentDisplay.setText(currentText);
       }
     };
 
@@ -174,11 +180,24 @@ export class Math3D extends xb.Script {
     var yMin = -5,
       yMax = 5,
       yRange = yMax - yMin;
+
+    const Z_LIMIT = 25; // Maximum absolute value for z to prevent extreme spikes in the graph
     var zFunction = Parser.parse(zFunctionText).toJSFunction(['x', 'y']);
-    var parametricFunction = function (x, y, target) {
-      var x = xRange * x + xMin;
-      var y = yRange * y + yMin;
-      var z = zFunction(x, y);
+    var parametricFunction = (u, v, target) => {
+      const x = xRange * u + xMin;
+      const y = yRange * v + yMin;
+
+      let z;
+      try {
+        z = zFunction(x, y);
+        // Clamp the value to stay between -Z_LIMIT and Z_LIMIT
+        z = xb.clamp(z, -Z_LIMIT, Z_LIMIT);
+
+        // Handle cases where the math results in NaN (not a number)
+        if (isNaN(z)) z = 0;
+      } catch (e) {
+        z = 0;
+      }
 
       target.set(x, y, z);
     };

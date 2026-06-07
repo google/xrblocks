@@ -4,7 +4,17 @@ import * as THREE from 'three';
 // NetSession imports `xrblocks` only to read `xb.core.sound.listener` inside
 // open(). The real module instantiates a Core (and AudioContext) at import
 // time, which jsdom can't satisfy — and we never call open() here anyway.
-vi.mock('xrblocks', () => ({core: undefined}));
+// `RemoteUserAvatar` also reaches into `xb.StylizedFace` in its
+// constructor, so stub that with a bare Object3D.
+vi.mock('xrblocks', async () => {
+  const T = await import('three');
+  return {
+    core: undefined,
+    StylizedFace: class extends T.Object3D {
+      dispose() {}
+    },
+  };
+});
 
 import {
   decodeMessage,
@@ -166,5 +176,102 @@ describe('NetSession late-join state-reset regression', () => {
 
     expect(owned.ownerId).toBe('zzz');
     expect(owned.position.toArray()).toEqual([1, 2, 3]);
+  });
+});
+
+describe('NetSession close ordering', () => {
+  // Regression: close() previously sent the session `bye` BEFORE
+  // calling voice.disable(). voice.disable() then broadcasts
+  // `netblocks/voice-state=false` and per-peer voice `bye` signals.
+  // On the remote, the session bye would remove the user first, and
+  // the trailing voice messages would land in `_onMessage` where any
+  // message from an unknown peer creates a fresh `NetUser` — leaving
+  // a ghost avatar behind for the peer that just left.
+  it('emits the session bye AFTER voice disable so remotes never resurrect a ghost user', async () => {
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    await session.open('room');
+    // Force voice into the enabled state without going through
+    // navigator.mediaDevices (jsdom doesn't have it). disable() still
+    // runs its full broadcast path because `wasEnabled` is true.
+    (session.voice as unknown as {_enabled: boolean})._enabled = true;
+    // Plant a peer connection so voice.disable() emits a voice bye too.
+    (
+      session.voice as unknown as {
+        _peers: Map<
+          string,
+          {
+            pc: {close: () => void; getSenders: () => unknown[]};
+            isOfferer: boolean;
+          }
+        >;
+      }
+    )._peers.set('peer-x', {
+      pc: {close: () => {}, getSenders: () => []},
+      isOfferer: false,
+    });
+    transport.sent.length = 0;
+
+    session.close();
+
+    const decoded = decodeSent(transport.sent);
+    const byeIdx = decoded.findIndex(
+      (d) => d.msg.type === 'bye' && d.to === undefined
+    );
+    const voiceByeIdx = decoded.findIndex(
+      (d) =>
+        d.msg.type === 'voice' &&
+        (d.msg as {signal: {kind: string}}).signal.kind === 'bye'
+    );
+    expect(byeIdx).toBeGreaterThanOrEqual(0);
+    expect(voiceByeIdx).toBeGreaterThanOrEqual(0);
+    // Voice bye must precede the session bye so the remote sees voice
+    // cleanup against the still-known sender, not against an
+    // already-removed user.
+    expect(voiceByeIdx).toBeLessThan(byeIdx);
+  });
+
+  // Regression: WebRTC peers only detect a closed peer via ICE
+  // failure, which takes 15–30s — long enough that the departed
+  // avatar reads as a frozen ghost in the room. Opening a session
+  // now registers a `pagehide` listener that calls `close()` so the
+  // session-level `bye` goes out over the data channel and the
+  // remote tears down immediately.
+  it('open() registers a pagehide handler that closes the session', async () => {
+    const added: Array<{type: string; listener: EventListener}> = [];
+    const removed: Array<{type: string; listener: EventListener}> = [];
+    const origAdd = window.addEventListener.bind(window);
+    const origRemove = window.removeEventListener.bind(window);
+    window.addEventListener = ((type: string, listener: EventListener) => {
+      added.push({type, listener});
+      return origAdd(type, listener);
+    }) as typeof window.addEventListener;
+    window.removeEventListener = ((type: string, listener: EventListener) => {
+      removed.push({type, listener});
+      return origRemove(type, listener);
+    }) as typeof window.removeEventListener;
+    try {
+      const transport = new FakeTransport();
+      const session = new NetSession(transport, new THREE.Group());
+      await session.open('room');
+      const ph = added.find((a) => a.type === 'pagehide');
+      expect(ph).toBeDefined();
+
+      // Trigger pagehide; session should close (and the transport
+      // should observe the call).
+      const closeSpy = vi.spyOn(transport, 'close');
+      ph!.listener(new Event('pagehide'));
+      expect(closeSpy).toHaveBeenCalled();
+      // close() must remove its own pagehide listener so a re-opened
+      // session in the same window doesn't fire stale handlers.
+      expect(
+        removed.find(
+          (r) => r.type === 'pagehide' && r.listener === ph!.listener
+        )
+      ).toBeDefined();
+    } finally {
+      window.addEventListener = origAdd;
+      window.removeEventListener = origRemove;
+    }
   });
 });

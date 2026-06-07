@@ -2,7 +2,10 @@ import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import * as xb from 'xrblocks';
 
-import {CustomGestureDemo} from './CustomGestureDemo.js';
+import {
+  CustomGestureDemo,
+  CustomGestureRecognizer,
+} from './CustomGestureDemo.js';
 
 const options = new xb.Options({
   antialias: true,
@@ -11,6 +14,8 @@ const options = new xb.Options({
   hands: {enabled: true, visualization: false},
   simulator: {defaultMode: xb.SimulatorMode.POSE},
 });
+options.enableGestures();
+options.gestures.setGestureRecognizer(new CustomGestureRecognizer());
 
 async function start() {
   options.setAppTitle('Custom Gestures');

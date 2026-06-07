@@ -52,6 +52,11 @@
     "node": ">=24.0"
   },
   "overrides": {
-    "serialize-javascript": "7.0.5"
+    "serialize-javascript": "7.0.5",
+    "webpack-dev-server": {
+      "sockjs": {
+        "uuid": "^11.1.1"
+      }
+    }
   }
 }

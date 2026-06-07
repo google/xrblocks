@@ -5,7 +5,7 @@ import {getUrlParameter} from '../utils/utils';
 
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
 import {GeminiResponse} from './AITypes';
-import {Gemini} from './Gemini';
+import {Gemini, GeminiQueryInput} from './Gemini';
 import {OpenAI} from './OpenAI';
 
 export type ModelClass = Gemini | OpenAI;
@@ -175,12 +175,20 @@ export class AI extends Script {
   }
 
   async query(
-    input: {prompt: string},
+    input: GeminiQueryInput | {prompt: string},
     tools?: never[]
   ): Promise<GeminiResponse | string | null> {
     if (!this.isAvailable()) {
       throw new Error(
         "AI is not available. Check if it's enabled and properly initialized."
+      );
+    }
+    if (this.model instanceof Gemini) {
+      return await this.model.query(input);
+    }
+    if (typeof input !== 'object' || input === null || !('prompt' in input)) {
+      throw new Error(
+        `${this.options.model} only supports {prompt: string} query inputs.`
       );
     }
     return await this.model!.query(input, tools);
@@ -258,7 +266,15 @@ export class AI extends Script {
     systemInstruction = 'Generate an image',
     model = undefined
   ) {
-    return this.model!.generate(prompt, type, systemInstruction, model);
+    if (!this.isAvailable()) {
+      throw new Error(
+        "AI is not available. Check if it's enabled and properly initialized."
+      );
+    }
+    if (this.model instanceof Gemini) {
+      return this.model.generate(prompt, type, systemInstruction, model);
+    }
+    throw new Error(`${this.options.model} does not support generate().`);
   }
 
   /**
