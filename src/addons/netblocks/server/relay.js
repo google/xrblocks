@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* eslint-env node */
+/* global */
 /**
  * Minimal WebSocket relay for netblocks.
  *
