@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 98db200
- * @builddate 2026-06-08T23:33:27.377Z
+ * @commitid d298261
+ * @builddate 2026-06-08T23:53:28.834Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6158,12 +6158,24 @@ class MouseController extends Script {
         this.raycaster = new THREE.Raycaster();
         /** A normalized vector representing the default forward direction. */
         this.forwardVector = new THREE.Vector3(0, 0, -1);
+        this.lastNormalizedMouse = new THREE.Vector2(0, 0);
     }
     /**
      * Initialize the MouseController
      */
     init({ camera }) {
         this.camera = camera;
+    }
+    /** Updates the mouse position/rotation using camera state. */
+    updatePose() {
+        if (this.camera === undefined) {
+            return;
+        }
+        this.position.copy(this.camera.position);
+        this.raycaster.setFromCamera(this.lastNormalizedMouse, this.camera);
+        const rayDirection = this.raycaster.ray.direction;
+        this.quaternion.setFromUnitVectors(this.forwardVector, rayDirection);
+        this.updateMatrixWorld();
     }
     /**
      * The main update loop, called every frame.
@@ -6175,7 +6187,7 @@ class MouseController extends Script {
         if (!this.userData.connected) {
             return;
         }
-        this.position.copy(this.camera.position);
+        this.updatePose();
     }
     /**
      * Updates the controller's transform based on the mouse's position on the
@@ -6187,18 +6199,9 @@ class MouseController extends Script {
         if (this.camera === undefined) {
             return;
         }
-        // The controller's origin point is always the camera's position.
-        this.position.copy(this.camera.position);
-        const mouse = new THREE.Vector2();
-        // Converts mouse coordinates from screen space (pixels) to normalized
-        // device coordinates (-1 to +1).
-        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        // Updates the raycaster and sets the controller's new rotation.
-        this.raycaster.setFromCamera(mouse, this.camera);
-        const rayDirection = this.raycaster.ray.direction;
-        this.quaternion.setFromUnitVectors(this.forwardVector, rayDirection);
-        this.updateMatrixWorld();
+        this.lastNormalizedMouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.lastNormalizedMouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        this.updatePose();
     }
     /**
      * Dispatches a 'selectstart' event, simulating the start of a controller
@@ -10063,6 +10066,9 @@ class SimulatorUserMode extends SimulatorControlMode {
     }
     onPointerMove(event) {
         this.input.mouseController.updateMousePositionFromEvent(event);
+        if (this.input.mouseController.userData.connected) {
+            this.input.updateController(this.input.mouseController);
+        }
         if (event.buttons & 2) {
             this.rotateOnPointerMove(event, this.camera.quaternion);
         }
