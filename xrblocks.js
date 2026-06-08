@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 3e5222c
- * @builddate 2026-06-08T21:42:53.450Z
+ * @commitid 98db200
+ * @builddate 2026-06-08T23:33:27.377Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5859,6 +5859,13 @@ class GamepadController extends Script {
     get captureActive() {
         return this._captureCallback !== null;
     }
+    updatePose() {
+        if (this.camera) {
+            this.position.copy(this.camera.position);
+            this.quaternion.copy(this.camera.quaternion);
+            this.updateMatrixWorld();
+        }
+    }
     update() {
         super.update();
         const gp = this._pollGamepad();
@@ -5880,10 +5887,7 @@ class GamepadController extends Script {
             const wasDown = this._prevButtons[i] ?? false;
             this._risingEdges[i] = down && !wasDown;
         }
-        // Sync pose with camera (center-screen ray, like GazeController).
-        this.position.copy(this.camera.position);
-        this.quaternion.copy(this.camera.quaternion);
-        this.updateMatrixWorld();
+        this.updatePose();
         // Check for capture mode on any rising edge.
         if (this._captureCallback) {
             for (let i = 0; i < gp.buttons.length; i++) {
@@ -6069,11 +6073,14 @@ class GazeController extends Script {
      * It handles syncing the controller with the camera and manages the gaze
      * selection logic.
      */
-    update() {
-        super.update();
+    updatePose() {
         this.position.copy(this.camera.position);
         this.quaternion.copy(this.camera.quaternion);
         this.updateMatrixWorld();
+    }
+    update() {
+        super.update();
+        this.updatePose();
         const delta = this.timer.getDelta();
         this.activationAmount.update(delta);
         const movement = this.lastReticlePosition.distanceTo(this.reticle.position) / delta;
@@ -6572,6 +6579,7 @@ class Input {
         if (controller.userData.connected === false) {
             return;
         }
+        controller.updatePose?.();
         controller.updateMatrixWorld();
         if (this.options.controllers.performRaycastOnUpdate) {
             this.setRaycasterFromController(controller);
@@ -6644,6 +6652,30 @@ class Input {
     disableGazeController() {
         this.gazeController.disconnect();
         this.activeControllers.remove(this.gazeController);
+    }
+    registerController(controller) {
+        if (this.controllers.includes(controller))
+            return;
+        this.controllers.push(controller);
+        this.intersectionsForController.set(controller, []);
+        if (controller.reticle) {
+            controller.reticle.visible = false;
+            this.reticles.add(controller.reticle);
+        }
+        for (const [listenerName, listeners] of this.listeners.entries()) {
+            for (const listener of listeners) {
+                controller.addEventListener(listenerName, listener);
+            }
+        }
+    }
+    enableController(controller) {
+        this.registerController(controller);
+        this.activeControllers.add(controller);
+        controller.connect?.();
+    }
+    disableController(controller) {
+        controller.disconnect?.();
+        this.activeControllers.remove(controller);
     }
     disableControllers() {
         this.controllersEnabled = false;
@@ -8859,11 +8891,13 @@ var SimulatorMode;
     SimulatorMode["USER"] = "User";
     SimulatorMode["POSE"] = "Navigation";
     SimulatorMode["CONTROLLER"] = "Hands";
+    SimulatorMode["POINTER_LOCK"] = "PointerLock";
 })(SimulatorMode || (SimulatorMode = {}));
 const DEFAULT_MODE_TOGGLE_ORDER = {
     [SimulatorMode.USER]: SimulatorMode.POSE,
     [SimulatorMode.POSE]: SimulatorMode.CONTROLLER,
-    [SimulatorMode.CONTROLLER]: SimulatorMode.USER,
+    [SimulatorMode.CONTROLLER]: SimulatorMode.POINTER_LOCK,
+    [SimulatorMode.POINTER_LOCK]: SimulatorMode.USER,
 };
 class SimulatorOptions {
     constructor(options) {
@@ -9667,10 +9701,11 @@ class SimulatorControlMode {
     /**
      * Initialize the simulator control mode.
      */
-    init({ camera, input, timer, }) {
+    init({ camera, input, timer, domElement, }) {
         this.camera = camera;
         this.input = input;
         this.timer = timer;
+        this.domElement = domElement;
         input.gamepadController.init({ camera });
     }
     onPointerDown(_) { }
@@ -9914,6 +9949,92 @@ class SimulatorPoseMode extends SimulatorControlMode {
     }
 }
 
+class SimulatorPointerLockController extends Script {
+    constructor() {
+        super(...arguments);
+        this.type = 'SimulatorPointerLockController';
+        this.name = 'Simulator Pointer Lock Controller';
+        this.userData = { id: 4, connected: false, selected: false };
+        this.reticle = new Reticle();
+    }
+    static { this.dependencies = { camera: THREE.Camera }; }
+    init({ camera }) {
+        this.camera = camera;
+    }
+    updatePose() {
+        this.position.copy(this.camera.position);
+        this.quaternion.copy(this.camera.quaternion);
+        this.updateMatrixWorld();
+    }
+    update() {
+        super.update();
+        if (!this.userData.connected)
+            return;
+        this.updatePose();
+    }
+    callSelectStart() {
+        this.dispatchEvent({ type: 'selectstart', target: this });
+    }
+    callSelectEnd() {
+        this.dispatchEvent({ type: 'selectend', target: this });
+    }
+    connect() {
+        this.dispatchEvent({ type: 'connected', target: this });
+    }
+    disconnect() {
+        this.dispatchEvent({ type: 'disconnected', target: this });
+    }
+}
+
+class SimulatorPointerLockMode extends SimulatorControlMode {
+    constructor() {
+        super(...arguments);
+        this.isPointerLocked = false;
+        this.pointerLockController = new SimulatorPointerLockController();
+        this.onPointerLockChange = () => {
+            this.isPointerLocked = document.pointerLockElement === this.domElement;
+        };
+    }
+    init(params) {
+        super.init(params);
+    }
+    onModeActivated() {
+        this.disableSimulatorHands();
+        this.input.enableController(this.pointerLockController);
+        document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    }
+    onModeDeactivated() {
+        this.input.disableController(this.pointerLockController);
+        this.exitLock();
+        document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    }
+    exitLock() {
+        if (document.pointerLockElement === this.domElement) {
+            document.exitPointerLock();
+        }
+    }
+    onPointerDown(event) {
+        if (!this.isPointerLocked && this.domElement) {
+            this.domElement.requestPointerLock();
+        }
+        else if (this.isPointerLocked && event.buttons & 1) {
+            this.pointerLockController.userData.selected = true;
+            this.pointerLockController.callSelectStart();
+        }
+    }
+    onPointerUp() {
+        if (this.pointerLockController.userData.selected) {
+            this.pointerLockController.userData.selected = false;
+            this.pointerLockController.callSelectEnd();
+        }
+    }
+    onPointerMove(event) {
+        if (this.isPointerLocked) {
+            this.rotateOnPointerMove(event, this.camera.quaternion);
+        }
+    }
+}
+
 class SimulatorUserMode extends SimulatorControlMode {
     onModeActivated() {
         this.disableSimulatorHands();
@@ -10036,6 +10157,7 @@ class SimulatorControls {
             [SimulatorMode.USER]: new SimulatorUserMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
             [SimulatorMode.POSE]: new SimulatorPoseMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
             [SimulatorMode.CONTROLLER]: new SimulatorControllerMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.POINTER_LOCK]: new SimulatorPointerLockMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
         };
         this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
     }
@@ -10044,7 +10166,12 @@ class SimulatorControls {
      */
     init({ camera, input, timer, renderer, simulatorOptions, }) {
         for (const mode in this.simulatorModes) {
-            this.simulatorModes[mode].init({ camera, input, timer });
+            this.simulatorModes[mode].init({
+                camera,
+                input,
+                timer,
+                domElement: renderer.domElement,
+            });
         }
         this.renderer = renderer;
         this.setSimulatorMode(simulatorOptions.defaultMode);
@@ -20790,5 +20917,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
