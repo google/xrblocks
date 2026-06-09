@@ -12,6 +12,20 @@ export class PoseDisplay extends xb.Script {
     this.detecting = false;
 
     this.initHudText();
+
+    // Create visible red dots for nose and neck positions
+    this.markerGeometry = new THREE.SphereGeometry(0.005, 16, 16);
+    this.markerMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
+
+    this.noseMarker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
+    this.neckMarker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
+
+    this.noseMarker.visible = false;
+    this.neckMarker.visible = false;
+
+    this.add(this.noseMarker);
+    this.add(this.neckMarker);
+
     console.log('PoseDisplay: human pose detector initialized.');
   }
 
@@ -133,6 +147,8 @@ export class PoseDisplay extends xb.Script {
         'Stand in view of the camera.\nEnsure full body is visible.\n\n[Diagnostics]:\n' +
           debugStr
       );
+      if (this.noseMarker) this.noseMarker.visible = false;
+      if (this.neckMarker) this.neckMarker.visible = false;
       return;
     }
 
@@ -141,8 +157,29 @@ export class PoseDisplay extends xb.Script {
       `Tracking 1 Active User (Score: ${Math.round(firstPose.score * 100)}%)`
     );
 
+    // Update nose marker position
+    const nosePos = firstPose.getJointPosition('nose');
+    if (nosePos) {
+      this.noseMarker.position.copy(nosePos);
+      this.worldToLocal(this.noseMarker.position);
+      this.noseMarker.visible = true;
+    } else {
+      this.noseMarker.visible = false;
+    }
+
+    // Update neck marker position
+    const neckPos = firstPose.getJointPosition('neck');
+    if (neckPos) {
+      this.neckMarker.position.copy(neckPos);
+      this.worldToLocal(this.neckMarker.position);
+      this.neckMarker.visible = true;
+    } else {
+      this.neckMarker.visible = false;
+    }
+
     const joints = [
       'nose',
+      'neck',
       'leftWrist',
       'rightWrist',
       'leftAnkle',
@@ -164,5 +201,15 @@ export class PoseDisplay extends xb.Script {
     });
 
     this.coordsText.setText(displayStr.trim());
+  }
+
+  dispose() {
+    if (this.markerGeometry) {
+      this.markerGeometry.dispose();
+    }
+    if (this.markerMaterial) {
+      this.markerMaterial.dispose();
+    }
+    super.dispose();
   }
 }

@@ -150,12 +150,32 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
           cameraParametersSnapshot
         );
 
+        let wp: THREE.Vector3 | undefined;
+        if (worldCoords) {
+          wp = worldCoords.worldPosition;
+        } else {
+          // Robust fallback estimation when physical depth mesh raycast misses
+          const origin = new THREE.Vector3().applyMatrix4(
+            cameraParametersSnapshot.worldFromView
+          );
+          const clipVec = new THREE.Vector3(
+            2 * lm.x - 1,
+            2 * (1.0 - lm.y) - 1,
+            -1
+          );
+          const direction = clipVec
+            .applyMatrix4(cameraParametersSnapshot.worldFromClip)
+            .sub(origin)
+            .normalize();
+          wp = origin.addScaledVector(direction, 1.5 + (lm.z || 0));
+        }
+
         landmarks.push({
           x: lm.x,
           y: lm.y,
           z: wLm ? wLm.z : lm.z,
           visibility: lm.visibility,
-          worldPosition: worldCoords ? worldCoords.worldPosition : undefined,
+          worldPosition: wp,
         });
       }
 
@@ -225,43 +245,46 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
       'rightAnkle',
     ];
 
-    const drawnJoints: THREE.Vector3[] = [];
+    const drawnJoints = new Map<string, THREE.Vector3>();
 
     jointNames.forEach((name) => {
       const pos = pose.getJointPosition(name);
       if (pos) {
+        const localPos = this.context.debugVisualsGroup!.worldToLocal(
+          pos.clone()
+        );
         const sphere = new THREE.Mesh(
           new THREE.SphereGeometry(0.025, 8, 8),
           new THREE.MeshBasicMaterial({color: 0x00ff00, depthTest: false})
         );
-        sphere.position.copy(pos);
+        sphere.position.copy(localPos);
         this.context.debugVisualsGroup!.add(sphere);
-        drawnJoints.push(pos);
+        drawnJoints.set(name, localPos);
       }
     });
 
-    // Draw simple skeletal connections/lines
-    const connections: [number, number][] = [
-      [0, 1], // hips -> chest
-      [1, 2], // chest -> neck
-      [2, 3], // neck -> head
-      [1, 4], // chest -> leftShoulder
-      [1, 5], // chest -> rightShoulder
-      [4, 6], // leftShoulder -> leftElbow
-      [6, 8], // leftElbow -> leftWrist
-      [5, 7], // rightShoulder -> rightElbow
-      [7, 9], // rightElbow -> rightWrist
-      [0, 10], // hips -> leftHip
-      [0, 11], // hips -> rightHip
-      [10, 12], // leftHip -> leftKnee
-      [12, 14], // leftKnee -> leftAnkle
-      [11, 13], // rightHip -> rightKnee
-      [13, 15], // rightKnee -> rightAnkle
+    // Draw simple skeletal connections/lines by joint name
+    const connections: [string, string][] = [
+      ['hips', 'chest'],
+      ['chest', 'neck'],
+      ['neck', 'head'],
+      ['chest', 'leftShoulder'],
+      ['chest', 'rightShoulder'],
+      ['leftShoulder', 'leftElbow'],
+      ['leftElbow', 'leftWrist'],
+      ['rightShoulder', 'rightElbow'],
+      ['rightElbow', 'rightWrist'],
+      ['hips', 'leftHip'],
+      ['hips', 'rightHip'],
+      ['leftHip', 'leftKnee'],
+      ['leftKnee', 'leftAnkle'],
+      ['rightHip', 'rightKnee'],
+      ['rightKnee', 'rightAnkle'],
     ];
 
-    connections.forEach(([startIdx, endIdx]) => {
-      const startPos = drawnJoints[startIdx];
-      const endPos = drawnJoints[endIdx];
+    connections.forEach(([startName, endName]) => {
+      const startPos = drawnJoints.get(startName);
+      const endPos = drawnJoints.get(endName);
       if (startPos && endPos) {
         const points = [startPos, endPos];
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
