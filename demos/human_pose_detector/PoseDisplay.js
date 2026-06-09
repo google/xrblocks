@@ -1,6 +1,7 @@
 import * as xb from 'xrblocks';
 import * as THREE from 'three';
 import {UICore, UIText, UIPanel} from 'uiblocks';
+import {Text} from 'troika-three-text';
 
 export class PoseDisplay extends xb.Script {
   static dependencies = {camera: THREE.Camera, world: xb.World};
@@ -13,10 +14,11 @@ export class PoseDisplay extends xb.Script {
 
     this.initHudText();
 
-    // Create a pool of red dot markers for all trackable body joints
+    // Create a pool of red dot markers and text labels for all trackable body joints
     this.markerGeometry = new THREE.SphereGeometry(0.005, 16, 16);
     this.markerMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
     this.jointMarkers = new Map();
+    this.jointLabels = new Map();
 
     const allJointNames = [
       'nose',
@@ -46,10 +48,26 @@ export class PoseDisplay extends xb.Script {
     ];
 
     allJointNames.forEach((jointName) => {
+      // Create dot marker
       const marker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
       marker.visible = false;
       this.add(marker);
       this.jointMarkers.set(jointName, marker);
+
+      // Create text label
+      const label = new Text();
+      const displayName = jointName
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, (str) => str.toUpperCase());
+      label.text = displayName;
+      label.fontSize = 0.008; // 8mm font size
+      label.color = 0xffffff;
+      label.anchorX = 'left';
+      label.anchorY = 'middle';
+      label.visible = false;
+      this.add(label);
+      this.jointLabels.set(jointName, label);
+      label.sync();
     });
 
     console.log('PoseDisplay: human pose detector initialized.');
@@ -185,6 +203,11 @@ export class PoseDisplay extends xb.Script {
           marker.visible = false;
         });
       }
+      if (this.jointLabels) {
+        this.jointLabels.forEach((label) => {
+          label.visible = false;
+        });
+      }
       return;
     }
 
@@ -193,16 +216,35 @@ export class PoseDisplay extends xb.Script {
       `Tracking 1 Active User (Score: ${Math.round(firstPose.score * 100)}%)`
     );
 
-    // Update all joint markers in the 3D world
-    if (this.jointMarkers) {
+    // Update all joint markers and labels in the 3D world
+    if (this.jointMarkers && this.jointLabels) {
       this.jointMarkers.forEach((marker, jointName) => {
         const pos = firstPose.getJointPosition(jointName);
+        const label = this.jointLabels.get(jointName);
         if (pos) {
-          marker.position.copy(pos);
-          this.worldToLocal(marker.position);
-          marker.visible = true;
+          // Convert target position to local space first
+          const targetLocalPos = pos.clone();
+          this.worldToLocal(targetLocalPos);
+
+          if (!marker.visible) {
+            // Snap directly on first detection to prevent flying in from origin
+            marker.position.copy(targetLocalPos);
+            marker.visible = true;
+          } else {
+            // Smoothly interpolate (lerp) the position to eliminate high-frequency jitter
+            marker.position.lerp(targetLocalPos, 0.25);
+          }
+
+          // Position label slightly to the right of the smoothed marker relative to camera view
+          const rightOffset = new THREE.Vector3(0.008, 0, 0).applyQuaternion(
+            this.camera.quaternion
+          );
+          label.position.copy(marker.position).add(rightOffset);
+          label.quaternion.copy(this.camera.quaternion);
+          label.visible = true;
         } else {
           marker.visible = false;
+          label.visible = false;
         }
       });
     }
@@ -237,6 +279,11 @@ export class PoseDisplay extends xb.Script {
     }
     if (this.markerMaterial) {
       this.markerMaterial.dispose();
+    }
+    if (this.jointLabels) {
+      this.jointLabels.forEach((label) => {
+        label.dispose();
+      });
     }
     super.dispose();
   }
