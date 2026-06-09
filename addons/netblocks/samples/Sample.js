@@ -76,7 +76,6 @@ class NetSample extends xb.Script {
             options.enableUI();
             options.reticles.enabled = true;
             options.controllers.visualizeRays = false;
-            options.simulator.instructions.enabled = false;
             const app = new ctor();
             xb.add(app);
             await xb.init(options);

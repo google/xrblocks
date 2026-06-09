@@ -63,7 +63,6 @@ class Sample extends xb.Script {
             options.uikit.enable(uikit);
             options.reticles.enabled = true;
             options.controllers.visualizeRays = false;
-            options.simulator.instructions.enabled = false;
             const sample = new SampleClass();
             sample.setupOptions(options);
             xb.add(sample);
