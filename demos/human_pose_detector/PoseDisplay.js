@@ -13,18 +13,44 @@ export class PoseDisplay extends xb.Script {
 
     this.initHudText();
 
-    // Create visible red dots for nose and neck positions
+    // Create a pool of red dot markers for all trackable body joints
     this.markerGeometry = new THREE.SphereGeometry(0.005, 16, 16);
     this.markerMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
+    this.jointMarkers = new Map();
 
-    this.noseMarker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
-    this.neckMarker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
+    const allJointNames = [
+      'nose',
+      'leftEye',
+      'rightEye',
+      'leftEar',
+      'rightEar',
+      'leftShoulder',
+      'rightShoulder',
+      'leftElbow',
+      'rightElbow',
+      'leftWrist',
+      'rightWrist',
+      'leftHip',
+      'rightHip',
+      'leftKnee',
+      'rightKnee',
+      'leftAnkle',
+      'rightAnkle',
+      'leftFoot',
+      'rightFoot',
+      'hips',
+      'spine',
+      'chest',
+      'neck',
+      'head',
+    ];
 
-    this.noseMarker.visible = false;
-    this.neckMarker.visible = false;
-
-    this.add(this.noseMarker);
-    this.add(this.neckMarker);
+    allJointNames.forEach((jointName) => {
+      const marker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
+      marker.visible = false;
+      this.add(marker);
+      this.jointMarkers.set(jointName, marker);
+    });
 
     console.log('PoseDisplay: human pose detector initialized.');
   }
@@ -104,7 +130,7 @@ export class PoseDisplay extends xb.Script {
   }
 
   update() {
-    // Align HUD card in front of camera
+    // Align HUD card in front of camera, positioned near the top of the view
     if (this.hudCard && this.camera) {
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
@@ -113,7 +139,14 @@ export class PoseDisplay extends xb.Script {
       this.camera.getWorldQuaternion(quaternion);
 
       const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
-      this.hudCard.position.copy(position).addScaledVector(forward, 0.8);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+
+      // Position the HUD card forward and offset upwards to act as a top visor, flat in view
+      this.hudCard.position
+        .copy(position)
+        .addScaledVector(forward, 0.8)
+        .addScaledVector(up, 0.22);
+
       this.hudCard.quaternion.copy(quaternion);
     }
 
@@ -147,8 +180,11 @@ export class PoseDisplay extends xb.Script {
         'Stand in view of the camera.\nEnsure full body is visible.\n\n[Diagnostics]:\n' +
           debugStr
       );
-      if (this.noseMarker) this.noseMarker.visible = false;
-      if (this.neckMarker) this.neckMarker.visible = false;
+      if (this.jointMarkers) {
+        this.jointMarkers.forEach((marker) => {
+          marker.visible = false;
+        });
+      }
       return;
     }
 
@@ -157,24 +193,18 @@ export class PoseDisplay extends xb.Script {
       `Tracking 1 Active User (Score: ${Math.round(firstPose.score * 100)}%)`
     );
 
-    // Update nose marker position
-    const nosePos = firstPose.getJointPosition('nose');
-    if (nosePos) {
-      this.noseMarker.position.copy(nosePos);
-      this.worldToLocal(this.noseMarker.position);
-      this.noseMarker.visible = true;
-    } else {
-      this.noseMarker.visible = false;
-    }
-
-    // Update neck marker position
-    const neckPos = firstPose.getJointPosition('neck');
-    if (neckPos) {
-      this.neckMarker.position.copy(neckPos);
-      this.worldToLocal(this.neckMarker.position);
-      this.neckMarker.visible = true;
-    } else {
-      this.neckMarker.visible = false;
+    // Update all joint markers in the 3D world
+    if (this.jointMarkers) {
+      this.jointMarkers.forEach((marker, jointName) => {
+        const pos = firstPose.getJointPosition(jointName);
+        if (pos) {
+          marker.position.copy(pos);
+          this.worldToLocal(marker.position);
+          marker.visible = true;
+        } else {
+          marker.visible = false;
+        }
+      });
     }
 
     const joints = [
@@ -185,18 +215,16 @@ export class PoseDisplay extends xb.Script {
       'leftAnkle',
       'rightAnkle',
     ];
-    let displayStr = `[Diagnostics]: ${debugStr}\n\n`;
+    let displayStr = `[Diagnostics]: ${debugStr}\n\nDetected Joints:\n`;
 
+    // Only mention the joints that are currently detected in the HUD diagnostics
     joints.forEach((jointName) => {
       const pos = firstPose.getJointPosition(jointName);
-      const displayName = jointName
-        .replace(/([A-Z])/g, ' $1')
-        .replace(/^./, (str) => str.toUpperCase());
-
       if (pos) {
-        displayStr += `${displayName}:  X: ${pos.x.toFixed(2)}, Y: ${pos.y.toFixed(2)}, Z: ${pos.z.toFixed(2)}\n`;
-      } else {
-        displayStr += `${displayName}:  (Searching...)\n`;
+        const displayName = jointName
+          .replace(/([A-Z])/g, ' $1')
+          .replace(/^./, (str) => str.toUpperCase());
+        displayStr += `• ${displayName}\n`;
       }
     });
 
