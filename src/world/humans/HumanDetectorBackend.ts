@@ -7,9 +7,8 @@ import {
   transformRgbUvToWorld,
 } from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
-import {WorldOptions} from '../WorldOptions';
-import {CameraSnapshot} from '../objects/ObjectDetector';
-import {DetectedBodyPose, PoseLandmark} from './DetectedBodyPose';
+import { WorldOptions } from '../WorldOptions';
+import {DetectedBodyPose, PoseLandmark, PoseJointName} from './DetectedBodyPose';
 
 export interface HumanBackendContext {
   readonly options: WorldOptions;
@@ -222,11 +221,7 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
     if (!this.context.debugVisualsGroup) return;
 
     // Draw simple joints as spheres
-    const jointNames: (typeof pose.getJointPosition extends (
-      name: infer N
-    ) => any
-      ? N
-      : never)[] = [
+    const jointNames: PoseJointName[] = [
       'hips',
       'chest',
       'neck',

@@ -12,6 +12,6 @@
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
     "types": ["dom-speech-recognition"],
-    "lib": ["dom", "es2023", "esnext"]
+    "lib": ["dom", "es2023", "esnext.temporal"]
   }
 }
