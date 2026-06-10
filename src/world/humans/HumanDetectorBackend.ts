@@ -7,8 +7,12 @@ import {
   transformRgbUvToWorld,
 } from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
-import { WorldOptions } from '../WorldOptions';
-import {DetectedBodyPose, PoseLandmark, PoseJointName} from './DetectedBodyPose';
+import {WorldOptions} from '../WorldOptions';
+import {
+  DetectedBodyPose,
+  PoseLandmark,
+  PoseJointName,
+} from './DetectedBodyPose';
 
 export interface HumanBackendContext {
   readonly options: WorldOptions;
