@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 31a9985
- * @builddate 2026-06-10T16:28:11.900Z
+ * @commitid 3e48932
+ * @builddate 2026-06-11T05:07:49.746Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -935,6 +935,12 @@ class MeshScript extends ScriptMixinMeshScript {
     }
 }
 
+function isRunningInGeminiCanvas() {
+    // Canvas injects several scripts which allow using the free tier of Gemini and Firebase APIs without API keys.
+    return (typeof window
+        .firebaseAuthBridgeScriptLoaded !== 'undefined');
+}
+
 /**
  * Clamps a value between a minimum and maximum value.
  */
@@ -1149,12 +1155,6 @@ class BaseAIModel {
     async hasApiKey() {
         return false;
     }
-}
-
-function isRunningInGeminiCanvas() {
-    // Canvas injects several scripts which allow using the free tier of Gemini and Firebase APIs without API keys.
-    return (typeof window
-        .firebaseAuthBridgeScriptLoaded !== 'undefined');
 }
 
 let createPartFromUri;
@@ -1555,7 +1555,6 @@ class AI extends Script {
             const response = await fetch('./keys.json');
             if (response.ok) {
                 this.keysCache = (await response.json());
-                console.log('🔑 Loaded keys.json');
                 return this.keysCache;
             }
         }
@@ -1587,9 +1586,19 @@ class AI extends Script {
     }
     async initializeModel(ModelClass, modelOptions) {
         const apiKey = await this.resolveApiKey(modelOptions);
-        if ((!apiKey || !this.isValidApiKey(apiKey)) && !this.hasApiKey()) {
-            console.error(`No valid API key found for ${this.options.model}`);
-            return;
+        if (!apiKey || !this.isValidApiKey(apiKey)) {
+            // Initialize the model anyway so runtime key flows (e.g. a key prompt
+            // or host-injected credentials) can still succeed later.
+            if (isRunningInGeminiCanvas()) {
+                console.warn(`No explicit API key found for ${this.options.model}. ` +
+                    'Relying on Gemini Canvas host-injected credentials; if queries ' +
+                    'fail, verify your Google login or report bugs on GitHub.');
+            }
+            else {
+                console.error(`No valid API key found for ${this.options.model}. ` +
+                    'Provide one via AIOptions, the ?key= URL parameter, or ' +
+                    'keys.json; queries will fail until a key is configured.');
+            }
         }
         modelOptions.apiKey = apiKey || '';
         this.model = new ModelClass(modelOptions);
@@ -1617,12 +1626,17 @@ class AI extends Script {
         const modelKey = getUrlParameter(modelOptions.urlParam);
         if (modelKey)
             return modelKey;
-        // Temporary fallback to geminiKey64 for teamfood.
+        // 4. Check URL parameters for geminiKey64
         const geminiKey64 = getUrlParameter('geminiKey64');
         if (geminiKey64) {
-            return window.atob(geminiKey64);
+            try {
+                return window.atob(geminiKey64);
+            }
+            catch {
+                console.warn('Ignoring malformed base64 in the geminiKey64 URL parameter.');
+            }
         }
-        // 3. Check keys.json file
+        // 5. Check keys.json file
         const keysFromFile = await this.loadKeysFromFile();
         if (keysFromFile) {
             const modelNameWithApiKeySuffix = modelName + `ApiKey`;
@@ -1637,7 +1651,6 @@ class AI extends Script {
                 keyFromFile = keysFromFile[modelName];
             }
             if (keyFromFile) {
-                console.log(`🔑 Using ${modelName} key from keys.json`);
                 return keyFromFile;
             }
         }
@@ -15706,24 +15719,6 @@ class IconButton extends TextView {
         }
     }
     /**
-  
-    /**
-     * Handles behavior when the cursor hovers over the button.
-     */
-    onHoverOver() {
-        if (!this.ux)
-            return;
-        this.update(); // Consolidate logic in update()
-    }
-    /**
-     * Handles behavior when the cursor moves off the button.
-     */
-    onHoverOut() {
-        if (!this.ux)
-            return;
-        this.update(); // Consolidate logic in update()
-    }
-    /**
      * Updates the button's visual state based on hover and selection status.
      */
     update() {
@@ -16096,7 +16091,11 @@ class TextButton extends TextView {
         // with the main button geometry's interaction.
         this.textObj.raycast = () => { };
     }
-    // TODO: Implement onHoverOver() and onHoverOut().
+    /**
+     * Updates the text color and background opacity for the hover and selection
+     * states. The background never drops below its idle opacity, so buttons with
+     * an opaque background only change text color.
+     */
     update() {
         if (!this.textObj) {
             return;
@@ -16104,17 +16103,20 @@ class TextButton extends TextView {
         // Update render order to ensure text appears on top of the button mesh
         this.textObj.renderOrder = this.renderOrder + 1;
         const ux = this.ux;
+        const idleOpacity = this.defaultOpacity * this.opacity;
         if (ux.isHovered()) {
             if (ux.isSelected()) {
                 this.setTextColor(this.selectedFontColor);
+                this.uniforms.uOpacity.value = Math.max(this.selectedOpacity, idleOpacity);
             }
             else {
                 this.setTextColor(this.hoverColor);
+                this.uniforms.uOpacity.value = Math.max(this.hoverOpacity, idleOpacity);
             }
         }
         else {
             this.setTextColor(this.fontColor);
-            this.uniforms.uOpacity.value = this.defaultOpacity * this.opacity;
+            this.uniforms.uOpacity.value = idleOpacity;
         }
     }
 }
@@ -17964,6 +17966,20 @@ class XRSystems extends THREE.Group {
  */
 class Core {
     /**
+     * The WebGL renderer, created during {@link Core.init}. Reading it before
+     * `init()` has run returns `undefined` and logs a one-time warning.
+     */
+    get renderer() {
+        if (!this._renderer) {
+            console.warn('xb.core.renderer is not available until xb.init() creates it. ' +
+                "Access it in or after your Script's init() method.");
+        }
+        return this._renderer;
+    }
+    set renderer(renderer) {
+        this._renderer = renderer;
+    }
+    /**
      * Core is a singleton manager that manages all XR "blocks".
      * It initializes core components and abstractions like the scene, camera,
      * user, UI, AI, and input managers.
@@ -18004,7 +18020,7 @@ class Core {
         this.simulator = new Simulator(this.renderSceneCallback);
         /** Manages drag-and-drop interactions. */
         this.dragManager = new DragManager();
-        /** Manages drag-and-drop interactions. */
+        /** Manages real-world understanding: planes, meshes, objects, and sounds. */
         this.world = new World();
         /** A shared texture loader. */
         this.textureLoader = new THREE.TextureLoader();
@@ -18118,7 +18134,6 @@ class Core {
         this.registry.register(this.ui);
         this.registry.register(this.sound);
         this.registry.register(this.dragManager);
-        this.registry.register(this.user);
         this.registry.register(this.simulator);
         this.registry.register(this.scriptsManager);
         this.registry.register(this.depth);
@@ -20943,5 +20958,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
