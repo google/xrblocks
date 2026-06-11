@@ -1,7 +1,6 @@
 import * as xb from 'xrblocks';
 import * as THREE from 'three';
 import {UICore, UIText, UIPanel} from 'uiblocks';
-import {Text} from 'troika-three-text';
 
 export class PoseDisplay extends xb.Script {
   static dependencies = {camera: THREE.Camera, world: xb.World};
@@ -14,11 +13,10 @@ export class PoseDisplay extends xb.Script {
 
     this.initHudText();
 
-    // Create a pool of red dot markers and text labels for all trackable body joints
+    // Create a pool of red dot markers for all trackable body joints
     this.markerGeometry = new THREE.SphereGeometry(0.005, 16, 16);
     this.markerMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
     this.jointMarkers = new Map();
-    this.jointLabels = new Map();
 
     const allJointNames = [
       'nose',
@@ -53,21 +51,64 @@ export class PoseDisplay extends xb.Script {
       marker.visible = false;
       this.add(marker);
       this.jointMarkers.set(jointName, marker);
+    });
 
-      // Create text label
-      const label = new Text();
-      const displayName = jointName
-        .replace(/([A-Z])/g, ' $1')
-        .replace(/^./, (str) => str.toUpperCase());
-      label.text = displayName;
-      label.fontSize = 0.008; // 8mm font size
-      label.color = 0xffffff;
-      label.anchorX = 'left';
-      label.anchorY = 'middle';
-      label.visible = false;
-      this.add(label);
-      this.jointLabels.set(jointName, label);
-      label.sync();
+    // Define connections between joints to build the skeleton
+    this.connections = [
+      // Head & Face
+      ['head', 'neck'],
+      ['neck', 'nose'],
+      ['nose', 'leftEye'],
+      ['leftEye', 'leftEar'],
+      ['nose', 'rightEye'],
+      ['rightEye', 'rightEar'],
+
+      // Torso
+      ['neck', 'chest'],
+      ['chest', 'spine'],
+      ['spine', 'hips'],
+
+      // Shoulders
+      ['chest', 'leftShoulder'],
+      ['chest', 'rightShoulder'],
+
+      // Arms
+      ['leftShoulder', 'leftElbow'],
+      ['leftElbow', 'leftWrist'],
+      ['rightShoulder', 'rightElbow'],
+      ['rightElbow', 'rightWrist'],
+
+      // Hips to legs
+      ['hips', 'leftHip'],
+      ['hips', 'rightHip'],
+
+      // Legs
+      ['leftHip', 'leftKnee'],
+      ['leftKnee', 'leftAnkle'],
+      ['leftAnkle', 'leftFoot'],
+
+      ['rightHip', 'rightKnee'],
+      ['rightKnee', 'rightAnkle'],
+      ['rightAnkle', 'rightFoot'],
+    ];
+
+    // Create a pool of connector meshes (thin holographic cyan cylinders)
+    this.connectorGeometry = new THREE.CylinderGeometry(0.003, 0.003, 1, 8);
+    this.connectorMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.8,
+    });
+    this.connectorMeshes = [];
+
+    this.connections.forEach(([jointA, jointB]) => {
+      const mesh = new THREE.Mesh(
+        this.connectorGeometry,
+        this.connectorMaterial
+      );
+      mesh.visible = false;
+      this.add(mesh);
+      this.connectorMeshes.push({jointA, jointB, mesh});
     });
 
     console.log('PoseDisplay: human pose detector initialized.');
@@ -203,9 +244,9 @@ export class PoseDisplay extends xb.Script {
           marker.visible = false;
         });
       }
-      if (this.jointLabels) {
-        this.jointLabels.forEach((label) => {
-          label.visible = false;
+      if (this.connectorMeshes) {
+        this.connectorMeshes.forEach(({mesh}) => {
+          mesh.visible = false;
         });
       }
       return;
@@ -216,11 +257,10 @@ export class PoseDisplay extends xb.Script {
       `Tracking 1 Active User (Score: ${Math.round(firstPose.score * 100)}%)`
     );
 
-    // Update all joint markers and labels in the 3D world
-    if (this.jointMarkers && this.jointLabels) {
+    // Update all joint markers in the 3D world
+    if (this.jointMarkers) {
       this.jointMarkers.forEach((marker, jointName) => {
         const pos = firstPose.getJointPosition(jointName);
-        const label = this.jointLabels.get(jointName);
         if (pos) {
           // Convert target position to local space first
           const targetLocalPos = pos.clone();
@@ -232,19 +272,44 @@ export class PoseDisplay extends xb.Script {
             marker.visible = true;
           } else {
             // Smoothly interpolate (lerp) the position to eliminate high-frequency jitter
-            marker.position.lerp(targetLocalPos, 0.25);
+            marker.position.lerp(targetLocalPos, 0.45);
           }
-
-          // Position label slightly to the right of the smoothed marker relative to camera view
-          const rightOffset = new THREE.Vector3(0.008, 0, 0).applyQuaternion(
-            this.camera.quaternion
-          );
-          label.position.copy(marker.position).add(rightOffset);
-          label.quaternion.copy(this.camera.quaternion);
-          label.visible = true;
         } else {
           marker.visible = false;
-          label.visible = false;
+        }
+      });
+    }
+
+    // Update all connector meshes
+    if (this.connectorMeshes && this.jointMarkers) {
+      const upVector = new THREE.Vector3(0, 1, 0);
+      const tempDirection = new THREE.Vector3();
+
+      this.connectorMeshes.forEach(({jointA, jointB, mesh}) => {
+        const markerA = this.jointMarkers.get(jointA);
+        const markerB = this.jointMarkers.get(jointB);
+
+        if (markerA && markerB && markerA.visible && markerB.visible) {
+          const posA = markerA.position;
+          const posB = markerB.position;
+
+          // Position the cylinder at the midpoint between the two joints
+          mesh.position.copy(posA).add(posB).multiplyScalar(0.5);
+
+          // Rotate and scale the cylinder to connect them
+          tempDirection.copy(posB).sub(posA);
+          const distance = tempDirection.length();
+
+          if (distance > 0.0001) {
+            tempDirection.normalize();
+            mesh.quaternion.setFromUnitVectors(upVector, tempDirection);
+            mesh.scale.set(1.0, distance, 1.0);
+            mesh.visible = true;
+          } else {
+            mesh.visible = false;
+          }
+        } else {
+          mesh.visible = false;
         }
       });
     }
@@ -280,10 +345,11 @@ export class PoseDisplay extends xb.Script {
     if (this.markerMaterial) {
       this.markerMaterial.dispose();
     }
-    if (this.jointLabels) {
-      this.jointLabels.forEach((label) => {
-        label.dispose();
-      });
+    if (this.connectorGeometry) {
+      this.connectorGeometry.dispose();
+    }
+    if (this.connectorMaterial) {
+      this.connectorMaterial.dispose();
     }
     super.dispose();
   }
