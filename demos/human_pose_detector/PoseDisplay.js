@@ -13,37 +13,93 @@ export class PoseDisplay extends xb.Script {
 
     this.initHudText();
 
+    this.initJointMarkers();
+    this.initConnections();
+
+    console.log('PoseDisplay: human pose detector initialized.');
+  }
+
+  initHudText() {
+    // Define the premium glassmorphic display card
+    this.hudCard = this.uiCore.createCard({
+      name: 'PoseHUDCard',
+      sizeX: 0.46,
+      sizeY: 0.18,
+      position: new THREE.Vector3(0, 0, -1.0),
+    });
+
+    const hudPanel = new UIPanel({
+      width: '100%',
+      height: '100%',
+      fillColor: 'rgba(15, 18, 25, 0.85)', // Sleek dark glassmorphic backdrop
+      innerShadowColor: 'rgba(100, 180, 255, 0.15)', // Blue glow
+      innerShadowBlur: 80,
+      strokeWidth: 3,
+      strokeColor: {
+        gradientType: 'linear',
+        rotation: 45,
+        stops: [
+          {position: 0, color: '#4796e3'}, // Vibrant blue
+          {position: 1, color: '#9b5de5'}, // Vibrant purple
+        ],
+      },
+      cornerRadius: 24,
+      padding: 20,
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'stretch',
+    });
+
+    // Header with a vibrant pose icon and title
+    this.titleText = new UIText('HUMAN POSE DETECTOR', {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: '#00f0ff', // Glowing cyan
+      textAlign: 'center',
+      width: '100%',
+    });
+
+    // Subtitle / Status
+    this.statusText = new UIText('Tracking Active...', {
+      fontSize: 16,
+      color: '#a0aec0',
+      textAlign: 'center',
+      width: '100%',
+      paddingBottom: 8,
+    });
+
+    // Separator line
+    const separator = new UIPanel({
+      width: '100%',
+      height: 2,
+      fillColor: 'rgba(255, 255, 255, 0.15)',
+      marginBottom: 8,
+    });
+
+    // Status Details Text
+    this.statusDetailsText = new UIText('Waiting for body detection...', {
+      fontSize: 14,
+      fontWeight: 'normal',
+      color: '#e2e8f0',
+      textAlign: 'center',
+      width: '100%',
+    });
+
+    hudPanel.add(this.titleText);
+    hudPanel.add(this.statusText);
+    hudPanel.add(separator);
+    hudPanel.add(this.statusDetailsText);
+
+    this.hudCard.add(hudPanel);
+  }
+
+  initJointMarkers() {
     // Create a pool of red dot markers for all trackable body joints
     this.markerGeometry = new THREE.SphereGeometry(0.005, 16, 16);
     this.markerMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
     this.jointMarkers = new Map();
 
-    const allJointNames = [
-      xb.PoseJointName.Nose,
-      xb.PoseJointName.LeftEye,
-      xb.PoseJointName.RightEye,
-      xb.PoseJointName.LeftEar,
-      xb.PoseJointName.RightEar,
-      xb.PoseJointName.LeftShoulder,
-      xb.PoseJointName.RightShoulder,
-      xb.PoseJointName.LeftElbow,
-      xb.PoseJointName.RightElbow,
-      xb.PoseJointName.LeftWrist,
-      xb.PoseJointName.RightWrist,
-      xb.PoseJointName.LeftHip,
-      xb.PoseJointName.RightHip,
-      xb.PoseJointName.LeftKnee,
-      xb.PoseJointName.RightKnee,
-      xb.PoseJointName.LeftAnkle,
-      xb.PoseJointName.RightAnkle,
-      xb.PoseJointName.LeftFoot,
-      xb.PoseJointName.RightFoot,
-      xb.PoseJointName.Hips,
-      xb.PoseJointName.Spine,
-      xb.PoseJointName.Chest,
-      xb.PoseJointName.Neck,
-      xb.PoseJointName.Head,
-    ];
+    const allJointNames = Object.values(xb.PoseJointName);
 
     allJointNames.forEach((jointName) => {
       // Create dot marker
@@ -52,7 +108,9 @@ export class PoseDisplay extends xb.Script {
       this.add(marker);
       this.jointMarkers.set(jointName, marker);
     });
+  }
 
+  initConnections() {
     // Define connections between joints to build the skeleton
     this.connections = [
       // Head & Face
@@ -110,82 +168,6 @@ export class PoseDisplay extends xb.Script {
       this.add(mesh);
       this.connectorMeshes.push({jointA, jointB, mesh});
     });
-
-    console.log('PoseDisplay: human pose detector initialized.');
-  }
-
-  initHudText() {
-    // Define the premium glassmorphic display card
-    this.hudCard = this.uiCore.createCard({
-      name: 'PoseHUDCard',
-      sizeX: 0.46,
-      sizeY: 0.18,
-      position: new THREE.Vector3(0, 0, -1.0),
-    });
-
-    const hudPanel = new UIPanel({
-      width: '100%',
-      height: '100%',
-      fillColor: 'rgba(15, 18, 25, 0.85)', // Sleek dark glassmorphic backdrop
-      innerShadowColor: 'rgba(100, 180, 255, 0.15)', // Blue glow
-      innerShadowBlur: 80,
-      strokeWidth: 3,
-      strokeColor: {
-        gradientType: 'linear',
-        rotation: 45,
-        stops: [
-          {position: 0, color: '#4796e3'}, // Vibrant blue
-          {position: 1, color: '#9b5de5'}, // Vibrant purple
-        ],
-      },
-      cornerRadius: 24,
-      padding: 20,
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'stretch',
-    });
-
-    // Header with a vibrant pose icon and title
-    this.titleText = new UIText('🧘 HUMAN POSE DETECTOR', {
-      fontSize: 24,
-      fontWeight: 'bold',
-      color: '#00f0ff', // Glowing cyan
-      textAlign: 'center',
-      width: '100%',
-    });
-
-    // Subtitle / Status
-    this.statusText = new UIText('Tracking Active...', {
-      fontSize: 16,
-      color: '#a0aec0',
-      textAlign: 'center',
-      width: '100%',
-      paddingBottom: 8,
-    });
-
-    // Separator line
-    const separator = new UIPanel({
-      width: '100%',
-      height: 2,
-      fillColor: 'rgba(255, 255, 255, 0.15)',
-      marginBottom: 8,
-    });
-
-    // Coordinates Text
-    this.coordsText = new UIText('Waiting for body detection...', {
-      fontSize: 14,
-      fontWeight: 'normal',
-      color: '#e2e8f0',
-      textAlign: 'center',
-      width: '100%',
-    });
-
-    hudPanel.add(this.titleText);
-    hudPanel.add(this.statusText);
-    hudPanel.add(separator);
-    hudPanel.add(this.coordsText);
-
-    this.hudCard.add(hudPanel);
   }
 
   update() {
@@ -222,7 +204,7 @@ export class PoseDisplay extends xb.Script {
           this.detecting = false;
           const errMsg = err.message || String(err);
           this.statusText.setText('Detection Error');
-          this.coordsText.setText('[Exception]:\n' + errMsg);
+          this.statusDetailsText.setText('[Exception]:\n' + errMsg);
           console.error('Pose detection failed:', err);
         });
     }
@@ -231,7 +213,7 @@ export class PoseDisplay extends xb.Script {
   displayPoses(poses) {
     if (!poses || poses.length === 0) {
       this.statusText.setText('Searching for user...');
-      this.coordsText.setText(
+      this.statusDetailsText.setText(
         'Stand in view of the camera.\nEnsure full body is visible.'
       );
       if (this.jointMarkers) {
@@ -252,87 +234,69 @@ export class PoseDisplay extends xb.Script {
       `Tracking Active (Confidence: ${Math.round(firstPose.score * 100)}%)`
     );
 
-    // Update all joint markers in the 3D world
-    if (this.jointMarkers) {
-      this.jointMarkers.forEach((marker, jointName) => {
-        const pos = firstPose.getJointPosition(jointName);
-        if (pos) {
-          // Convert target position to local space first
-          const targetLocalPos = pos.clone();
-          this.worldToLocal(targetLocalPos);
+    this.updateJointMarkers(firstPose);
+    this.updateConnectorMeshes();
 
-          if (!marker.visible) {
-            // Snap directly on first detection to prevent flying in from origin
-            marker.position.copy(targetLocalPos);
-            marker.visible = true;
-          } else {
-            // Smoothly interpolate (lerp) the position to eliminate high-frequency jitter
-            marker.position.lerp(targetLocalPos, 0.45);
-          }
+    this.statusDetailsText.setText('Full body skeleton tracked successfully.');
+  }
+
+  updateJointMarkers(firstPose) {
+    if (!this.jointMarkers) return;
+
+    this.jointMarkers.forEach((marker, jointName) => {
+      const pos = firstPose.getJointPosition(jointName);
+      if (pos) {
+        // Convert target position to local space first
+        const targetLocalPos = pos.clone();
+        this.worldToLocal(targetLocalPos);
+
+        if (!marker.visible) {
+          // Snap directly on first detection to prevent flying in from origin
+          marker.position.copy(targetLocalPos);
+          marker.visible = true;
         } else {
-          marker.visible = false;
+          // Smoothly interpolate (lerp) the position to eliminate high-frequency jitter
+          marker.position.lerp(targetLocalPos, 0.45);
         }
-      });
-    }
+      } else {
+        marker.visible = false;
+      }
+    });
+  }
 
-    // Update all connector meshes
-    if (this.connectorMeshes && this.jointMarkers) {
-      const upVector = new THREE.Vector3(0, 1, 0);
-      const tempDirection = new THREE.Vector3();
+  updateConnectorMeshes() {
+    if (!this.connectorMeshes || !this.jointMarkers) return;
 
-      this.connectorMeshes.forEach(({jointA, jointB, mesh}) => {
-        const markerA = this.jointMarkers.get(jointA);
-        const markerB = this.jointMarkers.get(jointB);
+    const upVector = new THREE.Vector3(0, 1, 0);
+    const tempDirection = new THREE.Vector3();
 
-        if (markerA && markerB && markerA.visible && markerB.visible) {
-          const posA = markerA.position;
-          const posB = markerB.position;
+    this.connectorMeshes.forEach(({jointA, jointB, mesh}) => {
+      const markerA = this.jointMarkers.get(jointA);
+      const markerB = this.jointMarkers.get(jointB);
 
-          // Position the cylinder at the midpoint between the two joints
-          mesh.position.copy(posA).add(posB).multiplyScalar(0.5);
+      if (markerA && markerB && markerA.visible && markerB.visible) {
+        const posA = markerA.position;
+        const posB = markerB.position;
 
-          // Rotate and scale the cylinder to connect them
-          tempDirection.copy(posB).sub(posA);
-          const distance = tempDirection.length();
+        // Position the cylinder at the midpoint between the two joints
+        mesh.position.copy(posA).add(posB).multiplyScalar(0.5);
 
-          if (distance > 0.0001) {
-            tempDirection.normalize();
-            mesh.quaternion.setFromUnitVectors(upVector, tempDirection);
-            mesh.scale.set(1.0, distance, 1.0);
-            mesh.visible = true;
-          } else {
-            mesh.visible = false;
-          }
+        // Rotate and scale the cylinder to connect them
+        tempDirection.copy(posB).sub(posA);
+        const distance = tempDirection.length();
+
+        if (distance > 0.0001) {
+          tempDirection.normalize();
+          mesh.quaternion.setFromUnitVectors(upVector, tempDirection);
+          mesh.scale.set(1.0, distance, 1.0);
+          mesh.visible = true;
         } else {
           mesh.visible = false;
         }
-      });
-    }
-
-    const joints = [
-      xb.PoseJointName.Nose,
-      xb.PoseJointName.Neck,
-      xb.PoseJointName.LeftWrist,
-      xb.PoseJointName.RightWrist,
-      xb.PoseJointName.LeftAnkle,
-      xb.PoseJointName.RightAnkle,
-    ];
-    let displayStr = `Detected: `;
-    let detectedList = [];
-
-    // Only mention the joints that are currently detected in the HUD
-    joints.forEach((jointName) => {
-      const pos = firstPose.getJointPosition(jointName);
-      if (pos) {
-        const displayName = jointName
-          .replace(/([A-Z])/g, ' $1')
-          .replace(/^./, (str) => str.toUpperCase());
-        detectedList.push(displayName);
+      } else {
+        mesh.visible = false;
       }
     });
-
-    displayStr += detectedList.length > 0 ? detectedList.join(', ') : 'None';
-    this.coordsText.setText(displayStr);
   }
 
   dispose() {
