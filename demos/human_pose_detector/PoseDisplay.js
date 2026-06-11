@@ -19,30 +19,30 @@ export class PoseDisplay extends xb.Script {
     this.jointMarkers = new Map();
 
     const allJointNames = [
-      'nose',
-      'leftEye',
-      'rightEye',
-      'leftEar',
-      'rightEar',
-      'leftShoulder',
-      'rightShoulder',
-      'leftElbow',
-      'rightElbow',
-      'leftWrist',
-      'rightWrist',
-      'leftHip',
-      'rightHip',
-      'leftKnee',
-      'rightKnee',
-      'leftAnkle',
-      'rightAnkle',
-      'leftFoot',
-      'rightFoot',
-      'hips',
-      'spine',
-      'chest',
-      'neck',
-      'head',
+      xb.PoseJointName.Nose,
+      xb.PoseJointName.LeftEye,
+      xb.PoseJointName.RightEye,
+      xb.PoseJointName.LeftEar,
+      xb.PoseJointName.RightEar,
+      xb.PoseJointName.LeftShoulder,
+      xb.PoseJointName.RightShoulder,
+      xb.PoseJointName.LeftElbow,
+      xb.PoseJointName.RightElbow,
+      xb.PoseJointName.LeftWrist,
+      xb.PoseJointName.RightWrist,
+      xb.PoseJointName.LeftHip,
+      xb.PoseJointName.RightHip,
+      xb.PoseJointName.LeftKnee,
+      xb.PoseJointName.RightKnee,
+      xb.PoseJointName.LeftAnkle,
+      xb.PoseJointName.RightAnkle,
+      xb.PoseJointName.LeftFoot,
+      xb.PoseJointName.RightFoot,
+      xb.PoseJointName.Hips,
+      xb.PoseJointName.Spine,
+      xb.PoseJointName.Chest,
+      xb.PoseJointName.Neck,
+      xb.PoseJointName.Head,
     ];
 
     allJointNames.forEach((jointName) => {
@@ -56,40 +56,40 @@ export class PoseDisplay extends xb.Script {
     // Define connections between joints to build the skeleton
     this.connections = [
       // Head & Face
-      ['head', 'neck'],
-      ['neck', 'nose'],
-      ['nose', 'leftEye'],
-      ['leftEye', 'leftEar'],
-      ['nose', 'rightEye'],
-      ['rightEye', 'rightEar'],
+      [xb.PoseJointName.Head, xb.PoseJointName.Neck],
+      [xb.PoseJointName.Neck, xb.PoseJointName.Nose],
+      [xb.PoseJointName.Nose, xb.PoseJointName.LeftEye],
+      [xb.PoseJointName.LeftEye, xb.PoseJointName.LeftEar],
+      [xb.PoseJointName.Nose, xb.PoseJointName.RightEye],
+      [xb.PoseJointName.RightEye, xb.PoseJointName.RightEar],
 
       // Torso
-      ['neck', 'chest'],
-      ['chest', 'spine'],
-      ['spine', 'hips'],
+      [xb.PoseJointName.Neck, xb.PoseJointName.Chest],
+      [xb.PoseJointName.Chest, xb.PoseJointName.Spine],
+      [xb.PoseJointName.Spine, xb.PoseJointName.Hips],
 
       // Shoulders
-      ['chest', 'leftShoulder'],
-      ['chest', 'rightShoulder'],
+      [xb.PoseJointName.Chest, xb.PoseJointName.LeftShoulder],
+      [xb.PoseJointName.Chest, xb.PoseJointName.RightShoulder],
 
       // Arms
-      ['leftShoulder', 'leftElbow'],
-      ['leftElbow', 'leftWrist'],
-      ['rightShoulder', 'rightElbow'],
-      ['rightElbow', 'rightWrist'],
+      [xb.PoseJointName.LeftShoulder, xb.PoseJointName.LeftElbow],
+      [xb.PoseJointName.LeftElbow, xb.PoseJointName.LeftWrist],
+      [xb.PoseJointName.RightShoulder, xb.PoseJointName.RightElbow],
+      [xb.PoseJointName.RightElbow, xb.PoseJointName.RightWrist],
 
       // Hips to legs
-      ['hips', 'leftHip'],
-      ['hips', 'rightHip'],
+      [xb.PoseJointName.Hips, xb.PoseJointName.LeftHip],
+      [xb.PoseJointName.Hips, xb.PoseJointName.RightHip],
 
       // Legs
-      ['leftHip', 'leftKnee'],
-      ['leftKnee', 'leftAnkle'],
-      ['leftAnkle', 'leftFoot'],
+      [xb.PoseJointName.LeftHip, xb.PoseJointName.LeftKnee],
+      [xb.PoseJointName.LeftKnee, xb.PoseJointName.LeftAnkle],
+      [xb.PoseJointName.LeftAnkle, xb.PoseJointName.LeftFoot],
 
-      ['rightHip', 'rightKnee'],
-      ['rightKnee', 'rightAnkle'],
-      ['rightAnkle', 'rightFoot'],
+      [xb.PoseJointName.RightHip, xb.PoseJointName.RightKnee],
+      [xb.PoseJointName.RightKnee, xb.PoseJointName.RightAnkle],
+      [xb.PoseJointName.RightAnkle, xb.PoseJointName.RightFoot],
     ];
 
     // Create a pool of connector meshes (thin holographic cyan cylinders)
@@ -310,12 +310,12 @@ export class PoseDisplay extends xb.Script {
     }
 
     const joints = [
-      'nose',
-      'neck',
-      'leftWrist',
-      'rightWrist',
-      'leftAnkle',
-      'rightAnkle',
+      xb.PoseJointName.Nose,
+      xb.PoseJointName.Neck,
+      xb.PoseJointName.LeftWrist,
+      xb.PoseJointName.RightWrist,
+      xb.PoseJointName.LeftAnkle,
+      xb.PoseJointName.RightAnkle,
     ];
     let displayStr = `Detected: `;
     let detectedList = [];

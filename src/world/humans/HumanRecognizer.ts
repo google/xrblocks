@@ -7,11 +7,8 @@ import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
 import {WorldOptions} from '../WorldOptions';
 import {DetectedBodyPose} from './DetectedBodyPose';
-import {
-  BaseHumanBackend,
-  HumanBackendContext,
-  MediaPipeHumanBackend,
-} from './HumanDetectorBackend';
+import {BaseHumanBackend, HumanBackendContext} from './HumanDetectorBackend';
+import {MediaPipeHumanBackend} from './backends/MediaPipeHumanBackend';
 
 export class HumanRecognizer extends Script {
   static dependencies = {
