@@ -17,6 +17,7 @@
     "format:check": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --check",
     "format:fix": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --write",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"
   },
   "files": [
@@ -53,6 +54,7 @@
     "@types/node": "^25.0.8",
     "@types/three": "^0.184.0",
     "@types/webxr": "^0.5.23",
+    "@vitest/coverage-v8": "^4.1.8",
     "concurrently": "^10.0.3",
     "eslint": "^9.35.0",
     "eslint-plugin-tsdoc": "^0.5.2",

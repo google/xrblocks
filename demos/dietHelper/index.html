@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Diet Helper | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link type="text/css" rel="stylesheet" href="../demo.css" />
+    <script>
+      window.litDisableBundleWarning = true;
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
+          "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/",
+          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --dh-panel-bg: rgba(15, 15, 18, 0.62);
+        --dh-panel-blur: blur(14px);
+        --dh-accent: #34a853;
+        --dh-warn: #f29900;
+        --dh-error: #ea4335;
+        --dh-text: #ffffff;
+        --dh-text-dim: rgba(255, 255, 255, 0.72);
+      }
+      .diet-helper-overlay,
+      .diet-helper-photo {
+        position: absolute;
+        z-index: 10;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: var(--dh-panel-bg);
+        color: var(--dh-text);
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        backdrop-filter: var(--dh-panel-blur);
+        -webkit-backdrop-filter: var(--dh-panel-blur);
+        box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35);
+      }
+      .diet-helper-overlay {
+        top: 12px;
+        left: 12px;
+        max-width: 320px;
+        pointer-events: none;
+      }
+      .diet-helper-overlay h1 {
+        margin: 0 0 4px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .diet-helper-overlay p {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.5;
+        opacity: 0.85;
+      }
+      .diet-helper-overlay kbd {
+        display: inline-block;
+        margin: 0 2px;
+        padding: 0 5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .diet-helper-actions {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 11;
+        display: flex;
+        gap: 8px;
+      }
+      .diet-helper-btn {
+        appearance: none;
+        border: 0;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: var(--dh-accent);
+        color: #fff;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 14px rgba(52, 168, 83, 0.35);
+        transition:
+          transform 80ms ease,
+          background 120ms ease;
+      }
+      .diet-helper-btn:hover {
+        background: #2c8f46;
+      }
+      .diet-helper-btn:active {
+        transform: scale(0.96);
+      }
+      .diet-helper-btn[disabled] {
+        background: rgba(255, 255, 255, 0.12);
+        color: rgba(255, 255, 255, 0.4);
+        cursor: progress;
+        box-shadow: none;
+      }
+      .diet-helper-photo {
+        right: 12px;
+        top: 64px;
+        width: 320px;
+        flex-direction: column;
+        gap: 10px;
+        display: none;
+      }
+      /* Stronger selector so :not(:hidden) wins over [hidden] cleanly. */
+      .diet-helper-photo:not([hidden]) {
+        display: flex !important;
+      }
+      .diet-helper-photo header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .diet-helper-photo header h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .diet-helper-photo header button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--dh-text-dim);
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 4px 6px;
+      }
+      .diet-helper-photo img {
+        width: 100%;
+        max-height: 200px;
+        object-fit: cover;
+        border-radius: 8px;
+        background: #000;
+      }
+      .diet-helper-photo .dh-status {
+        font-size: 12px;
+        color: var(--dh-text-dim);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .diet-helper-photo .dh-status[data-state='error'] {
+        color: var(--dh-error);
+      }
+      .diet-helper-photo .dh-spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: dh-spin 0.8s linear infinite;
+      }
+      @keyframes dh-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .diet-helper-photo .dh-result {
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .diet-helper-photo .dh-result .dh-dish {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .diet-helper-photo .dh-result .dh-macros {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        font-size: 12px;
+        color: var(--dh-text-dim);
+      }
+      .diet-helper-photo .dh-result .dh-macros strong {
+        color: var(--dh-text);
+        font-weight: 600;
+      }
+      .diet-helper-photo .dh-result .dh-notes {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--dh-text-dim);
+        font-style: italic;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="background-image" style="background-color: #1a1a1f"></div>
+    <div class="diet-helper-overlay" id="dietHelperOverlay">
+      <h1>Diet Helper</h1>
+      <p>
+        Drag the platform to move the dish. Pinch (XR) or click (desktop) the
+        burger to log it as a meal. Press <kbd>C</kbd> or tap
+        <strong>Capture</strong> to analyze the view with Gemini.
+      </p>
+    </div>
+    <div class="diet-helper-actions">
+      <button
+        class="diet-helper-btn"
+        id="dietHelperCaptureBtn"
+        onclick="window.dietHelperCaptureAndAnalyze && window.dietHelperCaptureAndAnalyze()"
+      >
+        Capture &amp; Analyze
+      </button>
+    </div>
+    <aside class="diet-helper-photo" id="dietHelperPhoto" hidden>
+      <header>
+        <h2>Latest Capture</h2>
+        <button
+          type="button"
+          id="dietHelperPhotoClose"
+          aria-label="Close"
+          onclick="window.dietHelperHidePanel && window.dietHelperHidePanel()"
+        >
+          &times;
+        </button>
+      </header>
+      <img id="dietHelperPhotoImg" alt="Captured food" />
+      <div class="dh-status" id="dietHelperPhotoStatus" data-state="idle">
+        <span class="dh-spinner"></span>
+        <span class="dh-status-text">Analyzing with Gemini…</span>
+      </div>
+      <div class="dh-result" id="dietHelperPhotoResult" hidden></div>
+    </aside>
+    <script type="module">
+      // Inline bootstrap so each HTML cache-bust forces a fresh ES module
+      // graph (avoids browsers serving stale main.js / DietHelper.js).
+      const v = Date.now();
+      await import(`./main.js?v=${v}`);
+    </script>
+  </body>
+</html>
