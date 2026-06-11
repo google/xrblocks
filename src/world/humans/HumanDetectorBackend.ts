@@ -8,18 +8,13 @@ import {
 } from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {WorldOptions} from '../WorldOptions';
-import {
-  DetectedBodyPose,
-  PoseLandmark,
-  PoseJointName,
-} from './DetectedBodyPose';
+import {DetectedBodyPose, PoseLandmark} from './DetectedBodyPose';
 
 export interface HumanBackendContext {
   readonly options: WorldOptions;
   readonly ai?: AI;
   readonly aiOptions?: AIOptions;
   readonly deviceCamera: XRDeviceCamera;
-  readonly debugVisualsGroup?: THREE.Group;
 }
 
 export abstract class BaseHumanBackend {
@@ -189,13 +184,6 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
 
       const bodyPose = new DetectedBodyPose(i, landmarks, boundingBox, score);
 
-      if (
-        this.context.options.humans.showDebugVisualizations &&
-        this.context.debugVisualsGroup
-      ) {
-        this.createDebugVisual(bodyPose);
-      }
-
       detectedPoses.push(bodyPose);
     }
 
@@ -218,83 +206,6 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
       },
       runningMode: 'IMAGE',
       numPoses: 4, // track up to 4 people
-    });
-  }
-
-  private createDebugVisual(pose: DetectedBodyPose) {
-    if (!this.context.debugVisualsGroup) return;
-
-    // Draw simple joints as spheres
-    const jointNames: PoseJointName[] = [
-      'hips',
-      'chest',
-      'neck',
-      'head',
-      'leftShoulder',
-      'rightShoulder',
-      'leftElbow',
-      'rightElbow',
-      'leftWrist',
-      'rightWrist',
-      'leftHip',
-      'rightHip',
-      'leftKnee',
-      'rightKnee',
-      'leftAnkle',
-      'rightAnkle',
-    ];
-
-    const drawnJoints = new Map<string, THREE.Vector3>();
-
-    jointNames.forEach((name) => {
-      const pos = pose.getJointPosition(name);
-      if (pos) {
-        const localPos = this.context.debugVisualsGroup!.worldToLocal(
-          pos.clone()
-        );
-        const sphere = new THREE.Mesh(
-          new THREE.SphereGeometry(0.025, 8, 8),
-          new THREE.MeshBasicMaterial({color: 0x00ff00, depthTest: false})
-        );
-        sphere.position.copy(localPos);
-        this.context.debugVisualsGroup!.add(sphere);
-        drawnJoints.set(name, localPos);
-      }
-    });
-
-    // Draw simple skeletal connections/lines by joint name
-    const connections: [string, string][] = [
-      ['hips', 'chest'],
-      ['chest', 'neck'],
-      ['neck', 'head'],
-      ['chest', 'leftShoulder'],
-      ['chest', 'rightShoulder'],
-      ['leftShoulder', 'leftElbow'],
-      ['leftElbow', 'leftWrist'],
-      ['rightShoulder', 'rightElbow'],
-      ['rightElbow', 'rightWrist'],
-      ['hips', 'leftHip'],
-      ['hips', 'rightHip'],
-      ['leftHip', 'leftKnee'],
-      ['leftKnee', 'leftAnkle'],
-      ['rightHip', 'rightKnee'],
-      ['rightKnee', 'rightAnkle'],
-    ];
-
-    connections.forEach(([startName, endName]) => {
-      const startPos = drawnJoints.get(startName);
-      const endPos = drawnJoints.get(endName);
-      if (startPos && endPos) {
-        const points = [startPos, endPos];
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({
-          color: 0x00ff88,
-          linewidth: 2,
-          depthTest: false,
-        });
-        const line = new THREE.Line(geometry, material);
-        this.context.debugVisualsGroup!.add(line);
-      }
     });
   }
 }

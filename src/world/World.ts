@@ -269,6 +269,5 @@ export class World extends Script {
   showDebugVisualizations(visible = true) {
     this.planes?.showDebugVisualizations(visible);
     this.objects?.showDebugVisualizations(visible);
-    this.humans?.showDebugVisualizations(visible);
   }
 }

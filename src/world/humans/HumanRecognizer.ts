@@ -25,7 +25,6 @@ export class HumanRecognizer extends Script {
   public body_poses: DetectedBodyPose[] = [];
   public lastDebugString = 'Initializing...';
   private _detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
-  private _debugVisualsGroup?: THREE.Group;
 
   // Injected dependencies
   private options!: WorldOptions;
@@ -66,12 +65,6 @@ export class HumanRecognizer extends Script {
     this.depth = depth;
     this.camera = camera;
     this.renderer = renderer;
-
-    if (this.options.humans.showDebugVisualizations) {
-      this._debugVisualsGroup = new THREE.Group();
-      this._debugVisualsGroup.raycast = () => {};
-      this.add(this._debugVisualsGroup);
-    }
   }
 
   /**
@@ -135,7 +128,6 @@ export class HumanRecognizer extends Script {
       ai: this.ai,
       aiOptions: this.aiOptions,
       deviceCamera: this.deviceCamera,
-      debugVisualsGroup: this._debugVisualsGroup,
     };
   }
 
@@ -185,15 +177,6 @@ export class HumanRecognizer extends Script {
       this.remove(pose);
     }
     this.body_poses = [];
-    if (this._debugVisualsGroup) {
-      this._debugVisualsGroup.clear();
-    }
     return this;
-  }
-
-  showDebugVisualizations(visible = true) {
-    if (this._debugVisualsGroup) {
-      this._debugVisualsGroup.visible = visible;
-    }
   }
 }
