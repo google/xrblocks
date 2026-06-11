@@ -118,8 +118,8 @@ export class PoseDisplay extends xb.Script {
     // Define the premium glassmorphic display card
     this.hudCard = this.uiCore.createCard({
       name: 'PoseHUDCard',
-      sizeX: 0.6,
-      sizeY: 0.35,
+      sizeX: 0.46,
+      sizeY: 0.18,
       position: new THREE.Vector3(0, 0, -1.0),
     });
 
@@ -129,7 +129,7 @@ export class PoseDisplay extends xb.Script {
       fillColor: 'rgba(15, 18, 25, 0.85)', // Sleek dark glassmorphic backdrop
       innerShadowColor: 'rgba(100, 180, 255, 0.15)', // Blue glow
       innerShadowBlur: 80,
-      strokeWidth: 4,
+      strokeWidth: 3,
       strokeColor: {
         gradientType: 'linear',
         rotation: 45,
@@ -138,16 +138,16 @@ export class PoseDisplay extends xb.Script {
           {position: 1, color: '#9b5de5'}, // Vibrant purple
         ],
       },
-      cornerRadius: 40,
-      padding: 40,
+      cornerRadius: 24,
+      padding: 20,
       flexDirection: 'column',
-      justifyContent: 'flex-start',
+      justifyContent: 'center',
       alignItems: 'stretch',
     });
 
     // Header with a vibrant pose icon and title
     this.titleText = new UIText('🧘 HUMAN POSE DETECTOR', {
-      fontSize: 36,
+      fontSize: 24,
       fontWeight: 'bold',
       color: '#00f0ff', // Glowing cyan
       textAlign: 'center',
@@ -156,11 +156,11 @@ export class PoseDisplay extends xb.Script {
 
     // Subtitle / Status
     this.statusText = new UIText('Tracking Active...', {
-      fontSize: 24,
+      fontSize: 16,
       color: '#a0aec0',
       textAlign: 'center',
       width: '100%',
-      paddingBottom: 15,
+      paddingBottom: 8,
     });
 
     // Separator line
@@ -168,15 +168,15 @@ export class PoseDisplay extends xb.Script {
       width: '100%',
       height: 2,
       fillColor: 'rgba(255, 255, 255, 0.15)',
-      marginBottom: 15,
+      marginBottom: 8,
     });
 
     // Coordinates Text
     this.coordsText = new UIText('Waiting for body detection...', {
-      fontSize: 22,
+      fontSize: 14,
       fontWeight: 'normal',
       color: '#e2e8f0',
-      textAlign: 'left',
+      textAlign: 'center',
       width: '100%',
     });
 
@@ -229,15 +229,10 @@ export class PoseDisplay extends xb.Script {
   }
 
   displayPoses(poses) {
-    const debugStr =
-      (this.world.humans && this.world.humans.lastDebugString) ||
-      'No Diagnostics Available';
-
     if (!poses || poses.length === 0) {
-      this.statusText.setText('Status: ' + debugStr);
+      this.statusText.setText('Searching for user...');
       this.coordsText.setText(
-        'Stand in view of the camera.\nEnsure full body is visible.\n\n[Diagnostics]:\n' +
-          debugStr
+        'Stand in view of the camera.\nEnsure full body is visible.'
       );
       if (this.jointMarkers) {
         this.jointMarkers.forEach((marker) => {
@@ -254,7 +249,7 @@ export class PoseDisplay extends xb.Script {
 
     const firstPose = poses[0];
     this.statusText.setText(
-      `Tracking 1 Active User (Score: ${Math.round(firstPose.score * 100)}%)`
+      `Tracking Active (Confidence: ${Math.round(firstPose.score * 100)}%)`
     );
 
     // Update all joint markers in the 3D world
@@ -322,20 +317,22 @@ export class PoseDisplay extends xb.Script {
       'leftAnkle',
       'rightAnkle',
     ];
-    let displayStr = `[Diagnostics]: ${debugStr}\n\nDetected Joints:\n`;
+    let displayStr = `Detected: `;
+    let detectedList = [];
 
-    // Only mention the joints that are currently detected in the HUD diagnostics
+    // Only mention the joints that are currently detected in the HUD
     joints.forEach((jointName) => {
       const pos = firstPose.getJointPosition(jointName);
       if (pos) {
         const displayName = jointName
           .replace(/([A-Z])/g, ' $1')
           .replace(/^./, (str) => str.toUpperCase());
-        displayStr += `• ${displayName}\n`;
+        detectedList.push(displayName);
       }
     });
 
-    this.coordsText.setText(displayStr.trim());
+    displayStr += detectedList.length > 0 ? detectedList.join(', ') : 'None';
+    this.coordsText.setText(displayStr);
   }
 
   dispose() {

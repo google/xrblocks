@@ -23,7 +23,7 @@ export class HumanRecognizer extends Script {
   };
 
   public body_poses: DetectedBodyPose[] = [];
-  public lastDebugString = 'Initializing...';
+
   private _detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
 
   // Injected dependencies
@@ -75,8 +75,6 @@ export class HumanRecognizer extends Script {
     this.clear();
 
     if (!this.depth || !this.depth.depthMesh) {
-      this.lastDebugString =
-        '[Recognizer]: Depth module or depthMesh uninitialized.';
       console.warn(
         'Cannot run Human Detection: Depth module / depthMesh is not enabled or initialized.'
       );
@@ -99,7 +97,6 @@ export class HumanRecognizer extends Script {
     try {
       backend = await backendPromise;
     } catch (error: unknown) {
-      this.lastDebugString = `[Recognizer]: Backend load failed: ${error instanceof Error ? error.message : String(error)}`;
       console.warn(
         `Failed to load or initialize HumanRecognizer backend '${activeBackend}':`,
         error
@@ -111,8 +108,6 @@ export class HumanRecognizer extends Script {
       depthMeshSnapshot,
       cameraParametersSnapshot
     );
-
-    this.lastDebugString = backend.lastDebugStatus;
 
     for (const pose of poses) {
       this.body_poses.push(pose);
