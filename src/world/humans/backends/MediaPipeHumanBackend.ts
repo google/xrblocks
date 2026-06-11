@@ -10,6 +10,7 @@ import {BaseHumanBackend, HumanBackendContext} from '../HumanDetectorBackend';
 let FilesetResolver: typeof MEDIAPIPE.FilesetResolver | undefined;
 let PoseLandmarker: typeof MEDIAPIPE.PoseLandmarker | undefined;
 
+// --- Attempt Dynamic Import ---
 async function loadMediaPipeModule() {
   if (FilesetResolver && PoseLandmarker) {
     return;
@@ -27,6 +28,10 @@ async function loadMediaPipeModule() {
   }
 }
 
+/**
+ * Human Pose detector backend implementation using MediaPipe's Pose Landmark Detector.
+ * Runs locally on the device.
+ */
 export class MediaPipeHumanBackend extends BaseHumanBackend {
   private poseLandmarker: MEDIAPIPE.PoseLandmarker | null = null;
   private initializationPromise: Promise<void>;
@@ -96,7 +101,6 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
     for (let i = 0; i < result.landmarks.length; i++) {
       const mpLandmarks = result.landmarks[i];
       const mpWorldLandmarks = result.worldLandmarks?.[i] || [];
-      const score = result.segmentationMasks ? 1.0 : 0.8; // default confidence indicator
 
       const landmarks: PoseLandmark[] = [];
       let xmin = 1;
@@ -156,7 +160,7 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
         new THREE.Vector2(xmax, ymax)
       );
 
-      const bodyPose = new DetectedBodyPose(i, landmarks, boundingBox, score);
+      const bodyPose = new DetectedBodyPose(i, landmarks, boundingBox);
 
       detectedPoses.push(bodyPose);
     }
@@ -179,7 +183,10 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
         delegate: 'GPU',
       },
       runningMode: 'IMAGE',
-      numPoses: 4, // track up to 4 people
+      numPoses: humansOptions.numPoses,
+      minPoseDetectionConfidence: humansOptions.minPoseDetectionConfidence,
+      minPosePresenceConfidence: humansOptions.minPosePresenceConfidence,
+      minTrackingConfidence: humansOptions.minTrackingConfidence,
     });
   }
 }

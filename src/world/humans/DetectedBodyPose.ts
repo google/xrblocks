@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+/**
+ * Names of key human body joints and anatomical landmarks.
+ * Includes standard MediaPipe pose landmarks and composite landmarks for
+ * skeletal animation compatibility (e.g., Hips, Spine, Chest, Neck, Head).
+ */
 export enum PoseJointName {
   Nose = 'nose',
   LeftEye = 'leftEye',
@@ -27,20 +32,52 @@ export enum PoseJointName {
   Head = 'head',
 }
 
+/**
+ * Represents a single detected anatomical landmark/joint in a human body pose.
+ */
 export interface PoseLandmark {
-  x: number; // normalized x [0, 1]
-  y: number; // normalized y [0, 1]
-  z: number; // raw z / depth estimation
+  /**
+   * Normalized horizontal coordinate [0.0, 1.0] in screen space,
+   * where 0.0 is the left edge and 1.0 is the right edge.
+   */
+  x: number;
+  /**
+   * Normalized vertical coordinate [0.0, 1.0] in screen space,
+   * where 0.0 is the top edge and 1.0 is the bottom edge.
+   */
+  y: number;
+  /**
+   * Raw estimated depth value relative to the camera.
+   */
+  z: number;
+  /**
+   * The probability [0.0, 1.0] that the landmark is visible (not occluded).
+   */
   visibility?: number;
-  worldPosition?: THREE.Vector3; // backprojected 3D WebXR position
+  /**
+   * The back-projected 3D position in WebXR world space, measured in meters.
+   * Null or undefined if depth projection was unsuccessful.
+   */
+  worldPosition?: THREE.Vector3;
 }
 
+/**
+ * Represents a single human body pose detected in physical space.
+ * Inherits from `THREE.Object3D` to fit naturally into the Three.js scene graph,
+ * positioning itself at the estimated hips/center of the tracked human.
+ */
 export class DetectedBodyPose extends THREE.Object3D {
+  /**
+   * Creates an instance of DetectedBodyPose.
+   *
+   * @param poseId - A unique tracking identifier for this body pose.
+   * @param landmarks - The list of raw and 3D-projected anatomical landmarks.
+   * @param detection2DBoundingBox - The 2D bounding box of the person in normalized screen space.
+   */
   constructor(
     public poseId: number,
     public landmarks: PoseLandmark[],
-    public detection2DBoundingBox: THREE.Box2,
-    public score: number
+    public detection2DBoundingBox: THREE.Box2
   ) {
     super();
     // Default the Object3D position to the estimated hips/center
@@ -51,8 +88,11 @@ export class DetectedBodyPose extends THREE.Object3D {
   }
 
   /**
-   * Returns the 3D world space position of a specific joint/landmark.
+   * Returns the 3D world space position of a specific joint/landmark in meters.
    * Exposes both standard MediaPipe landmark mappings and composite VRM/humanoid landmarks.
+   *
+   * @param name - The name of the joint (standard or composite).
+   * @returns A clone of the 3D world space position vector, or `null` if the joint is undetected or unprojected.
    */
   getJointPosition(name: PoseJointName | string): THREE.Vector3 | null {
     const getMPWorldPos = (index: number): THREE.Vector3 | null => {

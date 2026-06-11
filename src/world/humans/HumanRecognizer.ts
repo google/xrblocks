@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import {AI} from '../../ai/AI';
-import {AIOptions} from '../../ai/AIOptions';
 import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {Script} from '../../core/Script';
@@ -10,6 +8,11 @@ import {DetectedBodyPose} from './DetectedBodyPose';
 import {BaseHumanBackend, HumanBackendContext} from './HumanDetectorBackend';
 import {MediaPipeHumanBackend} from './backends/MediaPipeHumanBackend';
 
+/**
+ * A detector script that orchestrates human body pose estimation.
+ * Manages the backend pose detector lifecycle (e.g., MediaPipe) and exposes the detected
+ * poses, including 3D joint landmarks, in the world coordinate space.
+ */
 export class HumanRecognizer extends Script {
   static dependencies = {
     options: WorldOptions,
@@ -19,14 +22,10 @@ export class HumanRecognizer extends Script {
     renderer: THREE.WebGLRenderer,
   };
 
-  public body_poses: DetectedBodyPose[] = [];
-
   private _detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
 
   // Injected dependencies
   private options!: WorldOptions;
-  private ai?: AI;
-  private aiOptions?: AIOptions;
   private deviceCamera!: XRDeviceCamera;
   public depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
@@ -34,30 +33,20 @@ export class HumanRecognizer extends Script {
 
   targetDevice = 'galaxyxr';
 
-  /**
-   * Initializes the HumanRecognizer.
-   * @override
-   */
   init({
     options,
-    ai,
-    aiOptions,
     deviceCamera,
     depth,
     camera,
     renderer,
   }: {
     options: WorldOptions;
-    ai?: AI;
-    aiOptions?: AIOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
   }) {
     this.options = options;
-    this.ai = ai;
-    this.aiOptions = aiOptions;
     this.deviceCamera = deviceCamera;
     this.depth = depth;
     this.camera = camera;
@@ -66,7 +55,6 @@ export class HumanRecognizer extends Script {
 
   /**
    * Runs the human body pose detection process based on the configured backend.
-   * Exposes the results on this.body_poses.
    */
   async runDetection(): Promise<DetectedBodyPose[]> {
     this.clear();
@@ -101,24 +89,17 @@ export class HumanRecognizer extends Script {
       return [];
     }
 
-    const poses = await backend.run(
+    const bodyPoses = await backend.run(
       depthMeshSnapshot,
       cameraParametersSnapshot
     );
 
-    for (const pose of poses) {
-      this.body_poses.push(pose);
-      this.add(pose);
-    }
-
-    return this.body_poses;
+    return bodyPoses;
   }
 
   private getBackendContext(): HumanBackendContext {
     return {
       options: this.options,
-      ai: this.ai,
-      aiOptions: this.aiOptions,
       deviceCamera: this.deviceCamera,
     };
   }
@@ -162,13 +143,5 @@ export class HumanRecognizer extends Script {
     depthMesh.getWorldScale(depthMeshSnapshot.scale);
     depthMeshSnapshot.updateMatrixWorld(true);
     return depthMeshSnapshot;
-  }
-
-  clear() {
-    for (const pose of this.body_poses) {
-      this.remove(pose);
-    }
-    this.body_poses = [];
-    return this;
   }
 }

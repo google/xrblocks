@@ -4,7 +4,6 @@ import {PoseDisplay} from './PoseDisplay.js';
 
 const options = new xb.Options();
 options.enableHumanDetection();
-options.world.humans.showDebugVisualizations = true;
 
 options.setAppTitle('Human Pose Detector Demo');
 options.setAppDescription(

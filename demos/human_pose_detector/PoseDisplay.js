@@ -230,9 +230,7 @@ export class PoseDisplay extends xb.Script {
     }
 
     const firstPose = poses[0];
-    this.statusText.setText(
-      `Tracking Active (Confidence: ${Math.round(firstPose.score * 100)}%)`
-    );
+    this.statusText.setText('Tracking Active');
 
     this.updateJointMarkers(firstPose);
     this.updateConnectorMeshes();
