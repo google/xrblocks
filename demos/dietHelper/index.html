@@ -126,6 +126,49 @@
         cursor: progress;
         box-shadow: none;
       }
+      .diet-helper-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--dh-text);
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        user-select: none;
+        backdrop-filter: var(--dh-panel-blur);
+        -webkit-backdrop-filter: var(--dh-panel-blur);
+      }
+      .diet-helper-toggle input {
+        margin: 0;
+        cursor: pointer;
+        accent-color: var(--dh-accent);
+      }
+      .diet-helper-toggle:has(input:checked) {
+        background: rgba(52, 168, 83, 0.25);
+      }
+      .diet-helper-select {
+        appearance: none;
+        padding: 8px 28px 8px 12px;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--dh-text);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        backdrop-filter: var(--dh-panel-blur);
+        -webkit-backdrop-filter: var(--dh-panel-blur);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23ffffff' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+      }
+      .diet-helper-select option {
+        color: #111;
+      }
       .diet-helper-photo {
         right: 12px;
         top: 64px;
@@ -227,6 +270,25 @@
       </p>
     </div>
     <div class="diet-helper-actions">
+      <select
+        class="diet-helper-select"
+        id="dietHelperModelSelect"
+        title="Choose which multimodal Gemini model analyzes the captured image."
+      >
+        <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+        <option value="gemini-3-flash-preview">Gemini 3 Flash (preview)</option>
+        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (preview)</option>
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+      </select>
+      <label
+        class="diet-helper-toggle"
+        id="dietHelperBgToggleLabel"
+        title="Include the surrounding scene in the captured image. On a headset this composites the real-world passthrough; in the desktop simulator it uses the page background."
+      >
+        <input type="checkbox" id="dietHelperBgToggle" checked />
+        <span>Include scene</span>
+      </label>
       <button
         class="diet-helper-btn"
         id="dietHelperCaptureBtn"

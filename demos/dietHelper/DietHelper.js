@@ -40,7 +40,7 @@ const DISHES = [
   {
     id: 'burger',
     name: 'Classic Burger',
-    file: 'burger1.glb',
+    file: 'https://raw.githack.com/xrblocks/assets-genai/main/burger.glb',
     // The .glb is authored at real-world size (~22 cm wide). No extra scale.
     scale: {x: 1, y: 1, z: 1},
     nutrition: {
@@ -75,8 +75,11 @@ export class DietHelper extends xb.Script {
       ),
       photoResult: document.getElementById('dietHelperPhotoResult'),
       photoClose: document.getElementById('dietHelperPhotoClose'),
+      bgToggle: document.getElementById('dietHelperBgToggle'),
+      modelSelect: document.getElementById('dietHelperModelSelect'),
     };
     this.bindPhotoUI();
+    this.bindModelSelector();
   }
 
   async init() {
@@ -102,6 +105,16 @@ export class DietHelper extends xb.Script {
         this.hidePhotoPanel()
       );
     }
+    if (this.dom.bgToggle) {
+      const saved = localStorage.getItem('dietHelper.includeBackground');
+      if (saved !== null) this.dom.bgToggle.checked = saved === '1';
+      this.dom.bgToggle.addEventListener('change', () => {
+        localStorage.setItem(
+          'dietHelper.includeBackground',
+          this.dom.bgToggle.checked ? '1' : '0'
+        );
+      });
+    }
     // Keyboard shortcut: 'C' to capture (avoids conflicting with simulator
     // navigation keys like WASD / arrows).
     window.addEventListener('keydown', (e) => {
@@ -109,6 +122,35 @@ export class DietHelper extends xb.Script {
         this.captureAndAnalyze();
       }
     });
+  }
+
+  /**
+   * Lets the user pick which multimodal Gemini model analyzes the photo. The
+   * choice is persisted and applied to xb's shared GeminiOptions, which the
+   * query path reads live (see Gemini.queryOnce -> this.options.model).
+   */
+  bindModelSelector() {
+    if (!this.dom.modelSelect) return;
+    const saved = localStorage.getItem('dietHelper.geminiModel');
+    if (saved) this.dom.modelSelect.value = saved;
+    this.applySelectedModel();
+    this.dom.modelSelect.addEventListener('change', () => {
+      localStorage.setItem(
+        'dietHelper.geminiModel',
+        this.dom.modelSelect.value
+      );
+      this.applySelectedModel();
+    });
+  }
+
+  /** Pushes the dropdown's value into xb's live Gemini options, if ready. */
+  applySelectedModel() {
+    const model = this.dom.modelSelect?.value;
+    const gemini = xb.core?.ai?.options?.gemini;
+    if (model && gemini) {
+      gemini.model = model;
+      console.log('[diet-helper] using Gemini model:', model);
+    }
   }
 
   addLights() {
@@ -138,7 +180,7 @@ export class DietHelper extends xb.Script {
 
     await viewer.loadGLTFModel({
       data: {
-        path: './3DAssets/',
+        path: '',
         model: dish.file,
         scale: dish.scale,
       },
@@ -315,17 +357,130 @@ export class DietHelper extends xb.Script {
   }
 
   /**
-   * Captures a virtual + passthrough composite when the device camera is
-   * available (real XR), otherwise falls back to a virtual-only render
-   * (desktop simulator). NOTE: ScreenshotSynthesizer throws *inside* the
-   * render loop when asked for an overlay without a camera, leaving the
-   * returned Promise pending forever — so we must gate the choice here.
+   * Produces the image we send to Gemini.
+   *
+   *   - "Include scene" OFF  -> virtual-only screenshot (transparent bg).
+   *   - Real headset w/ passthrough -> synthesizer composites the virtual
+   *     scene over the real camera feed natively.
+   *   - Otherwise (desktop simulator) -> render the simulated environment +
+   *     the dish from the current viewer pose (see renderSceneWithBackground).
+   *
+   * NOTE: ScreenshotSynthesizer throws *inside* the render loop when asked for
+   * an overlay without a camera, leaving the returned Promise pending forever
+   * — so we must gate the passthrough path on a loaded device camera here.
    */
   async takePhoto() {
     const synth = xb.core?.screenshotSynthesizer;
-    if (!synth) throw new Error('screenshot synthesizer is not initialized');
     const cameraReady = !!xb.core?.deviceCamera?.loaded;
-    return await synth.getScreenshot(cameraReady);
+    const wantsBackground = this.dom.bgToggle?.checked ?? true;
+
+    if (!wantsBackground) {
+      if (!synth) throw new Error('screenshot synthesizer is not initialized');
+      return await synth.getScreenshot(false);
+    }
+
+    // Real headset with passthrough: native virtual-over-camera composite.
+    if (cameraReady && synth) {
+      return await synth.getScreenshot(true);
+    }
+
+    // Desktop simulator (or any setup without a passthrough camera): the
+    // environment and the dish both live in front of the viewer, so we just
+    // render them from the viewer's pose into an offscreen target.
+    return await this.renderSceneWithBackground();
+  }
+
+  /**
+   * Renders the scene from the current viewer pose so the captured image
+   * contains both the surrounding environment and the dish — no 2D
+   * compositing needed.
+   *
+   * The environment (e.g. the simulator's living room) and the virtual
+   * objects live in two separate scene graphs that xrblocks normally
+   * composites at draw time:
+   *   - `xb.core.simulator.simulatorScene` — the simulated environment.
+   *   - `xb.core.scene`                    — the virtual objects (the dish).
+   * Both are observed through `xb.core.camera`. We draw the environment
+   * first, clear depth, then draw the virtual scene on top — mirroring the
+   * on-screen result. Inspired by samples/panorama/PanoramaCapture.js.
+   */
+  async renderSceneWithBackground() {
+    const renderer = xb.core?.renderer;
+    const camera = xb.core?.camera;
+    const mainScene = xb.core?.scene;
+    if (!renderer || !camera || !mainScene) {
+      throw new Error('renderer/camera/scene not ready for capture');
+    }
+    // Only use the simulated environment as the backdrop while the simulator
+    // is actually running; otherwise we fall back to a plain clear color.
+    const bgScene = xb.core?.simulatorRunning
+      ? xb.core?.simulator?.simulatorScene
+      : null;
+
+    // Match the on-screen aspect ratio, capped to a Gemini-friendly width.
+    const srcW = renderer.domElement.width || window.innerWidth;
+    const srcH = renderer.domElement.height || window.innerHeight;
+    const width = Math.min(1024, srcW);
+    const height = Math.max(1, Math.round(srcH * (width / srcW)));
+
+    if (
+      !this.captureRT ||
+      this.captureRT.width !== width ||
+      this.captureRT.height !== height
+    ) {
+      this.captureRT?.dispose();
+      this.captureRT = new THREE.WebGLRenderTarget(width, height, {
+        colorSpace: THREE.SRGBColorSpace,
+      });
+    }
+    const rt = this.captureRT;
+
+    // Save renderer state. The simulator runs with autoClearColor=false and
+    // composites manually; for an isolated offscreen pass we want a normal
+    // clear-then-draw, with XR presentation temporarily disabled so the
+    // custom camera is honored.
+    const prevRT = renderer.getRenderTarget();
+    const prevAutoClear = renderer.autoClear;
+    const prevAutoClearColor = renderer.autoClearColor;
+    const xrWasPresenting = renderer.xr.isPresenting;
+
+    renderer.xr.isPresenting = false;
+    renderer.autoClear = true;
+    renderer.autoClearColor = true;
+    camera.updateMatrixWorld(true);
+
+    renderer.setRenderTarget(rt);
+    renderer.clear();
+
+    if (bgScene) {
+      renderer.render(bgScene, camera);
+      renderer.clearDepth();
+    }
+
+    renderer.autoClear = false; // keep the background we just drew
+    renderer.render(mainScene, camera);
+
+    renderer.autoClear = prevAutoClear;
+    renderer.autoClearColor = prevAutoClearColor;
+    renderer.xr.isPresenting = xrWasPresenting;
+    renderer.setRenderTarget(prevRT);
+
+    // Read back pixels and flip vertically (WebGL is bottom-up).
+    const buffer = new Uint8Array(width * height * 4);
+    await renderer.readRenderTargetPixelsAsync(rt, 0, 0, width, height, buffer);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(width, height);
+    const row = width * 4;
+    for (let y = 0; y < height; y++) {
+      const src = (height - 1 - y) * row;
+      imageData.data.set(buffer.subarray(src, src + row), y * row);
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas.toDataURL();
   }
 
   /**
@@ -333,6 +488,9 @@ export class DietHelper extends xb.Script {
    * @returns Parsed analysis object, or null if parsing fails.
    */
   async analyzeWithGemini(dataUrl) {
+    // Ensure the chosen model is applied; xb.core.ai may not have existed when
+    // the dropdown was first bound (constructor runs before xb.init()).
+    this.applySelectedModel();
     const {mimeType, base64} = this.splitDataUrl(dataUrl);
     const response = await xb.core.ai.query({
       type: 'multiPart',
