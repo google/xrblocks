@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 3e48932
- * @builddate 2026-06-11T05:07:49.746Z
+ * @commitid e714616
+ * @builddate 2026-06-12T08:24:53.150Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9140,6 +9140,48 @@ class SoundsOptions {
     }
 }
 
+/**
+ * Configuration options for the Human Pose Detection system.
+ */
+class HumansOptions {
+    constructor(options) {
+        this.enabled = false;
+        /**
+         * Configuration options for the active pose detection backend.
+         */
+        this.backendConfig = {
+            activeBackend: 'mediapipe',
+            mediapipe: {
+                wasmFilesUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+                /**
+                 * The maximum number of simultaneous human poses/bodies to track.
+                 */
+                numPoses: 1,
+                /**
+                 * The minimum confidence score [0.0, 1.0] required for a pose to be detected.
+                 */
+                minPoseDetectionConfidence: 0.5,
+                /**
+                 * The minimum confidence score [0.0, 1.0] required to confirm a pose is still present.
+                 */
+                minPosePresenceConfidence: 0.5,
+                /**
+                 * The minimum confidence score [0.0, 1.0] required for tracking landmarks between frames.
+                 */
+                minTrackingConfidence: 0.5,
+            },
+        };
+        if (options) {
+            deepMerge(this, options);
+        }
+    }
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+}
+
 class WorldOptions {
     constructor(options) {
         this.debugging = false;
@@ -9149,6 +9191,7 @@ class WorldOptions {
         this.objects = new ObjectsOptions();
         this.meshes = new MeshDetectionOptions();
         this.sounds = new SoundsOptions();
+        this.humans = new HumansOptions();
         if (options) {
             deepMerge(this, options);
         }
@@ -9183,6 +9226,14 @@ class WorldOptions {
     enableSoundDetection() {
         this.enabled = true;
         this.sounds.enable();
+        return this;
+    }
+    /**
+     * Enables human detection.
+     */
+    enableHumanDetection() {
+        this.enabled = true;
+        this.humans.enable();
         return this;
     }
 }
@@ -9405,6 +9456,17 @@ class Options {
     enableObjectDetection() {
         this.permissions.camera = true;
         this.world.enableObjectDetection();
+        return this;
+    }
+    /**
+     * Enables human pose detection.
+     * @returns The instance for chaining.
+     */
+    enableHumanDetection() {
+        this.permissions.camera = true;
+        this.enableCamera();
+        this.enableDepth();
+        this.world.enableHumanDetection();
         return this;
     }
     /**
@@ -12103,16 +12165,16 @@ class GeminiDetectorBackend extends BaseDetectorBackend$1 {
     }
 }
 
-let FilesetResolver$1;
+let FilesetResolver$2;
 let ObjectDetector$1;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$1() {
-    if (FilesetResolver$1 && ObjectDetector$1) {
+async function loadMediaPipeModule$2() {
+    if (FilesetResolver$2 && ObjectDetector$1) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver$1 = mediapipeModule.FilesetResolver;
+        FilesetResolver$2 = mediapipeModule.FilesetResolver;
         ObjectDetector$1 = mediapipeModule.ObjectDetector;
         console.log("'@mediapipe/tasks-vision' module loaded successfully.");
     }
@@ -12189,9 +12251,9 @@ let MediaPipeDetectorBackend$1 = class MediaPipeDetectorBackend extends BaseDete
     async tryInitializeObjectDetector() {
         if (this.objectDetector)
             return;
-        await loadMediaPipeModule$1();
+        await loadMediaPipeModule$2();
         const mediapipeOptions = this.context.options.objects.backendConfig.mediapipe;
-        const vision = await FilesetResolver$1.forVisionTasks(mediapipeOptions.wasmFilesUrl);
+        const vision = await FilesetResolver$2.forVisionTasks(mediapipeOptions.wasmFilesUrl);
         this.objectDetector = await ObjectDetector$1.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: mediapipeOptions.modelAssetPath,
@@ -13244,16 +13306,16 @@ class BaseDetectorBackend {
     }
 }
 
-let FilesetResolver;
+let FilesetResolver$1;
 let AudioClassifier;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule() {
-    if (FilesetResolver && AudioClassifier) {
+async function loadMediaPipeModule$1() {
+    if (FilesetResolver$1 && AudioClassifier) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-audio');
-        FilesetResolver = mediapipeModule.FilesetResolver;
+        FilesetResolver$1 = mediapipeModule.FilesetResolver;
         AudioClassifier = mediapipeModule.AudioClassifier;
         console.log("'@mediapipe/tasks-audio' module loaded successfully.");
     }
@@ -13275,9 +13337,9 @@ class MediaPipeDetectorBackend extends BaseDetectorBackend {
     async tryInitializeAudioClassifier() {
         if (this.audioClassifier)
             return;
-        await loadMediaPipeModule();
+        await loadMediaPipeModule$1();
         const mediapipeConfig = this.context.options.sounds.backendConfig.mediapipe;
-        const audioTasks = await FilesetResolver.forAudioTasks(mediapipeConfig.wasmFilesUrl);
+        const audioTasks = await FilesetResolver$1.forAudioTasks(mediapipeConfig.wasmFilesUrl);
         this.audioClassifier = await AudioClassifier.createFromOptions(audioTasks, {
             baseOptions: { modelAssetPath: mediapipeConfig.modelAssetPath },
         });
@@ -13774,9 +13836,429 @@ function getObjectBoundingBox(object) {
     return box;
 }
 
-// Import other modules as they are implemented in future.
-// import { LightEstimation } from '/lighting/LightEstimation.js';
-// import { HumanRecognizer } from '/human/HumanRecognizer.js';
+/**
+ * Names of key human body joints and anatomical landmarks.
+ * Includes standard MediaPipe pose landmarks and composite landmarks for
+ * skeletal animation compatibility (e.g., Hips, Spine, Chest, Neck, Head).
+ */
+var PoseJointName;
+(function (PoseJointName) {
+    PoseJointName["Nose"] = "nose";
+    PoseJointName["LeftEye"] = "leftEye";
+    PoseJointName["RightEye"] = "rightEye";
+    PoseJointName["LeftEar"] = "leftEar";
+    PoseJointName["RightEar"] = "rightEar";
+    PoseJointName["LeftShoulder"] = "leftShoulder";
+    PoseJointName["RightShoulder"] = "rightShoulder";
+    PoseJointName["LeftElbow"] = "leftElbow";
+    PoseJointName["RightElbow"] = "rightElbow";
+    PoseJointName["LeftWrist"] = "leftWrist";
+    PoseJointName["RightWrist"] = "rightWrist";
+    PoseJointName["LeftHip"] = "leftHip";
+    PoseJointName["RightHip"] = "rightHip";
+    PoseJointName["LeftKnee"] = "leftKnee";
+    PoseJointName["RightKnee"] = "rightKnee";
+    PoseJointName["LeftAnkle"] = "leftAnkle";
+    PoseJointName["RightAnkle"] = "rightAnkle";
+    PoseJointName["LeftFoot"] = "leftFoot";
+    PoseJointName["RightFoot"] = "rightFoot";
+    PoseJointName["Hips"] = "hips";
+    PoseJointName["Spine"] = "spine";
+    PoseJointName["Chest"] = "chest";
+    PoseJointName["Neck"] = "neck";
+    PoseJointName["Head"] = "head";
+})(PoseJointName || (PoseJointName = {}));
+/**
+ * Represents a single human body pose detected in physical space.
+ * Inherits from `THREE.Object3D` to fit naturally into the Three.js scene graph,
+ * positioning itself at the estimated hips/center of the tracked human.
+ */
+class DetectedBodyPose extends THREE.Object3D {
+    /**
+     * Creates an instance of DetectedBodyPose.
+     *
+     * @param poseId - A unique tracking identifier for this body pose.
+     * @param landmarks - The list of raw and 3D-projected anatomical landmarks.
+     * @param detection2DBoundingBox - The 2D bounding box of the person in normalized screen space.
+     */
+    constructor(poseId, landmarks, detection2DBoundingBox) {
+        super();
+        this.poseId = poseId;
+        this.landmarks = landmarks;
+        this.detection2DBoundingBox = detection2DBoundingBox;
+        // Default the Object3D position to the estimated hips/center
+        const hipsPos = this.getJointPosition(PoseJointName.Hips);
+        if (hipsPos) {
+            this.position.copy(hipsPos);
+        }
+    }
+    /**
+     * Returns the 3D world space position of a specific joint/landmark in meters.
+     * Exposes both standard MediaPipe landmark mappings and composite VRM/humanoid landmarks.
+     *
+     * @param name - The name of the joint (standard or composite).
+     * @returns A clone of the 3D world space position vector, or `null` if the joint is undetected or unprojected.
+     */
+    getJointPosition(name) {
+        const getMPWorldPos = (index) => {
+            const lm = this.landmarks[index];
+            return lm && lm.worldPosition ? lm.worldPosition.clone() : null;
+        };
+        switch (name) {
+            case PoseJointName.Nose:
+                return getMPWorldPos(0);
+            case PoseJointName.LeftEye:
+                return getMPWorldPos(2);
+            case PoseJointName.RightEye:
+                return getMPWorldPos(5);
+            case PoseJointName.LeftEar:
+                return getMPWorldPos(7);
+            case PoseJointName.RightEar:
+                return getMPWorldPos(8);
+            case PoseJointName.LeftShoulder:
+                return getMPWorldPos(11);
+            case PoseJointName.RightShoulder:
+                return getMPWorldPos(12);
+            case PoseJointName.LeftElbow:
+                return getMPWorldPos(13);
+            case PoseJointName.RightElbow:
+                return getMPWorldPos(14);
+            case PoseJointName.LeftWrist:
+                return getMPWorldPos(15);
+            case PoseJointName.RightWrist:
+                return getMPWorldPos(16);
+            case PoseJointName.LeftHip:
+                return getMPWorldPos(23);
+            case PoseJointName.RightHip:
+                return getMPWorldPos(24);
+            case PoseJointName.LeftKnee:
+                return getMPWorldPos(25);
+            case PoseJointName.RightKnee:
+                return getMPWorldPos(26);
+            case PoseJointName.LeftAnkle:
+                return getMPWorldPos(27);
+            case PoseJointName.RightAnkle:
+                return getMPWorldPos(28);
+            case PoseJointName.LeftFoot:
+                return getMPWorldPos(31);
+            case PoseJointName.RightFoot:
+                return getMPWorldPos(32);
+            // Composite virtual bones for VRM skeleton compatibility:
+            case PoseJointName.Hips: {
+                const lHip = getMPWorldPos(23);
+                const rHip = getMPWorldPos(24);
+                if (lHip && rHip) {
+                    return new THREE.Vector3().addVectors(lHip, rHip).multiplyScalar(0.5);
+                }
+                return lHip || rHip || null;
+            }
+            case PoseJointName.Spine: {
+                // Spine is lower center torso (between hips and chest)
+                const hips = this.getJointPosition(PoseJointName.Hips);
+                const chest = this.getJointPosition(PoseJointName.Chest);
+                if (hips && chest) {
+                    return new THREE.Vector3()
+                        .addVectors(hips, chest)
+                        .multiplyScalar(0.5);
+                }
+                return hips || chest || null;
+            }
+            case PoseJointName.Chest: {
+                const lShoulder = getMPWorldPos(11);
+                const rShoulder = getMPWorldPos(12);
+                if (lShoulder && rShoulder) {
+                    return new THREE.Vector3()
+                        .addVectors(lShoulder, rShoulder)
+                        .multiplyScalar(0.5);
+                }
+                return lShoulder || rShoulder || null;
+            }
+            case PoseJointName.Neck: {
+                const chest = this.getJointPosition(PoseJointName.Chest);
+                const nose = getMPWorldPos(0);
+                if (chest && nose) {
+                    return new THREE.Vector3()
+                        .addVectors(chest, nose)
+                        .multiplyScalar(0.5);
+                }
+                return chest || nose || null;
+            }
+            case PoseJointName.Head: {
+                const nose = getMPWorldPos(0);
+                const lEar = getMPWorldPos(7);
+                const rEar = getMPWorldPos(8);
+                if (nose && lEar && rEar) {
+                    const midEar = new THREE.Vector3()
+                        .addVectors(lEar, rEar)
+                        .multiplyScalar(0.5);
+                    return new THREE.Vector3()
+                        .addVectors(nose, midEar)
+                        .multiplyScalar(0.5);
+                }
+                return nose || lEar || rEar || null;
+            }
+        }
+        return null;
+    }
+}
+
+/**
+ * Abstract base class for all human pose detection backends (e.g., MediaPipe).
+ *
+ * Implements a Template Method pattern via `run()`, which orchestrates the
+ * detection pipeline by checking availability, acquiring a camera snapshot,
+ * and calling the abstract `detect()` hook implemented by specific backends.
+ */
+class BaseHumanBackend {
+    /**
+     * Creates an instance of BaseHumanBackend.
+     * @param context - The shared dependency and configuration context.
+     */
+    constructor(context) {
+        this.context = context;
+    }
+    /**
+     * The orchestration pipeline (Template Method) for running human detection.
+     * Checks backend availability and obtains a camera snapshot before running the concrete detection model.
+     *
+     * @param depthMeshSnapshot - The current 3D depth mesh snapshot of the physical environment.
+     * @param cameraParametersSnapshot - The current camera parameters and matrix transforms.
+     * @returns A promise that resolves to an array of detected body poses.
+     */
+    async run(depthMeshSnapshot, cameraParametersSnapshot) {
+        if (!(await this.isAvailable())) {
+            return [];
+        }
+        const snapshot = await this.getSnapshot();
+        if (!snapshot) {
+            return [];
+        }
+        return this.detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot);
+    }
+}
+
+let FilesetResolver;
+let PoseLandmarker;
+// --- Attempt Dynamic Import ---
+async function loadMediaPipeModule() {
+    if (FilesetResolver && PoseLandmarker) {
+        return;
+    }
+    try {
+        const mediapipeModule = await import('@mediapipe/tasks-vision');
+        FilesetResolver = mediapipeModule.FilesetResolver;
+        PoseLandmarker = mediapipeModule.PoseLandmarker;
+        console.log("'@mediapipe/tasks-vision' MediaPipe Pose Module loaded successfully.");
+    }
+    catch (error) {
+        console.error('Failed to load MediaPipe Tasks Vision module:', error);
+        throw error;
+    }
+}
+/**
+ * Human Pose detector backend implementation using MediaPipe's Pose Landmark Detector.
+ * Runs locally on the device.
+ */
+class MediaPipeHumanBackend extends BaseHumanBackend {
+    constructor(context) {
+        super(context);
+        this.poseLandmarker = null;
+        this.initializationPromise = this.tryInitializePoseLandmarker();
+    }
+    async isAvailable() {
+        try {
+            await this.initializationPromise;
+            return true;
+        }
+        catch (e) {
+            console.error('MediaPipe Pose Landmarker is not available:', e);
+            return false;
+        }
+    }
+    async getSnapshot() {
+        const imageData = await this.context.deviceCamera.getSnapshot({
+            outputFormat: 'imageData',
+        });
+        if (!imageData)
+            return null;
+        return { imageData };
+    }
+    async detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot) {
+        await this.initializationPromise;
+        if (!this.poseLandmarker) {
+            return [];
+        }
+        let result;
+        try {
+            result = this.poseLandmarker.detect(snapshot.imageData);
+        }
+        catch (error) {
+            console.error('MediaPipe Pose detection run failed:', error);
+            return [];
+        }
+        if (!result || !result.landmarks || result.landmarks.length === 0) {
+            return [];
+        }
+        return this.processDetectionResult(result, depthMeshSnapshot, cameraParametersSnapshot);
+    }
+    processDetectionResult(result, depthMeshSnapshot, cameraParametersSnapshot) {
+        const detectedPoses = [];
+        // Process each detected person
+        for (let i = 0; i < result.landmarks.length; i++) {
+            const mpLandmarks = result.landmarks[i];
+            const mpWorldLandmarks = result.worldLandmarks?.[i] || [];
+            const landmarks = [];
+            let xmin = 1;
+            let ymin = 1;
+            let xmax = 0;
+            let ymax = 0;
+            // Map landmarks and calculate bounding box in normalized screen space
+            for (let j = 0; j < mpLandmarks.length; j++) {
+                const lm = mpLandmarks[j];
+                const wLm = mpWorldLandmarks[j];
+                xmin = Math.min(xmin, lm.x);
+                ymin = Math.min(ymin, lm.y);
+                xmax = Math.max(xmax, lm.x);
+                ymax = Math.max(ymax, lm.y);
+                // Transform screen UV to WebXR World Position
+                const uv = new THREE.Vector2(lm.x, lm.y);
+                const worldCoords = transformRgbUvToWorld(uv, depthMeshSnapshot, cameraParametersSnapshot);
+                let wp;
+                if (worldCoords) {
+                    wp = worldCoords.worldPosition;
+                }
+                else {
+                    // Robust fallback estimation when physical depth mesh raycast misses
+                    const origin = new THREE.Vector3().applyMatrix4(cameraParametersSnapshot.worldFromView);
+                    const clipVec = new THREE.Vector3(2 * lm.x - 1, 2 * (1.0 - lm.y) - 1, -1);
+                    const direction = clipVec
+                        .applyMatrix4(cameraParametersSnapshot.worldFromClip)
+                        .sub(origin)
+                        .normalize();
+                    wp = origin.addScaledVector(direction, 1.5 + (lm.z || 0));
+                }
+                landmarks.push({
+                    x: lm.x,
+                    y: lm.y,
+                    z: wLm ? wLm.z : lm.z,
+                    visibility: lm.visibility,
+                    worldPosition: wp,
+                });
+            }
+            const boundingBox = new THREE.Box2(new THREE.Vector2(xmin, ymin), new THREE.Vector2(xmax, ymax));
+            const bodyPose = new DetectedBodyPose(i, landmarks, boundingBox);
+            detectedPoses.push(bodyPose);
+        }
+        return detectedPoses;
+    }
+    async tryInitializePoseLandmarker() {
+        if (this.poseLandmarker)
+            return;
+        await loadMediaPipeModule();
+        const humansOptions = this.context.options.humans.backendConfig.mediapipe;
+        const vision = await FilesetResolver.forVisionTasks(humansOptions.wasmFilesUrl);
+        this.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: humansOptions.modelAssetPath,
+                delegate: 'GPU',
+            },
+            runningMode: 'IMAGE',
+            numPoses: humansOptions.numPoses,
+            minPoseDetectionConfidence: humansOptions.minPoseDetectionConfidence,
+            minPosePresenceConfidence: humansOptions.minPosePresenceConfidence,
+            minTrackingConfidence: humansOptions.minTrackingConfidence,
+        });
+    }
+}
+
+/**
+ * A detector script that orchestrates human body pose estimation.
+ * Manages the backend pose detector lifecycle (e.g., MediaPipe) and exposes the detected
+ * poses, including 3D joint landmarks, in the world coordinate space.
+ */
+class HumanRecognizer extends Script {
+    constructor() {
+        super(...arguments);
+        this._detectorBackends = new Map();
+        this.targetDevice = 'galaxyxr';
+    }
+    static { this.dependencies = {
+        options: WorldOptions,
+        deviceCamera: XRDeviceCamera,
+        depth: Depth,
+        camera: THREE.Camera,
+        renderer: THREE.WebGLRenderer,
+    }; }
+    init({ options, deviceCamera, depth, camera, renderer, }) {
+        this.options = options;
+        this.deviceCamera = deviceCamera;
+        this.depth = depth;
+        this.camera = camera;
+        this.renderer = renderer;
+    }
+    /**
+     * Runs the human body pose detection process based on the configured backend.
+     */
+    async runDetection() {
+        this.clear();
+        if (!this.depth || !this.depth.depthMesh) {
+            console.warn('Cannot run Human Detection: Depth module / depthMesh is not enabled or initialized.');
+            return [];
+        }
+        const depthMeshSnapshot = this.getDepthMeshSnapshot();
+        const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
+        const context = this.getBackendContext();
+        const activeBackend = this.options.humans.backendConfig.activeBackend;
+        const backendPromise = this.getOrCreateBackend(activeBackend, context);
+        let backend;
+        try {
+            backend = await backendPromise;
+        }
+        catch (error) {
+            console.warn(`Failed to load or initialize HumanRecognizer backend '${activeBackend}':`, error);
+            return [];
+        }
+        const bodyPoses = await backend.run(depthMeshSnapshot, cameraParametersSnapshot);
+        return bodyPoses;
+    }
+    getBackendContext() {
+        return {
+            options: this.options,
+            deviceCamera: this.deviceCamera,
+        };
+    }
+    getOrCreateBackend(activeBackend, context) {
+        let backendPromise = this._detectorBackends.get(activeBackend);
+        if (!backendPromise) {
+            backendPromise = (async () => {
+                switch (activeBackend) {
+                    case 'mediapipe':
+                        return new MediaPipeHumanBackend(context);
+                    default:
+                        throw new Error(`HumanRecognizer backend '${activeBackend}' is not supported.`);
+                }
+            })();
+            this._detectorBackends.set(activeBackend, backendPromise);
+        }
+        return backendPromise;
+    }
+    getDepthMeshSnapshot() {
+        const depthMesh = this.depth.depthMesh;
+        const geometry = this.depth.options.depthMesh.updateFullResolutionGeometry
+            ? depthMesh.geometry
+            : depthMesh.downsampledGeometry || depthMesh.geometry;
+        const clonedGeometry = geometry.clone();
+        clonedGeometry.computeBoundingSphere();
+        clonedGeometry.computeBoundingBox();
+        const depthMeshSnapshot = new THREE.Mesh(clonedGeometry, new THREE.MeshBasicMaterial());
+        depthMesh.getWorldPosition(depthMeshSnapshot.position);
+        depthMesh.getWorldQuaternion(depthMeshSnapshot.quaternion);
+        depthMesh.getWorldScale(depthMeshSnapshot.scale);
+        depthMeshSnapshot.updateMatrixWorld(true);
+        return depthMeshSnapshot;
+    }
+}
+
 /**
  * Manages all interactions with the real-world environment perceived by the XR
  * device. This class abstracts the complexity of various perception APIs
@@ -13834,15 +14316,15 @@ class World extends Script {
             this.sounds = new SoundDetector();
             this.add(this.sounds);
         }
+        if (this.options.humans.enabled) {
+            this.humans = new HumanRecognizer();
+            this.add(this.humans);
+        }
         // TODO: Initialize other modules as they are available & implemented.
         /*
     
         if (this.options.lighting.enabled) {
           this.lighting = new LightEstimation();
-        }
-    
-        if (this.options.humans.enabled) {
-          this.humans = new HumanRecognizer();
         }
         */
         this.resolveInitialized();
@@ -20958,5 +21440,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
