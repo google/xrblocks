@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid e714616
- * @builddate 2026-06-12T08:24:53.150Z
+ * @commitid 7a9b6e8
+ * @builddate 2026-06-14T08:13:55.990Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9182,6 +9182,63 @@ class HumansOptions {
     }
 }
 
+/**
+ * Configuration options for the Face Landmark Detection system.
+ */
+class FacesOptions {
+    constructor(options) {
+        this.enabled = false;
+        /**
+         * Configuration options for the active face detection backend.
+         */
+        this.backendConfig = {
+            activeBackend: 'mediapipe',
+            mediapipe: {
+                wasmFilesUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task',
+                /**
+                 * The maximum number of simultaneous faces to track.
+                 */
+                numFaces: 1,
+                /**
+                 * The minimum confidence score [0.0, 1.0] required for a face to be
+                 * detected.
+                 */
+                minFaceDetectionConfidence: 0.5,
+                /**
+                 * The minimum confidence score [0.0, 1.0] required to confirm a face is
+                 * still present.
+                 */
+                minFacePresenceConfidence: 0.5,
+                /**
+                 * The minimum confidence score [0.0, 1.0] required for tracking
+                 * landmarks between frames.
+                 */
+                minTrackingConfidence: 0.5,
+                /**
+                 * Whether to compute and emit per-face blendshape weights (52
+                 * ARKit-compatible categories). Required for facial expression
+                 * mirroring, lipsync feeds, and avatar animation.
+                 */
+                outputFaceBlendshapes: true,
+                /**
+                 * Whether to compute and emit the 4x4 facial transformation matrix
+                 * for each face. Provides a stable rigid head pose for parenting
+                 * objects to the head (glasses, masks, hats).
+                 */
+                outputFacialTransformationMatrixes: true,
+            },
+        };
+        if (options) {
+            deepMerge(this, options);
+        }
+    }
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+}
+
 class WorldOptions {
     constructor(options) {
         this.debugging = false;
@@ -9192,6 +9249,7 @@ class WorldOptions {
         this.meshes = new MeshDetectionOptions();
         this.sounds = new SoundsOptions();
         this.humans = new HumansOptions();
+        this.faces = new FacesOptions();
         if (options) {
             deepMerge(this, options);
         }
@@ -9234,6 +9292,14 @@ class WorldOptions {
     enableHumanDetection() {
         this.enabled = true;
         this.humans.enable();
+        return this;
+    }
+    /**
+     * Enables face landmark detection.
+     */
+    enableFaceDetection() {
+        this.enabled = true;
+        this.faces.enable();
         return this;
     }
 }
@@ -9467,6 +9533,19 @@ class Options {
         this.enableCamera();
         this.enableDepth();
         this.world.enableHumanDetection();
+        return this;
+    }
+    /**
+     * Enables face landmark detection. Provides 478 per-face landmarks in
+     * world space, optional 52 ARKit-style blendshape weights, and an
+     * optional rigid 4x4 facial transformation matrix per detected face.
+     * @returns The instance for chaining.
+     */
+    enableFaceDetection() {
+        this.permissions.camera = true;
+        this.enableCamera();
+        this.enableDepth();
+        this.world.enableFaceDetection();
         return this;
     }
     /**
@@ -12165,16 +12244,16 @@ class GeminiDetectorBackend extends BaseDetectorBackend$1 {
     }
 }
 
-let FilesetResolver$2;
+let FilesetResolver$3;
 let ObjectDetector$1;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$2() {
-    if (FilesetResolver$2 && ObjectDetector$1) {
+async function loadMediaPipeModule$3() {
+    if (FilesetResolver$3 && ObjectDetector$1) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver$2 = mediapipeModule.FilesetResolver;
+        FilesetResolver$3 = mediapipeModule.FilesetResolver;
         ObjectDetector$1 = mediapipeModule.ObjectDetector;
         console.log("'@mediapipe/tasks-vision' module loaded successfully.");
     }
@@ -12251,9 +12330,9 @@ let MediaPipeDetectorBackend$1 = class MediaPipeDetectorBackend extends BaseDete
     async tryInitializeObjectDetector() {
         if (this.objectDetector)
             return;
-        await loadMediaPipeModule$2();
+        await loadMediaPipeModule$3();
         const mediapipeOptions = this.context.options.objects.backendConfig.mediapipe;
-        const vision = await FilesetResolver$2.forVisionTasks(mediapipeOptions.wasmFilesUrl);
+        const vision = await FilesetResolver$3.forVisionTasks(mediapipeOptions.wasmFilesUrl);
         this.objectDetector = await ObjectDetector$1.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: mediapipeOptions.modelAssetPath,
@@ -13306,16 +13385,16 @@ class BaseDetectorBackend {
     }
 }
 
-let FilesetResolver$1;
+let FilesetResolver$2;
 let AudioClassifier;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$1() {
-    if (FilesetResolver$1 && AudioClassifier) {
+async function loadMediaPipeModule$2() {
+    if (FilesetResolver$2 && AudioClassifier) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-audio');
-        FilesetResolver$1 = mediapipeModule.FilesetResolver;
+        FilesetResolver$2 = mediapipeModule.FilesetResolver;
         AudioClassifier = mediapipeModule.AudioClassifier;
         console.log("'@mediapipe/tasks-audio' module loaded successfully.");
     }
@@ -13337,9 +13416,9 @@ class MediaPipeDetectorBackend extends BaseDetectorBackend {
     async tryInitializeAudioClassifier() {
         if (this.audioClassifier)
             return;
-        await loadMediaPipeModule$1();
+        await loadMediaPipeModule$2();
         const mediapipeConfig = this.context.options.sounds.backendConfig.mediapipe;
-        const audioTasks = await FilesetResolver$1.forAudioTasks(mediapipeConfig.wasmFilesUrl);
+        const audioTasks = await FilesetResolver$2.forAudioTasks(mediapipeConfig.wasmFilesUrl);
         this.audioClassifier = await AudioClassifier.createFromOptions(audioTasks, {
             baseOptions: { modelAssetPath: mediapipeConfig.modelAssetPath },
         });
@@ -14037,16 +14116,16 @@ class BaseHumanBackend {
     }
 }
 
-let FilesetResolver;
+let FilesetResolver$1;
 let PoseLandmarker;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule() {
-    if (FilesetResolver && PoseLandmarker) {
+async function loadMediaPipeModule$1() {
+    if (FilesetResolver$1 && PoseLandmarker) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver = mediapipeModule.FilesetResolver;
+        FilesetResolver$1 = mediapipeModule.FilesetResolver;
         PoseLandmarker = mediapipeModule.PoseLandmarker;
         console.log("'@mediapipe/tasks-vision' MediaPipe Pose Module loaded successfully.");
     }
@@ -14154,9 +14233,9 @@ class MediaPipeHumanBackend extends BaseHumanBackend {
     async tryInitializePoseLandmarker() {
         if (this.poseLandmarker)
             return;
-        await loadMediaPipeModule();
+        await loadMediaPipeModule$1();
         const humansOptions = this.context.options.humans.backendConfig.mediapipe;
-        const vision = await FilesetResolver.forVisionTasks(humansOptions.wasmFilesUrl);
+        const vision = await FilesetResolver$1.forVisionTasks(humansOptions.wasmFilesUrl);
         this.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: humansOptions.modelAssetPath,
@@ -14260,6 +14339,422 @@ class HumanRecognizer extends Script {
 }
 
 /**
+ * Common facial landmark anchor names. These map to specific indices
+ * in the 478-point MediaPipe FaceLandmarker mesh and are exposed for
+ * convenience so callers can read e.g. the nose tip without memorising
+ * the index 1.
+ */
+var FaceLandmarkName;
+(function (FaceLandmarkName) {
+    FaceLandmarkName["NoseTip"] = "noseTip";
+    FaceLandmarkName["Chin"] = "chin";
+    FaceLandmarkName["LeftEyeOuterCorner"] = "leftEyeOuterCorner";
+    FaceLandmarkName["LeftEyeInnerCorner"] = "leftEyeInnerCorner";
+    FaceLandmarkName["RightEyeOuterCorner"] = "rightEyeOuterCorner";
+    FaceLandmarkName["RightEyeInnerCorner"] = "rightEyeInnerCorner";
+    FaceLandmarkName["LeftPupil"] = "leftPupil";
+    FaceLandmarkName["RightPupil"] = "rightPupil";
+    FaceLandmarkName["MouthLeftCorner"] = "mouthLeftCorner";
+    FaceLandmarkName["MouthRightCorner"] = "mouthRightCorner";
+    FaceLandmarkName["UpperLipCenter"] = "upperLipCenter";
+    FaceLandmarkName["LowerLipCenter"] = "lowerLipCenter";
+    FaceLandmarkName["ForeheadCenter"] = "foreheadCenter";
+})(FaceLandmarkName || (FaceLandmarkName = {}));
+/**
+ * Maps the named anchors above to FaceLandmarker mesh indices. Source:
+ * MediaPipe FaceLandmarker canonical face mesh topology, plus the iris
+ * sub-model (indices 468..477) for pupil centres.
+ */
+const LANDMARK_INDEX = {
+    [FaceLandmarkName.NoseTip]: 1,
+    [FaceLandmarkName.Chin]: 152,
+    [FaceLandmarkName.LeftEyeOuterCorner]: 263,
+    [FaceLandmarkName.LeftEyeInnerCorner]: 362,
+    [FaceLandmarkName.RightEyeOuterCorner]: 33,
+    [FaceLandmarkName.RightEyeInnerCorner]: 133,
+    [FaceLandmarkName.LeftPupil]: 473,
+    [FaceLandmarkName.RightPupil]: 468,
+    [FaceLandmarkName.MouthLeftCorner]: 291,
+    [FaceLandmarkName.MouthRightCorner]: 61,
+    [FaceLandmarkName.UpperLipCenter]: 13,
+    [FaceLandmarkName.LowerLipCenter]: 14,
+    [FaceLandmarkName.ForeheadCenter]: 10,
+};
+/**
+ * Represents a single human face detected in physical space.
+ * Inherits from `THREE.Object3D` to fit naturally into the Three.js
+ * scene graph, positioning itself at the estimated nose tip of the
+ * tracked face. When a facial transformation matrix is emitted by the
+ * backend it is decomposed onto `position`, `quaternion`, and `scale`
+ * so the Object3D directly represents the rigid head pose.
+ */
+class DetectedFace extends THREE.Object3D {
+    /**
+     * Creates an instance of DetectedFace.
+     *
+     * @param faceId - A unique tracking identifier for this face.
+     * @param landmarks - The 478 raw + 3D-projected facial landmarks.
+     * @param detection2DBoundingBox - The 2D bounding box of the face in
+     *     normalized screen space.
+     * @param blendshapes - Optional 52 ARKit-style blendshape weights.
+     *     Empty when the backend was configured with
+     *     `outputFaceBlendshapes: false`.
+     * @param facialTransformationMatrix - Optional 4x4 rigid head pose
+     *     matrix in world space. Null when the backend was configured
+     *     with `outputFacialTransformationMatrixes: false`.
+     */
+    constructor(faceId, landmarks, detection2DBoundingBox, blendshapes = [], facialTransformationMatrix = null) {
+        super();
+        this.faceId = faceId;
+        this.landmarks = landmarks;
+        this.detection2DBoundingBox = detection2DBoundingBox;
+        this.blendshapes = blendshapes;
+        this.facialTransformationMatrix = facialTransformationMatrix;
+        // Default Object3D position to the projected nose tip so consumers
+        // can parent objects to `face.position` without first decoding a
+        // landmark index.
+        const nose = this.getLandmarkPosition(FaceLandmarkName.NoseTip);
+        if (nose) {
+            this.position.copy(nose);
+        }
+        // If a rigid facial transformation matrix is available, decompose
+        // it onto position/quaternion/scale. This overrides the nose-tip
+        // default with a more stable head pose suitable for parenting
+        // glasses or masks.
+        if (this.facialTransformationMatrix) {
+            this.facialTransformationMatrix.decompose(this.position, this.quaternion, this.scale);
+        }
+    }
+    /**
+     * Returns the 3D world-space position of a named facial landmark.
+     *
+     * @param name - The landmark name to look up.
+     * @returns A clone of the landmark's world position, or `null` if the
+     *     index is out of range or depth back-projection was unsuccessful.
+     */
+    getLandmarkPosition(name) {
+        const index = LANDMARK_INDEX[name];
+        if (index === undefined)
+            return null;
+        const lm = this.landmarks[index];
+        return lm && lm.worldPosition ? lm.worldPosition.clone() : null;
+    }
+    /**
+     * Returns the score for a blendshape category, or `0` if the category
+     * isn't present in the current detection.
+     *
+     * @param categoryName - The ARKit category name, e.g. `jawOpen`.
+     */
+    getBlendshape(categoryName) {
+        const bs = this.blendshapes.find((b) => b.categoryName === categoryName);
+        return bs ? bs.score : 0;
+    }
+}
+
+/**
+ * Abstract base class for all face landmark detection backends (e.g.
+ * MediaPipe).
+ *
+ * Implements a Template Method pattern via `run()`, which orchestrates
+ * the detection pipeline by checking availability, acquiring a camera
+ * snapshot, and calling the abstract `detect()` hook implemented by
+ * specific backends.
+ */
+class BaseFaceBackend {
+    /**
+     * Creates an instance of BaseFaceBackend.
+     * @param context - The shared dependency and configuration context.
+     */
+    constructor(context) {
+        this.context = context;
+    }
+    /**
+     * The orchestration pipeline (Template Method) for running face
+     * detection. Checks backend availability and obtains a camera
+     * snapshot before running the concrete detection model.
+     *
+     * @param depthMeshSnapshot - The current 3D depth mesh snapshot of
+     *     the physical environment.
+     * @param cameraParametersSnapshot - The current camera parameters
+     *     and matrix transforms.
+     * @returns A promise that resolves to an array of detected faces.
+     */
+    async run(depthMeshSnapshot, cameraParametersSnapshot) {
+        if (!(await this.isAvailable())) {
+            return [];
+        }
+        const snapshot = await this.getSnapshot();
+        if (!snapshot) {
+            return [];
+        }
+        return this.detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot);
+    }
+}
+
+let FilesetResolver;
+let FaceLandmarker;
+// --- Attempt Dynamic Import ---
+async function loadMediaPipeModule() {
+    if (FilesetResolver && FaceLandmarker) {
+        return;
+    }
+    try {
+        const mediapipeModule = await import('@mediapipe/tasks-vision');
+        FilesetResolver = mediapipeModule.FilesetResolver;
+        FaceLandmarker = mediapipeModule.FaceLandmarker;
+        console.log("'@mediapipe/tasks-vision' MediaPipe Face Module loaded successfully.");
+    }
+    catch (error) {
+        console.error('Failed to load MediaPipe Tasks Vision module:', error);
+        throw error;
+    }
+}
+/**
+ * Convert a raw MediaPipe `FaceLandmarkerResult` into an array of
+ * `DetectedFace` objects with world-space positions, blendshape
+ * weights, and rigid head transforms.
+ *
+ * Extracted as a free function so unit tests can drive it directly
+ * without standing up the full backend lifecycle.
+ *
+ * For each landmark we try a depth-mesh raycast (`transformRgbUvToWorld`)
+ * first; when the ray misses the mesh we fall back to back-projecting
+ * through the camera frustum, placing the point ~0.5 m from the camera
+ * modulated by the landmark's relative z. The 0.5 m default is tuned
+ * for selfie / desktop sim use; passthrough Quest views typically hit
+ * the depth mesh path so the fallback rarely runs there.
+ */
+function processFaceLandmarkerResult(result, depthMeshSnapshot, cameraParametersSnapshot) {
+    const detectedFaces = [];
+    for (let i = 0; i < result.faceLandmarks.length; i++) {
+        const mpLandmarks = result.faceLandmarks[i];
+        const landmarks = [];
+        let xmin = 1;
+        let ymin = 1;
+        let xmax = 0;
+        let ymax = 0;
+        for (let j = 0; j < mpLandmarks.length; j++) {
+            const lm = mpLandmarks[j];
+            xmin = Math.min(xmin, lm.x);
+            ymin = Math.min(ymin, lm.y);
+            xmax = Math.max(xmax, lm.x);
+            ymax = Math.max(ymax, lm.y);
+            // Transform screen UV to WebXR world position via depth mesh
+            // raycast (preferred) or camera-frustum back-projection
+            // fallback when the ray misses the mesh.
+            const uv = new THREE.Vector2(lm.x, lm.y);
+            const worldCoords = transformRgbUvToWorld(uv, depthMeshSnapshot, cameraParametersSnapshot);
+            let wp;
+            if (worldCoords) {
+                wp = worldCoords.worldPosition;
+            }
+            else {
+                const origin = new THREE.Vector3().applyMatrix4(cameraParametersSnapshot.worldFromView);
+                const clipVec = new THREE.Vector3(2 * lm.x - 1, 2 * (1.0 - lm.y) - 1, -1);
+                const direction = clipVec
+                    .applyMatrix4(cameraParametersSnapshot.worldFromClip)
+                    .sub(origin)
+                    .normalize();
+                // Faces sit ~0.5 m from the camera in selfie/sim use, modulate
+                // by the landmark's z so the back of the head stays behind
+                // the front of the face along the view ray.
+                wp = origin.addScaledVector(direction, 0.5 + (lm.z || 0));
+            }
+            landmarks.push({
+                x: lm.x,
+                y: lm.y,
+                z: lm.z,
+                worldPosition: wp,
+            });
+        }
+        const boundingBox = new THREE.Box2(new THREE.Vector2(xmin, ymin), new THREE.Vector2(xmax, ymax));
+        // Blendshapes are one Classifications object per face. Each
+        // `categories` entry has `categoryName` and `score`. The browser
+        // model emits them already smoothed across frames.
+        const blendshapes = [];
+        const mpBlendshapes = result.faceBlendshapes?.[i];
+        if (mpBlendshapes && mpBlendshapes.categories) {
+            for (const c of mpBlendshapes.categories) {
+                blendshapes.push({
+                    categoryName: c.categoryName,
+                    score: c.score,
+                });
+            }
+        }
+        // Facial transformation matrixes are stored as a column-major
+        // Float32Array(16). THREE.Matrix4.fromArray() consumes the same
+        // layout directly.
+        let facialTransform = null;
+        const mpMatrix = result.facialTransformationMatrixes?.[i];
+        if (mpMatrix && mpMatrix.data) {
+            facialTransform = new THREE.Matrix4().fromArray(mpMatrix.data);
+        }
+        const face = new DetectedFace(i, landmarks, boundingBox, blendshapes, facialTransform);
+        detectedFaces.push(face);
+    }
+    return detectedFaces;
+}
+/**
+ * Face Landmark detector backend implementation using MediaPipe's
+ * FaceLandmarker. Runs locally on the device. Emits 478 facial
+ * landmarks per face plus optional 52 ARKit-style blendshape weights
+ * and an optional rigid 4x4 facial transformation matrix.
+ */
+class MediaPipeFaceBackend extends BaseFaceBackend {
+    constructor(context) {
+        super(context);
+        this.faceLandmarker = null;
+        this.initializationPromise = this.tryInitializeFaceLandmarker();
+    }
+    async isAvailable() {
+        try {
+            await this.initializationPromise;
+            return true;
+        }
+        catch (e) {
+            console.error('MediaPipe Face Landmarker is not available:', e);
+            return false;
+        }
+    }
+    async getSnapshot() {
+        const imageData = await this.context.deviceCamera.getSnapshot({
+            outputFormat: 'imageData',
+        });
+        if (!imageData)
+            return null;
+        return { imageData };
+    }
+    async detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot) {
+        await this.initializationPromise;
+        if (!this.faceLandmarker) {
+            return [];
+        }
+        let result;
+        try {
+            result = this.faceLandmarker.detect(snapshot.imageData);
+        }
+        catch (error) {
+            console.error('MediaPipe Face detection run failed:', error);
+            return [];
+        }
+        if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
+            return [];
+        }
+        return processFaceLandmarkerResult(result, depthMeshSnapshot, cameraParametersSnapshot);
+    }
+    async tryInitializeFaceLandmarker() {
+        if (this.faceLandmarker)
+            return;
+        await loadMediaPipeModule();
+        const facesOptions = this.context.options.faces.backendConfig.mediapipe;
+        const vision = await FilesetResolver.forVisionTasks(facesOptions.wasmFilesUrl);
+        this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+                modelAssetPath: facesOptions.modelAssetPath,
+                delegate: 'GPU',
+            },
+            runningMode: 'IMAGE',
+            numFaces: facesOptions.numFaces,
+            minFaceDetectionConfidence: facesOptions.minFaceDetectionConfidence,
+            minFacePresenceConfidence: facesOptions.minFacePresenceConfidence,
+            minTrackingConfidence: facesOptions.minTrackingConfidence,
+            outputFaceBlendshapes: facesOptions.outputFaceBlendshapes,
+            outputFacialTransformationMatrixes: facesOptions.outputFacialTransformationMatrixes,
+        });
+    }
+}
+
+/**
+ * A detector script that orchestrates face landmark estimation. Manages
+ * the backend face detector lifecycle (e.g. MediaPipe) and exposes the
+ * detected faces, including 3D landmark positions, blendshape weights,
+ * and rigid head transforms, in the world coordinate space.
+ */
+class FaceRecognizer extends Script {
+    constructor() {
+        super(...arguments);
+        this._detectorBackends = new Map();
+        this.targetDevice = 'galaxyxr';
+    }
+    static { this.dependencies = {
+        options: WorldOptions,
+        deviceCamera: XRDeviceCamera,
+        depth: Depth,
+        camera: THREE.Camera,
+        renderer: THREE.WebGLRenderer,
+    }; }
+    init({ options, deviceCamera, depth, camera, renderer, }) {
+        this.options = options;
+        this.deviceCamera = deviceCamera;
+        this.depth = depth;
+        this.camera = camera;
+        this.renderer = renderer;
+    }
+    /**
+     * Runs the face landmark detection process based on the configured
+     * backend.
+     */
+    async runDetection() {
+        this.clear();
+        if (!this.depth || !this.depth.depthMesh) {
+            console.warn('Cannot run Face Detection: Depth module / depthMesh is not enabled or initialized.');
+            return [];
+        }
+        const depthMeshSnapshot = this.getDepthMeshSnapshot();
+        const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
+        const context = this.getBackendContext();
+        const activeBackend = this.options.faces.backendConfig.activeBackend;
+        const backendPromise = this.getOrCreateBackend(activeBackend, context);
+        let backend;
+        try {
+            backend = await backendPromise;
+        }
+        catch (error) {
+            console.warn(`Failed to load or initialize FaceRecognizer backend '${activeBackend}':`, error);
+            return [];
+        }
+        const faces = await backend.run(depthMeshSnapshot, cameraParametersSnapshot);
+        return faces;
+    }
+    getBackendContext() {
+        return {
+            options: this.options,
+            deviceCamera: this.deviceCamera,
+        };
+    }
+    getOrCreateBackend(activeBackend, context) {
+        let backendPromise = this._detectorBackends.get(activeBackend);
+        if (!backendPromise) {
+            backendPromise = (async () => {
+                switch (activeBackend) {
+                    case 'mediapipe':
+                        return new MediaPipeFaceBackend(context);
+                    default:
+                        throw new Error(`FaceRecognizer backend '${activeBackend}' is not supported.`);
+                }
+            })();
+            this._detectorBackends.set(activeBackend, backendPromise);
+        }
+        return backendPromise;
+    }
+    getDepthMeshSnapshot() {
+        const depthMesh = this.depth.depthMesh;
+        const geometry = this.depth.options.depthMesh.updateFullResolutionGeometry
+            ? depthMesh.geometry
+            : depthMesh.downsampledGeometry || depthMesh.geometry;
+        const clonedGeometry = geometry.clone();
+        clonedGeometry.computeBoundingSphere();
+        clonedGeometry.computeBoundingBox();
+        const depthMeshSnapshot = new THREE.Mesh(clonedGeometry, new THREE.MeshBasicMaterial());
+        depthMesh.getWorldPosition(depthMeshSnapshot.position);
+        depthMesh.getWorldQuaternion(depthMeshSnapshot.quaternion);
+        depthMesh.getWorldScale(depthMeshSnapshot.scale);
+        depthMeshSnapshot.updateMatrixWorld(true);
+        return depthMeshSnapshot;
+    }
+}
+
+/**
  * Manages all interactions with the real-world environment perceived by the XR
  * device. This class abstracts the complexity of various perception APIs
  * (Depth, Planes, Meshes, etc.) and provides a simple, event-driven interface
@@ -14319,6 +14814,10 @@ class World extends Script {
         if (this.options.humans.enabled) {
             this.humans = new HumanRecognizer();
             this.add(this.humans);
+        }
+        if (this.options.faces.enabled) {
+            this.faces = new FaceRecognizer();
+            this.add(this.faces);
         }
         // TODO: Initialize other modules as they are available & implemented.
         /*
@@ -21440,5 +21939,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
