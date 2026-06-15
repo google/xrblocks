@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid a196170
- * @builddate 2026-06-15T16:55:03.506Z
+ * @commitid ab6a1bf
+ * @builddate 2026-06-15T17:29:20.393Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -14354,6 +14354,153 @@ class HumanRecognizer extends Script {
     }
 }
 
+// --- Dynamic Import of three-mesh-bvh ---
+//
+// Loaded the same way troika-three-text is in TextView: type-only
+// import for the SDK build, dynamic runtime import with try / catch +
+// status tracking so apps without three-mesh-bvh installed (or without
+// it in their importmap) don't break, they just don't get the
+// accelerated raycast.
+//
+// Apps opt in to BVH by either calling enableAcceleratedRaycast() or
+// applyBVH() and ensuring three-mesh-bvh is reachable at runtime
+// (e.g. via the demo importmap).
+var BvhImportStatus;
+(function (BvhImportStatus) {
+    BvhImportStatus[BvhImportStatus["PENDING"] = 0] = "PENDING";
+    BvhImportStatus[BvhImportStatus["SUCCESS"] = 1] = "SUCCESS";
+    BvhImportStatus[BvhImportStatus["FAILED"] = 2] = "FAILED";
+})(BvhImportStatus || (BvhImportStatus = {}));
+let acceleratedRaycast;
+let computeBoundsTree;
+let disposeBoundsTree;
+let bvhImportStatus = BvhImportStatus.PENDING;
+let bvhImportError;
+let bvhImportPromise = null;
+let bvhProtoPatched = false;
+function importBVH() {
+    if (bvhImportPromise)
+        return bvhImportPromise;
+    bvhImportPromise = (async () => {
+        try {
+            const mod = await import('three-mesh-bvh');
+            acceleratedRaycast = mod.acceleratedRaycast;
+            computeBoundsTree = mod.computeBoundsTree;
+            disposeBoundsTree = mod.disposeBoundsTree;
+            bvhImportStatus = BvhImportStatus.SUCCESS;
+            return true;
+        }
+        catch (error) {
+            if (error instanceof Error)
+                bvhImportError = error;
+            bvhImportStatus = BvhImportStatus.FAILED;
+            console.warn('[xrblocks] three-mesh-bvh not available; raycasts will use the ' +
+                'stock three.js walker. Install three-mesh-bvh or add it to your ' +
+                'importmap to enable BVH-accelerated raycasts.', error);
+            return false;
+        }
+    })();
+    return bvhImportPromise;
+}
+/**
+ * Whether the BVH module has been loaded AND the THREE prototypes have
+ * been patched. Sync check; returns false until `enableAcceleratedRaycast()`
+ * (or `applyBVH()`) has resolved at least once.
+ */
+function isBVHReady() {
+    return bvhProtoPatched;
+}
+/**
+ * Dynamically import three-mesh-bvh and install the prototype patches
+ * that route `THREE.Mesh.raycast` through the accelerated path when
+ * the target mesh has a computed bounds tree. Adds
+ * `computeBoundsTree` / `disposeBoundsTree` helpers to
+ * `THREE.BufferGeometry`.
+ *
+ * Async because the BVH module is loaded on demand (same pattern as
+ * troika-three-text). Resolves to `true` if the module loaded and
+ * patches were applied, `false` if the module isn't available — in
+ * which case meshes continue to use the stock raycaster.
+ *
+ * Safe to call multiple times. The first call kicks off the import,
+ * subsequent calls share the same promise.
+ */
+async function enableAcceleratedRaycast() {
+    const ok = await importBVH();
+    if (!ok || bvhProtoPatched)
+        return bvhProtoPatched;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    THREE.Mesh.prototype.raycast = acceleratedRaycast;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+    bvhProtoPatched = true;
+    return true;
+}
+/**
+ * Walk the given object3D (recursively) and build a bounds tree on
+ * every mesh's geometry that doesn't already have one. After this
+ * call any `raycaster.intersectObject(root, true)` against the tree
+ * goes through the BVH-accelerated path instead of walking every
+ * triangle per ray.
+ *
+ * Use this on the root of a scene (or sub-tree) that the SDK's
+ * interaction raycaster walks every frame. The build cost is
+ * proportional to total triangle count and happens once per geometry.
+ *
+ * Async because it awaits the dynamic import of three-mesh-bvh. If
+ * the module isn't available, this is a no-op. Geometries that
+ * already have a `boundsTree` are left alone so repeat calls are
+ * idempotent.
+ */
+async function applyBVH(root, { recursive = true } = {}) {
+    const ok = await enableAcceleratedRaycast();
+    if (!ok)
+        return;
+    const visit = (obj) => {
+        if (obj instanceof THREE.Mesh && obj.geometry) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const geom = obj.geometry;
+            if (!geom.boundsTree && typeof geom.computeBoundsTree === 'function') {
+                geom.computeBoundsTree();
+            }
+        }
+        if (recursive) {
+            for (const child of obj.children)
+                visit(child);
+        }
+    };
+    visit(root);
+}
+/**
+ * Walk the given object3D (recursively) and dispose any bounds trees
+ * previously built by `applyBVH`. Sync; no-op if three-mesh-bvh
+ * wasn't loaded.
+ */
+function disposeBVH(root, { recursive = true } = {}) {
+    if (!bvhProtoPatched)
+        return;
+    const visit = (obj) => {
+        if (obj instanceof THREE.Mesh && obj.geometry) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const geom = obj.geometry;
+            if (geom.boundsTree && typeof geom.disposeBoundsTree === 'function') {
+                geom.disposeBoundsTree();
+            }
+        }
+        if (recursive) {
+            for (const child of obj.children)
+                visit(child);
+        }
+    };
+    visit(root);
+}
+// Exposed for tests; consumers should use isBVHReady() instead.
+function _getBvhImportStatus() {
+    return { status: bvhImportStatus, error: bvhImportError };
+}
+
 /**
  * Common facial landmark anchor names. These map to specific indices
  * in the 478-point MediaPipe FaceLandmarker mesh and are exposed for
@@ -14838,6 +14985,19 @@ class MediaPipeFaceBackend extends BaseFaceBackend {
     }
 }
 
+// Kick off the BVH-accelerated raycast prototype patches at module
+// load so the per-landmark raycasts inside processFaceLandmarkerResult
+// go through the accelerated path. Fire-and-forget: the helper loads
+// three-mesh-bvh dynamically and the SDK keeps working even if the
+// module isn't installed or in the importmap (raycasts fall back to
+// the stock walker). idempotent across modules so multiple subsystems
+// can ping it safely.
+//
+// FaceLandmarker emits 478 landmarks per face and we raycast each one
+// against the depth-mesh snapshot. Stock three.js is O(triangles) per
+// ray; the depth mesh runs in the thousands of triangles so without
+// BVH the per-detection raycast loop alone dominates the frame budget.
+enableAcceleratedRaycast();
 /**
  * A detector script that orchestrates face landmark estimation. Manages
  * the backend face detector lifecycle (e.g. MediaPipe) and exposes the
@@ -14849,6 +15009,15 @@ class FaceRecognizer extends Script {
         super(...arguments);
         this._detectorBackends = new Map();
         this.targetDevice = 'galaxyxr';
+        // Cached depth-mesh snapshot (cloned geometry + BVH). We rebuild it
+        // only when the source depth geometry's position attribute bumps its
+        // version (three.js does this automatically whenever the depth mesh
+        // refreshes via needsUpdate = true). For a static desktop sim the
+        // BVH build therefore amortizes across all detections instead of
+        // running every detection.
+        this.cachedDepthMeshSnapshot = null;
+        this.cachedDepthMeshSource = null;
+        this.cachedDepthMeshVersion = -1;
     }
     static { this.dependencies = {
         options: WorldOptions,
@@ -14916,14 +15085,52 @@ class FaceRecognizer extends Script {
         const geometry = this.depth.options.depthMesh.updateFullResolutionGeometry
             ? depthMesh.geometry
             : depthMesh.downsampledGeometry || depthMesh.geometry;
+        // Both BufferAttribute and InterleavedBufferAttribute carry a
+        // `version` field that three.js bumps on `needsUpdate = true`, but
+        // the type for the union doesn't expose it. Cast to read.
+        const positionAttr = geometry.attributes.position;
+        const version = positionAttr.version;
+        if (this.cachedDepthMeshSnapshot &&
+            this.cachedDepthMeshSource === geometry &&
+            this.cachedDepthMeshVersion === version) {
+            // Source geometry hasn't been updated since last snapshot. Refresh
+            // the cached snapshot's world transform (cheap) and return it as
+            // is. The BVH built over the cloned positions is still valid
+            // because the source positions haven't changed.
+            depthMesh.getWorldPosition(this.cachedDepthMeshSnapshot.position);
+            depthMesh.getWorldQuaternion(this.cachedDepthMeshSnapshot.quaternion);
+            depthMesh.getWorldScale(this.cachedDepthMeshSnapshot.scale);
+            this.cachedDepthMeshSnapshot.updateMatrixWorld(true);
+            return this.cachedDepthMeshSnapshot;
+        }
+        // Source changed (or first call). Dispose the previous BVH so its
+        // backing buffers free, then clone + rebuild.
+        if (this.cachedDepthMeshSnapshot) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            this.cachedDepthMeshSnapshot.geometry.disposeBoundsTree?.();
+            this.cachedDepthMeshSnapshot.geometry.dispose();
+        }
         const clonedGeometry = geometry.clone();
         clonedGeometry.computeBoundingSphere();
         clonedGeometry.computeBoundingBox();
+        // Build a BVH over the cloned depth-mesh geometry when three-mesh-bvh
+        // is available so the per-landmark raycasts inside
+        // processFaceLandmarkerResult go through the BVH-accelerated path
+        // instead of walking every triangle 478 times. If BVH isn't ready
+        // yet (dynamic import in flight or three-mesh-bvh not installed),
+        // we skip computeBoundsTree and the stock raycaster takes over.
+        if (isBVHReady()) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            clonedGeometry.computeBoundsTree();
+        }
         const depthMeshSnapshot = new THREE.Mesh(clonedGeometry, new THREE.MeshBasicMaterial());
         depthMesh.getWorldPosition(depthMeshSnapshot.position);
         depthMesh.getWorldQuaternion(depthMeshSnapshot.quaternion);
         depthMesh.getWorldScale(depthMeshSnapshot.scale);
         depthMeshSnapshot.updateMatrixWorld(true);
+        this.cachedDepthMeshSnapshot = depthMeshSnapshot;
+        this.cachedDepthMeshSource = geometry;
+        this.cachedDepthMeshVersion = version;
         return depthMeshSnapshot;
     }
 }
@@ -22113,5 +22320,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, add, ai, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
