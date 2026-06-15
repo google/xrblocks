@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 7a9b6e8
- * @builddate 2026-06-14T08:13:55.990Z
+ * @commitid d83edd1
+ * @builddate 2026-06-15T05:15:51.459Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -12244,16 +12244,16 @@ class GeminiDetectorBackend extends BaseDetectorBackend$1 {
     }
 }
 
-let FilesetResolver$3;
+let FilesetResolver$2;
 let ObjectDetector$1;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$3() {
-    if (FilesetResolver$3 && ObjectDetector$1) {
+async function loadMediaPipeModule$2() {
+    if (FilesetResolver$2 && ObjectDetector$1) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver$3 = mediapipeModule.FilesetResolver;
+        FilesetResolver$2 = mediapipeModule.FilesetResolver;
         ObjectDetector$1 = mediapipeModule.ObjectDetector;
         console.log("'@mediapipe/tasks-vision' module loaded successfully.");
     }
@@ -12330,9 +12330,9 @@ let MediaPipeDetectorBackend$1 = class MediaPipeDetectorBackend extends BaseDete
     async tryInitializeObjectDetector() {
         if (this.objectDetector)
             return;
-        await loadMediaPipeModule$3();
+        await loadMediaPipeModule$2();
         const mediapipeOptions = this.context.options.objects.backendConfig.mediapipe;
-        const vision = await FilesetResolver$3.forVisionTasks(mediapipeOptions.wasmFilesUrl);
+        const vision = await FilesetResolver$2.forVisionTasks(mediapipeOptions.wasmFilesUrl);
         this.objectDetector = await ObjectDetector$1.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: mediapipeOptions.modelAssetPath,
@@ -13385,16 +13385,16 @@ class BaseDetectorBackend {
     }
 }
 
-let FilesetResolver$2;
+let FilesetResolver$1;
 let AudioClassifier;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$2() {
-    if (FilesetResolver$2 && AudioClassifier) {
+async function loadMediaPipeModule$1() {
+    if (FilesetResolver$1 && AudioClassifier) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-audio');
-        FilesetResolver$2 = mediapipeModule.FilesetResolver;
+        FilesetResolver$1 = mediapipeModule.FilesetResolver;
         AudioClassifier = mediapipeModule.AudioClassifier;
         console.log("'@mediapipe/tasks-audio' module loaded successfully.");
     }
@@ -13416,9 +13416,9 @@ class MediaPipeDetectorBackend extends BaseDetectorBackend {
     async tryInitializeAudioClassifier() {
         if (this.audioClassifier)
             return;
-        await loadMediaPipeModule$2();
+        await loadMediaPipeModule$1();
         const mediapipeConfig = this.context.options.sounds.backendConfig.mediapipe;
-        const audioTasks = await FilesetResolver$2.forAudioTasks(mediapipeConfig.wasmFilesUrl);
+        const audioTasks = await FilesetResolver$1.forAudioTasks(mediapipeConfig.wasmFilesUrl);
         this.audioClassifier = await AudioClassifier.createFromOptions(audioTasks, {
             baseOptions: { modelAssetPath: mediapipeConfig.modelAssetPath },
         });
@@ -14116,16 +14116,16 @@ class BaseHumanBackend {
     }
 }
 
-let FilesetResolver$1;
+let FilesetResolver;
 let PoseLandmarker;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$1() {
-    if (FilesetResolver$1 && PoseLandmarker) {
+async function loadMediaPipeModule() {
+    if (FilesetResolver && PoseLandmarker) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver$1 = mediapipeModule.FilesetResolver;
+        FilesetResolver = mediapipeModule.FilesetResolver;
         PoseLandmarker = mediapipeModule.PoseLandmarker;
         console.log("'@mediapipe/tasks-vision' MediaPipe Pose Module loaded successfully.");
     }
@@ -14233,9 +14233,9 @@ class MediaPipeHumanBackend extends BaseHumanBackend {
     async tryInitializePoseLandmarker() {
         if (this.poseLandmarker)
             return;
-        await loadMediaPipeModule$1();
+        await loadMediaPipeModule();
         const humansOptions = this.context.options.humans.backendConfig.mediapipe;
-        const vision = await FilesetResolver$1.forVisionTasks(humansOptions.wasmFilesUrl);
+        const vision = await FilesetResolver.forVisionTasks(humansOptions.wasmFilesUrl);
         this.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: humansOptions.modelAssetPath,
@@ -14491,24 +14491,86 @@ class BaseFaceBackend {
     }
 }
 
-let FilesetResolver;
-let FaceLandmarker;
-// --- Attempt Dynamic Import ---
-async function loadMediaPipeModule() {
-    if (FilesetResolver && FaceLandmarker) {
-        return;
-    }
-    try {
-        const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver = mediapipeModule.FilesetResolver;
-        FaceLandmarker = mediapipeModule.FaceLandmarker;
-        console.log("'@mediapipe/tasks-vision' MediaPipe Face Module loaded successfully.");
-    }
-    catch (error) {
-        console.error('Failed to load MediaPipe Tasks Vision module:', error);
-        throw error;
-    }
+// Source code for the MediaPipe FaceLandmarker web worker. Inlined as a
+// string and instantiated via Blob URL so the SDK ships in one bundle
+// without the rollup pipeline having to know about worker entry points.
+//
+// The worker dynamically imports `@mediapipe/tasks-vision` from a CDN URL
+// (workers don't share the host page's importmap), loads the
+// FaceLandmarker model once on `init`, then runs synchronous
+// `detect(imageBitmap)` calls per request. ImageBitmaps are transferable
+// so the snapshot pixel buffer doesn't get cloned across the worker
+// boundary.
+//
+// Wire protocol (all messages carry a numeric `id` so the main thread can
+// correlate request/response pairs):
+//   { id, type: 'init', config: { mediapipeModuleUrl, wasmFilesUrl,
+//                                  modelAssetPath, numFaces, ... } }
+//   { id, type: 'detect', imageBitmap: ImageBitmap }           // transfer the bitmap
+// Replies:
+//   { id, ok: true }
+//   { id, ok: true, result: FaceLandmarkerResult }
+//   { id, ok: false, error: string }
+//
+// The result object is a structured-clonable subset of MediaPipe's
+// FaceLandmarkerResult (plain landmarks, blendshape categories, transform
+// matrix data arrays). Float32Arrays inside `facialTransformationMatrixes`
+// clone cheaply, no transfer list needed.
+const MEDIA_PIPE_FACE_WORKER_SOURCE = /* js */ `
+let landmarker = null;
+
+async function init(config) {
+  const mod = await import(config.mediapipeModuleUrl);
+  const { FilesetResolver, FaceLandmarker } = mod;
+  const vision = await FilesetResolver.forVisionTasks(config.wasmFilesUrl);
+  landmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath: config.modelAssetPath,
+      // CPU delegate in the worker. GPU would need an OffscreenCanvas
+      // surface and MediaPipe's wasm pipeline only spins one up when it
+      // finds a real DOM canvas, which workers don't have.
+      delegate: 'CPU',
+    },
+    runningMode: 'IMAGE',
+    numFaces: config.numFaces,
+    minFaceDetectionConfidence: config.minFaceDetectionConfidence,
+    minFacePresenceConfidence: config.minFacePresenceConfidence,
+    minTrackingConfidence: config.minTrackingConfidence,
+    outputFaceBlendshapes: config.outputFaceBlendshapes,
+    outputFacialTransformationMatrixes: config.outputFacialTransformationMatrixes,
+  });
 }
+
+self.onmessage = async (event) => {
+  const { id, type } = event.data;
+  try {
+    if (type === 'init') {
+      await init(event.data.config);
+      self.postMessage({ id, ok: true });
+    } else if (type === 'detect') {
+      if (!landmarker) throw new Error('worker not initialized');
+      const bitmap = event.data.imageBitmap;
+      const result = landmarker.detect(bitmap);
+      bitmap.close();
+      self.postMessage({ id, ok: true, result });
+    } else {
+      throw new Error('unknown message type: ' + type);
+    }
+  } catch (err) {
+    self.postMessage({
+      id,
+      ok: false,
+      error: (err && err.message) || String(err),
+    });
+  }
+};
+`;
+
+// CDN module the worker dynamic-imports for MediaPipe. Workers can't see
+// the host page's importmap so we hand them an absolute URL. Pinned to a
+// version that matches the SDK's tested matrix; bump in lockstep with
+// any importmap updates in demos/face_mirror/index.html.
+const MEDIAPIPE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs';
 /**
  * Convert a raw MediaPipe `FaceLandmarkerResult` into an array of
  * `DetectedFace` objects with world-space positions, blendshape
@@ -14596,14 +14658,33 @@ function processFaceLandmarkerResult(result, depthMeshSnapshot, cameraParameters
 }
 /**
  * Face Landmark detector backend implementation using MediaPipe's
- * FaceLandmarker. Runs locally on the device. Emits 478 facial
- * landmarks per face plus optional 52 ARKit-style blendshape weights
- * and an optional rigid 4x4 facial transformation matrix.
+ * FaceLandmarker. Runs locally on the device, but offloads the
+ * inference to a Web Worker so heavy detection passes (~30 ms on a
+ * modern laptop, much more on mobile) don't stall the render loop.
+ *
+ * Pipeline per detect():
+ *   1. Main thread captures an `ImageData` snapshot from the device
+ *      camera (already async).
+ *   2. Convert to `ImageBitmap` once and transfer it (zero-copy) to
+ *      the worker.
+ *   3. Worker runs `landmarker.detect()` and posts back the structured-
+ *      clonable result.
+ *   4. Main thread runs `processFaceLandmarkerResult` (depth-mesh
+ *      raycasts + camera-frustum back-projection) which has to live on
+ *      the render thread because it touches the live depth mesh and
+ *      camera matrices.
+ *
+ * Emits 478 facial landmarks per face plus optional 52 ARKit-style
+ * blendshape weights and an optional rigid 4x4 facial transformation
+ * matrix.
  */
 class MediaPipeFaceBackend extends BaseFaceBackend {
     constructor(context) {
         super(context);
-        this.faceLandmarker = null;
+        this.worker = null;
+        this.workerUrl = null;
+        this.nextRequestId = 0;
+        this.pendingRequests = new Map();
         this.initializationPromise = this.tryInitializeFaceLandmarker();
     }
     async isAvailable() {
@@ -14626,40 +14707,117 @@ class MediaPipeFaceBackend extends BaseFaceBackend {
     }
     async detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot) {
         await this.initializationPromise;
-        if (!this.faceLandmarker) {
+        if (!this.worker) {
             return [];
         }
-        let result;
+        // Convert the snapshot to an ImageBitmap so the pixel buffer can be
+        // transferred (zero-copy) into the worker. ImageData itself is
+        // structured-cloneable but that means a full pixel copy per detect;
+        // ImageBitmap moves ownership.
+        let bitmap;
         try {
-            result = this.faceLandmarker.detect(snapshot.imageData);
+            bitmap = await createImageBitmap(snapshot.imageData);
         }
         catch (error) {
-            console.error('MediaPipe Face detection run failed:', error);
+            console.error('Failed to create ImageBitmap for face detection:', error);
             return [];
         }
-        if (!result || !result.faceLandmarks || result.faceLandmarks.length === 0) {
+        let workerResult;
+        try {
+            const reply = (await this.send({ type: 'detect', imageBitmap: bitmap }, [
+                bitmap,
+            ]));
+            workerResult = reply.result;
+        }
+        catch (error) {
+            console.error('MediaPipe Face detection (worker) failed:', error);
             return [];
         }
-        return processFaceLandmarkerResult(result, depthMeshSnapshot, cameraParametersSnapshot);
+        if (!workerResult ||
+            !workerResult.faceLandmarks ||
+            workerResult.faceLandmarks.length === 0) {
+            return [];
+        }
+        return processFaceLandmarkerResult(workerResult, depthMeshSnapshot, cameraParametersSnapshot);
+    }
+    /**
+     * Tear down the worker and revoke the Blob URL it was constructed
+     * from. Safe to call multiple times.
+     */
+    dispose() {
+        if (this.worker) {
+            this.worker.terminate();
+            this.worker = null;
+        }
+        if (this.workerUrl) {
+            URL.revokeObjectURL(this.workerUrl);
+            this.workerUrl = null;
+        }
+        // Reject any in-flight requests so callers don't hang.
+        for (const { reject } of this.pendingRequests.values()) {
+            reject(new Error('MediaPipeFaceBackend disposed'));
+        }
+        this.pendingRequests.clear();
     }
     async tryInitializeFaceLandmarker() {
-        if (this.faceLandmarker)
+        if (this.worker)
             return;
-        await loadMediaPipeModule();
+        if (typeof Worker === 'undefined') {
+            throw new Error('Web Workers are not available in this environment');
+        }
+        // Spawn the worker from an inlined Blob URL so we don't have to
+        // teach the rollup pipeline about a separate worker entry point.
+        const blob = new Blob([MEDIA_PIPE_FACE_WORKER_SOURCE], {
+            type: 'text/javascript',
+        });
+        this.workerUrl = URL.createObjectURL(blob);
+        this.worker = new Worker(this.workerUrl);
+        this.worker.onmessage = (event) => {
+            const { id } = event.data;
+            const pending = this.pendingRequests.get(id);
+            if (!pending)
+                return;
+            this.pendingRequests.delete(id);
+            if (event.data.ok) {
+                pending.resolve(event.data);
+            }
+            else {
+                pending.reject(new Error(event.data.error || 'worker error'));
+            }
+        };
+        this.worker.onerror = (event) => {
+            console.error('MediaPipe face worker errored:', event.message);
+        };
         const facesOptions = this.context.options.faces.backendConfig.mediapipe;
-        const vision = await FilesetResolver.forVisionTasks(facesOptions.wasmFilesUrl);
-        this.faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
+        await this.send({
+            type: 'init',
+            config: {
+                mediapipeModuleUrl: MEDIAPIPE_MODULE_URL,
+                wasmFilesUrl: facesOptions.wasmFilesUrl,
                 modelAssetPath: facesOptions.modelAssetPath,
-                delegate: 'GPU',
+                numFaces: facesOptions.numFaces,
+                minFaceDetectionConfidence: facesOptions.minFaceDetectionConfidence,
+                minFacePresenceConfidence: facesOptions.minFacePresenceConfidence,
+                minTrackingConfidence: facesOptions.minTrackingConfidence,
+                outputFaceBlendshapes: facesOptions.outputFaceBlendshapes,
+                outputFacialTransformationMatrixes: facesOptions.outputFacialTransformationMatrixes,
             },
-            runningMode: 'IMAGE',
-            numFaces: facesOptions.numFaces,
-            minFaceDetectionConfidence: facesOptions.minFaceDetectionConfidence,
-            minFacePresenceConfidence: facesOptions.minFacePresenceConfidence,
-            minTrackingConfidence: facesOptions.minTrackingConfidence,
-            outputFaceBlendshapes: facesOptions.outputFaceBlendshapes,
-            outputFacialTransformationMatrixes: facesOptions.outputFacialTransformationMatrixes,
+        });
+    }
+    /**
+     * Promise-wrap a single request/response round trip with the worker.
+     * The worker echoes back the request `id` so we can correlate replies
+     * even when multiple detect() calls overlap.
+     */
+    send(payload, transfer = []) {
+        if (!this.worker) {
+            return Promise.reject(new Error('worker not spawned'));
+        }
+        const id = this.nextRequestId++;
+        const worker = this.worker;
+        return new Promise((resolve, reject) => {
+            this.pendingRequests.set(id, { resolve, reject });
+            worker.postMessage({ id, ...payload }, transfer);
         });
     }
 }
