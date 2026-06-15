@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid d83edd1
- * @builddate 2026-06-15T05:15:51.459Z
+ * @commitid a196170
+ * @builddate 2026-06-15T16:55:03.506Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -10419,6 +10419,13 @@ class SimulatorDepth {
          */
         this.autoUpdateDepthCameraTransform = true;
         this.projectionMatrixArray = new Float32Array(16);
+        // Don't queue a new updateDepth while the previous async pass is
+        // still in flight. simulatorUpdate fires once per frame, but
+        // updateDepth() resolves via a WebGL fence poll that typically takes
+        // longer than a frame on desktop. Without this guard the
+        // setTimeout-based fence polling chains stack up and dominate the
+        // main thread.
+        this.updateInFlight = false;
     }
     /**
      * Initialize Simulator Depth.
@@ -10449,8 +10456,17 @@ class SimulatorDepth {
     }
     update() {
         this.updateDepthCamera();
+        // Skip if an earlier updateDepth() is still resolving its readback
+        // fence. We'd just race ourselves and stack up promises (the
+        // setTimeout-based fence poll inside readRenderTargetPixelsAsync
+        // was a dominant main-thread cost in perf traces before this).
+        if (this.updateInFlight)
+            return;
         this.renderDepthScene();
-        this.updateDepth();
+        this.updateInFlight = true;
+        this.updateDepth().finally(() => {
+            this.updateInFlight = false;
+        });
     }
     updateDepthCamera() {
         const renderingCamera = this.camera;

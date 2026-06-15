@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid d83edd1
- * @builddate 2026-06-15T05:15:51.459Z
+ * @commitid a196170
+ * @builddate 2026-06-15T16:55:03.506Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5755,6 +5755,7 @@ declare class SimulatorDepth {
      */
     autoUpdateDepthCameraTransform: boolean;
     private projectionMatrixArray;
+    private updateInFlight;
     constructor(simulatorScene: SimulatorScene);
     /**
      * Initialize Simulator Depth.
