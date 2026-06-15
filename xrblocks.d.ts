@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid ab6a1bf
- * @builddate 2026-06-15T17:29:20.393Z
+ * @commitid 059e13c
+ * @builddate 2026-06-15T18:56:35.348Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -8086,6 +8086,8 @@ declare class OcclusionPass extends Pass {
     private occlusionUniforms;
     private occlusionQuad;
     private depthNear;
+    private lastOcclusionMapSize;
+    private lastKawaseBlurSize;
     constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, useFloatDepth?: boolean, renderToScreen?: boolean, occludableItemsLayer?: number);
     private setupKawaseBlur;
     setDepthTexture(depthTexture: THREE.Texture, rawValueToMeters: number, viewId: number, depthNear?: number): void;
@@ -8100,6 +8102,8 @@ declare class OcclusionPass extends Pass {
     renderOcclusionMapFromScene(renderer: THREE.WebGLRenderer, dimensions: THREE.Vector2, viewId: number): void;
     renderOcclusionMapFromReadBuffer(renderer: THREE.WebGLRenderer, readBuffer: THREE.RenderTarget, dimensions: THREE.Vector2, viewId: number): void;
     blurOcclusionMap(renderer: THREE.WebGLRenderer, dimensions: THREE.Vector2): void;
+    private resizeOcclusionMap;
+    private resizeKawaseBlur;
     applyOcclusionMapToRenderedImage(renderer: THREE.WebGLRenderer, readBuffer?: THREE.WebGLRenderTarget, writeBuffer?: THREE.WebGLRenderTarget): void;
     dispose(): void;
     updateOcclusionMapUniforms(uniforms: ShaderUniforms, renderer: THREE.WebGLRenderer): void;

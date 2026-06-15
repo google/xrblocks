@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid ab6a1bf
- * @builddate 2026-06-15T17:29:20.393Z
+ * @commitid 059e13c
+ * @builddate 2026-06-15T18:56:35.348Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4737,6 +4737,13 @@ class OcclusionPass extends Pass {
         this.occludableItemsLayer = occludableItemsLayer;
         this.depthTextures = [];
         this.depthNear = [];
+        // Cached dimensions of the render targets so we only call setSize()
+        // when they actually changed. setSize() forces a GPU texture
+        // reallocation even when called with the same dimensions, which
+        // showed up as ~150 ms in a portals trace from a steady-state frame
+        // loop (renderer drawing-buffer size never changes mid-session).
+        this.lastOcclusionMapSize = new THREE.Vector2(0, 0);
+        this.lastKawaseBlurSize = new THREE.Vector2(0, 0);
         this.occlusionMeshMaterial = new OcclusionMapMeshMaterial(camera, useFloatDepth);
         this.occlusionMapUniforms = {
             uDepthTexture: { value: null },
@@ -4847,7 +4854,7 @@ class OcclusionPass extends Pass {
         }
         this.scene.overrideMaterial = this.occlusionMeshMaterial;
         renderer.getDrawingBufferSize(dimensions);
-        this.occlusionMapTexture.setSize(dimensions.x, dimensions.y);
+        this.resizeOcclusionMap(dimensions);
         const renderTarget = this.occlusionMapTexture;
         renderer.setRenderTarget(renderTarget);
         const camera = renderer.xr.getCamera().cameras[viewId] || this.camera;
@@ -4881,14 +4888,12 @@ class OcclusionPass extends Pass {
         }
         // First render the occlusion map to an intermediate buffer.
         renderer.getDrawingBufferSize(dimensions);
-        this.occlusionMapTexture.setSize(dimensions.x, dimensions.y);
+        this.resizeOcclusionMap(dimensions);
         renderer.setRenderTarget(this.occlusionMapTexture);
         this.occlusionMapQuad.render(renderer);
     }
     blurOcclusionMap(renderer, dimensions) {
-        for (let i = 0; i < 3; i++) {
-            this.kawaseBlurTargets[i].setSize(dimensions.x / 2 ** i, dimensions.y / 2 ** i);
-        }
+        this.resizeKawaseBlur(dimensions);
         for (let i = 0; i < 3; i++) {
             this.kawaseBlurQuads[i].material.uniforms.uTexelSize.value.set(1 / (dimensions.x / 2 ** i), 1 / (dimensions.y / 2 ** i));
             this.kawaseBlurQuads[this.kawaseBlurQuads.length - 1 - i]
@@ -4906,6 +4911,28 @@ class OcclusionPass extends Pass {
         this.kawaseBlurQuads[4].render(renderer);
         renderer.setRenderTarget(this.occlusionMapTexture);
         this.kawaseBlurQuads[5].render(renderer);
+    }
+    // Only call setSize() when the cached dimensions have actually
+    // changed. setSize triggers a render-target reallocation on every
+    // call (no internal short-circuit), and getDrawingBufferSize returns
+    // the same value frame after frame in a steady session.
+    resizeOcclusionMap(dimensions) {
+        if (this.lastOcclusionMapSize.x === dimensions.x &&
+            this.lastOcclusionMapSize.y === dimensions.y) {
+            return;
+        }
+        this.lastOcclusionMapSize.copy(dimensions);
+        this.occlusionMapTexture.setSize(dimensions.x, dimensions.y);
+    }
+    resizeKawaseBlur(dimensions) {
+        if (this.lastKawaseBlurSize.x === dimensions.x &&
+            this.lastKawaseBlurSize.y === dimensions.y) {
+            return;
+        }
+        this.lastKawaseBlurSize.copy(dimensions);
+        for (let i = 0; i < 3; i++) {
+            this.kawaseBlurTargets[i].setSize(dimensions.x / 2 ** i, dimensions.y / 2 ** i);
+        }
     }
     applyOcclusionMapToRenderedImage(renderer, readBuffer, writeBuffer) {
         if (readBuffer && (this.renderToScreen || writeBuffer)) {
