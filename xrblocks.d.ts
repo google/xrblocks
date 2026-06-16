@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 8f76b65
- * @builddate 2026-06-15T21:03:41.346Z
+ * @commitid 333bf2f
+ * @builddate 2026-06-16T00:56:41.244Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9075,19 +9075,37 @@ declare function isBVHReady(): boolean;
 declare function enableAcceleratedRaycast(): Promise<boolean>;
 /**
  * Walk the given object3D (recursively) and build a bounds tree on
- * every mesh's geometry that doesn't already have one. After this
- * call any `raycaster.intersectObject(root, true)` against the tree
- * goes through the BVH-accelerated path instead of walking every
- * triangle per ray.
+ * every standard `THREE.Mesh` whose geometry doesn't already have one.
+ * Subsequent `raycaster.intersectObject(root, true)` calls then go
+ * through the BVH-accelerated path.
  *
- * Use this on the root of a scene (or sub-tree) that the SDK's
- * interaction raycaster walks every frame. The build cost is
- * proportional to total triangle count and happens once per geometry.
+ * Use on dense, static environmental meshes only (loaded immersive
+ * scenes, photogrammetry scans, baked levels). The tree has a one-time
+ * build + memory cost and assumes static vertices, so it's a net loss
+ * for low-poly / UI / dynamic meshes. Don't apply globally to
+ * `xb.core.scene`.
  *
- * Async because it awaits the dynamic import of three-mesh-bvh. If
- * the module isn't available, this is a no-op. Geometries that
- * already have a `boundsTree` are left alone so repeat calls are
- * idempotent.
+ * Skips `THREE.SkinnedMesh`: skinned meshes deform vertices on the GPU
+ * each frame, so a bounds tree built on the bind-pose geometry is wrong
+ * the moment the mesh animates. Three's `SkinnedMesh.raycast()` also
+ * overrides the patched `Mesh.prototype.raycast` and does its own CPU
+ * skinning, so the BVH would never be consulted anyway.
+ *
+ * Skips `THREE.BatchedMesh`: three-mesh-bvh ships a dedicated
+ * `computeBatchedBoundsTree` / `disposeBatchedBoundsTree` pair that
+ * builds per-draw-range BVHs on `this.boundsTrees` (plural), and
+ * `acceleratedRaycast` has a separate `isBatchedMesh` branch that
+ * consults those. The standard `computeBoundsTree` would index the
+ * combined batched buffer and produce wrong hits. Conservative skip
+ * until the batched helpers are wired up.
+ *
+ * `THREE.InstancedMesh` is NOT skipped: its `.raycast()` calls a
+ * shared internal `Mesh` per instance, which does route through the
+ * patched `Mesh.prototype.raycast`, so a BVH on the shared geometry
+ * accelerates every per-instance test.
+ *
+ * Async because it awaits the dynamic import of three-mesh-bvh. If the
+ * module isn't available, this is a no-op. Idempotent across calls.
  */
 declare function applyBVH(root: THREE.Object3D, { recursive }?: {
     recursive?: boolean;
