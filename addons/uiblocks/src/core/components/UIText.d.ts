@@ -162,7 +162,7 @@ export declare class UIText extends UIText_base {
     /** Updates text color representation (HEX, CSS, or THREE.Color). */
     setColor(color: ColorRepresentation): void;
     /** Updates font weight configuration. */
-    setFontWeight(fontWeight: number | string): void;
+    setFontWeight(fontWeight: UITextProperties['fontWeight']): void;
     /** Updates text opacity (0.0 - 1.0). */
     setOpacity(opacity: number): void;
 }
