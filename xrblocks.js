@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 79ef2fe
- * @builddate 2026-06-17T03:18:22.716Z
+ * @commitid daa5382
+ * @builddate 2026-06-17T05:18:25.716Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -11050,7 +11050,6 @@ function getHandednessRotation(handedness, rotation) {
     }
     return [rotation[0], -rotation[1], -rotation[2]];
 }
-// apply constraints applies a biomechanical constraint onto hand pose rotations
 function resolveHandPoseRotations(handedness, restJoints, rotations, applyConstraints = false) {
     const finalPositions = new Map();
     const finalRotations = new Map();
@@ -11098,6 +11097,106 @@ function resolveHandPoseRotations(handedness, restJoints, rotations, applyConstr
 }
 function resolveSimulatorHandPoseRotations(handedness, rotations, applyConstraints = false) {
     return resolveHandPoseRotations(handedness, handedness === Handedness.LEFT ? LEFT_REST_JOINTS : RIGHT_REST_JOINTS, rotations, applyConstraints);
+}
+function resolveSimulatorRotationsFromKeypoints(handedness, joints, applyConstraints = false) {
+    const positions = new Map();
+    HAND_JOINT_NAMES.forEach((name, index) => {
+        const t = joints[index].t;
+        positions.set(name, new THREE.Vector3(t[0], t[1], t[2]));
+    });
+    const restJoints = handedness === Handedness.LEFT ? LEFT_REST_JOINTS : RIGHT_REST_JOINTS;
+    const computedRotations = {};
+    const finalRotations = new Map();
+    function getPalmBasis(wristPos, indexMcpPos, middleMcpPos) {
+        const yAxis = new THREE.Vector3()
+            .subVectors(middleMcpPos, wristPos)
+            .normalize();
+        const temp = new THREE.Vector3()
+            .subVectors(indexMcpPos, wristPos)
+            .normalize();
+        if (yAxis.lengthSq() < 1e-8 || temp.lengthSq() < 1e-8) {
+            return new THREE.Quaternion();
+        }
+        const zAxis = new THREE.Vector3().crossVectors(yAxis, temp);
+        if (zAxis.lengthSq() < 1e-8) {
+            return new THREE.Quaternion();
+        }
+        zAxis.normalize();
+        const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+        const matrix = new THREE.Matrix4();
+        matrix.makeBasis(xAxis, yAxis, zAxis);
+        return new THREE.Quaternion().setFromRotationMatrix(matrix);
+    }
+    const restWrist = restJoints.get('wrist');
+    const restIndexMcp = restJoints.get('index-finger-metacarpal');
+    const restMiddleMcp = restJoints.get('middle-finger-metacarpal');
+    const Q_rest = getPalmBasis(restWrist.position, restIndexMcp.position, restMiddleMcp.position);
+    const Q_actual = getPalmBasis(positions.get('wrist'), positions.get('index-finger-metacarpal'), positions.get('middle-finger-metacarpal'));
+    const offsetRotationWristBasis = Q_actual.clone().multiply(Q_rest.clone().invert());
+    const Q_wrist = offsetRotationWristBasis.clone().multiply(restWrist.rotation);
+    finalRotations.set('wrist', Q_wrist);
+    const offsetRotationWrist = restWrist.rotation
+        .clone()
+        .invert()
+        .multiply(offsetRotationWristBasis)
+        .multiply(restWrist.rotation);
+    const eulerWrist = new THREE.Euler().setFromQuaternion(offsetRotationWrist, 'XYZ');
+    const rawEulerWrist = getHandednessRotation(handedness, [
+        eulerWrist.x,
+        eulerWrist.y,
+        eulerWrist.z,
+    ]);
+    computedRotations['wrist'] = getRawFKRotation('wrist', rawEulerWrist);
+    // Pre-build child mapping for fast lookup (non-wrist, non-tip joints).
+    const HAND_JOINT_CHILD = {};
+    for (const [child, parent] of Object.entries(HAND_JOINT_PARENT)) {
+        if (parent !== 'wrist') {
+            HAND_JOINT_CHILD[parent] = child;
+        }
+    }
+    // Iterate remaining joints in hierarchical order.
+    for (const jointName of HAND_JOINT_NAMES) {
+        if (jointName === 'wrist' || jointName.endsWith('-tip')) {
+            continue;
+        }
+        const parentName = HAND_JOINT_PARENT[jointName];
+        const parentRotation = finalRotations.get(parentName);
+        const restJoint = restJoints.get(jointName);
+        const R_base = parentRotation.clone().multiply(restJoint.localRotation);
+        // Get the child to define the bone direction.
+        const childName = HAND_JOINT_CHILD[jointName];
+        if (!childName)
+            continue;
+        const restChild = restJoints.get(childName);
+        const v_rest = restChild.localOffset;
+        const pos_joint = positions.get(jointName);
+        const pos_child = positions.get(childName);
+        const v_actual = pos_child.clone().sub(pos_joint);
+        const v_target = v_actual.clone().applyQuaternion(R_base.clone().invert());
+        const lenSq = v_actual.lengthSq();
+        const offsetRotation = new THREE.Quaternion();
+        if (lenSq > 1e-8) {
+            offsetRotation.setFromUnitVectors(v_rest.clone().normalize(), v_target.clone().normalize());
+        }
+        const euler = new THREE.Euler().setFromQuaternion(offsetRotation, 'XYZ');
+        const rawEuler = getHandednessRotation(handedness, [
+            euler.x,
+            euler.y,
+            euler.z,
+        ]);
+        const biomechanical = getRawFKRotation(jointName, rawEuler);
+        const resolved = applyConstraints
+            ? applySimulatorHandPoseRotationConstraints({ [jointName]: biomechanical })
+            : { [jointName]: biomechanical };
+        const finalBiomechanical = resolved[jointName];
+        computedRotations[jointName] = finalBiomechanical;
+        // Save final orientation for children propagation.
+        const rawRotation = getRawFKRotation(jointName, finalBiomechanical);
+        const rotation = getHandednessRotation(handedness, rawRotation);
+        const finalOffsetRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2], 'XYZ'));
+        finalRotations.set(jointName, R_base.clone().multiply(finalOffsetRotation));
+    }
+    return computedRotations;
 }
 
 const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
@@ -22378,5 +22477,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
