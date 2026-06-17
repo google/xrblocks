@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 1b77a84
- * @builddate 2026-06-16T17:05:23.157Z
+ * @commitid 79ef2fe
+ * @builddate 2026-06-17T03:18:22.716Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9088,6 +9088,12 @@ class ObjectsOptions {
             activeBackend: 'gemini',
             gemini: {
                 systemInstruction: `Please provide me with the bounding box coordinates for the primary objects in the given image, prioritizing objects that are nearby. For each bounding box, include ymin, xmin, ymax, and xmax. These coordinates should be absolute values ranging from 0 to 1000, corresponding to the image as if it were resized to 1000x1000 pixels. The origin (xmin:0; ymin:0) is the top-left corner of the image, and (xmax:1000; ymax:1000) is the bottom-right corner. List a maximum of 5 objects. Ignore hands and other human body parts, as well as any UI elements attached to them (e.g., a blue circle attached to a finger).`,
+                /**
+                 * Extra Gemini generation config merged into the per-call config (over
+                 * the SDK defaults). Use to pin sampling parameters such as
+                 * `temperature: 0` for deterministic detections.
+                 */
+                generationConfig: {},
                 responseSchema: {
                     type: 'ARRAY',
                     items: {
@@ -12225,6 +12231,10 @@ class GeminiDetectorBackend extends BaseDetectorBackend$1 {
             responseMimeType: 'application/json',
             responseSchema: geminiOptions.responseSchema,
             systemInstruction: [{ text: geminiOptions.systemInstruction }],
+            // Spread any caller-provided generation options (temperature, topP, topK,
+            // seed, etc.). Keys here take precedence over the defaults above when
+            // they overlap, letting demos pin temperature=0 for determinism.
+            ...(geminiOptions.generationConfig ?? {}),
         };
     }
     async detect(snapshot) {
