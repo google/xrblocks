@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 71de2c1
- * @builddate 2026-06-17T18:38:55.364Z
+ * @commitid 400d2ae
+ * @builddate 2026-06-17T20:16:05.050Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -19562,6 +19562,31 @@ class Core {
     set renderer(renderer) {
         this._renderer = renderer;
     }
+    get isPaused() {
+        return this._isPaused;
+    }
+    pause() {
+        this._isPaused = true;
+    }
+    resume() {
+        this._isPaused = false;
+    }
+    stepFrame(dtMs = 16.67) {
+        if (this.isSteppingFrame) {
+            throw new Error('Core.stepFrame() cannot be called while already stepping.');
+        }
+        this.isSteppingFrame = true;
+        try {
+            this.manualStepTime += dtMs;
+            this.update(this.manualStepTime, undefined);
+            if (this.physics) {
+                this.physicsStep();
+            }
+        }
+        finally {
+            this.isSteppingFrame = false;
+        }
+    }
     /**
      * Core is a singleton manager that manages all XR "blocks".
      * It initializes core components and abstractions like the scene, camera,
@@ -19610,6 +19635,9 @@ class Core {
         this.webXRSettings = {};
         /** Whether the XR simulator is currently active. */
         this.simulatorRunning = false;
+        this._isPaused = false;
+        this.isSteppingFrame = false;
+        this.manualStepTime = 0;
         this.depth = new Depth();
         this.ai = new AI();
         this.scriptsManager = new ScriptsManager(async (script) => {
@@ -19632,7 +19660,11 @@ class Core {
          * @param frame - The WebXR frame object, if in an XR session.
          */
         this.update = (time, frame) => {
+            if (this._isPaused && !this.isSteppingFrame) {
+                return;
+            }
             this.currentFrame = frame;
+            this.manualStepTime = Math.max(this.manualStepTime, time);
             this.timer.update(time);
             if (this.simulatorRunning) {
                 this.simulator.simulatorUpdate();
@@ -19676,6 +19708,9 @@ class Core {
          * corresponding physics update on all active scripts.
          */
         this.physicsStep = () => {
+            if (this._isPaused && !this.isSteppingFrame) {
+                return;
+            }
             this.physics.physicsStep();
             this.scriptsManager.physicsStep();
         };
@@ -19709,6 +19744,7 @@ class Core {
         this.scene.add(this.xrSystemsGroup);
         this.xrSystemsGroup.add(this.user, this.dragManager, this.ui, this.sound, this.world);
         this.registry.register(this.registry);
+        this.registry.register(this);
         this.registry.register(this.waitFrame);
         this.registry.register(this.scene);
         this.registry.register(this.timer);

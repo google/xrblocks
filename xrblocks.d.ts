@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 71de2c1
- * @builddate 2026-06-17T18:38:55.364Z
+ * @commitid 400d2ae
+ * @builddate 2026-06-17T20:16:05.050Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7884,6 +7884,9 @@ declare class Core {
     private webXRSettings;
     /** Whether the XR simulator is currently active. */
     simulatorRunning: boolean;
+    private _isPaused;
+    private isSteppingFrame;
+    private manualStepTime;
     private _renderer?;
     options: Options;
     deviceCamera?: XRDeviceCamera;
@@ -7907,6 +7910,10 @@ declare class Core {
      */
     get renderer(): THREE.WebGLRenderer;
     set renderer(renderer: THREE.WebGLRenderer);
+    get isPaused(): boolean;
+    pause(): void;
+    resume(): void;
+    stepFrame(dtMs?: number): void;
     /**
      * Core is a singleton manager that manages all XR "blocks".
      * It initializes core components and abstractions like the scene, camera,
