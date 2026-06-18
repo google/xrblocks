@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 400d2ae
- * @builddate 2026-06-17T20:16:05.050Z
+ * @commitid 2d640c9
+ * @builddate 2026-06-18T04:02:00.912Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2514,7 +2514,7 @@ class XRDeviceCamera extends VideoStream {
             console.debug('Requesting media stream with constraints:', this.videoConstraints_);
             let stream = null;
             const deviceIdConstraint = this.videoConstraints_.deviceId;
-            const targetDeviceId = typeof deviceIdConstraint === 'string'
+            let targetDeviceId = typeof deviceIdConstraint === 'string'
                 ? deviceIdConstraint
                 : Array.isArray(deviceIdConstraint)
                     ? deviceIdConstraint[0]
@@ -2533,6 +2533,7 @@ class XRDeviceCamera extends VideoStream {
                     deviceId: targetDeviceIdFromLabel,
                     ...this.videoConstraints_,
                 };
+                targetDeviceId = targetDeviceIdFromLabel;
             }
             if (useSimulatorCamera) {
                 stream = this.simulatorCamera.getMedia(this.videoConstraints_);
@@ -2541,9 +2542,14 @@ class XRDeviceCamera extends VideoStream {
                 }
             }
             else {
+                const constraints = { ...this.videoConstraints_ };
+                if (targetDeviceId === '') {
+                    delete constraints.deviceId;
+                }
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: this.videoConstraints_,
+                    video: constraints,
                 });
+                this.availableDevices_ = await this.getAvailableVideoDevices();
             }
             const videoTracks = stream?.getVideoTracks() || [];
             if (!videoTracks.length) {
@@ -2554,6 +2560,11 @@ class XRDeviceCamera extends VideoStream {
             console.debug('Active track settings:', this.currentTrackSettings_);
             if (this.currentTrackSettings_.deviceId) {
                 this.currentDeviceIndex_ = this.availableDevices_.findIndex((device) => device.deviceId === this.currentTrackSettings_.deviceId);
+                if (targetDeviceId === '') {
+                    this.videoConstraints_.deviceId = {
+                        exact: this.currentTrackSettings_.deviceId,
+                    };
+                }
             }
             else {
                 console.warn('Stream started without deviceId as it was unavailable');
