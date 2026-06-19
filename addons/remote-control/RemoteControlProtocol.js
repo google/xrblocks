@@ -10,11 +10,16 @@ function createHandshake() {
         },
     };
 }
-function isStepMessage(value) {
+function isCommandMessage(value) {
     if (!value || typeof value !== 'object')
         return false;
-    const message = value;
-    return message.type === 'STEP' && !!message.control;
+    const type = value.type;
+    return (type === 'STEP' ||
+        type === 'TELEPORT_TO' ||
+        type === 'LOOK_AT_TARGET' ||
+        type === 'POINT_TO' ||
+        type === 'REACH_TO' ||
+        type === 'CLICK');
 }
 function parseRemoteControlMessage(data) {
     if (typeof data !== 'string') {
@@ -23,4 +28,4 @@ function parseRemoteControlMessage(data) {
     return JSON.parse(data);
 }
 
-export { REMOTE_CONTROL_PROTOCOL_VERSION, createHandshake, isStepMessage, parseRemoteControlMessage };
+export { REMOTE_CONTROL_PROTOCOL_VERSION, createHandshake, isCommandMessage, parseRemoteControlMessage };

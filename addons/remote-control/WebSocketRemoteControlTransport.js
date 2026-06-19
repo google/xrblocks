@@ -1,8 +1,8 @@
-import { createHandshake, parseRemoteControlMessage, isStepMessage } from './RemoteControlProtocol.js';
+import { createHandshake, parseRemoteControlMessage, isCommandMessage } from './RemoteControlProtocol.js';
 
 class WebSocketRemoteControlTransport {
-    constructor(options, handleStep) {
-        this.handleStep = handleStep;
+    constructor(options, handleCommand) {
+        this.handleCommand = handleCommand;
         this.stopped = false;
         this.onOpen = () => {
             this.send(createHandshake());
@@ -51,12 +51,12 @@ class WebSocketRemoteControlTransport {
             this.sendError(undefined, error);
             return;
         }
-        if (!isStepMessage(message)) {
-            this.sendError(message?.id, new Error('Invalid STEP payload'));
+        if (!isCommandMessage(message)) {
+            this.sendError(message?.id, new Error('Invalid message payload'));
             return;
         }
         try {
-            const result = await this.handleStep(message);
+            const result = await this.handleCommand(message);
             this.send({
                 type: 'STEP_COMPLETED',
                 ...result,

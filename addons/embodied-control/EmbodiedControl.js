@@ -42,6 +42,36 @@ class EmbodiedControl extends Script {
     get busy() {
         return this.executor?.busy ?? false;
     }
+    teleportTo(target, options) {
+        if (!this.executor) {
+            throw new Error('EmbodiedControl is not initialized.');
+        }
+        return this.executor.teleportTo(target, options);
+    }
+    lookAtTarget(target, options) {
+        if (!this.executor) {
+            throw new Error('EmbodiedControl is not initialized.');
+        }
+        return this.executor.lookAtTarget(target, options);
+    }
+    pointTo(handIndex, target, options) {
+        if (!this.executor) {
+            throw new Error('EmbodiedControl is not initialized.');
+        }
+        return this.executor.pointTo(handIndex, target, options);
+    }
+    reachTo(handIndex, target, options) {
+        if (!this.executor) {
+            throw new Error('EmbodiedControl is not initialized.');
+        }
+        return this.executor.reachTo(handIndex, target, options);
+    }
+    click(handIndex = 1, options) {
+        if (!this.executor) {
+            throw new Error('EmbodiedControl is not initialized.');
+        }
+        return this.executor.click(handIndex, options);
+    }
 }
 
 export { EmbodiedControl };

@@ -22,4 +22,21 @@ export declare class EmbodiedControl extends Script {
     step(step: EmbodiedControlStep): Promise<EmbodiedControlStepResult>;
     applyControl(control: XRCompoundControl): void;
     get busy(): boolean;
+    teleportTo(target: THREE.Vector3 | [number, number, number] | THREE.Object3D, options?: {
+        distance?: number;
+        faceTarget?: boolean;
+        snapToGround?: boolean;
+    }): Promise<EmbodiedControlStepResult>;
+    lookAtTarget(target: THREE.Object3D | THREE.Vector3 | [number, number, number], options?: {
+        velocity?: number;
+    }): Promise<EmbodiedControlStepResult>;
+    pointTo(handIndex: number, target: THREE.Object3D | THREE.Vector3 | [number, number, number], options?: {
+        velocity?: number;
+    }): Promise<EmbodiedControlStepResult>;
+    reachTo(handIndex: number, target: THREE.Vector3 | [number, number, number] | THREE.Object3D, options?: {
+        velocity?: number;
+    }): Promise<EmbodiedControlStepResult>;
+    click(handIndex?: number, options?: {
+        durationMs?: number;
+    }): Promise<EmbodiedControlStepResult>;
 }

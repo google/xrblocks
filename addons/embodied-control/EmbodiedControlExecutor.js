@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { User, World } from 'xrblocks';
 import { DEFAULT_EMBODIED_CONTROL_OPTIONS } from './EmbodiedControlTypes.js';
 
 const vector = new THREE.Vector3();
@@ -170,6 +171,221 @@ class EmbodiedControlExecutor {
         }
         else {
             simulator.hands.setRightHandRotations(mergedRotations, this.options.applyHandRotationConstraints);
+        }
+    }
+    async executeAction(actionFn) {
+        if (this.activeStep) {
+            throw new EmbodiedControlBusyError();
+        }
+        this.activeStep = true;
+        try {
+            let screenshotPromise;
+            const elapsedMs = await actionFn();
+            if (this.options.includeScreenshot) {
+                screenshotPromise =
+                    this.dependencies.screenshotSynthesizer.getScreenshot();
+            }
+            const observation = await this.createObservation(screenshotPromise);
+            return {
+                elapsedMs,
+                observation,
+            };
+        }
+        finally {
+            this.activeStep = false;
+        }
+    }
+    getTargetWorldPosition(target, out) {
+        if (target instanceof THREE.Vector3) {
+            out.copy(target);
+        }
+        else if (Array.isArray(target)) {
+            out.fromArray(target);
+        }
+        else if (target instanceof THREE.Object3D) {
+            target.getWorldPosition(out);
+        }
+    }
+    async teleportTo(target, options = {}) {
+        return this.executeAction(async () => {
+            const { distance = 1.5, faceTarget = true, snapToGround = false } = options;
+            const { camera, core } = this.dependencies;
+            const user = core.registry.get(User);
+            const world = core.registry.get(World);
+            const targetWorldPos = new THREE.Vector3();
+            this.getTargetWorldPosition(target, targetWorldPos);
+            if (target instanceof THREE.Object3D) {
+                const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(target.quaternion);
+                camera.position.copy(targetWorldPos).addScaledVector(forward, distance);
+            }
+            else {
+                camera.position.copy(targetWorldPos);
+            }
+            if (snapToGround && world?.planes && user) {
+                const horizontalPlanes = world.planes.get().filter((p) => {
+                    const orientation = (p.orientation || '').toLowerCase();
+                    const label = (p.label || '').toLowerCase();
+                    return (orientation === 'horizontal' ||
+                        label === 'floor' ||
+                        label === 'horizontal');
+                });
+                if (horizontalPlanes.length > 0) {
+                    const raycaster = new THREE.Raycaster();
+                    raycaster.set(new THREE.Vector3(camera.position.x, camera.position.y + 10, camera.position.z), new THREE.Vector3(0, -1, 0));
+                    const hits = raycaster.intersectObjects(horizontalPlanes);
+                    if (hits.length > 0) {
+                        camera.position.y = hits[0].point.y + user.height;
+                    }
+                }
+            }
+            if (faceTarget && target instanceof THREE.Object3D) {
+                camera.lookAt(targetWorldPos);
+            }
+            core.stepFrame(this.options.tickMs);
+            return this.options.tickMs;
+        });
+    }
+    async lookAtTarget(target, options = {}) {
+        return this.executeAction(async () => {
+            const { velocity } = options;
+            const { camera, core } = this.dependencies;
+            const targetWorldPos = new THREE.Vector3();
+            this.getTargetWorldPosition(target, targetWorldPos);
+            if (velocity === undefined || velocity <= 0) {
+                camera.lookAt(targetWorldPos);
+                core.stepFrame(this.options.tickMs);
+                return this.options.tickMs;
+            }
+            const Q_s = camera.quaternion.clone();
+            camera.lookAt(targetWorldPos);
+            const Q_t = camera.quaternion.clone();
+            camera.quaternion.copy(Q_s);
+            const angle = Q_s.angleTo(Q_t);
+            const durationMs = (angle / velocity) * 1000;
+            let elapsedMs = 0;
+            const tickMs = this.options.tickMs;
+            const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
+            for (let i = 0; i < stepCount; i++) {
+                const remainingMs = Math.max(0, durationMs - elapsedMs);
+                const currentTickMs = i === stepCount - 1
+                    ? remainingMs || tickMs
+                    : Math.min(tickMs, remainingMs);
+                elapsedMs += currentTickMs;
+                const u = durationMs > 0 ? elapsedMs / durationMs : 1;
+                camera.quaternion.slerpQuaternions(Q_s, Q_t, u);
+                core.stepFrame(currentTickMs);
+                if (this.options.realTime && i < stepCount - 1) {
+                    await nextAnimationFrame();
+                }
+            }
+            return durationMs;
+        });
+    }
+    async pointTo(handIndex, target, options = {}) {
+        return this.executeAction(async () => {
+            const { velocity } = options;
+            const { camera, simulator, core } = this.dependencies;
+            const targetWorldPos = new THREE.Vector3();
+            this.getTargetWorldPosition(target, targetWorldPos);
+            const targetCamSpace = targetWorldPos
+                .clone()
+                .applyMatrix4(camera.matrixWorldInverse);
+            const controllerPos = simulator.simulatorControllerState.localControllerPositions[handIndex];
+            const up = new THREE.Vector3(0, 1, 0);
+            const matrix = new THREE.Matrix4().lookAt(controllerPos, targetCamSpace, up);
+            const targetQuat = new THREE.Quaternion().setFromRotationMatrix(matrix);
+            if (velocity === undefined || velocity <= 0) {
+                simulator.simulatorControllerState.localControllerOrientations[handIndex].copy(targetQuat);
+                core.stepFrame(this.options.tickMs);
+                return this.options.tickMs;
+            }
+            const startQuat = simulator.simulatorControllerState.localControllerOrientations[handIndex].clone();
+            const angle = startQuat.angleTo(targetQuat);
+            const durationMs = (angle / velocity) * 1000;
+            let elapsedMs = 0;
+            const tickMs = this.options.tickMs;
+            const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
+            for (let i = 0; i < stepCount; i++) {
+                const remainingMs = Math.max(0, durationMs - elapsedMs);
+                const currentTickMs = i === stepCount - 1
+                    ? remainingMs || tickMs
+                    : Math.min(tickMs, remainingMs);
+                elapsedMs += currentTickMs;
+                const u = durationMs > 0 ? elapsedMs / durationMs : 1;
+                simulator.simulatorControllerState.localControllerOrientations[handIndex].slerpQuaternions(startQuat, targetQuat, u);
+                core.stepFrame(currentTickMs);
+                if (this.options.realTime && i < stepCount - 1) {
+                    await nextAnimationFrame();
+                }
+            }
+            return durationMs;
+        });
+    }
+    async reachTo(handIndex, target, options = {}) {
+        return this.executeAction(async () => {
+            const { velocity } = options;
+            const { camera, simulator, core } = this.dependencies;
+            const targetWorldPos = new THREE.Vector3();
+            this.getTargetWorldPosition(target, targetWorldPos);
+            const targetCamSpace = targetWorldPos
+                .clone()
+                .applyMatrix4(camera.matrixWorldInverse);
+            if (velocity === undefined || velocity <= 0) {
+                simulator.simulatorControllerState.localControllerPositions[handIndex].copy(targetCamSpace);
+                core.stepFrame(this.options.tickMs);
+                return this.options.tickMs;
+            }
+            const startPos = simulator.simulatorControllerState.localControllerPositions[handIndex].clone();
+            const distance = startPos.distanceTo(targetCamSpace);
+            const durationMs = (distance / velocity) * 1000;
+            let elapsedMs = 0;
+            const tickMs = this.options.tickMs;
+            const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
+            for (let i = 0; i < stepCount; i++) {
+                const remainingMs = Math.max(0, durationMs - elapsedMs);
+                const currentTickMs = i === stepCount - 1
+                    ? remainingMs || tickMs
+                    : Math.min(tickMs, remainingMs);
+                elapsedMs += currentTickMs;
+                const u = durationMs > 0 ? elapsedMs / durationMs : 1;
+                simulator.simulatorControllerState.localControllerPositions[handIndex].lerpVectors(startPos, targetCamSpace, u);
+                core.stepFrame(currentTickMs);
+                if (this.options.realTime && i < stepCount - 1) {
+                    await nextAnimationFrame();
+                }
+            }
+            return durationMs;
+        });
+    }
+    async click(handIndex = 1, options = {}) {
+        const { durationMs = 200 } = options;
+        const { simulator } = this.dependencies;
+        // Change the lerp speed to allow the hand to pinch and open all the way.
+        const originalLerpSpeed = simulator.hands.lerpSpeed;
+        simulator.hands.lerpSpeed = 0.3;
+        try {
+            const pressControl = handIndex === 0
+                ? { leftHand: { selectStart: true } }
+                : { rightHand: { selectStart: true } };
+            const pressResult = await this.step({
+                control: pressControl,
+                durationMs,
+            });
+            const releaseControl = handIndex === 0
+                ? { leftHand: { selectEnd: true } }
+                : { rightHand: { selectEnd: true } };
+            const releaseResult = await this.step({
+                control: releaseControl,
+                durationMs,
+            });
+            return {
+                id: releaseResult.id,
+                elapsedMs: pressResult.elapsedMs + releaseResult.elapsedMs,
+                observation: releaseResult.observation,
+            };
+        }
+        finally {
+            simulator.hands.lerpSpeed = originalLerpSpeed;
         }
     }
     async createObservation(screenshotPromise) {

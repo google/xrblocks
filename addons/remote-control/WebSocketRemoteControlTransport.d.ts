@@ -1,20 +1,20 @@
 import type { EmbodiedControlStepResult } from '../embodied-control';
-import { type RemoteControlStepMessage } from './RemoteControlProtocol';
+import { type RemoteControlMessage } from './RemoteControlProtocol';
 export type WebSocketRemoteControlTransportOptions = {
     url?: string;
     reconnect?: boolean;
     reconnectDelayMs?: number;
 };
-export type RemoteControlStepHandler = (step: RemoteControlStepMessage) => Promise<EmbodiedControlStepResult>;
+export type RemoteControlCommandHandler = (command: RemoteControlMessage) => Promise<EmbodiedControlStepResult>;
 export declare class WebSocketRemoteControlTransport {
-    private handleStep;
+    private handleCommand;
     private ws?;
     private stopped;
     private reconnectTimer?;
     private readonly url;
     private readonly reconnect;
     private readonly reconnectDelayMs;
-    constructor(options: WebSocketRemoteControlTransportOptions, handleStep: RemoteControlStepHandler);
+    constructor(options: WebSocketRemoteControlTransportOptions, handleCommand: RemoteControlCommandHandler);
     connect(): void;
     disconnect(): void;
     private onOpen;

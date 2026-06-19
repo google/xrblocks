@@ -26,6 +26,25 @@ export declare class EmbodiedControlExecutor {
     private applyInstantHandControls;
     private applyHandSelect;
     private applyHandRotations;
+    private executeAction;
+    private getTargetWorldPosition;
+    teleportTo(target: THREE.Vector3 | [number, number, number] | THREE.Object3D, options?: {
+        distance?: number;
+        faceTarget?: boolean;
+        snapToGround?: boolean;
+    }): Promise<EmbodiedControlStepResult>;
+    lookAtTarget(target: THREE.Object3D | THREE.Vector3 | [number, number, number], options?: {
+        velocity?: number;
+    }): Promise<EmbodiedControlStepResult>;
+    pointTo(handIndex: number, target: THREE.Object3D | THREE.Vector3 | [number, number, number], options?: {
+        velocity?: number;
+    }): Promise<EmbodiedControlStepResult>;
+    reachTo(handIndex: number, target: THREE.Vector3 | [number, number, number] | THREE.Object3D, options?: {
+        velocity?: number;
+    }): Promise<EmbodiedControlStepResult>;
+    click(handIndex?: number, options?: {
+        durationMs?: number;
+    }): Promise<EmbodiedControlStepResult>;
     private createObservation;
     private createHandObservation;
 }
