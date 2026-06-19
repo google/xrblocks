@@ -137,7 +137,7 @@ code below:
 
 ### Gem
 
-For rapdi prototyping, please refer to this
+For rapid prototyping, please refer to this
 [blog](https://research.google/blog/vibe-coding-xr-accelerating-ai-xr-prototyping-with-xr-blocks-and-gemini)
 and try out [XR Blocks Gem](https://xrblocks.github.io/gem) on Android XR or
 desktop using Chrome.

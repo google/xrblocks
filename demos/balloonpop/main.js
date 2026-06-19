@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   o.physics.useEventQueue = true;
   o.physics.worldStep = true;
   o.hands.enabled = true;
-  o.simulator.defaultMode = xb.SimulatorMode.POSE;
+  o.simulator.defaultMode = xb.SimulatorMode.USER;
 
   // START DISABLED to avoid Simulator Camera-Clone Crash
   o.depth.enabled = false;

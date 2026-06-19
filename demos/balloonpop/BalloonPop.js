@@ -72,6 +72,47 @@ function createStepperControl(
   grid.addRow({weight: getW(0.01)});
 }
 
+function applyGlimmerPatch(panel) {
+  if (panel.mesh && panel.mesh.material) {
+    let fs = panel.mesh.material.fragmentShader;
+    if (!fs.includes('Jetpack Glimmer')) {
+      fs = fs.replace(
+        'vec4 colorOutside = vec4(0.0, 0.0, 0.0, 0.0);',
+        `// Jetpack Glimmer
+        float isOutline = smoothstep(uOutlineWidth, uOutlineWidth - aa, -distOuterUV);
+        colorInside = mix(colorInside, vec4(1.0, 1.0, 1.0, 1.0), isOutline);
+        vec4 colorOutside = vec4(0.0, 0.0, 0.0, 0.0);`
+      );
+      panel.mesh.material.fragmentShader = fs;
+      panel.mesh.material.needsUpdate = true;
+    }
+  }
+}
+
+function applySquircleBorderPatch(button) {
+  if (button.mesh && button.mesh.material) {
+    let fs = button.mesh.material.fragmentShader;
+    if (!fs.includes('Squircle Border')) {
+      fs = fs.replace(
+        'vec4 finalColor = mix(colorInside, colorOutside, smoothstep(0.0, 1.0, dist));',
+        `// Squircle Border
+        float isOutline = smoothstep(-3.0, -1.0, dist);
+        vec4 customBg = vec4(1.0, 1.0, 1.0, 0.25);
+        vec4 customBorder = vec4(1.0, 1.0, 1.0, 1.0);
+        vec4 myColorInside = mix(customBg, customBorder, isOutline);
+        vec4 finalColor = mix(myColorInside, colorOutside, smoothstep(0.0, 1.0, dist));`
+      );
+      fs = fs.replace(
+        'gl_FragColor = uOpacity * finalColor.a * vec4(finalColor.rgb, 1.0);',
+        `// Straight Alpha Fix
+        gl_FragColor = vec4(finalColor.rgb, finalColor.a * uOpacity);`
+      );
+      button.mesh.material.fragmentShader = fs;
+      button.mesh.material.needsUpdate = true;
+    }
+  }
+}
+
 export class BalloonGame extends xb.Script {
   constructor() {
     super();
@@ -94,6 +135,7 @@ export class BalloonGame extends xb.Script {
     this.raycaster = new THREE.Raycaster();
     this.menuPos = new THREE.Vector3(0.6, 1.3, -1.0);
     this.menuRot = new THREE.Euler(0, -0.4, 0);
+    this.gameStarted = false;
   }
 
   async init() {
@@ -218,6 +260,7 @@ export class BalloonGame extends xb.Script {
     this.RAPIER = physics.RAPIER;
     this.spawnBalloons();
     this.renderMenu();
+    this.renderReadme();
   }
 
   renderMenu() {
@@ -235,6 +278,9 @@ export class BalloonGame extends xb.Script {
     const headerHeight = H_TOGGLE + H_SCORE + H_RESET + H_SPACE;
     const expandedControlsHeight =
       (H_BUTTON + H_VALUE_LABEL + H_BUTTON + H_SPACE) * 2;
+    if (this.balloonsPopped > 0) {
+      this.isMenuExpanded = false;
+    }
     const menuHeight = this.isMenuExpanded
       ? headerHeight + expandedControlsHeight
       : headerHeight;
@@ -243,22 +289,26 @@ export class BalloonGame extends xb.Script {
     this.menuPanel = new xb.SpatialPanel({
       width: MENU_WIDTH,
       height: menuHeight,
-      backgroundColor: '#2b2b2baa',
+      backgroundColor: '#00000000',
       showEdge: true,
       edgeColor: 'white',
       edgeWidth: 0.001,
     });
+
+    applyGlimmerPatch(this.menuPanel);
     this.menuPanel.position.copy(this.menuPos);
     this.menuPanel.rotation.copy(this.menuRot);
     this.add(this.menuPanel);
     const grid = this.menuPanel.addGrid();
     grid.addRow({weight: getW(H_TOGGLE)}).addTextButton({
       text: this.isMenuExpanded ? '\u25B2' : '\u25BC',
-      fontColor: '#ffffff',
+      fontColor: this.balloonsPopped === 0 ? '#ffffff' : '#888888',
       backgroundColor: '#444444',
       fontSize: 0.7,
       weight: 1.0,
-    }).onTriggered = () => this.toggleMenu();
+    }).onTriggered = () => {
+      if (this.balloonsPopped === 0) this.toggleMenu();
+    };
     this.scoreText = grid.addRow({weight: getW(H_SCORE)}).addText({
       text: `${this.balloonsPopped} / ${this.balloonCount}`,
       fontColor: '#ffffff',
@@ -295,6 +345,47 @@ export class BalloonGame extends xb.Script {
         false
       );
     }
+  }
+
+  renderReadme() {
+    this.readmePanel = new xb.SpatialPanel({
+      width: 0.9,
+      height: 0.5,
+      backgroundColor: '#00000000',
+      showEdge: true,
+      edgeColor: 'white',
+      edgeWidth: 0.001,
+    });
+    applyGlimmerPatch(this.readmePanel);
+
+    this.readmePanel.position.set(-0.8, 1.4, -0.8);
+    this.readmePanel.rotation.set(0, Math.PI / 6, 0);
+    this.add(this.readmePanel);
+
+    const grid = this.readmePanel.addGrid();
+
+    grid.addRow({weight: 0.65}).addText({
+      text: 'Controls\n\nXR: Pinch either hand to shoot\nDesktop: WASD + Right-Click to move, Left-Click to shoot',
+      fontColor: '#ffffff',
+      fontSize: 0.06,
+      textAlign: 'center',
+    });
+
+    const okayBtn = grid.addRow({weight: 0.35}).addTextButton({
+      text: 'OK',
+      fontColor: '#ffffff',
+      backgroundColor: '#ffffff',
+      opacity: 1.0,
+      fontSize: 0.15,
+      width: 0.5,
+      height: 0.8,
+    });
+    okayBtn.onTriggered = () => {
+      this.gameStarted = true;
+      this.remove(this.readmePanel);
+      this.readmePanel = null;
+    };
+    applySquircleBorderPatch(okayBtn);
   }
 
   toggleMenu() {
@@ -358,7 +449,7 @@ export class BalloonGame extends xb.Script {
 
   clearBalloons() {
     if (!this.physicsWorld) return;
-    for (const [h, b] of this.balloons.entries()) {
+    for (const b of this.balloons.values()) {
       this.remove(b.mesh);
       this.physicsWorld.removeCollider(b.collider, false);
       this.physicsWorld.removeRigidBody(b.rigidBody);
@@ -386,6 +477,7 @@ export class BalloonGame extends xb.Script {
   }
 
   onSelectStart(event) {
+    if (!this.gameStarted) return;
     if (this.menuPanel && this.menuPanel.parent) {
       const ctrl = event.target,
         pos = new THREE.Vector3(),
@@ -445,7 +537,7 @@ export class BalloonGame extends xb.Script {
 
   update(time, delta) {
     if (this.physicsWorld) {
-      for (const [h, b] of this.balloons.entries()) {
+      for (const b of this.balloons.values()) {
         b.mesh.position.copy(b.rigidBody.translation());
         b.mesh.quaternion.copy(b.rigidBody.rotation());
       }
@@ -475,7 +567,7 @@ export class BalloonGame extends xb.Script {
     if (!this.physics || !this.physicsWorld || !xb.core.camera) return;
     const camPos = xb.core.camera.position;
     const speedFactor = this.balloonSpeed / 10;
-    for (const [h, b] of this.balloons.entries()) {
+    for (const b of this.balloons.values()) {
       const s = speedFactor;
       b.rigidBody.addForce(
         {
@@ -524,7 +616,11 @@ export class BalloonGame extends xb.Script {
     }
     this.removeBalloon(h);
     this.balloonsPopped++;
-    this.updateScoreDisplay();
+    if (this.balloonsPopped === 1) {
+      this.renderMenu();
+    } else {
+      this.updateScoreDisplay();
+    }
   }
   removeBalloon(h) {
     const b = this.balloons.get(h);
