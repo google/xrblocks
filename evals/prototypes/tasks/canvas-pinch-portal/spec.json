@@ -1,0 +1,8 @@
+{
+  "skill": "xb-hands",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": [],
+  "expected_apis": ["enableHands", "xb.user.hands"],
+  "forbidden_patterns": ["navigator\\.xr\\.", "XRHandModelFactory"]
+}

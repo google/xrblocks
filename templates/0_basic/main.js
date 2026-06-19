@@ -39,6 +39,11 @@ class MainScript extends xb.Script {
   onSelecting(event) {
     this.player.material.color.set(0x66ccff);
   }
+
+  dispose() {
+    this.player.geometry.dispose();
+    this.player.material.dispose();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function () {

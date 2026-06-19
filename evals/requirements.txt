@@ -1,0 +1,9 @@
+# Agent runner + judge.
+google-genai>=0.3.0
+
+# Charts in plot.py.
+matplotlib>=3.7
+numpy>=1.24
+
+# Smoke runner (optional, only needed for prototypes/smoke.py).
+playwright>=1.40

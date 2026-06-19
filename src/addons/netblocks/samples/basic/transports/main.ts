@@ -125,7 +125,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   options.enableUI();
   options.reticles.enabled = true;
   options.controllers.visualizeRays = false;
-  options.simulator.instructions.enabled = false;
   const app = new TransportsSample();
   xb.add(app);
   await xb.init(options);

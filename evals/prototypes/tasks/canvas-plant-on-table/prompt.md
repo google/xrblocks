@@ -1,0 +1,1 @@
+When I open the app, place a small virtual plant on the nearest flat surface in my real room. The plant should sit on top of a table or the floor, not float in mid air. Keep the cylinder from the starter template too.

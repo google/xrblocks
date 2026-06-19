@@ -145,7 +145,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
       let stream = null;
 
       const deviceIdConstraint = this.videoConstraints_.deviceId;
-      const targetDeviceId =
+      let targetDeviceId =
         typeof deviceIdConstraint === 'string'
           ? deviceIdConstraint
           : Array.isArray(deviceIdConstraint)
@@ -168,6 +168,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
           deviceId: targetDeviceIdFromLabel,
           ...this.videoConstraints_,
         };
+        targetDeviceId = targetDeviceIdFromLabel;
       }
 
       if (useSimulatorCamera) {
@@ -176,9 +177,14 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
           throw new Error('Simulator camera failed to provide a media stream.');
         }
       } else {
+        const constraints = {...this.videoConstraints_};
+        if (targetDeviceId === '') {
+          delete constraints.deviceId;
+        }
         stream = await navigator.mediaDevices.getUserMedia({
-          video: this.videoConstraints_,
+          video: constraints,
         });
+        this.availableDevices_ = await this.getAvailableVideoDevices();
       }
 
       const videoTracks = stream?.getVideoTracks() || [];
@@ -195,6 +201,11 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
         this.currentDeviceIndex_ = this.availableDevices_.findIndex(
           (device) => device.deviceId === this.currentTrackSettings_!.deviceId
         );
+        if (targetDeviceId === '') {
+          this.videoConstraints_.deviceId = {
+            exact: this.currentTrackSettings_.deviceId,
+          };
+        }
       } else {
         console.warn('Stream started without deviceId as it was unavailable');
       }

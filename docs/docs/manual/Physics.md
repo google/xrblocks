@@ -1,5 +1,6 @@
 ---
-sidebar_position: 6
+sidebar_position: 13
+title: Physics
 ---
 
 Physics in XR Blocks is powered by the [Rapier physics engine](https://rapier.rs/).

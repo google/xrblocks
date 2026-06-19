@@ -1,0 +1,118 @@
+---
+sidebar_position: 10
+title: World Understanding
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# World Understanding
+
+The `xb.world` subsystem exposes real-world environment understanding to your application. This includes:
+
+1. **Plane Detection**: Real-world horizontal and vertical surfaces (floors, walls, tables).
+2. **Mesh Detection**: Environmental reconstruction of complex geometry.
+3. **Object Detection**: Identifying real objects (e.g., cups, laptops, chairs) using AI models.
+
+---
+
+## Plane Detection
+
+Plane detection is useful for placing virtual models (e.g., characters, furniture) on real-world surfaces.
+
+### Setup
+
+Enable plane detection in your options:
+
+```javascript
+import * as xb from 'xrblocks';
+
+const options = new xb.Options();
+options.enablePlaneDetection();
+xb.init(options);
+```
+
+### Auto-Placing Objects
+
+Use the built-in helper function to place virtual models on the first detected horizontal surface:
+
+```javascript
+class PlacementScript extends xb.Script {
+  init() {
+    const model = this.createVirtualModel();
+    this.add(model);
+
+    // Attempts to place the model on a horizontal surface (e.g., table)
+    // with a timeout of 30 seconds
+    xb.world
+      .placeOnHorizontalSurface(model, {seconds: 30})
+      .then(() => console.log('Successfully placed!'))
+      .catch((err) => console.warn('Placement timed out:', err));
+  }
+}
+```
+
+---
+
+## Mesh Detection
+
+Scene mesh detection allows you to reconstruct the geometry of the surrounding environment, which is useful for spatial occlusion, real physics collisions, and shadow mapping.
+
+Enable mesh detection and show debug visualizations:
+
+```javascript
+const options = new xb.Options();
+options.world.enableMeshDetection();
+options.world.meshes.showDebugVisualizations = true; // Visualize reconstructed geometry
+xb.init(options);
+```
+
+---
+
+## Object Detection (AI / Vision)
+
+Object detection detects physical items in the environment, lifts their 2D camera coordinates into 3D space using depth mapping, and positions them as interactive `THREE.Object3D` entities in your scene.
+
+### Requirements
+
+This feature requires the environment camera feed, generative AI/vision backends, and depth mapping:
+
+```javascript
+const options = new xb.Options();
+options.enableAI(); // Generative AI backend
+options.enableCamera('environment'); // Real camera passthrough feed
+options.enableDepth(); // Depth estimation for 3D positioning
+
+options.world.enableObjectDetection();
+options.world.objects.showDebugVisualizations = true; // Visual labels over items
+
+xb.init(options);
+```
+
+### Running Object Detection
+
+Object detection is run on-demand (e.g., when a user pinches or clicks a button) because it triggers external model queries:
+
+```javascript
+class ScannerScript extends xb.Script {
+  async onSelectEnd() {
+    console.log('Running object detection scanner...');
+
+    // Runs a visual query against the environment feed
+    const detectedObjects = await xb.world.objects.runDetection();
+
+    // detectedObjects is an array of THREE.Object3D nodes positioned at their actual real-world coords
+    for (const obj of detectedObjects) {
+      console.log(`Detected: ${obj.name} (ID: ${obj.userData.objectId})`);
+    }
+  }
+}
+```
+
+### Backends
+
+Under the hood, object detection uses pluggable backends selected via `options.world.objects.backend`:
+
+- **`GeminiDetectorBackend`**: Queries Gemini models using visual camera frames (requires AI API keys, see the [Generative AI](AI.mdx) guide).
+- **`MediaPipeDetectorBackend`**: Runs local MediaPipe object detection model.
+
+For working samples, see <CodeSearchLink path="samples/depthmesh/main.js"/> and <CodeSearchLink path="templates/8_objects/index.html"/>.

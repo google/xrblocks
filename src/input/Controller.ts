@@ -17,6 +17,7 @@ export interface Controller extends THREE.Object3D<ControllerEventMap> {
   reticle?: Reticle;
   gamepad?: Gamepad;
   inputSource?: Partial<XRInputSource>;
+  updatePose?(): void;
 }
 
 export interface ControllerEvent {

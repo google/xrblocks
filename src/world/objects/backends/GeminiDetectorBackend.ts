@@ -32,6 +32,10 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
       responseMimeType: 'application/json',
       responseSchema: geminiOptions.responseSchema,
       systemInstruction: [{text: geminiOptions.systemInstruction}],
+      // Spread any caller-provided generation options (temperature, topP, topK,
+      // seed, etc.). Keys here take precedence over the defaults above when
+      // they overlap, letting demos pin temperature=0 for determinism.
+      ...(geminiOptions.generationConfig ?? {}),
     };
   }
 

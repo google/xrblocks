@@ -1,0 +1,220 @@
+import * as THREE from 'three';
+import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
+import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {Script} from '../../core/Script';
+import {Depth} from '../../depth/Depth';
+import {enableAcceleratedRaycast, isBVHReady} from '../../utils/BVHRaycast';
+import {WorldOptions} from '../WorldOptions';
+import {DetectedFace} from './DetectedFace';
+import {BaseFaceBackend, FaceBackendContext} from './FaceDetectorBackend';
+import {MediaPipeFaceBackend} from './backends/MediaPipeFaceBackend';
+
+// Kick off the BVH-accelerated raycast prototype patches at module
+// load so the per-landmark raycasts inside processFaceLandmarkerResult
+// go through the accelerated path. Fire-and-forget: the helper loads
+// three-mesh-bvh dynamically and the SDK keeps working even if the
+// module isn't installed or in the importmap (raycasts fall back to
+// the stock walker). idempotent across modules so multiple subsystems
+// can ping it safely.
+//
+// FaceLandmarker emits 478 landmarks per face and we raycast each one
+// against the depth-mesh snapshot. Stock three.js is O(triangles) per
+// ray; the depth mesh runs in the thousands of triangles so without
+// BVH the per-detection raycast loop alone dominates the frame budget.
+enableAcceleratedRaycast();
+
+/**
+ * A detector script that orchestrates face landmark estimation. Manages
+ * the backend face detector lifecycle (e.g. MediaPipe) and exposes the
+ * detected faces, including 3D landmark positions, blendshape weights,
+ * and rigid head transforms, in the world coordinate space.
+ */
+export class FaceRecognizer extends Script {
+  static dependencies = {
+    options: WorldOptions,
+    deviceCamera: XRDeviceCamera,
+    depth: Depth,
+    camera: THREE.Camera,
+    renderer: THREE.WebGLRenderer,
+  };
+
+  private _detectorBackends = new Map<string, Promise<BaseFaceBackend>>();
+
+  // Injected dependencies
+  private options!: WorldOptions;
+  private deviceCamera!: XRDeviceCamera;
+  public depth!: Depth;
+  private camera!: THREE.PerspectiveCamera;
+  private renderer!: THREE.WebGLRenderer;
+
+  targetDevice = 'galaxyxr';
+
+  init({
+    options,
+    deviceCamera,
+    depth,
+    camera,
+    renderer,
+  }: {
+    options: WorldOptions;
+    deviceCamera: XRDeviceCamera;
+    depth: Depth;
+    camera: THREE.PerspectiveCamera;
+    renderer: THREE.WebGLRenderer;
+  }) {
+    this.options = options;
+    this.deviceCamera = deviceCamera;
+    this.depth = depth;
+    this.camera = camera;
+    this.renderer = renderer;
+  }
+
+  /**
+   * Runs the face landmark detection process based on the configured
+   * backend.
+   */
+  async runDetection(): Promise<DetectedFace[]> {
+    this.clear();
+
+    if (!this.depth || !this.depth.depthMesh) {
+      console.warn(
+        'Cannot run Face Detection: Depth module / depthMesh is not enabled or initialized.'
+      );
+      return [];
+    }
+
+    const depthMeshSnapshot = this.getDepthMeshSnapshot();
+    const cameraParametersSnapshot = getCameraParametersSnapshot(
+      this.camera,
+      this.renderer.xr.getCamera(),
+      this.deviceCamera,
+      this.targetDevice
+    );
+    if (!cameraParametersSnapshot) {
+      // Device camera not ready yet (warming up); skip until it is available.
+      return [];
+    }
+
+    const context = this.getBackendContext();
+    const activeBackend = this.options.faces.backendConfig.activeBackend;
+    const backendPromise = this.getOrCreateBackend(activeBackend, context);
+
+    let backend: BaseFaceBackend;
+    try {
+      backend = await backendPromise;
+    } catch (error: unknown) {
+      console.warn(
+        `Failed to load or initialize FaceRecognizer backend '${activeBackend}':`,
+        error
+      );
+      return [];
+    }
+
+    const faces = await backend.run(
+      depthMeshSnapshot,
+      cameraParametersSnapshot
+    );
+
+    return faces;
+  }
+
+  private getBackendContext(): FaceBackendContext {
+    return {
+      options: this.options,
+      deviceCamera: this.deviceCamera,
+    };
+  }
+
+  private getOrCreateBackend(
+    activeBackend: string,
+    context: FaceBackendContext
+  ): Promise<BaseFaceBackend> {
+    let backendPromise = this._detectorBackends.get(activeBackend);
+
+    if (!backendPromise) {
+      backendPromise = (async () => {
+        switch (activeBackend) {
+          case 'mediapipe':
+            return new MediaPipeFaceBackend(context);
+          default:
+            throw new Error(
+              `FaceRecognizer backend '${activeBackend}' is not supported.`
+            );
+        }
+      })();
+      this._detectorBackends.set(activeBackend, backendPromise);
+    }
+    return backendPromise;
+  }
+
+  // Cached depth-mesh snapshot (cloned geometry + BVH). We rebuild it
+  // only when the source depth geometry's position attribute bumps its
+  // version (three.js does this automatically whenever the depth mesh
+  // refreshes via needsUpdate = true). For a static desktop sim the
+  // BVH build therefore amortizes across all detections instead of
+  // running every detection.
+  private cachedDepthMeshSnapshot: THREE.Mesh | null = null;
+  private cachedDepthMeshSource: THREE.BufferGeometry | null = null;
+  private cachedDepthMeshVersion = -1;
+
+  private getDepthMeshSnapshot() {
+    const depthMesh = this.depth.depthMesh!;
+    const geometry = this.depth.options.depthMesh.updateFullResolutionGeometry
+      ? depthMesh.geometry
+      : depthMesh.downsampledGeometry || depthMesh.geometry;
+    // Both BufferAttribute and InterleavedBufferAttribute carry a
+    // `version` field that three.js bumps on `needsUpdate = true`, but
+    // the type for the union doesn't expose it. Cast to read.
+    const positionAttr = geometry.attributes.position as unknown as {
+      version: number;
+    };
+    const version = positionAttr.version;
+    if (
+      this.cachedDepthMeshSnapshot &&
+      this.cachedDepthMeshSource === geometry &&
+      this.cachedDepthMeshVersion === version
+    ) {
+      // Source geometry hasn't been updated since last snapshot. Refresh
+      // the cached snapshot's world transform (cheap) and return it as
+      // is. The BVH built over the cloned positions is still valid
+      // because the source positions haven't changed.
+      depthMesh.getWorldPosition(this.cachedDepthMeshSnapshot.position);
+      depthMesh.getWorldQuaternion(this.cachedDepthMeshSnapshot.quaternion);
+      depthMesh.getWorldScale(this.cachedDepthMeshSnapshot.scale);
+      this.cachedDepthMeshSnapshot.updateMatrixWorld(true);
+      return this.cachedDepthMeshSnapshot;
+    }
+    // Source changed (or first call). Dispose the previous BVH so its
+    // backing buffers free, then clone + rebuild.
+    if (this.cachedDepthMeshSnapshot) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.cachedDepthMeshSnapshot.geometry as any).disposeBoundsTree?.();
+      this.cachedDepthMeshSnapshot.geometry.dispose();
+    }
+    const clonedGeometry = geometry.clone();
+    clonedGeometry.computeBoundingSphere();
+    clonedGeometry.computeBoundingBox();
+    // Build a BVH over the cloned depth-mesh geometry when three-mesh-bvh
+    // is available so the per-landmark raycasts inside
+    // processFaceLandmarkerResult go through the BVH-accelerated path
+    // instead of walking every triangle 478 times. If BVH isn't ready
+    // yet (dynamic import in flight or three-mesh-bvh not installed),
+    // we skip computeBoundsTree and the stock raycaster takes over.
+    if (isBVHReady()) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (clonedGeometry as any).computeBoundsTree();
+    }
+    const depthMeshSnapshot = new THREE.Mesh(
+      clonedGeometry,
+      new THREE.MeshBasicMaterial()
+    );
+    depthMesh.getWorldPosition(depthMeshSnapshot.position);
+    depthMesh.getWorldQuaternion(depthMeshSnapshot.quaternion);
+    depthMesh.getWorldScale(depthMeshSnapshot.scale);
+    depthMeshSnapshot.updateMatrixWorld(true);
+    this.cachedDepthMeshSnapshot = depthMeshSnapshot;
+    this.cachedDepthMeshSource = geometry;
+    this.cachedDepthMeshVersion = version;
+    return depthMeshSnapshot;
+  }
+}

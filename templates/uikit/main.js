@@ -108,6 +108,5 @@ options.uikit.enable(uikit);
 
 document.addEventListener('DOMContentLoaded', async function () {
   xb.add(new UikitTemplate());
-  options.simulator.instructions.enabled = false;
   await xb.init(options);
 });

@@ -1,0 +1,2454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>3D Object Boxes</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link type="text/css" rel="stylesheet" href="../../samples/main.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.12.1/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "uiblocks": "../../build/addons/uiblocks/src/index.js",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/",
+          "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs",
+          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm",
+          "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0",
+          "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.10/build/index.module.js"
+        }
+      }
+    </script>
+    <style>
+      .panel {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: rgba(20, 20, 20, 0.85);
+        padding: 14px 18px;
+        border-radius: 12px;
+        font-family: system-ui, sans-serif;
+        color: #eee;
+        max-width: 540px;
+        width: 92%;
+      }
+      .panel button {
+        padding: 9px 14px;
+        border-radius: 8px;
+        border: 1px solid #444;
+        background: #2a2a2a;
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .panel button:hover:not(:disabled) {
+        background: #3a3a3a;
+      }
+      .panel button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      .panel .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .panel select {
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #444;
+        background: #2a2a2a;
+        color: white;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .panel label {
+        font-size: 11px;
+        color: #aaa;
+      }
+      .panel .status {
+        font-size: 12px;
+        color: #aaa;
+      }
+      .key-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+        font-family: system-ui, sans-serif;
+      }
+      .key-card {
+        background: #1a1a1a;
+        color: #eee;
+        padding: 24px;
+        border-radius: 12px;
+        max-width: 420px;
+        width: 92%;
+      }
+      .key-card h2 {
+        margin: 0 0 8px 0;
+      }
+      .key-card p {
+        font-size: 13px;
+        color: #bbb;
+        line-height: 1.5;
+      }
+      .key-card a {
+        color: #4cd964;
+      }
+      .key-card input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        font-size: 14px;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        color: white;
+        border-radius: 8px;
+        margin: 10px 0;
+      }
+      .key-card button {
+        padding: 10px 16px;
+        background: #4cd964;
+        border: none;
+        border-radius: 8px;
+        color: #000;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="keyOverlay" class="key-overlay" style="display: none">
+      <div class="key-card">
+        <h2>Gemini API key</h2>
+        <p>
+          This demo uses Gemini for open-vocabulary object detection (so it can
+          find lamps, plants, anything you ask for — not just the 80 COCO
+          classes). Get a free key from
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener"
+            >aistudio.google.com</a
+          >. The key is saved to localStorage and only sent to Google.
+        </p>
+        <input id="keyInput" type="password" placeholder="AIza..." />
+        <button id="keySave">save and reload</button>
+      </div>
+    </div>
+
+    <script>
+      // Resolve gemini key: ?key= URL param > localStorage > ./keys.json > overlay.
+      (async function () {
+        const STORAGE_KEY = 'gemini-api-key';
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('key')) {
+          window.localStorage.setItem(STORAGE_KEY, params.get('key'));
+          return;
+        }
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          params.set('key', stored);
+          const newUrl =
+            window.location.pathname +
+            '?' +
+            params.toString() +
+            window.location.hash;
+          window.history.replaceState(null, '', newUrl);
+          return;
+        }
+        try {
+          const res = await fetch('./keys.json', {cache: 'no-store'});
+          if (res.ok) {
+            const k = (await res.json()).key;
+            if (k) {
+              window.localStorage.setItem(STORAGE_KEY, k);
+              params.set('key', k);
+              window.location.search = '?' + params.toString();
+              return;
+            }
+          }
+        } catch (_) {
+          // no keys.json, fall through to overlay
+        }
+        const overlay = document.getElementById('keyOverlay');
+        const input = document.getElementById('keyInput');
+        const save = document.getElementById('keySave');
+        overlay.style.display = 'flex';
+        const submit = () => {
+          const k = input.value.trim();
+          if (!k) return;
+          window.localStorage.setItem(STORAGE_KEY, k);
+          params.set('key', k);
+          window.location.search = '?' + params.toString();
+        };
+        save.addEventListener('click', submit);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submit();
+        });
+        input.focus();
+      })();
+    </script>
+
+    <div class="panel">
+      <div class="row">
+        <button id="detect">Detect 3D objects</button>
+        <button id="clear">Clear</button>
+      </div>
+      <div class="row">
+        <label for="detectorSelect">detector</label>
+        <select id="detectorSelect">
+          <option value="gemini">gemini (cloud, open-vocab)</option>
+          <option value="mediapipe">mediapipe (on-device, COCO)</option>
+          <option value="both">both (union, can double-up)</option>
+        </select>
+        <label for="maskSelect">mask</label>
+        <select id="maskSelect">
+          <option value="slimsam">slimsam-77 (tight)</option>
+          <option value="segmenter">mediapipe segmenter (loose)</option>
+        </select>
+      </div>
+      <div class="status" id="status">
+        Press detect to fit oriented 3D boxes around things in front of you.
+      </div>
+    </div>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import * as xb from 'xrblocks';
+      import {
+        ManipulationBehavior,
+        UICore,
+        UIIcon,
+        UIPanel,
+        UIText,
+      } from 'uiblocks';
+      import {
+        FilesetResolver,
+        InteractiveSegmenter,
+      } from '@mediapipe/tasks-vision';
+      import {
+        AutoProcessor,
+        env as transformersEnv,
+        RawImage,
+        SamModel,
+      } from '@huggingface/transformers';
+
+      // Route Mesh.raycast() through the BVH-accelerated path via the SDK
+      // helper (xb.applyBVH / xb.enableAcceleratedRaycast, added in the
+      // utils/BVHRaycast module) instead of patching the THREE prototypes
+      // inline. Each per-detection sampleDepthInMask fires ~1000
+      // stride-sampled rays at the depth mesh; the stock raycaster is
+      // O(triangles) per ray (full mesh walk), BVH is O(log triangles),
+      // which is the difference between ~3 s of raycast time per Detect
+      // press and ~30 ms. enableAcceleratedRaycast() dynamically imports
+      // three-mesh-bvh (resolved from this demo's importmap) and installs
+      // computeBoundsTree / disposeBoundsTree on BufferGeometry; kick it
+      // off here so it's ready well before the first press. We then call
+      // computeBoundsTree() once per detect on the cloned depth-mesh
+      // geometry (cheap because depth meshes are small) and
+      // disposeBoundsTree() in the finally to release the index.
+      // detect() awaits this promise before building the per-press tree,
+      // so a press that lands before the import resolves waits it out
+      // rather than silently falling back to the stock raycaster.
+      const bvhReady = xb.enableAcceleratedRaycast().catch(() => false);
+
+      // Cache transformers.js model downloads in the browser so repeat runs
+      // don't re-fetch the SAM weights.
+      transformersEnv.allowLocalModels = false;
+
+      // Backend toggles via URL params so you can A/B the demo without an
+      // edit/reload cycle. Examples:
+      //   ?backend=gemini             (open-vocab cloud detector)
+      //   ?backend=mediapipe          (COCO on-device, default)
+      //   ?mask=slimsam               (transformers.js SAM, tighter, default)
+      //   ?mask=segmenter             (MediaPipe InteractiveSegmenter, looser)
+      const _qp = new URLSearchParams(window.location.search);
+      const _backendParam = _qp.get('backend');
+      // Default to 'gemini' for the best out-of-the-box demo: open-vocab
+      // labels with the most fits per single press. 'both' unions Gemini
+      // + MediaPipe but doubles non-overlapping detections (IoU dedupe
+      // only catches near-identical boxes), so it visually adds clutter
+      // without adding accuracy. Falls back to mediapipe via the
+      // selector dropdown if the user has no API key.
+      const DETECT_BACKEND = ['gemini', 'mediapipe', 'both'].includes(
+        _backendParam
+      )
+        ? _backendParam
+        : 'gemini';
+      const MASK_BACKEND =
+        _qp.get('mask') === 'segmenter' ? 'segmenter' : 'slimsam';
+
+      const boxes = new THREE.Group();
+      let xrStatusText = null;
+
+      // Lazy-loaded MediaPipe InteractiveSegmenter. Kept as a fallback for
+      // environments where the SAM path can't load (no WebGPU + no WASM fp16).
+      let _segmenter = null;
+      let _segmenterPromise = null;
+      function getSegmenter() {
+        if (_segmenter) return Promise.resolve(_segmenter);
+        if (_segmenterPromise) return _segmenterPromise;
+        _segmenterPromise = (async () => {
+          const vision = await FilesetResolver.forVisionTasks(
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm'
+          );
+          _segmenter = await InteractiveSegmenter.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                'https://storage.googleapis.com/mediapipe-tasks/interactive_segmenter/ptm_512_hdt_ptm_woid.tflite',
+              delegate: 'GPU',
+            },
+            outputCategoryMask: true,
+            outputConfidenceMasks: false,
+          });
+          return _segmenter;
+        })();
+        return _segmenterPromise;
+      }
+
+      // Lazy-loaded SlimSAM-77-uniform via transformers.js. Tighter per-pixel
+      // masks than the MediaPipe segmenter, especially around wall-mounted
+      // objects where MediaPipe spills onto the surrounding wall. Apache-2,
+      // ~14 MB total (encoder + decoder). The encoder runs once per snapshot;
+      // the decoder runs per detection with the 2D bbox as the prompt.
+      const SAM_MODEL_ID = 'Xenova/slimsam-77-uniform';
+      let _sam = null;
+      let _samProc = null;
+      let _samPromise = null;
+      // SAM's ONNX session isn't reentrant: a second sam(...) call before the
+      // previous one resolves trips "Session already started". Detect runs are
+      // serial in the for-loop but multi-frame waits inside sampleDepth can
+      // overlap with later frames in batches with many objects. Serialise
+      // every sam(...) and proc(...) invocation behind a chained promise so
+      // ORT only ever sees one in-flight call.
+      let _samQueue = Promise.resolve();
+      function samSerialize(fn) {
+        const next = _samQueue.then(fn, fn);
+        _samQueue = next.catch(() => {});
+        return next;
+      }
+      function getSam() {
+        if (_sam && _samProc)
+          return Promise.resolve({sam: _sam, proc: _samProc});
+        if (_samPromise) return _samPromise;
+        _samPromise = (async () => {
+          // Prefer webgpu when available; transformers.js falls back to
+          // wasm/cpu transparently if the backend isn't supported.
+          const device =
+            'gpu' in navigator && navigator.gpu ? 'webgpu' : 'wasm';
+          _sam = await SamModel.from_pretrained(SAM_MODEL_ID, {
+            device,
+            dtype: device === 'webgpu' ? 'fp16' : 'fp32',
+          });
+          _samProc = await AutoProcessor.from_pretrained(SAM_MODEL_ID);
+          return {sam: _sam, proc: _samProc};
+        })();
+        return _samPromise;
+      }
+
+      // Run the SAM encoder on a snapshot ImageData once per Detect press.
+      // Subsequent per-detection mask requests reuse the embedding.
+      async function samEncodeSnapshot(snapshot) {
+        return samSerialize(async () => {
+          const {sam, proc} = await getSam();
+          const canvas = document.createElement('canvas');
+          canvas.width = snapshot.width;
+          canvas.height = snapshot.height;
+          canvas.getContext('2d').putImageData(snapshot, 0, 0);
+          const image = await RawImage.fromCanvas(canvas);
+          const image_inputs = await proc(image);
+          const image_embeddings = await sam.get_image_embeddings(image_inputs);
+          return {
+            image,
+            image_inputs,
+            image_embeddings,
+            width: snapshot.width,
+            height: snapshot.height,
+          };
+        });
+      }
+
+      // Per-detection: feed the SAM decoder a single bbox prompt and return
+      // a mask in the same shape sampleDepthInMask() already expects from the
+      // MediaPipe segmenter (width, height, getAsUint8Array() with <128 = fg).
+      async function samMaskFromBbox(samState, box2d) {
+        return samSerialize(async () => {
+          const {sam, proc} = await getSam();
+          const {image, image_embeddings, width, height} = samState;
+          const x1 = box2d.min.x * width;
+          const y1 = box2d.min.y * height;
+          const x2 = box2d.max.x * width;
+          const y2 = box2d.max.y * height;
+          const cx = (x1 + x2) * 0.5;
+          const cy = (y1 + y2) * 0.5;
+          const prompt_inputs = await proc(image, {
+            input_points: [
+              [
+                [
+                  [cx, cy],
+                  [x1, y1],
+                  [x2, y2],
+                ],
+              ],
+            ],
+            input_labels: [[[1, 2, 3]]],
+          });
+          const out = await sam({
+            ...prompt_inputs,
+            image_embeddings,
+          });
+          const masks = await proc.post_process_masks(
+            out.pred_masks,
+            prompt_inputs.original_sizes,
+            prompt_inputs.reshaped_input_sizes
+          );
+          const t = masks[0];
+          const dataBool = t.data;
+          const H = t.dims[t.dims.length - 2];
+          const W = t.dims[t.dims.length - 1];
+          const planeStride = H * W;
+          const numChannels = Math.max(
+            1,
+            Math.floor(dataBool.length / planeStride)
+          );
+          const ious = out.iou_scores?.data;
+          const bx1 = Math.max(0, Math.floor(x1 * (W / width)));
+          const by1 = Math.max(0, Math.floor(y1 * (H / height)));
+          const bx2 = Math.min(W, Math.ceil(x2 * (W / width)));
+          const by2 = Math.min(H, Math.ceil(y2 * (H / height)));
+          let best = 0;
+          let bestScore = -Infinity;
+          for (let c = 0; c < numChannels; c++) {
+            const off = c * planeStride;
+            let inside = 0;
+            let total = 0;
+            for (let y = 0; y < H; y++) {
+              const row = off + y * W;
+              const yIn = y >= by1 && y < by2;
+              for (let x = 0; x < W; x++) {
+                if (dataBool[row + x]) {
+                  total++;
+                  if (yIn && x >= bx1 && x < bx2) inside++;
+                }
+              }
+            }
+            if (total === 0) continue;
+            const containment = inside / total;
+            const iou = ious ? ious[c] : 0;
+            const score = containment + 0.05 * iou;
+            if (score > bestScore) {
+              bestScore = score;
+              best = c;
+            }
+          }
+          const offset = best * planeStride;
+          const buf = new Uint8Array(planeStride);
+          for (let i = 0; i < planeStride; i++) {
+            buf[i] = dataBool[offset + i] ? 0 : 255;
+          }
+          return {
+            width: W,
+            height: H,
+            getAsUint8Array: () => buf,
+            close: () => {},
+          };
+        });
+      }
+
+      // MediaPipe InteractiveSegmenter mask path. Takes the snapshot ImageData
+      // + a 2D bbox, prompts the segmenter with the bbox centre as a keypoint,
+      // and returns a mask in the same shape sampleDepthInMask expects.
+      // Used when ?mask=segmenter — looser than SAM but no model download.
+      async function segmenterMaskFromSnapshot(snapshot, box2d) {
+        const seg = await getSegmenter();
+        const canvas = document.createElement('canvas');
+        canvas.width = snapshot.width;
+        canvas.height = snapshot.height;
+        canvas.getContext('2d').putImageData(snapshot, 0, 0);
+        const cx = (box2d.min.x + box2d.max.x) * 0.5;
+        const cy = (box2d.min.y + box2d.max.y) * 0.5;
+        return await new Promise((resolve, reject) => {
+          try {
+            seg.segment(canvas, {keypoint: {x: cx, y: cy}}, (result) =>
+              resolve(result.categoryMask)
+            );
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+
+      // Raycast each foreground mask pixel against the world-positioned depth
+      // mesh. Mask is iterated only inside the bbox region with a stride to
+      // keep raycast count reasonable. Foreground convention: Magic Touch
+      // returns 0 for the selected object, non-zero for background, so we
+      // accept pixels with value < 128.
+      const _raycaster = new THREE.Raycaster();
+      const _ndc = new THREE.Vector2();
+      function sampleDepthInMask(
+        mask,
+        box2d,
+        stride = 6,
+        maxDistance = 12,
+        cameraOverride = null,
+        meshOverride = null,
+        snapAspect = null
+      ) {
+        const points = [];
+        // Prefer snapshot-time camera + depth-mesh passed in over the live
+        // ones. Reading `xb.core.camera` or the live depth mesh here would
+        // race the render loop: the camera moves with mouse-look / head
+        // pose, and the depth mesh re-poses every frame to track the
+        // current camera. Raycasting frozen rays into a re-posed mesh
+        // produces a systematic offset between the snapshot pixels and
+        // the world-space hit, which is what shows up as boxes that
+        // hover next to objects instead of hugging them.
+        const camera = cameraOverride || xb.core.camera;
+        const mesh = meshOverride || xb.core.depth?.depthMesh;
+        if (!camera || !mesh) return points;
+        const sa = snapAspect ?? camera.userData?.snapAspect ?? camera.aspect;
+        const mw = mask.width;
+        const mh = mask.height;
+        const arr = mask.getAsUint8Array();
+        const xMin = Math.max(0, Math.floor(box2d.min.x * mw));
+        const xMax = Math.min(mw, Math.ceil(box2d.max.x * mw));
+        const yMin = Math.max(0, Math.floor(box2d.min.y * mh));
+        const yMax = Math.min(mh, Math.ceil(box2d.max.y * mh));
+        let fg = 0;
+        for (let py = yMin; py < yMax; py += stride) {
+          for (let px = xMin; px < xMax; px += stride) {
+            if (arr[py * mw + px] >= 128) continue;
+            fg++;
+            const u = (px + 0.5) / mw;
+            const v = (py + 0.5) / mh;
+            uvToNdc(u, v, sa, camera.aspect, _ndc);
+            _raycaster.setFromCamera(_ndc, camera);
+            const hits = _raycaster.intersectObject(mesh, false);
+            // Cap depth distance: ray can shoot through a window or open
+            // doorway to far background (trees outside the simulator room
+            // sit ~20 m out, well beyond any plausible indoor object). Drop
+            // hits past `maxDistance` so they don't blow up the OBB extents.
+            if (hits.length > 0 && hits[0].distance <= maxDistance) {
+              points.push(hits[0].point.clone());
+            }
+          }
+        }
+        return {points, foregroundPixels: fg};
+      }
+
+      // Cast a single ray through the 2D bbox centre using the *frozen*
+      // camera + depth-mesh snapshot to get the world-space anchor that
+      // actually matches the snapshot pixels we masked. The SDK provides
+      // obj.position, but it's computed against the SDK's own internal
+      // camera snapshot taken inside runDetection (milliseconds after
+      // our snapshot), so any live-camera drift in that gap shifts the
+      // anchor and visibly offsets the box. Returns null if the ray
+      // misses the mesh; callers fall back to the SDK anchor.
+      function anchorFromBboxCenter(box2d, camera, mesh, snapAspect = null) {
+        if (!box2d || !camera || !mesh) return null;
+        const sa = snapAspect ?? camera.userData?.snapAspect ?? camera.aspect;
+        const cx = (box2d.min.x + box2d.max.x) * 0.5;
+        const cy = (box2d.min.y + box2d.max.y) * 0.5;
+        uvToNdc(cx, cy, sa, camera.aspect, _ndc);
+        _raycaster.setFromCamera(_ndc, camera);
+        const hits = _raycaster.intersectObject(mesh, false);
+        return hits.length > 0 ? hits[0].point.clone() : null;
+      }
+
+      // Convert a snapshot uv coordinate ([0,1] left-right, top-bottom) to
+      // camera NDC. The simulator (and any source that center-crops the
+      // renderer to a different aspect than the camera) gives us a snapshot
+      // that only covers part of the camera's frustum. Mapping (u, v) ->
+      // (u*2-1, (1-v)*2-1) assumes the snapshot fills the full frustum,
+      // which is only true when their aspects match. The correction:
+      // when snap is narrower than camera the snapshot covers the full
+      // vertical FOV but only (snap_aspect / cam_aspect) of the horizontal
+      // FOV, and vice versa. Without this, every bbox-derived raycast is
+      // pulled outward along the mismatched axis and lands on the wrong
+      // world point.
+      function uvToNdc(u, v, snapAspect, camAspect, out) {
+        const sa = snapAspect ?? camAspect;
+        let sx = 1;
+        let sy = 1;
+        if (sa < camAspect) {
+          sx = sa / camAspect;
+        } else {
+          sy = camAspect / sa;
+        }
+        out.set((u * 2 - 1) * sx, ((1 - v) * 2 - 1) * sy);
+        return out;
+      }
+
+      // Clone the live depth mesh into a static snapshot mesh that won't
+      // re-pose during the Detect window. Mirrors the SDK's internal
+      // `getDepthMeshSnapshot` (src/world/objects/ObjectDetector.ts) so
+      // every per-detection raycast hits the exact mesh state the
+      // snapshot pixels correspond to.
+      function snapshotDepthMesh() {
+        const live = xb.core.depth?.depthMesh;
+        if (!live || !live.geometry) return null;
+        const clonedGeom = live.geometry.clone();
+        clonedGeom.computeBoundingSphere();
+        clonedGeom.computeBoundingBox();
+        // Build a BVH index on the cloned geometry. This is the speedup
+        // that turns per-press depth raycasts from ~3 s into ~30 ms for a
+        // typical ~10 k-triangle depth mesh. The index is disposed in the
+        // detect() finally block along with the geometry. Guarded in case
+        // enableAcceleratedRaycast() hasn't resolved yet: raycasts still
+        // work without the BVH, just slower.
+        if (clonedGeom.computeBoundsTree) clonedGeom.computeBoundsTree();
+        const snap = new THREE.Mesh(
+          clonedGeom,
+          new THREE.MeshBasicMaterial({visible: false})
+        );
+        live.getWorldPosition(snap.position);
+        live.getWorldQuaternion(snap.quaternion);
+        live.getWorldScale(snap.scale);
+        snap.updateMatrixWorld(true);
+        return snap;
+      }
+
+      // Multi-frame averaging wrapper. Each call to sampleDepthInMask reads
+      // the depth mesh's current vertex buffer; in the simulator the buffer
+      // is regenerated every frame from the live render, so successive calls
+      // across requestAnimationFrame ticks give independent depth samples for
+      // the same rays. Accumulating points across N frames before fitting
+      // pushes the OBB centroid toward the depth-stable mean of the surface
+      // and reduces the single-frame bias that's visible as box drift when
+      // the user orbits.
+      function nextFrame() {
+        return new Promise((r) => requestAnimationFrame(() => r()));
+      }
+      async function sampleDepthInMaskAcrossFrames(
+        mask,
+        box2d,
+        stride = 6,
+        frames = 3,
+        cameraOverride = null,
+        meshOverride = null,
+        snapAspect = null
+      ) {
+        // With a frozen camera + depth-mesh snapshot, multi-frame averaging
+        // is unnecessary and counterproductive: the snapshot already gives
+        // us a stable mesh state, and successive frames of the *live* mesh
+        // would only re-introduce the drift we just fixed. Take a single
+        // sample when overrides are provided, fall back to multi-frame
+        // accumulation only when neither override is set.
+        if (cameraOverride || meshOverride) {
+          const {points, foregroundPixels} = sampleDepthInMask(
+            mask,
+            box2d,
+            stride,
+            12,
+            cameraOverride,
+            meshOverride,
+            snapAspect
+          );
+          return {points, foregroundPixels};
+        }
+        const all = [];
+        let totalFg = 0;
+        for (let i = 0; i < frames; i++) {
+          if (i > 0) await nextFrame();
+          const {points, foregroundPixels} = sampleDepthInMask(
+            mask,
+            box2d,
+            stride
+          );
+          for (const p of points) all.push(p);
+          totalFg = Math.max(totalFg, foregroundPixels);
+        }
+        return {points: all, foregroundPixels: totalFg};
+      }
+
+      // Floor-plane estimate from the live depth mesh. Walks a stride sample
+      // of the mesh's vertex positions, lifts to world space, and takes the
+      // 5th percentile of Y. Robust to a few stray vertices near 0 because
+      // we use a percentile, and cheap because we stride sample. Cached once
+      // per Detect press so per-object snapping is O(1).
+      function estimateFloorY() {
+        const mesh = xb.core.depth?.depthMesh;
+        if (!mesh || !mesh.geometry) return null;
+        const pos = mesh.geometry.attributes.position;
+        if (!pos || !pos.count) return null;
+        mesh.updateMatrixWorld();
+        const ys = [];
+        const p = new THREE.Vector3();
+        const stride = Math.max(1, Math.floor(pos.count / 4000));
+        for (let i = 0; i < pos.count; i += stride) {
+          p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+          if (Number.isFinite(p.y)) ys.push(p.y);
+        }
+        if (ys.length < 10) return null;
+        ys.sort((a, b) => a - b);
+        return ys[Math.floor(ys.length * 0.05)];
+      }
+
+      // If the OBB bottom dips below the estimated floor by more than `slack`,
+      // pin the bottom edge to the floor and keep the top fixed. For floor-
+      // sitting furniture this stops the box clipping through the ground
+      // (which is the most jarring visual artifact when orbiting the demo).
+      // Spatial fusion of OBBs across Detect presses, so each new viewpoint
+      // refines existing boxes instead of stacking duplicate boxes for the
+      // same physical object. Match an incoming OBB to an existing one when:
+      //   - same category bucket (small cup never merges with a couch), and
+      //   - centroid distance is within `merge_radius` (sum of half-sizes,
+      //     i.e. the new center sits inside an expanded version of the old).
+      // On match: blend the centroid using a running average weighted by
+      // sample count, union the extents to enclose both observations, and
+      // increment the sample counter so further presses converge.
+      function fuseIntoBoxes(newObb, label, cat) {
+        // Use the average of the three half-dims as the merge radius
+        // contribution, not max(...) + 15cm. Max-based grace overcounts
+        // for spherical/cubic small objects (a 30cm pendant lamp gives
+        // 30cm radius, so two lamps spaced under 60cm always merge into
+        // one box even though they're distinct fixtures). Average-based
+        // shrinks the radius for compact objects while keeping it
+        // generous for elongated furniture, which is what fusion needs:
+        // press-again from a different angle of *the same* sofa should
+        // still merge, but two adjacent lamps shouldn't.
+        const half = (s) => (s.x + s.y + s.z) / 6;
+        for (const g of boxes.children) {
+          const u = g.userData || {};
+          if (u.cat !== cat) continue;
+          const dx = u.center.x - newObb.center.x;
+          const dy = u.center.y - newObb.center.y;
+          const dz = u.center.z - newObb.center.z;
+          const dist = Math.hypot(dx, dy, dz);
+          const radius = half(u.size) + half(newObb.size);
+          if (dist > radius) continue;
+          // Match: rebuild this group's box from the merged OBB.
+          const n = (u.samples || 1) + 1;
+          const blendedCenter = new THREE.Vector3(
+            (u.center.x * (n - 1) + newObb.center.x) / n,
+            (u.center.y * (n - 1) + newObb.center.y) / n,
+            (u.center.z * (n - 1) + newObb.center.z) / n
+          );
+          // Union extents in a local frame centered at blendedCenter and
+          // aligned to the existing OBB's yaw. Project BOTH the new OBB's
+          // 8 corners AND the existing OBB's 8 corners into that frame
+          // and expand to enclose them. Seeding with ±existingSize/2 (as
+          // if the existing box were centered at blendedCenter) is
+          // wrong: the existing box is centered at u.center, which is
+          // offset from blendedCenter by the running-mean shift, so the
+          // seed would mis-place the old corners and shrink the fused
+          // box on every press.
+          const cs = Math.cos(u.angle);
+          const sn = Math.sin(u.angle);
+          let umin = Infinity,
+            umax = -Infinity;
+          let vmin = Infinity,
+            vmax = -Infinity;
+          let ymin = Infinity,
+            ymax = -Infinity;
+          function expandFromOBB(centerX, centerY, centerZ, sx, sy, sz, ang) {
+            const ca = Math.cos(ang);
+            const sa = Math.sin(ang);
+            for (const ix of [-1, 1]) {
+              for (const iy of [-1, 1]) {
+                for (const iz of [-1, 1]) {
+                  const lx = (ix * sx) / 2;
+                  const lz = (iz * sz) / 2;
+                  const wx = centerX + lx * ca + lz * sa;
+                  const wz = centerZ - lx * sa + lz * ca;
+                  const wy = centerY + (iy * sy) / 2;
+                  const du =
+                    (wx - blendedCenter.x) * cs - (wz - blendedCenter.z) * sn;
+                  const dv =
+                    (wx - blendedCenter.x) * sn + (wz - blendedCenter.z) * cs;
+                  if (du < umin) umin = du;
+                  if (du > umax) umax = du;
+                  if (dv < vmin) vmin = dv;
+                  if (dv > vmax) vmax = dv;
+                  if (wy < ymin) ymin = wy;
+                  if (wy > ymax) ymax = wy;
+                }
+              }
+            }
+          }
+          expandFromOBB(
+            u.center.x,
+            u.center.y,
+            u.center.z,
+            u.size.x,
+            u.size.y,
+            u.size.z,
+            u.angle
+          );
+          expandFromOBB(
+            newObb.center.x,
+            newObb.center.y,
+            newObb.center.z,
+            newObb.size.x,
+            newObb.size.y,
+            newObb.size.z,
+            newObb.angle
+          );
+          const sizeU = Math.max(0.02, umax - umin);
+          const sizeV = Math.max(0.02, vmax - vmin);
+          const sizeY = Math.max(0.02, ymax - ymin);
+          const uc = (umin + umax) / 2;
+          const vc = (vmin + vmax) / 2;
+          const fusedCenter = new THREE.Vector3(
+            blendedCenter.x + uc * cs + vc * sn,
+            (ymin + ymax) / 2,
+            blendedCenter.z - uc * sn + vc * cs
+          );
+          // Replace the group's geometry / position with the fused OBB.
+          const fusedObb = {
+            center: fusedCenter,
+            size: new THREE.Vector3(sizeU, sizeY, sizeV),
+            angle: u.angle,
+          };
+          rebuildBoxGroupGeometry(g, fusedObb);
+          g.userData.center = fusedCenter;
+          g.userData.size = fusedObb.size;
+          g.userData.samples = n;
+          return true;
+        }
+        return false;
+      }
+
+      // Rebuild a box group's edge geometry in place after fusion, without
+      // re-creating sprites / event listeners. Keeps label visible across
+      // refinement presses.
+      function rebuildBoxGroupGeometry(group, obb) {
+        const newGeom = new THREE.BoxGeometry(
+          obb.size.x,
+          obb.size.y,
+          obb.size.z
+        );
+        const newEdges = new THREE.EdgesGeometry(newGeom);
+        group.traverse((o) => {
+          if (o.isLineSegments) {
+            if (o.geometry) o.geometry.dispose();
+            o.geometry = newEdges.clone();
+          }
+        });
+        newGeom.dispose();
+        newEdges.dispose();
+        group.position.copy(obb.center);
+        group.rotation.y = obb.angle;
+        // Re-place the label above the new top.
+        if (group.userData.label) {
+          group.userData.label.position.set(0, obb.size.y / 2 + 0.06, 0);
+        }
+      }
+
+      function snapBoxToFloor(obb, floorY, slack = 0.05) {
+        if (floorY == null || !obb) return obb;
+        const top = obb.center.y + obb.size.y / 2;
+        const bot = obb.center.y - obb.size.y / 2;
+        if (bot < floorY - slack) {
+          const newSizeY = Math.max(0.02, top - floorY);
+          const newCenterY = floorY + newSizeY / 2;
+          obb.size = new THREE.Vector3(obb.size.x, newSizeY, obb.size.z);
+          obb.center = new THREE.Vector3(
+            obb.center.x,
+            newCenterY,
+            obb.center.z
+          );
+        }
+        return obb;
+      }
+
+      // 2D IoU on detection2DBoundingBox-style {min:{x,y},max:{x,y}} boxes
+      // already normalized to [0,1]. Used by unionDetections to drop
+      // duplicate detections when running both backends.
+      function box2dIoU(a, b) {
+        if (!a || !b) return 0;
+        const ix1 = Math.max(a.min.x, b.min.x);
+        const iy1 = Math.max(a.min.y, b.min.y);
+        const ix2 = Math.min(a.max.x, b.max.x);
+        const iy2 = Math.min(a.max.y, b.max.y);
+        const iw = Math.max(0, ix2 - ix1);
+        const ih = Math.max(0, iy2 - iy1);
+        const inter = iw * ih;
+        const aw = a.max.x - a.min.x;
+        const ah = a.max.y - a.min.y;
+        const bw = b.max.x - b.min.x;
+        const bh = b.max.y - b.min.y;
+        const u = aw * ah + bw * bh - inter;
+        return u > 0 ? inter / u : 0;
+      }
+
+      // Union two detection lists with IoU dedupe. Keeps every item in `a`,
+      // then appends items from `b` whose 2D bbox doesn't overlap any kept
+      // box by more than `iouThresh`. This gives MediaPipe's deterministic
+      // COCO list anchoring with Gemini's open-vocab additions stacked on
+      // top — fewer duplicate boxes labelled "couch" + "sofa" + "loveseat"
+      // for the same object.
+      function unionDetections(a, b, iouThresh = 0.5) {
+        const out = a.slice();
+        for (const it of b) {
+          let dup = false;
+          for (const k of out) {
+            if (
+              box2dIoU(it.detection2DBoundingBox, k.detection2DBoundingBox) >
+              iouThresh
+            ) {
+              dup = true;
+              break;
+            }
+          }
+          if (!dup) out.push(it);
+        }
+        return out;
+      }
+
+      // Label categorisation. Each category gets a different fitting
+      // strategy because the failure modes differ:
+      //   - flat:      mask spillover blows up extents; orientation matters
+      //   - light:     hanging fixtures pick up cord/ceiling, need clustering
+      //   - small:     depth-mesh resolution is coarser than the object
+      //   - furniture: well-defined footprints, mask is reliable
+      const FLAT_LABEL_RE =
+        /\b(art|artwork|painting|picture|poster|photo|photograph|mirror|frame|window|whiteboard|screen|monitor|tv|television|display|door|switch|outlet|socket|thermostat|plug|vent|register)\b/i;
+      const LIGHT_LABEL_RE =
+        /\b(lamp|lamps|lampshade|light|lightbulb|fixture|chandelier|sconce|pendant|lantern|bulb)\b/i;
+      const SMALL_LABEL_RE =
+        /\b(cup|mug|glass|bottle|book|magazine|remote|phone|pen|pencil|bowl|plate|coaster|candle|vase|pot|toy|tissue|controller|keys|wallet|clock)\b/i;
+      const TINY_FLAT_LABEL_RE =
+        /\b(switch|outlet|socket|thermostat|plug|vent|register|knob|handle|doorknob)\b/i;
+      // Architectural surfaces — Gemini sometimes returns these but they aren't
+      // "objects" we want boxes around. "stud"/"board"/"panel" cover
+      // wall-cladding variants; "floorboard" guarded by SURFACE check first.
+      const SURFACE_LABEL_RE =
+        /\b(walls?|floors?|floorboards?|ceilings?|ground|background|surface|stud|studs|panel|panels|panelling|paneling|board|boards|cladding|baseboard|baseboards|skirting|trim|moulding|molding)\b/i;
+      function isSurfaceLabel(label) {
+        if (!label) return false;
+        // A label like "wall-mounted lamp" matches both SURFACE ("wall") and
+        // LIGHT ("lamp"); when the label is clearly a recognised object
+        // category, prefer that over the surface match so the box is built.
+        if (
+          FLAT_LABEL_RE.test(label) ||
+          LIGHT_LABEL_RE.test(label) ||
+          SMALL_LABEL_RE.test(label)
+        ) {
+          return false;
+        }
+        return SURFACE_LABEL_RE.test(label);
+      }
+      function isFlatLabel(label) {
+        return !!label && FLAT_LABEL_RE.test(label);
+      }
+      function isTinyFlatLabel(label) {
+        return !!label && TINY_FLAT_LABEL_RE.test(label);
+      }
+      function categorize(label) {
+        if (!label) return 'furniture';
+        if (FLAT_LABEL_RE.test(label)) return 'flat';
+        if (LIGHT_LABEL_RE.test(label)) return 'light';
+        if (SMALL_LABEL_RE.test(label)) return 'small';
+        return 'furniture';
+      }
+
+      // Drop points more than `radius` metres from `anchor` in 3D. Anchor is
+      // the SDK's depth-raycast through the bbox centre — generally a clean
+      // hit on the object surface, so this 3D ball filter is much more
+      // selective than camera-distance filtering for non-flat objects.
+      function rejectByAnchor(points, anchor, radius) {
+        if (!anchor || points.length < 4) return points;
+        const kept = points.filter((p) => p.distanceTo(anchor) < radius);
+        return kept.length >= 6 ? kept : points;
+      }
+
+      // Estimate a sensible 3D ball radius from the 2D detection extent.
+      // Back-project the 2D bbox onto the plane through `anchor` perpendicular
+      // to the view direction: at that distance, the bbox covers a real-world
+      // quad. Half the quad's diagonal is the smallest ball that contains
+      // every point that could plausibly belong to the object, so use that as
+      // the radius and add a multiplier for headroom (anchor isn't perfectly
+      // at object centre; objects extend a bit forward/back of the plane).
+      //
+      // Falls back to `fallback` when `box2d`, `camera`, or `anchor` is
+      // missing, and clamps to [minR, maxR] to bound runaway tiny / huge
+      // bboxes (a detection covering 80% of the frame is almost always a
+      // false positive that we don't want eating the whole room).
+      function radiusFromBbox(
+        box2d,
+        camera,
+        anchor,
+        {pad = 1.3, minR = 0.2, maxR = 2.0, fallback = 0.8} = {}
+      ) {
+        if (!box2d || !camera || !anchor) return fallback;
+        const dist = camera.position.distanceTo(anchor);
+        if (!isFinite(dist) || dist <= 0) return fallback;
+        const bw = Math.max(0, box2d.max.x - box2d.min.x);
+        const bh = Math.max(0, box2d.max.y - box2d.min.y);
+        if (bw <= 0 || bh <= 0) return fallback;
+        // Vertical world extent of the full frame at this distance.
+        const fovRad = (camera.fov * Math.PI) / 180;
+        const frameH = 2 * dist * Math.tan(fovRad / 2);
+        const frameW = frameH * camera.aspect;
+        // Same aspect correction as uvToNdc: when the snapshot is
+        // center-cropped to a different aspect than the camera (sim's
+        // 512x512 vs 16:9 camera), a bbox of normalized width 0.5
+        // doesn't actually span half the camera's horizontal FOV — it
+        // spans (snap_aspect / cam_aspect) of it when snap is narrower.
+        // Without this correction the radius was ~78% too wide
+        // horizontally and the rejectByAnchor filter kept extra
+        // background / neighbor points that shouldn't belong to the
+        // object. Reads snapAspect from camera.userData where detect()
+        // stashes it; defaults to camera.aspect (no correction) when
+        // unset, which matches the legacy behaviour.
+        const snapAspect = camera.userData?.snapAspect ?? camera.aspect;
+        let sx = 1;
+        let sy = 1;
+        if (snapAspect < camera.aspect) {
+          sx = snapAspect / camera.aspect;
+        } else if (snapAspect > camera.aspect) {
+          sy = camera.aspect / snapAspect;
+        }
+        const worldW = bw * frameW * sx;
+        const worldH = bh * frameH * sy;
+        const halfDiag = 0.5 * Math.hypot(worldW, worldH);
+        return Math.min(maxR, Math.max(minR, pad * halfDiag));
+      }
+
+      // Drop points whose distance-to-camera differs by more than `tol`
+      // metres from the median.
+      function rejectByDepth(points, camera, tol) {
+        if (!camera || points.length < 4) return points;
+        const ds = points.map((p) => p.distanceTo(camera.position));
+        const sorted = ds.slice().sort((a, b) => a - b);
+        const med = sorted[Math.floor(sorted.length / 2)];
+        const kept = points.filter((_, i) => Math.abs(ds[i] - med) < tol);
+        return kept.length >= 6 ? kept : points;
+      }
+
+      // Like rejectByDepth but anchors against the SDK's bbox-centre
+      // raycast hit instead of the median sample distance. Critical when
+      // the SAM mask leaks badly onto the floor or wall: the median
+      // depth then *is* the floor/wall, so a median-based filter keeps
+      // the bleed. The anchor is set from the original 2D bbox centre
+      // and is close to the real object depth even when the mask is
+      // dominated by background pixels. Falls through to the filtered
+      // set when it's small so downstream point-count rejects the
+      // detection instead of silently using the bad points.
+      function rejectByAnchorDepth(points, camera, anchor, tol) {
+        if (!camera || !anchor || points.length < 4) return points;
+        const anchorDist = camera.position.distanceTo(anchor);
+        return points.filter(
+          (p) => Math.abs(p.distanceTo(camera.position) - anchorDist) < tol
+        );
+      }
+
+      // Keep only points within ±dy of the median Y. Used for hanging
+      // fixtures where cord/ceiling stragglers extend vertically but the
+      // lampshade itself is compact in Y.
+      function rejectByY(points, dy) {
+        if (points.length < 4) return points;
+        const ys = points.map((p) => p.y).sort((a, b) => a - b);
+        const med = ys[Math.floor(ys.length / 2)];
+        const kept = points.filter((p) => Math.abs(p.y - med) < dy);
+        return kept.length >= 6 ? kept : points;
+      }
+
+      // RANSAC plane fitter. Picks 3 random points, builds a plane, counts
+      // inliers within `eps`, repeats `iters` times. Returns the plane with
+      // the most inliers, refined: point = inlier centroid, normal kept from
+      // the winning sample. Robust to ~50% outliers (corner spillover etc).
+      function ransacPlane(points, iters = 80, eps = 0.02) {
+        if (points.length < 3) return null;
+        let best = {inliers: [], normal: null, point: null};
+        const ab = new THREE.Vector3();
+        const ac = new THREE.Vector3();
+        const n = new THREE.Vector3();
+        for (let it = 0; it < iters; it++) {
+          const ia = (Math.random() * points.length) | 0;
+          const ib = (Math.random() * points.length) | 0;
+          const ic = (Math.random() * points.length) | 0;
+          if (ia === ib || ib === ic || ia === ic) continue;
+          const a = points[ia],
+            b = points[ib],
+            c = points[ic];
+          ab.subVectors(b, a);
+          ac.subVectors(c, a);
+          n.crossVectors(ab, ac);
+          if (n.lengthSq() < 1e-8) continue;
+          n.normalize();
+          const d = -n.dot(a);
+          let count = 0;
+          for (const p of points) {
+            if (Math.abs(n.dot(p) + d) < eps) count++;
+          }
+          if (count > best.inliers.length) {
+            const inliers = points.filter((p) => Math.abs(n.dot(p) + d) < eps);
+            best = {inliers, normal: n.clone(), point: a};
+          }
+        }
+        if (!best.normal || best.inliers.length < 6) return null;
+        // Refit: centroid of inliers as plane point.
+        const c = new THREE.Vector3();
+        for (const p of best.inliers) c.add(p);
+        c.multiplyScalar(1 / best.inliers.length);
+        return {normal: best.normal, point: c, inliers: best.inliers};
+      }
+
+      // Shoot a ray through normalized image coords (u, v) ∈ [0,1] (top-left
+      // origin) into the scene, intersect with the plane (planePoint,
+      // planeNormal). Returns world-space hit point or null.
+      const _bboxRay = new THREE.Raycaster();
+      const _bboxNdc = new THREE.Vector2();
+      const _diff = new THREE.Vector3();
+      function rayToPlane(u, v, camera, planePoint, planeNormal) {
+        uvToNdc(u, v, camera.userData?.snapAspect, camera.aspect, _bboxNdc);
+        _bboxRay.setFromCamera(_bboxNdc, camera);
+        const denom = _bboxRay.ray.direction.dot(planeNormal);
+        if (Math.abs(denom) < 1e-6) return null;
+        _diff.subVectors(planePoint, _bboxRay.ray.origin);
+        const t = _diff.dot(planeNormal) / denom;
+        if (t <= 0) return null;
+        return _bboxRay.ray.origin
+          .clone()
+          .addScaledVector(_bboxRay.ray.direction, t);
+      }
+
+      // Project the 4 bbox corners onto the plane. Returns {TL, TR, BR, BL}
+      // or null if any corner misses the plane.
+      function projectBboxToPlane(box2d, camera, planePoint, planeNormal) {
+        const TL = rayToPlane(
+          box2d.min.x,
+          box2d.min.y,
+          camera,
+          planePoint,
+          planeNormal
+        );
+        const TR = rayToPlane(
+          box2d.max.x,
+          box2d.min.y,
+          camera,
+          planePoint,
+          planeNormal
+        );
+        const BR = rayToPlane(
+          box2d.max.x,
+          box2d.max.y,
+          camera,
+          planePoint,
+          planeNormal
+        );
+        const BL = rayToPlane(
+          box2d.min.x,
+          box2d.max.y,
+          camera,
+          planePoint,
+          planeNormal
+        );
+        if (!TL || !TR || !BR || !BL) return null;
+        return {TL, TR, BR, BL};
+      }
+
+      // ------- Fitter dispatcher -------
+      // Each fitter returns {center: Vector3, size: Vector3, angle: number}
+      // where `angle` is yaw around world Y. center.y / size.y are world Y.
+      function fitYawOBB(points, opts = {}) {
+        const cat = opts.category || 'furniture';
+        if (cat === 'flat') {
+          if (opts.tinyFlat) {
+            const r = fitTinyFlatOBB(opts);
+            if (r) return r;
+          }
+          const r = fitFlatOBB(points, opts);
+          if (r) return r;
+        }
+        if (cat === 'small') {
+          const r = fitSmallOBB(points, opts);
+          if (r) return r;
+        }
+        if (cat === 'light') {
+          const r = fitLightOBB(points, opts);
+          if (r) return r;
+        }
+        return fitFurnitureOBB(points);
+      }
+
+      // Tiny wall-mounted flats (switches, outlets, thermostats, vents).
+      // Their depth back-projection is unreliable — tiny pixel footprint at
+      // frame edges, depth-mesh artefacts. Instead: cast a ray from the
+      // camera through the bbox centre, extend to a reasonable wall hit, snap
+      // to the nearest cardinal wall plane (±X / ±Z), and project the bbox
+      // corners onto that wall to size the box.
+      const _tfRay = new THREE.Raycaster();
+      const _tfNdc = new THREE.Vector2();
+      function fitTinyFlatOBB(opts) {
+        if (!opts.box2d || !opts.camera) return null;
+        const cam = opts.camera;
+        const cx = (opts.box2d.min.x + opts.box2d.max.x) * 0.5;
+        const cy = (opts.box2d.min.y + opts.box2d.max.y) * 0.5;
+        uvToNdc(cx, cy, cam.userData?.snapAspect, cam.aspect, _tfNdc);
+        _tfRay.setFromCamera(_tfNdc, cam);
+        const o = _tfRay.ray.origin,
+          d = _tfRay.ray.direction;
+        // Use the SDK anchor distance if it looks plausible (within a 6m room),
+        // otherwise pick the closest cardinal wall the ray hits.
+        let anchorOk = false;
+        if (opts.anchor) {
+          const a = opts.anchor;
+          if (
+            Math.abs(a.x) <= 4 &&
+            Math.abs(a.z) <= 4 &&
+            a.y >= -0.5 &&
+            a.y <= 4
+          ) {
+            anchorOk = true;
+          }
+        }
+        // Find nearest cardinal wall hit. Walls assumed at x = ±roomHalf and
+        // z = ±roomHalf with roomHalf=3m (matches the wood-cabin sim).
+        const roomHalf = 3.0;
+        const candidates = [
+          {n: new THREE.Vector3(1, 0, 0), d: -roomHalf}, // x = -3
+          {n: new THREE.Vector3(-1, 0, 0), d: -roomHalf}, // x = +3
+          {n: new THREE.Vector3(0, 0, 1), d: -roomHalf}, // z = -3
+          {n: new THREE.Vector3(0, 0, -1), d: -roomHalf}, // z = +3
+        ];
+        let best = null;
+        for (const c of candidates) {
+          const denom = d.dot(c.n);
+          if (Math.abs(denom) < 1e-4) continue;
+          const num = -(o.dot(c.n) + c.d);
+          const t = num / denom;
+          if (t <= 0.05) continue;
+          const hit = o.clone().addScaledVector(d, t);
+          if (
+            Math.abs(hit.x) > roomHalf + 0.5 ||
+            Math.abs(hit.z) > roomHalf + 0.5
+          )
+            continue;
+          if (!best || t < best.t) best = {t, hit, n: c.n.clone()};
+        }
+        if (!best) return null;
+        // If the SDK anchor is much closer than the wall and looks plausible,
+        // prefer the anchor's depth (handles cabinets, half-walls etc.).
+        let center;
+        let normal = best.n;
+        if (anchorOk) {
+          const camToAnchor = opts.anchor.distanceTo(cam.position);
+          if (camToAnchor < best.t * 0.8) {
+            // Snap anchor onto nearest cardinal-aligned wall plane.
+            const a = opts.anchor;
+            const dx = roomHalf - Math.abs(a.x);
+            const dz = roomHalf - Math.abs(a.z);
+            if (dx < dz) {
+              center = new THREE.Vector3(Math.sign(a.x) * roomHalf, a.y, a.z);
+              normal = new THREE.Vector3(-Math.sign(a.x), 0, 0);
+            } else {
+              center = new THREE.Vector3(a.x, a.y, Math.sign(a.z) * roomHalf);
+              normal = new THREE.Vector3(0, 0, -Math.sign(a.z));
+            }
+          } else {
+            center = best.hit;
+          }
+        } else {
+          center = best.hit;
+        }
+        // Make sure the normal faces the camera so the front face is visible.
+        const toCam = cam.position.clone().sub(center);
+        if (normal.dot(toCam) < 0) normal.multiplyScalar(-1);
+        // Project the bbox corners onto the wall plane to size the box.
+        const corners = projectBboxToPlane(opts.box2d, cam, center, normal);
+        if (!corners) return null;
+        const angle = Math.atan2(normal.x, normal.z);
+        const cs = Math.cos(angle),
+          sn = Math.sin(angle);
+        let umin = Infinity,
+          umax = -Infinity;
+        let ymin = Infinity,
+          ymax = -Infinity;
+        let cxw = 0,
+          czw = 0;
+        for (const c of [corners.TL, corners.TR, corners.BR, corners.BL]) {
+          const u = (c.x - center.x) * cs - (c.z - center.z) * sn;
+          if (u < umin) umin = u;
+          if (u > umax) umax = u;
+          if (c.y < ymin) ymin = c.y;
+          if (c.y > ymax) ymax = c.y;
+          cxw += c.x;
+          czw += c.z;
+        }
+        cxw /= 4;
+        czw /= 4;
+        const sizeU = Math.max(0.04, Math.min(0.4, umax - umin));
+        const sizeY = Math.max(0.04, Math.min(0.4, ymax - ymin));
+        return {
+          center: new THREE.Vector3(cxw, (ymin + ymax) / 2, czw),
+          size: new THREE.Vector3(sizeU, sizeY, 0.04),
+          angle,
+        };
+      }
+
+      // Flat objects (paintings, TVs, windows, mirrors): fit a plane via
+      // RANSAC, then reproject Gemini's clean 2D bbox onto that plane to get
+      // tight extents that are immune to mask spillover.
+      function fitFlatOBB(points, opts) {
+        if (points.length < 6) return null;
+        // Use only points near the SDK anchor — the mask often spills onto
+        // adjacent geometry (TV stand, wall, etc) and pollutes RANSAC.
+        let workingPoints = points;
+        if (opts.anchor) {
+          const filtered = rejectByAnchor(points, opts.anchor, 0.6);
+          if (filtered.length >= 6) workingPoints = filtered;
+        }
+        const plane = ransacPlane(workingPoints, 200, 0.02);
+        if (!plane) return null;
+        // Force normal to be horizontal (gravity-aligned wall) and pointing
+        // toward the camera so the front face is visible.
+        let n = new THREE.Vector3(plane.normal.x, 0, plane.normal.z);
+        if (n.lengthSq() < 1e-6) return null;
+        n.normalize();
+        // Snap to nearest cardinal wall direction (±X or ±Z). Real walls in a
+        // rectangular room are axis-aligned; this prevents RANSAC from picking
+        // a near-degenerate diagonal normal when the painting is small.
+        if (Math.abs(n.x) > Math.abs(n.z)) {
+          n.set(Math.sign(n.x), 0, 0);
+        } else {
+          n.set(0, 0, Math.sign(n.z));
+        }
+        if (opts.camera) {
+          _diff.subVectors(opts.camera.position, plane.point);
+          if (n.dot(_diff) < 0) n.multiplyScalar(-1);
+        }
+        const angle = Math.atan2(n.x, n.z);
+        // Re-fit plane offset to the snapped normal using the median of inlier
+        // projections so the plane sits exactly on the wall surface.
+        const inliers = plane.inliers.length ? plane.inliers : workingPoints;
+        const offsets = inliers.map((p) => p.x * n.x + p.z * n.z);
+        offsets.sort((a, b) => a - b);
+        const offset = offsets[Math.floor(offsets.length / 2)];
+        const planePoint = new THREE.Vector3(n.x * offset, 0, n.z * offset);
+        // Use mask inlier extents — these hug the actual painting/TV pixels,
+        // unlike the 2D bbox which often includes neighboring geometry.
+        // Use 5%/95% percentiles per axis instead of min/max so a handful of
+        // stray mask pixels (typical SAM bleed onto adjacent wall) don't
+        // blow up sizeU / sizeY by 50%.
+        const cs = Math.cos(angle),
+          sn = Math.sin(angle);
+        const us = [];
+        const ys = [];
+        for (const p of inliers) {
+          us.push((p.x - planePoint.x) * cs - (p.z - planePoint.z) * sn);
+          ys.push(p.y);
+        }
+        const pctile = (arr, q) => {
+          const a = arr.slice().sort((x, y) => x - y);
+          return a[
+            Math.max(0, Math.min(a.length - 1, Math.floor(q * a.length)))
+          ];
+        };
+        const umin = pctile(us, 0.05);
+        const umax = pctile(us, 0.95);
+        const ymin = pctile(ys, 0.05);
+        const ymax = pctile(ys, 0.95);
+        const uc = (umin + umax) / 2;
+        const sizeU = Math.max(0.05, umax - umin);
+        const sizeY = Math.max(0.05, ymax - ymin);
+        const center = new THREE.Vector3(
+          planePoint.x + uc * cs,
+          (ymin + ymax) / 2,
+          planePoint.z - uc * sn
+        );
+        return {center, size: new THREE.Vector3(sizeU, sizeY, 0.05), angle};
+      }
+
+      // Small objects (cups, books, controllers): depth-mesh resolution is
+      // worse than the object itself, so mask points are unreliable. Use the
+      // bbox projected through the median depth and trust Gemini's pixel
+      // extents. Camera-facing axis-aligned-ish box.
+      function fitSmallOBB(points, opts) {
+        if (!opts.box2d || !opts.camera || points.length < 3) return null;
+        const camPos = opts.camera.position;
+        // Median camera-distance defines the depth.
+        const ds = points.map((p) => p.distanceTo(camPos));
+        const sorted = ds.slice().sort((a, b) => a - b);
+        const depth = sorted[Math.floor(sorted.length / 2)];
+        // Build a camera-facing plane at the median depth, gravity-aligned.
+        const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(
+          opts.camera.quaternion
+        );
+        fwd.y = 0;
+        if (fwd.lengthSq() < 1e-6) return null;
+        fwd.normalize();
+        const planePoint = camPos.clone().addScaledVector(fwd, depth);
+        const planeNormal = fwd.clone().multiplyScalar(-1);
+        const corners = projectBboxToPlane(
+          opts.box2d,
+          opts.camera,
+          planePoint,
+          planeNormal
+        );
+        if (!corners) return null;
+        const angle = Math.atan2(planeNormal.x, planeNormal.z);
+        const cs = Math.cos(angle),
+          sn = Math.sin(angle);
+        const all = [corners.TL, corners.TR, corners.BR, corners.BL];
+        let umin = Infinity,
+          umax = -Infinity;
+        let ymin = Infinity,
+          ymax = -Infinity;
+        let cx = 0,
+          cz = 0;
+        for (const c of all) {
+          const u = (c.x - planePoint.x) * cs - (c.z - planePoint.z) * sn;
+          if (u < umin) umin = u;
+          if (u > umax) umax = u;
+          if (c.y < ymin) ymin = c.y;
+          if (c.y > ymax) ymax = c.y;
+          cx += c.x;
+          cz += c.z;
+        }
+        cx /= 4;
+        cz /= 4;
+        const sizeU = Math.max(0.02, umax - umin);
+        const sizeY = Math.max(0.02, ymax - ymin);
+        // Depth (thickness): use mask point depth spread, clamp small.
+        const dmin = sorted[0],
+          dmax = sorted[sorted.length - 1];
+        const sizeV = Math.max(0.05, Math.min(0.4, dmax - dmin));
+        return {
+          center: new THREE.Vector3(cx, (ymin + ymax) / 2, cz),
+          size: new THREE.Vector3(sizeU, sizeY, sizeV),
+          angle,
+        };
+      }
+
+      // Hanging lights / lamps: mask often picks up the cord and bits of
+      // ceiling. Cluster on the densest depth bin (the lampshade) and fit
+      // furniture-style on that subset.
+      function fitLightOBB(points, opts) {
+        if (points.length < 6) return null;
+        // Tight depth filter (5cm) — lampshade is roughly planar in depth.
+        const tight = rejectByDepth(points, opts.camera, 0.1);
+        return fitFurnitureOBB(tight);
+      }
+
+      // Furniture: yaw-constrained PCA in XZ + percentile-clipped extents.
+      // Also widen with the 2D bbox reprojected at anchor depth, since the
+      // depth mask typically only covers the camera-facing face of the
+      // furniture and underestimates the full extent.
+      function fitFurnitureOBB(points) {
+        if (points.length < 6) return null;
+        // Robust centroid: median per-axis to ignore mask spillover outliers.
+        const xs = points.map((p) => p.x).sort((a, b) => a - b);
+        const ys = points.map((p) => p.y).sort((a, b) => a - b);
+        const zs = points.map((p) => p.z).sort((a, b) => a - b);
+        const med = (arr) => arr[Math.floor(arr.length / 2)];
+        let cx = med(xs),
+          cy = med(ys),
+          cz = med(zs);
+        let Sxx = 0,
+          Sxz = 0,
+          Szz = 0;
+        for (const p of points) {
+          const dx = p.x - cx,
+            dz = p.z - cz;
+          Sxx += dx * dx;
+          Sxz += dx * dz;
+          Szz += dz * dz;
+        }
+        let angle = 0.5 * Math.atan2(2 * Sxz, Sxx - Szz);
+        // Snap to nearest cardinal (0/±90/180). Indoor furniture is almost
+        // always wall-aligned, and PCA on partial depth scans of one face is
+        // too noisy to trust the off-axis rotation. The rare genuinely-rotated
+        // chair will be off by a few degrees, which is a good trade.
+        const candidates = [0, Math.PI / 2, -Math.PI / 2, Math.PI, -Math.PI];
+        let bestSnap = angle,
+          bestErr = Infinity;
+        for (const c of candidates) {
+          const err = Math.abs(
+            ((angle - c + Math.PI) % (2 * Math.PI)) - Math.PI
+          );
+          if (err < bestErr) {
+            bestErr = err;
+            bestSnap = c;
+          }
+        }
+        angle = bestSnap;
+        const cs = Math.cos(angle),
+          sn = Math.sin(angle);
+        // Project all points to local axes.
+        const us = [],
+          vs = [],
+          ysProj = [];
+        for (const p of points) {
+          const dx = p.x - cx,
+            dz = p.z - cz;
+          us.push(dx * cs + dz * sn);
+          vs.push(-dx * sn + dz * cs);
+          ysProj.push(p.y);
+        }
+        // Percentile clipping to drop ~5% extreme outliers per axis.
+        const pctile = (arr, p) => {
+          const sorted = arr.slice().sort((a, b) => a - b);
+          return sorted[
+            Math.max(
+              0,
+              Math.min(sorted.length - 1, Math.floor(p * sorted.length))
+            )
+          ];
+        };
+        const umin = pctile(us, 0.05);
+        const umax = pctile(us, 0.95);
+        const vmin = pctile(vs, 0.05);
+        const vmax = pctile(vs, 0.95);
+        const ymin = pctile(ysProj, 0.02);
+        const ymax = pctile(ysProj, 0.98);
+        const uc = (umin + umax) / 2;
+        const vc = (vmin + vmax) / 2;
+        const offX = uc * cs - vc * sn;
+        const offZ = uc * sn + vc * cs;
+        let centerX = cx + offX;
+        let centerY = (ymin + ymax) / 2;
+        let centerZ = cz + offZ;
+        const sizeU = Math.max(0.02, umax - umin);
+        const sizeY = Math.max(0.02, ymax - ymin);
+        const sizeV = Math.max(0.02, vmax - vmin);
+        return {
+          center: new THREE.Vector3(centerX, centerY, centerZ),
+          size: new THREE.Vector3(sizeU, sizeY, sizeV),
+          angle,
+        };
+      }
+
+      // Per-category line colors so categories are visually distinguishable
+      // at a glance: flat (paintings/TV) = orange, furniture = green,
+      // small (cup/remote) = cyan, light = yellow.
+      const CAT_COLOR = {
+        flat: 0xff9f0a,
+        furniture: 0x4cd964,
+        small: 0x64d2ff,
+        light: 0xffd60a,
+      };
+
+      function makeLabelSprite(text, lineColor) {
+        // Render the label text into a 2D canvas, wrap it in a sprite so it
+        // billboards automatically. World height is fixed (~0.18 m) so the
+        // text reads at a consistent visual size regardless of box size.
+        const padX = 24;
+        const padY = 14;
+        const fontPx = 64;
+        const measureCanvas = document.createElement('canvas');
+        const measureCtx = measureCanvas.getContext('2d');
+        measureCtx.font = `bold ${fontPx}px sans-serif`;
+        const textW = Math.ceil(measureCtx.measureText(text).width);
+        const w = textW + padX * 2;
+        const h = fontPx + padY * 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        // Pill background colored to match the box edges.
+        const r = h / 2;
+        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.beginPath();
+        ctx.moveTo(r, 0);
+        ctx.lineTo(w - r, 0);
+        ctx.arc(w - r, r, r, -Math.PI / 2, Math.PI / 2);
+        ctx.lineTo(r, h);
+        ctx.arc(r, r, r, Math.PI / 2, -Math.PI / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#' + lineColor.toString(16).padStart(6, '0');
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.font = `bold ${fontPx}px sans-serif`;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, w / 2, h / 2 + 2);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.anisotropy = 8;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        const mat = new THREE.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(mat);
+        const targetH = 0.18;
+        const baseW = (targetH * w) / h;
+        sprite.scale.set(baseW, targetH, 1);
+        // Keep the label at roughly constant on-screen size by scaling with
+        // distance to the camera. Without this, the label balloons when the
+        // viewer walks up to an object and shrinks to nothing across the room.
+        // Clamped so labels never disappear and never dominate the frame.
+        const REF_DIST = 2.0;
+        const MIN_MUL = 0.55;
+        const MAX_MUL = 2.0;
+        const _camPos = new THREE.Vector3();
+        const _sprPos = new THREE.Vector3();
+        sprite.onBeforeRender = (renderer, scene, camera) => {
+          camera.getWorldPosition(_camPos);
+          sprite.getWorldPosition(_sprPos);
+          const d = _camPos.distanceTo(_sprPos);
+          let mul = d / REF_DIST;
+          if (mul < MIN_MUL) mul = MIN_MUL;
+          else if (mul > MAX_MUL) mul = MAX_MUL;
+          sprite.scale.set(baseW * mul, targetH * mul, 1);
+        };
+        // The xrblocks raycaster crashes on sprites without a camera reference;
+        // these labels are display-only so disable raycasting on them.
+        sprite.raycast = () => {};
+        return sprite;
+      }
+
+      function buildBoxGroup(obb, label, color = 0x4cd964) {
+        const group = new THREE.Group();
+        const geom = new THREE.BoxGeometry(obb.size.x, obb.size.y, obb.size.z);
+        const edges = new THREE.EdgesGeometry(geom);
+        // Two passes so the box reads clearly even when the object's mesh sits
+        // between the viewer and the back edges:
+        //   1. Faint pass with depthTest off, drawn first (renderOrder 0) so
+        //      occluded edges show through as a hint of where the back of the
+        //      box is.
+        //   2. Solid pass with normal depth testing, drawn after, so visible
+        //      edges in front of geometry pop crisply over the see-through.
+        const ghostLines = new THREE.LineSegments(
+          edges,
+          new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.25,
+            depthTest: false,
+            depthWrite: false,
+          })
+        );
+        ghostLines.renderOrder = 1;
+        group.add(ghostLines);
+
+        const lines = new THREE.LineSegments(
+          edges,
+          new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.95,
+          })
+        );
+        lines.renderOrder = 2;
+        group.add(lines);
+
+        // Build a canvas-based Sprite for the label. Sprites always face the
+        // camera (so labels stay readable from any viewing angle) and they
+        // sidestep the troika-three-text setup-timing issues that left the
+        // previous Text-based labels invisible. Render order is high so the
+        // label always reads on top of the box edges and the world geometry.
+        const labelSprite = makeLabelSprite(label, color);
+        labelSprite.position.set(0, obb.size.y / 2 + 0.06, 0);
+        labelSprite.renderOrder = 3;
+        group.add(labelSprite);
+        group.userData.label = labelSprite;
+        group.userData.labelText = label;
+
+        group.position.copy(obb.center);
+        group.rotation.y = obb.angle;
+        // Fusion bookkeeping so subsequent Detect presses can merge a new
+        // OBB into this one rather than stacking a duplicate.
+        group.userData.center = obb.center.clone();
+        group.userData.size = obb.size.clone();
+        group.userData.angle = obb.angle;
+        group.userData.samples = 1;
+        return group;
+      }
+
+      function setStatus(s) {
+        const el = document.getElementById('status');
+        if (el) el.textContent = s;
+        // The MSDF font uiblocks uses doesn't include the Unicode ellipsis
+        // glyph (U+2026), so swap it for three ASCII dots before handing
+        // the string to UIText, otherwise it renders as '?'.
+        if (xrStatusText) xrStatusText.setText(s.replace(/…/g, '...'));
+      }
+
+      function clearBoxes() {
+        while (boxes.children.length) {
+          const g = boxes.children[0];
+          boxes.remove(g);
+          g.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) {
+              if (Array.isArray(o.material)) {
+                o.material.forEach((m) => m.dispose && m.dispose());
+              } else if (o.material.dispose) {
+                o.material.dispose();
+              }
+            }
+            if (o.dispose && o !== g) o.dispose();
+          });
+        }
+      }
+
+      // Reentrancy guard. detect() runs for tens of seconds while monkey-
+      // patching xb.core.deviceCamera.getSnapshot; a concurrent press
+      // would capture our wrapper as its "original" and leave it
+      // installed when it restored, plus other SDK consumers calling
+      // getSnapshot during the overlap would receive the wrong cached
+      // frame. We disable the button in the UI but also gate here so
+      // programmatic callers (e.g. tests, playwright) can't trigger it.
+      let _detectInFlight = false;
+
+      async function detect() {
+        if (!xb.core.world?.objects) {
+          setStatus('object detection not available');
+          return;
+        }
+        if (_detectInFlight) {
+          console.info(
+            '[objects_3d] detect already in flight, ignoring re-entry'
+          );
+          return;
+        }
+        _detectInFlight = true;
+        const detectBtn = document.getElementById('detect');
+        if (detectBtn) detectBtn.disabled = true;
+        setStatus('detecting…');
+        // Capture pixels first, then freeze the camera. Two reasons:
+        //   1. getSnapshot reads the current video frame, which itself
+        //      reflects the camera at the most recent render. Freezing
+        //      *after* the snapshot returns minimises drift between the
+        //      pixels and the camera matrices we'll raycast with.
+        //   2. We only call getSnapshot once and derive base64 from the
+        //      same imageData via canvas. The previous code called
+        //      getSnapshot twice (base64 then imageData), each of which
+        //      awaits and may end up reading two *different* video
+        //      frames, so SAM and the detectors would see different
+        //      pixels. One drawImage, one frame, two formats.
+        let snapImageData;
+        try {
+          snapImageData = await xb.core.deviceCamera.getSnapshot({
+            outputFormat: 'imageData',
+          });
+        } catch (e) {
+          console.warn('[objects_3d] snapshot capture threw', e);
+          snapImageData = null;
+        }
+        if (!snapImageData) {
+          setStatus('no camera frame');
+          _detectInFlight = false;
+          if (detectBtn) detectBtn.disabled = false;
+          return;
+        }
+        const _b64Canvas = document.createElement('canvas');
+        _b64Canvas.width = snapImageData.width;
+        _b64Canvas.height = snapImageData.height;
+        _b64Canvas.getContext('2d').putImageData(snapImageData, 0, 0);
+        const snapBase64 = _b64Canvas.toDataURL('image/jpeg', 0.9);
+        // Now freeze the camera. State here reflects whatever the live
+        // camera became *after* the snapshot's drawImage finished, which
+        // is at most one render-loop tick later — close enough that the
+        // pixels and the matrix represent the same view.
+        const liveCam = xb.core.camera;
+        const frozenCam = liveCam.clone();
+        frozenCam.matrixAutoUpdate = false;
+        liveCam.updateMatrixWorld();
+        frozenCam.matrix.copy(liveCam.matrix);
+        frozenCam.matrixWorld.copy(liveCam.matrixWorld);
+        frozenCam.matrixWorldInverse.copy(liveCam.matrixWorld).invert();
+        frozenCam.projectionMatrix.copy(liveCam.projectionMatrix);
+        frozenCam.projectionMatrixInverse.copy(liveCam.projectionMatrixInverse);
+        frozenCam.position.copy(liveCam.position);
+        frozenCam.quaternion.copy(liveCam.quaternion);
+        // Diagnostic: if the snapshot aspect doesn't match the camera
+        // aspect, bbox-centre → NDC conversion will systematically miss
+        // along the mismatched axis (uvToNdc corrects for this; the warn
+        // is here so a regression in the correction surfaces quickly).
+        // Fire once per session: the simulator setup is constant, and
+        // logging on every Detect press is just noise after the first.
+        const snapAspect = snapImageData.width / snapImageData.height;
+        if (
+          !window._aspectWarned &&
+          Math.abs(snapAspect - liveCam.aspect) > 0.02
+        ) {
+          window._aspectWarned = true;
+          console.info(
+            '[objects_3d] snapshot vs camera aspect mismatch (corrected by uvToNdc)',
+            'snap',
+            snapImageData.width + 'x' + snapImageData.height,
+            '(' + snapAspect.toFixed(3) + ')',
+            'cam',
+            liveCam.aspect.toFixed(3)
+          );
+        }
+        // Stash the snapshot aspect on the frozen camera so every helper
+        // that has the camera (rayToPlane, fitTinyFlatOBB, etc.) can do
+        // the snapshot-vs-camera NDC correction without explicit threading.
+        frozenCam.userData.snapAspect = snapAspect;
+        // Snapshot the depth mesh in the same tick as the camera freeze
+        // so all three (pixels, camera, depth geometry) are coherent.
+        // Make sure the BVH prototype patch is installed before we build
+        // the per-press bounds tree. Kicked off at init so this is almost
+        // always already resolved; a very early press waits the dynamic
+        // import out here instead of racing it. Resolves false (not throw)
+        // if three-mesh-bvh is unreachable, in which case computeBoundsTree
+        // stays unpatched and the build below is skipped.
+        await bvhReady;
+        const frozenDepthMesh = snapshotDepthMesh();
+        if (!frozenDepthMesh) {
+          setStatus('no depth mesh');
+          _detectInFlight = false;
+          if (detectBtn) detectBtn.disabled = false;
+          return;
+        }
+        const _origGetSnapshot = xb.core.deviceCamera.getSnapshot.bind(
+          xb.core.deviceCamera
+        );
+        xb.core.deviceCamera.getSnapshot = async (opts) => {
+          if (opts?.outputFormat === 'base64') return snapBase64;
+          if (opts?.outputFormat === 'imageData') return snapImageData;
+          return _origGetSnapshot(opts);
+        };
+        // Start SAM init + encode in parallel with detection. Both
+        // network (gemini) and GPU (SAM encoder) work happens concurrently
+        // instead of serially, saving the smaller of the two stages on
+        // the critical path. The encode is a single shot on snapImageData,
+        // which is already pinned and won't change. Attach a no-op catch
+        // immediately so an early-return path doesn't leak the rejection
+        // as an UnhandledRejection warning; the real error surfaces when
+        // we await `samPrep` below (samState branch).
+        let samPrep = null;
+        if (MASK_BACKEND === 'slimsam') {
+          samPrep = (async () => {
+            await getSam();
+            return samEncodeSnapshot(snapImageData);
+          })();
+          samPrep.catch(() => {});
+        }
+        // Everything from here runs inside try/finally so the
+        // getSnapshot monkey-patch, the depth-mesh snapshot, the BVH
+        // bounds tree, the reentrancy flag, and the button-disabled
+        // state always come back even on detection / SAM / fitting
+        // failures. Without this, repeated failed presses leak memory
+        // and the cached-snapshot getter stays installed for other
+        // consumers.
+        try {
+          let detected = [];
+          try {
+            if (DETECT_BACKEND === 'both') {
+              // Run both detectors and union with IoU dedupe. Two
+              // separate runDetection calls because the SDK only exposes
+              // one activeBackend at a time. Run mediapipe first so its
+              // deterministic COCO results anchor the dedupe, then add
+              // gemini's open-vocab finds that don't overlap.
+              const cfg = xb.core.world.objects.options.objects.backendConfig;
+              const prev = cfg.activeBackend;
+              try {
+                cfg.activeBackend = 'mediapipe';
+                const mp = await xb.core.world.objects.runDetection();
+                cfg.activeBackend = 'gemini';
+                const gm = await xb.core.world.objects.runDetection();
+                detected = unionDetections(mp, gm);
+              } finally {
+                cfg.activeBackend = prev;
+              }
+            } else {
+              detected = await xb.core.world.objects.runDetection();
+            }
+          } catch (e) {
+            console.warn('[objects_3d] detection threw', e);
+            setStatus('detection failed (see console)');
+            return;
+          }
+          console.log(
+            '[objects_3d] runDetection returned',
+            detected.length,
+            'objects',
+            detected.map((o) => ({
+              label: o.label,
+              box: o.detection2DBoundingBox && {
+                min: o.detection2DBoundingBox.min.toArray(),
+                max: o.detection2DBoundingBox.max.toArray(),
+              },
+              pos: o.position && o.position.toArray(),
+            }))
+          );
+          if (!detected.length) {
+            setStatus('nothing detected');
+            return;
+          }
+          // Multi-view fusion: keep existing boxes across Detect presses
+          // so pressing from a new camera angle refines them instead of
+          // replacing them. Single-viewpoint OBBs always disagree
+          // slightly because depth raycasts from one POV can't see the
+          // back of an object; averaging centroids and unioning extents
+          // across views converges to the truth. Clear button is the
+          // explicit reset.
+          let samState = null;
+          if (MASK_BACKEND === 'slimsam') {
+            setStatus('encoding snapshot…');
+            try {
+              // Await the SAM prep we started in parallel with detection.
+              // By the time gemini returns, this is usually already done.
+              samState = await samPrep;
+            } catch (e) {
+              console.warn('[objects_3d] sam encoder failed', e);
+              setStatus('sam encoding failed (see console)');
+              return;
+            }
+          }
+          // Reuse the same imageData snapshot captured before
+          // runDetection so SAM masks line up exactly with the bboxes the
+          // detectors returned.
+          const snapshot = snapImageData;
+          // Restore the original snapshot getter; everything downstream
+          // (fitting, raycasting) uses the cached pixel data and the
+          // frozen camera, so there's no need to keep the monkey-patch
+          // active. The outer finally restores it too as a safety net.
+          xb.core.deviceCamera.getSnapshot = _origGetSnapshot;
+          setStatus('fitting boxes…');
+          const floorY = estimateFloorY();
+          // Pipeline the per-object work: mask decode (serial on GPU via
+          // samSerialize) overlaps with depth raycasts + OBB fitting for
+          // the previous object. Without pipelining we wait for mask N+1
+          // to finish decoding before even starting raycast N+1, even
+          // though the raycast is pure CPU and doesn't need the GPU.
+          // Returns null for rejected / surface-skip / failed entries so
+          // the result list stays aligned with `detected` order, which
+          // the final fuse pass walks serially (fuseIntoBoxes mutates
+          // the shared boxes group).
+          async function processOne(obj) {
+            try {
+              if (isSurfaceLabel(obj.label)) {
+                console.log('[objects_3d] skip surface label', obj.label);
+                return null;
+              }
+              const box2d = obj.detection2DBoundingBox;
+              let mask;
+              try {
+                mask =
+                  MASK_BACKEND === 'slimsam'
+                    ? await samMaskFromBbox(samState, box2d)
+                    : await segmenterMaskFromSnapshot(snapshot, box2d);
+              } catch (e) {
+                console.warn(
+                  '[objects_3d]',
+                  MASK_BACKEND,
+                  'mask threw for',
+                  obj.label,
+                  e
+                );
+                return null;
+              }
+              if (!mask) {
+                console.warn('[objects_3d] no mask for', obj.label);
+                return null;
+              }
+              const {points: raw, foregroundPixels} =
+                await sampleDepthInMaskAcrossFrames(
+                  mask,
+                  box2d,
+                  10,
+                  3,
+                  frozenCam,
+                  frozenDepthMesh,
+                  snapAspect
+                );
+              mask.close();
+              // Recompute the anchor ourselves through the frozen camera +
+              // frozen depth mesh so it lines up with the snapshot pixels.
+              // Falls back to the SDK anchor when the bbox-centre ray
+              // misses the mesh (e.g. the centre falls on a thin gap).
+              const anchor =
+                anchorFromBboxCenter(
+                  box2d,
+                  frozenCam,
+                  frozenDepthMesh,
+                  snapAspect
+                ) || obj.position;
+              const cat = categorize(obj.label);
+              // Category-specific outlier rejection. Flats skip upfront
+              // rejection entirely so RANSAC sees the full point set and
+              // finds the dominant plane (mask points off the wall become
+              // outliers there).
+              let points;
+              if (cat === 'flat') {
+                points = raw;
+              } else if (cat === 'small') {
+                const r = radiusFromBbox(box2d, frozenCam, anchor, {
+                  pad: 1.1,
+                  minR: 0.12,
+                  maxR: 0.3,
+                  fallback: 0.25,
+                });
+                points = rejectByAnchor(raw, anchor, r);
+              } else if (cat === 'light') {
+                const r = radiusFromBbox(box2d, frozenCam, anchor, {
+                  pad: 1.2,
+                  minR: 0.2,
+                  maxR: 0.7,
+                  fallback: 0.5,
+                });
+                points = rejectByY(rejectByAnchor(raw, anchor, r), 0.15);
+              } else {
+                const r = radiusFromBbox(box2d, frozenCam, anchor, {
+                  pad: 1.3,
+                  minR: 0.4,
+                  maxR: 2.0,
+                  fallback: 1.0,
+                });
+                const depthFiltered = rejectByAnchorDepth(
+                  raw,
+                  frozenCam,
+                  anchor,
+                  r
+                );
+                points = rejectByAnchor(depthFiltered, anchor, r);
+              }
+              const obb = fitYawOBB(points, {
+                category: cat,
+                camera: frozenCam,
+                anchor: anchor,
+                box2d,
+                tinyFlat: isTinyFlatLabel(obj.label),
+              });
+              if (!obb) {
+                console.info(
+                  '[objects_3d] no obb',
+                  obj.label,
+                  'cat',
+                  cat,
+                  'rawPts',
+                  raw.length,
+                  'keptPts',
+                  points.length
+                );
+                return null;
+              }
+              if (cat === 'furniture' || cat === 'small') {
+                snapBoxToFloor(obb, floorY);
+              }
+              const c = obb.center;
+              const farFromRoom =
+                Math.abs(c.x) > 6 || Math.abs(c.z) > 6 || c.y < -1 || c.y > 5;
+              const minPoints =
+                cat === 'small'
+                  ? 4
+                  : cat === 'light'
+                    ? 8
+                    : cat === 'flat'
+                      ? 8
+                      : 20;
+              const tinyFlat = isTinyFlatLabel(obj.label);
+              const tooFewPoints = !tinyFlat && points.length < minPoints;
+              const oversize =
+                obb.size.x > 4 || obb.size.y > 3 || obb.size.z > 4;
+              const horizMax = Math.max(obb.size.x, obb.size.z);
+              const degenerate =
+                cat !== 'flat' && horizMax > 0.5 && obb.size.y / horizMax < 0.1;
+              if (farFromRoom || tooFewPoints || oversize || degenerate) {
+                console.warn(
+                  '[objects_3d] reject',
+                  obj.label,
+                  'far',
+                  farFromRoom,
+                  'fewPts',
+                  tooFewPoints,
+                  'oversize',
+                  oversize,
+                  'degenerate',
+                  degenerate,
+                  'kept',
+                  points.length,
+                  'center',
+                  c.toArray().map((v) => +v.toFixed(2)),
+                  'size',
+                  obb.size.toArray().map((v) => +v.toFixed(2))
+                );
+                return null;
+              }
+              return {obb, label: obj.label || 'object', cat};
+            } catch (e) {
+              console.warn(
+                '[objects_3d] per-object pipeline threw for',
+                obj.label,
+                e?.message || String(e),
+                e?.stack || ''
+              );
+              return null;
+            }
+          }
+          const results = await Promise.all(detected.map(processOne));
+          // Serial fuse + add pass: fuseIntoBoxes iterates over
+          // boxes.children, and buildBoxGroup mutates it, so this can't
+          // race with itself or with another processOne completing.
+          let kept = 0;
+          for (const r of results) {
+            if (!r) continue;
+            const fused = fuseIntoBoxes(r.obb, r.label, r.cat);
+            if (!fused) {
+              const g = buildBoxGroup(
+                r.obb,
+                r.label,
+                CAT_COLOR[r.cat] || 0x4cd964
+              );
+              g.userData.cat = r.cat;
+              boxes.add(g);
+            }
+            kept++;
+          }
+          setStatus(
+            `fit ${kept} / ${detected.length} oriented boxes (press again from a new angle to refine)`
+          );
+        } finally {
+          // Centralized cleanup: every exit path from the inner try
+          // (success, "nothing detected", thrown detection, sam encoder
+          // fail) lands here. Restore the snapshot getter even if the
+          // inner happy-path already did it (idempotent), release the
+          // BVH index and geometry, free the material, and clear the
+          // reentrancy gate so the next press can run.
+          xb.core.deviceCamera.getSnapshot = _origGetSnapshot;
+          if (frozenDepthMesh.geometry) {
+            if (frozenDepthMesh.geometry.disposeBoundsTree) {
+              frozenDepthMesh.geometry.disposeBoundsTree();
+            }
+            frozenDepthMesh.geometry.dispose();
+          }
+          if (frozenDepthMesh.material?.dispose) {
+            frozenDepthMesh.material.dispose();
+          }
+          _detectInFlight = false;
+          if (detectBtn) detectBtn.disabled = false;
+        }
+      }
+
+      const options = new xb.Options();
+      options.enableUI();
+      options.enableAI();
+      options.enableCamera();
+      options.enableDepth();
+      options.depth.depthMesh.updateFullResolutionGeometry = true;
+      options.depth.depthTexture.enabled = false;
+      options.depth.matchDepthView = false;
+      options.enableObjectDetection();
+      options.world.objects.backendConfig.activeBackend =
+        DETECT_BACKEND === 'both' ? 'mediapipe' : DETECT_BACKEND;
+      options.world.objects.showDebugVisualizations = false;
+      // Override the SDK default prompt: stock prompt caps at 5 objects and
+      // is heavily worded toward "primary nearby" items, which produces low
+      // recall on a typical living-room scene. Ask for an exhaustive list
+      // including wall-mounted and small things; cap at 20 to give the OBB
+      // fitter headroom without blowing latency.
+      options.world.objects.backendConfig.gemini.systemInstruction =
+        'List every distinct object visible in the image, including small ' +
+        'items (cups, books, remotes), wall-mounted things (pictures, ' +
+        'switches, TVs), and ceiling fixtures (lamps, lights). For each, ' +
+        'return ymin, xmin, ymax, xmax as integers from 0 to 1000 (top-left ' +
+        'origin) and a short lowercase objectName. List up to 20 objects. ' +
+        'Skip walls, floor, ceiling, and any human body parts or UI ' +
+        'elements attached to them.';
+      // Lower MediaPipe's score gate so the demo surfaces borderline COCO
+      // detections (lamps, books, etc. that hover around 0.4). Stock 0.5 is
+      // tuned for production; for a demo we'd rather over-detect.
+      options.world.objects.backendConfig.mediapipe.scoreThreshold = 0.3;
+      // The SDK now exposes options.world.objects.backendConfig.gemini
+      // .generationConfig if you want to pin sampling (e.g. temperature: 0
+      // for deterministic detection). Left at default here so gemini's
+      // open-vocab range stays wide — the union backend benefits more from
+      // peak recall than from per-call repeatability.
+      options.reticles.enabled = true;
+      options.setAppTitle('3D Object Boxes');
+
+      // Used by the spatial cycle buttons + the DOM <select> dropdowns to
+      // re-enter the page with a new backend / mask choice. Reload is the
+      // simplest way to re-initialise options.world.objects.backendConfig
+      // and the mask path, both of which need to be set before xb.init().
+      function cycleQueryParam(name, value) {
+        const p = new URLSearchParams(window.location.search);
+        p.set(name, value);
+        window.location.search = '?' + p.toString();
+      }
+
+      // Spatial control panel for immersive XR. Built as an xb.Script so
+      // UICore + HeadLeashBehavior get the lifecycle hooks they need. The
+      // panel mirrors the DOM controls (detect / clear + detector / mask
+      // pickers) and shows live status. Uses uiblocks (preferred over the
+      // older xb.SpatialPanel per ruofei's guidance on PR #274).
+      class Objects3dControlPanel extends xb.Script {
+        init() {
+          this.uiCore = new UICore(this);
+          const card = this.uiCore.createCard({
+            name: 'Objects3dControlCard',
+            position: new THREE.Vector3(0, 1.4, -1.0),
+            sizeX: 0.62,
+            sizeY: 0.42,
+          });
+          const panel = new UIPanel({
+            width: '100%',
+            height: '100%',
+            fillColor: 'rgba(15, 18, 25, 0.9)',
+            innerShadowColor: 'rgba(100, 180, 255, 0.12)',
+            innerShadowBlur: 60,
+            strokeWidth: 3,
+            strokeColor: {
+              gradientType: 'linear',
+              rotation: 45,
+              stops: [
+                {position: 0, color: '#4796e3'},
+                {position: 1, color: '#9b5de5'},
+              ],
+            },
+            cornerRadius: 22,
+            padding: 18,
+            flexDirection: 'column',
+            gap: 10,
+            alignItems: 'stretch',
+            justifyContent: 'flex-start',
+          });
+          const titleText = new UIText('3D OBJECT BOXES', {
+            fontSize: 22,
+            fontWeight: 'bold',
+            color: '#00f0ff',
+            textAlign: 'center',
+            width: '100%',
+          });
+          xrStatusText = new UIText('idle', {
+            fontSize: 14,
+            color: '#a0aec0',
+            textAlign: 'center',
+            width: '100%',
+            paddingBottom: 4,
+          });
+          const separator = new UIPanel({
+            width: '100%',
+            height: 2,
+            fillColor: 'rgba(255, 255, 255, 0.12)',
+            marginBottom: 4,
+          });
+          const buttonRow = new UIPanel({
+            width: '100%',
+            flexDirection: 'row',
+            gap: 14,
+            justifyContent: 'center',
+            alignItems: 'center',
+          });
+          buttonRow.add(this.makeXrLabeledButton('search', 'detect', detect));
+          buttonRow.add(
+            this.makeXrLabeledButton('delete_sweep', 'clear', () => {
+              clearBoxes();
+              setStatus('cleared');
+            })
+          );
+          const pickerRow = new UIPanel({
+            width: '100%',
+            flexDirection: 'row',
+            gap: 10,
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginTop: 4,
+          });
+          pickerRow.add(
+            this.makeXrCycleButton(
+              'detector',
+              DETECT_BACKEND,
+              ['gemini', 'mediapipe', 'both'],
+              (next) => cycleQueryParam('backend', next)
+            )
+          );
+          pickerRow.add(
+            this.makeXrCycleButton(
+              'mask',
+              MASK_BACKEND,
+              ['slimsam', 'segmenter'],
+              (next) => cycleQueryParam('mask', next)
+            )
+          );
+          panel.add(titleText);
+          panel.add(xrStatusText);
+          panel.add(separator);
+          panel.add(buttonRow);
+          panel.add(pickerRow);
+          card.add(panel);
+          card.addBehavior(
+            new ManipulationBehavior({draggable: true, faceCamera: true})
+          );
+        }
+
+        // Detect / clear: icon + caption stacked so XR users get the same
+        // affordance as the DOM "Detect 3D objects" / "Clear" buttons.
+        makeXrLabeledButton(iconName, label, onClick) {
+          const idle = '#2a2a2a';
+          const hover = '#3a3a3a';
+          const btn = new UIPanel({
+            paddingTop: 8,
+            paddingBottom: 8,
+            paddingLeft: 16,
+            paddingRight: 16,
+            cornerRadius: 12,
+            fillColor: idle,
+            strokeWidth: 1,
+            strokeColor: '#444444',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            renderOrder: 10,
+            onHoverEnter: () => btn.setFillColor(hover),
+            onHoverExit: () => btn.setFillColor(idle),
+            onClick: () => {
+              btn.setFillColor('#4796e3');
+              setTimeout(() => btn.setFillColor(idle), 180);
+              onClick();
+            },
+          });
+          btn.add(
+            new UIIcon(iconName, {
+              color: 'white',
+              width: 22,
+              height: 22,
+              renderOrder: 12,
+            })
+          );
+          btn.add(
+            new UIText(label, {
+              fontSize: 14,
+              color: '#ffffff',
+              fontWeight: 'bold',
+              depthTest: false,
+              renderOrder: 100,
+            })
+          );
+          return btn;
+        }
+
+        makeXrIconButton(iconName, onClick) {
+          const idle = '#2a2a2a';
+          const hover = '#3a3a3a';
+          const btn = new UIPanel({
+            width: 56,
+            height: 56,
+            cornerRadius: 12,
+            fillColor: idle,
+            strokeWidth: 1,
+            strokeColor: '#444444',
+            justifyContent: 'center',
+            alignItems: 'center',
+            onHoverEnter: () => btn.setFillColor(hover),
+            onHoverExit: () => btn.setFillColor(idle),
+            onClick: () => {
+              btn.setFillColor('#4796e3');
+              setTimeout(() => btn.setFillColor(idle), 180);
+              onClick();
+            },
+          });
+          btn.add(
+            new UIIcon(iconName, {color: 'white', width: 32, height: 32})
+          );
+          return btn;
+        }
+
+        // Tap-to-cycle picker for XR. Each press advances to the next value
+        // in the list and reloads the page so the backend gets re-initialised
+        // (mirrors the DOM <select> behaviour, which also reloads on change).
+        makeXrCycleButton(label, current, options, onChange) {
+          const idle = '#2a2a2a';
+          const hover = '#3a3a3a';
+          const btn = new UIPanel({
+            paddingTop: 6,
+            paddingBottom: 6,
+            paddingLeft: 12,
+            paddingRight: 12,
+            cornerRadius: 10,
+            fillColor: idle,
+            strokeWidth: 1,
+            strokeColor: '#444444',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+            renderOrder: 10,
+            onHoverEnter: () => btn.setFillColor(hover),
+            onHoverExit: () => btn.setFillColor(idle),
+            onClick: () => {
+              const idx = options.indexOf(current);
+              const next = options[(idx + 1) % options.length];
+              onChange(next);
+            },
+          });
+          btn.add(
+            new UIText(label, {
+              fontSize: 10,
+              color: '#888888',
+              textAlign: 'center',
+              depthTest: false,
+              renderOrder: 100,
+            })
+          );
+          btn.add(
+            new UIText(current, {
+              fontSize: 14,
+              color: '#ffffff',
+              fontWeight: 'bold',
+              textAlign: 'center',
+              depthTest: false,
+              renderOrder: 100,
+            })
+          );
+          return btn;
+        }
+      }
+
+      xb.add(new Objects3dControlPanel());
+      xb.init(options);
+      xb.core.scene.add(boxes);
+      setStatus(
+        `Press Detect (then move around and press again to refine). backend=${DETECT_BACKEND} mask=${MASK_BACKEND}`
+      );
+
+      document.getElementById('detect').addEventListener('click', detect);
+      document.getElementById('clear').addEventListener('click', () => {
+        clearBoxes();
+        setStatus('cleared');
+      });
+
+      // Backend selector: reflect current selection and reload on change so
+      // the `options.world.objects.backendConfig.activeBackend` + mask path
+      // get re-initialised cleanly (both must be set before xb.init()).
+      const detectorSel = document.getElementById('detectorSelect');
+      const maskSel = document.getElementById('maskSelect');
+      detectorSel.value = DETECT_BACKEND;
+      maskSel.value = MASK_BACKEND;
+      function reloadWithBackends() {
+        const p = new URLSearchParams(window.location.search);
+        p.set('backend', detectorSel.value);
+        p.set('mask', maskSel.value);
+        window.location.search = '?' + p.toString();
+      }
+      detectorSel.addEventListener('change', reloadWithBackends);
+      maskSel.addEventListener('change', reloadWithBackends);
+    </script>
+  </body>
+</html>

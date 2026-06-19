@@ -101,7 +101,7 @@ export class Core {
   /** Manages drag-and-drop interactions. */
   dragManager = new DragManager();
 
-  /** Manages drag-and-drop interactions. */
+  /** Manages real-world understanding: planes, meshes, objects, and sounds. */
   world = new World();
 
   /** A shared texture loader. */
@@ -112,7 +112,10 @@ export class Core {
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
 
-  renderer!: THREE.WebGLRenderer;
+  private _isPaused = false;
+  private isSteppingFrame = false;
+  private manualStepTime = 0;
+  private _renderer?: THREE.WebGLRenderer;
   options!: Options;
   deviceCamera?: XRDeviceCamera;
   depth = new Depth();
@@ -140,6 +143,55 @@ export class Core {
   permissionsManager = new PermissionsManager();
 
   /**
+   * The WebGL renderer, created during {@link Core.init}. Reading it before
+   * `init()` has run returns `undefined` and logs a one-time warning.
+   */
+  get renderer(): THREE.WebGLRenderer {
+    if (!this._renderer) {
+      console.warn(
+        'xb.core.renderer is not available until xb.init() creates it. ' +
+          "Access it in or after your Script's init() method."
+      );
+    }
+    return this._renderer!;
+  }
+
+  set renderer(renderer: THREE.WebGLRenderer) {
+    this._renderer = renderer;
+  }
+
+  get isPaused() {
+    return this._isPaused;
+  }
+
+  pause() {
+    this._isPaused = true;
+  }
+
+  resume() {
+    this._isPaused = false;
+  }
+
+  stepFrame(dtMs = 16.67) {
+    if (this.isSteppingFrame) {
+      throw new Error(
+        'Core.stepFrame() cannot be called while already stepping.'
+      );
+    }
+
+    this.isSteppingFrame = true;
+    try {
+      this.manualStepTime += dtMs;
+      this.update(this.manualStepTime, undefined as unknown as XRFrame);
+      if (this.physics) {
+        this.physicsStep();
+      }
+    } finally {
+      this.isSteppingFrame = false;
+    }
+  }
+
+  /**
    * Core is a singleton manager that manages all XR "blocks".
    * It initializes core components and abstractions like the scene, camera,
    * user, UI, AI, and input managers.
@@ -162,6 +214,7 @@ export class Core {
     );
 
     this.registry.register(this.registry);
+    this.registry.register(this);
     this.registry.register(this.waitFrame);
     this.registry.register(this.scene);
     this.registry.register(this.timer);
@@ -170,7 +223,6 @@ export class Core {
     this.registry.register(this.ui);
     this.registry.register(this.sound);
     this.registry.register(this.dragManager);
-    this.registry.register(this.user);
     this.registry.register(this.simulator);
     this.registry.register(this.scriptsManager);
     this.registry.register(this.depth);
@@ -443,7 +495,12 @@ export class Core {
    * @param frame - The WebXR frame object, if in an XR session.
    */
   private update = (time: number, frame: XRFrame) => {
+    if (this._isPaused && !this.isSteppingFrame) {
+      return;
+    }
+
     this.currentFrame = frame;
+    this.manualStepTime = Math.max(this.manualStepTime, time);
     this.timer.update(time);
     if (this.simulatorRunning) {
       this.simulator.simulatorUpdate();
@@ -501,6 +558,10 @@ export class Core {
    * corresponding physics update on all active scripts.
    */
   private physicsStep = () => {
+    if (this._isPaused && !this.isSteppingFrame) {
+      return;
+    }
+
     this.physics!.physicsStep();
     this.scriptsManager.physicsStep();
   };

@@ -7,6 +7,7 @@ import {Keycodes} from '../utils/Keycodes';
 import {SimulatorControllerMode} from './controlModes/SimulatorControllerMode';
 import {SimulatorControlMode} from './controlModes/SimulatorControlMode';
 import {SimulatorPoseMode} from './controlModes/SimulatorPoseMode';
+import {SimulatorPointerLockMode} from './controlModes/SimulatorPointerLockMode';
 import {SimulatorUserMode} from './controlModes/SimulatorUserMode';
 import {SetSimulatorModeEvent} from './events/SimulatorModeEvents';
 import {SimulatorRenderMode} from './SimulatorConstants';
@@ -87,6 +88,14 @@ export class SimulatorControls {
         toggleUserInterface,
         cycleSimulatorMode
       ),
+      [SimulatorMode.POINTER_LOCK]: new SimulatorPointerLockMode(
+        this.simulatorControllerState,
+        this.downKeys,
+        hands,
+        setStereoRenderMode,
+        toggleUserInterface,
+        cycleSimulatorMode
+      ),
     };
 
     this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
@@ -109,7 +118,12 @@ export class SimulatorControls {
     simulatorOptions: SimulatorOptions;
   }) {
     for (const mode in this.simulatorModes) {
-      this.simulatorModes[mode].init({camera, input, timer});
+      this.simulatorModes[mode].init({
+        camera,
+        input,
+        timer,
+        domElement: renderer.domElement,
+      });
     }
     this.renderer = renderer;
     this.setSimulatorMode(simulatorOptions.defaultMode);

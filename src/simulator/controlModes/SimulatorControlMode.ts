@@ -17,6 +17,7 @@ export class SimulatorControlMode {
   camera!: THREE.Camera;
   input!: Input;
   timer!: THREE.Timer;
+  domElement?: HTMLCanvasElement;
 
   /**
    * Create a SimulatorControlMode
@@ -37,14 +38,17 @@ export class SimulatorControlMode {
     camera,
     input,
     timer,
+    domElement,
   }: {
     camera: THREE.Camera;
     input: Input;
     timer: THREE.Timer;
+    domElement?: HTMLCanvasElement;
   }) {
     this.camera = camera;
     this.input = input;
     this.timer = timer;
+    this.domElement = domElement;
     input.gamepadController.init({camera});
   }
 

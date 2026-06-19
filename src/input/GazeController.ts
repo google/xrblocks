@@ -85,11 +85,15 @@ export class GazeController
    * It handles syncing the controller with the camera and manages the gaze
    * selection logic.
    */
-  update() {
-    super.update();
+  updatePose() {
     this.position.copy(this.camera.position);
     this.quaternion.copy(this.camera.quaternion);
     this.updateMatrixWorld();
+  }
+
+  update() {
+    super.update();
+    this.updatePose();
     const delta = this.timer.getDelta();
     this.activationAmount.update(delta);
     const movement =

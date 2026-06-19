@@ -10,12 +10,14 @@ export enum SimulatorMode {
   USER = 'User',
   POSE = 'Navigation',
   CONTROLLER = 'Hands',
+  POINTER_LOCK = 'PointerLock',
 }
 
 const DEFAULT_MODE_TOGGLE_ORDER = {
   [SimulatorMode.USER]: SimulatorMode.POSE,
   [SimulatorMode.POSE]: SimulatorMode.CONTROLLER,
-  [SimulatorMode.CONTROLLER]: SimulatorMode.USER,
+  [SimulatorMode.CONTROLLER]: SimulatorMode.POINTER_LOCK,
+  [SimulatorMode.POINTER_LOCK]: SimulatorMode.USER,
 };
 
 export interface SimulatorCustomInstruction {
@@ -58,7 +60,8 @@ export class SimulatorOptions {
     element: 'xrblocks-simulator-settings',
   };
   instructions = {
-    enabled: false,
+    enabled: true,
+    showAutomatically: false,
     element: 'xrblocks-simulator-instructions',
     customInstructions: [] as SimulatorCustomInstruction[],
   };

@@ -1,0 +1,11 @@
+{
+  "skill": "xb-ai",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": [],
+  "expected_apis": ["enableAI", "xb.ai", "isAvailable", "query"],
+  "forbidden_patterns": [
+    "fetch\\(['\"]https://generativelanguage",
+    "OPENAI_API_KEY"
+  ]
+}

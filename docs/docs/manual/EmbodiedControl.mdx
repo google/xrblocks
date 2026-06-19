@@ -1,0 +1,179 @@
+---
+sidebar_position: 20
+title: 'Embodied Control (Addon)'
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# Embodied Control (Addon)
+
+The `embodied-control` addon provides a programmatic user simulator for XR
+Blocks scenes. It can drive camera locomotion, left and right hand motion, hand
+poses, and WebXR-like select gestures through a single step API.
+
+Use it directly for local tests and samples. Pair it with `remote-control` when
+an external runner needs to control the browser over WebSocket.
+
+---
+
+## Local Setup
+
+```javascript
+import * as xb from 'xrblocks';
+import {EmbodiedControl} from 'xrblocks/addons/embodied-control/index.js';
+
+const embodied = new EmbodiedControl({
+  includeScreenshot: false,
+});
+
+xb.add(embodied);
+await xb.init();
+
+embodied.applyControl({
+  rightHand: {visible: true},
+});
+
+await embodied.step({
+  durationMs: 250,
+  control: {
+    locomotion: {move: [0, 0, -0.25]},
+    rightHand: {move: [0, 0, -0.12]},
+  },
+});
+```
+
+`applyControl()` applies the control immediately and leaves the normal frame
+loop alone. Use it in live apps, scripts, and demos where XR Blocks should keep
+rendering normally.
+
+`step()` applies a control over a duration, advances the core frame loop, and
+returns an observation. By default the addon pauses the core after
+initialization, so frames advance only when `step()` is called. This is useful
+for deterministic test and agent loops. For visible demos, pass
+`realTime: true` so steps yield between frames and animate smoothly.
+
+---
+
+## Compound Controls
+
+Both `applyControl()` and `step()` use the same compound control schema. A
+control may combine locomotion and both hands:
+
+```javascript
+await embodied.step({
+  durationMs: 500,
+  control: {
+    locomotion: {
+      move: [0, 0, -0.2],
+      rotate: [0, 15, 0],
+    },
+    rightHand: {
+      move: [0, 0, -0.18],
+      selectStart: true,
+    },
+    leftHand: {
+      move: [-0.05, 0, 0],
+    },
+  },
+});
+```
+
+Locomotion `move` is `[strafeMeters, riseMeters, forwardMeters]`, relative to
+the camera. Locomotion `rotate` is `[pitchDegrees, yawDegrees, rollDegrees]`.
+
+Hand `move` and `rotate` are relative to the simulator controller pose. Hand
+`rotations` can apply sparse simulator joint rotations in radians.
+
+Use `selectStart` and `selectEnd` for pinch-like primary actions. In the
+simulator these call the semantic pinching APIs, which emit normal XR Blocks
+`selectstart` and `selectend` events. Raw pinching rotations only change the
+visual pose; they do not trigger selection.
+
+---
+
+## Observations
+
+Only `step()` resolves to elapsed time and an observation:
+
+```javascript
+const result = await embodied.step({
+  control: {rightHand: {selectEnd: true}},
+});
+
+console.log(result.observation.state.camera.position);
+console.log(result.observation.state.rightHand.selected);
+```
+
+If `includeScreenshot` is true, the observation also includes a screenshot data
+URL captured after the final frame.
+
+---
+
+## Live App Control
+
+For a normally running app, disable `autoPause` and call `applyControl()` from
+your script, UI, or scheduler:
+
+```javascript
+const embodied = new EmbodiedControl({
+  autoPause: false,
+  includeScreenshot: false,
+});
+
+embodied.applyControl({
+  locomotion: {rotate: [0, 10, 0]},
+  rightHand: {selectStart: true},
+});
+```
+
+`applyControl()` does not call `core.stepFrame()`, does not capture a
+screenshot, and does not return an observation.
+
+---
+
+## WebSocket Remote Control
+
+The `remote-control` addon forwards JSON `STEP` messages to embodied-control.
+
+```javascript
+import {RemoteControl} from 'xrblocks/addons/remote-control/index.js';
+
+xb.add(
+  new RemoteControl({
+    url: 'ws://127.0.0.1:8765',
+    reconnect: true,
+    embodiedOptions: {includeScreenshot: true},
+  })
+);
+```
+
+Example incoming message:
+
+```json
+{
+  "type": "STEP",
+  "id": "step-1",
+  "durationMs": 250,
+  "control": {
+    "locomotion": {"move": [0, 0, -0.25]},
+    "rightHand": {"selectStart": true}
+  }
+}
+```
+
+The browser responds with `STEP_COMPLETED`, `ACTION_REJECTED`, or `ERROR`.
+
+---
+
+## Sample
+
+The sidebar-driven local demo lives at
+
+<CodeSearchLink path="samples/embodied_control/main.js" />. It disables manual
+simulator controls and runs locomotion, hand motion, and pinch-select steps
+through `EmbodiedControl`.
+
+For source-level details, see
+
+<CodeSearchLink path="src/addons/embodied-control/README.md" /> and
+<CodeSearchLink path="src/addons/remote-control/README.md" />.

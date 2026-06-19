@@ -110,12 +110,69 @@ export type CameraParametersSnapshot = {
   worldFromClip: THREE.Matrix4;
 };
 
+// Milliseconds the device camera may remain unavailable during startup before
+// we surface a one-time warning. Ordinary warm-up (the simulator registering
+// its camera, or a WebXR session exposing its cameras) resolves well within
+// this window, so a warning indicates a real misconfiguration rather than
+// normal startup ordering.
+const DEVICE_CAMERA_READY_GRACE_MS = 5000;
+let deviceCameraUnavailableSinceMs: number | null = null;
+let warnedDeviceCameraUnavailable = false;
+
+/**
+ * Whether a device-camera pose can currently be resolved. This is false during
+ * the brief startup window before either the simulator camera is registered or
+ * the WebXR session exposes its cameras. While false, camera parameters are
+ * genuinely unavailable, and camera-dependent work should be skipped rather
+ * than run against a camera that does not exist yet.
+ *
+ * @param deviceCamera - The device camera, if configured.
+ * @param xrCameras - The WebXR array camera, or null outside an XR session.
+ * @returns True once a camera pose can be resolved.
+ */
+export function isDeviceCameraPoseAvailable(
+  deviceCamera: XRDeviceCamera | undefined,
+  xrCameras: THREE.WebXRArrayCamera | null
+): boolean {
+  return !!(
+    deviceCamera?.simulatorCamera ||
+    (xrCameras && xrCameras.cameras.length > 0)
+  );
+}
+
+/**
+ * Builds a snapshot of the device camera's view/projection matrices, or returns
+ * `null` while no camera pose is available yet (see
+ * {@link isDeviceCameraPoseAvailable}). Returning `null` lets per-frame callers
+ * skip cleanly during startup instead of throwing on every frame until a
+ * camera appears.
+ */
 export function getCameraParametersSnapshot(
   camera: THREE.PerspectiveCamera,
   xrCameras: THREE.WebXRArrayCamera | null,
   deviceCamera: XRDeviceCamera,
   targetDevice: string
-): CameraParametersSnapshot {
+): CameraParametersSnapshot | null {
+  if (!isDeviceCameraPoseAvailable(deviceCamera, xrCameras)) {
+    const now =
+      typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (deviceCameraUnavailableSinceMs === null) {
+      deviceCameraUnavailableSinceMs = now;
+    } else if (
+      !warnedDeviceCameraUnavailable &&
+      now - deviceCameraUnavailableSinceMs > DEVICE_CAMERA_READY_GRACE_MS
+    ) {
+      warnedDeviceCameraUnavailable = true;
+      console.warn(
+        '[xrblocks] Device camera is still unavailable after ' +
+          `${DEVICE_CAMERA_READY_GRACE_MS} ms; camera-dependent detection is ` +
+          'being skipped. Check that the camera is permitted and that a ' +
+          'session or simulator is running.'
+      );
+    }
+    return null;
+  }
+  deviceCameraUnavailableSinceMs = null;
   const clipFromView = getDeviceCameraClipFromView(
     camera,
     deviceCamera,

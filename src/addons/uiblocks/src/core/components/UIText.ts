@@ -67,7 +67,7 @@ export class UIText extends XRUI(Text) {
   }
 
   /** Updates font weight configuration. */
-  setFontWeight(fontWeight: number | string) {
+  setFontWeight(fontWeight: UITextProperties['fontWeight']) {
     this.setProperties({fontWeight});
   }
 

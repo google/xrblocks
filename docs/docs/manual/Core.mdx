@@ -25,3 +25,123 @@ import * as xb from 'xrblocks';
 const options = new xb.Options();
 xb.init(options);
 ```
+
+---
+
+## Core Components
+
+The singleton `Core` orchestrates several core modules located under <CodeSearchLink path="src/core/components/"/> to manage active WebXR sessions, input processing, scripting lifecycle, and rendering options.
+
+### 1. Registry
+
+The [`Registry`](/api/classes/Registry) is a service locator container that stores option configurations and active singleton subsystems.
+
+Subsystems are registered using their class constructors, which allows other parts of the SDK to look them up.
+
+```javascript
+import * as xb from 'xrblocks';
+import {World} from 'xrblocks';
+
+// Retrieve the active World subsystem instance
+const worldSubsystem = xb.core.registry.get(World);
+```
+
+### 2. Dependency Injection
+
+XR Blocks features an automated dependency injection pattern for scripts.
+
+Instead of accessing singletons or looking up dependencies inside constructor code, scripts declare their requirements as static properties. During script initialization, the [`Registry`](/api/classes/Registry) automatically resolves them.
+
+- Specify dependencies by defining a static `dependencies` dictionary mapping local keys to constructor classes.
+- The manager will automatically query those classes and inject the resolved instances as an object parameter inside your script's `init()` method.
+
+```javascript
+import * as xb from 'xrblocks';
+import {AI, AIOptions} from 'xrblocks';
+
+class SmartAgentScript extends xb.Script {
+  // 1. Declare what this script depends on
+  static dependencies = {
+    ai: AI,
+    aiOptions: AIOptions,
+  };
+
+  // 2. Resolved dependencies are injected here during startup
+  init({ai, aiOptions}) {
+    this.ai = ai;
+    this.aiOptions = aiOptions;
+
+    if (this.aiOptions.enabled && this.ai.isAvailable()) {
+      console.log('Dependencies injected successfully!');
+    }
+  }
+}
+```
+
+### 3. Permissions Manager
+
+The `PermissionsManager` manages requests for browser capabilities like camera, microphone, and geolocation.
+
+:::tip
+
+Current XR browsers like Google Chrome restrict prompting the user for permissions (such as camera or microphone dialogs) once an immersive WebXR session has started.
+
+You **must** specify the required permissions inside [`Options`](/api/classes/Options) before starting the WebXR session:
+
+```javascript
+const options = new xb.Options();
+options.permissions.camera = true;
+options.permissions.microphone = true;
+
+xb.init(options);
+```
+
+:::
+
+When the user clicks the "Enter XR" button to launch the experience, the SDK's [`XRButton`](/api/classes/XRButton) click handler automatically queries the `PermissionsManager` to request and confirm these permissions in the flat 2D browser window _before_ transitioning the user into the WebXR immersive view.
+
+### 4. Input Raycaster
+
+The [`Raycaster`](/api/classes/Raycaster) manages 3D raycasting against the scene graph using inputs (mouse, gaze, or WebXR controllers).
+
+It automatically processes hovering states and intersection targets, and dispatches pointer-events on scripts. Custom sorting (such as the `raycastSortFunction` from UI Blocks) is configured here.
+
+### 5. Screenshot Synthesizer
+
+The [`ScreenshotSynthesizer`](/api/classes/ScreenshotSynthesizer) captures visual snapshots of the 3D scene (with optional overlay on top of the physical camera texture in AR). This is useful for capturing camera frames to feed into visual generative AI queries.
+
+```javascript
+// Captures a snapshot of the virtual scene overlaying the physical camera stream
+const dataUrl = await xb.core.screenshotSynthesizer.getScreenshot(true);
+```
+
+### 6. Scripts Manager
+
+The [`ScriptsManager`](/api/classes/ScriptsManager) drives the lifecycle hooks (`init`, `update`, `dispose`, and select/hover events) on all registered [`Script`](Scripts.md) components.
+
+It iterates over all script-enabled `THREE.Object3D` nodes in the active scene graph on every tick of the main loop to run their update callbacks.
+
+### 7. Wait Frame
+
+The [`WaitFrame`](/api/classes/WaitFrame) component exposes an asynchronous promise utility to yield script execution until the next animation frame begins.
+
+```javascript
+// Pause execution until the next loop tick
+await xb.core.waitFrame.waitFrame();
+```
+
+### 8. WebXR Session Manager
+
+The `WebXRSessionManager` wraps raw WebXR session setup, handles session starting, stopping, and input source list modifications (detecting controllers/hands connections).
+
+### 9. XR Button
+
+The [`XRButton`](/api/classes/XRButton) creates and manages the floating HTML button overlay (`Enter AR` / `Enter VR`) that triggers WebXR initialization when clicked.
+
+### 10. XR Effects
+
+The [`XREffects`](/api/classes/XREffects) component orchestrates rendering configurations, postprocessing setups, and handles resolution/depth buffers configs.
+
+### 11. XR Transition
+
+The `XRTransition` component manages smooth fade transitions (in/out) when transitioning between immersive modes (AR/VR) or entering/exiting a session.

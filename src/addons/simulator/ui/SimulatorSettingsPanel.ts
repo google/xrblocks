@@ -124,11 +124,40 @@ export class SimulatorSettingsPanel
       background: #222;
       color: #fff;
     }
+
+    .instructions-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 0.6rem 1.2rem;
+      border-radius: 5rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition:
+        background-color 0.2s ease,
+        border-color 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .instructions-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+
+    .instructions-btn:active {
+      background: rgba(255, 255, 255, 0.15);
+    }
   `;
 
   @property({type: Array}) environments: xb.SimulatorEnvironment[] = [];
   @property({type: Number}) activeEnvironmentIndex = 0;
   @property({type: String}) simulatorMode = xb.SimulatorMode.USER;
+  @property({type: Boolean}) instructionsEnabled = false;
 
   @state() private _isOpen = false;
 
@@ -150,11 +179,17 @@ export class SimulatorSettingsPanel
     this.dispatchEvent(new xb.SetSimulatorModeEvent(newMode));
   }
 
+  private _onShowInstructions() {
+    this._isOpen = false;
+    this.dispatchEvent(new xb.ShowSimulatorInstructionsEvent());
+  }
+
   render() {
     const modes = [
       {label: 'User', value: xb.SimulatorMode.USER},
       {label: 'Navigation', value: xb.SimulatorMode.POSE},
       {label: 'Hands', value: xb.SimulatorMode.CONTROLLER},
+      {label: 'Pointer Lock', value: xb.SimulatorMode.POINTER_LOCK},
     ];
 
     return html`
@@ -204,6 +239,19 @@ export class SimulatorSettingsPanel
             )}
           </select>
         </div>
+
+        ${this.instructionsEnabled
+          ? html`
+              <div class="form-group">
+                <button
+                  class="instructions-btn"
+                  @click=${this._onShowInstructions}
+                >
+                  View Simulator Instructions
+                </button>
+              </div>
+            `
+          : ''}
       </div>
     `;
   }

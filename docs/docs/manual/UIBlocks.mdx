@@ -1,0 +1,165 @@
+---
+sidebar_position: 17
+title: 'UI Blocks (Addon)'
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# UI Blocks (Addon)
+
+The `uiblocks` addon provides a rich spatial UI system built on top of **`@pmndrs/uikit`** (powered by the Yoga flexbox layout engine).
+
+Use `uiblocks` when you need complex layouts, nested margins, CSS-like borders, gradients, rounded corners, or drop shadows. For basic panels, use the core [Spatial UI](UI.mdx) panels.
+
+:::warning
+
+Do not mix core UI classes (`Panel`, `SpatialPanel`) and `uiblocks` classes (`UIPanel`, `UICard`) on the same physical panel.
+
+:::
+
+---
+
+## Installation & Setup
+
+1. Make sure you have `@pmndrs/uikit` and its peer dependencies configured in your importmap, or install via npm:
+
+   ```bash
+   npm install @pmndrs/uikit
+   ```
+
+2. Enable the UI kit options in your startup configuration:
+
+   ```javascript
+   import * as uikit from '@pmndrs/uikit';
+   import * as xb from 'xrblocks';
+
+   const options = new xb.Options();
+   options.enableUI();
+   options.uikit.enable(uikit); // Required to register the custom UI renderer
+   xb.init(options);
+   ```
+
+3. Configure inputs. To allow raycasting against flexbox items, you must override the raycaster sort function in your script:
+
+   ```javascript
+   import {raycastSortFunction} from 'uiblocks';
+
+   class MyScript extends xb.Script {
+     init() {
+       if (xb.core.input.raycaster) {
+         xb.core.input.raycaster.sortFunction = raycastSortFunction;
+       }
+     }
+   }
+   ```
+
+---
+
+## Basic Example
+
+To render UI blocks, instantiate a `UICore` manager parented to your script, create a pivot-facing `UICard`, and build panels within it:
+
+```javascript
+import {UICore, UIPanel, UIText} from 'uiblocks';
+import * as THREE from 'three';
+
+class MenuScript extends xb.Script {
+  constructor() {
+    super();
+    this.uiCore = new UICore(this);
+  }
+
+  init() {
+    // 1. Create a root 3D Card pivot
+    const card = this.uiCore.createCard({
+      name: 'MainMenu',
+      sizeX: 1.0, // 1.0 meter physical width
+      sizeY: 0.6, // 0.6 meter physical height
+      position: new THREE.Vector3(0, 1.5, -1),
+      alignItems: 'center',
+    });
+
+    // 2. Add a styled container UIPanel
+    const panel = new UIPanel({
+      width: '100%',
+      height: '100%',
+      fillColor: '#1a1a24', // Hex string background
+      cornerRadius: 20, // Pixel corner radius
+      padding: 30, // Padding in pixels
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+    });
+    card.add(panel);
+
+    // 3. Add a child text block
+    panel.add(
+      new UIText('Hello from Flexbox', {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: 'white',
+      })
+    );
+  }
+}
+```
+
+---
+
+## Styling Primitives
+
+- **`UIPanel`**: A container layout group. Supports borders, padding, margins, shadows, and flex alignments.
+- **`UIText`**: Text block element.
+- **`UIImage`**: Renders 2D image assets.
+- **`UIIcon`**: Renders SVG icons.
+- **`UICard`**: The 3D root wrapper that anchors the flexbox system to the Three.js scene.
+
+### Formatting Rules
+
+- **Borders**: To follow rounded corners properly, use `strokeWidth` and `strokeColor` instead of `borderWidth`/`borderColor`.
+- **Colors**: Colors must be standard hex strings (e.g. `'#ff0000'`) or `THREE.Color` references. Do not use `rgba()` or `hsla()`.
+- **Buttons**: There is no dedicated button primitive. Build buttons by placing click handlers on a styled `UIPanel`:
+  ```javascript
+  const button = new UIPanel({
+    padding: 10,
+    fillColor: '#222222',
+  });
+  button.onClick = () => console.log('Button clicked!');
+  ```
+
+---
+
+## Spatial UI Behaviors
+
+You can attach behaviors to `UICard` elements to enable modern XR interactions:
+
+```javascript
+import {
+  ManipulationBehavior,
+  HeadLeashBehavior,
+  BillboardBehavior,
+} from 'uiblocks';
+
+// 1. ManipulationBehavior: allows the user to grab and reposition the UI card
+card.addBehavior(
+  new ManipulationBehavior({
+    draggable: true,
+    faceCamera: true,
+    manipulationMargin: 0.05,
+  })
+);
+
+// 2. HeadLeashBehavior: makes the UI smoothly follow the user's head position
+card.addBehavior(
+  new HeadLeashBehavior({
+    distance: 1.2,
+    heightOffset: -0.1,
+    lerpSpeed: 0.05,
+  })
+);
+
+// 3. BillboardBehavior: keeps the card rotated to always face the user
+card.addBehavior(new BillboardBehavior());
+```
+
+For complete reference implementation details, styling props, and troubleshooting tips, see <CodeSearchLink path="src/addons/uiblocks/SKILL.md"/>.

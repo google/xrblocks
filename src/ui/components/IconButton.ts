@@ -98,24 +98,6 @@ export class IconButton extends TextView {
   }
 
   /**
-
-  /**
-   * Handles behavior when the cursor hovers over the button.
-   */
-  onHoverOver() {
-    if (!this.ux) return;
-    this.update(); // Consolidate logic in update()
-  }
-
-  /**
-   * Handles behavior when the cursor moves off the button.
-   */
-  onHoverOut() {
-    if (!this.ux) return;
-    this.update(); // Consolidate logic in update()
-  }
-
-  /**
    * Updates the button's visual state based on hover and selection status.
    */
   update() {

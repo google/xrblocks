@@ -1,0 +1,8 @@
+{
+  "skill": "xb-modelviewer",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": [],
+  "expected_apis": ["ModelViewer", "loadGLTFModel"],
+  "forbidden_patterns": ["new GLTFLoader\\(\\)"]
+}

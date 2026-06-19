@@ -45,6 +45,8 @@ export class MouseController
   /** A reference to the main scene camera. */
   camera?: THREE.Camera;
 
+  private lastNormalizedMouse = new THREE.Vector2(0, 0);
+
   constructor() {
     super();
   }
@@ -54,6 +56,18 @@ export class MouseController
    */
   init({camera}: {camera: THREE.Camera}) {
     this.camera = camera;
+  }
+
+  /** Updates the mouse position/rotation using camera state. */
+  updatePose() {
+    if (this.camera === undefined) {
+      return;
+    }
+    this.position.copy(this.camera.position);
+    this.raycaster.setFromCamera(this.lastNormalizedMouse, this.camera);
+    const rayDirection = this.raycaster.ray.direction;
+    this.quaternion.setFromUnitVectors(this.forwardVector, rayDirection);
+    this.updateMatrixWorld();
   }
 
   /**
@@ -66,7 +80,7 @@ export class MouseController
     if (!this.userData.connected) {
       return;
     }
-    this.position.copy(this.camera!.position);
+    this.updatePose();
   }
 
   /**
@@ -79,20 +93,9 @@ export class MouseController
     if (this.camera === undefined) {
       return;
     }
-    // The controller's origin point is always the camera's position.
-    this.position.copy(this.camera.position);
-
-    const mouse = new THREE.Vector2();
-    // Converts mouse coordinates from screen space (pixels) to normalized
-    // device coordinates (-1 to +1).
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-    // Updates the raycaster and sets the controller's new rotation.
-    this.raycaster.setFromCamera(mouse, this.camera);
-    const rayDirection = this.raycaster.ray.direction;
-    this.quaternion.setFromUnitVectors(this.forwardVector, rayDirection);
-    this.updateMatrixWorld();
+    this.lastNormalizedMouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    this.lastNormalizedMouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    this.updatePose();
   }
 
   /**

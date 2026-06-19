@@ -10,6 +10,7 @@ import {
 } from './SimulatorOptions.js';
 import {SimulatorScene} from './SimulatorScene.js';
 import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.js';
+import {ShowSimulatorInstructionsEvent} from './events/SimulatorInstructionsEvents.js';
 
 /** Minimal interface for the gamepad toast element. */
 interface GamepadToastElement extends HTMLElement {
@@ -84,7 +85,9 @@ export class SimulatorInterface {
         `Active Hand: ${handedness === 'left' ? 'Left' : 'Right'}`
       );
     };
-    this.showInstructions(simulatorOptions);
+    if (simulatorOptions.instructions.showAutomatically) {
+      this.showInstructions(simulatorOptions);
+    }
     if (input) this._initGamepadUI(input);
   }
 
@@ -100,6 +103,8 @@ export class SimulatorInterface {
       settingsElement.environments = simulatorOptions.environments;
       settingsElement.activeEnvironmentIndex =
         simulatorOptions.activeEnvironmentIndex;
+      settingsElement.instructionsEnabled =
+        simulatorOptions.instructions.enabled;
       document.body.appendChild(settingsElement);
       simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
       settingsElement.addEventListener(
@@ -120,12 +125,21 @@ export class SimulatorInterface {
           }
         }
       );
+      settingsElement.addEventListener(
+        ShowSimulatorInstructionsEvent.type,
+        () => {
+          this.showInstructions(simulatorOptions);
+        }
+      );
       this.elements.push(settingsElement);
     }
   }
 
   showInstructions(simulatorOptions: SimulatorOptions) {
     if (simulatorOptions.instructions.enabled) {
+      if (document.querySelector(simulatorOptions.instructions.element)) {
+        return; // Already showing
+      }
       const element = document.createElement(
         simulatorOptions.instructions.element
       ) as SimulatorInstructionsHTMLElement;
@@ -161,6 +175,7 @@ export class SimulatorInterface {
   }
 
   hideUiElements() {
+    this.elements = this.elements.filter((el) => el.isConnected);
     for (const element of this.elements) {
       element.style.display = 'none';
     }
@@ -168,6 +183,7 @@ export class SimulatorInterface {
   }
 
   showUiElements() {
+    this.elements = this.elements.filter((el) => el.isConnected);
     for (const element of this.elements) {
       element.style.display = '';
     }

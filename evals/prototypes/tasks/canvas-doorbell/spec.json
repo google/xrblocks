@@ -1,0 +1,8 @@
+{
+  "skill": "xb-sound",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": [],
+  "expected_apis": ["xb.core.sound", "PositionalAudio", "getAudioListener"],
+  "forbidden_patterns": ["new Audio\\(", "Howler"]
+}

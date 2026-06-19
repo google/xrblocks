@@ -1,0 +1,135 @@
+---
+sidebar_position: 18
+title: 'Netblocks (Addon)'
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# Netblocks (Addon)
+
+The `netblocks` addon enables real-time co-located multiplayer for your XR Blocks applications. It provides peer presence tracking, synchronized entity states, RPC events, and spatial voice channels.
+
+---
+
+## Setup & Room Connection
+
+To establish a multiplayer session, enable netblocks and join a room:
+
+```javascript
+import * as xb from 'xrblocks';
+import {
+  enableNet,
+  BroadcastChannelTransport,
+} from 'xrblocks/addons/netblocks/src/index.js';
+
+class MultiplayerScript extends xb.Script {
+  async init() {
+    // 1. Initialize the netblocks singleton (hooks into the frame loop)
+    const net = enableNet();
+
+    // 2. Join a room using a specified Transport
+    const session = await net.joinRoom('main-lounge', {
+      displayName: 'PlayerOne',
+      // BroadcastChannelTransport allows testing multiplayer locally across tabs
+      transport: new BroadcastChannelTransport(),
+    });
+
+    console.log('Successfully connected to session:', session.id);
+  }
+}
+```
+
+---
+
+## Transport Channels
+
+Transports abstract network routing, allowing you to swap backends without rewriting application logic:
+
+- **`BroadcastChannelTransport`**: Zero-latency local communication. Ideal for local development (open two tabs of the same webpage side-by-side).
+- **`WebRTCTransport`**: Serverless Peer-to-Peer connectivity utilizing PeerJS (best for up to ~12 peers). Requires specifying stun/turn servers in parameters.
+- **`WebSocketTransport`**: Relayed connection via a lightweight WebSocket server (scalable to larger rooms).
+
+---
+
+## State Replication (`NetObject`)
+
+A `NetObject` synchronizes a target `THREE.Object3D`'s position, rotation, and scale across all active peers.
+
+### Setting Up a Replicated Object
+
+To replicate a model, wrap it in a `NetObject` and register it with the session:
+
+```javascript
+import {NetObject} from 'xrblocks/addons/netblocks/src/index.js';
+
+// 1. Create your local mesh
+const mesh = new THREE.Mesh(
+  new THREE.BoxGeometry(0.3, 0.3, 0.3),
+  new THREE.MeshStandardMaterial({color: 0x0000ff})
+);
+this.add(mesh);
+
+// 2. Create the NetObject wrapper with a unique ID
+const netObj = new NetObject({
+  id: 'shared-box-1',
+  object: mesh,
+});
+
+// 3. Register to session
+xb.core.registry.get('net').session.netObjects.add(netObj);
+```
+
+### Grabbing and Ownership
+
+Ownership determines which peer broadcasts the object's transform coordinates. When a user interacts with a shared object, they must claim ownership:
+
+```javascript
+// Claim ownership when grabbed
+onObjectGrabStart(event) {
+  const session = xb.core.registry.get('net').session;
+  session.claim(netObj); // You are now the authoritative sender
+}
+
+// Release ownership when dropped
+onObjectGrabEnd(event) {
+  const session = xb.core.registry.get('net').session;
+  session.release(netObj);
+}
+```
+
+---
+
+## RPC & Custom Events
+
+Send and listen for custom events across all connected peers in the room:
+
+```javascript
+const session = xb.core.registry.get('net').session;
+
+// Listen for a custom event
+session.events.on('ping', (payload, senderId) => {
+  console.log(`Received ping from peer ${senderId}:`, payload);
+});
+
+// Emit event to all other peers
+session.events.emit('ping', {time: Date.now()});
+```
+
+---
+
+## Spatial Voice Chat
+
+Enable spatial WebRTC voice channels so users hear peers panning and attenuating based on their relative distance:
+
+```javascript
+const session = await net.joinRoom('lobby', {
+  transport: new WebRTCTransport(),
+  voice: true, // Enable voice
+});
+
+// Manually mute/unmute
+// session.voice.mute();
+// session.voice.unmute();
+```
+
+For complete code examples, see <CodeSearchLink path="samples/netblocks/main.js"/> and the server relays inside <CodeSearchLink path="src/addons/netblocks/README.md"/>.

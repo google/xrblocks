@@ -3,6 +3,7 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
 
 import {StreamState} from '../video/VideoStream';
 
+import {SimulatorCamera} from '../simulator/SimulatorCamera';
 import {DeviceCameraOptions} from './CameraOptions';
 import {XRDeviceCamera} from './XRDeviceCamera';
 
@@ -280,5 +281,121 @@ describe('XRDeviceCamera', () => {
 
     warnSpy.mockRestore();
     vi.useRealTimers();
+  });
+
+  it('handles switching to a device with empty deviceId gracefully', async () => {
+    const mockEnumerateDevices = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          kind: 'videoinput',
+          deviceId: '',
+          label: '',
+          groupId: 'real-group',
+        },
+        {
+          kind: 'videoinput',
+          deviceId: 'sim-device',
+          label: 'Simulator Camera',
+          groupId: 'simulator',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          kind: 'videoinput',
+          deviceId: 'real-device-resolved',
+          label: 'Real Camera',
+          groupId: 'real-group',
+        },
+        {
+          kind: 'videoinput',
+          deviceId: 'sim-device',
+          label: 'Simulator Camera',
+          groupId: 'simulator',
+        },
+      ]);
+
+    const mockGetUserMedia = vi.fn().mockResolvedValue({
+      getVideoTracks: () => [
+        {
+          kind: 'video',
+          getSettings: () => ({deviceId: 'real-device-resolved'}),
+          stop: vi.fn(),
+        },
+      ],
+      getTracks: () => [],
+    } as unknown as MediaStream);
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: {
+        enumerateDevices: mockEnumerateDevices,
+        getUserMedia: mockGetUserMedia,
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    const videoMock = document.createElement('video') as HTMLVideoElement & {
+      srcObject: MediaStream | null;
+      src: string;
+      play: () => Promise<void>;
+    };
+    Object.defineProperty(videoMock, 'srcObject', {
+      set(_: MediaStream | null) {},
+    });
+    Object.defineProperty(videoMock, 'src', {set(_: string) {}});
+    Object.defineProperty(videoMock, 'videoWidth', {value: 1280});
+    Object.defineProperty(videoMock, 'videoHeight', {value: 720});
+    videoMock.play = vi.fn().mockImplementation(() => {
+      queueMicrotask(() => {
+        videoMock.onloadedmetadata?.call(
+          videoMock,
+          new Event('loadedmetadata')
+        );
+      });
+      return Promise.resolve();
+    });
+    Object.defineProperty(camera, 'video_', {
+      value: videoMock,
+      writable: true,
+      configurable: true,
+    });
+
+    const mockSimulatorCamera: Partial<SimulatorCamera> = {
+      enumerateDevices: vi.fn().mockResolvedValue([
+        {
+          kind: 'videoinput',
+          deviceId: 'sim-device',
+          label: 'Simulator Camera',
+          groupId: 'simulator',
+        },
+      ]),
+      getMedia: vi.fn().mockReturnValue({
+        getVideoTracks: () => [
+          {
+            kind: 'video',
+            getSettings: () => ({deviceId: 'sim-device'}),
+            stop: vi.fn(),
+          },
+        ],
+        getTracks: () => [],
+      }),
+    };
+    camera.simulatorCamera = mockSimulatorCamera as SimulatorCamera;
+
+    await camera.init();
+    expect(camera.getCurrentDevice()?.deviceId).toBe('sim-device');
+
+    await camera.setDeviceId('');
+
+    expect(mockGetUserMedia).toHaveBeenCalledWith({
+      video: {},
+    });
+
+    expect(camera.getAvailableDevices()[0].deviceId).toBe(
+      'real-device-resolved'
+    );
+    expect(camera.getCurrentDeviceIndex()).toBe(0);
+    expect(camera.getCurrentDevice()?.deviceId).toBe('real-device-resolved');
   });
 });

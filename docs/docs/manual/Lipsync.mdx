@@ -1,0 +1,116 @@
+---
+sidebar_position: 19
+title: 'Lipsync (Addon)'
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# Lipsync (Addon)
+
+The `lipsync` addon parses incoming audio streams (from a microphone or a remote peer) and maps frequency formants to real-time mouth shapes on a 3D avatar face.
+
+It runs locally with a heuristic viseme mapper, requiring **zero machine learning runtimes** or model downloads.
+
+---
+
+## How It Works
+
+1. **`LipsyncMouth`**: A `Script` component that processes a `MediaStream` chunk-by-chunk using Web Audio FFT, extracting vowel-formant features.
+2. **`StylizedFace`**: A canvas-based decal texture displaying interactive eyes, eyebrows, and a mouth that responds to viseme weight changes.
+3. **`VisemeWeights`**: Float weights representing the shape coordinates (`ah`, `oh`, `ee`, `rest`).
+
+---
+
+## Single User Setup (Microphone Test)
+
+To drive a mouth shape using the user's local microphone feed:
+
+```javascript
+import * as xb from 'xrblocks';
+import {LipsyncMouth} from 'xrblocks/addons/lipsync/index.js';
+
+class MicTestScript extends xb.Script {
+  async init() {
+    // 1. Request microphone access
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+
+    // 2. Create a StylizedFace decal and attach to a pivot mesh (e.g. head sphere)
+    this.face = new xb.StylizedFace({showEyes: true});
+    this.add(this.face);
+
+    // 3. Create the mouth driver linking stream and face
+    this.mouthDriver = new LipsyncMouth(stream, {
+      target: this.face,
+    });
+
+    // Add driver to the scene so it ticks/updates
+    this.add(this.mouthDriver);
+  }
+}
+```
+
+---
+
+## Netblocks Integration (Multiplayer Avatars)
+
+You can pair `lipsync` with the [Netblocks](Netblocks.mdx) multiplayer addon so that users see other peers' mouth shapes move when they speak over WebRTC voice channels.
+
+When a remote audio track arrives, instantiate a new `LipsyncMouth` targeting that peer's avatar face:
+
+```javascript
+import * as THREE from 'three';
+import {LipsyncMouth} from 'xrblocks/addons/lipsync/index.js';
+
+class MultiplayerLipsync extends xb.Script {
+  constructor() {
+    super();
+    this.drivers = new Map(); // Keep track of active drivers by peer ID
+    this.sharedCtx = THREE.AudioContext.getContext(); // Reuse AudioContext
+  }
+
+  onSession(session) {
+    // Triggers when a peer adds a voice stream
+    session.voice.onTrack((peerId, stream) => {
+      const remoteUser = session.users.get(peerId);
+      if (!remoteUser) return;
+
+      this.removeDriver(peerId);
+
+      // Create new mouth driver pointing to the remote user's avatar face
+      const driver = new LipsyncMouth(stream, {
+        target: remoteUser.avatar.face,
+        audioContext: this.sharedCtx,
+      });
+
+      remoteUser.avatar.add(driver);
+      this.drivers.set(peerId, driver);
+    });
+
+    session.voice.onTrackRemoved((peerId) => this.removeDriver(peerId));
+    session.addEventListener('user-leave', (e) =>
+      this.removeDriver(e.detail.user.peerId)
+    );
+  }
+
+  removeDriver(peerId) {
+    const driver = this.drivers.get(peerId);
+    if (driver) {
+      driver.dispose();
+      driver.removeFromParent();
+      this.drivers.delete(peerId);
+    }
+  }
+}
+```
+
+---
+
+## Resource Disposal Guidelines
+
+To prevent audio pipeline memory leaks, manage lifecycle hooks correctly:
+
+- **Mouth Driver**: Disposing the driver (`mouthDriver.dispose()`) disconnects Web Audio nodes, but does **not** close your shared `AudioContext` or stop the underlying `MediaStream` audio tracks.
+- **MediaStream**: The caller is responsible for calling `track.stop()` on the stream when exiting or leaving a room.
+- **Target Face**: Disposing the driver resets the target face back to its rest/silent pose. The face mesh itself is not deleted and must be disposed separately.
+
+For complete reference implementation details, see <CodeSearchLink path="src/addons/lipsync/SKILL.md"/> or the code samples under `src/addons/lipsync/samples/`.

@@ -66,6 +66,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'samples/XR-Emoji',
+        'samples/Face-Mirror',
         'samples/Custom-Gestures',
         'samples/RockPaperScissors',
         'samples/Netblocks',
@@ -79,6 +80,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'samples/XR-Poet',
         'samples/Gemini-XRObject',
+        'samples/Objects-3D',
         'samples/Language-Detector',
         'samples/Gemini-Icebreakers',
       ],

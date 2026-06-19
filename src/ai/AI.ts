@@ -1,6 +1,7 @@
 import type * as GoogleGenAITypes from '@google/genai';
 
 import {Script} from '../core/Script';
+import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 import {getUrlParameter} from '../utils/utils';
 
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
@@ -69,7 +70,6 @@ export class AI extends Script {
       const response = await fetch('./keys.json');
       if (response.ok) {
         this.keysCache = (await response.json()) as KeysJson;
-        console.log('🔑 Loaded keys.json');
         return this.keysCache;
       }
     } catch {
@@ -106,9 +106,22 @@ export class AI extends Script {
     modelOptions: ModelOptions
   ) {
     const apiKey = await this.resolveApiKey(modelOptions);
-    if ((!apiKey || !this.isValidApiKey(apiKey)) && !this.hasApiKey()) {
-      console.error(`No valid API key found for ${this.options.model}`);
-      return;
+    if (!apiKey || !this.isValidApiKey(apiKey)) {
+      // Initialize the model anyway so runtime key flows (e.g. a key prompt
+      // or host-injected credentials) can still succeed later.
+      if (isRunningInGeminiCanvas()) {
+        console.warn(
+          `No explicit API key found for ${this.options.model}. ` +
+            'Relying on Gemini Canvas host-injected credentials; if queries ' +
+            'fail, verify your Google login or report bugs on GitHub.'
+        );
+      } else {
+        console.error(
+          `No valid API key found for ${this.options.model}. ` +
+            'Provide one via AIOptions, the ?key= URL parameter, or ' +
+            'keys.json; queries will fail until a key is configured.'
+        );
+      }
     }
     modelOptions.apiKey = apiKey || '';
     this.model = new ModelClass(modelOptions as GeminiOptions & OpenAIOptions);
@@ -139,13 +152,19 @@ export class AI extends Script {
     const modelKey = getUrlParameter(modelOptions.urlParam);
     if (modelKey) return modelKey;
 
-    // Temporary fallback to geminiKey64 for teamfood.
+    // 4. Check URL parameters for geminiKey64
     const geminiKey64 = getUrlParameter('geminiKey64');
     if (geminiKey64) {
-      return window.atob(geminiKey64);
+      try {
+        return window.atob(geminiKey64);
+      } catch {
+        console.warn(
+          'Ignoring malformed base64 in the geminiKey64 URL parameter.'
+        );
+      }
     }
 
-    // 3. Check keys.json file
+    // 5. Check keys.json file
     const keysFromFile = await this.loadKeysFromFile();
     if (keysFromFile) {
       const modelNameWithApiKeySuffix = modelName + `ApiKey`;
@@ -158,7 +177,6 @@ export class AI extends Script {
         keyFromFile = keysFromFile[modelName];
       }
       if (keyFromFile) {
-        console.log(`🔑 Using ${modelName} key from keys.json`);
         return keyFromFile;
       }
     }

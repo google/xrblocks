@@ -1,0 +1,1 @@
+I want a pet rock. It should sit in front of me where the cylinder is. When I tap it, it wakes up and listens to whatever I say next. Then it should answer me back using Gemini. Keep it simple, no need for fancy animations.

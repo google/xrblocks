@@ -156,6 +156,12 @@ export class DepthMesh extends MeshScript {
     }
     if (this.downsampledGeometry) {
       this.updateGeometry(depthData, this.downsampledGeometry, depthDataFormat);
+      // The downsampled geometry's positions just changed, so bump its
+      // version. Consumers that cache work keyed on the position attribute's
+      // version (e.g. FaceRecognizer's depth-mesh snapshot + BVH) rely on this
+      // to invalidate; without it they reuse a stale clone from the first
+      // detection and every raycast misses.
+      this.downsampledGeometry.attributes.position.needsUpdate = true;
     }
 
     this.minDepthPrev = this.minDepth;

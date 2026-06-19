@@ -28,6 +28,14 @@ export class SimulatorDepth {
 
   private projectionMatrixArray = new Float32Array(16);
 
+  // Don't queue a new updateDepth while the previous async pass is
+  // still in flight. simulatorUpdate fires once per frame, but
+  // updateDepth() resolves via a WebGL fence poll that typically takes
+  // longer than a frame on desktop. Without this guard the
+  // setTimeout-based fence polling chains stack up and dominate the
+  // main thread.
+  private updateInFlight = false;
+
   constructor(private simulatorScene: SimulatorScene) {}
 
   /**
@@ -64,8 +72,16 @@ export class SimulatorDepth {
 
   update() {
     this.updateDepthCamera();
+    // Skip if an earlier updateDepth() is still resolving its readback
+    // fence. We'd just race ourselves and stack up promises (the
+    // setTimeout-based fence poll inside readRenderTargetPixelsAsync
+    // was a dominant main-thread cost in perf traces before this).
+    if (this.updateInFlight) return;
     this.renderDepthScene();
-    this.updateDepth();
+    this.updateInFlight = true;
+    this.updateDepth().finally(() => {
+      this.updateInFlight = false;
+    });
   }
 
   private updateDepthCamera() {

@@ -76,6 +76,14 @@ export class GamepadController
     return this._captureCallback !== null;
   }
 
+  updatePose() {
+    if (this.camera) {
+      this.position.copy(this.camera.position);
+      this.quaternion.copy(this.camera.quaternion);
+      this.updateMatrixWorld();
+    }
+  }
+
   update() {
     super.update();
 
@@ -100,10 +108,7 @@ export class GamepadController
       this._risingEdges[i] = down && !wasDown;
     }
 
-    // Sync pose with camera (center-screen ray, like GazeController).
-    this.position.copy(this.camera!.position);
-    this.quaternion.copy(this.camera!.quaternion);
-    this.updateMatrixWorld();
+    this.updatePose();
 
     // Check for capture mode on any rising edge.
     if (this._captureCallback) {

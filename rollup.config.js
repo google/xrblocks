@@ -74,9 +74,8 @@ const externalPackages = [
   /^lit(\/.*)?$/,
   '@pmndrs/uikit',
   '@preact/signals-core',
-  'lorem-ipsum',
-  'temporal-polyfill',
   'rapier3d',
+  'three-mesh-bvh',
 ];
 
 const xrblocksPackages = [

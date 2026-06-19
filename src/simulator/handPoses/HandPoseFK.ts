@@ -26,6 +26,7 @@ import type {
 } from './HandPoseJoints';
 import {SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES} from './HandPoseJoints';
 import {LEFT_HAND_NEUTRAL, RIGHT_HAND_NEUTRAL} from './NeutralHandPose';
+import type {DeepReadonly} from '../../utils/Types';
 
 const HAND_JOINT_PARENT: Partial<Record<JointName, JointName>> = {
   'thumb-metacarpal': 'wrist',
@@ -171,13 +172,13 @@ function getRawFKRotation(
 function getHandednessRotation(
   handedness: Handedness,
   rotation: SimulatorHandJointRotationArray
-) {
+): SimulatorHandJointRotationArray {
   if (handedness !== Handedness.RIGHT) {
     return rotation;
   }
-  return [rotation[0], -rotation[1], -rotation[2]] as const;
+  return [rotation[0], -rotation[1], -rotation[2]];
 }
-// apply constraints applies a biomechanical constraint onto hand pose rotations
+
 function resolveHandPoseRotations(
   handedness: Handedness,
   restJoints: Map<JointName, RestJoint>,
@@ -249,4 +250,152 @@ export function resolveSimulatorHandPoseRotations(
     rotations,
     applyConstraints
   );
+}
+
+export function resolveSimulatorRotationsFromKeypoints(
+  handedness: Handedness,
+  joints: DeepReadonly<SimulatorHandPoseJoints>,
+  applyConstraints = false
+): SimulatorHandPoseRotations {
+  const positions = new Map<JointName, THREE.Vector3>();
+  HAND_JOINT_NAMES.forEach((name, index) => {
+    const t = joints[index].t;
+    positions.set(name, new THREE.Vector3(t[0], t[1], t[2]));
+  });
+
+  const restJoints =
+    handedness === Handedness.LEFT ? LEFT_REST_JOINTS : RIGHT_REST_JOINTS;
+  const computedRotations: SimulatorHandPoseRotations = {};
+  const finalRotations = new Map<JointName, THREE.Quaternion>();
+
+  function getPalmBasis(
+    wristPos: THREE.Vector3,
+    indexMcpPos: THREE.Vector3,
+    middleMcpPos: THREE.Vector3
+  ): THREE.Quaternion {
+    const yAxis = new THREE.Vector3()
+      .subVectors(middleMcpPos, wristPos)
+      .normalize();
+    const temp = new THREE.Vector3()
+      .subVectors(indexMcpPos, wristPos)
+      .normalize();
+
+    if (yAxis.lengthSq() < 1e-8 || temp.lengthSq() < 1e-8) {
+      return new THREE.Quaternion();
+    }
+
+    const zAxis = new THREE.Vector3().crossVectors(yAxis, temp);
+    if (zAxis.lengthSq() < 1e-8) {
+      return new THREE.Quaternion();
+    }
+    zAxis.normalize();
+
+    const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+
+    const matrix = new THREE.Matrix4();
+    matrix.makeBasis(xAxis, yAxis, zAxis);
+    return new THREE.Quaternion().setFromRotationMatrix(matrix);
+  }
+
+  const restWrist = restJoints.get('wrist')!;
+  const restIndexMcp = restJoints.get('index-finger-metacarpal')!;
+  const restMiddleMcp = restJoints.get('middle-finger-metacarpal')!;
+
+  const Q_rest = getPalmBasis(
+    restWrist.position,
+    restIndexMcp.position,
+    restMiddleMcp.position
+  );
+  const Q_actual = getPalmBasis(
+    positions.get('wrist')!,
+    positions.get('index-finger-metacarpal')!,
+    positions.get('middle-finger-metacarpal')!
+  );
+
+  const offsetRotationWristBasis = Q_actual.clone().multiply(
+    Q_rest.clone().invert()
+  );
+  const Q_wrist = offsetRotationWristBasis.clone().multiply(restWrist.rotation);
+  finalRotations.set('wrist', Q_wrist);
+
+  const offsetRotationWrist = restWrist.rotation
+    .clone()
+    .invert()
+    .multiply(offsetRotationWristBasis)
+    .multiply(restWrist.rotation);
+  const eulerWrist = new THREE.Euler().setFromQuaternion(
+    offsetRotationWrist,
+    'XYZ'
+  );
+  const rawEulerWrist = getHandednessRotation(handedness, [
+    eulerWrist.x,
+    eulerWrist.y,
+    eulerWrist.z,
+  ]);
+  computedRotations['wrist'] = getRawFKRotation('wrist', rawEulerWrist);
+
+  // Pre-build child mapping for fast lookup (non-wrist, non-tip joints).
+  const HAND_JOINT_CHILD: Partial<Record<JointName, JointName>> = {};
+  for (const [child, parent] of Object.entries(HAND_JOINT_PARENT)) {
+    if (parent !== 'wrist') {
+      HAND_JOINT_CHILD[parent as JointName] = child as JointName;
+    }
+  }
+
+  // Iterate remaining joints in hierarchical order.
+  for (const jointName of HAND_JOINT_NAMES) {
+    if (jointName === 'wrist' || jointName.endsWith('-tip')) {
+      continue;
+    }
+
+    const parentName = HAND_JOINT_PARENT[jointName]!;
+    const parentRotation = finalRotations.get(parentName)!;
+    const restJoint = restJoints.get(jointName)!;
+    const R_base = parentRotation.clone().multiply(restJoint.localRotation);
+
+    // Get the child to define the bone direction.
+    const childName = HAND_JOINT_CHILD[jointName];
+    if (!childName) continue;
+
+    const restChild = restJoints.get(childName)!;
+    const v_rest = restChild.localOffset;
+    const pos_joint = positions.get(jointName)!;
+    const pos_child = positions.get(childName)!;
+    const v_actual = pos_child.clone().sub(pos_joint);
+
+    const v_target = v_actual.clone().applyQuaternion(R_base.clone().invert());
+    const lenSq = v_actual.lengthSq();
+    const offsetRotation = new THREE.Quaternion();
+    if (lenSq > 1e-8) {
+      offsetRotation.setFromUnitVectors(
+        v_rest.clone().normalize(),
+        v_target.clone().normalize()
+      );
+    }
+
+    const euler = new THREE.Euler().setFromQuaternion(offsetRotation, 'XYZ');
+    const rawEuler = getHandednessRotation(handedness, [
+      euler.x,
+      euler.y,
+      euler.z,
+    ]);
+    const biomechanical = getRawFKRotation(jointName, rawEuler);
+
+    const resolved = applyConstraints
+      ? applySimulatorHandPoseRotationConstraints({[jointName]: biomechanical})
+      : {[jointName]: biomechanical};
+
+    const finalBiomechanical = resolved[jointName]!;
+    computedRotations[jointName] = finalBiomechanical;
+
+    // Save final orientation for children propagation.
+    const rawRotation = getRawFKRotation(jointName, finalBiomechanical);
+    const rotation = getHandednessRotation(handedness, rawRotation);
+    const finalOffsetRotation = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(rotation[0], rotation[1], rotation[2], 'XYZ')
+    );
+    finalRotations.set(jointName, R_base.clone().multiply(finalOffsetRotation));
+  }
+
+  return computedRotations;
 }

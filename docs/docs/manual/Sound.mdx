@@ -1,0 +1,119 @@
+---
+sidebar_position: 14
+title: Spatial Audio & Speech
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# Spatial Audio & Speech
+
+The `xb.sound` (or `xb.core.sound`) manager handles audio capture, playback, positional spatial audio, and Web Speech API wrappers.
+
+---
+
+## Spatial (Positional) Audio
+
+Spatial audio pans, attenuates, and filters sounds based on the user's distance and orientation relative to an object in the virtual space.
+
+To implement positional audio, attach a `THREE.PositionalAudio` node directly to the target object:
+
+```javascript
+import * as THREE from 'three';
+import * as xb from 'xrblocks';
+
+class PositionalSoundScript extends xb.Script {
+  init() {
+    // 1. Get the Web Audio listener managed by the SDK
+    const listener = xb.core.sound.getAudioListener();
+
+    // 2. Create the PositionalAudio node
+    this.sound = new THREE.PositionalAudio(listener);
+
+    // 3. Configure audio parameters
+    this.sound.setRefDistance(0.5); // Distance where volume starts reducing
+    this.sound.setVolume(1.0);
+
+    // 4. Attach the sound node to the parent object
+    this.add(this.sound);
+  }
+
+  playAudio(audioBuffer) {
+    // Play a preloaded decoded AudioBuffer
+    this.sound.setBuffer(audioBuffer);
+    this.sound.play();
+  }
+}
+```
+
+---
+
+## Microphone Recording & Playback
+
+XR Blocks supports direct microphone capture (e.g., for sending speech files to an AI model or storing voice memos).
+
+_Note: Microphone access prompts the user for permissions. Set `options.permissions.microphone = true` during startup._
+
+```javascript
+// Start recording PCM audio from mic
+await xb.core.sound.startRecording();
+
+// Stop recording and retrieve buffer
+const pcm = xb.core.sound.stopRecording(); // Returns ArrayBuffer of Int16 PCM
+const sampleRate = xb.core.sound.getRecordingSampleRate();
+
+// Play the captured PCM buffer
+await xb.core.sound.playRecordedAudio(pcm, sampleRate);
+```
+
+Adjust the overall output levels:
+
+```javascript
+xb.core.sound.setMasterVolume(0.8); // Set master volume between 0.0 and 1.0
+```
+
+---
+
+## Speech Recognition (Speech-to-Text)
+
+The SDK provides a wrapper around the browser's Web Speech API for transcription via `SpeechRecognizer`:
+
+```javascript
+import {SpeechRecognizer} from 'xrblocks';
+
+const recognizer = new SpeechRecognizer();
+
+recognizer.onStart = () => console.log('Listening...');
+recognizer.onResult = (text) => console.log('Transcribed Text:', text);
+recognizer.onError = (err) => console.error('Recognition error:', err);
+
+// Start listening
+recognizer.start();
+
+// Stop listening
+recognizer.stop();
+```
+
+---
+
+## Speech Synthesis (Text-to-Speech)
+
+Use `SpeechSynthesizer` to convert text strings to spoken audio output:
+
+```javascript
+import {SpeechSynthesizer} from 'xrblocks';
+
+const synthesizer = new SpeechSynthesizer();
+
+// Configure speech settings
+synthesizer.setVoice('en-US'); // Set locale voice
+synthesizer.setPitch(1.0);
+synthesizer.setRate(1.0); // Speed
+
+// Speak a text string
+synthesizer.speak('Hello! Welcome to the XR experience.');
+
+// Stop speaking
+synthesizer.cancel();
+```
+
+For full implementation examples, see <CodeSearchLink path="samples/sound/main.js"/> or refer to the source at <CodeSearchLink path="src/sound/README.md"/>.

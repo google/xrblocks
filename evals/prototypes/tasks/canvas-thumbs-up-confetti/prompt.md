@@ -1,0 +1,1 @@
+When I give a thumbs-up with either hand, a little burst of bright confetti shoots out of the cylinder for a second. When I make a fist, nothing happens (it just resets). Keep the cylinder where it is.

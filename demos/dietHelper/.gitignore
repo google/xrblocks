@@ -1,0 +1,3 @@
+# Local Gemini / OpenAI keys consumed by xrblocks `AI.loadKeysFromFile()`.
+# Never commit. Rotate the key in AI Studio if it leaks.
+keys.json

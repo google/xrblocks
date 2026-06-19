@@ -1,0 +1,1 @@
+Make my room feel like there's a giant statue standing across it. Keep the cylinder from the starter template but move it about three meters away so when I walk in front of it, my real body should hide it instead of it floating over me.

@@ -270,6 +270,32 @@ export class Options {
   }
 
   /**
+   * Enables human pose detection.
+   * @returns The instance for chaining.
+   */
+  enableHumanDetection() {
+    this.permissions.camera = true;
+    this.enableCamera();
+    this.enableDepth();
+    this.world.enableHumanDetection();
+    return this;
+  }
+
+  /**
+   * Enables face landmark detection. Provides 478 per-face landmarks in
+   * world space, optional 52 ARKit-style blendshape weights, and an
+   * optional rigid 4x4 facial transformation matrix per detected face.
+   * @returns The instance for chaining.
+   */
+  enableFaceDetection() {
+    this.permissions.camera = true;
+    this.enableCamera();
+    this.enableDepth();
+    this.world.enableFaceDetection();
+    return this;
+  }
+
+  /**
    * Enables device camera (passthrough) with a specific facing mode.
    * @param facingMode - The desired camera facing mode, either 'environment' or
    *     'user'.

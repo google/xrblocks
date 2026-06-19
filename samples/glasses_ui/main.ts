@@ -85,7 +85,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const options = new xb.Options();
   options.camera.near = 0.001;
   options.reticles.enabled = false;
-  options.simulator.instructions.enabled = false;
   options.simulator.handPosePanel.enabled = false;
   options.simulator.renderToRenderTexture = false;
   options.uikit.enable(uikit);

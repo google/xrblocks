@@ -1,3 +1,8 @@
+---
+sidebar_position: 8
+title: Spatial UI
+---
+
 XR Blocks includes a 2D UI toolkit to create 2D UI elements in a panel within the scene.
 
 ## View
@@ -84,3 +89,49 @@ They can be combined with the following additional classes:
 ### Scrolling Text View
 
 The `ScrollingTroikaTextView` class provides a text view where the text moves upwards out of the view when a new line is added.
+
+---
+
+## Virtual Keyboard (Addon)
+
+The QWERTY **Virtual Keyboard** addon allows users to type text using a customizable spatial interface in VR/AR.
+
+To use the keyboard, add it to your imports and setup:
+
+```js
+import {Keyboard} from 'xrblocks/addons/virtualkeyboard/Keyboard.js';
+```
+
+### Setup & Usage
+
+To display the virtual keyboard, create an instance, initialize it, and add it to the scene:
+
+```javascript
+class KeyboardInputScript extends xb.Script {
+  init() {
+    // Create the virtual keyboard
+    this.keyboard = new Keyboard();
+    this.add(this.keyboard);
+
+    // Listen to typing events
+    this.keyboard.onTextChanged = (text) => {
+      console.log('Current buffer:', text);
+    };
+
+    this.keyboard.onEnterPressed = (text) => {
+      console.log('Submitted text:', text);
+      this.keyboard.setText(''); // Clear buffer
+    };
+  }
+}
+```
+
+By default, the keyboard initializes at a comfortable position in front of the user: `(0, 1.2, -1)` with physical dimensions of `1.0m` width and `0.555m` height.
+
+### How It Works
+
+- **UI Layout**: Organizes keys across **6 rows** (symbols, numbers, top letter row, middle letter row, bottom letter row, and space bar) using standard `Grid` components.
+- **State Management**:
+  - **Transient Shift**: Pressing **Shift** switches letters to uppercase temporarily, resetting automatically after typing one character.
+  - **Caps Lock**: Pressing **Caps Lock** enables persistent uppercase typing.
+- **Styling**: Leverages dark charcoal panels (`#1a1a1b`), slate gray special keys (`#3e4a59`), and a blue-teal Action/Enter key (`#449eb9`).

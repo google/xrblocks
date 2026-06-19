@@ -1,0 +1,121 @@
+---
+sidebar_position: 6
+title: Hand Tracking
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# Hand Tracking
+
+XR Blocks provides native support for WebXR Hand Tracking (inputs, joints, visualization, direct touch, and grabbing).
+
+## Setup & Configuration
+
+To enable hand tracking, set the corresponding options in your [`Options`](/api/classes/Options) configuration:
+
+```javascript
+import * as xb from 'xrblocks';
+
+const options = new xb.Options();
+options.enableHands();
+
+// Optional visualization settings
+options.hands.enabled = true;
+options.hands.visualization = true; // Render hand groups
+options.hands.visualizeJoints = true; // Render joint spheres
+options.hands.visualizeMeshes = true; // Render skinned hand meshes
+
+xb.init(options);
+```
+
+To test hand tracking on a desktop browser using the simulator, configure the default mode to POSE mode:
+
+```javascript
+options.simulator.defaultMode = xb.SimulatorMode.POSE;
+```
+
+---
+
+## Direct Interaction Hooks
+
+For scripts that react to physical hand contact (e.g., button presses, picking up virtual items), use the built-in direct touch and grab hooks.
+
+To use these, implement them directly in your [`Script`](/api/classes/Script):
+
+```javascript
+export class GrabbableItem extends xb.Script {
+  init() {
+    this.box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.2, 0.2),
+      new THREE.MeshStandardMaterial({color: 0x00ff00})
+    );
+    this.add(this.box);
+  }
+
+  onObjectTouchStart(event) {
+    // Triggers when the user's index finger tip enters the bounding volume
+    // event.handIndex (0 for left hand, 1 for right hand)
+    // event.touchPosition (THREE.Vector3 in world space)
+    this.box.material.color.set(0xff0000);
+  }
+
+  onObjectGrabStart(event) {
+    // Triggers when touching the object and pinching the thumb + index finger
+    // event.handIndex (0 | 1)
+    // event.hand (THREE.Object3D representing the wrist joint group)
+    console.log('Grabbed by hand index:', event.handIndex);
+  }
+
+  onObjectGrabbing(event) {
+    // Triggers every frame while the object remains grabbed
+    // Example: parent/move the object with the hand wrist group
+    this.position.copy(event.hand.position);
+  }
+
+  onObjectGrabEnd(event) {
+    // Triggers when the grab/pinch is released
+    this.box.material.color.set(0x00ff00);
+  }
+}
+```
+
+---
+
+## Reading Joints Directly
+
+In complex scenarios, you may want to read joint coordinates (e.g., wrist position, index tip position) directly inside your `update` loop.
+
+You can query `xb.user.hands` which exposes coordinates once hand tracking is active:
+
+```javascript
+update(time, frame) {
+  const hands = xb.user.hands;
+  if (!hands) return; // Hand tracking data not yet active
+
+  // Get index fingertip of hand 0 (left hand) as a THREE.Object3D
+  const leftIndexTip = hands.getIndexTip(0);
+
+  // Get wrist of hand 1 (right hand) as a THREE.Object3D
+  const rightWrist = hands.getWrist(1);
+
+  if (leftIndexTip) {
+    const worldPos = new THREE.Vector3();
+    leftIndexTip.getWorldPosition(worldPos);
+    console.log('Left Index fingertip position:', worldPos);
+  }
+
+  // Check if hand 0 is pinching
+  const isPinching = xb.user.isSelecting(0);
+}
+```
+
+### Key Reference Properties
+
+- **`numHands`**: Max number of supported tracking hands is `2` (indexed as `0` and `1`).
+- **`xb.user.handedness`**: Value mappings:
+  - `0` - Left hand only
+  - `1` - Right hand only
+  - `2` - Both hands active
+- **`HandJointNames`**: A list of joints (e.g., thumb tip, index tip, wrist, middle mcp) exported from the SDK.
+
+For a complete reference implementation, see <CodeSearchLink path="templates/2_hands/index.html"/>.

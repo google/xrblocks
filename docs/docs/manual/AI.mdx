@@ -1,0 +1,141 @@
+---
+sidebar_position: 15
+title: Generative AI
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+
+# Generative AI
+
+The `xb.ai` subsystem provides native integration with Generative AI models. It natively supports **Google Gemini** for text generation, multimodal processing, image generation, and real-time audio/video loops (Gemini Live).
+
+---
+
+## Setup & Configuration
+
+To enable AI integrations, set options on the [`Options`](/api/classes/Options) class:
+
+```javascript
+import * as xb from 'xrblocks';
+
+const options = new xb.Options();
+options.enableAI();
+
+// Configure the backend model (default: 'gemini')
+options.ai.model = 'gemini';
+options.ai.gemini.model = 'gemini-3.5-flash';
+
+xb.init(options);
+```
+
+### API Keys Security
+
+:::danger
+
+Never ship API keys in production client-side code.
+
+- **Local Prototyping**: You can pass keys via the `?key=YOUR_KEY` URL parameter or save a `keys.json` (`{"gemini": {"apiKey": "..."}}`) in the root directory.
+- **Production Deployment**: You must configure a proxy server to forward AI requests from your client apps to Gemini endpoints. For Gemini Live, you should authenticate clients using [Gemini Live API Ephemeral Tokens](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) instead of embedding long-lived developer keys.
+  :::
+
+---
+
+## Text & Multimodal Queries
+
+To send queries, first check if the backend is configured and ready:
+
+```javascript
+class AIScript extends xb.Script {
+  async askQuestion() {
+    if (!xb.ai.isAvailable()) {
+      console.warn(
+        'AI is not available. Please verify API keys/configuration.'
+      );
+      return;
+    }
+
+    // 1. Text Query
+    const response = await xb.ai.query({
+      prompt: 'Write a haiku about the sunset in virtual reality.',
+    });
+    console.log(response.text);
+
+    // 2. Multimodal Query (Image + Text)
+    // Convert a canvas/image into base64 PNG data
+    const base64Image = this.captureCanvasAsBase64();
+
+    const multiResponse = await xb.ai.query({
+      type: 'multiPart',
+      parts: [
+        {inlineData: {data: base64Image, mimeType: 'image/png'}},
+        {text: 'What objects do you see in this snapshot?'},
+      ],
+    });
+    console.log(multiResponse.text);
+  }
+}
+```
+
+---
+
+## Gemini Live (Real-Time Voice & Vision)
+
+Gemini Live provides full-duplex real-time audio and video interaction, ideal for building talking companions or agents that react directly to visual feeds.
+
+```javascript
+// 1. Define callbacks for the streaming session
+await xb.ai.setLiveCallbacks({
+  onopen: () => console.log('Live session connected!'),
+  onclose: () => console.log('Live session closed.'),
+  onmessage: (data) => {
+    // Handle incoming audio stream or server messages
+    if (data.serverContent?.modelTurn?.parts) {
+      console.log('Model responded in real-time.');
+    }
+  },
+  onerror: (err) => console.error('Streaming error:', err),
+});
+
+// 2. Start the connection
+const session = await xb.ai.startLiveSession({
+  generationConfig: {
+    responseModalities: ['AUDIO'], // Speak responses back
+    speechConfig: {
+      voiceConfig: {
+        prebuiltVoiceConfig: {voiceName: 'Aoede'},
+      },
+    },
+  },
+});
+
+// 3. Send audio or video input chunks periodically
+// e.g. Sending recorded microphone chunks:
+xb.ai.sendRealtimeInput({
+  mimeType: 'audio/pcm;rate=16000',
+  data: base64PcmChunk,
+});
+
+// 4. Tear down session when finished
+// xb.ai.stopLiveSession();
+```
+
+Use `xb.core.deviceCamera` or `xb.core.screenshotSynthesizer` to grab the virtual camera frames to send to the Live session.
+
+---
+
+## Image Generation
+
+You can generate 2D images dynamically in your application (e.g. creating textures or artwork based on user descriptions):
+
+```javascript
+// Generate an image from prompt
+const result = await xb.ai.generate(
+  'a futuristic low-poly treehouse in 3D',
+  'image'
+);
+
+// Retrieve generated URL or base64 data
+console.log('Generated image url:', result.url);
+```
+
+For templates and complete projects, see <CodeSearchLink path="templates/6_ai/index.html"/>, <CodeSearchLink path="templates/7_ai_live/index.html"/>, or the advanced poetry demo <CodeSearchLink path="demos/xrpoet/index.html"/>.

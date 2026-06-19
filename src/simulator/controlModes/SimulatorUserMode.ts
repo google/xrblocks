@@ -33,6 +33,9 @@ export class SimulatorUserMode extends SimulatorControlMode {
 
   onPointerMove(event: MouseEvent) {
     this.input.mouseController.updateMousePositionFromEvent(event);
+    if (this.input.mouseController.userData.connected) {
+      this.input.updateController(this.input.mouseController);
+    }
     if (event.buttons & 2) {
       this.rotateOnPointerMove(event, this.camera.quaternion);
     }

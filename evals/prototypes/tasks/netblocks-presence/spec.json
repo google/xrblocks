@@ -1,0 +1,8 @@
+{
+  "skill": "xb-netblocks",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": ["xrblocks/addons/netblocks"],
+  "expected_apis": ["enableNet", "joinRoom", "BroadcastChannelTransport"],
+  "forbidden_patterns": ["new WebSocket\\("]
+}

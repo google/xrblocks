@@ -444,6 +444,7 @@ export class Input {
     if (controller.userData.connected === false) {
       return;
     }
+    controller.updatePose?.();
     controller.updateMatrixWorld();
     if (this.options.controllers.performRaycastOnUpdate) {
       this.setRaycasterFromController(controller);
@@ -524,6 +525,34 @@ export class Input {
   disableGazeController() {
     this.gazeController.disconnect();
     this.activeControllers.remove(this.gazeController);
+  }
+
+  private registerController(controller: Controller) {
+    if (this.controllers.includes(controller)) return;
+    this.controllers.push(controller);
+    this.intersectionsForController.set(controller, []);
+
+    if (controller.reticle) {
+      controller.reticle.visible = false;
+      this.reticles.add(controller.reticle);
+    }
+
+    for (const [listenerName, listeners] of this.listeners.entries()) {
+      for (const listener of listeners) {
+        controller.addEventListener(listenerName, listener);
+      }
+    }
+  }
+
+  enableController(controller: Controller) {
+    this.registerController(controller);
+    this.activeControllers.add(controller as unknown as THREE.Object3D);
+    (controller as unknown as {connect?: () => void}).connect?.();
+  }
+
+  disableController(controller: Controller) {
+    (controller as unknown as {disconnect?: () => void}).disconnect?.();
+    this.activeControllers.remove(controller as unknown as THREE.Object3D);
   }
 
   disableControllers() {

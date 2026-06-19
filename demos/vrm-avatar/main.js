@@ -30,10 +30,12 @@ class SceneSetup extends xb.Script {
     dirLight.position.set(1, 3, 1).normalize();
     this.add(dirLight);
 
-    // Ground grid for spatial reference in the simulator.
-    const grid = new THREE.GridHelper(10, 20, 0x888888, 0x444444);
-    grid.position.y = 0;
-    this.add(grid);
+    // GRID TEST: temporarily removed to check whether rendering the floor grid
+    // is responsible for the close-range lag (it's the only scene-graph element
+    // this demo has that the smooth depth samples don't).
+    // const grid = new THREE.GridHelper(10, 20, 0x888888, 0x444444);
+    // grid.position.y = 0;
+    // this.add(grid);
   }
 }
 
@@ -55,6 +57,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   );
 
   const options = new xb.Options();
+  // Depth mesh: used by VRMAvatarScript.onSelectEnd to pick a walk target on the
+  // real-world floor. The mesh is invisible (xrDepthMeshOptions) and downsampled
+  // for raycasts, so it's cheap.
   options.enableDepth();
   options.setAppTitle('VRM Avatar Companion');
 

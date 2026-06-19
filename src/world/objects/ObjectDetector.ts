@@ -129,6 +129,10 @@ export class ObjectDetector extends Script {
       this.deviceCamera,
       this.targetDevice
     );
+    if (!cameraParametersSnapshot) {
+      // Device camera not ready yet (warming up); skip until it is available.
+      return [];
+    }
 
     const context = this.getDetectorContext();
     const activeBackend = this.options.objects.backendConfig.activeBackend;

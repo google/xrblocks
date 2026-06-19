@@ -37,6 +37,13 @@ export class OcclusionPass extends Pass {
   private occlusionUniforms: ShaderUniforms;
   private occlusionQuad: FullScreenQuad;
   private depthNear: (number | undefined)[] = [];
+  // Cached dimensions of the render targets so we only call setSize()
+  // when they actually changed. setSize() forces a GPU texture
+  // reallocation even when called with the same dimensions, which
+  // showed up as ~150 ms in a portals trace from a steady-state frame
+  // loop (renderer drawing-buffer size never changes mid-session).
+  private lastOcclusionMapSize = new THREE.Vector2(0, 0);
+  private lastKawaseBlurSize = new THREE.Vector2(0, 0);
 
   constructor(
     private scene: THREE.Scene,
@@ -209,7 +216,7 @@ export class OcclusionPass extends Pass {
     }
     this.scene.overrideMaterial = this.occlusionMeshMaterial;
     renderer.getDrawingBufferSize(dimensions);
-    this.occlusionMapTexture.setSize(dimensions.x, dimensions.y);
+    this.resizeOcclusionMap(dimensions);
     const renderTarget = this.occlusionMapTexture;
     renderer.setRenderTarget(renderTarget);
     const camera = renderer.xr.getCamera().cameras[viewId] || this.camera;
@@ -250,18 +257,13 @@ export class OcclusionPass extends Pass {
     }
     // First render the occlusion map to an intermediate buffer.
     renderer.getDrawingBufferSize(dimensions);
-    this.occlusionMapTexture.setSize(dimensions.x, dimensions.y);
+    this.resizeOcclusionMap(dimensions);
     renderer.setRenderTarget(this.occlusionMapTexture);
     this.occlusionMapQuad.render(renderer);
   }
 
   blurOcclusionMap(renderer: THREE.WebGLRenderer, dimensions: THREE.Vector2) {
-    for (let i = 0; i < 3; i++) {
-      this.kawaseBlurTargets[i].setSize(
-        dimensions.x / 2 ** i,
-        dimensions.y / 2 ** i
-      );
-    }
+    this.resizeKawaseBlur(dimensions);
     for (let i = 0; i < 3; i++) {
       (
         this.kawaseBlurQuads[i].material as THREE.ShaderMaterial
@@ -289,6 +291,37 @@ export class OcclusionPass extends Pass {
     this.kawaseBlurQuads[4].render(renderer);
     renderer.setRenderTarget(this.occlusionMapTexture);
     this.kawaseBlurQuads[5].render(renderer);
+  }
+
+  // Only call setSize() when the cached dimensions have actually
+  // changed. setSize triggers a render-target reallocation on every
+  // call (no internal short-circuit), and getDrawingBufferSize returns
+  // the same value frame after frame in a steady session.
+  private resizeOcclusionMap(dimensions: THREE.Vector2) {
+    if (
+      this.lastOcclusionMapSize.x === dimensions.x &&
+      this.lastOcclusionMapSize.y === dimensions.y
+    ) {
+      return;
+    }
+    this.lastOcclusionMapSize.copy(dimensions);
+    this.occlusionMapTexture.setSize(dimensions.x, dimensions.y);
+  }
+
+  private resizeKawaseBlur(dimensions: THREE.Vector2) {
+    if (
+      this.lastKawaseBlurSize.x === dimensions.x &&
+      this.lastKawaseBlurSize.y === dimensions.y
+    ) {
+      return;
+    }
+    this.lastKawaseBlurSize.copy(dimensions);
+    for (let i = 0; i < 3; i++) {
+      this.kawaseBlurTargets[i].setSize(
+        dimensions.x / 2 ** i,
+        dimensions.y / 2 ** i
+      );
+    }
   }
 
   applyOcclusionMapToRenderedImage(

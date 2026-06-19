@@ -224,6 +224,12 @@ export class VRMAvatar {
     this._blinkTimer = 0;
     this._blinking = false;
     this._blinkPhase = 0; // 0 = closing, 1 = opening
+
+    // Spring-bone (hair/cloth) physics throttle. The full sim runs every frame
+    // inside vrm.update(); stepping it at ~30 Hz cuts the per-frame CPU cost with
+    // a barely-perceptible motion difference.
+    this._springStep = 1 / 30;
+    this._springAccum = 0;
   }
 
   // -------------------------------------------------------------------------
@@ -248,11 +254,46 @@ export class VRMAvatar {
 
     this.vrm = vrm;
 
+    // Reduce avatar rendering cost before it ever hits the scene. Order matters
+    // (see three-vrm docs): drop unused verts, merge skeletons, then bake morphs.
+    //   - removeUnnecessaryVertices: trims vertices no morph/skin references.
+    //   - combineSkeletons: merges the model's separate skins into shared
+    //     skeletons → fewer draw calls and skinning state changes.
+    //   - combineMorphs: bakes the face's many morph targets into a single
+    //     managed morph → much cheaper per-frame morph upload. It rewires the
+    //     expressionManager, so expressions (e.g. blink) keep working.
+    VRMUtils.removeUnnecessaryVertices(vrm.scene);
+    VRMUtils.combineSkeletons(vrm.scene);
+    VRMUtils.combineMorphs(vrm);
+
+    // Run AFTER the mergers above so flags land on the final (possibly replaced)
+    // meshes/materials.
     vrm.scene.traverse((obj) => {
       if (obj.isMesh) {
         obj.frustumCulled = false;
         obj.castShadow = false;
         obj.receiveShadow = false;
+
+        // Exclude from pointer/reticle raycasts. SkinnedMesh.raycast() CPU-skins
+        // every vertex and tests all triangles per ray — pointing at (or standing
+        // near) the avatar tanks the frame rate. This only disables ray PICKING;
+        // physics collisions use separate Rapier colliders and are unaffected, so
+        // dropping/colliding items onto the avatar later still works. If ray
+        // picking is needed, raycast a cheap proxy (bbox/capsule) instead.
+        obj.raycast = () => {};
+
+        // Disable MToon ink outlines — each outlined material is otherwise drawn
+        // a second time (and again per eye in XR). Small look change, real GPU win.
+        const mats = Array.isArray(obj.material)
+          ? obj.material
+          : [obj.material];
+        for (const m of mats) {
+          if (m && 'outlineWidthMode' in m) {
+            m.outlineWidthMode = 0; // 0 = none
+            m.outlineWidthFactor = 0;
+            m.needsUpdate = true;
+          }
+        }
       }
     });
 
@@ -341,10 +382,24 @@ export class VRMAvatar {
   update(delta) {
     if (!this.vrm) return;
 
+    // vrm.update() always drives its spring-bone manager. Detach it around the
+    // call so spring bones are skipped here (node constraints — e.g. the twist
+    // bones — stay on every frame and are cheap), then step spring bones at
+    // ~30 Hz with the accumulated delta.
+    const sbm = this.vrm.springBoneManager;
+    this.vrm.springBoneManager = undefined;
+
     this.mixer?.update(delta);
     this._updateBlink(delta);
-
     this.vrm.update(delta);
+
+    this.vrm.springBoneManager = sbm;
+
+    this._springAccum += delta;
+    if (sbm && this._springAccum >= this._springStep) {
+      sbm.update(this._springAccum); // variable-dt step; three-vrm tolerates it
+      this._springAccum = 0;
+    }
   }
 
   // -------------------------------------------------------------------------

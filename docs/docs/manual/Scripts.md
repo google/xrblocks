@@ -23,6 +23,10 @@ export class MyClass extends xb.Script {
   update() {
     // Called every frame.
   }
+
+  dispose() {
+    // Called when the script is removed from the scene.
+  }
 }
 ```
 
@@ -30,6 +34,7 @@ export class MyClass extends xb.Script {
 
 - `init()` - Called when the object is found by `Core`. If `init` is async or returns a promise, other lifecycle functions will be called only after the promise resolves.
 - `update()` - Called every frame to update the current object.
+- `dispose()` - Called when the script is removed from the scene (or when the application is shutdown). Use this to clean up three.js resources (geometries, materials, textures, etc.).
 
 ## Global controller functions
 

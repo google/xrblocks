@@ -1,0 +1,9 @@
+# Per-model agent + judge results are regenerable from the source.
+results/gemini-*/
+
+# Charts are regenerated locally by plot.py and published to
+# https://github.com/xrblocks/evals; we don't commit binaries here.
+charts/
+
+# Python bytecode from running the harness locally.
+__pycache__/
