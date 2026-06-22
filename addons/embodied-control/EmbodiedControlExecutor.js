@@ -8,8 +8,6 @@ const quaternion = new THREE.Quaternion();
 function mergeOptions(options) {
     return {
         tickMs: options.tickMs ?? DEFAULT_EMBODIED_CONTROL_OPTIONS.tickMs,
-        defaultDurationMs: options.defaultDurationMs ??
-            DEFAULT_EMBODIED_CONTROL_OPTIONS.defaultDurationMs,
         includeScreenshot: options.includeScreenshot ??
             DEFAULT_EMBODIED_CONTROL_OPTIONS.includeScreenshot,
         applyHandRotationConstraints: options.applyHandRotationConstraints ??
@@ -60,8 +58,8 @@ class EmbodiedControlExecutor {
         }
         this.activeStep = true;
         try {
-            const durationMs = step.durationMs ?? this.options.defaultDurationMs;
             const tickMs = this.options.tickMs;
+            const durationMs = step.durationMs ?? tickMs;
             const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
             let elapsedMs = 0;
             const initialCameraQuaternion = this.dependencies.camera.quaternion.clone();
@@ -72,7 +70,7 @@ class EmbodiedControlExecutor {
                     ? remainingMs || tickMs
                     : Math.min(tickMs, remainingMs);
                 const fraction = durationMs > 0 ? currentTickMs / durationMs : 1;
-                this.applyControlFraction(step.control, fraction, initialCameraQuaternion);
+                this.applyControlFraction(step.control || {}, fraction, initialCameraQuaternion);
                 if (this.options.includeScreenshot && i === stepCount - 1) {
                     screenshotPromise =
                         this.dependencies.screenshotSynthesizer.getScreenshot();

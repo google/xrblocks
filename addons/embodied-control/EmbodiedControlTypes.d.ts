@@ -28,7 +28,7 @@ export type XRCompoundControl = {
 export type EmbodiedControlStep = {
     id?: string;
     durationMs?: number;
-    control: XRCompoundControl;
+    control?: XRCompoundControl;
 };
 export type HandObservation = {
     position: Vec3Tuple;
@@ -61,12 +61,10 @@ export type EmbodiedControlOptions = {
     realTime?: boolean;
     /** Simulated frame length used while executing a step. */
     tickMs?: number;
-    /** Step duration used when a step omits durationMs. */
-    defaultDurationMs?: number;
     /** Capture a screenshot in each completed observation. */
     includeScreenshot?: boolean;
     /** Clamp hand joint rotations through simulator biomechanical constraints. */
     applyHandRotationConstraints?: boolean;
 };
-export type EmbodiedControlExecutorOptions = Required<Pick<EmbodiedControlOptions, 'tickMs' | 'defaultDurationMs' | 'includeScreenshot' | 'applyHandRotationConstraints' | 'realTime'>>;
+export type EmbodiedControlExecutorOptions = Required<Pick<EmbodiedControlOptions, 'tickMs' | 'includeScreenshot' | 'applyHandRotationConstraints' | 'realTime'>>;
 export declare const DEFAULT_EMBODIED_CONTROL_OPTIONS: Required<EmbodiedControlOptions>;

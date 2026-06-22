@@ -31,7 +31,10 @@ class EmbodiedControl extends Script {
         if (!this.executor) {
             throw new Error('EmbodiedControl is not initialized.');
         }
-        return this.executor.step(step);
+        return this.executor.step({
+            ...step,
+            control: step.control || {},
+        });
     }
     applyControl(control) {
         if (!this.executor) {
