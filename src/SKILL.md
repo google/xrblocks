@@ -98,6 +98,7 @@ options.enablePlaneDetection(); // detected planes in xb.world
 options.enableObjectDetection(); // object detection (also sets camera permission)
 options.enableCamera('environment'); // passthrough device camera ('environment'|'user')
 options.enableAI(); // Gemini/OpenAI via xb.ai
+options.enableGenerativeObjects(); // prompt -> placed object via xb.core.generative (also enables AI)
 options.enableXRTransitions(); // fade transitions
 options.enableVR(); // immersive-vr instead of immersive-ar
 xb.init(options);
@@ -156,6 +157,13 @@ if (xb.ai.isAvailable()) {
   // res.text holds the answer; xb.ai.startLiveSession(config) for Gemini Live.
 }
 
+// Generative objects (xb.core.generative — see generative/). After
+// options.enableGenerativeObjects(): turn a prompt into a placed, draggable,
+// depth-occluded object. Resolves null if AI is unavailable.
+if (xb.core.generative.isSupported) {
+  const dragon = await xb.core.generative.imagine('a small red dragon');
+}
+
 // World (xb.world) — detected planes / objects / meshes after enabling detection.
 // Depth (xb.depth), Sound (xb.sound: spatial audio, speech recog/synth).
 ```
@@ -199,6 +207,7 @@ gradients, and shadows, use the **uiblocks addon** instead — see
 | [`depth/`](depth)                                                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                                                              |
 | [`ai/`](ai)                                                                          | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                                                       |
 | [`agent/`](agent)                                                                    | agent framework: tools, memory, context (WIP — see `agent/README.md`)                                                                                 |
+| [`generative/`](generative)                                                          | `GenerativeObjects` (`xb.core.generative.imagine`): prompt → placed, draggable, depth-occluded object; background keying for cutouts                  |
 | [`ui/`](ui)                                                                          | core spatial UI: `SpatialPanel`, `Grid`/`Row`/`Col`, views, `ModelViewer`, `Reticle`                                                                  |
 | [`ux/`](ux)                                                                          | `DragManager`, reusable interaction behaviors                                                                                                         |
 | [`simulator/`](simulator)                                                            | desktop XR simulator (virtual user/hands/depth/planes, control modes)                                                                                 |
