@@ -14,6 +14,60 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <link type="text/css" rel="stylesheet" href="../../samples/main.css" />
+    <style>
+      .key-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+        color: #eee;
+      }
+      .key-card {
+        background: #1a1a1a;
+        padding: 24px 28px;
+        border-radius: 12px;
+        max-width: 440px;
+        width: 90%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      }
+      .key-card h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      .key-card p {
+        margin: 0 0 16px;
+        font-size: 13px;
+        color: #aaa;
+        line-height: 1.4;
+      }
+      .key-card a {
+        color: #4a90e2;
+      }
+      .key-card input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #555;
+        background: #111;
+        color: #eee;
+        font-size: 14px;
+        box-sizing: border-box;
+        margin-bottom: 12px;
+      }
+      .key-card button {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #4a90e2;
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+      }
+    </style>
     <script type="importmap">
       {
         "imports": {
@@ -34,12 +88,85 @@
           "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
           "uiblocks": "../../build/addons/uiblocks/src/index.js",
           "xrblocks": "../../build/xrblocks.js",
-          "xrblocks/addons/": "../../build/addons/"
+          "xrblocks/addons/": "../../build/addons/",
+          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm"
         }
       }
     </script>
   </head>
   <body>
+    <div id="keyOverlay" class="key-overlay" style="display: none">
+      <div class="key-card">
+        <h2>Gemini API key</h2>
+        <p>
+          This demo needs a Gemini API key with image generation access. Get one
+          from
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener"
+            >aistudio.google.com</a
+          >. The key is saved in your browser's localStorage and only sent to
+          Google.
+        </p>
+        <input id="keyInput" type="password" placeholder="AIza..." />
+        <button id="keySave">save and reload</button>
+      </div>
+    </div>
+
+    <script>
+      // Resolve gemini key: ?key= URL param > localStorage > ./keys.json > overlay.
+      (async function () {
+        const STORAGE_KEY = 'gemini-api-key';
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('key')) {
+          window.localStorage.setItem(STORAGE_KEY, params.get('key'));
+          return;
+        }
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          params.set('key', stored);
+          const newUrl =
+            window.location.pathname +
+            '?' +
+            params.toString() +
+            window.location.hash;
+          window.history.replaceState(null, '', newUrl);
+          return;
+        }
+        try {
+          const res = await fetch('./keys.json', {cache: 'no-store'});
+          if (res.ok) {
+            const k = (await res.json()).key;
+            if (k) {
+              window.localStorage.setItem(STORAGE_KEY, k);
+              params.set('key', k);
+              window.location.search = '?' + params.toString();
+              return;
+            }
+          }
+        } catch (_) {
+          // no keys.json, fall through to overlay
+        }
+        const overlay = document.getElementById('keyOverlay');
+        const input = document.getElementById('keyInput');
+        const save = document.getElementById('keySave');
+        overlay.style.display = 'flex';
+        const submit = () => {
+          const k = input.value.trim();
+          if (!k) return;
+          window.localStorage.setItem(STORAGE_KEY, k);
+          params.set('key', k);
+          window.location.search = '?' + params.toString();
+        };
+        save.addEventListener('click', submit);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submit();
+        });
+        input.focus();
+      })();
+    </script>
+
     <div
       id="status"
       style="
