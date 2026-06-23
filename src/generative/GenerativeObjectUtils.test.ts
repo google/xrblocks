@@ -4,6 +4,7 @@ import {describe, it, expect} from 'vitest';
 import {
   computeBillboardScale,
   poseInFrontOfCamera,
+  quaternionFacingCamera,
 } from './GenerativeObjectUtils';
 
 describe('computeBillboardScale', () => {
@@ -69,5 +70,36 @@ describe('poseInFrontOfCamera', () => {
     // The plane normal should point from the object back toward the camera.
     const toCamera = camera.position.clone().sub(position).normalize();
     expect(normal.dot(toCamera)).toBeGreaterThan(0.99);
+  });
+});
+
+describe('quaternionFacingCamera', () => {
+  it('orients the front face (+Z) toward the camera', () => {
+    const objectPosition = new THREE.Vector3(0, 0, -2);
+    const cameraPosition = new THREE.Vector3(0, 0, 0);
+    const q = quaternionFacingCamera(objectPosition, cameraPosition);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    const toCamera = cameraPosition.clone().sub(objectPosition).normalize();
+    expect(normal.dot(toCamera)).toBeGreaterThan(0.99);
+  });
+
+  it('faces the camera from an off-axis position', () => {
+    const objectPosition = new THREE.Vector3(3, 0, 1);
+    const cameraPosition = new THREE.Vector3(0, 0, 0);
+    const q = quaternionFacingCamera(objectPosition, cameraPosition);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+    const toCamera = cameraPosition.clone().sub(objectPosition).normalize();
+    expect(normal.dot(toCamera)).toBeGreaterThan(0.99);
+  });
+
+  it('returns identity when object and camera coincide', () => {
+    const q = quaternionFacingCamera(
+      new THREE.Vector3(1, 1, 1),
+      new THREE.Vector3(1, 1, 1)
+    );
+    expect(q.x).toBe(0);
+    expect(q.y).toBe(0);
+    expect(q.z).toBe(0);
+    expect(q.w).toBe(1);
   });
 });

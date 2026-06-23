@@ -53,3 +53,28 @@ export function poseInFrontOfCamera(
   lookAtRotation(forward, undefined, quaternion);
   return {position, quaternion};
 }
+
+/**
+ * Computes an orientation that turns a plane's front face (+Z) toward the
+ * camera from `objectPosition`. Used to billboard a generated cutout so it
+ * always faces the user instead of looking paper-thin from the side.
+ * @param objectPosition - World position of the object.
+ * @param cameraPosition - World position of the camera.
+ * @param target - Optional output orientation.
+ * @returns `target` oriented so +Z points toward the camera.
+ */
+export function quaternionFacingCamera(
+  objectPosition: THREE.Vector3,
+  cameraPosition: THREE.Vector3,
+  target = new THREE.Quaternion()
+): THREE.Quaternion {
+  const awayFromCamera = new THREE.Vector3().subVectors(
+    objectPosition,
+    cameraPosition
+  );
+  if (awayFromCamera.lengthSq() === 0) {
+    return target.identity();
+  }
+  // lookAtRotation orients -Z along `awayFromCamera`, so +Z faces the camera.
+  return lookAtRotation(awayFromCamera, undefined, target);
+}

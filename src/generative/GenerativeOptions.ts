@@ -22,6 +22,12 @@ export class GenerativeOptions {
   maxSize = 0.6;
 
   /**
+   * Whether generated objects continuously turn to face the user (billboard).
+   * Keeps the flat cutout from ever looking paper-thin from the side.
+   */
+  billboard = true;
+
+  /**
    * Whether to key out the (plain) background of the generated image so the
    * subject reads as a clean cutout instead of a flat card. Requires a browser
    * 2D canvas; ignored in non-browser environments.

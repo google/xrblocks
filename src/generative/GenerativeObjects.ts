@@ -5,8 +5,13 @@ import {Script} from '../core/Script';
 
 import {GenerativeObject} from './GenerativeObject';
 import {GenerativeOptions} from './GenerativeOptions';
-import {poseInFrontOfCamera} from './GenerativeObjectUtils';
+import {
+  poseInFrontOfCamera,
+  quaternionFacingCamera,
+} from './GenerativeObjectUtils';
 import {DataUrlTextureSource, TextureSource} from './TextureSource';
+
+const scratchCameraPosition = new THREE.Vector3();
 
 /** Per-call overrides for {@link GenerativeObjects.imagine}. */
 export interface ImagineOptions {
@@ -60,6 +65,21 @@ export class GenerativeObjects extends Script {
   /** Whether image generation can run in the current session. */
   get isSupported(): boolean {
     return !!this.ai?.isAvailable?.();
+  }
+
+  /** Billboards tracked objects toward the user each frame, when enabled. */
+  override update() {
+    if (!this.options.billboard || this.objects.length === 0) {
+      return;
+    }
+    const cameraPosition = this.camera.getWorldPosition(scratchCameraPosition);
+    for (const object of this.objects) {
+      quaternionFacingCamera(
+        object.position,
+        cameraPosition,
+        object.quaternion
+      );
+    }
   }
 
   /**

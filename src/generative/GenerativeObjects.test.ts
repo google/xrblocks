@@ -124,3 +124,30 @@ describe('GenerativeObjects.clear', () => {
     expect(scene.children).toHaveLength(0);
   });
 });
+
+describe('GenerativeObjects billboarding', () => {
+  it('turns objects to face the camera on update when billboard is on', async () => {
+    const {manager, camera} = makeManager();
+    const object = await manager.imagine('x');
+    // Move the camera off to the side; the object should re-face it on update.
+    camera.position.set(3, 0, 0);
+    camera.updateMatrixWorld(true);
+    manager.update();
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      object.quaternion
+    );
+    const toCamera = camera.position.clone().sub(object.position).normalize();
+    expect(normal.dot(toCamera)).toBeGreaterThan(0.99);
+  });
+
+  it('leaves orientation unchanged when billboard is off', async () => {
+    const {manager, camera} = makeManager();
+    const object = await manager.imagine('x');
+    manager.options.billboard = false;
+    const before = object.quaternion.clone();
+    camera.position.set(3, 0, 0);
+    camera.updateMatrixWorld(true);
+    manager.update();
+    expect(object.quaternion.equals(before)).toBe(true);
+  });
+});
