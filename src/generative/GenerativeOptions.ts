@@ -28,6 +28,21 @@ export class GenerativeOptions {
   billboard = true;
 
   /**
+   * Experimental: build the object as a 2.5D relief instead of a flat cutout.
+   * A densely subdivided plane is displaced by the generated image's
+   * brightness (via a three.js displacement + bump map), giving the subject
+   * real, shaded surface relief. Approximate (brightness is not true depth) and
+   * requires a light in the scene. Best viewed with {@link billboard} off.
+   */
+  relief = false;
+
+  /** Relief displacement depth in meters (when {@link relief} is on). */
+  reliefStrength = 0.08;
+
+  /** Plane subdivisions per side used to build the relief mesh. */
+  reliefSegments = 96;
+
+  /**
    * Whether to key out the (plain) background of the generated image so the
    * subject reads as a clean cutout instead of a flat card. Requires a browser
    * 2D canvas; ignored in non-browser environments.

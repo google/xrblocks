@@ -111,7 +111,12 @@ export class GenerativeObjects extends Script {
     const maxSize = options.maxSize ?? this.options.maxSize;
     const distance = options.distance ?? this.options.distance;
 
-    const object = new GenerativeObject(prompt, loaded, maxSize);
+    const object = new GenerativeObject(prompt, loaded, {
+      maxSize,
+      relief: this.options.relief,
+      reliefStrength: this.options.reliefStrength,
+      reliefSegments: this.options.reliefSegments,
+    });
     const {position, quaternion} = poseInFrontOfCamera(this.camera, distance);
     object.position.copy(position);
     object.quaternion.copy(quaternion);

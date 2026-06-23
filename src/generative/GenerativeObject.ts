@@ -7,13 +7,29 @@ import type {Draggable} from '../ux/DragManager';
 import {computeBillboardScale} from './GenerativeObjectUtils';
 import type {LoadedTexture} from './TextureSource';
 
+/** How to build a {@link GenerativeObject}'s mesh. */
+export interface GenerativeObjectStyle {
+  /** Largest dimension of the object, in meters. */
+  maxSize: number;
+  /** Build a displaced 2.5D relief instead of a flat cutout. */
+  relief?: boolean;
+  /** Relief displacement depth in meters. */
+  reliefStrength?: number;
+  /** Plane subdivisions per side used for the relief mesh. */
+  reliefSegments?: number;
+}
+
 /**
- * A generated image placed in the scene as a flat, draggable billboard.
+ * A generated image placed in the scene as a draggable object.
  *
- * The object is a single textured plane sized to preserve the source image's
- * aspect ratio. It is {@link Draggable} (so the global `DragManager` lets the
- * user grab and move it) and opts into {@link OCCLUDABLE_ITEMS_LAYER} so real
- * world geometry can occlude it when depth occlusion is enabled.
+ * By default it is a single textured plane sized to preserve the source
+ * image's aspect ratio (a flat cutout). With {@link GenerativeObjectStyle.relief}
+ * it is instead a densely subdivided plane displaced by the image's brightness,
+ * giving the subject shaded surface relief.
+ *
+ * It is {@link Draggable} (so the global `DragManager` lets the user grab and
+ * move it) and opts into {@link OCCLUDABLE_ITEMS_LAYER} so real world geometry
+ * can occlude it when depth occlusion is enabled.
  */
 export class GenerativeObject extends Script implements Draggable {
   draggable = true;
@@ -21,26 +37,31 @@ export class GenerativeObject extends Script implements Draggable {
   /** The prompt that produced this object. */
   readonly prompt: string;
 
-  /** The textured plane that renders the generated image. */
-  readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  /** The mesh that renders the generated image. */
+  readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.Material>;
 
   /**
    * @param prompt - The prompt that produced the image.
    * @param loaded - The decoded texture and its pixel dimensions.
-   * @param maxSize - Largest dimension of the billboard, in meters.
+   * @param style - How to size and build the mesh.
    */
-  constructor(prompt: string, loaded: LoadedTexture, maxSize: number) {
+  constructor(
+    prompt: string,
+    loaded: LoadedTexture,
+    style: GenerativeObjectStyle
+  ) {
     super();
     this.prompt = prompt;
 
-    const material = new THREE.MeshBasicMaterial({
-      map: loaded.texture,
-      transparent: true,
-      side: THREE.DoubleSide,
-    });
-    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    this.mesh = style.relief
+      ? buildReliefMesh(loaded.texture, style)
+      : buildFlatMesh(loaded.texture);
 
-    const size = computeBillboardScale(loaded.width, loaded.height, maxSize);
+    const size = computeBillboardScale(
+      loaded.width,
+      loaded.height,
+      style.maxSize
+    );
     this.mesh.scale.set(size.x, size.y, 1);
     this.add(this.mesh);
 
@@ -51,7 +72,41 @@ export class GenerativeObject extends Script implements Draggable {
   /** Releases GPU resources held by this object. */
   dispose() {
     this.mesh.geometry.dispose();
-    this.mesh.material.map?.dispose();
-    this.mesh.material.dispose();
+    const material = this.mesh.material as THREE.Material & {
+      map?: THREE.Texture | null;
+    };
+    material.map?.dispose();
+    material.dispose();
   }
+}
+
+function buildFlatMesh(texture: THREE.Texture) {
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    side: THREE.DoubleSide,
+  });
+  return new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+}
+
+function buildReliefMesh(texture: THREE.Texture, style: GenerativeObjectStyle) {
+  const segments = style.reliefSegments ?? 96;
+  const strength = style.reliefStrength ?? 0.08;
+  // A lit material whose displacement + bump come from the generated image, so
+  // brighter regions stand out and pick up shading like real surface relief.
+  const material = new THREE.MeshStandardMaterial({
+    map: texture,
+    displacementMap: texture,
+    displacementScale: strength,
+    bumpMap: texture,
+    roughness: 0.9,
+    metalness: 0,
+    transparent: true,
+    alphaTest: 0.5,
+    side: THREE.DoubleSide,
+  });
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1, segments, segments),
+    material
+  );
 }
