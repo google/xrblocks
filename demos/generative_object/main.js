@@ -25,22 +25,65 @@ class GenerativeObjectDemo extends xb.Script {
     this.presetIndex = 0;
     this.busy = false;
     this.grabbingObject = false;
+    this.listening = false;
+    this.speakButton = null;
   }
 
   init() {
-    // Voice trigger: imagine whatever you say.
+    // Voice trigger: imagine whatever you say, driven by a push-to-talk button.
     const recognizer = xb.core.sound?.speechRecognizer;
     if (recognizer) {
       recognizer.addEventListener('result', (event) => {
         if (event.isFinal && event.transcript.trim()) {
           this.imagine(event.transcript.trim());
+          this.setListening_(false);
         }
       });
-      recognizer.start();
+      recognizer.addEventListener('end', () => this.setListening_(false));
+      recognizer.addEventListener('error', () => this.setListening_(false));
+      this.addSpeakButton_(recognizer);
     }
     this.setStatus_(
-      'pinch empty space (or press G, or speak) to summon. grab an object to move it.'
+      'pinch empty space (or press G, or hold 🎙️) to summon. grab an object to move it.'
     );
+  }
+
+  // A push-to-talk button styled like the netblocks voice sample.
+  addSpeakButton_(recognizer) {
+    const button = document.createElement('button');
+    button.textContent = '🎙️ Speak';
+    Object.assign(button.style, {
+      position: 'fixed',
+      top: '12px',
+      right: '12px',
+      padding: '10px 18px',
+      background: '#9177c7',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '24px',
+      fontSize: '14px',
+      cursor: 'pointer',
+      zIndex: '999',
+    });
+    button.addEventListener('click', () => {
+      if (this.listening) {
+        recognizer.stop();
+        this.setListening_(false);
+      } else {
+        recognizer.start();
+        this.setListening_(true);
+        this.setStatus_('listening… say what to summon.');
+      }
+    });
+    this.speakButton = button;
+    document.body.appendChild(button);
+  }
+
+  setListening_(listening) {
+    this.listening = listening;
+    if (this.speakButton) {
+      this.speakButton.textContent = listening ? '🔴 Listening…' : '🎙️ Speak';
+    }
   }
 
   // Track whether this select is grabbing an existing object, so releasing it
