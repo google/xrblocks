@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 929370d
- * @builddate 2026-06-22T20:32:17.400Z
+ * @commitid 951900d
+ * @builddate 2026-06-23T03:53:59.984Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5903,6 +5903,12 @@ declare class ObjectDetector extends Script {
     private depth;
     private camera;
     private renderer;
+    /**
+     * Target device profile used to look up RGB camera intrinsics and pose
+     * for converting detection bounding boxes into world space. Defaults to
+     * `'galaxyxr'`; auto-overridden to `'quest3'` in {@link init} when the
+     * Meta Quest browser is detected. Can be overridden manually before init.
+     */
     targetDevice: string;
     /**
      * Initializes the ObjectDetector.
