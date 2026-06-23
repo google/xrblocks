@@ -24,6 +24,7 @@ class GenerativeObjectDemo extends xb.Script {
     super();
     this.presetIndex = 0;
     this.busy = false;
+    this.grabbingObject = false;
   }
 
   init() {
@@ -37,11 +38,43 @@ class GenerativeObjectDemo extends xb.Script {
       });
       recognizer.start();
     }
-    this.setStatus_('pinch to summon an object, or speak to describe one.');
+    this.setStatus_(
+      'pinch empty space (or press G, or speak) to summon. grab an object to move it.'
+    );
   }
 
-  // Pinch / click cycles through preset prompts so the demo works without a mic.
+  // Track whether this select is grabbing an existing object, so releasing it
+  // moves the object instead of summoning a new one.
+  onSelectStart(event) {
+    this.grabbingObject = false;
+    const hits = xb.core.input?.intersectionsForController?.get(event.target);
+    if (hits && hits.length) {
+      for (let node = hits[0].object; node; node = node.parent) {
+        if (xb.core.generative.objects.includes(node)) {
+          this.grabbingObject = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // Pinch / click on empty space summons; cycles presets so it works mouse-only.
   onSelectEnd() {
+    if (this.grabbingObject) {
+      this.grabbingObject = false;
+      return;
+    }
+    this.summonPreset_();
+  }
+
+  // Press "G" to summon (handy on desktop where dragging uses the mouse).
+  onKeyDown(event) {
+    if (event.code === 'KeyG') {
+      this.summonPreset_();
+    }
+  }
+
+  summonPreset_() {
     const prompt = PRESET_PROMPTS[this.presetIndex % PRESET_PROMPTS.length];
     this.presetIndex++;
     this.imagine(prompt);
@@ -50,7 +83,7 @@ class GenerativeObjectDemo extends xb.Script {
   async imagine(prompt) {
     if (this.busy) return;
     if (!xb.core.generative?.isSupported) {
-      this.setStatus_('generation unavailable. add a Gemini ?key= and reload.');
+      this.setStatus_('generation unavailable. check your Gemini key.');
       return;
     }
     this.busy = true;
