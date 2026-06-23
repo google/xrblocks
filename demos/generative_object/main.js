@@ -1,5 +1,6 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
+import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 // Speak (or pinch) to summon a generated object into your space. The prompt is
@@ -30,6 +31,12 @@ class GenerativeObjectDemo extends xb.Script {
   }
 
   init() {
+    // Lights so the relief (lit standard material) shows surface shading.
+    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+    const key = new THREE.DirectionalLight(0xffffff, 1.5);
+    key.position.set(0.5, 1, 1);
+    xb.core.scene.add(ambient, key);
+
     // Voice trigger: imagine whatever you say, driven by a push-to-talk button.
     const recognizer = xb.core.sound?.speechRecognizer;
     if (recognizer) {
@@ -44,7 +51,7 @@ class GenerativeObjectDemo extends xb.Script {
       this.addSpeakButton_(recognizer);
     }
     this.setStatus_(
-      'pinch empty space (or press G, or hold 🎙️) to summon. grab an object to move it.'
+      'pinch (or G, or 🎙️) to summon. grab to move. press R for 2.5D relief.'
     );
   }
 
@@ -110,10 +117,20 @@ class GenerativeObjectDemo extends xb.Script {
     this.summonPreset_();
   }
 
-  // Press "G" to summon (handy on desktop where dragging uses the mouse).
+  // "G" summons; "R" toggles 2.5D relief mode for subsequently summoned objects.
   onKeyDown(event) {
     if (event.code === 'KeyG') {
       this.summonPreset_();
+    } else if (event.code === 'KeyR') {
+      const opts = xb.core.generative.options;
+      opts.relief = !opts.relief;
+      // Relief reads best when you can move around it, so pause billboarding.
+      opts.billboard = !opts.relief;
+      this.setStatus_(
+        opts.relief
+          ? 'relief ON (2.5D). summon something; billboarding paused so you can orbit it.'
+          : 'relief OFF (flat cutout). billboarding back on.'
+      );
     }
   }
 
