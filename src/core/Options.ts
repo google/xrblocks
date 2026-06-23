@@ -5,6 +5,7 @@ import {
   xrDeviceCameraUserOptions,
 } from '../camera/CameraOptions.js';
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
+import {GenerativeOptions} from '../generative/GenerativeOptions';
 import {HandsOptions} from '../input/HandsOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
@@ -112,6 +113,7 @@ export class Options {
   reticles = new ReticleOptions();
   sound = new SoundOptions();
   ai = new AIOptions();
+  generative = new GenerativeOptions();
   simulator = new SimulatorOptions();
   world = new WorldOptions();
   uikit = new UIKitOptions();
@@ -356,6 +358,18 @@ export class Options {
   enableAI() {
     this.ai.enabled = true;
     this.ai.gemini.enabled = true;
+    return this;
+  }
+
+  /**
+   * Enables generative objects: a text prompt is turned into a generated image
+   * and placed as a draggable object in front of the user. Requires AI, so this
+   * also enables it.
+   * @returns The instance for chaining.
+   */
+  enableGenerativeObjects() {
+    this.enableAI();
+    this.generative.enabled = true;
     return this;
   }
 
