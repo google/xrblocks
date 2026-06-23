@@ -22,6 +22,13 @@ export class GenerativeOptions {
   maxSize = 0.6;
 
   /**
+   * Whether to key out the (plain) background of the generated image so the
+   * subject reads as a clean cutout instead of a flat card. Requires a browser
+   * 2D canvas; ignored in non-browser environments.
+   */
+  removeBackground = true;
+
+  /**
    * Enables generative objects.
    * @returns The instance for chaining.
    */

@@ -7,6 +7,7 @@ import {UI_OVERLAY_LAYER} from '../constants';
 import {Depth} from '../depth/Depth';
 import {DepthOptions} from '../depth/DepthOptions';
 import {GenerativeObjects} from '../generative/GenerativeObjects';
+import {CanvasBackgroundTextureSource} from '../generative/TextureSource';
 import {Hands} from '../input/Hands';
 import {GestureRecognition} from '../input/gestures/GestureRecognition';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
@@ -466,6 +467,9 @@ export class Core {
     // Sets up generative objects (depends on AI being registered above).
     if (options.generative.enabled) {
       this.generative.options = options.generative;
+      if (options.generative.removeBackground) {
+        this.generative.textureSource = new CanvasBackgroundTextureSource();
+      }
       this.registry.register(this.generative);
       this.xrSystemsGroup.add(this.generative);
       await this.scriptsManager.initScript(this.generative);

@@ -1,3 +1,4 @@
+export * from './BackgroundKeyer';
 export * from './GenerativeObject';
 export * from './GenerativeObjects';
 export * from './GenerativeObjectUtils';

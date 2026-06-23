@@ -32,6 +32,7 @@ export * from './depth/DepthOptions';
 export * from './depth/DepthTextures';
 export * from './depth/occlusion/OcclusionPass';
 export * from './depth/occlusion/OcclusionUtils';
+export * from './generative/BackgroundKeyer';
 export * from './generative/GenerativeObject';
 export * from './generative/GenerativeObjects';
 export * from './generative/GenerativeObjectUtils';
