@@ -192,7 +192,7 @@ export class ScreenshotSynthesizer {
     }
     const mainRenderTargetSingleViewWidth = isRenderingStereo
       ? mainRenderTargetSize.x / 2
-      : mainRenderTargetSize.y;
+      : mainRenderTargetSize.x;
     const scaledHeight = Math.round(
       mainRenderTargetSize.y *
         (this.renderTargetWidth / mainRenderTargetSingleViewWidth)
