@@ -24,16 +24,11 @@ export interface GenerativeObjectStyle {
 }
 
 /**
- * A generated image placed in the scene as a draggable object.
- *
- * By default it is a single textured plane sized to preserve the source
- * image's aspect ratio (a flat cutout). With {@link GenerativeObjectStyle.relief}
- * it is instead a densely subdivided plane displaced by the image's brightness,
- * giving the subject shaded surface relief.
- *
- * It is {@link Draggable} (so the global `DragManager` lets the user grab and
- * move it) and opts into {@link OCCLUDABLE_ITEMS_LAYER} so real world geometry
- * can occlude it when depth occlusion is enabled.
+ * A generated image placed in the scene as a draggable object: a flat textured
+ * cutout by default, or a displaced relief mesh when
+ * {@link GenerativeObjectStyle.relief} is set. Opts into
+ * {@link OCCLUDABLE_ITEMS_LAYER} so depth occlusion can hide it behind real
+ * geometry.
  */
 export class GenerativeObject
   extends Script

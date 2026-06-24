@@ -33,8 +33,8 @@ export interface ImagineOptions {
  * {@link GenerativeObject}: it asks the AI model to generate an image, decodes
  * it into a texture, and drops the result into the scene in front of the user.
  *
- * Every step degrades gracefully: if AI is unavailable or generation yields no
- * image, {@link imagine} resolves to `null` instead of throwing.
+ * If AI is unavailable or generation yields no image, {@link imagine} resolves
+ * to `null` instead of throwing.
  */
 export class GenerativeObjects extends Script {
   static dependencies = {

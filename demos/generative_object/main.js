@@ -11,11 +11,9 @@ import {
 } from 'uiblocks';
 import * as xb from 'xrblocks';
 
-// Summon AI-generated objects into your space. A prompt is sent to Gemini image
-// generation, keyed onto a transparent cutout, and dropped onto the real-world
-// surface you are looking at as a draggable, depth-occluded object. Summon with
-// the on-screen buttons, the spatial panel, or your voice; grab to move.
-// Demonstrates the GenerativeObjects primitive (xb.core.generative.imagine).
+// Demo for the GenerativeObjects primitive (xb.core.generative.imagine).
+// Buttons or voice summon an AI-generated cutout onto the surface you're
+// looking at; grab to move it.
 //
 // A Gemini API key is required, pass it in the URL as ?key=... or place a
 // keys.json next to this file.
