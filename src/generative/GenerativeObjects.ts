@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 import {AI} from '../ai/AI';
 import {Script} from '../core/Script';
+import {Depth} from '../depth/Depth';
+import {OcclusionUtils} from '../depth/occlusion/OcclusionUtils';
 
 import {GenerativeObject} from './GenerativeObject';
 import {GenerativeOptions} from './GenerativeOptions';
@@ -12,6 +14,11 @@ import {
 import {DataUrlTextureSource, TextureSource} from './TextureSource';
 
 const scratchCameraPosition = new THREE.Vector3();
+const scratchOrigin = new THREE.Vector3();
+const scratchDirection = new THREE.Vector3();
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+/** Clearance in meters to float an object off a vertical surface. */
+const SURFACE_CLEARANCE = 0.08;
 
 /** Per-call overrides for {@link GenerativeObjects.imagine}. */
 export interface ImagineOptions {
@@ -34,6 +41,7 @@ export class GenerativeObjects extends Script {
     ai: AI,
     camera: THREE.Camera,
     scene: THREE.Scene,
+    depth: Depth,
   };
 
   options = new GenerativeOptions();
@@ -47,19 +55,24 @@ export class GenerativeObjects extends Script {
   private ai!: AI;
   private camera!: THREE.Camera;
   private scene!: THREE.Scene;
+  private depth?: Depth;
+  private raycaster = new THREE.Raycaster();
 
   init({
     ai,
     camera,
     scene,
+    depth,
   }: {
     ai: AI;
     camera: THREE.Camera;
     scene: THREE.Scene;
+    depth?: Depth;
   }) {
     this.ai = ai;
     this.camera = camera;
     this.scene = scene;
+    this.depth = depth;
   }
 
   /** Whether image generation can run in the current session. */
@@ -117,13 +130,87 @@ export class GenerativeObjects extends Script {
       reliefStrength: this.options.reliefStrength,
       reliefSegments: this.options.reliefSegments,
     });
-    const {position, quaternion} = poseInFrontOfCamera(this.camera, distance);
-    object.position.copy(position);
-    object.quaternion.copy(quaternion);
+    this.setupOcclusion_(object);
+    this.placeObject_(object, distance);
 
     this.scene.add(object);
     this.objects.push(object);
     return object;
+  }
+
+  /**
+   * Makes the object's material occluded by the real-world depth mesh: enabling
+   * the occludable layer alone only builds the occlusion mask, so the material's
+   * shader must also sample it (mirrors `ModelViewer`).
+   */
+  private setupOcclusion_(object: GenerativeObject) {
+    const depth = this.depth;
+    if (!depth) {
+      return;
+    }
+    const material = object.mesh.material;
+    material.onBeforeCompile = (shader) => {
+      OcclusionUtils.addOcclusionToShader(shader);
+      depth.occludableShaders.add(shader);
+    };
+    material.needsUpdate = true;
+  }
+
+  /**
+   * Positions a freshly built object: on the real-world surface the user is
+   * looking at when grounding is enabled and a hit is found, otherwise in front
+   * of the camera. Stands on horizontal surfaces and floats a little off
+   * vertical ones so it never blends into a wall. Always upright toward the user.
+   */
+  private placeObject_(object: GenerativeObject, distance: number) {
+    const hit = this.options.groundOnSurface ? this.raycastSurface_() : null;
+    if (hit) {
+      const isHorizontal = Math.abs(hit.normal.dot(WORLD_UP)) > 0.7;
+      if (isHorizontal) {
+        // Stand the cutout on the surface by lifting it half its height.
+        const halfHeight = object.mesh.scale.y / 2;
+        object.position.copy(hit.point).addScaledVector(WORLD_UP, halfHeight);
+      } else {
+        // Float it off the vertical surface so it doesn't z-fight / blend in.
+        object.position
+          .copy(hit.point)
+          .addScaledVector(hit.normal, SURFACE_CLEARANCE);
+      }
+    } else {
+      poseInFrontOfCamera(this.camera, distance, object.position);
+    }
+    const cameraPosition = this.camera.getWorldPosition(scratchCameraPosition);
+    quaternionFacingCamera(object.position, cameraPosition, object.quaternion);
+  }
+
+  /**
+   * Raycasts from the camera forward against the depth mesh.
+   * @returns The world-space hit point and surface normal, or `null` if there is
+   *     no depth mesh or no intersection.
+   */
+  protected raycastSurface_(): {
+    point: THREE.Vector3;
+    normal: THREE.Vector3;
+  } | null {
+    const depthMesh = this.depth?.depthMesh;
+    if (!depthMesh) {
+      return null;
+    }
+    const origin = this.camera.getWorldPosition(scratchOrigin);
+    const direction = this.camera.getWorldDirection(scratchDirection);
+    this.raycaster.set(origin, direction);
+    const intersections = this.raycaster.intersectObject(depthMesh, false);
+    if (intersections.length === 0) {
+      return null;
+    }
+    const hit = intersections[0];
+    const point = hit.point.clone();
+    // Intersection normals are in the mesh's local space; bring to world space.
+    const normal = (hit.normal ?? WORLD_UP)
+      .clone()
+      .transformDirection(depthMesh.matrixWorld)
+      .normalize();
+    return {point, normal};
   }
 
   /** Removes all generated objects from the scene and frees their resources. */

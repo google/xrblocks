@@ -151,3 +151,67 @@ describe('GenerativeObjects billboarding', () => {
     expect(object.quaternion.equals(before)).toBe(true);
   });
 });
+
+describe('GenerativeObjects grounded placement', () => {
+  it('stands the object on a horizontal surface, lifted by half its height', async () => {
+    const {manager} = makeManager({
+      textureSource: makeFakeTextureSource(100, 100),
+    });
+    manager.options.groundOnSurface = true;
+    manager.raycastSurface_ = () => ({
+      point: new THREE.Vector3(1, 0, -2),
+      normal: new THREE.Vector3(0, 1, 0),
+    });
+    const object = await manager.imagine('x');
+    // 100x100 image at maxSize 0.6 -> 0.6 tall, lifted half = 0.3.
+    expect(object.position.x).toBeCloseTo(1);
+    expect(object.position.y).toBeCloseTo(0.3);
+    expect(object.position.z).toBeCloseTo(-2);
+  });
+
+  it('floats the object off a vertical surface along its normal', async () => {
+    const {manager} = makeManager({
+      textureSource: makeFakeTextureSource(100, 100),
+    });
+    manager.options.groundOnSurface = true;
+    // A wall facing +Z (normal points toward the room).
+    manager.raycastSurface_ = () => ({
+      point: new THREE.Vector3(0, 1, -3),
+      normal: new THREE.Vector3(0, 0, 1),
+    });
+    const object = await manager.imagine('x');
+    // Offset 0.08 along the normal, stays at the hit height (no half-height lift).
+    expect(object.position.x).toBeCloseTo(0);
+    expect(object.position.y).toBeCloseTo(1);
+    expect(object.position.z).toBeCloseTo(-2.92);
+  });
+
+  it('falls back to front-of-camera when there is no surface hit', async () => {
+    const {manager} = makeManager();
+    manager.options.groundOnSurface = true;
+    manager.raycastSurface_ = () => null;
+    const object = await manager.imagine('x', {distance: 2});
+    expect(object.position.z).toBeCloseTo(-2);
+    expect(object.position.y).toBeCloseTo(0);
+  });
+});
+
+describe('GenerativeObjects occlusion', () => {
+  it('opts the material into the occlusion shader when depth is present', async () => {
+    const occludableShaders = new Set();
+    const depth = {occludableShaders};
+    const ai = {
+      isAvailable: () => true,
+      generate: async () => FIXTURE_DATA_URL,
+    };
+    const camera = new THREE.PerspectiveCamera();
+    camera.updateMatrixWorld(true);
+    const scene = new THREE.Scene();
+    const manager = new GenerativeObjects();
+    manager.init({ai, camera, scene, depth});
+    manager.textureSource = makeFakeTextureSource();
+    manager.options = new GenerativeOptions();
+    const object = await manager.imagine('x');
+    expect(typeof object.mesh.material.onBeforeCompile).toBe('function');
+  });
+});
