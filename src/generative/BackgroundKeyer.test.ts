@@ -1,6 +1,7 @@
 import {describe, it, expect} from 'vitest';
 
 import {
+  buildDisplacementMap,
   estimateBackgroundColor,
   keyOutBackground,
   RgbaImage,
@@ -69,5 +70,26 @@ describe('keyOutBackground', () => {
     const result = keyOutBackground(image, {tolerance: 10});
     const center = (2 * 4 + 2) * 4;
     expect(result.data[center + 3]).toBe(255);
+  });
+});
+
+describe('buildDisplacementMap', () => {
+  it('maps transparent background to black (no displacement)', () => {
+    const image = imageWithCenter(4, [255, 255, 255], [200, 0, 0]);
+    const keyed = keyOutBackground(image);
+    const disp = buildDisplacementMap(keyed);
+    // A corner was keyed transparent -> displacement 0, opaque.
+    expect(disp.data[0]).toBe(0);
+    expect(disp.data[3]).toBe(255);
+  });
+
+  it('maps the subject to its luminance', () => {
+    const image = imageWithCenter(4, [255, 255, 255], [200, 0, 0]);
+    const keyed = keyOutBackground(image);
+    const disp = buildDisplacementMap(keyed);
+    const center = (2 * 4 + 2) * 4;
+    const expected = Math.round(0.2126 * 200);
+    expect(disp.data[center]).toBe(expected);
+    expect(disp.data[center + 3]).toBe(255);
   });
 });

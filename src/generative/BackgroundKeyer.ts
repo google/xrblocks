@@ -72,3 +72,29 @@ export function keyOutBackground(
   }
   return {data: out, width: image.width, height: image.height};
 }
+
+/**
+ * Builds a grayscale displacement map from a keyed image: background pixels
+ * (alpha 0) become black (no displacement) and subject pixels become their
+ * luminance. Masking by alpha keeps the transparent background from displacing
+ * into stray geometry. The result is opaque RGBA.
+ * @param image - A keyed RGBA image (background already at alpha 0).
+ * @returns A new opaque {@link RgbaImage} usable as a displacement/bump map.
+ */
+export function buildDisplacementMap(image: RgbaImage): RgbaImage {
+  const {data, width, height} = image;
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    const luminance =
+      data[i + 3] === 0
+        ? 0
+        : Math.round(
+            0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
+          );
+    out[i] = luminance;
+    out[i + 1] = luminance;
+    out[i + 2] = luminance;
+    out[i + 3] = 255;
+  }
+  return {data: out, width, height};
+}
