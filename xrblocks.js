@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 115e130
- * @builddate 2026-06-24T01:39:28.730Z
+ * @commitid 74c341f
+ * @builddate 2026-06-24T01:50:01.685Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -11718,7 +11718,7 @@ class SimulatorHands {
         if (this.leftHandPose === SimulatorHandPose.PINCHING) {
             this.input.dispatchEvent({
                 type: 'selectend',
-                target: this.input.controllers[1],
+                target: this.input.controllers[0],
                 data: {
                     handedness: 'left',
                 },
