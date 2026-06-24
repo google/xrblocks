@@ -2,7 +2,11 @@ import * as THREE from 'three';
 
 import {OCCLUDABLE_ITEMS_LAYER} from '../constants';
 import {Script} from '../core/Script';
-import type {Draggable} from '../ux/DragManager';
+import {
+  DragMode,
+  type Draggable,
+  type HasDraggingMode,
+} from '../ux/DragManager';
 
 import {computeBillboardScale} from './GenerativeObjectUtils';
 import type {LoadedTexture} from './TextureSource';
@@ -31,8 +35,14 @@ export interface GenerativeObjectStyle {
  * move it) and opts into {@link OCCLUDABLE_ITEMS_LAYER} so real world geometry
  * can occlude it when depth occlusion is enabled.
  */
-export class GenerativeObject extends Script implements Draggable {
+export class GenerativeObject
+  extends Script
+  implements Draggable, HasDraggingMode
+{
   draggable = true;
+  // Lets the global DragManager pick the object up and move it; without a
+  // draggingMode the manager bails out of beginDragging.
+  draggingMode = DragMode.TRANSLATING;
 
   /** The prompt that produced this object. */
   readonly prompt: string;

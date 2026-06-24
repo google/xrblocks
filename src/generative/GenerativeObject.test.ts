@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {describe, it, expect, vi} from 'vitest';
 
 import {OCCLUDABLE_ITEMS_LAYER} from '../constants';
+import {DragMode} from '../ux/DragManager';
 
 import {GenerativeObject} from './GenerativeObject';
 import type {LoadedTexture} from './TextureSource';
@@ -69,5 +70,13 @@ describe('GenerativeObject relief mode', () => {
     const reliefVerts = obj.mesh.geometry.attributes.position.count;
     const flatVerts = flat.mesh.geometry.attributes.position.count;
     expect(reliefVerts).toBeGreaterThan(flatVerts);
+  });
+});
+
+describe('GenerativeObject dragging', () => {
+  it('exposes a translating drag mode so DragManager can move it', () => {
+    const obj = new GenerativeObject('x', fakeLoaded(), {maxSize: 0.6});
+    expect(obj.draggable).toBe(true);
+    expect(obj.draggingMode).toBe(DragMode.TRANSLATING);
   });
 });
