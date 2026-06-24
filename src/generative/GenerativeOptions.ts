@@ -18,6 +18,13 @@ export class GenerativeOptions {
   /** Distance in meters in front of the user to place a new object. */
   distance = 1.0;
 
+  /**
+   * Place new objects where the user is looking hits the real-world depth mesh
+   * (so they sit on your table/floor), falling back to {@link distance} in front
+   * of the camera when there is no surface hit. Requires depth to be enabled.
+   */
+  groundOnSurface = true;
+
   /** Largest dimension (meters) of a placed object; aspect ratio is preserved. */
   maxSize = 0.6;
 
