@@ -103,3 +103,13 @@ describe('quaternionFacingCamera', () => {
     expect(q.w).toBe(1);
   });
 });
+
+describe('quaternionFacingCamera uprightness', () => {
+  it('stays upright (world up preserved) when the camera is above', () => {
+    const objectPosition = new THREE.Vector3(0, 0, -2);
+    const cameraPosition = new THREE.Vector3(0, 3, 0);
+    const q = quaternionFacingCamera(objectPosition, cameraPosition);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    expect(up.y).toBeGreaterThan(0.99);
+  });
+});

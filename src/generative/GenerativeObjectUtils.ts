@@ -56,12 +56,12 @@ export function poseInFrontOfCamera(
 
 /**
  * Computes an orientation that turns a plane's front face (+Z) toward the
- * camera from `objectPosition`. Used to billboard a generated cutout so it
- * always faces the user instead of looking paper-thin from the side.
+ * camera while keeping the object upright (yaw only). Used to billboard a
+ * generated cutout so it faces the user like a standee, without tilting.
  * @param objectPosition - World position of the object.
  * @param cameraPosition - World position of the camera.
  * @param target - Optional output orientation.
- * @returns `target` oriented so +Z points toward the camera.
+ * @returns `target` oriented so +Z points toward the camera, staying upright.
  */
 export function quaternionFacingCamera(
   objectPosition: THREE.Vector3,
@@ -72,6 +72,8 @@ export function quaternionFacingCamera(
     objectPosition,
     cameraPosition
   );
+  // Keep it upright: only yaw toward the camera, never pitch/roll.
+  awayFromCamera.y = 0;
   if (awayFromCamera.lengthSq() === 0) {
     return target.identity();
   }
