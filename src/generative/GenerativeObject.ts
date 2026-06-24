@@ -54,7 +54,7 @@ export class GenerativeObject extends Script implements Draggable {
     this.prompt = prompt;
 
     this.mesh = style.relief
-      ? buildReliefMesh(loaded.texture, style)
+      ? buildReliefMesh(loaded, style)
       : buildFlatMesh(loaded.texture);
 
     const size = computeBillboardScale(
@@ -89,16 +89,18 @@ function buildFlatMesh(texture: THREE.Texture) {
   return new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
 }
 
-function buildReliefMesh(texture: THREE.Texture, style: GenerativeObjectStyle) {
+function buildReliefMesh(loaded: LoadedTexture, style: GenerativeObjectStyle) {
   const segments = style.reliefSegments ?? 96;
-  const strength = style.reliefStrength ?? 0.08;
-  // A lit material whose displacement + bump come from the generated image, so
-  // brighter regions stand out and pick up shading like real surface relief.
+  const strength = style.reliefStrength ?? 0.04;
+  // Displace/bump from an alpha-masked grayscale map (background stays flat) so
+  // brighter subject regions stand out and pick up shading. Falls back to the
+  // color texture when no masked map is available.
+  const displacementMap = loaded.displacementTexture ?? loaded.texture;
   const material = new THREE.MeshStandardMaterial({
-    map: texture,
-    displacementMap: texture,
+    map: loaded.texture,
+    displacementMap,
     displacementScale: strength,
-    bumpMap: texture,
+    bumpMap: displacementMap,
     roughness: 0.9,
     metalness: 0,
     transparent: true,
