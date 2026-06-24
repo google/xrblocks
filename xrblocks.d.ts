@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 74c341f
- * @builddate 2026-06-24T01:50:01.685Z
+ * @commitid c41f3d1
+ * @builddate 2026-06-24T20:22:27.639Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6362,10 +6362,16 @@ declare class HumanRecognizer extends Script {
         camera: typeof THREE.Camera;
         renderer: typeof THREE.WebGLRenderer;
     };
-    private _detectorBackends;
+    private detectorBackends;
+    private activeClients;
+    private currentDetectionPromise;
+    /**
+     * The latest detected body poses.
+     */
+    poses: DetectedBodyPose[];
     private options;
     private deviceCamera;
-    depth: Depth;
+    private depth;
     private camera;
     private renderer;
     targetDevice: string;
@@ -6377,9 +6383,36 @@ declare class HumanRecognizer extends Script {
         renderer: THREE.WebGLRenderer;
     }): void;
     /**
-     * Runs the human body pose detection process based on the configured backend.
+     * Starts continuous pose detection for the given client.
+     * If this is the first client, starts the background detection loop.
+     * @param client - The client object requesting pose detection.
+     */
+    start(client: object): void;
+    /**
+     * Stops continuous pose detection for the given client.
+     * If this was the last client, stops the background detection loop.
+     * @param client - The client object that no longer needs pose detection.
+     */
+    stop(client: object): void;
+    /**
+     * Called per frame by the engine. If there are active clients,
+     * ensures the continuous pose detection is running.
+     */
+    update(): void;
+    private runContinuousDetection;
+    /**
+     * Runs a pose detection or returns the ongoing detection promise.
+     *
+     * - If continuous detection is started (has active clients), returns the promise
+     *   for the next detection result.
+     * - If continuous detection is not started, performs a one-off detection and
+     *   returns the result. If a one-off detection is already in progress, returns
+     *   the promise for that ongoing detection.
+     *
+     * @returns A promise resolving to the next body pose detection result.
      */
     runDetection(): Promise<DetectedBodyPose[]>;
+    private runDetectionInternal;
     private getBackendContext;
     private getOrCreateBackend;
     private getDepthMeshSnapshot;

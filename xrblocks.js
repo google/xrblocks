@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 74c341f
- * @builddate 2026-06-24T01:50:01.685Z
+ * @commitid c41f3d1
+ * @builddate 2026-06-24T20:22:27.639Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -14603,7 +14603,13 @@ class MediaPipeHumanBackend extends BaseHumanBackend {
 class HumanRecognizer extends Script {
     constructor() {
         super(...arguments);
-        this._detectorBackends = new Map();
+        this.detectorBackends = new Map();
+        this.activeClients = new Set();
+        this.currentDetectionPromise = null;
+        /**
+         * The latest detected body poses.
+         */
+        this.poses = [];
         this.targetDevice = 'galaxyxr';
     }
     static { this.dependencies = {
@@ -14621,9 +14627,71 @@ class HumanRecognizer extends Script {
         this.renderer = renderer;
     }
     /**
-     * Runs the human body pose detection process based on the configured backend.
+     * Starts continuous pose detection for the given client.
+     * If this is the first client, starts the background detection loop.
+     * @param client - The client object requesting pose detection.
      */
-    async runDetection() {
+    start(client) {
+        if (this.activeClients.has(client)) {
+            return;
+        }
+        this.activeClients.add(client);
+        if (this.activeClients.size === 1) {
+            this.runContinuousDetection();
+        }
+    }
+    /**
+     * Stops continuous pose detection for the given client.
+     * If this was the last client, stops the background detection loop.
+     * @param client - The client object that no longer needs pose detection.
+     */
+    stop(client) {
+        this.activeClients.delete(client);
+    }
+    /**
+     * Called per frame by the engine. If there are active clients,
+     * ensures the continuous pose detection is running.
+     */
+    update() {
+        if (this.activeClients.size > 0 && !this.currentDetectionPromise) {
+            this.runContinuousDetection();
+        }
+    }
+    runContinuousDetection() {
+        this.currentDetectionPromise = this.runDetectionInternal()
+            .then((results) => {
+            this.poses = results;
+            return results;
+        })
+            .finally(() => {
+            this.currentDetectionPromise = null;
+        });
+    }
+    /**
+     * Runs a pose detection or returns the ongoing detection promise.
+     *
+     * - If continuous detection is started (has active clients), returns the promise
+     *   for the next detection result.
+     * - If continuous detection is not started, performs a one-off detection and
+     *   returns the result. If a one-off detection is already in progress, returns
+     *   the promise for that ongoing detection.
+     *
+     * @returns A promise resolving to the next body pose detection result.
+     */
+    runDetection() {
+        if (this.currentDetectionPromise) {
+            return this.currentDetectionPromise;
+        }
+        if (this.activeClients.size > 0) {
+            this.runContinuousDetection();
+            return this.currentDetectionPromise;
+        }
+        this.currentDetectionPromise = this.runDetectionInternal().finally(() => {
+            this.currentDetectionPromise = null;
+        });
+        return this.currentDetectionPromise;
+    }
+    async runDetectionInternal() {
         this.clear();
         if (!this.depth || !this.depth.depthMesh) {
             console.warn('Cannot run Human Detection: Depth module / depthMesh is not enabled or initialized.');
@@ -14656,7 +14724,7 @@ class HumanRecognizer extends Script {
         };
     }
     getOrCreateBackend(activeBackend, context) {
-        let backendPromise = this._detectorBackends.get(activeBackend);
+        let backendPromise = this.detectorBackends.get(activeBackend);
         if (!backendPromise) {
             backendPromise = (async () => {
                 switch (activeBackend) {
@@ -14666,7 +14734,7 @@ class HumanRecognizer extends Script {
                         throw new Error(`HumanRecognizer backend '${activeBackend}' is not supported.`);
                 }
             })();
-            this._detectorBackends.set(activeBackend, backendPromise);
+            this.detectorBackends.set(activeBackend, backendPromise);
         }
         return backendPromise;
     }
