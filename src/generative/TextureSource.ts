@@ -1,12 +1,17 @@
 import * as THREE from 'three';
 
-import {keyOutBackground} from './BackgroundKeyer';
+import {buildDisplacementMap, keyOutBackground} from './BackgroundKeyer';
 
 /** A loaded texture together with its source pixel dimensions. */
 export interface LoadedTexture {
   texture: THREE.Texture;
   width: number;
   height: number;
+  /**
+   * Optional alpha-masked grayscale map for relief displacement/bump, where the
+   * (transparent) background is black so it does not displace.
+   */
+  displacementTexture?: THREE.Texture;
 }
 
 /**
@@ -99,6 +104,29 @@ export class CanvasBackgroundTextureSource implements TextureSource {
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    return {texture, width, height};
+
+    // An alpha-masked grayscale map for relief: the transparent background is
+    // black so it stays flat instead of displacing into stray geometry.
+    const displacement = buildDisplacementMap({
+      data: keyed.data,
+      width,
+      height,
+    });
+    const displacementCanvas = document.createElement('canvas');
+    displacementCanvas.width = width;
+    displacementCanvas.height = height;
+    const displacementContext = displacementCanvas.getContext('2d');
+    let displacementTexture: THREE.Texture | undefined;
+    if (displacementContext) {
+      const displacementImageData = displacementContext.createImageData(
+        width,
+        height
+      );
+      displacementImageData.data.set(displacement.data);
+      displacementContext.putImageData(displacementImageData, 0, 0);
+      displacementTexture = new THREE.CanvasTexture(displacementCanvas);
+    }
+
+    return {texture, width, height, displacementTexture};
   }
 }
