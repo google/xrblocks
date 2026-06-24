@@ -44,7 +44,7 @@ export class GenerativeOptions {
   relief = false;
 
   /** Relief displacement depth in meters (when {@link relief} is on). */
-  reliefStrength = 0.08;
+  reliefStrength = 0.04;
 
   /** Plane subdivisions per side used to build the relief mesh. */
   reliefSegments = 96;
