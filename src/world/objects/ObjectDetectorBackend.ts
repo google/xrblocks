@@ -52,10 +52,6 @@ export abstract class BaseDetectorBackend<T> {
       return [];
     }
 
-    if (this.context.options.objects.showDebugVisualizations) {
-      this.visualize(snapshot, normalizedDetections);
-    }
-
     const detectionPromises = normalizedDetections.map(async (item) => {
       const boundingBox = new THREE.Box2(
         new THREE.Vector2(item.xmin, item.ymin),
@@ -156,76 +152,5 @@ export abstract class BaseDetectorBackend<T> {
 
     this.context.debugVisualsGroup!.add(sphere, textLabel);
     textLabel.sync(); // Required for Troika text to appear.
-  }
-
-  /**
-   * Visualizes the detections by drawing bounding boxes on a canvas and downloading the image.
-   * This is used for debugging detection results.
-   *
-   * @param snapshot - The camera snapshot used for detection.
-   * @param detections - The array of normalized detections to draw.
-   */
-  protected visualize(
-    snapshot: CameraSnapshot,
-    detections: NormalizedDetectedObject<T>[]
-  ) {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-
-    const drawDetectionsAndDownload = () => {
-      detections.forEach((item) => {
-        const rectX = item.xmin * canvas.width;
-        const rectY = item.ymin * canvas.height;
-        const rectWidth = (item.xmax - item.xmin) * canvas.width;
-        const rectHeight = (item.ymax - item.ymin) * canvas.height;
-
-        ctx.strokeStyle = '#FF0000';
-        ctx.lineWidth = Math.max(2, canvas.width / 400);
-        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
-
-        const text = item.objectName;
-        const fontSize = Math.max(16, canvas.width / 80);
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.textBaseline = 'bottom';
-        const textMetrics = ctx.measureText(text);
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(
-          rectX,
-          rectY - fontSize,
-          textMetrics.width + 8,
-          fontSize + 4
-        );
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(text, rectX + 4, rectY + 2);
-      });
-
-      const timestamp = new Date()
-        .toISOString()
-        .slice(0, 19)
-        .replace('T', '_')
-        .replace(/:/g, '-');
-      const link = document.createElement('a');
-      link.download = `detection_debug_${timestamp}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    };
-
-    if (snapshot.imageData) {
-      canvas.width = snapshot.imageData.width;
-      canvas.height = snapshot.imageData.height;
-      ctx.putImageData(snapshot.imageData, 0, 0);
-      drawDetectionsAndDownload();
-    } else if (snapshot.base64) {
-      const img = new Image();
-      img.onload = () => {
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        ctx.drawImage(img, 0, 0);
-        drawDetectionsAndDownload();
-      };
-      img.src = snapshot.base64;
-    }
   }
 }
