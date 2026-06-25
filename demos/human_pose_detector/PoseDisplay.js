@@ -9,12 +9,15 @@ export class PoseDisplay extends xb.Script {
     this.camera = camera;
     this.world = world;
     this.uiCore = new UICore(this);
-    this.detecting = false;
 
     this.initHudText();
 
     this.initJointMarkers();
     this.initConnections();
+
+    if (this.world.humans) {
+      this.world.humans.start(this);
+    }
 
     console.log('PoseDisplay: human pose detector initialized.');
   }
@@ -191,22 +194,8 @@ export class PoseDisplay extends xb.Script {
       this.hudCard.quaternion.copy(quaternion);
     }
 
-    // Continuously query human detector backend
-    if (this.world.humans && !this.detecting) {
-      this.detecting = true;
-      this.world.humans
-        .runDetection()
-        .then((poses) => {
-          this.detecting = false;
-          this.displayPoses(poses);
-        })
-        .catch((err) => {
-          this.detecting = false;
-          const errMsg = err.message || String(err);
-          this.statusText.setText('Detection Error');
-          this.statusDetailsText.setText('[Exception]:\n' + errMsg);
-          console.error('Pose detection failed:', err);
-        });
+    if (this.world.humans) {
+      this.displayPoses(this.world.humans.poses);
     }
   }
 
@@ -298,6 +287,9 @@ export class PoseDisplay extends xb.Script {
   }
 
   dispose() {
+    if (this.world.humans) {
+      this.world.humans.stop(this);
+    }
     if (this.markerGeometry) {
       this.markerGeometry.dispose();
     }

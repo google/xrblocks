@@ -22,12 +22,19 @@ export class HumanRecognizer extends Script {
     renderer: THREE.WebGLRenderer,
   };
 
-  private _detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
+  private detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
+  private activeClients = new Set<object>();
+  private currentDetectionPromise: Promise<DetectedBodyPose[]> | null = null;
+
+  /**
+   * The latest detected body poses.
+   */
+  public poses: DetectedBodyPose[] = [];
 
   // Injected dependencies
   private options!: WorldOptions;
   private deviceCamera!: XRDeviceCamera;
-  public depth!: Depth;
+  private depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer;
 
@@ -54,9 +61,76 @@ export class HumanRecognizer extends Script {
   }
 
   /**
-   * Runs the human body pose detection process based on the configured backend.
+   * Starts continuous pose detection for the given client.
+   * If this is the first client, starts the background detection loop.
+   * @param client - The client object requesting pose detection.
    */
-  async runDetection(): Promise<DetectedBodyPose[]> {
+  start(client: object): void {
+    if (this.activeClients.has(client)) {
+      return;
+    }
+    this.activeClients.add(client);
+    if (this.activeClients.size === 1) {
+      this.runContinuousDetection();
+    }
+  }
+
+  /**
+   * Stops continuous pose detection for the given client.
+   * If this was the last client, stops the background detection loop.
+   * @param client - The client object that no longer needs pose detection.
+   */
+  stop(client: object): void {
+    this.activeClients.delete(client);
+  }
+
+  /**
+   * Called per frame by the engine. If there are active clients,
+   * ensures the continuous pose detection is running.
+   */
+  override update() {
+    if (this.activeClients.size > 0 && !this.currentDetectionPromise) {
+      this.runContinuousDetection();
+    }
+  }
+
+  private runContinuousDetection() {
+    this.currentDetectionPromise = this.runDetectionInternal()
+      .then((results) => {
+        this.poses = results;
+        return results;
+      })
+      .finally(() => {
+        this.currentDetectionPromise = null;
+      });
+  }
+
+  /**
+   * Runs a pose detection or returns the ongoing detection promise.
+   *
+   * - If continuous detection is started (has active clients), returns the promise
+   *   for the next detection result.
+   * - If continuous detection is not started, performs a one-off detection and
+   *   returns the result. If a one-off detection is already in progress, returns
+   *   the promise for that ongoing detection.
+   *
+   * @returns A promise resolving to the next body pose detection result.
+   */
+  runDetection(): Promise<DetectedBodyPose[]> {
+    if (this.currentDetectionPromise) {
+      return this.currentDetectionPromise;
+    }
+    if (this.activeClients.size > 0) {
+      this.runContinuousDetection();
+      return this.currentDetectionPromise!;
+    }
+    this.currentDetectionPromise = this.runDetectionInternal().finally(() => {
+      this.currentDetectionPromise = null;
+    });
+    return this.currentDetectionPromise;
+  }
+
+  private async runDetectionInternal(): Promise<DetectedBodyPose[]> {
     this.clear();
 
     if (!this.depth || !this.depth.depthMesh) {
@@ -112,7 +186,7 @@ export class HumanRecognizer extends Script {
     activeBackend: string,
     context: HumanBackendContext
   ): Promise<BaseHumanBackend> {
-    let backendPromise = this._detectorBackends.get(activeBackend);
+    let backendPromise = this.detectorBackends.get(activeBackend);
 
     if (!backendPromise) {
       backendPromise = (async () => {
@@ -125,7 +199,7 @@ export class HumanRecognizer extends Script {
             );
         }
       })();
-      this._detectorBackends.set(activeBackend, backendPromise);
+      this.detectorBackends.set(activeBackend, backendPromise);
     }
     return backendPromise;
   }
