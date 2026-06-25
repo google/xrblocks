@@ -76,6 +76,7 @@ const externalPackages = [
   '@preact/signals-core',
   'rapier3d',
   'three-mesh-bvh',
+  '@huggingface/transformers',
   'vitest',
 ];
 
