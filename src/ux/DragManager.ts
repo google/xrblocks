@@ -15,6 +15,8 @@ export interface Draggable extends THREE.Object3D {
   // Whether to continuously face the camera as the user drags.
   // If unspecified, defaults to false.
   dragFacingCamera?: boolean;
+  // Dynamic check to determine if dragging should begin on this object.
+  canDrag?: (intersection: THREE.Intersection) => boolean;
 }
 
 export enum DragMode {
@@ -87,6 +89,9 @@ export class DragManager extends Script {
       draggingMode == null ||
       draggingMode == DragManager.DO_NOT_DRAG
     ) {
+      return false;
+    }
+    if (draggableObject.canDrag && !draggableObject.canDrag(intersection)) {
       return false;
     }
     if (this.mode != DragManager.IDLE) {
