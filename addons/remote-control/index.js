@@ -1,8 +1,13 @@
 export { RemoteControl } from './RemoteControl.js';
-export { REMOTE_CONTROL_PROTOCOL_VERSION, createHandshake, isCommandMessage, parseRemoteControlMessage } from './RemoteControlProtocol.js';
+export { RemoteControlClient } from './RemoteControlClient.js';
+export { createRemoteControlBuiltInTools } from './built-in-tools/index.js';
+export { REMOTE_CONTROL_CLIENT_NAME, REMOTE_CONTROL_DEFAULT_SESSION_ID, REMOTE_CONTROL_PROTOCOL_VERSION, createHello, isRemoteControlRequest, isRemoteControlResponse, parseRemoteControlMessage } from './RemoteControlProtocol.js';
 export { WebSocketRemoteControlTransport } from './WebSocketRemoteControlTransport.js';
+export { REMOTE_CONTROL_BUILT_IN_TOOL_NAMES } from './built-in-tools/Types.js';
 import 'three';
 import 'xrblocks';
 import '../embodied-control/EmbodiedControl.js';
 import '../embodied-control/EmbodiedControlExecutor.js';
 import '../embodied-control/EmbodiedControlTypes.js';
+import './built-in-tools/ActionTools.js';
+import './built-in-tools/ObservationTools.js';

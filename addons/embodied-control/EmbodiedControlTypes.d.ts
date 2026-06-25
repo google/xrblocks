@@ -1,6 +1,5 @@
 import type { SimulatorHandPoseRotations } from 'xrblocks';
 export type Vec3Tuple = [number, number, number];
-export type QuatTuple = [number, number, number, number];
 export type LocomotionControl = {
     /** Meters over the whole step, camera-relative: [strafe, rise, forward]. */
     move?: Vec3Tuple;
@@ -26,33 +25,8 @@ export type XRCompoundControl = {
     rightHand?: HandControl;
 };
 export type EmbodiedControlStep = {
-    id?: string;
     durationMs?: number;
     control?: XRCompoundControl;
-};
-export type HandObservation = {
-    position: Vec3Tuple;
-    quaternion: QuatTuple;
-    selected: boolean;
-    squeezing: boolean;
-    visible: boolean;
-    rotations?: SimulatorHandPoseRotations;
-};
-export type EmbodiedControlObservation = {
-    screenshot?: string;
-    state: {
-        camera: {
-            position: Vec3Tuple;
-            quaternion: QuatTuple;
-        };
-        leftHand: HandObservation;
-        rightHand: HandObservation;
-    };
-};
-export type EmbodiedControlStepResult = {
-    id?: string;
-    elapsedMs: number;
-    observation: EmbodiedControlObservation;
 };
 export type EmbodiedControlOptions = {
     /** Pause the core after initialization so only explicit steps advance time. */
@@ -61,10 +35,8 @@ export type EmbodiedControlOptions = {
     realTime?: boolean;
     /** Simulated frame length used while executing a step. */
     tickMs?: number;
-    /** Capture a screenshot in each completed observation. */
-    includeScreenshot?: boolean;
     /** Clamp hand joint rotations through simulator biomechanical constraints. */
     applyHandRotationConstraints?: boolean;
 };
-export type EmbodiedControlExecutorOptions = Required<Pick<EmbodiedControlOptions, 'tickMs' | 'includeScreenshot' | 'applyHandRotationConstraints' | 'realTime'>>;
+export type EmbodiedControlExecutorOptions = Required<Pick<EmbodiedControlOptions, 'tickMs' | 'applyHandRotationConstraints' | 'realTime'>>;
 export declare const DEFAULT_EMBODIED_CONTROL_OPTIONS: Required<EmbodiedControlOptions>;

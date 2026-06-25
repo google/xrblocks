@@ -1,77 +1,54 @@
-import type { EmbodiedControlStep, EmbodiedControlStepResult, XRCompoundControl } from '../embodied-control';
 export declare const REMOTE_CONTROL_PROTOCOL_VERSION = 1;
-export type RemoteControlHandshakeMessage = {
-    type: 'HANDSHAKE';
-    client: 'xrblocks-remote-control';
-    version: number;
-    capabilities: {
-        compoundControl: true;
-        embodiedControl: true;
+export declare const REMOTE_CONTROL_CLIENT_NAME = "xrblocks-remote-control";
+export declare const REMOTE_CONTROL_DEFAULT_SESSION_ID = "default";
+export type RemoteControlRole = 'simulator' | 'client';
+export type RemoteControlToolMetadata = {
+    description?: string;
+    parameters?: unknown;
+};
+export type RemoteControlToolContext = {
+    request: RemoteControlCallToolRequest;
+};
+export type RemoteControlToolHandler = (args: unknown, context: RemoteControlToolContext) => unknown | Promise<unknown>;
+export type RemoteControlHelloMessage = {
+    type: 'hello';
+    role: RemoteControlRole;
+    sessionId?: string;
+    protocolVersion: number;
+    client?: typeof REMOTE_CONTROL_CLIENT_NAME;
+    capabilities?: {
+        compoundControl?: boolean;
+        embodiedControl?: boolean;
+        tools?: boolean;
     };
 };
-export type RemoteControlStepMessage = EmbodiedControlStep & {
-    type: 'STEP';
-    control: XRCompoundControl;
+export type RemoteControlPingRequest = {
+    id: string;
+    type: 'ping';
 };
-export type RemoteControlTeleportMessage = {
-    id?: string;
-    type: 'TELEPORT_TO';
-    target: [number, number, number] | string;
-    options?: {
-        distance?: number;
-        faceTarget?: boolean;
-        snapToGround?: boolean;
+export type RemoteControlCallToolRequest = {
+    id: string;
+    type: 'callTool';
+    name: string;
+    args?: unknown;
+};
+export type RemoteControlRequest = RemoteControlPingRequest | RemoteControlCallToolRequest;
+export type RemoteControlResponse = {
+    type: 'response';
+    id: string;
+    ok: boolean;
+    result?: unknown;
+    error?: {
+        code: string;
+        message: string;
     };
 };
-export type RemoteControlLookAtMessage = {
-    id?: string;
-    type: 'LOOK_AT_TARGET';
-    target: [number, number, number] | string;
-    options?: {
-        velocity?: number;
-    };
+export type RemoteControlSimulatorReadyMessage = {
+    type: 'simulatorReady';
 };
-export type RemoteControlPointToMessage = {
-    id?: string;
-    type: 'POINT_TO';
-    handIndex: number;
-    target: [number, number, number] | string;
-    options?: {
-        velocity?: number;
-    };
-};
-export type RemoteControlReachToMessage = {
-    id?: string;
-    type: 'REACH_TO';
-    handIndex: number;
-    target: [number, number, number] | string;
-    options?: {
-        velocity?: number;
-    };
-};
-export type RemoteControlClickMessage = {
-    id?: string;
-    type: 'CLICK';
-    handIndex: number;
-    options?: {
-        durationMs?: number;
-    };
-};
-export type RemoteControlMessage = RemoteControlStepMessage | RemoteControlTeleportMessage | RemoteControlLookAtMessage | RemoteControlPointToMessage | RemoteControlReachToMessage | RemoteControlClickMessage;
-export type RemoteControlStepCompletedMessage = EmbodiedControlStepResult & {
-    type: 'STEP_COMPLETED';
-};
-export type RemoteControlActionRejectedMessage = {
-    type: 'ACTION_REJECTED';
-    id?: string;
-    reason: 'active_step';
-};
-export type RemoteControlErrorMessage = {
-    type: 'ERROR';
-    id?: string;
-    message: string;
-};
-export type RemoteControlOutgoingMessage = RemoteControlHandshakeMessage | RemoteControlStepCompletedMessage | RemoteControlActionRejectedMessage | RemoteControlErrorMessage;
-export declare function createHandshake(): RemoteControlHandshakeMessage;
-export declare function isCommandMessage(value: unknown): value is RemoteControlMessage;
+export type RemoteControlIncomingMessage = RemoteControlHelloMessage | RemoteControlRequest | RemoteControlResponse | RemoteControlSimulatorReadyMessage;
+export type RemoteControlOutgoingMessage = RemoteControlHelloMessage | RemoteControlResponse | RemoteControlSimulatorReadyMessage;
+export declare function createHello(role?: RemoteControlRole, sessionId?: string): RemoteControlHelloMessage;
+export declare function isRemoteControlRequest(value: unknown): value is RemoteControlRequest;
+export declare function isRemoteControlResponse(value: unknown): value is RemoteControlResponse;
 export declare function parseRemoteControlMessage(data: MessageEvent['data']): unknown;

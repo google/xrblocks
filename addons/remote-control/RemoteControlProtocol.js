@@ -1,25 +1,34 @@
 const REMOTE_CONTROL_PROTOCOL_VERSION = 1;
-function createHandshake() {
+const REMOTE_CONTROL_CLIENT_NAME = 'xrblocks-remote-control';
+const REMOTE_CONTROL_DEFAULT_SESSION_ID = 'default';
+function createHello(role = 'simulator', sessionId = REMOTE_CONTROL_DEFAULT_SESSION_ID) {
     return {
-        type: 'HANDSHAKE',
-        client: 'xrblocks-remote-control',
-        version: REMOTE_CONTROL_PROTOCOL_VERSION,
+        type: 'hello',
+        role,
+        sessionId,
+        protocolVersion: REMOTE_CONTROL_PROTOCOL_VERSION,
+        client: REMOTE_CONTROL_CLIENT_NAME,
         capabilities: {
             compoundControl: true,
             embodiedControl: true,
+            tools: true,
         },
     };
 }
-function isCommandMessage(value) {
+function isRemoteControlRequest(value) {
     if (!value || typeof value !== 'object')
         return false;
-    const type = value.type;
-    return (type === 'STEP' ||
-        type === 'TELEPORT_TO' ||
-        type === 'LOOK_AT_TARGET' ||
-        type === 'POINT_TO' ||
-        type === 'REACH_TO' ||
-        type === 'CLICK');
+    const message = value;
+    if (typeof message.id !== 'string' || typeof message.type !== 'string') {
+        return false;
+    }
+    return message.type === 'ping' || message.type === 'callTool';
+}
+function isRemoteControlResponse(value) {
+    return (!!value &&
+        typeof value === 'object' &&
+        value.type === 'response' &&
+        typeof value.id === 'string');
 }
 function parseRemoteControlMessage(data) {
     if (typeof data !== 'string') {
@@ -28,4 +37,4 @@ function parseRemoteControlMessage(data) {
     return JSON.parse(data);
 }
 
-export { REMOTE_CONTROL_PROTOCOL_VERSION, createHandshake, isCommandMessage, parseRemoteControlMessage };
+export { REMOTE_CONTROL_CLIENT_NAME, REMOTE_CONTROL_DEFAULT_SESSION_ID, REMOTE_CONTROL_PROTOCOL_VERSION, createHello, isRemoteControlRequest, isRemoteControlResponse, parseRemoteControlMessage };

@@ -8,8 +8,6 @@ const quaternion = new THREE.Quaternion();
 function mergeOptions(options) {
     return {
         tickMs: options.tickMs ?? DEFAULT_EMBODIED_CONTROL_OPTIONS.tickMs,
-        includeScreenshot: options.includeScreenshot ??
-            DEFAULT_EMBODIED_CONTROL_OPTIONS.includeScreenshot,
         applyHandRotationConstraints: options.applyHandRotationConstraints ??
             DEFAULT_EMBODIED_CONTROL_OPTIONS.applyHandRotationConstraints,
         realTime: options.realTime ?? DEFAULT_EMBODIED_CONTROL_OPTIONS.realTime,
@@ -63,7 +61,6 @@ class EmbodiedControlExecutor {
             const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
             let elapsedMs = 0;
             const initialCameraQuaternion = this.dependencies.camera.quaternion.clone();
-            let screenshotPromise;
             for (let i = 0; i < stepCount; i++) {
                 const remainingMs = Math.max(0, durationMs - elapsedMs);
                 const currentTickMs = i === stepCount - 1
@@ -71,22 +68,12 @@ class EmbodiedControlExecutor {
                     : Math.min(tickMs, remainingMs);
                 const fraction = durationMs > 0 ? currentTickMs / durationMs : 1;
                 this.applyControlFraction(step.control || {}, fraction, initialCameraQuaternion);
-                if (this.options.includeScreenshot && i === stepCount - 1) {
-                    screenshotPromise =
-                        this.dependencies.screenshotSynthesizer.getScreenshot();
-                }
                 this.dependencies.core.stepFrame(currentTickMs);
                 elapsedMs += currentTickMs;
                 if (this.options.realTime && i < stepCount - 1) {
                     await nextAnimationFrame();
                 }
             }
-            const observation = await this.createObservation(screenshotPromise);
-            return {
-                id: step.id,
-                elapsedMs,
-                observation,
-            };
         }
         finally {
             this.activeStep = false;
@@ -177,17 +164,7 @@ class EmbodiedControlExecutor {
         }
         this.activeStep = true;
         try {
-            let screenshotPromise;
-            const elapsedMs = await actionFn();
-            if (this.options.includeScreenshot) {
-                screenshotPromise =
-                    this.dependencies.screenshotSynthesizer.getScreenshot();
-            }
-            const observation = await this.createObservation(screenshotPromise);
-            return {
-                elapsedMs,
-                observation,
-            };
+            await actionFn();
         }
         finally {
             this.activeStep = false;
@@ -240,7 +217,6 @@ class EmbodiedControlExecutor {
                 camera.lookAt(targetWorldPos);
             }
             core.stepFrame(this.options.tickMs);
-            return this.options.tickMs;
         });
     }
     async lookAtTarget(target, options = {}) {
@@ -252,7 +228,7 @@ class EmbodiedControlExecutor {
             if (velocity === undefined || velocity <= 0) {
                 camera.lookAt(targetWorldPos);
                 core.stepFrame(this.options.tickMs);
-                return this.options.tickMs;
+                return;
             }
             const Q_s = camera.quaternion.clone();
             camera.lookAt(targetWorldPos);
@@ -276,7 +252,6 @@ class EmbodiedControlExecutor {
                     await nextAnimationFrame();
                 }
             }
-            return durationMs;
         });
     }
     async pointTo(handIndex, target, options = {}) {
@@ -295,7 +270,7 @@ class EmbodiedControlExecutor {
             if (velocity === undefined || velocity <= 0) {
                 simulator.simulatorControllerState.localControllerOrientations[handIndex].copy(targetQuat);
                 core.stepFrame(this.options.tickMs);
-                return this.options.tickMs;
+                return;
             }
             const startQuat = simulator.simulatorControllerState.localControllerOrientations[handIndex].clone();
             const angle = startQuat.angleTo(targetQuat);
@@ -316,7 +291,6 @@ class EmbodiedControlExecutor {
                     await nextAnimationFrame();
                 }
             }
-            return durationMs;
         });
     }
     async reachTo(handIndex, target, options = {}) {
@@ -331,7 +305,7 @@ class EmbodiedControlExecutor {
             if (velocity === undefined || velocity <= 0) {
                 simulator.simulatorControllerState.localControllerPositions[handIndex].copy(targetCamSpace);
                 core.stepFrame(this.options.tickMs);
-                return this.options.tickMs;
+                return;
             }
             const startPos = simulator.simulatorControllerState.localControllerPositions[handIndex].clone();
             const distance = startPos.distanceTo(targetCamSpace);
@@ -352,7 +326,6 @@ class EmbodiedControlExecutor {
                     await nextAnimationFrame();
                 }
             }
-            return durationMs;
         });
     }
     async click(handIndex = 1, options = {}) {
@@ -365,59 +338,21 @@ class EmbodiedControlExecutor {
             const pressControl = handIndex === 0
                 ? { leftHand: { selectStart: true } }
                 : { rightHand: { selectStart: true } };
-            const pressResult = await this.step({
+            await this.step({
                 control: pressControl,
                 durationMs,
             });
             const releaseControl = handIndex === 0
                 ? { leftHand: { selectEnd: true } }
                 : { rightHand: { selectEnd: true } };
-            const releaseResult = await this.step({
+            await this.step({
                 control: releaseControl,
                 durationMs,
             });
-            return {
-                id: releaseResult.id,
-                elapsedMs: pressResult.elapsedMs + releaseResult.elapsedMs,
-                observation: releaseResult.observation,
-            };
         }
         finally {
             simulator.hands.lerpSpeed = originalLerpSpeed;
         }
-    }
-    async createObservation(screenshotPromise) {
-        const screenshot = await screenshotPromise;
-        return {
-            screenshot,
-            state: {
-                camera: {
-                    position: this.dependencies.camera.position.toArray(),
-                    quaternion: this.dependencies.camera.quaternion.toArray(),
-                },
-                leftHand: this.createHandObservation(0),
-                rightHand: this.createHandObservation(1),
-            },
-        };
-    }
-    createHandObservation(handIndex) {
-        const { input, simulator } = this.dependencies;
-        const controllerState = simulator.simulatorControllerState;
-        const controller = input.controllers[handIndex];
-        const hand = handIndex === 0
-            ? simulator.hands.leftController
-            : simulator.hands.rightController;
-        const rotations = handIndex === 0
-            ? simulator.hands.leftHandTargetRotations
-            : simulator.hands.rightHandTargetRotations;
-        return {
-            position: controllerState.localControllerPositions[handIndex].toArray(),
-            quaternion: controllerState.localControllerOrientations[handIndex].toArray(),
-            selected: !!controller?.userData.selected,
-            squeezing: !!controller?.userData.squeezing,
-            visible: hand.visible,
-            rotations: { ...rotations },
-        };
     }
 }
 

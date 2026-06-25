@@ -1,6 +1,10 @@
 export { RemoteControl } from './RemoteControl';
 export type { RemoteControlOptions } from './RemoteControl';
-export { REMOTE_CONTROL_PROTOCOL_VERSION, createHandshake, isCommandMessage, parseRemoteControlMessage, } from './RemoteControlProtocol';
-export type { RemoteControlActionRejectedMessage, RemoteControlErrorMessage, RemoteControlHandshakeMessage, RemoteControlOutgoingMessage, RemoteControlStepCompletedMessage, RemoteControlMessage, } from './RemoteControlProtocol';
+export { RemoteControlClient } from './RemoteControlClient';
+export type { RemoteControlClientOptions } from './RemoteControlClient';
+export { createRemoteControlBuiltInTools, REMOTE_CONTROL_BUILT_IN_TOOL_NAMES, } from './built-in-tools';
+export type { RemoteControlApplyControlToolArgs, RemoteControlActionToolDependencies, RemoteControlBuiltInTool, RemoteControlBuiltInToolDependencies, RemoteControlCameraToolArgs, RemoteControlCameraToolResult, RemoteControlClickToolArgs, RemoteControlHandObservation, RemoteControlHandsToolResult, RemoteControlLookAtTargetToolArgs, RemoteControlObservationToolDependencies, RemoteControlPointToToolArgs, RemoteControlPoseObservation, RemoteControlReachToToolArgs, RemoteControlScreenshotToolArgs, RemoteControlSimulatorStateToolResult, RemoteControlTarget, RemoteControlTargetResolver, RemoteControlTeleportToToolArgs, } from './built-in-tools';
+export { REMOTE_CONTROL_CLIENT_NAME, REMOTE_CONTROL_DEFAULT_SESSION_ID, REMOTE_CONTROL_PROTOCOL_VERSION, createHello, isRemoteControlRequest, isRemoteControlResponse, parseRemoteControlMessage, } from './RemoteControlProtocol';
+export type { RemoteControlCallToolRequest, RemoteControlHelloMessage, RemoteControlIncomingMessage, RemoteControlOutgoingMessage, RemoteControlPingRequest, RemoteControlRequest, RemoteControlResponse, RemoteControlRole, RemoteControlSimulatorReadyMessage, RemoteControlToolContext, RemoteControlToolHandler, RemoteControlToolMetadata, } from './RemoteControlProtocol';
 export { WebSocketRemoteControlTransport } from './WebSocketRemoteControlTransport';
 export type { RemoteControlCommandHandler, WebSocketRemoteControlTransportOptions, } from './WebSocketRemoteControlTransport';

@@ -1,11 +1,14 @@
-import { createHandshake, parseRemoteControlMessage, isCommandMessage } from './RemoteControlProtocol.js';
+import { createHello, REMOTE_CONTROL_DEFAULT_SESSION_ID, parseRemoteControlMessage, isRemoteControlRequest } from './RemoteControlProtocol.js';
 
 class WebSocketRemoteControlTransport {
-    constructor(options, handleCommand) {
-        this.handleCommand = handleCommand;
+    constructor(options, handleRequest) {
+        this.handleRequest = handleRequest;
         this.stopped = false;
+        this.simulatorReady = false;
         this.onOpen = () => {
-            this.send(createHandshake());
+            if (this.simulatorReady) {
+                this.send(createHello('simulator', this.sessionId));
+            }
         };
         this.onMessage = (event) => {
             void this.handleMessage(event);
@@ -18,10 +21,10 @@ class WebSocketRemoteControlTransport {
             }, this.reconnectDelayMs);
         };
         this.onError = () => {
-            // The close event carries reconnect behavior; errors are reported there by
-            // browser WebSocket implementations.
+            // Browser WebSocket implementations surface reconnect-relevant state on close.
         };
-        this.url = options.url ?? 'ws://127.0.0.1:8765';
+        this.url = options.url ?? 'ws://127.0.0.1:8791';
+        this.sessionId = options.sessionId ?? REMOTE_CONTROL_DEFAULT_SESSION_ID;
         this.reconnect = options.reconnect ?? false;
         this.reconnectDelayMs = options.reconnectDelayMs ?? 1000;
     }
@@ -42,37 +45,28 @@ class WebSocketRemoteControlTransport {
         this.ws?.close();
         this.ws = undefined;
     }
+    announceSimulatorReady() {
+        this.simulatorReady = true;
+        this.send(createHello('simulator', this.sessionId));
+    }
     async handleMessage(event) {
         let message;
         try {
             message = parseRemoteControlMessage(event.data);
         }
         catch (error) {
-            this.sendError(undefined, error);
+            this.sendError(undefined, 'parse_error', error);
             return;
         }
-        if (!isCommandMessage(message)) {
-            this.sendError(message?.id, new Error('Invalid message payload'));
+        if (!isRemoteControlRequest(message)) {
+            this.sendError(message?.id, 'invalid_request', new Error('Invalid remote-control request payload'));
             return;
         }
         try {
-            const result = await this.handleCommand(message);
-            this.send({
-                type: 'STEP_COMPLETED',
-                ...result,
-            });
+            this.send(await this.handleRequest(message));
         }
         catch (error) {
-            if (error instanceof Error && error.name === 'EmbodiedControlBusyError') {
-                this.send({
-                    type: 'ACTION_REJECTED',
-                    id: message.id,
-                    reason: 'active_step',
-                });
-            }
-            else {
-                this.sendError(message.id, error);
-            }
+            this.sendError(message.id, 'execution_error', error);
         }
     }
     send(message) {
@@ -80,11 +74,15 @@ class WebSocketRemoteControlTransport {
             return;
         this.ws.send(JSON.stringify(message));
     }
-    sendError(id, error) {
+    sendError(id, code, error) {
         this.send({
-            type: 'ERROR',
-            id,
-            message: error instanceof Error ? error.message : String(error),
+            type: 'response',
+            id: id ?? '',
+            ok: false,
+            error: {
+                code,
+                message: error instanceof Error ? error.message : String(error),
+            },
         });
     }
 }

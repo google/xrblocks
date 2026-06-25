@@ -1,12 +1,10 @@
 import * as THREE from 'three';
-import { Core, Input, ScreenshotSynthesizer, Simulator } from 'xrblocks';
-import { type XRCompoundControl, type EmbodiedControlOptions, type EmbodiedControlStep, type EmbodiedControlStepResult } from './EmbodiedControlTypes';
+import { Core, Simulator } from 'xrblocks';
+import { type XRCompoundControl, type EmbodiedControlOptions, type EmbodiedControlStep } from './EmbodiedControlTypes';
 export type EmbodiedControlExecutorDependencies = {
     core: Core;
     simulator: Simulator;
-    input: Input;
     camera: THREE.Camera;
-    screenshotSynthesizer: ScreenshotSynthesizer;
 };
 export declare class EmbodiedControlBusyError extends Error {
     constructor();
@@ -19,7 +17,7 @@ export declare class EmbodiedControlExecutor {
     configure(options: EmbodiedControlOptions): void;
     get busy(): boolean;
     applyControl(control: XRCompoundControl): void;
-    step(step: EmbodiedControlStep): Promise<EmbodiedControlStepResult>;
+    step(step: EmbodiedControlStep): Promise<void>;
     private applyControlFraction;
     private applyLocomotion;
     private applyHandMotion;
@@ -32,19 +30,17 @@ export declare class EmbodiedControlExecutor {
         distance?: number;
         faceTarget?: boolean;
         snapToGround?: boolean;
-    }): Promise<EmbodiedControlStepResult>;
+    }): Promise<void>;
     lookAtTarget(target: THREE.Object3D | THREE.Vector3 | [number, number, number], options?: {
         velocity?: number;
-    }): Promise<EmbodiedControlStepResult>;
+    }): Promise<void>;
     pointTo(handIndex: number, target: THREE.Object3D | THREE.Vector3 | [number, number, number], options?: {
         velocity?: number;
-    }): Promise<EmbodiedControlStepResult>;
+    }): Promise<void>;
     reachTo(handIndex: number, target: THREE.Vector3 | [number, number, number] | THREE.Object3D, options?: {
         velocity?: number;
-    }): Promise<EmbodiedControlStepResult>;
+    }): Promise<void>;
     click(handIndex?: number, options?: {
         durationMs?: number;
-    }): Promise<EmbodiedControlStepResult>;
-    private createObservation;
-    private createHandObservation;
+    }): Promise<void>;
 }

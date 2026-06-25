@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Script, Input, Simulator, Core } from 'xrblocks';
+import { Script, Simulator, Core } from 'xrblocks';
 import { EmbodiedControlExecutor } from './EmbodiedControlExecutor.js';
 import { DEFAULT_EMBODIED_CONTROL_OPTIONS } from './EmbodiedControlTypes.js';
 
@@ -7,25 +7,49 @@ class EmbodiedControl extends Script {
     static { this.dependencies = {
         core: Core,
         simulator: Simulator,
-        input: Input,
         camera: THREE.Camera,
     }; }
     constructor(options = {}) {
         super();
         this.editorIcon = 'sports_martial_arts';
+        this.autoPauseScheduled = false;
+        this.autoPauseComplete = false;
         this.options = {
             ...DEFAULT_EMBODIED_CONTROL_OPTIONS,
             ...options,
         };
     }
     init(dependencies) {
-        this.executor = new EmbodiedControlExecutor({
-            ...dependencies,
-            screenshotSynthesizer: dependencies.core.screenshotSynthesizer,
-        }, this.options);
-        if (this.options.autoPause) {
-            dependencies.core.pause();
+        this.core = dependencies.core;
+        this.executor = new EmbodiedControlExecutor(dependencies, this.options);
+        if (this.options.autoPause && dependencies.core.simulatorRunning) {
+            this.scheduleAutoPause();
         }
+    }
+    onSimulatorStarted() {
+        if (this.options.autoPause) {
+            this.scheduleAutoPause();
+        }
+    }
+    scheduleAutoPause() {
+        if (this.autoPauseScheduled || this.autoPauseComplete)
+            return;
+        this.autoPauseScheduled = true;
+        this.afterRenderedFrame(() => {
+            if (!this.core)
+                return;
+            this.core.pause();
+            this.autoPauseComplete = true;
+        });
+    }
+    afterRenderedFrame(callback) {
+        const schedule = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : (handler) => {
+                setTimeout(() => handler(performance.now()), 0);
+                return 0;
+            };
+        schedule(() => schedule(() => callback()));
     }
     step(step) {
         if (!this.executor) {
