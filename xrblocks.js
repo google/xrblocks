@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid c41f3d1
- * @builddate 2026-06-24T20:22:27.639Z
+ * @commitid 9465db0
+ * @builddate 2026-06-25T16:30:40.093Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9174,6 +9174,11 @@ class ObjectsOptions {
         this.enabled = false;
         this.showDebugVisualizations = false;
         /**
+         * Minimum delay in milliseconds between continuous object detection runs.
+         * A value of 0 runs again as soon as the previous detection finishes.
+         */
+        this.pollingIntervalMs = 0;
+        /**
          * Margin to add when cropping the object image, as a percentage of image
          * size.
          */
@@ -9278,6 +9283,11 @@ class HumansOptions {
     constructor(options) {
         this.enabled = false;
         /**
+         * Minimum delay in milliseconds between continuous pose detection runs.
+         * A value of 0 runs again as soon as the previous detection finishes.
+         */
+        this.pollingIntervalMs = 0;
+        /**
          * Configuration options for the active pose detection backend.
          */
         this.backendConfig = {
@@ -9319,6 +9329,11 @@ class HumansOptions {
 class FacesOptions {
     constructor(options) {
         this.enabled = false;
+        /**
+         * Minimum delay in milliseconds between continuous face detection runs.
+         * A value of 0 runs again as soon as the previous detection finishes.
+         */
+        this.pollingIntervalMs = 0;
         /**
          * Configuration options for the active face detection backend.
          */
@@ -12648,6 +12663,13 @@ class ObjectDetector extends Script {
          */
         this._detectedObjects = new Map();
         this._detectorBackends = new Map();
+        this.activeClients = new Set();
+        this.currentDetectionPromise = null;
+        this.lastContinuousDetectionStartedAtMs = -Infinity;
+        /**
+         * The latest detected objects.
+         */
+        this.detectedObjects = [];
         /**
          * Target device profile used to look up RGB camera intrinsics and pose
          * for converting detection bounding boxes into world space. Defaults to
@@ -12690,12 +12712,84 @@ class ObjectDetector extends Script {
         }
     }
     /**
-     * Runs the object detection process based on the configured backend.
+     * Starts continuous object detection for the given client.
+     * If this is the first client, starts the background detection loop.
+     * @param client - The client object requesting object detection.
+     */
+    start(client) {
+        if (this.activeClients.has(client)) {
+            return;
+        }
+        this.activeClients.add(client);
+        if (this.activeClients.size === 1) {
+            this.runContinuousDetection();
+        }
+    }
+    /**
+     * Stops continuous object detection for the given client.
+     * If this was the last client, stops the background detection loop.
+     * @param client - The client object that no longer needs object detection.
+     */
+    stop(client) {
+        this.activeClients.delete(client);
+    }
+    /**
+     * Called per frame by the engine. If there are active clients,
+     * ensures the continuous object detection is running.
+     */
+    update() {
+        if (this.activeClients.size === 0 || this.currentDetectionPromise) {
+            return;
+        }
+        const pollingIntervalMs = this.options.objects.pollingIntervalMs;
+        if (pollingIntervalMs > 0 &&
+            performance.now() - this.lastContinuousDetectionStartedAtMs <
+                pollingIntervalMs) {
+            return;
+        }
+        this.runContinuousDetection();
+    }
+    runContinuousDetection() {
+        if (this.currentDetectionPromise) {
+            return;
+        }
+        this.lastContinuousDetectionStartedAtMs = performance.now();
+        this.currentDetectionPromise = this.runDetectionInternal()
+            .then((results) => {
+            this.detectedObjects = results;
+            return results;
+        })
+            .finally(() => {
+            this.currentDetectionPromise = null;
+        });
+    }
+    /**
+     * Runs object detection or returns the ongoing detection promise.
+     *
+     * - If continuous detection is started (has active clients), returns the
+     *   promise for the next detection result.
+     * - If continuous detection is not started, performs a one-off detection and
+     *   returns the result. If a one-off detection is already in progress, returns
+     *   the promise for that ongoing detection.
+     *
      * @returns A promise that resolves with an
      * array of detected `DetectedObject` instances.
      */
-    async runDetection() {
-        this.clear(); // Clear previous results before starting a new detection.
+    runDetection() {
+        if (this.currentDetectionPromise) {
+            return this.currentDetectionPromise;
+        }
+        if (this.activeClients.size > 0) {
+            this.runContinuousDetection();
+            return this.currentDetectionPromise;
+        }
+        this.currentDetectionPromise = this.runDetectionInternal().finally(() => {
+            this.currentDetectionPromise = null;
+        });
+        return this.currentDetectionPromise;
+    }
+    async runDetectionInternal() {
+        this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
         const depthMeshSnapshot = this.getDepthMeshSnapshot();
         const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
         if (!cameraParametersSnapshot) {
@@ -12780,6 +12874,11 @@ class ObjectDetector extends Script {
      * tracking.
      */
     clear() {
+        this.clearDetectedObjects();
+        this.detectedObjects = [];
+        return this;
+    }
+    clearDetectedObjects() {
         for (const obj of this._detectedObjects.values()) {
             this.remove(obj);
         }
@@ -12787,7 +12886,6 @@ class ObjectDetector extends Script {
         if (this._debugVisualsGroup) {
             this._debugVisualsGroup.clear();
         }
-        return this;
     }
     /**
      * Toggles the visibility of all debug visualizations for detected objects.
@@ -12797,71 +12895,6 @@ class ObjectDetector extends Script {
         if (this._debugVisualsGroup) {
             this._debugVisualsGroup.visible = visible;
         }
-    }
-    /**
-     * Generates a visual representation of the depth map, normalized to 0-1 range,
-     * and triggers a download for debugging.
-     * @param depthArray - The raw depth data array.
-     */
-    _visualizeDepthMap(depthArray) {
-        const width = this.depth.width;
-        const height = this.depth.height;
-        if (!width || !height || depthArray.length === 0) {
-            console.warn('Cannot visualize depth map: missing dimensions or data.');
-            return;
-        }
-        // 1. Find Min/Max for normalization (ignoring 0/invalid depth).
-        let min = Infinity;
-        let max = -Infinity;
-        for (let i = 0; i < depthArray.length; ++i) {
-            const val = depthArray[i];
-            if (val > 0) {
-                if (val < min)
-                    min = val;
-                if (val > max)
-                    max = val;
-            }
-        }
-        // Handle edge case where no valid depth exists.
-        if (min === Infinity) {
-            min = 0;
-            max = 1;
-        }
-        if (min === max) {
-            max = min + 1; // Avoid divide by zero
-        }
-        // 2. Create Canvas.
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.createImageData(width, height);
-        const data = imageData.data;
-        // 3. Fill Pixels.
-        for (let i = 0; i < depthArray.length; ++i) {
-            const raw = depthArray[i];
-            // Normalize to 0-1.
-            // Typically 0 means invalid/sky in some depth APIs, so we keep it black.
-            // Otherwise, map [min, max] to [0, 1].
-            const normalized = raw === 0 ? 0 : (raw - min) / (max - min);
-            const byteVal = Math.floor(normalized * 255);
-            const stride = i * 4;
-            data[stride] = byteVal; // R
-            data[stride + 1] = byteVal; // G
-            data[stride + 2] = byteVal; // B
-            data[stride + 3] = 255; // Alpha
-        }
-        ctx.putImageData(imageData, 0, 0);
-        // 4. Download.
-        const timestamp = new Date()
-            .toISOString()
-            .slice(0, 19)
-            .replace('T', '_')
-            .replace(/:/g, '-');
-        const link = document.createElement('a');
-        link.download = `depth_debug_${timestamp}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
     }
 }
 
@@ -14606,6 +14639,7 @@ class HumanRecognizer extends Script {
         this.detectorBackends = new Map();
         this.activeClients = new Set();
         this.currentDetectionPromise = null;
+        this.lastContinuousDetectionStartedAtMs = -Infinity;
         /**
          * The latest detected body poses.
          */
@@ -14653,11 +14687,22 @@ class HumanRecognizer extends Script {
      * ensures the continuous pose detection is running.
      */
     update() {
-        if (this.activeClients.size > 0 && !this.currentDetectionPromise) {
-            this.runContinuousDetection();
+        if (this.activeClients.size === 0 || this.currentDetectionPromise) {
+            return;
         }
+        const pollingIntervalMs = this.options.humans.pollingIntervalMs;
+        if (pollingIntervalMs > 0 &&
+            performance.now() - this.lastContinuousDetectionStartedAtMs <
+                pollingIntervalMs) {
+            return;
+        }
+        this.runContinuousDetection();
     }
     runContinuousDetection() {
+        if (this.currentDetectionPromise) {
+            return;
+        }
+        this.lastContinuousDetectionStartedAtMs = performance.now();
         this.currentDetectionPromise = this.runDetectionInternal()
             .then((results) => {
             this.poses = results;
@@ -15430,6 +15475,13 @@ class FaceRecognizer extends Script {
     constructor() {
         super(...arguments);
         this._detectorBackends = new Map();
+        this.activeClients = new Set();
+        this.currentDetectionPromise = null;
+        this.lastContinuousDetectionStartedAtMs = -Infinity;
+        /**
+         * The latest detected faces from continuous detection.
+         */
+        this.detectedFaces = [];
         this.targetDevice = 'galaxyxr';
         // Cached depth-mesh snapshot (cloned geometry + BVH). We rebuild it
         // only when the source depth geometry's position attribute bumps its
@@ -15456,10 +15508,80 @@ class FaceRecognizer extends Script {
         this.renderer = renderer;
     }
     /**
-     * Runs the face landmark detection process based on the configured
-     * backend.
+     * Starts continuous face detection for the given client.
+     * If this is the first client, starts the background detection loop.
+     * @param client - The client object requesting face detection.
      */
-    async runDetection() {
+    start(client) {
+        if (this.activeClients.has(client)) {
+            return;
+        }
+        this.activeClients.add(client);
+        if (this.activeClients.size === 1) {
+            this.runContinuousDetection();
+        }
+    }
+    /**
+     * Stops continuous face detection for the given client.
+     * If this was the last client, stops the background detection loop.
+     * @param client - The client object that no longer needs face detection.
+     */
+    stop(client) {
+        this.activeClients.delete(client);
+    }
+    /**
+     * Called per frame by the engine. If there are active clients,
+     * ensures the continuous face detection is running.
+     */
+    update() {
+        if (this.activeClients.size === 0 || this.currentDetectionPromise) {
+            return;
+        }
+        const pollingIntervalMs = this.options.faces.pollingIntervalMs;
+        if (pollingIntervalMs > 0 &&
+            performance.now() - this.lastContinuousDetectionStartedAtMs <
+                pollingIntervalMs) {
+            return;
+        }
+        this.runContinuousDetection();
+    }
+    runContinuousDetection() {
+        if (this.currentDetectionPromise) {
+            return;
+        }
+        this.lastContinuousDetectionStartedAtMs = performance.now();
+        this.currentDetectionPromise = this.runDetectionInternal()
+            .then((results) => {
+            this.detectedFaces = results;
+            return results;
+        })
+            .finally(() => {
+            this.currentDetectionPromise = null;
+        });
+    }
+    /**
+     * Runs face landmark detection or returns the ongoing detection promise.
+     *
+     * - If continuous detection is started (has active clients), returns the
+     *   promise for the next detection result.
+     * - If continuous detection is not started, performs a one-off detection and
+     *   returns the result. If a one-off detection is already in progress, returns
+     *   the promise for that ongoing detection.
+     */
+    runDetection() {
+        if (this.currentDetectionPromise) {
+            return this.currentDetectionPromise;
+        }
+        if (this.activeClients.size > 0) {
+            this.runContinuousDetection();
+            return this.currentDetectionPromise;
+        }
+        this.currentDetectionPromise = this.runDetectionInternal().finally(() => {
+            this.currentDetectionPromise = null;
+        });
+        return this.currentDetectionPromise;
+    }
+    async runDetectionInternal() {
         this.clear();
         if (!this.depth || !this.depth.depthMesh) {
             console.warn('Cannot run Face Detection: Depth module / depthMesh is not enabled or initialized.');
@@ -20392,6 +20514,79 @@ function computeMetrics(v) {
     return { width, openHeight };
 }
 
+/**
+ * Generates a visual representation of the current depth buffer on a
+ * {@link Depth} instance and triggers a download for debugging.
+ * @param depth - The depth subsystem instance.
+ * @param viewIndex - The depth view index to visualize.
+ */
+function visualizeDepth(depth, viewIndex = 0) {
+    const depthArray = depth.depthArray[viewIndex];
+    if (!depthArray) {
+        console.warn('Cannot visualize depth map: no depth data available.');
+        return;
+    }
+    visualizeDepthMap(depthArray, depth.width, depth.height);
+}
+/**
+ * Generates a visual representation of a depth map, normalized to 0-1 range,
+ * and triggers a download for debugging.
+ * @param depthArray - The raw depth data array.
+ * @param width - The depth map width in pixels.
+ * @param height - The depth map height in pixels.
+ */
+function visualizeDepthMap(depthArray, width, height) {
+    if (!width || !height || depthArray.length === 0) {
+        console.warn('Cannot visualize depth map: missing dimensions or data.');
+        return;
+    }
+    // Find Min/Max for normalization, ignoring 0/invalid depth.
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < depthArray.length; ++i) {
+        const val = depthArray[i];
+        if (val > 0) {
+            if (val < min)
+                min = val;
+            if (val > max)
+                max = val;
+        }
+    }
+    if (min === Infinity) {
+        min = 0;
+        max = 1;
+    }
+    if (min === max) {
+        max = min + 1;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(width, height);
+    const data = imageData.data;
+    for (let i = 0; i < depthArray.length; ++i) {
+        const raw = depthArray[i];
+        const normalized = raw === 0 ? 0 : (raw - min) / (max - min);
+        const byteVal = Math.floor(normalized * 255);
+        const stride = i * 4;
+        data[stride] = byteVal;
+        data[stride + 1] = byteVal;
+        data[stride + 2] = byteVal;
+        data[stride + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    const timestamp = new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace('T', '_')
+        .replace(/:/g, '-');
+    const link = document.createElement('a');
+    link.download = `depth_debug_${timestamp}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+
 class OcclusionUtils {
     /**
      * Creates a simple material used for rendering objects into the occlusion
@@ -22787,5 +22982,5 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
