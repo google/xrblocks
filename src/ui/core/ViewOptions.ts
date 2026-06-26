@@ -1,3 +1,5 @@
+import type {DragMode} from '../../ux/DragManager';
+
 /**
  * Options for View.
  */
@@ -15,4 +17,5 @@ export type ViewOptions = {
   paddingY?: number;
   paddingZ?: number;
   opacity?: number;
+  draggingMode?: DragMode;
 };

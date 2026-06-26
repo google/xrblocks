@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {VideoStream, VideoStreamDetails} from '../../video/VideoStream';
 import {View} from '../core/View';
 import {ViewOptions} from '../core/ViewOptions';
+import {DragMode} from '../../ux/DragManager';
 
 /**
  * A UI component for displaying video content on a 3D plane. It
@@ -21,6 +22,7 @@ export type VideoViewOptions = ViewOptions & {
 };
 
 export class VideoView extends View {
+  draggingMode = DragMode.DO_NOT_DRAG;
   /** Default description of this view in Three.js DevTools. */
   name: string = 'VideoView';
   /** The display mode for the video ('center' preserves aspect ratio). */

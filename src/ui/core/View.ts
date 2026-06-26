@@ -5,6 +5,7 @@ import {Script} from '../../core/Script';
 import {DP_TO_DMM} from '../constants';
 
 import type {ViewOptions} from './ViewOptions';
+import type {DragMode} from '../../ux/DragManager';
 
 // Temporary variables.
 const worldScale = new THREE.Vector3();
@@ -23,6 +24,8 @@ export class View<
 > extends Script<TEventMap> {
   /** Text description of the view */
   name = 'View';
+  /** The dragging mode of this view, if any. */
+  draggingMode?: DragMode;
   /** Flag indicating View behaves as a 2D quad in layout calculations. */
   isQuad = true;
   /** Flag indicating if this is the root view of a layout. */
