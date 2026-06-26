@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 6f69287
- * @builddate 2026-06-25T16:37:53.836Z
+ * @commitid ca68fa8
+ * @builddate 2026-06-26T22:17:07.239Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6839,6 +6839,72 @@ declare class Simulator extends Script {
     private renderSimulatorSceneToCanvas;
 }
 
+interface Draggable extends THREE.Object3D {
+    draggable: boolean;
+    dragFacingCamera?: boolean;
+}
+declare enum DragMode {
+    TRANSLATING = "TRANSLATING",
+    ROTATING = "ROTATING",
+    SCALING = "SCALING",
+    DO_NOT_DRAG = "DO_NOT_DRAG"
+}
+interface HasDraggingMode {
+    draggingMode: DragMode;
+}
+declare class DragManager extends Script {
+    static readonly dependencies: {
+        input: typeof Input;
+        camera: typeof THREE.Camera;
+    };
+    static readonly IDLE = "IDLE";
+    static readonly TRANSLATING = DragMode.TRANSLATING;
+    static readonly ROTATING = DragMode.ROTATING;
+    static readonly SCALING = DragMode.SCALING;
+    static readonly DO_NOT_DRAG = DragMode.DO_NOT_DRAG;
+    private mode;
+    private controller1?;
+    private controller2?;
+    private originalObjectPosition;
+    private originalObjectRotation;
+    private originalObjectScale;
+    private originalController1Position;
+    private originalController1RotationInverse;
+    private originalController1MatrixInverse;
+    private originalScalingControllerDistance;
+    private originalScalingObjectScale;
+    private intersection?;
+    private draggableObject?;
+    private input;
+    private camera;
+    type: string;
+    name: string;
+    editorIcon: string;
+    init({ input, camera }: {
+        input: Input;
+        camera: THREE.Camera;
+    }): void;
+    onSelectStart(event: SelectEvent): void;
+    onSelectEnd(): void;
+    update(): void;
+    beginDragging(intersection: THREE.Intersection, controller: THREE.Object3D): boolean;
+    beginScaling(controller: THREE.Object3D): boolean;
+    updateDragging(controller: THREE.Object3D): boolean | undefined;
+    updateTranslating(): boolean;
+    updateRotating(controller: THREE.Object3D): boolean | undefined;
+    updateRotatingFromMouseController(controller: THREE.Object3D): boolean;
+    updateScaling(): boolean;
+    turnPanelToFaceTheCamera(): void;
+    /**
+     * Seach up the scene graph to find the first draggable object and the first
+     * drag mode at or below the draggable object.
+     * @param target - Child object to search.
+     * @returns Array containing the first draggable object and the first drag
+     *     mode.
+     */
+    private findDraggableObjectAndDraggingMode;
+}
+
 /**
  * Options for View.
  */
@@ -6856,6 +6922,7 @@ type ViewOptions = {
     paddingY?: number;
     paddingZ?: number;
     opacity?: number;
+    draggingMode?: DragMode;
 };
 
 /**
@@ -6870,6 +6937,8 @@ type ViewOptions = {
 declare class View<TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap> extends Script<TEventMap> {
     /** Text description of the view */
     name: string;
+    /** The dragging mode of this view, if any. */
+    draggingMode?: DragMode;
     /** Flag indicating View behaves as a 2D quad in layout calculations. */
     isQuad: boolean;
     /** Flag indicating if this is the root view of a layout. */
@@ -7137,6 +7206,7 @@ type IconButtonOptions = TextViewOptions & {
     disabled?: boolean;
 };
 declare class IconButton extends TextView {
+    draggingMode: DragMode;
     /** The overall opacity when the button is not being interacted with. */
     opacity: number;
     /** The background opacity when the button is not being interacted with. */
@@ -7280,6 +7350,7 @@ type TextButtonOptions = TextViewOptions & {
     selectedFontColor?: string | number;
 };
 declare class TextButton extends TextView {
+    draggingMode: DragMode;
     /** Default description of this view in Three.js DevTools. */
     name: string;
     /** The font size of the text label. */
@@ -7341,6 +7412,7 @@ type VideoViewOptions = ViewOptions & {
     mode?: 'center' | 'stretch';
 };
 declare class VideoView extends View {
+    draggingMode: DragMode;
     /** Default description of this view in Three.js DevTools. */
     name: string;
     /** The display mode for the video ('center' preserves aspect ratio). */
@@ -7426,72 +7498,6 @@ declare class VideoView extends View {
      * @override
      */
     updateLayout(): void;
-}
-
-interface Draggable extends THREE.Object3D {
-    draggable: boolean;
-    dragFacingCamera?: boolean;
-}
-declare enum DragMode {
-    TRANSLATING = "TRANSLATING",
-    ROTATING = "ROTATING",
-    SCALING = "SCALING",
-    DO_NOT_DRAG = "DO_NOT_DRAG"
-}
-interface HasDraggingMode {
-    draggingMode: DragMode;
-}
-declare class DragManager extends Script {
-    static readonly dependencies: {
-        input: typeof Input;
-        camera: typeof THREE.Camera;
-    };
-    static readonly IDLE = "IDLE";
-    static readonly TRANSLATING = DragMode.TRANSLATING;
-    static readonly ROTATING = DragMode.ROTATING;
-    static readonly SCALING = DragMode.SCALING;
-    static readonly DO_NOT_DRAG = DragMode.DO_NOT_DRAG;
-    private mode;
-    private controller1?;
-    private controller2?;
-    private originalObjectPosition;
-    private originalObjectRotation;
-    private originalObjectScale;
-    private originalController1Position;
-    private originalController1RotationInverse;
-    private originalController1MatrixInverse;
-    private originalScalingControllerDistance;
-    private originalScalingObjectScale;
-    private intersection?;
-    private draggableObject?;
-    private input;
-    private camera;
-    type: string;
-    name: string;
-    editorIcon: string;
-    init({ input, camera }: {
-        input: Input;
-        camera: THREE.Camera;
-    }): void;
-    onSelectStart(event: SelectEvent): void;
-    onSelectEnd(): void;
-    update(): void;
-    beginDragging(intersection: THREE.Intersection, controller: THREE.Object3D): boolean;
-    beginScaling(controller: THREE.Object3D): boolean;
-    updateDragging(controller: THREE.Object3D): boolean | undefined;
-    updateTranslating(): boolean;
-    updateRotating(controller: THREE.Object3D): boolean | undefined;
-    updateRotatingFromMouseController(controller: THREE.Object3D): boolean;
-    updateScaling(): boolean;
-    turnPanelToFaceTheCamera(): void;
-    /**
-     * Seach up the scene graph to find the first draggable object and the first
-     * drag mode at or below the draggable object.
-     * @param target - Child object to search.
-     * @returns Array containing the first draggable object and the first drag
-     *     mode.
-     */
-    private findDraggableObjectAndDraggingMode;
 }
 
 type PanelOptions = ViewOptions & {
@@ -9108,6 +9114,7 @@ declare class ModelViewer extends Script implements Draggable {
  */
 declare class SketchPanel extends View {
     #private;
+    draggingMode: DragMode;
     static dependencies: {
         user: typeof User;
     };
