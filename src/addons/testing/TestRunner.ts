@@ -108,7 +108,6 @@ export class TestRunner {
     const embodiedOptions: EmbodiedControlOptions = {
       autoPause: true,
       realTime: false,
-      includeScreenshot: false, // No screenshot rendering in headless
       ...config.embodiedOptions,
     };
     const embodiedControl = new EmbodiedControl(embodiedOptions);

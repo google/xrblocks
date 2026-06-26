@@ -1,149 +1,236 @@
 # remote-control
 
-WebSocket transport for remotely driving [xrblocks](https://github.com/google/xrblocks)
-through `embodied-control`.
+Local API for driving an XR Blocks page from an external JavaScript, Python,
+or agent process.
 
-`remote-control` is intentionally thin: it owns the WebSocket connection and
-message protocol, while `embodied-control` owns the action semantics. If you do
-not need networking, use `EmbodiedControl` directly.
+`remote-control` owns the WebSocket protocol, request routing, registered scene
+tools, and built-in tools. `embodied-control` remains the movement/action layer
+used for simulator locomotion, hand motion, and select gestures.
 
----
+## Page Endpoint
 
-## Quick start
+Add `RemoteControl` to the XR Blocks page that should receive commands. The
+page connects to the relay, handles requests, and returns tool results.
 
 ```ts
 import * as xb from 'xrblocks';
 import {RemoteControl} from 'xrblocks/addons/remote-control/index.js';
 
+const game = new GameScript();
+xb.add(game);
+
+const options = RemoteControl.configureOptions(new xb.Options());
+
 xb.add(
   new RemoteControl({
-    url: 'ws://127.0.0.1:8765',
+    url: 'ws://127.0.0.1:8791',
+    sessionId: 'default',
     reconnect: true,
-    embodiedOptions: {
-      includeScreenshot: true,
+    embodiedOptions: {autoPause: true, realTime: false},
+    tools: {
+      getScore: async () => ({score: game.score}),
+      resetGame: async () => game.reset(),
     },
   })
 );
 
-await xb.init();
+await xb.init(options);
 ```
 
-`RemoteControl` is an XR Blocks `Script`. It uses normal dependency injection
-for `Core`, `Simulator`, `Input`, and `Camera`, then creates an internal
-`EmbodiedControl` instance unless one is supplied.
+`RemoteControl.configureOptions()` configures the page for simulator-driven
+control: desktop simulator autostart, simulator camera, hands, and hidden
+simulator control panels. Use it before `xb.init()` when the page should be
+driven by external clients.
 
----
+Tools are explicit named functions exposed by the scene. External clients
+cannot send arbitrary JavaScript to evaluate in the page.
 
-## Protocol
+## Built-In Tools
 
-Messages are JSON strings.
+Built-in tools are defined under `built-in-tools/`. `RemoteControl`
+automatically registers them before the page is exposed:
 
-### Handshake
+- `step({durationMs?: number, control?: XRCompoundControl})`
+- `applyControl({control: XRCompoundControl})`
+- `teleportTo({target, options?})`
+- `lookAtTarget({target, options?})`
+- `pointTo({handIndex, target, options?})`
+- `reachTo({handIndex, target, options?})`
+- `click({handIndex?, options?})`
+- `getCamera({screenshot?: boolean, overlayOnCamera?: boolean})`
+- `getHands()`
+- `getScreenshot({overlayOnCamera?: boolean})`
+- `getSimulatorState()`
 
-Sent by the browser after the socket opens:
+Scene tools registered with the same name override built-in tools.
+
+## Relay
+
+Run the local relay next to the XR Blocks dev server:
+
+```bash
+npx xrblocks-remote-control
+```
+
+The relay defaults to `ws://127.0.0.1:8791`. It keeps no state beyond the
+connected pages, connected controllers, and pending request IDs. It is intended
+for local development, automation, and evaluation harnesses.
+
+## Sessions
+
+One relay port can host multiple independent browser pages. Put each page and
+its client in the same `sessionId`:
+
+```ts
+xb.add(
+  new RemoteControl({
+    url: 'ws://127.0.0.1:8791',
+    sessionId: 'run-1',
+  })
+);
+```
+
+```ts
+const client = new RemoteControlClient({
+  url: 'ws://127.0.0.1:8791',
+  sessionId: 'run-1',
+});
+```
+
+Sessions default to `default`, so single-page usage does not need to set one.
+
+## JavaScript Client
+
+```ts
+import {RemoteControlClient} from 'xrblocks/addons/remote-control/index.js';
+
+const client = new RemoteControlClient({
+  url: 'ws://127.0.0.1:8791',
+  sessionId: 'default',
+});
+await client.connect();
+await client.waitForPage();
+
+const camera = await client.getCamera({screenshot: true});
+
+await client.step({
+  durationMs: 250,
+  control: {
+    locomotion: {move: [0, 0, -0.25]},
+  },
+});
+
+const hands = await client.getHands();
+const score = await client.callTool('getScore', {});
+```
+
+Client movement helpers are convenience wrappers around built-in tool calls.
+Movement tools return completion only. Request camera, hands, screenshots, or
+simulator state with tool calls when needed.
+
+## Smoke Test Sample
+
+The repository includes a minimal browser scene and command-line helper:
+
+```bash
+npm run build
+npm run serve
+```
+
+In another terminal, start the local relay:
+
+```bash
+npx xrblocks-remote-control
+```
+
+Open the sample:
+
+```text
+http://127.0.0.1:8080/samples/remote_control/
+```
+
+For multiple pages on one relay, open each with a different session:
+
+```text
+http://127.0.0.1:8080/samples/remote_control/?remoteControlSession=run-1
+http://127.0.0.1:8080/samples/remote_control/?remoteControlSession=run-2
+```
+
+Then send commands from a third terminal:
+
+```bash
+node samples/remote_control/send.mjs observe
+node samples/remote_control/send.mjs get-camera '{"screenshot":true}'
+node samples/remote_control/send.mjs step-forward
+node samples/remote_control/send.mjs get-hands
+node samples/remote_control/send.mjs get-state
+node samples/remote_control/send.mjs screenshot
+node samples/remote_control/send.mjs tool getCamera '{"screenshot":true}'
+node samples/remote_control/send.mjs get-cube
+node samples/remote_control/send.mjs nudge-cube
+node samples/remote_control/send.mjs nudge-cube '{"dx":0.25}'
+node samples/remote_control/send.mjs reset-cube
+```
+
+Target a non-default session with `REMOTE_CONTROL_SESSION`:
+
+```bash
+REMOTE_CONTROL_SESSION=run-1 node samples/remote_control/send.mjs get-state
+```
+
+Each command prints the JSON response. `observe`, `get-camera`, `get-hands`,
+`get-state`, and `screenshot` call built-in observation tools. The sample
+enables the simulator camera, and the screenshot commands request
+`overlayOnCamera: true` by default. `tool <name>` calls any built-in or scene
+tool by name. When a result contains a `data:image/...` URL, the helper writes
+it to the OS temp directory and replaces that value with the saved file path.
+
+## Protocol Internals
+
+Most users should use `RemoteControl` in the page and `RemoteControlClient`
+outside the page instead of constructing protocol messages by hand.
+
+External controllers send request messages:
 
 ```json
 {
-  "type": "HANDSHAKE",
-  "client": "xrblocks-remote-control",
-  "version": 1,
-  "capabilities": {
-    "compoundControl": true,
-    "embodiedControl": true
+  "id": "req-1",
+  "type": "callTool",
+  "name": "getCamera",
+  "args": {"screenshot": true}
+}
+```
+
+Movement uses the same request shape:
+
+```json
+{
+  "id": "req-2",
+  "type": "callTool",
+  "name": "step",
+  "args": {
+    "durationMs": 250,
+    "control": {"locomotion": {"move": [0, 0, -0.25]}}
   }
 }
 ```
 
-### Step
-
-Sent by the runner to the browser:
+The page returns one response per request:
 
 ```json
 {
-  "type": "STEP",
-  "id": "step-1",
-  "durationMs": 250,
-  "control": {
-    "locomotion": {"move": [0, 0, -0.25]},
-    "rightHand": {"selectStart": true}
+  "type": "response",
+  "id": "req-1",
+  "ok": true,
+  "result": {
+    "position": [0, 1.5, 0],
+    "quaternion": [0, 0, 0, 1],
+    "screenshot": "data:image/png;base64,..."
   }
 }
 ```
 
-The `control` payload is the same `EmbodiedControlStep.control` object used for
-local calls.
+Supported request types:
 
-### Step completed
-
-Sent by the browser after the step finishes:
-
-```json
-{
-  "type": "STEP_COMPLETED",
-  "id": "step-1",
-  "elapsedMs": 250,
-  "observation": {
-    "state": {
-      "camera": {"position": [0, 1.5, -0.25], "quaternion": [0, 0, 0, 1]},
-      "leftHand": {
-        "position": [-0.3, -0.1, -0.3],
-        "quaternion": [0, 0, 0, 1],
-        "selected": false,
-        "squeezing": false,
-        "visible": true
-      },
-      "rightHand": {
-        "position": [0.3, -0.1, -0.3],
-        "quaternion": [0, 0, 0, 1],
-        "selected": true,
-        "squeezing": false,
-        "visible": true
-      }
-    }
-  }
-}
-```
-
-When screenshots are enabled, `observation.screenshot` contains a data URL.
-
-### Busy and error responses
-
-If a step arrives while another step is active:
-
-```json
-{
-  "type": "ACTION_REJECTED",
-  "id": "step-2",
-  "reason": "active_step"
-}
-```
-
-Malformed messages or execution failures produce:
-
-```json
-{
-  "type": "ERROR",
-  "id": "step-2",
-  "message": "Invalid STEP payload"
-}
-```
-
----
-
-## Local-first design
-
-The transport layer is optional. For deterministic browser-local tests or
-sample interactions, call `EmbodiedControl.step()` directly. Use
-`RemoteControl` only when an external runner, Python process, or RL harness
-needs to drive the browser over a socket.
-
----
-
-## Public surface
-
-- `RemoteControl` — XR Blocks `Script` that connects to a WebSocket endpoint
-  and forwards `STEP` messages to embodied-control.
-- `WebSocketRemoteControlTransport` — standalone transport class for custom
-  runners.
-- `RemoteControlProtocol` helpers — `createHandshake`,
-  `parseRemoteControlMessage`, `isStepMessage`, and protocol message types.
+- `ping`
+- `callTool`

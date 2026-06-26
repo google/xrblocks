@@ -13,8 +13,6 @@ options.setAppTitle('Embodied Control');
 const embodied = new EmbodiedControl({
   autoPause: false,
   realTime: true,
-  defaultDurationMs: 250,
-  includeScreenshot: false,
 });
 
 const POSES = xb.SIMULATOR_HAND_POSE_ROTATIONS;
@@ -281,8 +279,7 @@ async function runAction(action) {
   setBusy(true);
   try {
     if (action.isHighLevel) {
-      const result = await action.run();
-      console.log('High-Level Action complete:', result);
+      await action.run();
     } else {
       const durationMs = Number(durationInput.value) || action.durationMs;
       await embodied.step({

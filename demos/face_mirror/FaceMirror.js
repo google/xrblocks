@@ -13,9 +13,6 @@ export class FaceMirror extends xb.Script {
   init({world}) {
     this.world = world;
     this.uiCore = new UICore(this);
-    this.detecting = false;
-    this.framesSinceLastDetect = 0;
-    this.detectEveryNFrames = 2;
 
     this.wireframe = new FaceWireframe();
     this.add(this.wireframe);
@@ -24,26 +21,15 @@ export class FaceMirror extends xb.Script {
     this.statusEl.blendshapes = FEATURED_BLENDSHAPES;
 
     this.spatialHud = new FaceSpatialHud(this.uiCore);
+
+    if (this.world.faces) {
+      this.world.faces.start(this);
+    }
   }
 
-  async update() {
-    this.framesSinceLastDetect++;
-    if (!this.world.faces || this.detecting) return;
-    if (this.framesSinceLastDetect < this.detectEveryNFrames) return;
-
-    this.framesSinceLastDetect = 0;
-    this.detecting = true;
-    try {
-      const faces = await this.world.faces.runDetection();
-      this.displayFaces(faces);
-    } catch (err) {
-      const msg = 'Detection error: ' + (err.message || String(err));
-      this.statusEl.updateState(msg);
-      this.spatialHud.updateState(msg);
-      console.error('Face detection failed:', err);
-    } finally {
-      this.detecting = false;
-    }
+  update() {
+    if (!this.world.faces) return;
+    this.displayFaces(this.world.faces.detectedFaces);
   }
 
   displayFaces(faces) {
@@ -76,5 +62,12 @@ export class FaceMirror extends xb.Script {
   resetBars() {
     this.statusEl.resetBars();
     this.spatialHud.resetBars();
+  }
+
+  dispose() {
+    if (this.world.faces) {
+      this.world.faces.stop(this);
+    }
+    super.dispose();
   }
 }

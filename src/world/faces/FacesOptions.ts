@@ -8,6 +8,12 @@ export class FacesOptions {
   enabled = false;
 
   /**
+   * Minimum delay in milliseconds between continuous face detection runs.
+   * A value of 0 runs again as soon as the previous detection finishes.
+   */
+  pollingIntervalMs = 0;
+
+  /**
    * Configuration options for the active face detection backend.
    */
   backendConfig = {

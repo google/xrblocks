@@ -130,9 +130,9 @@ export class SimulatorHands {
   /**
    * Initialize Simulator Hands.
    */
-  init({input}: {input: Input}) {
+  async init({input}: {input: Input}) {
     this.input = input;
-    this.loadMeshes();
+    await this.loadMeshes();
     this.simulatorScene.add(this.leftController);
     this.simulatorScene.add(this.rightController);
   }
@@ -140,51 +140,59 @@ export class SimulatorHands {
   loadMeshes() {
     this.loader = new GLTFLoader();
     this.loader.setPath(DEFAULT_HAND_PROFILE_PATH);
-    this.loader.load('left.glb', (gltf) => {
-      this.leftHand = gltf.scene;
-      this.leftController.add(this.leftHand);
-      HAND_JOINT_NAMES.forEach((jointName) => {
-        const bone = gltf.scene.getObjectByName(jointName);
-        if (bone) {
-          this.leftHandBones.push(bone);
-        } else {
-          console.warn(`Couldn't find ${jointName} in left hand mesh`);
-        }
-      });
-      applyHandJoints(
-        this.leftHandBones,
-        resolveSimulatorHandPoseRotations(
-          Handedness.LEFT,
-          this.leftHandCurrentRotations
-        )
+    return Promise.all([
+      this.loadHandMesh('left.glb', Handedness.LEFT),
+      this.loadHandMesh('right.glb', Handedness.RIGHT),
+    ]);
+  }
+
+  private loadHandMesh(path: string, handedness: Handedness) {
+    return new Promise<void>((resolve, reject) => {
+      this.loader.load(
+        path,
+        (gltf) => {
+          const isLeft = handedness === Handedness.LEFT;
+          const handednessName = isLeft ? 'left' : 'right';
+          const bones = isLeft ? this.leftHandBones : this.rightHandBones;
+          bones.length = 0;
+          if (isLeft) {
+            this.leftHand = gltf.scene;
+            this.leftController.add(this.leftHand);
+          } else {
+            this.rightHand = gltf.scene;
+            this.rightController.add(this.rightHand);
+          }
+          HAND_JOINT_NAMES.forEach((jointName) => {
+            const bone = gltf.scene.getObjectByName(jointName);
+            if (bone) {
+              bones.push(bone);
+            } else {
+              console.warn(
+                `Couldn't find ${jointName} in ${handednessName} hand mesh`
+              );
+            }
+          });
+          applyHandJoints(
+            bones,
+            resolveSimulatorHandPoseRotations(
+              handedness,
+              isLeft
+                ? this.leftHandCurrentRotations
+                : this.rightHandCurrentRotations
+            )
+          );
+          this.input.hands[isLeft ? 0 : 1]?.dispatchEvent?.({
+            type: 'connected',
+            data: {
+              hand: isLeft ? this.leftXRHand : this.rightXRHand,
+              handedness: handednessName,
+            } as XRInputSource,
+          });
+          resolve();
+        },
+        () => {},
+        (error) => reject(error)
       );
-      this.input.hands[0]?.dispatchEvent?.({
-        type: 'connected',
-        data: {hand: this.leftXRHand, handedness: 'left'} as XRInputSource,
-      });
-    });
-    this.loader.load('right.glb', (gltf) => {
-      this.rightHand = gltf.scene;
-      this.rightController.add(this.rightHand);
-      HAND_JOINT_NAMES.forEach((jointName) => {
-        const bone = gltf.scene.getObjectByName(jointName);
-        if (bone) {
-          this.rightHandBones.push(bone);
-        } else {
-          console.warn(`Couldn't find ${jointName} in right hand mesh`);
-        }
-      });
-      applyHandJoints(
-        this.rightHandBones,
-        resolveSimulatorHandPoseRotations(
-          Handedness.RIGHT,
-          this.rightHandCurrentRotations
-        )
-      );
-      this.input.hands[1]?.dispatchEvent?.({
-        type: 'connected',
-        data: {hand: this.rightXRHand, handedness: 'right'} as XRInputSource,
-      });
     });
   }
 

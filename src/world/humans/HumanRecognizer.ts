@@ -25,6 +25,7 @@ export class HumanRecognizer extends Script {
   private detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
   private activeClients = new Set<object>();
   private currentDetectionPromise: Promise<DetectedBodyPose[]> | null = null;
+  private lastContinuousDetectionStartedAtMs = -Infinity;
 
   /**
    * The latest detected body poses.
@@ -89,12 +90,27 @@ export class HumanRecognizer extends Script {
    * ensures the continuous pose detection is running.
    */
   override update() {
-    if (this.activeClients.size > 0 && !this.currentDetectionPromise) {
-      this.runContinuousDetection();
+    if (this.activeClients.size === 0 || this.currentDetectionPromise) {
+      return;
     }
+
+    const pollingIntervalMs = this.options.humans.pollingIntervalMs;
+    if (
+      pollingIntervalMs > 0 &&
+      performance.now() - this.lastContinuousDetectionStartedAtMs <
+        pollingIntervalMs
+    ) {
+      return;
+    }
+
+    this.runContinuousDetection();
   }
 
   private runContinuousDetection() {
+    if (this.currentDetectionPromise) {
+      return;
+    }
+    this.lastContinuousDetectionStartedAtMs = performance.now();
     this.currentDetectionPromise = this.runDetectionInternal()
       .then((results) => {
         this.poses = results;

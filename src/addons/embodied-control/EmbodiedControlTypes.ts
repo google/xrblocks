@@ -1,7 +1,6 @@
 import type {SimulatorHandPoseRotations} from 'xrblocks';
 
 export type Vec3Tuple = [number, number, number];
-export type QuatTuple = [number, number, number, number];
 
 export type LocomotionControl = {
   /** Meters over the whole step, camera-relative: [strafe, rise, forward]. */
@@ -31,36 +30,8 @@ export type XRCompoundControl = {
 };
 
 export type EmbodiedControlStep = {
-  id?: string;
   durationMs?: number;
   control?: XRCompoundControl;
-};
-
-export type HandObservation = {
-  position: Vec3Tuple;
-  quaternion: QuatTuple;
-  selected: boolean;
-  squeezing: boolean;
-  visible: boolean;
-  rotations?: SimulatorHandPoseRotations;
-};
-
-export type EmbodiedControlObservation = {
-  screenshot?: string;
-  state: {
-    camera: {
-      position: Vec3Tuple;
-      quaternion: QuatTuple;
-    };
-    leftHand: HandObservation;
-    rightHand: HandObservation;
-  };
-};
-
-export type EmbodiedControlStepResult = {
-  id?: string;
-  elapsedMs: number;
-  observation: EmbodiedControlObservation;
 };
 
 export type EmbodiedControlOptions = {
@@ -70,8 +41,6 @@ export type EmbodiedControlOptions = {
   realTime?: boolean;
   /** Simulated frame length used while executing a step. */
   tickMs?: number;
-  /** Capture a screenshot in each completed observation. */
-  includeScreenshot?: boolean;
   /** Clamp hand joint rotations through simulator biomechanical constraints. */
   applyHandRotationConstraints?: boolean;
 };
@@ -79,7 +48,7 @@ export type EmbodiedControlOptions = {
 export type EmbodiedControlExecutorOptions = Required<
   Pick<
     EmbodiedControlOptions,
-    'tickMs' | 'includeScreenshot' | 'applyHandRotationConstraints' | 'realTime'
+    'tickMs' | 'applyHandRotationConstraints' | 'realTime'
   >
 >;
 
@@ -88,6 +57,5 @@ export const DEFAULT_EMBODIED_CONTROL_OPTIONS: Required<EmbodiedControlOptions> 
     autoPause: true,
     realTime: false,
     tickMs: 16.67,
-    includeScreenshot: true,
     applyHandRotationConstraints: true,
   };

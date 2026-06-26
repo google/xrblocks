@@ -2,15 +2,14 @@
 
 Programmatic embodied-user control for [xrblocks](https://github.com/google/xrblocks).
 
-`embodied-control` lets tests, demos, and agent runners drive an XR Blocks
-scene through the same high-level surfaces a user has: locomotion, head/camera
-rotation, left hand pose, right hand pose, and WebXR-like select gestures. It is
-designed to work locally without networking, and to serve as the action
-executor behind the `remote-control` WebSocket addon.
+`embodied-control` lets tests and demos drive an XR Blocks scene through the
+same surfaces a user has: locomotion, head/camera rotation, left and right hand
+motion, hand poses, and WebXR-like select gestures. It is local-only and does
+not provide observation capture or remote networking.
 
 The addon follows the normal XR Blocks script lifecycle: construct it, add it to
 the scene before `xb.init()`, and let dependency injection provide `Core`,
-`Simulator`, `Input`, and `Camera`.
+`Simulator`, and `Camera`.
 
 ---
 
@@ -20,9 +19,7 @@ the scene before `xb.init()`, and let dependency injection provide `Core`,
 import * as xb from 'xrblocks';
 import {EmbodiedControl} from 'xrblocks/addons/embodied-control/index.js';
 
-const embodied = new EmbodiedControl({
-  includeScreenshot: false,
-});
+const embodied = new EmbodiedControl();
 
 xb.add(embodied);
 await xb.init();
@@ -45,9 +42,9 @@ loop alone. Use it in live apps, scripts, and demos where XR Blocks should keep
 rendering normally.
 
 `step()` applies a control over a duration, advances the core frame loop, and
-returns an observation. By default, `EmbodiedControl` pauses the core after
-initialization so frames advance only when `step()` is called. This is useful
-for repeatable tests and agent evaluation.
+resolves when movement is complete. By default, `EmbodiedControl` pauses the
+core after initialization so frames advance only when `step()` is called. This
+is useful for repeatable tests.
 
 For visual demos, pass `realTime: true` so the browser paints intermediate
 frames while a step is executing:
@@ -55,7 +52,6 @@ frames while a step is executing:
 ```ts
 const embodied = new EmbodiedControl({
   realTime: true,
-  includeScreenshot: false,
 });
 ```
 
@@ -68,7 +64,6 @@ Locomotion and both hands can move during the same control.
 
 ```ts
 await embodied.step({
-  id: 'reach-and-grab',
   durationMs: 500,
   control: {
     locomotion: {
@@ -123,61 +118,56 @@ controller selected state. This is different from passing raw pinching
 
 ## High-level actions
 
-In addition to raw coordinate-relative `step()` controls, `EmbodiedControl` exposes high-level, intent-based methods that perform automatic vector math and frame stepping. These methods are designed for layout-independent testing and semantic agent execution:
+In addition to raw coordinate-relative `step()` controls, `EmbodiedControl`
+exposes high-level methods that perform target math and frame stepping:
 
 ```ts
-// Teleport directly in front of the yellow cube
+// Teleport directly in front of the yellow cube.
 await embodied.teleportTo(cube, {distance: 1.2, faceTarget: true});
 
-// Smoothly turn user head to look at target at 1.5 radians/sec
+// Smoothly turn user head to look at target at 1.5 radians/sec.
 await embodied.lookAtTarget(cube, {velocity: 1.5});
 
-// Smoothly point right controller at target at 1.5 radians/sec
+// Smoothly point right controller at target at 1.5 radians/sec.
 await embodied.pointTo(1, cube, {velocity: 1.5}); // 1 = right hand
 
-// Smoothly extend right hand to cube at 0.5 meters/sec
+// Smoothly extend right hand to cube at 0.5 meters/sec.
 await embodied.reachTo(1, cube, {velocity: 0.5});
 
-// Perform click (selectStart + selectEnd sequence)
+// Perform click (selectStart + selectEnd sequence).
 await embodied.click(1);
 ```
 
-All high-level methods return a `Promise<EmbodiedControlStepResult>` containing the elapsed time and completed observation:
+All high-level methods return `Promise<void>` and resolve when the movement or
+gesture sequence is complete.
 
-- **`teleportTo(target, options)`**: Teleports the camera to coordinates or facing an object. Options: `distance` (default 1.5m), `faceTarget` (default true), and `snapToGround` (default false; if true, snaps camera Y coordinate to user standing height above closest detected horizontal ground plane).
-- **`lookAtTarget(target, options)`**: Rotates the camera to look at the target. Options: `velocity` (radians/second; if omitted, snaps instantly in 1 frame).
-- **`pointTo(handIndex, target, options)`**: Rotates the controller locally in camera space to point directly at the target, keeping its position/radius unchanged. Options: `velocity` (radians/second; if omitted, snaps instantly in 1 frame).
-- **`reachTo(handIndex, target, options)`**: Moves the controller position towards the target. Options: `velocity` (meters/second; if omitted, moves instantly).
-- **`click(handIndex, options)`**: Simulates click gesture press and release. Options: `durationMs` (default 200ms).
-
----
-
-## Observations
-
-Only `step()` resolves with an observation:
-
-```ts
-const result = await embodied.step({control: {rightHand: {selectEnd: true}}});
-
-console.log(result.elapsedMs);
-console.log(result.observation.state.camera.position);
-console.log(result.observation.state.rightHand.selected);
-```
-
-When `includeScreenshot` is enabled, observations include a screenshot data URL
-captured after the final frame of the step.
+- **`teleportTo(target, options)`**: Teleports the camera to coordinates or
+  facing an object. Options: `distance` (default 1.5m), `faceTarget` (default
+  true), and `snapToGround` (default false).
+- **`lookAtTarget(target, options)`**: Rotates the camera to look at the target.
+  Options: `velocity` in radians/second; if omitted, snaps instantly in 1
+  frame.
+- **`pointTo(handIndex, target, options)`**: Rotates the controller locally in
+  camera space to point directly at the target. Options: `velocity` in
+  radians/second; if omitted, snaps instantly in 1 frame.
+- **`reachTo(handIndex, target, options)`**: Moves the controller position
+  toward the target. Options: `velocity` in meters/second; if omitted, moves
+  instantly.
+- **`click(handIndex, options)`**: Simulates click gesture press and release.
+  Options: `durationMs` (default 200ms).
 
 ---
 
-## Local tests and agent loops
+## Local tests
 
-The addon does not require a WebSocket server. Local test cases can construct
-and call `EmbodiedControl` directly:
+The addon is intentionally imperative. Await movement completion, then assert
+against your app state, scene objects, scripts, or normal XR Blocks APIs:
 
 ```ts
-await embodied.step({control: {rightHand: {selectStart: true}}});
-await embodied.step({control: {rightHand: {move: [0, 0, -0.1]}}});
-await embodied.step({control: {rightHand: {selectEnd: true}}});
+await embodied.pointTo(1, button);
+await embodied.click(1);
+
+expect(game.score).toBe(1);
 ```
 
 Only one step may run at a time. If a second step is requested while another is
@@ -193,7 +183,6 @@ your script, UI, or scheduler:
 ```ts
 const embodied = new EmbodiedControl({
   autoPause: false,
-  includeScreenshot: false,
 });
 
 embodied.applyControl({
@@ -202,8 +191,7 @@ embodied.applyControl({
 });
 ```
 
-`applyControl()` does not call `core.stepFrame()`, does not capture a
-screenshot, and does not return an observation.
+`applyControl()` does not call `core.stepFrame()` and resolves no action result.
 
 ---
 
@@ -223,5 +211,3 @@ pinch-select steps only through `EmbodiedControl`.
   tests or custom harnesses.
 - `EmbodiedControlStep` / `XRCompoundControl` / `HandControl` /
   `LocomotionControl` — JSON-compatible action types.
-- `EmbodiedControlStepResult` / `EmbodiedControlObservation` — observation
-  result types.

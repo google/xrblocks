@@ -21,11 +21,12 @@ interface PrivateRecognizer {
 describe('HumanRecognizer Multi-Client API', () => {
   let recognizer: HumanRecognizer;
   let mockBackend: {run: ReturnType<typeof vi.fn>};
+  let options: WorldOptions;
 
   beforeEach(() => {
     vi.restoreAllMocks();
 
-    const options = new WorldOptions();
+    options = new WorldOptions();
     options.humans.enable();
     const deviceCamera = {} as unknown as XRDeviceCamera;
     const depth = {
@@ -83,6 +84,34 @@ describe('HumanRecognizer Multi-Client API', () => {
       .currentDetectionPromise;
     expect(promise2).not.toBeNull();
     await promise2;
+  });
+
+  it('respects pollingIntervalMs for continuous detection', async () => {
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    options.humans.pollingIntervalMs = 100;
+
+    recognizer.start({});
+    await (recognizer as unknown as PrivateRecognizer).currentDetectionPromise;
+
+    recognizer.update();
+    expect(
+      (recognizer as unknown as PrivateRecognizer).currentDetectionPromise
+    ).toBeNull();
+
+    now = 1099;
+    recognizer.update();
+    expect(
+      (recognizer as unknown as PrivateRecognizer).currentDetectionPromise
+    ).toBeNull();
+
+    now = 1100;
+    recognizer.update();
+    const promise = (recognizer as unknown as PrivateRecognizer)
+      .currentDetectionPromise;
+    expect(promise).not.toBeNull();
+    await promise;
+    expect(mockBackend.run).toHaveBeenCalledTimes(2);
   });
 
   it('should stop continuous detection when all clients stop', async () => {

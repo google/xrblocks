@@ -27,6 +27,7 @@ export * from './core/User';
 export * from './StylizedFace';
 export * from './VisemeWeights';
 export * from './depth/Depth';
+export * from './depth/DepthDebugUtils';
 export * from './depth/DepthMesh';
 export * from './depth/DepthOptions';
 export * from './depth/DepthTextures';

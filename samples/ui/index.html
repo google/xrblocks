@@ -59,11 +59,12 @@
           avatarCol.addImage({
             src: 'https://placehold.co/256x128/61dafb/282c34.png?text=XRBlocks',
           });
+          avatarRow.addCol({weight: 0.15});
 
           profileGrid
-            .addRow({weight: 0.15})
+            .addRow({weight: 0.2})
             .addText({text: 'Spatial Panel', fontSize: 0.08});
-          profileGrid.addRow({weight: 0.25}).addText({
+          profileGrid.addRow({weight: 0.3}).addText({
             text: 'You may drag borders of this spatial panel to move it around.',
             fontSize: 0.07,
             fontColor: '#abb2bf',
@@ -240,7 +241,7 @@
 
           this.add(settingsPanel);
           const settingsGrid = settingsPanel.addGrid();
-          settingsGrid.addRow({weight: 0.15}).addText({
+          settingsGrid.addRow({weight: 0.2}).addText({
             text: 'Fake Settings',
             fontSize: 0.1,
             fontColor: '#61dafb',
@@ -302,7 +303,7 @@
           );
           this.add(galleryPanel);
           const galleryGrid = galleryPanel.addGrid();
-          galleryGrid.addRow({weight: 0.25}).addText({
+          galleryGrid.addRow({weight: 0.2}).addText({
             text: 'Photo Gallery',
             fontSize: 0.07,
             fontColor: '#61dafb',
@@ -310,35 +311,23 @@
           const photoRow1 = galleryGrid.addRow({weight: 0.375});
           photoRow1.addCol({weight: 1 / 3}).addImage({
             src: 'https://placehold.co/150x150/92c5fd/333?text=Img1',
-            paddingX: 0.02,
-            paddingY: 0.02,
           });
           photoRow1.addCol({weight: 1 / 3}).addImage({
             src: 'https://placehold.co/150x150/6ee7b7/333?text=Img2',
-            paddingX: 0.02,
-            paddingY: 0.02,
           });
           photoRow1.addCol({weight: 1 / 3}).addImage({
             src: 'https://placehold.co/150x150/fca5a5/333?text=Img3',
-            paddingX: 0.02,
-            paddingY: 0.02,
           });
           galleryGrid.addRow({weight: 0.05});
           const photoRow2 = galleryGrid.addRow({weight: 0.375});
           photoRow2.addCol({weight: 1 / 3}).addImage({
             src: 'https://placehold.co/150x150/fde047/333?text=Img4',
-            paddingX: 0.02,
-            paddingY: 0.02,
           });
           photoRow2.addCol({weight: 1 / 3}).addImage({
             src: 'https://placehold.co/150x150/c4b5fd/333?text=Img5',
-            paddingX: 0.02,
-            paddingY: 0.02,
           });
           photoRow2.addCol({weight: 1 / 3}).addImage({
             src: 'https://placehold.co/150x150/f9a8d4/333?text=Img6',
-            paddingX: 0.02,
-            paddingY: 0.02,
           });
         }
 
@@ -352,7 +341,7 @@
           formPanel.position.set(-1.8, 0.7, -2.5);
           this.add(formPanel);
           const formGrid = formPanel.addGrid();
-          formGrid.addRow({weight: 0.1}).addText({
+          formGrid.addRow({weight: 0.16}).addText({
             text: 'Feedback Form',
             fontSize: 0.07,
             fontColor: '#61dafb',
@@ -461,7 +450,7 @@
 
           const tmpRow = chartGrid.addCol();
           tmpRow.addRow({weight: 0.3});
-          const okButton = tmpRow.addRow().addTextButton({
+          const okButton = tmpRow.addRow({weight: 0.7}).addTextButton({
             text: 'OK',
             backgroundColor: '#22aa33',
             opacity: 0.5,

@@ -10,6 +10,12 @@ export class ObjectsOptions {
   showDebugVisualizations = false;
 
   /**
+   * Minimum delay in milliseconds between continuous object detection runs.
+   * A value of 0 runs again as soon as the previous detection finishes.
+   */
+  pollingIntervalMs = 0;
+
+  /**
    * Margin to add when cropping the object image, as a percentage of image
    * size.
    */

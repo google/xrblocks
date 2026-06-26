@@ -8,6 +8,12 @@ export class HumansOptions {
   enabled = false;
 
   /**
+   * Minimum delay in milliseconds between continuous pose detection runs.
+   * A value of 0 runs again as soon as the previous detection finishes.
+   */
+  pollingIntervalMs = 0;
+
+  /**
    * Configuration options for the active pose detection backend.
    */
   backendConfig = {

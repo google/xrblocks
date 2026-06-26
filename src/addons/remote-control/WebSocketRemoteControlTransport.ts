@@ -1,36 +1,40 @@
-import type {EmbodiedControlStepResult} from '../embodied-control';
-
 import {
-  createHandshake,
-  isCommandMessage,
+  createHello,
+  REMOTE_CONTROL_DEFAULT_SESSION_ID,
+  isRemoteControlRequest,
   parseRemoteControlMessage,
   type RemoteControlOutgoingMessage,
-  type RemoteControlMessage,
+  type RemoteControlRequest,
+  type RemoteControlResponse,
 } from './RemoteControlProtocol';
 
 export type WebSocketRemoteControlTransportOptions = {
   url?: string;
+  sessionId?: string;
   reconnect?: boolean;
   reconnectDelayMs?: number;
 };
 
 export type RemoteControlCommandHandler = (
-  command: RemoteControlMessage
-) => Promise<EmbodiedControlStepResult>;
+  command: RemoteControlRequest
+) => Promise<RemoteControlResponse>;
 
 export class WebSocketRemoteControlTransport {
   private ws?: WebSocket;
   private stopped = false;
   private reconnectTimer?: number;
   private readonly url: string;
+  private readonly sessionId: string;
   private readonly reconnect: boolean;
   private readonly reconnectDelayMs: number;
+  private simulatorReady = false;
 
   constructor(
     options: WebSocketRemoteControlTransportOptions,
-    private handleCommand: RemoteControlCommandHandler
+    private handleRequest: RemoteControlCommandHandler
   ) {
-    this.url = options.url ?? 'ws://127.0.0.1:8765';
+    this.url = options.url ?? 'ws://127.0.0.1:8791';
+    this.sessionId = options.sessionId ?? REMOTE_CONTROL_DEFAULT_SESSION_ID;
     this.reconnect = options.reconnect ?? false;
     this.reconnectDelayMs = options.reconnectDelayMs ?? 1000;
   }
@@ -54,8 +58,15 @@ export class WebSocketRemoteControlTransport {
     this.ws = undefined;
   }
 
+  announceSimulatorReady() {
+    this.simulatorReady = true;
+    this.send(createHello('simulator', this.sessionId));
+  }
+
   private onOpen = () => {
-    this.send(createHandshake());
+    if (this.simulatorReady) {
+      this.send(createHello('simulator', this.sessionId));
+    }
   };
 
   private onMessage = (event: MessageEvent) => {
@@ -67,34 +78,23 @@ export class WebSocketRemoteControlTransport {
     try {
       message = parseRemoteControlMessage(event.data);
     } catch (error) {
-      this.sendError(undefined, error);
+      this.sendError(undefined, 'parse_error', error);
       return;
     }
 
-    if (!isCommandMessage(message)) {
+    if (!isRemoteControlRequest(message)) {
       this.sendError(
         (message as {id?: string} | undefined)?.id,
-        new Error('Invalid message payload')
+        'invalid_request',
+        new Error('Invalid remote-control request payload')
       );
       return;
     }
 
     try {
-      const result = await this.handleCommand(message);
-      this.send({
-        type: 'STEP_COMPLETED',
-        ...result,
-      });
+      this.send(await this.handleRequest(message));
     } catch (error) {
-      if (error instanceof Error && error.name === 'EmbodiedControlBusyError') {
-        this.send({
-          type: 'ACTION_REJECTED',
-          id: message.id,
-          reason: 'active_step',
-        });
-      } else {
-        this.sendError(message.id, error);
-      }
+      this.sendError(message.id, 'execution_error', error);
     }
   }
 
@@ -106,8 +106,7 @@ export class WebSocketRemoteControlTransport {
   };
 
   private onError = () => {
-    // The close event carries reconnect behavior; errors are reported there by
-    // browser WebSocket implementations.
+    // Browser WebSocket implementations surface reconnect-relevant state on close.
   };
 
   private send(message: RemoteControlOutgoingMessage) {
@@ -115,11 +114,15 @@ export class WebSocketRemoteControlTransport {
     this.ws.send(JSON.stringify(message));
   }
 
-  private sendError(id: string | undefined, error: unknown) {
+  private sendError(id: string | undefined, code: string, error: unknown) {
     this.send({
-      type: 'ERROR',
-      id,
-      message: error instanceof Error ? error.message : String(error),
+      type: 'response',
+      id: id ?? '',
+      ok: false,
+      error: {
+        code,
+        message: error instanceof Error ? error.message : String(error),
+      },
     });
   }
 }

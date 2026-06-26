@@ -9,10 +9,10 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 The `embodied-control` addon provides a programmatic user simulator for XR
 Blocks scenes. It can drive camera locomotion, left and right hand motion, hand
-poses, and WebXR-like select gestures through a single step API.
+poses, and WebXR-like select gestures through a local step API.
 
-Use it directly for local tests and samples. Pair it with `remote-control` when
-an external runner needs to control the browser over WebSocket.
+Use it directly for tests and samples that need deterministic movement without
+manual simulator controls.
 
 ---
 
@@ -22,9 +22,7 @@ an external runner needs to control the browser over WebSocket.
 import * as xb from 'xrblocks';
 import {EmbodiedControl} from 'xrblocks/addons/embodied-control/index.js';
 
-const embodied = new EmbodiedControl({
-  includeScreenshot: false,
-});
+const embodied = new EmbodiedControl();
 
 xb.add(embodied);
 await xb.init();
@@ -47,10 +45,9 @@ loop alone. Use it in live apps, scripts, and demos where XR Blocks should keep
 rendering normally.
 
 `step()` applies a control over a duration, advances the core frame loop, and
-returns an observation. By default the addon pauses the core after
-initialization, so frames advance only when `step()` is called. This is useful
-for deterministic test and agent loops. For visible demos, pass
-`realTime: true` so steps yield between frames and animate smoothly.
+resolves when movement is complete. By default the addon pauses the core after
+initialization, so frames advance only when `step()` is called. For visible
+demos, pass `realTime: true` so steps yield between frames and animate smoothly.
 
 ---
 
@@ -91,21 +88,51 @@ visual pose; they do not trigger selection.
 
 ---
 
-## Observations
+## High-Level Actions
 
-Only `step()` resolves to elapsed time and an observation:
+`EmbodiedControl` also exposes target-aware movement helpers:
 
 ```javascript
-const result = await embodied.step({
-  control: {rightHand: {selectEnd: true}},
-});
-
-console.log(result.observation.state.camera.position);
-console.log(result.observation.state.rightHand.selected);
+await embodied.teleportTo(cube, {distance: 1.2, faceTarget: true});
+await embodied.lookAtTarget(cube, {velocity: 1.5});
+await embodied.pointTo(1, cube, {velocity: 1.5});
+await embodied.reachTo(1, cube, {velocity: 0.5});
+await embodied.click(1);
 ```
 
-If `includeScreenshot` is true, the observation also includes a screenshot data
-URL captured after the final frame.
+All high-level methods return `Promise<void>` and resolve when movement or the
+gesture sequence is complete.
+
+- **`teleportTo(target, options)`**: Teleports the camera to coordinates or
+  facing an object. Options: `distance` (default 1.5m), `faceTarget` (default
+  true), and `snapToGround` (default false).
+- **`lookAtTarget(target, options)`**: Rotates the camera to look at the target.
+  Options: `velocity` in radians/second; if omitted, snaps instantly in 1
+  frame.
+- **`pointTo(handIndex, target, options)`**: Rotates the controller locally in
+  camera space to point directly at the target. Options: `velocity` in
+  radians/second; if omitted, snaps instantly in 1 frame.
+- **`reachTo(handIndex, target, options)`**: Moves the controller position
+  toward the target. Options: `velocity` in meters/second; if omitted, moves
+  instantly.
+- **`click(handIndex, options)`**: Simulates click gesture press and release.
+  Options: `durationMs` (default 200ms).
+
+---
+
+## Local Tests
+
+Await the control action, then assert against normal app state:
+
+```javascript
+await embodied.pointTo(1, button);
+await embodied.click(1);
+
+expect(game.score).toBe(1);
+```
+
+Only one step may run at a time. If a second step is requested while another is
+active, `EmbodiedControlBusyError` is thrown.
 
 ---
 
@@ -117,7 +144,6 @@ your script, UI, or scheduler:
 ```javascript
 const embodied = new EmbodiedControl({
   autoPause: false,
-  includeScreenshot: false,
 });
 
 embodied.applyControl({
@@ -126,42 +152,7 @@ embodied.applyControl({
 });
 ```
 
-`applyControl()` does not call `core.stepFrame()`, does not capture a
-screenshot, and does not return an observation.
-
----
-
-## WebSocket Remote Control
-
-The `remote-control` addon forwards JSON `STEP` messages to embodied-control.
-
-```javascript
-import {RemoteControl} from 'xrblocks/addons/remote-control/index.js';
-
-xb.add(
-  new RemoteControl({
-    url: 'ws://127.0.0.1:8765',
-    reconnect: true,
-    embodiedOptions: {includeScreenshot: true},
-  })
-);
-```
-
-Example incoming message:
-
-```json
-{
-  "type": "STEP",
-  "id": "step-1",
-  "durationMs": 250,
-  "control": {
-    "locomotion": {"move": [0, 0, -0.25]},
-    "rightHand": {"selectStart": true}
-  }
-}
-```
-
-The browser responds with `STEP_COMPLETED`, `ACTION_REJECTED`, or `ERROR`.
+`applyControl()` does not call `core.stepFrame()` and resolves no action result.
 
 ---
 
@@ -175,5 +166,4 @@ through `EmbodiedControl`.
 
 For source-level details, see
 
-<CodeSearchLink path="src/addons/embodied-control/README.md" /> and
-<CodeSearchLink path="src/addons/remote-control/README.md" />.
+<CodeSearchLink path="src/addons/embodied-control/README.md" />.

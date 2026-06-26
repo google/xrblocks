@@ -1,20 +1,43 @@
 import * as THREE from 'three';
-import {Core, Input, Script, Simulator} from 'xrblocks';
+import {
+  Core,
+  Handedness,
+  Input,
+  Options,
+  Script,
+  Simulator,
+  SimulatorMode,
+} from 'xrblocks';
 import {
   EmbodiedControl,
   type EmbodiedControlOptions,
-  type EmbodiedControlStepResult,
 } from '../embodied-control';
 
+import {
+  createRemoteControlBuiltInTools,
+  type RemoteControlTarget,
+} from './built-in-tools';
+import {
+  type RemoteControlCallToolRequest,
+  type RemoteControlRequest,
+  type RemoteControlResponse,
+  type RemoteControlToolHandler,
+  type RemoteControlToolMetadata,
+} from './RemoteControlProtocol';
 import {
   WebSocketRemoteControlTransport,
   type WebSocketRemoteControlTransportOptions,
 } from './WebSocketRemoteControlTransport';
-import {RemoteControlMessage} from './RemoteControlProtocol';
 
 export type RemoteControlOptions = WebSocketRemoteControlTransportOptions & {
   embodiedControl?: EmbodiedControl;
   embodiedOptions?: EmbodiedControlOptions;
+  tools?: Record<string, RemoteControlToolHandler>;
+};
+
+type RegisteredTool = {
+  handler: RemoteControlToolHandler;
+  metadata?: RemoteControlToolMetadata;
 };
 
 export class RemoteControl extends Script {
@@ -36,10 +59,30 @@ export class RemoteControl extends Script {
     camera: THREE.Camera;
   };
 
+  private tools = new Map<string, RegisteredTool>();
+
+  static configureOptions(options = new Options()) {
+    options.formFactor = 'desktop';
+    options.xrButton.enabled = false;
+    options.xrButton.alwaysAutostartSimulator = true;
+    options.enableHands();
+    options.enableCamera();
+    options.simulator.defaultMode = SimulatorMode.POSE;
+    options.simulator.defaultHand = Handedness.RIGHT;
+    options.simulator.simulatorSettingsPanel.enabled = false;
+    options.simulator.instructions.enabled = false;
+    options.simulator.handPosePanel.enabled = false;
+    return options;
+  }
+
   constructor(private options: RemoteControlOptions = {}) {
     super();
     this.embodiedControl =
       options.embodiedControl ?? new EmbodiedControl(options.embodiedOptions);
+
+    for (const [name, handler] of Object.entries(options.tools ?? {})) {
+      this.registerTool(name, handler);
+    }
   }
 
   init(dependencies: {
@@ -53,13 +96,15 @@ export class RemoteControl extends Script {
       this.embodiedControl.init(dependencies);
     }
 
+    this.registerBuiltInTools();
     this.transport = new WebSocketRemoteControlTransport(
       {
         url: this.options.url,
+        sessionId: this.options.sessionId,
         reconnect: this.options.reconnect,
         reconnectDelayMs: this.options.reconnectDelayMs,
       },
-      (cmd) => this.handleCommand(cmd)
+      (request) => this.handleRequest(request)
     );
     this.transport.connect();
   }
@@ -68,47 +113,91 @@ export class RemoteControl extends Script {
     this.transport?.disconnect();
   }
 
-  async handleCommand(
-    message: RemoteControlMessage
-  ): Promise<EmbodiedControlStepResult> {
-    switch (message.type) {
-      case 'STEP':
-        return this.embodiedControl.step(message);
-      case 'TELEPORT_TO': {
-        const target = this.resolveTarget(message.target);
-        return this.embodiedControl.teleportTo(target, message.options);
+  override onSimulatorStarted() {
+    if (
+      !this.dependencies.core.scriptsManager.scripts.has(this.embodiedControl)
+    ) {
+      this.embodiedControl.onSimulatorStarted();
+    }
+    this.transport?.announceSimulatorReady();
+  }
+
+  registerTool(
+    name: string,
+    handler: RemoteControlToolHandler,
+    metadata?: RemoteControlToolMetadata
+  ) {
+    if (!name) {
+      throw new Error('RemoteControl tool names must be non-empty.');
+    }
+    this.tools.set(name, {handler, metadata});
+  }
+
+  unregisterTool(name: string) {
+    this.tools.delete(name);
+  }
+
+  listTools() {
+    return [...this.tools.entries()].map(([name, tool]) => ({
+      name,
+      metadata: tool.metadata,
+    }));
+  }
+
+  async handleRequest(
+    request: RemoteControlRequest
+  ): Promise<RemoteControlResponse> {
+    try {
+      const result =
+        request.type === 'ping' ? {pong: true} : await this.callTool(request);
+      return {
+        type: 'response',
+        id: request.id,
+        ok: true,
+        result,
+      };
+    } catch (error) {
+      const code =
+        error instanceof Error && error.name === 'EmbodiedControlBusyError'
+          ? 'active_step'
+          : 'execution_error';
+      return {
+        type: 'response',
+        id: request.id,
+        ok: false,
+        error: {
+          code,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }
+
+  private async callTool(request: RemoteControlCallToolRequest) {
+    const tool = this.tools.get(request.name);
+    if (!tool) {
+      throw new Error(`RemoteControl tool not found: ${request.name}`);
+    }
+    return tool.handler(request.args, {request});
+  }
+
+  private registerBuiltInTools() {
+    for (const tool of createRemoteControlBuiltInTools({
+      ...this.dependencies,
+      embodiedControl: this.embodiedControl,
+      resolveTarget: (target) => this.resolveTarget(target),
+    })) {
+      if (!this.tools.has(tool.name)) {
+        this.tools.set(tool.name, {
+          handler: tool.handler,
+          metadata: tool.metadata,
+        });
       }
-      case 'LOOK_AT_TARGET': {
-        const target = this.resolveTarget(message.target);
-        return this.embodiedControl.lookAtTarget(target, message.options);
-      }
-      case 'POINT_TO': {
-        const target = this.resolveTarget(message.target);
-        return this.embodiedControl.pointTo(
-          message.handIndex,
-          target,
-          message.options
-        );
-      }
-      case 'REACH_TO': {
-        const target = this.resolveTarget(message.target);
-        return this.embodiedControl.reachTo(
-          message.handIndex,
-          target,
-          message.options
-        );
-      }
-      case 'CLICK':
-        return this.embodiedControl.click(message.handIndex, message.options);
-      default:
-        throw new Error(
-          `Unsupported command type: ${(message as {type: string}).type}`
-        );
     }
   }
 
   private resolveTarget(
-    target: [number, number, number] | string
+    target: RemoteControlTarget
   ): THREE.Vector3 | THREE.Object3D {
     if (typeof target === 'string') {
       const obj = this.dependencies.core.scene.getObjectByName(target);
