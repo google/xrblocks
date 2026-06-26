@@ -33,6 +33,22 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private static readonly XR_CAMERA_ACCESS_TIMEOUT_MS = 5000;
 
   simulatorCamera?: SimulatorCamera;
+  /**
+   * Camera intrinsics (clip-from-view) read straight off the WebXR `XRView`
+   * while raw camera access is streaming. Preferred over the static per-device
+   * fallback table when {@link hasXRCameraParams} is set.
+   */
+  xrCameraClipFromView?: THREE.Matrix4;
+  /**
+   * Camera pose (world-from-view) read straight off the WebXR `XRView`, in the
+   * same reference space used for `getViewerPose` and the rendered scene.
+   */
+  xrCameraWorldFromView?: THREE.Matrix4;
+  /**
+   * Whether {@link xrCameraClipFromView} / {@link xrCameraWorldFromView} hold
+   * live values captured from the current session.
+   */
+  hasXRCameraParams = false;
   rgbToDepthParams: RgbToDepthParams;
   protected videoConstraints_: MediaTrackConstraints;
   private isInitializing_ = false;
@@ -353,6 +369,19 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
       this.height = xrCamera.height;
       this.aspectRatio = this.width / this.height;
 
+      // The WebXR view already carries the device's own camera math:
+      // `projectionMatrix` is the intrinsics (clip-from-view) and
+      // `transform.matrix` is the pose (world-from-view), both in the reference
+      // space three renders in. Capture them so downstream consumers use real
+      // per-device values instead of the static DEVICE_CAMERA_PARAMETERS table.
+      (this.xrCameraClipFromView ??= new THREE.Matrix4()).fromArray(
+        view.projectionMatrix
+      );
+      (this.xrCameraWorldFromView ??= new THREE.Matrix4()).fromArray(
+        view.transform.matrix
+      );
+      this.hasXRCameraParams = true;
+
       const texProperties = this.renderer_!.properties.get(
         this.xrCameraTexture_
       ) as {
@@ -387,6 +416,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     if (!this.isXRCameraAccessGranted_()) {
       this.useXRCameraAccess_ = false;
       this.loaded = false;
+      this.hasXRCameraParams = false;
       this.setState_(StreamState.NO_DEVICES_FOUND, {force: true});
       console.warn(
         `${reason} WebXR Raw Camera Access API is not available in this session.`,
