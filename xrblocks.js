@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid ca68fa8
- * @builddate 2026-06-26T22:17:07.239Z
+ * @commitid 5f99f2c
+ * @builddate 2026-06-26T22:24:41.203Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -18098,14 +18098,12 @@ const SquircleShader = {
       #include <alphatest_fragment>
       #include <alphahash_fragment>
       #include <specularmap_fragment>
-      vec2 size = uBoxSize * 1000.0;
 
-      // Calculates the adjusted radius based on box size.
-      float radius = min(size.x, size.y) * (0.05 + uRadius);
-      vec2 half_size = 0.5 * size;
+      // Compute the distance from the rounded box edge in meters.
+      float dist = distRoundBox(vUv * uBoxSize - uBoxSize * 0.5, uBoxSize * 0.5, uRadius);
 
-      // Compute the distance from the rounded box edge.
-      float dist = distRoundBox(vUv * size - half_size, half_size, radius);
+      // Antialiasing delta
+      float aa = fwidth(dist) * 0.8;
 
       // Use lerp for smooth color transition based on distance.
       vec4 colorInside = uBackgroundColor;
@@ -18118,7 +18116,7 @@ const SquircleShader = {
       // Transparent black for outside.
       vec4 colorOutside = vec4(0.0, 0.0, 0.0, 0.0);
 
-      vec4 finalColor = mix(colorInside, colorOutside, smoothstep(0.0, 1.0, dist));
+      vec4 finalColor = mix(colorInside, colorOutside, smoothstep(0.0, aa, dist));
 
       // Return premultiplied alpha.
       gl_FragColor = uOpacity * finalColor.a * vec4(finalColor.rgb, 1.0);
@@ -18826,10 +18824,6 @@ const SpatialPanelShader = {
     }
 
     void main(void) {
-      vec2 size = uBoxSize * 1000.0;
-      float radius = min(size.x, size.y) * (0.05 + uRadius);
-      vec2 half_size = 0.5 * size;
-
       // Distance to the outer edge of the round box in UV space (0-1)
       float distOuterUV = distRoundBox(vTexCoord * uBoxSize - uBoxSize * 0.5, uBoxSize * 0.5, uRadius);
 
@@ -18872,9 +18866,8 @@ class PanelMesh extends THREE.Mesh {
      * Creates an instance of PanelMesh.
      * @param shader - Shader for the panel mesh.
      * @param backgroundColor - The background color as a CSS string.
-     * @param panelScale - The initial scale of the plane
      */
-    constructor(shader, backgroundColor, panelScale = 1.0) {
+    constructor(shader, backgroundColor) {
         // Each mesh needs its own unique set of uniforms.
         const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
         const material = new THREE.ShaderMaterial({
@@ -18885,7 +18878,7 @@ class PanelMesh extends THREE.Mesh {
             depthWrite: false,
             side: THREE.DoubleSide,
         });
-        const geometry = new THREE.PlaneGeometry(panelScale, panelScale);
+        const geometry = new THREE.PlaneGeometry(1.0, 1.0);
         super(geometry, material);
         /** Text description of the PanelMesh */
         this.name = 'PanelMesh';
@@ -18959,6 +18952,8 @@ class Panel extends View {
          * Whether to show highlights for the spatial panel.
          */
         this.showHighlights = false;
+        /** The width of the interactive border, in meters. */
+        this.borderWidth = 0.1;
         /** The background color of the panel, expressed as a CSS color string. */
         this.backgroundColor = '#c2c2c255';
         // --- Private Fading Animation Properties ---
@@ -18988,8 +18983,6 @@ class Panel extends View {
         this._targetOpacity = 1.0;
         const isDraggable = options.draggable ?? this.draggable;
         const useBorderlessShader = options.useBorderlessShader ?? !isDraggable;
-        // Draggable panels have a larger geometry for interaction padding.
-        const panelScale = useBorderlessShader ? 1.0 : 1.3;
         // Use SpatialPanelShader for SpatialPanel, while developers can choose
         // useBorderlessShader=false to disable the interactive border.
         const shader = useBorderlessShader ? SquircleShader : SpatialPanelShader;
@@ -19011,7 +19004,11 @@ class Panel extends View {
             options.useDefaultPosition ?? this.useDefaultPosition;
         this.useBorderlessShader =
             options.useBorderlessShader ?? this.useBorderlessShader;
-        this.mesh = new PanelMesh(shader, this.backgroundColor, panelScale);
+        this.borderWidth = options.borderWidth ?? this.borderWidth;
+        this.mesh = new PanelMesh(shader, this.backgroundColor);
+        if (this.mesh.uniforms.uBorderWidth) {
+            this.mesh.uniforms.uBorderWidth.value = this.borderWidth;
+        }
         this.add(this.mesh);
         this.updateLayout();
     }
@@ -19158,9 +19155,17 @@ class Panel extends View {
      */
     updateLayout() {
         super.updateLayout();
-        this.mesh.setAspectRatio(this.aspectRatio);
         const parentAspectRatio = this.isRoot || !this.parent ? 1.0 : this.parent.aspectRatio;
-        this.mesh.setWidthHeight(this.width * Math.max(parentAspectRatio, 1.0), this.height * Math.max(1.0 / parentAspectRatio, 1.0));
+        const layoutWidth = this.width * Math.max(parentAspectRatio, 1.0);
+        const layoutHeight = this.height * Math.max(1.0 / parentAspectRatio, 1.0);
+        const effectiveBorderWidth = this.useBorderlessShader
+            ? 0.0
+            : this.borderWidth;
+        const meshWidth = layoutWidth + effectiveBorderWidth;
+        const meshHeight = layoutHeight + effectiveBorderWidth;
+        const panelScale = Math.min(layoutWidth, layoutHeight);
+        this.mesh.scale.set(meshWidth / panelScale, meshHeight / panelScale, 1.0);
+        this.mesh.setWidthHeight(meshWidth, meshHeight);
         this.mesh.renderOrder = this.renderOrder;
     }
     /**

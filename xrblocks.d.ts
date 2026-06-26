@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid ca68fa8
- * @builddate 2026-06-26T22:17:07.239Z
+ * @commitid 5f99f2c
+ * @builddate 2026-06-26T22:24:41.203Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7511,6 +7511,7 @@ type PanelOptions = ViewOptions & {
     showHighlights?: boolean;
     useDefaultPosition?: boolean;
     useBorderlessShader?: boolean;
+    borderWidth?: number;
 };
 
 /**
@@ -7579,9 +7580,8 @@ declare class PanelMesh extends THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMate
      * Creates an instance of PanelMesh.
      * @param shader - Shader for the panel mesh.
      * @param backgroundColor - The background color as a CSS string.
-     * @param panelScale - The initial scale of the plane
      */
-    constructor(shader: Shader, backgroundColor?: string, panelScale?: number);
+    constructor(shader: Shader, backgroundColor?: string);
     /**
      * Sets the panel's absolute dimensions (width and height) in the shader.
      * This is used by the shader to correctly calculate properties like rounded
@@ -7642,6 +7642,8 @@ declare class Panel extends View implements Draggable, Partial<HasDraggingMode> 
      * Whether to show highlights for the spatial panel.
      */
     showHighlights: boolean;
+    /** The width of the interactive border, in meters. */
+    borderWidth: number;
     /** The background color of the panel, expressed as a CSS color string. */
     backgroundColor: string;
     /**
