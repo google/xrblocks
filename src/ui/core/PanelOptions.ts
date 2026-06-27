@@ -14,4 +14,5 @@ export type PanelOptions = ViewOptions & {
   showHighlights?: boolean;
   useDefaultPosition?: boolean;
   useBorderlessShader?: boolean;
+  borderWidth?: number;
 };

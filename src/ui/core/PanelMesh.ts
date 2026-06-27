@@ -29,9 +29,8 @@ export class PanelMesh extends THREE.Mesh<
    * Creates an instance of PanelMesh.
    * @param shader - Shader for the panel mesh.
    * @param backgroundColor - The background color as a CSS string.
-   * @param panelScale - The initial scale of the plane
    */
-  constructor(shader: Shader, backgroundColor?: string, panelScale = 1.0) {
+  constructor(shader: Shader, backgroundColor?: string) {
     // Each mesh needs its own unique set of uniforms.
     const uniforms = THREE.UniformsUtils.clone(shader.uniforms);
 
@@ -44,7 +43,7 @@ export class PanelMesh extends THREE.Mesh<
       side: THREE.DoubleSide,
     });
 
-    const geometry = new THREE.PlaneGeometry(panelScale, panelScale);
+    const geometry = new THREE.PlaneGeometry(1.0, 1.0);
 
     super(geometry, material);
 

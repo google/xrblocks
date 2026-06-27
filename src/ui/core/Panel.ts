@@ -76,6 +76,9 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
    */
   showHighlights = false;
 
+  /** The width of the interactive border, in meters. */
+  borderWidth = 0.1;
+
   /** The background color of the panel, expressed as a CSS color string. */
   backgroundColor = '#c2c2c255';
 
@@ -123,8 +126,6 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
     const isDraggable = options.draggable ?? this.draggable;
 
     const useBorderlessShader = options.useBorderlessShader ?? !isDraggable;
-    // Draggable panels have a larger geometry for interaction padding.
-    const panelScale = useBorderlessShader ? 1.0 : 1.3;
     // Use SpatialPanelShader for SpatialPanel, while developers can choose
     // useBorderlessShader=false to disable the interactive border.
     const shader = useBorderlessShader ? SquircleShader : SpatialPanelShader;
@@ -147,8 +148,12 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
       options.useDefaultPosition ?? this.useDefaultPosition;
     this.useBorderlessShader =
       options.useBorderlessShader ?? this.useBorderlessShader;
+    this.borderWidth = options.borderWidth ?? this.borderWidth;
 
-    this.mesh = new PanelMesh(shader, this.backgroundColor, panelScale);
+    this.mesh = new PanelMesh(shader, this.backgroundColor);
+    if (this.mesh.uniforms.uBorderWidth) {
+      this.mesh.uniforms.uBorderWidth.value = this.borderWidth;
+    }
     this.add(this.mesh);
 
     this.updateLayout();
@@ -321,13 +326,21 @@ export class Panel extends View implements Draggable, Partial<HasDraggingMode> {
    */
   override updateLayout() {
     super.updateLayout();
-    this.mesh.setAspectRatio(this.aspectRatio);
     const parentAspectRatio =
       this.isRoot || !this.parent ? 1.0 : (this.parent as View).aspectRatio;
-    this.mesh.setWidthHeight(
-      this.width * Math.max(parentAspectRatio, 1.0),
-      this.height * Math.max(1.0 / parentAspectRatio, 1.0)
-    );
+    const layoutWidth = this.width * Math.max(parentAspectRatio, 1.0);
+    const layoutHeight = this.height * Math.max(1.0 / parentAspectRatio, 1.0);
+
+    const effectiveBorderWidth = this.useBorderlessShader
+      ? 0.0
+      : this.borderWidth;
+    const meshWidth = layoutWidth + effectiveBorderWidth;
+    const meshHeight = layoutHeight + effectiveBorderWidth;
+
+    const panelScale = Math.min(layoutWidth, layoutHeight);
+    this.mesh.scale.set(meshWidth / panelScale, meshHeight / panelScale, 1.0);
+
+    this.mesh.setWidthHeight(meshWidth, meshHeight);
     this.mesh.renderOrder = this.renderOrder;
   }
 
