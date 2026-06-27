@@ -8,15 +8,17 @@ import {
   UIIcon,
   UIPanel,
   UIText,
-} from 'uiblocks';
+} from 'xrblocks/addons/uiblocks/src/index.js';
 import * as xb from 'xrblocks';
 
-// Demo for the GenerativeObjects primitive (xb.core.generative.imagine).
-// Buttons or voice summon an AI-generated cutout onto the surface you're
-// looking at; grab to move it.
+import {GenerativeObjects} from './GenerativeObjects.js';
+
+// Demo for a prompt-to-object generative helper. Buttons or voice summon an
+// AI-generated cutout onto the surface you're looking at; grab to move it.
 //
-// A Gemini API key is required, pass it in the URL as ?key=... or place a
-// keys.json next to this file.
+// The generative helper lives in this demo (demos/generative_object/src/), not
+// the SDK: a Gemini API key is required, pass it in the URL as ?key=... or place
+// a keys.json next to this file (or at the served repo root).
 
 const PRESET_PROMPTS = [
   'a small friendly red dragon',
@@ -28,17 +30,23 @@ const PRESET_PROMPTS = [
 ];
 
 class GenerativeObjectDemo extends xb.Script {
-  constructor() {
+  private presetIndex = 0;
+  private busy = false;
+  private listening = false;
+  private recognizer: xb.SpeechRecognizer | null = null;
+  private domSpeakButton: HTMLButtonElement | null = null;
+  private xrStatusText: UIText | null = null;
+  private uiCore?: UICore;
+
+  /**
+   * @param generative - The demo-owned generative helper, added to the engine
+   *     separately so its dependencies (AI, camera, scene, depth) are injected.
+   */
+  constructor(private generative: GenerativeObjects) {
     super();
-    this.presetIndex = 0;
-    this.busy = false;
-    this.listening = false;
-    this.recognizer = null;
-    this.domSpeakButton = null;
-    this.xrStatusText = null;
   }
 
-  init() {
+  override init() {
     // Lights so the relief (lit standard material) shows surface shading.
     const ambient = new THREE.AmbientLight(0xffffff, 1.2);
     const key = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -67,13 +75,13 @@ class GenerativeObjectDemo extends xb.Script {
 
   // ---- actions (shared by DOM buttons, spatial buttons, and keys) ----
 
-  summonPreset_() {
+  private summonPreset_() {
     const prompt = PRESET_PROMPTS[this.presetIndex % PRESET_PROMPTS.length];
     this.presetIndex++;
     this.imagine(prompt);
   }
 
-  toggleSpeak_() {
+  private toggleSpeak_() {
     if (!this.recognizer) return;
     if (this.listening) {
       this.recognizer.stop();
@@ -85,8 +93,8 @@ class GenerativeObjectDemo extends xb.Script {
     }
   }
 
-  toggleRelief_() {
-    const opts = xb.core.generative.options;
+  private toggleRelief_() {
+    const opts = this.generative.options;
     opts.relief = !opts.relief;
     // Relief reads best when you can move around it, so pause billboarding.
     opts.billboard = !opts.relief;
@@ -97,21 +105,21 @@ class GenerativeObjectDemo extends xb.Script {
     );
   }
 
-  clearObjects_() {
-    xb.core.generative.clearObjects();
+  private clearObjects_() {
+    this.generative.clearObjects();
     this.setStatus_('cleared. summon something new.');
   }
 
-  async imagine(prompt) {
+  private async imagine(prompt: string) {
     if (this.busy) return;
-    if (!xb.core.generative?.isSupported) {
+    if (!this.generative.isSupported) {
       this.setStatus_('generation unavailable. check your Gemini key.');
       return;
     }
     this.busy = true;
     this.setStatus_(`summoning "${prompt}"...`);
     try {
-      const object = await xb.core.generative.imagine(prompt);
+      const object = await this.generative.imagine(prompt);
       this.setStatus_(
         object
           ? `summoned "${prompt}". grab to move it. summon more anytime.`
@@ -127,7 +135,7 @@ class GenerativeObjectDemo extends xb.Script {
 
   // ---- input: keyboard shortcuts (summoning is via the buttons / voice) ----
 
-  onKeyDown(event) {
+  override onKeyDown(event: KeyboardEvent) {
     if (event.code === 'KeyG') {
       this.summonPreset_();
     } else if (event.code === 'KeyR') {
@@ -137,7 +145,7 @@ class GenerativeObjectDemo extends xb.Script {
 
   // ---- DOM controls (desktop) ----
 
-  buildDomControls_() {
+  private buildDomControls_() {
     const bar = document.createElement('div');
     Object.assign(bar.style, {
       position: 'fixed',
@@ -164,7 +172,10 @@ class GenerativeObjectDemo extends xb.Script {
     document.body.appendChild(bar);
   }
 
-  makeDomButton_(label, onClick) {
+  private makeDomButton_(
+    label: string,
+    onClick: () => void
+  ): HTMLButtonElement {
     const button = document.createElement('button');
     button.textContent = label;
     Object.assign(button.style, {
@@ -180,7 +191,7 @@ class GenerativeObjectDemo extends xb.Script {
     return button;
   }
 
-  setListening_(listening) {
+  private setListening_(listening: boolean) {
     this.listening = listening;
     if (this.domSpeakButton) {
       this.domSpeakButton.textContent = listening
@@ -191,7 +202,7 @@ class GenerativeObjectDemo extends xb.Script {
 
   // ---- spatial control panel (XR) ----
 
-  buildSpatialPanel_() {
+  private buildSpatialPanel_() {
     this.uiCore = new UICore(this);
     const card = this.uiCore.createCard({
       name: 'GenerativeObjectControlCard',
@@ -266,7 +277,11 @@ class GenerativeObjectDemo extends xb.Script {
   }
 
   // Icon + caption button mirroring a DOM control (matches world_companion).
-  makeXrButton_(iconName, label, onClick) {
+  private makeXrButton_(
+    iconName: string,
+    label: string,
+    onClick: () => void
+  ): UIPanel {
     const idle = '#2a2a2a';
     const hover = '#3a3a3a';
     const btn = new UIPanel({
@@ -311,7 +326,7 @@ class GenerativeObjectDemo extends xb.Script {
     return btn;
   }
 
-  setStatus_(text) {
+  private setStatus_(text: string) {
     console.log('[generative_object]', text);
     const el = document.getElementById('status');
     if (el) el.textContent = text;
@@ -322,16 +337,18 @@ class GenerativeObjectDemo extends xb.Script {
 
 function start() {
   const options = new xb.Options();
-  // The generative primitive (also enables AI).
-  options.enableGenerativeObjects();
+  // AI for image generation (the generative helper lives in the demo now).
+  options.enableAI();
 
   // Spatial UI (the control panel) + reticle for pointing at it.
   options.enableUI();
   options.reticles.enabled = true;
 
-  // Real-world depth so generated objects are occluded by your environment.
+  // Real-world depth so generated objects are occluded by your environment, and
+  // so placement raycasts hit the current full-resolution surface.
   options.depth.enabled = true;
   options.depth.depthMesh.enabled = true;
+  options.depth.depthMesh.updateFullResolutionGeometry = true;
   options.depth.depthTexture.enabled = true;
   options.depth.occlusion.enabled = true;
 
@@ -345,7 +362,11 @@ function start() {
   );
   options.xrButton.showEnterSimulatorButton = true;
 
-  xb.add(new GenerativeObjectDemo());
+  // The generative helper is its own Script so dependency injection resolves
+  // AI/camera/scene/depth for it, just like a core subsystem would.
+  const generative = new GenerativeObjects();
+  xb.add(generative);
+  xb.add(new GenerativeObjectDemo(generative));
   xb.init(options);
 }
 

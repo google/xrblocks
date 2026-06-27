@@ -134,19 +134,23 @@
           window.history.replaceState(null, '', newUrl);
           return;
         }
-        try {
-          const res = await fetch('./keys.json', {cache: 'no-store'});
-          if (res.ok) {
-            const k = (await res.json()).key;
-            if (k) {
-              window.localStorage.setItem(STORAGE_KEY, k);
-              params.set('key', k);
-              window.location.search = '?' + params.toString();
-              return;
+        // Try the demo-local keys.json first, then the repo-root one (handy
+        // when debugging locally with a single keys.json at the served root).
+        for (const keysUrl of ['./keys.json', '../../keys.json']) {
+          try {
+            const res = await fetch(keysUrl, {cache: 'no-store'});
+            if (res.ok) {
+              const k = (await res.json()).key;
+              if (k) {
+                window.localStorage.setItem(STORAGE_KEY, k);
+                params.set('key', k);
+                window.location.search = '?' + params.toString();
+                return;
+              }
             }
+          } catch (_) {
+            // no keys.json at this path, try the next / fall through to overlay
           }
-        } catch (_) {
-          // no keys.json, fall through to overlay
         }
         const overlay = document.getElementById('keyOverlay');
         const input = document.getElementById('keyInput');
@@ -185,6 +189,6 @@
     >
       starting...
     </div>
-    <script type="module" src="main.js"></script>
+    <script type="module" src="src/build/main.js"></script>
   </body>
 </html>
