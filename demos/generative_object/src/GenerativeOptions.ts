@@ -4,13 +4,16 @@
  */
 export class GenerativeOptions {
   /**
-   * System instruction passed to the image model. The default steers the model
-   * toward a single, centered subject on a plain background so the result reads
-   * cleanly as a standalone object.
+   * System instruction passed to the image model. Asks for a single subject on
+   * a saturated, uniform background that contrasts with most subjects, so the
+   * background keyer can cut it out cleanly (a plain white background fails for
+   * pale subjects like a paper airplane, which get keyed out with it).
    */
   systemInstruction =
-    'Generate a single, centered subject on a plain, solid white background. ' +
-    'No text, no watermark, no border.';
+    'Generate a single, centered subject that fills most of the frame on a ' +
+    'plain, solid chroma-green (#00b140) background. The subject itself must ' +
+    'not be green. No text, no watermark, no border, no shadows on the ' +
+    'background.';
 
   /** Distance in meters in front of the user to place a new object. */
   distance = 1.0;
@@ -21,6 +24,13 @@ export class GenerativeOptions {
    * of the camera when there is no surface hit. Requires depth to be enabled.
    */
   groundOnSurface = true;
+
+  /**
+   * Farthest a grounded object may be placed, in meters. Surface hits beyond
+   * this (e.g. a wall across the room) are ignored so the object appears at a
+   * comfortable, visible reach in front of you rather than tiny and far away.
+   */
+  maxGroundDistance = 2.0;
 
   /** Largest dimension (meters) of a placed object; aspect ratio is preserved. */
   maxSize = 0.6;

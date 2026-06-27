@@ -248,6 +248,12 @@ export class GenerativeObjects extends Script {
       return null;
     }
     const hit = intersections[0];
+    // Ignore far surfaces (e.g. a wall across the room): placing a small object
+    // metres away makes it tiny and easy to miss. Fall back to in-front
+    // placement by returning null when the hit is beyond the comfortable reach.
+    if (hit.distance > this.options.maxGroundDistance) {
+      return null;
+    }
     const point = hit.point.clone();
     // Prefer the triangle's geometric face normal: the depth mesh does not keep
     // per-vertex normals fresh, so the interpolated hit.normal can be stale,
