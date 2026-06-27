@@ -106,14 +106,12 @@ export const SquircleShader = {
       #include <alphatest_fragment>
       #include <alphahash_fragment>
       #include <specularmap_fragment>
-      vec2 size = uBoxSize * 1000.0;
 
-      // Calculates the adjusted radius based on box size.
-      float radius = min(size.x, size.y) * (0.05 + uRadius);
-      vec2 half_size = 0.5 * size;
+      // Compute the distance from the rounded box edge in meters.
+      float dist = distRoundBox(vUv * uBoxSize - uBoxSize * 0.5, uBoxSize * 0.5, uRadius);
 
-      // Compute the distance from the rounded box edge.
-      float dist = distRoundBox(vUv * size - half_size, half_size, radius);
+      // Antialiasing delta
+      float aa = fwidth(dist) * 0.8;
 
       // Use lerp for smooth color transition based on distance.
       vec4 colorInside = uBackgroundColor;
@@ -126,7 +124,7 @@ export const SquircleShader = {
       // Transparent black for outside.
       vec4 colorOutside = vec4(0.0, 0.0, 0.0, 0.0);
 
-      vec4 finalColor = mix(colorInside, colorOutside, smoothstep(0.0, 1.0, dist));
+      vec4 finalColor = mix(colorInside, colorOutside, smoothstep(0.0, aa, dist));
 
       // Return premultiplied alpha.
       gl_FragColor = uOpacity * finalColor.a * vec4(finalColor.rgb, 1.0);

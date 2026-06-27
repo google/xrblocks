@@ -1,4 +1,4 @@
-name: Build Check
+name: Test
 
 on:
   push:
@@ -6,17 +6,15 @@ on:
       - 'build'
     paths:
       - 'src/**'
-      - 'demos/**/*.ts'
-      - 'samples/**/*.ts'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig*.json'
-      - 'rollup.config.js'
-      - '.github/workflows/build-check.yml'
+      - 'vitest.config.ts'
+      - '.github/workflows/test.yml'
   pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -40,5 +38,5 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Build project
-        run: npm run build
+      - name: Run tests
+        run: npm run test
