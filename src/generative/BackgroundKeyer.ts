@@ -18,9 +18,9 @@ const DEFAULT_TOLERANCE = 48;
 
 /**
  * Estimates the background color of an image by averaging its four corner
- * pixels. Generated images from the default {@link GenerativeOptions}
- * instruction place the subject on a plain, uniform background, so the corners
- * are a reliable sample.
+ * pixels. Generated images that place the subject on a plain, uniform
+ * background (the generative_object demo instructs the model to do so) have
+ * corners that are a reliable sample.
  * @param image - The source RGBA image.
  * @returns The estimated `[r, g, b]` background color (0-255).
  */
