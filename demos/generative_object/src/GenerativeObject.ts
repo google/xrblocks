@@ -99,6 +99,9 @@ function buildFlatMesh(texture: THREE.Texture) {
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
+    // Discard the keyed-out (transparent) pixels so edge filtering doesn't blend
+    // the chroma-key background color into a halo around the cutout.
+    alphaTest: 0.5,
     side: THREE.DoubleSide,
   });
   return new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
