@@ -23,15 +23,6 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 /** Clearance in meters to float an object off a vertical surface. */
 const SURFACE_CLEARANCE = 0.08;
 
-// Saved original raycast of each depth mesh whose raycast we no-op (so the
-// reticle skips it) but still need for surface placement. See
-// ensureDepthMeshNonInteractive_ / raycastSurface_.
-type DepthMeshRaycast = (
-  raycaster: THREE.Raycaster,
-  intersects: THREE.Intersection[]
-) => boolean;
-const originalDepthRaycast = new WeakMap<THREE.Object3D, DepthMeshRaycast>();
-
 /** Per-call overrides for {@link GenerativeObjects.imagine}. */
 export interface ImagineOptions {
   /** Distance in meters in front of the user. Defaults to the options value. */
@@ -107,7 +98,7 @@ export class GenerativeObjects extends Script {
 
   /** Billboards tracked objects toward the user each frame, when enabled. */
   override update() {
-    this.ensureDepthMeshNonInteractive_();
+    this.markDepthMeshNonInteractive_();
     if (!this.options.billboard || this.objects.length === 0) {
       return;
     }
@@ -121,17 +112,15 @@ export class GenerativeObjects extends Script {
     }
   }
 
-  // The depth mesh is added to the scene for occlusion and surface placement, so
-  // the reticle's whole-scene raycast also hits it; standing close to a wall
-  // makes it the nearest hit and steals hover from the control panel. No-op its
-  // raycast so the reticle skips it (raycastSurface_ restores it for placement).
-  private ensureDepthMeshNonInteractive_() {
+  // Keep the depth mesh out of the reticle's hover/select raycast so that
+  // standing close to a wall doesn't let it steal hover from the control panel.
+  // ignoreReticleRaycast leaves the mesh's own .raycast intact, so
+  // raycastSurface_ can still place objects on it.
+  private markDepthMeshNonInteractive_() {
     const mesh = this.depth?.depthMesh;
-    if (!mesh || originalDepthRaycast.has(mesh)) {
-      return;
+    if (mesh) {
+      mesh.ignoreReticleRaycast = true;
     }
-    originalDepthRaycast.set(mesh, mesh.raycast);
-    mesh.raycast = () => false;
   }
 
   /**
@@ -266,15 +255,7 @@ export class GenerativeObjects extends Script {
     const origin = this.camera.getWorldPosition(scratchOrigin);
     const direction = this.camera.getWorldDirection(scratchDirection);
     this.raycaster.set(origin, direction);
-    // depthMesh.raycast is no-op'd so the reticle ignores it; restore the real
-    // raycast just for this placement query.
-    const original = originalDepthRaycast.get(depthMesh);
-    const nooped = depthMesh.raycast;
-    if (original) {
-      depthMesh.raycast = original;
-    }
     const intersections = this.raycaster.intersectObject(depthMesh, false);
-    depthMesh.raycast = nooped;
     if (intersections.length === 0) {
       return null;
     }
