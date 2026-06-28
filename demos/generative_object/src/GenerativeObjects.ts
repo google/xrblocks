@@ -65,6 +65,9 @@ export class GenerativeObjects extends Script {
   private scene!: THREE.Scene;
   private depth?: Depth;
   private raycaster = new THREE.Raycaster();
+  // Per-object teardown that removes the object's occlusion shader from the
+  // engine-wide depth.occludableShaders set, so cleared objects don't leak.
+  private readonly shaderCleanups = new Map<GenerativeObject, () => void>();
   // Bumped whenever objects are cleared, so an in-flight imagine() that resolves
   // after a clear/teardown does not add a stale object to the scene.
   private generation = 0;
@@ -208,6 +211,10 @@ export class GenerativeObjects extends Script {
     material.onBeforeCompile = (shader) => {
       OcclusionUtils.addOcclusionToShader(shader);
       depth.occludableShaders.add(shader);
+      // Remember how to remove this shader so clearObjects() doesn't leak it.
+      this.shaderCleanups.set(object, () =>
+        depth.occludableShaders.delete(shader)
+      );
     };
     material.needsUpdate = true;
   }
@@ -284,6 +291,8 @@ export class GenerativeObjects extends Script {
     this.generation++;
     for (const object of this.objects) {
       this.scene.remove(object);
+      this.shaderCleanups.get(object)?.();
+      this.shaderCleanups.delete(object);
       object.dispose();
     }
     this.objects.length = 0;
