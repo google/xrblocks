@@ -170,319 +170,331 @@ export class Object3DDetector extends Script {
     }
     this._detectInFlight = true;
 
-    // Capture one snapshot frame that will be shared for detection + SAM.
-    let snapImageData: ImageData | null = null;
+    // Wrap the whole body so the in-flight guard is always cleared even if the
+    // setup below (canvas / camera clone / bvh / depth snapshot) throws; one
+    // failure must not wedge the detector permanently.
     try {
-      snapImageData =
-        deviceCamera?.getSnapshot({outputFormat: 'imageData'}) ?? null;
-    } catch (_e) {
-      snapImageData = null;
-    }
-    if (!snapImageData) {
-      console.warn('[Object3DDetector] no camera frame available');
-      this._detectInFlight = false;
-      return this._results;
-    }
-    if (!deviceCamera) {
-      console.warn('[Object3DDetector] device camera not available');
-      this._detectInFlight = false;
-      return this._results;
-    }
-
-    // Derive base64 from the same ImageData to avoid a second video-frame read.
-    const b64Canvas = document.createElement('canvas');
-    b64Canvas.width = snapImageData.width;
-    b64Canvas.height = snapImageData.height;
-    b64Canvas.getContext('2d')!.putImageData(snapImageData, 0, 0);
-    const snapBase64 = b64Canvas.toDataURL('image/jpeg', 0.9);
-
-    // Freeze the camera matrix so raycasts align with snapshot pixels.
-    const liveCam = core.camera;
-    const frozenCam = liveCam.clone() as THREE.PerspectiveCamera;
-    frozenCam.matrixAutoUpdate = false;
-    liveCam.updateMatrixWorld();
-    frozenCam.matrix.copy(liveCam.matrix);
-    frozenCam.matrixWorld.copy(liveCam.matrixWorld);
-    frozenCam.matrixWorldInverse.copy(liveCam.matrixWorld).invert();
-    frozenCam.projectionMatrix.copy(liveCam.projectionMatrix);
-    frozenCam.projectionMatrixInverse.copy(liveCam.projectionMatrixInverse);
-    frozenCam.position.copy(liveCam.position);
-    frozenCam.quaternion.copy(liveCam.quaternion);
-    const snapAspect = snapImageData.width / snapImageData.height;
-    frozenCam.userData = {...frozenCam.userData, snapAspect};
-
-    // Wait for the BVH patch before building the per-press bounds tree.
-    await _bvhReady;
-
-    // Clone and index the depth mesh.
-    const frozenDepthMesh = this._snapshotDepthMesh();
-    if (!frozenDepthMesh) {
-      console.warn('[Object3DDetector] no depth mesh available');
-      this._detectInFlight = false;
-      return this._results;
-    }
-
-    // Monkey-patch getSnapshot so the SDK detector backends read our cached
-    // frame instead of the live video (which may have drifted by the time
-    // they call it).
-    type SnapFn = typeof deviceCamera.getSnapshot;
-    const origGetSnapshot = deviceCamera.getSnapshot.bind(
-      deviceCamera
-    ) as SnapFn;
-    const mutableCamera = deviceCamera as unknown as {
-      getSnapshot: (opts?: {outputFormat?: string}) => unknown;
-    };
-    mutableCamera.getSnapshot = (opts?: {outputFormat?: string}) => {
-      if (opts?.outputFormat === 'base64') return Promise.resolve(snapBase64);
-      if (opts?.outputFormat === 'imageData') return snapImageData;
-      return (origGetSnapshot as (opts?: unknown) => unknown)(opts);
-    };
-
-    // Start SAM init + encode in parallel with 2-D detection.
-    let samPrep: Promise<Awaited<ReturnType<typeof samEncodeSnapshot>>> | null =
-      null;
-    if (this._opts.maskBackend === 'slimsam') {
-      samPrep = (async () => {
-        await getSam();
-        return samEncodeSnapshot(snapImageData!);
-      })();
-      samPrep.catch(() => {});
-    }
-
-    try {
-      // 2-D detection.
-      let detected: Awaited<ReturnType<typeof worldObjects.runDetection>>;
+      // Capture one snapshot frame that will be shared for detection + SAM.
+      let snapImageData: ImageData | null = null;
       try {
-        if (this._opts.detectBackend === 'both') {
-          const cfg = core.world!.options.objects.backendConfig;
-          const prev = cfg.activeBackend;
-          try {
-            cfg.activeBackend = 'mediapipe';
-            const mp = await worldObjects.runDetection();
-            cfg.activeBackend = 'gemini';
-            const gm = await worldObjects.runDetection();
-            detected = unionDetections(mp, gm) as typeof mp;
-          } finally {
-            cfg.activeBackend = prev;
-          }
-        } else {
-          const cfg = core.world!.options.objects.backendConfig;
-          const prev = cfg.activeBackend;
-          cfg.activeBackend = this._opts.detectBackend;
-          try {
-            detected = await worldObjects.runDetection();
-          } finally {
-            cfg.activeBackend = prev;
-          }
-        }
-      } catch (e) {
-        console.warn('[Object3DDetector] runDetection threw', e);
+        snapImageData =
+          deviceCamera?.getSnapshot({outputFormat: 'imageData'}) ?? null;
+      } catch (_e) {
+        snapImageData = null;
+      }
+      if (!snapImageData) {
+        console.warn('[Object3DDetector] no camera frame available');
+        return this._results;
+      }
+      if (!deviceCamera) {
+        console.warn('[Object3DDetector] device camera not available');
         return this._results;
       }
 
-      if (!detected.length) {
-        console.info('[Object3DDetector] nothing detected');
+      // Derive base64 from the same ImageData to avoid a second video-frame read.
+      const b64Canvas = document.createElement('canvas');
+      b64Canvas.width = snapImageData.width;
+      b64Canvas.height = snapImageData.height;
+      b64Canvas.getContext('2d')!.putImageData(snapImageData, 0, 0);
+      const snapBase64 = b64Canvas.toDataURL('image/jpeg', 0.9);
+
+      // Freeze the camera matrix so raycasts align with snapshot pixels.
+      const liveCam = core.camera;
+      const frozenCam = liveCam.clone() as THREE.PerspectiveCamera;
+      frozenCam.matrixAutoUpdate = false;
+      liveCam.updateMatrixWorld();
+      frozenCam.matrix.copy(liveCam.matrix);
+      frozenCam.matrixWorld.copy(liveCam.matrixWorld);
+      frozenCam.matrixWorldInverse.copy(liveCam.matrixWorld).invert();
+      frozenCam.projectionMatrix.copy(liveCam.projectionMatrix);
+      frozenCam.projectionMatrixInverse.copy(liveCam.projectionMatrixInverse);
+      frozenCam.position.copy(liveCam.position);
+      frozenCam.quaternion.copy(liveCam.quaternion);
+      const snapAspect = snapImageData.width / snapImageData.height;
+      frozenCam.userData = {...frozenCam.userData, snapAspect};
+
+      // Wait for the BVH patch before building the per-press bounds tree.
+      await _bvhReady;
+
+      // Clone and index the depth mesh.
+      const frozenDepthMesh = this._snapshotDepthMesh();
+      if (!frozenDepthMesh) {
+        console.warn('[Object3DDetector] no depth mesh available');
         return this._results;
       }
 
-      // Await the SAM encoder that ran in parallel with detection.
-      let samState: Awaited<ReturnType<typeof samEncodeSnapshot>> | null = null;
-      if (this._opts.maskBackend === 'slimsam' && samPrep) {
+      // Monkey-patch getSnapshot so the SDK detector backends read our cached
+      // frame instead of the live video (which may have drifted by the time
+      // they call it).
+      type SnapFn = typeof deviceCamera.getSnapshot;
+      const origGetSnapshot = deviceCamera.getSnapshot.bind(
+        deviceCamera
+      ) as SnapFn;
+      const mutableCamera = deviceCamera as unknown as {
+        getSnapshot: (opts?: {outputFormat?: string}) => unknown;
+      };
+      mutableCamera.getSnapshot = (opts?: {outputFormat?: string}) => {
+        if (opts?.outputFormat === 'base64') return Promise.resolve(snapBase64);
+        if (opts?.outputFormat === 'imageData') return snapImageData;
+        return (origGetSnapshot as (opts?: unknown) => unknown)(opts);
+      };
+
+      // Start SAM init + encode in parallel with 2-D detection.
+      let samPrep: Promise<
+        Awaited<ReturnType<typeof samEncodeSnapshot>>
+      > | null = null;
+      if (this._opts.maskBackend === 'slimsam') {
+        samPrep = (async () => {
+          await getSam();
+          return samEncodeSnapshot(snapImageData!);
+        })();
+        samPrep.catch(() => {});
+      }
+
+      try {
+        // 2-D detection.
+        let detected: Awaited<ReturnType<typeof worldObjects.runDetection>>;
         try {
-          samState = await samPrep;
+          if (this._opts.detectBackend === 'both') {
+            const cfg = core.world!.options.objects.backendConfig;
+            const prev = cfg.activeBackend;
+            try {
+              cfg.activeBackend = 'mediapipe';
+              const mp = await worldObjects.runDetection();
+              cfg.activeBackend = 'gemini';
+              const gm = await worldObjects.runDetection();
+              detected = unionDetections(mp, gm) as typeof mp;
+            } finally {
+              cfg.activeBackend = prev;
+            }
+          } else {
+            const cfg = core.world!.options.objects.backendConfig;
+            const prev = cfg.activeBackend;
+            cfg.activeBackend = this._opts.detectBackend;
+            try {
+              detected = await worldObjects.runDetection();
+            } finally {
+              cfg.activeBackend = prev;
+            }
+          }
         } catch (e) {
-          console.warn('[Object3DDetector] SAM encoder failed', e);
+          console.warn('[Object3DDetector] runDetection threw', e);
           return this._results;
         }
-      }
 
-      // Restore the snapshot getter; fitting uses the frozen camera / mesh.
-      (deviceCamera as unknown as {getSnapshot: SnapFn}).getSnapshot =
-        origGetSnapshot;
+        if (!detected.length) {
+          console.info('[Object3DDetector] nothing detected');
+          return this._results;
+        }
 
-      const floorY = this._estimateFloorY();
-
-      // Pipeline per-object work: mask decode (serial on GPU via samSerialize)
-      // overlaps with depth raycasts for the previous object.
-      const snapshot = snapImageData;
-      const processOne = async (
-        obj: (typeof detected)[0]
-      ): Promise<{
-        obb: ReturnType<typeof fitYawOBB> & object;
-        label: string;
-        cat: string;
-      } | null> => {
-        try {
-          if (isSurfaceLabel(obj.label)) return null;
-          const box2d = obj.detection2DBoundingBox;
-          let mask;
+        // Await the SAM encoder that ran in parallel with detection.
+        let samState: Awaited<ReturnType<typeof samEncodeSnapshot>> | null =
+          null;
+        if (this._opts.maskBackend === 'slimsam' && samPrep) {
           try {
-            mask =
-              this._opts.maskBackend === 'slimsam' && samState
-                ? await samMaskFromBbox(samState, box2d)
-                : await segmenterMaskFromSnapshot(snapshot!, box2d);
+            samState = await samPrep;
           } catch (e) {
-            console.warn('[Object3DDetector] mask failed for', obj.label, e);
-            return null;
+            console.warn('[Object3DDetector] SAM encoder failed', e);
+            return this._results;
           }
-          if (!mask) return null;
+        }
 
-          const {points: raw} = await sampleDepthInMaskAcrossFrames(
-            mask,
-            box2d,
-            10,
-            3,
-            frozenCam,
-            frozenDepthMesh,
-            snapAspect
-          );
-          mask.close();
+        // Restore the snapshot getter; fitting uses the frozen camera / mesh.
+        (deviceCamera as unknown as {getSnapshot: SnapFn}).getSnapshot =
+          origGetSnapshot;
 
-          const anchor =
-            anchorFromBboxCenter(
+        const floorY = this._estimateFloorY();
+
+        // Pipeline per-object work: mask decode (serial on GPU via samSerialize)
+        // overlaps with depth raycasts for the previous object.
+        const snapshot = snapImageData;
+        const processOne = async (
+          obj: (typeof detected)[0]
+        ): Promise<{
+          obb: ReturnType<typeof fitYawOBB> & object;
+          label: string;
+          cat: string;
+        } | null> => {
+          try {
+            if (isSurfaceLabel(obj.label)) return null;
+            const box2d = obj.detection2DBoundingBox;
+            let mask;
+            try {
+              mask =
+                this._opts.maskBackend === 'slimsam' && samState
+                  ? await samMaskFromBbox(samState, box2d)
+                  : await segmenterMaskFromSnapshot(snapshot!, box2d);
+            } catch (e) {
+              console.warn('[Object3DDetector] mask failed for', obj.label, e);
+              return null;
+            }
+            if (!mask) return null;
+
+            const {points: raw} = await sampleDepthInMaskAcrossFrames(
+              mask,
               box2d,
+              10,
+              3,
               frozenCam,
               frozenDepthMesh,
               snapAspect
-            ) ??
-            (obj.position as THREE.Vector3 | undefined) ??
-            null;
-
-          const cat = categorize(obj.label);
-          let points: THREE.Vector3[];
-
-          if (cat === 'flat') {
-            points = raw;
-          } else if (cat === 'small') {
-            const r = radiusFromBbox(box2d, frozenCam, anchor, {
-              pad: 1.1,
-              minR: 0.12,
-              maxR: 0.3,
-              fallback: 0.25,
-            });
-            points = rejectByAnchor(raw, anchor, r);
-          } else if (cat === 'light') {
-            const r = radiusFromBbox(box2d, frozenCam, anchor, {
-              pad: 1.2,
-              minR: 0.2,
-              maxR: 0.7,
-              fallback: 0.5,
-            });
-            points = rejectByY(rejectByAnchor(raw, anchor, r), 0.15);
-          } else {
-            const r = radiusFromBbox(box2d, frozenCam, anchor, {
-              pad: 1.3,
-              minR: 0.4,
-              maxR: 2.0,
-              fallback: 1.0,
-            });
-            const depthFiltered = rejectByAnchorDepth(
-              raw,
-              frozenCam,
-              anchor,
-              r
             );
-            points = rejectByAnchor(depthFiltered, anchor, r);
-          }
+            mask.close();
 
-          const obb = fitYawOBB(points, {
-            category: cat,
-            camera: frozenCam,
-            anchor,
-            box2d,
-            tinyFlat: isTinyFlatLabel(obj.label),
-          });
-          if (!obb) return null;
+            const anchor =
+              anchorFromBboxCenter(
+                box2d,
+                frozenCam,
+                frozenDepthMesh,
+                snapAspect
+              ) ??
+              (obj.position as THREE.Vector3 | undefined) ??
+              null;
 
-          if (cat === 'furniture' || cat === 'small') {
-            snapBoxToFloor(obb, floorY);
-          }
+            const cat = categorize(obj.label);
+            let points: THREE.Vector3[];
 
-          const c = obb.center;
-          const farFromRoom =
-            Math.abs(c.x) > 6 || Math.abs(c.z) > 6 || c.y < -1 || c.y > 5;
-          const minPoints =
-            cat === 'small' ? 4 : cat === 'light' ? 8 : cat === 'flat' ? 8 : 20;
-          const tinyFlat = isTinyFlatLabel(obj.label);
-          const tooFewPoints = !tinyFlat && points.length < minPoints;
-          const oversize = obb.size.x > 4 || obb.size.y > 3 || obb.size.z > 4;
-          const horizMax = Math.max(obb.size.x, obb.size.z);
-          const degenerate =
-            cat !== 'flat' && horizMax > 0.5 && obb.size.y / horizMax < 0.1;
+            if (cat === 'flat') {
+              points = raw;
+            } else if (cat === 'small') {
+              const r = radiusFromBbox(box2d, frozenCam, anchor, {
+                pad: 1.1,
+                minR: 0.12,
+                maxR: 0.3,
+                fallback: 0.25,
+              });
+              points = rejectByAnchor(raw, anchor, r);
+            } else if (cat === 'light') {
+              const r = radiusFromBbox(box2d, frozenCam, anchor, {
+                pad: 1.2,
+                minR: 0.2,
+                maxR: 0.7,
+                fallback: 0.5,
+              });
+              points = rejectByY(rejectByAnchor(raw, anchor, r), 0.15);
+            } else {
+              const r = radiusFromBbox(box2d, frozenCam, anchor, {
+                pad: 1.3,
+                minR: 0.4,
+                maxR: 2.0,
+                fallback: 1.0,
+              });
+              const depthFiltered = rejectByAnchorDepth(
+                raw,
+                frozenCam,
+                anchor,
+                r
+              );
+              points = rejectByAnchor(depthFiltered, anchor, r);
+            }
 
-          if (farFromRoom || tooFewPoints || oversize || degenerate) {
-            console.warn('[Object3DDetector] reject', obj.label, {
-              farFromRoom,
-              tooFewPoints,
-              oversize,
-              degenerate,
-              kept: points.length,
+            const obb = fitYawOBB(points, {
+              category: cat,
+              camera: frozenCam,
+              anchor,
+              box2d,
+              tinyFlat: isTinyFlatLabel(obj.label),
             });
+            if (!obb) return null;
+
+            if (cat === 'furniture' || cat === 'small') {
+              snapBoxToFloor(obb, floorY);
+            }
+
+            const c = obb.center;
+            const farFromRoom =
+              Math.abs(c.x) > 6 || Math.abs(c.z) > 6 || c.y < -1 || c.y > 5;
+            const minPoints =
+              cat === 'small'
+                ? 4
+                : cat === 'light'
+                  ? 8
+                  : cat === 'flat'
+                    ? 8
+                    : 20;
+            const tinyFlat = isTinyFlatLabel(obj.label);
+            const tooFewPoints = !tinyFlat && points.length < minPoints;
+            const oversize = obb.size.x > 4 || obb.size.y > 3 || obb.size.z > 4;
+            const horizMax = Math.max(obb.size.x, obb.size.z);
+            const degenerate =
+              cat !== 'flat' && horizMax > 0.5 && obb.size.y / horizMax < 0.1;
+
+            if (farFromRoom || tooFewPoints || oversize || degenerate) {
+              console.warn('[Object3DDetector] reject', obj.label, {
+                farFromRoom,
+                tooFewPoints,
+                oversize,
+                degenerate,
+                kept: points.length,
+              });
+              return null;
+            }
+
+            return {obb, label: obj.label || 'object', cat};
+          } catch (e) {
+            console.warn(
+              '[Object3DDetector] pipeline error for',
+              obj.label,
+              (e as Error)?.message ?? String(e)
+            );
             return null;
           }
+        };
 
-          return {obb, label: obj.label || 'object', cat};
-        } catch (e) {
-          console.warn(
-            '[Object3DDetector] pipeline error for',
-            obj.label,
-            (e as Error)?.message ?? String(e)
-          );
-          return null;
-        }
-      };
+        const pipelineResults = await Promise.all(detected.map(processOne));
 
-      const pipelineResults = await Promise.all(detected.map(processOne));
+        // Serial fuse + add pass (fuseIntoBoxes mutates _results).
+        for (const r of pipelineResults) {
+          if (!r || !r.obb) continue;
+          const internalObb = r.obb;
 
-      // Serial fuse + add pass (fuseIntoBoxes mutates _results).
-      for (const r of pipelineResults) {
-        if (!r || !r.obb) continue;
-        const internalObb = r.obb;
-
-        if (this._opts.fuseAcrossViews) {
-          const matched = fuseIntoBoxes(this._results, internalObb, r.cat);
-          if (matched) {
-            const obj = matched as Detected3DObject;
-            obj.syncFromInternalObb({
-              center: obj._fusionCenter,
-              size: obj._fusionSize,
-              angle: obj._fusionAngle,
-            });
-            if (this._opts.showDebugBoxes && obj.boxGroup) {
-              rebuildBoxGroupGeometry(obj.boxGroup as THREE.Group, {
+          if (this._opts.fuseAcrossViews) {
+            const matched = fuseIntoBoxes(this._results, internalObb, r.cat);
+            if (matched) {
+              const obj = matched as Detected3DObject;
+              obj.syncFromInternalObb({
                 center: obj._fusionCenter,
                 size: obj._fusionSize,
                 angle: obj._fusionAngle,
               });
+              if (this._opts.showDebugBoxes && obj.boxGroup) {
+                rebuildBoxGroupGeometry(obj.boxGroup as THREE.Group, {
+                  center: obj._fusionCenter,
+                  size: obj._fusionSize,
+                  angle: obj._fusionAngle,
+                });
+              }
+              continue;
             }
-            continue;
           }
+
+          const newObj = new Detected3DObject(r.label, r.cat, internalObb);
+          if (this._opts.showDebugBoxes) {
+            const color = CAT_COLOR[r.cat] ?? 0x4cd964;
+            const grp = buildBoxGroup(internalObb, r.label, color);
+            newObj.boxGroup = grp;
+            this.add(grp);
+          }
+          this._results.push(newObj);
+          this.add(newObj);
         }
 
-        const newObj = new Detected3DObject(r.label, r.cat, internalObb);
-        if (this._opts.showDebugBoxes) {
-          const color = CAT_COLOR[r.cat] ?? 0x4cd964;
-          const grp = buildBoxGroup(internalObb, r.label, color);
-          newObj.boxGroup = grp;
-          this.add(grp);
+        return this._results;
+      } finally {
+        // Always restore the snapshot getter and clean up the frozen mesh.
+        (deviceCamera as unknown as {getSnapshot: SnapFn}).getSnapshot =
+          origGetSnapshot;
+        if (frozenDepthMesh.geometry) {
+          const geom = frozenDepthMesh.geometry as THREE.BufferGeometry & {
+            disposeBoundsTree?: () => void;
+          };
+          geom.disposeBoundsTree?.();
+          geom.dispose();
         }
-        this._results.push(newObj);
-        this.add(newObj);
+        (frozenDepthMesh.material as THREE.Material | undefined)?.dispose?.();
+        this._detectInFlight = false;
       }
-
-      return this._results;
     } finally {
-      // Always restore the snapshot getter and clean up the frozen mesh.
-      (deviceCamera as unknown as {getSnapshot: SnapFn}).getSnapshot =
-        origGetSnapshot;
-      if (frozenDepthMesh.geometry) {
-        const geom = frozenDepthMesh.geometry as THREE.BufferGeometry & {
-          disposeBoundsTree?: () => void;
-        };
-        geom.disposeBoundsTree?.();
-        geom.dispose();
-      }
-      (frozenDepthMesh.material as THREE.Material | undefined)?.dispose?.();
       this._detectInFlight = false;
     }
   }
