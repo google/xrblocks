@@ -85,9 +85,25 @@ export async function segmenterMaskFromSnapshot(
             cb: (result: {categoryMask: SegmenterMaskResult | null}) => void
           ): void;
         }
-      ).segment(canvas, {keypoint: {x: cx, y: cy}}, (result) =>
-        resolve(result.categoryMask)
-      );
+      ).segment(canvas, {keypoint: {x: cx, y: cy}}, (result) => {
+        const mask = result.categoryMask;
+        if (!mask) {
+          resolve(null);
+          return;
+        }
+        // The MediaPipe mask's backing buffer is only valid for the duration of
+        // this callback, so copy it out before close() frees it; the consumer
+        // reads the mask in a later microtask (after this callback returns).
+        const data = new Uint8Array(mask.getAsUint8Array());
+        const {width, height} = mask;
+        mask.close();
+        resolve({
+          width,
+          height,
+          getAsUint8Array: () => data,
+          close: () => {},
+        });
+      });
     } catch (e) {
       reject(e);
     }
