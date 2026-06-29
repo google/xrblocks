@@ -111,6 +111,7 @@ export class Core {
 
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
+  private startingSimulator?: Promise<void>;
 
   private _isPaused = false;
   private isSteppingFrame = false;
@@ -474,7 +475,7 @@ export class Core {
     }
 
     if (shouldAutostartSimulator) {
-      this.startSimulator();
+      await this.startSimulator();
     }
 
     if (!loadingSpinnerManager.isLoading) {
@@ -582,10 +583,21 @@ export class Core {
   }
 
   private startSimulator = async () => {
-    this.xrButton?.domElement.remove();
-    this.xrSystemsGroup.add(this.simulator);
-    await this.scriptsManager.initScript(this.simulator);
-    this.onSimulatorStarted();
+    if (this.simulatorRunning) return;
+    if (this.startingSimulator) return this.startingSimulator;
+
+    this.startingSimulator = (async () => {
+      this.xrButton?.domElement.remove();
+      this.xrSystemsGroup.add(this.simulator);
+      await this.scriptsManager.initScript(this.simulator);
+      this.onSimulatorStarted();
+    })();
+
+    try {
+      await this.startingSimulator;
+    } finally {
+      this.startingSimulator = undefined;
+    }
   };
 
   /**

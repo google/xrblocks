@@ -108,7 +108,8 @@ REMOTE_CONTROL_URL=ws://127.0.0.1:9000 node samples/remote_control/send.mjs get-
 ## Troubleshooting
 
 If the page reports that `RemoteControl.configureOptions` is missing, rebuild
-the addon bundle:
+the addon bundle. The sample now uses the generic
+`new xb.Options().enableAutomationMode()` startup preset:
 
 ```bash
 npm run build

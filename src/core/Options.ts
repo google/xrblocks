@@ -10,13 +10,14 @@ import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOpt
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
-import {SimulatorOptions} from '../simulator/SimulatorOptions';
+import {SimulatorMode, SimulatorOptions} from '../simulator/SimulatorOptions';
 import {SoundOptions} from '../sound/SoundOptions';
 import {deepMerge} from '../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {UIKitOptions} from './UIKitOptions.js';
 import {WorldOptions} from '../world/WorldOptions';
-import {getUrlParameter} from '../utils/utils';
+import {getUrlParamBool, getUrlParameter} from '../utils/utils';
+import {Handedness} from '../input/Hands';
 
 /**
  * Default options for XR controllers, which encompass hands by default in
@@ -64,6 +65,14 @@ export class XRTransitionOptions {
 
 const FORM_FACTORS = ['auto', 'xr', 'hud', 'vr', 'desktop', 'mobile'] as const;
 export type FormFactor = (typeof FORM_FACTORS)[number];
+
+export type AutomationModeOptions = {
+  hideSimulatorUi?: boolean;
+  defaultHand?: Handedness;
+  defaultMode?: SimulatorMode;
+  enableHands?: boolean;
+  enableCamera?: boolean;
+};
 
 /**
  * A central configuration class for the entire XR Blocks system. It aggregates
@@ -204,6 +213,10 @@ export class Options {
     ) {
       this.formFactor = formFactorUrlParam as FormFactor;
     }
+
+    if (getUrlParamBool('xrAutomation')) {
+      this.enableAutomationMode();
+    }
   }
 
   /**
@@ -229,6 +242,43 @@ export class Options {
   enableUI() {
     this.antialias = true;
     this.reticles.enabled = true;
+    return this;
+  }
+
+  /**
+   * Enables a standard simulator-driven setup for automation and external test
+   * harnesses.
+   * @returns The instance for chaining.
+   */
+  enableAutomationMode(config: AutomationModeOptions = {}) {
+    const {
+      hideSimulatorUi = true,
+      defaultHand = Handedness.RIGHT,
+      defaultMode = SimulatorMode.POSE,
+      enableHands = true,
+      enableCamera = true,
+    } = config;
+
+    this.formFactor = 'desktop';
+    this.xrButton.enabled = false;
+    this.xrButton.alwaysAutostartSimulator = true;
+
+    if (enableHands) {
+      this.enableHands();
+    }
+    if (enableCamera) {
+      this.enableCamera();
+    }
+
+    this.simulator.defaultMode = defaultMode;
+    this.simulator.defaultHand = defaultHand;
+
+    if (hideSimulatorUi) {
+      this.simulator.simulatorSettingsPanel.enabled = false;
+      this.simulator.instructions.enabled = false;
+      this.simulator.handPosePanel.enabled = false;
+    }
+
     return this;
   }
 

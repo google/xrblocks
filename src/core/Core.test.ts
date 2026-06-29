@@ -369,4 +369,38 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
       expect(events.length).toBe(0);
     });
   });
+
+  describe('simulator startup', () => {
+    it('shares one in-flight simulator start and ignores later starts once running', async () => {
+      let finishInit: (() => void) | undefined;
+      core.scriptsManager.initScript = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishInit = resolve;
+          })
+      );
+      core.scriptsManager.onSimulatorStarted = vi.fn();
+
+      const startSimulator = (
+        core as unknown as {startSimulator: () => Promise<void>}
+      ).startSimulator;
+
+      const firstStart = startSimulator();
+      const secondStart = startSimulator();
+
+      expect(core.scriptsManager.initScript).toHaveBeenCalledTimes(1);
+      expect(core.simulatorRunning).toBe(false);
+
+      finishInit?.();
+      await Promise.all([firstStart, secondStart]);
+
+      expect(core.simulatorRunning).toBe(true);
+      expect(core.scriptsManager.onSimulatorStarted).toHaveBeenCalledTimes(1);
+
+      await startSimulator();
+
+      expect(core.scriptsManager.initScript).toHaveBeenCalledTimes(1);
+      expect(core.scriptsManager.onSimulatorStarted).toHaveBeenCalledTimes(1);
+    });
+  });
 });
