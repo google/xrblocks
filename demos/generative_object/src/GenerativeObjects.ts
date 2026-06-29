@@ -23,6 +23,15 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 /** Clearance in meters to float an object off a vertical surface. */
 const SURFACE_CLEARANCE = 0.08;
 
+// Saved original raycast of each depth mesh we no-op so it stays out of the
+// reticle AND the spatial-UI hover raycast; raycastSurface_ restores it for
+// placement. (ignoreReticleRaycast covers only the reticle, not UI hover.)
+type DepthMeshRaycast = (
+  raycaster: THREE.Raycaster,
+  intersects: THREE.Intersection[]
+) => boolean;
+const originalDepthRaycast = new WeakMap<THREE.Object3D, DepthMeshRaycast>();
+
 /** Per-call overrides for {@link GenerativeObjects.imagine}. */
 export interface ImagineOptions {
   /** Distance in meters in front of the user. Defaults to the options value. */
@@ -101,7 +110,7 @@ export class GenerativeObjects extends Script {
 
   /** Billboards tracked objects toward the user each frame, when enabled. */
   override update() {
-    this.markDepthMeshNonInteractive_();
+    this.ensureDepthMeshNonInteractive_();
     if (!this.options.billboard || this.objects.length === 0) {
       return;
     }
@@ -115,15 +124,17 @@ export class GenerativeObjects extends Script {
     }
   }
 
-  // Keep the depth mesh out of the reticle's hover/select raycast so that
-  // standing close to a wall doesn't let it steal hover from the control panel.
-  // ignoreReticleRaycast leaves the mesh's own .raycast intact, so
-  // raycastSurface_ can still place objects on it.
-  private markDepthMeshNonInteractive_() {
+  // The depth mesh is in the scene for occlusion + placement, so both the
+  // reticle and the spatial-UI button hover (its own scene raycast) hit it;
+  // close to a wall it steals hover from the panel. No-op its raycast so every
+  // raycaster skips it; raycastSurface_ restores it briefly for placement.
+  private ensureDepthMeshNonInteractive_() {
     const mesh = this.depth?.depthMesh;
-    if (mesh) {
-      mesh.ignoreReticleRaycast = true;
+    if (!mesh || originalDepthRaycast.has(mesh)) {
+      return;
     }
+    originalDepthRaycast.set(mesh, mesh.raycast);
+    mesh.raycast = () => false;
   }
 
   /**
@@ -262,7 +273,17 @@ export class GenerativeObjects extends Script {
     const origin = this.camera.getWorldPosition(scratchOrigin);
     const direction = this.camera.getWorldDirection(scratchDirection);
     this.raycaster.set(origin, direction);
-    const intersections = this.raycaster.intersectObject(depthMesh, false);
+    // depthMesh.raycast is no-op'd so walls don't steal hover; restore it just
+    // for this placement query, in a finally so a throw can't leave it active.
+    const original = originalDepthRaycast.get(depthMesh);
+    const nooped = depthMesh.raycast;
+    if (original) depthMesh.raycast = original;
+    let intersections;
+    try {
+      intersections = this.raycaster.intersectObject(depthMesh, false);
+    } finally {
+      depthMesh.raycast = nooped;
+    }
     if (intersections.length === 0) {
       return null;
     }
