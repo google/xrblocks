@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Script, Input, Simulator, Core, Options, SimulatorMode, Handedness } from 'xrblocks';
+import { Script, Input, Simulator, Core, Options } from 'xrblocks';
 import { EmbodiedControl } from '../embodied-control/EmbodiedControl.js';
 import '../embodied-control/EmbodiedControlExecutor.js';
 import { createRemoteControlBuiltInTools } from './built-in-tools/index.js';
@@ -18,17 +18,7 @@ class RemoteControl extends Script {
         camera: THREE.Camera,
     }; }
     static configureOptions(options = new Options()) {
-        options.formFactor = 'desktop';
-        options.xrButton.enabled = false;
-        options.xrButton.alwaysAutostartSimulator = true;
-        options.enableHands();
-        options.enableCamera();
-        options.simulator.defaultMode = SimulatorMode.POSE;
-        options.simulator.defaultHand = Handedness.RIGHT;
-        options.simulator.simulatorSettingsPanel.enabled = false;
-        options.simulator.instructions.enabled = false;
-        options.simulator.handPosePanel.enabled = false;
-        return options;
+        return options.enableAutomationMode();
     }
     constructor(options = {}) {
         super();

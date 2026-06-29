@@ -26,7 +26,9 @@ export declare class RemoteControl extends Script {
         camera: THREE.Camera;
     };
     private tools;
-    static configureOptions(options?: Options): Options;
+    static configureOptions(options?: Options): Options & {
+        enableAutomationMode: () => Options;
+    };
     constructor(options?: RemoteControlOptions);
     init(dependencies: {
         core: Core;

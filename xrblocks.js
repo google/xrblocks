@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid 1f42b26
- * @builddate 2026-06-29T15:31:56.469Z
+ * @commitid e728b94
+ * @builddate 2026-06-29T22:14:33.867Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -980,7 +980,9 @@ function getUrlParameter(name) {
  * @returns The boolean value of the URL parameter.
  */
 function getUrlParamBool(name, defaultBool = false) {
-    const inputString = urlParams.get(name)?.toLowerCase();
+    const inputString = new URLSearchParams(window.location.search)
+        .get(name)
+        ?.toLowerCase();
     // Convert the parameter value to a boolean. Returns true for 'true' or '1'.
     if (inputString === 'true' || inputString === '1') {
         return true;
@@ -1001,7 +1003,7 @@ function getUrlParamBool(name, defaultBool = false) {
  * @returns The integer value of the URL parameter.
  */
 function getUrlParamInt(name, defaultNumber = 0) {
-    const inputNumber = urlParams.get(name);
+    const inputNumber = new URLSearchParams(window.location.search).get(name);
     if (inputNumber) {
         // Convert the parameter value to an integer. If valid, returns it.
         const num = parseInt(inputNumber, 10);
@@ -1022,7 +1024,7 @@ function getUrlParamInt(name, defaultNumber = 0) {
  * @returns The float value of the URL parameter.
  */
 function getUrlParamFloat(name, defaultNumber = 0) {
-    const inputNumber = urlParams.get(name);
+    const inputNumber = new URLSearchParams(window.location.search).get(name);
     if (inputNumber) {
         // Convert the parameter value to a float. If valid, returns it.
         const num = parseFloat(inputNumber);
@@ -9616,6 +9618,9 @@ class Options {
             FORM_FACTORS.includes(formFactorUrlParam)) {
             this.formFactor = formFactorUrlParam;
         }
+        if (getUrlParamBool('xrAutomation')) {
+            this.enableAutomationMode();
+        }
     }
     /**
      * Sets the session mode to VR and disables the simulator passthrough scene.
@@ -9635,6 +9640,31 @@ class Options {
     enableUI() {
         this.antialias = true;
         this.reticles.enabled = true;
+        return this;
+    }
+    /**
+     * Enables a standard simulator-driven setup for automation and external test
+     * harnesses.
+     * @returns The instance for chaining.
+     */
+    enableAutomationMode(config = {}) {
+        const { hideSimulatorUi = true, defaultHand = Handedness.RIGHT, defaultMode = SimulatorMode.POSE, enableHands = true, enableCamera = true, } = config;
+        this.formFactor = 'desktop';
+        this.xrButton.enabled = false;
+        this.xrButton.alwaysAutostartSimulator = true;
+        if (enableHands) {
+            this.enableHands();
+        }
+        if (enableCamera) {
+            this.enableCamera();
+        }
+        this.simulator.defaultMode = defaultMode;
+        this.simulator.defaultHand = defaultHand;
+        if (hideSimulatorUi) {
+            this.simulator.simulatorSettingsPanel.enabled = false;
+            this.simulator.instructions.enabled = false;
+            this.simulator.handPosePanel.enabled = false;
+        }
         return this;
     }
     /**
@@ -20061,10 +20091,22 @@ class Core {
             this.scriptsManager.physicsStep();
         };
         this.startSimulator = async () => {
-            this.xrButton?.domElement.remove();
-            this.xrSystemsGroup.add(this.simulator);
-            await this.scriptsManager.initScript(this.simulator);
-            this.onSimulatorStarted();
+            if (this.simulatorRunning)
+                return;
+            if (this.startingSimulator)
+                return this.startingSimulator;
+            this.startingSimulator = (async () => {
+                this.xrButton?.domElement.remove();
+                this.xrSystemsGroup.add(this.simulator);
+                await this.scriptsManager.initScript(this.simulator);
+                this.onSimulatorStarted();
+            })();
+            try {
+                await this.startingSimulator;
+            }
+            finally {
+                this.startingSimulator = undefined;
+            }
         };
         /**
          * Lifecycle callback executed when an XR session ends. Notifies all active
@@ -20279,7 +20321,7 @@ class Core {
             this.input.addReticles();
         }
         if (shouldAutostartSimulator) {
-            this.startSimulator();
+            await this.startSimulator();
         }
         if (!loadingSpinnerManager.isLoading) {
             loadingSpinnerManager.hideSpinner();
