@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.16.0
- * @commitid e728b94
- * @builddate 2026-06-29T22:14:33.867Z
+ * @commitid 185732b
+ * @builddate 2026-06-30T05:00:16.975Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9387,6 +9387,48 @@ class FacesOptions {
     }
 }
 
+/**
+ * Configuration options for the semantic segmentation system. Mirrors the
+ * other `world/*` perception options (humans, faces, objects).
+ */
+class SegmentationOptions {
+    constructor(options) {
+        this.enabled = false;
+        /**
+         * Minimum delay in milliseconds between continuous segmentation runs.
+         * A value of 0 runs again as soon as the previous inference finishes.
+         * Defaults to 66 (~15 fps), the rate the magic_window grab loop used before
+         * segmentation moved onto its own polling loop.
+         */
+        this.pollingIntervalMs = 66;
+        /**
+         * Configuration options for the active segmentation backend.
+         */
+        this.backendConfig = {
+            activeBackend: 'mediapipe',
+            mediapipe: {
+                wasmFilesUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+                // Selfie multiclass model: 0=background, 1=hair, 2=body-skin,
+                // 3=face-skin, 4=clothes, 5=others (see SegmentCategory).
+                modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/' +
+                    'selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
+                /**
+                 * Output the per-pixel category mask. Required to produce a
+                 * {@link SegmentationMask}.
+                 */
+                outputCategoryMask: true,
+            },
+        };
+        if (options) {
+            deepMerge(this, options);
+        }
+    }
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+}
+
 class WorldOptions {
     constructor(options) {
         this.debugging = false;
@@ -9398,6 +9440,7 @@ class WorldOptions {
         this.sounds = new SoundsOptions();
         this.humans = new HumansOptions();
         this.faces = new FacesOptions();
+        this.segmentation = new SegmentationOptions();
         if (options) {
             deepMerge(this, options);
         }
@@ -9448,6 +9491,14 @@ class WorldOptions {
     enableFaceDetection() {
         this.enabled = true;
         this.faces.enable();
+        return this;
+    }
+    /**
+     * Enables semantic segmentation (person / background category masks).
+     */
+    enableSegmentation() {
+        this.enabled = true;
+        this.segmentation.enable();
         return this;
     }
 }
@@ -9722,6 +9773,18 @@ class Options {
         this.enableCamera();
         this.enableDepth();
         this.world.enableFaceDetection();
+        return this;
+    }
+    /**
+     * Enables semantic segmentation. Produces per-pixel person / background
+     * category masks from the device camera (MediaPipe, on-device). Unlike face
+     * and human detection it does not require depth.
+     * @returns The instance for chaining.
+     */
+    enableSegmentation() {
+        this.permissions.camera = true;
+        this.enableCamera();
+        this.world.enableSegmentation();
         return this;
     }
     /**
@@ -12588,16 +12651,16 @@ class GeminiDetectorBackend extends BaseDetectorBackend$1 {
     }
 }
 
-let FilesetResolver$2;
+let FilesetResolver$3;
 let ObjectDetector$1;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$2() {
-    if (FilesetResolver$2 && ObjectDetector$1) {
+async function loadMediaPipeModule$3() {
+    if (FilesetResolver$3 && ObjectDetector$1) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver$2 = mediapipeModule.FilesetResolver;
+        FilesetResolver$3 = mediapipeModule.FilesetResolver;
         ObjectDetector$1 = mediapipeModule.ObjectDetector;
         console.log("'@mediapipe/tasks-vision' module loaded successfully.");
     }
@@ -12674,9 +12737,9 @@ let MediaPipeDetectorBackend$1 = class MediaPipeDetectorBackend extends BaseDete
     async tryInitializeObjectDetector() {
         if (this.objectDetector)
             return;
-        await loadMediaPipeModule$2();
+        await loadMediaPipeModule$3();
         const mediapipeOptions = this.context.options.objects.backendConfig.mediapipe;
-        const vision = await FilesetResolver$2.forVisionTasks(mediapipeOptions.wasmFilesUrl);
+        const vision = await FilesetResolver$3.forVisionTasks(mediapipeOptions.wasmFilesUrl);
         this.objectDetector = await ObjectDetector$1.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: mediapipeOptions.modelAssetPath,
@@ -13799,16 +13862,16 @@ class BaseDetectorBackend {
     }
 }
 
-let FilesetResolver$1;
+let FilesetResolver$2;
 let AudioClassifier;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule$1() {
-    if (FilesetResolver$1 && AudioClassifier) {
+async function loadMediaPipeModule$2() {
+    if (FilesetResolver$2 && AudioClassifier) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-audio');
-        FilesetResolver$1 = mediapipeModule.FilesetResolver;
+        FilesetResolver$2 = mediapipeModule.FilesetResolver;
         AudioClassifier = mediapipeModule.AudioClassifier;
         console.log("'@mediapipe/tasks-audio' module loaded successfully.");
     }
@@ -13830,9 +13893,9 @@ class MediaPipeDetectorBackend extends BaseDetectorBackend {
     async tryInitializeAudioClassifier() {
         if (this.audioClassifier)
             return;
-        await loadMediaPipeModule$1();
+        await loadMediaPipeModule$2();
         const mediapipeConfig = this.context.options.sounds.backendConfig.mediapipe;
-        const audioTasks = await FilesetResolver$1.forAudioTasks(mediapipeConfig.wasmFilesUrl);
+        const audioTasks = await FilesetResolver$2.forAudioTasks(mediapipeConfig.wasmFilesUrl);
         this.audioClassifier = await AudioClassifier.createFromOptions(audioTasks, {
             baseOptions: { modelAssetPath: mediapipeConfig.modelAssetPath },
         });
@@ -14530,16 +14593,16 @@ class BaseHumanBackend {
     }
 }
 
-let FilesetResolver;
+let FilesetResolver$1;
 let PoseLandmarker;
 // --- Attempt Dynamic Import ---
-async function loadMediaPipeModule() {
-    if (FilesetResolver && PoseLandmarker) {
+async function loadMediaPipeModule$1() {
+    if (FilesetResolver$1 && PoseLandmarker) {
         return;
     }
     try {
         const mediapipeModule = await import('@mediapipe/tasks-vision');
-        FilesetResolver = mediapipeModule.FilesetResolver;
+        FilesetResolver$1 = mediapipeModule.FilesetResolver;
         PoseLandmarker = mediapipeModule.PoseLandmarker;
         console.log("'@mediapipe/tasks-vision' MediaPipe Pose Module loaded successfully.");
     }
@@ -14647,9 +14710,9 @@ class MediaPipeHumanBackend extends BaseHumanBackend {
     async tryInitializePoseLandmarker() {
         if (this.poseLandmarker)
             return;
-        await loadMediaPipeModule();
+        await loadMediaPipeModule$1();
         const humansOptions = this.context.options.humans.backendConfig.mediapipe;
-        const vision = await FilesetResolver.forVisionTasks(humansOptions.wasmFilesUrl);
+        const vision = await FilesetResolver$1.forVisionTasks(humansOptions.wasmFilesUrl);
         this.poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
             baseOptions: {
                 modelAssetPath: humansOptions.modelAssetPath,
@@ -15720,6 +15783,252 @@ class FaceRecognizer extends Script {
 }
 
 /**
+ * Abstract base for segmentation backends (e.g. MediaPipe).
+ *
+ * `run()` is a Template Method: it checks availability, grabs a camera frame,
+ * then defers to the concrete `segment()` hook. Unlike pose/object detection
+ * there is no depth or world-space step, the result is a 2D mask.
+ */
+class BaseSegmenterBackend {
+    constructor(context) {
+        this.context = context;
+    }
+    /**
+     * Runs one segmentation pass. Returns `null` when the backend is not ready
+     * or no camera frame is available.
+     */
+    async run() {
+        if (!(await this.isAvailable())) {
+            return null;
+        }
+        const snapshot = await this.getSnapshot();
+        if (!snapshot) {
+            return null;
+        }
+        return this.segment(snapshot);
+    }
+}
+
+let FilesetResolver;
+let ImageSegmenter;
+// --- Attempt Dynamic Import ---
+async function loadMediaPipeModule() {
+    if (FilesetResolver && ImageSegmenter) {
+        return;
+    }
+    try {
+        const mediapipeModule = await import('@mediapipe/tasks-vision');
+        FilesetResolver = mediapipeModule.FilesetResolver;
+        ImageSegmenter = mediapipeModule.ImageSegmenter;
+        console.log("'@mediapipe/tasks-vision' MediaPipe Segmenter Module loaded successfully.");
+    }
+    catch (error) {
+        console.error('Failed to load MediaPipe Tasks Vision module:', error);
+        throw error;
+    }
+}
+/**
+ * Maps a MediaPipe category mask into a {@link SegmentationMask}. Copies the
+ * buffer out before `close()` frees the underlying memory. Exported for tests.
+ * @param mask - The MediaPipe category mask, or null/undefined if absent.
+ * @returns The segmentation mask, or `null` when no mask was provided.
+ */
+function categoryMaskToSegmentationMask(mask) {
+    if (!mask) {
+        return null;
+    }
+    const result = {
+        // Copy out before close() frees the underlying buffer.
+        data: new Uint8Array(mask.getAsUint8Array()),
+        width: mask.width,
+        height: mask.height,
+    };
+    mask.close();
+    return result;
+}
+/**
+ * Segmentation backend backed by MediaPipe's `ImageSegmenter`. Runs locally on
+ * the device using the configured selfie multiclass model.
+ */
+class MediaPipeSegmenterBackend extends BaseSegmenterBackend {
+    constructor(context) {
+        super(context);
+        this.imageSegmenter = null;
+        this.initializationPromise = this.tryInitializeSegmenter();
+    }
+    async tryInitializeSegmenter() {
+        await loadMediaPipeModule();
+        const mediapipe = this.context.options.segmentation.backendConfig.mediapipe;
+        const vision = await FilesetResolver.forVisionTasks(mediapipe.wasmFilesUrl);
+        this.imageSegmenter = await ImageSegmenter.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: mediapipe.modelAssetPath, delegate: 'GPU' },
+            runningMode: 'IMAGE',
+            outputCategoryMask: mediapipe.outputCategoryMask,
+            outputConfidenceMasks: false,
+        });
+    }
+    async isAvailable() {
+        try {
+            await this.initializationPromise;
+            return this.imageSegmenter !== null;
+        }
+        catch (e) {
+            console.error('MediaPipe Image Segmenter is not available:', e);
+            return false;
+        }
+    }
+    async getSnapshot() {
+        const imageData = await this.context.deviceCamera.getSnapshot({
+            outputFormat: 'imageData',
+        });
+        if (!imageData)
+            return null;
+        return { imageData };
+    }
+    async segment(snapshot) {
+        await this.initializationPromise;
+        if (!this.imageSegmenter) {
+            return null;
+        }
+        // In IMAGE running mode segment() invokes the callback synchronously
+        // before returning, so `out` is populated by the time we read it.
+        let out = null;
+        this.imageSegmenter.segment(snapshot.imageData, (result) => {
+            out = categoryMaskToSegmentationMask(result.categoryMask);
+        });
+        return out;
+    }
+}
+
+/**
+ * A Script that runs semantic segmentation on the device camera feed and
+ * returns a per-pixel category mask ({@link SegmentationMask}).
+ *
+ * Mirrors `HumanRecognizer` / `ObjectDetector`, but without any depth or
+ * world-space step, segmentation is a pure 2D camera-to-mask operation, so it
+ * does not depend on the depth mesh or camera intrinsics.
+ *
+ * Multiple concurrent calls to {@link runSegmentation} within the same async
+ * cycle are coalesced: only one MediaPipe inference is dispatched per cycle
+ * and its result is shared with all callers. The latest completed mask is also
+ * available synchronously via {@link latestMask}.
+ */
+class Segmenter extends Script {
+    constructor() {
+        super(...arguments);
+        this._backends = new Map();
+        /** The result of the most recently completed segmentation pass. */
+        this._latestMask = null;
+        /**
+         * The inference currently in progress, shared among all concurrent callers
+         * so MediaPipe is not invoked more than once per cycle.
+         */
+        this._inferenceInFlight = null;
+        /**
+         * Timestamp (ms) of the most recent inference kick-off. Initialised to
+         * `Number.NEGATIVE_INFINITY` so the first `update()` tick fires immediately.
+         */
+        this._lastRunMs = Number.NEGATIVE_INFINITY;
+    }
+    static { this.dependencies = {
+        options: WorldOptions,
+        deviceCamera: XRDeviceCamera,
+    }; }
+    init({ options, deviceCamera, }) {
+        this.options = options;
+        this.deviceCamera = deviceCamera;
+    }
+    /**
+     * The latest cached segmentation mask from the most recently completed
+     * inference pass. Returns `null` until the first inference finishes.
+     */
+    get latestMask() {
+        return this._latestMask;
+    }
+    /**
+     * Continuous throttled loop driven by the engine frame tick.
+     *
+     * Called every frame by `ScriptsManager` (via `Core.update → scriptsManager.update`).
+     * Kicks off a fresh inference pass at most once per
+     * `options.segmentation.pollingIntervalMs` milliseconds. The in-flight guard
+     * prevents stacking: if a previous inference is still running the tick is
+     * silently skipped rather than launching a second one.
+     *
+     * After each completed inference {@link latestMask} is updated so all
+     * consumers in the same frame read the same cached result without each
+     * triggering their own MediaPipe run.
+     *
+     * @param time - Current timestamp in milliseconds, forwarded from the
+     *   engine frame loop.
+     */
+    update(time) {
+        if (this._inferenceInFlight)
+            return;
+        if (time - this._lastRunMs < this.options.segmentation.pollingIntervalMs)
+            return;
+        this._lastRunMs = time;
+        void this.runSegmentation();
+    }
+    /**
+     * Runs one segmentation pass over the current camera frame, or returns the
+     * result of the in-flight pass when one is already running. Multiple callers
+     * in the same async cycle share a single MediaPipe inference rather than
+     * each triggering their own.
+     *
+     * Under normal usage consumers should poll {@link latestMask} (kept fresh
+     * by the automatic loop) rather than calling this directly.
+     *
+     * @returns The mask, or `null` if the backend or camera frame is not ready.
+     */
+    async runSegmentation() {
+        if (this._inferenceInFlight) {
+            return this._inferenceInFlight;
+        }
+        this._inferenceInFlight = this._runInference().then((mask) => {
+            this._latestMask = mask;
+            this._inferenceInFlight = null;
+            return mask;
+        });
+        return this._inferenceInFlight;
+    }
+    async _runInference() {
+        const activeBackend = this.options.segmentation.backendConfig.activeBackend;
+        const backendPromise = this.getOrCreateBackend(activeBackend);
+        let backend;
+        try {
+            backend = await backendPromise;
+        }
+        catch (error) {
+            console.warn(`Failed to load or initialize Segmenter backend '${activeBackend}':`, error);
+            return null;
+        }
+        return backend.run();
+    }
+    getBackendContext() {
+        return {
+            options: this.options,
+            deviceCamera: this.deviceCamera,
+        };
+    }
+    getOrCreateBackend(activeBackend) {
+        let backendPromise = this._backends.get(activeBackend);
+        if (!backendPromise) {
+            const context = this.getBackendContext();
+            backendPromise = (async () => {
+                switch (activeBackend) {
+                    case 'mediapipe':
+                        return new MediaPipeSegmenterBackend(context);
+                    default:
+                        throw new Error(`Segmenter backend '${activeBackend}' is not supported.`);
+                }
+            })();
+            this._backends.set(activeBackend, backendPromise);
+        }
+        return backendPromise;
+    }
+}
+
+/**
  * Manages all interactions with the real-world environment perceived by the XR
  * device. This class abstracts the complexity of various perception APIs
  * (Depth, Planes, Meshes, etc.) and provides a simple, event-driven interface
@@ -15783,6 +16092,10 @@ class World extends Script {
         if (this.options.faces.enabled) {
             this.faces = new FaceRecognizer();
             this.add(this.faces);
+        }
+        if (this.options.segmentation.enabled) {
+            this.segmentation = new Segmenter();
+            this.add(this.segmentation);
         }
         // TODO: Initialize other modules as they are available & implemented.
         /*
@@ -23039,5 +23352,20 @@ class VideoFileStream extends VideoStream {
     }
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+/**
+ * Per-pixel semantic categories emitted by the selfie multiclass segmentation
+ * model. Index `0` is the background; every other index is part of a person,
+ * so anything `>= 1` can be treated as foreground.
+ */
+var SegmentCategory;
+(function (SegmentCategory) {
+    SegmentCategory[SegmentCategory["Background"] = 0] = "Background";
+    SegmentCategory[SegmentCategory["Hair"] = 1] = "Hair";
+    SegmentCategory[SegmentCategory["BodySkin"] = 2] = "BodySkin";
+    SegmentCategory[SegmentCategory["FaceSkin"] = 3] = "FaceSkin";
+    SegmentCategory[SegmentCategory["Clothes"] = 4] = "Clothes";
+    SegmentCategory[SegmentCategory["Others"] = 5] = "Others";
+})(SegmentCategory || (SegmentCategory = {}));
+
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
