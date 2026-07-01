@@ -4,10 +4,11 @@ import {ControlPanel} from './ControlPanel.js';
 import {MagicWindow} from './MagicWindow.js';
 
 const options = new xb.Options();
-// The device camera feeds the segmenter, so we want a person in frame. The
-// user-facing mode pulls the real webcam through the camera module (on desktop
-// `facingMode: 'user'` skips the simulator camera and goes straight to
-// getUserMedia), giving an actual person to cut out.
+// Enable the SDK's segmentation primitive (MediaPipe person/background masks).
+// It turns the camera on for us; we then override to the user-facing camera so
+// there's a person to cut out (on desktop `facingMode: 'user'` skips the
+// simulator camera and goes straight to getUserMedia).
+options.enableSegmentation();
 options.enableCamera('user');
 options.setAppTitle('Magic Window');
 options.setAppDescription(

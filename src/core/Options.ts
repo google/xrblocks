@@ -346,6 +346,19 @@ export class Options {
   }
 
   /**
+   * Enables semantic segmentation. Produces per-pixel person / background
+   * category masks from the device camera (MediaPipe, on-device). Unlike face
+   * and human detection it does not require depth.
+   * @returns The instance for chaining.
+   */
+  enableSegmentation() {
+    this.permissions.camera = true;
+    this.enableCamera();
+    this.world.enableSegmentation();
+    return this;
+  }
+
+  /**
    * Enables device camera (passthrough) with a specific facing mode.
    * @param facingMode - The desired camera facing mode, either 'environment' or
    *     'user'.
