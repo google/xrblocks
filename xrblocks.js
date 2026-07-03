@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 84b714b
- * @builddate 2026-07-01T20:25:37.731Z
+ * @commitid 27e4d54
+ * @builddate 2026-07-03T19:35:35.672Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9602,6 +9602,10 @@ class Options {
          * Any additional required features when initializing webxr.
          */
         this.webxrRequiredFeatures = [];
+        /**
+         * Any additional optional features when initializing webxr.
+         */
+        this.webxrOptionalFeatures = [];
         // "local-floor" sets the scene origin at the user's feet,
         // "local" sets the scene origin near their head.
         this.referenceSpaceType = 'local-floor';
@@ -20545,14 +20549,13 @@ class Core {
             this.registry.register(this.deviceCamera);
         }
         const webXRRequiredFeatures = options.webxrRequiredFeatures;
+        const webXROptionalFeatures = options.webxrOptionalFeatures;
         // Use camera-access when the browser supports it.
         if (options.deviceCamera?.enabled) {
-            if (!this.webXRSettings.optionalFeatures) {
-                this.webXRSettings.optionalFeatures = [];
-            }
-            this.webXRSettings.optionalFeatures.push('camera-access');
+            webXROptionalFeatures.push('camera-access');
         }
         this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
+        this.webXRSettings.optionalFeatures = webXROptionalFeatures;
         // Sets up depth.
         if (options.depth.enabled) {
             webXRRequiredFeatures.push('depth-sensing');
@@ -20576,15 +20579,18 @@ class Core {
                 this.registry.register(this.gestureRecognition);
             }
         }
+        // World-sensing and lighting features are requested as optional so that
+        // browsers lacking one of them still enter the immersive session instead
+        // of rejecting it outright; the subsystems no-op when the data is absent.
         if (options.world.planes.enabled) {
-            webXRRequiredFeatures.push('plane-detection');
+            webXROptionalFeatures.push('plane-detection');
         }
         if (options.world.meshes.enabled) {
-            webXRRequiredFeatures.push('mesh-detection');
+            webXROptionalFeatures.push('mesh-detection');
         }
         // Sets up lighting.
         if (options.lighting.enabled) {
-            webXRRequiredFeatures.push('light-estimation');
+            webXROptionalFeatures.push('light-estimation');
             this.lighting = new Lighting();
             this.lighting.init(options.lighting, this.renderer, this.scene, this.depth);
         }
