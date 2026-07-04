@@ -107,6 +107,11 @@ export class Options {
    */
   webxrRequiredFeatures: string[] = [];
 
+  /**
+   * Any additional optional features when initializing webxr.
+   */
+  webxrOptionalFeatures: string[] = [];
+
   // "local-floor" sets the scene origin at the user's feet,
   // "local" sets the scene origin near their head.
   referenceSpaceType: XRReferenceSpaceType = 'local-floor';
