@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 27e4d54
- * @builddate 2026-07-03T19:35:35.672Z
+ * @commitid d09d22c
+ * @builddate 2026-07-06T22:55:04.024Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4118,6 +4118,30 @@ declare class SimulatorOptions {
     };
     renderToRenderTexture: boolean;
     blendingMode: 'normal' | 'screen';
+    /** Limits how far each hand controller can travel from the user's shoulder origin. */
+    reachDistance: {
+        enabled: boolean;
+        /** The maximum distance in meters a controller can move from its origin point. */
+        radius: number;
+        /** The shoulder/chest origin point for the left hand in local camera space. */
+        leftHandOrigin: {
+            x: number;
+            y: number;
+            z: number;
+        };
+        /** The shoulder/chest origin point for the right hand in local camera space. */
+        rightHandOrigin: {
+            x: number;
+            y: number;
+            z: number;
+        };
+    };
+    /** Limits the angular cone in front of the user within which controllers can move. */
+    reachAngle: {
+        enabled: boolean;
+        /** The maximum full cone angle in radians around the camera's forward direction (default is Math.PI, a front hemisphere). */
+        angle: number;
+    };
     constructor(options?: DeepReadonly<DeepPartial<SimulatorOptions>>);
 }
 
@@ -5650,6 +5674,8 @@ declare class SimulatorHands {
     rightHandBones: THREE.Object3D[];
     leftHandPose?: SimulatorHandPose | undefined;
     rightHandPose?: SimulatorHandPose | undefined;
+    leftHandAtMaxRange: boolean;
+    rightHandAtMaxRange: boolean;
     leftHandCurrentRotations: Partial<Record<"wrist" | "thumb-metacarpal" | "thumb-phalanx-proximal" | "thumb-phalanx-distal" | "thumb-tip" | "index-finger-metacarpal" | "index-finger-phalanx-proximal" | "index-finger-phalanx-intermediate" | "index-finger-phalanx-distal" | "index-finger-tip" | "middle-finger-metacarpal" | "middle-finger-phalanx-proximal" | "middle-finger-phalanx-intermediate" | "middle-finger-phalanx-distal" | "middle-finger-tip" | "ring-finger-metacarpal" | "ring-finger-phalanx-proximal" | "ring-finger-phalanx-intermediate" | "ring-finger-phalanx-distal" | "ring-finger-tip" | "pinky-finger-metacarpal" | "pinky-finger-phalanx-proximal" | "pinky-finger-phalanx-intermediate" | "pinky-finger-phalanx-distal" | "pinky-finger-tip", SimulatorHandJointRotationArray>>;
     rightHandCurrentRotations: Partial<Record<"wrist" | "thumb-metacarpal" | "thumb-phalanx-proximal" | "thumb-phalanx-distal" | "thumb-tip" | "index-finger-metacarpal" | "index-finger-phalanx-proximal" | "index-finger-phalanx-intermediate" | "index-finger-phalanx-distal" | "index-finger-tip" | "middle-finger-metacarpal" | "middle-finger-phalanx-proximal" | "middle-finger-phalanx-intermediate" | "middle-finger-phalanx-distal" | "middle-finger-tip" | "ring-finger-metacarpal" | "ring-finger-phalanx-proximal" | "ring-finger-phalanx-intermediate" | "ring-finger-phalanx-distal" | "ring-finger-tip" | "pinky-finger-metacarpal" | "pinky-finger-phalanx-proximal" | "pinky-finger-phalanx-intermediate" | "pinky-finger-phalanx-distal" | "pinky-finger-tip", SimulatorHandJointRotationArray>>;
     leftHandTargetRotations: Partial<Record<"wrist" | "thumb-metacarpal" | "thumb-phalanx-proximal" | "thumb-phalanx-distal" | "thumb-tip" | "index-finger-metacarpal" | "index-finger-phalanx-proximal" | "index-finger-phalanx-intermediate" | "index-finger-phalanx-distal" | "index-finger-tip" | "middle-finger-metacarpal" | "middle-finger-phalanx-proximal" | "middle-finger-phalanx-intermediate" | "middle-finger-phalanx-distal" | "middle-finger-tip" | "ring-finger-metacarpal" | "ring-finger-phalanx-proximal" | "ring-finger-phalanx-intermediate" | "ring-finger-phalanx-distal" | "ring-finger-tip" | "pinky-finger-metacarpal" | "pinky-finger-phalanx-proximal" | "pinky-finger-phalanx-intermediate" | "pinky-finger-phalanx-distal" | "pinky-finger-tip", SimulatorHandJointRotationArray>>;
@@ -5706,6 +5732,7 @@ declare class SimulatorControlMode {
     input: Input;
     timer: THREE.Timer;
     domElement?: HTMLCanvasElement;
+    simulatorOptions?: SimulatorOptions;
     /**
      * Create a SimulatorControlMode
      */
@@ -5713,11 +5740,12 @@ declare class SimulatorControlMode {
     /**
      * Initialize the simulator control mode.
      */
-    init({ camera, input, timer, domElement, }: {
+    init({ camera, input, timer, domElement, simulatorOptions, }: {
         camera: THREE.Camera;
         input: Input;
         timer: THREE.Timer;
         domElement?: HTMLCanvasElement;
+        simulatorOptions?: SimulatorOptions;
     }): void;
     onPointerDown(_: MouseEvent): void;
     onPointerUp(_: MouseEvent): void;
@@ -5736,6 +5764,8 @@ declare class SimulatorControlMode {
      */
     updateGamepadUI(gp: GamepadController): void;
     cycleHandPose(direction: number): void;
+    private getHandOrigin;
+    limitMovementAtReachEdge(idx: number, localPos: THREE.Vector3, delta: THREE.Vector3): void;
     updateControllerPositions(): void;
     rotateOnPointerMove(event: MouseEvent, objectQuaternion: THREE.Quaternion, multiplier?: number): void;
     enableSimulatorHands(): void;

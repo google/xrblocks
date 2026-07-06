@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 27e4d54
- * @builddate 2026-07-03T19:35:35.672Z
+ * @commitid d09d22c
+ * @builddate 2026-07-06T22:55:04.024Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9094,6 +9094,22 @@ class SimulatorOptions {
         this.renderToRenderTexture = true;
         // Blending mode when rendering the virtual scene.
         this.blendingMode = 'normal';
+        /** Limits how far each hand controller can travel from the user's shoulder origin. */
+        this.reachDistance = {
+            enabled: false,
+            /** The maximum distance in meters a controller can move from its origin point. */
+            radius: 0.75,
+            /** The shoulder/chest origin point for the left hand in local camera space. */
+            leftHandOrigin: { x: -0.2, y: -0.2, z: 0 },
+            /** The shoulder/chest origin point for the right hand in local camera space. */
+            rightHandOrigin: { x: 0.2, y: -0.2, z: 0 },
+        };
+        /** Limits the angular cone in front of the user within which controllers can move. */
+        this.reachAngle = {
+            enabled: false,
+            /** The maximum full cone angle in radians around the camera's forward direction (default is Math.PI, a front hemisphere). */
+            angle: Math.PI,
+        };
         deepMerge(this, options);
     }
 }
@@ -10085,6 +10101,12 @@ const SIMULATOR_HAND_POSE_NAMES = Object.freeze({
 
 const { A_CODE: A_CODE$1, D_CODE: D_CODE$1, E_CODE: E_CODE$1, Q_CODE: Q_CODE$1, S_CODE: S_CODE$1, W_CODE: W_CODE$1 } = Keycodes;
 const vector3$6 = new THREE.Vector3();
+const originVec = new THREE.Vector3();
+const forwardVec = new THREE.Vector3(0, 0, -1);
+const offsetVec = new THREE.Vector3();
+const axisVec = new THREE.Vector3();
+const currentOffsetVec = new THREE.Vector3();
+const newOffsetVec = new THREE.Vector3();
 const euler$2 = new THREE.Euler();
 const HAND_POSES = Object.values(SimulatorHandPose);
 class SimulatorControlMode {
@@ -10102,11 +10124,12 @@ class SimulatorControlMode {
     /**
      * Initialize the simulator control mode.
      */
-    init({ camera, input, timer, domElement, }) {
+    init({ camera, input, timer, domElement, simulatorOptions, }) {
         this.camera = camera;
         this.input = input;
         this.timer = timer;
         this.domElement = domElement;
+        this.simulatorOptions = simulatorOptions;
         input.gamepadController.init({ camera });
     }
     onPointerDown(_) { }
@@ -10227,7 +10250,81 @@ class SimulatorControlMode {
             this.hands.setRightHandLerpPose(nextPose);
         }
     }
+    getHandOrigin(idx, target) {
+        const distOpt = this.simulatorOptions?.reachDistance;
+        const angleOpt = this.simulatorOptions?.reachAngle;
+        if (!distOpt?.enabled && !angleOpt?.enabled)
+            return false;
+        const originObj = idx === 0 ? distOpt.leftHandOrigin : distOpt.rightHandOrigin;
+        target.set(originObj.x, originObj.y, originObj.z);
+        return true;
+    }
+    limitMovementAtReachEdge(idx, localPos, delta) {
+        if (!this.getHandOrigin(idx, originVec))
+            return;
+        const distOpt = this.simulatorOptions.reachDistance;
+        const angleOpt = this.simulatorOptions.reachAngle;
+        currentOffsetVec.copy(localPos).sub(originVec);
+        newOffsetVec.copy(currentOffsetVec).add(delta);
+        if (distOpt.enabled) {
+            const curDistSq = currentOffsetVec.lengthSq();
+            const radSq = distOpt.radius * distOpt.radius;
+            if (curDistSq >= radSq && newOffsetVec.lengthSq() >= curDistSq) {
+                delta.set(0, 0, 0);
+                return;
+            }
+        }
+        if (angleOpt.enabled) {
+            const maxAngle = angleOpt.angle * 0.5;
+            const curAngle = currentOffsetVec.angleTo(forwardVec);
+            if (curAngle >= maxAngle &&
+                newOffsetVec.angleTo(forwardVec) >= curAngle) {
+                delta.set(0, 0, 0);
+            }
+        }
+    }
     updateControllerPositions() {
+        const distOpt = this.simulatorOptions?.reachDistance;
+        const angleOpt = this.simulatorOptions?.reachAngle;
+        const distEnabled = !!distOpt?.enabled;
+        const angleEnabled = !!angleOpt?.enabled;
+        if (distEnabled || angleEnabled) {
+            const radius = distOpt.radius;
+            const maxAngle = angleOpt.angle * 0.5;
+            for (let i = 0; i < 2; i++) {
+                this.getHandOrigin(i, originVec);
+                const localPos = this.simulatorControllerState.localControllerPositions[i];
+                offsetVec.copy(localPos).sub(originVec);
+                const dist = offsetVec.length();
+                const angle = offsetVec.angleTo(forwardVec);
+                const atMax = (distEnabled && dist >= radius) ||
+                    (angleEnabled && angle >= maxAngle);
+                if (i === 0) {
+                    this.hands.leftHandAtMaxRange = atMax;
+                }
+                else {
+                    this.hands.rightHandAtMaxRange = atMax;
+                }
+                if (angleEnabled && angle > maxAngle) {
+                    axisVec.copy(offsetVec).cross(forwardVec);
+                    if (axisVec.lengthSq() < 1e-6) {
+                        axisVec.set(0, 1, 0);
+                    }
+                    else {
+                        axisVec.normalize();
+                    }
+                    offsetVec.applyAxisAngle(axisVec, angle - maxAngle);
+                }
+                if (distEnabled && offsetVec.lengthSq() > radius * radius) {
+                    offsetVec.clampLength(0, radius);
+                }
+                localPos.copy(originVec).add(offsetVec);
+            }
+        }
+        else {
+            this.hands.leftHandAtMaxRange = false;
+            this.hands.rightHandAtMaxRange = false;
+        }
         this.camera.updateMatrixWorld();
         for (let i = 0; i < 2 && i < this.input.controllers.length; i++) {
             const controller = this.input.controllers[i];
@@ -10300,10 +10397,12 @@ class SimulatorControllerMode extends SimulatorControlMode {
     updateControllerPositions() {
         const deltaTime = this.timer.getDelta();
         const downKeys = this.downKeys;
-        const localPos = this.simulatorControllerState.localControllerPositions[this.simulatorControllerState.currentControllerIndex];
+        const idx = this.simulatorControllerState.currentControllerIndex;
+        const localPos = this.simulatorControllerState.localControllerPositions[idx];
         vector3$5
             .set(Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)), Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)), Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)))
             .multiplyScalar(deltaTime);
+        this.limitMovementAtReachEdge(idx, localPos, vector3$5);
         localPos.add(vector3$5);
         // Gamepad: left stick moves hand on XZ; configurable buttons on Y.
         // Skip when the tab isn't focused so background tabs don't react to
@@ -10314,6 +10413,7 @@ class SimulatorControllerMode extends SimulatorControlMode {
             const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
             const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
             vector3$5.set(lx, upVal - downVal, ly).multiplyScalar(deltaTime);
+            this.limitMovementAtReachEdge(idx, localPos, vector3$5);
             localPos.add(vector3$5);
         }
         super.updateControllerPositions();
@@ -10575,6 +10675,7 @@ class SimulatorControls {
                 input,
                 timer,
                 domElement: renderer.domElement,
+                simulatorOptions,
             });
         }
         this.renderer = renderer;
@@ -11669,6 +11770,8 @@ class SimulatorHands {
         this.rightHandBones = [];
         this.leftHandPose = SimulatorHandPose.RELAXED;
         this.rightHandPose = SimulatorHandPose.RELAXED;
+        this.leftHandAtMaxRange = false;
+        this.rightHandAtMaxRange = false;
         this.leftHandCurrentRotations = cloneHandPoseRotations(SIMULATOR_HAND_POSE_ROTATIONS[SimulatorHandPose.RELAXED]);
         this.rightHandCurrentRotations = cloneHandPoseRotations(SIMULATOR_HAND_POSE_ROTATIONS[SimulatorHandPose.RELAXED]);
         this.leftHandTargetRotations = cloneHandPoseRotations(SIMULATOR_HAND_POSE_ROTATIONS[SimulatorHandPose.RELAXED]);
