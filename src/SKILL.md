@@ -115,6 +115,11 @@ options.physics.RAPIER = RAPIER; // assigning RAPIER enables physics
 URL does the same. `options.catchScriptExceptions` (default `true`) keeps one buggy
 script from crashing the app.
 
+For automation or external remote runs, use `options.enableAutomationMode()` before
+`xb.init(options)`. It applies the desktop simulator preset, enables hands and
+camera input, hides simulator control panels, and can also be activated from the
+URL with `?xrAutomation=1`.
+
 ## Script lifecycle hooks
 
 Override only what you need (all verified against `core/Script.ts` and `core/User.ts`):

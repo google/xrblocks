@@ -18,8 +18,10 @@ and the full in-tree overview is [`src/SKILL.md`](src/SKILL.md).
 - **Guard AI.** AI needs a key and may be unavailable — wrap calls in
   `if (xb.ai.isAvailable())`.
 - **Test in the simulator first.** It runs automatically on desktop browser without WebXR plugins; `?formFactor=desktop`
-  forces to start it. Subsystems created during `xb.init()` (e.g. `xb.core.renderer`) are
-  undefined in a constructor — use them in/after `init()`.
+  forces it to start. Use `options.enableAutomationMode()` or `?xrAutomation=1` for
+  automation-oriented simulator startup. Subsystems created during `xb.init()`
+  (e.g. `xb.core.renderer`) are undefined in a constructor — use them in/after
+  `init()`.
 - **Units & colors.** World/position values are meters; UI sizes use meters or "layout
   pixels"/`fontSize`. Colors are hex strings (`'#ffffff'`) or `THREE.Color`.
 
@@ -93,6 +95,8 @@ npm ci && npm run dev     # builds in watch mode + serves http://127.0.0.1:8080
 ```
 
 Open a sample/template/demo under that URL; add `?formFactor=desktop` to force the simulator.
+For external automation or remote runs, configure `new xb.Options().enableAutomationMode()` or
+add `?xrAutomation=1`.
 
 ## Task Recipes -> Skills/
 

@@ -7,6 +7,7 @@ import {PlanesOptions} from './planes/PlanesOptions';
 import {SoundsOptions} from './sounds/SoundsOptions';
 import {HumansOptions} from './humans/HumansOptions';
 import {FacesOptions} from './faces/FacesOptions';
+import {SegmentationOptions} from './segmentation/SegmentationOptions';
 
 export class WorldOptions {
   debugging = false;
@@ -18,6 +19,7 @@ export class WorldOptions {
   sounds = new SoundsOptions();
   humans = new HumansOptions();
   faces = new FacesOptions();
+  segmentation = new SegmentationOptions();
 
   constructor(options?: DeepPartial<WorldOptions>) {
     if (options) {
@@ -76,6 +78,15 @@ export class WorldOptions {
   enableFaceDetection() {
     this.enabled = true;
     this.faces.enable();
+    return this;
+  }
+
+  /**
+   * Enables semantic segmentation (person / background category masks).
+   */
+  enableSegmentation() {
+    this.enabled = true;
+    this.segmentation.enable();
     return this;
   }
 }

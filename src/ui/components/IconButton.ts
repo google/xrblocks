@@ -4,6 +4,7 @@ import {VIEW_DEPTH_GAP} from '../../constants';
 import {TextView, TextViewOptions} from '../components/TextView';
 
 import {MATERIAL_ICONS_FONT_FILE} from './utils/FontFamilies';
+import {DragMode} from '../../ux/DragManager';
 
 /**
  * An interactive circular button that displays a single character
@@ -21,6 +22,7 @@ export type IconButtonOptions = TextViewOptions & {
 };
 
 export class IconButton extends TextView {
+  draggingMode = DragMode.DO_NOT_DRAG;
   /** The overall opacity when the button is not being interacted with. */
   opacity = 1.0;
   /** The background opacity when the button is not being interacted with. */

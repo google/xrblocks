@@ -154,6 +154,9 @@ export * from './world/humans/HumansOptions';
 export * from './world/faces/DetectedFace';
 export * from './world/faces/FaceRecognizer';
 export * from './world/faces/FacesOptions';
+export * from './world/segmentation/SegmentationMask';
+export * from './world/segmentation/Segmenter';
+export * from './world/segmentation/SegmentationOptions';
 
 export type {IconButtonOptions} from './ui/components/IconButton';
 export type {IconViewOptions} from './ui/components/IconView';

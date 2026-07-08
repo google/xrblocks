@@ -230,7 +230,7 @@ export class VideoStream<
         this.canvas_.width = width;
         this.canvas_.height = height;
         this.context_ = this.canvas_.getContext('2d', {
-          willCaptureFrequently: this.willCaptureFrequently_,
+          willReadFrequently: this.willCaptureFrequently_,
         }) as CanvasRenderingContext2D;
       }
 

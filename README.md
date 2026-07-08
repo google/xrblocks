@@ -46,6 +46,8 @@ immersive applications with features like:
   understanding and live conversational experiences.
 - **Cross-Platform:** Write once and deploy to both XR devices and desktop
   Chrome browsers.
+- **Automation-Friendly Simulator:** Use `options.enableAutomationMode()` or
+  `?xrAutomation=1` to start a desktop simulator preset for external remote runs.
 
 We welcome all contributors to foster an AI + XR community! Read our
 [blog post](https://research.google/blog/xr-blocks-accelerating-ai-xr-innovation/)

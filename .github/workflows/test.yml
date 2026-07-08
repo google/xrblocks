@@ -1,28 +1,20 @@
-name: Lint and Format Check
+name: Test
 
 on:
   push:
     branches-ignore:
       - 'build'
     paths:
-      - '**/*.cjs'
-      - '**/*.html'
-      - '**/*.js'
-      - '**/*.json'
-      - '**/*.md'
-      - '**/*.mdx'
-      - '**/*.ts'
-      - '**/*.css'
-      - 'eslint.config.mjs'
-      - '.prettierrc.json'
-      - '.prettierignore'
+      - 'src/**'
       - 'package.json'
       - 'package-lock.json'
-      - '.github/workflows/lint-format-check.yml'
+      - 'tsconfig*.json'
+      - 'vitest.config.ts'
+      - '.github/workflows/test.yml'
   pull_request:
 
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -46,8 +38,5 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Run ESLint check
-        run: npm run lint
-
-      - name: Run Prettier check
-        run: npm run format:check
+      - name: Run tests
+        run: npm run test

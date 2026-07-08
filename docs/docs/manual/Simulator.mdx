@@ -40,6 +40,10 @@ Upon launching an XR Blocks experience in a desktop browser, a run in simulator 
   ![Run in simulator button](assets/run_in_simulator_button.webp)
 </div>
 
+For automation or external remote runs, call `options.enableAutomationMode()` before `xb.init(options)`.
+This applies a desktop simulator startup preset with simulator autostart, hands, camera input, and hidden simulator control panels.
+Pages that construct a plain `new xb.Options()` can also opt into the same preset with `?xrAutomation=1`.
+
 ## Simulator Control Modes
 
 The XR Blocks simulator supports control three modes: User mode, Navigation Mode, and Hands Mode.

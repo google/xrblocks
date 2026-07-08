@@ -100,6 +100,8 @@ export class SimulatorHands {
   rightHandBones: THREE.Object3D[] = [];
   leftHandPose? = SimulatorHandPose.RELAXED;
   rightHandPose? = SimulatorHandPose.RELAXED;
+  leftHandAtMaxRange = false;
+  rightHandAtMaxRange = false;
   leftHandCurrentRotations = cloneHandPoseRotations(
     SIMULATOR_HAND_POSE_ROTATIONS[SimulatorHandPose.RELAXED]
   );

@@ -1,13 +1,5 @@
 import * as THREE from 'three';
-import {
-  Core,
-  Handedness,
-  Input,
-  Options,
-  Script,
-  Simulator,
-  SimulatorMode,
-} from 'xrblocks';
+import {Core, Input, Options, Script, Simulator} from 'xrblocks';
 import {
   EmbodiedControl,
   type EmbodiedControlOptions,
@@ -62,17 +54,11 @@ export class RemoteControl extends Script {
   private tools = new Map<string, RegisteredTool>();
 
   static configureOptions(options = new Options()) {
-    options.formFactor = 'desktop';
-    options.xrButton.enabled = false;
-    options.xrButton.alwaysAutostartSimulator = true;
-    options.enableHands();
-    options.enableCamera();
-    options.simulator.defaultMode = SimulatorMode.POSE;
-    options.simulator.defaultHand = Handedness.RIGHT;
-    options.simulator.simulatorSettingsPanel.enabled = false;
-    options.simulator.instructions.enabled = false;
-    options.simulator.handPosePanel.enabled = false;
-    return options;
+    return (
+      options as Options & {
+        enableAutomationMode: () => Options;
+      }
+    ).enableAutomationMode();
   }
 
   constructor(private options: RemoteControlOptions = {}) {
