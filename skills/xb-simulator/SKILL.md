@@ -50,6 +50,20 @@ options.simulator.defaultMode = xb.SimulatorMode.POSE; // pose hands (great for 
 controllers — see [`src/simulator/SimulatorOptions.ts`](../../src/simulator/SimulatorOptions.ts)
 and `src/simulator/controlModes/`.
 
+## Reach limits
+
+You can limit how far each virtual hand controller can travel from the user's shoulder origin (in meters) and restrict their movement to an angular cone (in radians) facing forward from the camera:
+
+```js
+options.simulator.reachDistance.enabled = true;
+options.simulator.reachDistance.radius = 0.75; // meters from shoulder origin
+options.simulator.reachDistance.leftHandOrigin = {x: -0.2, y: -0.2, z: 0};
+options.simulator.reachDistance.rightHandOrigin = {x: 0.2, y: -0.2, z: 0};
+
+options.simulator.reachAngle.enabled = true;
+options.simulator.reachAngle.angle = Math.PI; // radians (default Math.PI is a front hemisphere)
+```
+
 ## Lifecycle
 
 `onSimulatorStarted()` fires when the simulator boots — a common pattern is to mirror your XR

@@ -123,6 +123,7 @@ export class SimulatorControls {
         input,
         timer,
         domElement: renderer.domElement,
+        simulatorOptions,
       });
     }
     this.renderer = renderer;
