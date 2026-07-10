@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid c971161
- * @builddate 2026-07-09T03:09:59.020Z
+ * @commitid 0c463b3
+ * @builddate 2026-07-10T18:08:45.270Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -30,6 +30,7 @@
     "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
     "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
     "lit/": "https://esm.run/lit@3/",
+    "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
     2. If the app focus on standalone objects, spawn it in front of the user in
     WebXR and rescale to reasonable physical size. Wrap them with xb.ModelViewer
     and make sure users can drag the platform to move it around in XR.
@@ -1861,7 +1862,7 @@ const DEFAULT_DEVICE_CAMERA_WIDTH = 1280;
  * Corresponds to a 720p resolution.
  */
 const DEFAULT_DEVICE_CAMERA_HEIGHT = 720;
-const XR_BLOCKS_ASSETS_PATH = 'https://cdn.jsdelivr.net/gh/xrblocks/assets@02bbbf2093d20bcefdac18c65d3ff0f2b94b7535/';
+const XR_BLOCKS_ASSETS_PATH = 'https://cdn.jsdelivr.net/gh/xrblocks/assets@d872cfdb7668443da5cd38361fc3a3d131aca04c/';
 
 /**
  * Recursively freezes an object and all its nested properties, making them
@@ -9052,6 +9053,8 @@ class SimulatorOptions {
                     'simulator/scenes/XREmulatorsceneV5_livingRoom.glb',
                 scenePlanesPath: XR_BLOCKS_ASSETS_PATH +
                     'simulator/scenes/XREmulatorsceneV5_livingRoom_planes.json',
+                navMeshPath: XR_BLOCKS_ASSETS_PATH +
+                    'simulator/scenes/XREmulatorsceneV5_livingRoom_navmesh.glb',
             },
         ];
         this.activeEnvironmentIndex = 0;
@@ -9083,6 +9086,10 @@ class SimulatorOptions {
         };
         this.stereo = {
             enabled: false,
+        };
+        this.navMesh = {
+            enabled: false,
+            eyeHeight: 1.5,
         };
         this.deviceCamera = {
             // Whether to enable the simulator camera feed.
@@ -10101,6 +10108,7 @@ const SIMULATOR_HAND_POSE_NAMES = Object.freeze({
 
 const { A_CODE: A_CODE$1, D_CODE: D_CODE$1, E_CODE: E_CODE$1, Q_CODE: Q_CODE$1, S_CODE: S_CODE$1, W_CODE: W_CODE$1 } = Keycodes;
 const vector3$6 = new THREE.Vector3();
+const desiredCameraPosition = new THREE.Vector3();
 const originVec = new THREE.Vector3();
 const forwardVec = new THREE.Vector3(0, 0, -1);
 const offsetVec = new THREE.Vector3();
@@ -10108,15 +10116,18 @@ const axisVec = new THREE.Vector3();
 const currentOffsetVec = new THREE.Vector3();
 const newOffsetVec = new THREE.Vector3();
 const euler$2 = new THREE.Euler();
+const yawEuler = new THREE.Euler();
+const yawQuaternion = new THREE.Quaternion();
 const HAND_POSES = Object.values(SimulatorHandPose);
 class SimulatorControlMode {
     /**
      * Create a SimulatorControlMode
      */
-    constructor(simulatorControllerState, downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode = () => { }) {
+    constructor(simulatorControllerState, downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode = () => { }) {
         this.simulatorControllerState = simulatorControllerState;
         this.downKeys = downKeys;
         this.hands = hands;
+        this.navMesh = navMesh;
         this.setStereoRenderMode = setStereoRenderMode;
         this.toggleUserInterface = toggleUserInterface;
         this.cycleSimulatorMode = cycleSimulatorMode;
@@ -10170,13 +10181,10 @@ class SimulatorControlMode {
             return;
         const deltaTime = this.timer.getDelta();
         const cameraRotation = this.camera.quaternion;
-        const cameraPosition = this.camera.position;
         const downKeys = this.downKeys;
-        vector3$6
-            .set(Number(downKeys.has(D_CODE$1)) - Number(downKeys.has(A_CODE$1)), Number(downKeys.has(Q_CODE$1)) - Number(downKeys.has(E_CODE$1)), Number(downKeys.has(S_CODE$1)) - Number(downKeys.has(W_CODE$1)))
-            .multiplyScalar(deltaTime)
-            .applyQuaternion(cameraRotation);
-        cameraPosition.add(vector3$6);
+        this.applyYawRelativeMovement(Number(downKeys.has(D_CODE$1)) - Number(downKeys.has(A_CODE$1)), this.navMesh.constrained
+            ? 0
+            : Number(downKeys.has(Q_CODE$1)) - Number(downKeys.has(E_CODE$1)), Number(downKeys.has(S_CODE$1)) - Number(downKeys.has(W_CODE$1)), deltaTime);
         // Gamepad stick input (if connected). Skip while the tab isn't
         // focused — the Gamepad API delivers state to every tab, so without
         // this guard the camera moves in background tabs whenever the user
@@ -10185,11 +10193,7 @@ class SimulatorControlMode {
             const [lx, ly, rx, ry] = gp.getAxes();
             // Left stick → move camera.
             if (lx !== 0 || ly !== 0) {
-                vector3$6
-                    .set(lx, 0, ly)
-                    .multiplyScalar(deltaTime)
-                    .applyQuaternion(cameraRotation);
-                cameraPosition.add(vector3$6);
+                this.applyYawRelativeMovement(lx, 0, ly, deltaTime);
             }
             // Right stick → look (yaw + pitch).
             if (rx !== 0 || ry !== 0) {
@@ -10202,13 +10206,29 @@ class SimulatorControlMode {
                 cameraRotation.setFromEuler(euler$2);
             }
             // Configurable vertical movement bindings (defaults LT/RT, analog).
-            const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
-            const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
-            const verticalDelta = (upVal - downVal) * deltaTime;
-            if (verticalDelta !== 0) {
-                cameraPosition.y += verticalDelta;
+            if (!this.navMesh.constrained) {
+                const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
+                const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
+                const verticalDelta = (upVal - downVal) * deltaTime;
+                if (verticalDelta !== 0) {
+                    desiredCameraPosition.copy(this.camera.position);
+                    desiredCameraPosition.y += verticalDelta;
+                    this.navMesh.applyUserMovement(this.camera, desiredCameraPosition);
+                }
             }
         }
+    }
+    applyYawRelativeMovement(localX, localY, localZ, deltaTime) {
+        euler$2.setFromQuaternion(this.camera.quaternion, 'YXZ');
+        yawEuler.set(0, euler$2.y, 0, 'YXZ');
+        yawQuaternion.setFromEuler(yawEuler);
+        vector3$6
+            .set(localX, 0, localZ)
+            .multiplyScalar(deltaTime)
+            .applyQuaternion(yawQuaternion);
+        vector3$6.y += localY * deltaTime;
+        desiredCameraPosition.copy(this.camera.position).add(vector3$6);
+        this.navMesh.applyUserMovement(this.camera, desiredCameraPosition);
     }
     /**
      * Handle gamepad buttons for simulator UI using configurable bindings.
@@ -10598,9 +10618,10 @@ class SimulatorControls {
      * @param setStereoRenderMode - A function to set the stereo mode.
      * @param userInterface - The simulator user interface manager.
      */
-    constructor(simulatorControllerState, hands, setStereoRenderMode, userInterface) {
+    constructor(simulatorControllerState, hands, navMesh, setStereoRenderMode, userInterface) {
         this.simulatorControllerState = simulatorControllerState;
         this.hands = hands;
+        this.navMesh = navMesh;
         this.userInterface = userInterface;
         this.pointerDown = false;
         this.downKeys = new Set();
@@ -10658,10 +10679,10 @@ class SimulatorControls {
             this.setSimulatorMode(this.simulatorOptions.modeToggle.toggleOrder[this.simulatorMode]);
         };
         this.simulatorModes = {
-            [SimulatorMode.USER]: new SimulatorUserMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
-            [SimulatorMode.POSE]: new SimulatorPoseMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
-            [SimulatorMode.CONTROLLER]: new SimulatorControllerMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
-            [SimulatorMode.POINTER_LOCK]: new SimulatorPointerLockMode(this.simulatorControllerState, this.downKeys, hands, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.USER]: new SimulatorUserMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.POSE]: new SimulatorPoseMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.CONTROLLER]: new SimulatorControllerMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.POINTER_LOCK]: new SimulatorPointerLockMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
         };
         this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
     }
@@ -12119,9 +12140,9 @@ class SimulatorInterface {
     /**
      * Initialize the simulator interface.
      */
-    init(simulatorOptions, simulatorControls, simulatorHands, input, simulatorScene) {
+    init(simulatorOptions, simulatorControls, simulatorHands, input, simulatorScene, simulatorNavMesh) {
         if (simulatorScene) {
-            this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene);
+            this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene, simulatorNavMesh);
         }
         this.showGeminiLivePanel(simulatorOptions);
         this.createHandPosePanel(simulatorOptions, simulatorHands);
@@ -12134,7 +12155,7 @@ class SimulatorInterface {
         if (input)
             this._initGamepadUI(input);
     }
-    createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene) {
+    createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene, simulatorNavMesh) {
         if (simulatorOptions.simulatorSettingsPanel.enabled) {
             const settingsElement = document.createElement(simulatorOptions.simulatorSettingsPanel.element);
             settingsElement.environments = simulatorOptions.environments;
@@ -12149,6 +12170,7 @@ class SimulatorInterface {
                     simulatorOptions.activeEnvironmentIndex = event.environmentIndex;
                     const activeEnv = simulatorOptions.environments[event.environmentIndex];
                     simulatorScene.setEnvironment(activeEnv?.scenePath ?? null, new THREE.Vector3(simulatorOptions.initialScenePosition.x, simulatorOptions.initialScenePosition.y, simulatorOptions.initialScenePosition.z));
+                    void simulatorNavMesh?.setEnvironment(activeEnv ?? null, simulatorOptions);
                 }
             });
             settingsElement.addEventListener(ShowSimulatorInstructionsEvent.type, () => {
@@ -12259,6 +12281,247 @@ class SimulatorInterface {
         else {
             this._gamepadSettings.hide();
         }
+    }
+}
+
+const DEFAULT_ZONE_ID = 'simulator';
+const RANDOM_PATH_SAMPLE_ATTEMPTS = 8;
+const desiredGroundPosition = new THREE.Vector3();
+const startGroundPosition = new THREE.Vector3();
+const clampedGroundPosition = new THREE.Vector3();
+const initialScenePosition = new THREE.Vector3();
+const targetWorldPosition$2 = new THREE.Vector3();
+const randomTriangleA = new THREE.Vector3();
+const randomTriangleB = new THREE.Vector3();
+const randomTriangleC = new THREE.Vector3();
+const randomTriangleAB = new THREE.Vector3();
+const randomTriangleAC = new THREE.Vector3();
+class SimulatorNavMesh {
+    constructor() {
+        this.enabled = false;
+        this.ready = false;
+        this.zoneId = DEFAULT_ZONE_ID;
+        this.groupId = null;
+        this.currentNode = null;
+        this.eyeHeight = 1.5;
+    }
+    get constrained() {
+        return this.enabled && this.ready;
+    }
+    async init(options) {
+        this.enabled = options.navMesh.enabled;
+        this.eyeHeight = options.navMesh.eyeHeight;
+        const activeEnv = options.environments[options.activeEnvironmentIndex] ?? null;
+        await this.setEnvironment(activeEnv, options);
+    }
+    async setEnvironment(environment, options) {
+        this.enabled = options.navMesh.enabled;
+        this.eyeHeight = options.navMesh.eyeHeight;
+        this.ready = false;
+        this.groupId = null;
+        this.currentNode = null;
+        this.pathfinding = undefined;
+        this.zone = undefined;
+        if (!this.enabled)
+            return;
+        if (!environment?.navMeshPath) {
+            console.warn('SimulatorNavMesh: navmesh is enabled, but the active environment has no navMeshPath.');
+            return;
+        }
+        try {
+            initialScenePosition.set(options.initialScenePosition.x, options.initialScenePosition.y, options.initialScenePosition.z);
+            const geometry = await this.loadGeometry(environment.navMeshPath, initialScenePosition);
+            try {
+                await this.setGeometry(geometry);
+            }
+            finally {
+                geometry.dispose();
+            }
+        }
+        catch (error) {
+            console.warn(`SimulatorNavMesh: failed to load navmesh at ${environment.navMeshPath}.`, error);
+        }
+    }
+    async setGeometry(geometry) {
+        const Pathfinding = await this.loadPathfinding();
+        const zone = Pathfinding.createZone(geometry);
+        this.pathfinding = new Pathfinding();
+        this.pathfinding.setZoneData(this.zoneId, zone);
+        this.zone = zone;
+        this.ready = true;
+        this.groupId = null;
+        this.currentNode = null;
+    }
+    applyUserMovement(camera, desiredCameraPosition) {
+        if (!this.constrained || !this.pathfinding) {
+            camera.position.copy(desiredCameraPosition);
+            return;
+        }
+        startGroundPosition.copy(camera.position);
+        startGroundPosition.y -= this.eyeHeight;
+        desiredGroundPosition.copy(desiredCameraPosition);
+        desiredGroundPosition.y -= this.eyeHeight;
+        if (this.groupId === null || this.currentNode === null) {
+            this.groupId = this.pathfinding.getGroup(this.zoneId, startGroundPosition);
+            if (this.groupId === null) {
+                camera.position.copy(desiredCameraPosition);
+                return;
+            }
+            this.currentNode = this.pathfinding.getClosestNode(startGroundPosition, this.zoneId, this.groupId, true);
+            this.currentNode ??= this.pathfinding.getClosestNode(startGroundPosition, this.zoneId, this.groupId, false);
+        }
+        if (!this.currentNode || this.groupId === null) {
+            camera.position.copy(desiredCameraPosition);
+            return;
+        }
+        this.currentNode = this.pathfinding.clampStep(startGroundPosition, desiredGroundPosition, this.currentNode, this.zoneId, this.groupId, clampedGroundPosition);
+        camera.position.set(clampedGroundPosition.x, clampedGroundPosition.y + this.eyeHeight, clampedGroundPosition.z);
+    }
+    findPathTo(startCameraPosition, targetGroundPosition) {
+        if (!this.constrained || !this.pathfinding)
+            return null;
+        const start = startGroundPosition.copy(startCameraPosition);
+        start.y -= this.eyeHeight;
+        const groupId = this.getGroup(start);
+        if (groupId === null)
+            return null;
+        return this.pathfinding.findPath(start, targetGroundPosition, this.zoneId, groupId);
+    }
+    findRandomPathFrom(startCameraPosition) {
+        if (!this.constrained || !this.pathfinding || !this.zone)
+            return null;
+        const start = startGroundPosition.copy(startCameraPosition);
+        start.y -= this.eyeHeight;
+        const groupId = this.getGroup(start);
+        if (groupId === null)
+            return null;
+        for (let i = 0; i < RANDOM_PATH_SAMPLE_ATTEMPTS; i++) {
+            const target = this.getRandomPointInGroup(groupId);
+            if (!target)
+                continue;
+            const path = this.pathfinding.findPath(start, target, this.zoneId, groupId);
+            if (path)
+                return { target, path };
+        }
+        return null;
+    }
+    isGroundPositionReachable(startCameraPosition, targetGroundPosition) {
+        return this.isLocationReachable(startCameraPosition, targetGroundPosition);
+    }
+    isLocationReachable(startCameraPosition, targetGroundPosition) {
+        return this.findPathTo(startCameraPosition, targetGroundPosition) !== null;
+    }
+    isObjectReachable(startCameraPosition, object) {
+        object.getWorldPosition(targetWorldPosition$2);
+        return this.isGroundPositionReachable(startCameraPosition, targetWorldPosition$2);
+    }
+    getGroup(position) {
+        if (!this.pathfinding)
+            return null;
+        return this.pathfinding.getGroup(this.zoneId, position);
+    }
+    getRandomPointInGroup(groupId) {
+        const group = this.zone?.groups[groupId];
+        if (!group)
+            return null;
+        let totalArea = 0;
+        const areas = group.map((node) => {
+            const area = this.getNodeArea(node);
+            totalArea += area;
+            return totalArea;
+        });
+        if (totalArea <= 0)
+            return null;
+        const targetArea = Math.random() * totalArea;
+        const nodeIndex = areas.findIndex((area) => area >= targetArea);
+        const node = group[nodeIndex === -1 ? group.length - 1 : nodeIndex];
+        return this.sampleNode(node);
+    }
+    getNodeArea(node) {
+        if (!node || !this.zone)
+            return 0;
+        const [a, b, c] = node.vertexIds.map((id) => this.zone.vertices[id]);
+        randomTriangleAB.subVectors(b, a);
+        randomTriangleAC.subVectors(c, a);
+        return randomTriangleAB.cross(randomTriangleAC).length() * 0.5;
+    }
+    sampleNode(node) {
+        if (!node || !this.zone)
+            return null;
+        const [a, b, c] = node.vertexIds.map((id) => this.zone.vertices[id]);
+        randomTriangleA.copy(a);
+        randomTriangleB.copy(b);
+        randomTriangleC.copy(c);
+        let u = Math.random();
+        let v = Math.random();
+        if (u + v > 1) {
+            u = 1 - u;
+            v = 1 - v;
+        }
+        return new THREE.Vector3()
+            .copy(randomTriangleA)
+            .addScaledVector(randomTriangleAB.subVectors(randomTriangleB, randomTriangleA), u)
+            .addScaledVector(randomTriangleAC.subVectors(randomTriangleC, randomTriangleA), v);
+    }
+    async loadGeometry(path, sceneOffset) {
+        const loader = new GLTFLoader();
+        const gltf = await loader.loadAsync(path);
+        try {
+            gltf.scene.position.copy(sceneOffset);
+            gltf.scene.updateMatrixWorld(true);
+            const navMesh = this.findFirstMesh(gltf.scene);
+            if (!navMesh) {
+                throw new Error('No mesh found in navmesh glTF/GLB.');
+            }
+            const geometry = navMesh.geometry.clone();
+            geometry.applyMatrix4(navMesh.matrixWorld);
+            return geometry;
+        }
+        finally {
+            this.disposeGLTFResources(gltf);
+        }
+    }
+    disposeGLTFResources(gltf) {
+        gltf.scene.traverse((object) => {
+            const mesh = object;
+            if (!mesh.isMesh)
+                return;
+            mesh.geometry?.dispose();
+            const materials = Array.isArray(mesh.material)
+                ? mesh.material
+                : [mesh.material];
+            for (const material of materials) {
+                this.disposeMaterial(material);
+            }
+        });
+    }
+    disposeMaterial(material) {
+        if (!material)
+            return;
+        for (const value of Object.values(material)) {
+            if (value instanceof THREE.Texture) {
+                value.dispose();
+            }
+        }
+        material.dispose();
+    }
+    findFirstMesh(root) {
+        const queue = [root];
+        while (queue.length > 0) {
+            const object = queue.shift();
+            const mesh = object;
+            if (mesh.isMesh && mesh.geometry) {
+                return mesh;
+            }
+            queue.push(...object.children);
+        }
+        return null;
+    }
+    async loadPathfinding() {
+        if (!this.Pathfinding) {
+            this.Pathfinding = (await import('three-pathfinding')).Pathfinding;
+        }
+        return this.Pathfinding;
     }
 }
 
@@ -16321,13 +16584,14 @@ class Simulator extends Script {
         this.editorIcon = 'simulation';
         this.simulatorScene = new SimulatorScene();
         this.simulatorWorld = new SimulatorWorld();
+        this.navMesh = new SimulatorNavMesh();
         this.depth = new SimulatorDepth(this.simulatorScene);
         // Controller poses relative to the camera.
         this.simulatorControllerState = new SimulatorControllerState();
         this.hands = new SimulatorHands(this.simulatorControllerState, this.simulatorScene);
         this.simulatorUser = new SimulatorUser();
         this.userInterface = new SimulatorInterface();
-        this.controls = new SimulatorControls(this.simulatorControllerState, this.hands, this.setStereoRenderMode.bind(this), this.userInterface);
+        this.controls = new SimulatorControls(this.simulatorControllerState, this.hands, this.navMesh, this.setStereoRenderMode.bind(this), this.userInterface);
         this.renderDepthPass = false;
         this.renderMode = SimulatorRenderMode.DEFAULT;
         this.stereoCameras = [];
@@ -16342,9 +16606,10 @@ class Simulator extends Script {
         const deviceCamera = registry.get(XRDeviceCamera);
         this.options = simulatorOptions;
         camera.position.copy(this.options.initialCameraPosition);
-        this.userInterface.init(simulatorOptions, this.controls, this.hands, input, this.simulatorScene);
+        this.userInterface.init(simulatorOptions, this.controls, this.hands, input, this.simulatorScene, this.navMesh);
         renderer.autoClearColor = false;
         await this.simulatorScene.init(simulatorOptions);
+        await this.navMesh.init(simulatorOptions);
         await this.simulatorWorld.init(options, world, this.simulatorScene);
         await this.hands.init({ input });
         this.controls.init({ camera, input, timer, renderer, simulatorOptions });
@@ -20562,6 +20827,7 @@ class Core {
         this.registry.register(this.sound);
         this.registry.register(this.dragManager);
         this.registry.register(this.simulator);
+        this.registry.register(this.simulator.navMesh);
         this.registry.register(this.scriptsManager);
         this.registry.register(this.depth);
         this.registry.register(this.world);
@@ -21605,14 +21871,19 @@ const inverseCameraRotation = new THREE.Quaternion();
  * Represents a action to walk towards a panel or object.
  */
 class WalkTowardsPanelAction extends SimulatorUserAction {
-    static { this.dependencies = { camera: THREE.Camera, timer: THREE.Timer }; }
+    static { this.dependencies = {
+        camera: THREE.Camera,
+        timer: THREE.Timer,
+        navMesh: SimulatorNavMesh,
+    }; }
     constructor(target) {
         super();
         this.target = target;
     }
-    async init({ camera, timer }) {
+    async init({ camera, timer, navMesh, }) {
         this.camera = camera;
         this.timer = timer;
+        this.navMesh = navMesh;
     }
     isLookingAtTarget() {
         const camera = this.camera;
@@ -21627,8 +21898,9 @@ class WalkTowardsPanelAction extends SimulatorUserAction {
         const camera = this.camera;
         this.target.getWorldPosition(targetWorldPosition);
         cameraToTargetVector.copy(targetWorldPosition).sub(camera.position);
-        return (Math.abs(cameraToTargetVector.length() - NEAR_TARGET_DISTANCE) <
-            NEAR_TARGET_THRESHOLD);
+        cameraToTargetVector.y = 0;
+        return (cameraToTargetVector.length() <=
+            NEAR_TARGET_DISTANCE + NEAR_TARGET_THRESHOLD);
     }
     lookAtTarget() {
         const camera = this.camera;
@@ -21654,12 +21926,15 @@ class WalkTowardsPanelAction extends SimulatorUserAction {
         const deltaTime = this.timer.getDelta();
         this.target.getWorldPosition(targetWorldPosition);
         cameraToTargetVector.copy(targetWorldPosition).sub(camera.position);
+        cameraToTargetVector.y = 0;
+        const distanceToTarget = cameraToTargetVector.length();
+        const movementDistance = clamp$1(distanceToTarget - NEAR_TARGET_DISTANCE, 0, MOVEMENT_SPEED_METERS_PER_SECOND * deltaTime);
+        if (movementDistance === 0 || distanceToTarget === 0)
+            return;
         closeToTargetPosition
-            .copy(targetWorldPosition)
-            .addScaledVector(cameraToTargetVector, -NEAR_TARGET_THRESHOLD);
-        const cameraToCloseToTarget = closeToTargetPosition.sub(camera.position);
-        const movementDistance = clamp$1(cameraToCloseToTarget.length(), 0, MOVEMENT_SPEED_METERS_PER_SECOND * deltaTime);
-        camera.position.addScaledVector(cameraToCloseToTarget, movementDistance / cameraToCloseToTarget.length());
+            .copy(camera.position)
+            .addScaledVector(cameraToTargetVector, movementDistance / distanceToTarget);
+        this.navMesh.applyUserMovement(camera, closeToTargetPosition);
     }
     async play({ simulatorUser, journeyId, waitFrame, }) {
         let isLookingAtTarget = this.isLookingAtTarget();
@@ -23476,5 +23751,5 @@ var SegmentCategory;
     SegmentCategory[SegmentCategory["Others"] = 5] = "Others";
 })(SegmentCategory || (SegmentCategory = {}));
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
