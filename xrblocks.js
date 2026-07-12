@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid dad7935
- * @builddate 2026-07-12T22:47:49.659Z
+ * @commitid 670ae4e
+ * @builddate 2026-07-12T22:49:25.636Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13880,6 +13880,44 @@ function placeObjectAtIntersectionFacingTarget(obj, intersection, target) {
     return obj;
 }
 
+function disposeMaterial(material, except = new Set()) {
+    if (!material) {
+        return;
+    }
+    const materials = Array.isArray(material) ? material : [material];
+    for (const item of materials) {
+        if (!except.has(item)) {
+            item.dispose();
+        }
+    }
+}
+function disposeRenderableResources(object) {
+    const renderable = object;
+    renderable.geometry?.dispose?.();
+    disposeMaterial(renderable.material);
+}
+function hasRenderableResources(object) {
+    const renderable = object;
+    return !!(renderable.geometry || renderable.material);
+}
+function disposeObjectTree(object) {
+    for (const child of [...object.children]) {
+        disposeObjectTree(child);
+        object.remove(child);
+    }
+    if (hasRenderableResources(object)) {
+        disposeRenderableResources(object);
+    }
+    const disposable = object;
+    disposable.dispose?.();
+}
+function disposeObjectChildren(object) {
+    for (const child of [...object.children]) {
+        disposeObjectTree(child);
+        object.remove(child);
+    }
+}
+
 /**
  * Represents a single detected object in the XR environment and holds metadata
  * about the object's properties. Note: 3D object position is stored in the
@@ -13962,6 +14000,7 @@ let BaseDetectorBackend$1 = class BaseDetectorBackend {
         const detectedObjects = (await Promise.all(detectionPromises)).filter((obj) => obj !== null && obj !== undefined);
         return detectedObjects;
     }
+    dispose() { }
     /**
      * Creates a debug visual representation for a detected object in the 3D scene.
      *
@@ -14250,6 +14289,7 @@ class ObjectDetector extends Script {
         this.activeClients = new Set();
         this.currentDetectionPromise = null;
         this.lastContinuousDetectionStartedAtMs = -Infinity;
+        this.disposed = false;
         /**
          * The latest detected objects.
          */
@@ -14283,6 +14323,7 @@ class ObjectDetector extends Script {
         this.depth = depth;
         this.camera = camera;
         this.renderer = renderer;
+        this.disposed = false;
         if (this.targetDevice === 'galaxyxr' &&
             typeof navigator !== 'undefined' &&
             /OculusBrowser|Quest/i.test(navigator.userAgent)) {
@@ -14340,7 +14381,9 @@ class ObjectDetector extends Script {
         this.lastContinuousDetectionStartedAtMs = performance.now();
         this.currentDetectionPromise = this.runDetectionInternal()
             .then((results) => {
-            this.detectedObjects = results;
+            if (!this.disposed) {
+                this.detectedObjects = results;
+            }
             return results;
         })
             .finally(() => {
@@ -14374,7 +14417,6 @@ class ObjectDetector extends Script {
     }
     async runDetectionInternal() {
         this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
-        const depthMeshSnapshot = this.getDepthMeshSnapshot();
         const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
         if (!cameraParametersSnapshot) {
             // Device camera not ready yet (warming up); skip until it is available.
@@ -14391,12 +14433,24 @@ class ObjectDetector extends Script {
             console.warn(`Failed to load or initialize ObjectDetector backend '${activeBackend}':`, error);
             return [];
         }
-        const detectedObjects = await detectorBackend.run(depthMeshSnapshot, cameraParametersSnapshot);
-        for (const obj of detectedObjects) {
-            this._detectedObjects.set(obj.uuid, obj);
-            this.add(obj);
+        if (this.disposed) {
+            return [];
         }
-        return detectedObjects;
+        const depthMeshSnapshot = this.getDepthMeshSnapshot();
+        try {
+            const detectedObjects = await detectorBackend.run(depthMeshSnapshot, cameraParametersSnapshot);
+            if (this.disposed) {
+                return [];
+            }
+            for (const obj of detectedObjects) {
+                this._detectedObjects.set(obj.uuid, obj);
+                this.add(obj);
+            }
+            return detectedObjects;
+        }
+        finally {
+            this.disposeDepthMeshSnapshot(depthMeshSnapshot);
+        }
     }
     getDetectorContext() {
         return {
@@ -14464,12 +14518,17 @@ class ObjectDetector extends Script {
     }
     clearDetectedObjects() {
         for (const obj of this._detectedObjects.values()) {
+            disposeObjectTree(obj);
             this.remove(obj);
         }
         this._detectedObjects.clear();
         if (this._debugVisualsGroup) {
-            this._debugVisualsGroup.clear();
+            disposeObjectChildren(this._debugVisualsGroup);
         }
+    }
+    disposeDepthMeshSnapshot(depthMeshSnapshot) {
+        depthMeshSnapshot.geometry.dispose();
+        disposeMaterial(depthMeshSnapshot.material);
     }
     /**
      * Toggles the visibility of all debug visualizations for detected objects.
@@ -14479,6 +14538,18 @@ class ObjectDetector extends Script {
         if (this._debugVisualsGroup) {
             this._debugVisualsGroup.visible = visible;
         }
+    }
+    dispose() {
+        this.disposed = true;
+        this.activeClients.clear();
+        disposeObjectChildren(this);
+        this.clear(); // Unlinks children so needs to come last
+        for (const backendPromise of this._detectorBackends.values()) {
+            void backendPromise
+                .then((backend) => backend.dispose?.())
+                .catch(() => { });
+        }
+        this._detectorBackends.clear();
     }
 }
 
@@ -14627,10 +14698,14 @@ class PlaneDetector extends Script {
     _removePlaneMesh(xrPlane) {
         const planeMesh = this._detectedPlanes.get(xrPlane);
         if (planeMesh) {
-            planeMesh.geometry.dispose();
+            this.disposePlaneMesh(planeMesh);
             this.remove(planeMesh);
             this._detectedPlanes.delete(xrPlane);
         }
+    }
+    disposePlaneMesh(planeMesh) {
+        planeMesh.geometry.dispose();
+        disposeMaterial(planeMesh.material, this._debugMaterial ? new Set([this._debugMaterial]) : undefined);
     }
     /**
      * Updates the position and orientation of a `DetectedPlane` mesh from its XR
@@ -14682,10 +14757,20 @@ class PlaneDetector extends Script {
     }
     setSimulatorPlanes(planes) {
         this.usingSimulatorPlanes = true;
-        this._detectedPlanes.clear();
+        for (const plane of Array.from(this._detectedPlanes.keys())) {
+            this._removePlaneMesh(plane);
+        }
         for (const plane of planes) {
             this._addSimulatorPlaneMesh(plane);
         }
+    }
+    dispose() {
+        for (const plane of Array.from(this._detectedPlanes.keys())) {
+            this._removePlaneMesh(plane);
+        }
+        this._debugMaterial?.dispose();
+        this.usingSimulatorPlanes = false;
+        this._xrRefSpace = undefined;
     }
 }
 
@@ -14936,12 +15021,9 @@ class MeshDetector extends Script {
      */
     setSimulatorMeshes(meshes) {
         this.usingSimulatorMeshes = true;
-        for (const [, threeMesh] of this.xrMeshToThreeMesh) {
-            this.remove(threeMesh);
-            threeMesh.dispose();
+        for (const [xrMesh, threeMesh] of this.xrMeshToThreeMesh) {
+            this.removeMesh(xrMesh, threeMesh);
         }
-        this.xrMeshToThreeMesh.clear();
-        this.threeMeshToXrMesh.clear();
         for (const simMesh of meshes) {
             const material = (simMesh.semanticLabel &&
                 this.debugMaterials.get(simMesh.semanticLabel)) ||
@@ -14961,6 +15043,20 @@ class MeshDetector extends Script {
                 threeMesh.initRapierPhysics(this.physics.RAPIER, this.physics.blendedWorld);
             }
         }
+    }
+    dispose() {
+        for (const [xrMesh, threeMesh] of Array.from(this.xrMeshToThreeMesh.entries())) {
+            this.removeMesh(xrMesh, threeMesh);
+        }
+        this.defaultMaterial.dispose();
+        this.fallbackDebugMaterial?.dispose();
+        this.fallbackDebugMaterial = null;
+        for (const material of this.debugMaterials.values()) {
+            material.dispose();
+        }
+        this.debugMaterials.clear();
+        this.usingSimulatorMeshes = false;
+        this.physics = undefined;
     }
     createMesh(frame, xrMesh) {
         const semanticLabel = xrMesh.semanticLabel;
@@ -15345,6 +15441,7 @@ class BaseDetectorBackend {
             sampleRate: this.context.sampleRate,
         };
     }
+    dispose() { }
 }
 
 let FilesetResolver$2;
@@ -15426,6 +15523,11 @@ class MediaPipeDetectorBackend extends BaseDetectorBackend {
         }
         return null;
     }
+    dispose() {
+        this.audioClassifier?.close();
+        this.audioClassifier = null;
+        this.accumulatedAudio = [];
+    }
 }
 
 const DEFAULT_SAMPLE_RATE = 44000;
@@ -15500,6 +15602,14 @@ class SoundDetector extends Script {
     }
     update(_timestamp, _frame) {
         // No per-frame update logic needed, audio is handled asynchronously via streams.
+    }
+    dispose() {
+        this.stopListening();
+        for (const backendPromise of this._detectorBackends.values()) {
+            void backendPromise.then((backend) => backend.dispose()).catch(() => { });
+        }
+        this._detectorBackends.clear();
+        this.audioListener = undefined;
     }
     getOrCreateDetectorBackend(sampleRate) {
         if (!this.options) {
@@ -16076,6 +16186,7 @@ class BaseHumanBackend {
         }
         return this.detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot);
     }
+    dispose() { }
 }
 
 let FilesetResolver$1;
@@ -16210,6 +16321,10 @@ class MediaPipeHumanBackend extends BaseHumanBackend {
             minTrackingConfidence: humansOptions.minTrackingConfidence,
         });
     }
+    dispose() {
+        this.poseLandmarker?.close();
+        this.poseLandmarker = null;
+    }
 }
 
 /**
@@ -16224,6 +16339,7 @@ class HumanRecognizer extends Script {
         this.activeClients = new Set();
         this.currentDetectionPromise = null;
         this.lastContinuousDetectionStartedAtMs = -Infinity;
+        this.disposed = false;
         /**
          * The latest detected body poses.
          */
@@ -16243,6 +16359,7 @@ class HumanRecognizer extends Script {
         this.depth = depth;
         this.camera = camera;
         this.renderer = renderer;
+        this.disposed = false;
     }
     /**
      * Starts continuous pose detection for the given client.
@@ -16289,7 +16406,9 @@ class HumanRecognizer extends Script {
         this.lastContinuousDetectionStartedAtMs = performance.now();
         this.currentDetectionPromise = this.runDetectionInternal()
             .then((results) => {
-            this.poses = results;
+            if (!this.disposed) {
+                this.poses = results;
+            }
             return results;
         })
             .finally(() => {
@@ -16326,7 +16445,6 @@ class HumanRecognizer extends Script {
             console.warn('Cannot run Human Detection: Depth module / depthMesh is not enabled or initialized.');
             return [];
         }
-        const depthMeshSnapshot = this.getDepthMeshSnapshot();
         const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
         if (!cameraParametersSnapshot) {
             // Device camera not ready yet (warming up); skip until it is available.
@@ -16343,8 +16461,17 @@ class HumanRecognizer extends Script {
             console.warn(`Failed to load or initialize HumanRecognizer backend '${activeBackend}':`, error);
             return [];
         }
-        const bodyPoses = await backend.run(depthMeshSnapshot, cameraParametersSnapshot);
-        return bodyPoses;
+        if (this.disposed) {
+            return [];
+        }
+        const depthMeshSnapshot = this.getDepthMeshSnapshot();
+        try {
+            const bodyPoses = await backend.run(depthMeshSnapshot, cameraParametersSnapshot);
+            return this.disposed ? [] : bodyPoses;
+        }
+        finally {
+            this.disposeDepthMeshSnapshot(depthMeshSnapshot);
+        }
     }
     getBackendContext() {
         return {
@@ -16381,6 +16508,22 @@ class HumanRecognizer extends Script {
         depthMesh.getWorldScale(depthMeshSnapshot.scale);
         depthMeshSnapshot.updateMatrixWorld(true);
         return depthMeshSnapshot;
+    }
+    disposeDepthMeshSnapshot(depthMeshSnapshot) {
+        depthMeshSnapshot.geometry.dispose();
+        disposeMaterial(depthMeshSnapshot.material);
+    }
+    dispose() {
+        this.disposed = true;
+        this.activeClients.clear();
+        this.clear();
+        this.poses = [];
+        for (const backendPromise of this.detectorBackends.values()) {
+            void backendPromise
+                .then((backend) => backend.dispose?.())
+                .catch(() => { });
+        }
+        this.detectorBackends.clear();
     }
 }
 
@@ -16703,6 +16846,7 @@ class BaseFaceBackend {
         }
         return this.detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot);
     }
+    dispose() { }
 }
 
 // Source code for the MediaPipe FaceLandmarker web worker. Inlined as a
@@ -17062,6 +17206,7 @@ class FaceRecognizer extends Script {
         this.activeClients = new Set();
         this.currentDetectionPromise = null;
         this.lastContinuousDetectionStartedAtMs = -Infinity;
+        this.disposed = false;
         /**
          * The latest detected faces from continuous detection.
          */
@@ -17090,6 +17235,7 @@ class FaceRecognizer extends Script {
         this.depth = depth;
         this.camera = camera;
         this.renderer = renderer;
+        this.disposed = false;
     }
     /**
      * Starts continuous face detection for the given client.
@@ -17136,7 +17282,9 @@ class FaceRecognizer extends Script {
         this.lastContinuousDetectionStartedAtMs = performance.now();
         this.currentDetectionPromise = this.runDetectionInternal()
             .then((results) => {
-            this.detectedFaces = results;
+            if (!this.disposed) {
+                this.detectedFaces = results;
+            }
             return results;
         })
             .finally(() => {
@@ -17171,7 +17319,6 @@ class FaceRecognizer extends Script {
             console.warn('Cannot run Face Detection: Depth module / depthMesh is not enabled or initialized.');
             return [];
         }
-        const depthMeshSnapshot = this.getDepthMeshSnapshot();
         const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
         if (!cameraParametersSnapshot) {
             // Device camera not ready yet (warming up); skip until it is available.
@@ -17188,8 +17335,12 @@ class FaceRecognizer extends Script {
             console.warn(`Failed to load or initialize FaceRecognizer backend '${activeBackend}':`, error);
             return [];
         }
+        if (this.disposed) {
+            return [];
+        }
+        const depthMeshSnapshot = this.getDepthMeshSnapshot();
         const faces = await backend.run(depthMeshSnapshot, cameraParametersSnapshot);
-        return faces;
+        return this.disposed ? [] : faces;
     }
     getBackendContext() {
         return {
@@ -17238,9 +17389,7 @@ class FaceRecognizer extends Script {
         // Source changed (or first call). Dispose the previous BVH so its
         // backing buffers free, then clone + rebuild.
         if (this.cachedDepthMeshSnapshot) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            this.cachedDepthMeshSnapshot.geometry.disposeBoundsTree?.();
-            this.cachedDepthMeshSnapshot.geometry.dispose();
+            this.disposeCachedDepthMeshSnapshot();
         }
         const clonedGeometry = geometry.clone();
         clonedGeometry.computeBoundingSphere();
@@ -17264,6 +17413,41 @@ class FaceRecognizer extends Script {
         this.cachedDepthMeshSource = geometry;
         this.cachedDepthMeshVersion = version;
         return depthMeshSnapshot;
+    }
+    disposeCachedDepthMeshSnapshot() {
+        if (!this.cachedDepthMeshSnapshot) {
+            return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.cachedDepthMeshSnapshot.geometry.disposeBoundsTree?.();
+        this.cachedDepthMeshSnapshot.geometry.dispose();
+        disposeMaterial(this.cachedDepthMeshSnapshot.material);
+        this.cachedDepthMeshSnapshot = null;
+        this.cachedDepthMeshSource = null;
+        this.cachedDepthMeshVersion = -1;
+    }
+    dispose() {
+        this.disposed = true;
+        this.activeClients.clear();
+        this.clear();
+        this.detectedFaces = [];
+        const pendingDetection = this.currentDetectionPromise;
+        if (pendingDetection) {
+            void pendingDetection
+                .finally(() => {
+                this.disposeCachedDepthMeshSnapshot();
+            })
+                .catch(() => { });
+        }
+        else {
+            this.disposeCachedDepthMeshSnapshot();
+        }
+        for (const backendPromise of this._detectorBackends.values()) {
+            void backendPromise
+                .then((backend) => backend.dispose?.())
+                .catch(() => { });
+        }
+        this._detectorBackends.clear();
     }
 }
 
@@ -17292,6 +17476,7 @@ class BaseSegmenterBackend {
         }
         return this.segment(snapshot);
     }
+    dispose() { }
 }
 
 let FilesetResolver;
@@ -17383,6 +17568,10 @@ class MediaPipeSegmenterBackend extends BaseSegmenterBackend {
         });
         return out;
     }
+    dispose() {
+        this.imageSegmenter?.close();
+        this.imageSegmenter = null;
+    }
 }
 
 /**
@@ -17414,6 +17603,7 @@ class Segmenter extends Script {
          * `Number.NEGATIVE_INFINITY` so the first `update()` tick fires immediately.
          */
         this._lastRunMs = Number.NEGATIVE_INFINITY;
+        this._disposed = false;
     }
     static { this.dependencies = {
         options: WorldOptions,
@@ -17422,6 +17612,7 @@ class Segmenter extends Script {
     init({ options, deviceCamera, }) {
         this.options = options;
         this.deviceCamera = deviceCamera;
+        this._disposed = false;
     }
     /**
      * The latest cached segmentation mask from the most recently completed
@@ -17447,6 +17638,8 @@ class Segmenter extends Script {
      *   engine frame loop.
      */
     update(time) {
+        if (this._disposed)
+            return;
         if (this._inferenceInFlight)
             return;
         if (time - this._lastRunMs < this.options.segmentation.pollingIntervalMs)
@@ -17466,11 +17659,16 @@ class Segmenter extends Script {
      * @returns The mask, or `null` if the backend or camera frame is not ready.
      */
     async runSegmentation() {
+        if (this._disposed) {
+            return null;
+        }
         if (this._inferenceInFlight) {
             return this._inferenceInFlight;
         }
         this._inferenceInFlight = this._runInference().then((mask) => {
-            this._latestMask = mask;
+            if (!this._disposed) {
+                this._latestMask = mask;
+            }
             this._inferenceInFlight = null;
             return mask;
         });
@@ -17510,6 +17708,17 @@ class Segmenter extends Script {
             this._backends.set(activeBackend, backendPromise);
         }
         return backendPromise;
+    }
+    dispose() {
+        this._disposed = true;
+        this._latestMask = null;
+        this._inferenceInFlight = null;
+        for (const backendPromise of this._backends.values()) {
+            void backendPromise
+                .then((backend) => backend.dispose?.())
+                .catch(() => { });
+        }
+        this._backends.clear();
     }
 }
 
@@ -17677,6 +17886,30 @@ class World extends Script {
     showDebugVisualizations(visible = true) {
         this.planes?.showDebugVisualizations(visible);
         this.objects?.showDebugVisualizations(visible);
+    }
+    dispose() {
+        const detectors = [
+            this.planes,
+            this.objects,
+            this.meshes,
+            this.sounds,
+            this.humans,
+            this.faces,
+            this.segmentation,
+        ];
+        for (const detector of detectors) {
+            if (!detector)
+                continue;
+            detector.dispose();
+            this.remove(detector);
+        }
+        this.planes = undefined;
+        this.objects = undefined;
+        this.meshes = undefined;
+        this.sounds = undefined;
+        this.humans = undefined;
+        this.faces = undefined;
+        this.segmentation = undefined;
     }
 }
 

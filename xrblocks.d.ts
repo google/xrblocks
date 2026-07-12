@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid dad7935
- * @builddate 2026-07-12T22:47:49.659Z
+ * @commitid 670ae4e
+ * @builddate 2026-07-12T22:49:25.636Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6297,6 +6297,7 @@ declare class ObjectDetector extends Script {
     private activeClients;
     private currentDetectionPromise;
     private lastContinuousDetectionStartedAtMs;
+    private disposed;
     private _debugVisualsGroup?;
     /**
      * The latest detected objects.
@@ -6378,11 +6379,13 @@ declare class ObjectDetector extends Script {
      */
     clear(): this;
     private clearDetectedObjects;
+    private disposeDepthMeshSnapshot;
     /**
      * Toggles the visibility of all debug visualizations for detected objects.
      * @param visible - Whether the visualizations should be visible.
      */
     showDebugVisualizations(visible?: boolean): void;
+    dispose(): void;
 }
 
 type SimulatorPlaneType = 'horizontal' | 'vertical';
@@ -6483,6 +6486,7 @@ declare class PlaneDetector extends Script {
      * @param xrPlane - The WebXR plane object to remove.
      */
     private _removePlaneMesh;
+    private disposePlaneMesh;
     /**
      * Updates the position and orientation of a `DetectedPlane` mesh from its XR
      * pose.
@@ -6510,6 +6514,7 @@ declare class PlaneDetector extends Script {
     showDebugVisualizations(visible?: boolean): void;
     private _addSimulatorPlaneMesh;
     setSimulatorPlanes(planes: SimulatorPlane[]): void;
+    dispose(): void;
 }
 
 /**
@@ -6595,6 +6600,7 @@ declare class MeshDetector extends Script {
      * `frame.detectedMeshes` path. Mirrors `PlaneDetector.setSimulatorPlanes`.
      */
     setSimulatorMeshes(meshes: SimulatorMesh[]): void;
+    dispose(): void;
     private createMesh;
     private updateMeshPose;
     private getCameraInfo;
@@ -6687,6 +6693,7 @@ declare class SoundDetector extends Script<SoundDetectorEventMap> {
      */
     stopListening(): void;
     update(_timestamp: number, _frame?: XRFrame): void;
+    dispose(): void;
     private getOrCreateDetectorBackend;
 }
 
@@ -6793,6 +6800,7 @@ declare class HumanRecognizer extends Script {
     private activeClients;
     private currentDetectionPromise;
     private lastContinuousDetectionStartedAtMs;
+    private disposed;
     /**
      * The latest detected body poses.
      */
@@ -6844,6 +6852,8 @@ declare class HumanRecognizer extends Script {
     private getBackendContext;
     private getOrCreateBackend;
     private getDepthMeshSnapshot;
+    private disposeDepthMeshSnapshot;
+    dispose(): void;
 }
 
 /**
@@ -6975,6 +6985,7 @@ declare class FaceRecognizer extends Script {
     private activeClients;
     private currentDetectionPromise;
     private lastContinuousDetectionStartedAtMs;
+    private disposed;
     /**
      * The latest detected faces from continuous detection.
      */
@@ -7027,6 +7038,8 @@ declare class FaceRecognizer extends Script {
     private cachedDepthMeshSource;
     private cachedDepthMeshVersion;
     private getDepthMeshSnapshot;
+    private disposeCachedDepthMeshSnapshot;
+    dispose(): void;
 }
 
 /**
@@ -7086,6 +7099,7 @@ declare class Segmenter extends Script {
      * `Number.NEGATIVE_INFINITY` so the first `update()` tick fires immediately.
      */
     private _lastRunMs;
+    private _disposed;
     private options;
     private deviceCamera;
     init({ options, deviceCamera, }: {
@@ -7129,6 +7143,7 @@ declare class Segmenter extends Script {
     private _runInference;
     private getBackendContext;
     private getOrCreateBackend;
+    dispose(): void;
 }
 
 /**
@@ -7250,6 +7265,7 @@ declare class World extends Script {
      * @param visible - Whether the visualizations should be visible.
      */
     showDebugVisualizations(visible?: boolean): void;
+    dispose(): void;
 }
 
 declare class SimulatorWorld {
