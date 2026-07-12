@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 0c463b3
- * @builddate 2026-07-10T18:08:45.270Z
+ * @commitid dad7935
+ * @builddate 2026-07-12T22:47:49.659Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1372,7 +1372,7 @@ declare class Memory {
 /**
  * Builds the context to be sent to the AI for reasoning.
  */
-declare class Context {
+declare class Context$1 {
     private instructions;
     constructor(instructions?: string);
     get instruction(): string;
@@ -1407,7 +1407,7 @@ declare class Agent {
     ai: AI;
     tools: Tool[];
     memory: Memory;
-    contextBuilder: Context;
+    contextBuilder: Context$1;
     lifecycleCallbacks?: AgentLifecycleCallbacks;
     isSessionActive: boolean;
     constructor(ai: AI, tools?: Tool[], instruction?: string, callbacks?: AgentLifecycleCallbacks);
@@ -3129,6 +3129,257 @@ declare const DEFAULT_DEVICE_CAMERA_WIDTH = 1280;
 declare const DEFAULT_DEVICE_CAMERA_HEIGHT = 720;
 declare const XR_BLOCKS_ASSETS_PATH = "https://cdn.jsdelivr.net/gh/xrblocks/assets@d872cfdb7668443da5cd38361fc3a3d131aca04c/";
 
+declare class ScreenshotSynthesizer {
+    private pendingScreenshotRequests;
+    private virtualCanvas?;
+    private virtualBuffer;
+    private virtualRenderTarget?;
+    private virtualRealCanvas?;
+    private virtualRealBuffer;
+    private virtualRealRenderTarget?;
+    private fullScreenQuad?;
+    private renderTargetWidth;
+    private virtualCaptureInFlight;
+    private virtualRealCaptureInFlight;
+    onAfterRender(renderer: THREE.WebGLRenderer, renderSceneFn: () => void, deviceCamera?: XRDeviceCamera): Promise<void>;
+    private createVirtualImageDataURL;
+    private resolveVirtualOnlyRequests;
+    private rejectVirtualOnlyRequests;
+    private createVirtualRealImageDataURL;
+    private resolveVirtualRealRequests;
+    private rejectVirtualRealRequests;
+    private getFullScreenQuad;
+    /**
+     * Requests a screenshot from the scene as a DataURL.
+     * @param overlayOnCamera - If true, overlays the image on a camera image
+     *     without any projection or aspect ratio correction.
+     * @returns Promise which returns the screenshot as a data uri.
+     */
+    getScreenshot(overlayOnCamera?: boolean): Promise<string>;
+}
+
+declare class SceneDerivedContextOptions {
+    enabled: boolean;
+    constructor(options?: DeepPartial<SceneDerivedContextOptions>);
+    enable(): this;
+}
+declare class SceneVisibilityOptions extends SceneDerivedContextOptions {
+    /**
+     * Raycast hits on materials with effective opacity less than or equal to this
+     * threshold are ignored for line-of-sight occlusion.
+     */
+    occlusionOpacityThreshold: number;
+}
+declare class SceneSetOfMarkOptions extends SceneDerivedContextOptions {
+}
+declare class SceneOptions {
+    enabled: boolean;
+    pollingIntervalMs: number;
+    visibleObjects: SceneVisibilityOptions;
+    som: SceneSetOfMarkOptions;
+    constructor(options?: DeepPartial<SceneOptions>);
+    enable(): this;
+    enableVisibleObjects(): this;
+    enableSetOfMark(): this;
+}
+
+declare class ContextOptions {
+    debugging: boolean;
+    enabled: boolean;
+    scene: SceneOptions;
+    constructor(options?: DeepPartial<ContextOptions>);
+    enable(): this;
+    enableScene(): this;
+    enableVisibleObjects(): this;
+    enableSetOfMark(): this;
+}
+
+type Vec2Tuple = [number, number];
+type Vec3Tuple = [number, number, number];
+type QuatTuple = [number, number, number, number];
+type SemanticSource = 'xrblocks' | 'uiblocks' | 'three' | 'app';
+type SemanticViewOcclusion = 'none' | 'occluded' | 'outOfFrame' | 'notRendered';
+interface SemanticBounds {
+    center: Vec3Tuple;
+    size: Vec3Tuple;
+}
+interface SemanticViewData {
+    rendered: boolean;
+    inFrame: boolean;
+    inLineOfSight: boolean;
+    occlusion: SemanticViewOcclusion;
+    /**
+     * Normalized horizontal screen coordinate: 0 at the left edge, 1 at the
+     * right edge.
+     */
+    x?: number;
+    /**
+     * Normalized vertical screen coordinate: 0 at the top edge, 1 at the
+     * bottom edge. This matches detector 2D bounding-box conventions.
+     */
+    y?: number;
+}
+interface SemanticNode {
+    id: string;
+    role: string;
+    name: string;
+    visible: boolean;
+    position: Vec3Tuple;
+    children: string[];
+    parentId?: string;
+    objectId?: number;
+    source?: SemanticSource;
+    type?: string;
+    text?: string;
+    traits?: string[];
+    disabled?: boolean;
+    selected?: boolean;
+    hovered?: boolean;
+    bounds?: SemanticBounds;
+    view?: SemanticViewData;
+}
+interface SemanticTree {
+    snapshotId: string;
+    capturedAt: number;
+    rootIds: string[];
+    nodes: Record<string, SemanticNode>;
+}
+type VisibleObjectsContext = SemanticTree;
+interface SetOfMark {
+    label: string;
+    nodeId: string;
+    role: string;
+    name: string;
+    /**
+     * Normalized horizontal screen coordinate: 0 at the left edge, 1 at the
+     * right edge.
+     */
+    x: number;
+    /**
+     * Normalized vertical screen coordinate: 0 at the top edge, 1 at the
+     * bottom edge. This matches detector 2D bounding-box conventions.
+     */
+    y: number;
+}
+interface SetOfMarkContext {
+    snapshotId: string;
+    capturedAt: number;
+    image: string;
+    marks: SetOfMark[];
+}
+type SemanticMetadata = {
+    role?: string;
+    name?: string;
+    text?: string;
+    traits?: string[];
+    hidden?: boolean;
+    disabled?: boolean;
+    source?: SemanticSource;
+};
+
+type SceneContextDetectionOptions = {
+    semanticTree?: boolean;
+    visibleObjects?: boolean;
+    setOfMark?: boolean;
+};
+type SceneContextDetectionResult = {
+    semanticTree?: SemanticTree;
+    visibleObjects?: VisibleObjectsContext;
+    setOfMark?: SetOfMarkContext;
+};
+declare class SceneDetector extends Script {
+    static dependencies: {
+        options: typeof ContextOptions;
+        scene: typeof THREE.Scene;
+        camera: typeof THREE.Camera;
+        screenshotSynthesizer: typeof ScreenshotSynthesizer;
+    };
+    private options;
+    private scene;
+    private camera;
+    private screenshotSynthesizer;
+    private deviceCamera?;
+    private registry;
+    private snapshot;
+    private snapshotPromise;
+    private activeClients;
+    private currentDetectionPromise;
+    private currentVisibleObjectsPromise;
+    private currentSetOfMarkPromise;
+    private currentContextPromise;
+    private currentContextRequestKey;
+    private lastContinuousDetectionStartedAtMs;
+    private disposed;
+    /**
+     * The latest semantic tree produced by scene context detection.
+     */
+    tree: SemanticTree | null;
+    /**
+     * The latest semantic tree annotated with user-view visibility.
+     */
+    visibleObjects: VisibleObjectsContext | null;
+    /**
+     * The latest Set-of-Mark context image and label mapping.
+     */
+    setOfMark: SetOfMarkContext | null;
+    init({ options, scene, camera, screenshotSynthesizer, deviceCamera, }: {
+        options: ContextOptions;
+        scene: THREE.Scene;
+        camera: THREE.Camera;
+        screenshotSynthesizer: ScreenshotSynthesizer;
+        deviceCamera?: XRDeviceCamera;
+    }): void;
+    setDeviceCamera(deviceCamera: XRDeviceCamera | undefined): void;
+    resolveNodeObject(nodeId: string): THREE.Object3D | undefined;
+    start(client: object): void;
+    stop(client: object): void;
+    update(): void;
+    shouldRunContinuous(now?: number): true | undefined;
+    runDetection(): Promise<SemanticTree>;
+    runVisibleObjectsDetection(): Promise<VisibleObjectsContext>;
+    runSetOfMarkDetection(): Promise<SetOfMarkContext>;
+    runContextDetection(options?: SceneContextDetectionOptions, snapshotOptions?: {
+        preserveVisibleObjects?: boolean;
+    }): Promise<SceneContextDetectionResult>;
+    private runContinuousDetection;
+    private detectSceneContext;
+    private beginSnapshot;
+    private getSemanticTree;
+    private getVisibleObjectsContext;
+    private getSetOfMarkContext;
+    private getSnapshot;
+    dispose(): void;
+}
+
+declare class Context extends Script {
+    static dependencies: {
+        options: typeof ContextOptions;
+        scene: typeof THREE.Scene;
+        camera: typeof THREE.Camera;
+        screenshotSynthesizer: typeof ScreenshotSynthesizer;
+    };
+    editorIcon: string;
+    /**
+     * Configuration options for all context-sensing features.
+     */
+    options: ContextOptions;
+    /**
+     * The scene context module instance. Null if not enabled.
+     */
+    scene?: SceneDetector;
+    private deviceCamera?;
+    init({ options, deviceCamera, }: {
+        options: ContextOptions;
+        scene: THREE.Scene;
+        camera: THREE.Camera;
+        screenshotSynthesizer: ScreenshotSynthesizer;
+        deviceCamera?: XRDeviceCamera;
+    }): void;
+    setDeviceCamera(deviceCamera: XRDeviceCamera | undefined): void;
+    dispose(): void;
+    private removeDetectors;
+}
+
 declare class Raycaster extends THREE.Raycaster {
     sortFunction: (a: THREE.Intersection, b: THREE.Intersection) => number;
     /**
@@ -3147,31 +3398,6 @@ declare class Raycaster extends THREE.Raycaster {
      * @returns The intersections found.
      */
     intersectObjects<TIntersected extends THREE.Object3D>(objects: THREE.Object3D[], recursive?: boolean, intersects?: Array<THREE.Intersection<TIntersected>>): Array<THREE.Intersection<TIntersected>>;
-}
-
-declare class ScreenshotSynthesizer {
-    private pendingScreenshotRequests;
-    private virtualCanvas?;
-    private virtualBuffer;
-    private virtualRenderTarget?;
-    private virtualRealCanvas?;
-    private virtualRealBuffer;
-    private virtualRealRenderTarget?;
-    private fullScreenQuad?;
-    private renderTargetWidth;
-    onAfterRender(renderer: THREE.WebGLRenderer, renderSceneFn: () => void, deviceCamera?: XRDeviceCamera): Promise<void>;
-    private createVirtualImageDataURL;
-    private resolveVirtualOnlyRequests;
-    private createVirtualRealImageDataURL;
-    private resolveVirtualRealRequests;
-    private getFullScreenQuad;
-    /**
-     * Requests a screenshot from the scene as a DataURL.
-     * @param overlayOnCamera - If true, overlays the image on a camera image
-     *     without any projection or aspect ratio correction.
-     * @returns Promise which returns the screenshot as a data uri.
-     */
-    getScreenshot(overlayOnCamera?: boolean): Promise<string>;
 }
 
 declare enum ScriptsManagerEventType {
@@ -4543,6 +4769,7 @@ declare class Options {
     ai: AIOptions;
     simulator: SimulatorOptions;
     world: WorldOptions;
+    context: ContextOptions;
     uikit: UIKitOptions;
     physics: PhysicsOptions;
     transition: XRTransitionOptions;
@@ -4685,6 +4912,27 @@ declare class Options {
      * @returns The instance for chaining.
      */
     enableAI(): this;
+    /**
+     * Enables agent-facing context detectors such as semantic trees,
+     * view visibility, and Set-of-Mark observations.
+     * @returns The instance for chaining.
+     */
+    enableContext(): this;
+    /**
+     * Enables agent-facing scene context.
+     * @returns The instance for chaining.
+     */
+    enableSceneContext(): this;
+    /**
+     * Enables agent-facing visible objects context.
+     * @returns The instance for chaining.
+     */
+    enableVisibleObjectsContext(): this;
+    /**
+     * Enables agent-facing Set-of-Mark context.
+     * @returns The instance for chaining.
+     */
+    enableSetOfMarkContext(): this;
     /**
      * Enables the XR transition component for toggling VR.
      * @returns The instance for chaining.
@@ -8289,6 +8537,8 @@ declare class Core {
     dragManager: DragManager;
     /** Manages real-world understanding: planes, meshes, objects, and sounds. */
     world: World;
+    /** Manages agent-facing observations of the app/session. */
+    context: Context;
     /** A shared texture loader. */
     textureLoader: THREE.TextureLoader;
     private webXRSettings;
@@ -8957,6 +9207,11 @@ declare const user: User;
  * understanding features like plane detection and object detection.
  */
 declare const world: World;
+/**
+ * A direct alias to the `Context` instance, which provides agent-facing
+ * observations such as semantic trees, visible objects, and Set-of-Mark views.
+ */
+declare const context: Context;
 /**
  * A direct alias to the `AI` instance for integrating generative AI features,
  * including multi-modal understanding, image generation, and live conversation.
@@ -9881,5 +10136,5 @@ declare class VideoFileStream extends VideoStream<VideoFileStreamDetails> {
     setSource(videoFile: string | File): Promise<void>;
 }
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
-export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, AutomationModeOptions, CameraParametersSnapshot, CameraSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, DigitName, Draggable, FaceBlendshape, FaceLandmark, FingerName, FormFactor, GLTFData, GamepadAction, GeminiQueryInput, GestureConfiguration, GestureDetectionResult, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureRecognizer, GestureScoreMap, GetWeatherArgs, GridOptions, HandContext, HandLabel, HasDraggingMode, HasIgnoreReticleRaycast, HeuristicGestureDetector, ISimulatorSettingsPanelElement, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, JointName, JointPositions, KeyEvent, KeysJson, LabelViewOptions, LipMetrics, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, MediaPipeHandLandmark, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, NormalizedDetectedObject, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, OrbiterPosition, PagerOptions, PalmPose, PanelFadeState, PanelOptions, PlaySoundOptions, PoseEstimator, PoseLandmark, RAPIERCompat, RgbToDepthParams, RowOptions, ScriptsManagerEventMap, ScrollingTroikaTextViewOptions, SegmentationMask, SelectEvent, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorMesh, SimulatorNavMeshPath, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, StrokeEventMap, StylizedFaceOptions, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, VisemeWeights, WeatherData, WebXRJointRotations };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, context, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export type { AIModel, AgentLifecycleCallbacks, AudioListenerOptions, AudioPlayerOptions, AutomationModeOptions, CameraParametersSnapshot, CameraSnapshot, ColOptions, Constructor, DeepPartial, DeepReadonly, DepthArray, DeviceCameraParameters, DigitName, Draggable, FaceBlendshape, FaceLandmark, FingerName, FormFactor, GLTFData, GamepadAction, GeminiQueryInput, GestureConfiguration, GestureDetectionResult, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureRecognizer, GestureScoreMap, GetWeatherArgs, GridOptions, HandContext, HandLabel, HasDraggingMode, HasIgnoreReticleRaycast, HeuristicGestureDetector, ISimulatorSettingsPanelElement, IconButtonOptions, IconViewOptions, ImageViewOptions, Injectable, InjectableConstructor, JointName, JointPositions, KeyEvent, KeysJson, LabelViewOptions, LipMetrics, LiveSessionState, MaterialSymbolsViewOptions, MaybeHasIgnoreReticleRaycast, MediaOrSimulatorMediaDeviceInfo, MediaPipeHandLandmark, ModelClass, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, NormalizedDetectedObject, ObjectGrabEvent, ObjectTouchEvent, OrbiterOptions, OrbiterPosition, PagerOptions, PalmPose, PanelFadeState, PanelOptions, PlaySoundOptions, PoseEstimator, PoseLandmark, QuatTuple, RAPIERCompat, RgbToDepthParams, RowOptions, SceneContextDetectionOptions, SceneContextDetectionResult, ScriptsManagerEventMap, ScrollingTroikaTextViewOptions, SegmentationMask, SelectEvent, SemanticBounds, SemanticMetadata, SemanticNode, SemanticSource, SemanticTree, SemanticViewData, SemanticViewOcclusion, SetOfMark, SetOfMarkContext, Shader, ShaderUniforms, SimulatorCustomInstruction, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPoseHTMLElement, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorMesh, SimulatorNavMeshPath, SimulatorPlane, SimulatorPlaneType, SpatialPanelOptions, SplatData, StrokeEventMap, StylizedFaceOptions, TextButtonOptions, TextViewOptions, ToolCall, ToolOptions, ToolResult, ToolSchema, UIJsonNode, UIJsonNodeOptions, Vec2Tuple, Vec3Tuple, VideoFileStreamOptions, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VideoViewOptions, ViewOptions, VisemeWeights, VisibleObjectsContext, WeatherData, WebXRJointRotations };

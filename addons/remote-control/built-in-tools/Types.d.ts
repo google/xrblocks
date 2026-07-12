@@ -18,7 +18,11 @@ export type RemoteControlBuiltInTool = {
     handler: RemoteControlToolHandler;
     metadata: RemoteControlToolMetadata;
 };
-export type RemoteControlTarget = [number, number, number] | string;
+export type RemoteControlContextNodeTarget = {
+    type: 'contextNode';
+    id: string;
+};
+export type RemoteControlTarget = [number, number, number] | string | RemoteControlContextNodeTarget;
 export type RemoteControlTargetResolver = (target: RemoteControlTarget) => THREE.Vector3 | THREE.Object3D;
 export type RemoteControlPoseObservation = {
     position: [number, number, number];

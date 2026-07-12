@@ -116,6 +116,16 @@ class RemoteControl extends Script {
         }
     }
     resolveTarget(target) {
+        if (!Array.isArray(target) && typeof target === 'object') {
+            if (target.type === 'contextNode') {
+                const contextTarget = this.dependencies.core.context.scene?.resolveNodeObject(target.id);
+                if (!contextTarget) {
+                    throw new Error(`Context target not found: ${target.id}`);
+                }
+                return contextTarget;
+            }
+            throw new Error(`Unsupported target type: ${String(target.type)}`);
+        }
         if (typeof target === 'string') {
             const obj = this.dependencies.core.scene.getObjectByName(target);
             if (!obj) {
