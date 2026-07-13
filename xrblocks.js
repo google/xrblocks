@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 670ae4e
- * @builddate 2026-07-12T22:49:25.636Z
+ * @commitid 0abc581
+ * @builddate 2026-07-13T23:33:31.594Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5379,6 +5379,52 @@ class XREffects {
         renderer.xr.enabled = xrEnabled;
         renderer.xr.isPresenting = xrIsPresenting;
     }
+}
+
+let lifecycle;
+function registerDebugGlobals(sdk) {
+    if (!debugRequestedByUrl() || typeof window === 'undefined')
+        return;
+    const debugWindow = window;
+    if ('xb' in debugWindow || 'xbReady' in debugWindow) {
+        console.warn('XR Blocks debug globals were not installed because window.xb or ' +
+            'window.xbReady is already defined.');
+        return;
+    }
+    let resolveReady;
+    let rejectReady;
+    const ready = new Promise((resolve, reject) => {
+        resolveReady = resolve;
+        rejectReady = reject;
+    });
+    // Keep initialization failures observable without creating an unhandled
+    // rejection before a browser driver awaits the readiness promise.
+    void ready.catch(() => undefined);
+    debugWindow.xb = sdk;
+    debugWindow.xbReady = ready;
+    lifecycle = {
+        core: sdk.core,
+        resolve: resolveReady,
+        reject: rejectReady,
+    };
+}
+function markDebugReady(core) {
+    if (lifecycle?.core === core) {
+        lifecycle.resolve();
+    }
+}
+function markDebugFailed(core, error) {
+    if (lifecycle?.core === core) {
+        lifecycle.reject(error);
+    }
+}
+function debugRequestedByUrl() {
+    if (typeof window === 'undefined')
+        return false;
+    const value = new URLSearchParams(window.location.search)
+        .get('debug')
+        ?.toLowerCase();
+    return value === '1' || value === 'true';
 }
 
 class DepthMeshOptions {
@@ -10818,6 +10864,7 @@ class Options {
         if (enableCamera) {
             this.enableCamera();
         }
+        this.enableContext();
         this.simulator.defaultMode = defaultMode;
         this.simulator.defaultHand = defaultHand;
         if (hideSimulatorUi) {
@@ -22182,6 +22229,16 @@ class Core {
      * session.
      */
     async init(options = new Options()) {
+        try {
+            await this.initialize(options);
+            markDebugReady(this);
+        }
+        catch (error) {
+            markDebugFailed(this, error);
+            throw error;
+        }
+    }
+    async initialize(options) {
         loadingSpinnerManager.showSpinner();
         this.registry.register(options, Options);
         this.registry.register(options.depth, DepthOptions);
@@ -25099,6 +25156,311 @@ var SegmentCategory;
     SegmentCategory[SegmentCategory["Clothes"] = 4] = "Clothes";
     SegmentCategory[SegmentCategory["Others"] = 5] = "Others";
 })(SegmentCategory || (SegmentCategory = {}));
+
+var sdk = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    AI: AI,
+    AIOptions: AIOptions,
+    AVERAGE_IPD_METERS: AVERAGE_IPD_METERS,
+    ActiveControllers: ActiveControllers,
+    Agent: Agent,
+    AnimatableNumber: AnimatableNumber,
+    AudioListener: AudioListener,
+    AudioPlayer: AudioPlayer,
+    BACK: BACK,
+    BackgroundMusic: BackgroundMusic,
+    CategoryVolumes: CategoryVolumes,
+    Col: Col,
+    Context: Context,
+    ContextOptions: ContextOptions,
+    Core: Core,
+    CoreSound: CoreSound,
+    DEFAULT_DEVICE_CAMERA_HEIGHT: DEFAULT_DEVICE_CAMERA_HEIGHT,
+    DEFAULT_DEVICE_CAMERA_WIDTH: DEFAULT_DEVICE_CAMERA_WIDTH,
+    DEFAULT_RGB_TO_DEPTH_PARAMS: DEFAULT_RGB_TO_DEPTH_PARAMS,
+    DEVICE_CAMERA_PARAMETERS: DEVICE_CAMERA_PARAMETERS,
+    DOWN: DOWN,
+    Depth: Depth,
+    DepthMesh: DepthMesh,
+    DepthMeshOptions: DepthMeshOptions,
+    DepthOptions: DepthOptions,
+    DepthTextures: DepthTextures,
+    DetectedBodyPose: DetectedBodyPose,
+    DetectedFace: DetectedFace,
+    DetectedMesh: DetectedMesh,
+    DetectedObject: DetectedObject,
+    DetectedPlane: DetectedPlane,
+    DeviceCameraOptions: DeviceCameraOptions,
+    DragManager: DragManager,
+    get DragMode () { return DragMode; },
+    ExitButton: ExitButton,
+    FINGER_ORDER: FINGER_ORDER,
+    FORWARD: FORWARD,
+    get FaceLandmarkName () { return FaceLandmarkName; },
+    FaceRecognizer: FaceRecognizer,
+    FacesOptions: FacesOptions,
+    FreestandingSlider: FreestandingSlider,
+    GEMINI_DEFAULT_FLASH_MODEL: GEMINI_DEFAULT_FLASH_MODEL,
+    GEMINI_DEFAULT_IMAGE_MODEL: GEMINI_DEFAULT_IMAGE_MODEL,
+    GEMINI_DEFAULT_LIVE_MODEL: GEMINI_DEFAULT_LIVE_MODEL,
+    GamepadBindings: GamepadBindings,
+    GamepadController: GamepadController,
+    GazeController: GazeController,
+    Gemini: Gemini,
+    GeminiOptions: GeminiOptions,
+    GenerateSkyboxTool: GenerateSkyboxTool,
+    GestureRecognition: GestureRecognition,
+    GestureRecognitionOptions: GestureRecognitionOptions,
+    GetWeatherTool: GetWeatherTool,
+    Grid: Grid,
+    HAND_BONE_IDX_CONNECTION_MAP: HAND_BONE_IDX_CONNECTION_MAP,
+    HAND_INDEX_TO_LABEL: HAND_INDEX_TO_LABEL,
+    HAND_JOINT_COUNT: HAND_JOINT_COUNT,
+    HAND_JOINT_IDX_CONNECTION_MAP: HAND_JOINT_IDX_CONNECTION_MAP,
+    HAND_JOINT_NAMES: HAND_JOINT_NAMES,
+    get Handedness () { return Handedness; },
+    Hands: Hands,
+    HandsOptions: HandsOptions,
+    HeuristicGestureRecognizer: HeuristicGestureRecognizer,
+    HorizontalPager: HorizontalPager,
+    HumanRecognizer: HumanRecognizer,
+    HumansOptions: HumansOptions,
+    IconButton: IconButton,
+    IconView: IconView,
+    ImageView: ImageView,
+    Input: Input,
+    InputOptions: InputOptions,
+    get Keycodes () { return Keycodes; },
+    LEFT: LEFT,
+    LEFT_VIEW_ONLY_LAYER: LEFT_VIEW_ONLY_LAYER,
+    LabelView: LabelView,
+    Lighting: Lighting,
+    LightingOptions: LightingOptions,
+    LoadingSpinnerManager: LoadingSpinnerManager,
+    MaterialSymbolsView: MaterialSymbolsView,
+    MediaPipeHandContext: MediaPipeHandContext,
+    MediaPipeHandPoseEstimator: MediaPipeHandPoseEstimator,
+    MeshDetectionOptions: MeshDetectionOptions,
+    MeshDetector: MeshDetector,
+    MeshScript: MeshScript,
+    ModelLoader: ModelLoader,
+    ModelViewer: ModelViewer,
+    MouseController: MouseController,
+    NUM_HANDS: NUM_HANDS,
+    OCCLUDABLE_ITEMS_LAYER: OCCLUDABLE_ITEMS_LAYER,
+    ObjectDetector: ObjectDetector,
+    ObjectsOptions: ObjectsOptions,
+    OcclusionPass: OcclusionPass,
+    OcclusionUtils: OcclusionUtils,
+    OpenAI: OpenAI,
+    OpenAIOptions: OpenAIOptions,
+    Options: Options,
+    Orbiter: Orbiter,
+    PageIndicator: PageIndicator,
+    Pager: Pager,
+    PagerState: PagerState,
+    Panel: Panel,
+    PanelMesh: PanelMesh,
+    Physics: Physics,
+    PhysicsOptions: PhysicsOptions,
+    PinchOnButtonAction: PinchOnButtonAction,
+    PlaneDetector: PlaneDetector,
+    PlanesOptions: PlanesOptions,
+    get PoseJointName () { return PoseJointName; },
+    RIGHT: RIGHT,
+    RIGHT_VIEW_ONLY_LAYER: RIGHT_VIEW_ONLY_LAYER,
+    Raycaster: Raycaster,
+    Registry: Registry,
+    Reticle: Reticle,
+    ReticleOptions: ReticleOptions,
+    Reticles: Reticles,
+    RotationRaycastMesh: RotationRaycastMesh,
+    Row: Row,
+    SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES: SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES,
+    SIMULATOR_HAND_POSE_NAMES: SIMULATOR_HAND_POSE_NAMES,
+    SIMULATOR_HAND_POSE_ROTATIONS: SIMULATOR_HAND_POSE_ROTATIONS,
+    SOUND_PRESETS: SOUND_PRESETS,
+    SceneDetector: SceneDetector,
+    SceneOptions: SceneOptions,
+    SceneSetOfMarkOptions: SceneSetOfMarkOptions,
+    SceneVisibilityOptions: SceneVisibilityOptions,
+    ScreenshotSynthesizer: ScreenshotSynthesizer,
+    Script: Script,
+    ScriptMixin: ScriptMixin,
+    ScriptsManager: ScriptsManager,
+    get ScriptsManagerEventType () { return ScriptsManagerEventType; },
+    ScrollingTroikaTextView: ScrollingTroikaTextView,
+    get SegmentCategory () { return SegmentCategory; },
+    SegmentationOptions: SegmentationOptions,
+    Segmenter: Segmenter,
+    SetSimulatorEnvironmentEvent: SetSimulatorEnvironmentEvent,
+    SetSimulatorModeEvent: SetSimulatorModeEvent,
+    ShowHandsAction: ShowHandsAction,
+    ShowSimulatorInstructionsEvent: ShowSimulatorInstructionsEvent,
+    Simulator: Simulator,
+    SimulatorCamera: SimulatorCamera,
+    SimulatorControlMode: SimulatorControlMode,
+    SimulatorControllerState: SimulatorControllerState,
+    SimulatorControls: SimulatorControls,
+    SimulatorDepth: SimulatorDepth,
+    SimulatorDepthMaterial: SimulatorDepthMaterial,
+    get SimulatorHandPose () { return SimulatorHandPose; },
+    SimulatorHandPoseChangeRequestEvent: SimulatorHandPoseChangeRequestEvent,
+    SimulatorHands: SimulatorHands,
+    SimulatorInterface: SimulatorInterface,
+    SimulatorMediaDeviceInfo: SimulatorMediaDeviceInfo,
+    get SimulatorMode () { return SimulatorMode; },
+    SimulatorNavMesh: SimulatorNavMesh,
+    SimulatorOptions: SimulatorOptions,
+    SimulatorPointerLockController: SimulatorPointerLockController,
+    get SimulatorRenderMode () { return SimulatorRenderMode; },
+    SimulatorScene: SimulatorScene,
+    SimulatorUser: SimulatorUser,
+    SimulatorUserAction: SimulatorUserAction,
+    SketchPanel: SketchPanel,
+    SkyboxAgent: SkyboxAgent,
+    SoundOptions: SoundOptions,
+    SoundSynthesizer: SoundSynthesizer,
+    SparkRendererHolder: SparkRendererHolder,
+    SpatialAudio: SpatialAudio,
+    SpatialPanel: SpatialPanel,
+    SpeechRecognizer: SpeechRecognizer,
+    SpeechRecognizerOptions: SpeechRecognizerOptions,
+    SpeechSynthesizer: SpeechSynthesizer,
+    SpeechSynthesizerOptions: SpeechSynthesizerOptions,
+    SplatAnchor: SplatAnchor,
+    get StreamState () { return StreamState; },
+    StrokeRecognizer: StrokeRecognizer,
+    StylizedFace: StylizedFace,
+    TensorFlowHandPoseEstimator: TensorFlowHandPoseEstimator,
+    TextButton: TextButton,
+    TextScrollerState: TextScrollerState,
+    TextView: TextView,
+    Tool: Tool,
+    UI: UI,
+    UIKitOptions: UIKitOptions,
+    UI_OVERLAY_LAYER: UI_OVERLAY_LAYER,
+    UP: UP,
+    UX: UX,
+    User: User,
+    VIEW_DEPTH_GAP: VIEW_DEPTH_GAP,
+    VerticalPager: VerticalPager,
+    VideoFileStream: VideoFileStream,
+    VideoStream: VideoStream,
+    VideoView: VideoView,
+    View: View,
+    get VolumeCategory () { return VolumeCategory; },
+    WaitFrame: WaitFrame,
+    WalkTowardsPanelAction: WalkTowardsPanelAction,
+    WebXRHandContext: WebXRHandContext,
+    WebXRHandPoseEstimator: WebXRHandPoseEstimator,
+    World: World,
+    WorldOptions: WorldOptions,
+    XRButton: XRButton,
+    XRDeviceCamera: XRDeviceCamera,
+    XREffects: XREffects,
+    XRPass: XRPass,
+    XRTransitionOptions: XRTransitionOptions,
+    XR_BLOCKS_ASSETS_PATH: XR_BLOCKS_ASSETS_PATH,
+    ZERO_VECTOR3: ZERO_VECTOR3,
+    ZERO_VISEME: ZERO_VISEME,
+    _getBvhImportStatus: _getBvhImportStatus,
+    add: add,
+    ai: ai,
+    applyBVH: applyBVH,
+    applySimulatorHandPoseRotationConstraints: applySimulatorHandPoseRotationConstraints,
+    average: average,
+    callInitWithDependencyInjection: callInitWithDependencyInjection,
+    camera: camera,
+    clamp: clamp$1,
+    clamp01: clamp01,
+    clampRotationToAngle: clampRotationToAngle,
+    context: context,
+    core: core,
+    cropImage: cropImage,
+    depth: depth,
+    disposeBVH: disposeBVH,
+    enableAcceleratedRaycast: enableAcceleratedRaycast,
+    estimateHandScale: estimateHandScale,
+    extractYaw: extractYaw,
+    getAdjacentFingerSpreads: getAdjacentFingerSpreads,
+    getBoneVectors: getBoneVectors,
+    getCameraParametersSnapshot: getCameraParametersSnapshot,
+    getColorHex: getColorHex,
+    getDeltaTime: getDeltaTime,
+    getDeviceCameraClipFromView: getDeviceCameraClipFromView,
+    getDeviceCameraWorldFromClip: getDeviceCameraWorldFromClip,
+    getDeviceCameraWorldFromView: getDeviceCameraWorldFromView,
+    getElapsedTime: getElapsedTime,
+    getFingerBendAngles: getFingerBendAngles,
+    getFingerCurl: getFingerCurl,
+    getFingerDirection: getFingerDirection,
+    getFingerJoint: getFingerJoint,
+    getFingerPalmAlignment: getFingerPalmAlignment,
+    getFingerSpread: getFingerSpread,
+    getFingerStraightness: getFingerStraightness,
+    getFingertipDistance: getFingertipDistance,
+    getFingertipPalmDistance: getFingertipPalmDistance,
+    getPalmNormal: getPalmNormal,
+    getPalmPose: getPalmPose,
+    getPalmRight: getPalmRight,
+    getPalmUp: getPalmUp,
+    getPalmWidth: getPalmWidth,
+    getRelativeBoneAngles: getRelativeBoneAngles,
+    getThumbBendAngles: getThumbBendAngles,
+    getThumbCurl: getThumbCurl,
+    getThumbDirection: getThumbDirection,
+    getThumbOpposition: getThumbOpposition,
+    getThumbStraightness: getThumbStraightness,
+    getThumbVerticalDirection: getThumbVerticalDirection,
+    getUrlParamBool: getUrlParamBool,
+    getUrlParamFloat: getUrlParamFloat,
+    getUrlParamInt: getUrlParamInt,
+    getUrlParameter: getUrlParameter,
+    getVec4ByColorString: getVec4ByColorString,
+    getXrCameraLeft: getXrCameraLeft,
+    getXrCameraRight: getXrCameraRight,
+    init: init,
+    initScript: initScript,
+    input: input,
+    intrinsicsToProjectionMatrix: intrinsicsToProjectionMatrix,
+    isBVHReady: isBVHReady,
+    isDeviceCameraPoseAvailable: isDeviceCameraPoseAvailable,
+    lerp: lerp,
+    loadStereoImageAsTextures: loadStereoImageAsTextures,
+    loadingSpinnerManager: loadingSpinnerManager,
+    lookAtRotation: lookAtRotation,
+    objectIsDescendantOf: objectIsDescendantOf,
+    parseBase64DataURL: parseBase64DataURL,
+    parseSimulatorHandPoseRotations: parseSimulatorHandPoseRotations,
+    placeObjectAtIntersectionFacingTarget: placeObjectAtIntersectionFacingTarget,
+    print: print,
+    resolveSimulatorHandPoseRotations: resolveSimulatorHandPoseRotations,
+    resolveSimulatorRotationsFromKeypoints: resolveSimulatorRotationsFromKeypoints,
+    scene: scene,
+    showOnlyInLeftEye: showOnlyInLeftEye,
+    showOnlyInRightEye: showOnlyInRightEye,
+    showReticleOnDepthMesh: showReticleOnDepthMesh,
+    sound: sound,
+    timer: timer,
+    transformRgbUvToWorld: transformRgbUvToWorld,
+    traverseUtil: traverseUtil,
+    uninitScript: uninitScript,
+    urlParams: urlParams,
+    user: user,
+    visualizeDepth: visualizeDepth,
+    visualizeDepthMap: visualizeDepthMap,
+    world: world,
+    xrDepthMeshOptions: xrDepthMeshOptions,
+    xrDepthMeshPhysicsOptions: xrDepthMeshPhysicsOptions,
+    xrDepthMeshVisualizationOptions: xrDepthMeshVisualizationOptions,
+    xrDeviceCameraEnvironmentContinuousOptions: xrDeviceCameraEnvironmentContinuousOptions,
+    xrDeviceCameraEnvironmentOptions: xrDeviceCameraEnvironmentOptions,
+    xrDeviceCameraUserContinuousOptions: xrDeviceCameraUserContinuousOptions,
+    xrDeviceCameraUserOptions: xrDeviceCameraUserOptions
+});
+
+registerDebugGlobals(sdk);
 
 export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, context, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
