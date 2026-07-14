@@ -17,24 +17,25 @@ The `xb-` prefix matches the `xb` import alias.
 
 ## Registry
 
-| Skill                                       | Use when you need to…                                             |
-| ------------------------------------------- | ----------------------------------------------------------------- |
-| [`xb-core`](xb-core/SKILL.md)               | Bootstrap an app: `Script`, `Options`, the frame loop, run it     |
-| [`xb-ui`](xb-ui/SKILL.md)                   | Build a HUD/menu with the core `SpatialPanel` grid                |
-| [`xb-uiblocks`](xb-uiblocks/SKILL.md)       | Build rich flexbox UI (gradients, shadows) via the uiblocks addon |
-| [`xb-modelviewer`](xb-modelviewer/SKILL.md) | Load & display GLTF / splat / primitive 3D models                 |
-| [`xb-hands`](xb-hands/SKILL.md)             | Use hand tracking (joints, pinch, touch, grab)                    |
-| [`xb-gestures`](xb-gestures/SKILL.md)       | Detect pinch/fist/point/spread/thumbs-up/open-palm                |
-| [`xb-depth`](xb-depth/SKILL.md)             | Add depth sensing, occlusion, and depth-mesh colliders            |
-| [`xb-world`](xb-world/SKILL.md)             | Detect real-world planes, meshes, and objects                     |
-| [`xb-context`](xb-context/SKILL.md)         | Read agent-facing scene context, visible objects, and SOM labels  |
-| [`xb-ai`](xb-ai/SKILL.md)                   | Query Gemini/OpenAI, run a live session, generate images          |
-| [`xb-physics`](xb-physics/SKILL.md)         | Add Rapier rigid-body physics                                     |
-| [`xb-simulator`](xb-simulator/SKILL.md)     | Develop/test in the desktop simulator                             |
-| [`xb-netblocks`](xb-netblocks/SKILL.md)     | Add multiplayer presence, shared objects, voice                   |
-| [`xb-lipsync`](xb-lipsync/SKILL.md)         | Drive audio-driven avatar mouths from any `MediaStream`           |
-| [`xb-sound`](xb-sound/SKILL.md)             | Play spatial audio, record, recognize/synthesize speech           |
-| [`xb-testing`](xb-testing/SKILL.md)         | Write sequential functional, integration, or simulator tests      |
+| Skill                                       | Use when you need to…                                                |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| [`xb-core`](xb-core/SKILL.md)               | Bootstrap an app: `Script`, `Options`, the frame loop, run it        |
+| [`xb-ui`](xb-ui/SKILL.md)                   | Build a HUD/menu with the core `SpatialPanel` grid                   |
+| [`xb-uiblocks`](xb-uiblocks/SKILL.md)       | Build rich flexbox UI (gradients, shadows) via the uiblocks addon    |
+| [`xb-modelviewer`](xb-modelviewer/SKILL.md) | Load & display GLTF / splat / primitive 3D models                    |
+| [`xb-hands`](xb-hands/SKILL.md)             | Use hand tracking (joints, pinch, touch, grab)                       |
+| [`xb-agenthands`](xb-agenthands/SKILL.md)   | Give an AI agent gesturing hands + an orb that point at real objects |
+| [`xb-gestures`](xb-gestures/SKILL.md)       | Detect pinch/fist/point/spread/thumbs-up/open-palm                   |
+| [`xb-depth`](xb-depth/SKILL.md)             | Add depth sensing, occlusion, and depth-mesh colliders               |
+| [`xb-world`](xb-world/SKILL.md)             | Detect real-world planes, meshes, and objects                        |
+| [`xb-context`](xb-context/SKILL.md)         | Read agent-facing scene context, visible objects, and SOM labels     |
+| [`xb-ai`](xb-ai/SKILL.md)                   | Query Gemini/OpenAI, run a live session, generate images             |
+| [`xb-physics`](xb-physics/SKILL.md)         | Add Rapier rigid-body physics                                        |
+| [`xb-simulator`](xb-simulator/SKILL.md)     | Develop/test in the desktop simulator                                |
+| [`xb-netblocks`](xb-netblocks/SKILL.md)     | Add multiplayer presence, shared objects, voice                      |
+| [`xb-lipsync`](xb-lipsync/SKILL.md)         | Drive audio-driven avatar mouths from any `MediaStream`              |
+| [`xb-sound`](xb-sound/SKILL.md)             | Play spatial audio, record, recognize/synthesize speech              |
+| [`xb-testing`](xb-testing/SKILL.md)         | Write sequential functional, integration, or simulator tests         |
 
 Deep references some skills link to live next to the code:
 [`../src/SKILL.md`](../src/SKILL.md), [`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),

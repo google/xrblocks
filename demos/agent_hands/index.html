@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Agent Hands</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link type="text/css" rel="stylesheet" href="../../samples/main.css" />
+    <style>
+      .key-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+        color: #eee;
+      }
+      .key-card {
+        background: #1a1a1a;
+        padding: 24px 28px;
+        border-radius: 12px;
+        max-width: 440px;
+        width: 90%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      }
+      .key-card h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      .key-card p {
+        margin: 0 0 16px;
+        font-size: 13px;
+        color: #aaa;
+        line-height: 1.4;
+      }
+      .key-card a {
+        color: #4a90e2;
+      }
+      .key-card input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #555;
+        background: #111;
+        color: #eee;
+        font-size: 14px;
+        box-sizing: border-box;
+        margin-bottom: 12px;
+      }
+      .key-card button {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #4a90e2;
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .key-card .skip {
+        display: inline-block;
+        margin-left: 14px;
+        font-size: 13px;
+        color: #888;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.12.1/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "uiblocks": "../../build/addons/uiblocks/src/index.js",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/",
+          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="keyOverlay" class="key-overlay" style="display: none">
+      <div class="key-card">
+        <h2>Gemini API key</h2>
+        <p>
+          Add a Gemini API key to talk to the agent. Get one from
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener"
+            >aistudio.google.com</a
+          >. The key is saved in your browser's localStorage and only sent to
+          Google. Without a key the demo plays a short scripted monologue.
+        </p>
+        <input id="keyInput" type="password" placeholder="AIza..." />
+        <button id="keySave">save and reload</button>
+        <span id="keySkip" class="skip">watch the scripted demo</span>
+      </div>
+    </div>
+
+    <script>
+      // Resolve gemini key: ?key= URL param > localStorage > ./keys.json >
+      // overlay. The overlay also lets you skip into the scripted demo.
+      (async function () {
+        const STORAGE_KEY = 'gemini-api-key';
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('key')) {
+          window.localStorage.setItem(STORAGE_KEY, params.get('key'));
+          return;
+        }
+        const stored = window.localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          params.set('key', stored);
+          const newUrl =
+            window.location.pathname +
+            '?' +
+            params.toString() +
+            window.location.hash;
+          window.history.replaceState(null, '', newUrl);
+          return;
+        }
+        try {
+          const res = await fetch('./keys.json', {cache: 'no-store'});
+          if (res.ok) {
+            const k = (await res.json()).key;
+            if (k) {
+              window.localStorage.setItem(STORAGE_KEY, k);
+              params.set('key', k);
+              window.location.search = '?' + params.toString();
+              return;
+            }
+          }
+        } catch (_) {
+          // no keys.json, fall through to overlay
+        }
+        const overlay = document.getElementById('keyOverlay');
+        const input = document.getElementById('keyInput');
+        const save = document.getElementById('keySave');
+        const skip = document.getElementById('keySkip');
+        overlay.style.display = 'flex';
+        const submit = () => {
+          const k = input.value.trim();
+          if (!k) return;
+          window.localStorage.setItem(STORAGE_KEY, k);
+          params.set('key', k);
+          window.location.search = '?' + params.toString();
+        };
+        save.addEventListener('click', submit);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submit();
+        });
+        // Dismiss the overlay and let the scripted (no-key) demo run.
+        skip.addEventListener('click', () => {
+          overlay.style.display = 'none';
+        });
+        input.focus();
+      })();
+    </script>
+
+    <div
+      id="status"
+      style="
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 50;
+        max-width: 420px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: rgba(20, 20, 30, 0.78);
+        color: #eee;
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+      "
+    >
+      the agent will gesture as it speaks...
+    </div>
+    <button
+      id="talk"
+      style="
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 50;
+        padding: 10px 18px;
+        border: none;
+        border-radius: 24px;
+        background: #9177c7;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+        display: none;
+      "
+    >
+      🎙️ Talk
+    </button>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
