@@ -43,6 +43,12 @@ const DEPTH_SAMPLE_FRAME_COUNT = 3;
 const MAX_CENTER_HORIZONTAL_DISTANCE_M = 6;
 const MIN_CENTER_HEIGHT_M = -1;
 const MAX_CENTER_HEIGHT_M = 5;
+const MIN_POINTS_BY_CATEGORY: Record<ObjectCategory, number> = {
+  small: 4,
+  light: 8,
+  flat: 8,
+  furniture: 20,
+};
 
 /** Options for {@link Object3DDetector}. */
 export interface Object3DDetectorOptions {
@@ -414,14 +420,7 @@ export class Object3DDetector extends Script {
               Math.abs(c.z) > MAX_CENTER_HORIZONTAL_DISTANCE_M ||
               c.y < MIN_CENTER_HEIGHT_M ||
               c.y > MAX_CENTER_HEIGHT_M;
-            const minPoints =
-              category === 'small'
-                ? 4
-                : category === 'light'
-                  ? 8
-                  : category === 'flat'
-                    ? 8
-                    : 20;
+            const minPoints = MIN_POINTS_BY_CATEGORY[category];
             const tinyFlat = isTinyFlatLabel(obj.label);
             const tooFewPoints = !tinyFlat && points.length < minPoints;
             const oversize = obb.size.x > 4 || obb.size.y > 3 || obb.size.z > 4;
