@@ -40,6 +40,9 @@ import type {ObjectCategory} from './labels/Categories';
 
 const DEPTH_SAMPLE_GRID_SIZE = 10;
 const DEPTH_SAMPLE_FRAME_COUNT = 3;
+const MAX_CENTER_HORIZONTAL_DISTANCE_M = 6;
+const MIN_CENTER_HEIGHT_M = -1;
+const MAX_CENTER_HEIGHT_M = 5;
 
 /** Options for {@link Object3DDetector}. */
 export interface Object3DDetectorOptions {
@@ -407,7 +410,10 @@ export class Object3DDetector extends Script {
 
             const c = obb.center;
             const farFromRoom =
-              Math.abs(c.x) > 6 || Math.abs(c.z) > 6 || c.y < -1 || c.y > 5;
+              Math.abs(c.x) > MAX_CENTER_HORIZONTAL_DISTANCE_M ||
+              Math.abs(c.z) > MAX_CENTER_HORIZONTAL_DISTANCE_M ||
+              c.y < MIN_CENTER_HEIGHT_M ||
+              c.y > MAX_CENTER_HEIGHT_M;
             const minPoints =
               category === 'small'
                 ? 4
