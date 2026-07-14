@@ -96,6 +96,10 @@ options.enableStrokes(); // $1 unistroke recognition
 options.enableDepth(); // WebXR depth sensing + depth mesh
 options.enablePlaneDetection(); // detected planes in xb.world
 options.enableObjectDetection(); // object detection (also sets camera permission)
+options.enableContext(); // agent-facing semantic tree, visible objects, SOM
+options.enableSceneContext(); // semantic tree only
+options.enableVisibleObjectsContext(); // semantic tree + view visibility
+options.enableSetOfMarkContext(); // semantic tree + visible objects + SOM image
 options.enableCamera('environment'); // passthrough device camera ('environment'|'user')
 options.enableAI(); // Gemini/OpenAI via xb.ai
 options.enableXRTransitions(); // fade transitions
@@ -116,9 +120,23 @@ URL does the same. `options.catchScriptExceptions` (default `true`) keeps one bu
 script from crashing the app.
 
 For automation or external remote runs, use `options.enableAutomationMode()` before
-`xb.init(options)`. It applies the desktop simulator preset, enables hands and
-camera input, hides simulator control panels, and can also be activated from the
-URL with `?xrAutomation=1`.
+`xb.init(options)`. It applies the desktop simulator preset, enables hands, camera
+input, and agent context, hides simulator control panels, and can also be activated
+from the URL with `?xrAutomation=1`. Separately, `?debug=1` exposes the full SDK as
+`window.xb` and initialization as `window.xbReady`. Combine the flags when browser
+tooling needs both direct SDK access and the automation preset.
+
+Simulator navmesh constraints are opt-in. Set
+`options.simulator.navMesh.enabled = true`; the default Living Room environment
+already includes a glTF/GLB `navMeshPath`. Custom environments can provide their
+own navmesh. The navmesh represents the walkable floor surface; XR Blocks uses it
+to ground/constrain the Simulator User only, not simulated hands/controllers.
+Author it in the same local coordinates as the simulator scene; XR Blocks
+applies the same environment placement transform to both. `SimulatorNavMesh`
+also exposes high-level helpers for reachable location/object checks and random
+reachable path generation, without exposing `three-pathfinding` groups or nodes.
+CDN/importmap apps that enable this need
+`"three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js"`.
 
 ## Script lifecycle hooks
 
@@ -201,6 +219,7 @@ gradients, and shadows, use the **uiblocks addon** instead — see
 | [`core/`](core)                                                                      | `Core` singleton, `Script`, `Options`, `User`, DI `Registry`, `XRButton`, WebXR session mgmt                                                          |
 | [`input/`](input)                                                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `strokes/`                                                                                     |
 | [`world/`](world)                                                                    | `World` + `planes/`, `mesh/`, `objects/` (Gemini & MediaPipe backends), `sounds/`                                                                     |
+| [`context/`](context)                                                                | Agent-facing scene context: semantic tree, visible objects, Set-of-Mark screenshots                                                                   |
 | [`depth/`](depth)                                                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                                                              |
 | [`ai/`](ai)                                                                          | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                                                       |
 | [`agent/`](agent)                                                                    | agent framework: tools, memory, context (WIP — see `agent/README.md`)                                                                                 |

@@ -100,6 +100,15 @@ export class SoundDetector extends Script<SoundDetectorEventMap> {
     // No per-frame update logic needed, audio is handled asynchronously via streams.
   }
 
+  override dispose() {
+    this.stopListening();
+    for (const backendPromise of this._detectorBackends.values()) {
+      void backendPromise.then((backend) => backend.dispose()).catch(() => {});
+    }
+    this._detectorBackends.clear();
+    this.audioListener = undefined;
+  }
+
   private getOrCreateDetectorBackend(
     sampleRate: number
   ): Promise<BaseDetectorBackend> {

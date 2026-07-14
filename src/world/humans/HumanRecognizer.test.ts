@@ -174,4 +174,25 @@ describe('HumanRecognizer Multi-Client API', () => {
       (recognizer as unknown as PrivateRecognizer).currentDetectionPromise
     ).toBeNull();
   });
+
+  it('disposes temporary depth mesh snapshots after detection', async () => {
+    const geometryDispose = vi.fn();
+    const materialDispose = vi.fn();
+
+    mockBackend.run.mockImplementation(
+      async (depthMeshSnapshot: THREE.Mesh) => {
+        vi.spyOn(depthMeshSnapshot.geometry, 'dispose').mockImplementation(
+          geometryDispose
+        );
+        const material = depthMeshSnapshot.material as THREE.Material;
+        vi.spyOn(material, 'dispose').mockImplementation(materialDispose);
+        return [];
+      }
+    );
+
+    await recognizer.runDetection();
+
+    expect(geometryDispose).toHaveBeenCalledTimes(1);
+    expect(materialDispose).toHaveBeenCalledTimes(1);
+  });
 });

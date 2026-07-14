@@ -19,7 +19,7 @@ import {RemoteControl} from 'xrblocks/addons/remote-control/index.js';
 const game = new GameScript();
 xb.add(game);
 
-const options = new xb.Options().enableAutomationMode();
+const options = new xb.Options();
 
 xb.add(
   new RemoteControl({
@@ -36,15 +36,6 @@ xb.add(
 
 await xb.init(options);
 ```
-
-`options.enableAutomationMode()` configures the page for simulator-driven control:
-desktop simulator autostart, simulator camera, hands, and hidden simulator
-control panels. Use it before `xb.init()` when the page should be driven by
-external clients. Pages can also opt into the same startup preset with the
-`?xrAutomation=1` URL flag when they construct a plain `new xb.Options()`.
-
-`RemoteControl.configureOptions()` remains as a compatibility wrapper around
-`options.enableAutomationMode()`.
 
 Tools are explicit named functions exposed by the scene. External clients
 cannot send arbitrary JavaScript to evaluate in the page.

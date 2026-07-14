@@ -41,8 +41,19 @@ Upon launching an XR Blocks experience in a desktop browser, a run in simulator 
 </div>
 
 For automation or external remote runs, call `options.enableAutomationMode()` before `xb.init(options)`.
-This applies a desktop simulator startup preset with simulator autostart, hands, camera input, and hidden simulator control panels.
+This applies a desktop simulator startup preset with simulator autostart, hands, camera input, agent context, and hidden simulator control panels.
 Pages that construct a plain `new xb.Options()` can also opt into the same preset with `?xrAutomation=1`.
+
+Browser tooling can independently add `?debug=1` to expose the SDK as `window.xb` and an initialization promise as `window.xbReady`. Use `?xrAutomation=1&debug=1` when a driver needs both the automation preset and direct SDK access:
+
+```js
+await page.goto(`${appUrl}?xrAutomation=1&debug=1`);
+await page.evaluate(() => window.xbReady);
+
+const semanticTree = await page.evaluate(() =>
+  window.xb.context.scene.runDetection()
+);
+```
 
 ## Simulator Control Modes
 

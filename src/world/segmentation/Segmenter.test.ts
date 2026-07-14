@@ -236,6 +236,27 @@ describe('Segmenter', () => {
       expect(segmenter.latestMask).toBe(mask);
     });
 
+    it('disposes cached backends and clears latestMask', async () => {
+      const segmenter = makeSegmenter();
+      const dispose = vi.fn();
+      const backend = {
+        run: vi.fn(() => Promise.resolve(makeMask())),
+        dispose,
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (segmenter as any)._backends.set('mediapipe', Promise.resolve(backend));
+
+      await segmenter.runSegmentation();
+      expect(segmenter.latestMask).not.toBeNull();
+
+      segmenter.dispose();
+      await flushMicrotasks();
+
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(segmenter.latestMask).toBeNull();
+      await expect(segmenter.runSegmentation()).resolves.toBeNull();
+    });
+
     it('respects a custom pollingIntervalMs set in options', async () => {
       const segmenter = new Segmenter();
       // Custom 200 ms cadence.

@@ -128,6 +128,8 @@ export abstract class BaseDetectorBackend<T> {
     snapshot: CameraSnapshot
   ): Promise<NormalizedDetectedObject<T>[]>;
 
+  dispose() {}
+
   /**
    * Creates a debug visual representation for a detected object in the 3D scene.
    *

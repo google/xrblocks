@@ -193,6 +193,27 @@ describe('ObjectDetector Multi-Client API', () => {
     ).toBeNull();
   });
 
+  it('disposes temporary depth mesh snapshots after detection', async () => {
+    const geometryDispose = vi.fn();
+    const materialDispose = vi.fn();
+
+    mockBackend.run.mockImplementation(
+      async (depthMeshSnapshot: THREE.Mesh) => {
+        vi.spyOn(depthMeshSnapshot.geometry, 'dispose').mockImplementation(
+          geometryDispose
+        );
+        const material = depthMeshSnapshot.material as THREE.Material;
+        vi.spyOn(material, 'dispose').mockImplementation(materialDispose);
+        return [];
+      }
+    );
+
+    await detector.runDetection();
+
+    expect(geometryDispose).toHaveBeenCalledTimes(1);
+    expect(materialDispose).toHaveBeenCalledTimes(1);
+  });
+
   it('reuses an in-flight one-off detection when a client starts', async () => {
     const promise = detector.runDetection();
 

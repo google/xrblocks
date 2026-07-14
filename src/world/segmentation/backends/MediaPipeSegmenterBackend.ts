@@ -122,4 +122,9 @@ export class MediaPipeSegmenterBackend extends BaseSegmenterBackend {
     });
     return out;
   }
+
+  override dispose() {
+    this.imageSegmenter?.close();
+    this.imageSegmenter = null;
+  }
 }

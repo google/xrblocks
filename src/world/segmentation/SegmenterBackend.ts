@@ -46,4 +46,6 @@ export abstract class BaseSegmenterBackend {
   protected abstract segment(snapshot: {
     imageData: ImageData;
   }): Promise<SegmentationMask | null>;
+
+  dispose() {}
 }

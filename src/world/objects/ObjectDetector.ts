@@ -6,6 +6,11 @@ import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
+import {
+  disposeMaterial,
+  disposeObjectChildren,
+  disposeObjectTree,
+} from '../../utils/ThreeDisposal';
 import {WorldOptions} from '../WorldOptions';
 import {DetectedObject} from './DetectedObject';
 import {
@@ -67,6 +72,7 @@ export class ObjectDetector extends Script {
   private currentDetectionPromise: Promise<DetectedObject<unknown>[]> | null =
     null;
   private lastContinuousDetectionStartedAtMs = -Infinity;
+  private disposed = false;
 
   private _debugVisualsGroup?: THREE.Group;
 
@@ -120,6 +126,7 @@ export class ObjectDetector extends Script {
     this.depth = depth;
     this.camera = camera;
     this.renderer = renderer;
+    this.disposed = false;
 
     if (
       this.targetDevice === 'galaxyxr' &&
@@ -189,7 +196,9 @@ export class ObjectDetector extends Script {
     this.lastContinuousDetectionStartedAtMs = performance.now();
     this.currentDetectionPromise = this.runDetectionInternal()
       .then((results) => {
-        this.detectedObjects = results;
+        if (!this.disposed) {
+          this.detectedObjects = results;
+        }
         return results;
       })
       .finally(() => {
@@ -226,7 +235,6 @@ export class ObjectDetector extends Script {
   private async runDetectionInternal<T = null>(): Promise<DetectedObject<T>[]> {
     this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
 
-    const depthMeshSnapshot = this.getDepthMeshSnapshot();
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
       this.renderer.xr.getCamera(),
@@ -255,15 +263,26 @@ export class ObjectDetector extends Script {
       );
       return [];
     }
-    const detectedObjects = await detectorBackend.run(
-      depthMeshSnapshot,
-      cameraParametersSnapshot
-    );
-    for (const obj of detectedObjects) {
-      this._detectedObjects.set(obj.uuid, obj);
-      this.add(obj);
+    if (this.disposed) {
+      return [];
     }
-    return detectedObjects;
+    const depthMeshSnapshot = this.getDepthMeshSnapshot();
+    try {
+      const detectedObjects = await detectorBackend.run(
+        depthMeshSnapshot,
+        cameraParametersSnapshot
+      );
+      if (this.disposed) {
+        return [];
+      }
+      for (const obj of detectedObjects) {
+        this._detectedObjects.set(obj.uuid, obj);
+        this.add(obj);
+      }
+      return detectedObjects;
+    } finally {
+      this.disposeDepthMeshSnapshot(depthMeshSnapshot);
+    }
   }
 
   private getDetectorContext(): DetectorBackendContext {
@@ -357,12 +376,18 @@ export class ObjectDetector extends Script {
 
   private clearDetectedObjects() {
     for (const obj of this._detectedObjects.values()) {
+      disposeObjectTree(obj);
       this.remove(obj);
     }
     this._detectedObjects.clear();
     if (this._debugVisualsGroup) {
-      this._debugVisualsGroup.clear();
+      disposeObjectChildren(this._debugVisualsGroup);
     }
+  }
+
+  private disposeDepthMeshSnapshot(depthMeshSnapshot: THREE.Mesh) {
+    depthMeshSnapshot.geometry.dispose();
+    disposeMaterial(depthMeshSnapshot.material);
   }
 
   /**
@@ -373,5 +398,19 @@ export class ObjectDetector extends Script {
     if (this._debugVisualsGroup) {
       this._debugVisualsGroup.visible = visible;
     }
+  }
+
+  override dispose() {
+    this.disposed = true;
+    this.activeClients.clear();
+    disposeObjectChildren(this);
+    this.clear(); // Unlinks children so needs to come last
+
+    for (const backendPromise of this._detectorBackends.values()) {
+      void backendPromise
+        .then((backend) => backend.dispose?.())
+        .catch(() => {});
+    }
+    this._detectorBackends.clear();
   }
 }

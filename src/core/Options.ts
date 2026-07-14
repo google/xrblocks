@@ -4,6 +4,7 @@ import {
   xrDeviceCameraEnvironmentOptions,
   xrDeviceCameraUserOptions,
 } from '../camera/CameraOptions.js';
+import {ContextOptions} from '../context/ContextOptions';
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
 import {HandsOptions} from '../input/HandsOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
@@ -128,6 +129,7 @@ export class Options {
   ai = new AIOptions();
   simulator = new SimulatorOptions();
   world = new WorldOptions();
+  context = new ContextOptions();
   uikit = new UIKitOptions();
   physics = new PhysicsOptions();
   transition = new XRTransitionOptions();
@@ -274,6 +276,7 @@ export class Options {
     if (enableCamera) {
       this.enableCamera();
     }
+    this.enableContext();
 
     this.simulator.defaultMode = defaultMode;
     this.simulator.defaultHand = defaultHand;
@@ -424,6 +427,43 @@ export class Options {
   enableAI() {
     this.ai.enabled = true;
     this.ai.gemini.enabled = true;
+    return this;
+  }
+
+  /**
+   * Enables agent-facing context detectors such as semantic trees,
+   * view visibility, and Set-of-Mark observations.
+   * @returns The instance for chaining.
+   */
+  enableContext() {
+    this.context.enable();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing scene context.
+   * @returns The instance for chaining.
+   */
+  enableSceneContext() {
+    this.context.enableScene();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing visible objects context.
+   * @returns The instance for chaining.
+   */
+  enableVisibleObjectsContext() {
+    this.context.enableVisibleObjects();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing Set-of-Mark context.
+   * @returns The instance for chaining.
+   */
+  enableSetOfMarkContext() {
+    this.context.enableSetOfMark();
     return this;
   }
 

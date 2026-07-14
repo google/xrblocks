@@ -6,11 +6,15 @@ import {Keycodes} from '../../utils/Keycodes';
 import {SimulatorRenderMode} from '../SimulatorConstants';
 import {SimulatorControllerState} from '../SimulatorControllerState';
 import {SimulatorHands} from '../SimulatorHands.js';
+import {SimulatorNavMesh} from '../SimulatorNavMesh';
 import {SimulatorHandPose} from '../handPoses/HandPoses';
 import {SimulatorOptions} from '../SimulatorOptions';
 
 const {A_CODE, D_CODE, E_CODE, Q_CODE, S_CODE, W_CODE} = Keycodes;
 const vector3 = new THREE.Vector3();
+
+const desiredCameraPosition = new THREE.Vector3();
+
 const originVec = new THREE.Vector3();
 const forwardVec = new THREE.Vector3(0, 0, -1);
 const offsetVec = new THREE.Vector3();
@@ -18,6 +22,8 @@ const axisVec = new THREE.Vector3();
 const currentOffsetVec = new THREE.Vector3();
 const newOffsetVec = new THREE.Vector3();
 const euler = new THREE.Euler();
+const yawEuler = new THREE.Euler();
+const yawQuaternion = new THREE.Quaternion();
 const HAND_POSES = Object.values(SimulatorHandPose);
 
 export class SimulatorControlMode {
@@ -34,6 +40,7 @@ export class SimulatorControlMode {
     protected simulatorControllerState: SimulatorControllerState,
     protected downKeys: Set<Keycodes>,
     protected hands: SimulatorHands,
+    protected navMesh: SimulatorNavMesh,
     protected setStereoRenderMode: (_: SimulatorRenderMode) => void,
     protected toggleUserInterface: () => void,
     protected cycleSimulatorMode: () => void = () => {}
@@ -102,17 +109,15 @@ export class SimulatorControlMode {
 
     const deltaTime = this.timer.getDelta();
     const cameraRotation = this.camera.quaternion;
-    const cameraPosition = this.camera.position;
     const downKeys = this.downKeys;
-    vector3
-      .set(
-        Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
-        Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)),
-        Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE))
-      )
-      .multiplyScalar(deltaTime)
-      .applyQuaternion(cameraRotation);
-    cameraPosition.add(vector3);
+    this.applyYawRelativeMovement(
+      Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
+      this.navMesh.constrained
+        ? 0
+        : Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)),
+      Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)),
+      deltaTime
+    );
 
     // Gamepad stick input (if connected). Skip while the tab isn't
     // focused — the Gamepad API delivers state to every tab, so without
@@ -123,11 +128,7 @@ export class SimulatorControlMode {
 
       // Left stick → move camera.
       if (lx !== 0 || ly !== 0) {
-        vector3
-          .set(lx, 0, ly)
-          .multiplyScalar(deltaTime)
-          .applyQuaternion(cameraRotation);
-        cameraPosition.add(vector3);
+        this.applyYawRelativeMovement(lx, 0, ly, deltaTime);
       }
 
       // Right stick → look (yaw + pitch).
@@ -142,13 +143,35 @@ export class SimulatorControlMode {
       }
 
       // Configurable vertical movement bindings (defaults LT/RT, analog).
-      const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
-      const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
-      const verticalDelta = (upVal - downVal) * deltaTime;
-      if (verticalDelta !== 0) {
-        cameraPosition.y += verticalDelta;
+      if (!this.navMesh.constrained) {
+        const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
+        const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
+        const verticalDelta = (upVal - downVal) * deltaTime;
+        if (verticalDelta !== 0) {
+          desiredCameraPosition.copy(this.camera.position);
+          desiredCameraPosition.y += verticalDelta;
+          this.navMesh.applyUserMovement(this.camera, desiredCameraPosition);
+        }
       }
     }
+  }
+
+  private applyYawRelativeMovement(
+    localX: number,
+    localY: number,
+    localZ: number,
+    deltaTime: number
+  ) {
+    euler.setFromQuaternion(this.camera.quaternion, 'YXZ');
+    yawEuler.set(0, euler.y, 0, 'YXZ');
+    yawQuaternion.setFromEuler(yawEuler);
+    vector3
+      .set(localX, 0, localZ)
+      .multiplyScalar(deltaTime)
+      .applyQuaternion(yawQuaternion);
+    vector3.y += localY * deltaTime;
+    desiredCameraPosition.copy(this.camera.position).add(vector3);
+    this.navMesh.applyUserMovement(this.camera, desiredCameraPosition);
   }
 
   /**

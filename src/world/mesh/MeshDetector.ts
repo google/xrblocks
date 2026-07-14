@@ -208,12 +208,9 @@ export class MeshDetector extends Script {
   setSimulatorMeshes(meshes: SimulatorMesh[]) {
     this.usingSimulatorMeshes = true;
 
-    for (const [, threeMesh] of this.xrMeshToThreeMesh) {
-      this.remove(threeMesh);
-      threeMesh.dispose();
+    for (const [xrMesh, threeMesh] of this.xrMeshToThreeMesh) {
+      this.removeMesh(xrMesh, threeMesh);
     }
-    this.xrMeshToThreeMesh.clear();
-    this.threeMeshToXrMesh.clear();
 
     for (const simMesh of meshes) {
       const material =
@@ -238,6 +235,24 @@ export class MeshDetector extends Script {
         );
       }
     }
+  }
+
+  override dispose() {
+    for (const [xrMesh, threeMesh] of Array.from(
+      this.xrMeshToThreeMesh.entries()
+    )) {
+      this.removeMesh(xrMesh, threeMesh);
+    }
+
+    this.defaultMaterial.dispose();
+    this.fallbackDebugMaterial?.dispose();
+    this.fallbackDebugMaterial = null;
+    for (const material of this.debugMaterials.values()) {
+      material.dispose();
+    }
+    this.debugMaterials.clear();
+    this.usingSimulatorMeshes = false;
+    this.physics = undefined;
   }
 
   private createMesh(frame: XRFrame, xrMesh: XRMesh) {

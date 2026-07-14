@@ -27,6 +27,7 @@ The `xb-` prefix matches the `xb` import alias.
 | [`xb-gestures`](xb-gestures/SKILL.md)       | Detect pinch/fist/point/spread/thumbs-up/open-palm                |
 | [`xb-depth`](xb-depth/SKILL.md)             | Add depth sensing, occlusion, and depth-mesh colliders            |
 | [`xb-world`](xb-world/SKILL.md)             | Detect real-world planes, meshes, and objects                     |
+| [`xb-context`](xb-context/SKILL.md)         | Read agent-facing scene context, visible objects, and SOM labels  |
 | [`xb-ai`](xb-ai/SKILL.md)                   | Query Gemini/OpenAI, run a live session, generate images          |
 | [`xb-physics`](xb-physics/SKILL.md)         | Add Rapier rigid-body physics                                     |
 | [`xb-simulator`](xb-simulator/SKILL.md)     | Develop/test in the desktop simulator                             |

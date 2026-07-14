@@ -43,6 +43,7 @@ export class Segmenter extends Script {
    * `Number.NEGATIVE_INFINITY` so the first `update()` tick fires immediately.
    */
   private _lastRunMs = Number.NEGATIVE_INFINITY;
+  private _disposed = false;
 
   private options!: WorldOptions;
   private deviceCamera!: XRDeviceCamera;
@@ -56,6 +57,7 @@ export class Segmenter extends Script {
   }) {
     this.options = options;
     this.deviceCamera = deviceCamera;
+    this._disposed = false;
   }
 
   /**
@@ -83,6 +85,7 @@ export class Segmenter extends Script {
    *   engine frame loop.
    */
   override update(time: number) {
+    if (this._disposed) return;
     if (this._inferenceInFlight) return;
     if (time - this._lastRunMs < this.options.segmentation.pollingIntervalMs)
       return;
@@ -102,12 +105,17 @@ export class Segmenter extends Script {
    * @returns The mask, or `null` if the backend or camera frame is not ready.
    */
   async runSegmentation(): Promise<SegmentationMask | null> {
+    if (this._disposed) {
+      return null;
+    }
     if (this._inferenceInFlight) {
       return this._inferenceInFlight;
     }
 
     this._inferenceInFlight = this._runInference().then((mask) => {
-      this._latestMask = mask;
+      if (!this._disposed) {
+        this._latestMask = mask;
+      }
       this._inferenceInFlight = null;
       return mask;
     });
@@ -160,5 +168,17 @@ export class Segmenter extends Script {
       this._backends.set(activeBackend, backendPromise);
     }
     return backendPromise;
+  }
+
+  override dispose() {
+    this._disposed = true;
+    this._latestMask = null;
+    this._inferenceInFlight = null;
+    for (const backendPromise of this._backends.values()) {
+      void backendPromise
+        .then((backend) => backend.dispose?.())
+        .catch(() => {});
+    }
+    this._backends.clear();
   }
 }

@@ -25,6 +25,26 @@ and the full in-tree overview is [`src/SKILL.md`](src/SKILL.md).
 - **Units & colors.** World/position values are meters; UI sizes use meters or "layout
   pixels"/`fontSize`. Colors are hex strings (`'#ffffff'`) or `THREE.Color`.
 
+## Language
+
+**Simulator User**:
+The simulated person whose viewpoint is represented by the simulator camera. Navigation
+constraints apply to the Simulator User, not to simulated hands or controllers.
+_Avoid_: Camera-only actor, embodied action target
+
+**Simulator Navmesh**:
+A pregenerated walkable navigation surface for a simulator environment. When enabled, it
+constrains Simulator User navigation by clamping attempted movement to valid walkable space
+and represents the walkable floor surface used for grounding. It is authored in the same
+local coordinate space as the simulator scene and receives the same environment placement
+transform.
+_Avoid_: Movement bounds, collision mesh
+
+**`navMeshPath`**:
+The simulator environment field containing the URL/path of the pregenerated Simulator
+Navmesh sidecar asset.
+_Avoid_: navigationMeshPath, navmeshUrl, navMesh
+
 ## Core Pattern
 
 ```js
@@ -65,6 +85,10 @@ options.enableStrokes(); // $1 unistroke recognition
 options.enableDepth(); // depth sensing + depth mesh
 options.enablePlaneDetection(); // detected planes in xb.world
 options.enableObjectDetection(); // object detection (also enables camera permission)
+options.enableContext(); // agent-facing scene context in xb.context
+options.enableSceneContext(); // semantic tree only
+options.enableVisibleObjectsContext(); // semantic tree + view visibility
+options.enableSetOfMarkContext(); // semantic tree + visible objects + SOM image
 options.enableCamera('environment'); // passthrough device camera
 options.enableAI(); // Gemini/OpenAI via xb.ai
 options.enableXRTransitions(); // fade transitions
@@ -80,8 +104,9 @@ options.physics.RAPIER = RAPIER; // enables physics
 
 ## Key Globals & Lifecycle
 
-- Globals: `xb.core`, `xb.scene`, `xb.user`, `xb.world`, `xb.ai`, `xb.depth`, `xb.sound`,
-  `xb.input`, `xb.camera`; helpers `xb.add()`, `xb.init()`, `xb.getDeltaTime()`.
+- Globals: `xb.core`, `xb.scene`, `xb.user`, `xb.world`, `xb.context`, `xb.ai`,
+  `xb.depth`, `xb.sound`, `xb.input`, `xb.camera`; helpers `xb.add()`, `xb.init()`,
+  `xb.getDeltaTime()`.
 - Lifecycle hooks: `init`, `update`, `initPhysics`/`physicsStep`, `onSelectStart/End`,
   `onSqueezeStart/End`, `onKeyDown/Up`, `onXRSessionStarted/Ended`, `onSimulatorStarted`.
 - Object-targeted hooks (return `true` to stop propagation): `onObjectSelectStart/End`,
@@ -96,10 +121,13 @@ npm ci && npm run dev     # builds in watch mode + serves http://127.0.0.1:8080
 
 Open a sample/template/demo under that URL; add `?formFactor=desktop` to force the simulator.
 For external automation or remote runs, configure `new xb.Options().enableAutomationMode()` or
-add `?xrAutomation=1`.
+add `?xrAutomation=1`. Automation mode enables agent context. Add `?debug=1` to expose
+the SDK as `window.xb` and initialization as `window.xbReady`; combine both flags when
+an in-page browser driver needs the automation preset and direct SDK access.
 
 ## Task Recipes -> Skills/
 
 For "how do I do X", use the focused skills in [`skills/`](skills/): `xb-core`, `xb-ui`,
-`xb-uiblocks`, `xb-modelviewer`, `xb-hands`, `xb-gestures`, `xb-depth`, `xb-world`, `xb-ai`,
-`xb-physics`, `xb-simulator`, `xb-netblocks`, `xb-sound`, `xb-testing`.
+`xb-uiblocks`, `xb-modelviewer`, `xb-hands`, `xb-gestures`, `xb-depth`, `xb-world`,
+`xb-context`, `xb-ai`, `xb-physics`, `xb-simulator`, `xb-netblocks`, `xb-sound`,
+`xb-testing`.

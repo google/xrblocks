@@ -24,6 +24,7 @@ export type EmbodiedControlExecutorDependencies = {
 };
 
 const vector = new THREE.Vector3();
+const targetCameraPosition = new THREE.Vector3();
 const euler = new THREE.Euler();
 const quaternion = new THREE.Quaternion();
 
@@ -153,7 +154,8 @@ export class EmbodiedControlExecutor {
         .fromArray(control.move)
         .multiplyScalar(fraction)
         .applyQuaternion(initialCameraQuaternion);
-      camera.position.add(vector);
+      vector.add(camera.position);
+      this.dependencies.simulator.navMesh.applyUserMovement(camera, vector);
     }
 
     if (control.rotate) {
@@ -294,17 +296,25 @@ export class EmbodiedControlExecutor {
       const world = core.registry.get(World);
       const targetWorldPos = new THREE.Vector3();
       this.getTargetWorldPosition(target, targetWorldPos);
+      targetCameraPosition.copy(targetWorldPos);
 
       if (target instanceof THREE.Object3D) {
         const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
           target.quaternion
         );
-        camera.position.copy(targetWorldPos).addScaledVector(forward, distance);
-      } else {
-        camera.position.copy(targetWorldPos);
+        targetCameraPosition.addScaledVector(forward, distance);
       }
+      this.dependencies.simulator.navMesh.applyUserMovement(
+        camera,
+        targetCameraPosition
+      );
 
-      if (snapToGround && world?.planes && user) {
+      if (
+        snapToGround &&
+        !this.dependencies.simulator.navMesh.constrained &&
+        world?.planes &&
+        user
+      ) {
         const horizontalPlanes = world.planes.get().filter((p) => {
           const orientation = (p.orientation || '').toLowerCase();
           const label = (p.label || '').toLowerCase();

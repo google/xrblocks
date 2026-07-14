@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import {Script} from '../../core/Script';
+import {disposeMaterial} from '../../utils/ThreeDisposal';
 import {WorldOptions} from '../WorldOptions';
 
 import {DetectedPlane} from './DetectedPlane';
@@ -137,10 +138,18 @@ export class PlaneDetector extends Script {
   private _removePlaneMesh(xrPlane: XRPlane | SimulatorPlane) {
     const planeMesh = this._detectedPlanes.get(xrPlane);
     if (planeMesh) {
-      planeMesh.geometry.dispose();
+      this.disposePlaneMesh(planeMesh);
       this.remove(planeMesh);
       this._detectedPlanes.delete(xrPlane);
     }
+  }
+
+  private disposePlaneMesh(planeMesh: DetectedPlane) {
+    planeMesh.geometry.dispose();
+    disposeMaterial(
+      planeMesh.material,
+      this._debugMaterial ? new Set([this._debugMaterial]) : undefined
+    );
   }
 
   /**
@@ -202,9 +211,20 @@ export class PlaneDetector extends Script {
 
   setSimulatorPlanes(planes: SimulatorPlane[]) {
     this.usingSimulatorPlanes = true;
-    this._detectedPlanes.clear();
+    for (const plane of Array.from(this._detectedPlanes.keys())) {
+      this._removePlaneMesh(plane);
+    }
     for (const plane of planes) {
       this._addSimulatorPlaneMesh(plane);
     }
+  }
+
+  override dispose() {
+    for (const plane of Array.from(this._detectedPlanes.keys())) {
+      this._removePlaneMesh(plane);
+    }
+    this._debugMaterial?.dispose();
+    this.usingSimulatorPlanes = false;
+    this._xrRefSpace = undefined;
   }
 }

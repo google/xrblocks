@@ -10,6 +10,8 @@ import {dts} from 'rollup-plugin-dts';
 // Read the version from package.json
 const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
 const version = packageJson.version;
+const buildTarget = process.env.XRBLOCKS_BUILD ?? 'all';
+const buildExamples = buildTarget !== 'sdk';
 
 // Get the current commit ID (short hash)
 let commitId = 'unknown';
@@ -52,6 +54,7 @@ ${apache2License}
     "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
     "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
     "lit/": "https://esm.run/lit@3/",
+    "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
     2. If the app focus on standalone objects, spawn it in front of the user in
     WebXR and rescale to reasonable physical size. Wrap them with xb.ModelViewer
     and make sure users can drag the platform to move it around in XR.
@@ -77,6 +80,7 @@ const externalPackages = [
   'rapier3d',
   'three-mesh-bvh',
   '@huggingface/transformers',
+  'three-pathfinding',
   'vitest',
 ];
 
@@ -87,9 +91,9 @@ const xrblocksPackages = [
   /xrblocks\/addons\//,
 ];
 
-export default [
+const sdkBuilds = [
   {
-    input: 'src/xrblocks.ts',
+    input: 'src/entry.ts',
     external: externalPackages,
     output: {
       file: 'build/xrblocks.js',
@@ -107,7 +111,7 @@ export default [
     ],
   },
   {
-    input: 'src/xrblocks.ts',
+    input: 'src/entry.ts',
     external: externalPackages,
     output: {
       file: 'build/xrblocks.d.ts',
@@ -117,7 +121,7 @@ export default [
     plugins: [dts()],
   },
   {
-    input: 'src/xrblocks.ts',
+    input: 'src/entry.ts',
     external: externalPackages,
     output: {
       file: 'build/xrblocks.min.js',
@@ -172,72 +176,78 @@ export default [
       }),
     ],
   },
-  // Enable demo projects (excluding those with a custom build system) to use TypeScript
-  // and import it in their index.html via by referencing, e.g. `./build/main.js`.
-  ...globSync('demos/**/*.ts', {
-    ignore: [
-      'demos/**/node_modules/**',
-      'demos/**/build/**',
-      // Projects with a custom build system.
-    ],
-  }).map((file) => ({
-    input: file,
-    external: () => true,
-    output: {
-      file: path.join(
-        path.dirname(file),
-        'build',
-        path.basename(file).replace(/\.ts$/, '.js')
-      ),
-      format: 'esm',
-    },
-    plugins: [
-      typescript({
-        tsconfig: false,
-        include: [file],
-        compilerOptions: {
-          target: 'ES2022',
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          esModuleInterop: true,
-          forceConsistentCasingInFileNames: true,
-          strict: true,
-          skipLibCheck: true,
-          declaration: false,
-        },
-      }),
-    ],
-  })),
-  // Enable demo projects (excluding those with a custom build system) to use TypeScript
-  // and import it in their index.html via by referencing, e.g. `./build/main.js`.
-  ...globSync('samples/**/*.ts', {
-    ignore: ['samples/**/node_modules/**', 'samples/**/build/**'],
-  }).map((file) => ({
-    input: file,
-    external: () => true,
-    output: {
-      file: path.join(
-        path.dirname(file),
-        'build',
-        path.basename(file).replace(/\.ts$/, '.js')
-      ),
-      format: 'esm',
-    },
-    plugins: [
-      typescript({
-        tsconfig: false,
-        include: [file],
-        compilerOptions: {
-          target: 'ES2022',
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          esModuleInterop: true,
-          forceConsistentCasingInFileNames: true,
-          strict: true,
-          skipLibCheck: true,
-          declaration: false,
-        },
-      }),
-    ],
-  })),
 ];
+
+// Enable demo projects (excluding those with a custom build system) to use TypeScript
+// and import it in their index.html via by referencing, e.g. `./build/main.js`.
+const demoBuilds = globSync('demos/**/*.ts', {
+  ignore: [
+    'demos/**/node_modules/**',
+    'demos/**/build/**',
+    // Projects with a custom build system.
+  ],
+}).map((file) => ({
+  input: file,
+  external: () => true,
+  output: {
+    file: path.join(
+      path.dirname(file),
+      'build',
+      path.basename(file).replace(/\.ts$/, '.js')
+    ),
+    format: 'esm',
+  },
+  plugins: [
+    typescript({
+      tsconfig: false,
+      include: [file],
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        esModuleInterop: true,
+        forceConsistentCasingInFileNames: true,
+        strict: true,
+        skipLibCheck: true,
+        declaration: false,
+      },
+    }),
+  ],
+}));
+
+// Enable sample projects to use TypeScript and import it in their index.html
+// via by referencing, e.g. `./build/main.js`.
+const sampleBuilds = globSync('samples/**/*.ts', {
+  ignore: ['samples/**/node_modules/**', 'samples/**/build/**'],
+}).map((file) => ({
+  input: file,
+  external: () => true,
+  output: {
+    file: path.join(
+      path.dirname(file),
+      'build',
+      path.basename(file).replace(/\.ts$/, '.js')
+    ),
+    format: 'esm',
+  },
+  plugins: [
+    typescript({
+      tsconfig: false,
+      include: [file],
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        esModuleInterop: true,
+        forceConsistentCasingInFileNames: true,
+        strict: true,
+        skipLibCheck: true,
+        declaration: false,
+      },
+    }),
+  ],
+}));
+
+export default buildExamples
+  ? [...sdkBuilds, ...demoBuilds, ...sampleBuilds]
+  : sdkBuilds.slice(0, 3);

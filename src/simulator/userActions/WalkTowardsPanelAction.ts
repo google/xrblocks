@@ -4,6 +4,7 @@ import {WaitFrame} from '../../core/components/WaitFrame';
 import {UP} from '../../utils/HelperConstants';
 import {clampRotationToAngle, lookAtRotation} from '../../utils/RotationUtils';
 import {clamp} from '../../utils/utils';
+import {SimulatorNavMesh} from '../SimulatorNavMesh';
 import {SimulatorUser} from '../SimulatorUser';
 
 import {SimulatorUserAction} from './SimulatorUserAction';
@@ -27,17 +28,31 @@ const inverseCameraRotation = new THREE.Quaternion();
  * Represents a action to walk towards a panel or object.
  */
 export class WalkTowardsPanelAction extends SimulatorUserAction {
-  static dependencies = {camera: THREE.Camera, timer: THREE.Timer};
+  static dependencies = {
+    camera: THREE.Camera,
+    timer: THREE.Timer,
+    navMesh: SimulatorNavMesh,
+  };
   camera!: THREE.Camera;
   timer!: THREE.Timer;
+  navMesh!: SimulatorNavMesh;
 
   constructor(private target: THREE.Object3D) {
     super();
   }
 
-  async init({camera, timer}: {camera: THREE.Camera; timer: THREE.Timer}) {
+  async init({
+    camera,
+    timer,
+    navMesh,
+  }: {
+    camera: THREE.Camera;
+    timer: THREE.Timer;
+    navMesh: SimulatorNavMesh;
+  }) {
     this.camera = camera;
     this.timer = timer;
+    this.navMesh = navMesh;
   }
 
   isLookingAtTarget() {
@@ -55,9 +70,10 @@ export class WalkTowardsPanelAction extends SimulatorUserAction {
     const camera = this.camera;
     this.target.getWorldPosition(targetWorldPosition);
     cameraToTargetVector.copy(targetWorldPosition).sub(camera.position);
+    cameraToTargetVector.y = 0;
     return (
-      Math.abs(cameraToTargetVector.length() - NEAR_TARGET_DISTANCE) <
-      NEAR_TARGET_THRESHOLD
+      cameraToTargetVector.length() <=
+      NEAR_TARGET_DISTANCE + NEAR_TARGET_THRESHOLD
     );
   }
 
@@ -90,19 +106,22 @@ export class WalkTowardsPanelAction extends SimulatorUserAction {
     const deltaTime = this.timer.getDelta();
     this.target.getWorldPosition(targetWorldPosition);
     cameraToTargetVector.copy(targetWorldPosition).sub(camera.position);
-    closeToTargetPosition
-      .copy(targetWorldPosition)
-      .addScaledVector(cameraToTargetVector, -NEAR_TARGET_THRESHOLD);
-    const cameraToCloseToTarget = closeToTargetPosition.sub(camera.position);
+    cameraToTargetVector.y = 0;
+    const distanceToTarget = cameraToTargetVector.length();
     const movementDistance = clamp(
-      cameraToCloseToTarget.length(),
+      distanceToTarget - NEAR_TARGET_DISTANCE,
       0,
       MOVEMENT_SPEED_METERS_PER_SECOND * deltaTime
     );
-    camera.position.addScaledVector(
-      cameraToCloseToTarget,
-      movementDistance / cameraToCloseToTarget.length()
-    );
+    if (movementDistance === 0 || distanceToTarget === 0) return;
+
+    closeToTargetPosition
+      .copy(camera.position)
+      .addScaledVector(
+        cameraToTargetVector,
+        movementDistance / distanceToTarget
+      );
+    this.navMesh.applyUserMovement(camera, closeToTargetPosition);
   }
 
   async play({

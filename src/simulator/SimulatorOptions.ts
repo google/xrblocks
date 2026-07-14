@@ -30,6 +30,7 @@ export interface SimulatorEnvironment {
   name: string;
   scenePath?: string | null;
   scenePlanesPath?: string | null;
+  navMeshPath?: string | null;
   videoPath?: string;
 }
 
@@ -44,6 +45,9 @@ export class SimulatorOptions {
       scenePlanesPath:
         XR_BLOCKS_ASSETS_PATH +
         'simulator/scenes/XREmulatorsceneV5_livingRoom_planes.json',
+      navMeshPath:
+        XR_BLOCKS_ASSETS_PATH +
+        'simulator/scenes/XREmulatorsceneV5_livingRoom_navmesh.glb',
     },
   ];
   activeEnvironmentIndex = 0;
@@ -75,6 +79,10 @@ export class SimulatorOptions {
   };
   stereo = {
     enabled: false,
+  };
+  navMesh = {
+    enabled: false,
+    eyeHeight: 1.5,
   };
   deviceCamera = {
     // Whether to enable the simulator camera feed.

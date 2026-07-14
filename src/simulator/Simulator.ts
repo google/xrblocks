@@ -17,6 +17,7 @@ import {SimulatorControls} from './SimulatorControls';
 import {SimulatorDepth} from './SimulatorDepth';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
+import {SimulatorNavMesh} from './SimulatorNavMesh';
 import {SimulatorOptions} from './SimulatorOptions';
 import {SimulatorScene} from './SimulatorScene';
 import {SimulatorUser} from './SimulatorUser';
@@ -40,6 +41,7 @@ export class Simulator extends Script {
   editorIcon = 'simulation';
   simulatorScene = new SimulatorScene();
   simulatorWorld = new SimulatorWorld();
+  navMesh = new SimulatorNavMesh();
   depth = new SimulatorDepth(this.simulatorScene);
   // Controller poses relative to the camera.
   simulatorControllerState = new SimulatorControllerState();
@@ -52,6 +54,7 @@ export class Simulator extends Script {
   controls = new SimulatorControls(
     this.simulatorControllerState,
     this.hands,
+    this.navMesh,
     this.setStereoRenderMode.bind(this),
     this.userInterface
   );
@@ -118,10 +121,12 @@ export class Simulator extends Script {
       this.controls,
       this.hands,
       input,
-      this.simulatorScene
+      this.simulatorScene,
+      this.navMesh
     );
     renderer.autoClearColor = false;
     await this.simulatorScene.init(simulatorOptions);
+    await this.navMesh.init(simulatorOptions);
     await this.simulatorWorld.init(options, world, this.simulatorScene);
     await this.hands.init({input});
     this.controls.init({camera, input, timer, renderer, simulatorOptions});
