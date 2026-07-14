@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import {SelectEvent} from '../../core/Script';
 import {User} from '../../core/User';
 import {View} from '../core/View';
+import {DragMode} from '../../ux/DragManager';
 
 interface LinePoint {
   x: number;
@@ -18,6 +19,7 @@ interface LinePoint {
  * functionality.
  */
 export class SketchPanel extends View {
+  draggingMode = DragMode.DO_NOT_DRAG;
   static dependencies = {user: User};
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;

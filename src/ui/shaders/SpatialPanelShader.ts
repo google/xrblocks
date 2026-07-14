@@ -108,10 +108,6 @@ export const SpatialPanelShader = {
     }
 
     void main(void) {
-      vec2 size = uBoxSize * 1000.0;
-      float radius = min(size.x, size.y) * (0.05 + uRadius);
-      vec2 half_size = 0.5 * size;
-
       // Distance to the outer edge of the round box in UV space (0-1)
       float distOuterUV = distRoundBox(vTexCoord * uBoxSize - uBoxSize * 0.5, uBoxSize * 0.5, uRadius);
 

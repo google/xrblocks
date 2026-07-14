@@ -125,6 +125,10 @@ function retargetGLBClip(
   const vrmHipsHeight = vrm.humanoid.normalizedRestPose.hips.position[1];
   const hipsPositionScale = vrmHipsHeight / motionHipsHeight;
 
+  // VRM 0.x is mirrored about the YZ plane vs VRM 1.0, so retargeted rotations
+  // need their x/z quaternion components negated (the w/y are left alone).
+  const isVrm0 = vrm.meta?.metaVersion === '0';
+
   referenceScene.updateMatrixWorld(true);
 
   for (const track of clip.tracks) {
@@ -163,11 +167,16 @@ function retargetGLBClip(
         _quatA.toArray(values, i);
       }
 
+      // VRM0: negate x and z (even indices within each xyzw quad) to un-mirror.
+      const outValues = isVrm0
+        ? values.map((v, i) => (i % 2 === 0 ? -v : v))
+        : values;
+
       tracks.push(
         new THREE.QuaternionKeyframeTrack(
           `${vrmNodeName}.${propertyName}`,
           track.times,
-          values
+          outValues
         )
       );
     } else if (track instanceof THREE.VectorKeyframeTrack) {
@@ -254,6 +263,17 @@ export class VRMAvatar {
 
     this.vrm = vrm;
 
+    // VRM spec version: '0' for VRM 0.x, '1' for VRM 1.0. Drives two
+    // version-specific fixups: facing (here) and a quaternion sign flip in the
+    // retargeter, because VRM 0.x faces +Z and is mirrored relative to VRM 1.0.
+    this.vrmVersion = vrm.meta?.metaVersion ?? '1';
+    console.log(`[VRMAvatar] VRM spec version: ${this.vrmVersion}`);
+
+    // VRM 0.x avatars face +Z; VRM 1.0 avatars face -Z. rotateVRM0() spins a 0.x
+    // model 180° so it faces -Z like a 1.0 model (it no-ops for 1.0), keeping the
+    // rest of the pipeline — placement, lookAt, facing — version-agnostic.
+    VRMUtils.rotateVRM0(vrm);
+
     // Reduce avatar rendering cost before it ever hits the scene. Order matters
     // (see three-vrm docs): drop unused verts, merge skeletons, then bake morphs.
     //   - removeUnnecessaryVertices: trims vertices no morph/skin references.
@@ -297,7 +317,15 @@ export class VRMAvatar {
       }
     });
 
-    this.mixer = new THREE.AnimationMixer(vrm.scene);
+    // Bind the mixer to the normalized humanoid rig root, not the whole vrm.scene.
+    // Retargeted clips address bones by name (e.g. 'Normalized_Avatar_LeftArm').
+    // Some exports (seen on a UniVRM 0.x model) carry duplicate node names in the
+    // wider scene graph, so THREE.PropertyBinding can resolve a track to the wrong
+    // same-named node — one the humanoid's normalized→raw sync never reads, leaving
+    // the mesh frozen in its bind (T) pose. The normalized rig subtree has unique
+    // bone names, so binding here drives exactly the nodes humanoid.update() reads.
+    const mixerRoot = this.vrm.humanoid?.normalizedHumanBonesRoot ?? vrm.scene;
+    this.mixer = new THREE.AnimationMixer(mixerRoot);
     this.root.add(vrm.scene);
 
     console.log('[VRMAvatar] VRM loaded:', vrmUrl);

@@ -111,6 +111,7 @@ export class Core {
 
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
+  private startingSimulator?: Promise<void>;
 
   private _isPaused = false;
   private isSteppingFrame = false;
@@ -331,14 +332,13 @@ export class Core {
     }
 
     const webXRRequiredFeatures: string[] = options.webxrRequiredFeatures;
+    const webXROptionalFeatures: string[] = options.webxrOptionalFeatures;
     // Use camera-access when the browser supports it.
     if (options.deviceCamera?.enabled) {
-      if (!this.webXRSettings.optionalFeatures) {
-        this.webXRSettings.optionalFeatures = [];
-      }
-      (this.webXRSettings.optionalFeatures as string[]).push('camera-access');
+      webXROptionalFeatures.push('camera-access');
     }
     this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
+    this.webXRSettings.optionalFeatures = webXROptionalFeatures;
     // Sets up depth.
     if (options.depth.enabled) {
       webXRRequiredFeatures.push('depth-sensing');
@@ -368,16 +368,19 @@ export class Core {
         this.registry.register(this.gestureRecognition);
       }
     }
+    // World-sensing and lighting features are requested as optional so that
+    // browsers lacking one of them still enter the immersive session instead
+    // of rejecting it outright; the subsystems no-op when the data is absent.
     if (options.world.planes.enabled) {
-      webXRRequiredFeatures.push('plane-detection');
+      webXROptionalFeatures.push('plane-detection');
     }
     if (options.world.meshes.enabled) {
-      webXRRequiredFeatures.push('mesh-detection');
+      webXROptionalFeatures.push('mesh-detection');
     }
 
     // Sets up lighting.
     if (options.lighting.enabled) {
-      webXRRequiredFeatures.push('light-estimation');
+      webXROptionalFeatures.push('light-estimation');
       this.lighting = new Lighting();
       this.lighting.init(
         options.lighting,
@@ -474,7 +477,7 @@ export class Core {
     }
 
     if (shouldAutostartSimulator) {
-      this.startSimulator();
+      await this.startSimulator();
     }
 
     if (!loadingSpinnerManager.isLoading) {
@@ -582,10 +585,21 @@ export class Core {
   }
 
   private startSimulator = async () => {
-    this.xrButton?.domElement.remove();
-    this.xrSystemsGroup.add(this.simulator);
-    await this.scriptsManager.initScript(this.simulator);
-    this.onSimulatorStarted();
+    if (this.simulatorRunning) return;
+    if (this.startingSimulator) return this.startingSimulator;
+
+    this.startingSimulator = (async () => {
+      this.xrButton?.domElement.remove();
+      this.xrSystemsGroup.add(this.simulator);
+      await this.scriptsManager.initScript(this.simulator);
+      this.onSimulatorStarted();
+    })();
+
+    try {
+      await this.startingSimulator;
+    } finally {
+      this.startingSimulator = undefined;
+    }
   };
 
   /**
