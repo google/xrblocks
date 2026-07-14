@@ -124,18 +124,18 @@ export function snapBoxToFloor(
  * @param records - Existing fusion records (implemented by
  *   {@link Detected3DObject}).
  * @param newObb - Candidate OBB to merge.
- * @param cat - Category of the candidate.
+ * @param category - Category of the candidate.
  * @returns The matched record (already mutated) when fusion happened, or
  *   `null` when no match was found.
  */
 export function fuseIntoBoxes(
   records: FusionRecord[],
   newObb: InternalObb,
-  cat: string
+  category: string
 ): FusionRecord | null {
   const half = (s: THREE.Vector3) => (s.x + s.y + s.z) / 6;
   for (const rec of records) {
-    if (rec.category !== cat) continue;
+    if (rec.category !== category) continue;
     const dx = rec._fusionCenter.x - newObb.center.x;
     const dy = rec._fusionCenter.y - newObb.center.y;
     const dz = rec._fusionCenter.z - newObb.center.z;

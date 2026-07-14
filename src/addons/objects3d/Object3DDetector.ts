@@ -36,6 +36,7 @@ import {
   rebuildBoxGroupGeometry,
   CAT_COLOR,
 } from './visuals/BoxGroup';
+import type {ObjectCategory} from './labels/Categories';
 
 /** Options for {@link Object3DDetector}. */
 export interface Object3DDetectorOptions {
@@ -313,7 +314,7 @@ export class Object3DDetector extends Script {
         ): Promise<{
           obb: ReturnType<typeof fitYawOBB> & object;
           label: string;
-          cat: string;
+          category: ObjectCategory;
         } | null> => {
           try {
             if (isSurfaceLabel(obj.label)) return null;
@@ -351,12 +352,12 @@ export class Object3DDetector extends Script {
               (obj.position as THREE.Vector3 | undefined) ??
               null;
 
-            const cat = categorize(obj.label);
+            const category = categorize(obj.label);
             let points: THREE.Vector3[];
 
-            if (cat === 'flat') {
+            if (category === 'flat') {
               points = raw;
-            } else if (cat === 'small') {
+            } else if (category === 'small') {
               const r = radiusFromBbox(box2d, frozenCam, anchor, {
                 pad: 1.1,
                 minR: 0.12,
@@ -364,7 +365,7 @@ export class Object3DDetector extends Script {
                 fallback: 0.25,
               });
               points = rejectByAnchor(raw, anchor, r);
-            } else if (cat === 'light') {
+            } else if (category === 'light') {
               const r = radiusFromBbox(box2d, frozenCam, anchor, {
                 pad: 1.2,
                 minR: 0.2,
@@ -389,7 +390,7 @@ export class Object3DDetector extends Script {
             }
 
             const obb = fitYawOBB(points, {
-              category: cat,
+              category,
               camera: frozenCam,
               anchor,
               box2d,
@@ -397,7 +398,7 @@ export class Object3DDetector extends Script {
             });
             if (!obb) return null;
 
-            if (cat === 'furniture' || cat === 'small') {
+            if (category === 'furniture' || category === 'small') {
               snapBoxToFloor(obb, floorY);
             }
 
@@ -405,11 +406,11 @@ export class Object3DDetector extends Script {
             const farFromRoom =
               Math.abs(c.x) > 6 || Math.abs(c.z) > 6 || c.y < -1 || c.y > 5;
             const minPoints =
-              cat === 'small'
+              category === 'small'
                 ? 4
-                : cat === 'light'
+                : category === 'light'
                   ? 8
-                  : cat === 'flat'
+                  : category === 'flat'
                     ? 8
                     : 20;
             const tinyFlat = isTinyFlatLabel(obj.label);
@@ -417,7 +418,9 @@ export class Object3DDetector extends Script {
             const oversize = obb.size.x > 4 || obb.size.y > 3 || obb.size.z > 4;
             const horizMax = Math.max(obb.size.x, obb.size.z);
             const degenerate =
-              cat !== 'flat' && horizMax > 0.5 && obb.size.y / horizMax < 0.1;
+              category !== 'flat' &&
+              horizMax > 0.5 &&
+              obb.size.y / horizMax < 0.1;
 
             if (farFromRoom || tooFewPoints || oversize || degenerate) {
               console.warn('[Object3DDetector] reject', obj.label, {
@@ -430,7 +433,7 @@ export class Object3DDetector extends Script {
               return null;
             }
 
-            return {obb, label: obj.label || 'object', cat};
+            return {obb, label: obj.label || 'object', category};
           } catch (e) {
             console.warn(
               '[Object3DDetector] pipeline error for',
@@ -449,7 +452,11 @@ export class Object3DDetector extends Script {
           const internalObb = r.obb;
 
           if (this._opts.fuseAcrossViews) {
-            const matched = fuseIntoBoxes(this._results, internalObb, r.cat);
+            const matched = fuseIntoBoxes(
+              this._results,
+              internalObb,
+              r.category
+            );
             if (matched) {
               const obj = matched as Detected3DObject;
               obj.syncFromInternalObb({
@@ -468,9 +475,9 @@ export class Object3DDetector extends Script {
             }
           }
 
-          const newObj = new Detected3DObject(r.label, r.cat, internalObb);
+          const newObj = new Detected3DObject(r.label, r.category, internalObb);
           if (this._opts.showDebugBoxes) {
-            const color = CAT_COLOR[r.cat] ?? 0x4cd964;
+            const color = CAT_COLOR[r.category] ?? 0x4cd964;
             const grp = buildBoxGroup(internalObb, r.label, color);
             newObj.boxGroup = grp;
             this.add(grp);
