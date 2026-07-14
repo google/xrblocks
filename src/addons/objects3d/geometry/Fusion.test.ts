@@ -102,8 +102,13 @@ describe('fuseIntoBoxes', () => {
     };
   }
 
-  const nearbyObb = {
+  const overlappingObb = {
     center: new THREE.Vector3(0.1, 0, 0),
+    size: new THREE.Vector3(1, 1, 1),
+    angle: 0,
+  };
+  const adjacentObb = {
+    center: new THREE.Vector3(0.75, 0, 0),
     size: new THREE.Vector3(1, 1, 1),
     angle: 0,
   };
@@ -111,15 +116,23 @@ describe('fuseIntoBoxes', () => {
   it('fuses nearby observations with the same normalized label', () => {
     const chair = makeRecord('Chair');
 
-    expect(fuseIntoBoxes([chair], nearbyObb, 'furniture', ' chair ')).toBe(
+    expect(fuseIntoBoxes([chair], overlappingObb, 'furniture', ' chair ')).toBe(
       chair
     );
   });
 
-  it('does not fuse nearby objects that only share a category', () => {
+  it('fuses strongly overlapping observations when the label changes', () => {
     const chair = makeRecord('chair');
 
-    expect(fuseIntoBoxes([chair], nearbyObb, 'furniture', 'sofa')).toBeNull();
+    expect(fuseIntoBoxes([chair], overlappingObb, 'furniture', 'sofa')).toBe(
+      chair
+    );
+  });
+
+  it('does not fuse adjacent objects that only share a category', () => {
+    const chair = makeRecord('chair');
+
+    expect(fuseIntoBoxes([chair], adjacentObb, 'furniture', 'sofa')).toBeNull();
     expect(chair._fusionSamples).toBe(1);
   });
 });

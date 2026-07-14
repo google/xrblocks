@@ -119,10 +119,11 @@ export function snapBoxToFloor(
 
 /**
  * Attempt to fuse `newObb` into an existing record in `records` that belongs
- * to the same label and category and whose centroid is within the combined
- * average-half-extent radius. On a match the record's fusion fields are updated
- * in place (running-average centroid, unioned extents, incremented sample
- * count).
+ * to the same category and whose centroid is within the combined average-half-
+ * extent radius. When labels differ, both OBB centers must additionally lie
+ * inside the other OBB, allowing relabeled observations of one object to merge
+ * without merging merely adjacent objects. On a match the record's fusion
+ * fields are updated in place.
  *
  * @param records - Existing fusion records (implemented by
  *   {@link Detected3DObject}).
@@ -140,10 +141,43 @@ export function fuseIntoBoxes(
 ): FusionRecord | null {
   const half = (s: THREE.Vector3) => (s.x + s.y + s.z) / 6;
   const normalizedLabel = label.trim().toLowerCase();
+
+  const containsCenter = (
+    center: THREE.Vector3,
+    size: THREE.Vector3,
+    angle: number,
+    point: THREE.Vector3
+  ) => {
+    const dx = point.x - center.x;
+    const dz = point.z - center.z;
+    const cs = Math.cos(angle);
+    const sn = Math.sin(angle);
+    const localX = dx * cs - dz * sn;
+    const localZ = dx * sn + dz * cs;
+    return (
+      Math.abs(localX) <= size.x / 2 &&
+      Math.abs(point.y - center.y) <= size.y / 2 &&
+      Math.abs(localZ) <= size.z / 2
+    );
+  };
+
   for (const rec of records) {
+    if (rec.category !== category) continue;
+    const sameLabel = rec.label.trim().toLowerCase() === normalizedLabel;
     if (
-      rec.category !== category ||
-      rec.label.trim().toLowerCase() !== normalizedLabel
+      !sameLabel &&
+      (!containsCenter(
+        rec._fusionCenter,
+        rec._fusionSize,
+        rec._fusionAngle,
+        newObb.center
+      ) ||
+        !containsCenter(
+          newObb.center,
+          newObb.size,
+          newObb.angle,
+          rec._fusionCenter
+        ))
     ) {
       continue;
     }
