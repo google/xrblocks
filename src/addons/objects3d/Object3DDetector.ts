@@ -38,6 +38,9 @@ import {
 } from './visuals/BoxGroup';
 import type {ObjectCategory} from './labels/Categories';
 
+const DEPTH_SAMPLE_GRID_SIZE = 10;
+const DEPTH_SAMPLE_FRAME_COUNT = 3;
+
 /** Options for {@link Object3DDetector}. */
 export interface Object3DDetectorOptions {
   /**
@@ -334,8 +337,8 @@ export class Object3DDetector extends Script {
             const {points: raw} = await sampleDepthInMaskAcrossFrames(
               mask,
               box2d,
-              10,
-              3,
+              DEPTH_SAMPLE_GRID_SIZE,
+              DEPTH_SAMPLE_FRAME_COUNT,
               frozenCam,
               frozenDepthMesh,
               snapAspect
