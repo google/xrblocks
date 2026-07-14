@@ -15,6 +15,8 @@ import type {InternalObb} from './ObbFitting';
  * (avoids circular dependencies).
  */
 export interface FusionRecord {
+  /** Semantic label returned by the detector. */
+  readonly label: string;
   /** Category bucket matched during detection. */
   readonly category: string;
   /** Mutable centroid used for running-average blending. */
@@ -117,25 +119,34 @@ export function snapBoxToFloor(
 
 /**
  * Attempt to fuse `newObb` into an existing record in `records` that belongs
- * to the same category and whose centroid is within the combined average-half-
- * extent radius. On a match the record's fusion fields are updated in place
- * (running-average centroid, unioned extents, incremented sample count).
+ * to the same label and category and whose centroid is within the combined
+ * average-half-extent radius. On a match the record's fusion fields are updated
+ * in place (running-average centroid, unioned extents, incremented sample
+ * count).
  *
  * @param records - Existing fusion records (implemented by
  *   {@link Detected3DObject}).
  * @param newObb - Candidate OBB to merge.
  * @param category - Category of the candidate.
+ * @param label - Semantic label of the candidate.
  * @returns The matched record (already mutated) when fusion happened, or
  *   `null` when no match was found.
  */
 export function fuseIntoBoxes(
   records: FusionRecord[],
   newObb: InternalObb,
-  category: string
+  category: string,
+  label: string
 ): FusionRecord | null {
   const half = (s: THREE.Vector3) => (s.x + s.y + s.z) / 6;
+  const normalizedLabel = label.trim().toLowerCase();
   for (const rec of records) {
-    if (rec.category !== category) continue;
+    if (
+      rec.category !== category ||
+      rec.label.trim().toLowerCase() !== normalizedLabel
+    ) {
+      continue;
+    }
     const dx = rec._fusionCenter.x - newObb.center.x;
     const dy = rec._fusionCenter.y - newObb.center.y;
     const dz = rec._fusionCenter.z - newObb.center.z;

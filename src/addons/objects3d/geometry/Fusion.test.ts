@@ -1,7 +1,12 @@
 import {describe, it, expect} from 'vitest';
 import * as THREE from 'three';
 
-import {box2dIoU, snapBoxToFloor} from './Fusion';
+import {
+  box2dIoU,
+  fuseIntoBoxes,
+  snapBoxToFloor,
+  type FusionRecord,
+} from './Fusion';
 
 function makeBox2(minX: number, minY: number, maxX: number, maxY: number) {
   return new THREE.Box2(
@@ -82,5 +87,39 @@ describe('snapBoxToFloor', () => {
     // new centerY = 0 + 0.9/2 = 0.45
     expect(obb.size.y).toBeCloseTo(0.9);
     expect(obb.center.y).toBeCloseTo(0.45);
+  });
+});
+
+describe('fuseIntoBoxes', () => {
+  function makeRecord(label: string): FusionRecord {
+    return {
+      label,
+      category: 'furniture',
+      _fusionCenter: new THREE.Vector3(),
+      _fusionSize: new THREE.Vector3(1, 1, 1),
+      _fusionAngle: 0,
+      _fusionSamples: 1,
+    };
+  }
+
+  const nearbyObb = {
+    center: new THREE.Vector3(0.1, 0, 0),
+    size: new THREE.Vector3(1, 1, 1),
+    angle: 0,
+  };
+
+  it('fuses nearby observations with the same normalized label', () => {
+    const chair = makeRecord('Chair');
+
+    expect(fuseIntoBoxes([chair], nearbyObb, 'furniture', ' chair ')).toBe(
+      chair
+    );
+  });
+
+  it('does not fuse nearby objects that only share a category', () => {
+    const chair = makeRecord('chair');
+
+    expect(fuseIntoBoxes([chair], nearbyObb, 'furniture', 'sofa')).toBeNull();
+    expect(chair._fusionSamples).toBe(1);
   });
 });

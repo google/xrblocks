@@ -455,7 +455,8 @@ export class Object3DDetector extends Script {
             const matched = fuseIntoBoxes(
               this._results,
               internalObb,
-              r.category
+              r.category,
+              r.label
             );
             if (matched) {
               const obj = matched as Detected3DObject;
