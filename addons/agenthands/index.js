@@ -1,0 +1,10 @@
+export { AgentGestureAnimator } from './AgentGestureAnimator.js';
+export { GESTURE_MOTION_MAP, GESTURE_POSE_MAP, buildGestureSteps, gestureNameToMotion, gestureNameToPose, parseAgentGestures } from './AgentGestures.js';
+export { AGENT_HAND_PROFILE_PATH, AgentHand, applyAgentHandAppearance, lerpBonesToJoints } from './AgentHand.js';
+export { AgentHands } from './AgentHands.js';
+export { AgentHead } from './AgentHead.js';
+export { AgentSpeechConductor, estimateSpeechDuration } from './AgentSpeechConductor.js';
+export { AgentWorld } from './AgentWorld.js';
+import 'three';
+import 'xrblocks';
+import 'three/addons/loaders/GLTFLoader.js';

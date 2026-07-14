@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 0abc581
- * @builddate 2026-07-13T23:33:31.594Z
+ * @commitid 08ee19a
+ * @builddate 2026-07-14T15:32:31.961Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1818,6 +1818,12 @@ declare class SpeechSynthesizer extends Script {
     private specificVolume;
     private speechCategory;
     private options;
+    /**
+     * Optional callback invoked on each word boundary while speaking, with the
+     * character index into the spoken text. Lets callers sync visuals (e.g.
+     * gestures) to the actual spoken words.
+     */
+    onBoundaryCallback?: (charIndex: number) => void;
     constructor(categoryVolumes: CategoryVolumes, onStartCallback?: () => void, onEndCallback?: () => void, onErrorCallback?: (_: Error) => void);
     init({ soundOptions }: {
         soundOptions: SoundOptions;

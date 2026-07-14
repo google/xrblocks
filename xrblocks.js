@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 0abc581
- * @builddate 2026-07-13T23:33:31.594Z
+ * @commitid 08ee19a
+ * @builddate 2026-07-14T15:32:31.961Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -18930,6 +18930,9 @@ class SpeechSynthesizer extends Script {
             }
             utterance.volume = effectiveVolume;
             console.log(`SpeechSynthesizer: Setting utterance volume to ${effectiveVolume}`);
+            if (this.onBoundaryCallback) {
+                utterance.onboundary = (event) => this.onBoundaryCallback?.(event.charIndex);
+            }
             this.synth.speak(utterance);
         });
     }
