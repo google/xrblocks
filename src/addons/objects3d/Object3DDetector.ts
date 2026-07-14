@@ -49,6 +49,11 @@ const MIN_POINTS_BY_CATEGORY: Record<ObjectCategory, number> = {
   flat: 8,
   furniture: 20,
 };
+const MAX_BOX_WIDTH_M = 4;
+const MAX_BOX_HEIGHT_M = 3;
+const MAX_BOX_DEPTH_M = 4;
+const MIN_DEGENERATE_HORIZONTAL_SIZE_M = 0.5;
+const MIN_DEGENERATE_HEIGHT_RATIO = 0.1;
 
 /** Options for {@link Object3DDetector}. */
 export interface Object3DDetectorOptions {
@@ -423,12 +428,15 @@ export class Object3DDetector extends Script {
             const minPoints = MIN_POINTS_BY_CATEGORY[category];
             const tinyFlat = isTinyFlatLabel(obj.label);
             const tooFewPoints = !tinyFlat && points.length < minPoints;
-            const oversize = obb.size.x > 4 || obb.size.y > 3 || obb.size.z > 4;
+            const oversize =
+              obb.size.x > MAX_BOX_WIDTH_M ||
+              obb.size.y > MAX_BOX_HEIGHT_M ||
+              obb.size.z > MAX_BOX_DEPTH_M;
             const horizMax = Math.max(obb.size.x, obb.size.z);
             const degenerate =
               category !== 'flat' &&
-              horizMax > 0.5 &&
-              obb.size.y / horizMax < 0.1;
+              horizMax > MIN_DEGENERATE_HORIZONTAL_SIZE_M &&
+              obb.size.y / horizMax < MIN_DEGENERATE_HEIGHT_RATIO;
 
             if (farFromRoom || tooFewPoints || oversize || degenerate) {
               console.warn('[Object3DDetector] reject', obj.label, {
