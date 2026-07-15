@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 08ee19a
- * @builddate 2026-07-14T15:32:31.961Z
+ * @commitid 4d0babc
+ * @builddate 2026-07-15T05:54:24.828Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3111,6 +3111,38 @@ class ContextOptions {
 }
 
 /**
+ * Tracks elapsed simulation time independently from browser wall time.
+ */
+class SimulationTimer {
+    constructor() {
+        this.elapsedMs = 0;
+    }
+    getElapsedMs() {
+        return this.elapsedMs;
+    }
+    update(frameTimeMs, timescale) {
+        if (this.previousFrameTimeMs !== undefined) {
+            this.elapsedMs +=
+                Math.max(0, frameTimeMs - this.previousFrameTimeMs) * timescale;
+        }
+        this.previousFrameTimeMs = frameTimeMs;
+    }
+    step(dtMs, timescale) {
+        this.elapsedMs += dtMs * timescale;
+        this.previousFrameTimeMs = undefined;
+    }
+    pause() {
+        this.previousFrameTimeMs = undefined;
+    }
+}
+
+const CONTEXT_NUMBER_SCALE = 10_000;
+function roundContextNumber(value) {
+    const rounded = Math.round(value * CONTEXT_NUMBER_SCALE) / CONTEXT_NUMBER_SCALE;
+    return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+/**
  * A node to hold all XR Blocks Systems.
  */
 class XRSystems extends THREE.Group {
@@ -3656,14 +3688,14 @@ const tempBoundsCenter = new THREE.Vector3();
 const tempBoundsSize = new THREE.Vector3();
 const tempBoundsBox$2 = new THREE.Box3();
 let snapshotCounter = 0;
-function buildSemanticTree({ scene, registry, }) {
+function buildSemanticTree({ scene, registry, capturedAt, }) {
     scene.updateMatrixWorld(true);
     const nodes = {};
     const rootIds = [];
     const nodeObjects = new Map();
     const objectNodeIds = new WeakMap();
-    const capturedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const snapshotId = `ctx_snapshot_${Math.round(capturedAt)}_${snapshotCounter++}`;
+    const roundedCapturedAt = roundContextNumber(capturedAt);
+    const snapshotId = `ctx_snapshot_${Math.round(roundedCapturedAt)}_${snapshotCounter++}`;
     const visit = (object, semanticParentId) => {
         if (shouldPruneObject(object)) {
             return;
@@ -3694,7 +3726,7 @@ function buildSemanticTree({ scene, registry, }) {
     return {
         tree: {
             snapshotId,
-            capturedAt,
+            capturedAt: roundedCapturedAt,
             rootIds,
             nodes,
         },
@@ -3874,7 +3906,11 @@ function createSemanticNode(object, id, semantic, parentId) {
         role: semantic.role,
         name: semantic.name,
         visible: object.visible,
-        position: [tempPosition.x, tempPosition.y, tempPosition.z],
+        position: [
+            roundContextNumber(tempPosition.x),
+            roundContextNumber(tempPosition.y),
+            roundContextNumber(tempPosition.z),
+        ],
         children: [],
         objectId: object.id,
         source: semantic.source,
@@ -3907,8 +3943,16 @@ function getSemanticBounds(object) {
     const center = bounds.getCenter(tempBoundsCenter);
     const size = bounds.getSize(tempBoundsSize);
     return {
-        center: [center.x, center.y, center.z],
-        size: [size.x, size.y, size.z],
+        center: [
+            roundContextNumber(center.x),
+            roundContextNumber(center.y),
+            roundContextNumber(center.z),
+        ],
+        size: [
+            roundContextNumber(size.x),
+            roundContextNumber(size.y),
+            roundContextNumber(size.z),
+        ],
     };
 }
 
@@ -4001,8 +4045,8 @@ function projectObjectCenter(object, projectionMatrix, matrixWorldInverse) {
         return null;
     }
     return {
-        x: (projected.x + 1) / 2,
-        y: (1 - projected.y) / 2,
+        x: roundContextNumber((projected.x + 1) / 2),
+        y: roundContextNumber((1 - projected.y) / 2),
     };
 }
 async function renderSetOfMarkImage(image, marks) {
@@ -4028,7 +4072,7 @@ async function renderSetOfMarkImage(image, marks) {
         const y = mark.y * canvas.height;
         ctx.beginPath();
         ctx.arc(x, y, 14, 0, Math.PI * 2);
-        ctx.fillStyle = '#ff0055';
+        ctx.fillStyle = '#ff005599';
         ctx.fill();
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#ffffff';
@@ -4088,7 +4132,6 @@ function createSemanticViewData({ camera, node, object, raycastTargets, occlusio
             rendered: true,
             inFrame: false,
             inLineOfSight: false,
-            occlusion: 'outOfFrame',
             ...projectedToScreenCoordinates(projected),
         };
     }
@@ -4103,7 +4146,6 @@ function createSemanticViewData({ camera, node, object, raycastTargets, occlusio
         rendered: true,
         inFrame: true,
         inLineOfSight,
-        occlusion: inLineOfSight ? 'none' : 'occluded',
         ...projectedToScreenCoordinates(projected),
     };
 }
@@ -4112,7 +4154,6 @@ function createNotRenderedViewData() {
         rendered: false,
         inFrame: false,
         inLineOfSight: false,
-        occlusion: 'notRendered',
     };
 }
 function projectWorldPoint(point, camera) {
@@ -4131,8 +4172,8 @@ function isProjectedInFrame(projected) {
 }
 function projectedToScreenCoordinates(projected) {
     return {
-        x: (projected.x + 1) / 2,
-        y: (1 - projected.y) / 2,
+        x: roundContextNumber((projected.x + 1) / 2),
+        y: roundContextNumber((1 - projected.y) / 2),
     };
 }
 function isObjectInLineOfSight({ camera, object, targetPoint, raycastTargets, occlusionOpacityThreshold, }) {
@@ -4153,6 +4194,9 @@ function isObjectInLineOfSight({ camera, object, targetPoint, raycastTargets, oc
         if (isSemanticInternalObject(hit.object)) {
             return false;
         }
+        if (ignoresReticleRaycast(hit.object)) {
+            return false;
+        }
         if (isDescendantOf$1(hit.object, object) ||
             isDescendantOf$1(object, hit.object)) {
             return false;
@@ -4163,6 +4207,17 @@ function isObjectInLineOfSight({ camera, object, targetPoint, raycastTargets, oc
         return isObjectVisible(hit.object);
     });
     return occludingHit === undefined;
+}
+function ignoresReticleRaycast(object) {
+    let current = object;
+    while (current) {
+        if ('ignoreReticleRaycast' in current &&
+            current.ignoreReticleRaycast === true) {
+            return true;
+        }
+        current = current.parent;
+    }
+    return false;
 }
 function isOpacityOccluding(object, occlusionOpacityThreshold) {
     if (!(object instanceof THREE.Mesh)) {
@@ -4207,12 +4262,14 @@ class SceneDetector extends Script {
         scene: THREE.Scene,
         camera: THREE.Camera,
         screenshotSynthesizer: ScreenshotSynthesizer,
+        simulationTimer: SimulationTimer,
     }; }
-    init({ options, scene, camera, screenshotSynthesizer, deviceCamera, }) {
+    init({ options, scene, camera, screenshotSynthesizer, simulationTimer, deviceCamera, }) {
         this.options = options;
         this.scene = scene;
         this.camera = camera;
         this.screenshotSynthesizer = screenshotSynthesizer;
+        this.simulationTimer = simulationTimer;
         this.deviceCamera = deviceCamera ?? this.deviceCamera;
         this.snapshot = null;
         this.disposed = false;
@@ -4438,6 +4495,7 @@ class SceneDetector extends Script {
             snapshot.semanticInternal = buildSemanticTree({
                 scene: this.scene,
                 registry: this.registry,
+                capturedAt: this.getCaptureTimeMs(),
             });
             this.snapshot = snapshot;
             return snapshot;
@@ -4460,6 +4518,9 @@ class SceneDetector extends Script {
         this.tree = null;
         this.visibleObjects = null;
         this.setOfMark = null;
+    }
+    getCaptureTimeMs() {
+        return this.simulationTimer?.getElapsedMs() ?? performance.now();
     }
 }
 
@@ -22013,6 +22074,7 @@ class Core {
     }
     pause() {
         this._isPaused = true;
+        this.simulationTimer.pause();
     }
     resume() {
         this._isPaused = false;
@@ -22023,6 +22085,7 @@ class Core {
         }
         this.isSteppingFrame = true;
         try {
+            this.simulationTimer.step(dtMs, this.timer.getTimescale());
             this.manualStepTime += dtMs;
             this.update(this.manualStepTime, undefined);
             if (this.physics) {
@@ -22055,6 +22118,7 @@ class Core {
          * A timer for tracking time deltas. Call timer.getDelta() or getDeltaTime().
          */
         this.timer = new THREE.Timer();
+        this.simulationTimer = new SimulationTimer();
         /** Manages hand, mouse, gaze inputs. */
         this.input = new Input();
         /** The main camera for rendering. */
@@ -22113,6 +22177,9 @@ class Core {
             }
             this.currentFrame = frame;
             this.manualStepTime = Math.max(this.manualStepTime, time);
+            if (!this.isSteppingFrame) {
+                this.simulationTimer.update(time, this.timer.getTimescale());
+            }
             this.timer.update(time);
             if (this.simulatorRunning) {
                 this.simulator.simulatorUpdate();
@@ -22209,6 +22276,7 @@ class Core {
         this.registry.register(this);
         this.registry.register(this.waitFrame);
         this.registry.register(this.screenshotSynthesizer);
+        this.registry.register(this.simulationTimer);
         this.registry.register(this.scene);
         this.registry.register(this.timer);
         this.registry.register(this.input);

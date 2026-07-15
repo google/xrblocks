@@ -14,6 +14,10 @@ export declare class EmbodiedControl extends Script {
     private core?;
     private autoPauseScheduled;
     private autoPauseComplete;
+    private readyComplete;
+    private resolveReady;
+    /** Resolves after initialization and any requested auto-pause complete. */
+    readonly ready: Promise<void>;
     constructor(options?: EmbodiedControlOptions);
     init(dependencies: {
         core: Core;
@@ -22,6 +26,7 @@ export declare class EmbodiedControl extends Script {
     }): void;
     onSimulatorStarted(): void;
     private scheduleAutoPause;
+    private markReady;
     private afterRenderedFrame;
     step(step: EmbodiedControlStep): Promise<void>;
     applyControl(control: XRCompoundControl): void;

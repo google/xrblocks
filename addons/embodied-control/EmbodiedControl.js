@@ -14,6 +14,11 @@ class EmbodiedControl extends Script {
         this.editorIcon = 'sports_martial_arts';
         this.autoPauseScheduled = false;
         this.autoPauseComplete = false;
+        this.readyComplete = false;
+        /** Resolves after initialization and any requested auto-pause complete. */
+        this.ready = new Promise((resolve) => {
+            this.resolveReady = resolve;
+        });
         this.options = {
             ...DEFAULT_EMBODIED_CONTROL_OPTIONS,
             ...options,
@@ -24,6 +29,9 @@ class EmbodiedControl extends Script {
         this.executor = new EmbodiedControlExecutor(dependencies, this.options);
         if (this.options.autoPause && dependencies.core.simulatorRunning) {
             this.scheduleAutoPause();
+        }
+        else if (!this.options.autoPause) {
+            this.markReady();
         }
     }
     onSimulatorStarted() {
@@ -40,7 +48,14 @@ class EmbodiedControl extends Script {
                 return;
             this.core.pause();
             this.autoPauseComplete = true;
+            this.markReady();
         });
+    }
+    markReady() {
+        if (this.readyComplete)
+            return;
+        this.readyComplete = true;
+        this.resolveReady();
     }
     afterRenderedFrame(callback) {
         const schedule = typeof requestAnimationFrame === 'function'
