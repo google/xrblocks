@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid 4d0babc
- * @builddate 2026-07-15T05:54:24.828Z
+ * @commitid a8c4072
+ * @builddate 2026-07-16T17:59:22.576Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7462,6 +7462,471 @@ class GazeController extends Script {
     }
 }
 
+const RELATIVE_ORIENTATION = new THREE.Quaternion();
+const INVERSE_BASELINE = new THREE.Quaternion();
+const EULER = new THREE.Euler(0, 0, 0, 'YXZ');
+function detectNod(context, config, options) {
+    const threshold = config.threshold ?? THREE.MathUtils.degToRad(12);
+    const series = buildMotionSeries(context, options);
+    if (!series)
+        return;
+    return findSingleExcursion(series, 'pitch', threshold, options, (value) => value >= 0 ? 'up' : 'down');
+}
+function detectShake(context, config, options) {
+    const threshold = config.threshold ?? THREE.MathUtils.degToRad(10);
+    const series = buildMotionSeries(context, options);
+    if (!series)
+        return;
+    return findSingleExcursion(series, 'yaw', threshold, options, (value) => value >= 0 ? 'left' : 'right');
+}
+function findSingleExcursion(series, axis, threshold, options, directionLabel) {
+    const tolerance = threshold * options.returnToleranceFactor;
+    const extrema = findExtrema(series, axis, threshold);
+    let best;
+    for (const peakIndex of extrema) {
+        const peakValue = series[peakIndex][axis];
+        const startIndex = findLastNearBaseline(series, axis, peakIndex, tolerance);
+        const endIndex = findFirstNearBaseline(series, axis, peakIndex, tolerance);
+        if (startIndex === undefined || endIndex === undefined)
+            continue;
+        const durationMs = series[endIndex].timestamp - series[startIndex].timestamp;
+        if (!validDuration(durationMs, options))
+            continue;
+        if (series.at(-1).timestamp - series[endIndex].timestamp >
+            options.detectionHoldMs) {
+            continue;
+        }
+        const amplitude = Math.abs(peakValue);
+        const offAxis = maximumAbsoluteValue(series, startIndex, endIndex, axis === 'pitch' ? ['yaw', 'roll'] : ['pitch', 'roll']);
+        const offAxisRatio = offAxis / amplitude;
+        if (offAxisRatio > options.maximumOffAxisRatio)
+            continue;
+        const expectedVariation = Math.abs(peakValue - series[startIndex][axis]) +
+            Math.abs(series[endIndex][axis] - peakValue);
+        const actualVariation = totalVariation(series, axis, startIndex, endIndex);
+        const pathEfficiency = expectedVariation / Math.max(actualVariation, 1e-6);
+        if (pathEfficiency < options.minimumPathEfficiency)
+            continue;
+        const peakAngularSpeed = getPeakAngularSpeed(series, axis, startIndex, endIndex);
+        if (peakAngularSpeed < options.minimumPeakAngularSpeed)
+            continue;
+        const confidence = scoreCandidate({
+            amplitude,
+            threshold,
+            durationMs,
+            returnError: Math.abs(series[endIndex][axis]),
+            returnTolerance: tolerance,
+            offAxisRatio,
+            pathEfficiency,
+            peakAngularSpeed,
+            options,
+        });
+        const completedAt = series[endIndex].timestamp;
+        const result = {
+            confidence,
+            data: {
+                amplitudeRadians: amplitude,
+                durationMs,
+                peakAngularSpeed,
+                initialDirection: directionLabel(peakValue),
+            },
+        };
+        if (!best || completedAt > best.completedAt) {
+            best = { result, completedAt };
+        }
+    }
+    return best?.result;
+}
+function buildMotionSeries(context, options) {
+    const samples = context.samples;
+    if (samples.length < 5)
+        return;
+    const totalDuration = samples.at(-1).timestamp - samples[0].timestamp;
+    if (totalDuration <
+        options.quietPrefixDurationMs + options.minimumGestureDurationMs) {
+        return;
+    }
+    const quietEnd = samples[0].timestamp + options.quietPrefixDurationMs;
+    const quietSamples = samples.filter((sample) => sample.timestamp <= quietEnd);
+    if (quietSamples.length < 2)
+        return;
+    const baseline = quietSamples[0].orientation.clone();
+    for (let i = 1; i < quietSamples.length; i++) {
+        baseline.slerp(quietSamples[i].orientation, 1 / (i + 1));
+    }
+    INVERSE_BASELINE.copy(baseline).invert();
+    const series = [];
+    let previous;
+    for (const sample of samples) {
+        RELATIVE_ORIENTATION.copy(INVERSE_BASELINE).multiply(sample.orientation);
+        EULER.setFromQuaternion(RELATIVE_ORIENTATION, 'YXZ');
+        const point = {
+            timestamp: sample.timestamp,
+            pitch: EULER.x,
+            yaw: EULER.y,
+            roll: EULER.z,
+        };
+        if (previous) {
+            const elapsed = Math.max(0, point.timestamp - previous.timestamp);
+            const alpha = elapsed / (options.smoothingTimeConstantMs + elapsed || 1);
+            point.pitch = THREE.MathUtils.lerp(previous.pitch, point.pitch, alpha);
+            point.yaw = THREE.MathUtils.lerp(previous.yaw, point.yaw, alpha);
+            point.roll = THREE.MathUtils.lerp(previous.roll, point.roll, alpha);
+        }
+        series.push(point);
+        previous = point;
+    }
+    return series;
+}
+function findExtrema(series, axis, threshold) {
+    const extrema = [];
+    for (let i = 1; i < series.length - 1; i++) {
+        const previous = series[i - 1][axis];
+        const current = series[i][axis];
+        const next = series[i + 1][axis];
+        const isMaximum = current >= previous && current > next;
+        const isMinimum = current <= previous && current < next;
+        if ((isMaximum || isMinimum) && Math.abs(current) >= threshold) {
+            extrema.push(i);
+        }
+    }
+    return extrema;
+}
+function findLastNearBaseline(series, axis, before, tolerance) {
+    for (let i = before - 1; i >= 0; i--) {
+        if (Math.abs(series[i][axis]) <= tolerance)
+            return i;
+    }
+}
+function findFirstNearBaseline(series, axis, after, tolerance) {
+    for (let i = after + 1; i < series.length; i++) {
+        if (Math.abs(series[i][axis]) <= tolerance)
+            return i;
+    }
+}
+function validDuration(durationMs, options) {
+    return (durationMs >= options.minimumGestureDurationMs &&
+        durationMs <= options.maximumGestureDurationMs);
+}
+function maximumAbsoluteValue(series, start, end, axes) {
+    let maximum = 0;
+    for (let i = start; i <= end; i++) {
+        for (const axis of axes) {
+            maximum = Math.max(maximum, Math.abs(series[i][axis]));
+        }
+    }
+    return maximum;
+}
+function totalVariation(series, axis, start, end) {
+    let variation = 0;
+    for (let i = start + 1; i <= end; i++) {
+        variation += Math.abs(series[i][axis] - series[i - 1][axis]);
+    }
+    return variation;
+}
+function getPeakAngularSpeed(series, axis, start, end) {
+    let peak = 0;
+    for (let i = start + 1; i <= end; i++) {
+        const elapsedSeconds = (series[i].timestamp - series[i - 1].timestamp) / 1000;
+        if (elapsedSeconds <= 0)
+            continue;
+        peak = Math.max(peak, Math.abs(series[i][axis] - series[i - 1][axis]) / elapsedSeconds);
+    }
+    return peak;
+}
+function scoreCandidate({ amplitude, threshold, durationMs, returnError, returnTolerance, offAxisRatio, pathEfficiency, peakAngularSpeed, options, }) {
+    const midpoint = (options.minimumGestureDurationMs + options.maximumGestureDurationMs) / 2;
+    const halfRange = (options.maximumGestureDurationMs - options.minimumGestureDurationMs) / 2;
+    const scores = [
+        quality((amplitude - threshold) / Math.max(threshold, 1e-6)),
+        quality(1 - Math.abs(durationMs - midpoint) / Math.max(halfRange, 1)),
+        quality(1 - returnError / Math.max(returnTolerance, 1e-6)),
+        quality(1 - offAxisRatio / options.maximumOffAxisRatio),
+        quality((pathEfficiency - options.minimumPathEfficiency) /
+            (1 - options.minimumPathEfficiency)),
+        quality((peakAngularSpeed - options.minimumPeakAngularSpeed) /
+            options.minimumPeakAngularSpeed),
+    ];
+    const product = scores.reduce((value, score) => value * score, 1);
+    return THREE.MathUtils.clamp(product ** (1 / scores.length), 0, 1);
+}
+function quality(value) {
+    return 0.6 + 0.4 * THREE.MathUtils.clamp(value, 0, 1);
+}
+
+const DEFAULT_OPTIONS = {
+    minimumGestureDurationMs: 200,
+    maximumGestureDurationMs: 750,
+    maximumOffAxisRatio: 0.5,
+    quietPrefixDurationMs: 200,
+    detectionHoldMs: 180,
+    returnToleranceFactor: 0.55,
+    smoothingTimeConstantMs: 35,
+    minimumPathEfficiency: 0.65,
+    minimumPeakAngularSpeed: 0.6,
+};
+class HeuristicHeadGestureRecognizer {
+    constructor(initBuiltInGestures = true, options = {}) {
+        this.gestures = new Map();
+        this.options = { ...DEFAULT_OPTIONS, ...options };
+        if (initBuiltInGestures) {
+            this.registerBuiltInGestures();
+        }
+    }
+    registerGesture(name, detector, config = {}) {
+        this.gestures.set(name, {
+            detector,
+            config: {
+                enabled: true,
+                ...config,
+            },
+        });
+        return this;
+    }
+    unregisterGesture(name) {
+        this.gestures.delete(name);
+        return this;
+    }
+    getGestureConfigurations() {
+        const configs = {};
+        for (const [name, gesture] of this.gestures.entries()) {
+            configs[name] = { ...gesture.config };
+        }
+        return configs;
+    }
+    setGestureConfig(name, config) {
+        const gesture = this.gestures.get(name);
+        if (gesture) {
+            gesture.config = { ...config };
+        }
+        return this;
+    }
+    recognize(context) {
+        const scores = {};
+        for (const [name, gesture] of this.gestures.entries()) {
+            scores[name] = gesture.detector(context, gesture.config);
+        }
+        return scores;
+    }
+    registerBuiltInGestures() {
+        const nodThreshold = (12 * Math.PI) / 180;
+        const shakeThreshold = (10 * Math.PI) / 180;
+        this.registerGesture('nod', (context, config) => detectNod(context, config, this.options), { enabled: true, threshold: nodThreshold });
+        this.registerGesture('shake', (context, config) => detectShake(context, config, this.options), { enabled: true, threshold: shakeThreshold });
+        this.registerGesture('nod-up', this.detectDirection(detectNod, 'up'), {
+            enabled: true,
+            threshold: nodThreshold,
+        });
+        this.registerGesture('nod-down', this.detectDirection(detectNod, 'down'), {
+            enabled: true,
+            threshold: nodThreshold,
+        });
+        this.registerGesture('shake-left', this.detectDirection(detectShake, 'left'), { enabled: true, threshold: shakeThreshold });
+        this.registerGesture('shake-right', this.detectDirection(detectShake, 'right'), { enabled: true, threshold: shakeThreshold });
+    }
+    detectDirection(detector, direction) {
+        return (context, config) => {
+            const result = detector(context, config, this.options);
+            return result?.data?.initialDirection === direction ? result : undefined;
+        };
+    }
+}
+
+class HeadGestureRecognitionOptions {
+    constructor(options) {
+        this.enabled = false;
+        this.minimumConfidence = 0.6;
+        this.releaseConfidence = 0.4;
+        this.updateIntervalMs = 16;
+        this.historyDurationMs = 1500;
+        this.warmupDurationMs = 200;
+        this.maximumSampleGapMs = 250;
+        this.maximumSampleAngleRadians = Math.PI / 3;
+        this.gestureRecognizer = new HeuristicHeadGestureRecognizer();
+        this.gestures = {};
+        if (options) {
+            const { gestureRecognizer, gestures, ...baseOptions } = options;
+            deepMerge(this, baseOptions);
+            if (gestureRecognizer) {
+                this.gestureRecognizer = gestureRecognizer;
+            }
+            this.applyGestureRecognizerConfigurations();
+            if (gestures) {
+                for (const [name, config] of Object.entries(gestures)) {
+                    this.setGestureConfig(name, config);
+                }
+            }
+            return;
+        }
+        this.applyGestureRecognizerConfigurations();
+    }
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+    setGestureEnabled(name, enabled) {
+        return this.setGestureConfig(name, { enabled });
+    }
+    setGestureRecognizer(gestureRecognizer) {
+        this.gestureRecognizer = gestureRecognizer;
+        this.gestures = {};
+        this.applyGestureRecognizerConfigurations();
+        return this;
+    }
+    setGestureConfig(name, config) {
+        const mergedConfig = {
+            ...this.gestures[name],
+            enabled: this.gestures[name]?.enabled ?? true,
+        };
+        deepMerge(mergedConfig, config);
+        this.gestures[name] = mergedConfig;
+        this.gestureRecognizer.setGestureConfig?.(name, mergedConfig);
+        return this;
+    }
+    applyGestureRecognizerConfigurations() {
+        const configs = this.gestureRecognizer.getGestureConfigurations?.() ?? {};
+        for (const [name, config] of Object.entries(configs)) {
+            this.setGestureConfig(name, config);
+        }
+    }
+}
+
+class HeadGestureRecognition extends Script {
+    constructor() {
+        super(...arguments);
+        this.samples = [];
+        this.latchedGestures = new Set();
+        this.lastEvaluation = -Infinity;
+        this.latestTimestamp = -Infinity;
+        this.pendingRecognition = false;
+        this.generation = 0;
+    }
+    static { this.dependencies = {
+        camera: THREE.Camera,
+        options: HeadGestureRecognitionOptions,
+    }; }
+    async init({ camera, options, }) {
+        this.camera = camera;
+        this.options = options;
+        await this.options.gestureRecognizer.init?.();
+    }
+    update(time = performance.now()) {
+        if (!this.options.enabled)
+            return;
+        const timestamp = Number.isFinite(time) ? time : performance.now();
+        this.latestTimestamp = timestamp;
+        const sample = this.captureSample(timestamp);
+        const previous = this.samples.at(-1);
+        if (previous && this.isDiscontinuity(previous, sample)) {
+            this.resetRecognitionState();
+        }
+        this.samples.push(sample);
+        this.pruneSamples(timestamp);
+        const historyDuration = timestamp - (this.samples[0]?.timestamp ?? timestamp);
+        if (historyDuration < this.options.warmupDurationMs) {
+            return;
+        }
+        if (timestamp - this.lastEvaluation < this.options.updateIntervalMs ||
+            this.pendingRecognition) {
+            return;
+        }
+        this.lastEvaluation = timestamp;
+        this.evaluate({ samples: this.samples.slice() }, timestamp);
+    }
+    captureSample(timestamp) {
+        return {
+            timestamp,
+            position: this.camera.getWorldPosition(new THREE.Vector3()),
+            orientation: this.camera.getWorldQuaternion(new THREE.Quaternion()),
+        };
+    }
+    isDiscontinuity(previous, next) {
+        return (next.timestamp - previous.timestamp > this.options.maximumSampleGapMs ||
+            previous.orientation.angleTo(next.orientation) >
+                this.options.maximumSampleAngleRadians);
+    }
+    pruneSamples(timestamp) {
+        const oldestTimestamp = timestamp - this.options.historyDurationMs;
+        let firstRetained = 0;
+        while (firstRetained < this.samples.length &&
+            this.samples[firstRetained].timestamp < oldestTimestamp) {
+            firstRetained++;
+        }
+        if (firstRetained > 0) {
+            this.samples.splice(0, firstRetained);
+        }
+    }
+    evaluate(context, requestedAt) {
+        const generation = this.generation;
+        let result;
+        try {
+            result = this.options.gestureRecognizer.recognize(context);
+        }
+        catch (error) {
+            console.error('HeadGestureRecognition recognizer failed:', error);
+            return;
+        }
+        if (result instanceof Promise) {
+            this.pendingRecognition = true;
+            result
+                .then((scores) => {
+                if (generation === this.generation &&
+                    this.latestTimestamp - requestedAt <= this.options.historyDurationMs) {
+                    this.emitFromScores(scores);
+                }
+            })
+                .catch((error) => {
+                console.error('HeadGestureRecognition recognizer failed:', error);
+            })
+                .finally(() => {
+                if (generation === this.generation) {
+                    this.pendingRecognition = false;
+                }
+            });
+            return;
+        }
+        this.emitFromScores(result);
+    }
+    emitFromScores(scores) {
+        for (const [name, config] of Object.entries(this.options.gestures)) {
+            if (!config.enabled) {
+                this.latchedGestures.delete(name);
+                continue;
+            }
+            const result = scores[name];
+            const confidence = THREE.MathUtils.clamp(result?.confidence ?? 0, 0, 1);
+            if (this.latchedGestures.has(name)) {
+                if (confidence <= this.options.releaseConfidence) {
+                    this.latchedGestures.delete(name);
+                }
+                continue;
+            }
+            if (result && confidence >= this.options.minimumConfidence) {
+                this.latchedGestures.add(name);
+                this.emitGesture({
+                    name,
+                    confidence,
+                    data: result.data,
+                });
+            }
+        }
+    }
+    emitGesture(detail) {
+        this.dispatchEvent({ type: 'gesture', detail, target: this });
+    }
+    resetRecognitionState() {
+        this.samples.length = 0;
+        this.latchedGestures.clear();
+        this.lastEvaluation = -Infinity;
+        this.generation++;
+        this.pendingRecognition = false;
+    }
+    dispose() {
+        this.resetRecognitionState();
+        this.options.gestureRecognizer.dispose?.();
+    }
+}
+
 /**
  * Simulates an XR controller using the mouse for desktop
  * environments. This class translates 2D mouse movements on the screen into a
@@ -7608,6 +8073,13 @@ class Input {
         systemsGroup.add(this.activeControllers, this.reticles);
         this.controllersEnabled = options.controllers.enabled;
         this.options = options;
+        if (options.headGestures.enabled) {
+            this.headGestures = new HeadGestureRecognition();
+            systemsGroup.add(this.headGestures);
+        }
+        if (!options.controllers.enabled) {
+            return;
+        }
         const controllers = this.controllers;
         const controllerGrips = this.controllerGrips;
         for (let i = 0; i < NUM_HANDS; ++i) {
@@ -10826,6 +11298,7 @@ class Options {
         this.deviceCamera = new DeviceCameraOptions();
         this.hands = new HandsOptions();
         this.gestures = new GestureRecognitionOptions();
+        this.headGestures = new HeadGestureRecognitionOptions();
         this.strokes = new StrokeRecognitionOptions();
         this.reticles = new ReticleOptions();
         this.sound = new SoundOptions();
@@ -11032,6 +11505,14 @@ class Options {
     enableGestures() {
         this.enableHands();
         this.gestures.enable();
+        return this;
+    }
+    /**
+     * Enables completed nod and shake recognition from the user's head pose.
+     * @returns The instance for chaining.
+     */
+    enableHeadGestures() {
+        this.headGestures.enable();
         return this;
     }
     /**
@@ -22322,6 +22803,7 @@ class Core {
         this.registry.register(options.ai, AIOptions);
         this.registry.register(options.sound, SoundOptions);
         this.registry.register(options.gestures, GestureRecognitionOptions);
+        this.registry.register(options.headGestures, HeadGestureRecognitionOptions);
         this.registry.register(options.strokes, StrokeRecognitionOptions);
         if (options.transition.enabled) {
             this.transition = new XRTransition();
@@ -22365,14 +22847,14 @@ class Core {
         }
         this.options = options;
         this.scriptsManager.catchExceptions = options.catchScriptExceptions;
-        // Sets up controllers.
+        // Sets up input. Head gestures are camera-only and do not require controllers.
+        this.input.init({
+            scene: this.scene,
+            systemsGroup: this.xrSystemsGroup,
+            options: options,
+            renderer: this.renderer,
+        });
         if (options.controllers.enabled) {
-            this.input.init({
-                scene: this.scene,
-                systemsGroup: this.xrSystemsGroup,
-                options: options,
-                renderer: this.renderer,
-            });
             this.input.bindSelectStart(this.scriptsManager.callSelectStart);
             this.input.bindSelectEnd(this.scriptsManager.callSelectEnd);
             this.input.bindSelect(this.scriptsManager.callSelect);
@@ -25292,7 +25774,10 @@ var sdk = /*#__PURE__*/Object.freeze({
     get Handedness () { return Handedness; },
     Hands: Hands,
     HandsOptions: HandsOptions,
+    HeadGestureRecognition: HeadGestureRecognition,
+    HeadGestureRecognitionOptions: HeadGestureRecognitionOptions,
     HeuristicGestureRecognizer: HeuristicGestureRecognizer,
+    HeuristicHeadGestureRecognizer: HeuristicHeadGestureRecognizer,
     HorizontalPager: HorizontalPager,
     HumanRecognizer: HumanRecognizer,
     HumansOptions: HumansOptions,
@@ -25533,5 +26018,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeuristicGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, context, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, context, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map
