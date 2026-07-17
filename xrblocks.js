@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid a8c4072
- * @builddate 2026-07-16T17:59:22.576Z
+ * @commitid a57e841
+ * @builddate 2026-07-17T16:44:28.497Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -45,11 +45,11 @@ import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 import { XREstimatedLight } from 'three/addons/webxr/XREstimatedLight.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 
 /**
  * Builds the context to be sent to the AI for reasoning.
@@ -11850,6 +11850,9 @@ class SimulatorControlMode {
     onPointerDown(_) { }
     onPointerUp(_) { }
     onPointerMove(_) { }
+    onWheel(_) {
+        return false;
+    }
     onKeyDown(event) {
         if (event.code == Keycodes.DIGIT_1) {
             this.setStereoRenderMode(SimulatorRenderMode.STEREO_LEFT);
@@ -12260,6 +12263,990 @@ class SimulatorPointerLockMode extends SimulatorControlMode {
     }
 }
 
+class OcclusionUtils {
+    /**
+     * Creates a simple material used for rendering objects into the occlusion
+     * map. This material is intended to be used with `renderer.overrideMaterial`.
+     * @returns A new instance of THREE.MeshBasicMaterial.
+     */
+    static createOcclusionMapOverrideMaterial() {
+        return new THREE.MeshBasicMaterial();
+    }
+    /**
+     * Modifies a material's shader in-place to incorporate distance-based
+     * alpha occlusion. This is designed to be used with a material's
+     * `onBeforeCompile` property. This only works with built-in three.js
+     * materials.
+     * @param shader - The shader object provided by onBeforeCompile.
+     */
+    static addOcclusionToShader(shader) {
+        shader.uniforms.occlusionEnabled = { value: true };
+        shader.uniforms.tOcclusionMap = { value: null };
+        shader.uniforms.uOcclusionClipFromWorld = { value: new THREE.Matrix4() };
+        shader.defines = { USE_UV: true, DISTANCE: true };
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', [
+            'uniform mat4 uOcclusionClipFromWorld;',
+            'varying vec4 vOcclusionScreenCoord;',
+            '#include <common>',
+        ].join('\n'))
+            .replace('#include <fog_vertex>', [
+            '#include <fog_vertex>',
+            'vOcclusionScreenCoord = uOcclusionClipFromWorld * worldPosition;',
+        ].join('\n'));
+        shader.fragmentShader = shader.fragmentShader
+            .replace('uniform vec3 diffuse;', [
+            'uniform vec3 diffuse;',
+            'uniform bool occlusionEnabled;',
+            'uniform sampler2D tOcclusionMap;',
+            'varying vec4 vOcclusionScreenCoord;',
+        ].join('\n'))
+            .replace('vec4 diffuseColor = vec4( diffuse, opacity );', [
+            'vec4 diffuseColor = vec4( diffuse, opacity );',
+            'vec2 occlusion_coordinates = 0.5 + 0.5 * vOcclusionScreenCoord.xy / vOcclusionScreenCoord.w;',
+            'vec2 occlusion_sample = texture2D(tOcclusionMap, occlusion_coordinates.xy).rg;',
+            'occlusion_sample = occlusion_sample / max(0.0001, occlusion_sample.g);',
+            'float occlusion_value = clamp(occlusion_sample.r, 0.0, 1.0);',
+            'diffuseColor.a *= occlusionEnabled ? occlusion_value : 1.0;',
+        ].join('\n'));
+    }
+}
+
+const DOWN = Object.freeze(new THREE.Vector3(0, -1, 0));
+const UP = Object.freeze(new THREE.Vector3(0, 1, 0));
+const FORWARD = Object.freeze(new THREE.Vector3(0, 0, -1));
+const BACK = Object.freeze(new THREE.Vector3(0, 0, 1));
+const LEFT = Object.freeze(new THREE.Vector3(-1, 0, 0));
+const RIGHT = Object.freeze(new THREE.Vector3(1, 0, 0));
+const ZERO_VECTOR3 = Object.freeze(new THREE.Vector3(0, 0, 0));
+
+/**
+ * The base URL for Three.js JSM examples, used for DRACO and KTX2 decoders.
+ */
+const jsmUrl = `https://cdn.jsdelivr.net/npm/three@0.${THREE.REVISION}.0/examples/jsm/`;
+/**
+ * The configured GLTFLoader instance.
+ */
+let gltfLoaderInstance;
+function getGLTFLoader(renderer, manager) {
+    if (gltfLoaderInstance) {
+        return gltfLoaderInstance;
+    }
+    const dracoLoader = new DRACOLoader(manager);
+    dracoLoader.setDecoderPath(jsmUrl + 'libs/draco/');
+    dracoLoader.setDecoderConfig({ type: 'js' });
+    const ktx2Loader = new KTX2Loader(manager);
+    ktx2Loader.setTranscoderPath(jsmUrl + 'libs/basis/');
+    if (renderer) {
+        ktx2Loader.detectSupport(renderer);
+    }
+    gltfLoaderInstance = new GLTFLoader(manager);
+    gltfLoaderInstance.setDRACOLoader(dracoLoader);
+    gltfLoaderInstance.setKTX2Loader(ktx2Loader);
+    return gltfLoaderInstance;
+}
+/**
+ * Manages the loading of 3D models, automatically handling dependencies
+ * like DRACO and KTX2 loaders.
+ */
+class ModelLoader {
+    /**
+     * Creates an instance of ModelLoader.
+     * @param manager - The
+     *     loading manager to use,
+     * required for KTX2 texture support.
+     */
+    constructor(manager = THREE.DefaultLoadingManager) {
+        this.manager = manager;
+    }
+    /**
+     * Loads a model based on its file extension. Supports .gltf, .glb,
+     * .ply, .spz, .splat, and .ksplat.
+     * @returns A promise that resolves with the loaded model data (e.g., a glTF
+     *     scene or a SplatMesh).
+     */
+    async load({ path, url = '', renderer = undefined, onProgress = undefined, }) {
+        if (onProgress) {
+            console.warn('ModelLoader: An onProgress callback was provided to load(), ' +
+                'but a LoadingManager is in use. Progress will be reported via the ' +
+                "LoadingManager's onProgress callback. The provided callback will be ignored.");
+        }
+        const extension = url.split('.').pop()?.toLowerCase() || '';
+        const splatExtensions = ['ply', 'spz', 'splat', 'ksplat'];
+        const gltfExtensions = ['gltf', 'glb'];
+        if (gltfExtensions.includes(extension)) {
+            return await this.loadGLTF({ path, url, renderer });
+        }
+        else if (splatExtensions.includes(extension)) {
+            return await this.loadSplat({ url });
+        }
+        console.error('Unsupported file type: ' + extension);
+        return null;
+    }
+    /**
+     * Loads a 3DGS model (.ply, .spz, .splat, .ksplat).
+     * @param url - The URL of the model file.
+     * @returns A promise that resolves with the loaded
+     * SplatMesh object.
+     */
+    async loadSplat({ url = '' }) {
+        const { SplatMesh } = await import('@sparkjsdev/spark'); // Dynamic import
+        const splatMesh = new SplatMesh({ url });
+        await splatMesh.initialized;
+        return splatMesh;
+    }
+    /**
+     * Loads a GLTF or GLB model.
+     * @param options - The loading options.
+     * @returns A promise that resolves with the loaded glTF object.
+     */
+    async loadGLTF({ path, url = '', renderer = undefined, }) {
+        const loader = getGLTFLoader(renderer, this.manager);
+        if (path) {
+            loader.setPath(path);
+        }
+        return new Promise((resolve, reject) => {
+            loader.load(url, (gltf) => resolve(gltf), undefined, (error) => reject(error));
+        });
+    }
+}
+
+/**
+ * Calculates the bounding box for a group of THREE.Object3D instances.
+ *
+ * @param objects - An array of THREE.Object3D instances.
+ * @returns The computed THREE.Box3.
+ */
+function getGroupBoundingBox(objects) {
+    const bbox = new THREE.Box3();
+    if (objects.length === 0) {
+        return bbox;
+    }
+    const parentReferences = new Map();
+    for (const child of objects) {
+        if (child.parent) {
+            parentReferences.set(child, child.parent);
+            child.removeFromParent();
+        }
+        bbox.expandByObject(child, true);
+    }
+    // Restore parent references
+    for (const [child, parent] of parentReferences.entries()) {
+        parent.add(child);
+    }
+    return bbox;
+}
+
+// Temporary variables.
+const _quaternion = new THREE.Quaternion();
+const _euler = new THREE.Euler();
+const _vector3 = new THREE.Vector3();
+var DragMode;
+(function (DragMode) {
+    DragMode["TRANSLATING"] = "TRANSLATING";
+    DragMode["ROTATING"] = "ROTATING";
+    DragMode["SCALING"] = "SCALING";
+    DragMode["DO_NOT_DRAG"] = "DO_NOT_DRAG";
+})(DragMode || (DragMode = {}));
+class DragManager extends Script {
+    constructor() {
+        super(...arguments);
+        this.mode = DragManager.IDLE;
+        this.originalObjectPosition = new THREE.Vector3();
+        this.originalObjectRotation = new THREE.Quaternion();
+        this.originalObjectScale = new THREE.Vector3();
+        this.originalController1Position = new THREE.Vector3();
+        this.originalController1RotationInverse = new THREE.Quaternion();
+        this.originalController1MatrixInverse = new THREE.Matrix4();
+        this.originalScalingControllerDistance = 0.0;
+        this.originalScalingObjectScale = new THREE.Vector3();
+        this.type = 'DragManager';
+        this.name = 'Drag Manager';
+        this.editorIcon = 'drag_pan';
+    }
+    static { this.dependencies = { input: Input, camera: THREE.Camera }; }
+    static { this.IDLE = 'IDLE'; }
+    static { this.TRANSLATING = DragMode.TRANSLATING; }
+    static { this.ROTATING = DragMode.ROTATING; }
+    static { this.SCALING = DragMode.SCALING; }
+    static { this.DO_NOT_DRAG = DragMode.DO_NOT_DRAG; }
+    init({ input, camera }) {
+        this.input = input;
+        this.camera = camera;
+    }
+    onSelectStart(event) {
+        const controller = event.target;
+        const intersections = this.input.intersectionsForController.get(controller);
+        if (intersections && intersections.length > 0) {
+            this.beginDragging(intersections[0], controller);
+        }
+    }
+    onSelectEnd() {
+        this.mode = DragManager.IDLE;
+        this.intersection = undefined;
+        this.draggableObject = undefined;
+    }
+    update() {
+        for (const controller of this.input.controllers) {
+            this.updateDragging(controller);
+        }
+    }
+    beginDragging(intersection, controller) {
+        const [draggableObject, draggingMode] = this.findDraggableObjectAndDraggingMode(intersection.object);
+        if (draggableObject == null ||
+            draggingMode == null ||
+            draggingMode == DragManager.DO_NOT_DRAG) {
+            return false;
+        }
+        if (this.mode != DragManager.IDLE) {
+            // Already dragging, switch to scaling.
+            return this.beginScaling(controller);
+        }
+        this.draggableObject = draggableObject;
+        this.mode =
+            draggingMode == DragManager.ROTATING
+                ? DragManager.ROTATING
+                : DragManager.TRANSLATING;
+        this.originalController1Position.copy(controller.position);
+        this.originalController1MatrixInverse
+            .compose(controller.position, controller.quaternion, controller.scale)
+            .invert();
+        this.originalController1RotationInverse
+            .copy(controller.quaternion)
+            .invert();
+        this.intersection = intersection;
+        this.controller1 = controller;
+        this.originalObjectRotation.copy(draggableObject.quaternion);
+        this.originalObjectPosition.copy(draggableObject.position);
+        this.originalObjectScale.copy(draggableObject.scale);
+        return true;
+    }
+    // Scaling is a two-handed gesture, based on the distance between the two
+    // hands.
+    beginScaling(controller) {
+        this.controller2 = controller;
+        this.originalScalingControllerDistance = _vector3
+            .subVectors(this.controller1.position, this.controller2.position)
+            .length();
+        this.originalScalingObjectScale.copy(this.intersection.object.scale);
+        this.mode = DragManager.SCALING;
+        return true;
+    }
+    updateDragging(controller) {
+        if (this.mode == DragManager.TRANSLATING) {
+            return this.updateTranslating();
+        }
+        else if (this.mode == DragManager.ROTATING) {
+            return this.updateRotating(controller);
+        }
+        else if (this.mode == DragManager.SCALING) {
+            return this.updateScaling();
+        }
+        // Continue handle controller.
+        return false;
+    }
+    updateTranslating() {
+        const model = this.draggableObject;
+        model.position.copy(this.originalObjectPosition);
+        model.quaternion.copy(this.originalObjectRotation);
+        model.scale.copy(this.originalObjectScale);
+        model.updateMatrix();
+        this.controller1.updateMatrix();
+        model.matrix
+            .premultiply(this.originalController1MatrixInverse)
+            .premultiply(this.controller1.matrix);
+        model.position.setFromMatrixPosition(model.matrix);
+        if (model.dragFacingCamera) {
+            this.turnPanelToFaceTheCamera();
+        }
+        return true;
+    }
+    updateRotating(controller) {
+        if (controller != this.controller1) {
+            return;
+        }
+        if (controller instanceof MouseController) {
+            return this.updateRotatingFromMouseController(controller);
+        }
+        const model = this.draggableObject;
+        const deltaPosition = new THREE.Vector3().subVectors(controller.position, this.originalController1Position);
+        deltaPosition.applyQuaternion(this.originalController1RotationInverse);
+        const offsetRotation = _quaternion.setFromAxisAngle(UP, 10.0 * deltaPosition.x);
+        model.quaternion.multiplyQuaternions(offsetRotation, this.originalObjectRotation);
+        return true;
+    }
+    updateRotatingFromMouseController(controller) {
+        const model = this.draggableObject;
+        const deltaRotation = _quaternion.multiplyQuaternions(controller.quaternion, this.originalController1RotationInverse);
+        const rotationYawAngle = _euler.setFromQuaternion(deltaRotation, 'YXZ');
+        const offsetRotation = _quaternion.setFromAxisAngle(UP, -10 * rotationYawAngle.y);
+        model.quaternion.multiplyQuaternions(offsetRotation, this.originalObjectRotation);
+        return true;
+    }
+    updateScaling() {
+        const newControllerDistance = _vector3
+            .subVectors(this.controller1.position, this.controller2.position)
+            .length();
+        const distanceRatio = newControllerDistance / this.originalScalingControllerDistance;
+        const model = this.draggableObject;
+        model.scale
+            .copy(this.originalScalingObjectScale)
+            .multiplyScalar(distanceRatio);
+        return true;
+    }
+    turnPanelToFaceTheCamera() {
+        const model = this.draggableObject;
+        _vector3.subVectors(model.position, this.camera.position);
+        model.quaternion.setFromAxisAngle(UP, (3 * Math.PI) / 2 - Math.atan2(_vector3.z, _vector3.x));
+    }
+    /**
+     * Seach up the scene graph to find the first draggable object and the first
+     * drag mode at or below the draggable object.
+     * @param target - Child object to search.
+     * @returns Array containing the first draggable object and the first drag
+     *     mode.
+     */
+    findDraggableObjectAndDraggingMode(target) {
+        let currentTarget = target;
+        let draggableObject;
+        let draggingMode;
+        while (currentTarget && !draggableObject) {
+            draggableObject = currentTarget.draggable
+                ? currentTarget
+                : undefined;
+            draggingMode =
+                draggingMode ??
+                    currentTarget.draggingMode;
+            currentTarget = currentTarget.parent;
+        }
+        return [draggableObject, draggingMode];
+    }
+}
+
+/**
+ * A custom `THREE.BufferGeometry` that creates one rounded corner
+ * piece for the `ModelViewerPlatform`. Four of these are instantiated and
+ * rotated to form all corners of the platform.
+ */
+class ModelViewerPlatformCornerGeometry extends THREE.BufferGeometry {
+    constructor(radius = 1, tube = 0.4, radialSegments = 12, tubularSegments = 48) {
+        super();
+        const indices = [];
+        const vertices = [];
+        const normals = [];
+        const uvs = [];
+        const center = new THREE.Vector3();
+        const vertex = new THREE.Vector3();
+        const normal = new THREE.Vector3();
+        for (let j = 0; j <= radialSegments; j++) {
+            for (let i = 0; i <= tubularSegments; i++) {
+                const u = ((i / tubularSegments) * Math.PI) / 2;
+                const v = (j / radialSegments) * Math.PI + (3 * Math.PI) / 2;
+                vertex.x = (radius + tube * Math.cos(v)) * Math.cos(u);
+                vertex.y = (radius + tube * Math.cos(v)) * Math.sin(u);
+                vertex.z = tube * Math.sin(v);
+                vertices.push(vertex.x, vertex.y, vertex.z);
+                center.x = radius * Math.cos(u);
+                center.y = radius * Math.sin(u);
+                normal.subVectors(vertex, center).normalize();
+                normals.push(normal.x, normal.y, normal.z);
+                uvs.push(i / tubularSegments);
+                uvs.push(j / radialSegments);
+            }
+        }
+        for (let j = 1; j <= radialSegments; j++) {
+            for (let i = 1; i <= tubularSegments; i++) {
+                const a = (tubularSegments + 1) * j + i - 1;
+                const b = (tubularSegments + 1) * (j - 1) + i - 1;
+                const c = (tubularSegments + 1) * (j - 1) + i;
+                const d = (tubularSegments + 1) * j + i;
+                indices.push(a, b, d);
+                indices.push(b, c, d);
+            }
+        }
+        this.setIndex(indices);
+        this.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        this.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+        this.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    }
+}
+
+/**
+ * A factory function that constructs the complete geometry for a
+ * `ModelViewerPlatform`. It combines several sub-geometries: four rounded
+ * corners, four straight side tubes, and the flat top and bottom surfaces.
+ * @param width - The total width of the platform.
+ * @param depth - The total depth of the platform.
+ * @param thickness - The thickness of the platform.
+ * @param cornerRadius - The radius of the rounded corners.
+ * @returns A merged `THREE.BufferGeometry` for the entire platform.
+ */
+function createPlatformGeometry(width = 1, depth = 1, thickness = 0.02, cornerRadius = 0.03, cornerWidthSegments = 5, radialSegments = 5) {
+    const sideGeometries = createPlatformSideGeometries(width, depth, thickness, cornerRadius, cornerWidthSegments, radialSegments);
+    const sideGeometriesVertexCount = sideGeometries.reduce((acc, val) => {
+        return acc + val.index.count;
+    }, 0);
+    const flatGeometries = createPlatformFlatGeometries(width, depth, thickness, cornerRadius, cornerWidthSegments);
+    const flatGeometriesVertexCount = flatGeometries.reduce((acc, val) => {
+        return acc + val.index.count;
+    }, 0);
+    const allGeometries = [...sideGeometries, ...flatGeometries];
+    const mergedGeometry = BufferGeometryUtils.mergeGeometries(allGeometries);
+    allGeometries.forEach((geometry) => geometry.dispose());
+    mergedGeometry.addGroup(0, sideGeometriesVertexCount, 0);
+    mergedGeometry.addGroup(sideGeometriesVertexCount, flatGeometriesVertexCount, 1);
+    mergedGeometry.computeBoundingBox();
+    return mergedGeometry;
+}
+function createPlatformSideGeometries(width = 1, depth = 1, thickness = 0.01, cornerRadius = 0.03, cornerWidthSegments = 5, radialSegments = 5) {
+    const cornerGeometry = new ModelViewerPlatformCornerGeometry(cornerRadius, thickness / 2, radialSegments, cornerWidthSegments).rotateX(Math.PI / 2);
+    const cornerGeometry1 = cornerGeometry
+        .clone()
+        .rotateY((2 * Math.PI) / 2)
+        .translate(-(width / 2 - cornerRadius), 0, -(depth / 2 - cornerRadius));
+    const cornerGeometry2 = cornerGeometry
+        .clone()
+        .rotateY((3 * Math.PI) / 2)
+        .translate(-(width / 2 - cornerRadius), 0, depth / 2 - cornerRadius);
+    const cornerGeometry3 = cornerGeometry
+        .clone()
+        .rotateY((4 * Math.PI) / 2)
+        .translate(width / 2 - cornerRadius, 0, depth / 2 - cornerRadius);
+    const cornerGeometry4 = cornerGeometry
+        .rotateY((5 * Math.PI) / 2)
+        .translate(width / 2 - cornerRadius, 0, -(depth / 2 - cornerRadius));
+    const cornerTubes = [
+        cornerGeometry1,
+        cornerGeometry2,
+        cornerGeometry3,
+        cornerGeometry4,
+    ];
+    const widthTube = new THREE.CylinderGeometry(thickness / 2, thickness / 2, width - 2 * cornerRadius, radialSegments, 1, true, 0, Math.PI).rotateZ(Math.PI / 2);
+    const widthTube1 = widthTube
+        .clone()
+        .rotateX(-Math.PI / 2)
+        .translate(0, 0, -depth / 2);
+    const widthTube2 = widthTube.rotateX(Math.PI / 2).translate(0, 0, depth / 2);
+    const depthTube = new THREE.CylinderGeometry(thickness / 2, thickness / 2, depth - 2 * cornerRadius, radialSegments, 1, true, 0, Math.PI).rotateX(-Math.PI / 2);
+    const depthTube1 = depthTube
+        .clone()
+        .rotateY(Math.PI)
+        .translate(-width / 2, 0, 0);
+    const depthTube2 = depthTube.translate(width / 2, 0, 0);
+    const sideTubes = [widthTube1, widthTube2, depthTube1, depthTube2];
+    return [...cornerTubes, ...sideTubes];
+}
+function createPlatformFlatGeometries(width = 1, depth = 1, thickness = 0.01, cornerRadius = 0.03, cornerWidthSegments = 5) {
+    const widthMinusRadius = width - 2 * cornerRadius;
+    const depthMinusRadius = depth - 2 * cornerRadius;
+    const longQuad = new THREE.PlaneGeometry(width, depthMinusRadius).rotateX(-Math.PI / 2);
+    const shortQuad = new THREE.PlaneGeometry(widthMinusRadius, cornerRadius).rotateX(-Math.PI / 2);
+    const shortQuadTranslationZ = depthMinusRadius / 2 + cornerRadius / 2;
+    const shortQuad1 = shortQuad.clone().translate(0, 0, shortQuadTranslationZ);
+    const shortQuad2 = shortQuad.translate(0, 0, -shortQuadTranslationZ);
+    const quadGeometries = [longQuad, shortQuad1, shortQuad2];
+    const cornerCircle = new THREE.CircleGeometry(cornerRadius, cornerWidthSegments, 0, Math.PI / 2).rotateX(-Math.PI / 2);
+    const circleTranslationZ = depthMinusRadius / 2;
+    const circleTranslationX = widthMinusRadius / 2;
+    const cornerCircle1 = cornerCircle
+        .clone()
+        .rotateY((3 * Math.PI) / 2)
+        .translate(circleTranslationX, 0, circleTranslationZ);
+    const cornerCircle2 = cornerCircle
+        .clone()
+        .rotateY((0 * Math.PI) / 2)
+        .translate(circleTranslationX, 0, -circleTranslationZ);
+    const cornerCircle3 = cornerCircle
+        .clone()
+        .rotateY((1 * Math.PI) / 2)
+        .translate(-circleTranslationX, 0, -circleTranslationZ);
+    const cornerCircle4 = cornerCircle
+        .clone()
+        .rotateY((2 * Math.PI) / 2)
+        .translate(-circleTranslationX, 0, circleTranslationZ);
+    const circleGeometries = [
+        cornerCircle1,
+        cornerCircle2,
+        cornerCircle3,
+        cornerCircle4,
+    ];
+    const topGeometries = [...quadGeometries, ...circleGeometries];
+    const bottomGeometries = topGeometries.map((geometry) => {
+        return geometry
+            .clone()
+            .rotateX(Math.PI)
+            .translate(0, -thickness / 2, 0);
+    });
+    topGeometries.forEach((geometry) => geometry.translate(0, thickness / 2, 0));
+    return [...topGeometries, ...bottomGeometries];
+}
+
+/**
+ * A specialized `THREE.Mesh` that serves as the interactive base for
+ * a `ModelViewer`. It has a distinct visual appearance and handles the logic
+ * for fading in and out on hover. Its `draggingMode` is set to `TRANSLATING` to
+ * enable movement.
+ */
+class ModelViewerPlatform extends THREE.Mesh {
+    constructor(width, depth, thickness) {
+        const geometry = createPlatformGeometry(width, depth, thickness);
+        super(geometry, [
+            new THREE.MeshLambertMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.0,
+            }),
+            new THREE.MeshLambertMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.0,
+            }),
+        ]);
+        this.draggingMode = DragManager.TRANSLATING;
+        this.opacity = new AnimatableNumber(0, 0, 0.5, 0);
+    }
+    update(deltaTime) {
+        this.opacity.update(deltaTime);
+        this.material[0].opacity = this.opacity.value;
+        this.material[1].opacity = 0.5 * this.opacity.value;
+        this.visible = this.opacity.value > 0.001;
+    }
+}
+
+// Object which just holds the spark renderer so other classes don't need to import spark.
+class SparkRendererHolder {
+    constructor(renderer) {
+        this.renderer = renderer;
+    }
+}
+
+const defaultPlatformMargin = new THREE.Vector2(0.2, 0.2);
+const vector3$4 = new THREE.Vector3();
+const quaternion$1 = new THREE.Quaternion();
+const quaternion2 = new THREE.Quaternion();
+class SplatAnchor extends THREE.Object3D {
+    constructor() {
+        super(...arguments);
+        this.draggingMode = DragMode.ROTATING;
+    }
+}
+class RotationRaycastMesh extends THREE.Mesh {
+    constructor(geometry, material) {
+        super(geometry, material);
+        this.draggingMode = DragMode.ROTATING;
+    }
+}
+/**
+ * A comprehensive UI component for loading, displaying, and
+ * interacting with 3D models (GLTF and Splats) in an XR scene. It
+ * automatically creates an interactive platform for translation and provides
+ * mechanisms for rotation and scaling in both desktop and XR.
+ */
+class ModelViewer extends Script {
+    static { this.dependencies = {
+        camera: THREE.Camera,
+        depth: Depth,
+        scene: THREE.Scene,
+        renderer: THREE.WebGLRenderer,
+        registry: Registry,
+        timer: THREE.Timer,
+    }; }
+    constructor({ castShadow = true, receiveShadow = true, raycastToChildren = false, }) {
+        super();
+        this.draggable = true;
+        this.rotatable = true;
+        this.scalable = true;
+        this.platformAnimationSpeed = 2;
+        this.platformThickness = 0.02;
+        this.isOneOneScale = false;
+        this.initialScale = new THREE.Vector3().setScalar(1);
+        this.startAnimationOnLoad = true;
+        this.clipActions = [];
+        this.bbox = new THREE.Box3();
+        this.hoveringControllers = new Set();
+        this.occludableShaders = new Set();
+        this.castShadow = castShadow;
+        this.receiveShadow = receiveShadow;
+        this.raycastToChildren = raycastToChildren;
+    }
+    async init({ camera, depth, scene, renderer, registry, timer, }) {
+        this.camera = camera;
+        this.depth = depth;
+        this.scene = scene;
+        this.renderer = renderer;
+        this.registry = registry;
+        this.timer = timer;
+        for (const shader of this.occludableShaders) {
+            this.depth.occludableShaders.add(shader);
+        }
+        if (this.splatMesh) {
+            await this.createSparkRendererIfNeeded();
+            this.scene.add(this.splatMesh);
+        }
+    }
+    async loadSplatModel({ data, onSceneLoaded = (_) => { }, platformMargin = defaultPlatformMargin, setupRaycastCylinder = true, setupRaycastBox = false, setupPlatform = true, }) {
+        this.data = data;
+        if (data.scale) {
+            this.initialScale.copy(data.scale);
+        }
+        const splatMesh = await new ModelLoader().loadSplat({ url: data.model });
+        this.splatMesh = splatMesh;
+        splatMesh.raycast = () => { };
+        this.splatAnchor = new SplatAnchor();
+        this.splatAnchor.add(splatMesh);
+        if (data.scale) {
+            this.splatAnchor.scale.copy(data.scale);
+        }
+        if (data.rotation) {
+            this.splatAnchor.rotation.set(THREE.MathUtils.degToRad(data.rotation.x), THREE.MathUtils.degToRad(data.rotation.y), THREE.MathUtils.degToRad(data.rotation.z));
+        }
+        if (data.position) {
+            this.splatAnchor.position.copy(data.position);
+        }
+        this.add(this.splatAnchor);
+        await this.createSparkRendererIfNeeded();
+        await this.setupBoundingBox(data.verticallyAlignObject !== false, data.horizontallyAlignObject !== false);
+        if (setupRaycastCylinder) {
+            this.setupRaycastCylinder();
+        }
+        else if (setupRaycastBox) {
+            this.setupRaycastBox();
+        }
+        if (setupPlatform) {
+            this.setupPlatform(platformMargin);
+        }
+        this.setCastShadow(this.castShadow);
+        this.setReceiveShadow(this.receiveShadow);
+        // Return the anchor, as it's the interactive object in the scene graph
+        return onSceneLoaded ? onSceneLoaded(this.splatAnchor) : this.splatAnchor;
+    }
+    async loadGLTFModel({ data, onSceneLoaded = () => { }, platformMargin = defaultPlatformMargin, setupRaycastCylinder = true, setupRaycastBox = false, setupPlatform = true, renderer = undefined, addOcclusionToShader = false, }) {
+        this.data = data;
+        if (data.scale) {
+            this.initialScale.copy(data.scale);
+        }
+        const gltf = await new ModelLoader().loadGLTF({
+            path: data.path,
+            url: data.model,
+            renderer: renderer,
+        });
+        const animationMixer = new THREE.AnimationMixer(gltf.scene);
+        gltf.animations.forEach((clip) => {
+            if (this.startAnimationOnLoad) {
+                animationMixer.clipAction(clip).play();
+            }
+            else {
+                this.clipActions.push(animationMixer.clipAction(clip));
+            }
+        });
+        gltf.scene.draggingMode =
+            DragManager.ROTATING;
+        this.gltfMesh = gltf;
+        this.animationMixer = animationMixer;
+        // Set the initial scale
+        if (data.scale) {
+            this.gltfMesh.scene.scale.copy(data.scale);
+        }
+        if (data.rotation) {
+            gltf.scene.rotation.set(THREE.MathUtils.degToRad(data.rotation.x), THREE.MathUtils.degToRad(data.rotation.y), THREE.MathUtils.degToRad(data.rotation.z));
+        }
+        if (data.position) {
+            gltf.scene.position.copy(data.position);
+        }
+        gltf.scene.draggingMode =
+            DragManager.ROTATING;
+        this.add(gltf.scene);
+        await this.setupBoundingBox(data.verticallyAlignObject !== false, data.horizontallyAlignObject !== false);
+        if (setupRaycastCylinder) {
+            this.setupRaycastCylinder();
+        }
+        else if (setupRaycastBox) {
+            this.setupRaycastBox();
+        }
+        if (setupPlatform) {
+            this.setupPlatform(platformMargin);
+        }
+        this.setCastShadow(this.castShadow);
+        this.setReceiveShadow(this.receiveShadow);
+        if (addOcclusionToShader) {
+            for (const material of this.platform?.material || []) {
+                material.onBeforeCompile = (shader) => {
+                    OcclusionUtils.addOcclusionToShader(shader);
+                    shader.uniforms.occlusionEnabled.value = true;
+                    material.userData.shader = shader;
+                    this.occludableShaders.add(shader);
+                    this.depth?.occludableShaders.add(shader);
+                };
+            }
+            this.platform?.layers.enable(OCCLUDABLE_ITEMS_LAYER);
+            gltf.scene.traverse((child) => {
+                if (child.isMesh) {
+                    const mesh = child;
+                    (mesh.material instanceof Array
+                        ? mesh.material
+                        : [mesh.material]).forEach((material) => {
+                        material.transparent = true;
+                        material.onBeforeCompile = (shader) => {
+                            OcclusionUtils.addOcclusionToShader(shader);
+                            shader.uniforms.occlusionEnabled.value = true;
+                            this.occludableShaders.add(shader);
+                            this.depth?.occludableShaders.add(shader);
+                        };
+                    });
+                    child.layers.enable(OCCLUDABLE_ITEMS_LAYER);
+                }
+            });
+        }
+        return onSceneLoaded ? onSceneLoaded(gltf.scene) : gltf.scene;
+    }
+    async setupBoundingBox(verticallyAlignObject = true, horizontallyAlignObject = true) {
+        if (this.splatMesh) {
+            const localBbox = await this.splatMesh.getBoundingBox(false);
+            if (localBbox.isEmpty()) {
+                this.bbox = localBbox;
+                return;
+            }
+            this.splatAnchor.updateMatrix();
+            const localBboxOfTransformedMesh = localBbox
+                .clone()
+                .applyMatrix4(this.splatAnchor.matrix);
+            const translationAmount = new THREE.Vector3();
+            localBboxOfTransformedMesh
+                .getCenter(translationAmount)
+                .multiplyScalar(-1);
+            if (verticallyAlignObject) {
+                translationAmount.y = -localBboxOfTransformedMesh.min.y;
+            }
+            else {
+                translationAmount.y = 0;
+            }
+            if (!horizontallyAlignObject) {
+                translationAmount.x = 0;
+                translationAmount.z = 0;
+            }
+            this.splatAnchor.position.add(translationAmount);
+            this.bbox = localBboxOfTransformedMesh.translate(translationAmount);
+        }
+        else {
+            const contentChildren = this.children.filter((c) => c !== this.platform &&
+                c !== this.rotationRaycastMesh &&
+                c !== this.controlBar);
+            this.bbox = getGroupBoundingBox(contentChildren);
+            if (this.bbox.isEmpty()) {
+                return;
+            }
+            const translationAmount = new THREE.Vector3();
+            this.bbox.getCenter(translationAmount).multiplyScalar(-1);
+            if (verticallyAlignObject) {
+                translationAmount.y = -this.bbox.min.y;
+            }
+            else {
+                translationAmount.y = 0;
+            }
+            if (!horizontallyAlignObject) {
+                translationAmount.x = 0;
+                translationAmount.z = 0;
+            }
+            for (const child of contentChildren) {
+                child.position.add(translationAmount);
+            }
+            this.bbox.translate(translationAmount);
+        }
+    }
+    setupRaycastCylinder() {
+        const bboxSize = new THREE.Vector3();
+        this.bbox.getSize(bboxSize);
+        const radius = 0.05 + 0.5 * Math.min(bboxSize.x, bboxSize.z);
+        const rotationRaycastMesh = new RotationRaycastMesh(new THREE.CylinderGeometry(radius, radius, bboxSize.y), new THREE.MeshBasicMaterial({ color: 0x990000, wireframe: true }));
+        this.bbox.getCenter(rotationRaycastMesh.position);
+        this.rotationRaycastMesh = rotationRaycastMesh;
+        this.rotationRaycastMesh.visible = false;
+        this.add(this.rotationRaycastMesh);
+    }
+    setupRaycastBox() {
+        if (this.rotationRaycastMesh) {
+            this.rotationRaycastMesh.removeFromParent();
+            this.rotationRaycastMesh.geometry.dispose();
+            this.rotationRaycastMesh.material.dispose();
+        }
+        const bboxSize = new THREE.Vector3();
+        this.bbox.getSize(bboxSize);
+        const rotationRaycastMesh = new RotationRaycastMesh(new THREE.BoxGeometry(bboxSize.x, bboxSize.y, bboxSize.z), new THREE.MeshBasicMaterial({ color: 0x990000, wireframe: true }));
+        this.bbox.getCenter(rotationRaycastMesh.position);
+        this.rotationRaycastMesh = rotationRaycastMesh;
+        this.rotationRaycastMesh.visible = false;
+        this.add(this.rotationRaycastMesh);
+    }
+    setupPlatform(platformMargin = defaultPlatformMargin) {
+        const bboxSize = new THREE.Vector3();
+        this.bbox.getSize(bboxSize);
+        const width = bboxSize.x + platformMargin.x;
+        const depth = bboxSize.z + platformMargin.y;
+        this.platform = new ModelViewerPlatform(width, depth, this.platformThickness);
+        const center = new THREE.Vector3();
+        this.bbox.getCenter(center);
+        this.platform.position.set(center.x, -this.platformThickness / 2, center.z);
+        this.add(this.platform);
+    }
+    update() {
+        const delta = this.timer.getDelta();
+        if (this.animationMixer) {
+            this.animationMixer.update(delta);
+        }
+        if (this.platform) {
+            this.platform.update(delta);
+        }
+        const camera = this.camera;
+        if (this.controlBar != null &&
+            this.controlBar.parent == this &&
+            camera != null) {
+            const directionToCamera = vector3$4
+                .copy(camera.position)
+                .sub(this.position);
+            const distanceToCamera = directionToCamera.length();
+            const pitchAngleRadians = Math.asin(directionToCamera.normalize().y);
+            directionToCamera.y = 0;
+            directionToCamera.normalize();
+            // Make the button face the camera.
+            quaternion$1.copy(this.quaternion).invert();
+            this.controlBar.quaternion
+                .setFromAxisAngle(LEFT, pitchAngleRadians)
+                .premultiply(quaternion2.setFromUnitVectors(BACK, directionToCamera))
+                .premultiply(quaternion$1);
+            this.controlBar.position
+                .setScalar(0)
+                .addScaledVector(directionToCamera, 0.5)
+                .applyQuaternion(quaternion$1);
+            this.controlBar.position.y = 0.0;
+            this.controlBar.scale.set(distanceToCamera / this.scale.x, distanceToCamera / this.scale.y, distanceToCamera / this.scale.z);
+        }
+    }
+    onObjectSelectStart() {
+        return this.draggable || this.rotatable || this.scalable;
+    }
+    onObjectSelectEnd() {
+        return this.draggable || this.rotatable || this.scalable;
+    }
+    onHoverEnter(controller) {
+        this.hoveringControllers.add(controller);
+        if (this.platform) {
+            this.platform.opacity.speed = this.platformAnimationSpeed;
+        }
+    }
+    onHoverExit(controller) {
+        this.hoveringControllers.delete(controller);
+        if (this.platform && this.hoveringControllers.size == 0) {
+            this.platform.opacity.speed = -this.platformAnimationSpeed;
+        }
+    }
+    /**
+     * {@inheritDoc}
+     */
+    raycast(raycaster, intersects) {
+        const content = this.gltfMesh?.scene ?? this.splatMesh;
+        if (this.raycastToChildren && content) {
+            const childRaycasts = [];
+            for (const child of this.children) {
+                if (child != this.rotationRaycastMesh &&
+                    child != this.platform &&
+                    child != this.controlBar) {
+                    raycaster.intersectObject(child, true, childRaycasts);
+                }
+            }
+            intersects.push(...childRaycasts);
+        }
+        if (this.rotationRaycastMesh) {
+            const rotationIntersects = [];
+            this.rotationRaycastMesh.raycast(raycaster, rotationIntersects);
+            for (const intersect of rotationIntersects) {
+                intersects.push(intersect);
+            }
+        }
+        if (this.platform) {
+            const platformIntersects = [];
+            this.platform.raycast(raycaster, platformIntersects);
+            for (const intersect of platformIntersects) {
+                intersects.push(intersect);
+            }
+        }
+        if (this.controlBar != null && this.controlBar.parent == this) {
+            const controlButtonIntersects = [];
+            this.controlBar.raycast(raycaster, controlButtonIntersects);
+            for (const intersect of controlButtonIntersects) {
+                intersects.push(intersect);
+            }
+        }
+        return false;
+    }
+    onScaleButtonClick() {
+        this.scale.setScalar(1.0);
+    }
+    setCastShadow(castShadow) {
+        this.castShadow = castShadow;
+        if (this.gltfMesh) {
+            this.gltfMesh.scene.traverse(function (child) {
+                child.castShadow = castShadow;
+            });
+        }
+        if (this.platform) {
+            this.platform.castShadow = false;
+        }
+    }
+    setReceiveShadow(receiveShadow) {
+        this.receiveShadow = receiveShadow;
+        if (this.gltfMesh) {
+            this.gltfMesh.scene.traverse(function (child) {
+                child.receiveShadow = receiveShadow;
+            });
+        }
+        if (this.platform) {
+            this.platform.receiveShadow = receiveShadow;
+        }
+    }
+    getOcclusionEnabled() {
+        for (const shader of this.occludableShaders) {
+            return shader.uniforms.occlusionEnabled.value;
+        }
+        return false;
+    }
+    setOcclusionEnabled(enabled) {
+        for (const shader of this.occludableShaders) {
+            shader.uniforms.occlusionEnabled.value = enabled;
+        }
+    }
+    playClipAnimationOnce() {
+        if (this.startAnimationOnLoad || this.clipActions.length === 0) {
+            return;
+        }
+        this.clipActions.forEach((clip) => {
+            clip.reset();
+            clip.clampWhenFinished = true;
+            clip.loop = THREE.LoopOnce;
+            clip.play();
+        });
+    }
+    async createSparkRendererIfNeeded() {
+        // We insert our own SparkRenderer configured to show Gaussians up to
+        // Math.sqrt(4) standard deviations from the center, recommended for XR.
+        const { SparkRenderer } = await import('@sparkjsdev/spark');
+        let sparkRendererExists = false;
+        this.scene.traverse((child) => {
+            sparkRendererExists ||= child instanceof SparkRenderer;
+        });
+        if (!sparkRendererExists) {
+            const sparkRenderer = new SparkRenderer({
+                renderer: this.renderer,
+                maxStdDev: Math.sqrt(4),
+            });
+            this.registry.register(new SparkRendererHolder(sparkRenderer));
+            this.scene.add(sparkRenderer);
+        }
+    }
+}
+
+const WHEEL_SCALE_SPEED = 0.001;
+// Approximate one line-mode wheel unit as 16 CSS pixels.
+const WHEEL_LINE_HEIGHT = 16;
 class SimulatorUserMode extends SimulatorControlMode {
     onModeActivated() {
         this.disableSimulatorHands();
@@ -12294,6 +13281,33 @@ class SimulatorUserMode extends SimulatorControlMode {
         if (event.buttons & 2) {
             this.rotateOnPointerMove(event, this.camera.quaternion);
         }
+    }
+    onWheel(event) {
+        let deltaY = event.deltaY;
+        if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+            deltaY *= WHEEL_LINE_HEIGHT;
+        }
+        else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+            deltaY *= this.domElement?.clientHeight || window.innerHeight;
+        }
+        if (deltaY === 0) {
+            return false;
+        }
+        const mouseController = this.input.mouseController;
+        mouseController.updateMousePositionFromEvent(event);
+        if (!mouseController.userData.connected) {
+            return false;
+        }
+        this.input.updateController(mouseController);
+        let target = this.input.intersectionsForController.get(mouseController)?.[0]?.object;
+        while (target && !(target instanceof ModelViewer)) {
+            target = target.parent ?? undefined;
+        }
+        if (!(target instanceof ModelViewer) || !target.scalable) {
+            return false;
+        }
+        target.scale.multiplyScalar(Math.exp(-deltaY * WHEEL_SCALE_SPEED));
+        return true;
     }
 }
 
@@ -12347,6 +13361,13 @@ class SimulatorControls {
                 return;
             this.simulatorModeControls.onPointerUp(event);
             this.pointerDown = false;
+        };
+        this.onWheel = (event) => {
+            if (!this.enabled)
+                return;
+            if (this.simulatorModeControls.onWheel(event)) {
+                event.preventDefault();
+            }
         };
         this.onKeyDown = (event) => {
             if (!this.enabled)
@@ -12417,6 +13438,7 @@ class SimulatorControls {
         domElement.addEventListener('pointermove', this.onPointerMove);
         domElement.addEventListener('pointerdown', this.onPointerDown);
         domElement.addEventListener('pointerup', this.onPointerUp);
+        domElement.addEventListener('wheel', this.onWheel, { passive: false });
         domElement.addEventListener('contextmenu', preventDefault);
         window.addEventListener('blur', this.onBlur);
         document.addEventListener('visibilitychange', this.onBlur);
@@ -13440,8 +14462,8 @@ class SimulatorXRHand {
 }
 
 const DEFAULT_HAND_PROFILE_PATH = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles/generic-hand/';
-const vector3$4 = new THREE.Vector3();
-const quaternion$1 = new THREE.Quaternion();
+const vector3$3 = new THREE.Vector3();
+const quaternion = new THREE.Quaternion();
 const ROTATION_JOINT_NAMES = HAND_JOINT_NAMES.filter((jointName) => !jointName.endsWith('-tip'));
 function cloneHandPoseRotations(rotations) {
     const clonedRotations = {};
@@ -13479,10 +14501,10 @@ function lerpHandJoints(bones, joints, lerpSpeed) {
         const targetJoint = joints[i];
         if (!bone || !targetJoint)
             continue;
-        vector3$4.fromArray(targetJoint.t);
-        quaternion$1.fromArray(targetJoint.r);
-        bone.position.lerp(vector3$4, lerpSpeed);
-        bone.quaternion.slerp(quaternion$1, lerpSpeed);
+        vector3$3.fromArray(targetJoint.t);
+        quaternion.fromArray(targetJoint.r);
+        bone.position.lerp(vector3$3, lerpSpeed);
+        bone.quaternion.slerp(quaternion, lerpSpeed);
     }
 }
 class SimulatorHands {
@@ -14400,19 +15422,12 @@ class SimulatorWorld {
     }
 }
 
-// Object which just holds the spark renderer so other classes don't need to import spark.
-class SparkRendererHolder {
-    constructor(renderer) {
-        this.renderer = renderer;
-    }
-}
-
 /**
  * Utility functions for positioning and orienting objects in 3D
  * space.
  */
 // Reusable instances to avoid creating new objects in the render loop.
-const vector3$3 = new THREE.Vector3();
+const vector3$2 = new THREE.Vector3();
 const vector3a = new THREE.Vector3();
 const vector3b = new THREE.Vector3();
 const matrix4$2 = new THREE.Matrix4();
@@ -14448,7 +15463,7 @@ function placeObjectAtIntersectionFacingTarget(obj, intersection, target) {
         .copy(intersection.normal)
         .transformDirection(intersection.object.matrixWorld);
     const forwardVector = target
-        .getWorldPosition(vector3$3)
+        .getWorldPosition(vector3$2)
         .sub(obj.position)
         .cross(worldNormal)
         .cross(worldNormal)
@@ -20225,200 +21240,6 @@ class TextView extends View {
     }
 }
 
-const DOWN = Object.freeze(new THREE.Vector3(0, -1, 0));
-const UP = Object.freeze(new THREE.Vector3(0, 1, 0));
-const FORWARD = Object.freeze(new THREE.Vector3(0, 0, -1));
-const BACK = Object.freeze(new THREE.Vector3(0, 0, 1));
-const LEFT = Object.freeze(new THREE.Vector3(-1, 0, 0));
-const RIGHT = Object.freeze(new THREE.Vector3(1, 0, 0));
-const ZERO_VECTOR3 = Object.freeze(new THREE.Vector3(0, 0, 0));
-
-// Temporary variables.
-const _quaternion = new THREE.Quaternion();
-const _euler = new THREE.Euler();
-const _vector3 = new THREE.Vector3();
-var DragMode;
-(function (DragMode) {
-    DragMode["TRANSLATING"] = "TRANSLATING";
-    DragMode["ROTATING"] = "ROTATING";
-    DragMode["SCALING"] = "SCALING";
-    DragMode["DO_NOT_DRAG"] = "DO_NOT_DRAG";
-})(DragMode || (DragMode = {}));
-class DragManager extends Script {
-    constructor() {
-        super(...arguments);
-        this.mode = DragManager.IDLE;
-        this.originalObjectPosition = new THREE.Vector3();
-        this.originalObjectRotation = new THREE.Quaternion();
-        this.originalObjectScale = new THREE.Vector3();
-        this.originalController1Position = new THREE.Vector3();
-        this.originalController1RotationInverse = new THREE.Quaternion();
-        this.originalController1MatrixInverse = new THREE.Matrix4();
-        this.originalScalingControllerDistance = 0.0;
-        this.originalScalingObjectScale = new THREE.Vector3();
-        this.type = 'DragManager';
-        this.name = 'Drag Manager';
-        this.editorIcon = 'drag_pan';
-    }
-    static { this.dependencies = { input: Input, camera: THREE.Camera }; }
-    static { this.IDLE = 'IDLE'; }
-    static { this.TRANSLATING = DragMode.TRANSLATING; }
-    static { this.ROTATING = DragMode.ROTATING; }
-    static { this.SCALING = DragMode.SCALING; }
-    static { this.DO_NOT_DRAG = DragMode.DO_NOT_DRAG; }
-    init({ input, camera }) {
-        this.input = input;
-        this.camera = camera;
-    }
-    onSelectStart(event) {
-        const controller = event.target;
-        const intersections = this.input.intersectionsForController.get(controller);
-        if (intersections && intersections.length > 0) {
-            this.beginDragging(intersections[0], controller);
-        }
-    }
-    onSelectEnd() {
-        this.mode = DragManager.IDLE;
-        this.intersection = undefined;
-        this.draggableObject = undefined;
-    }
-    update() {
-        for (const controller of this.input.controllers) {
-            this.updateDragging(controller);
-        }
-    }
-    beginDragging(intersection, controller) {
-        const [draggableObject, draggingMode] = this.findDraggableObjectAndDraggingMode(intersection.object);
-        if (draggableObject == null ||
-            draggingMode == null ||
-            draggingMode == DragManager.DO_NOT_DRAG) {
-            return false;
-        }
-        if (this.mode != DragManager.IDLE) {
-            // Already dragging, switch to scaling.
-            return this.beginScaling(controller);
-        }
-        this.draggableObject = draggableObject;
-        this.mode =
-            draggingMode == DragManager.ROTATING
-                ? DragManager.ROTATING
-                : DragManager.TRANSLATING;
-        this.originalController1Position.copy(controller.position);
-        this.originalController1MatrixInverse
-            .compose(controller.position, controller.quaternion, controller.scale)
-            .invert();
-        this.originalController1RotationInverse
-            .copy(controller.quaternion)
-            .invert();
-        this.intersection = intersection;
-        this.controller1 = controller;
-        this.originalObjectRotation.copy(draggableObject.quaternion);
-        this.originalObjectPosition.copy(draggableObject.position);
-        this.originalObjectScale.copy(draggableObject.scale);
-        return true;
-    }
-    // Scaling is a two-handed gesture, based on the distance between the two
-    // hands.
-    beginScaling(controller) {
-        this.controller2 = controller;
-        this.originalScalingControllerDistance = _vector3
-            .subVectors(this.controller1.position, this.controller2.position)
-            .length();
-        this.originalScalingObjectScale.copy(this.intersection.object.scale);
-        this.mode = DragManager.SCALING;
-        return true;
-    }
-    updateDragging(controller) {
-        if (this.mode == DragManager.TRANSLATING) {
-            return this.updateTranslating();
-        }
-        else if (this.mode == DragManager.ROTATING) {
-            return this.updateRotating(controller);
-        }
-        else if (this.mode == DragManager.SCALING) {
-            return this.updateScaling();
-        }
-        // Continue handle controller.
-        return false;
-    }
-    updateTranslating() {
-        const model = this.draggableObject;
-        model.position.copy(this.originalObjectPosition);
-        model.quaternion.copy(this.originalObjectRotation);
-        model.scale.copy(this.originalObjectScale);
-        model.updateMatrix();
-        this.controller1.updateMatrix();
-        model.matrix
-            .premultiply(this.originalController1MatrixInverse)
-            .premultiply(this.controller1.matrix);
-        model.position.setFromMatrixPosition(model.matrix);
-        if (model.dragFacingCamera) {
-            this.turnPanelToFaceTheCamera();
-        }
-        return true;
-    }
-    updateRotating(controller) {
-        if (controller != this.controller1) {
-            return;
-        }
-        if (controller instanceof MouseController) {
-            return this.updateRotatingFromMouseController(controller);
-        }
-        const model = this.draggableObject;
-        const deltaPosition = new THREE.Vector3().subVectors(controller.position, this.originalController1Position);
-        deltaPosition.applyQuaternion(this.originalController1RotationInverse);
-        const offsetRotation = _quaternion.setFromAxisAngle(UP, 10.0 * deltaPosition.x);
-        model.quaternion.multiplyQuaternions(offsetRotation, this.originalObjectRotation);
-        return true;
-    }
-    updateRotatingFromMouseController(controller) {
-        const model = this.draggableObject;
-        const deltaRotation = _quaternion.multiplyQuaternions(controller.quaternion, this.originalController1RotationInverse);
-        const rotationYawAngle = _euler.setFromQuaternion(deltaRotation, 'YXZ');
-        const offsetRotation = _quaternion.setFromAxisAngle(UP, -10 * rotationYawAngle.y);
-        model.quaternion.multiplyQuaternions(offsetRotation, this.originalObjectRotation);
-        return true;
-    }
-    updateScaling() {
-        const newControllerDistance = _vector3
-            .subVectors(this.controller1.position, this.controller2.position)
-            .length();
-        const distanceRatio = newControllerDistance / this.originalScalingControllerDistance;
-        const model = this.draggableObject;
-        model.scale
-            .copy(this.originalScalingObjectScale)
-            .multiplyScalar(distanceRatio);
-        return true;
-    }
-    turnPanelToFaceTheCamera() {
-        const model = this.draggableObject;
-        _vector3.subVectors(model.position, this.camera.position);
-        model.quaternion.setFromAxisAngle(UP, (3 * Math.PI) / 2 - Math.atan2(_vector3.z, _vector3.x));
-    }
-    /**
-     * Seach up the scene graph to find the first draggable object and the first
-     * drag mode at or below the draggable object.
-     * @param target - Child object to search.
-     * @returns Array containing the first draggable object and the first drag
-     *     mode.
-     */
-    findDraggableObjectAndDraggingMode(target) {
-        let currentTarget = target;
-        let draggableObject;
-        let draggingMode;
-        while (currentTarget && !draggableObject) {
-            draggableObject = currentTarget.draggable
-                ? currentTarget
-                : undefined;
-            draggingMode =
-                draggingMode ??
-                    currentTarget.draggingMode;
-            currentTarget = currentTarget.parent;
-        }
-        return [draggableObject, draggingMode];
-    }
-}
-
 class IconButton extends TextView {
     /**
      * Overrides the parent `rangeX` to ensure the circular shape is not affected
@@ -23285,55 +24106,6 @@ function visualizeDepthMap(depthArray, width, height) {
     link.click();
 }
 
-class OcclusionUtils {
-    /**
-     * Creates a simple material used for rendering objects into the occlusion
-     * map. This material is intended to be used with `renderer.overrideMaterial`.
-     * @returns A new instance of THREE.MeshBasicMaterial.
-     */
-    static createOcclusionMapOverrideMaterial() {
-        return new THREE.MeshBasicMaterial();
-    }
-    /**
-     * Modifies a material's shader in-place to incorporate distance-based
-     * alpha occlusion. This is designed to be used with a material's
-     * `onBeforeCompile` property. This only works with built-in three.js
-     * materials.
-     * @param shader - The shader object provided by onBeforeCompile.
-     */
-    static addOcclusionToShader(shader) {
-        shader.uniforms.occlusionEnabled = { value: true };
-        shader.uniforms.tOcclusionMap = { value: null };
-        shader.uniforms.uOcclusionClipFromWorld = { value: new THREE.Matrix4() };
-        shader.defines = { USE_UV: true, DISTANCE: true };
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', [
-            'uniform mat4 uOcclusionClipFromWorld;',
-            'varying vec4 vOcclusionScreenCoord;',
-            '#include <common>',
-        ].join('\n'))
-            .replace('#include <fog_vertex>', [
-            '#include <fog_vertex>',
-            'vOcclusionScreenCoord = uOcclusionClipFromWorld * worldPosition;',
-        ].join('\n'));
-        shader.fragmentShader = shader.fragmentShader
-            .replace('uniform vec3 diffuse;', [
-            'uniform vec3 diffuse;',
-            'uniform bool occlusionEnabled;',
-            'uniform sampler2D tOcclusionMap;',
-            'varying vec4 vOcclusionScreenCoord;',
-        ].join('\n'))
-            .replace('vec4 diffuseColor = vec4( diffuse, opacity );', [
-            'vec4 diffuseColor = vec4( diffuse, opacity );',
-            'vec2 occlusion_coordinates = 0.5 + 0.5 * vOcclusionScreenCoord.xy / vOcclusionScreenCoord.w;',
-            'vec2 occlusion_sample = texture2D(tOcclusionMap, occlusion_coordinates.xy).rg;',
-            'occlusion_sample = occlusion_sample / max(0.0001, occlusion_sample.g);',
-            'float occlusion_value = clamp(occlusion_sample.r, 0.0, 1.0);',
-            'diffuseColor.a *= occlusionEnabled ? occlusion_value : 1.0;',
-        ].join('\n'));
-    }
-}
-
 /**
  * StrokeRecognizer is a framework Script that handles recording hand stroke gestures
  * and recognizing them as geometric shapes using a configured provider.
@@ -24280,7 +25052,7 @@ class TextScrollerState extends Script {
     }
 }
 
-const vector3$2 = new THREE.Vector3();
+const vector3$1 = new THREE.Vector3();
 /**
  * A simple container that represents a single, swipeable page
  * within a `Pager` component. It's a fundamental building block for creating
@@ -24292,9 +25064,9 @@ class Page extends View {
     }
     updateLayout() {
         // Do not update the position.
-        vector3$2.copy(this.position);
+        vector3$1.copy(this.position);
         super.updateLayout();
-        this.position.copy(vector3$2);
+        this.position.copy(vector3$1);
     }
 }
 
@@ -24333,7 +25105,7 @@ class PagerState extends Script {
     }
 }
 
-const vector3$1 = new THREE.Vector3();
+const vector3 = new THREE.Vector3();
 const matrix4 = new THREE.Matrix4();
 /**
  * A layout container that manages a collection of `Page` views and
@@ -24490,7 +25262,7 @@ class Pager extends View {
             this.updateMatrixWorld();
             matrix4.copy(this.matrixWorld).invert();
             for (const intersection of childIntersections) {
-                const pointInLocalCoordinates = vector3$1
+                const pointInLocalCoordinates = vector3
                     .copy(intersection.point)
                     .applyMatrix4(matrix4);
                 if (Math.abs(pointInLocalCoordinates.x) < 0.5) {
@@ -24659,737 +25431,6 @@ class FreestandingSlider {
      */
     updateValue(value) {
         this.startingValue = value;
-    }
-}
-
-/**
- * The base URL for Three.js JSM examples, used for DRACO and KTX2 decoders.
- */
-const jsmUrl = `https://cdn.jsdelivr.net/npm/three@0.${THREE.REVISION}.0/examples/jsm/`;
-/**
- * The configured GLTFLoader instance.
- */
-let gltfLoaderInstance;
-function getGLTFLoader(renderer, manager) {
-    if (gltfLoaderInstance) {
-        return gltfLoaderInstance;
-    }
-    const dracoLoader = new DRACOLoader(manager);
-    dracoLoader.setDecoderPath(jsmUrl + 'libs/draco/');
-    dracoLoader.setDecoderConfig({ type: 'js' });
-    const ktx2Loader = new KTX2Loader(manager);
-    ktx2Loader.setTranscoderPath(jsmUrl + 'libs/basis/');
-    if (renderer) {
-        ktx2Loader.detectSupport(renderer);
-    }
-    gltfLoaderInstance = new GLTFLoader(manager);
-    gltfLoaderInstance.setDRACOLoader(dracoLoader);
-    gltfLoaderInstance.setKTX2Loader(ktx2Loader);
-    return gltfLoaderInstance;
-}
-/**
- * Manages the loading of 3D models, automatically handling dependencies
- * like DRACO and KTX2 loaders.
- */
-class ModelLoader {
-    /**
-     * Creates an instance of ModelLoader.
-     * @param manager - The
-     *     loading manager to use,
-     * required for KTX2 texture support.
-     */
-    constructor(manager = THREE.DefaultLoadingManager) {
-        this.manager = manager;
-    }
-    /**
-     * Loads a model based on its file extension. Supports .gltf, .glb,
-     * .ply, .spz, .splat, and .ksplat.
-     * @returns A promise that resolves with the loaded model data (e.g., a glTF
-     *     scene or a SplatMesh).
-     */
-    async load({ path, url = '', renderer = undefined, onProgress = undefined, }) {
-        if (onProgress) {
-            console.warn('ModelLoader: An onProgress callback was provided to load(), ' +
-                'but a LoadingManager is in use. Progress will be reported via the ' +
-                "LoadingManager's onProgress callback. The provided callback will be ignored.");
-        }
-        const extension = url.split('.').pop()?.toLowerCase() || '';
-        const splatExtensions = ['ply', 'spz', 'splat', 'ksplat'];
-        const gltfExtensions = ['gltf', 'glb'];
-        if (gltfExtensions.includes(extension)) {
-            return await this.loadGLTF({ path, url, renderer });
-        }
-        else if (splatExtensions.includes(extension)) {
-            return await this.loadSplat({ url });
-        }
-        console.error('Unsupported file type: ' + extension);
-        return null;
-    }
-    /**
-     * Loads a 3DGS model (.ply, .spz, .splat, .ksplat).
-     * @param url - The URL of the model file.
-     * @returns A promise that resolves with the loaded
-     * SplatMesh object.
-     */
-    async loadSplat({ url = '' }) {
-        const { SplatMesh } = await import('@sparkjsdev/spark'); // Dynamic import
-        const splatMesh = new SplatMesh({ url });
-        await splatMesh.initialized;
-        return splatMesh;
-    }
-    /**
-     * Loads a GLTF or GLB model.
-     * @param options - The loading options.
-     * @returns A promise that resolves with the loaded glTF object.
-     */
-    async loadGLTF({ path, url = '', renderer = undefined, }) {
-        const loader = getGLTFLoader(renderer, this.manager);
-        if (path) {
-            loader.setPath(path);
-        }
-        return new Promise((resolve, reject) => {
-            loader.load(url, (gltf) => resolve(gltf), undefined, (error) => reject(error));
-        });
-    }
-}
-
-/**
- * Calculates the bounding box for a group of THREE.Object3D instances.
- *
- * @param objects - An array of THREE.Object3D instances.
- * @returns The computed THREE.Box3.
- */
-function getGroupBoundingBox(objects) {
-    const bbox = new THREE.Box3();
-    if (objects.length === 0) {
-        return bbox;
-    }
-    const parentReferences = new Map();
-    for (const child of objects) {
-        if (child.parent) {
-            parentReferences.set(child, child.parent);
-            child.removeFromParent();
-        }
-        bbox.expandByObject(child, true);
-    }
-    // Restore parent references
-    for (const [child, parent] of parentReferences.entries()) {
-        parent.add(child);
-    }
-    return bbox;
-}
-
-/**
- * A custom `THREE.BufferGeometry` that creates one rounded corner
- * piece for the `ModelViewerPlatform`. Four of these are instantiated and
- * rotated to form all corners of the platform.
- */
-class ModelViewerPlatformCornerGeometry extends THREE.BufferGeometry {
-    constructor(radius = 1, tube = 0.4, radialSegments = 12, tubularSegments = 48) {
-        super();
-        const indices = [];
-        const vertices = [];
-        const normals = [];
-        const uvs = [];
-        const center = new THREE.Vector3();
-        const vertex = new THREE.Vector3();
-        const normal = new THREE.Vector3();
-        for (let j = 0; j <= radialSegments; j++) {
-            for (let i = 0; i <= tubularSegments; i++) {
-                const u = ((i / tubularSegments) * Math.PI) / 2;
-                const v = (j / radialSegments) * Math.PI + (3 * Math.PI) / 2;
-                vertex.x = (radius + tube * Math.cos(v)) * Math.cos(u);
-                vertex.y = (radius + tube * Math.cos(v)) * Math.sin(u);
-                vertex.z = tube * Math.sin(v);
-                vertices.push(vertex.x, vertex.y, vertex.z);
-                center.x = radius * Math.cos(u);
-                center.y = radius * Math.sin(u);
-                normal.subVectors(vertex, center).normalize();
-                normals.push(normal.x, normal.y, normal.z);
-                uvs.push(i / tubularSegments);
-                uvs.push(j / radialSegments);
-            }
-        }
-        for (let j = 1; j <= radialSegments; j++) {
-            for (let i = 1; i <= tubularSegments; i++) {
-                const a = (tubularSegments + 1) * j + i - 1;
-                const b = (tubularSegments + 1) * (j - 1) + i - 1;
-                const c = (tubularSegments + 1) * (j - 1) + i;
-                const d = (tubularSegments + 1) * j + i;
-                indices.push(a, b, d);
-                indices.push(b, c, d);
-            }
-        }
-        this.setIndex(indices);
-        this.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        this.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-        this.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    }
-}
-
-/**
- * A factory function that constructs the complete geometry for a
- * `ModelViewerPlatform`. It combines several sub-geometries: four rounded
- * corners, four straight side tubes, and the flat top and bottom surfaces.
- * @param width - The total width of the platform.
- * @param depth - The total depth of the platform.
- * @param thickness - The thickness of the platform.
- * @param cornerRadius - The radius of the rounded corners.
- * @returns A merged `THREE.BufferGeometry` for the entire platform.
- */
-function createPlatformGeometry(width = 1, depth = 1, thickness = 0.02, cornerRadius = 0.03, cornerWidthSegments = 5, radialSegments = 5) {
-    const sideGeometries = createPlatformSideGeometries(width, depth, thickness, cornerRadius, cornerWidthSegments, radialSegments);
-    const sideGeometriesVertexCount = sideGeometries.reduce((acc, val) => {
-        return acc + val.index.count;
-    }, 0);
-    const flatGeometries = createPlatformFlatGeometries(width, depth, thickness, cornerRadius, cornerWidthSegments);
-    const flatGeometriesVertexCount = flatGeometries.reduce((acc, val) => {
-        return acc + val.index.count;
-    }, 0);
-    const allGeometries = [...sideGeometries, ...flatGeometries];
-    const mergedGeometry = BufferGeometryUtils.mergeGeometries(allGeometries);
-    allGeometries.forEach((geometry) => geometry.dispose());
-    mergedGeometry.addGroup(0, sideGeometriesVertexCount, 0);
-    mergedGeometry.addGroup(sideGeometriesVertexCount, flatGeometriesVertexCount, 1);
-    mergedGeometry.computeBoundingBox();
-    return mergedGeometry;
-}
-function createPlatformSideGeometries(width = 1, depth = 1, thickness = 0.01, cornerRadius = 0.03, cornerWidthSegments = 5, radialSegments = 5) {
-    const cornerGeometry = new ModelViewerPlatformCornerGeometry(cornerRadius, thickness / 2, radialSegments, cornerWidthSegments).rotateX(Math.PI / 2);
-    const cornerGeometry1 = cornerGeometry
-        .clone()
-        .rotateY((2 * Math.PI) / 2)
-        .translate(-(width / 2 - cornerRadius), 0, -(depth / 2 - cornerRadius));
-    const cornerGeometry2 = cornerGeometry
-        .clone()
-        .rotateY((3 * Math.PI) / 2)
-        .translate(-(width / 2 - cornerRadius), 0, depth / 2 - cornerRadius);
-    const cornerGeometry3 = cornerGeometry
-        .clone()
-        .rotateY((4 * Math.PI) / 2)
-        .translate(width / 2 - cornerRadius, 0, depth / 2 - cornerRadius);
-    const cornerGeometry4 = cornerGeometry
-        .rotateY((5 * Math.PI) / 2)
-        .translate(width / 2 - cornerRadius, 0, -(depth / 2 - cornerRadius));
-    const cornerTubes = [
-        cornerGeometry1,
-        cornerGeometry2,
-        cornerGeometry3,
-        cornerGeometry4,
-    ];
-    const widthTube = new THREE.CylinderGeometry(thickness / 2, thickness / 2, width - 2 * cornerRadius, radialSegments, 1, true, 0, Math.PI).rotateZ(Math.PI / 2);
-    const widthTube1 = widthTube
-        .clone()
-        .rotateX(-Math.PI / 2)
-        .translate(0, 0, -depth / 2);
-    const widthTube2 = widthTube.rotateX(Math.PI / 2).translate(0, 0, depth / 2);
-    const depthTube = new THREE.CylinderGeometry(thickness / 2, thickness / 2, depth - 2 * cornerRadius, radialSegments, 1, true, 0, Math.PI).rotateX(-Math.PI / 2);
-    const depthTube1 = depthTube
-        .clone()
-        .rotateY(Math.PI)
-        .translate(-width / 2, 0, 0);
-    const depthTube2 = depthTube.translate(width / 2, 0, 0);
-    const sideTubes = [widthTube1, widthTube2, depthTube1, depthTube2];
-    return [...cornerTubes, ...sideTubes];
-}
-function createPlatformFlatGeometries(width = 1, depth = 1, thickness = 0.01, cornerRadius = 0.03, cornerWidthSegments = 5) {
-    const widthMinusRadius = width - 2 * cornerRadius;
-    const depthMinusRadius = depth - 2 * cornerRadius;
-    const longQuad = new THREE.PlaneGeometry(width, depthMinusRadius).rotateX(-Math.PI / 2);
-    const shortQuad = new THREE.PlaneGeometry(widthMinusRadius, cornerRadius).rotateX(-Math.PI / 2);
-    const shortQuadTranslationZ = depthMinusRadius / 2 + cornerRadius / 2;
-    const shortQuad1 = shortQuad.clone().translate(0, 0, shortQuadTranslationZ);
-    const shortQuad2 = shortQuad.translate(0, 0, -shortQuadTranslationZ);
-    const quadGeometries = [longQuad, shortQuad1, shortQuad2];
-    const cornerCircle = new THREE.CircleGeometry(cornerRadius, cornerWidthSegments, 0, Math.PI / 2).rotateX(-Math.PI / 2);
-    const circleTranslationZ = depthMinusRadius / 2;
-    const circleTranslationX = widthMinusRadius / 2;
-    const cornerCircle1 = cornerCircle
-        .clone()
-        .rotateY((3 * Math.PI) / 2)
-        .translate(circleTranslationX, 0, circleTranslationZ);
-    const cornerCircle2 = cornerCircle
-        .clone()
-        .rotateY((0 * Math.PI) / 2)
-        .translate(circleTranslationX, 0, -circleTranslationZ);
-    const cornerCircle3 = cornerCircle
-        .clone()
-        .rotateY((1 * Math.PI) / 2)
-        .translate(-circleTranslationX, 0, -circleTranslationZ);
-    const cornerCircle4 = cornerCircle
-        .clone()
-        .rotateY((2 * Math.PI) / 2)
-        .translate(-circleTranslationX, 0, circleTranslationZ);
-    const circleGeometries = [
-        cornerCircle1,
-        cornerCircle2,
-        cornerCircle3,
-        cornerCircle4,
-    ];
-    const topGeometries = [...quadGeometries, ...circleGeometries];
-    const bottomGeometries = topGeometries.map((geometry) => {
-        return geometry
-            .clone()
-            .rotateX(Math.PI)
-            .translate(0, -thickness / 2, 0);
-    });
-    topGeometries.forEach((geometry) => geometry.translate(0, thickness / 2, 0));
-    return [...topGeometries, ...bottomGeometries];
-}
-
-/**
- * A specialized `THREE.Mesh` that serves as the interactive base for
- * a `ModelViewer`. It has a distinct visual appearance and handles the logic
- * for fading in and out on hover. Its `draggingMode` is set to `TRANSLATING` to
- * enable movement.
- */
-class ModelViewerPlatform extends THREE.Mesh {
-    constructor(width, depth, thickness) {
-        const geometry = createPlatformGeometry(width, depth, thickness);
-        super(geometry, [
-            new THREE.MeshLambertMaterial({
-                color: 0xffffff,
-                transparent: true,
-                opacity: 0.0,
-            }),
-            new THREE.MeshLambertMaterial({
-                color: 0xffffff,
-                transparent: true,
-                opacity: 0.0,
-            }),
-        ]);
-        this.draggingMode = DragManager.TRANSLATING;
-        this.opacity = new AnimatableNumber(0, 0, 0.5, 0);
-    }
-    update(deltaTime) {
-        this.opacity.update(deltaTime);
-        this.material[0].opacity = this.opacity.value;
-        this.material[1].opacity = 0.5 * this.opacity.value;
-        this.visible = this.opacity.value > 0.001;
-    }
-}
-
-const defaultPlatformMargin = new THREE.Vector2(0.2, 0.2);
-const vector3 = new THREE.Vector3();
-const quaternion = new THREE.Quaternion();
-const quaternion2 = new THREE.Quaternion();
-class SplatAnchor extends THREE.Object3D {
-    constructor() {
-        super(...arguments);
-        this.draggingMode = DragMode.ROTATING;
-    }
-}
-class RotationRaycastMesh extends THREE.Mesh {
-    constructor(geometry, material) {
-        super(geometry, material);
-        this.draggingMode = DragMode.ROTATING;
-    }
-}
-/**
- * A comprehensive UI component for loading, displaying, and
- * interacting with 3D models (GLTF and Splats) in an XR scene. It
- * automatically creates an interactive platform for translation and provides
- * mechanisms for rotation and scaling in both desktop and XR.
- */
-class ModelViewer extends Script {
-    static { this.dependencies = {
-        camera: THREE.Camera,
-        depth: Depth,
-        scene: THREE.Scene,
-        renderer: THREE.WebGLRenderer,
-        registry: Registry,
-        timer: THREE.Timer,
-    }; }
-    constructor({ castShadow = true, receiveShadow = true, raycastToChildren = false, }) {
-        super();
-        this.draggable = true;
-        this.rotatable = true;
-        this.scalable = true;
-        this.platformAnimationSpeed = 2;
-        this.platformThickness = 0.02;
-        this.isOneOneScale = false;
-        this.initialScale = new THREE.Vector3().setScalar(1);
-        this.startAnimationOnLoad = true;
-        this.clipActions = [];
-        this.bbox = new THREE.Box3();
-        this.hoveringControllers = new Set();
-        this.occludableShaders = new Set();
-        this.castShadow = castShadow;
-        this.receiveShadow = receiveShadow;
-        this.raycastToChildren = raycastToChildren;
-    }
-    async init({ camera, depth, scene, renderer, registry, timer, }) {
-        this.camera = camera;
-        this.depth = depth;
-        this.scene = scene;
-        this.renderer = renderer;
-        this.registry = registry;
-        this.timer = timer;
-        for (const shader of this.occludableShaders) {
-            this.depth.occludableShaders.add(shader);
-        }
-        if (this.splatMesh) {
-            await this.createSparkRendererIfNeeded();
-            this.scene.add(this.splatMesh);
-        }
-    }
-    async loadSplatModel({ data, onSceneLoaded = (_) => { }, platformMargin = defaultPlatformMargin, setupRaycastCylinder = true, setupRaycastBox = false, setupPlatform = true, }) {
-        this.data = data;
-        if (data.scale) {
-            this.initialScale.copy(data.scale);
-        }
-        const splatMesh = await new ModelLoader().loadSplat({ url: data.model });
-        this.splatMesh = splatMesh;
-        splatMesh.raycast = () => { };
-        this.splatAnchor = new SplatAnchor();
-        this.splatAnchor.add(splatMesh);
-        if (data.scale) {
-            this.splatAnchor.scale.copy(data.scale);
-        }
-        if (data.rotation) {
-            this.splatAnchor.rotation.set(THREE.MathUtils.degToRad(data.rotation.x), THREE.MathUtils.degToRad(data.rotation.y), THREE.MathUtils.degToRad(data.rotation.z));
-        }
-        if (data.position) {
-            this.splatAnchor.position.copy(data.position);
-        }
-        this.add(this.splatAnchor);
-        await this.createSparkRendererIfNeeded();
-        await this.setupBoundingBox(data.verticallyAlignObject !== false, data.horizontallyAlignObject !== false);
-        if (setupRaycastCylinder) {
-            this.setupRaycastCylinder();
-        }
-        else if (setupRaycastBox) {
-            this.setupRaycastBox();
-        }
-        if (setupPlatform) {
-            this.setupPlatform(platformMargin);
-        }
-        this.setCastShadow(this.castShadow);
-        this.setReceiveShadow(this.receiveShadow);
-        // Return the anchor, as it's the interactive object in the scene graph
-        return onSceneLoaded ? onSceneLoaded(this.splatAnchor) : this.splatAnchor;
-    }
-    async loadGLTFModel({ data, onSceneLoaded = () => { }, platformMargin = defaultPlatformMargin, setupRaycastCylinder = true, setupRaycastBox = false, setupPlatform = true, renderer = undefined, addOcclusionToShader = false, }) {
-        this.data = data;
-        if (data.scale) {
-            this.initialScale.copy(data.scale);
-        }
-        const gltf = await new ModelLoader().loadGLTF({
-            path: data.path,
-            url: data.model,
-            renderer: renderer,
-        });
-        const animationMixer = new THREE.AnimationMixer(gltf.scene);
-        gltf.animations.forEach((clip) => {
-            if (this.startAnimationOnLoad) {
-                animationMixer.clipAction(clip).play();
-            }
-            else {
-                this.clipActions.push(animationMixer.clipAction(clip));
-            }
-        });
-        gltf.scene.draggingMode =
-            DragManager.ROTATING;
-        this.gltfMesh = gltf;
-        this.animationMixer = animationMixer;
-        // Set the initial scale
-        if (data.scale) {
-            this.gltfMesh.scene.scale.copy(data.scale);
-        }
-        if (data.rotation) {
-            gltf.scene.rotation.set(THREE.MathUtils.degToRad(data.rotation.x), THREE.MathUtils.degToRad(data.rotation.y), THREE.MathUtils.degToRad(data.rotation.z));
-        }
-        if (data.position) {
-            gltf.scene.position.copy(data.position);
-        }
-        gltf.scene.draggingMode =
-            DragManager.ROTATING;
-        this.add(gltf.scene);
-        await this.setupBoundingBox(data.verticallyAlignObject !== false, data.horizontallyAlignObject !== false);
-        if (setupRaycastCylinder) {
-            this.setupRaycastCylinder();
-        }
-        else if (setupRaycastBox) {
-            this.setupRaycastBox();
-        }
-        if (setupPlatform) {
-            this.setupPlatform(platformMargin);
-        }
-        this.setCastShadow(this.castShadow);
-        this.setReceiveShadow(this.receiveShadow);
-        if (addOcclusionToShader) {
-            for (const material of this.platform?.material || []) {
-                material.onBeforeCompile = (shader) => {
-                    OcclusionUtils.addOcclusionToShader(shader);
-                    shader.uniforms.occlusionEnabled.value = true;
-                    material.userData.shader = shader;
-                    this.occludableShaders.add(shader);
-                    this.depth?.occludableShaders.add(shader);
-                };
-            }
-            this.platform?.layers.enable(OCCLUDABLE_ITEMS_LAYER);
-            gltf.scene.traverse((child) => {
-                if (child.isMesh) {
-                    const mesh = child;
-                    (mesh.material instanceof Array
-                        ? mesh.material
-                        : [mesh.material]).forEach((material) => {
-                        material.transparent = true;
-                        material.onBeforeCompile = (shader) => {
-                            OcclusionUtils.addOcclusionToShader(shader);
-                            shader.uniforms.occlusionEnabled.value = true;
-                            this.occludableShaders.add(shader);
-                            this.depth?.occludableShaders.add(shader);
-                        };
-                    });
-                    child.layers.enable(OCCLUDABLE_ITEMS_LAYER);
-                }
-            });
-        }
-        return onSceneLoaded ? onSceneLoaded(gltf.scene) : gltf.scene;
-    }
-    async setupBoundingBox(verticallyAlignObject = true, horizontallyAlignObject = true) {
-        if (this.splatMesh) {
-            const localBbox = await this.splatMesh.getBoundingBox(false);
-            if (localBbox.isEmpty()) {
-                this.bbox = localBbox;
-                return;
-            }
-            this.splatAnchor.updateMatrix();
-            const localBboxOfTransformedMesh = localBbox
-                .clone()
-                .applyMatrix4(this.splatAnchor.matrix);
-            const translationAmount = new THREE.Vector3();
-            localBboxOfTransformedMesh
-                .getCenter(translationAmount)
-                .multiplyScalar(-1);
-            if (verticallyAlignObject) {
-                translationAmount.y = -localBboxOfTransformedMesh.min.y;
-            }
-            else {
-                translationAmount.y = 0;
-            }
-            if (!horizontallyAlignObject) {
-                translationAmount.x = 0;
-                translationAmount.z = 0;
-            }
-            this.splatAnchor.position.add(translationAmount);
-            this.bbox = localBboxOfTransformedMesh.translate(translationAmount);
-        }
-        else {
-            const contentChildren = this.children.filter((c) => c !== this.platform &&
-                c !== this.rotationRaycastMesh &&
-                c !== this.controlBar);
-            this.bbox = getGroupBoundingBox(contentChildren);
-            if (this.bbox.isEmpty()) {
-                return;
-            }
-            const translationAmount = new THREE.Vector3();
-            this.bbox.getCenter(translationAmount).multiplyScalar(-1);
-            if (verticallyAlignObject) {
-                translationAmount.y = -this.bbox.min.y;
-            }
-            else {
-                translationAmount.y = 0;
-            }
-            if (!horizontallyAlignObject) {
-                translationAmount.x = 0;
-                translationAmount.z = 0;
-            }
-            for (const child of contentChildren) {
-                child.position.add(translationAmount);
-            }
-            this.bbox.translate(translationAmount);
-        }
-    }
-    setupRaycastCylinder() {
-        const bboxSize = new THREE.Vector3();
-        this.bbox.getSize(bboxSize);
-        const radius = 0.05 + 0.5 * Math.min(bboxSize.x, bboxSize.z);
-        const rotationRaycastMesh = new RotationRaycastMesh(new THREE.CylinderGeometry(radius, radius, bboxSize.y), new THREE.MeshBasicMaterial({ color: 0x990000, wireframe: true }));
-        this.bbox.getCenter(rotationRaycastMesh.position);
-        this.rotationRaycastMesh = rotationRaycastMesh;
-        this.rotationRaycastMesh.visible = false;
-        this.add(this.rotationRaycastMesh);
-    }
-    setupRaycastBox() {
-        if (this.rotationRaycastMesh) {
-            this.rotationRaycastMesh.removeFromParent();
-            this.rotationRaycastMesh.geometry.dispose();
-            this.rotationRaycastMesh.material.dispose();
-        }
-        const bboxSize = new THREE.Vector3();
-        this.bbox.getSize(bboxSize);
-        const rotationRaycastMesh = new RotationRaycastMesh(new THREE.BoxGeometry(bboxSize.x, bboxSize.y, bboxSize.z), new THREE.MeshBasicMaterial({ color: 0x990000, wireframe: true }));
-        this.bbox.getCenter(rotationRaycastMesh.position);
-        this.rotationRaycastMesh = rotationRaycastMesh;
-        this.rotationRaycastMesh.visible = false;
-        this.add(this.rotationRaycastMesh);
-    }
-    setupPlatform(platformMargin = defaultPlatformMargin) {
-        const bboxSize = new THREE.Vector3();
-        this.bbox.getSize(bboxSize);
-        const width = bboxSize.x + platformMargin.x;
-        const depth = bboxSize.z + platformMargin.y;
-        this.platform = new ModelViewerPlatform(width, depth, this.platformThickness);
-        const center = new THREE.Vector3();
-        this.bbox.getCenter(center);
-        this.platform.position.set(center.x, -this.platformThickness / 2, center.z);
-        this.add(this.platform);
-    }
-    update() {
-        const delta = this.timer.getDelta();
-        if (this.animationMixer) {
-            this.animationMixer.update(delta);
-        }
-        if (this.platform) {
-            this.platform.update(delta);
-        }
-        const camera = this.camera;
-        if (this.controlBar != null &&
-            this.controlBar.parent == this &&
-            camera != null) {
-            const directionToCamera = vector3
-                .copy(camera.position)
-                .sub(this.position);
-            const distanceToCamera = directionToCamera.length();
-            const pitchAngleRadians = Math.asin(directionToCamera.normalize().y);
-            directionToCamera.y = 0;
-            directionToCamera.normalize();
-            // Make the button face the camera.
-            quaternion.copy(this.quaternion).invert();
-            this.controlBar.quaternion
-                .setFromAxisAngle(LEFT, pitchAngleRadians)
-                .premultiply(quaternion2.setFromUnitVectors(BACK, directionToCamera))
-                .premultiply(quaternion);
-            this.controlBar.position
-                .setScalar(0)
-                .addScaledVector(directionToCamera, 0.5)
-                .applyQuaternion(quaternion);
-            this.controlBar.position.y = 0.0;
-            this.controlBar.scale.set(distanceToCamera / this.scale.x, distanceToCamera / this.scale.y, distanceToCamera / this.scale.z);
-        }
-    }
-    onObjectSelectStart() {
-        return this.draggable || this.rotatable || this.scalable;
-    }
-    onObjectSelectEnd() {
-        return this.draggable || this.rotatable || this.scalable;
-    }
-    onHoverEnter(controller) {
-        this.hoveringControllers.add(controller);
-        if (this.platform) {
-            this.platform.opacity.speed = this.platformAnimationSpeed;
-        }
-    }
-    onHoverExit(controller) {
-        this.hoveringControllers.delete(controller);
-        if (this.platform && this.hoveringControllers.size == 0) {
-            this.platform.opacity.speed = -this.platformAnimationSpeed;
-        }
-    }
-    /**
-     * {@inheritDoc}
-     */
-    raycast(raycaster, intersects) {
-        const content = this.gltfMesh?.scene ?? this.splatMesh;
-        if (this.raycastToChildren && content) {
-            const childRaycasts = [];
-            for (const child of this.children) {
-                if (child != this.rotationRaycastMesh &&
-                    child != this.platform &&
-                    child != this.controlBar) {
-                    raycaster.intersectObject(child, true, childRaycasts);
-                }
-            }
-            intersects.push(...childRaycasts);
-        }
-        if (this.rotationRaycastMesh) {
-            const rotationIntersects = [];
-            this.rotationRaycastMesh.raycast(raycaster, rotationIntersects);
-            for (const intersect of rotationIntersects) {
-                intersects.push(intersect);
-            }
-        }
-        if (this.platform) {
-            const platformIntersects = [];
-            this.platform.raycast(raycaster, platformIntersects);
-            for (const intersect of platformIntersects) {
-                intersects.push(intersect);
-            }
-        }
-        if (this.controlBar != null && this.controlBar.parent == this) {
-            const controlButtonIntersects = [];
-            this.controlBar.raycast(raycaster, controlButtonIntersects);
-            for (const intersect of controlButtonIntersects) {
-                intersects.push(intersect);
-            }
-        }
-        return false;
-    }
-    onScaleButtonClick() {
-        this.scale.setScalar(1.0);
-    }
-    setCastShadow(castShadow) {
-        this.castShadow = castShadow;
-        if (this.gltfMesh) {
-            this.gltfMesh.scene.traverse(function (child) {
-                child.castShadow = castShadow;
-            });
-        }
-        if (this.platform) {
-            this.platform.castShadow = false;
-        }
-    }
-    setReceiveShadow(receiveShadow) {
-        this.receiveShadow = receiveShadow;
-        if (this.gltfMesh) {
-            this.gltfMesh.scene.traverse(function (child) {
-                child.receiveShadow = receiveShadow;
-            });
-        }
-        if (this.platform) {
-            this.platform.receiveShadow = receiveShadow;
-        }
-    }
-    getOcclusionEnabled() {
-        for (const shader of this.occludableShaders) {
-            return shader.uniforms.occlusionEnabled.value;
-        }
-        return false;
-    }
-    setOcclusionEnabled(enabled) {
-        for (const shader of this.occludableShaders) {
-            shader.uniforms.occlusionEnabled.value = enabled;
-        }
-    }
-    playClipAnimationOnce() {
-        if (this.startAnimationOnLoad || this.clipActions.length === 0) {
-            return;
-        }
-        this.clipActions.forEach((clip) => {
-            clip.reset();
-            clip.clampWhenFinished = true;
-            clip.loop = THREE.LoopOnce;
-            clip.play();
-        });
-    }
-    async createSparkRendererIfNeeded() {
-        // We insert our own SparkRenderer configured to show Gaussians up to
-        // Math.sqrt(4) standard deviations from the center, recommended for XR.
-        const { SparkRenderer } = await import('@sparkjsdev/spark');
-        let sparkRendererExists = false;
-        this.scene.traverse((child) => {
-            sparkRendererExists ||= child instanceof SparkRenderer;
-        });
-        if (!sparkRendererExists) {
-            const sparkRenderer = new SparkRenderer({
-                renderer: this.renderer,
-                maxStdDev: Math.sqrt(4),
-            });
-            this.registry.register(new SparkRendererHolder(sparkRenderer));
-            this.scene.add(sparkRenderer);
-        }
     }
 }
 

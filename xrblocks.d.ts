@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.17.0
- * @commitid a8c4072
- * @builddate 2026-07-16T17:59:22.576Z
+ * @commitid a57e841
+ * @builddate 2026-07-17T16:44:28.497Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6159,6 +6159,7 @@ declare class SimulatorControlMode {
     onPointerDown(_: MouseEvent): void;
     onPointerUp(_: MouseEvent): void;
     onPointerMove(_: MouseEvent): void;
+    onWheel(_: WheelEvent): boolean;
     onKeyDown(event: KeyboardEvent): void;
     onModeActivated(): void;
     onModeDeactivated(): void;
@@ -6261,6 +6262,7 @@ declare class SimulatorControls {
     onPointerMove: (event: MouseEvent) => void;
     onPointerDown: (event: MouseEvent) => void;
     onPointerUp: (event: MouseEvent) => void;
+    onWheel: (event: WheelEvent) => void;
     onKeyDown: (event: KeyboardEvent) => void;
     onKeyUp: (event: KeyboardEvent) => void;
     onBlur: () => void;
