@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import {roundContextNumber} from '../../shared/ContextNumberUtils';
 import {SemanticIdRegistry} from '../../shared/SemanticIdRegistry';
 import {getObjectBounds} from '../../shared/SemanticObjectUtils';
 import {
@@ -89,8 +90,8 @@ function projectObjectCenter(
     return null;
   }
   return {
-    x: (projected.x + 1) / 2,
-    y: (1 - projected.y) / 2,
+    x: roundContextNumber((projected.x + 1) / 2),
+    y: roundContextNumber((1 - projected.y) / 2),
   };
 }
 
@@ -123,7 +124,7 @@ async function renderSetOfMarkImage(
     const y = mark.y * canvas.height;
     ctx.beginPath();
     ctx.arc(x, y, 14, 0, Math.PI * 2);
-    ctx.fillStyle = '#ff0055';
+    ctx.fillStyle = '#ff005599';
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#ffffff';

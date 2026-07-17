@@ -39,6 +39,9 @@ immersive applications with features like:
   and spread detection with `options.enableGestures()`, tune providers or
   thresholds, and subscribe to `gesturestart`/`gestureupdate`/`gestureend`
   events from the shared subsystem.
+- **Head Gestures:** Detect completed nod and shake motions with
+  `options.enableHeadGestures()` and subscribe through
+  `xb.input.headGestures` on device or in the desktop simulator.
 - **World Understanding:** Present samples with depth sensing, geometry-aware
   physics, and object recognition with Gemini in both XR and desktop
   simulator.

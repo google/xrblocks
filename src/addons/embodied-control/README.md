@@ -23,6 +23,8 @@ const embodied = new EmbodiedControl();
 
 xb.add(embodied);
 await xb.init();
+// Resolves after initialization and any requested auto-pause complete.
+await embodied.ready;
 
 embodied.applyControl({
   rightHand: {visible: true},

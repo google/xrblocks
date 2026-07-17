@@ -8,6 +8,7 @@ import {ContextOptions} from '../context/ContextOptions';
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
 import {HandsOptions} from '../input/HandsOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
+import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRecognitionOptions.js';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
@@ -123,6 +124,7 @@ export class Options {
   deviceCamera = new DeviceCameraOptions();
   hands = new HandsOptions();
   gestures = new GestureRecognitionOptions();
+  headGestures = new HeadGestureRecognitionOptions();
   strokes = new StrokeRecognitionOptions();
   reticles = new ReticleOptions();
   sound = new SoundOptions();
@@ -398,6 +400,15 @@ export class Options {
   enableGestures() {
     this.enableHands();
     this.gestures.enable();
+    return this;
+  }
+
+  /**
+   * Enables completed nod and shake recognition from the user's head pose.
+   * @returns The instance for chaining.
+   */
+  enableHeadGestures() {
+    this.headGestures.enable();
     return this;
   }
 

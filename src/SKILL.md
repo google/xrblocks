@@ -5,7 +5,7 @@ description: >-
   package, source in `src/`). Use when writing, editing, or debugging WebXR /
   Android XR / VR / AR / mixed-reality experiences on this framework — authoring
   `xb.Script` classes, configuring `xb.Options`, and wiring spatial UI, hand
-  tracking, gestures, depth & occlusion, plane/object detection, physics,
+  tracking, hand/head gestures, depth & occlusion, plane/object detection, physics,
   spatial audio, or Gemini/OpenAI integration — and when running them in the
   desktop simulator or on-device. Covers the canonical app skeleton, the real
   `enable*` option methods, the `Script` lifecycle hooks, the global aliases
@@ -92,6 +92,7 @@ options.enableControllers(); // tracked controllers
 options.enableHands(); // hand tracking (joints, pinch)
 options.enableHandRays(); // visible rays from hands/controllers
 options.enableGestures(); // pinch/fist/point/etc. (see input/gestures)
+options.enableHeadGestures(); // completed nod/shake events (see input/headGestures)
 options.enableStrokes(); // $1 unistroke recognition
 options.enableDepth(); // WebXR depth sensing + depth mesh
 options.enablePlaneDetection(); // detected planes in xb.world
@@ -171,6 +172,7 @@ xb.user.isSelectingAt(object); // is the user selecting this object/subtree?
 xb.user.isPointingAt(object); // hover test
 xb.user.getReticleTarget(0); // object under controller 0's reticle
 xb.user.hands; // hand joints when enableHands()
+xb.input.headGestures; // optional completed nod/shake detector
 
 // AI (xb.ai — see ai/AI.ts). Requires a key (?key=... or keys.json) — guard it.
 if (xb.ai.isAvailable()) {
@@ -217,7 +219,7 @@ gradients, and shadows, use the **uiblocks addon** instead — see
 | Path                                                                                 | What lives there                                                                                                                                                               |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`core/`](core)                                                                      | `Core` singleton, `Script`, `Options`, `User`, DI `Registry`, `XRButton`, WebXR session mgmt                                                                                   |
-| [`input/`](input)                                                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `strokes/`                                                                                                              |
+| [`input/`](input)                                                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `headGestures/`; `strokes/`                                                                                             |
 | [`world/`](world)                                                                    | `World` + `planes/`, `mesh/`, `objects/` (Gemini & MediaPipe backends), `sounds/`                                                                                              |
 | [`context/`](context)                                                                | Agent-facing scene context: semantic tree, visible objects, Set-of-Mark screenshots                                                                                            |
 | [`depth/`](depth)                                                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                                                                                       |

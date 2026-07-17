@@ -16,6 +16,7 @@ import type {
 } from './Controller';
 import {GamepadController} from './GamepadController';
 import {GazeController} from './GazeController';
+import {HeadGestureRecognition} from './headGestures/HeadGestureRecognition';
 import {MouseController} from './MouseController';
 import {XRSystems} from '../core/components/XRSystems';
 
@@ -30,6 +31,7 @@ export class Reticles extends THREE.Group {
 }
 
 export type HasIgnoreReticleRaycast = {
+  /** Excludes this object and its descendants from reticle targeting and context visibility occlusion. */
   ignoreReticleRaycast: boolean;
 };
 export type MaybeHasIgnoreReticleRaycast = Partial<HasIgnoreReticleRaycast>;
@@ -46,6 +48,8 @@ export class Input {
   controllers: Controller[] = [];
   controllerGrips: THREE.Group[] = [];
   hands: THREE.XRHandSpace[] = [];
+  /** Completed head gestures, when enabled before initialization. */
+  headGestures?: HeadGestureRecognition;
   raycaster = new Raycaster();
   initialized = false;
   pivotsEnabled = false;
@@ -83,6 +87,15 @@ export class Input {
     this.controllersEnabled = options.controllers.enabled;
 
     this.options = options;
+
+    if (options.headGestures.enabled) {
+      this.headGestures = new HeadGestureRecognition();
+      systemsGroup.add(this.headGestures);
+    }
+
+    if (!options.controllers.enabled) {
+      return;
+    }
 
     const controllers = this.controllers;
     const controllerGrips = this.controllerGrips;

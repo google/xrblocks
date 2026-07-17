@@ -81,6 +81,7 @@ options.enableUI(); // spatial UI + reticles
 options.enableReticles(); // pointing cursor
 options.enableHands(); // hand tracking
 options.enableGestures(); // pinch/fist/point/spread/thumbs-up/open-palm
+options.enableHeadGestures(); // completed nod/shake events in xb.input.headGestures
 options.enableStrokes(); // $1 unistroke recognition
 options.enableDepth(); // depth sensing + depth mesh
 options.enablePlaneDetection(); // detected planes in xb.world
@@ -128,6 +129,6 @@ an in-page browser driver needs the automation preset and direct SDK access.
 ## Task Recipes -> Skills/
 
 For "how do I do X", use the focused skills in [`skills/`](skills/): `xb-core`, `xb-ui`,
-`xb-uiblocks`, `xb-modelviewer`, `xb-hands`, `xb-gestures`, `xb-depth`, `xb-world`,
+`xb-uiblocks`, `xb-modelviewer`, `xb-hands`, `xb-gestures`, `xb-head-gestures`, `xb-depth`, `xb-world`,
 `xb-context`, `xb-ai`, `xb-physics`, `xb-simulator`, `xb-netblocks`, `xb-sound`,
 `xb-testing`.

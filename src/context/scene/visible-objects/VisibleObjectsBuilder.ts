@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import {roundContextNumber} from '../../shared/ContextNumberUtils';
 import {SemanticTreeInternal} from '../semantic-tree/SemanticTreeBuilder';
 import {
   getObjectBounds,
@@ -89,7 +90,6 @@ function createSemanticViewData({
       rendered: true,
       inFrame: false,
       inLineOfSight: false,
-      occlusion: 'outOfFrame',
       ...projectedToScreenCoordinates(projected),
     };
   }
@@ -106,7 +106,6 @@ function createSemanticViewData({
     rendered: true,
     inFrame: true,
     inLineOfSight,
-    occlusion: inLineOfSight ? 'none' : 'occluded',
     ...projectedToScreenCoordinates(projected),
   };
 }
@@ -116,7 +115,6 @@ function createNotRenderedViewData(): SemanticViewData {
     rendered: false,
     inFrame: false,
     inLineOfSight: false,
-    occlusion: 'notRendered',
   };
 }
 
@@ -140,8 +138,8 @@ function isProjectedInFrame(projected: THREE.Vector3): boolean {
 
 function projectedToScreenCoordinates(projected: THREE.Vector3) {
   return {
-    x: (projected.x + 1) / 2,
-    y: (1 - projected.y) / 2,
+    x: roundContextNumber((projected.x + 1) / 2),
+    y: roundContextNumber((1 - projected.y) / 2),
   };
 }
 
@@ -177,6 +175,9 @@ function isObjectInLineOfSight({
     if (isSemanticInternalObject(hit.object)) {
       return false;
     }
+    if (ignoresReticleRaycast(hit.object)) {
+      return false;
+    }
     if (
       isDescendantOf(hit.object, object) ||
       isDescendantOf(object, hit.object)
@@ -190,6 +191,20 @@ function isObjectInLineOfSight({
   });
 
   return occludingHit === undefined;
+}
+
+function ignoresReticleRaycast(object: THREE.Object3D): boolean {
+  let current: THREE.Object3D | null = object;
+  while (current) {
+    if (
+      'ignoreReticleRaycast' in current &&
+      current.ignoreReticleRaycast === true
+    ) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
 }
 
 function isOpacityOccluding(

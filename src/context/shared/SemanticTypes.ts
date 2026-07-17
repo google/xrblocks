@@ -4,12 +4,6 @@ export type QuatTuple = [number, number, number, number];
 
 export type SemanticSource = 'xrblocks' | 'uiblocks' | 'three' | 'app';
 
-export type SemanticViewOcclusion =
-  | 'none'
-  | 'occluded'
-  | 'outOfFrame'
-  | 'notRendered';
-
 export interface SemanticBounds {
   center: Vec3Tuple;
   size: Vec3Tuple;
@@ -19,7 +13,6 @@ export interface SemanticViewData {
   rendered: boolean;
   inFrame: boolean;
   inLineOfSight: boolean;
-  occlusion: SemanticViewOcclusion;
   /**
    * Normalized horizontal screen coordinate: 0 at the left edge, 1 at the
    * right edge.
@@ -54,6 +47,7 @@ export interface SemanticNode {
 
 export interface SemanticTree {
   snapshotId: string;
+  /** Elapsed simulation time in milliseconds when the snapshot was captured. */
   capturedAt: number;
   rootIds: string[];
   nodes: Record<string, SemanticNode>;
@@ -80,6 +74,7 @@ export interface SetOfMark {
 
 export interface SetOfMarkContext {
   snapshotId: string;
+  /** Elapsed simulation time in milliseconds when the snapshot was captured. */
   capturedAt: number;
   image: string;
   marks: SetOfMark[];

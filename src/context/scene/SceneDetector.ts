@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {ScreenshotSynthesizer} from '../../core/components/ScreenshotSynthesizer';
+import {SimulationTimer} from '../../core/components/SimulationTimer';
 import {Script} from '../../core/Script';
 import {ContextOptions} from '../ContextOptions';
 import {
@@ -41,12 +42,14 @@ export class SceneDetector extends Script {
     scene: THREE.Scene,
     camera: THREE.Camera,
     screenshotSynthesizer: ScreenshotSynthesizer,
+    simulationTimer: SimulationTimer,
   };
 
   private options!: ContextOptions;
   private scene!: THREE.Scene;
   private camera!: THREE.Camera;
   private screenshotSynthesizer!: ScreenshotSynthesizer;
+  private simulationTimer?: SimulationTimer;
   private deviceCamera?: XRDeviceCamera;
   private registry = new SemanticIdRegistry();
   private snapshot: ContextSnapshot | null = null;
@@ -82,18 +85,21 @@ export class SceneDetector extends Script {
     scene,
     camera,
     screenshotSynthesizer,
+    simulationTimer,
     deviceCamera,
   }: {
     options: ContextOptions;
     scene: THREE.Scene;
     camera: THREE.Camera;
     screenshotSynthesizer: ScreenshotSynthesizer;
+    simulationTimer?: SimulationTimer;
     deviceCamera?: XRDeviceCamera;
   }) {
     this.options = options;
     this.scene = scene;
     this.camera = camera;
     this.screenshotSynthesizer = screenshotSynthesizer;
+    this.simulationTimer = simulationTimer;
     this.deviceCamera = deviceCamera ?? this.deviceCamera;
     this.snapshot = null;
     this.disposed = false;
@@ -359,6 +365,7 @@ export class SceneDetector extends Script {
         snapshot.semanticInternal = buildSemanticTree({
           scene: this.scene,
           registry: this.registry,
+          capturedAt: this.getCaptureTimeMs(),
         });
         this.snapshot = snapshot;
         return snapshot;
@@ -382,5 +389,9 @@ export class SceneDetector extends Script {
     this.tree = null;
     this.visibleObjects = null;
     this.setOfMark = null;
+  }
+
+  private getCaptureTimeMs() {
+    return this.simulationTimer?.getElapsedMs() ?? performance.now();
   }
 }
