@@ -183,6 +183,7 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
             { label: 'Navigation', value: xb.SimulatorMode.POSE },
             { label: 'Hands', value: xb.SimulatorMode.CONTROLLER },
             { label: 'Pointer Lock', value: xb.SimulatorMode.POINTER_LOCK },
+            { label: 'Editor', value: xb.SimulatorMode.EDITOR },
         ];
         return html `
       <button

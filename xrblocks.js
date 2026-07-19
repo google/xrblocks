@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 0dfc5ae
- * @builddate 2026-07-17T17:09:21.294Z
+ * @commitid 05ccce6
+ * @builddate 2026-07-19T01:06:37.474Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -10696,12 +10696,14 @@ var SimulatorMode;
     SimulatorMode["POSE"] = "Navigation";
     SimulatorMode["CONTROLLER"] = "Hands";
     SimulatorMode["POINTER_LOCK"] = "PointerLock";
+    SimulatorMode["EDITOR"] = "Editor";
 })(SimulatorMode || (SimulatorMode = {}));
 const DEFAULT_MODE_TOGGLE_ORDER = {
     [SimulatorMode.USER]: SimulatorMode.POSE,
     [SimulatorMode.POSE]: SimulatorMode.CONTROLLER,
     [SimulatorMode.CONTROLLER]: SimulatorMode.POINTER_LOCK,
-    [SimulatorMode.POINTER_LOCK]: SimulatorMode.USER,
+    [SimulatorMode.POINTER_LOCK]: SimulatorMode.EDITOR,
+    [SimulatorMode.EDITOR]: SimulatorMode.USER,
 };
 class SimulatorOptions {
     constructor(options) {
@@ -12166,103 +12168,6 @@ class SimulatorControllerMode extends SimulatorControlMode {
     }
 }
 
-class SimulatorPoseMode extends SimulatorControlMode {
-    onModeActivated() {
-        this.enableSimulatorHands();
-    }
-    onPointerMove(event) {
-        if (event.buttons) {
-            this.rotateOnPointerMove(event, this.camera.quaternion);
-        }
-    }
-}
-
-class SimulatorPointerLockController extends Script {
-    constructor() {
-        super(...arguments);
-        this.type = 'SimulatorPointerLockController';
-        this.name = 'Simulator Pointer Lock Controller';
-        this.userData = { id: 4, connected: false, selected: false };
-        this.reticle = new Reticle();
-    }
-    static { this.dependencies = { camera: THREE.Camera }; }
-    init({ camera }) {
-        this.camera = camera;
-    }
-    updatePose() {
-        this.position.copy(this.camera.position);
-        this.quaternion.copy(this.camera.quaternion);
-        this.updateMatrixWorld();
-    }
-    update() {
-        super.update();
-        if (!this.userData.connected)
-            return;
-        this.updatePose();
-    }
-    callSelectStart() {
-        this.dispatchEvent({ type: 'selectstart', target: this });
-    }
-    callSelectEnd() {
-        this.dispatchEvent({ type: 'selectend', target: this });
-    }
-    connect() {
-        this.dispatchEvent({ type: 'connected', target: this });
-    }
-    disconnect() {
-        this.dispatchEvent({ type: 'disconnected', target: this });
-    }
-}
-
-class SimulatorPointerLockMode extends SimulatorControlMode {
-    constructor() {
-        super(...arguments);
-        this.isPointerLocked = false;
-        this.pointerLockController = new SimulatorPointerLockController();
-        this.onPointerLockChange = () => {
-            this.isPointerLocked = document.pointerLockElement === this.domElement;
-        };
-    }
-    init(params) {
-        super.init(params);
-    }
-    onModeActivated() {
-        this.disableSimulatorHands();
-        this.input.enableController(this.pointerLockController);
-        document.addEventListener('pointerlockchange', this.onPointerLockChange);
-    }
-    onModeDeactivated() {
-        this.input.disableController(this.pointerLockController);
-        this.exitLock();
-        document.removeEventListener('pointerlockchange', this.onPointerLockChange);
-    }
-    exitLock() {
-        if (document.pointerLockElement === this.domElement) {
-            document.exitPointerLock();
-        }
-    }
-    onPointerDown(event) {
-        if (!this.isPointerLocked && this.domElement) {
-            this.domElement.requestPointerLock();
-        }
-        else if (this.isPointerLocked && event.buttons & 1) {
-            this.pointerLockController.userData.selected = true;
-            this.pointerLockController.callSelectStart();
-        }
-    }
-    onPointerUp() {
-        if (this.pointerLockController.userData.selected) {
-            this.pointerLockController.userData.selected = false;
-            this.pointerLockController.callSelectEnd();
-        }
-    }
-    onPointerMove(event) {
-        if (this.isPointerLocked) {
-            this.rotateOnPointerMove(event, this.camera.quaternion);
-        }
-    }
-}
-
 class OcclusionUtils {
     /**
      * Creates a simple material used for rendering objects into the occlusion
@@ -12851,6 +12756,15 @@ class ModelViewer extends Script {
         registry: Registry,
         timer: THREE.Timer,
     }; }
+    /** The loaded GLTF content's root object, if a model has been loaded via
+     * loadGLTFModel() -- public so external code (e.g. a scene-editor addon
+     * applying its own rotation gizmo) can read/transform the loaded
+     * content directly, independent of the ModelViewer's own
+     * position/scale. Exposes just the scene root, not the full GLTF
+     * (animations/cameras/etc.), to keep the rest of gltfMesh encapsulated. */
+    get modelScene() {
+        return this.gltfMesh?.scene;
+    }
     constructor({ castShadow = true, receiveShadow = true, raycastToChildren = false, }) {
         super();
         this.draggable = true;
@@ -13311,6 +13225,113 @@ class SimulatorUserMode extends SimulatorControlMode {
     }
 }
 
+/**
+ * Identical to SimulatorUserMode for camera movement and click-raycast
+ * behavior (WASDQE navigation, plain left-click = raycast) -- it exists as
+ * its own SimulatorMode purely so an addon (e.g. a scene editor) can key
+ * off `simulatorMode === SimulatorMode.EDITOR` to decide whether to show
+ * its own UI, without changing how the user navigates or clicks.
+ */
+class SimulatorEditorMode extends SimulatorUserMode {
+}
+
+class SimulatorPoseMode extends SimulatorControlMode {
+    onModeActivated() {
+        this.enableSimulatorHands();
+    }
+    onPointerMove(event) {
+        if (event.buttons) {
+            this.rotateOnPointerMove(event, this.camera.quaternion);
+        }
+    }
+}
+
+class SimulatorPointerLockController extends Script {
+    constructor() {
+        super(...arguments);
+        this.type = 'SimulatorPointerLockController';
+        this.name = 'Simulator Pointer Lock Controller';
+        this.userData = { id: 4, connected: false, selected: false };
+        this.reticle = new Reticle();
+    }
+    static { this.dependencies = { camera: THREE.Camera }; }
+    init({ camera }) {
+        this.camera = camera;
+    }
+    updatePose() {
+        this.position.copy(this.camera.position);
+        this.quaternion.copy(this.camera.quaternion);
+        this.updateMatrixWorld();
+    }
+    update() {
+        super.update();
+        if (!this.userData.connected)
+            return;
+        this.updatePose();
+    }
+    callSelectStart() {
+        this.dispatchEvent({ type: 'selectstart', target: this });
+    }
+    callSelectEnd() {
+        this.dispatchEvent({ type: 'selectend', target: this });
+    }
+    connect() {
+        this.dispatchEvent({ type: 'connected', target: this });
+    }
+    disconnect() {
+        this.dispatchEvent({ type: 'disconnected', target: this });
+    }
+}
+
+class SimulatorPointerLockMode extends SimulatorControlMode {
+    constructor() {
+        super(...arguments);
+        this.isPointerLocked = false;
+        this.pointerLockController = new SimulatorPointerLockController();
+        this.onPointerLockChange = () => {
+            this.isPointerLocked = document.pointerLockElement === this.domElement;
+        };
+    }
+    init(params) {
+        super.init(params);
+    }
+    onModeActivated() {
+        this.disableSimulatorHands();
+        this.input.enableController(this.pointerLockController);
+        document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    }
+    onModeDeactivated() {
+        this.input.disableController(this.pointerLockController);
+        this.exitLock();
+        document.removeEventListener('pointerlockchange', this.onPointerLockChange);
+    }
+    exitLock() {
+        if (document.pointerLockElement === this.domElement) {
+            document.exitPointerLock();
+        }
+    }
+    onPointerDown(event) {
+        if (!this.isPointerLocked && this.domElement) {
+            this.domElement.requestPointerLock();
+        }
+        else if (this.isPointerLocked && event.buttons & 1) {
+            this.pointerLockController.userData.selected = true;
+            this.pointerLockController.callSelectStart();
+        }
+    }
+    onPointerUp() {
+        if (this.pointerLockController.userData.selected) {
+            this.pointerLockController.userData.selected = false;
+            this.pointerLockController.callSelectEnd();
+        }
+    }
+    onPointerMove(event) {
+        if (this.isPointerLocked) {
+            this.rotateOnPointerMove(event, this.camera.quaternion);
+        }
+    }
+}
+
 class SetSimulatorModeEvent extends Event {
     static { this.type = 'setSimulatorMode'; }
     constructor(simulatorMode) {
@@ -13408,6 +13429,7 @@ class SimulatorControls {
             [SimulatorMode.POSE]: new SimulatorPoseMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
             [SimulatorMode.CONTROLLER]: new SimulatorControllerMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
             [SimulatorMode.POINTER_LOCK]: new SimulatorPointerLockMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
+            [SimulatorMode.EDITOR]: new SimulatorEditorMode(this.simulatorControllerState, this.downKeys, hands, navMesh, setStereoRenderMode, toggleUserInterface, cycleSimulatorMode),
         };
         this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
     }

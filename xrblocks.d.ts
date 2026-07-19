@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 0dfc5ae
- * @builddate 2026-07-17T17:09:21.294Z
+ * @commitid 05ccce6
+ * @builddate 2026-07-19T01:06:37.474Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4349,7 +4349,8 @@ declare enum SimulatorMode {
     USER = "User",
     POSE = "Navigation",
     CONTROLLER = "Hands",
-    POINTER_LOCK = "PointerLock"
+    POINTER_LOCK = "PointerLock",
+    EDITOR = "Editor"
 }
 interface SimulatorCustomInstruction {
     header: string | TemplateResult;
@@ -4386,6 +4387,7 @@ declare class SimulatorOptions {
             Navigation: SimulatorMode;
             Hands: SimulatorMode;
             PointerLock: SimulatorMode;
+            Editor: SimulatorMode;
         };
     };
     simulatorSettingsPanel: {
@@ -9707,6 +9709,13 @@ declare class ModelViewer extends Script implements Draggable {
     protected timer: THREE.Timer;
     protected animationMixer?: THREE.AnimationMixer;
     protected gltfMesh?: GLTF;
+    /** The loaded GLTF content's root object, if a model has been loaded via
+     * loadGLTFModel() -- public so external code (e.g. a scene-editor addon
+     * applying its own rotation gizmo) can read/transform the loaded
+     * content directly, independent of the ModelViewer's own
+     * position/scale. Exposes just the scene root, not the full GLTF
+     * (animations/cameras/etc.), to keep the rest of gltfMesh encapsulated. */
+    get modelScene(): THREE.Object3D | undefined;
     protected splatMesh?: SplatMesh;
     protected splatAnchor?: SplatAnchor;
     protected hoveringControllers: Set<unknown>;
