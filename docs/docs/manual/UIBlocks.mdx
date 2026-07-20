@@ -7,9 +7,13 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 # UI Blocks (Addon)
 
-The `uiblocks` addon provides a rich spatial UI system built on top of **`@pmndrs/uikit`** (powered by the Yoga flexbox layout engine).
+The `uiblocks` addon is the preferred spatial UI system for XR Blocks apps. It
+builds on **`@pmndrs/uikit`** and the Yoga flexbox layout engine.
 
-Use `uiblocks` when you need complex layouts, nested margins, CSS-like borders, gradients, rounded corners, or drop shadows. For basic panels, use the core [Spatial UI](UI.mdx) panels.
+Start with `uiblocks` for menus, HUDs, cards, labels, and controls, including
+simple surfaces. Use the core [Spatial UI](UI.mdx) system only when a concrete
+constraint prevents loading UIBlocks or an existing app requires legacy
+`SpatialPanel` integration.
 
 :::warning
 
@@ -42,7 +46,7 @@ Do not mix core UI classes (`Panel`, `SpatialPanel`) and `uiblocks` classes (`UI
 3. Configure inputs. To allow raycasting against flexbox items, you must override the raycaster sort function in your script:
 
    ```javascript
-   import {raycastSortFunction} from 'xrblocks/addons/uiblocks/src/core/index.js';
+   import {raycastSortFunction} from 'uiblocks';
 
    class MyScript extends xb.Script {
      init() {
@@ -61,11 +65,7 @@ To render UI blocks, instantiate a `UICore` manager parented to your script, cre
 
 ```javascript
 import * as xb from 'xrblocks';
-import {
-  UICore,
-  UIPanel,
-  UIText,
-} from 'xrblocks/addons/uiblocks/src/core/index.js';
+import {UICore, UIPanel, UIText} from 'uiblocks';
 import * as THREE from 'three';
 
 class MenuScript extends xb.Script {
@@ -170,8 +170,12 @@ card.addBehavior(
 card.addBehavior(new BillboardBehavior({mode: 'cylindrical'}));
 ```
 
-Repository samples use the shorter bare import `from 'uiblocks'` through an
-import-map alias. Published-package consumers can use the explicit
-`xrblocks/addons/uiblocks/src/core/index.js` path shown above.
+Use the bare `from 'uiblocks'` specifier consistently. Browser-native apps map
+that exact name to `build/addons/uiblocks/src/index.js`; the `xrblocks/addons/`
+prefix does not resolve it. Copy the complete peer-dependency map from the
+
+<CodeSearchLink path="samples/uiblocks/index.html" /> or
+<CodeSearchLink path="src/addons/uiblocks/README.md" />, keeping `uiblocks` and
+`xrblocks` on the same build commit or package version.
 
 For complete reference implementation details, styling props, and troubleshooting tips, see <CodeSearchLink path="src/addons/uiblocks/SKILL.md"/>.

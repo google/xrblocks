@@ -27,7 +27,7 @@ xb.add(
     },
   })
 );
-await xb.init(new xb.Options());
+await xb.init(new xb.Options().enableAutomationMode());
 ```
 
 Start the local relay with `npx xrblocks-remote-control`. A relay can host
@@ -43,12 +43,26 @@ const client = new RemoteControlClient({
   sessionId: 'default',
 });
 await client.connect();
-await client.waitForPage();
+await Promise.race([
+  client.waitForPage(),
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Page readiness timed out')), 8000)
+  ),
+]);
 
-await client.pointTo(1, {type: 'contextNode', id: 'ctx_7'});
-await client.click(1);
-const camera = await client.getCamera({screenshot: true});
+function unwrap(response) {
+  if (!response.ok) throw new Error(response.error?.message);
+  return response.result;
+}
+
+unwrap(await client.pointTo(1, {type: 'contextNode', id: 'ctx_7'}));
+unwrap(await client.click(1));
+const camera = unwrap(await client.getCamera({screenshot: true}));
 ```
+
+`waitForPage()` has no built-in deadline, so bound it in the harness. Every
+client helper resolves a `RemoteControlResponse`; check `ok` before consuming
+`result`.
 
 Built-in tools cover stepping, compound controls, teleporting, looking,
 pointing, reaching, clicking, camera/screenshots, hands, and simulator state.
