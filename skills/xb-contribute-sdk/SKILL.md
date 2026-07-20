@@ -10,8 +10,13 @@ description: >-
 # Contribute to the XR Blocks SDK
 
 Deliver a **complete seam**: source, runtime wiring, public entry, proof, build
-output, and developer guidance tell one story. For application code, use
-[`../xb-build-app/SKILL.md`](../xb-build-app/SKILL.md).
+output, and developer guidance tell one story.
+
+Invoke [`xb-implement`](../xb-implement/SKILL.md) first and apply its shared
+grounding, lifecycle, dependency, and implementation rules. Then return here
+for SDK seam tracing, proof, generated output, and developer-surface alignment.
+For application code, pair `xb-implement` with
+[`xb-build-app`](../xb-build-app/SKILL.md) instead.
 
 ## 1. Freeze the worktree and contract
 

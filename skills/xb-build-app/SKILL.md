@@ -14,6 +14,10 @@ primary experience that a user can open, operate, and judge in the simulator or
 XR. Own the implementation and smoke checks; package deeper experiential and
 device acceptance as a clear user test handoff.
 
+Invoke [`xb-implement`](../xb-implement/SKILL.md) first and apply its shared
+grounding, lifecycle, dependency, and implementation rules. Then return here
+for app composition, simulator/XR preparation, smoke checks, and user handoff.
+
 Reach for the focused `xb-add-*` skills when the slice needs interaction,
 spatial UI, world sensing, or AI.
 
@@ -50,16 +54,9 @@ every bare specifier resolves to one intended dependency graph.
 
 ## 3. Implement the complete slice
 
-Treat [`../../src/xrblocks.ts`](../../src/xrblocks.ts) as the public core API and
-verify addon symbols against their public entry. Copy lifecycle and
-configuration patterns from the nearest template, sample, demo, or manual page.
-Source implementations clarify behavior; public entries define what app code
-may import.
-
-Read [`references/app-runtime-patterns.md`](references/app-runtime-patterns.md)
-before writing the app runtime. It carries the essential engine model,
-capability setup, lifecycle selection, and generated-code guardrails from the
-SDK's in-tree guidance.
+Use the verified API, lifecycle, and dependency foundation established by
+`xb-implement`. Copy the experience-specific configuration pattern from the
+nearest template, sample, demo, or manual page.
 
 If any API, option, lifecycle, addon setup, or runtime behavior is unclear,
 refer to [`../../docs/docs/manual/`](../../docs/docs/manual/) before proceeding.
@@ -90,19 +87,9 @@ and fall back to the simulator otherwise. Load `SimulatorAddons` so the
 settings, instructions, and hand-pose UI are registered whenever that simulator
 path starts.
 
-Register every script before `xb.init(options)`. Access engine-created objects
-in or after `init()`. Put per-frame behavior in `update()` and release owned GPU,
-media, listener, and timer resources in `dispose()`. Place content in meters
-using `xb.user.height`, `xb.user.objectDistance`, and `xb.user.panelDistance`.
-
-Keep each `xb.Script` legible as a high-level description of the experience.
-Because a Script is already a `THREE.Object3D`, attach its scene content with
-`this.add(...)`; let XR Blocks own the renderer, camera, XR session, and frame
-loop. Prefer declared `static dependencies` for engine services when a script
-needs them instead of reaching into partially initialized globals.
-
-Use `xb-add-spatial-ui` and its UIBlocks-first path for app UI. For physics,
-assign Rapier to `options.physics.RAPIER`; XR Blocks has no `enablePhysics()`.
+Place content in meters using `xb.user.height`, `xb.user.objectDistance`, and
+`xb.user.panelDistance`. Use `xb-add-spatial-ui` and its UIBlocks-first path for
+app UI.
 
 This step is complete when the launch entry contains the full first-load →
 primary-action → observable-result path with no placeholder branch in that path.

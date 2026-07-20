@@ -1,8 +1,7 @@
-# XR Blocks app runtime patterns
+# Runtime and public API guardrails
 
-Read this before implementing an app's runtime. These are the durable app-side
-rules from the SDK's in-tree guidance. Check the public entries and current
-manual when a requested capability needs more detail.
+Read this when implementation touches application runtime, `xb.Options`,
+`xb.Script`, public exports, addon imports, or engine lifecycle behavior.
 
 ## Engine model
 
@@ -10,16 +9,17 @@ manual when a requested capability needs more detail.
   camera, XR session, subsystems, and frame loop.
 - An `xb.Script` is a `THREE.Object3D` and the normal app extension point. Add
   scene content beneath it with `this.add(object)`.
-- Register every script with `xb.add(script)` before `xb.init(options)`.
+- Register every app script with `xb.add(script)` before `xb.init(options)`.
 - Do not create a competing render loop, renderer, camera, or XR session. Put
-  per-frame behavior in `update(time, frame)`.
+  per-frame application behavior in `update(time, frame)`.
 - Access engine-created state in or after `init()`, not in a constructor.
-- Use meters. Start from `xb.user.height`, `xb.user.objectDistance`, and
-  `xb.user.panelDistance` instead of device-specific constants.
+- Use meters. Start app placement from `xb.user.height`,
+  `xb.user.objectDistance`, and `xb.user.panelDistance` instead of
+  device-specific constants.
 
 The useful singleton aliases are `xb.scene`, `xb.user`, `xb.world`, `xb.ai`,
-`xb.depth`, `xb.sound`, `xb.input`, and `xb.camera`. Use the high-level alias
-when it is the intended public API. For reusable scripts that consume engine
+`xb.depth`, `xb.sound`, `xb.input`, and `xb.camera`. Use a high-level alias when
+it is the intended public API. For reusable scripts that consume engine
 services, prefer dependency injection:
 
 ```js
@@ -32,12 +32,13 @@ class MainScript extends xb.Script {
 }
 ```
 
-Copy the dependency key and class from a current manual page or working source
-example; the registry key must exist.
+Copy the dependency key and constructor from a current working example or
+source registration; the registry key must exist. SDK changes must register
+option and runtime objects before dependent scripts initialize.
 
 ## Pick the narrowest lifecycle hook
 
-Override only the hooks the experience needs:
+Override only what the behavior needs:
 
 | Hook                                     | Use                                          |
 | ---------------------------------------- | -------------------------------------------- |
@@ -51,16 +52,21 @@ Override only the hooks the experience needs:
 | `onSimulatorStarted()`                   | React to desktop simulator startup.          |
 | `dispose()`                              | Release resources owned by the script.       |
 
-For an action aimed at scene content, use object-targeted hooks such as
+For scene-targeted actions, use object hooks such as
 `onObjectSelectStart/End`, `onObjectTouchStart/Touching/End`,
 `onObjectGrabStart/Grabbing/End`, or `onHoverEnter/Hovering/Exit`. Return `true`
 from a handled object selection or hover callback when propagation should stop.
-Use `xb-add-interactions` for the complete interaction-generation workflow.
+Use `xb-add-interactions` for complete interaction generation.
 
-## Enable capabilities before initialization
+When changing SDK lifecycle behavior, trace the same phases through the
+constructor, registry, `Core`, `ScriptsManager`, subsystem owner, and disposal
+path. Preserve established frame and initialization order unless the change
+contract explicitly requires otherwise.
+
+## Configure capabilities before initialization
 
 Create one `xb.Options`, enable only the capabilities the experience uses, and
-pass that same instance to `xb.init()`:
+pass that instance to `xb.init()`:
 
 ```js
 const options = new xb.Options();
@@ -79,9 +85,8 @@ Other current helpers include `enableUI`, `enableReticles`,
 `enableControllers`, `enableHandRays`, `enableHeadGestures`, `enableStrokes`,
 `enableHumanDetection`, `enableFaceDetection`, `enableSegmentation`,
 `enableSceneContext`, `enableVisibleObjectsContext`, and
-`enableSetOfMarkContext`. Verify the exact helper in
-`src/core/Options.ts` before using it; some helpers enable prerequisite
-capabilities and permissions themselves.
+`enableSetOfMarkContext`. Verify the exact helper in `src/core/Options.ts`;
+some helpers enable prerequisite capabilities and permissions themselves.
 
 Physics is the important exception. There is no `enablePhysics()`:
 
@@ -94,31 +99,43 @@ options.physics.RAPIER = RAPIER;
 Then implement `initPhysics(physics)` and, if needed, `physicsStep()` on the
 script. Keep app physics separate from simulator environment physics.
 
-## Use public APIs only
+When adding or changing a user-facing SDK capability, keep defaults inert,
+make `enable*()` chainable when a high-level switch is warranted, encode
+permissions and prerequisites in `Options`, and initialize runtime owners
+before dependent scripts.
 
-- Core imports must be exported by `src/xrblocks.ts`.
-- Addon imports must come from that addon's public entry and match a working
-  sample or documentation page.
-- Treat source classes as behavioral evidence, not permission to deep-import
-  internal files.
-- Keep the app's `three` version aligned with the peer dependency and load only
-  one copy. Follow `import-maps.md` for browser-native modules.
-- Favor UIBlocks for spatial UI through `xb-add-spatial-ui`; use core UI only
-  when a concrete constraint requires the fallback.
+## Use intentional public boundaries
 
-## Frequent generated-code failures
+- App-facing core imports must be exported by `src/xrblocks.ts`.
+- Addon imports must come from that addon's public entry and match its emitted
+  `build/addons/...` path.
+- Treat source classes as behavioral evidence, not permission for app code to
+  deep-import internal files.
+- Keep `three` aligned with the peer dependency and load only one copy.
+- Include every external peer imported by the selected core or addon path.
+- In SDK work, add intentional public values and types to the correct root or
+  addon entry and confirm declaration output can resolve them.
+- Edit source inputs and regenerate `build/`; never hand-edit generated output.
+
+For browser-native application modules, follow
+[`xb-build-app`'s import-map reference](../../xb-build-app/references/import-maps.md).
+For app UI, use `xb-add-spatial-ui` and its UIBlocks-first path.
+
+## Frequent implementation failures
 
 | Avoid                                                             | Use instead                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------ |
 | `options.enablePhysics()`                                         | Assign `options.physics.RAPIER`.                             |
 | Reading `xb.core.renderer` or physics in a constructor            | Read initialized services in or after `init()`.              |
 | Driving `requestAnimationFrame` directly                          | Implement `update(time, frame)`.                             |
-| Calling `xb.init()` before `xb.add(script)`                       | Register all scripts first.                                  |
+| Calling `xb.init()` before `xb.add(script)`                       | Register all app scripts first.                              |
 | Importing a symbol because a similarly named internal file exists | Confirm it in the public core or addon entry.                |
-| Loading another `three` build for an addon                        | Share the pinned import-map or bundler dependency.           |
+| Loading another `three` build for an addon                        | Share the pinned import-map or package dependency.           |
 | `xb.ai.query('text')`                                             | Guard availability and call `xb.ai.query({prompt: 'text'})`. |
 | Assuming client-side AI credentials are production-safe           | Use local keys only for prototyping; proxy production calls. |
+| Adding a global to make an SDK dependency reachable               | Register it and declare `static dependencies`.               |
+| Exporting an internal helper only to make it testable             | Test through its nearest stable owner or boundary.           |
 
-When an API shape remains unclear, consult `docs/docs/manual/`, then a working
+When a shape remains unclear, consult `docs/docs/manual/`, then a working
 template, sample, or demo, and finally the implementation. Do not invent a
-plausible method to bridge missing information.
+method, option, export, or import path to bridge missing information.

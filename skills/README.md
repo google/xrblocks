@@ -2,9 +2,10 @@
 
 Focused, task-oriented skills for building **AI + XR** apps with the XR Blocks SDK
 (`import * as xb from 'xrblocks'`). Each subfolder is one skill with a `SKILL.md` whose YAML
-`description` tells an agent _what it does and when to use it_. Start with
-**`xb-build-app`**, then compose only the focused workflow skills the request
-actually triggers.
+`description` tells an agent _what it does and when to use it_. Apply
+**`xb-implement`** as the shared foundation, then use **`xb-build-app`** or
+**`xb-contribute-sdk`** for the requested outcome and compose only the focused
+workflow skills the request actually triggers.
 
 For repo/build/architecture rules see [`../AGENTS.md`](../AGENTS.md); for the
 agent rules of engagement and SDK app overview see
@@ -18,8 +19,14 @@ intent, such as `xb-build-app` or `xb-add-ai`. Existing capability references us
 
 ## Primary workflow skills
 
+All implementation workflows first apply the shared
+[`xb-implement`](xb-implement/SKILL.md) foundation. It grounds APIs, lifecycle,
+ownership, dependencies, cleanup, and unavailable states; the primary workflow
+then owns the requested outcome.
+
 | Skill                                                   | Use when you need to…                                              |
 | ------------------------------------------------------- | ------------------------------------------------------------------ |
+| [`xb-implement`](xb-implement/SKILL.md)                 | Apply the required implementation foundation                       |
 | [`xb-build-app`](xb-build-app/SKILL.md)                 | Build an app through a simulator or XR user-testing handoff        |
 | [`xb-add-interactions`](xb-add-interactions/SKILL.md)   | Generate hands, gaze, grabbing, gesture, or manipulation behavior  |
 | [`xb-add-spatial-ui`](xb-add-spatial-ui/SKILL.md)       | Add a usable menu, HUD, card, dashboard, label, or control surface |
