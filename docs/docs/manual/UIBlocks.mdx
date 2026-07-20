@@ -42,7 +42,7 @@ Do not mix core UI classes (`Panel`, `SpatialPanel`) and `uiblocks` classes (`UI
 3. Configure inputs. To allow raycasting against flexbox items, you must override the raycaster sort function in your script:
 
    ```javascript
-   import {raycastSortFunction} from 'uiblocks';
+   import {raycastSortFunction} from 'xrblocks/addons/uiblocks/src/core/index.js';
 
    class MyScript extends xb.Script {
      init() {
@@ -60,7 +60,12 @@ Do not mix core UI classes (`Panel`, `SpatialPanel`) and `uiblocks` classes (`UI
 To render UI blocks, instantiate a `UICore` manager parented to your script, create a pivot-facing `UICard`, and build panels within it:
 
 ```javascript
-import {UICore, UIPanel, UIText} from 'uiblocks';
+import * as xb from 'xrblocks';
+import {
+  UICore,
+  UIPanel,
+  UIText,
+} from 'xrblocks/addons/uiblocks/src/core/index.js';
 import * as THREE from 'three';
 
 class MenuScript extends xb.Script {
@@ -117,14 +122,17 @@ class MenuScript extends xb.Script {
 ### Formatting Rules
 
 - **Borders**: To follow rounded corners properly, use `strokeWidth` and `strokeColor` instead of `borderWidth`/`borderColor`.
-- **Colors**: Colors must be standard hex strings (e.g. `'#ff0000'`) or `THREE.Color` references. Do not use `rgba()` or `hsla()`.
-- **Buttons**: There is no dedicated button primitive. Build buttons by placing click handlers on a styled `UIPanel`:
+- **Colors**: Solid colors accept hex (including alpha), `rgb()` / `rgba()`,
+  CSS color names, numeric Three.js colors, or `THREE.Color`. `hsla()` is not
+  supported by the addon's alpha-aware parser.
+- **Buttons**: There is no dedicated button primitive. Build buttons with the
+  `onClick` option on a styled `UIPanel`:
   ```javascript
   const button = new UIPanel({
     padding: 10,
     fillColor: '#222222',
+    onClick: () => console.log('Button clicked!'),
   });
-  button.onClick = () => console.log('Button clicked!');
   ```
 
 ---
@@ -152,14 +160,18 @@ card.addBehavior(
 // 2. HeadLeashBehavior: makes the UI smoothly follow the user's head position
 card.addBehavior(
   new HeadLeashBehavior({
-    distance: 1.2,
-    heightOffset: -0.1,
-    lerpSpeed: 0.05,
+    offset: new THREE.Vector3(0, -0.1, -1.2),
+    posLerp: 0.1,
+    rotLerp: 0.1,
   })
 );
 
 // 3. BillboardBehavior: keeps the card rotated to always face the user
-card.addBehavior(new BillboardBehavior());
+card.addBehavior(new BillboardBehavior({mode: 'cylindrical'}));
 ```
+
+Repository samples use the shorter bare import `from 'uiblocks'` through an
+import-map alias. Published-package consumers can use the explicit
+`xrblocks/addons/uiblocks/src/core/index.js` path shown above.
 
 For complete reference implementation details, styling props, and troubleshooting tips, see <CodeSearchLink path="src/addons/uiblocks/SKILL.md"/>.

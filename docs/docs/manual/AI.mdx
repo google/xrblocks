@@ -35,7 +35,7 @@ xb.init(options);
 Never ship API keys in production client-side code.
 
 - **Local Prototyping**: You can pass keys via the `?key=YOUR_KEY` URL parameter or save a `keys.json` (`{"gemini": {"apiKey": "..."}}`) in the root directory.
-- **Production Deployment**: You must configure a proxy server to forward AI requests from your client apps to Gemini endpoints. For Gemini Live, you should authenticate clients using [Gemini Live API Ephemeral Tokens](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) instead of embedding long-lived developer keys.
+- **Production Deployment**: The SDK's `?key=` and `keys.json` mechanisms are for local prototypes. Production applications must configure a proxy server to forward AI requests from your client apps to Gemini endpoints. For Gemini Live, you should authenticate clients using [Gemini Live API Ephemeral Tokens](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) instead of embedding long-lived developer keys.
   :::
 
 ---
