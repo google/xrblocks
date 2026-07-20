@@ -13,14 +13,11 @@ const NAME_EXTENSION = /\.(glb|gltf)$/i;
  * itself there, since SelectEvent carries no modifier info), a real
  * click event already has this for free.
  *
- * Each row also has a visibility toggle (flips viewer.visible), a lock
- * toggle (flips instance.locked -- SelectionManager excludes locked
+ * Each row also has a persisted visibility toggle, a session-only lock
+ * toggle (SelectionManager excludes locked
  * instances from both 3D-click and hierarchy-row selection), and
- * double-click-to-rename on the label (sets instance.customName, shown in
- * place of the auto-derived name everywhere a name is displayed). None of
- * the three push undo/redo commands -- they're treated as organizational
- * metadata rather than scene content, unlike everything else in the
- * editor.
+ * double-click-to-edit the manifest's semantic label. Locks do not enter the
+ * manifest or undo stack.
  *
  * Rows are only rebuilt when the instance set actually changes (id list
  * comparison) to avoid recreating DOM nodes every frame; per-row state
@@ -57,13 +54,12 @@ class HierarchyPanel extends xb.Script {
         }
         return counts;
     }
-    /** customName wins outright; otherwise the stripped filename, with a
-     * trailing #id only when another live instance shares the same source
-     * file (disambiguation, not identity -- a renamed object never gets a
-     * suffix, even if another instance happens to share its new name). */
+    /** The manifest label wins, then the stable id, then the asset filename. */
     computeLabel(instance, countByFileName) {
-        if (instance.customName)
-            return instance.customName;
+        if (instance.definition.label)
+            return instance.definition.label;
+        if (instance.id)
+            return instance.id;
         const baseName = instance.fileName.replace(NAME_EXTENSION, '');
         return (countByFileName.get(instance.fileName) ?? 0) > 1
             ? `${baseName} #${instance.id}`
@@ -94,7 +90,7 @@ class HierarchyPanel extends xb.Script {
             });
             visBtn.addEventListener('click', (event) => {
                 event.stopPropagation();
-                instance.viewer.visible = !instance.viewer.visible;
+                void this.sceneManager.setVisible(instance, !instance.object.visible);
             });
             const lockBtn = el('button', {
                 type: 'button',
@@ -131,7 +127,7 @@ class HierarchyPanel extends xb.Script {
         const input = el('input', {
             type: 'text',
             className: 'xrblocks-editor-hierarchy-rename-input',
-            value: instance.customName ?? instance.fileName.replace(NAME_EXTENSION, ''),
+            value: instance.definition.label ?? '',
         });
         input.addEventListener('click', (event) => event.stopPropagation());
         const finish = () => {
@@ -146,7 +142,7 @@ class HierarchyPanel extends xb.Script {
         };
         const commit = () => {
             const trimmed = input.value.trim();
-            instance.customName = trimmed.length > 0 ? trimmed : null;
+            void this.sceneManager.setLabel(instance, trimmed.length > 0 ? trimmed : null);
             finish();
         };
         const onInputKeyDown = (event) => {
@@ -174,8 +170,8 @@ class HierarchyPanel extends xb.Script {
                     labelEl.title = label;
                 }
             }
-            visBtn.classList.toggle('active', instance.viewer.visible);
-            visBtn.title = instance.viewer.visible ? 'Hide' : 'Show';
+            visBtn.classList.toggle('active', instance.object.visible);
+            visBtn.title = instance.object.visible ? 'Hide' : 'Show';
             lockBtn.classList.toggle('warn', instance.locked);
             lockBtn.title = instance.locked ? 'Unlock' : 'Lock';
         }

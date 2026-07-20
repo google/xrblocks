@@ -19,7 +19,7 @@ export interface SceneEditorOptions {
 /**
  * Public entry point for the scene editor addon: a multi-object
  * translate/rotate/scale gizmo scene editor with a model picker, an
- * outliner (rename/visibility/lock), undo/redo, and JSON scene
+ * outliner (label/visibility/lock), undo/redo, and simulator manifest
  * export/import. Desktop mouse in the simulator only -- permanently out
  * of scope for real XR controllers (all hit-testing gates on
  * `event.target === xb.core.input.mouseController`, which a real XR
@@ -64,9 +64,8 @@ export declare class SceneEditor extends xb.Script {
      * session is active -- everywhere else (other simulator modes, or a
      * real headset), it goes fully inert without discarding state, so
      * switching back to Editor mode restores exactly where you left off.
-     * SceneManager itself (spawned models, occlusion) is untouched by this
-     * -- it's scene content, not editor chrome, and should render normally
-     * even in a real headset. */
+     * Simulator-owned models are untouched by this -- they are environment
+     * content, not editor chrome, and render normally even in a real headset. */
     update(): void;
     /** Hard safety net: force the editor inert the instant a real XR
      * session begins, regardless of whatever simulator mode was last
@@ -77,4 +76,5 @@ export declare class SceneEditor extends xb.Script {
      * starting with no selection is the safe default. */
     onXRSessionStarted(): void;
     onXRSessionEnded(): void;
+    dispose(): void;
 }

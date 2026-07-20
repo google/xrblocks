@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 05ccce6
- * @builddate 2026-07-19T01:06:37.474Z
+ * @commitid 8a57b88
+ * @builddate 2026-07-20T21:50:14.193Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -49,6 +49,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 
 /**
@@ -10705,22 +10706,22 @@ const DEFAULT_MODE_TOGGLE_ORDER = {
     [SimulatorMode.POINTER_LOCK]: SimulatorMode.EDITOR,
     [SimulatorMode.EDITOR]: SimulatorMode.USER,
 };
+const DEFAULT_ENVIRONMENT_MANIFESTS = [
+    'living-room.json',
+    'office.json',
+    'emulator-scene-v5.json',
+    'emulator-scene-dark.json',
+];
+function defaultEnvironment(manifestFile) {
+    return {
+        manifestPath: new URL(`../src/simulator/scene/defaultManifests/${manifestFile}`, import.meta.url).href,
+    };
+}
 class SimulatorOptions {
     constructor(options) {
         this.initialCameraPosition = { x: 0, y: 1.5, z: 0 };
-        this.environments = [
-            {
-                name: 'Living Room',
-                scenePath: XR_BLOCKS_ASSETS_PATH +
-                    'simulator/scenes/XREmulatorsceneV5_livingRoom.glb',
-                scenePlanesPath: XR_BLOCKS_ASSETS_PATH +
-                    'simulator/scenes/XREmulatorsceneV5_livingRoom_planes.json',
-                navMeshPath: XR_BLOCKS_ASSETS_PATH +
-                    'simulator/scenes/XREmulatorsceneV5_livingRoom_navmesh.glb',
-            },
-        ];
+        this.environments = DEFAULT_ENVIRONMENT_MANIFESTS.map(defaultEnvironment);
         this.activeEnvironmentIndex = 0;
-        this.initialScenePosition = { x: -1.6, y: 0.3, z: 0 };
         this.defaultMode = SimulatorMode.USER;
         this.defaultHand = Handedness.LEFT;
         this.modeToggle = {
@@ -10751,7 +10752,12 @@ class SimulatorOptions {
         };
         this.navMesh = {
             enabled: false,
+            showDebugVisualizations: false,
             eyeHeight: 1.5,
+        };
+        /** Controls the isolated physics world used by the desktop simulator. */
+        this.physics = {
+            enabled: true,
         };
         this.deviceCamera = {
             // Whether to enable the simulator camera feed.
@@ -10763,15 +10769,24 @@ class SimulatorOptions {
         this.renderToRenderTexture = true;
         // Blending mode when rendering the virtual scene.
         this.blendingMode = 'normal';
+        /** Shoulder/chest origin of the left hand in local camera space. */
+        this.leftHandOrigin = { x: -0.2, y: -0.2, z: 0 };
+        /** Shoulder/chest origin of the right hand in local camera space. */
+        this.rightHandOrigin = { x: 0.2, y: -0.2, z: 0 };
+        /** Optional physical constraints for simulated hands. Requires Rapier. */
+        this.handPhysics = {
+            enabled: false,
+            radius: 0.075,
+            mass: 1,
+            contactOffset: 0.002,
+            friction: 0.8,
+            restitution: 0,
+        };
         /** Limits how far each hand controller can travel from the user's shoulder origin. */
         this.reachDistance = {
             enabled: false,
             /** The maximum distance in meters a controller can move from its origin point. */
             radius: 0.75,
-            /** The shoulder/chest origin point for the left hand in local camera space. */
-            leftHandOrigin: { x: -0.2, y: -0.2, z: 0 },
-            /** The shoulder/chest origin point for the right hand in local camera space. */
-            rightHandOrigin: { x: 0.2, y: -0.2, z: 0 },
         };
         /** Limits the angular cone in front of the user within which controllers can move. */
         this.reachAngle = {
@@ -10860,6 +10875,8 @@ class ObjectsOptions {
         this.debugging = false;
         this.enabled = false;
         this.showDebugVisualizations = false;
+        /** Use simulator ground truth instead of a camera detector on desktop. */
+        this.simulatorOverride = false;
         /**
          * Minimum delay in milliseconds between continuous object detection runs.
          * A value of 0 runs again as soon as the previous detection finishes.
@@ -11369,10 +11386,6 @@ class Options {
      */
     enableVR() {
         this.xrSessionMode = 'immersive-vr';
-        if (this.simulator.environments[this.simulator.activeEnvironmentIndex]) {
-            this.simulator.environments[this.simulator.activeEnvironmentIndex].scenePath = null;
-            this.simulator.environments[this.simulator.activeEnvironmentIndex].scenePlanesPath = null;
-        }
         return this;
     }
     /**
@@ -11984,7 +11997,9 @@ class SimulatorControlMode {
         const angleOpt = this.simulatorOptions?.reachAngle;
         if (!distOpt?.enabled && !angleOpt?.enabled)
             return false;
-        const originObj = idx === 0 ? distOpt.leftHandOrigin : distOpt.rightHandOrigin;
+        const originObj = idx === 0
+            ? this.simulatorOptions.leftHandOrigin
+            : this.simulatorOptions.rightHandOrigin;
         target.set(originObj.x, originObj.y, originObj.z);
         return true;
     }
@@ -12756,15 +12771,6 @@ class ModelViewer extends Script {
         registry: Registry,
         timer: THREE.Timer,
     }; }
-    /** The loaded GLTF content's root object, if a model has been loaded via
-     * loadGLTFModel() -- public so external code (e.g. a scene-editor addon
-     * applying its own rotation gizmo) can read/transform the loaded
-     * content directly, independent of the ModelViewer's own
-     * position/scale. Exposes just the scene root, not the full GLTF
-     * (animations/cameras/etc.), to keep the rest of gltfMesh encapsulated. */
-    get modelScene() {
-        return this.gltfMesh?.scene;
-    }
     constructor({ castShadow = true, receiveShadow = true, raycastToChildren = false, }) {
         super();
         this.draggable = true;
@@ -14486,6 +14492,12 @@ class SimulatorXRHand {
 const DEFAULT_HAND_PROFILE_PATH = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles/generic-hand/';
 const vector3$3 = new THREE.Vector3();
 const quaternion = new THREE.Quaternion();
+const wristPosition = new THREE.Vector3();
+const metacarpalPosition = new THREE.Vector3();
+const desiredPalmPosition = new THREE.Vector3();
+const constrainedPalmPosition = new THREE.Vector3();
+const controllerWorldPosition = new THREE.Vector3();
+const handOriginWorldPosition = new THREE.Vector3();
 const ROTATION_JOINT_NAMES = HAND_JOINT_NAMES.filter((jointName) => !jointName.endsWith('-tip'));
 function cloneHandPoseRotations(rotations) {
     const clonedRotations = {};
@@ -14563,8 +14575,11 @@ class SimulatorHands {
     /**
      * Initialize Simulator Hands.
      */
-    async init({ input }) {
+    async init({ input, physics, camera, simulatorOptions, }) {
         this.input = input;
+        this.physics = physics;
+        this.camera = camera;
+        this.simulatorOptions = simulatorOptions;
         await this.loadMeshes();
         this.simulatorScene.add(this.leftController);
         this.simulatorScene.add(this.rightController);
@@ -14736,7 +14751,43 @@ class SimulatorHands {
     update() {
         this.lerpLeftHandPose();
         this.lerpRightHandPose();
+        this.constrainHand(0, this.leftController, this.leftHand);
+        this.constrainHand(1, this.rightController, this.rightHand);
         this.syncHandJoints();
+    }
+    constrainHand(index, controller, hand) {
+        if (!this.physics)
+            return;
+        controller.updateWorldMatrix(true, true);
+        const wrist = hand?.getObjectByName('wrist');
+        const metacarpal = hand?.getObjectByName('middle-finger-metacarpal');
+        if (wrist && metacarpal) {
+            wrist.getWorldPosition(wristPosition);
+            metacarpal.getWorldPosition(metacarpalPosition);
+            desiredPalmPosition.lerpVectors(wristPosition, metacarpalPosition, 0.5);
+        }
+        else {
+            controller.getWorldPosition(desiredPalmPosition);
+        }
+        constrainedPalmPosition.copy(desiredPalmPosition);
+        if (this.camera && this.simulatorOptions) {
+            const origin = index === 0
+                ? this.simulatorOptions.leftHandOrigin
+                : this.simulatorOptions.rightHandOrigin;
+            handOriginWorldPosition
+                .set(origin.x, origin.y, origin.z)
+                .applyMatrix4(this.camera.matrixWorld);
+        }
+        this.physics.constrainHand(index, constrainedPalmPosition, controller.visible, this.camera && this.simulatorOptions ? handOriginWorldPosition : undefined);
+        if (!controller.visible)
+            return;
+        controller.getWorldPosition(controllerWorldPosition);
+        controllerWorldPosition.add(constrainedPalmPosition.sub(desiredPalmPosition));
+        if (controller.parent) {
+            controller.parent.worldToLocal(controllerWorldPosition);
+        }
+        controller.position.copy(controllerWorldPosition);
+        controller.updateWorldMatrix(true, true);
     }
     lerpLeftHandPose() {
         if (this.leftHandRawTargetJoints) {
@@ -14858,6 +14909,17 @@ class ShowSimulatorInstructionsEvent extends Event {
     }
 }
 
+class SetSimulatorHandPhysicsEvent extends Event {
+    static { this.type = 'setSimulatorHandPhysics'; }
+    constructor(enabled) {
+        super(SetSimulatorHandPhysicsEvent.type, {
+            bubbles: true,
+            composed: true,
+        });
+        this.enabled = enabled;
+    }
+}
+
 /** Standard gamepad button names for display. */
 const BUTTON_NAMES = {
     0: 'A',
@@ -14888,9 +14950,9 @@ class SimulatorInterface {
     /**
      * Initialize the simulator interface.
      */
-    init(simulatorOptions, simulatorControls, simulatorHands, input, simulatorScene, simulatorNavMesh) {
-        if (simulatorScene) {
-            this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene, simulatorNavMesh);
+    init(simulatorOptions, simulatorControls, simulatorHands, input, setEnvironment, handPhysicsAvailable = false) {
+        if (setEnvironment) {
+            this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable);
         }
         this.showGeminiLivePanel(simulatorOptions);
         this.createHandPosePanel(simulatorOptions, simulatorHands);
@@ -14903,7 +14965,7 @@ class SimulatorInterface {
         if (input)
             this._initGamepadUI(input);
     }
-    createSimulatorSettingsPanel(simulatorOptions, simulatorControls, simulatorScene, simulatorNavMesh) {
+    createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable) {
         if (simulatorOptions.simulatorSettingsPanel.enabled) {
             const settingsElement = document.createElement(simulatorOptions.simulatorSettingsPanel.element);
             settingsElement.environments = simulatorOptions.environments;
@@ -14911,18 +14973,29 @@ class SimulatorInterface {
                 simulatorOptions.activeEnvironmentIndex;
             settingsElement.instructionsEnabled =
                 simulatorOptions.instructions.enabled;
+            settingsElement.handPhysicsAvailable = handPhysicsAvailable;
+            settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
             document.body.appendChild(settingsElement);
             simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
             settingsElement.addEventListener(SetSimulatorEnvironmentEvent.type, (event) => {
                 if (event instanceof SetSimulatorEnvironmentEvent) {
-                    simulatorOptions.activeEnvironmentIndex = event.environmentIndex;
-                    const activeEnv = simulatorOptions.environments[event.environmentIndex];
-                    simulatorScene.setEnvironment(activeEnv?.scenePath ?? null, new THREE.Vector3(simulatorOptions.initialScenePosition.x, simulatorOptions.initialScenePosition.y, simulatorOptions.initialScenePosition.z));
-                    void simulatorNavMesh?.setEnvironment(activeEnv ?? null, simulatorOptions);
+                    const environment = simulatorOptions.environments[event.environmentIndex];
+                    if (!environment) {
+                        console.error(`Simulator environment index ${event.environmentIndex} does not exist.`);
+                        return;
+                    }
+                    void setEnvironment(environment).catch((error) => {
+                        console.error('Failed to switch simulator environment.', error);
+                    });
                 }
             });
             settingsElement.addEventListener(ShowSimulatorInstructionsEvent.type, () => {
                 this.showInstructions(simulatorOptions);
+            });
+            settingsElement.addEventListener(SetSimulatorHandPhysicsEvent.type, (event) => {
+                if (event instanceof SetSimulatorHandPhysicsEvent) {
+                    simulatorOptions.handPhysics.enabled = event.enabled;
+                }
             });
             this.elements.push(settingsElement);
         }
@@ -15037,7 +15110,7 @@ const RANDOM_PATH_SAMPLE_ATTEMPTS = 8;
 const desiredGroundPosition = new THREE.Vector3();
 const startGroundPosition = new THREE.Vector3();
 const clampedGroundPosition = new THREE.Vector3();
-const initialScenePosition = new THREE.Vector3();
+const environmentMatrix = new THREE.Matrix4();
 const targetWorldPosition$2 = new THREE.Vector3();
 const randomTriangleA = new THREE.Vector3();
 const randomTriangleB = new THREE.Vector3();
@@ -15048,47 +15121,102 @@ class SimulatorNavMesh {
     constructor() {
         this.enabled = false;
         this.ready = false;
+        this.debugVisualization = new THREE.Group();
         this.zoneId = DEFAULT_ZONE_ID;
         this.groupId = null;
         this.currentNode = null;
         this.eyeHeight = 1.5;
+        this.debugVisualizationVisible = false;
+        this.debugVisualization.name = 'Simulator Navmesh Visualization';
+        this.debugVisualization.raycast = () => { };
     }
     get constrained() {
         return this.enabled && this.ready;
     }
-    async init(options) {
-        this.enabled = options.navMesh.enabled;
-        this.eyeHeight = options.navMesh.eyeHeight;
-        const activeEnv = options.environments[options.activeEnvironmentIndex] ?? null;
-        await this.setEnvironment(activeEnv, options);
+    get debugVisualizationsVisible() {
+        return this.debugVisualizationVisible;
     }
-    async setEnvironment(environment, options) {
-        this.enabled = options.navMesh.enabled;
-        this.eyeHeight = options.navMesh.eyeHeight;
-        this.ready = false;
-        this.groupId = null;
-        this.currentNode = null;
-        this.pathfinding = undefined;
-        this.zone = undefined;
-        if (!this.enabled)
-            return;
-        if (!environment?.navMeshPath) {
-            console.warn('SimulatorNavMesh: navmesh is enabled, but the active environment has no navMeshPath.');
-            return;
+    showDebugVisualizations(visible = true) {
+        this.debugVisualizationVisible = visible;
+        this.debugVisualization.visible = visible;
+    }
+    async prepareEnvironment(manifest, options) {
+        const prepared = {
+            enabled: options.navMesh.enabled,
+            eyeHeight: options.navMesh.eyeHeight,
+        };
+        const shouldLoad = prepared.enabled || options.navMesh.showDebugVisualizations;
+        if (!shouldLoad)
+            return prepared;
+        if (!manifest.navMeshPath) {
+            console.warn('SimulatorNavMesh: navmesh is enabled or visualized, but the active environment has no navMeshPath.');
+            return prepared;
         }
         try {
-            initialScenePosition.set(options.initialScenePosition.x, options.initialScenePosition.y, options.initialScenePosition.z);
-            const geometry = await this.loadGeometry(environment.navMeshPath, initialScenePosition);
+            environmentMatrix.compose(new THREE.Vector3().fromArray(manifest.position ?? [0, 0, 0]), new THREE.Quaternion().fromArray(manifest.quaternion ?? [0, 0, 0, 1]), new THREE.Vector3().fromArray(manifest.scale ?? [1, 1, 1]));
+            const geometry = await this.loadGeometry(manifest.navMeshPath, environmentMatrix);
             try {
-                await this.setGeometry(geometry);
+                prepared.debugGeometry = geometry.clone();
+                if (prepared.enabled) {
+                    const Pathfinding = await this.loadPathfinding();
+                    const zone = Pathfinding.createZone(geometry);
+                    const pathfinding = new Pathfinding();
+                    pathfinding.setZoneData(this.zoneId, zone);
+                    prepared.zone = zone;
+                    prepared.pathfinding = pathfinding;
+                }
             }
             finally {
                 geometry.dispose();
             }
         }
         catch (error) {
-            console.warn(`SimulatorNavMesh: failed to load navmesh at ${environment.navMeshPath}.`, error);
+            prepared.debugGeometry?.dispose();
+            throw new Error(`SimulatorNavMesh: failed to load navmesh at ${manifest.navMeshPath}.`, { cause: error });
         }
+        return prepared;
+    }
+    commitEnvironment(prepared) {
+        this.enabled = prepared.enabled;
+        this.eyeHeight = prepared.eyeHeight;
+        this.pathfinding = prepared.pathfinding;
+        this.zone = prepared.zone;
+        this.ready = !!prepared.pathfinding;
+        this.groupId = null;
+        this.currentNode = null;
+        this.setDebugGeometry(prepared.debugGeometry);
+    }
+    dispose() {
+        this.setDebugGeometry();
+        this.pathfinding = undefined;
+        this.zone = undefined;
+        this.ready = false;
+        this.groupId = null;
+        this.currentNode = null;
+    }
+    setDebugGeometry(geometry) {
+        for (const child of [...this.debugVisualization.children]) {
+            const mesh = child;
+            mesh.geometry.dispose();
+            const materials = Array.isArray(mesh.material)
+                ? mesh.material
+                : [mesh.material];
+            for (const material of materials)
+                material.dispose();
+            child.removeFromParent();
+        }
+        if (!geometry)
+            return;
+        const wireframe = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 1), new THREE.LineBasicMaterial({
+            color: 0x00e5ff,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false,
+        }));
+        wireframe.renderOrder = 1000;
+        wireframe.raycast = () => { };
+        this.debugVisualization.add(wireframe);
+        geometry.dispose();
     }
     async setGeometry(geometry) {
         const Pathfinding = await this.loadPathfinding();
@@ -15211,11 +15339,11 @@ class SimulatorNavMesh {
             .addScaledVector(randomTriangleAB.subVectors(randomTriangleB, randomTriangleA), u)
             .addScaledVector(randomTriangleAC.subVectors(randomTriangleC, randomTriangleA), v);
     }
-    async loadGeometry(path, sceneOffset) {
+    async loadGeometry(path, transform) {
         const loader = new GLTFLoader();
         const gltf = await loader.loadAsync(path);
         try {
-            gltf.scene.position.copy(sceneOffset);
+            gltf.scene.applyMatrix4(transform);
             gltf.scene.updateMatrixWorld(true);
             const navMesh = this.findFirstMesh(gltf.scene);
             if (!navMesh) {
@@ -15276,43 +15404,34 @@ class SimulatorNavMesh {
 class SimulatorScene extends THREE.Scene {
     constructor() {
         super();
-    }
-    async init(simulatorOptions) {
-        this.addLights();
-        const activeEnv = simulatorOptions.environments[simulatorOptions.activeEnvironmentIndex];
-        if (!activeEnv)
-            return;
-        if (activeEnv.videoPath) {
-            return;
-        }
-        if (activeEnv.scenePath) {
-            await this.loadGLTF(activeEnv.scenePath, new THREE.Vector3(simulatorOptions.initialScenePosition.x, simulatorOptions.initialScenePosition.y, simulatorOptions.initialScenePosition.z));
-        }
-    }
-    async setEnvironment(path, initialPosition) {
-        if (this.gltf) {
-            this.remove(this.gltf.scene);
-            this.gltf = undefined;
-        }
-        if (path) {
-            await this.loadGLTF(path, initialPosition);
-        }
-    }
-    addLights() {
         this.add(new THREE.HemisphereLight(0xbbbbbb, 0x888888, 3));
     }
-    async loadGLTF(path, initialPosition) {
-        const loader = new GLTFLoader();
-        return new Promise((resolve, reject) => {
-            loader.load(path, (gltf) => {
-                gltf.scene.position.copy(initialPosition);
-                this.add(gltf.scene);
-                this.gltf = gltf;
-                resolve(gltf);
-            }, () => { }, (error) => {
-                reject(error);
-            });
-        });
+    createEnvironmentRoot(manifest) {
+        const root = new THREE.Group();
+        root.name = 'Simulator Environment';
+        if (manifest.position)
+            root.position.fromArray(manifest.position);
+        if (manifest.quaternion)
+            root.quaternion.fromArray(manifest.quaternion);
+        if (manifest.scale)
+            root.scale.fromArray(manifest.scale);
+        const objects = new THREE.Group();
+        objects.name = 'Simulator Objects';
+        root.add(objects);
+        return { root, objects };
+    }
+    commitEnvironment(root, gltf) {
+        const previousRoot = this.environmentRoot;
+        this.add(root);
+        this.environmentRoot = root;
+        this.gltf = gltf;
+        previousRoot?.removeFromParent();
+        return previousRoot;
+    }
+    clearEnvironment() {
+        this.environmentRoot?.removeFromParent();
+        this.environmentRoot = undefined;
+        this.gltf = undefined;
     }
 }
 
@@ -15366,81 +15485,1186 @@ class SimulatorUser extends Script {
     }
 }
 
-// World sensing for the simulator.
-// Injects planes and meshes extracted from the simulated environment.
-class SimulatorWorld {
-    async init(options, world, simulatorScene) {
+function disposeMaterial(material, except = new Set()) {
+    if (!material) {
+        return;
+    }
+    const materials = Array.isArray(material) ? material : [material];
+    for (const item of materials) {
+        if (!except.has(item)) {
+            item.dispose();
+        }
+    }
+}
+function disposeRenderableResources(object) {
+    const renderable = object;
+    renderable.geometry?.dispose?.();
+    disposeMaterial(renderable.material);
+}
+function hasRenderableResources(object) {
+    const renderable = object;
+    return !!(renderable.geometry || renderable.material);
+}
+function disposeObjectTree(object) {
+    for (const child of [...object.children]) {
+        disposeObjectTree(child);
+        object.remove(child);
+    }
+    if (hasRenderableResources(object)) {
+        disposeRenderableResources(object);
+    }
+    const disposable = object;
+    disposable.dispose?.();
+}
+function disposeObjectChildren(object) {
+    for (const child of [...object.children]) {
+        disposeObjectTree(child);
+        object.remove(child);
+    }
+}
+
+const worldPosition$1 = new THREE.Vector3();
+const worldQuaternion$1 = new THREE.Quaternion();
+const rigidWorldMatrix = new THREE.Matrix4();
+const inverseRigidWorldMatrix = new THREE.Matrix4();
+const relativeMatrix = new THREE.Matrix4();
+/**
+ * Merges the meshes below an object into geometry expressed relative to the
+ * object's world-space rigid transform. Scale is baked into the vertices.
+ */
+function mergeObjectGeometry(root) {
+    root.updateWorldMatrix(true, true);
+    root.getWorldPosition(worldPosition$1);
+    root.getWorldQuaternion(worldQuaternion$1);
+    rigidWorldMatrix.compose(worldPosition$1, worldQuaternion$1, new THREE.Vector3(1, 1, 1));
+    inverseRigidWorldMatrix.copy(rigidWorldMatrix).invert();
+    const geometries = [];
+    root.traverse((object) => {
+        const mesh = object;
+        if (!mesh.isMesh || !mesh.geometry?.attributes.position)
+            return;
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', mesh.geometry.attributes.position.clone());
+        if (mesh.geometry.index) {
+            geometry.setIndex(mesh.geometry.index.clone());
+        }
+        relativeMatrix.multiplyMatrices(inverseRigidWorldMatrix, mesh.matrixWorld);
+        geometry.applyMatrix4(relativeMatrix);
+        geometries.push(geometry);
+    });
+    if (geometries.length === 0)
+        return null;
+    const merged = mergeGeometries(geometries, false);
+    for (const geometry of geometries)
+        geometry.dispose();
+    if (!merged)
+        return null;
+    if (!merged.index) {
+        const count = merged.attributes.position.count;
+        const indices = new Uint32Array(count);
+        for (let i = 0; i < count; i++)
+            indices[i] = i;
+        merged.setIndex(new THREE.BufferAttribute(indices, 1));
+    }
+    merged.computeVertexNormals();
+    return merged;
+}
+function geometryVertices(geometry) {
+    const position = geometry.getAttribute('position');
+    const vertices = new Float32Array(position.count * 3);
+    for (let i = 0; i < position.count; i++) {
+        const offset = i * 3;
+        vertices[offset] = position.getX(i);
+        vertices[offset + 1] = position.getY(i);
+        vertices[offset + 2] = position.getZ(i);
+    }
+    return vertices;
+}
+function geometryIndices(geometry) {
+    const index = geometry.getIndex();
+    if (!index)
+        return new Uint32Array();
+    return new Uint32Array(index.array);
+}
+
+const MANIFEST_KEYS = new Set([
+    'name',
+    'scenePath',
+    'videoPath',
+    'scenePlanesPath',
+    'navMeshPath',
+    'position',
+    'quaternion',
+    'scale',
+    'objects',
+]);
+const OBJECT_KEYS = new Set([
+    'id',
+    'assetPath',
+    'position',
+    'quaternion',
+    'scale',
+    'visible',
+    'detectObject',
+    'label',
+    'data',
+    'physics',
+]);
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function assertKnownKeys(value, keys, location) {
+    for (const key of Object.keys(value)) {
+        if (!keys.has(key)) {
+            throw new Error(`${location}: unknown field '${key}'.`);
+        }
+    }
+}
+function parseString(value, location) {
+    if (value === undefined)
+        return undefined;
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new Error(`${location}: expected a non-empty string.`);
+    }
+    return value;
+}
+function parseTuple(value, length, location) {
+    if (value === undefined)
+        return undefined;
+    if (!Array.isArray(value) ||
+        value.length !== length ||
+        value.some((item) => typeof item !== 'number' || !Number.isFinite(item))) {
+        throw new Error(`${location}: expected an array of ${length} finite numbers.`);
+    }
+    return value;
+}
+function parseBoolean(value, location) {
+    if (value === undefined)
+        return undefined;
+    if (typeof value !== 'boolean') {
+        throw new Error(`${location}: expected a boolean.`);
+    }
+    return value;
+}
+function parsePhysics(value, location) {
+    if (value === undefined || value === false)
+        return false;
+    if (value !== 'fixed' && value !== 'dynamic') {
+        throw new Error(`${location}: expected false, 'fixed', or 'dynamic'.`);
+    }
+    return value;
+}
+function parseObject(value, index, seenIds) {
+    const location = `objects[${index}]`;
+    if (!isRecord(value)) {
+        throw new Error(`${location}: expected an object.`);
+    }
+    assertKnownKeys(value, OBJECT_KEYS, location);
+    const id = parseString(value.id, `${location}.id`);
+    if (id && seenIds.has(id)) {
+        throw new Error(`${location}: duplicate id '${id}'.`);
+    }
+    if (id)
+        seenIds.add(id);
+    const assetPath = parseString(value.assetPath, `${location}.assetPath`);
+    if (!assetPath) {
+        throw new Error(`${location}: assetPath is required.`);
+    }
+    const detectObject = parseBoolean(value.detectObject, `${location}.detectObject`);
+    const label = parseString(value.label, `${location}.label`);
+    if (detectObject && !label) {
+        throw new Error(`${location}: detectObject requires label.`);
+    }
+    const quaternion = parseTuple(value.quaternion, 4, `${location}.quaternion`);
+    if (quaternion && quaternion.every((component) => component === 0)) {
+        throw new Error(`${location}.quaternion: expected a non-zero quaternion.`);
+    }
+    const scale = parseTuple(value.scale, 3, `${location}.scale`);
+    if (scale?.some((component) => component === 0)) {
+        throw new Error(`${location}.scale: components must be non-zero.`);
+    }
+    return {
+        id,
+        assetPath,
+        position: parseTuple(value.position, 3, `${location}.position`),
+        quaternion,
+        scale,
+        visible: parseBoolean(value.visible, `${location}.visible`),
+        detectObject,
+        label,
+        data: value.data,
+        physics: parsePhysics(value.physics, `${location}.physics`),
+    };
+}
+function resolveOptionalUrl(path, baseUrl) {
+    return path ? new URL(path, baseUrl).href : undefined;
+}
+function parseSimulatorSceneManifest(value, manifestUrl) {
+    if (!isRecord(value)) {
+        throw new Error(`Invalid simulator manifest at ${manifestUrl}: expected an object.`);
+    }
+    try {
+        assertKnownKeys(value, MANIFEST_KEYS, 'manifest');
+        const scenePath = parseString(value.scenePath, 'manifest.scenePath');
+        const videoPath = parseString(value.videoPath, 'manifest.videoPath');
+        if (scenePath && videoPath) {
+            throw new Error('manifest: scenePath and videoPath are mutually exclusive.');
+        }
+        const objectValues = value.objects;
+        if (objectValues !== undefined && !Array.isArray(objectValues)) {
+            throw new Error('manifest.objects: expected an array.');
+        }
+        const seenIds = new Set();
+        const objects = (objectValues ?? []).map((object, index) => parseObject(object, index, seenIds));
+        const quaternion = parseTuple(value.quaternion, 4, 'manifest.quaternion');
+        if (quaternion && quaternion.every((component) => component === 0)) {
+            throw new Error('manifest.quaternion: expected a non-zero quaternion.');
+        }
+        const scale = parseTuple(value.scale, 3, 'manifest.scale');
+        if (scale?.some((component) => component === 0)) {
+            throw new Error('manifest.scale: components must be non-zero.');
+        }
+        return {
+            name: parseString(value.name, 'manifest.name'),
+            scenePath: resolveOptionalUrl(scenePath, manifestUrl),
+            videoPath: resolveOptionalUrl(videoPath, manifestUrl),
+            scenePlanesPath: resolveOptionalUrl(parseString(value.scenePlanesPath, 'manifest.scenePlanesPath'), manifestUrl),
+            navMeshPath: resolveOptionalUrl(parseString(value.navMeshPath, 'manifest.navMeshPath'), manifestUrl),
+            position: parseTuple(value.position, 3, 'manifest.position'),
+            quaternion,
+            scale,
+            objects: objects.map((object) => ({
+                ...object,
+                assetPath: resolveOptionalUrl(object.assetPath, manifestUrl),
+            })),
+            manifestUrl,
+        };
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Invalid simulator manifest at ${manifestUrl}: ${message}`);
+    }
+}
+async function loadSimulatorSceneManifest(manifestPath, baseUrl = document.baseURI) {
+    const manifestUrl = new URL(manifestPath, baseUrl).href;
+    // Manifests are small, mutable environment descriptors. Always refresh them
+    // while allowing the larger assets they reference to use normal HTTP caching.
+    const response = await fetch(manifestUrl, { cache: 'no-store' });
+    if (!response.ok) {
+        throw new Error(`Failed to load simulator manifest at ${manifestUrl}: ${response.status} ${response.statusText}`);
+    }
+    return parseSimulatorSceneManifest(await response.json(), manifestUrl);
+}
+
+function getManifestFallbackName(manifestUrl) {
+    return new URL(manifestUrl).pathname.split('/').pop() || manifestUrl;
+}
+class SimulatorEnvironmentManager {
+    constructor(options, renderer, simulatorScene, simulatorObjects, navMesh, simulatorWorld, physics, setVideoPath) {
         this.options = options;
-        this.world = world;
-        // Wait for World script initialization to complete first
-        await world.initializedPromise;
-        const activeEnv = options.simulator.environments[options.simulator.activeEnvironmentIndex];
-        if (options.world.planes.enabled && activeEnv?.scenePlanesPath) {
-            await this.loadPlanes(activeEnv.scenePlanesPath);
-        }
-        // Unlike planes (loaded from a prebuilt JSON), the scene mesh is extracted
-        // from the ground-truth geometry of the loaded environment GLTF.
-        if (options.world.meshes.enabled && simulatorScene?.gltf?.scene) {
-            this.loadMeshesFromScene(simulatorScene.gltf.scene);
-        }
+        this.renderer = renderer;
+        this.simulatorScene = simulatorScene;
+        this.simulatorObjects = simulatorObjects;
+        this.navMesh = navMesh;
+        this.simulatorWorld = simulatorWorld;
+        this.physics = physics;
+        this.setVideoPath = setVideoPath;
+        this.generation = 0;
+        this.simulatorObjects.onChanged = this.refreshMeshes.bind(this);
     }
     /**
-     * Bakes every sub-mesh of the environment into world-space
-     * {@link SimulatorMesh} objects and injects them into the MeshDetector.
+     * Resolves manifest names for the settings panel without loading scene assets.
      */
-    loadMeshesFromScene(root) {
-        if (!this.world.meshes)
-            return;
-        root.updateMatrixWorld(true);
-        const simMeshes = [];
-        root.traverse((object) => {
-            const mesh = object;
-            if (!mesh.isMesh || !mesh.geometry)
+    async resolveEnvironmentNames(environments) {
+        await Promise.all(environments.map(async (environment) => {
+            if (environment.name)
                 return;
-            const geometry = mesh.geometry.clone();
-            geometry.applyMatrix4(mesh.matrixWorld);
-            const positionAttribute = geometry.attributes.position;
-            if (!positionAttribute) {
-                geometry.dispose();
-                return;
+            try {
+                const manifest = await loadSimulatorSceneManifest(environment.manifestPath);
+                environment.name = manifest.name;
             }
-            const vertices = new Float32Array(positionAttribute.array);
-            let indices;
-            if (geometry.index) {
-                indices = new Uint32Array(geometry.index.array);
+            catch (error) {
+                console.warn(`Failed to read simulator environment name from ${environment.manifestPath}.`, error);
             }
-            else {
-                indices = new Uint32Array(positionAttribute.count);
-                for (let i = 0; i < indices.length; i++) {
-                    indices[i] = i;
+        }));
+    }
+    async setEnvironment(environment) {
+        const generation = ++this.generation;
+        const manifest = await loadSimulatorSceneManifest(environment.manifestPath);
+        const { root, objects: objectsGroup } = this.simulatorScene.createEnvironmentRoot(manifest);
+        let gltf;
+        let roomGeometry;
+        try {
+            const roomPromise = manifest.scenePath
+                ? new ModelLoader().loadGLTF({
+                    url: manifest.scenePath,
+                    renderer: this.renderer,
+                })
+                : Promise.resolve(undefined);
+            const results = await Promise.allSettled([
+                roomPromise,
+                this.simulatorObjects.prepareObjects(manifest.objects, manifest.manifestUrl, { replaceExisting: true }),
+                this.navMesh.prepareEnvironment(manifest, this.options),
+                this.simulatorWorld.preparePlanes(manifest),
+            ]);
+            const failure = results.find((result) => result.status === 'rejected');
+            if (failure) {
+                const loadedRoom = results[0];
+                if (loadedRoom.status === 'fulfilled' && loadedRoom.value) {
+                    root.add(loadedRoom.value.scene);
+                }
+                const loadedObjects = results[1];
+                if (loadedObjects.status === 'fulfilled') {
+                    for (const record of loadedObjects.value.records) {
+                        objectsGroup.add(record.object);
+                    }
+                }
+                const loadedNavMesh = results[2];
+                if (loadedNavMesh.status === 'fulfilled') {
+                    loadedNavMesh.value.debugGeometry?.dispose();
+                }
+                throw failure.reason;
+            }
+            const [loadedRoom, loadedObjects, loadedNavMesh, loadedPlanes] = results;
+            const preparedObjects = loadedObjects.value;
+            const preparedNavMesh = loadedNavMesh.value;
+            const preparedPlanes = loadedPlanes.value;
+            gltf = loadedRoom.value;
+            if (gltf)
+                root.add(gltf.scene);
+            for (const record of preparedObjects.records) {
+                objectsGroup.add(record.object);
+            }
+            if (gltf && this.physics) {
+                roomGeometry = mergeObjectGeometry(gltf.scene) ?? undefined;
+                if (!roomGeometry) {
+                    throw new Error('Simulator room has no mesh geometry for physics.');
                 }
             }
-            simMeshes.push({ vertices, indices, lastChangedTime: 0 });
-            geometry.dispose();
-        });
-        if (simMeshes.length > 0) {
-            this.world.meshes.setSimulatorMeshes(simMeshes);
-        }
-    }
-    async loadPlanes(path) {
-        const offsetPosition = new THREE.Vector3().copy(this.options.simulator.initialScenePosition);
-        try {
-            const planesData = (await fetch(path).then((response) => response.json()));
-            const planes = planesData.planes.map((plane) => {
-                return {
-                    type: plane.type,
-                    area: plane.area,
-                    position: new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z).add(offsetPosition),
-                    quaternion: new THREE.Quaternion(plane.quaternion[0], plane.quaternion[1], plane.quaternion[2], plane.quaternion[3]),
-                    polygon: plane.polygon.map((p) => new THREE.Vector2(p.x, p.y)),
-                    label: plane.label,
-                };
-            });
-            this.world.planes.setSimulatorPlanes(planes);
+            if (generation !== this.generation) {
+                roomGeometry?.dispose();
+                preparedNavMesh.debugGeometry?.dispose();
+                disposeObjectTree(root);
+                return;
+            }
+            const previousRoot = this.simulatorScene.environmentRoot;
+            this.disposeRoomPhysics();
+            this.simulatorObjects.reset();
+            this.simulatorScene.commitEnvironment(root, gltf);
+            this.simulatorObjects.setEnvironmentGroup(objectsGroup);
+            this.simulatorObjects.activatePrepared(preparedObjects, objectsGroup);
+            this.createRoomPhysics(gltf?.scene, roomGeometry);
+            roomGeometry = undefined;
+            this.navMesh.commitEnvironment(preparedNavMesh);
+            this.simulatorWorld.commitPlanes(preparedPlanes);
+            this.refreshMeshes();
+            this.setVideoPath(manifest.videoPath);
+            environment.name =
+                environment.name ??
+                    manifest.name ??
+                    getManifestFallbackName(manifest.manifestUrl);
+            this.activeEnvironment = environment;
+            this.manifest = manifest;
+            if (previousRoot)
+                disposeObjectTree(previousRoot);
         }
         catch (error) {
-            console.error('Failed to load planes:', error);
+            roomGeometry?.dispose();
+            if (root !== this.simulatorScene.environmentRoot) {
+                disposeObjectTree(root);
+            }
+            throw error;
         }
+    }
+    createRoomPhysics(room, geometry) {
+        if (!room || !this.physics)
+            return;
+        if (!geometry) {
+            throw new Error('Simulator room has no mesh geometry for physics.');
+        }
+        room.updateWorldMatrix(true, true);
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        room.getWorldPosition(position);
+        room.getWorldQuaternion(quaternion);
+        const body = this.physics.world.createRigidBody(this.physics.RAPIER.RigidBodyDesc.fixed()
+            .setTranslation(position.x, position.y, position.z)
+            .setRotation(quaternion));
+        this.physics.world.createCollider(this.physics.RAPIER.ColliderDesc.trimesh(geometryVertices(geometry), geometryIndices(geometry)), body);
+        geometry.dispose();
+        this.roomPhysics = { rigidBody: body };
+    }
+    disposeRoomPhysics() {
+        if (this.physics && this.roomPhysics) {
+            this.physics.world.removeRigidBody(this.roomPhysics.rigidBody);
+        }
+        this.roomPhysics = undefined;
+    }
+    refreshMeshes() {
+        this.simulatorWorld.commitMeshes(this.simulatorScene.gltf?.scene, this.simulatorObjects);
+    }
+    suspendSensing() {
+        this.simulatorWorld.suspendSimulatorSensing();
+    }
+    resumeSensing() {
+        this.simulatorWorld.restoreSimulatorPlanes();
+        this.refreshMeshes();
+    }
+    dispose() {
+        this.generation++;
+        this.simulatorWorld.suspendSimulatorSensing();
+        this.disposeRoomPhysics();
+        this.simulatorObjects.dispose();
+        this.navMesh.dispose();
+        const root = this.simulatorScene.environmentRoot;
+        root?.removeFromParent();
+        if (root)
+            disposeObjectTree(root);
+        this.simulatorScene.clearEnvironment();
+        this.activeEnvironment = undefined;
+        this.manifest = undefined;
+        this.setVideoPath(undefined);
+    }
+}
+
+const samplePoints = Array.from({ length: 9 }, () => new THREE.Vector3());
+/** Ground-truth object detection for the desktop simulator. */
+class SimulatorObjectDetectionSource {
+    constructor(camera, scene, objects) {
+        this.camera = camera;
+        this.scene = scene;
+        this.objects = objects;
+        this.frustum = new THREE.Frustum();
+        this.raycaster = new THREE.Raycaster();
+    }
+    detect() {
+        this.camera.updateWorldMatrix(true, false);
+        this.scene.updateWorldMatrix(true, true);
+        const projectionView = new THREE.Matrix4().multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+        this.frustum.setFromProjectionMatrix(projectionView);
+        const cameraPosition = new THREE.Vector3();
+        this.camera.getWorldPosition(cameraPosition);
+        const results = [];
+        for (const record of this.objects.get()) {
+            if (!record.definition.detectObject || !record.definition.label)
+                continue;
+            if (!record.object.visible)
+                continue;
+            const box = new THREE.Box3().setFromObject(record.object);
+            if (box.isEmpty() || !this.frustum.intersectsBox(box))
+                continue;
+            this.fillSamples(box);
+            if (!this.isVisible(record.object, cameraPosition, samplePoints))
+                continue;
+            const boundingBox = this.projectBox();
+            if (boundingBox.isEmpty())
+                continue;
+            const boxCenter = box.getCenter(new THREE.Vector3());
+            results.push({
+                label: record.definition.label,
+                position: this.findDetectionPoint(record.object, boundingBox, boxCenter, cameraPosition),
+                boundingBox,
+                data: record.definition.data ?? {},
+            });
+        }
+        return results;
+    }
+    fillSamples(box) {
+        box.getCenter(samplePoints[0]);
+        let index = 1;
+        for (const x of [box.min.x, box.max.x]) {
+            for (const y of [box.min.y, box.max.y]) {
+                for (const z of [box.min.z, box.max.z]) {
+                    samplePoints[index++].set(x, y, z);
+                }
+            }
+        }
+    }
+    isVisible(target, cameraPosition, points) {
+        const roots = this.scene.environmentRoot
+            ? [this.scene.environmentRoot]
+            : [];
+        let visibleSamples = 0;
+        for (const point of points) {
+            const direction = point.clone().sub(cameraPosition);
+            const distance = direction.length();
+            if (distance === 0)
+                return true;
+            this.raycaster.set(cameraPosition, direction.normalize());
+            this.raycaster.far = distance + 0.001;
+            const hit = this.raycaster.intersectObjects(roots, true)[0];
+            if (!hit || this.isDescendantOf(hit.object, target)) {
+                visibleSamples++;
+                if (visibleSamples >= 2)
+                    return true;
+            }
+        }
+        return false;
+    }
+    isDescendantOf(object, ancestor) {
+        for (let current = object; current; current = current.parent) {
+            if (current === ancestor)
+                return true;
+        }
+        return false;
+    }
+    projectBox() {
+        const projected = new THREE.Box2();
+        for (let i = 1; i < samplePoints.length; i++) {
+            const point = samplePoints[i].clone().project(this.camera);
+            projected.expandByPoint(new THREE.Vector2(THREE.MathUtils.clamp((point.x + 1) / 2, 0, 1), THREE.MathUtils.clamp((1 - point.y) / 2, 0, 1)));
+        }
+        return projected;
+    }
+    findDetectionPoint(target, boundingBox, fallback, cameraPosition) {
+        const screenCenter = boundingBox.getCenter(new THREE.Vector2());
+        const ndc = new THREE.Vector2(screenCenter.x * 2 - 1, 1 - screenCenter.y * 2);
+        this.raycaster.setFromCamera(ndc, this.camera);
+        const centerHit = this.raycaster.intersectObject(target, true)[0];
+        if (centerHit)
+            return centerHit.point.clone();
+        const meshCenters = [];
+        target.traverse((object) => {
+            const mesh = object;
+            if (!mesh.isMesh || !mesh.geometry?.attributes.position)
+                return;
+            mesh.geometry.computeBoundingSphere();
+            if (!mesh.geometry.boundingSphere)
+                return;
+            meshCenters.push(mesh.geometry.boundingSphere.center
+                .clone()
+                .applyMatrix4(mesh.matrixWorld));
+        });
+        for (const meshCenter of meshCenters) {
+            this.raycaster.set(cameraPosition, meshCenter.clone().sub(cameraPosition).normalize());
+            const hit = this.raycaster.intersectObject(target, true)[0];
+            if (hit)
+                return hit.point.clone();
+        }
+        return fallback;
+    }
+}
+
+const worldPosition = new THREE.Vector3();
+const worldQuaternion = new THREE.Quaternion();
+const localPosition = new THREE.Vector3();
+const parentQuaternion = new THREE.Quaternion();
+/** @internal */
+class SimulatorObjectsManager {
+    constructor() {
+        this.records = new Map();
+        this.nextId = 1;
+    }
+    init(renderer, physics) {
+        this.renderer = renderer;
+        this.physics = physics;
+    }
+    async prepareObjects(definitions, baseUrl = document.baseURI, { replaceExisting = false } = {}) {
+        const assignedIds = new Set(replaceExisting ? [] : this.records.keys());
+        const assignedObjects = new Set(replaceExisting
+            ? []
+            : Array.from(this.records.values(), (record) => record.object));
+        let nextId = replaceExisting ? 1 : this.nextId;
+        const normalized = definitions.map((definition) => {
+            let id = definition.id;
+            while (!id) {
+                const candidate = `simulator-object-${nextId++}`;
+                if (!assignedIds.has(candidate))
+                    id = candidate;
+            }
+            if (assignedIds.has(id)) {
+                throw new Error(`Simulator object id '${id}' is already in use.`);
+            }
+            assignedIds.add(id);
+            if (!!definition.assetPath === !!definition.object) {
+                throw new Error(`Simulator object '${id}' must provide exactly one of assetPath or object.`);
+            }
+            if (definition.object && assignedObjects.has(definition.object)) {
+                throw new Error(`Simulator object '${id}' uses the same runtime object more than once.`);
+            }
+            if (definition.object)
+                assignedObjects.add(definition.object);
+            if (definition.detectObject && !definition.label) {
+                throw new Error(`Simulator object '${id}' requires label when detectObject is true.`);
+            }
+            const physics = definition.physics ?? false;
+            if (physics && !this.physics) {
+                throw new Error(`Simulator object '${id}' requires physics, but simulator physics is not enabled.`);
+            }
+            return { definition, id };
+        });
+        const settled = await Promise.allSettled(normalized.map(async ({ definition, id }) => {
+            if (definition.object)
+                return { definition, id, object: definition.object };
+            const assetUrl = new URL(definition.assetPath, baseUrl).href;
+            const gltf = await new ModelLoader().loadGLTF({
+                url: assetUrl,
+                renderer: this.renderer,
+            });
+            return { definition, id, object: gltf.scene };
+        }));
+        const failure = settled.find((result) => result.status === 'rejected');
+        if (failure) {
+            for (const result of settled) {
+                if (result.status === 'fulfilled' && !result.value.definition.object) {
+                    disposeObjectTree(result.value.object);
+                }
+            }
+            throw failure.reason;
+        }
+        const loaded = settled.map((result) => result.value);
+        const records = [];
+        try {
+            for (const { definition, id, object } of loaded) {
+                const hasTransform = !!definition.position ||
+                    !!definition.quaternion ||
+                    !!definition.scale;
+                object.name ||= id;
+                if (definition.position)
+                    object.position.fromArray(definition.position);
+                if (definition.quaternion)
+                    object.quaternion.fromArray(definition.quaternion);
+                if (definition.scale)
+                    object.scale.fromArray(definition.scale);
+                object.visible = definition.visible ?? true;
+                const physicsGeometry = (definition.physics ?? false)
+                    ? (mergeObjectGeometry(object) ?? undefined)
+                    : undefined;
+                if ((definition.physics ?? false) && !physicsGeometry) {
+                    throw new Error(`Simulator object '${id}' has no mesh geometry for physics.`);
+                }
+                records.push({
+                    id,
+                    object,
+                    definition: { ...definition, id },
+                    physicsGeometry,
+                    ownsObject: !definition.object,
+                    preserveWorldTransform: !!definition.object?.parent && !hasTransform,
+                });
+            }
+        }
+        catch (error) {
+            for (const record of records)
+                record.physicsGeometry?.dispose();
+            for (const entry of loaded) {
+                if (!entry.definition.object)
+                    disposeObjectTree(entry.object);
+            }
+            throw error;
+        }
+        return { records, nextId };
+    }
+    activatePrepared(prepared, targetGroup) {
+        for (const record of prepared.records) {
+            if (record.object.parent !== targetGroup) {
+                if (record.preserveWorldTransform)
+                    targetGroup.attach(record.object);
+                else
+                    targetGroup.add(record.object);
+            }
+            this.createPhysics(record);
+            this.records.set(record.id, record);
+        }
+        this.group = targetGroup;
+        this.nextId = prepared.nextId;
+        return prepared.records;
+    }
+    setEnvironmentGroup(group) {
+        this.group = group;
+        this.nextId = 1;
+    }
+    async addObjects(definitions, { baseUrl = document.baseURI } = {}) {
+        if (!this.group) {
+            throw new Error('Simulator environment is not ready.');
+        }
+        const prepared = await this.prepareObjects(definitions, baseUrl);
+        try {
+            const activated = this.activatePrepared(prepared, this.group);
+            if (activated.length > 0)
+                this.onChanged?.();
+            return activated;
+        }
+        catch (error) {
+            for (const record of prepared.records) {
+                this.disposeRecord(record);
+                this.records.delete(record.id);
+            }
+            throw error;
+        }
+    }
+    get(ids) {
+        if (!ids)
+            return Array.from(this.records.values());
+        return ids
+            .map((id) => this.records.get(id))
+            .filter((record) => !!record);
+    }
+    async updateObjects(updates) {
+        const seen = new Set();
+        const entries = updates.map((update) => {
+            if (seen.has(update.id)) {
+                throw new Error(`Simulator object '${update.id}' is updated more than once.`);
+            }
+            seen.add(update.id);
+            const record = this.records.get(update.id);
+            if (!record) {
+                throw new Error(`Simulator object '${update.id}' does not exist.`);
+            }
+            this.validateUpdate(update);
+            return { record, update };
+        });
+        const snapshots = entries.map(({ record }) => ({
+            record,
+            definition: { ...record.definition },
+            position: record.object.position.clone(),
+            quaternion: record.object.quaternion.clone(),
+            scale: record.object.scale.clone(),
+            visible: record.object.visible,
+        }));
+        const geometries = new Map();
+        const physicsUpdates = new Set(entries
+            .filter(({ update }) => ['position', 'quaternion', 'scale', 'physics'].some((key) => Object.prototype.hasOwnProperty.call(update, key)))
+            .map(({ record }) => record));
+        try {
+            for (const { record, update } of entries) {
+                this.applyUpdate(record, update);
+                if (physicsUpdates.has(record) &&
+                    (record.definition.physics ?? false) &&
+                    this.physics) {
+                    const geometry = mergeObjectGeometry(record.object);
+                    if (!geometry) {
+                        throw new Error(`Simulator object '${record.id}' has no mesh geometry for physics.`);
+                    }
+                    geometries.set(record, geometry);
+                }
+            }
+            for (const { record } of entries) {
+                if (!physicsUpdates.has(record))
+                    continue;
+                this.removePhysics(record);
+                record.physicsGeometry = geometries.get(record);
+                this.createPhysics(record);
+            }
+        }
+        catch (error) {
+            for (const geometry of geometries.values())
+                geometry.dispose();
+            for (const snapshot of snapshots) {
+                if (physicsUpdates.has(snapshot.record))
+                    this.removePhysics(snapshot.record);
+                snapshot.record.definition = snapshot.definition;
+                snapshot.record.object.position.copy(snapshot.position);
+                snapshot.record.object.quaternion.copy(snapshot.quaternion);
+                snapshot.record.object.scale.copy(snapshot.scale);
+                snapshot.record.object.visible = snapshot.visible;
+                if (physicsUpdates.has(snapshot.record) &&
+                    (snapshot.definition.physics ?? false) &&
+                    this.physics) {
+                    snapshot.record.physicsGeometry =
+                        mergeObjectGeometry(snapshot.record.object) ?? undefined;
+                    this.createPhysics(snapshot.record);
+                }
+            }
+            throw error;
+        }
+        if (entries.length > 0)
+            this.onChanged?.();
+        return entries.map(({ record }) => record);
+    }
+    validateUpdate(update) {
+        const finiteTuple = (value, length) => value === undefined ||
+            (value.length === length && value.every(Number.isFinite));
+        if (!finiteTuple(update.position, 3)) {
+            throw new Error(`Simulator object '${update.id}' has an invalid position.`);
+        }
+        if (!finiteTuple(update.quaternion, 4) ||
+            update.quaternion?.every((component) => component === 0)) {
+            throw new Error(`Simulator object '${update.id}' has an invalid quaternion.`);
+        }
+        if (!finiteTuple(update.scale, 3) ||
+            update.scale?.some((component) => component === 0)) {
+            throw new Error(`Simulator object '${update.id}' has an invalid scale.`);
+        }
+        if (update.label !== undefined && update.label !== null && !update.label) {
+            throw new Error(`Simulator object '${update.id}' has an invalid label.`);
+        }
+        if (update.physics && !this.physics) {
+            throw new Error(`Simulator object '${update.id}' requires physics, but simulator physics is not enabled.`);
+        }
+        const detectObject = update.detectObject;
+        const label = update.label;
+        if (detectObject && label === null) {
+            throw new Error(`Simulator object '${update.id}' requires label when detectObject is true.`);
+        }
+    }
+    applyUpdate(record, update) {
+        if (update.position)
+            record.object.position.fromArray(update.position);
+        if (update.quaternion)
+            record.object.quaternion.fromArray(update.quaternion).normalize();
+        if (update.scale)
+            record.object.scale.fromArray(update.scale);
+        if (update.visible !== undefined)
+            record.object.visible = update.visible;
+        const definition = record.definition;
+        if (update.position)
+            definition.position = [...update.position];
+        if (update.quaternion)
+            definition.quaternion = [...update.quaternion];
+        if (update.scale)
+            definition.scale = [...update.scale];
+        if (update.visible !== undefined)
+            definition.visible = update.visible;
+        if (update.detectObject !== undefined)
+            definition.detectObject = update.detectObject;
+        if (update.label !== undefined)
+            definition.label = update.label ?? undefined;
+        if (Object.prototype.hasOwnProperty.call(update, 'data'))
+            definition.data = update.data;
+        if (update.physics !== undefined)
+            definition.physics = update.physics;
+        if (definition.detectObject && !definition.label) {
+            throw new Error(`Simulator object '${record.id}' requires label when detectObject is true.`);
+        }
+    }
+    getMeshRecords() {
+        return Array.from(this.records.values());
+    }
+    setDetectedMeshes(meshes) {
+        for (const record of this.records.values()) {
+            record.detectedMesh = meshes.get(record.id);
+        }
+    }
+    removeObjects(ids) {
+        const changed = this.removeRecords(ids);
+        if (changed)
+            this.onChanged?.();
+        return this;
+    }
+    removeRecords(ids) {
+        let changed = false;
+        for (const id of ids) {
+            const record = this.records.get(id);
+            if (!record)
+                continue;
+            this.disposeRecord(record);
+            this.records.delete(id);
+            changed = true;
+        }
+        return changed;
+    }
+    clear() {
+        const changed = this.removeRecords(Array.from(this.records.keys()));
+        if (changed)
+            this.onChanged?.();
+        return this;
+    }
+    reset() {
+        this.removeRecords(Array.from(this.records.keys()));
+        this.nextId = 1;
+    }
+    physicsStep() {
+        for (const record of this.records.values()) {
+            if (record.definition.physics !== 'dynamic' || !record.rigidBody)
+                continue;
+            const translation = record.rigidBody.translation();
+            const rotation = record.rigidBody.rotation();
+            worldPosition.set(translation.x, translation.y, translation.z);
+            worldQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+            const parent = record.object.parent;
+            if (parent) {
+                parent.updateWorldMatrix(true, false);
+                localPosition.copy(worldPosition);
+                parent.worldToLocal(localPosition);
+                parent.getWorldQuaternion(parentQuaternion).invert();
+                record.object.position.copy(localPosition);
+                record.object.quaternion.copy(parentQuaternion.multiply(worldQuaternion));
+            }
+            else {
+                record.object.position.copy(worldPosition);
+                record.object.quaternion.copy(worldQuaternion);
+            }
+            record.object.updateWorldMatrix(true, true);
+            if (record.detectedMesh) {
+                record.detectedMesh.position.copy(worldPosition);
+                record.detectedMesh.quaternion.copy(worldQuaternion);
+                record.detectedMesh.updateWorldMatrix(true, true);
+                const virtualBody = record.detectedMesh.getRigidBody;
+                virtualBody?.setTranslation(worldPosition, false);
+                virtualBody?.setRotation(worldQuaternion, false);
+            }
+        }
+    }
+    createPhysics(record) {
+        const mode = record.definition.physics ?? false;
+        if (!mode || !this.physics)
+            return;
+        const geometry = record.physicsGeometry;
+        if (!geometry) {
+            throw new Error(`Simulator object '${record.id}' has no mesh geometry for physics.`);
+        }
+        record.object.getWorldPosition(worldPosition);
+        record.object.getWorldQuaternion(worldQuaternion);
+        const bodyDesc = this.createBodyDesc(mode)
+            .setTranslation(worldPosition.x, worldPosition.y, worldPosition.z)
+            .setRotation(worldQuaternion);
+        const body = this.physics.world.createRigidBody(bodyDesc);
+        const vertices = geometryVertices(geometry);
+        let colliderDesc = this.physics.RAPIER.ColliderDesc.convexHull(vertices);
+        if (!colliderDesc) {
+            geometry.computeBoundingBox();
+            const size = new THREE.Vector3();
+            geometry.boundingBox.getSize(size).multiplyScalar(0.5);
+            colliderDesc = this.physics.RAPIER.ColliderDesc.cuboid(Math.max(size.x, 0.001), Math.max(size.y, 0.001), Math.max(size.z, 0.001));
+        }
+        record.rigidBody = body;
+        this.physics.world.createCollider(colliderDesc, body);
+        geometry.dispose();
+        record.physicsGeometry = undefined;
+    }
+    removePhysics(record) {
+        if (this.physics && record.rigidBody) {
+            this.physics.world.removeRigidBody(record.rigidBody);
+            record.rigidBody = undefined;
+        }
+        record.physicsGeometry?.dispose();
+        record.physicsGeometry = undefined;
+    }
+    createBodyDesc(mode) {
+        return mode === 'dynamic'
+            ? this.physics.RAPIER.RigidBodyDesc.dynamic().setCcdEnabled(true)
+            : this.physics.RAPIER.RigidBodyDesc.fixed();
+    }
+    disposeRecord(record) {
+        this.removePhysics(record);
+        record.object.removeFromParent();
+        if (record.ownsObject)
+            disposeObjectTree(record.object);
+    }
+    dispose() {
+        this.reset();
+        this.onChanged = undefined;
+        this.group = undefined;
+        this.physics = undefined;
+        this.renderer = undefined;
+    }
+}
+
+const handPosition = new THREE.Vector3();
+const handInputDelta = new THREE.Vector3();
+const identityRotation = new THREE.Quaternion();
+/** Physics world isolated to the simulated physical environment. */
+class SimulatorPhysics {
+    constructor(physics, handOptions) {
+        this.handOptions = handOptions;
+        this.hands = [];
+        this.RAPIER = physics.RAPIER;
+        this.world = new this.RAPIER.World(physics.options?.gravity ?? { x: 0, y: -9.81, z: 0 });
+        this.world.timestep = physics.timestep;
+    }
+    constrainHand(index, position, enabled, handOrigin) {
+        let hand = this.hands[index];
+        if (!this.handOptions.enabled) {
+            if (hand?.enabled) {
+                hand.enabled = false;
+                hand.body.setEnabled(false);
+            }
+            return;
+        }
+        if (!enabled) {
+            if (hand?.enabled) {
+                hand.enabled = false;
+                hand.body.setEnabled(false);
+            }
+            return;
+        }
+        const tethered = this.clampHandToOrigin(position, handOrigin);
+        if (!hand) {
+            hand = this.createHand(position);
+            this.hands[index] = hand;
+            return;
+        }
+        if (!hand.enabled) {
+            hand.enabled = true;
+            hand.body.setTranslation(position, true);
+            hand.body.setEnabled(true);
+            return;
+        }
+        if (tethered) {
+            hand.body.setTranslation(position, true);
+            return;
+        }
+        const translation = hand.body.translation();
+        handInputDelta.set(position.x - translation.x, position.y - translation.y, position.z - translation.z);
+        if (handInputDelta.lengthSq() > 0) {
+            hand.controller.computeColliderMovement(hand.collider, handInputDelta);
+            const movement = hand.controller.computedMovement();
+            handPosition.set(translation.x + movement.x, translation.y + movement.y, translation.z + movement.z);
+            hand.body.setTranslation(handPosition, true);
+        }
+        else {
+            handPosition.set(translation.x, translation.y, translation.z);
+        }
+        position.copy(handPosition);
+    }
+    createHand(position) {
+        this.validateHandOptions();
+        const body = this.world.createRigidBody(this.RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(position.x, position.y, position.z));
+        const collider = this.world.createCollider(this.RAPIER.ColliderDesc.ball(this.handOptions.radius)
+            .setFriction(this.handOptions.friction)
+            .setRestitution(this.handOptions.restitution), body);
+        const controller = this.world.createCharacterController(this.handOptions.contactOffset);
+        controller.setSlideEnabled(true);
+        controller.setApplyImpulsesToDynamicBodies(true);
+        controller.setCharacterMass(this.handOptions.mass);
+        return { body, collider, controller, enabled: true };
+    }
+    clampHandToOrigin(position, origin) {
+        if (!origin)
+            return false;
+        handInputDelta.copy(position).sub(origin);
+        if (handInputDelta.lengthSq() === 0)
+            return false;
+        const hit = this.world.castShape(origin, identityRotation, handInputDelta, new this.RAPIER.Ball(this.handOptions.radius), this.handOptions.contactOffset, 1, false, this.RAPIER.QueryFilterFlags.ONLY_FIXED);
+        if (!hit)
+            return false;
+        position.copy(origin).addScaledVector(handInputDelta, hit.time_of_impact);
+        return true;
+    }
+    validateHandOptions() {
+        if (this.handOptions.radius <= 0) {
+            throw new RangeError('Simulator hand physics radius must be positive.');
+        }
+        if (this.handOptions.contactOffset <= 0 ||
+            this.handOptions.contactOffset >= this.handOptions.radius) {
+            throw new RangeError('Simulator hand physics contactOffset must be positive and smaller than radius.');
+        }
+        if (this.handOptions.mass <= 0) {
+            throw new RangeError('Simulator hand physics mass must be positive.');
+        }
+    }
+    step() {
+        this.world.step();
+    }
+    dispose() {
+        for (const hand of this.hands) {
+            if (hand)
+                this.world.removeCharacterController(hand.controller);
+        }
+        this.hands.length = 0;
+        this.world.free();
+    }
+}
+
+/** World-sensing adapters for the simulator environment. */
+class SimulatorWorld {
+    async init(options, world) {
+        this.options = options;
+        this.world = world;
+        await world.initializedPromise;
+    }
+    async preparePlanes(manifest) {
+        if (!this.options.world.planes.enabled)
+            return undefined;
+        if (!manifest.scenePlanesPath)
+            return [];
+        // Plane sidecars are frequently regenerated while authoring environments.
+        const response = await fetch(manifest.scenePlanesPath, { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`Failed to load simulator planes at ${manifest.scenePlanesPath}: ${response.status} ${response.statusText}`);
+        }
+        const data = (await response.json());
+        if (!Array.isArray(data.planes)) {
+            throw new Error(`Invalid simulator planes at ${manifest.scenePlanesPath}: expected planes array.`);
+        }
+        const rootPosition = new THREE.Vector3().fromArray(manifest.position ?? [0, 0, 0]);
+        const rootQuaternion = new THREE.Quaternion().fromArray(manifest.quaternion ?? [0, 0, 0, 1]);
+        const rootScale = new THREE.Vector3().fromArray(manifest.scale ?? [1, 1, 1]);
+        const matrix = new THREE.Matrix4().compose(rootPosition, rootQuaternion, rootScale);
+        return data.planes.map((plane) => {
+            const position = new THREE.Vector3(plane.position.x, plane.position.y, plane.position.z).applyMatrix4(matrix);
+            const quaternion = rootQuaternion
+                .clone()
+                .multiply(new THREE.Quaternion().fromArray(plane.quaternion));
+            return {
+                type: plane.type,
+                area: plane.area * Math.abs(rootScale.x * rootScale.z),
+                position,
+                quaternion,
+                polygon: plane.polygon.map((point) => new THREE.Vector2(point.x * rootScale.x, point.y * rootScale.z)),
+                label: plane.label,
+            };
+        });
+    }
+    commitPlanes(planes) {
+        this.simulatorPlanes = planes;
+        if (planes && this.world.planes) {
+            this.world.planes.setSimulatorPlanes(planes);
+        }
+    }
+    suspendSimulatorSensing() {
+        this.world.planes?.clearSimulatorPlanes();
+        this.world.meshes?.clearSimulatorMeshes();
+    }
+    restoreSimulatorPlanes() {
+        if (this.simulatorPlanes) {
+            this.world.planes?.setSimulatorPlanes(this.simulatorPlanes);
+        }
+    }
+    commitMeshes(room, objects) {
+        if (!this.world.meshes)
+            return;
+        const sources = [];
+        if (room)
+            sources.push(...this.createRoomMeshSources(room));
+        for (const record of objects.getMeshRecords()) {
+            const source = this.createMeshSource(record.object, 'other', record.id);
+            if (source)
+                sources.push(source);
+        }
+        const detectedMeshes = this.world.meshes.setSimulatorMeshes(sources);
+        const objectMeshes = new Map(sources.flatMap((source, index) => source.simulatorObjectId
+            ? [[source.simulatorObjectId, detectedMeshes[index]]]
+            : []));
+        objects.setDetectedMeshes(objectMeshes);
+    }
+    /** Preserves the original simulator behavior of exposing each room submesh. */
+    createRoomMeshSources(root) {
+        root.updateWorldMatrix(true, true);
+        const sources = [];
+        root.traverse((object) => {
+            const mesh = object;
+            if (!mesh.isMesh || !mesh.geometry?.attributes.position)
+                return;
+            const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+            sources.push({
+                vertices: geometryVertices(geometry),
+                indices: geometryIndices(geometry),
+                lastChangedTime: 0,
+            });
+            geometry.dispose();
+        });
+        return sources;
+    }
+    createMeshSource(object, semanticLabel, simulatorObjectId) {
+        const geometry = mergeObjectGeometry(object);
+        if (!geometry)
+            return undefined;
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        object.getWorldPosition(position);
+        object.getWorldQuaternion(quaternion);
+        const source = {
+            vertices: geometryVertices(geometry),
+            indices: geometryIndices(geometry),
+            lastChangedTime: 0,
+            semanticLabel,
+            position,
+            quaternion,
+            simulatorObjectId,
+        };
+        geometry.dispose();
+        return source;
     }
 }
 
@@ -15504,44 +16728,6 @@ function placeObjectAtIntersectionFacingTarget(obj, intersection, target) {
     // authored with +Z forward, or a rotation offset can be applied here.
     obj.quaternion.setFromRotationMatrix(matrix4$2);
     return obj;
-}
-
-function disposeMaterial(material, except = new Set()) {
-    if (!material) {
-        return;
-    }
-    const materials = Array.isArray(material) ? material : [material];
-    for (const item of materials) {
-        if (!except.has(item)) {
-            item.dispose();
-        }
-    }
-}
-function disposeRenderableResources(object) {
-    const renderable = object;
-    renderable.geometry?.dispose?.();
-    disposeMaterial(renderable.material);
-}
-function hasRenderableResources(object) {
-    const renderable = object;
-    return !!(renderable.geometry || renderable.material);
-}
-function disposeObjectTree(object) {
-    for (const child of [...object.children]) {
-        disposeObjectTree(child);
-        object.remove(child);
-    }
-    if (hasRenderableResources(object)) {
-        disposeRenderableResources(object);
-    }
-    const disposable = object;
-    disposable.dispose?.();
-}
-function disposeObjectChildren(object) {
-    for (const child of [...object.children]) {
-        disposeObjectTree(child);
-        object.remove(child);
-    }
 }
 
 /**
@@ -16041,8 +17227,25 @@ class ObjectDetector extends Script {
         });
         return this.currentDetectionPromise;
     }
+    /** Installs or removes the desktop simulator's ground-truth detector. */
+    setSimulatorSource(source) {
+        this.simulatorSource = source;
+        return this;
+    }
     async runDetectionInternal() {
         this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
+        if (this.simulatorSource) {
+            const detectedObjects = this.simulatorSource.detect().map((input) => {
+                const object = new DetectedObject(input.label, null, input.boundingBox, input.data ?? {});
+                object.position.copy(input.position);
+                return object;
+            });
+            for (const object of detectedObjects) {
+                this._detectedObjects.set(object.uuid, object);
+                this.add(object);
+            }
+            return detectedObjects;
+        }
         const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
         if (!cameraParametersSnapshot) {
             // Device camera not ready yet (warming up); skip until it is available.
@@ -16176,6 +17379,7 @@ class ObjectDetector extends Script {
                 .catch(() => { });
         }
         this._detectorBackends.clear();
+        this.simulatorSource = undefined;
     }
 }
 
@@ -16390,6 +17594,14 @@ class PlaneDetector extends Script {
             this._addSimulatorPlaneMesh(plane);
         }
     }
+    clearSimulatorPlanes() {
+        if (!this.usingSimulatorPlanes)
+            return;
+        for (const plane of Array.from(this._detectedPlanes.keys())) {
+            this._removePlaneMesh(plane);
+        }
+        this.usingSimulatorPlanes = false;
+    }
     dispose() {
         for (const plane of Array.from(this._detectedPlanes.keys())) {
             this._removePlaneMesh(plane);
@@ -16477,8 +17689,8 @@ class DetectedMesh extends THREE.Mesh {
         }
         if (this.blendedWorld && this.rigidBody) {
             this.blendedWorld.removeRigidBody(this.rigidBody);
-            this.rigidBody = undefined;
         }
+        this.rigidBody = undefined;
         this.geometry.dispose();
     }
 }
@@ -16535,7 +17747,7 @@ class MeshDetector extends Script {
     }
     initPhysics(physics) {
         this.physics = physics;
-        for (const [_, mesh] of this.xrMeshToThreeMesh.entries()) {
+        for (const mesh of this.xrMeshToThreeMesh.values()) {
             mesh.initRapierPhysics(physics.RAPIER, physics.blendedWorld);
         }
     }
@@ -16669,6 +17881,15 @@ class MeshDetector extends Script {
                 threeMesh.initRapierPhysics(this.physics.RAPIER, this.physics.blendedWorld);
             }
         }
+        return meshes.map((mesh) => this.xrMeshToThreeMesh.get(mesh));
+    }
+    clearSimulatorMeshes() {
+        if (!this.usingSimulatorMeshes)
+            return;
+        for (const [source, mesh] of Array.from(this.xrMeshToThreeMesh.entries())) {
+            this.removeMesh(source, mesh);
+        }
+        this.usingSimulatorMeshes = false;
     }
     dispose() {
         for (const [xrMesh, threeMesh] of Array.from(this.xrMeshToThreeMesh.entries())) {
@@ -19559,6 +20780,8 @@ class Simulator extends Script {
         this.simulatorScene = new SimulatorScene();
         this.simulatorWorld = new SimulatorWorld();
         this.navMesh = new SimulatorNavMesh();
+        this.simulatorObjects = new SimulatorObjectsManager();
+        this.objects = this.simulatorObjects;
         this.depth = new SimulatorDepth(this.simulatorScene);
         // Controller poses relative to the camera.
         this.simulatorControllerState = new SimulatorControllerState();
@@ -19571,6 +20794,7 @@ class Simulator extends Script {
         this.stereoCameras = [];
         this.initialized = false;
         this.renderSimulatorSceneToCanvasBound = this.renderSimulatorSceneToCanvas.bind(this);
+        this.useSimulatorObjectDetection = false;
         this.add(this.simulatorUser);
     }
     async init({ simulatorOptions, input, timer, camera, renderer, scene, registry, options, depth, world, }) {
@@ -19578,14 +20802,43 @@ class Simulator extends Script {
             return;
         // Get optional dependencies from the registry.
         const deviceCamera = registry.get(XRDeviceCamera);
+        const physics = registry.get(Physics);
+        this.simulatorPhysics =
+            physics && simulatorOptions.physics.enabled
+                ? new SimulatorPhysics(physics, simulatorOptions.handPhysics)
+                : undefined;
         this.options = simulatorOptions;
+        this.renderer = renderer;
+        this.mainCamera = camera;
+        this.mainScene = scene;
+        this.registry = registry;
+        this.world = world;
+        this.simulatorScene.add(this.navMesh.debugVisualization);
+        this.navMesh.showDebugVisualizations(this.options.navMesh.showDebugVisualizations);
         camera.position.copy(this.options.initialCameraPosition);
-        this.userInterface.init(simulatorOptions, this.controls, this.hands, input, this.simulatorScene, this.navMesh);
         renderer.autoClearColor = false;
-        await this.simulatorScene.init(simulatorOptions);
-        await this.navMesh.init(simulatorOptions);
-        await this.simulatorWorld.init(options, world, this.simulatorScene);
-        await this.hands.init({ input });
+        await this.simulatorWorld.init(options, world);
+        this.simulatorObjects.init(renderer, this.simulatorPhysics);
+        this.environment = new SimulatorEnvironmentManager(simulatorOptions, renderer, this.simulatorScene, this.simulatorObjects, this.navMesh, this.simulatorWorld, this.simulatorPhysics, this.setVideoPath.bind(this));
+        const initialEnvironment = this.options.environments[this.options.activeEnvironmentIndex];
+        if (!initialEnvironment) {
+            throw new Error(`Simulator environment index ${this.options.activeEnvironmentIndex} does not exist.`);
+        }
+        await this.environment.setEnvironment(initialEnvironment);
+        await this.environment.resolveEnvironmentNames(this.options.environments);
+        this.userInterface.init(simulatorOptions, this.controls, this.hands, input, this.activateEnvironment.bind(this), !!this.simulatorPhysics);
+        this.useSimulatorObjectDetection =
+            options.world.objects.enabled && options.world.objects.simulatorOverride;
+        if (this.useSimulatorObjectDetection && world.objects) {
+            this.objectDetectionSource = new SimulatorObjectDetectionSource(camera, this.simulatorScene, this.objects);
+            world.objects.setSimulatorSource(this.objectDetectionSource);
+        }
+        await this.hands.init({
+            input,
+            physics: this.simulatorPhysics,
+            camera,
+            simulatorOptions,
+        });
         this.controls.init({ camera, input, timer, renderer, simulatorOptions });
         if (deviceCamera &&
             !this.simulatorCamera &&
@@ -19603,22 +20856,6 @@ class Simulator extends Script {
         if (this.options.stereo.enabled) {
             this.setupStereoCameras(camera);
         }
-        const activeEnv = this.options.environments[this.options.activeEnvironmentIndex];
-        if (activeEnv?.videoPath) {
-            this.videoElement = document.createElement('video');
-            this.videoElement.src = activeEnv.videoPath;
-            this.videoElement.loop = true;
-            this.videoElement.muted = true;
-            this.videoElement.play().catch((e) => {
-                console.error(`Simulator: Failed to play video at ${activeEnv.videoPath}`, e);
-            });
-            this.videoElement.addEventListener('error', () => {
-                console.error(`Simulator: Error loading video at ${activeEnv.videoPath}`, this.videoElement?.error);
-            });
-            const videoTexture = new THREE.VideoTexture(this.videoElement);
-            videoTexture.colorSpace = THREE.SRGBColorSpace;
-            this.backgroundVideoQuad = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: videoTexture }));
-        }
         this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(renderer.domElement.width, renderer.domElement.height, { stencilBuffer: options.stencil });
         const virtualSceneMaterial = new THREE.MeshBasicMaterial({
             map: this.virtualSceneRenderTarget.texture,
@@ -19631,11 +20868,60 @@ class Simulator extends Script {
             virtualSceneMaterial.blendEquation = THREE.AddEquation;
         }
         this.virtualSceneFullScreenQuad = new FullScreenQuad(virtualSceneMaterial);
-        this.renderer = renderer;
-        this.mainCamera = camera;
-        this.mainScene = scene;
-        this.registry = registry;
         this.initialized = true;
+    }
+    async setEnvironment(nameOrPath, manifestPath) {
+        await this.activateEnvironment(manifestPath
+            ? { name: nameOrPath, manifestPath }
+            : { manifestPath: nameOrPath });
+    }
+    async activateEnvironment(environment) {
+        if (!this.initialized || !this.environment) {
+            throw new Error('Simulator is not initialized.');
+        }
+        const index = this.options.environments.findIndex((candidate) => candidate.manifestPath === environment.manifestPath);
+        if (index !== -1) {
+            this.options.activeEnvironmentIndex = index;
+        }
+        await this.environment.setEnvironment(environment);
+    }
+    get activeEnvironment() {
+        return this.environment?.activeEnvironment;
+    }
+    get activeEnvironmentManifest() {
+        return this.environment?.manifest;
+    }
+    physicsStep() {
+        this.simulatorPhysics?.step();
+        this.simulatorObjects.physicsStep();
+    }
+    onXRSessionStarted() {
+        if (this.useSimulatorObjectDetection) {
+            this.world?.objects?.clear();
+        }
+        this.world?.objects?.setSimulatorSource(undefined);
+        this.environment?.suspendSensing();
+    }
+    onXRSessionEnded() {
+        if (this.useSimulatorObjectDetection) {
+            this.world?.objects?.clear();
+            this.world?.objects?.setSimulatorSource(this.objectDetectionSource);
+        }
+        this.environment?.resumeSensing();
+    }
+    dispose() {
+        this.world?.objects?.setSimulatorSource(undefined);
+        this.environment?.dispose();
+        this.environment = undefined;
+        this.simulatorPhysics?.dispose();
+        this.simulatorPhysics = undefined;
+        this.setVideoPath(undefined);
+        this.virtualSceneFullScreenQuad?.material?.dispose();
+        this.virtualSceneFullScreenQuad?.dispose();
+        this.virtualSceneFullScreenQuad = undefined;
+        this.virtualSceneRenderTarget?.dispose();
+        this.virtualSceneRenderTarget = undefined;
+        this.initialized = false;
     }
     simulatorUpdate() {
         this.controls.update();
@@ -19729,6 +21015,37 @@ class Simulator extends Script {
         }
         this.renderer.render(this.simulatorScene, camera);
         this.renderer.clearDepth();
+    }
+    setVideoPath(path) {
+        this.videoElement?.pause();
+        this.videoElement?.removeAttribute('src');
+        this.videoElement?.load();
+        this.videoElement = undefined;
+        if (this.backgroundVideoQuad) {
+            const material = this.backgroundVideoQuad
+                .material;
+            material.map?.dispose();
+            material.dispose();
+            this.backgroundVideoQuad.dispose();
+        }
+        this.backgroundVideoQuad = undefined;
+        if (!path)
+            return;
+        const video = document.createElement('video');
+        video.src = path;
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.play().catch((error) => {
+            console.error(`Simulator: Failed to play video at ${path}`, error);
+        });
+        video.addEventListener('error', () => {
+            console.error(`Simulator: Error loading video at ${path}`, video.error);
+        });
+        const texture = new THREE.VideoTexture(video);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.videoElement = video;
+        this.backgroundVideoQuad = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: texture }));
     }
 }
 
@@ -25913,6 +27230,7 @@ var sdk = /*#__PURE__*/Object.freeze({
     SegmentationOptions: SegmentationOptions,
     Segmenter: Segmenter,
     SetSimulatorEnvironmentEvent: SetSimulatorEnvironmentEvent,
+    SetSimulatorHandPhysicsEvent: SetSimulatorHandPhysicsEvent,
     SetSimulatorModeEvent: SetSimulatorModeEvent,
     ShowHandsAction: ShowHandsAction,
     ShowSimulatorInstructionsEvent: ShowSimulatorInstructionsEvent,
@@ -26081,5 +27399,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, context, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, AVERAGE_IPD_METERS, ActiveControllers, Agent, AnimatableNumber, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Col, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DragManager, DragMode, ExitButton, FINGER_ORDER, FORWARD, FaceLandmarkName, FaceRecognizer, FacesOptions, FreestandingSlider, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, Grid, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HorizontalPager, HumanRecognizer, HumansOptions, IconButton, IconView, ImageView, Input, InputOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LabelView, Lighting, LightingOptions, LoadingSpinnerManager, MaterialSymbolsView, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbiter, PageIndicator, Pager, PagerState, Panel, PanelMesh, Physics, PhysicsOptions, PinchOnButtonAction, PlaneDetector, PlanesOptions, PoseJointName, RIGHT, RIGHT_VIEW_ONLY_LAYER, Raycaster, Registry, Reticle, ReticleOptions, Reticles, RotationRaycastMesh, Row, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, ScrollingTroikaTextView, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowHandsAction, ShowSimulatorInstructionsEvent, Simulator, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorDepth, SimulatorDepthMaterial, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHands, SimulatorInterface, SimulatorMediaDeviceInfo, SimulatorMode, SimulatorNavMesh, SimulatorOptions, SimulatorPointerLockController, SimulatorRenderMode, SimulatorScene, SimulatorUser, SimulatorUserAction, SketchPanel, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpatialPanel, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatAnchor, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, TextButton, TextScrollerState, TextView, Tool, UI, UIKitOptions, UI_OVERLAY_LAYER, UP, UX, User, VIEW_DEPTH_GAP, VerticalPager, VideoFileStream, VideoStream, VideoView, View, VolumeCategory, WaitFrame, WalkTowardsPanelAction, WebXRHandContext, WebXRHandPoseEstimator, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, applyBVH, applySimulatorHandPoseRotationConstraints, average, callInitWithDependencyInjection, camera, clamp$1 as clamp, clamp01, clampRotationToAngle, context, core, cropImage, depth, disposeBVH, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, showReticleOnDepthMesh, sound, timer, transformRgbUvToWorld, traverseUtil, uninitScript, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 //# sourceMappingURL=xrblocks.js.map

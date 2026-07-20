@@ -12,6 +12,8 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
         this.activeEnvironmentIndex = 0;
         this.simulatorMode = xb.SimulatorMode.USER;
         this.instructionsEnabled = false;
+        this.handPhysicsAvailable = false;
+        this.handPhysicsEnabled = false;
         this._isOpen = false;
     }
     static { this.styles = css `
@@ -104,6 +106,27 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
       color: #ccc;
     }
 
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      cursor: pointer;
+    }
+
+    .checkbox-label:has(input:disabled) {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    input[type='checkbox'] {
+      width: 1rem;
+      height: 1rem;
+      margin: 0;
+      accent-color: #8ab4f8;
+      cursor: inherit;
+    }
+
     select {
       appearance: none;
       -webkit-appearance: none;
@@ -173,6 +196,11 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
         this.simulatorMode = newMode;
         this.dispatchEvent(new xb.SetSimulatorModeEvent(newMode));
     }
+    _onHandPhysicsChange(e) {
+        const input = e.target;
+        this.handPhysicsEnabled = input.checked;
+        this.dispatchEvent(new xb.SetSimulatorHandPhysicsEvent(this.handPhysicsEnabled));
+    }
     _onShowInstructions() {
         this._isOpen = false;
         this.dispatchEvent(new xb.ShowSimulatorInstructionsEvent());
@@ -209,7 +237,7 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
                   value=${idx}
                   ?selected=${idx === this.activeEnvironmentIndex}
                 >
-                  ${env.name}
+                  ${env.name ?? env.manifestPath.split('/').pop()}
                 </option>
               `)}
           </select>
@@ -227,6 +255,18 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
                 </option>
               `)}
           </select>
+        </div>
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <span>Hand Physics</span>
+            <input
+              type="checkbox"
+              .checked=${this.handPhysicsEnabled}
+              ?disabled=${!this.handPhysicsAvailable}
+              @change=${this._onHandPhysicsChange}
+            />
+          </label>
         </div>
 
         ${this.instructionsEnabled
@@ -257,6 +297,12 @@ __decorate([
 __decorate([
     property({ type: Boolean })
 ], SimulatorSettingsPanel.prototype, "instructionsEnabled", void 0);
+__decorate([
+    property({ type: Boolean })
+], SimulatorSettingsPanel.prototype, "handPhysicsAvailable", void 0);
+__decorate([
+    property({ type: Boolean })
+], SimulatorSettingsPanel.prototype, "handPhysicsEnabled", void 0);
 __decorate([
     state()
 ], SimulatorSettingsPanel.prototype, "_isOpen", void 0);
