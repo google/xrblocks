@@ -56,6 +56,11 @@ configuration patterns from the nearest template, sample, demo, or manual page.
 Source implementations clarify behavior; public entries define what app code
 may import.
 
+Read [`references/app-runtime-patterns.md`](references/app-runtime-patterns.md)
+before writing the app runtime. It carries the essential engine model,
+capability setup, lifecycle selection, and generated-code guardrails from the
+SDK's in-tree guidance.
+
 If any API, option, lifecycle, addon setup, or runtime behavior is unclear,
 refer to [`../../docs/docs/manual/`](../../docs/docs/manual/) before proceeding.
 
@@ -89,6 +94,12 @@ Register every script before `xb.init(options)`. Access engine-created objects
 in or after `init()`. Put per-frame behavior in `update()` and release owned GPU,
 media, listener, and timer resources in `dispose()`. Place content in meters
 using `xb.user.height`, `xb.user.objectDistance`, and `xb.user.panelDistance`.
+
+Keep each `xb.Script` legible as a high-level description of the experience.
+Because a Script is already a `THREE.Object3D`, attach its scene content with
+`this.add(...)`; let XR Blocks own the renderer, camera, XR session, and frame
+loop. Prefer declared `static dependencies` for engine services when a script
+needs them instead of reaching into partially initialized globals.
 
 Use `xb-add-spatial-ui` and its UIBlocks-first path for app UI. For physics,
 assign Rapier to `options.physics.RAPIER`; XR Blocks has no `enablePhysics()`.
