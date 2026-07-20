@@ -13,7 +13,6 @@ Update surfaces whose promise changed; do not perform a blanket rewrite.
 | `README.md`         | Installation, first-use contract, dependency/security headline                | Root formatting and link/code review                    |
 | `CONTEXT.md`        | Compact app-generation rules and canonical patterns                           | Verify every named API in the public entry              |
 | `AGENTS.md`         | Repository architecture and contribution policy                               | Verify commands and paths against configuration         |
-| `src/SKILL.md`      | In-tree SDK overview and public mental model                                  | Verify against `src/xrblocks.ts`, `Options`, and `Core` |
 | `skills/xb-*`       | Task process and branch selection                                             | Validate the changed skill folder                       |
 
 ## Public-pattern rules

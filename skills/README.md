@@ -6,9 +6,9 @@ Focused, task-oriented skills for building **AI + XR** apps with the XR Blocks S
 **`xb-build-app`**, then compose only the focused workflow skills the request
 actually triggers.
 
-For repo/build/architecture rules see [`../AGENTS.md`](../AGENTS.md); for the agent rules of
-engagement see [`../CONTEXT.md`](../CONTEXT.md); for the full SDK overview see
-[`../src/SKILL.md`](../src/SKILL.md).
+For repo/build/architecture rules see [`../AGENTS.md`](../AGENTS.md); for the
+agent rules of engagement and SDK app overview see
+[`../CONTEXT.md`](../CONTEXT.md).
 
 ## Naming convention
 
@@ -56,5 +56,5 @@ skill points to it; start app-generation work from the workflow layer.
 | [`xb-testing`](xb-testing/SKILL.md)             | Write sequential functional, integration, or simulator tests         |
 
 Deep references some skills link to live next to the code:
-[`../src/SKILL.md`](../src/SKILL.md), [`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),
+[`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),
 [`../src/addons/netblocks/SKILL.md`](../src/addons/netblocks/SKILL.md), [`../src/addons/lipsync/SKILL.md`](../src/addons/lipsync/SKILL.md).
