@@ -93,9 +93,10 @@ fails without the implementation and passes through its real boundary.
 
 For public behavior or changed setup, read
 [`references/developer-surfaces.md`](references/developer-surfaces.md). Update the
-smallest executable sample or template that teaches the supported pattern, then
-align the manual and agent guidance with that code. Keep detailed API facts in
-source TSDoc/manual pages and task composition in workflow skills. Use legacy
+smallest executable sample or template that teaches the supported pattern. Then
+align the manual and agent guidance with that code, adding a new manual page or
+sample wrapper when no existing page has the right scope. Keep detailed API facts
+in source TSDoc/manual pages and task composition in workflow skills. Use legacy
 capability skills as source-discovery indexes; correct affected claims against
 code rather than copying them.
 
