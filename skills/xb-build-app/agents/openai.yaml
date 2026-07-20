@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Build an XR Blocks app'
+  short_description: 'Build an XR app ready for simulator or device testing'
+  default_prompt: 'Use $xb-build-app to implement this XR Blocks app and bring it to a clear simulator or XR test handoff.'
