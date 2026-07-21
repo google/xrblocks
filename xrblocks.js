@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 8a57b88
- * @builddate 2026-07-20T21:50:14.193Z
+ * @commitid 1184698
+ * @builddate 2026-07-21T01:48:51.835Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -8027,6 +8027,91 @@ class MouseController extends Script {
     }
 }
 
+class PinchFilter {
+    constructor(handleEventFn) {
+        this.handleEventFn = handleEventFn;
+        this.forwardingListeners = new Map();
+    }
+    getOrCreateForwardingListener(type) {
+        let listener = this.forwardingListeners.get(type);
+        if (!listener) {
+            listener = (event) => {
+                this.handleEventFn(event);
+            };
+            this.forwardingListeners.set(type, listener);
+        }
+        return listener;
+    }
+    setupController(controller, activeEventTypes) {
+        for (const type of activeEventTypes) {
+            const forwarder = this.getOrCreateForwardingListener(type);
+            controller.addEventListener(type, forwarder);
+        }
+    }
+    setupControllerForType(controller, type) {
+        const forwarder = this.getOrCreateForwardingListener(type);
+        controller.addEventListener(type, forwarder);
+    }
+    removeControllerForType(controller, type) {
+        const forwarder = this.forwardingListeners.get(type);
+        if (forwarder) {
+            controller.removeEventListener(type, forwarder);
+        }
+    }
+    dispose(controllers) {
+        for (const [type, forwarder] of this.forwardingListeners.entries()) {
+            for (const controller of controllers) {
+                controller.removeEventListener(type, forwarder);
+            }
+        }
+        this.forwardingListeners.clear();
+    }
+    shouldFilterEvent(event) {
+        const controller = event.target;
+        if (event.type === 'selectstart' ||
+            event.type === 'selectend' ||
+            event.type === 'select') {
+            if (controller.gamepad?.buttons[0] !== undefined && !event.isCustom) {
+                return true;
+            }
+        }
+        return false;
+    }
+    updateController(controller, dispatchEventFn, setRaycasterFn, performRaycastFn) {
+        if (controller.gamepad && controller.gamepad.buttons[0] !== undefined) {
+            const pinchValue = controller.gamepad.buttons[0].value;
+            const isPinching = pinchValue >= 1.0;
+            const wasPinching = controller.userData.selected === true;
+            if (isPinching && !wasPinching) {
+                controller.userData.selected = true;
+                setRaycasterFn(controller);
+                performRaycastFn(controller);
+                dispatchEventFn({
+                    type: 'selectstart',
+                    target: controller,
+                    data: controller.inputSource,
+                    isCustom: true,
+                });
+            }
+            else if (!isPinching && wasPinching) {
+                controller.userData.selected = false;
+                dispatchEventFn({
+                    type: 'select',
+                    target: controller,
+                    data: controller.inputSource,
+                    isCustom: true,
+                });
+                dispatchEventFn({
+                    type: 'selectend',
+                    target: controller,
+                    data: controller.inputSource,
+                    isCustom: true,
+                });
+            }
+        }
+    }
+}
+
 class ActiveControllers extends THREE.Group {
     constructor() {
         super(...arguments);
@@ -8060,6 +8145,7 @@ class Input {
         this.gamepadController = new GamepadController();
         this.controllersEnabled = true;
         this.listeners = new Map();
+        this.pinchFilter = new PinchFilter((event) => this.dispatchEvent(event));
         this.intersectionsForController = new Map();
         this.intersections = [];
         this.activeControllers = new ActiveControllers();
@@ -8239,6 +8325,15 @@ class Input {
     defaultOnDisconnected(event) {
         const controller = event.target;
         controller.userData.connected = false;
+        if (controller.userData.selected) {
+            controller.userData.selected = false;
+            this.dispatchEvent({
+                type: 'selectend',
+                target: controller,
+                data: event.data,
+                isCustom: true,
+            });
+        }
         if (controller.reticle) {
             controller.reticle.visible = false;
         }
@@ -8259,7 +8354,7 @@ class Input {
      */
     bindListener(listenerName, listener) {
         for (const controller of this.controllers) {
-            controller.addEventListener(listenerName, listener);
+            this.pinchFilter.setupControllerForType(controller, listenerName);
         }
         if (!this.listeners.has(listenerName)) {
             this.listeners.set(listenerName, []);
@@ -8268,17 +8363,22 @@ class Input {
     }
     unbindListener(listenerName, listener) {
         if (this.listeners.has(listenerName)) {
-            const listeners = this.listeners.get(listenerName);
-            const index = listeners.indexOf(listener);
+            const list = this.listeners.get(listenerName);
+            const index = list.indexOf(listener);
             if (index !== -1) {
-                listeners.splice(index, 1);
+                list.splice(index, 1);
             }
-        }
-        for (const controller of this.controllers) {
-            controller.removeEventListener(listenerName, listener);
+            if (list.length === 0) {
+                for (const controller of this.controllers) {
+                    this.pinchFilter.removeControllerForType(controller, listenerName);
+                }
+            }
         }
     }
     dispatchEvent(event) {
+        if (this.pinchFilter.shouldFilterEvent(event)) {
+            return;
+        }
         if (this.listeners.has(event.type)) {
             for (const listener of this.listeners.get(event.type)) {
                 listener(event);
@@ -8384,6 +8484,7 @@ class Input {
         if (controller.userData.connected === false) {
             return;
         }
+        this.pinchFilter.updateController(controller, this.dispatchEvent.bind(this), this.setRaycasterFromController.bind(this), this.performRaycastOnScene.bind(this));
         controller.updatePose?.();
         controller.updateMatrixWorld();
         if (this.options.controllers.performRaycastOnUpdate) {
@@ -8467,11 +8568,7 @@ class Input {
             controller.reticle.visible = false;
             this.reticles.add(controller.reticle);
         }
-        for (const [listenerName, listeners] of this.listeners.entries()) {
-            for (const listener of listeners) {
-                controller.addEventListener(listenerName, listener);
-            }
-        }
+        this.pinchFilter.setupController(controller, this.listeners.keys());
     }
     enableController(controller) {
         this.registerController(controller);
@@ -8494,6 +8591,10 @@ class Input {
     }
     enableControllers() {
         this.controllersEnabled = true;
+    }
+    dispose() {
+        this.pinchFilter.dispose(this.controllers);
+        this.listeners.clear();
     }
     // Performs the raycast assuming the raycaster is already set up.
     performRaycastOnScene(controller) {
@@ -24932,6 +25033,10 @@ class Core {
         this.registry.register(this.world);
         this.registry.register(this.context);
         this.registry.register(this.xrSystemsGroup);
+    }
+    dispose() {
+        this.input.dispose();
+        window.removeEventListener('resize', this.onWindowResize);
     }
     /**
      * Initializes the Core system with a given set of options. This includes

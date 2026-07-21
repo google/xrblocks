@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 8a57b88
- * @builddate 2026-07-20T21:50:14.193Z
+ * @commitid 1184698
+ * @builddate 2026-07-21T01:48:51.835Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5436,6 +5436,7 @@ declare class Input {
     gamepadController: GamepadController;
     controllersEnabled: boolean;
     listeners: Map<any, any>;
+    private pinchFilter;
     intersectionsForController: Map<Controller, THREE.Intersection<THREE.Object3D<THREE.Object3DEventMap>>[]>;
     intersections: never[];
     activeControllers: ActiveControllers;
@@ -5566,6 +5567,7 @@ declare class Input {
     disableController(controller: Controller): void;
     disableControllers(): void;
     enableControllers(): void;
+    dispose(): void;
     performRaycastOnScene(controller: Controller): void;
 }
 
@@ -8930,6 +8932,7 @@ declare class Core {
      * user, UI, AI, and input managers.
      */
     constructor();
+    dispose(): void;
     /**
      * Initializes the Core system with a given set of options. This includes
      * setting up the renderer, enabling features like controllers, depth
