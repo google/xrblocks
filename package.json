@@ -63,7 +63,7 @@
     "@types/webxr": "^0.5.23",
     "@vitest/coverage-v8": "^4.1.8",
     "concurrently": "^10.0.3",
-    "eslint": "^9.35.0",
+    "eslint": "^10.7.0",
     "eslint-plugin-tsdoc": "^0.5.2",
     "glob": "^11.0.3",
     "http-server": "^14.1.1",
