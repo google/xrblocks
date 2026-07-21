@@ -43,6 +43,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
   beforeEach(() => {
     // Reset Core singleton to ensure fresh state for each test
+    Core.instance?.dispose();
     Core.instance = undefined;
     core = new Core();
     core.options = new Options();
