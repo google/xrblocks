@@ -27,6 +27,7 @@ export declare class CommandHistory extends xb.Script {
      * forward order. No-op entries should be filtered out by the caller
      * before calling this. */
     pushBatch(commands: Array<Command | undefined | null>): void;
+    clearHistory(): void;
     undo(): Promise<void>;
     redo(): Promise<void>;
     onKeyDown(event: KeyboardEvent): void;

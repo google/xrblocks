@@ -6,10 +6,13 @@ export declare class SimulatorSettingsPanel extends LitElement implements xb.ISi
     activeEnvironmentIndex: number;
     simulatorMode: xb.SimulatorMode;
     instructionsEnabled: boolean;
+    handPhysicsAvailable: boolean;
+    handPhysicsEnabled: boolean;
     private _isOpen;
     private _togglePanel;
     private _onEnvironmentChange;
     private _onModeChange;
+    private _onHandPhysicsChange;
     private _onShowInstructions;
     render(): import("lit-html").TemplateResult<1>;
 }

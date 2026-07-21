@@ -10,12 +10,12 @@ import { TransformGizmo } from './TransformGizmo.js';
 import { TransformInspectorPanel } from './TransformInspectorPanel.js';
 import './dom.js';
 import 'three';
-import 'three/addons/loaders/GLTFLoader.js';
+import './SceneManifest.js';
 
 /**
  * Public entry point for the scene editor addon: a multi-object
  * translate/rotate/scale gizmo scene editor with a model picker, an
- * outliner (rename/visibility/lock), undo/redo, and JSON scene
+ * outliner (label/visibility/lock), undo/redo, and simulator manifest
  * export/import. Desktop mouse in the simulator only -- permanently out
  * of scope for real XR controllers (all hit-testing gates on
  * `event.target === xb.core.input.mouseController`, which a real XR
@@ -67,6 +67,10 @@ class SceneEditor extends xb.Script {
         this.hierarchyPanel = new HierarchyPanel(this.sceneManager, this.selectionManager, {
             parent: this.leftColumn,
         });
+        this.sceneManager.onEnvironmentChange = () => {
+            this.selectionManager.clearSelection();
+            this.commandHistory.clearHistory();
+        };
         this.add(this.commandHistory);
         this.add(this.sceneManager);
         this.add(this.selectionManager);
@@ -82,9 +86,8 @@ class SceneEditor extends xb.Script {
      * session is active -- everywhere else (other simulator modes, or a
      * real headset), it goes fully inert without discarding state, so
      * switching back to Editor mode restores exactly where you left off.
-     * SceneManager itself (spawned models, occlusion) is untouched by this
-     * -- it's scene content, not editor chrome, and should render normally
-     * even in a real headset. */
+     * Simulator-owned models are untouched by this -- they are environment
+     * content, not editor chrome, and render normally even in a real headset. */
     update() {
         const active = xb.core.simulatorRunning &&
             xb.core.simulator.controls.simulatorMode === xb.SimulatorMode.EDITOR &&
@@ -106,6 +109,9 @@ class SceneEditor extends xb.Script {
     }
     onXRSessionEnded() {
         this.inRealXRSession = false;
+    }
+    dispose() {
+        this.root.remove();
     }
 }
 
