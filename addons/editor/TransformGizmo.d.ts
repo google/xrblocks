@@ -21,20 +21,20 @@ interface HandleRecord {
 }
 interface TranslateTarget {
     instance: SceneInstance;
-    object: THREE.Object3D;
+    viewer: xb.ModelViewer;
     startPosition: THREE.Vector3;
 }
 interface RotateTarget {
     instance: SceneInstance;
-    object: THREE.Object3D;
+    viewer: xb.ModelViewer;
+    content: THREE.Object3D;
     startPosition: THREE.Vector3;
     startQuaternion: THREE.Quaternion;
-    startWorldQuaternion: THREE.Quaternion;
     ownPivot: THREE.Vector3;
 }
 interface ScaleTarget {
     instance: SceneInstance;
-    object: THREE.Object3D;
+    viewer: xb.ModelViewer;
     startPosition: THREE.Vector3;
     startScale: THREE.Vector3;
     ownPivot: THREE.Vector3;
@@ -107,9 +107,9 @@ export declare class TransformGizmo extends xb.Script {
     getPlaneNormals(): Record<PlaneName, THREE.Vector3>;
     getPlaneAxisPair(planeName: PlaneName, axisDirections: Record<AxisName, THREE.Vector3>): [THREE.Vector3, THREE.Vector3];
     /** World-space center of the object's bounding box, not its base/origin -
-     * Uses rendered world-space bounds rather than assuming an asset's origin
-     * is its visual center. */
-    getPivotWorldPosition(object: THREE.Object3D): THREE.Vector3;
+     * viewer.position sits at the object's floor, which would otherwise
+     * place the gizmo at the object's feet. */
+    getPivotWorldPosition(viewer: xb.ModelViewer): THREE.Vector3;
     /** Centroid of every selected instance's own pivot. For a single
      * selection this is exactly that instance's own pivot, which is what
      * makes the group translate/rotate/scale math below reduce to today's
@@ -145,18 +145,15 @@ export declare class TransformGizmo extends xb.Script {
     updateDrag(): void;
     /** How far `point` (relative to `pivot`) ends up after applying
      * `transformFn` to it, expressed as a delta. Used to carry each
-     * target's own pivot displacement over to its object position --
+     * target's own pivot displacement over to its actual viewer.position --
      * see updateRotateDrag/updateScaleDrag. Zero whenever `point` already
      * equals `pivot`, which is what makes group rotate/scale reduce exactly
      * to single-object behavior when there's only one target. */
     computeOrbitDelta(point: THREE.Vector3, pivot: THREE.Vector3, transformFn: (relative: THREE.Vector3) => THREE.Vector3): THREE.Vector3;
-    applyWorldOffset(object: THREE.Object3D, startPosition: THREE.Vector3, offset: THREE.Vector3): void;
-    applyWorldQuaternion(object: THREE.Object3D, quaternion: THREE.Quaternion): void;
     updateRotateDrag(drag: RotateDrag): void;
     updateTranslateDrag(drag: TranslateDrag): void;
     updateScaleDrag(drag: ScaleDrag): void;
     endDrag(): void;
     pushDragCommand(drag: DragState): void;
-    dispose(): void;
 }
 export {};

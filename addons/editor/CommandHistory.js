@@ -51,10 +51,6 @@ class CommandHistory extends xb.Script {
             },
         });
     }
-    clearHistory() {
-        this.undoStack.length = 0;
-        this.redoStack.length = 0;
-    }
     async undo() {
         const command = this.undoStack.pop();
         if (!command)

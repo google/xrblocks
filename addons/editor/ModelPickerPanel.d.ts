@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { SceneManager } from './SceneManager';
 export interface ModelPickerPanelOptions {
     parent?: HTMLElement;
@@ -16,8 +17,9 @@ export interface ModelPickerPanelOptions {
  *
  * The preview thumbnail is its own tiny, fully independent THREE.js scene
  * + WebGLRenderer bound to its own <canvas> -- unrelated to the main
- * xrblocks scene/renderer. It uses xb.ModelLoader so previews support the
- * same compressed GLTF/GLB assets as the simulator.
+ * xrblocks scene/renderer. It loads the currently-browsed file via a raw
+ * GLTFLoader (not xb.ModelViewer; no platform/drag markers needed for a
+ * static thumbnail) each time Prev/Next changes the selection.
  */
 export declare class ModelPickerPanel extends xb.Script {
     sceneManager: SceneManager;
@@ -30,7 +32,7 @@ export declare class ModelPickerPanel extends xb.Script {
     previewScene: THREE.Scene;
     previewCamera: THREE.PerspectiveCamera;
     previewRoot: THREE.Group;
-    previewLoader: xb.ModelLoader;
+    previewLoader: GLTFLoader;
     previewLoadToken: number;
     previewObject: THREE.Object3D | null;
     lastDirectoryRefresh: number;
@@ -62,5 +64,4 @@ export declare class ModelPickerPanel extends xb.Script {
     fitPreviewModel(object: THREE.Object3D): void;
     disposePreviewObject(object: THREE.Object3D): void;
     setStatus(text: string): void;
-    dispose(): void;
 }

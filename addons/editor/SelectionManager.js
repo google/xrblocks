@@ -88,9 +88,11 @@ class SelectionManager extends xb.Script {
                 helper = new THREE.Box3Helper(new THREE.Box3(), HIGHLIGHT_COLOR);
                 helper.raycast = () => { };
                 this.highlights.set(instance, helper);
-                this.add(helper);
             }
-            helper.box.setFromObject(instance.object);
+            helper.box.copy(instance.viewer.bbox);
+            if (helper.parent !== instance.viewer) {
+                instance.viewer.add(helper);
+            }
         }
     }
     update() {
@@ -101,10 +103,6 @@ class SelectionManager extends xb.Script {
         // exactly where you left off.
         for (const helper of this.highlights.values()) {
             helper.visible = this.editorActive;
-        }
-        for (const [instance, helper] of this.highlights) {
-            if (this.selectedSet.has(instance))
-                helper.box.setFromObject(instance.object);
         }
         let changed = false;
         for (const instance of this.selectedList()) {
@@ -142,8 +140,12 @@ class SelectionManager extends xb.Script {
         // avoids stealing clicks meant to start a drag.
         if (this.transformGizmo?.hitTestActiveHandle(controller))
             return;
-        xb.core.input.setRaycasterFromController(controller);
-        const hit = xb.core.input.raycaster.intersectObjects(this.sceneManager.list().map((candidate) => candidate.object), true)[0];
+        const intersections = xb.core.input.intersectionsForController.get(controller);
+        const hit = intersections?.[0];
+        // A click on a UI panel (model picker, inspector) isn't a click "in
+        // the scene" -- leave the current selection alone.
+        if (hit && this.hasUserDataFlag(hit.object, 'isUIPanel'))
+            return;
         let instance = hit
             ? this.sceneManager.getInstanceForObject(hit.object)
             : undefined;
@@ -152,9 +154,18 @@ class SelectionManager extends xb.Script {
         // pickable in the 3D scene. Hidden (but unlocked) objects are still
         // selectable from the hierarchy panel, e.g. to re-show them; locked
         // ones are excluded there too (see HierarchyPanel's row click guard).
-        if (instance && (instance.locked || !instance.object.visible))
+        if (instance && (instance.locked || !instance.viewer.visible))
             instance = undefined;
         this.select(instance ?? null, { additive: this.shiftHeld });
+    }
+    hasUserDataFlag(object, flag) {
+        let current = object;
+        while (current) {
+            if (current.userData?.[flag])
+                return true;
+            current = current.parent;
+        }
+        return false;
     }
     frameSelected() {
         const instances = this.selectedList();
@@ -162,8 +173,8 @@ class SelectionManager extends xb.Script {
             return;
         const box = new THREE.Box3();
         for (const instance of instances) {
-            instance.object.updateWorldMatrix(true, true);
-            box.union(new THREE.Box3().setFromObject(instance.object));
+            instance.viewer.updateMatrixWorld();
+            box.union(instance.viewer.bbox.clone().applyMatrix4(instance.viewer.matrixWorld));
         }
         const center = new THREE.Vector3();
         box.getCenter(center);
@@ -232,20 +243,6 @@ class SelectionManager extends xb.Script {
             event.code === xb.Keycodes.RIGHT_SHIFT_CODE) {
             this.shiftHeld = false;
         }
-    }
-    dispose() {
-        for (const helper of this.highlights.values()) {
-            helper.geometry.dispose();
-            const materials = Array.isArray(helper.material)
-                ? helper.material
-                : [helper.material];
-            for (const material of materials)
-                material.dispose();
-            helper.removeFromParent();
-        }
-        this.highlights.clear();
-        this.selectedSet.clear();
-        this.primary = null;
     }
 }
 

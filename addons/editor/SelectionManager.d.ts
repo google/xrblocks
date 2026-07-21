@@ -40,9 +40,9 @@ export declare class SelectionManager extends xb.Script {
     syncHighlights(): void;
     update(): void;
     onSelectStart(event: SelectEvent): void;
+    hasUserDataFlag(object: THREE.Object3D, flag: string): boolean;
     frameSelected(): void;
     selectAll(): void;
     onKeyDown(event: KeyboardEvent): void;
     onKeyUp(event: KeyboardEvent): void;
-    dispose(): void;
 }

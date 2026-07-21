@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { el } from './dom.js';
 import { injectEditorStyles } from './styles.js';
 
@@ -27,15 +28,15 @@ const DIRECTORY_REFRESH_INTERVAL_MS = 3000;
  *
  * The preview thumbnail is its own tiny, fully independent THREE.js scene
  * + WebGLRenderer bound to its own <canvas> -- unrelated to the main
- * xrblocks scene/renderer. It uses xb.ModelLoader so previews support the
- * same compressed GLTF/GLB assets as the simulator.
+ * xrblocks scene/renderer. It loads the currently-browsed file via a raw
+ * GLTFLoader (not xb.ModelViewer; no platform/drag markers needed for a
+ * static thumbnail) each time Prev/Next changes the selection.
  */
 class ModelPickerPanel extends xb.Script {
     constructor(sceneManager, { parent = document.body } = {}) {
         super();
         this.models = [];
         this.pickerIndex = 0;
-        this.previewLoader = new xb.ModelLoader();
         this.previewLoadToken = 0;
         this.previewObject = null;
         this.lastDirectoryRefresh = 0;
@@ -77,6 +78,7 @@ class ModelPickerPanel extends xb.Script {
         this.previewCamera.lookAt(0, 0.35, 0);
         this.previewRoot = new THREE.Group();
         this.previewScene.add(this.previewRoot);
+        this.previewLoader = new GLTFLoader();
     }
     async init() {
         this.setStatus('Loading models...');
@@ -223,10 +225,7 @@ class ModelPickerPanel extends xb.Script {
         if (!fileName)
             return;
         try {
-            const gltf = await this.previewLoader.loadGLTF({
-                url: new URL(fileName, new URL(this.sceneManager.modelsDir, document.baseURI)).href,
-                renderer: xb.core.renderer,
-            });
+            const gltf = await this.previewLoader.loadAsync(`${this.sceneManager.modelsDir}${fileName}`);
             if (token !== this.previewLoadToken) {
                 this.disposePreviewObject(gltf.scene);
                 return;
@@ -284,10 +283,6 @@ class ModelPickerPanel extends xb.Script {
     }
     setStatus(text) {
         this.statusLabel.textContent = text;
-    }
-    dispose() {
-        this.clearPreview();
-        this.previewRenderer.dispose();
     }
 }
 
