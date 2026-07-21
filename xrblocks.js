@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid ba474f6
- * @builddate 2026-07-21T17:15:24.637Z
+ * @commitid 6ca68cd
+ * @builddate 2026-07-21T18:32:05.504Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -12377,26 +12377,16 @@ const ZERO_VECTOR3 = Object.freeze(new THREE.Vector3(0, 0, 0));
  * The base URL for Three.js JSM examples, used for DRACO and KTX2 decoders.
  */
 const jsmUrl = `https://cdn.jsdelivr.net/npm/three@0.${THREE.REVISION}.0/examples/jsm/`;
-/**
- * The configured GLTFLoader instance.
- */
-let gltfLoaderInstance;
-function getGLTFLoader(renderer, manager) {
-    if (gltfLoaderInstance) {
-        return gltfLoaderInstance;
-    }
+function createGLTFLoader(manager) {
     const dracoLoader = new DRACOLoader(manager);
     dracoLoader.setDecoderPath(jsmUrl + 'libs/draco/');
     dracoLoader.setDecoderConfig({ type: 'js' });
     const ktx2Loader = new KTX2Loader(manager);
     ktx2Loader.setTranscoderPath(jsmUrl + 'libs/basis/');
-    if (renderer) {
-        ktx2Loader.detectSupport(renderer);
-    }
-    gltfLoaderInstance = new GLTFLoader(manager);
-    gltfLoaderInstance.setDRACOLoader(dracoLoader);
-    gltfLoaderInstance.setKTX2Loader(ktx2Loader);
-    return gltfLoaderInstance;
+    const gltfLoader = new GLTFLoader(manager);
+    gltfLoader.setDRACOLoader(dracoLoader);
+    gltfLoader.setKTX2Loader(ktx2Loader);
+    return { gltfLoader, ktx2Loader };
 }
 /**
  * Manages the loading of 3D models, automatically handling dependencies
@@ -12411,6 +12401,18 @@ class ModelLoader {
      */
     constructor(manager = THREE.DefaultLoadingManager) {
         this.manager = manager;
+    }
+    getGLTFLoader(renderer) {
+        if (!this.gltfLoader) {
+            const { gltfLoader, ktx2Loader } = createGLTFLoader(this.manager);
+            this.gltfLoader = gltfLoader;
+            this.ktx2Loader = ktx2Loader;
+        }
+        if (renderer && renderer !== this.ktxRenderer) {
+            this.ktx2Loader.detectSupport(renderer);
+            this.ktxRenderer = renderer;
+        }
+        return this.gltfLoader;
     }
     /**
      * Loads a model based on its file extension. Supports .gltf, .glb,
@@ -12454,10 +12456,8 @@ class ModelLoader {
      * @returns A promise that resolves with the loaded glTF object.
      */
     async loadGLTF({ path, url = '', renderer = undefined, }) {
-        const loader = getGLTFLoader(renderer, this.manager);
-        if (path) {
-            loader.setPath(path);
-        }
+        const loader = this.getGLTFLoader(renderer);
+        loader.setPath(path ?? '');
         return new Promise((resolve, reject) => {
             loader.load(url, (gltf) => resolve(gltf), undefined, (error) => reject(error));
         });

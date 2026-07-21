@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid ba474f6
- * @builddate 2026-07-21T17:15:24.637Z
+ * @commitid 6ca68cd
+ * @builddate 2026-07-21T18:32:05.504Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -10285,6 +10285,9 @@ type ModelLoaderLoadOptions = ModelLoaderLoadGLTFOptions & {
  */
 declare class ModelLoader {
     private manager;
+    private gltfLoader?;
+    private ktx2Loader?;
+    private ktxRenderer?;
     /**
      * Creates an instance of ModelLoader.
      * @param manager - The
@@ -10292,6 +10295,7 @@ declare class ModelLoader {
      * required for KTX2 texture support.
      */
     constructor(manager?: THREE.LoadingManager);
+    private getGLTFLoader;
     /**
      * Loads a model based on its file extension. Supports .gltf, .glb,
      * .ply, .spz, .splat, and .ksplat.
