@@ -4,6 +4,7 @@ import {Handedness} from '../input/Hands';
 import {deepMerge} from '../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {Keycodes} from '../utils/Keycodes';
+import {DEFAULT_ENVIRONMENTS} from './DefaultManifests';
 
 export enum SimulatorMode {
   USER = 'User',
@@ -21,13 +22,6 @@ const DEFAULT_MODE_TOGGLE_ORDER = {
   [SimulatorMode.EDITOR]: SimulatorMode.USER,
 };
 
-const DEFAULT_ENVIRONMENT_MANIFESTS = [
-  'living-room.json',
-  'office.json',
-  'emulator-scene-v5.json',
-  'emulator-scene-dark.json',
-];
-
 export interface SimulatorCustomInstruction {
   header: string | TemplateResult;
   videoSrc?: string;
@@ -38,15 +32,6 @@ export interface SimulatorEnvironment {
   /** Optional display name; otherwise the manifest name is used. */
   name?: string;
   manifestPath: string;
-}
-
-function defaultEnvironment(manifestFile: string): SimulatorEnvironment {
-  return {
-    manifestPath: new URL(
-      `../src/simulator/scene/defaultManifests/${manifestFile}`,
-      import.meta.url
-    ).href,
-  };
 }
 
 export interface SimulatorHandPhysicsOptions {
@@ -60,7 +45,7 @@ export interface SimulatorHandPhysicsOptions {
 
 export class SimulatorOptions {
   initialCameraPosition = {x: 0, y: 1.5, z: 0};
-  environments = DEFAULT_ENVIRONMENT_MANIFESTS.map(defaultEnvironment);
+  environments = DEFAULT_ENVIRONMENTS.map((environment) => ({...environment}));
   activeEnvironmentIndex = 0;
   defaultMode = SimulatorMode.USER;
   defaultHand = Handedness.LEFT;

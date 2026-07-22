@@ -58,6 +58,20 @@ const sidebars: SidebarsConfig = {
         'samples/DepthMesh',
         'samples/Reticle',
         'samples/Lighting',
+        'samples/3DGS-Walkthrough',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Avatar Lab',
+      collapsed: false,
+      items: [
+        'samples/GNM-Head',
+        'samples/VRM-Avatar',
+        'samples/Lipsync',
+        'samples/Face-Mirror',
+        'samples/Magic-Window',
+        'samples/Netblocks',
       ],
     },
     {
@@ -66,12 +80,8 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'samples/XR-Emoji',
-        'samples/Face-Mirror',
-        'samples/Magic-Window',
         'samples/Custom-Gestures',
         'samples/RockPaperScissors',
-        'samples/Netblocks',
-        'samples/Lipsync',
       ],
     },
     {
@@ -81,7 +91,6 @@ const sidebars: SidebarsConfig = {
       items: [
         'samples/XR-Poet',
         'samples/Gemini-XRObject',
-        'samples/Objects-3D',
         'samples/Language-Detector',
         'samples/Gemini-Icebreakers',
       ],
@@ -91,9 +100,9 @@ const sidebars: SidebarsConfig = {
       label: 'Advanced Demos',
       collapsed: false,
       items: [
-        'samples/Portals',
         'samples/Ballpit',
         'samples/BalloonPop',
+        'samples/Portals',
         'samples/Paint',
         'samples/Splash',
         'samples/Rain',
@@ -102,8 +111,6 @@ const sidebars: SidebarsConfig = {
         'samples/Math-Tutor',
         'samples/AI-Simulator',
         'samples/Virtual-Screens',
-        'samples/3DGS-Walkthrough',
-        'samples/VRM-Avatar',
       ],
     },
   ],

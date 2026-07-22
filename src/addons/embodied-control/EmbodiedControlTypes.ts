@@ -1,4 +1,4 @@
-import type {SimulatorHandPoseRotations} from 'xrblocks';
+import type {SimulatorHandPose, SimulatorHandPoseRotations} from 'xrblocks';
 
 export type Vec3Tuple = [number, number, number];
 
@@ -18,6 +18,8 @@ export type HandControl = {
   selectStart?: boolean;
   /** End the hand's primary select gesture. In the simulator this releases a pinch. */
   selectEnd?: boolean;
+  /** Apply one of the simulator's named hand poses. */
+  pose?: SimulatorHandPose;
   /** Sparse angular joint targets in radians. */
   rotations?: SimulatorHandPoseRotations;
   visible?: boolean;
