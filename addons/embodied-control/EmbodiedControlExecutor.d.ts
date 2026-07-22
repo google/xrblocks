@@ -22,6 +22,7 @@ export declare class EmbodiedControlExecutor {
     private applyLocomotion;
     private applyHandMotion;
     private applyInstantHandControls;
+    private applyHandPose;
     private applyHandSelect;
     private applyHandRotations;
     private executeAction;

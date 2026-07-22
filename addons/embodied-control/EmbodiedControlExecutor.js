@@ -129,14 +129,28 @@ class EmbodiedControlExecutor {
                 : simulator.hands.rightController;
             controller.visible = control.visible;
         }
-        if (control.rotations) {
-            this.applyHandRotations(handIndex, control.rotations);
-        }
         if (control.selectStart) {
             this.applyHandSelect(handIndex, true);
+            return;
         }
         else if (control.selectEnd) {
             this.applyHandSelect(handIndex, false);
+            return;
+        }
+        if (control.pose) {
+            this.applyHandPose(handIndex, control.pose);
+        }
+        if (control.rotations) {
+            this.applyHandRotations(handIndex, control.rotations);
+        }
+    }
+    applyHandPose(handIndex, pose) {
+        const { hands } = this.dependencies.simulator;
+        if (handIndex === 0) {
+            hands.setLeftHandLerpPose(pose);
+        }
+        else {
+            hands.setRightHandLerpPose(pose);
         }
     }
     applyHandSelect(handIndex, selected) {
