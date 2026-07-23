@@ -6,7 +6,7 @@ import {Keycodes} from '../../utils/Keycodes';
 import {SimulatorRenderMode} from '../SimulatorConstants';
 import {SimulatorControllerState} from '../SimulatorControllerState';
 import {SimulatorHands} from '../SimulatorHands.js';
-import {SimulatorNavMesh} from '../SimulatorNavMesh';
+import {SimulatorNavMesh} from '../scene/SimulatorNavMesh';
 import {SimulatorHandPose} from '../handPoses/HandPoses';
 import {SimulatorOptions} from '../SimulatorOptions';
 
@@ -73,6 +73,9 @@ export class SimulatorControlMode {
   onPointerDown(_: MouseEvent) {}
   onPointerUp(_: MouseEvent) {}
   onPointerMove(_: MouseEvent) {}
+  onWheel(_: WheelEvent) {
+    return false;
+  }
   onKeyDown(event: KeyboardEvent) {
     if (event.code == Keycodes.DIGIT_1) {
       this.setStereoRenderMode(SimulatorRenderMode.STEREO_LEFT);
@@ -223,7 +226,9 @@ export class SimulatorControlMode {
     const angleOpt = this.simulatorOptions?.reachAngle;
     if (!distOpt?.enabled && !angleOpt?.enabled) return false;
     const originObj =
-      idx === 0 ? distOpt!.leftHandOrigin : distOpt!.rightHandOrigin;
+      idx === 0
+        ? this.simulatorOptions!.leftHandOrigin
+        : this.simulatorOptions!.rightHandOrigin;
     target.set(originObj.x, originObj.y, originObj.z);
     return true;
   }

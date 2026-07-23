@@ -248,6 +248,11 @@ export class Core {
     this.registry.register(this.xrSystemsGroup);
   }
 
+  dispose() {
+    this.input.dispose();
+    window.removeEventListener('resize', this.onWindowResize);
+  }
+
   /**
    * Initializes the Core system with a given set of options. This includes
    * setting up the renderer, enabling features like controllers, depth

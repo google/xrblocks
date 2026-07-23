@@ -103,4 +103,4 @@ export const DEFAULT_DEVICE_CAMERA_WIDTH = 1280;
 export const DEFAULT_DEVICE_CAMERA_HEIGHT = 720;
 
 export const XR_BLOCKS_ASSETS_PATH =
-  'https://cdn.jsdelivr.net/gh/xrblocks/assets@d872cfdb7668443da5cd38361fc3a3d131aca04c/';
+  'https://cdn.jsdelivr.net/gh/xrblocks/assets@5582bd1b2d1a4e19f7ee7093b63a5ee328e974ac/';

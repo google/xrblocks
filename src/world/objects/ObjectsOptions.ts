@@ -9,6 +9,9 @@ export class ObjectsOptions {
   enabled = false;
   showDebugVisualizations = false;
 
+  /** Use simulator ground truth instead of a camera detector on desktop. */
+  simulatorOverride = false;
+
   /**
    * Minimum delay in milliseconds between continuous object detection runs.
    * A value of 0 runs again as soon as the previous detection finishes.

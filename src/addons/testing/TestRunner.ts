@@ -91,8 +91,7 @@ export class TestRunner {
     options.simulator.environments = [
       {
         name: 'Empty Test Environment',
-        scenePath: null,
-        scenePlanesPath: null,
+        manifestPath: 'data:application/json,%7B%22objects%22%3A%5B%5D%7D',
       },
     ];
     options.simulator.activeEnvironmentIndex = 0;

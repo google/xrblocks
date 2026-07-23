@@ -90,6 +90,7 @@ export class ModelViewer extends Script implements Draggable {
   protected timer!: THREE.Timer;
   protected animationMixer?: THREE.AnimationMixer;
   protected gltfMesh?: GLTF;
+
   protected splatMesh?: SplatMesh;
   // Anchor to act as a proxy for the splat mesh
   protected splatAnchor?: SplatAnchor;

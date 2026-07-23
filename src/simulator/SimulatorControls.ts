@@ -6,6 +6,7 @@ import {Keycodes} from '../utils/Keycodes';
 
 import {SimulatorControllerMode} from './controlModes/SimulatorControllerMode';
 import {SimulatorControlMode} from './controlModes/SimulatorControlMode';
+import {SimulatorEditorMode} from './controlModes/SimulatorEditorMode';
 import {SimulatorPoseMode} from './controlModes/SimulatorPoseMode';
 import {SimulatorPointerLockMode} from './controlModes/SimulatorPointerLockMode';
 import {SimulatorUserMode} from './controlModes/SimulatorUserMode';
@@ -15,7 +16,7 @@ import {SimulatorControllerState} from './SimulatorControllerState';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
 import {SimulatorMode, SimulatorOptions} from './SimulatorOptions';
-import {SimulatorNavMesh} from './SimulatorNavMesh';
+import {SimulatorNavMesh} from './scene/SimulatorNavMesh';
 import {ISimulatorSettingsPanelElement} from './interfaces/ISimulatorSettingsPanelElement';
 
 function preventDefault(event: Event) {
@@ -102,6 +103,15 @@ export class SimulatorControls {
         toggleUserInterface,
         cycleSimulatorMode
       ),
+      [SimulatorMode.EDITOR]: new SimulatorEditorMode(
+        this.simulatorControllerState,
+        this.downKeys,
+        hands,
+        navMesh,
+        setStereoRenderMode,
+        toggleUserInterface,
+        cycleSimulatorMode
+      ),
     };
 
     this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
@@ -147,6 +157,7 @@ export class SimulatorControls {
     domElement.addEventListener('pointermove', this.onPointerMove);
     domElement.addEventListener('pointerdown', this.onPointerDown);
     domElement.addEventListener('pointerup', this.onPointerUp);
+    domElement.addEventListener('wheel', this.onWheel, {passive: false});
     domElement.addEventListener('contextmenu', preventDefault);
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('visibilitychange', this.onBlur);
@@ -171,6 +182,13 @@ export class SimulatorControls {
     if (!this.enabled) return;
     this.simulatorModeControls.onPointerUp(event);
     this.pointerDown = false;
+  };
+
+  onWheel = (event: WheelEvent) => {
+    if (!this.enabled) return;
+    if (this.simulatorModeControls.onWheel(event)) {
+      event.preventDefault();
+    }
   };
 
   onKeyDown = (event: KeyboardEvent) => {

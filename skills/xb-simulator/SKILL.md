@@ -57,12 +57,64 @@ You can limit how far each virtual hand controller can travel from the user's sh
 ```js
 options.simulator.reachDistance.enabled = true;
 options.simulator.reachDistance.radius = 0.75; // meters from shoulder origin
-options.simulator.reachDistance.leftHandOrigin = {x: -0.2, y: -0.2, z: 0};
-options.simulator.reachDistance.rightHandOrigin = {x: 0.2, y: -0.2, z: 0};
+options.simulator.leftHandOrigin = {x: -0.2, y: -0.2, z: 0};
+options.simulator.rightHandOrigin = {x: 0.2, y: -0.2, z: 0};
 
 options.simulator.reachAngle.enabled = true;
 options.simulator.reachAngle.angle = Math.PI; // radians (default Math.PI is a front hemisphere)
 ```
+
+Physical simulated hands are opt-in and require Rapier:
+
+```js
+options.simulator.handPhysics.enabled = true;
+```
+
+Disable all simulator-owned physics while leaving regular app physics available with:
+
+```js
+options.simulator.physics.enabled = false;
+```
+
+The top-level hand origins are shared by reach limits and hand physics. When hand physics
+is enabled, they act as invisible shoulder-to-palm tethers so fixed geometry cannot leave
+a hand trapped on the far side of a wall. Dynamic objects remain pushable by the hands.
+
+## Scene manifests and physical-world objects
+
+Simulator environments use one strict JSON manifest:
+
+```js
+options.simulator.environments = [
+  {name: 'Evaluation Room', manifestPath: './evaluation-room.json'},
+];
+```
+
+The manifest can contain `scenePath` or `videoPath`, `scenePlanesPath`,
+`navMeshPath`, a root `position`/`quaternion`/`scale`, and an `objects` array.
+Object entries support `assetPath`, optional transform arrays,
+`physics: false | 'fixed' | 'dynamic'`, and `detectObject` plus `label`. All paths
+may be manifest-relative, root-relative, or absolute CDN URLs.
+
+At runtime, use the plural API:
+
+```js
+await xb.core.simulator.objects.addObjects([
+  {
+    assetPath: './chair.glb',
+    physics: 'fixed',
+    detectObject: true,
+    label: 'chair',
+  },
+]);
+xb.core.simulator.objects.get();
+xb.core.simulator.objects.removeObjects(['simulator-object-1']);
+```
+
+Set `options.world.objects.simulatorOverride = true` after enabling object
+detection to make the normal `world.objects.runDetection()` API use simulator
+frustum and visibility checks on desktop. Real XR sessions continue to use the
+configured detector backend.
 
 ## Lifecycle
 

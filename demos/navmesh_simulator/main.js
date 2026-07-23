@@ -1,7 +1,6 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import * as THREE from 'three';
-import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import * as xb from 'xrblocks';
 
 const EYE_HEIGHT = 1.5;
@@ -23,55 +22,11 @@ class NavMeshWireframe extends xb.Script {
   routePoints = [];
   routeIndex = 0;
 
-  async init() {
+  init() {
     this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
+  }
 
-    const simulatorOptions = xb.core.options.simulator;
-    const activeEnvironment =
-      simulatorOptions.environments[simulatorOptions.activeEnvironmentIndex];
-    const navMeshPath = activeEnvironment?.navMeshPath;
-    if (!navMeshPath) {
-      console.warn('No navmesh path configured for the active environment.');
-      return;
-    }
-
-    const loader = new GLTFLoader();
-    let gltf;
-    try {
-      gltf = await loader.loadAsync(navMeshPath);
-    } catch (error) {
-      console.warn(
-        `Failed to load navmesh wireframe at ${navMeshPath}.`,
-        error
-      );
-      return;
-    }
-    const group = new THREE.Group();
-
-    gltf.scene.position.set(
-      simulatorOptions.initialScenePosition.x,
-      simulatorOptions.initialScenePosition.y,
-      simulatorOptions.initialScenePosition.z
-    );
-    gltf.scene.updateMatrixWorld(true);
-    gltf.scene.traverse((object) => {
-      if (!object.isMesh || !object.geometry) return;
-      const geometry = object.geometry.clone();
-      geometry.applyMatrix4(object.matrixWorld);
-      const edges = new THREE.EdgesGeometry(geometry, 1);
-      const wireframe = new THREE.LineSegments(
-        edges,
-        new THREE.LineBasicMaterial({
-          color: 0x00e5ff,
-          transparent: true,
-          opacity: 0.9,
-          depthTest: false,
-        })
-      );
-      wireframe.renderOrder = 1000;
-      group.add(wireframe);
-    });
-    this.add(group);
+  onSimulatorStarted() {
     this.createPathButton();
   }
 
@@ -205,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
   options.setAppTitle('Simulator Navmesh');
   options.simulator.defaultMode = xb.SimulatorMode.POINTER_LOCK;
   options.simulator.navMesh.enabled = true;
+  options.simulator.navMesh.showDebugVisualizations = true;
   options.simulator.navMesh.eyeHeight = EYE_HEIGHT;
   options.simulator.initialCameraPosition = {
     x: START_FOOT_POSITION.x,

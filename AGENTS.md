@@ -24,7 +24,7 @@ code runs in an ordinary browser. The published npm package exposes one ESM bund
 ```bash
 npm ci                 # install from the lockfile
 npm run dev            # rollup watch + http-server on http://127.0.0.1:8080
-npm run build          # production build (rollup -c --failAfterWarnings)
+npm run build:sdk      # preferred product build for testing without building demos/samples
 npm run serve          # serve the repo without rebuilding
 npm test               # vitest run
 npm run lint           # eslint src
@@ -74,22 +74,22 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 
 ### `src/` subsystems
 
-| Folder                                      | Responsibility                                                                               |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `core/`                                     | `Core` singleton, `Script`, `Options`, `User`, DI `Registry`, `XRButton`, WebXR session mgmt |
-| `input/`                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `headGestures/`; `strokes/`           |
-| `world/`                                    | `World` + `planes/`, `mesh/`, `objects/` (Gemini & MediaPipe backends), `sounds/`            |
-| `context/`                                  | Agent-facing scene context: semantic tree, visible objects, Set-of-Mark screenshots          |
-| `depth/`                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                     |
-| `ai/`                                       | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                              |
-| `agent/`                                    | agent framework: tools, memory, context (WIP)                                                |
-| `ui/`                                       | core spatial UI: `SpatialPanel`, `Grid`/`Row`/`Col`, views, `ModelViewer`, `Reticle`         |
-| `ux/`                                       | `DragManager`, reusable interaction behaviors                                                |
-| `simulator/`                                | desktop XR simulator (virtual user/hands/depth/planes, control modes)                        |
-| `sound/`                                    | spatial audio, speech recognizer/synthesizer                                                 |
-| `physics/`                                  | Rapier3D integration                                                                         |
-| `lighting/`, `camera/`, `video/`, `stereo/` | light estimation, device camera, video streams, stereo utils                                 |
-| `utils/`                                    | `ModelLoader`, dependency injection, helpers                                                 |
+| Folder                                      | Responsibility                                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `core/`                                     | `Core` singleton, `Script`, `Options`, `User`, DI `Registry`, `XRButton`, WebXR session mgmt                   |
+| `input/`                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `headGestures/`; `strokes/`                             |
+| `world/`                                    | `World` + `planes/`, `mesh/`, `objects/` (Gemini & MediaPipe backends), `sounds/`                              |
+| `context/`                                  | Agent-facing scene context: semantic tree, visible objects, Set-of-Mark screenshots                            |
+| `depth/`                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                       |
+| `ai/`                                       | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                |
+| `agent/`                                    | agent framework: tools, memory, context (WIP)                                                                  |
+| `ui/`                                       | core spatial UI: `SpatialPanel`, `Grid`/`Row`/`Col`, views, `ModelViewer`, `Reticle`                           |
+| `ux/`                                       | `DragManager`, reusable interaction behaviors                                                                  |
+| `simulator/`                                | desktop XR simulator (manifest environments, physical objects, virtual user/hands/depth/planes, control modes) |
+| `sound/`                                    | spatial audio, speech recognizer/synthesizer                                                                   |
+| `physics/`                                  | Rapier3D integration                                                                                           |
+| `lighting/`, `camera/`, `video/`, `stereo/` | light estimation, device camera, video streams, stereo utils                                                   |
+| `utils/`                                    | `ModelLoader`, dependency injection, helpers                                                                   |
 
 ## Conventions
 

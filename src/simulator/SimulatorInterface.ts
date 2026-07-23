@@ -1,17 +1,16 @@
-import * as THREE from 'three';
 import {GamepadController} from '../input/GamepadController.js';
 import {Input} from '../input/Input.js';
 import {SimulatorControls} from './SimulatorControls.js';
 import {ISimulatorSettingsPanelElement} from './interfaces/ISimulatorSettingsPanelElement.js';
 import {SimulatorHands} from './SimulatorHands.js';
-import {SimulatorNavMesh} from './SimulatorNavMesh.js';
-import {
+import type {
   SimulatorCustomInstruction,
+  SimulatorEnvironment,
   SimulatorOptions,
 } from './SimulatorOptions.js';
-import {SimulatorScene} from './SimulatorScene.js';
 import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.js';
 import {ShowSimulatorInstructionsEvent} from './events/SimulatorInstructionsEvents.js';
+import {SetSimulatorHandPhysicsEvent} from './events/SimulatorPhysicsEvents.js';
 
 /** Minimal interface for the gamepad toast element. */
 interface GamepadToastElement extends HTMLElement {
@@ -70,15 +69,15 @@ export class SimulatorInterface {
     simulatorControls: SimulatorControls,
     simulatorHands: SimulatorHands,
     input?: Input,
-    simulatorScene?: SimulatorScene,
-    simulatorNavMesh?: SimulatorNavMesh
+    setEnvironment?: (environment: SimulatorEnvironment) => Promise<void>,
+    handPhysicsAvailable = false
   ) {
-    if (simulatorScene) {
+    if (setEnvironment) {
       this.createSimulatorSettingsPanel(
         simulatorOptions,
         simulatorControls,
-        simulatorScene,
-        simulatorNavMesh
+        setEnvironment,
+        handPhysicsAvailable
       );
     }
     this.showGeminiLivePanel(simulatorOptions);
@@ -97,8 +96,8 @@ export class SimulatorInterface {
   createSimulatorSettingsPanel(
     simulatorOptions: SimulatorOptions,
     simulatorControls: SimulatorControls,
-    simulatorScene: SimulatorScene,
-    simulatorNavMesh?: SimulatorNavMesh
+    setEnvironment: (environment: SimulatorEnvironment) => Promise<void>,
+    handPhysicsAvailable: boolean
   ) {
     if (simulatorOptions.simulatorSettingsPanel.enabled) {
       const settingsElement = document.createElement(
@@ -109,27 +108,25 @@ export class SimulatorInterface {
         simulatorOptions.activeEnvironmentIndex;
       settingsElement.instructionsEnabled =
         simulatorOptions.instructions.enabled;
+      settingsElement.handPhysicsAvailable = handPhysicsAvailable;
+      settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
       document.body.appendChild(settingsElement);
       simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
       settingsElement.addEventListener(
         SetSimulatorEnvironmentEvent.type,
         (event: Event) => {
           if (event instanceof SetSimulatorEnvironmentEvent) {
-            simulatorOptions.activeEnvironmentIndex = event.environmentIndex;
-            const activeEnv =
+            const environment =
               simulatorOptions.environments[event.environmentIndex];
-            simulatorScene.setEnvironment(
-              activeEnv?.scenePath ?? null,
-              new THREE.Vector3(
-                simulatorOptions.initialScenePosition.x,
-                simulatorOptions.initialScenePosition.y,
-                simulatorOptions.initialScenePosition.z
-              )
-            );
-            void simulatorNavMesh?.setEnvironment(
-              activeEnv ?? null,
-              simulatorOptions
-            );
+            if (!environment) {
+              console.error(
+                `Simulator environment index ${event.environmentIndex} does not exist.`
+              );
+              return;
+            }
+            void setEnvironment(environment).catch((error) => {
+              console.error('Failed to switch simulator environment.', error);
+            });
           }
         }
       );
@@ -137,6 +134,14 @@ export class SimulatorInterface {
         ShowSimulatorInstructionsEvent.type,
         () => {
           this.showInstructions(simulatorOptions);
+        }
+      );
+      settingsElement.addEventListener(
+        SetSimulatorHandPhysicsEvent.type,
+        (event: Event) => {
+          if (event instanceof SetSimulatorHandPhysicsEvent) {
+            simulatorOptions.handPhysics.enabled = event.enabled;
+          }
         }
       );
       this.elements.push(settingsElement);

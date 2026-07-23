@@ -25,26 +25,6 @@ and the full in-tree overview is [`src/SKILL.md`](src/SKILL.md).
 - **Units & colors.** World/position values are meters; UI sizes use meters or "layout
   pixels"/`fontSize`. Colors are hex strings (`'#ffffff'`) or `THREE.Color`.
 
-## Language
-
-**Simulator User**:
-The simulated person whose viewpoint is represented by the simulator camera. Navigation
-constraints apply to the Simulator User, not to simulated hands or controllers.
-_Avoid_: Camera-only actor, embodied action target
-
-**Simulator Navmesh**:
-A pregenerated walkable navigation surface for a simulator environment. When enabled, it
-constrains Simulator User navigation by clamping attempted movement to valid walkable space
-and represents the walkable floor surface used for grounding. It is authored in the same
-local coordinate space as the simulator scene and receives the same environment placement
-transform.
-_Avoid_: Movement bounds, collision mesh
-
-**`navMeshPath`**:
-The simulator environment field containing the URL/path of the pregenerated Simulator
-Navmesh sidecar asset.
-_Avoid_: navigationMeshPath, navmeshUrl, navMesh
-
 ## Core Pattern
 
 ```js

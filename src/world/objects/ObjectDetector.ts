@@ -44,6 +44,17 @@ export interface CameraSnapshot {
   imageData?: ImageData;
 }
 
+export interface SimulatorDetectedObjectInput<T = unknown> {
+  label: string;
+  position: THREE.Vector3;
+  boundingBox: THREE.Box2;
+  data?: T;
+}
+
+export interface SimulatorObjectDetectionSource {
+  detect(): SimulatorDetectedObjectInput[];
+}
+
 /**
  * Detects objects in the user's environment using a specified backend.
  * It queries an AI model with the device camera feed and returns located
@@ -73,6 +84,7 @@ export class ObjectDetector extends Script {
     null;
   private lastContinuousDetectionStartedAtMs = -Infinity;
   private disposed = false;
+  private simulatorSource?: SimulatorObjectDetectionSource;
 
   private _debugVisualsGroup?: THREE.Group;
 
@@ -232,8 +244,32 @@ export class ObjectDetector extends Script {
     return this.currentDetectionPromise as Promise<DetectedObject<T>[]>;
   }
 
+  /** Installs or removes the desktop simulator's ground-truth detector. */
+  setSimulatorSource(source?: SimulatorObjectDetectionSource) {
+    this.simulatorSource = source;
+    return this;
+  }
+
   private async runDetectionInternal<T = null>(): Promise<DetectedObject<T>[]> {
     this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
+
+    if (this.simulatorSource) {
+      const detectedObjects = this.simulatorSource.detect().map((input) => {
+        const object = new DetectedObject(
+          input.label,
+          null,
+          input.boundingBox,
+          input.data ?? {}
+        );
+        object.position.copy(input.position);
+        return object;
+      });
+      for (const object of detectedObjects) {
+        this._detectedObjects.set(object.uuid, object);
+        this.add(object);
+      }
+      return detectedObjects as DetectedObject<T>[];
+    }
 
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
@@ -412,5 +448,6 @@ export class ObjectDetector extends Script {
         .catch(() => {});
     }
     this._detectorBackends.clear();
+    this.simulatorSource = undefined;
   }
 }

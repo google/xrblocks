@@ -219,6 +219,14 @@ export class PlaneDetector extends Script {
     }
   }
 
+  clearSimulatorPlanes() {
+    if (!this.usingSimulatorPlanes) return;
+    for (const plane of Array.from(this._detectedPlanes.keys())) {
+      this._removePlaneMesh(plane);
+    }
+    this.usingSimulatorPlanes = false;
+  }
+
   override dispose() {
     for (const plane of Array.from(this._detectedPlanes.keys())) {
       this._removePlaneMesh(plane);

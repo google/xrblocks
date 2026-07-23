@@ -55,6 +55,82 @@ const semanticTree = await page.evaluate(() =>
 );
 ```
 
+## Scene environments
+
+Each simulator environment points to one strict JSON manifest. Asset paths may be relative to
+the manifest, root-relative, or absolute CDN URLs.
+
+```js
+options.simulator.environments = [
+  {name: 'Evaluation Room', manifestPath: './evaluation-room.json'},
+];
+```
+
+The list supplies the simulator settings panel and selects the initial environment through
+`activeEnvironmentIndex`. To load any environment directly at runtime, pass its display name and
+manifest path:
+
+```js
+await xb.core.simulator.setEnvironment(
+  'Ad Hoc Evaluation Room',
+  './ad-hoc-evaluation-room.json'
+);
+```
+
+```json title="evaluation-room.json"
+{
+  "scenePath": "./room.glb",
+  "scenePlanesPath": "./room-planes.json",
+  "navMeshPath": "./room-navmesh.glb",
+  "position": [0, 0, 0],
+  "objects": [
+    {
+      "id": "chair",
+      "assetPath": "./chair.glb",
+      "position": [0.5, 0, -1.5],
+      "physics": "fixed",
+      "detectObject": true,
+      "label": "chair"
+    }
+  ]
+}
+```
+
+Use `scenePath` or `videoPath`, not both. Room collision is generated automatically when
+physics is configured. Object physics may be `false`, `"fixed"`, or `"dynamic"`; object
+colliders use a convex hull with a box fallback. Mesh detection exposes the room and one
+merged mesh per simulator object through the normal `world.meshes` API.
+
+Objects can also be managed at runtime with the plural API:
+
+```js
+const [chair] = await xb.core.simulator.objects.addObjects([
+  {
+    assetPath: './chair.glb',
+    physics: 'fixed',
+    detectObject: true,
+    label: 'chair',
+  },
+]);
+
+xb.core.simulator.objects.get([chair.id]);
+xb.core.simulator.objects.removeObjects([chair.id]);
+xb.core.simulator.objects.clear();
+```
+
+To use simulator ground truth through the ordinary object detector API, enable object
+detection and opt into the override before initialization:
+
+```js
+options.enableObjectDetection();
+options.world.objects.simulatorOverride = true;
+
+const detections = await xb.world.objects.runDetection();
+```
+
+The override applies camera-frustum and occlusion checks on desktop. Real XR sessions use the
+configured Gemini or MediaPipe backend.
+
 ## Simulator Control Modes
 
 The XR Blocks simulator supports control three modes: User mode, Navigation Mode, and Hands Mode.
@@ -67,6 +143,7 @@ In user mode, WASD on the keyboard controls the forward, left, backwards, and ri
 The mouse cursor is respresented to the application through a `MouseController` object which moves based on the camera and rotates based on the pose position in the window.
 Holding down the primary mouse button represents a selection on the `MouseController` object.
 Holding down the secondary mouse button allows the mouse cursor to rotate the camera.
+Point at a scalable `ModelViewer` and use the mouse wheel to scale it up or down.
 
 ### Navigation Mode
 

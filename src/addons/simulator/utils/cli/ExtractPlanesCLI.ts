@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import {GLTF, GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {findPlanesInScene} from '../PlaneExtractor';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import type {GLTF} from 'three/addons/loaders/GLTFLoader.js';
+import {findPlanesInScene} from '../PlaneExtractor.ts';
 
 // ==========================================
 // 1. Headless Polyfills for Three.js

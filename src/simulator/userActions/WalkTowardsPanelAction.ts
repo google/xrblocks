@@ -4,7 +4,7 @@ import {WaitFrame} from '../../core/components/WaitFrame';
 import {UP} from '../../utils/HelperConstants';
 import {clampRotationToAngle, lookAtRotation} from '../../utils/RotationUtils';
 import {clamp} from '../../utils/utils';
-import {SimulatorNavMesh} from '../SimulatorNavMesh';
+import {SimulatorNavMesh} from '../scene/SimulatorNavMesh';
 import {SimulatorUser} from '../SimulatorUser';
 
 import {SimulatorUserAction} from './SimulatorUserAction';

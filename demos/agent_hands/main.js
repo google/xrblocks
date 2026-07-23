@@ -61,6 +61,11 @@ const LEAN_CLAMP = 0.5; // max yaw lean toward a pointing target (rad)
 const LEAN_X_GAIN = 0.25; // pitch lean per unit target height
 const LEAN_X_CLAMP = 0.25; // max pitch lean (rad)
 
+// Keep the control card near neutral gaze at a comfortable viewing distance
+// instead of targeting it far below the user's view.
+const PANEL_HEIGHT_M = -0.2;
+const PANEL_DISTANCE_M = 0.9;
+
 // Scripted (no-key) pacing, in seconds: the gap before the first pose, between
 // poses, before the closing rest, and before advancing to the next line.
 const SCRIPT_START_S = 0.4;
@@ -370,7 +375,7 @@ class AgentHandsDemo extends xb.Script {
     // Gently follow the user so the controls stay in reach as they move.
     card.addBehavior(
       new HeadLeashBehavior({
-        offset: new THREE.Vector3(0, -0.55, -0.85),
+        offset: new THREE.Vector3(0, PANEL_HEIGHT_M, -PANEL_DISTANCE_M),
         posLerp: 0.08,
         rotLerp: 0.1,
       })

@@ -129,8 +129,10 @@ tooling needs both direct SDK access and the automation preset.
 
 Simulator navmesh constraints are opt-in. Set
 `options.simulator.navMesh.enabled = true`; the default Living Room environment
-already includes a glTF/GLB `navMeshPath`. Custom environments can provide their
-own navmesh. The navmesh represents the walkable floor surface; XR Blocks uses it
+already includes a glTF/GLB `navMeshPath` in its scene manifest. Custom environments
+are configured as `{name, manifestPath}` and can provide their own room, planes,
+navmesh, and objects. Relative asset paths resolve from the manifest, and absolute
+CDN URLs are accepted. The navmesh represents the walkable floor surface; XR Blocks uses it
 to ground/constrain the Simulator User only, not simulated hands/controllers.
 Author it in the same local coordinates as the simulator scene; XR Blocks
 applies the same environment placement transform to both. `SimulatorNavMesh`
@@ -138,6 +140,23 @@ also exposes high-level helpers for reachable location/object checks and random
 reachable path generation, without exposing `three-pathfinding` groups or nodes.
 CDN/importmap apps that enable this need
 `"three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js"`.
+
+Simulator hand physics is opt-in with `options.simulator.handPhysics.enabled = true` and
+requires Rapier. The top-level `leftHandOrigin` and `rightHandOrigin` values are shared
+camera-local shoulder anchors for reach limits and the physics tether. Fixed geometry
+between an anchor and its palm clamps the hand to the near side, while dynamic simulator
+objects remain pushable.
+
+Set `options.simulator.physics.enabled = false` before initialization to disable the
+simulator's isolated physics world without disabling the app's regular Rapier world. This
+also disables simulator room, object, and hand collision.
+
+Use `xb.core.simulator.objects.addObjects(definitions)` for runtime additions. The
+matching plural APIs are `get(ids?)`, `removeObjects(ids)`, and `clear()`. An object
+definition accepts either `assetPath` or `object`, optional transform arrays,
+`physics: false | 'fixed' | 'dynamic'`, and `detectObject` plus `label`. Simulator
+object detection uses the regular `world.objects.runDetection()` API when
+`options.world.objects.simulatorOverride = true`.
 
 ## Script lifecycle hooks
 
@@ -227,7 +246,7 @@ gradients, and shadows, use the **uiblocks addon** instead — see
 | [`agent/`](agent)                                                                    | agent framework: tools, memory, context (WIP — see `agent/README.md`)                                                                                                          |
 | [`ui/`](ui)                                                                          | core spatial UI: `SpatialPanel`, `Grid`/`Row`/`Col`, views, `ModelViewer`, `Reticle`                                                                                           |
 | [`ux/`](ux)                                                                          | `DragManager`, reusable interaction behaviors                                                                                                                                  |
-| [`simulator/`](simulator)                                                            | desktop XR simulator (virtual user/hands/depth/planes, control modes)                                                                                                          |
+| [`simulator/`](simulator)                                                            | desktop XR simulator; [`simulator/scene/`](simulator/scene) owns the simulated physical environment, navigation, depth, and sensing adapters                                   |
 | [`sound/`](sound)                                                                    | spatial audio, speech recognizer/synthesizer (see `sound/README.md`)                                                                                                           |
 | [`physics/`](physics)                                                                | Rapier3D integration                                                                                                                                                           |
 | [`lighting/`](lighting), [`camera/`](camera), [`video/`](video), [`stereo/`](stereo) | light estimation, device camera, video streams, stereo utils                                                                                                                   |

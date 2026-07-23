@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import {Depth} from '../depth/Depth';
+import {Depth} from '../../depth/Depth';
 
 import {SimulatorDepthMaterial} from './SimulatorDepthMaterial';
 import {SimulatorScene} from './SimulatorScene';

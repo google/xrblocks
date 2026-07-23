@@ -76,16 +76,29 @@ export * from './simulator/SimulatorCamera';
 export * from './simulator/SimulatorConstants';
 export * from './simulator/SimulatorControllerState';
 export * from './simulator/SimulatorControls';
-export * from './simulator/SimulatorDepth';
-export * from './simulator/SimulatorDepthMaterial';
+export * from './simulator/scene/SimulatorDepth';
+export * from './simulator/scene/SimulatorDepthMaterial';
+export type {
+  SimulatorObjectDefinition,
+  SimulatorPhysicsMode,
+  SimulatorQuaternionTuple,
+  ResolvedSimulatorSceneManifest,
+  SimulatorSceneManifest,
+  SimulatorVector3Tuple,
+} from './simulator/scene/SimulatorEnvironmentManifest';
 export * from './simulator/SimulatorHands';
 export * from './simulator/SimulatorInterface';
 export * from './simulator/SimulatorMediaDeviceInfo';
-export * from './simulator/SimulatorNavMesh';
+export * from './simulator/scene/SimulatorNavMesh';
+export type {
+  SimulatorObject,
+  SimulatorObjectUpdate,
+  SimulatorObjects,
+} from './simulator/scene/SimulatorObjects';
 export * from './simulator/SimulatorOptions';
 export * from './simulator/SimulatorPointerLockController';
 export * from './simulator/interfaces/ISimulatorSettingsPanelElement';
-export * from './simulator/SimulatorScene';
+export * from './simulator/scene/SimulatorScene';
 export * from './simulator/SimulatorUser';
 export * from './simulator/userActions/actions';
 export * from './singletons';
