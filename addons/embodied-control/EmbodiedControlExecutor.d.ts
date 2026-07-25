@@ -16,6 +16,7 @@ export declare class EmbodiedControlExecutor {
     constructor(dependencies: EmbodiedControlExecutorDependencies, options?: EmbodiedControlOptions);
     configure(options: EmbodiedControlOptions): void;
     get busy(): boolean;
+    private runTimedMotion;
     applyControl(control: XRCompoundControl): void;
     step(step: EmbodiedControlStep): Promise<void>;
     private applyControlFraction;

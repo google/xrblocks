@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Script, Simulator, Core } from 'xrblocks';
 import { EmbodiedControlExecutor } from './EmbodiedControlExecutor.js';
 import { DEFAULT_EMBODIED_CONTROL_OPTIONS } from './EmbodiedControlTypes.js';
+import './EmbodiedControlTiming.js';
 
 class EmbodiedControl extends Script {
     static { this.dependencies = {

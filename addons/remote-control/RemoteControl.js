@@ -5,6 +5,7 @@ import '../embodied-control/EmbodiedControlExecutor.js';
 import { createRemoteControlBuiltInTools } from './built-in-tools/index.js';
 import { WebSocketRemoteControlTransport } from './WebSocketRemoteControlTransport.js';
 import '../embodied-control/EmbodiedControlTypes.js';
+import '../embodied-control/EmbodiedControlTiming.js';
 import './built-in-tools/ActionTools.js';
 import './built-in-tools/Types.js';
 import './built-in-tools/ObservationTools.js';

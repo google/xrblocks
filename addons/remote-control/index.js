@@ -9,5 +9,6 @@ import 'xrblocks';
 import '../embodied-control/EmbodiedControl.js';
 import '../embodied-control/EmbodiedControlExecutor.js';
 import '../embodied-control/EmbodiedControlTypes.js';
+import '../embodied-control/EmbodiedControlTiming.js';
 import './built-in-tools/ActionTools.js';
 import './built-in-tools/ObservationTools.js';

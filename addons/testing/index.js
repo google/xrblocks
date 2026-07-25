@@ -7,3 +7,4 @@ import 'xrblocks';
 import '../embodied-control/EmbodiedControl.js';
 import '../embodied-control/EmbodiedControlExecutor.js';
 import '../embodied-control/EmbodiedControlTypes.js';
+import '../embodied-control/EmbodiedControlTiming.js';

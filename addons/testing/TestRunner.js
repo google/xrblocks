@@ -6,6 +6,7 @@ import '../embodied-control/EmbodiedControlExecutor.js';
 import 'vitest';
 import 'three/addons/loaders/GLTFLoader.js';
 import '../embodied-control/EmbodiedControlTypes.js';
+import '../embodied-control/EmbodiedControlTiming.js';
 
 class TestRunner {
     constructor(core, embodiedControl) {

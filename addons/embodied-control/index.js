@@ -3,3 +3,4 @@ export { EmbodiedControlBusyError, EmbodiedControlExecutor } from './EmbodiedCon
 export { DEFAULT_EMBODIED_CONTROL_OPTIONS } from './EmbodiedControlTypes.js';
 import 'three';
 import 'xrblocks';
+import './EmbodiedControlTiming.js';
