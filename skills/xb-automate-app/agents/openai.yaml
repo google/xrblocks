@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Automate an XR Blocks app'
+  short_description: 'Expose safe controls for external app automation'
+  default_prompt: 'Use $xb-automate-app to add a bounded control and observation bridge to this XR Blocks app.'

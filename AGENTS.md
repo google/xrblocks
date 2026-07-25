@@ -63,7 +63,7 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 
 | Path          | Purpose                                                                                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/`        | SDK source — one folder per subsystem (overview: [`src/SKILL.md`](src/SKILL.md))                                                                        |
+| `src/`        | SDK source — one folder per subsystem                                                                                                                   |
 | `src/addons/` | Opt-in modules built separately: `testing`, `uiblocks`, `netblocks`, `lipsync`, `glasses`, `simulator`, `volumes`, `virtualkeyboard`, `agenthands`, ... |
 | `samples/`    | Focused feature examples (served by the docs site)                                                                                                      |
 | `demos/`      | Richer showcase apps (Ballpit, XR-Emoji, XR-Object, Gemini Icebreakers, ...)                                                                            |
@@ -111,7 +111,8 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 4. Re-export public types from `src/xrblocks.ts`.
 5. Add colocated `*.test.ts`, a `samples/`/`templates/` example, and — for a distinct
    capability — a `skills/xb-*` entry (see [`skills/README.md`](skills/README.md)).
-6. Update `CONTEXT.md`, `README.md`, `AGENTS.md` and `src/SKILL.md` with the changes.
+6. Update `CONTEXT.md`, `README.md`, `AGENTS.md`, the manual, and any affected
+   workflow skills with the changes.
 
 ## AI & API-Key Security
 
@@ -125,7 +126,6 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 ## Agent Docs & Skills
 
 - [`CONTEXT.md`](CONTEXT.md) — rules of engagement for building apps with the SDK.
-- [`src/SKILL.md`](src/SKILL.md) — in-tree SDK overview for app developers.
 - [`skills/`](skills/) — focused `xb-*` skills (UI, hands, gestures, head gestures, depth, world, AI,
   physics, simulator, sound, multiplayer). Index + naming convention in
   [`skills/README.md`](skills/README.md).

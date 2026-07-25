@@ -14,6 +14,7 @@ XR Blocks provides native support for WebXR Hand Tracking (inputs, joints, visua
 To enable hand tracking, set the corresponding options in your [`Options`](/api/classes/Options) configuration:
 
 ```javascript
+import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 const options = new xb.Options();
@@ -92,11 +93,11 @@ update(time, frame) {
   const hands = xb.user.hands;
   if (!hands) return; // Hand tracking data not yet active
 
-  // Get index fingertip of hand 0 (left hand) as a THREE.Object3D
-  const leftIndexTip = hands.getIndexTip(0);
+  // Get index fingertip of the left hand as a THREE.Object3D
+  const leftIndexTip = hands.getIndexTip(xb.Handedness.LEFT);
 
-  // Get wrist of hand 1 (right hand) as a THREE.Object3D
-  const rightWrist = hands.getWrist(1);
+  // Get wrist of the right hand as a THREE.Object3D
+  const rightWrist = hands.getWrist(xb.Handedness.RIGHT);
 
   if (leftIndexTip) {
     const worldPos = new THREE.Vector3();
@@ -105,7 +106,7 @@ update(time, frame) {
   }
 
   // Check if hand 0 is pinching
-  const isPinching = xb.user.isSelecting(0);
+  const isPinching = xb.user.isSelecting(xb.Handedness.LEFT);
 }
 ```
 
@@ -116,6 +117,7 @@ update(time, frame) {
   - `0` - Left hand only
   - `1` - Right hand only
   - `2` - Both hands active
-- **`HandJointNames`**: A list of joints (e.g., thumb tip, index tip, wrist, middle mcp) exported from the SDK.
+- **`xb.Handedness`**: `LEFT`, `RIGHT`, or `NONE` (use the dominant hand).
+- **`xb.HAND_JOINT_NAMES`**: The exported list of WebXR joint names.
 
 For a complete reference implementation, see <CodeSearchLink path="templates/2_hands/index.html"/>.
