@@ -58,10 +58,6 @@ def build_prompt(sections: list[tuple[str, str]], ablate_idx: int | None) -> str
             parts.append(f"(section `{label}` removed for ablation)\n")
         else:
             parts.append(text)
-    # Also include src/SKILL.md if it exists (we always do this in the runner).
-    top = REPO_ROOT / "src" / "SKILL.md"
-    if top.exists():
-        parts.append("\n\n---\n\n# src/SKILL.md\n\n" + top.read_text())
     return "".join(parts)
 
 

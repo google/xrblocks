@@ -5,9 +5,9 @@ title: Input & Controllers
 
 ## Input
 
-The [`Input`](/api/classes/Input) object available at `xb.core.input` provides access to controllers and raycasting results.
-Intersection results can be queries using the [`intersectionsForController`](/api/classes/Input#intersectionsforcontroller) property which maps controllers to raycast results.
-Raycast results are automatically updated when the controller begins selecting.
+The [`Input`](/api/classes/Input) object at `xb.core.input` provides access to
+controllers and their raycast results. [`intersectionsForController`](/api/classes/Input#intersectionforcontroller) is a
+`Map`, keyed by controller object. Results are updated by the input system as the controller points and selects.
 
 For example, to detect which item is selected:
 
@@ -23,7 +23,8 @@ export class ItemSelectionScript extends xb.Script {
 }
 ```
 
-When a controller begins selecting, XRInput also sets `controller.userData.selected` to `true`.
+When a controller begins selecting, `Input` also sets
+`controller.userData.selected` to `true`.
 This can be used to loop over controllers which are selecting.
 For example:
 

@@ -1,0 +1,72 @@
+---
+sidebar_position: 23
+title: Remote Control (Addon)
+---
+
+# Remote Control addon
+
+`remote-control` lets an external JavaScript, Python, or agent process drive a
+running XR Blocks page through an explicit WebSocket tool protocol. It is for
+local development, automation, and evaluation—not arbitrary code execution.
+
+## Expose a page
+
+```js
+import * as xb from 'xrblocks';
+import {RemoteControl} from 'xrblocks/addons/remote-control/index.js';
+
+const game = new GameScript();
+xb.add(game);
+xb.add(
+  new RemoteControl({
+    url: 'ws://127.0.0.1:8791',
+    sessionId: 'default',
+    reconnect: true,
+    tools: {
+      getScore: async () => ({score: game.score}),
+    },
+  })
+);
+await xb.init(new xb.Options().enableAutomationMode());
+```
+
+Start the local relay with `npx xrblocks-remote-control`. A relay can host
+multiple pages; match the page and client `sessionId` values.
+
+## Connect a client
+
+```js
+import {RemoteControlClient} from 'xrblocks/addons/remote-control/index.js';
+
+const client = new RemoteControlClient({
+  url: 'ws://127.0.0.1:8791',
+  sessionId: 'default',
+});
+await client.connect();
+await Promise.race([
+  client.waitForPage(),
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Page readiness timed out')), 8000)
+  ),
+]);
+
+function unwrap(response) {
+  if (!response.ok) throw new Error(response.error?.message);
+  return response.result;
+}
+
+unwrap(await client.pointTo(1, {type: 'contextNode', id: 'ctx_7'}));
+unwrap(await client.click(1));
+const camera = unwrap(await client.getCamera({screenshot: true}));
+```
+
+`waitForPage()` has no built-in deadline, so bound it in the harness. Every
+client helper resolves a `RemoteControlResponse`; check `ok` before consuming
+`result`.
+
+Built-in tools cover stepping, compound controls, teleporting, looking,
+pointing, reaching, clicking, camera/screenshots, hands, and simulator state.
+Scene tools with the same name override built-ins.
+
+For protocol details, target formats, the smoke-test sample, and the security
+boundary, see `src/addons/remote-control/README.md`.

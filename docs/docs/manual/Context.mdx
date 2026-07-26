@@ -1,0 +1,83 @@
+---
+sidebar_position: 20
+title: Agent Scene Context
+---
+
+# Agent scene context
+
+`xb.context` turns the Three.js scene into compact observations for agents and
+automation. It can produce a semantic tree, view-aware visible objects, and a
+Set-of-Mark image whose labels map back to stable scene node ids.
+
+## Enable context
+
+Enable all three streams before `xb.init()`:
+
+```js
+const options = new xb.Options();
+options.enableContext();
+xb.init(options);
+```
+
+Or enable only what the application needs:
+
+```js
+options.enableSceneContext();
+options.enableVisibleObjectsContext();
+options.enableSetOfMarkContext();
+options.context.scene.pollingIntervalMs = 3000;
+```
+
+`xb.context.scene` is `undefined` when scene context was not enabled.
+
+## Take one shared snapshot
+
+Use `runContextDetection()` when several outputs must describe the same frame:
+
+```js
+const result = await xb.context.scene?.runContextDetection({
+  semanticTree: true,
+  visibleObjects: true,
+  setOfMark: true,
+});
+
+console.log(result?.semanticTree?.nodes);
+console.log(result?.visibleObjects?.nodes);
+console.log(result?.setOfMark?.marks);
+```
+
+For one output, use `runDetection()`, `runVisibleObjectsDetection()`, or
+`runSetOfMarkDetection()`.
+
+Semantic nodes have stable `ctx_*` ids, roles, names, parent/child
+relationships, object ids, and optional view state. Treat ids as opaque. To
+recover the live Three.js object represented by a node, call:
+
+```js
+const object = xb.context.scene?.resolveNodeObject(node.id);
+```
+
+## Continuous observations
+
+Continuous detection is reference-counted by client object:
+
+```js
+const client = {};
+xb.context.scene?.start(client);
+
+// Read the latest values after updates.
+console.log(xb.context.scene?.tree);
+console.log(xb.context.scene?.visibleObjects);
+console.log(xb.context.scene?.setOfMark);
+
+xb.context.scene?.stop(client);
+```
+
+Always stop with the same client object. Multiple clients share the detector's
+polling work.
+
+## Automation
+
+`options.enableAutomationMode()` and `?xrAutomation=1` enable agent context as
+part of the desktop automation preset. Add `?debug=1` to expose `window.xb` and
+`window.xbReady` to a browser driver. See [Desktop Simulator](Simulator.mdx).

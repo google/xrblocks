@@ -14,7 +14,8 @@ description: >-
 
 Every app is one or more `xb.Script` subclasses registered with `xb.add()` before
 `xb.init(options)`. `Core` owns the renderer, camera, WebXR session, and frame loop — never
-roll your own. Full overview: [`../../src/SKILL.md`](../../src/SKILL.md).
+roll your own. Repository-wide app guidance lives in
+[`../../CONTEXT.md`](../../CONTEXT.md).
 
 ## Canonical app
 

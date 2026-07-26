@@ -1,0 +1,66 @@
+---
+sidebar_position: 21
+title: Testing XR Blocks Apps
+---
+
+# Testing XR Blocks apps
+
+Use Vitest for isolated logic and the `testing` addon when a test needs the XR
+Blocks lifecycle, simulator, camera, controllers, or embodied actions. The
+addon provides browser/audio/WebGL setup for JSDOM and catches exceptions from
+developer scripts.
+
+## Create a functional test
+
+```ts
+import {afterEach, describe, expect, it} from 'vitest';
+import {TestRunner} from 'xrblocks/addons/testing/index.js';
+import {MyScript} from './MyScript';
+
+describe('MyScript', () => {
+  let runner: TestRunner | undefined;
+
+  afterEach(async () => {
+    await runner?.destroy();
+  });
+
+  it('updates inside the engine lifecycle', async () => {
+    const script = new MyScript();
+    runner = await TestRunner.create({scripts: [script]});
+
+    await runner.actions.step({durationMs: 100});
+
+    expect(script.ready).toBe(true);
+  });
+});
+```
+
+Always call `destroy()`. `Core` is a singleton, so incomplete teardown leaks
+controllers, listeners, renderer state, and registry entries into later tests.
+
+## Drive interactions
+
+`runner.actions` is an `EmbodiedControl` instance. Its async methods also check
+for lifecycle exceptions after each action:
+
+```ts
+await runner.actions.teleportTo(target, {distance: 1});
+await runner.actions.lookAtTarget(target);
+await runner.actions.pointTo(1, target);
+await runner.actions.click(1);
+await runner.actions.step({durationMs: 250});
+```
+
+Use `runner.scene`, `runner.camera`, and `runner.core` for assertions. Retrieve
+a registered script or subsystem by constructor with `runner.getScript(Type)`.
+
+## Choose the right level
+
+- Test pure calculations without `TestRunner`.
+- Use `TestRunner` for lifecycle, input, simulator, and integration behavior.
+- Use `?xrAutomation=1&debug=1` plus a real browser for rendering, screenshots,
+  permissions, media APIs, or interactions that depend on browser layout.
+- Test actual-device behavior separately for WebXR features the simulator does
+  not emulate.
+
+Tests belong next to their implementation as `*.test.ts` files.
