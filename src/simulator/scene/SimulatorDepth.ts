@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {Depth} from '../../depth/Depth';
 
+import type {SimulatorHands} from '../SimulatorHands';
 import {SimulatorDepthMaterial} from './SimulatorDepthMaterial';
 import {SimulatorScene} from './SimulatorScene';
 
@@ -9,6 +10,7 @@ export class SimulatorDepth {
   private renderer!: THREE.WebGLRenderer;
   private camera!: THREE.Camera;
   private depth!: Depth;
+  private hands?: SimulatorHands;
   depthWidth = 160;
   depthHeight = 160;
   depthBufferSlice = new Float32Array();
@@ -41,10 +43,16 @@ export class SimulatorDepth {
   /**
    * Initialize Simulator Depth.
    */
-  init(renderer: THREE.WebGLRenderer, camera: THREE.Camera, depth: Depth) {
+  init(
+    renderer: THREE.WebGLRenderer,
+    camera: THREE.Camera,
+    depth: Depth,
+    hands?: SimulatorHands
+  ) {
     this.renderer = renderer;
     this.camera = camera;
     this.depth = depth;
+    this.hands = hands;
 
     if (this.camera instanceof THREE.PerspectiveCamera) {
       this.depthCamera = new THREE.PerspectiveCamera();
@@ -108,7 +116,17 @@ export class SimulatorDepth {
     const originalRenderTarget = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.depthRenderTarget);
     this.simulatorScene.overrideMaterial = this.depthMaterial;
+    const leftWasVisible = this.hands?.leftController.visible ?? false;
+    const rightWasVisible = this.hands?.rightController.visible ?? false;
+    if (this.hands) {
+      this.hands.leftController.visible = false;
+      this.hands.rightController.visible = false;
+    }
     this.renderer.render(this.simulatorScene, this.depthCamera);
+    if (this.hands) {
+      this.hands.leftController.visible = leftWasVisible;
+      this.hands.rightController.visible = rightWasVisible;
+    }
     this.simulatorScene.overrideMaterial = null;
     this.renderer.setRenderTarget(originalRenderTarget);
   }
