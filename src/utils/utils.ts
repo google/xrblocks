@@ -44,7 +44,9 @@ export function getUrlParameter(name: string) {
  * @returns The boolean value of the URL parameter.
  */
 export function getUrlParamBool(name: string, defaultBool = false) {
-  const inputString = urlParams.get(name)?.toLowerCase();
+  const inputString = new URLSearchParams(window.location.search)
+    .get(name)
+    ?.toLowerCase();
   // Convert the parameter value to a boolean. Returns true for 'true' or '1'.
   if (inputString === 'true' || inputString === '1') {
     return true;
@@ -66,7 +68,7 @@ export function getUrlParamBool(name: string, defaultBool = false) {
  * @returns The integer value of the URL parameter.
  */
 export function getUrlParamInt(name: string, defaultNumber = 0) {
-  const inputNumber = urlParams.get(name);
+  const inputNumber = new URLSearchParams(window.location.search).get(name);
   if (inputNumber) {
     // Convert the parameter value to an integer. If valid, returns it.
     const num = parseInt(inputNumber, 10);
@@ -88,7 +90,7 @@ export function getUrlParamInt(name: string, defaultNumber = 0) {
  * @returns The float value of the URL parameter.
  */
 export function getUrlParamFloat(name: string, defaultNumber = 0) {
-  const inputNumber = urlParams.get(name);
+  const inputNumber = new URLSearchParams(window.location.search).get(name);
   if (inputNumber) {
     // Convert the parameter value to a float. If valid, returns it.
     const num = parseFloat(inputNumber);

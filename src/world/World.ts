@@ -15,6 +15,7 @@ import {placeOnHorizontalSurface} from './HorizontalPlacement';
 // import { LightEstimation } from '/lighting/LightEstimation.js';
 import {HumanRecognizer} from './humans/HumanRecognizer';
 import {FaceRecognizer} from './faces/FaceRecognizer';
+import {Segmenter} from './segmentation/Segmenter';
 
 /**
  * Manages all interactions with the real-world environment perceived by the XR
@@ -77,6 +78,11 @@ export class World extends Script {
    * The face landmark detection module instance. Null if not enabled.
    */
   faces?: FaceRecognizer;
+
+  /**
+   * The semantic segmentation module instance. Null if not enabled.
+   */
+  segmentation?: Segmenter;
 
   /**
    * A Three.js Raycaster for performing intersection tests.
@@ -151,6 +157,11 @@ export class World extends Script {
     if (this.options.faces.enabled) {
       this.faces = new FaceRecognizer();
       this.add(this.faces);
+    }
+
+    if (this.options.segmentation.enabled) {
+      this.segmentation = new Segmenter();
+      this.add(this.segmentation);
     }
 
     // TODO: Initialize other modules as they are available & implemented.
@@ -280,5 +291,30 @@ export class World extends Script {
   showDebugVisualizations(visible = true) {
     this.planes?.showDebugVisualizations(visible);
     this.objects?.showDebugVisualizations(visible);
+  }
+
+  override dispose() {
+    const detectors = [
+      this.planes,
+      this.objects,
+      this.meshes,
+      this.sounds,
+      this.humans,
+      this.faces,
+      this.segmentation,
+    ];
+    for (const detector of detectors) {
+      if (!detector) continue;
+      detector.dispose();
+      this.remove(detector);
+    }
+
+    this.planes = undefined;
+    this.objects = undefined;
+    this.meshes = undefined;
+    this.sounds = undefined;
+    this.humans = undefined;
+    this.faces = undefined;
+    this.segmentation = undefined;
   }
 }

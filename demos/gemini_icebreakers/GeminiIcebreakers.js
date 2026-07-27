@@ -141,7 +141,7 @@ export class GeminiIcebreakers extends xb.Script {
           new xb.TextView({
             text: this.data[i].prompt,
             fontColor: '#ffffff',
-            imageOverlay: 'images/gradient.png',
+            imageOverlay: 'images/gradient.webp',
             /** This modifier makes the gradient more towards purple. */
             imageOffsetX: 0.2,
           })

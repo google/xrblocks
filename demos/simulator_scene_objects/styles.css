@@ -1,0 +1,93 @@
+#controls {
+  position: fixed;
+  z-index: 20;
+  top: 16px;
+  left: 16px;
+  width: min(340px, calc(100vw - 64px));
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(9, 13, 22, 0.86);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
+  color: white;
+  font-family: system-ui, sans-serif;
+  line-height: 1.55;
+}
+
+#controls h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+#controls p {
+  margin: 0 0 12px;
+  color: #cbd5e1;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 7px;
+  border-radius: 50%;
+}
+
+.floating {
+  background: #ffca28;
+}
+
+.fixed {
+  background: #66bb6a;
+}
+
+.dynamic {
+  background: #ef5350;
+}
+
+.mesh {
+  background: #00e5ff;
+}
+
+.point {
+  background: #ff3dce;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#controls button {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 7px;
+  background: #1e293b;
+  color: white;
+  font-size: 11px;
+}
+
+#controls button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+#depth-visualization {
+  margin: 12px 0 0;
+}
+
+#depth-visualization figcaption {
+  margin-bottom: 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+#depth-preview {
+  display: block;
+  width: 160px;
+  height: 160px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 7px;
+  background: black;
+  image-rendering: pixelated;
+}

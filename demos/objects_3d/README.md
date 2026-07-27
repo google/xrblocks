@@ -1,3 +1,5 @@
+> **Experimental in Android XR. More robust detection is required for on-device showcase.**
+
 # 3D Object Boxes
 
 Run the existing 2D object detector, sample the depth mesh inside each

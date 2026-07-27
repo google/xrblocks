@@ -107,4 +107,10 @@ export class MediaPipeDetectorBackend extends BaseDetectorBackend {
     }
     return null;
   }
+
+  override dispose() {
+    this.audioClassifier?.close();
+    this.audioClassifier = null;
+    this.accumulatedAudio = [];
+  }
 }

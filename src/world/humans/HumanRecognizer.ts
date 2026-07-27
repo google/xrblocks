@@ -3,6 +3,7 @@ import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
+import {disposeMaterial} from '../../utils/ThreeDisposal';
 import {WorldOptions} from '../WorldOptions';
 import {DetectedBodyPose} from './DetectedBodyPose';
 import {BaseHumanBackend, HumanBackendContext} from './HumanDetectorBackend';
@@ -26,6 +27,7 @@ export class HumanRecognizer extends Script {
   private activeClients = new Set<object>();
   private currentDetectionPromise: Promise<DetectedBodyPose[]> | null = null;
   private lastContinuousDetectionStartedAtMs = -Infinity;
+  private disposed = false;
 
   /**
    * The latest detected body poses.
@@ -59,6 +61,7 @@ export class HumanRecognizer extends Script {
     this.depth = depth;
     this.camera = camera;
     this.renderer = renderer;
+    this.disposed = false;
   }
 
   /**
@@ -113,7 +116,9 @@ export class HumanRecognizer extends Script {
     this.lastContinuousDetectionStartedAtMs = performance.now();
     this.currentDetectionPromise = this.runDetectionInternal()
       .then((results) => {
-        this.poses = results;
+        if (!this.disposed) {
+          this.poses = results;
+        }
         return results;
       })
       .finally(() => {
@@ -156,7 +161,6 @@ export class HumanRecognizer extends Script {
       return [];
     }
 
-    const depthMeshSnapshot = this.getDepthMeshSnapshot();
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
       this.renderer.xr.getCamera(),
@@ -183,12 +187,19 @@ export class HumanRecognizer extends Script {
       return [];
     }
 
-    const bodyPoses = await backend.run(
-      depthMeshSnapshot,
-      cameraParametersSnapshot
-    );
-
-    return bodyPoses;
+    if (this.disposed) {
+      return [];
+    }
+    const depthMeshSnapshot = this.getDepthMeshSnapshot();
+    try {
+      const bodyPoses = await backend.run(
+        depthMeshSnapshot,
+        cameraParametersSnapshot
+      );
+      return this.disposed ? [] : bodyPoses;
+    } finally {
+      this.disposeDepthMeshSnapshot(depthMeshSnapshot);
+    }
   }
 
   private getBackendContext(): HumanBackendContext {
@@ -237,5 +248,23 @@ export class HumanRecognizer extends Script {
     depthMesh.getWorldScale(depthMeshSnapshot.scale);
     depthMeshSnapshot.updateMatrixWorld(true);
     return depthMeshSnapshot;
+  }
+
+  private disposeDepthMeshSnapshot(depthMeshSnapshot: THREE.Mesh) {
+    depthMeshSnapshot.geometry.dispose();
+    disposeMaterial(depthMeshSnapshot.material);
+  }
+
+  override dispose() {
+    this.disposed = true;
+    this.activeClients.clear();
+    this.clear();
+    this.poses = [];
+    for (const backendPromise of this.detectorBackends.values()) {
+      void backendPromise
+        .then((backend) => backend.dispose?.())
+        .catch(() => {});
+    }
+    this.detectorBackends.clear();
   }
 }

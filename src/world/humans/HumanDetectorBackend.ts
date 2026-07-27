@@ -86,4 +86,6 @@ export abstract class BaseHumanBackend {
     depthMeshSnapshot: THREE.Mesh,
     cameraParametersSnapshot: CameraParametersSnapshot
   ): Promise<DetectedBodyPose[]>;
+
+  dispose() {}
 }

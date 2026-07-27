@@ -79,7 +79,7 @@ export class MeshDetector extends Script {
 
   override initPhysics(physics: Physics) {
     this.physics = physics;
-    for (const [_, mesh] of this.xrMeshToThreeMesh.entries()) {
+    for (const mesh of this.xrMeshToThreeMesh.values()) {
       mesh.initRapierPhysics(physics.RAPIER, physics.blendedWorld);
     }
   }
@@ -208,12 +208,9 @@ export class MeshDetector extends Script {
   setSimulatorMeshes(meshes: SimulatorMesh[]) {
     this.usingSimulatorMeshes = true;
 
-    for (const [, threeMesh] of this.xrMeshToThreeMesh) {
-      this.remove(threeMesh);
-      threeMesh.dispose();
+    for (const [xrMesh, threeMesh] of this.xrMeshToThreeMesh) {
+      this.removeMesh(xrMesh, threeMesh);
     }
-    this.xrMeshToThreeMesh.clear();
-    this.threeMeshToXrMesh.clear();
 
     for (const simMesh of meshes) {
       const material =
@@ -238,6 +235,33 @@ export class MeshDetector extends Script {
         );
       }
     }
+    return meshes.map((mesh) => this.xrMeshToThreeMesh.get(mesh)!);
+  }
+
+  clearSimulatorMeshes() {
+    if (!this.usingSimulatorMeshes) return;
+    for (const [source, mesh] of Array.from(this.xrMeshToThreeMesh.entries())) {
+      this.removeMesh(source, mesh);
+    }
+    this.usingSimulatorMeshes = false;
+  }
+
+  override dispose() {
+    for (const [xrMesh, threeMesh] of Array.from(
+      this.xrMeshToThreeMesh.entries()
+    )) {
+      this.removeMesh(xrMesh, threeMesh);
+    }
+
+    this.defaultMaterial.dispose();
+    this.fallbackDebugMaterial?.dispose();
+    this.fallbackDebugMaterial = null;
+    for (const material of this.debugMaterials.values()) {
+      material.dispose();
+    }
+    this.debugMaterials.clear();
+    this.usingSimulatorMeshes = false;
+    this.physics = undefined;
   }
 
   private createMesh(frame: XRFrame, xrMesh: XRMesh) {

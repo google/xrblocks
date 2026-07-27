@@ -40,11 +40,112 @@ Upon launching an XR Blocks experience in a desktop browser, a run in simulator 
   ![Run in simulator button](assets/run_in_simulator_button.webp)
 </div>
 
-## Simulator Control Modes
+For automation or external remote runs, call `options.enableAutomationMode()` before `xb.init(options)`.
+This applies a desktop simulator startup preset with simulator autostart, hands, camera input, agent context, and hidden simulator control panels.
+Pages that construct a plain `new xb.Options()` can also opt into the same preset with `?xrAutomation=1`.
 
-The XR Blocks simulator supports control three modes: User mode, Navigation Mode, and Hands Mode.
+Browser tooling can independently add `?debug=1` to expose the SDK as `window.xb` and an initialization promise as `window.xbReady`. Use `?xrAutomation=1&debug=1` when a driver needs both the automation preset and direct SDK access:
 
-To switch between modes, press the <kbd>Left Shift</kbd> key on the keyboard.
+```js
+await page.goto(`${appUrl}?xrAutomation=1&debug=1`);
+await page.evaluate(() => window.xbReady);
+
+const semanticTree = await page.evaluate(() =>
+  window.xb.context.scene.runDetection()
+);
+```
+
+## Scene environments
+
+Each simulator environment points to one strict JSON manifest. Asset paths may be relative to
+the manifest, root-relative, or absolute CDN URLs.
+
+```js
+options.simulator.environments = [
+  {name: 'Evaluation Room', manifestPath: './evaluation-room.json'},
+];
+```
+
+The list supplies the simulator settings panel and selects the initial environment through
+`activeEnvironmentIndex`. To load any environment directly at runtime, pass its display name and
+manifest path:
+
+```js
+await xb.core.simulator.setEnvironment(
+  'Ad Hoc Evaluation Room',
+  './ad-hoc-evaluation-room.json'
+);
+```
+
+```json title="evaluation-room.json"
+{
+  "scenePath": "./room.glb",
+  "scenePlanesPath": "./room-planes.json",
+  "navMeshPath": "./room-navmesh.glb",
+  "position": [0, 0, 0],
+  "objects": [
+    {
+      "id": "chair",
+      "assetPath": "./chair.glb",
+      "position": [0.5, 0, -1.5],
+      "physics": "fixed",
+      "detectObject": true,
+      "label": "chair"
+    }
+  ]
+}
+```
+
+Use `scenePath` or `videoPath`, not both. Room collision is generated automatically when
+physics is configured. Object physics may be `false`, `"fixed"`, or `"dynamic"`; object
+colliders use a convex hull with a box fallback. Mesh detection exposes the room and one
+merged mesh per simulator object through the normal `world.meshes` API.
+
+Objects can also be managed at runtime with the plural API:
+
+```js
+const [chair] = await xb.core.simulator.objects.addObjects([
+  {
+    assetPath: './chair.glb',
+    physics: 'fixed',
+    detectObject: true,
+    label: 'chair',
+  },
+]);
+
+xb.core.simulator.objects.get([chair.id]);
+xb.core.simulator.objects.removeObjects([chair.id]);
+xb.core.simulator.objects.clear();
+```
+
+To use simulator ground truth through the ordinary object detector API, enable object
+detection and opt into the override before initialization:
+
+```js
+options.enableObjectDetection();
+options.world.objects.simulatorOverride = true;
+
+const detections = await xb.world.objects.runDetection();
+```
+
+The override applies camera-frustum and occlusion checks on desktop. Real XR sessions use the
+configured Gemini or MediaPipe backend.
+
+## Simulator control modes
+
+The simulator exposes five values through `xb.SimulatorMode`: `USER`, `POSE`
+(displayed as Navigation), `CONTROLLER` (displayed as Hands), `POINTER_LOCK`,
+and `EDITOR`. Choose the initial mode before initialization:
+
+```js
+options.simulator.defaultMode = xb.SimulatorMode.CONTROLLER;
+```
+
+Keyboard mode cycling is opt-in. To use <kbd>Left Shift</kbd>:
+
+```js
+options.simulator.modeToggle.enabled = true;
+```
 
 ### User Mode
 
@@ -52,16 +153,25 @@ In user mode, WASD on the keyboard controls the forward, left, backwards, and ri
 The mouse cursor is respresented to the application through a `MouseController` object which moves based on the camera and rotates based on the pose position in the window.
 Holding down the primary mouse button represents a selection on the `MouseController` object.
 Holding down the secondary mouse button allows the mouse cursor to rotate the camera.
+Point at a scalable `ModelViewer` and use the mouse wheel to scale it up or down.
 
 ### Navigation Mode
 
-In navigation mode, WASD on the keyboard controls the forward, left, backwards, and right movement respectively.
-Holding down the primary mouse button allows the mouse cursor to rotate the camera.
+Navigation/pose mode shows simulated hands while WASD/QE moves the user.
+Drag the mouse to rotate the camera. Use the simulator hand-pose panel or a
+configured gamepad to change poses.
 
-### User Mode
+### Hands Mode
 
-In navigation mode, WASD on the keyboard controls the forward, left, backwards, and right movement respectively.
-Holding down the primary mouse button allows the mouse cursor to rotate the camera.
+Hands/controller mode uses WASD/QE to move the active hand instead of the
+camera. Press <kbd>T</kbd> to switch hands and <kbd>Space</kbd> to toggle the
+active hand's pinch state. Drag the mouse to rotate the active hand.
+
+### Pointer Lock and Editor modes
+
+Pointer Lock mode provides first-person mouse look and click selection. Editor
+mode behaves like User mode but allows the optional scene editor to detect and
+show its editing interface.
 
 ## Supported Features
 
@@ -70,7 +180,29 @@ Currently, the simulator supports the following features:
 - Depth simulation.
 - Hands simulation.
 
-Notably, the following features are not supported.
+The simulator also supplies simulated planes, meshes, object detections, a
+device-camera feed, and optional physics-backed environment objects when those
+subsystems are enabled.
+
+## Hand reach and simulator physics
+
+Limit virtual hands to a shoulder-relative radius or forward cone:
+
+```js
+options.simulator.reachDistance.enabled = true;
+options.simulator.reachDistance.radius = 0.75;
+options.simulator.reachAngle.enabled = true;
+options.simulator.reachAngle.angle = Math.PI;
+```
+
+Physical simulated hands require Rapier through `options.physics.RAPIER`:
+
+```js
+options.simulator.handPhysics.enabled = true;
+```
+
+Set `options.simulator.physics.enabled = false` to disable simulator-owned
+physics while leaving application physics available.
 
 ## UI Addons
 
@@ -94,7 +226,7 @@ To customize the simulator instructions, use the following options when initiali
     //...
     instructions: {
       enabled: true, // Whether to show the simulator instructions.
-      element: `xrblocks-simulator-intstructions` // Name of the simulator instructions web component.
+      element: `xrblocks-simulator-instructions` // Name of the simulator instructions web component.
     }
   }
 }

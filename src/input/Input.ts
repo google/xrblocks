@@ -16,8 +16,10 @@ import type {
 } from './Controller';
 import {GamepadController} from './GamepadController';
 import {GazeController} from './GazeController';
+import {HeadGestureRecognition} from './headGestures/HeadGestureRecognition';
 import {MouseController} from './MouseController';
 import {XRSystems} from '../core/components/XRSystems';
+import {PinchFilter} from './PinchFilter';
 
 export class ActiveControllers extends THREE.Group {
   type = 'ActiveControllers';
@@ -30,6 +32,7 @@ export class Reticles extends THREE.Group {
 }
 
 export type HasIgnoreReticleRaycast = {
+  /** Excludes this object and its descendants from reticle targeting and context visibility occlusion. */
   ignoreReticleRaycast: boolean;
 };
 export type MaybeHasIgnoreReticleRaycast = Partial<HasIgnoreReticleRaycast>;
@@ -46,6 +49,8 @@ export class Input {
   controllers: Controller[] = [];
   controllerGrips: THREE.Group[] = [];
   hands: THREE.XRHandSpace[] = [];
+  /** Completed head gestures, when enabled before initialization. */
+  headGestures?: HeadGestureRecognition;
   raycaster = new Raycaster();
   initialized = false;
   pivotsEnabled = false;
@@ -54,6 +59,7 @@ export class Input {
   gamepadController = new GamepadController();
   controllersEnabled = true;
   listeners = new Map();
+  private pinchFilter = new PinchFilter((event) => this.dispatchEvent(event));
   intersectionsForController = new Map<Controller, THREE.Intersection[]>();
   intersections = [];
   activeControllers = new ActiveControllers();
@@ -83,6 +89,15 @@ export class Input {
     this.controllersEnabled = options.controllers.enabled;
 
     this.options = options;
+
+    if (options.headGestures.enabled) {
+      this.headGestures = new HeadGestureRecognition();
+      systemsGroup.add(this.headGestures);
+    }
+
+    if (!options.controllers.enabled) {
+      return;
+    }
 
     const controllers = this.controllers;
     const controllerGrips = this.controllerGrips;
@@ -266,6 +281,15 @@ export class Input {
   defaultOnDisconnected(event: ControllerEvent) {
     const controller = event.target;
     controller.userData.connected = false;
+    if (controller.userData.selected) {
+      controller.userData.selected = false;
+      this.dispatchEvent({
+        type: 'selectend',
+        target: controller,
+        data: event.data,
+        isCustom: true,
+      } as unknown as ControllerEvent);
+    }
     if (controller.reticle) {
       controller.reticle.visible = false;
     }
@@ -290,7 +314,7 @@ export class Input {
     listener: (event: ControllerEvent) => void
   ) {
     for (const controller of this.controllers) {
-      controller.addEventListener(listenerName, listener);
+      this.pinchFilter.setupControllerForType(controller, listenerName);
     }
     if (!this.listeners.has(listenerName)) {
       this.listeners.set(listenerName, []);
@@ -303,18 +327,23 @@ export class Input {
     listener: (event: ControllerEvent) => void
   ) {
     if (this.listeners.has(listenerName)) {
-      const listeners = this.listeners.get(listenerName);
-      const index = listeners.indexOf(listener);
+      const list = this.listeners.get(listenerName)!;
+      const index = list.indexOf(listener);
       if (index !== -1) {
-        listeners.splice(index, 1);
+        list.splice(index, 1);
       }
-    }
-    for (const controller of this.controllers) {
-      controller.removeEventListener(listenerName, listener);
+      if (list.length === 0) {
+        for (const controller of this.controllers) {
+          this.pinchFilter.removeControllerForType(controller, listenerName);
+        }
+      }
     }
   }
 
   dispatchEvent(event: ControllerEvent) {
+    if (this.pinchFilter.shouldFilterEvent(event)) {
+      return;
+    }
     if (this.listeners.has(event.type)) {
       for (const listener of this.listeners.get(event.type)) {
         listener(event);
@@ -444,6 +473,12 @@ export class Input {
     if (controller.userData.connected === false) {
       return;
     }
+    this.pinchFilter.updateController(
+      controller,
+      this.dispatchEvent.bind(this),
+      this.setRaycasterFromController.bind(this),
+      this.performRaycastOnScene.bind(this)
+    );
     controller.updatePose?.();
     controller.updateMatrixWorld();
     if (this.options.controllers.performRaycastOnUpdate) {
@@ -537,11 +572,7 @@ export class Input {
       this.reticles.add(controller.reticle);
     }
 
-    for (const [listenerName, listeners] of this.listeners.entries()) {
-      for (const listener of listeners) {
-        controller.addEventListener(listenerName, listener);
-      }
-    }
+    this.pinchFilter.setupController(controller, this.listeners.keys());
   }
 
   enableController(controller: Controller) {
@@ -568,6 +599,11 @@ export class Input {
 
   enableControllers() {
     this.controllersEnabled = true;
+  }
+
+  dispose() {
+    this.pinchFilter.dispose(this.controllers);
+    this.listeners.clear();
   }
 
   // Performs the raycast assuming the raycaster is already set up.

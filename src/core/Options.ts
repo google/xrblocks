@@ -4,19 +4,22 @@ import {
   xrDeviceCameraEnvironmentOptions,
   xrDeviceCameraUserOptions,
 } from '../camera/CameraOptions.js';
+import {ContextOptions} from '../context/ContextOptions';
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
 import {HandsOptions} from '../input/HandsOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
+import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRecognitionOptions.js';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
-import {SimulatorOptions} from '../simulator/SimulatorOptions';
+import {SimulatorMode, SimulatorOptions} from '../simulator/SimulatorOptions';
 import {SoundOptions} from '../sound/SoundOptions';
 import {deepMerge} from '../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {UIKitOptions} from './UIKitOptions.js';
 import {WorldOptions} from '../world/WorldOptions';
-import {getUrlParameter} from '../utils/utils';
+import {getUrlParamBool, getUrlParameter} from '../utils/utils';
+import {Handedness} from '../input/Hands';
 
 /**
  * Default options for XR controllers, which encompass hands by default in
@@ -65,6 +68,14 @@ export class XRTransitionOptions {
 const FORM_FACTORS = ['auto', 'xr', 'hud', 'vr', 'desktop', 'mobile'] as const;
 export type FormFactor = (typeof FORM_FACTORS)[number];
 
+export type AutomationModeOptions = {
+  hideSimulatorUi?: boolean;
+  defaultHand?: Handedness;
+  defaultMode?: SimulatorMode;
+  enableHands?: boolean;
+  enableCamera?: boolean;
+};
+
 /**
  * A central configuration class for the entire XR Blocks system. It aggregates
  * all settings and provides chainable methods for enabling common features.
@@ -98,6 +109,11 @@ export class Options {
    */
   webxrRequiredFeatures: string[] = [];
 
+  /**
+   * Any additional optional features when initializing webxr.
+   */
+  webxrOptionalFeatures: string[] = [];
+
   // "local-floor" sets the scene origin at the user's feet,
   // "local" sets the scene origin near their head.
   referenceSpaceType: XRReferenceSpaceType = 'local-floor';
@@ -108,12 +124,14 @@ export class Options {
   deviceCamera = new DeviceCameraOptions();
   hands = new HandsOptions();
   gestures = new GestureRecognitionOptions();
+  headGestures = new HeadGestureRecognitionOptions();
   strokes = new StrokeRecognitionOptions();
   reticles = new ReticleOptions();
   sound = new SoundOptions();
   ai = new AIOptions();
   simulator = new SimulatorOptions();
   world = new WorldOptions();
+  context = new ContextOptions();
   uikit = new UIKitOptions();
   physics = new PhysicsOptions();
   transition = new XRTransitionOptions();
@@ -204,6 +222,10 @@ export class Options {
     ) {
       this.formFactor = formFactorUrlParam as FormFactor;
     }
+
+    if (getUrlParamBool('xrAutomation')) {
+      this.enableAutomationMode();
+    }
   }
 
   /**
@@ -211,14 +233,6 @@ export class Options {
    */
   enableVR() {
     this.xrSessionMode = 'immersive-vr';
-    if (this.simulator.environments[this.simulator.activeEnvironmentIndex]) {
-      this.simulator.environments[
-        this.simulator.activeEnvironmentIndex
-      ].scenePath = null;
-      this.simulator.environments[
-        this.simulator.activeEnvironmentIndex
-      ].scenePlanesPath = null;
-    }
     return this;
   }
 
@@ -229,6 +243,44 @@ export class Options {
   enableUI() {
     this.antialias = true;
     this.reticles.enabled = true;
+    return this;
+  }
+
+  /**
+   * Enables a standard simulator-driven setup for automation and external test
+   * harnesses.
+   * @returns The instance for chaining.
+   */
+  enableAutomationMode(config: AutomationModeOptions = {}) {
+    const {
+      hideSimulatorUi = true,
+      defaultHand = Handedness.RIGHT,
+      defaultMode = SimulatorMode.POSE,
+      enableHands = true,
+      enableCamera = true,
+    } = config;
+
+    this.formFactor = 'desktop';
+    this.xrButton.enabled = false;
+    this.xrButton.alwaysAutostartSimulator = true;
+
+    if (enableHands) {
+      this.enableHands();
+    }
+    if (enableCamera) {
+      this.enableCamera();
+    }
+    this.enableContext();
+
+    this.simulator.defaultMode = defaultMode;
+    this.simulator.defaultHand = defaultHand;
+
+    if (hideSimulatorUi) {
+      this.simulator.simulatorSettingsPanel.enabled = false;
+      this.simulator.instructions.enabled = false;
+      this.simulator.handPosePanel.enabled = false;
+    }
+
     return this;
   }
 
@@ -296,6 +348,19 @@ export class Options {
   }
 
   /**
+   * Enables semantic segmentation. Produces per-pixel person / background
+   * category masks from the device camera (MediaPipe, on-device). Unlike face
+   * and human detection it does not require depth.
+   * @returns The instance for chaining.
+   */
+  enableSegmentation() {
+    this.permissions.camera = true;
+    this.enableCamera();
+    this.world.enableSegmentation();
+    return this;
+  }
+
+  /**
    * Enables device camera (passthrough) with a specific facing mode.
    * @param facingMode - The desired camera facing mode, either 'environment' or
    *     'user'.
@@ -331,6 +396,15 @@ export class Options {
   }
 
   /**
+   * Enables completed nod and shake recognition from the user's head pose.
+   * @returns The instance for chaining.
+   */
+  enableHeadGestures() {
+    this.headGestures.enable();
+    return this;
+  }
+
+  /**
    * Enables the stroke recognition block and ensures gestures are available.
    * @returns The instance for chaining.
    */
@@ -356,6 +430,43 @@ export class Options {
   enableAI() {
     this.ai.enabled = true;
     this.ai.gemini.enabled = true;
+    return this;
+  }
+
+  /**
+   * Enables agent-facing context detectors such as semantic trees,
+   * view visibility, and Set-of-Mark observations.
+   * @returns The instance for chaining.
+   */
+  enableContext() {
+    this.context.enable();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing scene context.
+   * @returns The instance for chaining.
+   */
+  enableSceneContext() {
+    this.context.enableScene();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing visible objects context.
+   * @returns The instance for chaining.
+   */
+  enableVisibleObjectsContext() {
+    this.context.enableVisibleObjects();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing Set-of-Mark context.
+   * @returns The instance for chaining.
+   */
+  enableSetOfMarkContext() {
+    this.context.enableSetOfMark();
     return this;
   }
 

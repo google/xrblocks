@@ -6,6 +6,11 @@ import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
+import {
+  disposeMaterial,
+  disposeObjectChildren,
+  disposeObjectTree,
+} from '../../utils/ThreeDisposal';
 import {WorldOptions} from '../WorldOptions';
 import {DetectedObject} from './DetectedObject';
 import {
@@ -39,6 +44,17 @@ export interface CameraSnapshot {
   imageData?: ImageData;
 }
 
+export interface SimulatorDetectedObjectInput<T = unknown> {
+  label: string;
+  position: THREE.Vector3;
+  boundingBox: THREE.Box2;
+  data?: T;
+}
+
+export interface SimulatorObjectDetectionSource {
+  detect(): SimulatorDetectedObjectInput[];
+}
+
 /**
  * Detects objects in the user's environment using a specified backend.
  * It queries an AI model with the device camera feed and returns located
@@ -67,6 +83,8 @@ export class ObjectDetector extends Script {
   private currentDetectionPromise: Promise<DetectedObject<unknown>[]> | null =
     null;
   private lastContinuousDetectionStartedAtMs = -Infinity;
+  private disposed = false;
+  private simulatorSource?: SimulatorObjectDetectionSource;
 
   private _debugVisualsGroup?: THREE.Group;
 
@@ -120,6 +138,7 @@ export class ObjectDetector extends Script {
     this.depth = depth;
     this.camera = camera;
     this.renderer = renderer;
+    this.disposed = false;
 
     if (
       this.targetDevice === 'galaxyxr' &&
@@ -189,7 +208,9 @@ export class ObjectDetector extends Script {
     this.lastContinuousDetectionStartedAtMs = performance.now();
     this.currentDetectionPromise = this.runDetectionInternal()
       .then((results) => {
-        this.detectedObjects = results;
+        if (!this.disposed) {
+          this.detectedObjects = results;
+        }
         return results;
       })
       .finally(() => {
@@ -223,10 +244,33 @@ export class ObjectDetector extends Script {
     return this.currentDetectionPromise as Promise<DetectedObject<T>[]>;
   }
 
+  /** Installs or removes the desktop simulator's ground-truth detector. */
+  setSimulatorSource(source?: SimulatorObjectDetectionSource) {
+    this.simulatorSource = source;
+    return this;
+  }
+
   private async runDetectionInternal<T = null>(): Promise<DetectedObject<T>[]> {
     this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
 
-    const depthMeshSnapshot = this.getDepthMeshSnapshot();
+    if (this.simulatorSource) {
+      const detectedObjects = this.simulatorSource.detect().map((input) => {
+        const object = new DetectedObject(
+          input.label,
+          null,
+          input.boundingBox,
+          input.data ?? {}
+        );
+        object.position.copy(input.position);
+        return object;
+      });
+      for (const object of detectedObjects) {
+        this._detectedObjects.set(object.uuid, object);
+        this.add(object);
+      }
+      return detectedObjects as DetectedObject<T>[];
+    }
+
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
       this.renderer.xr.getCamera(),
@@ -255,15 +299,26 @@ export class ObjectDetector extends Script {
       );
       return [];
     }
-    const detectedObjects = await detectorBackend.run(
-      depthMeshSnapshot,
-      cameraParametersSnapshot
-    );
-    for (const obj of detectedObjects) {
-      this._detectedObjects.set(obj.uuid, obj);
-      this.add(obj);
+    if (this.disposed) {
+      return [];
     }
-    return detectedObjects;
+    const depthMeshSnapshot = this.getDepthMeshSnapshot();
+    try {
+      const detectedObjects = await detectorBackend.run(
+        depthMeshSnapshot,
+        cameraParametersSnapshot
+      );
+      if (this.disposed) {
+        return [];
+      }
+      for (const obj of detectedObjects) {
+        this._detectedObjects.set(obj.uuid, obj);
+        this.add(obj);
+      }
+      return detectedObjects;
+    } finally {
+      this.disposeDepthMeshSnapshot(depthMeshSnapshot);
+    }
   }
 
   private getDetectorContext(): DetectorBackendContext {
@@ -357,12 +412,18 @@ export class ObjectDetector extends Script {
 
   private clearDetectedObjects() {
     for (const obj of this._detectedObjects.values()) {
+      disposeObjectTree(obj);
       this.remove(obj);
     }
     this._detectedObjects.clear();
     if (this._debugVisualsGroup) {
-      this._debugVisualsGroup.clear();
+      disposeObjectChildren(this._debugVisualsGroup);
     }
+  }
+
+  private disposeDepthMeshSnapshot(depthMeshSnapshot: THREE.Mesh) {
+    depthMeshSnapshot.geometry.dispose();
+    disposeMaterial(depthMeshSnapshot.material);
   }
 
   /**
@@ -373,5 +434,20 @@ export class ObjectDetector extends Script {
     if (this._debugVisualsGroup) {
       this._debugVisualsGroup.visible = visible;
     }
+  }
+
+  override dispose() {
+    this.disposed = true;
+    this.activeClients.clear();
+    disposeObjectChildren(this);
+    this.clear(); // Unlinks children so needs to come last
+
+    for (const backendPromise of this._detectorBackends.values()) {
+      void backendPromise
+        .then((backend) => backend.dispose?.())
+        .catch(() => {});
+    }
+    this._detectorBackends.clear();
+    this.simulatorSource = undefined;
   }
 }

@@ -43,6 +43,12 @@ export const user = core.user;
 export const world = core.world;
 
 /**
+ * A direct alias to the `Context` instance, which provides agent-facing
+ * observations such as semantic trees, visible objects, and Set-of-Mark views.
+ */
+export const context = core.context;
+
+/**
  * A direct alias to the `AI` instance for integrating generative AI features,
  * including multi-modal understanding, image generation, and live conversation.
  */

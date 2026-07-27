@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
-import {SegmenterController} from './SegmenterController.js';
-
 // Backdrop modes for the cut-out background.
 //   0 = passthrough: background pixels are discarded so you see straight
 //       through the window to the real world behind it.
@@ -77,9 +75,10 @@ const FRAGMENT_SHADER = /* glsl */ `
     // The camera texture uses GL flipY; the mask DataTexture does not, so
     // flip the mask's v to line the two up.
     float id = texture2D(uMask, vec2(vUv.x, 1.0 - vUv.y)).r * 255.0;
-    // Until the first mask arrives, show the raw feed. Category 0 is the
-    // background; everything else is a person.
-    bool isPerson = (uHasMask < 0.5) || (id >= 0.5);
+    // Until the first mask arrives, treat the whole frame as background so we
+    // show the backdrop rather than flashing the raw camera (the room) during
+    // model warm-up. Category 0 is background; everything else is a person.
+    bool isPerson = (uHasMask > 0.5) && (id > 0.5);
     if (isPerson) {
       gl_FragColor = vec4(cam, 1.0);
       return;
@@ -95,7 +94,6 @@ const FRAGMENT_SHADER = /* glsl */ `
 export class MagicWindow extends xb.Script {
   constructor() {
     super();
-    this.segmenter = new SegmenterController();
     this.frameCanvas = document.createElement('canvas');
     this.frameCtx = this.frameCanvas.getContext('2d', {
       willReadFrequently: true,
@@ -144,8 +142,6 @@ export class MagicWindow extends xb.Script {
     this.plane.add(this.windowFrame_);
     this.plane.position.set(0, 1.5, -1.2);
     this.add(this.plane);
-
-    this.segmenter.load();
 
     // Quick keyboard control until the spatial panel lands: B cycles backdrop.
     this.onKeyDown_ = (event) => {
@@ -250,10 +246,14 @@ export class MagicWindow extends xb.Script {
   }
 
   updateMask_() {
-    if (!this.segmenter.isReady) {
+    // The Segmenter's own update() loop keeps latestMask fresh at its
+    // configured cadence. Reading it here is a synchronous poll — no
+    // MediaPipe inference is triggered by this call.
+    const segmentation = xb.core.world?.segmentation;
+    if (!segmentation) {
       return;
     }
-    const mask = this.segmenter.segment(this.frameCanvas);
+    const mask = segmentation.latestMask;
     if (!mask) {
       return;
     }
@@ -283,7 +283,6 @@ export class MagicWindow extends xb.Script {
 
   dispose() {
     window.removeEventListener('keydown', this.onKeyDown_);
-    this.segmenter.dispose();
     this.cameraTexture?.dispose();
     this.maskTexture?.dispose();
     this.plane.geometry.dispose();

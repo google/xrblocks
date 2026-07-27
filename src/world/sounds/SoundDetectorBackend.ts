@@ -65,4 +65,6 @@ export abstract class BaseDetectorBackend {
       sampleRate: this.context.sampleRate,
     };
   }
+
+  dispose() {}
 }

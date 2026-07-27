@@ -22,6 +22,13 @@ export class EmbodiedControl extends Script {
   private core?: Core;
   private autoPauseScheduled = false;
   private autoPauseComplete = false;
+  private readyComplete = false;
+  private resolveReady!: () => void;
+
+  /** Resolves after initialization and any requested auto-pause complete. */
+  readonly ready = new Promise<void>((resolve) => {
+    this.resolveReady = resolve;
+  });
 
   constructor(options: EmbodiedControlOptions = {}) {
     super();
@@ -36,6 +43,8 @@ export class EmbodiedControl extends Script {
     this.executor = new EmbodiedControlExecutor(dependencies, this.options);
     if (this.options.autoPause && dependencies.core.simulatorRunning) {
       this.scheduleAutoPause();
+    } else if (!this.options.autoPause) {
+      this.markReady();
     }
   }
 
@@ -52,7 +61,14 @@ export class EmbodiedControl extends Script {
       if (!this.core) return;
       this.core.pause();
       this.autoPauseComplete = true;
+      this.markReady();
     });
+  }
+
+  private markReady() {
+    if (this.readyComplete) return;
+    this.readyComplete = true;
+    this.resolveReady();
   }
 
   private afterRenderedFrame(callback: () => void) {

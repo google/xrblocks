@@ -6,11 +6,24 @@ import {Keycodes} from '../../utils/Keycodes';
 import {SimulatorRenderMode} from '../SimulatorConstants';
 import {SimulatorControllerState} from '../SimulatorControllerState';
 import {SimulatorHands} from '../SimulatorHands.js';
+import {SimulatorNavMesh} from '../scene/SimulatorNavMesh';
 import {SimulatorHandPose} from '../handPoses/HandPoses';
+import {SimulatorOptions} from '../SimulatorOptions';
 
 const {A_CODE, D_CODE, E_CODE, Q_CODE, S_CODE, W_CODE} = Keycodes;
 const vector3 = new THREE.Vector3();
+
+const desiredCameraPosition = new THREE.Vector3();
+
+const originVec = new THREE.Vector3();
+const forwardVec = new THREE.Vector3(0, 0, -1);
+const offsetVec = new THREE.Vector3();
+const axisVec = new THREE.Vector3();
+const currentOffsetVec = new THREE.Vector3();
+const newOffsetVec = new THREE.Vector3();
 const euler = new THREE.Euler();
+const yawEuler = new THREE.Euler();
+const yawQuaternion = new THREE.Quaternion();
 const HAND_POSES = Object.values(SimulatorHandPose);
 
 export class SimulatorControlMode {
@@ -18,6 +31,7 @@ export class SimulatorControlMode {
   input!: Input;
   timer!: THREE.Timer;
   domElement?: HTMLCanvasElement;
+  simulatorOptions?: SimulatorOptions;
 
   /**
    * Create a SimulatorControlMode
@@ -26,6 +40,7 @@ export class SimulatorControlMode {
     protected simulatorControllerState: SimulatorControllerState,
     protected downKeys: Set<Keycodes>,
     protected hands: SimulatorHands,
+    protected navMesh: SimulatorNavMesh,
     protected setStereoRenderMode: (_: SimulatorRenderMode) => void,
     protected toggleUserInterface: () => void,
     protected cycleSimulatorMode: () => void = () => {}
@@ -39,22 +54,28 @@ export class SimulatorControlMode {
     input,
     timer,
     domElement,
+    simulatorOptions,
   }: {
     camera: THREE.Camera;
     input: Input;
     timer: THREE.Timer;
     domElement?: HTMLCanvasElement;
+    simulatorOptions?: SimulatorOptions;
   }) {
     this.camera = camera;
     this.input = input;
     this.timer = timer;
     this.domElement = domElement;
+    this.simulatorOptions = simulatorOptions;
     input.gamepadController.init({camera});
   }
 
   onPointerDown(_: MouseEvent) {}
   onPointerUp(_: MouseEvent) {}
   onPointerMove(_: MouseEvent) {}
+  onWheel(_: WheelEvent) {
+    return false;
+  }
   onKeyDown(event: KeyboardEvent) {
     if (event.code == Keycodes.DIGIT_1) {
       this.setStereoRenderMode(SimulatorRenderMode.STEREO_LEFT);
@@ -91,17 +112,15 @@ export class SimulatorControlMode {
 
     const deltaTime = this.timer.getDelta();
     const cameraRotation = this.camera.quaternion;
-    const cameraPosition = this.camera.position;
     const downKeys = this.downKeys;
-    vector3
-      .set(
-        Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
-        Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)),
-        Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE))
-      )
-      .multiplyScalar(deltaTime)
-      .applyQuaternion(cameraRotation);
-    cameraPosition.add(vector3);
+    this.applyYawRelativeMovement(
+      Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
+      this.navMesh.constrained
+        ? 0
+        : Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)),
+      Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)),
+      deltaTime
+    );
 
     // Gamepad stick input (if connected). Skip while the tab isn't
     // focused — the Gamepad API delivers state to every tab, so without
@@ -112,11 +131,7 @@ export class SimulatorControlMode {
 
       // Left stick → move camera.
       if (lx !== 0 || ly !== 0) {
-        vector3
-          .set(lx, 0, ly)
-          .multiplyScalar(deltaTime)
-          .applyQuaternion(cameraRotation);
-        cameraPosition.add(vector3);
+        this.applyYawRelativeMovement(lx, 0, ly, deltaTime);
       }
 
       // Right stick → look (yaw + pitch).
@@ -131,13 +146,35 @@ export class SimulatorControlMode {
       }
 
       // Configurable vertical movement bindings (defaults LT/RT, analog).
-      const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
-      const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
-      const verticalDelta = (upVal - downVal) * deltaTime;
-      if (verticalDelta !== 0) {
-        cameraPosition.y += verticalDelta;
+      if (!this.navMesh.constrained) {
+        const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
+        const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
+        const verticalDelta = (upVal - downVal) * deltaTime;
+        if (verticalDelta !== 0) {
+          desiredCameraPosition.copy(this.camera.position);
+          desiredCameraPosition.y += verticalDelta;
+          this.navMesh.applyUserMovement(this.camera, desiredCameraPosition);
+        }
       }
     }
+  }
+
+  private applyYawRelativeMovement(
+    localX: number,
+    localY: number,
+    localZ: number,
+    deltaTime: number
+  ) {
+    euler.setFromQuaternion(this.camera.quaternion, 'YXZ');
+    yawEuler.set(0, euler.y, 0, 'YXZ');
+    yawQuaternion.setFromEuler(yawEuler);
+    vector3
+      .set(localX, 0, localZ)
+      .multiplyScalar(deltaTime)
+      .applyQuaternion(yawQuaternion);
+    vector3.y += localY * deltaTime;
+    desiredCameraPosition.copy(this.camera.position).add(vector3);
+    this.navMesh.applyUserMovement(this.camera, desiredCameraPosition);
   }
 
   /**
@@ -184,7 +221,94 @@ export class SimulatorControlMode {
     }
   }
 
+  private getHandOrigin(idx: number, target: THREE.Vector3): boolean {
+    const distOpt = this.simulatorOptions?.reachDistance;
+    const angleOpt = this.simulatorOptions?.reachAngle;
+    if (!distOpt?.enabled && !angleOpt?.enabled) return false;
+    const originObj =
+      idx === 0
+        ? this.simulatorOptions!.leftHandOrigin
+        : this.simulatorOptions!.rightHandOrigin;
+    target.set(originObj.x, originObj.y, originObj.z);
+    return true;
+  }
+
+  limitMovementAtReachEdge(
+    idx: number,
+    localPos: THREE.Vector3,
+    delta: THREE.Vector3
+  ) {
+    if (!this.getHandOrigin(idx, originVec)) return;
+    const distOpt = this.simulatorOptions!.reachDistance;
+    const angleOpt = this.simulatorOptions!.reachAngle;
+    currentOffsetVec.copy(localPos).sub(originVec);
+    newOffsetVec.copy(currentOffsetVec).add(delta);
+
+    if (distOpt.enabled) {
+      const curDistSq = currentOffsetVec.lengthSq();
+      const radSq = distOpt.radius * distOpt.radius;
+      if (curDistSq >= radSq && newOffsetVec.lengthSq() >= curDistSq) {
+        delta.set(0, 0, 0);
+        return;
+      }
+    }
+    if (angleOpt.enabled) {
+      const maxAngle = angleOpt.angle * 0.5;
+      const curAngle = currentOffsetVec.angleTo(forwardVec);
+      if (
+        curAngle >= maxAngle &&
+        newOffsetVec.angleTo(forwardVec) >= curAngle
+      ) {
+        delta.set(0, 0, 0);
+      }
+    }
+  }
+
   updateControllerPositions() {
+    const distOpt = this.simulatorOptions?.reachDistance;
+    const angleOpt = this.simulatorOptions?.reachAngle;
+    const distEnabled = !!distOpt?.enabled;
+    const angleEnabled = !!angleOpt?.enabled;
+
+    if (distEnabled || angleEnabled) {
+      const radius = distOpt!.radius;
+      const maxAngle = angleOpt!.angle * 0.5;
+
+      for (let i = 0; i < 2; i++) {
+        this.getHandOrigin(i, originVec);
+        const localPos =
+          this.simulatorControllerState.localControllerPositions[i];
+        offsetVec.copy(localPos).sub(originVec);
+
+        const dist = offsetVec.length();
+        const angle = offsetVec.angleTo(forwardVec);
+        const atMax =
+          (distEnabled && dist >= radius) ||
+          (angleEnabled && angle >= maxAngle);
+        if (i === 0) {
+          this.hands.leftHandAtMaxRange = atMax;
+        } else {
+          this.hands.rightHandAtMaxRange = atMax;
+        }
+
+        if (angleEnabled && angle > maxAngle) {
+          axisVec.copy(offsetVec).cross(forwardVec);
+          if (axisVec.lengthSq() < 1e-6) {
+            axisVec.set(0, 1, 0);
+          } else {
+            axisVec.normalize();
+          }
+          offsetVec.applyAxisAngle(axisVec, angle - maxAngle);
+        }
+        if (distEnabled && offsetVec.lengthSq() > radius * radius) {
+          offsetVec.clampLength(0, radius);
+        }
+        localPos.copy(originVec).add(offsetVec);
+      }
+    } else {
+      this.hands.leftHandAtMaxRange = false;
+      this.hands.rightHandAtMaxRange = false;
+    }
     this.camera.updateMatrixWorld();
     for (let i = 0; i < 2 && i < this.input.controllers.length; i++) {
       const controller = this.input.controllers[i];

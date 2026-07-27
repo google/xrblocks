@@ -4,6 +4,7 @@ import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
 import {enableAcceleratedRaycast, isBVHReady} from '../../utils/BVHRaycast';
+import {disposeMaterial} from '../../utils/ThreeDisposal';
 import {WorldOptions} from '../WorldOptions';
 import {DetectedFace} from './DetectedFace';
 import {BaseFaceBackend, FaceBackendContext} from './FaceDetectorBackend';
@@ -42,6 +43,7 @@ export class FaceRecognizer extends Script {
   private activeClients = new Set<object>();
   private currentDetectionPromise: Promise<DetectedFace[]> | null = null;
   private lastContinuousDetectionStartedAtMs = -Infinity;
+  private disposed = false;
 
   /**
    * The latest detected faces from continuous detection.
@@ -75,6 +77,7 @@ export class FaceRecognizer extends Script {
     this.depth = depth;
     this.camera = camera;
     this.renderer = renderer;
+    this.disposed = false;
   }
 
   /**
@@ -129,7 +132,9 @@ export class FaceRecognizer extends Script {
     this.lastContinuousDetectionStartedAtMs = performance.now();
     this.currentDetectionPromise = this.runDetectionInternal()
       .then((results) => {
-        this.detectedFaces = results;
+        if (!this.disposed) {
+          this.detectedFaces = results;
+        }
         return results;
       })
       .finally(() => {
@@ -170,7 +175,6 @@ export class FaceRecognizer extends Script {
       return [];
     }
 
-    const depthMeshSnapshot = this.getDepthMeshSnapshot();
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
       this.renderer.xr.getCamera(),
@@ -197,12 +201,17 @@ export class FaceRecognizer extends Script {
       return [];
     }
 
+    if (this.disposed) {
+      return [];
+    }
+
+    const depthMeshSnapshot = this.getDepthMeshSnapshot();
     const faces = await backend.run(
       depthMeshSnapshot,
       cameraParametersSnapshot
     );
 
-    return faces;
+    return this.disposed ? [] : faces;
   }
 
   private getBackendContext(): FaceBackendContext {
@@ -274,9 +283,7 @@ export class FaceRecognizer extends Script {
     // Source changed (or first call). Dispose the previous BVH so its
     // backing buffers free, then clone + rebuild.
     if (this.cachedDepthMeshSnapshot) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.cachedDepthMeshSnapshot.geometry as any).disposeBoundsTree?.();
-      this.cachedDepthMeshSnapshot.geometry.dispose();
+      this.disposeCachedDepthMeshSnapshot();
     }
     const clonedGeometry = geometry.clone();
     clonedGeometry.computeBoundingSphere();
@@ -303,5 +310,41 @@ export class FaceRecognizer extends Script {
     this.cachedDepthMeshSource = geometry;
     this.cachedDepthMeshVersion = version;
     return depthMeshSnapshot;
+  }
+
+  private disposeCachedDepthMeshSnapshot() {
+    if (!this.cachedDepthMeshSnapshot) {
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.cachedDepthMeshSnapshot.geometry as any).disposeBoundsTree?.();
+    this.cachedDepthMeshSnapshot.geometry.dispose();
+    disposeMaterial(this.cachedDepthMeshSnapshot.material);
+    this.cachedDepthMeshSnapshot = null;
+    this.cachedDepthMeshSource = null;
+    this.cachedDepthMeshVersion = -1;
+  }
+
+  override dispose() {
+    this.disposed = true;
+    this.activeClients.clear();
+    this.clear();
+    this.detectedFaces = [];
+    const pendingDetection = this.currentDetectionPromise;
+    if (pendingDetection) {
+      void pendingDetection
+        .finally(() => {
+          this.disposeCachedDepthMeshSnapshot();
+        })
+        .catch(() => {});
+    } else {
+      this.disposeCachedDepthMeshSnapshot();
+    }
+    for (const backendPromise of this._detectorBackends.values()) {
+      void backendPromise
+        .then((backend) => backend.dispose?.())
+        .catch(() => {});
+    }
+    this._detectorBackends.clear();
   }
 }

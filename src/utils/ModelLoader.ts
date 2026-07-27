@@ -8,31 +8,17 @@ import {KTX2Loader} from 'three/addons/loaders/KTX2Loader.js';
  */
 const jsmUrl = `https://cdn.jsdelivr.net/npm/three@0.${THREE.REVISION}.0/examples/jsm/`;
 
-/**
- * The configured GLTFLoader instance.
- */
-let gltfLoaderInstance: GLTFLoader | undefined;
-
-function getGLTFLoader(
-  renderer?: THREE.WebGLRenderer,
-  manager?: THREE.LoadingManager
-) {
-  if (gltfLoaderInstance) {
-    return gltfLoaderInstance;
-  }
+function createGLTFLoader(manager?: THREE.LoadingManager) {
   const dracoLoader = new DRACOLoader(manager);
   dracoLoader.setDecoderPath(jsmUrl + 'libs/draco/');
   dracoLoader.setDecoderConfig({type: 'js'});
   const ktx2Loader = new KTX2Loader(manager);
   ktx2Loader.setTranscoderPath(jsmUrl + 'libs/basis/');
-  if (renderer) {
-    ktx2Loader.detectSupport(renderer);
-  }
 
-  gltfLoaderInstance = new GLTFLoader(manager);
-  gltfLoaderInstance.setDRACOLoader(dracoLoader);
-  gltfLoaderInstance.setKTX2Loader(ktx2Loader);
-  return gltfLoaderInstance;
+  const gltfLoader = new GLTFLoader(manager);
+  gltfLoader.setDRACOLoader(dracoLoader);
+  gltfLoader.setKTX2Loader(ktx2Loader);
+  return {gltfLoader, ktx2Loader};
 }
 
 export type ModelLoaderLoadGLTFOptions = {
@@ -58,6 +44,9 @@ export type ModelLoaderLoadOptions = ModelLoaderLoadGLTFOptions & {
  */
 export class ModelLoader {
   private manager: THREE.LoadingManager;
+  private gltfLoader?: GLTFLoader;
+  private ktx2Loader?: KTX2Loader;
+  private ktxRenderer?: THREE.WebGLRenderer;
 
   /**
    * Creates an instance of ModelLoader.
@@ -67,6 +56,19 @@ export class ModelLoader {
    */
   constructor(manager = THREE.DefaultLoadingManager) {
     this.manager = manager;
+  }
+
+  private getGLTFLoader(renderer?: THREE.WebGLRenderer) {
+    if (!this.gltfLoader) {
+      const {gltfLoader, ktx2Loader} = createGLTFLoader(this.manager);
+      this.gltfLoader = gltfLoader;
+      this.ktx2Loader = ktx2Loader;
+    }
+    if (renderer && renderer !== this.ktxRenderer) {
+      this.ktx2Loader!.detectSupport(renderer);
+      this.ktxRenderer = renderer;
+    }
+    return this.gltfLoader;
   }
 
   /**
@@ -124,10 +126,8 @@ export class ModelLoader {
     url = '',
     renderer = undefined,
   }: ModelLoaderLoadGLTFOptions) {
-    const loader = getGLTFLoader(renderer, this.manager);
-    if (path) {
-      loader.setPath(path);
-    }
+    const loader = this.getGLTFLoader(renderer);
+    loader.setPath(path ?? '');
     return new Promise<GLTF>((resolve, reject) => {
       loader.load(
         url,

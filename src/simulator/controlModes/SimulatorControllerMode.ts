@@ -31,10 +31,9 @@ export class SimulatorControllerMode extends SimulatorControlMode {
   updateControllerPositions() {
     const deltaTime = this.timer.getDelta();
     const downKeys = this.downKeys;
+    const idx = this.simulatorControllerState.currentControllerIndex;
     const localPos =
-      this.simulatorControllerState.localControllerPositions[
-        this.simulatorControllerState.currentControllerIndex
-      ];
+      this.simulatorControllerState.localControllerPositions[idx];
     vector3
       .set(
         Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
@@ -42,6 +41,7 @@ export class SimulatorControllerMode extends SimulatorControlMode {
         Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE))
       )
       .multiplyScalar(deltaTime);
+    this.limitMovementAtReachEdge(idx, localPos, vector3);
     localPos.add(vector3);
 
     // Gamepad: left stick moves hand on XZ; configurable buttons on Y.
@@ -53,6 +53,7 @@ export class SimulatorControllerMode extends SimulatorControlMode {
       const downVal = gp.getButtonValue(gp.bindings.getBinding('moveDown'));
       const upVal = gp.getButtonValue(gp.bindings.getBinding('moveUp'));
       vector3.set(lx, upVal - downVal, ly).multiplyScalar(deltaTime);
+      this.limitMovementAtReachEdge(idx, localPos, vector3);
       localPos.add(vector3);
     }
 

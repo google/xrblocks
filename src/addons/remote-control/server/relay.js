@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-env node */
 /**
  * Local WebSocket relay for xrblocks remote-control.
  *

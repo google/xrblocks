@@ -9,7 +9,7 @@ const RELAY_URL =
 const SESSION_ID =
   new URLSearchParams(location.search).get('remoteControlSession') || 'default';
 
-const options = RemoteControl.configureOptions(new xb.Options());
+const options = new xb.Options().enableAutomationMode();
 options.setAppTitle('Remote Control Smoke Test');
 
 class RemoteControlSmokeScene extends xb.Script {

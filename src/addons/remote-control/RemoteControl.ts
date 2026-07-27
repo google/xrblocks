@@ -1,13 +1,5 @@
 import * as THREE from 'three';
-import {
-  Core,
-  Handedness,
-  Input,
-  Options,
-  Script,
-  Simulator,
-  SimulatorMode,
-} from 'xrblocks';
+import {Core, Input, Options, Script, Simulator} from 'xrblocks';
 import {
   EmbodiedControl,
   type EmbodiedControlOptions,
@@ -62,17 +54,11 @@ export class RemoteControl extends Script {
   private tools = new Map<string, RegisteredTool>();
 
   static configureOptions(options = new Options()) {
-    options.formFactor = 'desktop';
-    options.xrButton.enabled = false;
-    options.xrButton.alwaysAutostartSimulator = true;
-    options.enableHands();
-    options.enableCamera();
-    options.simulator.defaultMode = SimulatorMode.POSE;
-    options.simulator.defaultHand = Handedness.RIGHT;
-    options.simulator.simulatorSettingsPanel.enabled = false;
-    options.simulator.instructions.enabled = false;
-    options.simulator.handPosePanel.enabled = false;
-    return options;
+    return (
+      options as Options & {
+        enableAutomationMode: () => Options;
+      }
+    ).enableAutomationMode();
   }
 
   constructor(private options: RemoteControlOptions = {}) {
@@ -199,6 +185,18 @@ export class RemoteControl extends Script {
   private resolveTarget(
     target: RemoteControlTarget
   ): THREE.Vector3 | THREE.Object3D {
+    if (!Array.isArray(target) && typeof target === 'object') {
+      if (target.type === 'contextNode') {
+        const contextTarget =
+          this.dependencies.core.context.scene?.resolveNodeObject(target.id);
+        if (!contextTarget) {
+          throw new Error(`Context target not found: ${target.id}`);
+        }
+        return contextTarget;
+      }
+      throw new Error(`Unsupported target type: ${String(target.type)}`);
+    }
+
     if (typeof target === 'string') {
       const obj = this.dependencies.core.scene.getObjectByName(target);
       if (!obj) {
