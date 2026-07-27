@@ -76,6 +76,13 @@ Disable all simulator-owned physics while leaving regular app physics available 
 options.simulator.physics.enabled = false;
 ```
 
+Simulated hands are excluded from generated depth data by default so hand rays do not
+hit the same hand. Include them when a test requires hand depth:
+
+```js
+options.simulator.excludeHandsFromDepth = false;
+```
+
 The top-level hand origins are shared by reach limits and hand physics. When hand physics
 is enabled, they act as invisible shoulder-to-palm tethers so fixed geometry cannot leave
 a hand trapped on the far side of a wall. Dynamic objects remain pushable by the hands.

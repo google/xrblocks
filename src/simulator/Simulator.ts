@@ -206,7 +206,13 @@ export class Simulator extends Script {
 
     if (options.depth.enabled) {
       this.renderDepthPass = true;
-      this.depth.init(renderer, camera, depth, this.hands);
+      this.depth.init(
+        renderer,
+        camera,
+        depth,
+        this.hands,
+        simulatorOptions.excludeHandsFromDepth
+      );
     }
     scene.add(camera);
 

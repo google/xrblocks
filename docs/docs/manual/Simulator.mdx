@@ -184,6 +184,14 @@ The simulator also supplies simulated planes, meshes, object detections, a
 device-camera feed, and optional physics-backed environment objects when those
 subsystems are enabled.
 
+Simulated hands are excluded from generated depth data by default. This prevents
+hand rays from hitting the depth image of the same hand. Set the option to
+`false` when a test must include hand depth:
+
+```js
+options.simulator.excludeHandsFromDepth = false;
+```
+
 ## Hand reach and simulator physics
 
 Limit virtual hands to a shoulder-relative radius or forward cone:

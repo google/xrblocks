@@ -11,6 +11,7 @@ export class SimulatorDepth {
   private camera!: THREE.Camera;
   private depth!: Depth;
   private hands?: SimulatorHands;
+  private excludeHandsFromDepth = true;
   depthWidth = 160;
   depthHeight = 160;
   depthBufferSlice = new Float32Array();
@@ -47,12 +48,14 @@ export class SimulatorDepth {
     renderer: THREE.WebGLRenderer,
     camera: THREE.Camera,
     depth: Depth,
-    hands?: SimulatorHands
+    hands?: SimulatorHands,
+    excludeHandsFromDepth = true
   ) {
     this.renderer = renderer;
     this.camera = camera;
     this.depth = depth;
     this.hands = hands;
+    this.excludeHandsFromDepth = excludeHandsFromDepth;
 
     if (this.camera instanceof THREE.PerspectiveCamera) {
       this.depthCamera = new THREE.PerspectiveCamera();
@@ -116,19 +119,23 @@ export class SimulatorDepth {
     const originalRenderTarget = this.renderer.getRenderTarget();
     this.renderer.setRenderTarget(this.depthRenderTarget);
     this.simulatorScene.overrideMaterial = this.depthMaterial;
-    const leftWasVisible = this.hands?.leftController.visible ?? false;
-    const rightWasVisible = this.hands?.rightController.visible ?? false;
-    if (this.hands) {
-      this.hands.leftController.visible = false;
-      this.hands.rightController.visible = false;
+    const hands = this.excludeHandsFromDepth ? this.hands : undefined;
+    const leftWasVisible = hands?.leftController.visible ?? false;
+    const rightWasVisible = hands?.rightController.visible ?? false;
+    if (hands) {
+      hands.leftController.visible = false;
+      hands.rightController.visible = false;
     }
-    this.renderer.render(this.simulatorScene, this.depthCamera);
-    if (this.hands) {
-      this.hands.leftController.visible = leftWasVisible;
-      this.hands.rightController.visible = rightWasVisible;
+    try {
+      this.renderer.render(this.simulatorScene, this.depthCamera);
+    } finally {
+      if (hands) {
+        hands.leftController.visible = leftWasVisible;
+        hands.rightController.visible = rightWasVisible;
+      }
+      this.simulatorScene.overrideMaterial = null;
+      this.renderer.setRenderTarget(originalRenderTarget);
     }
-    this.simulatorScene.overrideMaterial = null;
-    this.renderer.setRenderTarget(originalRenderTarget);
   }
 
   private async updateDepth() {

@@ -45,6 +45,8 @@ export interface SimulatorHandPhysicsOptions {
 
 export class SimulatorOptions {
   initialCameraPosition = {x: 0, y: 1.5, z: 0};
+  /** Excludes simulated hands from generated depth data. */
+  excludeHandsFromDepth = true;
   environments = DEFAULT_ENVIRONMENTS.map((environment) => ({...environment}));
   activeEnvironmentIndex = 0;
   defaultMode = SimulatorMode.USER;

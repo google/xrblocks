@@ -65,6 +65,49 @@ describe('SimulatorDepth.update inflight guard', () => {
     );
   });
 
+  it('excludes hands from the depth render and restores visibility', () => {
+    const hands = {
+      leftController: new THREE.Object3D(),
+      rightController: new THREE.Object3D(),
+    };
+    hands.rightController.visible = false;
+    depthSim.init(
+      renderer.renderer as unknown as THREE.WebGLRenderer,
+      new THREE.PerspectiveCamera(),
+      {updateCPUDepthData: vi.fn()} as never,
+      hands as never
+    );
+    renderer.renderer.render.mockImplementation(() => {
+      expect(hands.leftController.visible).toBe(false);
+      expect(hands.rightController.visible).toBe(false);
+    });
+
+    depthSim.update();
+
+    expect(hands.leftController.visible).toBe(true);
+    expect(hands.rightController.visible).toBe(false);
+  });
+
+  it('includes hands when exclusion is disabled', () => {
+    const hands = {
+      leftController: new THREE.Object3D(),
+      rightController: new THREE.Object3D(),
+    };
+    depthSim.init(
+      renderer.renderer as unknown as THREE.WebGLRenderer,
+      new THREE.PerspectiveCamera(),
+      {updateCPUDepthData: vi.fn()} as never,
+      hands as never,
+      false
+    );
+    renderer.renderer.render.mockImplementation(() => {
+      expect(hands.leftController.visible).toBe(true);
+      expect(hands.rightController.visible).toBe(true);
+    });
+
+    depthSim.update();
+  });
+
   it('does NOT queue a second pass while an earlier readback is still in flight', () => {
     depthSim.update();
     expect(renderer.pendingReadback()).toBe(true);
