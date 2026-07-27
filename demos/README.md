@@ -5,8 +5,23 @@ that with your contribution, we can inspire more hackers, designers, and
 practitioners to unleash their creativity! Let's make AI + XR accessible to
 everyone so they may bring their ideas to life faster.
 
-For basic demo to demonstrate the use of a particular module, we suggest you
+For basic demos to demonstrate the use of a particular module, we suggest you
 submit to `/samples/`.
+
+## Contributing Guidelines
+
+In addition to [CONTRIBUTING.md](../CONTRIBUTING.md), here are a few key points for contributing to XR Blocks:
+
+- **Preferred Demo Contributions:** We prefer new demos that demonstrate novel features in interactive perception, XR realism, embodied interactions, interactive graphics, or Gemini capabilities. Note that 3D applications without any XR-specific features may be rejected. Preferred types of contributions include:
+  1. Novel use cases with open Hugging Face models.
+  2. Porting more features from [ARCore Depth Lab](https://github.com/googlesamples/arcore-depth-lab) and [ARChat](https://github.com/google/archat) to XR.
+  3. Converting MIT / Apache 2 shaders to XR (e.g., from [Shadertoy](https://www.shadertoy.com/view/4sX3Rn); remember to give credit in the demo's README).
+  4. Finding novel use cases for Gemini.
+  5. Adding accessibility and security layers.
+
+- **Requirements:** All demo submissions MUST include a screen recording in the desktop simulator and a screen recording on device (preferably an Android XR device).
+
+- **AI code:** For AI-generated code, there should be a real person behind it to take responsibility.
 
 ## Running Demos Locally
 
