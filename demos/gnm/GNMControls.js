@@ -4,8 +4,21 @@
  * Provides the full parameter surface of the model: semantic sampling
  * (gender/ethnicity identities, 20 expression classes), grouped PCA sliders
  * for all 253 identity + 383 expression components, joint pose, animation
- * drivers, and view options. Styling lives in gnm.css.
+ * drivers, view options, and save/load of face presets. Styling lives in
+ * gnm.css.
  */
+
+import {
+  deleteLocalPreset,
+  downloadPreset,
+  fetchPresetUrl,
+  getLocalPreset,
+  listLocalPresets,
+  parsePreset,
+  readPresetFile,
+  saveLocalPreset,
+  serializePreset,
+} from './GNMPresets.js';
 
 const MATERIAL_MODES = [
   ['studio', 'Studio'],
@@ -43,6 +56,12 @@ function gaussian() {
   let u = 0;
   while (u === 0) u = Math.random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
+}
+
+/** True for form controls that consume keystrokes (text fields, selects). */
+function isFormControl(element) {
+  const tag = element?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
 export class GNMControls {
@@ -87,6 +106,17 @@ export class GNMControls {
       </div>`;
     document.body.appendChild(this.root);
 
+    // Keep keystrokes typed into panel fields (e.g. the Save "Face name" box)
+    // from also driving the simulator: it listens for WASD on `document`, so
+    // stopping propagation at the panel — after the field has handled the key —
+    // hides those events from it without any SDK change.
+    const stopFieldKeys = (event) => {
+      if (isFormControl(event.target)) event.stopPropagation();
+    };
+    for (const type of ['keydown', 'keyup', 'keypress']) {
+      this.root.addEventListener(type, stopFieldKeys);
+    }
+
     this.statusElement = this.root.querySelector('#gnm-status');
     this.statsElement = this.root.querySelector('#gnm-stats');
     this.tabsElement = this.root.querySelector('#gnm-tabs');
@@ -104,6 +134,7 @@ export class GNMControls {
       ['Pose', () => this._buildPoseTab()],
       ['Animate', () => this._buildAnimateTab()],
       ['View', () => this._buildViewTab()],
+      ['Save', () => this._buildSaveTab()],
     ]);
     this._bindKeyboard();
     this._startStatsLoop();
@@ -618,6 +649,169 @@ export class GNMControls {
     this._materialButtons?.forEach((button) =>
       button.classList.toggle('active', button.dataset.mode === mode)
     );
+  }
+
+  // ------------------------------------------------------------ save/load --
+
+  _buildSaveTab() {
+    const fragment = document.createDocumentFragment();
+
+    // Save the current face.
+    const save = this._section(fragment, 'Save current face');
+    this._presetNameInput = document.createElement('input');
+    this._presetNameInput.type = 'text';
+    this._presetNameInput.className = 'gnm-text-input';
+    this._presetNameInput.placeholder = 'Face name';
+    this._presetNameInput.maxLength = 60;
+    save.appendChild(this._presetNameInput);
+    const saveButtons = document.createElement('div');
+    saveButtons.className = 'gnm-btn-row';
+    this._button(saveButtons, 'Save to browser', () => this._savePresetLocal());
+    this._button(saveButtons, 'Download file', () => this._downloadPreset());
+    save.appendChild(saveButtons);
+
+    // Presets kept in this browser (localStorage).
+    const stored = this._section(fragment, 'Saved in this browser');
+    this._presetListEl = document.createElement('div');
+    this._presetListEl.className = 'gnm-preset-list';
+    stored.appendChild(this._presetListEl);
+
+    // Import from a file or a URL.
+    const importSec = this._section(fragment, 'Import');
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.json,.gnmhead.json,application/json';
+    fileInput.style.display = 'none';
+    fileInput.addEventListener('change', () => {
+      this._importFromFile(fileInput.files[0]);
+      fileInput.value = ''; // allow re-importing the same file
+    });
+    importSec.appendChild(fileInput);
+    const fileRow = document.createElement('div');
+    fileRow.className = 'gnm-btn-row';
+    this._button(fileRow, 'Import from file', () => fileInput.click());
+    importSec.appendChild(fileRow);
+
+    this._presetUrlInput = document.createElement('input');
+    this._presetUrlInput.type = 'text';
+    this._presetUrlInput.className = 'gnm-text-input';
+    this._presetUrlInput.placeholder = 'https://…/head.gnmhead.json';
+    importSec.appendChild(this._presetUrlInput);
+    const urlRow = document.createElement('div');
+    urlRow.className = 'gnm-btn-row';
+    this._button(urlRow, 'Load from URL', () =>
+      this._importFromUrl(this._presetUrlInput.value.trim())
+    );
+    importSec.appendChild(urlRow);
+
+    this._refreshPresetList();
+    return fragment;
+  }
+
+  /** A unique default name so quick saves don't silently overwrite. */
+  _defaultPresetName() {
+    const existing = new Set(listLocalPresets().map((p) => p.name));
+    let n = existing.size + 1;
+    let name = `Face ${n}`;
+    while (existing.has(name)) name = `Face ${++n}`;
+    return name;
+  }
+
+  _currentPresetDoc() {
+    const name =
+      this._presetNameInput.value.trim() || this._defaultPresetName();
+    return serializePreset(this.scene.capturePreset(), this.model.meta, name);
+  }
+
+  _savePresetLocal() {
+    const doc = this._currentPresetDoc();
+    saveLocalPreset(doc);
+    this._presetNameInput.value = '';
+    this._refreshPresetList();
+    this.setStatus(`saved "${doc.name}" to browser`);
+  }
+
+  _downloadPreset() {
+    const doc = this._currentPresetDoc();
+    downloadPreset(doc);
+    this.setStatus(`downloaded "${doc.name}"`);
+  }
+
+  _refreshPresetList() {
+    const list = this._presetListEl;
+    if (!list) return;
+    list.innerHTML = '';
+    const presets = listLocalPresets();
+    if (presets.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'gnm-hint';
+      empty.textContent = 'No saved faces yet.';
+      list.appendChild(empty);
+      return;
+    }
+    for (const {name, savedAt} of presets) {
+      const row = document.createElement('div');
+      row.className = 'gnm-preset-row';
+      const label = document.createElement('span');
+      label.className = 'gnm-preset-name';
+      label.textContent = name;
+      if (savedAt) label.title = new Date(savedAt).toLocaleString();
+      row.appendChild(label);
+      const actions = document.createElement('div');
+      actions.className = 'gnm-btn-row';
+      this._button(actions, 'Load', () => this._loadLocalPreset(name));
+      this._button(
+        actions,
+        'Delete',
+        () => this._deleteLocalPreset(name),
+        'danger'
+      );
+      row.appendChild(actions);
+      list.appendChild(row);
+    }
+  }
+
+  _loadLocalPreset(name) {
+    const doc = getLocalPreset(name);
+    if (doc) this._applyPresetDoc(doc);
+  }
+
+  _deleteLocalPreset(name) {
+    deleteLocalPreset(name);
+    this._refreshPresetList();
+    this.setStatus(`deleted "${name}"`);
+  }
+
+  async _importFromFile(file) {
+    if (!file) return;
+    try {
+      this._applyPresetDoc(await readPresetFile(file));
+    } catch (error) {
+      this.setStatus(`import failed: ${error.message}`);
+    }
+  }
+
+  async _importFromUrl(url) {
+    if (!url) return;
+    this.setStatus('loading face…');
+    try {
+      this._applyPresetDoc(await fetchPresetUrl(url));
+    } catch (error) {
+      this.setStatus(`URL load failed: ${error.message}`);
+    }
+  }
+
+  /** Validates and applies a parsed preset document to the scene. */
+  _applyPresetDoc(doc) {
+    let parsed;
+    try {
+      parsed = parsePreset(doc, this.model.meta);
+    } catch (error) {
+      this.setStatus(`can't load: ${error.message}`);
+      return;
+    }
+    this.scene.applyPreset(parsed.state, true);
+    this.setStatus(`loaded "${parsed.name}"`);
   }
 
   // ------------------------------------------------------------------ sync --

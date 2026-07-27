@@ -17,6 +17,7 @@ import {
   type HandControl,
   type LocomotionControl,
 } from './EmbodiedControlTypes';
+import {runTimedMotion, type TimedMotionTick} from './EmbodiedControlTiming';
 
 export type EmbodiedControlExecutorDependencies = {
   core: Core;
@@ -39,16 +40,6 @@ function mergeOptions(
       DEFAULT_EMBODIED_CONTROL_OPTIONS.applyHandRotationConstraints,
     realTime: options.realTime ?? DEFAULT_EMBODIED_CONTROL_OPTIONS.realTime,
   };
-}
-
-function nextAnimationFrame() {
-  return new Promise<void>((resolve) => {
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve());
-    } else {
-      setTimeout(resolve, 0);
-    }
-  });
 }
 
 export class EmbodiedControlBusyError extends Error {
@@ -80,6 +71,18 @@ export class EmbodiedControlExecutor {
     return this.activeStep;
   }
 
+  private async runTimedMotion(
+    requestedDurationMs: number,
+    applyTick: TimedMotionTick
+  ) {
+    return runTimedMotion({
+      requestedDurationMs,
+      tickMs: this.options.tickMs,
+      realTime: this.options.realTime,
+      applyTick,
+    });
+  }
+
   applyControl(control: XRCompoundControl) {
     if (this.activeStep) {
       throw new EmbodiedControlBusyError();
@@ -98,33 +101,18 @@ export class EmbodiedControlExecutor {
     this.activeStep = true;
 
     try {
-      const tickMs = this.options.tickMs;
-      const durationMs = step.durationMs ?? tickMs;
-      const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
-      let elapsedMs = 0;
+      const durationMs = step.durationMs ?? this.options.tickMs;
       const initialCameraQuaternion =
         this.dependencies.camera.quaternion.clone();
 
-      for (let i = 0; i < stepCount; i++) {
-        const remainingMs = Math.max(0, durationMs - elapsedMs);
-        const currentTickMs =
-          i === stepCount - 1
-            ? remainingMs || tickMs
-            : Math.min(tickMs, remainingMs);
-        const fraction = durationMs > 0 ? currentTickMs / durationMs : 1;
-
+      await this.runTimedMotion(durationMs, (_elapsed, currentTick, total) => {
         this.applyControlFraction(
           step.control || {},
-          fraction,
+          currentTick / total,
           initialCameraQuaternion
         );
-
-        this.dependencies.core.stepFrame(currentTickMs);
-        elapsedMs += currentTickMs;
-        if (this.options.realTime && i < stepCount - 1) {
-          await nextAnimationFrame();
-        }
-      }
+        this.dependencies.core.stepFrame(currentTick);
+      });
     } finally {
       this.activeStep = false;
     }
@@ -388,23 +376,11 @@ export class EmbodiedControlExecutor {
       const angle = Q_s.angleTo(Q_t);
       const durationMs = (angle / velocity) * 1000;
 
-      let elapsedMs = 0;
-      const tickMs = this.options.tickMs;
-      const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
-      for (let i = 0; i < stepCount; i++) {
-        const remainingMs = Math.max(0, durationMs - elapsedMs);
-        const currentTickMs =
-          i === stepCount - 1
-            ? remainingMs || tickMs
-            : Math.min(tickMs, remainingMs);
-        elapsedMs += currentTickMs;
-        const u = durationMs > 0 ? elapsedMs / durationMs : 1;
+      await this.runTimedMotion(durationMs, (elapsed, currentTick, total) => {
+        const u = elapsed / total;
         camera.quaternion.slerpQuaternions(Q_s, Q_t, u);
-        core.stepFrame(currentTickMs);
-        if (this.options.realTime && i < stepCount - 1) {
-          await nextAnimationFrame();
-        }
-      }
+        core.stepFrame(currentTick);
+      });
     });
   }
 
@@ -448,25 +424,13 @@ export class EmbodiedControlExecutor {
       const angle = startQuat.angleTo(targetQuat);
       const durationMs = (angle / velocity) * 1000;
 
-      let elapsedMs = 0;
-      const tickMs = this.options.tickMs;
-      const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
-      for (let i = 0; i < stepCount; i++) {
-        const remainingMs = Math.max(0, durationMs - elapsedMs);
-        const currentTickMs =
-          i === stepCount - 1
-            ? remainingMs || tickMs
-            : Math.min(tickMs, remainingMs);
-        elapsedMs += currentTickMs;
-        const u = durationMs > 0 ? elapsedMs / durationMs : 1;
+      await this.runTimedMotion(durationMs, (elapsed, currentTick, total) => {
+        const u = elapsed / total;
         simulator.simulatorControllerState.localControllerOrientations[
           handIndex
         ].slerpQuaternions(startQuat, targetQuat, u);
-        core.stepFrame(currentTickMs);
-        if (this.options.realTime && i < stepCount - 1) {
-          await nextAnimationFrame();
-        }
-      }
+        core.stepFrame(currentTick);
+      });
     });
   }
 
@@ -501,25 +465,13 @@ export class EmbodiedControlExecutor {
       const distance = startPos.distanceTo(targetCamSpace);
       const durationMs = (distance / velocity) * 1000;
 
-      let elapsedMs = 0;
-      const tickMs = this.options.tickMs;
-      const stepCount = Math.max(1, Math.ceil(durationMs / tickMs));
-      for (let i = 0; i < stepCount; i++) {
-        const remainingMs = Math.max(0, durationMs - elapsedMs);
-        const currentTickMs =
-          i === stepCount - 1
-            ? remainingMs || tickMs
-            : Math.min(tickMs, remainingMs);
-        elapsedMs += currentTickMs;
-        const u = durationMs > 0 ? elapsedMs / durationMs : 1;
+      await this.runTimedMotion(durationMs, (elapsed, currentTick, total) => {
+        const u = elapsed / total;
         simulator.simulatorControllerState.localControllerPositions[
           handIndex
         ].lerpVectors(startPos, targetCamSpace, u);
-        core.stepFrame(currentTickMs);
-        if (this.options.realTime && i < stepCount - 1) {
-          await nextAnimationFrame();
-        }
-      }
+        core.stepFrame(currentTick);
+      });
     });
   }
 

@@ -67,10 +67,10 @@ async function start() {
 
     const scene = new GNMScene(model, samplers);
     xb.add(scene);
-    window.gnm = {model, samplers, scene};
 
     const controls = new GNMControls(model, samplers, scene);
     controls.attach();
+    window.gnm = {model, samplers, scene, controls};
     document.getElementById('gnm-loading')?.remove();
 
     await xb.init(options);

@@ -35,7 +35,7 @@ xb.init(options);
 Never ship API keys in production client-side code.
 
 - **Local Prototyping**: You can pass keys via the `?key=YOUR_KEY` URL parameter or save a `keys.json` (`{"gemini": {"apiKey": "..."}}`) in the root directory.
-- **Production Deployment**: You must configure a proxy server to forward AI requests from your client apps to Gemini endpoints. For Gemini Live, you should authenticate clients using [Gemini Live API Ephemeral Tokens](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) instead of embedding long-lived developer keys.
+- **Production Deployment**: The SDK's `?key=` and `keys.json` mechanisms are for local prototypes. Production applications must configure a proxy server to forward AI requests from your client apps to Gemini endpoints. For Gemini Live, you should authenticate clients using [Gemini Live API Ephemeral Tokens](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) instead of embedding long-lived developer keys.
   :::
 
 ---
@@ -98,12 +98,10 @@ await xb.ai.setLiveCallbacks({
 
 // 2. Start the connection
 const session = await xb.ai.startLiveSession({
-  generationConfig: {
-    responseModalities: ['AUDIO'], // Speak responses back
-    speechConfig: {
-      voiceConfig: {
-        prebuiltVoiceConfig: {voiceName: 'Aoede'},
-      },
+  responseModalities: ['AUDIO'], // Speak responses back
+  speechConfig: {
+    voiceConfig: {
+      prebuiltVoiceConfig: {voiceName: 'Aoede'},
     },
   },
 });
@@ -111,8 +109,10 @@ const session = await xb.ai.startLiveSession({
 // 3. Send audio or video input chunks periodically
 // e.g. Sending recorded microphone chunks:
 xb.ai.sendRealtimeInput({
-  mimeType: 'audio/pcm;rate=16000',
-  data: base64PcmChunk,
+  audio: {
+    mimeType: 'audio/pcm;rate=16000',
+    data: base64PcmChunk,
+  },
 });
 
 // 4. Tear down session when finished
@@ -129,13 +129,15 @@ You can generate 2D images dynamically in your application (e.g. creating textur
 
 ```javascript
 // Generate an image from prompt
-const result = await xb.ai.generate(
+const imageDataUrl = await xb.ai.generate(
   'a futuristic low-poly treehouse in 3D',
   'image'
 );
 
-// Retrieve generated URL or base64 data
-console.log('Generated image url:', result.url);
+// The successful result is a data:image/png;base64,... string.
+if (imageDataUrl) {
+  console.log('Generated image:', imageDataUrl);
+}
 ```
 
 For templates and complete projects, see <CodeSearchLink path="templates/6_ai/index.html"/>, <CodeSearchLink path="templates/7_ai_live/index.html"/>, or the advanced poetry demo <CodeSearchLink path="demos/xrpoet/index.html"/>.

@@ -9,7 +9,8 @@ Pick the doc that matches what you are doing:
 - **Building an XR app with the SDK**: read [CONTEXT.md](CONTEXT.md) for the rules of
   engagement, then use the focused skills in [`skills/`](skills/) (e.g. `xb-core`,
   `xb-ui`, `xb-hands`, `xb-depth`, `xb-ai`).
-- **In-tree SDK overview**: [`src/SKILL.md`](src/SKILL.md).
+- **SDK app overview**: [CONTEXT.md](CONTEXT.md), with public APIs grounded in
+  [`src/xrblocks.ts`](src/xrblocks.ts).
 
 > The single most important rule: **only call APIs that exist.** Verify against
 > [`src/xrblocks.ts`](src/xrblocks.ts) (the full public surface) or copy a working

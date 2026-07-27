@@ -52,6 +52,7 @@
     "node": ">=24.0"
   },
   "overrides": {
+    "brace-expansion": "^5.0.8",
     "serialize-javascript": "7.0.5",
     "webpack-dev-server": {
       "sockjs": {

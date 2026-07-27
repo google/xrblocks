@@ -390,6 +390,47 @@ export class GNMScene extends xb.Script {
     this.onModelChanged?.();
   }
 
+  /** Captures the full parameter state of the current face. */
+  capturePreset() {
+    const model = this.model;
+    return {
+      identity: Array.from(model.identity),
+      expression: Array.from(model.expression),
+      rotations: Array.from(model.rotations),
+      translation: Array.from(model.translation),
+    };
+  }
+
+  /**
+   * Applies a captured/loaded preset. Stops any running animation drivers so
+   * the loaded pose is not immediately overwritten.
+   */
+  applyPreset(preset, smooth = true) {
+    this.setExpressionTour(false);
+    this.setIdentityMorph(false);
+    this.setPulseEnabled?.(false);
+
+    const model = this.model;
+    this._applyIdentity(Float32Array.from(preset.identity), smooth);
+    this._applyExpression(Float32Array.from(preset.expression), smooth);
+
+    const rotations = preset.rotations ?? [];
+    for (let j = 0; j < model.numJoints; ++j) {
+      const o = j * 3;
+      model.setJointRotation(
+        j,
+        rotations[o] || 0,
+        rotations[o + 1] || 0,
+        rotations[o + 2] || 0
+      );
+    }
+    this._smoothedRotations.set(model.rotations);
+    const t = preset.translation ?? [];
+    model.setTranslation(t[0] || 0, t[1] || 0, t[2] || 0);
+
+    this.onModelChanged?.();
+  }
+
   _applyIdentity(target, smooth) {
     this.morph = null;
     if (smooth) {

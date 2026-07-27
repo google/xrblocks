@@ -250,4 +250,4 @@ const sampleBuilds = globSync('samples/**/*.ts', {
 
 export default buildExamples
   ? [...sdkBuilds, ...demoBuilds, ...sampleBuilds]
-  : sdkBuilds.slice(0, 3);
+  : sdkBuilds;

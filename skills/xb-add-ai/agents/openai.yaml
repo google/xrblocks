@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Add AI behavior'
+  short_description: 'Implement reliable XR Blocks AI behavior and handoff'
+  default_prompt: 'Use $xb-add-ai to implement this AI behavior and prepare it for user evaluation.'
