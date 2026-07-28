@@ -39,20 +39,20 @@ Review and sign the
 [Contributor Licence Agreement](https://cla.developers.google.com/about) (CLA).
 Now you are ready to create a pull request :)
 
-### Step 2: Create your sample
+### Step 2: Create your demo
 
 Follow README.md in the root folder to set up your development workflow. Create
-a new sample by starting from scratch or an existing template from `/templates/`
+a new demo by starting from scratch or an existing template from `/templates/`
 or `/samples/`.
 
 When using third-party assets, make sure they are compatible with Apache 2
 license and add corresponding LICENSE file to the demo folder. Please submit large assets as a PR to https://github.com/xrblocks/proprietary-assets and use a jsdelivr CDN link to reference them.
 
-For samples with third-party npm dependencies or requiring a build, please configure a `package.json` using `pnpm` and add your project to the `build_all.sh` script. See `drone` for an example.
+For demos with third-party npm dependencies or requiring a build, please configure a `package.json` using `pnpm` and add your project to the `build_all.sh` script. See `drone` for an example.
 
 ### Step 3: Create a pull request
 
-Now that your files are created and configured correctly, commit and [create a pull request using the PR Template](https://github.com/google/xrblocks/compare?template=pull_request_template.md) (refer to [the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request) for assistance). Make sure to complete the required checklist (including simulator/device testing and asset guidelines).
+Now that your files are created and configured correctly, commit and [create a pull request](https://github.com/google/xrblocks/compare) (refer to [the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request) for assistance). Make sure to complete the required checklist (including simulator/device testing and asset guidelines).
 
 ## Community Guidelines
 
