@@ -55,6 +55,7 @@ For samples with third-party npm dependencies or requiring a build, please confi
 Now that your files are created and configured correctly, commit and create a
 pull request by following
 [the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request).
+Be sure to select or use the [Demo PR Template](https://github.com/google/xrblocks/blob/main/.github/PULL_REQUEST_TEMPLATE/demo.md) and complete the required checklist (including simulator/device testing and asset guidelines).
 
 ## Community Guidelines
 
