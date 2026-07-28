@@ -37,4 +37,7 @@ export interface SimulatorMesh {
 
   /** Optional world-space orientation. Defaults to the identity. */
   quaternion?: THREE.Quaternion;
+
+  /** Internal simulator object id used to keep dynamic mesh poses synchronized. */
+  simulatorObjectId?: string;
 }

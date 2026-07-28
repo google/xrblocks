@@ -1,6 +1,6 @@
 {
   "name": "xrblocks",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "XR Blocks SDK",
   "main": "build/xrblocks.js",
   "types": "build/xrblocks.d.ts",
@@ -14,6 +14,7 @@
     "build:watch": "rollup -c -w",
     "serve": "http-server --cors -a 127.0.0.1 -p 8080",
     "build": "echo \"Building xrblocks.js...\" && rollup -c --failAfterWarnings",
+    "build:sdk": "rollup -c --failAfterWarnings --forceExit --environment XRBLOCKS_BUILD:sdk",
     "prepare": "npm run build",
     "lint": "eslint src",
     "format": "npm run format:fix",
@@ -62,9 +63,10 @@
     "@types/webxr": "^0.5.23",
     "@vitest/coverage-v8": "^4.1.8",
     "concurrently": "^10.0.3",
-    "eslint": "^9.35.0",
+    "eslint": "^10.8.0",
     "eslint-plugin-tsdoc": "^0.5.2",
     "glob": "^11.0.3",
+    "globals": "^17.7.0",
     "http-server": "^14.1.1",
     "jsdom": "^27.0.1",
     "lit": "^3.3.1",
@@ -88,5 +90,8 @@
     "rollup-plugin-dts": {
       "typescript": "$typescript"
     }
+  },
+  "dependencies": {
+    "three-pathfinding": "^1.3.0"
   }
 }

@@ -35,19 +35,22 @@ immersive applications with features like:
 
 - **Hand Tracking & Gestures:** Access advanced hand tracking, custom gestures
   with TensorFlow Lite / PyTorch models, and interaction events.
-- **Gesture Recognition:** Opt into pinch, open-palm, fist, thumbs-up, point,
+- **Hand Gesture Recognition:** Opt into pinch, open-palm, fist, thumbs-up, point,
   and spread detection with `options.enableGestures()`, tune providers or
   thresholds, and subscribe to `gesturestart`/`gestureupdate`/`gestureend`
   events from the shared subsystem.
+- **Head Gesture Recognition:** Detect completed nod and shake motions with
+  `options.enableHeadGestures()` and subscribe through
+  `xb.input.headGestures` on device or in the desktop simulator.
 - **World Understanding:** Present samples with depth sensing, geometry-aware
   physics, and object recognition with Gemini in both XR and desktop
   simulator.
+- **Agent Context:** Expose an agent-facing scene context with semantic trees,
+  visible-object state, and Set-of-Mark screenshots through `xb.context`.
 - **AI Integration:** Seamlessly connect to Gemini for multimodal
   understanding and live conversational experiences.
 - **Cross-Platform:** Write once and deploy to both XR devices and desktop
   Chrome browsers.
-- **Automation-Friendly Simulator:** Use `options.enableAutomationMode()` or
-  `?xrAutomation=1` to start a desktop simulator preset for external remote runs.
 
 We welcome all contributors to foster an AI + XR community! Read our
 [blog post](https://research.google/blog/xr-blocks-accelerating-ai-xr-innovation/)
@@ -84,6 +87,7 @@ code below:
         "imports": {
           "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
           "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
           "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
           "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/"
         }

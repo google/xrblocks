@@ -107,8 +107,8 @@ export class DetectedMesh extends THREE.Mesh {
     }
     if (this.blendedWorld && this.rigidBody) {
       this.blendedWorld.removeRigidBody(this.rigidBody);
-      this.rigidBody = undefined;
     }
+    this.rigidBody = undefined;
     this.geometry.dispose();
   }
 }

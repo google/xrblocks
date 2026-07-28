@@ -99,4 +99,6 @@ export abstract class BaseFaceBackend {
     depthMeshSnapshot: THREE.Mesh,
     cameraParametersSnapshot: CameraParametersSnapshot
   ): Promise<DetectedFace[]>;
+
+  dispose() {}
 }

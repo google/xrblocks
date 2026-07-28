@@ -35,6 +35,10 @@ export class UserInstructions extends SimulatorInstructionsCard {
         <li>
           <strong>Rotate Camera:</strong> Hold the right mouse button and drag.
         </li>
+        <li>
+          <strong>Scale a ModelViewer:</strong> Point at it and use the mouse
+          wheel.
+        </li>
         <li><strong>Select Object:</strong> Left-click the mouse.</li>
       </ul>
     `;

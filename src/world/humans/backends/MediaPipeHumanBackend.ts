@@ -189,4 +189,9 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
       minTrackingConfidence: humansOptions.minTrackingConfidence,
     });
   }
+
+  override dispose() {
+    this.poseLandmarker?.close();
+    this.poseLandmarker = null;
+  }
 }

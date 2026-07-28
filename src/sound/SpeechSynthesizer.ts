@@ -17,6 +17,13 @@ export class SpeechSynthesizer extends Script {
   private speechCategory = 'speech';
   private options!: SpeechSynthesizerOptions;
 
+  /**
+   * Optional callback invoked on each word boundary while speaking, with the
+   * character index into the spoken text. Lets callers sync visuals (e.g.
+   * gestures) to the actual spoken words.
+   */
+  onBoundaryCallback?: (charIndex: number) => void;
+
   constructor(
     private categoryVolumes: CategoryVolumes,
     private onStartCallback = () => {},
@@ -178,6 +185,11 @@ export class SpeechSynthesizer extends Script {
       console.log(
         `SpeechSynthesizer: Setting utterance volume to ${effectiveVolume}`
       );
+
+      if (this.onBoundaryCallback) {
+        utterance.onboundary = (event) =>
+          this.onBoundaryCallback?.(event.charIndex);
+      }
 
       this.synth.speak(utterance);
     });

@@ -12,6 +12,11 @@ export * from './camera/CameraUtils';
 export * from './camera/CameraParameterUtils';
 export * from './camera/XRDeviceCamera';
 export * from './constants';
+export * from './context/Context';
+export * from './context/ContextOptions';
+export * from './context/scene/SceneDetector';
+export * from './context/scene/SceneOptions';
+export * from './context/shared/SemanticTypes';
 export * from './core/components/Raycaster';
 export * from './core/components/Registry';
 export * from './core/components/ScreenshotSynthesizer';
@@ -49,6 +54,11 @@ export * from './input/gestures/poseEstimators/WebXRHandPoseEstimator';
 export * from './input/gestures/poseEstimators/MediaPipeHandPoseEstimator';
 export * from './input/gestures/poseEstimators/TensorFlowHandPoseEstimator';
 export * from './input/gestures/gestureRecognizers/HeuristicGestureRecognizer';
+export * from './input/headGestures/HeadGestureEvents';
+export * from './input/headGestures/HeadGestureRecognition';
+export * from './input/headGestures/HeadGestureRecognitionOptions';
+export * from './input/headGestures/HeadGestureTypes';
+export * from './input/headGestures/gestureRecognizers/HeuristicHeadGestureRecognizer';
 export * from './input/Input';
 export * from './input/MouseController';
 export * from './lighting/Lighting';
@@ -66,15 +76,29 @@ export * from './simulator/SimulatorCamera';
 export * from './simulator/SimulatorConstants';
 export * from './simulator/SimulatorControllerState';
 export * from './simulator/SimulatorControls';
-export * from './simulator/SimulatorDepth';
-export * from './simulator/SimulatorDepthMaterial';
+export * from './simulator/scene/SimulatorDepth';
+export * from './simulator/scene/SimulatorDepthMaterial';
+export type {
+  SimulatorObjectDefinition,
+  SimulatorPhysicsMode,
+  SimulatorQuaternionTuple,
+  ResolvedSimulatorSceneManifest,
+  SimulatorSceneManifest,
+  SimulatorVector3Tuple,
+} from './simulator/scene/SimulatorEnvironmentManifest';
 export * from './simulator/SimulatorHands';
 export * from './simulator/SimulatorInterface';
 export * from './simulator/SimulatorMediaDeviceInfo';
+export * from './simulator/scene/SimulatorNavMesh';
+export type {
+  SimulatorObject,
+  SimulatorObjectUpdate,
+  SimulatorObjects,
+} from './simulator/scene/SimulatorObjects';
 export * from './simulator/SimulatorOptions';
 export * from './simulator/SimulatorPointerLockController';
 export * from './simulator/interfaces/ISimulatorSettingsPanelElement';
-export * from './simulator/SimulatorScene';
+export * from './simulator/scene/SimulatorScene';
 export * from './simulator/SimulatorUser';
 export * from './simulator/userActions/actions';
 export * from './singletons';

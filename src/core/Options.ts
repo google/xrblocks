@@ -4,9 +4,11 @@ import {
   xrDeviceCameraEnvironmentOptions,
   xrDeviceCameraUserOptions,
 } from '../camera/CameraOptions.js';
+import {ContextOptions} from '../context/ContextOptions';
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
 import {HandsOptions} from '../input/HandsOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
+import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRecognitionOptions.js';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
@@ -122,12 +124,14 @@ export class Options {
   deviceCamera = new DeviceCameraOptions();
   hands = new HandsOptions();
   gestures = new GestureRecognitionOptions();
+  headGestures = new HeadGestureRecognitionOptions();
   strokes = new StrokeRecognitionOptions();
   reticles = new ReticleOptions();
   sound = new SoundOptions();
   ai = new AIOptions();
   simulator = new SimulatorOptions();
   world = new WorldOptions();
+  context = new ContextOptions();
   uikit = new UIKitOptions();
   physics = new PhysicsOptions();
   transition = new XRTransitionOptions();
@@ -229,14 +233,6 @@ export class Options {
    */
   enableVR() {
     this.xrSessionMode = 'immersive-vr';
-    if (this.simulator.environments[this.simulator.activeEnvironmentIndex]) {
-      this.simulator.environments[
-        this.simulator.activeEnvironmentIndex
-      ].scenePath = null;
-      this.simulator.environments[
-        this.simulator.activeEnvironmentIndex
-      ].scenePlanesPath = null;
-    }
     return this;
   }
 
@@ -274,6 +270,7 @@ export class Options {
     if (enableCamera) {
       this.enableCamera();
     }
+    this.enableContext();
 
     this.simulator.defaultMode = defaultMode;
     this.simulator.defaultHand = defaultHand;
@@ -399,6 +396,15 @@ export class Options {
   }
 
   /**
+   * Enables completed nod and shake recognition from the user's head pose.
+   * @returns The instance for chaining.
+   */
+  enableHeadGestures() {
+    this.headGestures.enable();
+    return this;
+  }
+
+  /**
    * Enables the stroke recognition block and ensures gestures are available.
    * @returns The instance for chaining.
    */
@@ -424,6 +430,43 @@ export class Options {
   enableAI() {
     this.ai.enabled = true;
     this.ai.gemini.enabled = true;
+    return this;
+  }
+
+  /**
+   * Enables agent-facing context detectors such as semantic trees,
+   * view visibility, and Set-of-Mark observations.
+   * @returns The instance for chaining.
+   */
+  enableContext() {
+    this.context.enable();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing scene context.
+   * @returns The instance for chaining.
+   */
+  enableSceneContext() {
+    this.context.enableScene();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing visible objects context.
+   * @returns The instance for chaining.
+   */
+  enableVisibleObjectsContext() {
+    this.context.enableVisibleObjects();
+    return this;
+  }
+
+  /**
+   * Enables agent-facing Set-of-Mark context.
+   * @returns The instance for chaining.
+   */
+  enableSetOfMarkContext() {
+    this.context.enableSetOfMark();
     return this;
   }
 

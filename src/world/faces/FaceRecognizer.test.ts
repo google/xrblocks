@@ -184,6 +184,28 @@ describe('FaceRecognizer Multi-Client API', () => {
     ).toBeNull();
   });
 
+  it('disposes cached depth mesh snapshots when disposed', async () => {
+    const geometryDispose = vi.fn();
+    const materialDispose = vi.fn();
+
+    mockBackend.run.mockImplementation(
+      async (depthMeshSnapshot: THREE.Mesh) => {
+        vi.spyOn(depthMeshSnapshot.geometry, 'dispose').mockImplementation(
+          geometryDispose
+        );
+        const material = depthMeshSnapshot.material as THREE.Material;
+        vi.spyOn(material, 'dispose').mockImplementation(materialDispose);
+        return [];
+      }
+    );
+
+    await recognizer.runDetection();
+    recognizer.dispose();
+
+    expect(geometryDispose).toHaveBeenCalledTimes(1);
+    expect(materialDispose).toHaveBeenCalledTimes(1);
+  });
+
   it('reuses an in-flight one-off detection when a client starts', async () => {
     const promise = recognizer.runDetection();
 

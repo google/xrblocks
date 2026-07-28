@@ -86,7 +86,8 @@ export function createRemoteControlActionTools({
       metadata: {
         description: 'Teleports the simulator camera to a scene target.',
         parameters: {
-          target: 'Vec3 tuple or scene object name',
+          target:
+            'Vec3 tuple, scene object name, or {type: "contextNode", id: string}',
           options: 'teleport options',
         },
       },
@@ -101,7 +102,8 @@ export function createRemoteControlActionTools({
       metadata: {
         description: 'Rotates the simulator camera to face a scene target.',
         parameters: {
-          target: 'Vec3 tuple or scene object name',
+          target:
+            'Vec3 tuple, scene object name, or {type: "contextNode", id: string}',
           options: 'look options',
         },
       },
@@ -122,7 +124,8 @@ export function createRemoteControlActionTools({
         description: 'Moves a simulator hand to point at a scene target.',
         parameters: {
           handIndex: 'number',
-          target: 'Vec3 tuple or scene object name',
+          target:
+            'Vec3 tuple, scene object name, or {type: "contextNode", id: string}',
           options: 'hand motion options',
         },
       },
@@ -143,7 +146,8 @@ export function createRemoteControlActionTools({
         description: 'Moves a simulator hand to reach toward a scene target.',
         parameters: {
           handIndex: 'number',
-          target: 'Vec3 tuple or scene object name',
+          target:
+            'Vec3 tuple, scene object name, or {type: "contextNode", id: string}',
           options: 'hand motion options',
         },
       },

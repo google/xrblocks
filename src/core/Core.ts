@@ -2,13 +2,18 @@ import * as THREE from 'three';
 
 import {AI} from '../ai/AI';
 import {AIOptions} from '../ai/AIOptions';
+import {markDebugFailed, markDebugReady} from '../debug/DebugGlobals';
 import {XRDeviceCamera} from '../camera/XRDeviceCamera';
+import {Context} from '../context/Context';
+import {ContextOptions} from '../context/ContextOptions';
+import {SceneOptions} from '../context/scene/SceneOptions';
 import {UI_OVERLAY_LAYER} from '../constants';
 import {Depth} from '../depth/Depth';
 import {DepthOptions} from '../depth/DepthOptions';
 import {Hands} from '../input/Hands';
 import {GestureRecognition} from '../input/gestures/GestureRecognition';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
+import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRecognitionOptions.js';
 import type {PoseEstimator} from '../input/gestures/GestureTypes';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {Input} from '../input/Input';
@@ -29,6 +34,7 @@ import {MeshDetectionOptions} from '../world/mesh/MeshDetectionOptions';
 
 import {Registry} from './components/Registry';
 import {ScreenshotSynthesizer} from './components/ScreenshotSynthesizer';
+import {SimulationTimer} from './components/SimulationTimer';
 import {ScriptsManager} from './components/ScriptsManager';
 import {WaitFrame} from './components/WaitFrame';
 import {
@@ -70,6 +76,7 @@ export class Core {
    * A timer for tracking time deltas. Call timer.getDelta() or getDeltaTime().
    */
   timer = new THREE.Timer();
+  private simulationTimer = new SimulationTimer();
 
   /** Manages hand, mouse, gaze inputs. */
   input = new Input();
@@ -103,6 +110,9 @@ export class Core {
 
   /** Manages real-world understanding: planes, meshes, objects, and sounds. */
   world = new World();
+
+  /** Manages agent-facing observations of the app/session. */
+  context = new Context();
 
   /** A shared texture loader. */
   textureLoader = new THREE.TextureLoader();
@@ -167,6 +177,7 @@ export class Core {
 
   pause() {
     this._isPaused = true;
+    this.simulationTimer.pause();
   }
 
   resume() {
@@ -182,6 +193,7 @@ export class Core {
 
     this.isSteppingFrame = true;
     try {
+      this.simulationTimer.step(dtMs, this.timer.getTimescale());
       this.manualStepTime += dtMs;
       this.update(this.manualStepTime, undefined as unknown as XRFrame);
       if (this.physics) {
@@ -211,12 +223,15 @@ export class Core {
       this.dragManager,
       this.ui,
       this.sound,
-      this.world
+      this.world,
+      this.context
     );
 
     this.registry.register(this.registry);
     this.registry.register(this);
     this.registry.register(this.waitFrame);
+    this.registry.register(this.screenshotSynthesizer);
+    this.registry.register(this.simulationTimer);
     this.registry.register(this.scene);
     this.registry.register(this.timer);
     this.registry.register(this.input);
@@ -225,10 +240,17 @@ export class Core {
     this.registry.register(this.sound);
     this.registry.register(this.dragManager);
     this.registry.register(this.simulator);
+    this.registry.register(this.simulator.navMesh);
     this.registry.register(this.scriptsManager);
     this.registry.register(this.depth);
     this.registry.register(this.world);
+    this.registry.register(this.context);
     this.registry.register(this.xrSystemsGroup);
+  }
+
+  dispose() {
+    this.input.dispose();
+    window.removeEventListener('resize', this.onWindowResize);
   }
 
   /**
@@ -239,17 +261,30 @@ export class Core {
    * session.
    */
   async init(options = new Options()) {
+    try {
+      await this.initialize(options);
+      markDebugReady(this);
+    } catch (error) {
+      markDebugFailed(this, error);
+      throw error;
+    }
+  }
+
+  private async initialize(options: Options) {
     loadingSpinnerManager.showSpinner();
 
     this.registry.register(options, Options);
     this.registry.register(options.depth, DepthOptions);
     this.registry.register(options.simulator, SimulatorOptions);
     this.registry.register(options.world, WorldOptions);
+    this.registry.register(options.context, ContextOptions);
+    this.registry.register(options.context.scene, SceneOptions);
     this.registry.register(options.world.meshes, MeshDetectionOptions);
     this.registry.register(options.uikit, UIKitOptions);
     this.registry.register(options.ai, AIOptions);
     this.registry.register(options.sound, SoundOptions);
     this.registry.register(options.gestures, GestureRecognitionOptions);
+    this.registry.register(options.headGestures, HeadGestureRecognitionOptions);
     this.registry.register(options.strokes, StrokeRecognitionOptions);
 
     if (options.transition.enabled) {
@@ -306,14 +341,14 @@ export class Core {
     this.options = options;
     this.scriptsManager.catchExceptions = options.catchScriptExceptions;
 
-    // Sets up controllers.
+    // Sets up input. Head gestures are camera-only and do not require controllers.
+    this.input.init({
+      scene: this.scene,
+      systemsGroup: this.xrSystemsGroup,
+      options: options,
+      renderer: this.renderer,
+    });
     if (options.controllers.enabled) {
-      this.input.init({
-        scene: this.scene,
-        systemsGroup: this.xrSystemsGroup,
-        options: options,
-        renderer: this.renderer,
-      });
       this.input.bindSelectStart(this.scriptsManager.callSelectStart);
       this.input.bindSelectEnd(this.scriptsManager.callSelectEnd);
       this.input.bindSelect(this.scriptsManager.callSelect);
@@ -329,6 +364,7 @@ export class Core {
       this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
       this.deviceCamera.setRenderer(this.renderer);
       this.registry.register(this.deviceCamera);
+      this.context.setDeviceCamera(this.deviceCamera);
     }
 
     const webXRRequiredFeatures: string[] = options.webxrRequiredFeatures;
@@ -504,6 +540,9 @@ export class Core {
 
     this.currentFrame = frame;
     this.manualStepTime = Math.max(this.manualStepTime, time);
+    if (!this.isSteppingFrame) {
+      this.simulationTimer.update(time, this.timer.getTimescale());
+    }
     this.timer.update(time);
     if (this.simulatorRunning) {
       this.simulator.simulatorUpdate();
@@ -547,7 +586,6 @@ export class Core {
 
     // Updates renderings.
     this.scriptsManager.update(time, frame);
-
     this.renderSimulatorAndScene();
     this.screenshotSynthesizer.onAfterRender(
       this.renderer,

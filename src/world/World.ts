@@ -292,4 +292,29 @@ export class World extends Script {
     this.planes?.showDebugVisualizations(visible);
     this.objects?.showDebugVisualizations(visible);
   }
+
+  override dispose() {
+    const detectors = [
+      this.planes,
+      this.objects,
+      this.meshes,
+      this.sounds,
+      this.humans,
+      this.faces,
+      this.segmentation,
+    ];
+    for (const detector of detectors) {
+      if (!detector) continue;
+      detector.dispose();
+      this.remove(detector);
+    }
+
+    this.planes = undefined;
+    this.objects = undefined;
+    this.meshes = undefined;
+    this.sounds = undefined;
+    this.humans = undefined;
+    this.faces = undefined;
+    this.segmentation = undefined;
+  }
 }

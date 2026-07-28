@@ -47,6 +47,8 @@ export class ScreenshotSynthesizer {
   private virtualRealRenderTarget?: THREE.WebGLRenderTarget;
   private fullScreenQuad?: FullScreenQuad;
   private renderTargetWidth = DEFAULT_CANVAS_WIDTH;
+  private virtualCaptureInFlight = false;
+  private virtualRealCaptureInFlight = false;
 
   async onAfterRender(
     renderer: THREE.WebGLRenderer,
@@ -60,28 +62,42 @@ export class ScreenshotSynthesizer {
     const haveVirtualOnlyRequests = this.pendingScreenshotRequests.every(
       (request) => !request.overlayOnCamera
     );
-    if (haveVirtualOnlyRequests) {
-      this.createVirtualImageDataURL(renderer, renderSceneFn).then(
-        (virtualImageDataUrl) => {
+    if (haveVirtualOnlyRequests && !this.virtualCaptureInFlight) {
+      this.virtualCaptureInFlight = true;
+      this.createVirtualImageDataURL(renderer, renderSceneFn)
+        .then((virtualImageDataUrl) => {
           this.resolveVirtualOnlyRequests(virtualImageDataUrl);
-        }
-      );
+        })
+        .catch((error: Error) => {
+          this.rejectVirtualOnlyRequests(error);
+        })
+        .finally(() => {
+          this.virtualCaptureInFlight = false;
+        });
     }
 
     const haveVirtualAndRealReqeusts = this.pendingScreenshotRequests.some(
       (request) => request.overlayOnCamera
     );
-    if (haveVirtualAndRealReqeusts && deviceCamera) {
-      this.createVirtualRealImageDataURL(
-        renderer,
-        renderSceneFn,
-        deviceCamera
-      ).then((virtualRealImageDataUrl) => {
-        if (virtualRealImageDataUrl) {
-          this.resolveVirtualRealRequests(virtualRealImageDataUrl);
-        }
-      });
-    } else if (haveVirtualAndRealReqeusts) {
+    if (
+      haveVirtualAndRealReqeusts &&
+      deviceCamera &&
+      !this.virtualRealCaptureInFlight
+    ) {
+      this.virtualRealCaptureInFlight = true;
+      this.createVirtualRealImageDataURL(renderer, renderSceneFn, deviceCamera)
+        .then((virtualRealImageDataUrl) => {
+          if (virtualRealImageDataUrl) {
+            this.resolveVirtualRealRequests(virtualRealImageDataUrl);
+          }
+        })
+        .catch((error: Error) => {
+          this.rejectVirtualRealRequests(error);
+        })
+        .finally(() => {
+          this.virtualRealCaptureInFlight = false;
+        });
+    } else if (haveVirtualAndRealReqeusts && !deviceCamera) {
       throw new Error('No device camera provided');
     }
   }
@@ -165,6 +181,19 @@ export class ScreenshotSynthesizer {
       const request = this.pendingScreenshotRequests[i];
       if (!request.overlayOnCamera) {
         request.resolve(virtualImageDataUrl);
+      } else {
+        this.pendingScreenshotRequests[remainingRequests++] = request;
+      }
+    }
+    this.pendingScreenshotRequests.length = remainingRequests;
+  }
+
+  private rejectVirtualOnlyRequests(error: Error) {
+    let remainingRequests = 0;
+    for (let i = 0; i < this.pendingScreenshotRequests.length; i++) {
+      const request = this.pendingScreenshotRequests[i];
+      if (!request.overlayOnCamera) {
+        request.reject(error);
       } else {
         this.pendingScreenshotRequests[remainingRequests++] = request;
       }
@@ -263,6 +292,19 @@ export class ScreenshotSynthesizer {
       const request = this.pendingScreenshotRequests[i];
       if (request.overlayOnCamera) {
         request.resolve(virtualRealImageDataUrl);
+      } else {
+        this.pendingScreenshotRequests[remainingRequests++] = request;
+      }
+    }
+    this.pendingScreenshotRequests.length = remainingRequests;
+  }
+
+  private rejectVirtualRealRequests(error: Error) {
+    let remainingRequests = 0;
+    for (let i = 0; i < this.pendingScreenshotRequests.length; i++) {
+      const request = this.pendingScreenshotRequests[i];
+      if (request.overlayOnCamera) {
+        request.reject(error);
       } else {
         this.pendingScreenshotRequests[remainingRequests++] = request;
       }

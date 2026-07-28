@@ -25,7 +25,15 @@ export type RemoteControlBuiltInTool = {
   metadata: RemoteControlToolMetadata;
 };
 
-export type RemoteControlTarget = [number, number, number] | string;
+export type RemoteControlContextNodeTarget = {
+  type: 'contextNode';
+  id: string;
+};
+
+export type RemoteControlTarget =
+  | [number, number, number]
+  | string
+  | RemoteControlContextNodeTarget;
 
 export type RemoteControlTargetResolver = (
   target: RemoteControlTarget
