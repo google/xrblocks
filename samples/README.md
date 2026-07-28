@@ -31,6 +31,7 @@ license and add corresponding LICENSE file to the demo folder.
 Now that your files are created and configured correctly, commit and create a
 pull request by following
 [the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request).
+Be sure to select or use the [PR Template for Demos and Samples](https://github.com/google/xrblocks/blob/main/.github/PULL_REQUEST_TEMPLATE/demo.md) and complete the required checklist.
 
 ## Community Guidelines
 
