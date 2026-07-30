@@ -141,7 +141,6 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script1 = {
         name: 'Script1',
-        ux: {reset: vi.fn()},
         update: vi.fn().mockImplementation(() => {
           throw new Error('Script1 crashed');
         }),
@@ -149,7 +148,6 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script2 = {
         name: 'Script2',
-        ux: {reset: vi.fn()},
         update: vi.fn(),
       } as unknown as Script;
 
