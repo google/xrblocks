@@ -41,9 +41,9 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
   let core: Core;
   let consoleErrorSpy: MockInstance;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset Core singleton to ensure fresh state for each test
-    Core.instance?.dispose();
+    await Core.instance?.dispose();
     Core.instance = undefined;
     core = new Core();
     core.options = new Options();
@@ -82,6 +82,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
       const script1 = {
         name: 'Script1',
         ux: {reset: vi.fn()},
+        dispose: vi.fn(),
         update: vi.fn().mockImplementation(() => {
           throw new Error('Script1 crashed');
         }),
@@ -90,6 +91,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
       const script2 = {
         name: 'Script2',
         ux: {reset: vi.fn()},
+        dispose: vi.fn(),
         update: vi.fn(),
       } as unknown as Script;
 
@@ -141,6 +143,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script1 = {
         name: 'Script1',
+        dispose: vi.fn(),
         update: vi.fn().mockImplementation(() => {
           throw new Error('Script1 crashed');
         }),
@@ -148,6 +151,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script2 = {
         name: 'Script2',
+        dispose: vi.fn(),
         update: vi.fn(),
       } as unknown as Script;
 
@@ -184,6 +188,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
             throw new Error('UX reset crashed');
           }),
         },
+        dispose: vi.fn(),
         onSelecting: vi.fn().mockImplementation(() => {
           throw new Error('onSelecting crashed');
         }),
@@ -196,6 +201,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
       const script2 = {
         name: 'Script2',
         ux: {reset: vi.fn()},
+        dispose: vi.fn(),
         onSelecting: vi.fn(),
         onSqueezing: vi.fn(),
         update: vi.fn(),
@@ -250,6 +256,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
     it('should catch and emit exceptions inside callSelectStart without crashing other scripts', () => {
       const script1 = {
         name: 'Script1',
+        dispose: vi.fn(),
         onSelectStart: vi.fn().mockImplementation(() => {
           throw new Error('SelectStart error');
         }),
@@ -257,6 +264,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script2 = {
         name: 'Script2',
+        dispose: vi.fn(),
         onSelectStart: vi.fn(),
       } as unknown as Script;
 
@@ -294,6 +302,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script1 = {
         name: 'Script1',
+        dispose: vi.fn(),
         physicsStep: vi.fn().mockImplementation(() => {
           throw new Error('physicsStep crashed');
         }),
@@ -301,6 +310,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script2 = {
         name: 'Script2',
+        dispose: vi.fn(),
         physicsStep: vi.fn(),
       } as unknown as Script;
 
@@ -339,6 +349,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script1 = {
         name: 'Script1',
+        dispose: vi.fn(),
         physicsStep: vi.fn().mockImplementation(() => {
           throw new Error('physicsStep crashed');
         }),
@@ -346,6 +357,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
 
       const script2 = {
         name: 'Script2',
+        dispose: vi.fn(),
         physicsStep: vi.fn(),
       } as unknown as Script;
 
