@@ -107,6 +107,8 @@ export class Core {
 
   /** Manages drag-and-drop interactions. */
   dragManager = new DragManager();
+  private physicsInterval?: ReturnType<typeof setInterval>;
+  private disposalPromise?: Promise<void>;
 
   /** Manages real-world understanding: planes, meshes, objects, and sounds. */
   world = new World();
@@ -248,9 +250,40 @@ export class Core {
     this.registry.register(this.xrSystemsGroup);
   }
 
-  dispose() {
-    this.input.dispose();
+  dispose(): Promise<void> {
+    if (this.disposalPromise) return this.disposalPromise;
+
+    if (this.physicsInterval !== undefined) {
+      clearInterval(this.physicsInterval);
+      this.physicsInterval = undefined;
+    }
+    if (typeof this._renderer?.setAnimationLoop === 'function') {
+      this._renderer.setAnimationLoop(null);
+    }
     window.removeEventListener('resize', this.onWindowResize);
+
+    const scriptsDisposal = this.scriptsManager.dispose();
+    this.disposalPromise = this.finishDisposal(scriptsDisposal);
+    return this.disposalPromise;
+  }
+
+  private async finishDisposal(scriptsDisposal: Promise<void>): Promise<void> {
+    let firstError: unknown;
+    try {
+      await scriptsDisposal;
+    } catch (error: unknown) {
+      firstError = error;
+    }
+
+    for (const dispose of [() => this.input.dispose()]) {
+      try {
+        dispose();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+
+    if (firstError !== undefined) throw firstError;
   }
 
   /**
@@ -505,7 +538,10 @@ export class Core {
     this.renderer.setAnimationLoop(this.update);
 
     if (this.physics) {
-      setInterval(this.physicsStep, 1000 * this.physics.timestep);
+      this.physicsInterval = setInterval(
+        this.physicsStep,
+        1000 * this.physics.timestep
+      );
     }
 
     if (this.options.reticles.enabled) {

@@ -70,6 +70,8 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   private readonly seenScripts = new Set<Script>();
   private readonly failedScripts = new Set<Script>();
   private readonly syncPromises: Promise<void>[] = [];
+  private disposed = false;
+  private disposalPromise?: Promise<void>;
 
   /** Whether to catch all exceptions thrown by developer scripts. */
   catchExceptions = true;
@@ -134,6 +136,9 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
 
   /** Initializes a script. Concurrent calls share one initialization. */
   initScript(script: Script): Promise<void> {
+    if (this.disposed) {
+      return Promise.reject(new Error('ScriptsManager has been disposed.'));
+    }
     if (this.activeScripts.has(script)) return Promise.resolve();
     if (this.failedScripts.has(script)) return Promise.resolve();
 
@@ -202,6 +207,54 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     this.disposeScript(script);
   }
 
+  /** Disposes every Script generation and prevents further initialization. */
+  dispose(): Promise<void> {
+    if (this.disposalPromise) return this.disposalPromise;
+
+    this.disposed = true;
+    for (const pending of this.pendingInitializations.values()) {
+      pending.connection = 'disconnected';
+    }
+
+    const scripts = new Set([...this.activeScripts, ...this.failedScripts]);
+    const pending = [...this.pendingInitializations.values()].map(
+      (entry) => entry.promise
+    );
+    this.activeScripts.clear();
+    this.failedScripts.clear();
+    this.hookScripts.clear();
+    this.seenScripts.clear();
+    this.interactionCandidates.clear();
+    this.syncPromises.length = 0;
+
+    this.disposalPromise = Promise.resolve().then(() =>
+      this.finishDisposal(scripts, pending)
+    );
+    return this.disposalPromise;
+  }
+
+  private async finishDisposal(
+    scripts: ReadonlySet<Script>,
+    pending: readonly Promise<void>[]
+  ): Promise<void> {
+    let firstError: unknown;
+    for (const script of scripts) {
+      try {
+        this.disposeScript(script);
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+
+    const pendingResults = await Promise.allSettled(pending);
+    for (const result of pendingResults) {
+      if (result.status === 'rejected') firstError ??= result.reason;
+    }
+    this.pendingInitializations.clear();
+
+    if (firstError !== undefined) throw firstError;
+  }
+
   private disposeScript(script: Script): void {
     let firstError: Error | undefined;
     const run = (context: string, callback: () => void): void => {
@@ -235,6 +288,9 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   syncScriptsWithScene(
     scene: THREE.Scene
   ): Promise<PromiseSettledResult<void>[]> {
+    if (this.disposed) {
+      return Promise.reject(new Error('ScriptsManager has been disposed.'));
+    }
     this.seenScripts.clear();
     this.syncPromises.length = 0;
     scene.traverse(this.checkScript);
