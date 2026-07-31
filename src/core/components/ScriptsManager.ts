@@ -73,6 +73,8 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
 
   /** Whether to catch all exceptions thrown by developer scripts. */
   catchExceptions = true;
+  beforeDispose?: (script: Script) => void;
+  afterDispose?: (script: Script) => void;
 
   constructor(private initScriptFunction: (script: Script) => Promise<void>) {
     super();
@@ -201,11 +203,26 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   }
 
   private disposeScript(script: Script): void {
-    try {
-      script.dispose();
-    } catch (error: unknown) {
-      this.handleScriptError(error, script, 'dispose');
-    }
+    let firstError: Error | undefined;
+    const run = (context: string, callback: () => void): void => {
+      try {
+        callback();
+      } catch (error: unknown) {
+        const normalizedError =
+          error instanceof Error ? error : new Error(String(error));
+        if (this.catchExceptions) {
+          this.handleException(normalizedError, script, context);
+        } else {
+          firstError ??= normalizedError;
+        }
+      }
+    };
+
+    run('beforeDispose', () => this.beforeDispose?.(script));
+    run('dispose', () => script.dispose());
+    run('afterDispose', () => this.afterDispose?.(script));
+
+    if (firstError) throw firstError;
   }
 
   private checkScript = (object: THREE.Object3D): void => {
