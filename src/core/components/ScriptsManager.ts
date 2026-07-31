@@ -26,9 +26,7 @@ type GlobalScriptHook =
 interface PendingInitialization {
   readonly script: Script;
   promise: Promise<void>;
-  canceled: boolean;
-  restartRequested: boolean;
-  restartPromise?: Promise<void>;
+  connection: 'connected' | 'disconnected' | 'reconnected';
 }
 
 const GLOBAL_HOOKS = Object.freeze([
@@ -64,13 +62,13 @@ export type ScriptsManagerEventMap = THREE.Object3DEventMap & {
 
 export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap> {
   private activeScripts = new Set<Script>();
-  private indexedScripts = new Set<Script>();
   private readonly hookScripts = new Map<GlobalScriptHook, Set<Script>>();
   private readonly pendingInitializations = new Map<
     Script,
     PendingInitialization
   >();
   private readonly seenScripts = new Set<Script>();
+  private readonly failedScripts = new Set<Script>();
   private readonly syncPromises: Promise<void>[] = [];
 
   /** Whether to catch all exceptions thrown by developer scripts. */
@@ -135,27 +133,20 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   /** Initializes a script. Concurrent calls share one initialization. */
   initScript(script: Script): Promise<void> {
     if (this.activeScripts.has(script)) return Promise.resolve();
+    if (this.failedScripts.has(script)) return Promise.resolve();
 
     const pending = this.pendingInitializations.get(script);
     if (pending) {
-      if (!pending.canceled) return pending.promise;
-      pending.restartRequested = true;
-      pending.restartPromise ??= pending.promise.then(
-        () =>
-          pending.restartRequested
-            ? this.initScript(script)
-            : Promise.resolve(),
-        () =>
-          pending.restartRequested ? this.initScript(script) : Promise.resolve()
-      );
-      return pending.restartPromise;
+      if (pending.connection === 'disconnected') {
+        pending.connection = 'reconnected';
+      }
+      return pending.promise;
     }
 
     const entry: PendingInitialization = {
       script,
       promise: Promise.resolve(),
-      canceled: false,
-      restartRequested: false,
+      connection: 'connected',
     };
     entry.promise = Promise.resolve().then(() =>
       this.finishInitialization(entry)
@@ -167,24 +158,33 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   private async finishInitialization(
     entry: PendingInitialization
   ): Promise<void> {
+    let failed = false;
     try {
       try {
         await this.initScriptFunction(entry.script);
       } catch (error: unknown) {
-        this.handleScriptError(error, entry.script, 'init');
-        return;
+        failed = true;
+        if (entry.connection === 'connected') {
+          this.failedScripts.add(entry.script);
+          this.handleScriptError(error, entry.script, 'init');
+        }
       }
 
-      if (entry.canceled) {
+      if (entry.connection !== 'connected') {
         this.disposeScript(entry.script);
-        return;
+      } else if (!failed) {
+        this.activeScripts.add(entry.script);
+        this.failedScripts.delete(entry.script);
+        this.indexScript(entry.script);
       }
-      this.activeScripts.add(entry.script);
-      this.indexScript(entry.script);
     } finally {
       if (this.pendingInitializations.get(entry.script) === entry) {
         this.pendingInitializations.delete(entry.script);
       }
+    }
+
+    if (entry.connection === 'reconnected') {
+      await this.initScript(entry.script);
     }
   }
 
@@ -192,8 +192,7 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   uninitScript(script: Script): void {
     const pending = this.pendingInitializations.get(script);
     if (pending) {
-      pending.canceled = true;
-      pending.restartRequested = false;
+      pending.connection = 'disconnected';
       return;
     }
     if (!this.activeScripts.delete(script)) return;
@@ -231,6 +230,12 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
       const pending = this.pendingInitializations.get(script);
       if (pending) this.syncPromises.push(pending.promise);
       this.uninitScript(script);
+    }
+    for (const script of [...this.failedScripts]) {
+      if (!this.seenScripts.has(script)) {
+        this.failedScripts.delete(script);
+        this.disposeScript(script);
+      }
     }
 
     return Promise.allSettled(this.syncPromises);
@@ -314,7 +319,6 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     hook: GlobalScriptHook,
     callback: (script: Script) => void
   ): void {
-    this.ensureHookIndex();
     const scripts = this.hookScripts.get(hook);
     if (scripts) this.callScripts(scripts, hook, callback);
   }
@@ -329,7 +333,6 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   }
 
   private indexScript(script: Script): void {
-    this.indexedScripts.add(script);
     for (const hook of GLOBAL_HOOKS) {
       if (!isDefaultScriptMethod(Reflect.get(script, hook))) {
         this.getHookSet(hook).add(script);
@@ -338,22 +341,11 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   }
 
   private unindexScript(script: Script): void {
-    this.indexedScripts.delete(script);
     for (const scripts of this.hookScripts.values()) scripts.delete(script);
   }
 
   private rebuildHookIndex(): void {
-    this.indexedScripts.clear();
     this.hookScripts.clear();
     for (const script of this.activeScripts) this.indexScript(script);
-  }
-
-  private ensureHookIndex(): void {
-    if (
-      this.indexedScripts.size !== this.activeScripts.size ||
-      [...this.activeScripts].some((script) => !this.indexedScripts.has(script))
-    ) {
-      this.rebuildHookIndex();
-    }
   }
 }
