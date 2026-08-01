@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 62138f1
- * @builddate 2026-07-26T03:02:20.874Z
+ * @commitid 66db1de
+ * @builddate 2026-08-01T00:54:58.752Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -20160,19 +20160,6 @@ class MediaPipeFaceBackend extends BaseFaceBackend {
     }
 }
 
-// Kick off the BVH-accelerated raycast prototype patches at module
-// load so the per-landmark raycasts inside processFaceLandmarkerResult
-// go through the accelerated path. Fire-and-forget: the helper loads
-// three-mesh-bvh dynamically and the SDK keeps working even if the
-// module isn't installed or in the importmap (raycasts fall back to
-// the stock walker). idempotent across modules so multiple subsystems
-// can ping it safely.
-//
-// FaceLandmarker emits 478 landmarks per face and we raycast each one
-// against the depth-mesh snapshot. Stock three.js is O(triangles) per
-// ray; the depth mesh runs in the thousands of triangles so without
-// BVH the per-detection raycast loop alone dominates the frame budget.
-enableAcceleratedRaycast();
 /**
  * A detector script that orchestrates face landmark estimation. Manages
  * the backend face detector lifecycle (e.g. MediaPipe) and exposes the
@@ -20216,6 +20203,7 @@ class FaceRecognizer extends Script {
         this.camera = camera;
         this.renderer = renderer;
         this.disposed = false;
+        void enableAcceleratedRaycast();
     }
     /**
      * Starts continuous face detection for the given client.
