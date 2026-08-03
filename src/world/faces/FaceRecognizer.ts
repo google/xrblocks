@@ -10,20 +10,6 @@ import {DetectedFace} from './DetectedFace';
 import {BaseFaceBackend, FaceBackendContext} from './FaceDetectorBackend';
 import {MediaPipeFaceBackend} from './backends/MediaPipeFaceBackend';
 
-// Kick off the BVH-accelerated raycast prototype patches at module
-// load so the per-landmark raycasts inside processFaceLandmarkerResult
-// go through the accelerated path. Fire-and-forget: the helper loads
-// three-mesh-bvh dynamically and the SDK keeps working even if the
-// module isn't installed or in the importmap (raycasts fall back to
-// the stock walker). idempotent across modules so multiple subsystems
-// can ping it safely.
-//
-// FaceLandmarker emits 478 landmarks per face and we raycast each one
-// against the depth-mesh snapshot. Stock three.js is O(triangles) per
-// ray; the depth mesh runs in the thousands of triangles so without
-// BVH the per-detection raycast loop alone dominates the frame budget.
-enableAcceleratedRaycast();
-
 /**
  * A detector script that orchestrates face landmark estimation. Manages
  * the backend face detector lifecycle (e.g. MediaPipe) and exposes the
@@ -78,6 +64,7 @@ export class FaceRecognizer extends Script {
     this.camera = camera;
     this.renderer = renderer;
     this.disposed = false;
+    void enableAcceleratedRaycast();
   }
 
   /**
