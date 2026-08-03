@@ -9,7 +9,8 @@ checkThreeVersion();
 
 /**
  * The global singleton instance of Core, serving as the main entry point
- * for the entire XR system.
+ * for the entire XR system. This binding is stable for the module lifetime;
+ * disposing Core is terminal.
  */
 export const core = new Core();
 
