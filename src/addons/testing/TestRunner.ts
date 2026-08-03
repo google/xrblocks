@@ -4,8 +4,8 @@ import {
   Core,
   Options,
   Script,
-  ScriptsManagerEventType,
   type Constructor,
+  type ScriptError,
 } from 'xrblocks';
 import {
   EmbodiedControl,
@@ -28,11 +28,7 @@ export class TestRunner {
   readonly actions: EmbodiedControl;
 
   private caughtErrors: Error[] = [];
-  private boundExceptionListener: (event: {
-    error: Error;
-    scriptName: string;
-    context: string;
-  }) => void;
+  private readonly unsubscribeScriptErrors: () => void;
 
   private constructor(core: Core, embodiedControl: EmbodiedControl) {
     this.core = core;
@@ -40,24 +36,14 @@ export class TestRunner {
     this.scene = core.scene;
     this.camera = core.camera;
 
-    this.boundExceptionListener = (event: {
-      error: Error;
-      scriptName: string;
-      context: string;
-    }) => {
+    this.unsubscribeScriptErrors = core.onScriptError((event: ScriptError) => {
       const error =
         event.error ||
         new Error(
           `Exception in script: ${event.scriptName} (${event.context})`
         );
       this.caughtErrors.push(error);
-    };
-
-    // Hook error handling
-    core.scriptsManager.addEventListener(
-      ScriptsManagerEventType.EXCEPTION,
-      this.boundExceptionListener
-    );
+    });
 
     // Set up the dynamic actions proxy.
     this.actions = new Proxy(this.embodiedControl, {
@@ -111,6 +97,7 @@ export class TestRunner {
     };
     const embodiedControl = new EmbodiedControl(embodiedOptions);
     core.scene.add(embodiedControl);
+    const runner = new TestRunner(core, embodiedControl);
 
     await core.init(options);
 
@@ -138,7 +125,6 @@ export class TestRunner {
     core.camera.updateMatrixWorld(true);
     core.camera.matrixWorldInverse.copy(core.camera.matrixWorld).invert();
 
-    const runner = new TestRunner(core, embodiedControl);
     runner.checkErrors();
     return runner;
   }
@@ -156,77 +142,21 @@ export class TestRunner {
     return script;
   }
 
-  /**
-   * Destroys the test runner, cleans up the scene, window events, and resets mocks.
-   */
+  /** Disposes the Core lifetime owned by this runner. */
   async destroy(): Promise<void> {
-    this.checkErrors();
-
-    // Remove exception listener
-    this.core.scriptsManager.removeEventListener(
-      ScriptsManagerEventType.EXCEPTION,
-      this.boundExceptionListener
-    );
-
-    const coreInternal = this.core as unknown as {
-      onWindowResize?: EventListenerOrEventListenerObject;
-    };
-    if (coreInternal.onWindowResize) {
-      window.removeEventListener('resize', coreInternal.onWindowResize);
+    let firstError: unknown;
+    try {
+      this.checkErrors();
+    } catch (error) {
+      firstError = error;
     }
-
-    this.core.scene.clear();
-    await this.core.scriptsManager.syncScriptsWithScene(this.core.scene);
-    this.core.scene.add(this.core.xrSystemsGroup);
-
-    // Clear Input lists and maps to prevent duplicate controller registration across tests.
-    const input = this.core.input;
-    input.controllers.length = 0;
-    input.controllerGrips.length = 0;
-    input.hands.length = 0;
-    input.leftController = undefined;
-    input.rightController = undefined;
-    input.intersectionsForController.clear();
-    input.activeControllers.clear();
-    input.listeners.clear();
-
-    const depth = this.core.depth;
-    depth.view.length = 0;
-    depth.cpuDepthData.length = 0;
-    depth.gpuDepthData.length = 0;
-    depth.depthArray.length = 0;
-
-    const coreWritable = this.core as unknown as {
-      effects?: unknown;
-      renderer?: unknown;
-    };
-    coreWritable.effects = undefined;
-
-    const registryInternal = this.core.registry as unknown as {
-      instances: Map<unknown, unknown>;
-    };
-    registryInternal.instances.clear();
-    this.core.registry.register(this.core.registry);
-    this.core.registry.register(this.core, Core);
-    this.core.registry.register(this.core.scene, THREE.Scene);
-    this.core.registry.register(this.core.camera, THREE.Camera);
-    this.core.registry.register(this.core.timer, THREE.Timer);
-    this.core.registry.register(this.core.input);
-    this.core.registry.register(this.core.user);
-    this.core.registry.register(this.core.ui);
-    this.core.registry.register(this.core.sound);
-    this.core.registry.register(this.core.dragManager);
-    this.core.registry.register(this.core.simulator);
-    this.core.registry.register(this.core.scriptsManager);
-    this.core.registry.register(this.core.depth);
-    this.core.registry.register(this.core.world);
-    this.core.registry.register(this.core.xrSystemsGroup);
-
-    if (this.core.renderer) {
-      this.core.renderer.dispose();
-      this.core.renderer.domElement.remove();
-      coreWritable.renderer = undefined;
+    this.unsubscribeScriptErrors();
+    try {
+      await this.core.dispose();
+    } catch (error) {
+      firstError ??= error;
     }
+    if (firstError !== undefined) throw firstError;
   }
 
   private checkErrors() {

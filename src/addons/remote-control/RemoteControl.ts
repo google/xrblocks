@@ -22,7 +22,6 @@ import {
 } from './WebSocketRemoteControlTransport';
 
 export type RemoteControlOptions = WebSocketRemoteControlTransportOptions & {
-  embodiedControl?: EmbodiedControl;
   embodiedOptions?: EmbodiedControlOptions;
   tools?: Record<string, RemoteControlToolHandler>;
 };
@@ -41,7 +40,6 @@ export class RemoteControl extends Script {
   };
 
   editorIcon = 'settings_remote';
-  embodiedControl: EmbodiedControl;
   transport?: WebSocketRemoteControlTransport;
 
   dependencies!: {
@@ -52,6 +50,8 @@ export class RemoteControl extends Script {
   };
 
   private tools = new Map<string, RegisteredTool>();
+  private readonly embodiedControl: EmbodiedControl;
+  private simulatorReadyAnnounced = false;
 
   static configureOptions(options = new Options()) {
     return (
@@ -63,8 +63,8 @@ export class RemoteControl extends Script {
 
   constructor(private options: RemoteControlOptions = {}) {
     super();
-    this.embodiedControl =
-      options.embodiedControl ?? new EmbodiedControl(options.embodiedOptions);
+    this.embodiedControl = new EmbodiedControl(options.embodiedOptions);
+    this.add(this.embodiedControl);
 
     for (const [name, handler] of Object.entries(options.tools ?? {})) {
       this.registerTool(name, handler);
@@ -78,10 +78,6 @@ export class RemoteControl extends Script {
     camera: THREE.Camera;
   }) {
     this.dependencies = dependencies;
-    if (!this.embodiedControl.executor) {
-      this.embodiedControl.init(dependencies);
-    }
-
     this.registerBuiltInTools();
     this.transport = new WebSocketRemoteControlTransport(
       {
@@ -93,19 +89,18 @@ export class RemoteControl extends Script {
       (request) => this.handleRequest(request)
     );
     this.transport.connect();
+    if (dependencies.core.simulatorRunning) {
+      void this.announceSimulatorReady();
+    }
   }
 
   dispose() {
     this.transport?.disconnect();
+    this.transport = undefined;
   }
 
   override onSimulatorStarted() {
-    if (
-      !this.dependencies.core.scriptsManager.scripts.has(this.embodiedControl)
-    ) {
-      this.embodiedControl.onSimulatorStarted();
-    }
-    this.transport?.announceSimulatorReady();
+    void this.announceSimulatorReady();
   }
 
   registerTool(
@@ -180,6 +175,13 @@ export class RemoteControl extends Script {
         });
       }
     }
+  }
+
+  private async announceSimulatorReady() {
+    await this.embodiedControl.ready;
+    if (this.simulatorReadyAnnounced || !this.transport) return;
+    this.simulatorReadyAnnounced = true;
+    this.transport.announceSimulatorReady();
   }
 
   private resolveTarget(
