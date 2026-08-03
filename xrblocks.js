@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 66db1de
- * @builddate 2026-08-01T00:54:58.752Z
+ * @commitid 06afc5d
+ * @builddate 2026-08-03T21:49:52.957Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -17048,8 +17048,12 @@ class GeminiDetectorBackend extends BaseDetectorBackend$1 {
     buildGeminiConfig() {
         const geminiOptions = this.context.options.objects.backendConfig.gemini;
         return {
+            // Keep detection fast by asking for as little reasoning as possible.
+            // gemini-3.6-flash rejects a zero thinking budget, which 3.5 accepted,
+            // so use the minimal thinking level instead. Both resolve to no thought
+            // tokens and it is accepted by 3.5 and 3.6 alike.
             thinkingConfig: {
-                thinkingBudget: 0,
+                thinkingLevel: 'MINIMAL',
             },
             responseMimeType: 'application/json',
             responseSchema: geminiOptions.responseSchema,
