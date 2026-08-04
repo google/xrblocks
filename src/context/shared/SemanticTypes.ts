@@ -2,7 +2,7 @@ export type Vec2Tuple = [number, number];
 export type Vec3Tuple = [number, number, number];
 export type QuatTuple = [number, number, number, number];
 
-export type SemanticSource = 'xrblocks' | 'uiblocks' | 'three' | 'app';
+export type SemanticSource = 'xrblocks' | 'three' | 'app';
 
 export interface SemanticBounds {
   center: Vec3Tuple;
@@ -41,6 +41,9 @@ export interface SemanticNode {
   disabled?: boolean;
   selected?: boolean;
   hovered?: boolean;
+  value?: number;
+  min?: number;
+  max?: number;
   bounds?: SemanticBounds;
   view?: SemanticViewData;
 }

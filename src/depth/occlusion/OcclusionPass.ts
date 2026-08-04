@@ -46,6 +46,7 @@ export class OcclusionPass extends Pass {
   // loop (renderer drawing-buffer size never changes mid-session).
   private lastOcclusionMapSize = new THREE.Vector2(0, 0);
   private lastKawaseBlurSize = new THREE.Vector2(0, 0);
+  private readonly renderDimensions = new THREE.Vector2();
 
   constructor(
     private scene: THREE.Scene,
@@ -185,7 +186,7 @@ export class OcclusionPass extends Pass {
     viewId = 0
   ) {
     const originalRenderTarget = renderer.getRenderTarget();
-    const dimensions = new THREE.Vector2();
+    const dimensions = this.renderDimensions;
     if (readBuffer == null) {
       this.renderOcclusionMapFromScene(renderer, dimensions, viewId);
     } else {
@@ -234,15 +235,10 @@ export class OcclusionPass extends Pass {
     this.resizeOcclusionMap(dimensions);
     const renderTarget = this.occlusionMapTexture;
     renderer.setRenderTarget(renderTarget);
-    const originalCameraLayers = Array.from(Array(32).keys()).filter(
-      (element) => camera.layers.isEnabled(element)
-    );
+    const originalCameraLayerMask = camera.layers.mask;
     camera.layers.set(this.occludableItemsLayer);
     renderer.render(this.scene, camera);
-    camera.layers.disableAll();
-    originalCameraLayers.forEach((element) => {
-      camera.layers.enable(element);
-    });
+    camera.layers.mask = originalCameraLayerMask;
     this.scene.overrideMaterial = null;
   }
 

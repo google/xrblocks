@@ -362,29 +362,10 @@ function isDescendantOf(
 }
 
 function getObjectBoundingBox(object: THREE.Object3D): THREE.Box3 {
-  // If the object has a pre-calculated bounding box (e.g. ModelViewer), use it directly
-  if ('bbox' in object) {
-    const customBbox = (object as {bbox?: THREE.Box3}).bbox;
-    if (customBbox && !customBbox.isEmpty()) {
-      object.updateMatrixWorld(true);
-      return customBbox.clone().applyMatrix4(object.matrixWorld);
-    }
-  }
-
   const box = new THREE.Box3();
 
   function traverse(node: THREE.Object3D) {
-    if (!node.visible) return;
-
-    // Ignore the model viewer's platform, rotation cylinder, and control bar meshes
-    const name = node.constructor.name;
-    if (
-      name === 'ModelViewerPlatform' ||
-      name === 'RotationRaycastMesh' ||
-      node.name === 'Platform'
-    ) {
-      return;
-    }
+    if (!node.visible || node.userData.xrblocksPrivate === true) return;
 
     const mesh = node as THREE.Mesh;
     if (mesh.isMesh) {

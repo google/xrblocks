@@ -5,15 +5,14 @@ import {DepthMesh} from '../../depth/DepthMesh';
 
 type BoundsObject = THREE.Object3D & {
   isUI?: boolean;
-  baseSizeX?: number;
-  baseSizeY?: number;
+  size?: {width?: number; height?: number};
 };
 
 const boundsBox = new THREE.Box3();
 const boundsCorner = new THREE.Vector3();
 
 export function isSemanticInternalObject(object: THREE.Object3D): boolean {
-  if (isInternalRoot(object)) {
+  if (object.userData.xrblocksPrivateSelf === true || isInternalRoot(object)) {
     return true;
   }
 
@@ -40,6 +39,10 @@ export function hasRenderableDescendant(object: THREE.Object3D): boolean {
   const stack = [...object.children];
   while (stack.length > 0) {
     const child = stack.pop()!;
+    if (child.userData.xrblocksPrivateSelf === true) {
+      stack.push(...child.children);
+      continue;
+    }
     if (isSemanticInternalObject(child)) {
       continue;
     }
@@ -87,6 +90,7 @@ export function getObjectBounds(
 
 function isInternalRoot(object: THREE.Object3D): boolean {
   return (
+    object.userData.xrblocksPrivate === true ||
     object instanceof XRSystems ||
     object instanceof DepthMesh ||
     (object.constructor as typeof DepthMesh).isDepthMesh === true
@@ -100,15 +104,15 @@ function getUIObjectBounds(
   const uiObject = object as BoundsObject;
   if (
     uiObject.isUI !== true ||
-    typeof uiObject.baseSizeX !== 'number' ||
-    typeof uiObject.baseSizeY !== 'number'
+    typeof uiObject.size?.width !== 'number' ||
+    typeof uiObject.size?.height !== 'number'
   ) {
     return null;
   }
 
   object.updateMatrixWorld(true);
-  const halfWidth = uiObject.baseSizeX / 2;
-  const halfHeight = uiObject.baseSizeY / 2;
+  const halfWidth = uiObject.size.width / 2;
+  const halfHeight = uiObject.size.height / 2;
   boundsBox.makeEmpty();
 
   for (const x of [-halfWidth, halfWidth]) {
