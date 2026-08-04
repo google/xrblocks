@@ -13,16 +13,21 @@ on:
       - '.github/workflows/docs-build-check.yml'
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-docs:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           cache: 'npm'
@@ -32,7 +37,7 @@ jobs:
 
       - name: Cache Root Node Modules
         id: cache-root-modules
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: node_modules
           key: ${{ runner.os }}-node-root-${{ hashFiles('package-lock.json') }}
@@ -43,7 +48,7 @@ jobs:
 
       - name: Cache Docs Node Modules
         id: cache-docs-modules
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: docs/node_modules
           key: ${{ runner.os }}-node-docs-${{ hashFiles('docs/package-lock.json') }}
