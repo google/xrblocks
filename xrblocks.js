@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.18.0
- * @commitid 06afc5d
- * @builddate 2026-08-03T21:49:52.957Z
+ * @commitid cecea3d
+ * @builddate 2026-08-04T00:58:23.360Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -8027,6 +8027,7 @@ class MouseController extends Script {
     }
 }
 
+// Temporary class until pinch is fixed at the system level on Galaxy XR.
 class PinchFilter {
     constructor(handleEventFn) {
         this.handleEventFn = handleEventFn;
@@ -8071,14 +8072,18 @@ class PinchFilter {
         if (event.type === 'selectstart' ||
             event.type === 'selectend' ||
             event.type === 'select') {
-            if (controller.gamepad?.buttons[0] !== undefined && !event.isCustom) {
+            if (controller.gamepad?.buttons[0] !== undefined &&
+                controller.inputSource?.targetRayMode !== 'screen' &&
+                !event.isCustom) {
                 return true;
             }
         }
         return false;
     }
     updateController(controller, dispatchEventFn, setRaycasterFn, performRaycastFn) {
-        if (controller.gamepad && controller.gamepad.buttons[0] !== undefined) {
+        if (controller.gamepad &&
+            controller.gamepad.buttons[0] !== undefined &&
+            controller.inputSource?.targetRayMode !== 'screen') {
             const pinchValue = controller.gamepad.buttons[0].value;
             const isPinching = pinchValue >= 1.0;
             const wasPinching = controller.userData.selected === true;
