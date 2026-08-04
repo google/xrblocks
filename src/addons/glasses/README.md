@@ -1,7 +1,7 @@
 # glasses ui
 
 This is an experimental implementation of Glasses UI inspired by Jetpack Compose Glimmer for use in XR Blocks.
-It depends on @pmndrs/uikit and uiblocks.
+It depends on `@pmndrs/uikit` and `@preact/signals-core`.
 
 ## Features
 

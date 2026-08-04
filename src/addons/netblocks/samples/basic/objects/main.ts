@@ -63,9 +63,7 @@ class ObjectsSample extends NetSample {
           opacity: 0.5,
         })
       );
-      (
-        edges as unknown as {ignoreReticleRaycast: boolean}
-      ).ignoreReticleRaycast = true;
+      edges.pointerEvents = 'none';
       mesh.add(edges);
       cube.add(mesh);
       this._cubes.push(cube);

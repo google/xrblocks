@@ -119,7 +119,7 @@ before dependent scripts.
 
 For browser-native application modules, follow
 [`xb-build-app`'s import-map reference](../../xb-build-app/references/import-maps.md).
-For app UI, use `xb-add-spatial-ui` and its UIBlocks-first path.
+For app UI, use `xb-add-spatial-ui` and the built-in UI exports.
 
 ## Frequent implementation failures
 

@@ -46,7 +46,7 @@ inspect [`../../templates/typescript/`](../../templates/typescript/).
 
 For browser-native modules, read
 [`references/import-maps.md`](references/import-maps.md) before editing HTML.
-Its rules are mandatory whenever the app imports an addon, `uiblocks`, or a new
+Its rules are mandatory whenever the app imports an addon or a new
 external package.
 
 The foundation is ready when the app has one launch command and entry URL, and
@@ -88,7 +88,7 @@ settings, instructions, and hand-pose UI are registered whenever that simulator
 path starts.
 
 Place content in meters using `xb.user.height`, `xb.user.objectDistance`, and
-`xb.user.panelDistance`. Use `xb-add-spatial-ui` and its UIBlocks-first path for
+`xb.user.panelDistance`. Use `xb-add-spatial-ui` for
 app UI.
 
 This step is complete when the launch entry contains the full first-load →

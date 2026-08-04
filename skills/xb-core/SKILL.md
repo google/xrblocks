@@ -56,14 +56,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ```js
 const options = new xb.Options();
-options.enableUI(); // see xb-ui
 options.enableHands(); // see xb-hands
 options.enableAI(); // see xb-ai
 options.setAppTitle?.('My App');
 xb.init(options);
 ```
 
-Chainable feature toggles: `enableUI`, `enableReticles`, `enableControllers`, `enableHands`,
+Chainable feature toggles: `enableReticles`, `enableControllers`, `enableHands`,
 `enableHandRays`, `enableGestures`, `enableStrokes`, `enableDepth`, `enablePlaneDetection`,
 `enableObjectDetection`, `enableCamera`, `enableAI`, `enableXRTransitions`, `enableVR`.
 Physics and lighting are configured directly (see `xb-physics`; `options.lighting`).

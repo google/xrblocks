@@ -102,9 +102,11 @@ When the user clicks the "Enter XR" button to launch the experience, the SDK's [
 
 ### 4. Input Raycaster
 
-The [`Raycaster`](/api/classes/Raycaster) manages 3D raycasting against the scene graph using inputs (mouse, gaze, or WebXR controllers).
+The internal raycaster manages 3D raycasting against the scene graph using
+mouse, gaze, and WebXR controller inputs.
 
-It automatically processes hovering states and intersection targets, and dispatches pointer-events on scripts. Custom sorting (such as the `raycastSortFunction` from UI Blocks) is configured here.
+It processes hover states and intersection targets, then dispatches pointer
+events to scripts and built-in UI controls.
 
 ### 5. Screenshot Synthesizer
 

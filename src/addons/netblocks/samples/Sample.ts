@@ -83,7 +83,6 @@ export abstract class NetSample extends xb.Script {
   static run<T extends NetSample>(ctor: new () => T) {
     document.addEventListener('DOMContentLoaded', async () => {
       const options = new xb.Options();
-      options.enableUI();
       options.reticles.enabled = true;
       options.controllers.visualizeRays = false;
       const app = new ctor();

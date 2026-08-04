@@ -9,6 +9,7 @@ import {Options} from '../core/Options';
 import {Script} from '../core/Script';
 import {Depth} from '../depth/Depth';
 import {Input} from '../input/Input';
+import {Interaction} from '../interaction/Interaction';
 import {Physics} from '../physics/Physics';
 
 import {SimulatorCamera} from './SimulatorCamera';
@@ -38,6 +39,7 @@ export class Simulator extends Script {
   static dependencies = {
     simulatorOptions: SimulatorOptions,
     input: Input,
+    interaction: Interaction,
     timer: THREE.Timer,
     camera: THREE.Camera,
     renderer: THREE.WebGLRenderer,
@@ -107,6 +109,7 @@ export class Simulator extends Script {
   async init({
     simulatorOptions,
     input,
+    interaction,
     timer,
     camera,
     renderer,
@@ -118,6 +121,7 @@ export class Simulator extends Script {
   }: {
     simulatorOptions: SimulatorOptions;
     input: Input;
+    interaction: Interaction;
     timer: THREE.Timer;
     camera: THREE.Camera;
     renderer: THREE.WebGLRenderer;
@@ -192,7 +196,14 @@ export class Simulator extends Script {
       camera,
       simulatorOptions,
     });
-    this.controls.init({camera, input, timer, renderer, simulatorOptions});
+    this.controls.init({
+      camera,
+      input,
+      interaction,
+      timer,
+      renderer,
+      simulatorOptions,
+    });
     if (
       deviceCamera &&
       !this.simulatorCamera &&
