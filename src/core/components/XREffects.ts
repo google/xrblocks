@@ -192,4 +192,30 @@ export class XREffects {
     renderer.xr.enabled = xrEnabled;
     renderer.xr.isPresenting = xrIsPresenting;
   }
+
+  dispose() {
+    let firstError: unknown;
+    for (const target of this.renderTargets) {
+      for (const dispose of [
+        () => target.depthTexture?.dispose(),
+        () => target.dispose(),
+      ]) {
+        try {
+          dispose();
+        } catch (error: unknown) {
+          firstError ??= error;
+        }
+      }
+    }
+    this.renderTargets.length = 0;
+    for (const pass of this.passes) {
+      try {
+        pass.dispose();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+    this.passes.length = 0;
+    if (firstError !== undefined) throw firstError;
+  }
 }

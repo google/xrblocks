@@ -9,7 +9,8 @@ checkThreeVersion();
 
 /**
  * The global singleton instance of Core, serving as the main entry point
- * for the entire XR system.
+ * for the entire XR system. This binding is stable for the module lifetime;
+ * disposing Core is terminal.
  */
 export const core = new Core();
 
@@ -102,23 +103,11 @@ export function init(options: Options = new Options()) {
 }
 
 /**
- * A shortcut for `core.scriptsManager.initScript()`. Manually initializes a
- * script and its dependencies.
- * @param script - The script to initialize.
- * @see {@link ScriptsManager.initScript}
+ * Manually initializes a Script and resolves after its dependencies and
+ * lifecycle initialization are complete.
  */
 export function initScript(script: Script) {
   return core.scriptsManager.initScript(script);
-}
-
-/**
- * A shortcut for `core.scriptsManager.uninitScript()`. Disposes of a script
- * and removes it from the update loop.
- * @param script - The script to uninitialize.
- * @see {@link ScriptsManager.uninitScript}
- */
-export function uninitScript(script: Script) {
-  return core.scriptsManager.uninitScript(script);
 }
 
 /**
