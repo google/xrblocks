@@ -51,6 +51,13 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRSystems} from './components/XRSystems';
 
+type CoreLifecycleState =
+  | 'new'
+  | 'initializing'
+  | 'running'
+  | 'disposing'
+  | 'disposed';
+
 /**
  * Core is the central engine of the XR Blocks framework, acting as a
  * singleton manager for all XR subsystems. Its primary goal is to abstract
@@ -107,6 +114,11 @@ export class Core {
 
   /** Manages drag-and-drop interactions. */
   dragManager = new DragManager();
+  private physicsInterval?: ReturnType<typeof setInterval>;
+  private rendererContainer?: HTMLDivElement;
+  private lifecycleState: CoreLifecycleState = 'new';
+  private initializationPromise?: Promise<void>;
+  private disposalPromise?: Promise<void>;
 
   /** Manages real-world understanding: planes, meshes, objects, and sounds. */
   world = new World();
@@ -118,10 +130,19 @@ export class Core {
   textureLoader = new THREE.TextureLoader();
 
   private webXRSettings: XRSessionInit = {};
+  private shouldAutostartSimulator = false;
 
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
   private startingSimulator?: Promise<void>;
+  private onWebXRSessionStarted = (event: {session: XRSession}) => {
+    void this.onXRSessionStarted(event.session);
+  };
+  private onWebXRUnsupported = () => {
+    if (!this.options.enableSimulator) return;
+    this.xrButton?.domElement.remove();
+    this.shouldAutostartSimulator = true;
+  };
 
   private _isPaused = false;
   private isSteppingFrame = false;
@@ -248,9 +269,95 @@ export class Core {
     this.registry.register(this.xrSystemsGroup);
   }
 
-  dispose() {
-    this.input.dispose();
-    window.removeEventListener('resize', this.onWindowResize);
+  dispose(): Promise<void> {
+    if (this.disposalPromise) return this.disposalPromise;
+    if (this.lifecycleState === 'disposed') return Promise.resolve();
+
+    this.lifecycleState = 'disposing';
+    this.disposalPromise = this.finishDisposal();
+    return this.disposalPromise;
+  }
+
+  private async finishDisposal(): Promise<void> {
+    let firstError: unknown;
+    const cleanups: Array<() => void | Promise<void>> = [
+      () => {
+        if (this.physicsInterval === undefined) return;
+        clearInterval(this.physicsInterval);
+        this.physicsInterval = undefined;
+      },
+      () => {
+        if (typeof this._renderer?.setAnimationLoop === 'function') {
+          this._renderer.setAnimationLoop(null);
+        }
+      },
+      () => window.removeEventListener('resize', this.onWindowResize),
+      () => {
+        const button = this.xrButton;
+        this.xrButton = undefined;
+        button?.dispose();
+      },
+      () => this.disposeWebXRSessionManager(),
+      () => this.scriptsManager.dispose(),
+      () => {
+        this.simulatorRunning = false;
+      },
+      () => this.input.dispose(),
+      () => {
+        const camera = this.deviceCamera;
+        this.deviceCamera = undefined;
+        camera?.dispose();
+      },
+      () => {
+        const effects = this.effects;
+        this.effects = undefined;
+        effects?.dispose();
+      },
+      () => {
+        const physics = this.physics;
+        this.physics = undefined;
+        physics?.dispose();
+      },
+      () => {
+        const renderer = this._renderer;
+        this._renderer = undefined;
+        renderer?.dispose();
+      },
+      () => {
+        this.rendererContainer?.remove();
+        this.rendererContainer = undefined;
+      },
+    ];
+
+    for (const cleanup of cleanups) {
+      try {
+        await cleanup();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+
+    this.lifecycleState = 'disposed';
+    if (firstError !== undefined) throw firstError;
+  }
+
+  private async disposeWebXRSessionManager(): Promise<void> {
+    const manager = this.webXRSessionManager;
+    if (!manager) return;
+    this.webXRSessionManager = undefined;
+    manager.removeEventListener(
+      WebXRSessionEventType.SESSION_START,
+      this.onWebXRSessionStarted
+    );
+    manager.removeEventListener(
+      WebXRSessionEventType.SESSION_END,
+      this.onXRSessionEnded
+    );
+    manager.removeEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      this.onWebXRUnsupported
+    );
+    await manager.dispose();
   }
 
   /**
@@ -260,14 +367,54 @@ export class Core {
    * @param options - Configuration options for the
    * session.
    */
-  async init(options = new Options()) {
+  init(options = new Options()): Promise<void> {
+    if (
+      this.lifecycleState === 'initializing' ||
+      this.lifecycleState === 'running'
+    ) {
+      return this.initializationPromise!;
+    }
+    if (
+      this.lifecycleState === 'disposing' ||
+      this.lifecycleState === 'disposed'
+    ) {
+      return Promise.reject(
+        new Error(
+          `Core cannot initialize after disposal has ${
+            this.lifecycleState === 'disposing' ? 'started' : 'completed'
+          }.`
+        )
+      );
+    }
+
+    this.lifecycleState = 'initializing';
+    this.initializationPromise = Promise.resolve().then(() =>
+      this.runInitialization(options)
+    );
+    return this.initializationPromise;
+  }
+
+  private async runInitialization(options: Options): Promise<void> {
     try {
       await this.initialize(options);
-      markDebugReady(this);
     } catch (error) {
       markDebugFailed(this, error);
+      if (this.lifecycleState === 'initializing') {
+        try {
+          await this.dispose();
+        } catch (cleanupError) {
+          console.error(
+            'Core cleanup failed after initialization failed.',
+            cleanupError
+          );
+        }
+      }
       throw error;
     }
+
+    this.assertInitializing();
+    this.lifecycleState = 'running';
+    markDebugReady(this);
   }
 
   private async initialize(options: Options) {
@@ -333,9 +480,9 @@ export class Core {
     window.addEventListener('resize', this.onWindowResize);
 
     if (!options.canvas) {
-      const xrContainer = document.createElement('div');
-      document.body.appendChild(xrContainer);
-      xrContainer.appendChild(this.renderer.domElement);
+      this.rendererContainer = document.createElement('div');
+      document.body.appendChild(this.rendererContainer);
+      this.rendererContainer.appendChild(this.renderer.domElement);
     }
 
     this.options = options;
@@ -431,6 +578,7 @@ export class Core {
       this.physics = new Physics();
       this.registry.register(this.physics);
       await this.physics.init({physicsOptions: options.physics});
+      this.assertInitializing();
 
       if (options.depth.enabled) {
         this.depth.depthMesh?.initRapierPhysics(
@@ -447,7 +595,7 @@ export class Core {
     );
     this.webXRSessionManager.addEventListener(
       WebXRSessionEventType.SESSION_START,
-      (event) => this.onXRSessionStarted(event.session)
+      this.onWebXRSessionStarted
     );
     this.webXRSessionManager.addEventListener(
       WebXRSessionEventType.SESSION_END,
@@ -455,9 +603,9 @@ export class Core {
     );
 
     // Sets up xrButton.
-    let shouldAutostartSimulator =
+    this.shouldAutostartSimulator =
       this.options.xrButton.alwaysAutostartSimulator;
-    if (!shouldAutostartSimulator && options.xrButton.enabled) {
+    if (!this.shouldAutostartSimulator && options.xrButton.enabled) {
       this.xrButton = new XRButton(
         this.webXRSessionManager,
         this.permissionsManager,
@@ -476,15 +624,11 @@ export class Core {
 
     this.webXRSessionManager.addEventListener(
       WebXRSessionEventType.UNSUPPORTED,
-      () => {
-        if (this.options.enableSimulator) {
-          this.xrButton?.domElement.remove();
-          shouldAutostartSimulator = true;
-        }
-      }
+      this.onWebXRUnsupported
     );
 
     await this.webXRSessionManager.initialize();
+    this.assertInitializing();
 
     // Sets up postprocessing effects.
     if (options.usePostprocessing) {
@@ -498,22 +642,28 @@ export class Core {
       this.xrSystemsGroup.add(this.ai);
       // Manually init the script in case other scripts rely on it.
       await this.scriptsManager.initScript(this.ai);
+      this.assertInitializing();
     }
 
     await this.scriptsManager.syncScriptsWithScene(this.scene);
+    this.assertInitializing();
 
     this.renderer.setAnimationLoop(this.update);
 
     if (this.physics) {
-      setInterval(this.physicsStep, 1000 * this.physics.timestep);
+      this.physicsInterval = setInterval(
+        this.physicsStep,
+        1000 * this.physics.timestep
+      );
     }
 
     if (this.options.reticles.enabled) {
       this.input.addReticles();
     }
 
-    if (shouldAutostartSimulator) {
+    if (this.shouldAutostartSimulator) {
       await this.startSimulator();
+      this.assertInitializing();
     }
 
     if (!loadingSpinnerManager.isLoading) {
@@ -616,20 +766,25 @@ export class Core {
    * @param session - The newly started WebXR session.
    */
   private async onXRSessionStarted(session: XRSession) {
+    if (!this.isLifecycleActive()) return;
     if (this.options.deviceCamera?.enabled) {
       await this.deviceCamera!.init();
+      if (!this.isLifecycleActive()) return;
     }
     this.scriptsManager.onXRSessionStarted(session);
   }
 
   private startSimulator = async () => {
+    this.assertLifecycleActive('start the simulator');
     if (this.simulatorRunning) return;
     if (this.startingSimulator) return this.startingSimulator;
 
     this.startingSimulator = (async () => {
-      this.xrButton?.domElement.remove();
+      this.xrButton?.dispose();
+      this.xrButton = undefined;
       this.xrSystemsGroup.add(this.simulator);
       await this.scriptsManager.initScript(this.simulator);
+      this.assertLifecycleActive('finish simulator startup');
       this.onSimulatorStarted();
     })();
 
@@ -645,8 +800,30 @@ export class Core {
    * scripts.
    */
   private onXRSessionEnded = () => {
+    if (!this.isLifecycleActive()) return;
     this.scriptsManager.onXRSessionEnded();
   };
+
+  private isLifecycleActive(): boolean {
+    return (
+      this.lifecycleState === 'initializing' ||
+      this.lifecycleState === 'running'
+    );
+  }
+
+  private assertInitializing(): void {
+    if (this.lifecycleState === 'initializing') return;
+    throw new Error(
+      `Core initialization stopped because Core is ${this.lifecycleState}.`
+    );
+  }
+
+  private assertLifecycleActive(operation: string): void {
+    if (this.isLifecycleActive()) return;
+    throw new Error(
+      `Core cannot ${operation} while it is ${this.lifecycleState}.`
+    );
+  }
 
   /**
    * Lifecycle callback executed when the desktop simulator starts. Notifies
