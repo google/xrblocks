@@ -5,6 +5,8 @@
  * addon bundle stays external-free at build time.
  */
 
+import {samDeviceCandidates, type SamGpuAdapterInfo} from './SamDevice';
+
 // @huggingface/transformers is an external peer-dep loaded via importmap at
 // runtime. Define opaque local types so TypeScript doesn't require the package
 // to be installed in node_modules.
@@ -14,6 +16,13 @@ type RawImage = unknown;
 
 /** Hugging Face model ID for SlimSAM-77-uniform. Apache-2 licensed, ~14 MB. */
 export const SAM_MODEL_ID = 'Xenova/slimsam-77-uniform';
+
+export {
+  SAM_ATTENTION_ELEMENTS,
+  samDeviceCandidates,
+  type SamGpuAdapterInfo,
+  type SamLoadOption,
+} from './SamDevice';
 
 /** Encoded snapshot state reused across all per-detection mask calls. */
 export interface SamState {
@@ -68,32 +77,57 @@ export function samSerialize<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Lazily load SlimSAM-77-uniform model and processor. Prefers WebGPU when
- * available; falls back to WASM / CPU transparently.
+ * Lazily load SlimSAM-77-uniform model and processor, preferring WebGPU when
+ * the adapter can actually run it and falling back through lower-precision and
+ * CPU configurations of the same model.
  *
  * @returns Model and processor instances.
  */
 export function getSam(): Promise<{sam: SamModel; proc: AutoProcessor}> {
   if (_sam && _samProc) return Promise.resolve({sam: _sam, proc: _samProc});
   if (_samPromise) return _samPromise;
-  _samPromise = (async () => {
+  const pending = (async () => {
     const {
       SamModel: SamModelCls,
       AutoProcessor: AutoProcessorCls,
       env,
     } = await import('@huggingface/transformers');
     env.allowLocalModels = false;
-    const device = 'gpu' in navigator && navigator.gpu ? 'webgpu' : 'wasm';
-    _sam = (await SamModelCls.from_pretrained(SAM_MODEL_ID, {
-      device,
-      dtype: device === 'webgpu' ? 'fp16' : 'fp32',
-    })) as SamModel;
-    _samProc = (await AutoProcessorCls.from_pretrained(
-      SAM_MODEL_ID
-    )) as AutoProcessor;
-    return {sam: _sam, proc: _samProc};
+    let adapter: SamGpuAdapterInfo | null = null;
+    try {
+      adapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null;
+    } catch (error) {
+      console.warn('[objects3d] WebGPU adapter probe failed', error);
+    }
+    let lastError: unknown = null;
+    for (const opts of samDeviceCandidates(adapter)) {
+      try {
+        _sam = (await SamModelCls.from_pretrained(
+          SAM_MODEL_ID,
+          opts
+        )) as SamModel;
+        _samProc = (await AutoProcessorCls.from_pretrained(
+          SAM_MODEL_ID
+        )) as AutoProcessor;
+        return {sam: _sam, proc: _samProc};
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `[objects3d] SAM load failed on ${opts.device}/${opts.dtype}`,
+          error
+        );
+      }
+    }
+    throw lastError ?? new Error('SAM could not be loaded');
   })();
-  return _samPromise;
+  _samPromise = pending;
+  // Never leave a rejected promise cached: getSam() hands back the cached
+  // promise, so a single failed load would otherwise keep failing for the rest
+  // of the session instead of retrying.
+  pending.catch(() => {
+    if (_samPromise === pending) _samPromise = null;
+  });
+  return pending;
 }
 
 /**
