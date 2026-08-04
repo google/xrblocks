@@ -6,6 +6,19 @@ import {isDefaultScriptMethod} from '../ScriptHooks';
 
 type MaybeScript = THREE.Object3D & {isXRScript?: boolean};
 
+export enum ScriptsManagerEventType {
+  EXCEPTION = 'exception',
+}
+
+export type ScriptsManagerEventMap = THREE.Object3DEventMap & {
+  [ScriptsManagerEventType.EXCEPTION]: {
+    scriptName: string;
+    context: string;
+    error: Error;
+    timestamp: number;
+  };
+};
+
 type GlobalScriptHook =
   | 'update'
   | 'physicsStep'
@@ -50,14 +63,7 @@ const GLOBAL_HOOKS = Object.freeze([
 const SCRIPT_READY = Promise.resolve();
 const NO_SCRIPT_CHANGES = Promise.resolve<PromiseSettledResult<void>[]>([]);
 
-export interface ScriptError {
-  readonly scriptName: string;
-  readonly context: string;
-  readonly error: Error;
-  readonly timestamp: number;
-}
-
-export class ScriptsManager {
+export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap> {
   private readonly activeScripts = new Set<Script>();
   private readonly hookScripts = new Map<GlobalScriptHook, Set<Script>>();
   private readonly pendingInitializations = new Map<
@@ -76,9 +82,10 @@ export class ScriptsManager {
   afterDispose?: (script: Script) => void;
 
   constructor(
-    private readonly initScriptFunction: (script: Script) => Promise<void>,
-    private readonly onScriptError?: (event: ScriptError) => void
-  ) {}
+    private readonly initScriptFunction: (script: Script) => Promise<void>
+  ) {
+    super();
+  }
 
   private handleException(error: Error, script: Script, context: string) {
     console.error(
@@ -88,7 +95,8 @@ export class ScriptsManager {
       error
     );
 
-    this.onScriptError?.({
+    this.dispatchEvent({
+      type: ScriptsManagerEventType.EXCEPTION,
       scriptName: script.name || script.constructor.name,
       context,
       error,
@@ -157,14 +165,15 @@ export class ScriptsManager {
     entry: PendingInitialization
   ): Promise<void> {
     let failed = false;
+    let initializationError: unknown;
     try {
       try {
         await this.initScriptFunction(entry.script);
       } catch (error: unknown) {
         failed = true;
+        initializationError = error;
         if (entry.connection === 'connected') {
           this.failedScripts.add(entry.script);
-          this.handleScriptError(error, entry.script, 'init');
         }
       }
 
@@ -183,6 +192,12 @@ export class ScriptsManager {
 
     if (entry.connection === 'reconnected') {
       await this.initScript(entry.script);
+      return;
+    }
+    if (initializationError !== undefined) {
+      throw initializationError instanceof Error
+        ? initializationError
+        : new Error(String(initializationError));
     }
   }
 

@@ -115,9 +115,11 @@ The [`ScreenshotSynthesizer`](/api/classes/ScreenshotSynthesizer) captures visua
 const dataUrl = await xb.core.screenshotSynthesizer.getScreenshot(true);
 ```
 
-### 6. Script lifecycle
+### 6. Scripts Manager
 
-Core drives the lifecycle hooks (`init`, `update`, `dispose`, and select/hover events) on all registered [`Script`](Scripts.md) components through its internal script lifecycle manager.
+The [`ScriptsManager`](/api/classes/ScriptsManager) drives lifecycle hooks
+(`init`, `update`, `dispose`, and select/hover events) on all registered
+[`Script`](Scripts.md) components.
 
 It iterates over all script-enabled `THREE.Object3D` nodes in the active scene graph on every tick of the main loop to run their update callbacks.
 

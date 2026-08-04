@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {Core} from './core/Core';
 import {Options} from './core/Options';
+import {Script} from './core/Script';
 import {checkThreeVersion} from './utils/VersionCheck';
 
 checkThreeVersion();
@@ -99,6 +100,14 @@ export function add(...object: THREE.Object3D[]) {
  */
 export function init(options: Options = new Options()) {
   return core.init(options);
+}
+
+/**
+ * Manually initializes a Script and resolves after its dependencies and
+ * lifecycle initialization are complete.
+ */
+export function initScript(script: Script) {
+  return core.scriptsManager.initScript(script);
 }
 
 /**
