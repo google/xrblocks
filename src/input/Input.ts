@@ -4,9 +4,13 @@ import {XRHandModelFactory} from 'three/addons/webxr/XRHandModelFactory.js';
 
 import {NUM_HANDS} from '../constants';
 import {Options} from '../core/Options.js';
-import {KeyEvent, Script} from '../core/Script';
-import {Reticle} from '../ui/core/Reticle.js';
-import {Raycaster} from '../core/components/Raycaster';
+import {KeyEvent} from '../core/Script';
+import type {
+  DirectTouchInput,
+  InteractionFrameInput,
+  RaySourceInput,
+} from '../interaction/InteractionTypes.js';
+import {Reticle} from '../interaction/reticle/Reticle.js';
 
 import {ControllerRayVisual} from './components/ControllerRayVisual';
 import type {
@@ -31,18 +35,8 @@ export class Reticles extends THREE.Group {
   name = 'Reticles';
 }
 
-export type HasIgnoreReticleRaycast = {
-  /** Excludes this object and its descendants from reticle targeting and context visibility occlusion. */
-  ignoreReticleRaycast: boolean;
-};
-export type MaybeHasIgnoreReticleRaycast = Partial<HasIgnoreReticleRaycast>;
-
-// Reusable objects for performance.
-const MATRIX4 = new THREE.Matrix4();
-
 /**
- * The XRInput class holds all the controllers and performs raycasts through the
- * scene each frame.
+ * Holds physical input sources and samples their current state each frame.
  */
 export class Input {
   options!: Options;
@@ -51,40 +45,46 @@ export class Input {
   hands: THREE.XRHandSpace[] = [];
   /** Completed head gestures, when enabled before initialization. */
   headGestures?: HeadGestureRecognition;
-  raycaster = new Raycaster();
-  initialized = false;
   pivotsEnabled = false;
   gazeController = new GazeController();
   mouseController = new MouseController();
   gamepadController = new GamepadController();
   controllersEnabled = true;
   listeners = new Map();
-  private pinchFilter = new PinchFilter((event) => this.dispatchEvent(event));
-  intersectionsForController = new Map<Controller, THREE.Intersection[]>();
-  intersections = [];
+  private dispatchControllerEvent = (event: ControllerEvent) =>
+    this.dispatchEvent(event);
+  private pinchFilter = new PinchFilter(this.dispatchControllerEvent);
+  private releasedControllers = new Set<Controller>();
+  private keyDownListeners = new Set<(event: KeyEvent) => void>();
+  private keyUpListeners = new Set<(event: KeyEvent) => void>();
   activeControllers = new ActiveControllers();
   leftController?: Controller;
   rightController?: Controller;
   reticles = new Reticles();
-  scene?: THREE.Scene;
-
+  private ownedReticles = new Set<Reticle>(
+    this.gazeController.reticle ? [this.gazeController.reticle] : []
+  );
+  private readonly raySourceInputs: RaySourceInput[] = [];
+  private readonly raySourceSlots = new Map<Controller, RaySourceInput>();
+  private readonly directTouchInputs: DirectTouchInput[] = [];
+  private readonly directTouchSlots: Array<DirectTouchInput | undefined> = [];
+  private readonly interactionFrame: InteractionFrameInput = {
+    raySources: this.raySourceInputs,
+    directTouches: this.directTouchInputs,
+  };
   /**
-   * Initializes an instance with XR controllers, grips, hands, raycaster, and
-   * default options. Only called by Core.
+   * Initializes physical input sources. Only called by Core.
    */
   init({
-    scene,
     systemsGroup,
     options,
     renderer,
   }: {
-    scene: THREE.Scene;
     systemsGroup: XRSystems;
     options: Options;
     renderer: THREE.WebGLRenderer;
   }) {
-    this.scene = scene;
-    systemsGroup.add(this.activeControllers, this.reticles);
+    systemsGroup.add(this.activeControllers);
 
     this.controllersEnabled = options.controllers.enabled;
 
@@ -112,10 +112,6 @@ export class Input {
     this.activeControllers.add(this.mouseController);
     controllers.push(this.gamepadController);
     this.activeControllers.add(this.gamepadController);
-
-    for (const controller of controllers) {
-      this.intersectionsForController.set(controller, []);
-    }
 
     if (options.controllers.enabled) {
       if (options.controllers.visualization) {
@@ -145,8 +141,7 @@ export class Input {
                 this.hands[i],
                 'boxes'
               );
-              (handModel as MaybeHasIgnoreReticleRaycast).ignoreReticleRaycast =
-                true;
+              handModel.xb = {...handModel.xb, pointerEvents: 'none'};
               this.hands[i].add(handModel);
             }
           }
@@ -158,8 +153,7 @@ export class Input {
                 this.hands[i],
                 'mesh'
               );
-              (handModel as MaybeHasIgnoreReticleRaycast).ignoreReticleRaycast =
-                true;
+              handModel.xb = {...handModel.xb, pointerEvents: 'none'};
               this.hands[i].add(handModel);
             }
           }
@@ -175,8 +169,8 @@ export class Input {
 
     this.bindSelectStart(this.defaultOnSelectStart.bind(this));
     this.bindSelectEnd(this.defaultOnSelectEnd.bind(this));
-    this.bindSqueezeStart(this.defaultOnSelectStart.bind(this));
-    this.bindSqueezeEnd(this.defaultOnSelectEnd.bind(this));
+    this.bindSqueezeStart(this.defaultOnSqueezeStart.bind(this));
+    this.bindSqueezeEnd(this.defaultOnSqueezeEnd.bind(this));
     this.bindListener('connected', this.defaultOnConnected.bind(this));
     this.bindListener('disconnected', this.defaultOnDisconnected.bind(this));
   }
@@ -225,6 +219,7 @@ export class Input {
     for (const controller of this.controllers) {
       if (controller.reticle == null) {
         controller.reticle = new Reticle();
+        this.ownedReticles.add(controller.reticle);
         controller.reticle.name = 'Reticle ' + id;
         ++id;
       }
@@ -240,8 +235,6 @@ export class Input {
   defaultOnSelectStart(event: ControllerEvent) {
     const controller = event.target;
     controller.userData.selected = true;
-    this.setRaycasterFromController(controller);
-    this.performRaycastOnScene(controller);
   }
 
   /**
@@ -251,16 +244,19 @@ export class Input {
   defaultOnSelectEnd(event: ControllerEvent) {
     const controller = event.target;
     controller.userData.selected = false;
+    this.releasedControllers.add(controller);
   }
 
   defaultOnSqueezeStart(event: ControllerEvent) {
     const controller = event.target;
     controller.userData.squeezing = true;
+    this.defaultOnSelectStart(event);
   }
 
   defaultOnSqueezeEnd(event: ControllerEvent) {
     const controller = event.target;
     controller.userData.squeezing = false;
+    this.defaultOnSelectEnd(event);
   }
 
   defaultOnConnected(event: ControllerEvent) {
@@ -293,6 +289,7 @@ export class Input {
     if (controller.reticle) {
       controller.reticle.visible = false;
     }
+    this.releasedControllers.delete(controller);
     delete controller?.gamepad;
     switch (event.data?.handedness) {
       case 'left':
@@ -398,158 +395,108 @@ export class Input {
   }
 
   bindKeyDown(event: (event: KeyEvent) => void) {
+    if (this.keyDownListeners.has(event)) return;
+    this.keyDownListeners.add(event);
     window.addEventListener('keydown', event);
   }
 
   bindKeyUp(event: (event: KeyEvent) => void) {
+    if (this.keyUpListeners.has(event)) return;
+    this.keyUpListeners.add(event);
     window.addEventListener('keyup', event);
   }
 
   unbindKeyDown(event: (event: KeyEvent) => void) {
+    this.keyDownListeners.delete(event);
     window.removeEventListener('keydown', event);
   }
 
   unbindKeyUp(event: (event: KeyEvent) => void) {
+    this.keyUpListeners.delete(event);
     window.removeEventListener('keyup', event);
   }
 
-  /**
-   * Finds intersections between a controller's ray and a specified object.
-   * @param controller - The controller casting the ray.
-   * @param obj - The object to intersect.
-   * @returns Array of intersection points, if any.
-   */
-  intersectObjectByController(
-    controller: THREE.Object3D,
-    obj: THREE.Object3D
-  ): THREE.Intersection[] {
-    controller.updateMatrixWorld();
-    this.setRaycasterFromController(controller);
-    return this.raycaster.intersectObject(obj, false);
-  }
-
-  /**
-   * Finds intersections based on an event's target controller and a specified
-   * object.
-   * @param event - The event containing the controller reference.
-   * @param obj - The object to intersect.
-   * @returns Array of intersection points, if any.
-   */
-  intersectObjectByEvent(
-    event: ControllerEvent,
-    obj: THREE.Object3D
-  ): THREE.Intersection[] {
-    return this.intersectObjectByController(event.target, obj);
-  }
-
-  /**
-   * Finds intersections with an object from either controller.
-   * @param obj - The object to intersect.
-   * @returns Array of intersection points, if any.
-   */
-  intersectObject(obj: THREE.Object3D): THREE.Intersection[] {
-    // Checks for intersections from the first controller.
-    const intersection = this.intersectObjectByController(
-      this.controllers[0],
-      obj
-    );
-    if (intersection.length > 0) {
-      return intersection;
-    }
-    // Checks for intersections from the second controller if no intersection
-    // found.
-    return this.intersectObjectByController(this.controllers[1], obj);
-  }
-
-  update() {
+  /** Samples current controller, button, and direct-touch state. */
+  sampleSources() {
     if (this.controllersEnabled) {
       for (const controller of this.controllers) {
-        this.updateController(controller);
+        if (controller.userData.connected !== true) continue;
+        controller.updatePose?.();
+        this.pinchFilter.updateController(controller);
       }
     }
+    this.updateDirectTouchInputs();
   }
 
-  updateController(controller: Controller) {
-    if (controller.userData.connected === false) {
-      return;
-    }
-    this.pinchFilter.updateController(
-      controller,
-      this.dispatchEvent.bind(this),
-      this.setRaycasterFromController.bind(this),
-      this.performRaycastOnScene.bind(this)
-    );
-    controller.updatePose?.();
-    controller.updateMatrixWorld();
-    if (this.options.controllers.performRaycastOnUpdate) {
-      this.setRaycasterFromController(controller);
-      this.performRaycastOnScene(controller);
-      this.updateReticleFromIntersections(controller);
-    }
-  }
-
-  /**
-   * Sets the raycaster's origin and direction from any Object3D that
-   * represents a controller. This replaces the non-standard
-   * `setFromXRController`.
-   * @param controller - The controller to cast a ray from.
-   */
-  setRaycasterFromController(controller: THREE.Object3D) {
-    controller.getWorldPosition(this.raycaster.ray.origin);
-    MATRIX4.identity().extractRotation(controller.matrixWorld);
-    this.raycaster.ray.direction
-      .set(0, 0, -1)
-      .applyMatrix4(MATRIX4)
-      .normalize();
-  }
-
-  updateReticleFromIntersections(controller: Controller) {
-    if (!controller.reticle) return;
-    const reticle = controller.reticle;
-    const intersection = this.intersectionsForController
-      .get(controller)
-      ?.find((intersection) => {
-        let target: THREE.Object3D | null = intersection.object;
-        while (target) {
-          if (
-            (target as MaybeHasIgnoreReticleRaycast).ignoreReticleRaycast ===
-            true
-          ) {
-            return false;
-          }
-          target = target.parent;
+  /** Returns the complete physical source state sampled this frame. */
+  getFrame(): InteractionFrameInput {
+    this.raySourceInputs.length = 0;
+    if (this.controllersEnabled) {
+      for (const controller of this.controllers) {
+        if (controller.userData.connected !== true) continue;
+        let input = this.raySourceSlots.get(controller);
+        if (!input) {
+          input = {
+            controller,
+            sourceType: this.getRaySourceType(controller),
+            ray: new THREE.Ray(),
+            selected: false,
+            position: new THREE.Vector3(),
+            orientation: new THREE.Quaternion(),
+          };
+          this.raySourceSlots.set(controller, input);
         }
-        return true;
-      });
-    if (!intersection) {
-      const fallback = this.options.reticles.defaultDistance;
-      if (fallback > 0) {
-        reticle.visible = true;
-        reticle.position
-          .copy(this.raycaster.ray.origin)
-          .addScaledVector(this.raycaster.ray.direction, fallback);
-        reticle.quaternion.identity();
-      } else {
-        reticle.visible = false;
+        const position = input.position!;
+        const orientation = input.orientation!;
+        controller.getWorldPosition(position);
+        controller.getWorldQuaternion(orientation);
+        input.sourceType = this.getRaySourceType(controller);
+        input.ray.origin.copy(position);
+        input.ray.direction
+          .set(0, 0, -1)
+          .applyQuaternion(orientation)
+          .normalize();
+        input.selected = controller.userData.selected === true;
+        input.released = this.releasedControllers.delete(controller);
+        this.raySourceInputs.push(input);
       }
-      return;
     }
-    reticle.visible = true;
+    return this.interactionFrame;
+  }
 
-    // Here isXRScript is semantically equals to isInteractable.
-    if ((intersection.object as Partial<Script>)?.isXRScript) {
-      (intersection.object as Script).ux.update(controller, intersection);
-    } else if ((intersection.object?.parent as Partial<Script>)?.isXRScript) {
-      (intersection.object.parent as Script).ux.update(
-        controller,
-        intersection
-      );
+  private getRaySourceType(
+    controller: Controller
+  ): RaySourceInput['sourceType'] {
+    if (controller === this.mouseController) return 'mouse';
+    if (controller === this.gazeController) return 'gaze';
+    if (controller.inputSource?.hand) return 'hand-ray';
+    return 'controller-ray';
+  }
+
+  private updateDirectTouchInputs() {
+    this.directTouchInputs.length = 0;
+    for (let handIndex = 0; handIndex < NUM_HANDS; handIndex++) {
+      const controller = this.controllers[handIndex];
+      const indexTip = this.hands[handIndex]?.joints?.['index-finger-tip'];
+      if (!controller || !indexTip) continue;
+      let input = this.directTouchSlots[handIndex];
+      if (!input) {
+        input = {
+          controller,
+          handIndex,
+          point: new THREE.Vector3(),
+          orientation: new THREE.Quaternion(),
+          selected: false,
+        };
+        this.directTouchSlots[handIndex] = input;
+      }
+      input.controller = controller;
+      input.hand = this.hands[handIndex]?.joints?.wrist;
+      indexTip.getWorldPosition(input.point);
+      controller.getWorldQuaternion(input.orientation!);
+      input.selected = controller.userData.selected === true;
+      this.directTouchInputs.push(input);
     }
-
-    reticle.intersection = intersection;
-    reticle.direction.copy(this.raycaster.ray.direction).normalize();
-    reticle.setPoseFromIntersection(intersection);
-    reticle.setPressed(controller.userData.selected);
   }
 
   enableGazeController() {
@@ -565,7 +512,6 @@ export class Input {
   private registerController(controller: Controller) {
     if (this.controllers.includes(controller)) return;
     this.controllers.push(controller);
-    this.intersectionsForController.set(controller, []);
 
     if (controller.reticle) {
       controller.reticle.visible = false;
@@ -590,6 +536,7 @@ export class Input {
     this.controllersEnabled = false;
     for (const controller of this.controllers) {
       controller.userData.selected = false;
+      this.releasedControllers.delete(controller);
       if (controller.reticle) {
         controller.reticle.visible = false;
         controller.reticle.targetObject = undefined;
@@ -602,18 +549,30 @@ export class Input {
   }
 
   dispose() {
+    for (const listener of this.keyDownListeners) {
+      window.removeEventListener('keydown', listener);
+    }
+    for (const listener of this.keyUpListeners) {
+      window.removeEventListener('keyup', listener);
+    }
+    this.keyDownListeners.clear();
+    this.keyUpListeners.clear();
     this.pinchFilter.dispose(this.controllers);
     this.listeners.clear();
-  }
-
-  // Performs the raycast assuming the raycaster is already set up.
-  performRaycastOnScene(controller: Controller) {
-    if (!this.scene) return;
-    if (!this.intersectionsForController.has(controller)) {
-      this.intersectionsForController.set(controller, []);
+    for (const controller of new Set([
+      ...this.controllers,
+      this.gazeController,
+    ])) {
+      if (controller.reticle && this.ownedReticles.has(controller.reticle)) {
+        controller.reticle = undefined;
+      }
     }
-    const intersections = this.intersectionsForController.get(controller)!;
-    intersections.length = 0;
-    this.raycaster.intersectObject(this.scene, true, intersections);
+    for (const reticle of this.ownedReticles) reticle.dispose();
+    this.ownedReticles.clear();
+    this.reticles.clear();
+    this.raySourceInputs.length = 0;
+    this.raySourceSlots.clear();
+    this.directTouchInputs.length = 0;
+    this.directTouchSlots.length = 0;
   }
 }

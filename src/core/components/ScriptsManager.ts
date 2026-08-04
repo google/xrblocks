@@ -1,7 +1,27 @@
 import * as THREE from 'three';
 
-import type {Controller} from '../../input/Controller';
-import {KeyEvent, Script, SelectEvent} from '../Script';
+import type {Controller, ControllerEvent} from '../../input/Controller';
+import type {
+  GlobalInteractionHook,
+  GlobalInteractionEvent,
+  InteractionCallbackDispatch,
+  InteractionSourceType,
+  TargetedInteractionHook,
+} from '../../interaction/InteractionTypes';
+import {getInteractionSource} from '../../interaction/InteractionTypes';
+import type {ManipulationEvent} from '../../interaction/manipulation/ManipulationTypes';
+import {getSemanticControl} from '../../interaction/SemanticControl';
+import {
+  KeyEvent,
+  type HoverEvent,
+  type LongSelectEvent,
+  type ObjectGrabEvent,
+  type ObjectTouchEvent,
+  type ObjectTouchStartEvent,
+  Script,
+  SelectEvent,
+  type SelectEndEvent,
+} from '../Script';
 import {isDefaultScriptMethod} from '../ScriptHooks';
 
 type MaybeScript = THREE.Object3D & {isXRScript?: boolean};
@@ -26,6 +46,7 @@ type GlobalScriptHook =
   | 'onSelectEnd'
   | 'onSelect'
   | 'onSelecting'
+  | 'onLongSelect'
   | 'onSqueezeStart'
   | 'onSqueezeEnd'
   | 'onSqueeze'
@@ -36,11 +57,52 @@ type GlobalScriptHook =
   | 'onXRSessionEnded'
   | 'onSimulatorStarted';
 
+type IndexedScriptHook =
+  | TargetedInteractionHook
+  | GlobalScriptHook
+  | 'onObjectManipulate';
+
 interface PendingInitialization {
   readonly script: Script;
   promise: Promise<void>;
   connection: 'connected' | 'disconnected' | 'reconnected';
 }
+
+type TargetDispatch = {
+  [Hook in TargetedInteractionHook]: (
+    script: Script,
+    argument: unknown
+  ) => boolean | void;
+};
+
+const TARGET_DISPATCH: TargetDispatch = {
+  onObjectSelectStart: (script, argument) =>
+    script.onObjectSelectStart(argument as SelectEvent),
+  onObjectSelectEnd: (script, argument) =>
+    script.onObjectSelectEnd(argument as SelectEndEvent),
+  onObjectLongSelect: (script, argument) =>
+    script.onObjectLongSelect(argument as LongSelectEvent),
+  onObjectTouchStart: (script, argument) =>
+    script.onObjectTouchStart(argument as ObjectTouchStartEvent),
+  onObjectTouching: (script, argument) =>
+    script.onObjectTouching(argument as ObjectTouchEvent),
+  onObjectTouchEnd: (script, argument) =>
+    script.onObjectTouchEnd(argument as ObjectTouchEvent),
+  onObjectGrabStart: (script, argument) =>
+    script.onObjectGrabStart(argument as ObjectGrabEvent),
+  onObjectGrabbing: (script, argument) =>
+    script.onObjectGrabbing(argument as ObjectGrabEvent),
+  onObjectGrabEnd: (script, argument) =>
+    script.onObjectGrabEnd(argument as ObjectGrabEvent),
+  onHoverEnter: (script, argument) =>
+    script.onHoverEnter(argument as HoverEvent),
+  onHovering: (script, argument) => script.onHovering(argument as HoverEvent),
+  onHoverExit: (script, argument) => script.onHoverExit(argument as HoverEvent),
+};
+
+const TARGETED_HOOKS = Object.freeze(
+  Object.keys(TARGET_DISPATCH) as TargetedInteractionHook[]
+);
 
 const GLOBAL_HOOKS = Object.freeze([
   'update',
@@ -49,6 +111,7 @@ const GLOBAL_HOOKS = Object.freeze([
   'onSelectEnd',
   'onSelect',
   'onSelecting',
+  'onLongSelect',
   'onSqueezeStart',
   'onSqueezeEnd',
   'onSqueeze',
@@ -60,19 +123,51 @@ const GLOBAL_HOOKS = Object.freeze([
   'onSimulatorStarted',
 ] as const satisfies readonly GlobalScriptHook[]);
 
+const INDEXED_HOOKS = Object.freeze([
+  ...TARGETED_HOOKS,
+  ...GLOBAL_HOOKS,
+  'onObjectManipulate',
+] as const satisfies readonly IndexedScriptHook[]);
+
+const RAY_TARGET_HOOKS = Object.freeze([
+  'onObjectSelectStart',
+  'onObjectSelectEnd',
+  'onObjectLongSelect',
+  'onHoverEnter',
+  'onHovering',
+  'onHoverExit',
+] as const satisfies readonly TargetedInteractionHook[]);
+
+const DIRECT_TOUCH_TARGET_HOOKS = Object.freeze([
+  'onObjectSelectStart',
+  'onObjectSelectEnd',
+  'onObjectLongSelect',
+  'onObjectTouchStart',
+  'onObjectTouching',
+  'onObjectTouchEnd',
+  'onObjectGrabStart',
+  'onObjectGrabbing',
+  'onObjectGrabEnd',
+] as const satisfies readonly TargetedInteractionHook[]);
+
 const SCRIPT_READY = Promise.resolve();
 const NO_SCRIPT_CHANGES = Promise.resolve<PromiseSettledResult<void>[]>([]);
 
-export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap> {
+export class ScriptsManager
+  extends THREE.EventDispatcher<ScriptsManagerEventMap>
+  implements InteractionCallbackDispatch
+{
   private readonly activeScripts = new Set<Script>();
-  private readonly hookScripts = new Map<GlobalScriptHook, Set<Script>>();
+  private readonly hookScripts = new Map<IndexedScriptHook, Set<Script>>();
   private readonly pendingInitializations = new Map<
     Script,
     PendingInitialization
   >();
   private readonly seenScripts = new Set<Script>();
+  private readonly interactionCandidates = new Set<THREE.Object3D>();
   private readonly failedScripts = new Set<Script>();
   private readonly syncPromises: Promise<void>[] = [];
+  private readonly traversalStack: THREE.Object3D[] = [];
   private disposed = false;
   private disposalPromise?: Promise<void>;
 
@@ -86,6 +181,82 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   ) {
     super();
   }
+
+  /** Objects found during the lifecycle traversal that direct touch can use. */
+  get directTouchCandidates(): ReadonlySet<THREE.Object3D> {
+    return this.interactionCandidates;
+  }
+
+  isScript = (object: THREE.Object3D): boolean =>
+    (object as MaybeScript).isXRScript === true;
+
+  hasTargetHandler = (
+    object: THREE.Object3D,
+    sourceType: InteractionSourceType
+  ): boolean => {
+    if (!this.isScript(object)) return false;
+
+    const script = object as Script;
+    const hooks =
+      sourceType === 'direct-touch'
+        ? DIRECT_TOUCH_TARGET_HOOKS
+        : RAY_TARGET_HOOKS;
+    return (
+      hooks.some((hook) => this.hasIndexedHook(script, hook)) ||
+      this.hasIndexedHook(script, 'onObjectManipulate')
+    );
+  };
+
+  hasTargetHook = (
+    object: THREE.Object3D,
+    hook: TargetedInteractionHook
+  ): boolean =>
+    this.isScript(object) && this.hasIndexedHook(object as Script, hook);
+
+  invokeTarget = (
+    object: THREE.Object3D,
+    hook: TargetedInteractionHook,
+    argument: unknown
+  ): boolean => {
+    if (!this.isScript(object)) return false;
+    const script = object as Script;
+    if (!this.hasOverriddenHook(script, hook)) return false;
+    return this.callTargeted([script], hook, (target) =>
+      TARGET_DISPATCH[hook](target, eventForTarget(argument, target))
+    );
+  };
+
+  invokeGlobal = <Hook extends GlobalInteractionHook>(
+    hook: Hook,
+    event: GlobalInteractionEvent<Hook>
+  ): void => {
+    if (hook === 'onSelectStart') this.callSelectStart(event);
+    else if (hook === 'onSelecting') this.callSelecting(event);
+    else if (hook === 'onSelect') this.callSelect(event);
+    else if (hook === 'onLongSelect')
+      this.callLongSelect(event as LongSelectEvent);
+    else this.callSelectEnd(event as SelectEndEvent);
+  };
+
+  invokeManipulation = (
+    object: THREE.Object3D,
+    event: ManipulationEvent
+  ): boolean => {
+    if (!this.isScript(object)) return false;
+    const script = object as Script;
+    if (!this.hasOverriddenHook(script, 'onObjectManipulate')) return false;
+    return this.callTargeted([script], 'onObjectManipulate', (target) =>
+      target.onObjectManipulate(event)
+    );
+  };
+
+  invokeSemantic = (object: THREE.Object3D, callback: () => void): void => {
+    this.callTargeted(
+      [object as Script],
+      'semantic control callback',
+      callback
+    );
+  };
 
   private handleException(error: Error, script: Script, context: string) {
     console.error(
@@ -115,12 +286,22 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     this.handleException(normalizedError, script, context);
   }
 
+  /** Reports an asynchronous subsystem error against its owning Script. */
+  reportError(error: unknown, script: Script, context: string): void {
+    this.handleScriptError(error, script, context);
+  }
+
+  /**
+   * Calls one targeted hook along a captured Script path. Only a literal true
+   * return value stops propagation. Developer errors use the same exception
+   * policy as global Script callbacks.
+   */
   callTargeted(
-    scripts: Iterable<Script>,
+    path: Iterable<Script>,
     context: string,
     callback: (script: Script) => boolean | void
   ): boolean {
-    for (const script of scripts) {
+    for (const script of path) {
       try {
         if (callback(script) === true) return true;
       } catch (error: unknown) {
@@ -130,12 +311,12 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     return false;
   }
 
-  /** Reports an asynchronous subsystem error against its owning Script. */
-  reportError(error: unknown, script: Script, context: string): void {
-    this.handleScriptError(error, script, context);
-  }
-
-  /** Initializes a script. Concurrent calls share one initialization. */
+  /**
+   * Initializes a script and adds it to the set of scripts which will receive
+   * callbacks. Concurrent calls share one initialization.
+   * @param script - The script to initialize
+   * @returns A promise which resolves when the script is initialized.
+   */
   initScript(script: Script): Promise<void> {
     if (this.disposed) {
       return Promise.reject(new Error('ScriptsManager has been disposed.'));
@@ -201,7 +382,12 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     }
   }
 
-  /** Uninitializes a script and prevents a pending generation from activating. */
+  /**
+   * Uninitializes a script calling dispose and removes it from the set of
+   * scripts which will receive callbacks. A pending initialization is disposed
+   * after it finishes and is never activated.
+   * @param script - The script to uninitialize.
+   */
   uninitScript(script: Script): void {
     const pending = this.pendingInitializations.get(script);
     if (pending) {
@@ -230,6 +416,7 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     this.failedScripts.clear();
     this.hookScripts.clear();
     this.seenScripts.clear();
+    this.interactionCandidates.clear();
     this.syncPromises.length = 0;
 
     this.disposalPromise = Promise.resolve().then(() =>
@@ -283,15 +470,43 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     if (firstError) throw firstError;
   }
 
+  /** Helper for scene traversal to avoid closure allocation. */
   private checkScript = (object: THREE.Object3D): void => {
-    if (!(object as MaybeScript).isXRScript) return;
-    const script = object as Script;
-    this.seenScripts.add(script);
-    if (!this.activeScripts.has(script) && !this.failedScripts.has(script)) {
-      this.syncPromises.push(this.initScript(script));
+    if (
+      object.xb?.manipulation ||
+      getSemanticControl(object) ||
+      this.hasTargetHandler(object, 'direct-touch')
+    ) {
+      this.interactionCandidates.add(object);
+    }
+    if ((object as MaybeScript).isXRScript) {
+      const script = object as Script;
+      this.seenScripts.add(script);
+      if (!this.activeScripts.has(script) && !this.failedScripts.has(script)) {
+        this.syncPromises.push(this.initScript(script));
+      }
     }
   };
 
+  private scanScene(scene: THREE.Scene): void {
+    const stack = this.traversalStack;
+    stack.length = 0;
+    stack.push(scene);
+    while (stack.length > 0) {
+      const object = stack.pop()!;
+      if (object.userData.xrblocksPrivate === true) continue;
+      this.checkScript(object);
+      for (let index = object.children.length - 1; index >= 0; index--) {
+        stack.push(object.children[index]);
+      }
+    }
+  }
+
+  /**
+   * Finds all scripts in the scene and initializes them or uninitializes them.
+   * Returns a promise which resolves when all new scripts finish initializing.
+   * @param scene - The main scene which is used to find scripts.
+   */
   syncScriptsWithScene(
     scene: THREE.Scene
   ): Promise<PromiseSettledResult<void>[]> {
@@ -299,8 +514,9 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
       return Promise.reject(new Error('ScriptsManager has been disposed.'));
     }
     this.seenScripts.clear();
+    this.interactionCandidates.clear();
     this.syncPromises.length = 0;
-    scene.traverse(this.checkScript);
+    this.scanScene(scene);
 
     for (const script of this.activeScripts) {
       if (!this.seenScripts.has(script)) this.uninitScript(script);
@@ -323,22 +539,13 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
       : Promise.allSettled(this.syncPromises);
   }
 
-  resetUX = (): void => {
-    this.callTargeted(this.activeScripts, 'ux.reset', (script) =>
-      script.ux.reset()
-    );
-  };
-
-  callSelecting = (controller: Controller): void => {
-    this.callHook('onSelecting', (script) =>
-      script.onSelecting({target: controller})
-    );
+  callSelecting = (event: SelectEvent): void => {
+    this.callHook('onSelecting', (script) => script.onSelecting(event));
   };
 
   callSqueezing = (controller: Controller): void => {
-    this.callHook('onSqueezing', (script) =>
-      script.onSqueezing({target: controller})
-    );
+    const event = controllerSelectEvent(controller);
+    this.callHook('onSqueezing', (script) => script.onSqueezing(event));
   };
 
   update = (time: number, frame: XRFrame): void => {
@@ -353,7 +560,7 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     this.callHook('onSelectStart', (script) => script.onSelectStart(event));
   };
 
-  callSelectEnd = (event: SelectEvent): void => {
+  callSelectEnd = (event: SelectEndEvent): void => {
     this.callHook('onSelectEnd', (script) => script.onSelectEnd(event));
   };
 
@@ -361,15 +568,22 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     this.callHook('onSelect', (script) => script.onSelect(event));
   };
 
-  callSqueezeStart = (event: SelectEvent): void => {
+  callLongSelect = (event: LongSelectEvent): void => {
+    this.callHook('onLongSelect', (script) => script.onLongSelect(event));
+  };
+
+  callSqueezeStart = (raw: ControllerEvent): void => {
+    const event = controllerSelectEvent(raw.target);
     this.callHook('onSqueezeStart', (script) => script.onSqueezeStart(event));
   };
 
-  callSqueezeEnd = (event: SelectEvent): void => {
+  callSqueezeEnd = (raw: ControllerEvent): void => {
+    const event = controllerSelectEvent(raw.target);
     this.callHook('onSqueezeEnd', (script) => script.onSqueezeEnd(event));
   };
 
-  callSqueeze = (event: SelectEvent): void => {
+  callSqueeze = (raw: ControllerEvent): void => {
+    const event = controllerSelectEvent(raw.target);
     this.callHook('onSqueeze', (script) => script.onSqueeze(event));
   };
 
@@ -405,7 +619,15 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     if (scripts) this.callTargeted(scripts, hook, callback);
   }
 
-  private getHookSet(hook: GlobalScriptHook): Set<Script> {
+  private hasOverriddenHook(script: Script, hook: IndexedScriptHook): boolean {
+    return !isDefaultScriptMethod(Reflect.get(script, hook));
+  }
+
+  private hasIndexedHook(script: Script, hook: IndexedScriptHook): boolean {
+    return this.hookScripts.get(hook)?.has(script) ?? false;
+  }
+
+  private getHookSet(hook: IndexedScriptHook): Set<Script> {
     let scripts = this.hookScripts.get(hook);
     if (!scripts) {
       scripts = new Set<Script>();
@@ -415,8 +637,8 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   }
 
   private indexScript(script: Script): void {
-    for (const hook of GLOBAL_HOOKS) {
-      if (!isDefaultScriptMethod(Reflect.get(script, hook))) {
+    for (const hook of INDEXED_HOOKS) {
+      if (this.hasOverriddenHook(script, hook)) {
         this.getHookSet(hook).add(script);
       }
     }
@@ -425,4 +647,29 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   private unindexScript(script: Script): void {
     for (const scripts of this.hookScripts.values()) scripts.delete(script);
   }
+}
+
+function controllerSelectEvent(controller: Controller): SelectEvent {
+  const type = controller.inputSource?.hand
+    ? 'hand-ray'
+    : controller.userData.isMouse
+      ? 'mouse'
+      : 'controller-ray';
+  return {source: getInteractionSource(controller, type)};
+}
+
+function eventForTarget(argument: unknown, currentTarget: Script): unknown {
+  if (!argument || typeof argument !== 'object') return argument;
+  if (Reflect.get(argument, 'currentTarget') === currentTarget) return argument;
+  const event = Object.create(Object.getPrototypeOf(argument)) as Record<
+    PropertyKey,
+    unknown
+  >;
+  Object.defineProperties(event, Object.getOwnPropertyDescriptors(argument));
+  Object.defineProperty(event, 'currentTarget', {
+    enumerable: true,
+    configurable: true,
+    value: currentTarget,
+  });
+  return event;
 }

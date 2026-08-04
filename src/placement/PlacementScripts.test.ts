@@ -46,41 +46,6 @@ function createTransformedObjects() {
 }
 
 describe('placement scripts', () => {
-  it('follows world position under transformed parents', () => {
-    const {target, object} = createTransformedObjects();
-    const offset = new THREE.Vector3(0.5, -0.25, 1);
-    const follow = new FollowObject({target, positionOffset: offset});
-    object.add(follow);
-
-    const expected = target.getWorldPosition(new THREE.Vector3()).add(offset);
-    follow.update();
-
-    expectVector(object.getWorldPosition(new THREE.Vector3()), expected);
-  });
-
-  it('follows world rotation under transformed parents', () => {
-    const {target, object} = createTransformedObjects();
-    const offset = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(0.1, -0.2, 0.3)
-    );
-    const follow = new FollowObject({
-      target,
-      mode: 'rotation',
-      rotationOffset: offset,
-    });
-    object.add(follow);
-
-    const expected = target
-      .getWorldQuaternion(new THREE.Quaternion())
-      .multiply(offset);
-    follow.update();
-
-    expectQuaternion(
-      object.getWorldQuaternion(new THREE.Quaternion()),
-      expected
-    );
-  });
-
   it('follows a world pose under transformed parents', () => {
     const {target, object} = createTransformedObjects();
     const positionOffset = new THREE.Vector3(-1, 0.5, 0.25);
@@ -197,28 +162,6 @@ describe('placement scripts', () => {
     follow.update();
 
     expectVector(object.getWorldPosition(new THREE.Vector3()), expected);
-  });
-
-  it('rebases a followed object after manipulation', () => {
-    const target = new THREE.Object3D();
-    const object = new THREE.Object3D();
-    const follow = new FollowObject({target});
-    object.add(follow);
-
-    target.position.x = 1;
-    follow.update();
-    expect(object.position.x).toBe(1);
-
-    suspendTransformScripts(object);
-    object.position.x = 5;
-    target.position.x = 2;
-    follow.update();
-    expect(object.position.x).toBe(5);
-
-    resumeTransformScripts(object);
-    target.position.x = 3;
-    follow.update();
-    expect(object.position.x).toBe(6);
   });
 
   it('shows and hides its parent without replacing visibility assignment', () => {

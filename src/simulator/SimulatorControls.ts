@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {Handedness} from '../input/Hands';
 import {Input} from '../input/Input';
+import {Interaction} from '../interaction/Interaction';
 import {Keycodes} from '../utils/Keycodes';
 
 import {SimulatorControllerMode} from './controlModes/SimulatorControllerMode';
@@ -123,12 +124,14 @@ export class SimulatorControls {
   init({
     camera,
     input,
+    interaction,
     timer,
     renderer,
     simulatorOptions,
   }: {
     camera: THREE.Camera;
     input: Input;
+    interaction: Interaction;
     timer: THREE.Timer;
     renderer: THREE.WebGLRenderer;
     simulatorOptions: SimulatorOptions;
@@ -137,6 +140,7 @@ export class SimulatorControls {
       this.simulatorModes[mode].init({
         camera,
         input,
+        interaction,
         timer,
         domElement: renderer.domElement,
         simulatorOptions,

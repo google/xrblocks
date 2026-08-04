@@ -1,4 +1,4 @@
 interface:
   display_name: 'Add spatial UI'
-  short_description: 'Build reliable UIBlocks-first spatial interfaces'
-  default_prompt: 'Use $xb-add-spatial-ui to add a usable UIBlocks spatial interface to this app.'
+  short_description: 'Build reliable spatial interfaces'
+  default_prompt: 'Use $xb-add-spatial-ui to add a usable spatial interface to this app.'

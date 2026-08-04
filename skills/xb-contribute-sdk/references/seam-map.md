@@ -41,17 +41,15 @@ contract and tests intentionally change it.
 ## Addon-public branch
 
 Find the addon's intended entry before adding exports. Common entries include
-`src/addons/<name>/index.ts`; UIBlocks instead exposes
-`src/addons/uiblocks/src/index.ts`. Export consumer values and types from that
-entry, not from the root barrel unless the capability is deliberately becoming
-core.
+`src/addons/<name>/index.ts`. Export consumer values and types from that entry,
+not from the root barrel unless the capability is deliberately becoming core.
 
 Rollup emits every non-test addon source file beneath the same relative
 `build/addons/` path. `package.json` exposes `./addons/*` as
 `./build/addons/*`, so verify the complete import including any `index.js` or
-nested segment against the emitted file. Bare repo aliases such as `uiblocks`
-and `netblocks` are separate import-map/TypeScript conveniences; they are not
-created by the package wildcard.
+nested segment against the emitted file. Bare repo aliases such as `netblocks`
+are separate import-map/TypeScript conveniences; they are not created by the
+package wildcard.
 
 If the addon imports a heavy peer, check `externalPackages` in
 `rollup.config.js`. If addon sources use a bare local alias, check

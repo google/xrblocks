@@ -8,12 +8,17 @@
         "../../node_modules/troika-types/packages/troika-three-text/dist/src/index"
       ],
       "xrblocks": ["../xrblocks.ts"],
-      "uiblocks": ["./uiblocks/src/index.ts"],
       "netblocks": ["./netblocks/src/index.ts"],
       "lipsync": ["./lipsync/index.ts"]
     }
   },
   "include": ["**/*.ts"],
-  "exclude": ["**/cli/**/*.ts", "**/*.test.ts", "**/*.test.js"],
+  "exclude": [
+    "**/cli/**/*.ts",
+    "**/samples/**/*.ts",
+    "virtualkeyboard/**/*.ts",
+    "**/*.test.ts",
+    "**/*.test.js"
+  ],
   "references": [{"path": "../../"}]
 }

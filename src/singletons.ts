@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {Core} from './core/Core';
 import {Options} from './core/Options';
 import {Script} from './core/Script';
+import {ui} from './ui/UI';
 import {checkThreeVersion} from './utils/VersionCheck';
 
 checkThreeVersion();
@@ -80,6 +81,9 @@ export const input = core.input;
  */
 export const camera = core.camera;
 
+/** Lightweight global UI settings and theme. */
+export {ui};
+
 // --- Function Aliases ---
 // These are bound shortcuts to frequently used methods for convenience.
 
@@ -128,17 +132,6 @@ export function getDeltaTime() {
  */
 export function getElapsedTime() {
   return core.timer.getElapsed();
-}
-
-/**
- * Toggles whether the reticle can target the depth-sensing mesh.
- * @param value - True to add the depth mesh as a target, false to
- * remove it.
- */
-export function showReticleOnDepthMesh(value: boolean) {
-  if (core.depth.depthMesh) {
-    core.depth.depthMesh.ignoreReticleRaycast = !value;
-  }
 }
 
 /**

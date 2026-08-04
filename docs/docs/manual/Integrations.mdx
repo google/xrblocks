@@ -17,7 +17,7 @@ The following table lists the optional dependencies supported by XR Blocks and t
 | **UI System**              | [`lit`](https://www.npmjs.com/package/lit)                               | Used for rendering HTML-based UI overlays and the built-in Simulator UI components when running the simulator.                                 |
 | **Text Rendering**         | [`troika-three-text`](https://www.npmjs.com/package/troika-three-text)   | Provides high-quality, signed-distance-field (SDF) 3D text rendering. Essential for readable and crisp text in 3D space.                       |
 | **Gaussian Splatting**     | [`@sparkjsdev/spark`](https://www.npmjs.com/package/@sparkjsdev/spark)   | Enables viewing of Gaussian Splatting models, allowing for photorealistic scene rendering.                                                     |
-| **UI Blocks**              | `@pmndrs/uikit`, `@preact/signals-core`                                  | Provides Yoga/flexbox-based rich spatial UI. Follow the complete UIBlocks import map because UIKit also has browser-side peers.                |
+| **Spatial UI**             | `@pmndrs/uikit`, `@preact/signals-core`                                  | Provides the built-in flex-layout spatial UI renderer and reactive layout state.                                                               |
 | **Vision**                 | `@mediapipe/tasks-vision`                                                | Enables MediaPipe object, human, face, hand-pose, and segmentation backends.                                                                   |
 | **Audio classification**   | `@mediapipe/tasks-audio`                                                 | Enables on-device sound classification.                                                                                                        |
 | **Accelerated raycasting** | `three-mesh-bvh`                                                         | Enables BVH-accelerated mesh raycasting where configured.                                                                                      |
@@ -27,8 +27,8 @@ The following table lists the optional dependencies supported by XR Blocks and t
 
 Install only the dependencies needed by the features you use. Most integrations
 are loaded lazily, but they are not universally auto-configured: physics needs
-`options.physics.RAPIER`, UI Blocks needs `options.uikit.enable(uikit)`, and
-camera/AI/vision capabilities must be enabled through `Options`.
+`options.physics.RAPIER`, while camera, AI, and vision capabilities must be
+enabled through `Options`. The spatial UI renderer starts automatically.
 
 For import-map applications, copy dependency entries from a working template
 or sample. Several browser packages require multiple related specifiers; a
