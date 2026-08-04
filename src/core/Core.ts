@@ -35,7 +35,7 @@ import {MeshDetectionOptions} from '../world/mesh/MeshDetectionOptions';
 import {Registry} from './components/Registry';
 import {ScreenshotSynthesizer} from './components/ScreenshotSynthesizer';
 import {SimulationTimer} from './components/SimulationTimer';
-import {type ScriptError, ScriptsManager} from './components/ScriptsManager';
+import {ScriptsManager} from './components/ScriptsManager';
 import {WaitFrame} from './components/WaitFrame';
 import {
   WebXRSessionEventType,
@@ -57,9 +57,6 @@ type CoreLifecycleState =
   | 'running'
   | 'disposing'
   | 'disposed';
-
-export type ScriptErrorListener = (event: ScriptError) => void;
-export type {ScriptError};
 
 /**
  * Core is the central engine of the XR Blocks framework, acting as a
@@ -163,18 +160,12 @@ export class Core {
   gestureRecognition?: GestureRecognition;
   transition?: XRTransition;
   currentFrame?: XRFrame;
-  private readonly scriptErrorListeners = new Set<ScriptErrorListener>();
-  private readonly scriptsManager = new ScriptsManager(
-    async (script: Script) => {
-      await callInitWithDependencyInjection(script, this.registry, this);
-      if (this.physics) {
-        await script.initPhysics(this.physics);
-      }
-    },
-    (event) => {
-      for (const listener of this.scriptErrorListeners) listener(event);
+  scriptsManager = new ScriptsManager(async (script: Script) => {
+    await callInitWithDependencyInjection(script, this.registry, this);
+    if (this.physics) {
+      await script.initPhysics(this.physics);
     }
-  );
+  });
   renderSceneOverride?: (
     renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
@@ -271,16 +262,11 @@ export class Core {
     this.registry.register(this.dragManager);
     this.registry.register(this.simulator);
     this.registry.register(this.simulator.navMesh);
+    this.registry.register(this.scriptsManager);
     this.registry.register(this.depth);
     this.registry.register(this.world);
     this.registry.register(this.context);
     this.registry.register(this.xrSystemsGroup);
-  }
-
-  /** Observes errors reported by Script lifecycle and callback execution. */
-  onScriptError(listener: ScriptErrorListener): () => void {
-    this.scriptErrorListeners.add(listener);
-    return () => this.scriptErrorListeners.delete(listener);
   }
 
   dispose(): Promise<void> {
@@ -313,7 +299,6 @@ export class Core {
       },
       () => this.disposeWebXRSessionManager(),
       () => this.scriptsManager.dispose(),
-      () => this.scriptErrorListeners.clear(),
       () => {
         this.simulatorRunning = false;
       },

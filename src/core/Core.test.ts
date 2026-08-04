@@ -12,7 +12,10 @@ vi.hoisted(() => {
 import {Core} from './Core';
 import {Options} from './Options';
 import {Script} from './Script';
-import {ScriptsManager} from './components/ScriptsManager';
+import {
+  ScriptsManager,
+  ScriptsManagerEventType,
+} from './components/ScriptsManager';
 
 function scripts(core: Core): ScriptsManager {
   return (core as unknown as {scriptsManager: ScriptsManager}).scriptsManager;
@@ -83,14 +86,17 @@ describe('Core lifecycle', () => {
     await disposal;
   });
 
-  it('reports script callback errors through Core', async () => {
+  it('reports script callback errors through ScriptsManager events', async () => {
     const script = new Script();
     vi.spyOn(script, 'update').mockImplementation(() => {
       throw new Error('update failed');
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const listener = vi.fn();
-    core.onScriptError(listener);
+    core.scriptsManager.addEventListener(
+      ScriptsManagerEventType.EXCEPTION,
+      listener
+    );
     await scripts(core).initScript(script);
 
     scripts(core).update(0, {} as XRFrame);

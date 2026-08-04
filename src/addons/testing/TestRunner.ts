@@ -4,8 +4,8 @@ import {
   Core,
   Options,
   Script,
+  ScriptsManagerEventType,
   type Constructor,
-  type ScriptError,
 } from 'xrblocks';
 import {
   EmbodiedControl,
@@ -28,7 +28,16 @@ export class TestRunner {
   readonly actions: EmbodiedControl;
 
   private caughtErrors: Error[] = [];
-  private readonly unsubscribeScriptErrors: () => void;
+  private readonly handleScriptException = (event: {
+    error: Error;
+    scriptName: string;
+    context: string;
+  }) => {
+    const error =
+      event.error ||
+      new Error(`Exception in script: ${event.scriptName} (${event.context})`);
+    this.caughtErrors.push(error);
+  };
 
   private constructor(core: Core, embodiedControl: EmbodiedControl) {
     this.core = core;
@@ -36,14 +45,10 @@ export class TestRunner {
     this.scene = core.scene;
     this.camera = core.camera;
 
-    this.unsubscribeScriptErrors = core.onScriptError((event: ScriptError) => {
-      const error =
-        event.error ||
-        new Error(
-          `Exception in script: ${event.scriptName} (${event.context})`
-        );
-      this.caughtErrors.push(error);
-    });
+    core.scriptsManager.addEventListener(
+      ScriptsManagerEventType.EXCEPTION,
+      this.handleScriptException
+    );
 
     // Set up the dynamic actions proxy.
     this.actions = new Proxy(this.embodiedControl, {
@@ -152,7 +157,10 @@ export class TestRunner {
     } catch (error) {
       firstError = error;
     }
-    this.unsubscribeScriptErrors();
+    this.core.scriptsManager.removeEventListener(
+      ScriptsManagerEventType.EXCEPTION,
+      this.handleScriptException
+    );
     try {
       await this.core.dispose();
     } catch (error) {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {describe, expect, it, vi} from 'vitest';
 
 import {Script} from '../Script';
-import {ScriptsManager} from './ScriptsManager';
+import {ScriptsManager, ScriptsManagerEventType} from './ScriptsManager';
 
 describe('ScriptsManager lifecycle', () => {
   it('disposes active and pending script generations once', async () => {
@@ -72,8 +72,9 @@ describe('ScriptsManager lifecycle', () => {
   });
 
   it('isolates callback errors unless propagation is requested', () => {
+    const manager = new ScriptsManager(async () => {});
     const reportError = vi.fn();
-    const manager = new ScriptsManager(async () => {}, reportError);
+    manager.addEventListener(ScriptsManagerEventType.EXCEPTION, reportError);
     const first = new Script();
     const second = new Script();
     const visited: Script[] = [];
@@ -96,5 +97,24 @@ describe('ScriptsManager lifecycle', () => {
         throw new Error('callback failed again');
       })
     ).toThrow('callback failed again');
+  });
+
+  it('shares initialization and rejects initialization failures', async () => {
+    let rejectInitialization: ((error: Error) => void) | undefined;
+    const manager = new ScriptsManager(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectInitialization = reject;
+        })
+    );
+    const script = new Script();
+
+    const first = manager.initScript(script);
+    const second = manager.initScript(script);
+    expect(second).toBe(first);
+
+    await vi.waitFor(() => expect(rejectInitialization).toBeDefined());
+    rejectInitialization?.(new Error('initialization failed'));
+    await expect(first).rejects.toThrow('initialization failed');
   });
 });
