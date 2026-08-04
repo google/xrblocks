@@ -25,9 +25,6 @@ export class Reticle extends THREE.Mesh<
   /** Ensures the reticle is drawn on top of other transparent objects. */
   renderOrder = 1000;
 
-  /** The smoothing factor for rotational slerp interpolation. */
-  rotationSmoothing: number;
-
   /** The z-offset to prevent visual artifacts (z-fighting). */
   offset: number;
 
@@ -59,7 +56,7 @@ export class Reticle extends THREE.Mesh<
    * objects. Defaults to `false` to ensure it is always visible.
    */
   constructor(
-    rotationSmoothing = 0.8,
+    public rotationSmoothing = 0.8,
     offset = 0.001,
     size = 0.019,
     depthTest = false
