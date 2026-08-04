@@ -14,6 +14,7 @@ export class ModelViewerScene extends xb.Script {
   placedObjects = new Set();
   sessionStarted = false;
   torusMesh = null;
+  globe = null;
 
   async init() {
     xb.core.input.addReticles();
@@ -39,6 +40,7 @@ export class ModelViewerScene extends xb.Script {
       this.torusMesh.rotation.x += 0.015;
       this.torusMesh.rotation.y += 0.015;
     }
+    if (this.globe) this.globe.rotation.y += 0.005;
   }
 
   onSimulatorStarted() {
@@ -68,7 +70,7 @@ export class ModelViewerScene extends xb.Script {
   }
 
   createModelFromObject() {
-    const model = new xb.ModelViewer({});
+    const model = new xb.ModelViewer();
     const torusMesh = new THREE.Mesh(
       new THREE.TorusKnotGeometry(0.1, 0.03, 100, 16),
       new THREE.MeshPhongMaterial({
@@ -78,10 +80,7 @@ export class ModelViewerScene extends xb.Script {
       })
     );
     this.torusMesh = torusMesh;
-    model.add(torusMesh);
-    model.setupBoundingBox();
-    model.setupRaycastCylinder();
-    model.setupPlatform();
+    model.setContent(torusMesh);
     model.position.set(-0.6, 0.5, -1.5);
     this.add(model);
     this.loadedObjects.push(model);
@@ -89,15 +88,12 @@ export class ModelViewerScene extends xb.Script {
   }
 
   async createModelFromGLTF() {
-    const model = new xb.ModelViewer({});
+    const model = new xb.ModelViewer();
     this.add(model);
-    await model.loadGLTFModel({
-      data: {
-        scale: {x: 0.009, y: 0.009, z: 0.009},
-        path: PROPRIETARY_ASSETS_BASE_URL,
-        model: 'chess/chess_compressed.glb',
-      },
-      renderer: xb.core.renderer,
+    await model.load({
+      url: 'chess/chess_compressed.glb',
+      path: PROPRIETARY_ASSETS_BASE_URL,
+      scale: 0.009,
     });
     model.position.set(-0.2, 0.5, -1.5);
     this.loadedObjects.push(model);
@@ -105,15 +101,11 @@ export class ModelViewerScene extends xb.Script {
   }
 
   async createModelFromAnimatedGLTF() {
-    const model = new xb.ModelViewer({});
+    const model = new xb.ModelViewer();
     this.add(model);
-    await model.loadGLTFModel({
-      data: {
-        scale: {x: 1.0, y: 1.0, z: 1.0},
-        path: ASSETS_BASE_URL,
-        model: 'models/Cat/cat.gltf',
-      },
-      renderer: xb.core.renderer,
+    await model.load({
+      url: 'models/Cat/cat.gltf',
+      path: ASSETS_BASE_URL,
     });
     model.position.set(0.9, 0.68, -0.95);
   }
@@ -121,12 +113,10 @@ export class ModelViewerScene extends xb.Script {
   async createModelFromSplat() {
     const model = new xb.ModelViewer({castShadow: false, receiveShadow: false});
     this.add(model);
-    await model.loadSplatModel({
-      data: {
-        model: PROPRIETARY_ASSETS_BASE_URL + 'lego/lego.spz',
-        scale: {x: 0.6, y: 0.6, z: 0.6},
-        rotation: {x: 0, y: 180, z: 0},
-      },
+    await model.load({
+      url: PROPRIETARY_ASSETS_BASE_URL + 'lego/lego.spz',
+      scale: 0.6,
+      rotation: {x: 0, y: Math.PI, z: 0},
     });
     model.position.set(0.6, 0.5, -1.5);
     this.loadedObjects.push(model);
@@ -134,37 +124,34 @@ export class ModelViewerScene extends xb.Script {
   }
 
   async createModelInPanel() {
-    const panel = new xb.SpatialPanel({
-      backgroundColor: '#00000000',
-      width: 0.6,
-      height: 0.6,
-      useDefaultPosition: false,
+    const modelGroup = new THREE.Group();
+    modelGroup.position.set(0, 1.5, -2.0);
+    this.add(modelGroup);
+
+    const model = new xb.ModelViewer({
+      manipulation: false,
+      origin: 'center',
     });
-    panel.isRoot = true;
-    this.add(panel);
-    panel.position.set(0, 1.5, -2.0);
-
-    panel.updateLayouts();
-
-    const model = new xb.ModelViewer({});
-    panel.add(model);
-    await model.loadGLTFModel({
-      data: {
-        scale: {x: 0.002, y: 0.002, z: 0.002},
-        rotation: {x: 0, y: 180, z: 0},
-        path: PROPRIETARY_ASSETS_BASE_URL,
-        model: 'earth/Earth_1_12756.glb',
-      },
-      setupPlatform: false,
-      renderer: xb.core.renderer,
+    modelGroup.add(model);
+    await model.load({
+      url: 'earth/Earth_1_12756.glb',
+      path: PROPRIETARY_ASSETS_BASE_URL,
+      scale: 0.002,
+      rotation: {x: 0, y: Math.PI, z: 0},
     });
     // Position and scale the model to fill a 1x1x1 space uniformly, centered on the panel.
-    const size = new THREE.Vector3();
-    model.bbox.getSize(size);
+    const size = new THREE.Box3()
+      .setFromObject(model)
+      .getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     if (maxDim > 0) {
       model.scale.setScalar(1 / maxDim);
       model.position.set(0, -(size.y / 2) / maxDim, 0);
     }
+    model.manipulation = {
+      actions: {rotate: {axis: 'y'}},
+      handle: {action: 'rotate'},
+    };
+    this.globe = model;
   }
 }
