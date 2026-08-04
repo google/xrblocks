@@ -2,7 +2,6 @@ import * as THREE from 'three';
 
 import {Core} from './core/Core';
 import {Options} from './core/Options';
-import {Script} from './core/Script';
 import {checkThreeVersion} from './utils/VersionCheck';
 
 checkThreeVersion();
@@ -100,26 +99,6 @@ export function add(...object: THREE.Object3D[]) {
  */
 export function init(options: Options = new Options()) {
   return core.init(options);
-}
-
-/**
- * A shortcut for `core.scriptsManager.initScript()`. Manually initializes a
- * script and its dependencies.
- * @param script - The script to initialize.
- * @see {@link ScriptsManager.initScript}
- */
-export function initScript(script: Script) {
-  return core.scriptsManager.initScript(script);
-}
-
-/**
- * A shortcut for `core.scriptsManager.uninitScript()`. Disposes of a script
- * and removes it from the update loop.
- * @param script - The script to uninitialize.
- * @see {@link ScriptsManager.uninitScript}
- */
-export function uninitScript(script: Script) {
-  return core.scriptsManager.uninitScript(script);
 }
 
 /**
