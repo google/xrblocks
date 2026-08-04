@@ -47,21 +47,18 @@ const GLOBAL_HOOKS = Object.freeze([
   'onSimulatorStarted',
 ] as const satisfies readonly GlobalScriptHook[]);
 
-export enum ScriptsManagerEventType {
-  EXCEPTION = 'exception',
+const SCRIPT_READY = Promise.resolve();
+const NO_SCRIPT_CHANGES = Promise.resolve<PromiseSettledResult<void>[]>([]);
+
+export interface ScriptError {
+  readonly scriptName: string;
+  readonly context: string;
+  readonly error: Error;
+  readonly timestamp: number;
 }
 
-export type ScriptsManagerEventMap = THREE.Object3DEventMap & {
-  [ScriptsManagerEventType.EXCEPTION]: {
-    scriptName: string;
-    context: string;
-    error: Error;
-    timestamp: number;
-  };
-};
-
-export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap> {
-  private activeScripts = new Set<Script>();
+export class ScriptsManager {
+  private readonly activeScripts = new Set<Script>();
   private readonly hookScripts = new Map<GlobalScriptHook, Set<Script>>();
   private readonly pendingInitializations = new Map<
     Script,
@@ -78,19 +75,10 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   beforeDispose?: (script: Script) => void;
   afterDispose?: (script: Script) => void;
 
-  constructor(private initScriptFunction: (script: Script) => Promise<void>) {
-    super();
-  }
-
-  /** The set of all currently initialized scripts. */
-  get scripts(): Set<Script> {
-    return this.activeScripts;
-  }
-
-  set scripts(scripts: Set<Script>) {
-    this.activeScripts = scripts;
-    this.rebuildHookIndex();
-  }
+  constructor(
+    private readonly initScriptFunction: (script: Script) => Promise<void>,
+    private readonly onScriptError?: (event: ScriptError) => void
+  ) {}
 
   private handleException(error: Error, script: Script, context: string) {
     console.error(
@@ -100,8 +88,7 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
       error
     );
 
-    this.dispatchEvent({
-      type: ScriptsManagerEventType.EXCEPTION,
+    this.onScriptError?.({
       scriptName: script.name || script.constructor.name,
       context,
       error,
@@ -120,18 +107,24 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     this.handleException(normalizedError, script, context);
   }
 
-  private callScripts(
+  callTargeted(
     scripts: Iterable<Script>,
     context: string,
-    callback: (script: Script) => void
-  ): void {
+    callback: (script: Script) => boolean | void
+  ): boolean {
     for (const script of scripts) {
       try {
-        callback(script);
+        if (callback(script) === true) return true;
       } catch (error: unknown) {
         this.handleScriptError(error, script, context);
       }
     }
+    return false;
+  }
+
+  /** Reports an asynchronous subsystem error against its owning Script. */
+  reportError(error: unknown, script: Script, context: string): void {
+    this.handleScriptError(error, script, context);
   }
 
   /** Initializes a script. Concurrent calls share one initialization. */
@@ -139,8 +132,8 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     if (this.disposed) {
       return Promise.reject(new Error('ScriptsManager has been disposed.'));
     }
-    if (this.activeScripts.has(script)) return Promise.resolve();
-    if (this.failedScripts.has(script)) return Promise.resolve();
+    if (this.activeScripts.has(script)) return SCRIPT_READY;
+    if (this.failedScripts.has(script)) return SCRIPT_READY;
 
     const pending = this.pendingInitializations.get(script);
     if (pending) {
@@ -152,12 +145,10 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
 
     const entry: PendingInitialization = {
       script,
-      promise: Promise.resolve(),
+      promise: SCRIPT_READY,
       connection: 'connected',
     };
-    entry.promise = Promise.resolve().then(() =>
-      this.finishInitialization(entry)
-    );
+    entry.promise = SCRIPT_READY.then(() => this.finishInitialization(entry));
     this.pendingInitializations.set(script, entry);
     return entry.promise;
   }
@@ -281,8 +272,10 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
   private checkScript = (object: THREE.Object3D): void => {
     if (!(object as MaybeScript).isXRScript) return;
     const script = object as Script;
-    this.syncPromises.push(this.initScript(script));
     this.seenScripts.add(script);
+    if (!this.activeScripts.has(script) && !this.failedScripts.has(script)) {
+      this.syncPromises.push(this.initScript(script));
+    }
   };
 
   syncScriptsWithScene(
@@ -311,11 +304,13 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
       }
     }
 
-    return Promise.allSettled(this.syncPromises);
+    return this.syncPromises.length === 0
+      ? NO_SCRIPT_CHANGES
+      : Promise.allSettled(this.syncPromises);
   }
 
   resetUX = (): void => {
-    this.callScripts(this.activeScripts, 'ux.reset', (script) =>
+    this.callTargeted(this.activeScripts, 'ux.reset', (script) =>
       script.ux.reset()
     );
   };
@@ -393,7 +388,7 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     callback: (script: Script) => void
   ): void {
     const scripts = this.hookScripts.get(hook);
-    if (scripts) this.callScripts(scripts, hook, callback);
+    if (scripts) this.callTargeted(scripts, hook, callback);
   }
 
   private getHookSet(hook: GlobalScriptHook): Set<Script> {
@@ -417,8 +412,4 @@ export class ScriptsManager extends THREE.EventDispatcher<ScriptsManagerEventMap
     for (const scripts of this.hookScripts.values()) scripts.delete(script);
   }
 
-  private rebuildHookIndex(): void {
-    this.hookScripts.clear();
-    for (const script of this.activeScripts) this.indexScript(script);
-  }
 }
