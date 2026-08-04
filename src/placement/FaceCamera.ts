@@ -23,6 +23,9 @@ export class FaceCamera extends TransformScript {
   private timer?: THREE.Timer;
   private readonly mode: FaceCameraMode;
   private readonly smoothing: number;
+  private readonly worldPosition = new THREE.Vector3();
+  private readonly cameraPosition = new THREE.Vector3();
+  private readonly parentWorldQuaternion = new THREE.Quaternion();
 
   constructor(options: FaceCameraOptions = {}) {
     super();
@@ -39,10 +42,10 @@ export class FaceCamera extends TransformScript {
     const object = this.parent;
     if (!this.canUpdate || !object || !this.camera || !this.timer) return;
 
-    const worldPosition = object.getWorldPosition(new THREE.Vector3());
-    const cameraPosition = this.camera.getWorldPosition(new THREE.Vector3());
+    const worldPosition = object.getWorldPosition(this.worldPosition);
+    const cameraPosition = this.camera.getWorldPosition(this.cameraPosition);
     const parentWorldQuaternion = object.parent?.getWorldQuaternion(
-      new THREE.Quaternion()
+      this.parentWorldQuaternion
     );
     const targetQuaternion = faceCameraQuaternion(
       worldPosition,
