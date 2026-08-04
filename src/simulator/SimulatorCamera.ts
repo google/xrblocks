@@ -133,4 +133,13 @@ export class SimulatorCamera {
     }
     return null;
   }
+
+  dispose() {
+    for (const track of this.mediaStream?.getTracks() ?? []) track.stop();
+    this.mediaStream = undefined;
+    this.cameraInfo = undefined;
+    this.canvas = undefined;
+    this.context = undefined;
+    this.cameraCreated = false;
+  }
 }

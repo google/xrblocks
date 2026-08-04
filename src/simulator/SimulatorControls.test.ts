@@ -5,6 +5,7 @@ import {SimulatorControls} from './SimulatorControls';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
 import {SimulatorNavMesh} from './scene/SimulatorNavMesh';
+import {Keycodes} from '../utils/Keycodes';
 
 function createControls() {
   return new SimulatorControls(
@@ -29,56 +30,73 @@ describe('SimulatorControls wheel input', () => {
     connectedControls.length = 0;
   });
 
-  it('prevents the default wheel action when the active mode handles it', () => {
+  it('prevents browser wheel defaults only when the active mode handles them', () => {
     const controls = createControls();
     const canvas = document.createElement('canvas');
     controls.renderer = {domElement: canvas} as never;
-    const wheelSpy = vi
-      .spyOn(controls.simulatorModeControls, 'onWheel')
-      .mockReturnValue(true);
+    vi.spyOn(controls.simulatorModeControls, 'onWheel')
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
     connectedControls.push(controls);
     controls.connect();
 
-    const event = new WheelEvent('wheel', {
+    const handled = new WheelEvent('wheel', {
       deltaY: -100,
       cancelable: true,
     });
-    canvas.dispatchEvent(event);
+    canvas.dispatchEvent(handled);
+    expect(handled.defaultPrevented).toBe(true);
 
-    expect(event.defaultPrevented).toBe(true);
-    expect(wheelSpy).toHaveBeenCalledWith(event);
+    const rejected = new WheelEvent('wheel', {
+      deltaY: -100,
+      cancelable: true,
+    });
+    canvas.dispatchEvent(rejected);
+    expect(rejected.defaultPrevented).toBe(false);
   });
 
-  it('does not prevent the default wheel action when the active mode does not handle it', () => {
+  it('cancels pointer interactions and clears keys on disable, blur, and cancel', () => {
     const controls = createControls();
-    const wheelSpy = vi
-      .spyOn(controls.simulatorModeControls, 'onWheel')
-      .mockReturnValue(false);
-    const event = new WheelEvent('wheel', {
-      deltaY: -100,
-      cancelable: true,
-    });
+    const setPointerCapture = vi.fn();
+    const releasePointerCapture = vi.fn();
+    const hasPointerCapture = vi.fn().mockReturnValue(true);
+    controls.renderer = {
+      domElement: {
+        setPointerCapture,
+        releasePointerCapture,
+        hasPointerCapture,
+      },
+    } as never;
+    vi.spyOn(
+      controls.simulatorModeControls,
+      'onPointerDown'
+    ).mockImplementation(() => {});
+    const pointerUp = vi
+      .spyOn(controls.simulatorModeControls, 'onPointerUp')
+      .mockImplementation(() => {});
 
-    controls.onWheel(event);
+    controls.onPointerDown(pointerEvent('pointerdown', 1));
+    controls.downKeys.add(Keycodes.W_CODE);
+    controls.onBlur();
+    expect(controls.pointerDown).toBe(false);
+    expect(controls.downKeys.size).toBe(0);
+    expect(pointerUp).toHaveBeenCalledOnce();
+    expect(releasePointerCapture).toHaveBeenCalledWith(1);
 
-    expect(event.defaultPrevented).toBe(false);
-    expect(wheelSpy).toHaveBeenCalledWith(event);
-  });
+    controls.onPointerDown(pointerEvent('pointerdown', 2));
+    controls.onPointerCancel(pointerEvent('pointercancel', 2));
+    expect(controls.pointerDown).toBe(false);
+    expect(pointerUp).toHaveBeenCalledTimes(2);
 
-  it('does not capture or forward wheel events while controls are disabled', () => {
-    const controls = createControls();
-    const wheelSpy = vi
-      .spyOn(controls.simulatorModeControls, 'onWheel')
-      .mockReturnValue(true);
-    controls.enabled = false;
-    const event = new WheelEvent('wheel', {
-      deltaY: -100,
-      cancelable: true,
-    });
-
-    controls.onWheel(event);
-
-    expect(event.defaultPrevented).toBe(false);
-    expect(wheelSpy).not.toHaveBeenCalled();
+    controls.onPointerDown(pointerEvent('pointerdown', 3));
+    controls.downKeys.add(Keycodes.W_CODE);
+    controls.setEnabled(false);
+    expect(controls.pointerDown).toBe(false);
+    expect(controls.downKeys.size).toBe(0);
+    expect(pointerUp).toHaveBeenCalledTimes(3);
   });
 });
+
+function pointerEvent(type: string, pointerId: number): PointerEvent {
+  return Object.assign(new MouseEvent(type), {pointerId}) as PointerEvent;
+}

@@ -54,11 +54,18 @@ export class Physics {
    * ends.
    */
   dispose() {
-    if (this.eventQueue) {
-      this.eventQueue.free();
+    let firstError: unknown;
+    for (const free of [
+      () => this.eventQueue?.free(),
+      () => this.blendedWorld?.free(),
+    ]) {
+      try {
+        free();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
     }
-    if (this.blendedWorld) {
-      this.blendedWorld.free();
-    }
+    this.initialized = false;
+    if (firstError !== undefined) throw firstError;
   }
 }
