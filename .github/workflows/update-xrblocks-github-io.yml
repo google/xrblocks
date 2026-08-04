@@ -13,13 +13,15 @@ on:
       - "templates/**"
       - "samples/**"
 
+permissions: {}
+
 jobs:
   dispatch-to-xrblocks-github-io:
     if: github.repository == 'google/xrblocks'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger build in xrblocks.github.io
-        uses: peter-evans/repository-dispatch@v4
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
         with:
           token: ${{ secrets.XRBLOCKS_GITHUB_IO_PAT }}
           repository: xrblocks/xrblocks.github.io
