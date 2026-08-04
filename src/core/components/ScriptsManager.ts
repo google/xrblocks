@@ -215,7 +215,6 @@ export class ScriptsManager {
     this.failedScripts.clear();
     this.hookScripts.clear();
     this.seenScripts.clear();
-    this.interactionCandidates.clear();
     this.syncPromises.length = 0;
 
     this.disposalPromise = Promise.resolve().then(() =>
@@ -411,5 +410,4 @@ export class ScriptsManager {
   private unindexScript(script: Script): void {
     for (const scripts of this.hookScripts.values()) scripts.delete(script);
   }
-
 }
