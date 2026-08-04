@@ -83,3 +83,43 @@ describe('Input resilience and cleanup', () => {
     expect(removeSpy).toHaveBeenCalledWith('selectstart', listenerAdded);
   });
 });
+
+describe('Input PinchFilter mobile and hand tracking compatibility', () => {
+  it('does not filter native select events when targetRayMode is screen', () => {
+    const input = new Input();
+    const mockController = new THREE.Object3D() as unknown as Controller;
+    mockController.userData = {connected: true};
+    mockController.gamepad = {
+      buttons: [{value: 0, pressed: true}],
+    } as unknown as Gamepad;
+    mockController.inputSource = {
+      targetRayMode: 'screen',
+    } as unknown as XRInputSource;
+
+    const selectStartSpy = vi.fn();
+    input.controllers.push(mockController);
+    input.bindListener('selectstart', selectStartSpy);
+
+    mockController.dispatchEvent({type: 'selectstart', target: mockController});
+    expect(selectStartSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('filters native select events on hand tracking when button value is around 0.7', () => {
+    const input = new Input();
+    const mockController = new THREE.Object3D() as unknown as Controller;
+    mockController.userData = {connected: true};
+    mockController.gamepad = {
+      buttons: [{value: 0.7, pressed: true}],
+    } as unknown as Gamepad;
+    mockController.inputSource = {
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+
+    const selectStartSpy = vi.fn();
+    input.controllers.push(mockController);
+    input.bindListener('selectstart', selectStartSpy);
+
+    mockController.dispatchEvent({type: 'selectstart', target: mockController});
+    expect(selectStartSpy).not.toHaveBeenCalled();
+  });
+});

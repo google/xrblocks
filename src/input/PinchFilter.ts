@@ -5,6 +5,7 @@ export interface FilterableControllerEvent extends ControllerEvent {
   isCustom?: boolean;
 }
 
+// Temporary class until pinch is fixed at the system level on Galaxy XR.
 export class PinchFilter {
   private forwardingListeners = new Map<
     keyof ControllerEventMap,
@@ -68,7 +69,11 @@ export class PinchFilter {
       event.type === 'selectend' ||
       event.type === 'select'
     ) {
-      if (controller.gamepad?.buttons[0] !== undefined && !event.isCustom) {
+      if (
+        controller.gamepad?.buttons[0] !== undefined &&
+        controller.inputSource?.targetRayMode !== 'screen' &&
+        !event.isCustom
+      ) {
         return true;
       }
     }
@@ -81,7 +86,11 @@ export class PinchFilter {
     setRaycasterFn: (c: Controller) => void,
     performRaycastFn: (c: Controller) => void
   ) {
-    if (controller.gamepad && controller.gamepad.buttons[0] !== undefined) {
+    if (
+      controller.gamepad &&
+      controller.gamepad.buttons[0] !== undefined &&
+      controller.inputSource?.targetRayMode !== 'screen'
+    ) {
       const pinchValue = controller.gamepad.buttons[0].value;
       const isPinching = pinchValue >= 1.0;
       const wasPinching = controller.userData.selected === true;
