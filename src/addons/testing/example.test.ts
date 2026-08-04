@@ -1,7 +1,7 @@
 import {describe, it, expect} from 'vitest';
 import {TestRunner} from './TestRunner';
 import * as THREE from 'three';
-import {Script, type SelectEvent, TextButton, Options, core} from 'xrblocks';
+import {Core, Script, type SelectEvent, TextButton, Options} from 'xrblocks';
 
 class SimpleRotationScript extends Script {
   speed = 1.0;
@@ -125,7 +125,7 @@ describe('TestRunner functional examples', () => {
     button.onTriggered = () => {
       game.spawnItem();
     };
-    button.position.set(0, core.user.height, -core.user.height);
+    button.position.set(0, 1.6, -1.6);
 
     const runner = await TestRunner.create({
       scripts: [game, button],
@@ -147,11 +147,15 @@ describe('TestRunner functional examples', () => {
 
   it('should run Example 5: End-to-End Heuristic Gesture Recognition', async () => {
     class TestGestureScript extends Script {
+      static dependencies = {core: Core};
+
       pinchDetected = false;
+      private core?: Core;
       private _onGestureStart?: (event: Event) => void;
       private _onGestureEnd?: (event: Event) => void;
 
-      override init() {
+      override init({core}: {core: Core}) {
+        this.core = core;
         const gestures = core.gestureRecognition;
         if (!gestures) return;
 
@@ -173,7 +177,7 @@ describe('TestRunner functional examples', () => {
       }
 
       override dispose() {
-        const gestures = core.gestureRecognition;
+        const gestures = this.core?.gestureRecognition;
         if (gestures) {
           if (this._onGestureStart) {
             gestures.removeEventListener('gesturestart', this._onGestureStart);
