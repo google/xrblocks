@@ -78,6 +78,7 @@ const sidebars: SidebarsConfig = {
       label: 'XR Interaction',
       collapsed: false,
       items: [
+        'samples/Head-Gestures',
         'samples/XR-Emoji',
         'samples/Custom-Gestures',
         'samples/RockPaperScissors',
