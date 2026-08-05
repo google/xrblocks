@@ -293,7 +293,7 @@
           const rotations = [0.18, 0, -0.18];
           cards.forEach((card, index) => {
             card.name = ['Explore card', 'Tune card', 'Features card'][index];
-            card.position.set(positions[index], 1.48, -1.5);
+            card.position.set(positions[index], 1.48, -1.2);
             card.rotation.y = rotations[index];
             card.userData.initialTransform = {
               position: card.position.clone(),

@@ -125,13 +125,12 @@ export class MeetEmoji extends xb.Script {
       style: {
         fontSize: 34,
         fontWeight: 'bold',
-        color: '#ffffff',
         textAlign: 'center',
       },
     });
     this.hint = new xb.UIText({
       text: 'Victory launches confetti - Thumbs up releases balloons',
-      style: {fontSize: 20, color: '#c8d2ff', textAlign: 'center'},
+      style: {fontSize: 20, textAlign: 'center'},
     });
 
     this.card = new xb.UICard({
@@ -139,14 +138,8 @@ export class MeetEmoji extends xb.Script {
       manipulation: true,
       edge: {scale: true},
       style: {
-        padding: 34,
-        gap: 18,
         justifyContent: 'center',
         alignItems: 'stretch',
-        backgroundColor: '#14152bcc',
-        borderColor: '#8b7dff',
-        borderWidth: 3,
-        borderRadius: 32,
       },
       children: [
         new xb.UIText({
@@ -154,7 +147,6 @@ export class MeetEmoji extends xb.Script {
           style: {
             fontSize: 20,
             fontWeight: 'bold',
-            color: '#a99dff',
             textAlign: 'center',
           },
         }),

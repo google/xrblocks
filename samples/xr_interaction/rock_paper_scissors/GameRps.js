@@ -65,13 +65,12 @@ export class GameRps extends xb.Script {
       style: {
         fontSize: 28,
         fontWeight: 'bold',
-        color: '#ffffff',
         textAlign: 'center',
       },
     });
     this.secondaryText = new xb.UIText({
       text: 'Show a thumbs-up gesture to start.',
-      style: {fontSize: 20, color: '#bfdbfe', textAlign: 'center'},
+      style: {fontSize: 20, textAlign: 'center'},
     });
 
     const playRow = new xb.UIPanel({
@@ -98,13 +97,7 @@ export class GameRps extends xb.Script {
       manipulation: true,
       edge: {scale: true},
       style: {
-        padding: 30,
-        gap: 14,
         alignItems: 'center',
-        backgroundColor: '#0f172aee',
-        borderColor: '#60a5fa',
-        borderWidth: 3,
-        borderRadius: 32,
       },
       children: [
         new xb.UIText({
@@ -112,7 +105,6 @@ export class GameRps extends xb.Script {
           style: {
             fontSize: 20,
             fontWeight: 'bold',
-            color: '#60a5fa',
             textAlign: 'center',
           },
         }),
@@ -142,13 +134,11 @@ export class GameRps extends xb.Script {
         padding: 14,
         gap: 8,
         alignItems: 'center',
-        backgroundColor: '#ffffff0d',
-        borderRadius: 20,
       },
       children: [
         new xb.UIText({
           text: label,
-          style: {fontSize: 17, color: '#94a3b8', textAlign: 'center'},
+          style: {fontSize: 17, textAlign: 'center'},
         }),
         image,
       ],

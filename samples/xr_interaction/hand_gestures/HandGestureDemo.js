@@ -217,8 +217,6 @@ export class HandGestureDemo extends xb.Script {
               width: 74,
               height: 74,
               objectFit: 'contain',
-              backgroundColor: '#ffffff12',
-              borderRadius: 14,
             },
           })
       ),
@@ -226,35 +224,26 @@ export class HandGestureDemo extends xb.Script {
 
     this.modelStatus = new xb.UIText({
       text: 'Loading gesture model...',
-      style: {fontSize: 18, color: '#b8c2d9', textAlign: 'center'},
+      style: {fontSize: 18, textAlign: 'center'},
     });
 
     this.card = new xb.UICard({
       size: {width: 1.0, height: 0.68},
       manipulation: true,
       edge: {scale: true},
-      style: {
-        padding: 34,
-        gap: 20,
-        backgroundColor: '#111827ee',
-        borderColor: '#5eead4',
-        borderWidth: 3,
-        borderRadius: 32,
-      },
       children: [
         new xb.UIText({
           text: 'HAND GESTURES',
           style: {
             fontSize: 22,
             fontWeight: 'bold',
-            color: '#5eead4',
             textAlign: 'center',
           },
         }),
         handRow,
         new xb.UIText({
           text: 'Try one of these gestures with either hand',
-          style: {fontSize: 22, color: '#ffffff', textAlign: 'center'},
+          style: {fontSize: 22, textAlign: 'center'},
         }),
         examples,
         this.modelStatus,
@@ -280,7 +269,6 @@ export class HandGestureDemo extends xb.Script {
       style: {
         fontSize: 28,
         fontWeight: 'bold',
-        color: '#ffffff',
         textAlign: 'center',
       },
     });
@@ -290,13 +278,11 @@ export class HandGestureDemo extends xb.Script {
         padding: 18,
         gap: 8,
         alignItems: 'center',
-        backgroundColor: '#ffffff0d',
-        borderRadius: 22,
       },
       children: [
         new xb.UIText({
           text: hand.toUpperCase(),
-          style: {fontSize: 18, color: '#94a3b8', textAlign: 'center'},
+          style: {fontSize: 18, textAlign: 'center'},
         }),
         image,
         label,
