@@ -1,5 +1,4 @@
 import {UIElement, type UIElementOptions} from '../UIElement';
-import {selectUnicodeTextRenderer} from '../internal/TextRendererSelection';
 
 export interface UITextOptions extends UIElementOptions {
   text: string;
@@ -14,7 +13,6 @@ export class UIText extends UIElement {
     if (typeof text !== 'string') throw new Error('UIText requires text.');
     super('text', options);
     this._text = text;
-    selectUnicodeTextRenderer(this, text);
   }
 
   get text(): string {
@@ -26,7 +24,6 @@ export class UIText extends UIElement {
       throw new Error('UIText.text must be a string.');
     if (value === this._text) return;
     this._text = value;
-    this.markUIDirty();
-    if (selectUnicodeTextRenderer(this, value)) this.markUIStructureDirty();
+    this.markUIContentDirty();
   }
 }
