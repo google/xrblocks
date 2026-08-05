@@ -151,13 +151,10 @@ class AnchorsDemo extends xb.Script {
       this.restoreSaved();
     }
 
-    // Simulated anchors report their own pose, so this works with or without
-    // a live frame.
-    const referenceSpace = frame
-      ? (xb.core.renderer.xr.getReferenceSpace() ?? undefined)
-      : undefined;
+    // The manager resolves the reference space itself, and simulated anchors
+    // report their own pose, so this works with or without a live frame.
     for (const [id, mesh] of this.markers) {
-      const pose = anchors.getPose(id, referenceSpace);
+      const pose = anchors.getPose(id);
       if (!pose) continue;
       mesh.position.set(
         pose.transform.position.x,

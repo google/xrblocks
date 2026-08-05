@@ -2,6 +2,20 @@ import {deepMerge} from '../../utils/OptionsUtils';
 import {DeepPartial} from '../../utils/Types';
 
 /**
+ * Builds the default storage key for a page.
+ *
+ * Scoped to the path because anchors are stored per origin: two apps served
+ * from one host would otherwise restore each other's anchors, which reads as
+ * mysterious content appearing on first run rather than as a shared store.
+ *
+ * @param pathname - Page path; omit when there is no document.
+ * @returns The storage key to default to.
+ */
+export function defaultAnchorStorageKey(pathname?: string): string {
+  return pathname ? `xrblocks.anchors:${pathname}` : 'xrblocks.anchors';
+}
+
+/**
  * Configuration for the spatial anchor subsystem.
  *
  * Anchors pin content to a real place so the platform keeps it there as its
@@ -33,8 +47,15 @@ export class AnchorsOptions {
    */
   simulatorFallback = false;
 
-  /** Storage key used when persistence is enabled. */
-  storageKey = 'xrblocks.anchors';
+  /**
+   * Storage key used when persistence is enabled.
+   *
+   * Defaults to a page-scoped key. Set it explicitly to share anchors between
+   * pages, or to keep a stable key if the app might move path.
+   */
+  storageKey = defaultAnchorStorageKey(
+    typeof location === 'undefined' ? undefined : location.pathname
+  );
 
   /**
    * Upper bound on saved handles. Persistent handles accumulate across

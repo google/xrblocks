@@ -295,11 +295,17 @@ export class AnchorManager extends Script {
       return {transform: {position, orientation}} as unknown as XRPose;
     }
     const frame = this.currentFrame;
-    if (!frame || !referenceSpace) return null;
+    // The manager already holds the renderer, so callers should not have to
+    // thread a reference space through every read.
+    const space = referenceSpace ?? this.referenceSpace();
+    if (!frame || !space) return null;
     try {
       // An XRFrame is only valid inside its own callback, so reading a pose
       // from outside the frame loop throws rather than returning nothing.
-      return frame.getPose(tracked.anchor.anchorSpace, referenceSpace) ?? null;
+      return (
+        frame.getPose(tracked.anchor.anchorSpace, space as XRReferenceSpace) ??
+        null
+      );
     } catch {
       return null;
     }

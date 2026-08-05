@@ -519,3 +519,34 @@ describe('AnchorManager.getPose', () => {
     expect(manager.getPose('missing', REF_SPACE)).toBeNull();
   });
 });
+
+describe('AnchorManager.getPose reference space default', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('falls back to the renderer reference space when none is given', async () => {
+    const {manager} = makeManager();
+    const env = fakeEnv();
+    const getPose = vi.fn(() => ({transform: {}}) as unknown as XRPose);
+    (env.frame as unknown as {getPose: unknown}).getPose = getPose;
+    manager.update(0, env.frame);
+    const tracked = await manager.create(POSE, 'sofa');
+    // Callers should not have to thread the reference space through
+    // themselves when the manager already holds the renderer.
+    manager.getPose(tracked!.id);
+    expect(getPose.mock.calls[0][1]).toBe(REF_SPACE);
+  });
+
+  it('still honours an explicitly supplied reference space', async () => {
+    const {manager} = makeManager();
+    const env = fakeEnv();
+    const getPose = vi.fn(() => ({transform: {}}) as unknown as XRPose);
+    (env.frame as unknown as {getPose: unknown}).getPose = getPose;
+    manager.update(0, env.frame);
+    const tracked = await manager.create(POSE, 'sofa');
+    const custom = {__other: true} as unknown as XRReferenceSpace;
+    manager.getPose(tracked!.id, custom);
+    expect(getPose.mock.calls[0][1]).toBe(custom);
+  });
+});
