@@ -158,7 +158,7 @@
         >
         <label
           >detector
-        <select id="detectorSelect">
+          <select id="detectorSelect">
             <option value="gemini">gemini</option>
             <option value="mediapipe">mediapipe</option>
             <option value="both">both</option>
@@ -166,7 +166,7 @@
         >
         <label
           >mask
-        <select id="maskSelect">
+          <select id="maskSelect">
             <option value="slimsam">slimsam</option>
             <option value="mediapipe">mediapipe</option>
           </select></label
@@ -250,41 +250,41 @@
           yaw: THREE.MathUtils.degToRad(SETTINGS.yawDeg),
           pitch: THREE.MathUtils.degToRad(SETTINGS.pitchDeg),
           roll: THREE.MathUtils.degToRad(SETTINGS.rollDeg),
-            },
+        },
         orientation: {mode: SETTINGS.orient},
-          });
+      });
 
       // -----------------------------------------------------------------
       // Diagnostics formatting, shared by the DOM readout and the XR panel.
       // -----------------------------------------------------------------
       const ms = (v) => (v == null ? '—' : `${v.toFixed(0)} ms`);
       const DIAG_ROWS = [
-              [
+        [
           'frame latency',
           (d) =>
             d.frameLatencyMs == null
               ? 'no captureTime (may be stale)'
               : ms(d.frameLatencyMs),
         ],
-                [
+        [
           'pose match',
           (d) =>
             d.poseMatchErrorMs == null ? 'live pose' : ms(d.poseMatchErrorMs),
-                ],
+        ],
         ['pose ring', (d) => `${d.poseRingSize} poses`],
         [
           'camera model',
           (d) =>
             `${d.usedDeviceCameraModel ? 'device' : 'RENDER (fallback)'}` +
             ` · fov ${d.cameraFovDeg.toFixed(1)}° · aspect ${d.cameraAspect.toFixed(2)}`,
-              ],
+        ],
         [
           'rot offset',
           (d) =>
             `yaw ${d.cameraRotationOffsetDeg.yaw.toFixed(1)}° ` +
             `pitch ${d.cameraRotationOffsetDeg.pitch.toFixed(1)}° ` +
             `roll ${d.cameraRotationOffsetDeg.roll.toFixed(1)}°`,
-            ],
+        ],
         ['snapshot', (d) => `${d.snapshotWidth}×${d.snapshotHeight}`],
         [
           'depth remap',
@@ -333,7 +333,7 @@
                       `${y.label}:${y.yawDeg.toFixed(0)}°` +
                       `(rel ${y.roomRelativeYawDeg.toFixed(0)}°,` +
                       `${y.confidence.toFixed(2)},${y.method})`
-          )
+                  )
                   .join(' '),
         ],
         [
@@ -347,7 +347,7 @@
             `total ${d.timings.total.toFixed(0)}`,
         ],
         ['error', (d) => d.error ?? 'none'],
-          ];
+      ];
 
       const LABEL_WIDTH = Math.max(...DIAG_ROWS.map(([l]) => l.length)) + 2;
 
@@ -528,10 +528,10 @@
           root.add(
             new UIText('3D OBJECT BOXES · ADDON', {
               fontSize: 18,
-            fontWeight: 'bold',
-            color: '#00f0ff',
-            textAlign: 'center',
-            width: '100%',
+              fontWeight: 'bold',
+              color: '#00f0ff',
+              textAlign: 'center',
+              width: '100%',
             })
           );
           xrStatusText = new UIText(statusEl.textContent, {
@@ -543,9 +543,9 @@
           root.add(xrStatusText);
           root.add(
             new UIPanel({
-            width: '100%',
-            height: 2,
-            fillColor: 'rgba(255, 255, 255, 0.12)',
+              width: '100%',
+              height: 2,
+              fillColor: 'rgba(255, 255, 255, 0.12)',
             })
           );
 
@@ -866,10 +866,10 @@
           const valueText = new UIText(current, {
             fontSize: 11,
             color: current === 'off' ? '#888888' : '#ffffff',
-              fontWeight: 'bold',
-              textAlign: 'center',
-              depthTest: false,
-              renderOrder: 100,
+            fontWeight: 'bold',
+            textAlign: 'center',
+            depthTest: false,
+            renderOrder: 100,
           });
           btn.add(valueText);
           onLabelReady?.(valueText);
