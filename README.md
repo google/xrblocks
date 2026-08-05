@@ -28,7 +28,7 @@
 **XR Blocks** is a lightweight, cross-platform library for rapidly prototyping
 advanced XR and AI experiences. Built upon [three.js](https://threejs.org), it
 targets Chrome v136+ with WebXR support on Android XR (e.g.,
-[Galaxy XR](https://www.samsung.com/us/xr/galaxy-xr/galaxy-xr/)) and also
+[Galaxy XR](https://www.samsung.com/us/xr/galaxy-xr/galaxy-xr/), [XREAL Aura](https://www.xreal.com/aura)) and also
 includes a powerful desktop simulator for development. The framework emphasizes
 a user-centric, developer-friendly SDK designed to simplify the creation of
 immersive applications with features like:
