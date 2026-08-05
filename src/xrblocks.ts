@@ -168,6 +168,7 @@ export * from './world/objects/ObjectDetector';
 export * from './world/objects/ObjectsOptions';
 export * from './world/anchors/AnchorCapability';
 export * from './world/anchors/AnchorManager';
+export * from './world/anchors/AnchoredObjects';
 export * from './world/anchors/AnchorStore';
 export * from './world/anchors/AnchorTypes';
 export * from './world/anchors/AnchorsOptions';
