@@ -20,8 +20,8 @@ import {NetSample} from '../../Sample';
 class VoiceSample extends NetSample {
   private _voiceOn = false;
   private _btn?: HTMLButtonElement;
-  private _spatialVoiceBtn?: xb.TextButton;
-  private _spatialStatus?: xb.TextView;
+  private _spatialVoiceBtn?: xb.UIButton;
+  private _spatialStatus?: xb.UIText;
   private _keys = new Set<string>();
   private _yaw = 0;
   private _pitch = 0;
@@ -121,52 +121,68 @@ class VoiceSample extends NetSample {
       session.voice.disable();
       this._voiceOn = false;
       if (this._btn) this._btn.textContent = '🎙️ Enable voice';
-      this._spatialVoiceBtn?.setText('🎙️ Enable voice');
-      this._spatialStatus?.setText('voice: off');
+      if (this._spatialVoiceBtn)
+        this._spatialVoiceBtn.label = '🎙️ Enable voice';
+      if (this._spatialStatus) this._spatialStatus.text = 'voice: off';
     } else {
       try {
         await session.voice.enable(session.transport.remotePeerIds);
         this._voiceOn = true;
         if (this._btn) this._btn.textContent = '🔇 Disable voice';
-        this._spatialVoiceBtn?.setText('🔇 Disable voice');
-        this._spatialStatus?.setText('voice: on');
+        if (this._spatialVoiceBtn)
+          this._spatialVoiceBtn.label = '🔇 Disable voice';
+        if (this._spatialStatus) this._spatialStatus.text = 'voice: on';
       } catch (err) {
         const msg = (err as Error).message;
         alert(`Could not start voice: ${msg}`);
-        this._spatialStatus?.setText(`voice error: ${msg}`);
+        if (this._spatialStatus)
+          this._spatialStatus.text = `voice error: ${msg}`;
       }
     }
   }
 
   private _buildSpatialHud(session: NonNullable<this['net']['session']>) {
-    const panel = new xb.SpatialPanel({
-      width: 1.0,
-      height: 0.5,
-      backgroundColor: '#1a1a2add',
+    const panel = new xb.UICard({
+      size: {width: 1.0, height: 0.5},
+      manipulation: {
+        actions: {translate: {faceCamera: true}},
+        handle: {action: 'translate'},
+      },
+      edge: true,
+      style: {backgroundColor: '#1a1a2add'},
     });
-    const grid = panel.addGrid();
-
-    grid.addRow({weight: 0.25}).addText({
-      text: '🎙️ Spatial voice',
-      fontSize: 0.06,
-      fontColor: '#bfa9ff',
-      textAlign: 'center',
+    const content = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: '100%',
+        padding: 28,
+        flexDirection: 'column',
+        gap: 16,
+      },
     });
-
-    this._spatialStatus = grid.addRow({weight: 0.25}).addText({
+    content.add(
+      new xb.UIText({
+        text: '🎙️ Spatial voice',
+        style: {color: '#bfa9ff', fontSize: 34, textAlign: 'center'},
+      })
+    );
+    this._spatialStatus = new xb.UIText({
       text: 'voice: off',
-      fontSize: 0.05,
-      fontColor: '#7ac0ff',
-      textAlign: 'center',
+      style: {color: '#7ac0ff', fontSize: 28, textAlign: 'center'},
     });
-
-    this._spatialVoiceBtn = grid.addRow({weight: 0.5}).addTextButton({
-      text: '🎙️ Enable voice',
-      fontColor: '#ffffff',
-      backgroundColor: '#9177c7',
-      fontSize: 0.18,
+    this._spatialVoiceBtn = new xb.UIButton({
+      label: '🎙️ Enable voice',
+      onClick: () => this._toggleVoice(session),
+      style: {
+        height: 76,
+        backgroundColor: '#9177c7',
+        color: '#ffffff',
+        fontSize: 28,
+        borderRadius: 18,
+      },
     });
-    this._spatialVoiceBtn.onTriggered = () => this._toggleVoice(session);
+    content.add(this._spatialStatus, this._spatialVoiceBtn);
+    panel.add(content);
 
     panel.position.set(-1.0, 1.5, -1.4);
     panel.rotation.y = Math.PI / 8;
