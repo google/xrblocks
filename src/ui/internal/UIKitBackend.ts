@@ -29,6 +29,8 @@ import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {UICardEdge} from './UICardEdge';
+import {usesUnicodeTextRenderer} from './TextRendererSelection';
+import {UnicodeText, type UnicodeTextProperties} from './UnicodeText';
 import type {
   UIBackend,
   UIHitMapping,
@@ -248,13 +250,25 @@ function createNode(
         pointerEvents: element.xb?.pointerEvents ?? 'auto',
       };
     };
-    const textNode = new Text(propertiesFor(presentation));
-    node = textNode;
-    applyContent = () => {
-      textContent.value = text.text;
-    };
-    applyPresentation = (state) =>
-      textNode.resetProperties(propertiesFor(state));
+    if (usesUnicodeTextRenderer(text)) {
+      const unicodePropertiesFor = (state: UIPresentationState) => ({
+        ...propertiesFor(state),
+        text: text.text,
+      });
+      const textNode = new UnicodeText(
+        unicodePropertiesFor(presentation) as UnicodeTextProperties
+      );
+      node = textNode;
+      applyPresentation = (state) =>
+        textNode.setTextProperties(
+          unicodePropertiesFor(state) as UnicodeTextProperties
+        );
+    } else {
+      const textNode = new Text(propertiesFor(presentation));
+      node = textNode;
+      applyPresentation = (state) =>
+        textNode.resetProperties(propertiesFor(state));
+    }
   } else if (kind === 'image') {
     const image = element as UIImage;
     const propertiesFor = (state: UIPresentationState) => ({

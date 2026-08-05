@@ -41,6 +41,8 @@ export interface ModelSource {
 export interface ModelViewerOptions {
   origin?: ModelViewerOrigin;
   manipulation?: boolean | ManipulationOptions;
+  /** Extra platform width and depth around the model bounds, in meters. */
+  platformMargin?: number | THREE.Vector2Like;
   autoplay?: boolean;
   occlusion?: boolean;
   castShadow?: boolean;
@@ -99,6 +101,7 @@ export class ModelViewer extends Script {
   >();
   private readonly unregisterHitSurfaces: Array<() => void> = [];
   private readonly origin: ModelViewerOrigin;
+  private readonly platformMargin: THREE.Vector2;
   private readonly autoplay: boolean;
   private readonly occlusionEnabled: boolean;
 
@@ -120,6 +123,7 @@ export class ModelViewer extends Script {
   constructor({
     origin = 'bottom-center',
     manipulation,
+    platformMargin = PLATFORM_MARGIN,
     autoplay = true,
     occlusion = false,
     castShadow = true,
@@ -131,6 +135,10 @@ export class ModelViewer extends Script {
     this.visualRoot.xb = {pointerEvents: 'none'};
     this.add(this.visualRoot);
     this.origin = origin;
+    this.platformMargin =
+      typeof platformMargin === 'number'
+        ? new THREE.Vector2(platformMargin, platformMargin)
+        : new THREE.Vector2(platformMargin.x, platformMargin.y);
     this.autoplay = autoplay;
     this.occlusionEnabled = occlusion;
     this.castShadow = castShadow;
@@ -356,8 +364,8 @@ export class ModelViewer extends Script {
       const size = this.boundingBox.getSize(new THREE.Vector3());
       const center = this.boundingBox.getCenter(new THREE.Vector3());
       const platform = new ModelViewerPlatform(
-        size.x + PLATFORM_MARGIN,
-        size.z + PLATFORM_MARGIN,
+        size.x + this.platformMargin.x,
+        size.z + this.platformMargin.y,
         PLATFORM_THICKNESS
       );
       platform.position.set(
