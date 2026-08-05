@@ -44,7 +44,7 @@ The VRM model and all animation assets (T-pose, idle, and walking GLB files) are
 `VRMAvatar.js` includes a full `MESH2MOTION_VRM_RIG_MAP` mapping Mesh2Motion bone naming conventions to the VRM 1.0 specification. `retargetGLBClip()` remaps bone names, utilizes `Tpose.glb` as a pristine reference rest pose, and corrects rest-pose rotations. Root motion on the hips X/Z axes is zeroed out to prevent position drift on loop.
 
 **Depth mesh floor detection**
-On device, `onSelectEnd` raycasts against `xb.core.depth.depthMesh` for accurate floor hits. When depth mesh is not enabled, it falls back to intersecting the y=0 ground plane.
+On device, `onSelectEnd` uses the callback's `event.surface` and `event.intersection` values for accurate depth-mesh floor hits. When the depth mesh is not available, it casts from `event.source.controller` to the y=0 ground plane.
 
 ---
 

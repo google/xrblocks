@@ -150,6 +150,9 @@ export class UIRenderer {
   present(): void {
     for (const record of this.mounts.values()) {
       if (!record.connected) continue;
+      if (record.structureRevision !== getUIStructureRevision(record.root)) {
+        continue;
+      }
       record.mount.present(this.presentationStateFor);
     }
   }

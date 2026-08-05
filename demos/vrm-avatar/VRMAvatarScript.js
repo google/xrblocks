@@ -60,6 +60,7 @@ export class VRMAvatarScript extends xb.Script {
     this._walkFaceQuat = new THREE.Quaternion();
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this._planeHit = new THREE.Vector3();
+    this._raycaster = new THREE.Raycaster();
   }
 
   // -------------------------------------------------------------------------
@@ -118,26 +119,22 @@ export class VRMAvatarScript extends xb.Script {
 
   /**
    * Handles the XR select end event to set a walk target.
-   * @param {Event} event The select end event.
+   * @param {xb.SelectEndEvent} event The select end event.
    * @returns {void}
    */
   onSelectEnd(event) {
-    console.log('onSelectEnd triggered');
     if (!this._loaded) return;
 
-    let hit = null;
-
-    // Prefer depth mesh (real XR environment)
     const depthMesh = xb.core.depth?.depthMesh;
-    if (depthMesh) {
-      const hits = xb.core.input.intersectObjectByEvent(event, depthMesh);
-      if (hits.length > 0) hit = hits[0].point.clone();
-    }
+    let hit =
+      event.surface === depthMesh && event.intersection
+        ? event.intersection.point.clone()
+        : null;
 
     // Fallback: intersect the y=0 ground plane (simulator / no depth)
     if (!hit) {
-      xb.core.input.setRaycasterFromController(event.target);
-      const planeHit = xb.core.input.raycaster.ray.intersectPlane(
+      this._raycaster.setFromXRController(event.source.controller);
+      const planeHit = this._raycaster.ray.intersectPlane(
         this._groundPlane,
         this._planeHit
       );
@@ -157,14 +154,29 @@ export class VRMAvatarScript extends xb.Script {
    * @param {XRFrame} [frame] XR frame (may be null on desktop).
    * @returns {void}
    */
-  update(time, frame) {
+  update() {
     if (!this._loaded) return;
 
     const delta = xb.core.timer.getDelta();
 
-    this._updateMovement(delta);
+    this._updateMovement();
     if (this._walkToTarget) this._updateWalkTo(delta);
     this._avatar.update(delta);
+  }
+
+  /** Current user-facing state for sample UI. */
+  get state() {
+    if (!this._loaded) return 'Loading avatar';
+    return this._walkToTarget ? 'Walking' : 'Ready';
+  }
+
+  /** Returns the companion to its initial position in front of the user. */
+  resetPosition() {
+    if (!this._loaded) return;
+    this._walkToTarget = null;
+    this._placeAvatarFacingUser();
+    this._prevUserPos.copy(this._getUserPosition());
+    this._avatar.play(this._idleUrl ? 'idle' : 'walk');
   }
 
   // -------------------------------------------------------------------------
@@ -206,7 +218,7 @@ export class VRMAvatarScript extends xb.Script {
     root.quaternion.copy(this._walkFaceQuat);
   }
 
-  _updateMovement(delta) {
+  _updateMovement() {
     this._userPosNow.copy(this._getUserPosition());
     this._deltaPos.subVectors(this._userPosNow, this._prevUserPos);
     this._prevUserPos.copy(this._userPosNow);
