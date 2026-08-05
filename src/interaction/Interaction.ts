@@ -203,7 +203,7 @@ export class Interaction {
     }
     for (const snapshot of snapshots) {
       const capture = this.captures.get(snapshot.controller);
-      if (!capture || capture.kind === 'none') continue;
+      if (!capture) continue;
       try {
         if (capture.kind === 'target') {
           this.updateLongSelect(capture, snapshot, deltaSeconds);
@@ -1092,13 +1092,20 @@ export class Interaction {
     capture: ActiveCapture
   ): SelectEvent {
     const targetCapture = capture.kind === 'target' ? capture : undefined;
+    const resolved = this.resolvedRays.get(controller);
+    const surface = targetCapture?.selection.surface ?? resolved?.surface;
+    const intersection =
+      resolved && surface && objectIsDescendantOf(resolved.surface, surface)
+        ? clonePublicIntersection(resolved.intersection, resolved.surface)
+        : undefined;
     return {
       source:
         targetCapture?.selection.publicSource ??
         this.getSourceSnapshot(controller)?.source ??
         getInteractionSource(controller, 'controller-ray'),
       target: targetCapture?.selection.target,
-      surface: targetCapture?.selection.surface,
+      surface,
+      intersection,
     };
   }
 

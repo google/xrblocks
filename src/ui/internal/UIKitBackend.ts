@@ -1,4 +1,5 @@
 import {
+  Component,
   Container,
   Image,
   Svg,
@@ -12,6 +13,7 @@ import {UIButton} from '../components/UIButton';
 import {UICard, getUICardEdgeOptions} from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
+import {UIOverlay} from '../components/UIOverlay';
 import {UISlider} from '../components/UISlider';
 import {UIText} from '../components/UIText';
 import {
@@ -24,6 +26,7 @@ import {
   type UIStyle,
 } from '../UIElement';
 import type {UITheme} from '../UITheme';
+import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {UICardEdge} from './UICardEdge';
 import type {
@@ -46,6 +49,7 @@ class UIKitMount implements UIMount {
   object: THREE.Object3D = new THREE.Group();
   private rendered?: Container;
   private presentationUpdates: PresentationUpdate[] = [];
+  private readonly elementNodes = new Map<UIElement, Component>();
   private readonly isOverlay: boolean;
 
   constructor(
@@ -65,8 +69,9 @@ class UIKitMount implements UIMount {
     this.rendered?.removeFromParent();
     this.rendered?.dispose();
     this.presentationUpdates = [];
+    this.elementNodes.clear();
     const mappings: UIHitMapping[] = [];
-    this.rendered = createNode(
+    const rendered = createNode(
       this.root,
       theme,
       mappings,
@@ -79,8 +84,12 @@ class UIKitMount implements UIMount {
         : undefined,
       {value: 0},
       this.icons,
-      this.presentationUpdates
+      this.presentationUpdates,
+      this.elementNodes
     ) as Container;
+    this.rendered = this.isOverlay
+      ? createOverlayViewport(rendered, viewport)
+      : rendered;
     this.object.add(this.rendered);
     return mappings;
   }
@@ -93,13 +102,59 @@ class UIKitMount implements UIMount {
 
   update(deltaSeconds: number): void {
     this.rendered?.update(deltaSeconds);
-    if (this.isOverlay) this.rendered?.traverse(setOverlayLayer);
+  }
+
+  validate(): readonly UIValidationIssue[] {
+    const issues: UIValidationIssue[] = [];
+    for (const [element, node] of this.elementNodes) {
+      const size = node.size.peek();
+      const center = node.relativeCenter.peek();
+      if (
+        !validPair(size) ||
+        (node.parentContainer.peek() && !validPair(center))
+      ) {
+        issues.push({
+          code: 'invalid-layout',
+          severity: 'error',
+          element,
+          message: `${element.name} does not have a finite calculated layout.`,
+        });
+        continue;
+      }
+      if (element instanceof UIText && node.isClipped.peek()) {
+        issues.push({
+          code: 'text-clipped',
+          severity: 'error',
+          element,
+          message: `${element.name} is clipped by its layout container.`,
+        });
+      }
+      const parent = node.parentContainer.peek();
+      const parentSize = parent?.size.peek();
+      if (!parent || !validPair(parentSize) || !center) continue;
+      const bounds = boundsFromCenter(center, size);
+      const containerBounds = contentBounds(parent);
+      if (containsBounds(containerBounds, bounds)) continue;
+      const overlayRoot = element === this.root && this.isOverlay;
+      issues.push({
+        code: overlayRoot ? 'outside-viewport' : 'content-overflow',
+        severity: overlayRoot ? 'error' : 'warning',
+        element,
+        message: overlayRoot
+          ? `${element.name} extends outside the overlay viewport.`
+          : `${element.name} extends outside its layout container.`,
+        bounds,
+        containerBounds,
+      });
+    }
+    return issues;
   }
 
   dispose(): void {
     this.rendered?.dispose();
     this.rendered = undefined;
     this.presentationUpdates = [];
+    this.elementNodes.clear();
     this.object.clear();
   }
 }
@@ -147,7 +202,8 @@ function createNode(
   rootStack: number | undefined,
   sequence: {value: number},
   icons: IconCache,
-  presentationUpdates: PresentationUpdate[]
+  presentationUpdates: PresentationUpdate[],
+  elementNodes: Map<UIElement, Component>
 ): THREE.Object3D {
   const kind = getUIElementKind(element);
   const cardEdgeOptions =
@@ -223,7 +279,7 @@ function createNode(
       iconNode.resetProperties(propertiesFor(state));
   } else {
     const propertiesFor = (state: UIPresentationState) =>
-      panelDefaults(element, theme, styleFor(state), viewport);
+      panelDefaults(element, theme, styleFor(state));
     const panelStyle = propertiesFor(presentation);
     blocksHits =
       kind === 'button' ||
@@ -259,7 +315,8 @@ function createNode(
           rootStack,
           sequence,
           icons,
-          presentationUpdates
+          presentationUpdates,
+          elementNodes
         )
       );
     }
@@ -328,6 +385,7 @@ function createNode(
   });
 
   node.visible = element.visible;
+  elementNodes.set(element, node as Component);
   if (overlayRenderOrder !== undefined) node.renderOrder = overlayRenderOrder;
   if (blocksHits) {
     mappings.push({
@@ -357,15 +415,24 @@ function resolveStyle(
   state: UIPresentationState,
   theme: UITheme
 ): UIStyle {
-  const themeStyle = theme.styles?.[getUIElementKind(element)] ?? {};
+  const kind = getUIElementKind(element);
+  const surfaceStyle = hasSurfaceAppearance(element)
+    ? (theme.styles?.surface ?? {})
+    : {};
+  const themeStyle =
+    kind === 'card' || kind === 'overlay' ? {} : (theme.styles?.[kind] ?? {});
   const style = element.style;
   return {
+    ...surfaceStyle,
     ...themeStyle,
     ...style,
+    ...(state.hovered ? surfaceStyle?.[':hover'] : undefined),
     ...(state.hovered ? themeStyle[':hover'] : undefined),
     ...(state.hovered ? style[':hover'] : undefined),
+    ...(state.active ? surfaceStyle?.[':active'] : undefined),
     ...(state.active ? themeStyle[':active'] : undefined),
     ...(state.active ? style[':active'] : undefined),
+    ...(state.disabled ? surfaceStyle?.[':disabled'] : undefined),
     ...(state.disabled ? themeStyle[':disabled'] : undefined),
     ...(state.disabled ? style[':disabled'] : undefined),
   };
@@ -393,8 +460,7 @@ function isTransparent(color: unknown): boolean {
 function panelDefaults(
   element: UIElement,
   theme: UITheme,
-  style: Record<string, unknown>,
-  viewport: {width: number; height: number}
+  style: Record<string, unknown>
 ): NonNullable<ConstructorParameters<typeof GradientPanel>[0]> {
   const kind = getUIElementKind(element);
   const defaults: Record<string, unknown> = {
@@ -403,7 +469,7 @@ function panelDefaults(
         ? (element as UIButton).disabled
           ? theme.colors.disabledSurface
           : theme.colors.primary
-        : kind === 'card'
+        : hasSurfaceAppearance(element)
           ? theme.colors.surface
           : kind === 'slider'
             ? 'rgba(255, 255, 255, 0)'
@@ -416,11 +482,13 @@ function panelDefaults(
     pointerEvents: element.xb?.pointerEvents ?? 'auto',
     ...style,
   };
-  if (kind === 'card') {
-    const card = element as UICard;
+  if (kind === 'card' || kind === 'overlay') {
     defaults.flexDirection = style.flexDirection ?? 'column';
     defaults.justifyContent = style.justifyContent ?? 'center';
     defaults.alignItems = style.alignItems ?? 'stretch';
+  }
+  if (kind === 'card') {
+    const card = element as UICard;
     defaults.pixelSize = card.pixelSize;
     defaults.sizeX = card.size.width;
     defaults.sizeY = card.size.height;
@@ -429,13 +497,84 @@ function panelDefaults(
     defaults.anchorX = card.anchorX;
     defaults.anchorY = card.anchorY;
   } else if (kind === 'overlay') {
-    defaults.pixelSize = 1;
-    defaults.sizeX = viewport.width;
-    defaults.sizeY = viewport.height;
-    defaults.width = viewport.width;
-    defaults.height = viewport.height;
+    defaults.depthTest = false;
   }
   return defaults;
+}
+
+function createOverlayViewport(
+  surface: Container,
+  viewport: {width: number; height: number}
+): Container {
+  const wrapper = new Container({
+    width: viewport.width,
+    height: viewport.height,
+    sizeX: viewport.width,
+    sizeY: viewport.height,
+    pixelSize: 1,
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    pointerEvents: 'none',
+    depthTest: false,
+  });
+  wrapper.add(surface);
+  return wrapper;
+}
+
+function hasSurfaceAppearance(
+  element: UIElement
+): element is UICard | UIOverlay {
+  return (
+    (element instanceof UICard || element instanceof UIOverlay) &&
+    element.appearance === 'surface'
+  );
+}
+
+function validPair(
+  value: readonly [number, number] | undefined
+): value is readonly [number, number] {
+  return (
+    value !== undefined &&
+    Number.isFinite(value[0]) &&
+    Number.isFinite(value[1])
+  );
+}
+
+function boundsFromCenter(
+  center: readonly [number, number],
+  size: readonly [number, number]
+): UIValidationBounds {
+  return {
+    x: center[0] - size[0] / 2,
+    y: center[1] - size[1] / 2,
+    width: size[0],
+    height: size[1],
+  };
+}
+
+function contentBounds(parent: Component): UIValidationBounds {
+  const [width, height] = parent.size.peek() ?? [0, 0];
+  const [top, right, bottom, left] = parent.paddingInset.peek() ?? [0, 0, 0, 0];
+  return {
+    x: -width / 2 + left,
+    y: -height / 2 + bottom,
+    width: Math.max(0, width - left - right),
+    height: Math.max(0, height - top - bottom),
+  };
+}
+
+function containsBounds(
+  container: UIValidationBounds,
+  child: UIValidationBounds
+): boolean {
+  const tolerance = 0.5;
+  return (
+    child.x >= container.x - tolerance &&
+    child.y >= container.y - tolerance &&
+    child.x + child.width <= container.x + container.width + tolerance &&
+    child.y + child.height <= container.y + container.height + tolerance
+  );
 }
 
 function addButtonContent(

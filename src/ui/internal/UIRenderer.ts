@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
-import {ui} from '../UI';
+import {setUIValidator, ui} from '../UI';
 import {
   collectUIRoots,
   getUIElementKind,
@@ -15,6 +15,11 @@ import type {
   UIHitMapping,
   UIMount,
 } from './UIBackend';
+import {
+  createUIValidationReport,
+  type UIValidationIssue,
+  type UIValidationReport,
+} from '../UIValidation';
 
 interface MountRecord {
   readonly root: UIElement;
@@ -69,6 +74,7 @@ export class UIRenderer {
   ): Promise<void> {
     this.publicScene = scene;
     this.renderer = renderer;
+    setUIValidator(this.validate);
     scene.add(this.privateRoot);
     const roots = this.collectConnectedRoots();
     if (roots.length === 0) return;
@@ -79,6 +85,7 @@ export class UIRenderer {
       if (cause === STALE_UI_LOAD || this.backendState.kind === 'disposed') {
         return;
       }
+      setUIValidator(undefined);
       this.privateRoot.removeFromParent();
       this.publicScene = undefined;
       this.renderer = undefined;
@@ -162,6 +169,7 @@ export class UIRenderer {
     this.themeRevision = -1;
     this.viewport.width = 0;
     this.viewport.height = 0;
+    setUIValidator(undefined);
     this.privateRoot.removeFromParent();
     this.publicScene = undefined;
     this.renderer = undefined;
@@ -304,6 +312,38 @@ export class UIRenderer {
       mapping.logical
     );
   }
+
+  /** Reports issues from the latest completed mounted layout. */
+  validate = (root?: UIElement): UIValidationReport => {
+    if (this.backendState.kind !== 'ready') {
+      return createUIValidationReport(false, [
+        {
+          code: 'not-ready',
+          severity: 'error',
+          element: root,
+          message: 'The UI renderer has not completed a layout.',
+        },
+      ]);
+    }
+    const records = root
+      ? [this.mounts.get(root)].filter(
+          (record): record is MountRecord => record?.connected === true
+        )
+      : [...this.mounts.values()].filter((record) => record.connected);
+    if (root && records.length === 0) {
+      return createUIValidationReport(true, [
+        {
+          code: 'not-mounted',
+          severity: 'error',
+          element: root,
+          message: `${root.name} is not a mounted UI root.`,
+        },
+      ]);
+    }
+    const issues: UIValidationIssue[] = [];
+    for (const record of records) issues.push(...record.mount.validate());
+    return createUIValidationReport(true, issues);
+  };
 
   private collectConnectedRoots(): readonly UIElement[] {
     collectUIRoots(this.roots);
