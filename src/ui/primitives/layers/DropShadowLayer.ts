@@ -10,6 +10,7 @@ import {Paint, StrokeAlign} from '../../types/ShaderTypes';
 import {
   createPaintUniforms,
   createShadowUniforms,
+  isPaintVisible,
   updatePaintUniforms,
   updateShadowUniforms,
   updateStrokeUniforms,
@@ -76,11 +77,8 @@ export class DropShadowLayer extends PanelLayer<DropShadowLayerProperties> {
         }
       ).signal;
 
-      updatePaintUniforms(
-        this.material.uniforms,
-        signalProps.dropShadowColor?.value,
-        'u_drop_'
-      );
+      const dropShadowColor = signalProps.dropShadowColor?.value;
+      updatePaintUniforms(this.material.uniforms, dropShadowColor, 'u_drop_');
 
       updateShadowUniforms(
         this.material.uniforms,
@@ -98,6 +96,7 @@ export class DropShadowLayer extends PanelLayer<DropShadowLayerProperties> {
         strokeWidth: signalProps.strokeWidth?.value,
         strokeAlign: signalProps.strokeAlign?.value,
       });
+      this.material.visible = isPaintVisible(dropShadowColor);
     }, this.abortSignal);
   }
 }

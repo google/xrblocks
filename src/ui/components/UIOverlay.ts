@@ -1,4 +1,3 @@
-import {UI_OVERLAY_LAYER} from '../../constants';
 import {UIElement, type UIElementOptions} from '../UIElement';
 
 export type UIOverlayOptions = UIElementOptions;
@@ -9,8 +8,5 @@ export class UIOverlay extends UIElement {
 
   constructor(options: UIOverlayOptions = {}) {
     super('overlay', options);
-    this.xb ??= {};
-    this.xb.manipulation = false;
-    this.layers.set(UI_OVERLAY_LAYER);
   }
 }

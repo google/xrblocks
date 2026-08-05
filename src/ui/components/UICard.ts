@@ -8,12 +8,17 @@ export interface UISize {
 }
 
 export interface UICardEdgeOptions {
-  scale?: boolean;
   translateFromSurface?: boolean;
 }
 
+export type UICardAnchorX = 'left' | 'center' | 'right';
+export type UICardAnchorY = 'bottom' | 'center' | 'top';
+
 export interface UICardOptions extends UIElementOptions {
   size: UISize;
+  pixelSize?: number;
+  anchorX?: UICardAnchorX;
+  anchorY?: UICardAnchorY;
   manipulation?: boolean | ManipulationOptions;
   edge?: boolean | UICardEdgeOptions;
 }
@@ -21,18 +26,34 @@ export interface UICardOptions extends UIElementOptions {
 /** The only world-transform root in a spatial UI tree. */
 export class UICard extends UIElement {
   name = 'UICard';
+  readonly pixelSize: number;
+  readonly anchorX: UICardAnchorX;
+  readonly anchorY: UICardAnchorY;
   private readonly sizeTarget: UISize;
   private readonly sizeProxy: UISize;
   private readonly edgeTarget: Required<UICardEdgeOptions> = {
-    scale: false,
     translateFromSurface: false,
   };
   private readonly edgeProxy: Required<UICardEdgeOptions>;
   private edgeEnabled = false;
 
-  constructor({size, manipulation, edge = false, ...options}: UICardOptions) {
+  constructor({
+    size,
+    pixelSize = 0.001,
+    anchorX = 'center',
+    anchorY = 'center',
+    manipulation,
+    edge = false,
+    ...options
+  }: UICardOptions) {
     validateSize(size);
+    validatePixelSize(pixelSize);
+    validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
+    validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
     super('card', options);
+    this.pixelSize = pixelSize;
+    this.anchorX = anchorX;
+    this.anchorY = anchorY;
     this.sizeTarget = {...size};
     this.sizeProxy = new Proxy(this.sizeTarget, {
       set: (target, property, value) => {
@@ -51,10 +72,7 @@ export class UICard extends UIElement {
     });
     this.edgeProxy = new Proxy(this.edgeTarget, {
       set: (target, property, value) => {
-        if (
-          (property !== 'scale' && property !== 'translateFromSurface') ||
-          typeof value !== 'boolean'
-        ) {
+        if (property !== 'translateFromSurface' || typeof value !== 'boolean') {
           throw new Error(
             `Unknown or invalid UICard edge option "${String(property)}".`
           );
@@ -92,7 +110,7 @@ export class UICard extends UIElement {
 
   set manipulation(value: boolean | ManipulationOptions | undefined) {
     const normalized = normalizeCardManipulation(value);
-    this.validateEdge(this.edgeEnabled, this.edgeTarget, normalized);
+    this.validateEdge(this.edgeEnabled, normalized);
     this.xb ??= {};
     this.xb.manipulation = normalized;
     this.markUIDirty();
@@ -107,22 +125,17 @@ export class UICard extends UIElement {
     const enabled = value !== false;
     const options = value && value !== true ? value : {};
     const next = {
-      scale: options.scale ?? false,
       translateFromSurface: options.translateFromSurface ?? false,
     };
-    this.validateEdge(enabled, next, this.xb?.manipulation);
+    this.validateEdge(enabled, this.xb?.manipulation);
     this.edgeEnabled = enabled;
-    this.edgeTarget.scale = next.scale;
     this.edgeTarget.translateFromSurface = next.translateFromSurface;
-    this.xb ??= {};
-    this.xb.manipulationSurface = enabled ? this.edgeTarget : undefined;
     this.markUIDirty();
     if (enabled !== wasEnabled) this.markUIStructureDirty();
   }
 
   private validateEdge(
     enabled = this.edgeEnabled,
-    edge: Readonly<Required<UICardEdgeOptions>> = this.edgeTarget,
     manipulation: boolean | ManipulationOptions | undefined = this.xb
       ?.manipulation
   ): void {
@@ -130,9 +143,6 @@ export class UICard extends UIElement {
     const config = normalizeManipulationConfig(manipulation);
     if (!config?.translate) {
       throw new Error('UICard edge requires Translate manipulation.');
-    }
-    if (edge.scale && !config.scale) {
-      throw new Error('UICard edge Scale requires Scale manipulation.');
     }
   }
 }
@@ -203,5 +213,21 @@ function validateSize(size: UISize): void {
     size.height < 0
   ) {
     throw new Error('UICard size values must be finite and nonnegative.');
+  }
+}
+
+function validatePixelSize(pixelSize: number): void {
+  if (!Number.isFinite(pixelSize) || pixelSize <= 0) {
+    throw new Error('UICard pixelSize must be positive and finite.');
+  }
+}
+
+function validateAnchor(
+  value: string,
+  allowed: readonly string[],
+  property: 'anchorX' | 'anchorY'
+): void {
+  if (!allowed.includes(value)) {
+    throw new Error(`UICard ${property} has an invalid value.`);
   }
 }

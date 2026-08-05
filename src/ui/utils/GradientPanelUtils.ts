@@ -21,6 +21,17 @@ function _isGradient(paint: Paint): paint is GradientPaint {
   return typeof paint === 'object' && paint !== null && 'stops' in paint;
 }
 
+/** Returns whether a paint can produce a fragment with non-zero alpha. */
+export function isPaintVisible(paint: Paint | undefined): boolean {
+  if (paint === undefined) return false;
+  if (_isGradient(paint)) {
+    return paint.stops.some(
+      ({color}) => parseColorWithAlpha(color).opacity > 0
+    );
+  }
+  return parseColorWithAlpha(paint).opacity > 0;
+}
+
 /**
  * Sets a solid color into ShaderUniforms.
  */

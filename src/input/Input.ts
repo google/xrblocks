@@ -84,7 +84,7 @@ export class Input {
     options: Options;
     renderer: THREE.WebGLRenderer;
   }) {
-    systemsGroup.add(this.activeControllers);
+    systemsGroup.add(this.activeControllers, this.reticles);
 
     this.controllersEnabled = options.controllers.enabled;
 

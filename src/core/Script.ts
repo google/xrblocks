@@ -1,30 +1,67 @@
 import * as THREE from 'three';
 
-import type {
-  HoverEvent,
-  LongSelectEvent,
-  ObjectGrabEvent,
-  ObjectTouchEvent,
-  ObjectTouchStartEvent,
-  SelectEndEvent,
-  SelectEvent,
-} from '../interaction/InteractionTypes';
+import type {InteractionSource} from '../interaction/InteractionTypes';
 import type {ManipulationEvent} from '../interaction/manipulation/ManipulationTypes';
 import type {Physics} from '../physics/Physics';
 import type {Injectable} from '../utils/DependencyInjection';
 import type {Constructor} from '../utils/Types';
 import {markDefaultScriptMethods} from './ScriptHooks';
 
-export type {
-  HoverEvent,
-  LongSelectEvent,
-  ObjectGrabEvent,
-  ObjectTouchEvent,
-  ObjectTouchStartEvent,
-  SelectEndEvent,
-  SelectEvent,
-  SelectionEndReason,
-} from '../interaction/InteractionTypes';
+export interface SelectEvent {
+  readonly source: InteractionSource;
+  readonly target?: THREE.Object3D;
+  readonly currentTarget?: Script;
+  readonly surface?: THREE.Object3D;
+}
+
+export type SelectionEndReason =
+  | 'released'
+  | 'released-outside'
+  | 'source-lost'
+  | 'pointer-cancel'
+  | 'removed'
+  | 'hidden'
+  | 'disabled';
+
+export interface SelectEndEvent extends SelectEvent {
+  readonly completed: boolean;
+  readonly reason: SelectionEndReason;
+}
+
+/** Event sent after a captured selection is held past the long-select delay. */
+export interface LongSelectEvent extends SelectEvent {
+  /** How long the selection has been held, in seconds. */
+  duration: number;
+}
+
+export interface ObjectTouchEvent {
+  readonly source: InteractionSource;
+  readonly target: THREE.Object3D;
+  readonly currentTarget?: Script;
+  readonly surface: THREE.Object3D;
+  readonly handIndex: number;
+  readonly hand?: THREE.Object3D;
+  readonly touchPosition: THREE.Vector3;
+}
+
+export interface ObjectTouchStartEvent extends ObjectTouchEvent {
+  readonly defaultPrevented: boolean;
+  preventDefault(): void;
+}
+
+export interface ObjectGrabEvent {
+  readonly source: InteractionSource;
+  readonly target: THREE.Object3D;
+  readonly currentTarget?: Script;
+  readonly surface: THREE.Object3D;
+  readonly handIndex: number;
+  readonly hand: THREE.Object3D;
+  readonly touchPosition: THREE.Vector3;
+}
+
+export interface HoverEvent extends SelectEvent {
+  readonly intersection?: THREE.Intersection;
+}
 
 export interface KeyEvent {
   code: string;

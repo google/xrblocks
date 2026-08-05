@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import type {Script} from '../core/Script.js';
 import type {
   InteractionCallbackDispatch,
   InteractionSourceType,
@@ -76,7 +77,9 @@ export class HitResolver {
             manipulation?.owner
           ));
       const scriptPath = target
-        ? eligiblePath.filter((object) => this.callbacks.isScript(object))
+        ? (eligiblePath.filter((object) =>
+            this.callbacks.isScript(object)
+          ) as Script[])
         : [];
 
       return {

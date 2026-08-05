@@ -17,7 +17,6 @@ The scene covers:
 - `FaceCamera` on UI and `FollowHead`, `FollowObject`, and
   `VisibilityTransition` on ordinary 3D objects.
 - Transform-script suspension and rebasing while an object is manipulated.
-- Depth sensing for physical or simulated environment reticles.
 
 Use the mouse wheel over a manipulable object to test simulator scaling. In
 spatial input, hold a scale-enabled object with one source and select with a

@@ -8,6 +8,7 @@ import {GradientFillFragmentShader} from '../../shaders/GradientFill.frag';
 import {Paint} from '../../types/ShaderTypes';
 import {
   createPaintUniforms,
+  isPaintVisible,
   updatePaintUniforms,
 } from '../../utils/GradientPanelUtils';
 import {
@@ -63,11 +64,9 @@ export class FillLayer extends PanelLayer<FillLayerProperties> {
         }
       ).signal;
 
-      updatePaintUniforms(
-        this.material.uniforms,
-        signalProps.fillColor?.value,
-        'u_fill_'
-      );
+      const fillColor = signalProps.fillColor?.value;
+      updatePaintUniforms(this.material.uniforms, fillColor, 'u_fill_');
+      this.material.visible = isPaintVisible(fillColor);
     }, this.abortSignal);
   }
 }

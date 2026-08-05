@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Add spatial UI'
-  short_description: 'Build reliable spatial interfaces'
-  default_prompt: 'Use $xb-add-spatial-ui to add a usable spatial interface to this app.'

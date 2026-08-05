@@ -10,6 +10,7 @@ import {Paint, StrokeAlign} from '../../types/ShaderTypes';
 import {
   createPaintUniforms,
   createShadowUniforms,
+  isPaintVisible,
   updatePaintUniforms,
   updateShadowUniforms,
   updateStrokeUniforms,
@@ -83,11 +84,8 @@ export class InnerShadowLayer extends PanelLayer<InnerShadowLayerProperties> {
         }
       ).signal;
 
-      updatePaintUniforms(
-        this.material.uniforms,
-        signalProps.innerShadowColor?.value,
-        'u_inner_'
-      );
+      const innerShadowColor = signalProps.innerShadowColor?.value;
+      updatePaintUniforms(this.material.uniforms, innerShadowColor, 'u_inner_');
 
       updateShadowUniforms(
         this.material.uniforms,
@@ -105,6 +103,7 @@ export class InnerShadowLayer extends PanelLayer<InnerShadowLayerProperties> {
         strokeWidth: signalProps.strokeWidth?.value,
         strokeAlign: signalProps.strokeAlign?.value,
       });
+      this.material.visible = isPaintVisible(innerShadowColor);
     }, this.abortSignal);
   }
 }

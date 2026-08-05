@@ -53,6 +53,7 @@ function createMaterial(): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({
     color: 0xffffff,
     transparent: true,
+    depthWrite: false,
     opacity: 0,
   });
 }

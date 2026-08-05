@@ -10,6 +10,10 @@ const requestedRaycastMode = new URLSearchParams(window.location.search).get(
 );
 const raycastMode = requestedRaycastMode === 'select' ? 'select' : 'continuous';
 
+const CONTENT_DEPTH = -1.5;
+const LABEL_DEPTH = CONTENT_DEPTH - 0.12;
+const SECTION_DEPTH = CONTENT_DEPTH - 0.2;
+
 const UI_THEME = Object.freeze({
   surfaceSubtle: 'rgba(255, 255, 255, 0.08)',
   text: '#f8fafc',
@@ -213,7 +217,7 @@ class HandleOwner extends xb.Script {
   constructor() {
     super();
     this.name = 'Handle owner';
-    this.position.set(-0.2, 1.12, -1.8);
+    this.position.set(-0.2, 1.12, CONTENT_DEPTH);
     this.xb = {
       manipulation: {
         actions: {
@@ -472,7 +476,7 @@ class InteractionPlayground extends xb.Script {
   addXRDashboard() {
     this.guideCard = createCard(xb.UICard, {
       name: 'XR scene guide',
-      position: new THREE.Vector3(-1.35, 2.08, -2.85),
+      position: new THREE.Vector3(-1.35, 2.08, CONTENT_DEPTH),
       size: {width: 1.16, height: 0.72},
       style: {
         padding: 28,
@@ -513,7 +517,7 @@ class InteractionPlayground extends xb.Script {
 
     this.statusCard = createCard(InstrumentedCard, {
       name: 'XR coverage and controls',
-      position: new THREE.Vector3(1.35, 2.08, -2.85),
+      position: new THREE.Vector3(1.35, 2.08, CONTENT_DEPTH),
       size: {width: 1.16, height: 0.76},
       manipulation: {
         actions: {translate: true, scale: {minScale: 0.75, maxScale: 1.5}},
@@ -605,7 +609,7 @@ class InteractionPlayground extends xb.Script {
     this.statusCard.add(
       controls,
       new xb.FollowHead({
-        offset: new THREE.Vector3(1.35, 0.48, -2.85),
+        offset: new THREE.Vector3(1.35, 0.48, CONTENT_DEPTH),
         smoothing: 0.08,
       }),
       new xb.FaceCamera({mode: 'spherical', smoothing: 0.12})
@@ -646,25 +650,25 @@ class InteractionPlayground extends xb.Script {
   addManipulationObjects() {
     const sectionLabel = makeSectionLabel(
       'INTERACTION + MANIPULATION',
-      new THREE.Vector3(0, 1.58, -3.05),
+      new THREE.Vector3(0, 1.58, SECTION_DEPTH),
       '#22d3ee'
     );
     const defaultCube = new InteractiveObject({
       name: 'Default manipulation cube',
       geometry: new THREE.BoxGeometry(0.26, 0.26, 0.26),
       color: 0x26c6da,
-      position: new THREE.Vector3(-1.8, 1.18, -2.5),
+      position: new THREE.Vector3(-1.8, 1.18, CONTENT_DEPTH),
       manipulation: true,
     });
 
     const handles = new HandleOwner();
-    handles.position.set(-1.08, 1.18, -2.5);
+    handles.position.set(-1.08, 1.18, CONTENT_DEPTH);
 
     const scaleSphere = new InteractiveObject({
       name: 'Scale-only sphere',
       geometry: new THREE.IcosahedronGeometry(0.16, 2),
       color: 0xec407a,
-      position: new THREE.Vector3(-0.36, 1.18, -2.5),
+      position: new THREE.Vector3(-0.36, 1.18, CONTENT_DEPTH),
       manipulation: {
         actions: {scale: {minScale: 0.45, maxScale: 2.75}},
       },
@@ -674,21 +678,21 @@ class InteractionPlayground extends xb.Script {
       name: 'Long-select gem',
       geometry: new THREE.DodecahedronGeometry(0.16),
       color: 0xffd54f,
-      position: new THREE.Vector3(0.36, 1.18, -2.5),
+      position: new THREE.Vector3(0.36, 1.18, CONTENT_DEPTH),
     });
 
     const touchTarget = new InteractiveObject({
       name: 'Touch and grab capsule',
       geometry: new THREE.CapsuleGeometry(0.1, 0.2, 8, 16),
       color: 0xab47bc,
-      position: new THREE.Vector3(1.08, 1.18, -2.5),
+      position: new THREE.Vector3(1.08, 1.18, CONTENT_DEPTH),
     });
 
     const locked = new InteractiveObject({
       name: 'Prevented manipulation object',
       geometry: new THREE.CylinderGeometry(0.14, 0.14, 0.28, 24),
       color: 0xef5350,
-      position: new THREE.Vector3(1.8, 1.18, -2.5),
+      position: new THREE.Vector3(1.8, 1.18, CONTENT_DEPTH),
       manipulation: {
         actions: {translate: true},
         handle: {action: xb.ManipulationAction.Translate},
@@ -699,32 +703,32 @@ class InteractionPlayground extends xb.Script {
     const labels = [
       makeSampleLabel(
         'MOVE + SCALE',
-        new THREE.Vector3(-1.8, 0.91, -2.62),
+        new THREE.Vector3(-1.8, 0.91, LABEL_DEPTH),
         '#67e8f9'
       ),
       makeSampleLabel(
         'CHILD HANDLES',
-        new THREE.Vector3(-1.08, 0.91, -2.62),
+        new THREE.Vector3(-1.08, 0.91, LABEL_DEPTH),
         '#fdba74'
       ),
       makeSampleLabel(
         'SCALE ONLY',
-        new THREE.Vector3(-0.36, 0.91, -2.62),
+        new THREE.Vector3(-0.36, 0.91, LABEL_DEPTH),
         '#f9a8d4'
       ),
       makeSampleLabel(
         'HOLD 0.75 S',
-        new THREE.Vector3(0.36, 0.91, -2.62),
+        new THREE.Vector3(0.36, 0.91, LABEL_DEPTH),
         '#fde68a'
       ),
       makeSampleLabel(
         'TOUCH + GRAB',
-        new THREE.Vector3(1.08, 0.91, -2.62),
+        new THREE.Vector3(1.08, 0.91, LABEL_DEPTH),
         '#d8b4fe'
       ),
       makeSampleLabel(
         'PREVENTED',
-        new THREE.Vector3(1.8, 0.91, -2.62),
+        new THREE.Vector3(1.8, 0.91, LABEL_DEPTH),
         '#fca5a5'
       ),
     ];
@@ -752,7 +756,7 @@ class InteractionPlayground extends xb.Script {
   addPlacementObjects() {
     const sectionLabel = makeSectionLabel(
       'PLACEMENT SCRIPTS',
-      new THREE.Vector3(0, 0.82, -3.04),
+      new THREE.Vector3(0, 0.82, SECTION_DEPTH),
       '#a78bfa'
     );
     this.followAnchor = new THREE.Mesh(
@@ -765,13 +769,13 @@ class InteractionPlayground extends xb.Script {
     );
     this.followAnchor.name = 'Animated follow anchor';
     this.followAnchor.xb = {pointerEvents: 'none'};
-    this.followAnchor.position.set(-1.55, 0.56, -2.5);
+    this.followAnchor.position.set(-1.55, 0.56, CONTENT_DEPTH);
 
     const follower = new InteractiveObject({
       name: 'FollowObject cone',
       geometry: new THREE.ConeGeometry(0.11, 0.24, 20),
       color: 0x4dd0e1,
-      position: new THREE.Vector3(-1.15, 0.56, -2.5),
+      position: new THREE.Vector3(-1.15, 0.56, CONTENT_DEPTH),
       manipulation: true,
     });
     follower.add(
@@ -786,7 +790,7 @@ class InteractionPlayground extends xb.Script {
       name: 'FaceCamera pyramid',
       geometry: new THREE.ConeGeometry(0.14, 0.26, 4),
       color: 0x66bb6a,
-      position: new THREE.Vector3(0.15, 0.56, -2.5),
+      position: new THREE.Vector3(0.15, 0.56, CONTENT_DEPTH),
       manipulation: true,
     });
     faceCamera.rotation.x = Math.PI / 2;
@@ -796,7 +800,7 @@ class InteractionPlayground extends xb.Script {
       name: 'VisibilityTransition knot',
       geometry: new THREE.TorusKnotGeometry(0.12, 0.035, 72, 12),
       color: 0x7e57c2,
-      position: new THREE.Vector3(1.35, 0.56, -2.5),
+      position: new THREE.Vector3(1.35, 0.56, CONTENT_DEPTH),
     });
     this.objectTransition = new xb.VisibilityTransition({duration: 0.32});
     this.visibilityObject.add(this.objectTransition);
@@ -811,13 +815,13 @@ class InteractionPlayground extends xb.Script {
     );
     orbitTarget.name = 'Orbit focus';
     orbitTarget.xb = {pointerEvents: 'none'};
-    orbitTarget.position.set(0.75, 0.56, -2.5);
+    orbitTarget.position.set(0.75, 0.56, CONTENT_DEPTH);
 
     const orbiter = new InteractiveObject({
       name: 'Precessing elliptical orbiter',
       geometry: new THREE.SphereGeometry(0.045, 18, 12),
       color: 0xf472b6,
-      position: new THREE.Vector3(0.974, 0.56, -2.5),
+      position: new THREE.Vector3(0.974, 0.56, CONTENT_DEPTH),
       manipulation: true,
     });
     orbiter.add(
@@ -835,27 +839,27 @@ class InteractionPlayground extends xb.Script {
     const labels = [
       makeSampleLabel(
         'ANIMATED TARGET',
-        new THREE.Vector3(-1.55, 0.3, -2.62),
+        new THREE.Vector3(-1.55, 0.3, LABEL_DEPTH),
         '#99f6e4'
       ),
       makeSampleLabel(
         'FOLLOW POSE',
-        new THREE.Vector3(-1.0, 0.3, -2.62),
+        new THREE.Vector3(-1.0, 0.3, LABEL_DEPTH),
         '#67e8f9'
       ),
       makeSampleLabel(
         'FACE CAMERA',
-        new THREE.Vector3(0.15, 0.3, -2.62),
+        new THREE.Vector3(0.15, 0.3, LABEL_DEPTH),
         '#86efac'
       ),
       makeSampleLabel(
         'ORBIT + PRECESS',
-        new THREE.Vector3(0.75, 0.3, -2.62),
+        new THREE.Vector3(0.75, 0.3, LABEL_DEPTH),
         '#f9a8d4'
       ),
       makeSampleLabel(
         'VISIBILITY',
-        new THREE.Vector3(1.35, 0.3, -2.62),
+        new THREE.Vector3(1.35, 0.3, LABEL_DEPTH),
         '#c4b5fd'
       ),
     ];
@@ -881,32 +885,32 @@ class InteractionPlayground extends xb.Script {
   addReticleTargets() {
     const sectionLabel = makeSectionLabel(
       'RETICLE RESOLUTION',
-      new THREE.Vector3(0, 0.14, -3.05),
+      new THREE.Vector3(0, 0.14, SECTION_DEPTH),
       '#4ade80'
     );
     const surfaceTarget = new ReticleTarget({
       name: 'Surface target',
       color: 0x43a047,
-      position: new THREE.Vector3(-1.2, -0.08, -2.45),
+      position: new THREE.Vector3(-1.2, -0.08, CONTENT_DEPTH + 0.05),
       reticleMode: 'surface',
     });
     const hiddenTarget = new ReticleTarget({
       name: 'Hidden target',
       color: 0x78909c,
-      position: new THREE.Vector3(-0.4, -0.08, -2.45),
+      position: new THREE.Vector3(-0.4, -0.08, CONTENT_DEPTH + 0.05),
       reticleMode: 'hidden',
     });
     const disabledTarget = new ReticleTarget({
       name: 'Disabled blocking surface',
       color: 0x5c6b73,
-      position: new THREE.Vector3(0.4, -0.08, -2.45),
+      position: new THREE.Vector3(0.4, -0.08, CONTENT_DEPTH + 0.05),
       reticleMode: 'surface',
       interactionEnabled: false,
     });
     const passThroughTarget = new ReticleTarget({
       name: 'Pass-through target',
       color: 0x00acc1,
-      position: new THREE.Vector3(1.2, -0.08, -2.52),
+      position: new THREE.Vector3(1.2, -0.08, CONTENT_DEPTH - 0.02),
       reticleMode: 'auto',
     });
 
@@ -920,28 +924,28 @@ class InteractionPlayground extends xb.Script {
       })
     );
     ignoredDecoration.name = 'Pointer-ignored wireframe';
-    ignoredDecoration.position.set(1.2, -0.08, -2.31);
+    ignoredDecoration.position.set(1.2, -0.08, CONTENT_DEPTH + 0.19);
     ignoredDecoration.xb = {pointerEvents: 'none'};
 
     const labels = [
       makeSampleLabel(
         'SURFACE',
-        new THREE.Vector3(-1.2, -0.29, -2.62),
+        new THREE.Vector3(-1.2, -0.29, LABEL_DEPTH),
         '#86efac'
       ),
       makeSampleLabel(
         'HIDDEN',
-        new THREE.Vector3(-0.4, -0.29, -2.62),
+        new THREE.Vector3(-0.4, -0.29, LABEL_DEPTH),
         '#cbd5e1'
       ),
       makeSampleLabel(
         'DISABLED',
-        new THREE.Vector3(0.4, -0.29, -2.62),
+        new THREE.Vector3(0.4, -0.29, LABEL_DEPTH),
         '#94a3b8'
       ),
       makeSampleLabel(
         'PASS-THROUGH',
-        new THREE.Vector3(1.2, -0.29, -2.62),
+        new THREE.Vector3(1.2, -0.29, LABEL_DEPTH),
         '#67e8f9'
       ),
     ];
@@ -960,7 +964,7 @@ class InteractionPlayground extends xb.Script {
   addUICards() {
     this.galleryCard = createCard(InstrumentedCard, {
       name: 'UI component card',
-      position: new THREE.Vector3(0, 2.08, -2.85),
+      position: new THREE.Vector3(0, 2.08, CONTENT_DEPTH),
       size: {width: 1.16, height: 0.76},
       manipulation: {
         actions: {
@@ -968,9 +972,7 @@ class InteractionPlayground extends xb.Script {
           scale: {minScale: 0.7, maxScale: 1.8},
         },
       },
-      edge: {
-        scale: true,
-      },
+      edge: true,
       style: {
         padding: 30,
         gap: 16,
@@ -1188,14 +1190,11 @@ options.setAppTitle('Interaction Playground');
 options.setAppDescription(
   'Test interaction, manipulation, placement scripts, UIKit UI, and reticles.'
 );
-options.enableDepth();
-options.depth.depthMesh.updateVertexNormals = true;
-options.depth.depthMesh.updateFullResolutionGeometry = true;
 options.reticles.enabled = true;
 options.reticles.maxDistance = 4;
-options.reticles.defaultRenderDistance = 1.5;
+options.reticles.defaultRenderDistance = 4;
 options.interaction.raycastMode = raycastMode;
-options.controllers.visualizeRays = true;
+// options.controllers.visualizeRays = true;
 
 xb.add(playground);
 await xb.init(options);

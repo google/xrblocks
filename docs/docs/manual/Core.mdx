@@ -6,7 +6,7 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 XR Blocks SDK is wrapped around a singleton instance of [`Core`](/api/classes/Core) exported as [`xb.core`](/api/variables/core).
 
-The [`Core`](/api/classes/Core) object is responsible for:
+The [`Core`](/api/classes/Core) object is resposible for:
 
 1. Setup of all components such as the renderer, scene, input, depth, physics, simulator, etc.
 2. Calling lifecycle functions in all [`Script`](Scripts.md) entities and XR Blocks components.
@@ -102,11 +102,9 @@ When the user clicks the "Enter XR" button to launch the experience, the SDK's [
 
 ### 4. Input Raycaster
 
-The internal raycaster manages 3D raycasting against the scene graph using
-mouse, gaze, and WebXR controller inputs.
+The [`Raycaster`](/api/classes/Raycaster) manages 3D raycasting against the scene graph using inputs (mouse, gaze, or WebXR controllers).
 
-It processes hover states and intersection targets, then dispatches pointer
-events to scripts and built-in UI controls.
+It automatically processes hovering states and intersection targets, and dispatches pointer-events on scripts. Custom sorting (such as the `raycastSortFunction` from UI Blocks) is configured here.
 
 ### 5. Screenshot Synthesizer
 

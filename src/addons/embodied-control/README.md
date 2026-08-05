@@ -74,7 +74,6 @@ await embodied.step({
     },
     rightHand: {
       move: [0, 0, -0.18],
-      pose: xb.SimulatorHandPose.POINTING,
       selectStart: true,
     },
     leftHand: {
@@ -103,23 +102,19 @@ rightHand: {
   rotate?: [pitchDegrees, yawDegrees, rollDegrees];
   selectStart?: boolean;
   selectEnd?: boolean;
-  pose?: SimulatorHandPose;
   rotations?: SimulatorHandPoseRotations;
   visible?: boolean;
 }
 ```
 
 Hand `move` and `rotate` are relative to the current simulator controller pose.
-`pose` applies one of the nine named `SimulatorHandPose` values. `rotations`
-applies sparse simulator hand joint rotations in radians. When both are
-supplied, the named pose is applied first and sparse rotations override its
-joint targets.
+`rotations` applies sparse simulator hand joint rotations in radians.
 
 Use `selectStart` and `selectEnd` for WebXR-like hand selection. In the
 simulator these call `setLeftHandPinching()` / `setRightHandPinching()`, which
 emits the normal XR Blocks `selectstart` / `selectend` events and updates the
-controller selected state. Applying the named `PINCHING` pose has the same
-selection transitions; raw joint `rotations` do not begin selection.
+controller selected state. This is different from passing raw pinching
+`rotations`, which only changes the visual hand pose.
 
 ---
 

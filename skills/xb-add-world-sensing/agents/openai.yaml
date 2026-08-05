@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Add World Sensing'
-  short_description: 'Connect physical signals to app reactions'
-  default_prompt: 'Use $xb-add-world-sensing to implement this physical-world sensing behavior and prepare its simulator/device handoff.'

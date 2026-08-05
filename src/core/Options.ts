@@ -10,10 +10,6 @@ import {HandsOptions} from '../input/HandsOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
 import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRecognitionOptions.js';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
-import type {
-  InteractionReticleOptions,
-  RaycastMode,
-} from '../interaction/InteractionTypes';
 import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
 import {SimulatorMode, SimulatorOptions} from '../simulator/SimulatorOptions';
@@ -23,8 +19,6 @@ import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {WorldOptions} from '../world/WorldOptions';
 import {getUrlParamBool, getUrlParameter} from '../utils/utils';
 import {Handedness} from '../input/Hands';
-
-export type {RaycastMode} from '../interaction/InteractionTypes';
 
 /**
  * Default options for XR controllers, which encompass hands by default in
@@ -46,7 +40,7 @@ export class InputOptions {
 /**
  * Default options for the reticle (pointing cursor).
  */
-export class ReticleOptions implements InteractionReticleOptions {
+export class ReticleOptions {
   enabled = true;
   /** Whether reticles use the real-world depth mesh as a surface. */
   projectOnDepthMesh = false;
@@ -60,6 +54,8 @@ export class ReticleOptions implements InteractionReticleOptions {
    */
   defaultRenderDistance = 0;
 }
+
+export type RaycastMode = 'continuous' | 'select';
 
 export class InteractionOptions {
   /** When to sample ray intersections for interaction. */

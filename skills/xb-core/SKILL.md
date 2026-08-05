@@ -14,8 +14,7 @@ description: >-
 
 Every app is one or more `xb.Script` subclasses registered with `xb.add()` before
 `xb.init(options)`. `Core` owns the renderer, camera, WebXR session, and frame loop — never
-roll your own. Repository-wide app guidance lives in
-[`../../CONTEXT.md`](../../CONTEXT.md).
+roll your own. Full overview: [`../../src/SKILL.md`](../../src/SKILL.md).
 
 ## Canonical app
 
@@ -56,13 +55,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ```js
 const options = new xb.Options();
+options.enableUI(); // see xb-ui
 options.enableHands(); // see xb-hands
 options.enableAI(); // see xb-ai
 options.setAppTitle?.('My App');
 xb.init(options);
 ```
 
-Chainable feature toggles: `enableReticles`, `enableControllers`, `enableHands`,
+Chainable feature toggles: `enableUI`, `enableReticles`, `enableControllers`, `enableHands`,
 `enableHandRays`, `enableGestures`, `enableStrokes`, `enableDepth`, `enablePlaneDetection`,
 `enableObjectDetection`, `enableCamera`, `enableAI`, `enableXRTransitions`, `enableVR`.
 Physics and lighting are configured directly (see `xb-physics`; `options.lighting`).

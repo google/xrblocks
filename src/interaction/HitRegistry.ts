@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 
-import {UI_OVERLAY_LAYER} from '../constants';
-
 export interface RegisteredHitSurface {
   readonly physical: THREE.Object3D;
   readonly logical: THREE.Object3D;
@@ -19,10 +17,6 @@ export class HitRegistry {
     THREE.Object3D,
     RegisteredHitSurface
   >();
-
-  constructor() {
-    this.raycaster.layers.enable(UI_OVERLAY_LAYER);
-  }
 
   register(physical: THREE.Object3D, logical: THREE.Object3D): () => void {
     const entry = {physical, logical};
@@ -76,7 +70,7 @@ export class HitRegistry {
   ): readonly THREE.Intersection[] {
     intersections.length = 0;
     this.raycaster.ray.copy(ray);
-    this.raycaster.intersectObject(scene, true, intersections);
+    intersectTree(scene, this.raycaster, intersections);
 
     let publicCount = 0;
     for (const intersection of intersections) {
@@ -135,12 +129,30 @@ export class HitRegistry {
   }
 }
 
+/** Recursively raycasts interactive scene branches. */
+function intersectTree(
+  object: THREE.Object3D,
+  raycaster: THREE.Raycaster,
+  intersections: THREE.Intersection[]
+): void {
+  // Private render trees expose their interactive surfaces through
+  // `registered`. Do not raycast them here and again in the registered pass.
+  if (object.userData.xrblocksPrivate === true) return;
+  if (object.xb?.pointerEvents === 'none') return;
+  if (object.layers.test(raycaster.layers)) {
+    object.raycast(raycaster, intersections);
+  }
+  for (const child of object.children) {
+    intersectTree(child, raycaster, intersections);
+  }
+}
+
 function compareRayIntersections(
   a: THREE.Intersection,
   b: THREE.Intersection
 ): number {
-  const aOverlay = a.object.layers.isEnabled(UI_OVERLAY_LAYER);
-  const bOverlay = b.object.layers.isEnabled(UI_OVERLAY_LAYER);
+  const aOverlay = isOverlayHit(a.object);
+  const bOverlay = isOverlayHit(b.object);
   if (aOverlay !== bOverlay) return aOverlay ? -1 : 1;
   const distance = a.distance - b.distance;
   if (distance !== 0) return distance;
@@ -159,8 +171,8 @@ function compareTouchIntersections(
   if (a.object === preferred) return -1;
   if (b.object === preferred) return 1;
 
-  const aOverlay = a.object.layers.isEnabled(UI_OVERLAY_LAYER);
-  const bOverlay = b.object.layers.isEnabled(UI_OVERLAY_LAYER);
+  const aOverlay = isOverlayHit(a.object);
+  const bOverlay = isOverlayHit(b.object);
   if (aOverlay !== bOverlay) return aOverlay ? -1 : 1;
 
   const aOrder = getInteractionHitOrder(a.object);
@@ -180,6 +192,15 @@ function getInteractionHitOrder(object: THREE.Object3D): number | undefined {
     current = current.parent;
   }
   return undefined;
+}
+
+function isOverlayHit(object: THREE.Object3D): boolean {
+  let current: THREE.Object3D | null = object;
+  while (current) {
+    if (current.userData.xrblocksOverlay === true) return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 function hasPrivateAncestor(object: THREE.Object3D): boolean {

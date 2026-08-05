@@ -8,6 +8,7 @@ import {GradientStrokeFragmentShader} from '../../shaders/GradientStroke.frag';
 import {Paint, StrokeAlign} from '../../types/ShaderTypes';
 import {
   createPaintUniforms,
+  isPaintVisible,
   updatePaintUniforms,
   updateStrokeUniforms,
 } from '../../utils/GradientPanelUtils';
@@ -68,16 +69,16 @@ export class StrokeLayer extends PanelLayer<StrokeLayerProperties> {
         }
       ).signal;
 
-      updatePaintUniforms(
-        this.material.uniforms,
-        signalProps.strokeColor?.value,
-        'u_stroke_'
-      );
+      const strokeColor = signalProps.strokeColor?.value;
+      const strokeWidth = signalProps.strokeWidth?.value;
+      updatePaintUniforms(this.material.uniforms, strokeColor, 'u_stroke_');
 
       updateStrokeUniforms(this.material.uniforms, {
-        strokeWidth: signalProps.strokeWidth?.value,
+        strokeWidth,
         strokeAlign: signalProps.strokeAlign?.value,
       });
+      this.material.visible =
+        isPaintVisible(strokeColor) && (strokeWidth ?? 0) > 0;
     }, this.abortSignal);
   }
 }

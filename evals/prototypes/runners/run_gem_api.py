@@ -46,6 +46,11 @@ def build_system_prompt(skill_name: str) -> str:
     if skill_md.exists():
         parts.append(f"# {skill_name}\n\n{skill_md.read_text()}")
 
+    # Always include the top-level SDK overview if it exists.
+    top_skill = REPO_ROOT / "src" / "SKILL.md"
+    if top_skill.exists():
+        parts.append(f"# src/SKILL.md\n\n{top_skill.read_text()}")
+
     return "\n\n---\n\n".join(parts)
 
 

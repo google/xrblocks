@@ -4,10 +4,11 @@ import {Script} from '../core/Script';
 import type {PointerEvents, ReticleMode} from '../interaction/InteractionTypes';
 import {TransformScript} from '../placement/TransformScript';
 import {MAX_GRADIENT_STOPS} from './constants/GradientPanelConstants';
-import type {GradientPaint, Paint} from './types/ShaderTypes';
+import type {GradientPaint, Paint, StrokeAlign} from './types/ShaderTypes';
 
 export type UIUnit = number | `${number}%` | 'auto';
 export type UIColor = Paint;
+export type UIVector2 = THREE.Vector2 | [number, number];
 
 export interface UIStateStyle {
   backgroundColor?: UIColor;
@@ -57,9 +58,16 @@ export interface UIStyle extends UIStateStyle {
   textAlign?: 'left' | 'center' | 'right';
   innerShadowColor?: Paint;
   innerShadowBlur?: number;
+  innerShadowPosition?: UIVector2;
+  innerShadowSpread?: number;
+  innerShadowFalloff?: number;
   dropShadowColor?: Paint;
   dropShadowBlur?: number;
+  dropShadowPosition?: UIVector2;
   dropShadowSpread?: number;
+  dropShadowFalloff?: number;
+  borderAlign?: StrokeAlign;
+  display?: 'flex' | 'none';
   overflow?: 'visible' | 'hidden';
   objectFit?: 'contain' | 'cover' | 'fill';
   whiteSpace?: 'normal' | 'nowrap';
@@ -91,6 +99,8 @@ export type UIElementKind =
 interface UIElementState {
   readonly kind: UIElementKind;
   revision: number;
+  contentRevision: number;
+  structureRevision: number;
 }
 
 const STYLE_KEYS = new Set<keyof UIStyle>([
@@ -138,9 +148,16 @@ const STYLE_KEYS = new Set<keyof UIStyle>([
   'textAlign',
   'innerShadowColor',
   'innerShadowBlur',
+  'innerShadowPosition',
+  'innerShadowSpread',
+  'innerShadowFalloff',
   'dropShadowColor',
   'dropShadowBlur',
+  'dropShadowPosition',
   'dropShadowSpread',
+  'dropShadowFalloff',
+  'borderAlign',
+  'display',
   'overflow',
   'objectFit',
   'whiteSpace',
@@ -190,8 +207,11 @@ const NUMBER_KEYS = new Set<keyof UIStyle>([
   'fontSize',
   'lineHeight',
   'innerShadowBlur',
+  'innerShadowSpread',
+  'innerShadowFalloff',
   'dropShadowBlur',
   'dropShadowSpread',
+  'dropShadowFalloff',
 ]);
 
 const PAINT_KEYS = new Set<keyof UIStyle>([
@@ -235,6 +255,8 @@ const ENUM_VALUES: Partial<Record<keyof UIStyle, readonly unknown[]>> = {
   alignItems: ['flex-start', 'center', 'flex-end', 'stretch'],
   alignSelf: ['auto', 'flex-start', 'center', 'flex-end', 'stretch'],
   positionType: ['relative', 'absolute'],
+  borderAlign: ['inside', 'center', 'outside'],
+  display: ['flex', 'none'],
   fontWeight: ['normal', 'medium', 'bold'],
   textAlign: ['left', 'center', 'right'],
   overflow: ['visible', 'hidden'],
@@ -253,7 +275,12 @@ export abstract class UIElement extends Script {
 
   protected constructor(kind: UIElementKind, options: UIElementOptions = {}) {
     super();
-    states.set(this, {kind, revision: 0});
+    states.set(this, {
+      kind,
+      revision: 0,
+      contentRevision: 0,
+      structureRevision: 0,
+    });
     this.addEventListener('added', this.assertPlacement);
     this.addEventListener('childadded', this.markUIStructureDirty);
     this.addEventListener('childremoved', this.markUIStructureDirty);
@@ -305,13 +332,27 @@ export abstract class UIElement extends Script {
     if (state) state.revision++;
   };
 
-  protected markUIStructureDirty = (): void => {
-    markRootDirty(findUIRoot(this));
+  /** Marks content that can update through a retained backend binding. */
+  protected markUIContentDirty = (): void => {
+    const state = states.get(this);
+    if (state) state.contentRevision++;
   };
 
-  private markUIStyleDirty = (property: string): void => {
+  protected markUIStructureDirty = (): void => {
+    markRootStructureDirty(findUIRoot(this));
+  };
+
+  private markUIStyleDirty = (
+    property: string,
+    previous: unknown,
+    next: unknown
+  ): void => {
     this.markUIDirty();
-    if (property === 'backgroundColor' || property === 'zIndex') {
+    if (
+      property === 'zIndex' ||
+      (property === 'backgroundColor' &&
+        isTransparentPaint(previous) !== isTransparentPaint(next))
+    ) {
       this.markUIStructureDirty();
     }
   };
@@ -343,6 +384,16 @@ export function getUIElementKind(element: UIElement): UIElementKind {
 
 export function getUIRevision(element: UIElement): number {
   return states.get(element)!.revision;
+}
+
+/** Returns the revision for content that does not replace backend nodes. */
+export function getUIContentRevision(element: UIElement): number {
+  return states.get(element)!.contentRevision;
+}
+
+/** Returns the revision that changes only when the physical UI tree changes. */
+export function getUIStructureRevision(element: UIElement): number {
+  return states.get(element)!.structureRevision;
 }
 
 /** Collects public UI roots without retaining their application lifetime. */
@@ -377,7 +428,7 @@ export function cloneUIStyle(style: UIStyle): UIStyle {
 function createStyleProxy<T extends UIStyle | UIStateStyle>(
   target: T,
   stateOnly: boolean,
-  onChange: (property: string) => void
+  onChange: (property: string, previous: unknown, next: unknown) => void
 ): T {
   return new Proxy(target, {
     set(object, property, value) {
@@ -385,8 +436,9 @@ function createStyleProxy<T extends UIStyle | UIStateStyle>(
       validateStyle(property, value, stateOnly);
       if (value === undefined) {
         if (!Reflect.has(object, property)) return true;
+        const previous = Reflect.get(object, property);
         Reflect.deleteProperty(object, property);
-        onChange(property);
+        onChange(property, previous, undefined);
         return true;
       }
       const next =
@@ -397,15 +449,19 @@ function createStyleProxy<T extends UIStyle | UIStateStyle>(
               onChange
             )
           : value;
-      if (Reflect.get(object, property) === next) return true;
+      const previous = Reflect.get(object, property);
+      if (previous === next) return true;
       Reflect.set(object, property, next);
-      onChange(property);
+      onChange(property, previous, next);
       return true;
     },
     deleteProperty(object, property) {
       if (!Reflect.has(object, property)) return true;
+      const previous = Reflect.get(object, property);
       Reflect.deleteProperty(object, property);
-      if (typeof property === 'string') onChange(property);
+      if (typeof property === 'string') {
+        onChange(property, previous, undefined);
+      }
       return true;
     },
   });
@@ -440,9 +496,9 @@ function findUIRoot(object: THREE.Object3D): UIElement | undefined {
   return undefined;
 }
 
-function markRootDirty(root: UIElement | undefined): void {
+function markRootStructureDirty(root: UIElement | undefined): void {
   if (!root) return;
-  states.get(root)!.revision++;
+  states.get(root)!.structureRevision++;
 }
 
 function isUIRootKind(kind: UIElementKind): boolean {
@@ -479,6 +535,12 @@ function validateStyle(
   }
   if (PAINT_KEYS.has(property as keyof UIStyle) && !isPaint(value)) {
     throw new Error(`UI style "${property}" must be a valid paint.`);
+  }
+  if (
+    (property === 'innerShadowPosition' || property === 'dropShadowPosition') &&
+    !isVector2Like(value)
+  ) {
+    throw new Error(`UI style "${property}" must be a finite 2D vector.`);
   }
   if (COLOR_KEYS.has(property as keyof UIStyle)) {
     if (!isSolidColor(value) || value === 'transparent') {
@@ -528,6 +590,13 @@ function validateStyle(
     (value < 0 || value > 1)
   ) {
     throw new Error('UI style "opacity" must be between 0 and 1.');
+  }
+  if (
+    (property === 'innerShadowFalloff' || property === 'dropShadowFalloff') &&
+    typeof value === 'number' &&
+    value <= 0
+  ) {
+    throw new Error(`UI style "${property}" must be positive.`);
   }
 }
 
@@ -589,6 +658,17 @@ function isSolidColor(value: unknown): value is THREE.ColorRepresentation {
     value instanceof THREE.Color ||
     (typeof value === 'number' && Number.isFinite(value)) ||
     (typeof value === 'string' && value.trim().length > 0)
+  );
+}
+
+function isTransparentPaint(value: unknown): boolean {
+  if (value === undefined || value === 'transparent') return true;
+  if (typeof value !== 'string') return false;
+  const compact = value.replace(/\s/g, '').toLowerCase();
+  return (
+    /^#[0-9a-f]{3}0$/u.test(compact) ||
+    /^#[0-9a-f]{6}00$/u.test(compact) ||
+    /^(?:rgba|hsla)\([^)]*,0(?:\.0+)?\)$/u.test(compact)
   );
 }
 

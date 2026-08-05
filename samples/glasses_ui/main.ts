@@ -1,5 +1,6 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
+import * as uikit from '@pmndrs/uikit';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 import {SystemUI} from 'xrblocks/addons/glasses/ui/SystemUI.js';
@@ -86,6 +87,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   options.reticles.enabled = false;
   options.simulator.handPosePanel.enabled = false;
   options.simulator.renderToRenderTexture = false;
+  options.uikit.enable(uikit);
   xb.add(new GlassesUISample());
   await xb.init(options);
 });

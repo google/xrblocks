@@ -12,8 +12,6 @@ The `xb.world` subsystem exposes real-world environment understanding to your ap
 1. **Plane Detection**: Real-world horizontal and vertical surfaces (floors, walls, tables).
 2. **Mesh Detection**: Environmental reconstruction of complex geometry.
 3. **Object Detection**: Identifying real objects (e.g., cups, laptops, chairs) using AI models.
-4. **Human and Face Detection**: On-device pose and facial landmark detection.
-5. **Segmentation**: On-device per-pixel person/background categories.
 
 ---
 
@@ -104,7 +102,7 @@ class ScannerScript extends xb.Script {
 
     // detectedObjects is an array of THREE.Object3D nodes positioned at their actual real-world coords
     for (const obj of detectedObjects) {
-      console.log(`Detected: ${obj.label} (UUID: ${obj.uuid})`);
+      console.log(`Detected: ${obj.name} (ID: ${obj.userData.objectId})`);
     }
   }
 }
@@ -112,75 +110,9 @@ class ScannerScript extends xb.Script {
 
 ### Backends
 
-Object detection uses the backend selected by
-`options.world.objects.backendConfig.activeBackend`:
+Under the hood, object detection uses pluggable backends selected via `options.world.objects.backend`:
 
 - **`GeminiDetectorBackend`**: Queries Gemini models using visual camera frames (requires AI API keys, see the [Generative AI](AI.mdx) guide).
 - **`MediaPipeDetectorBackend`**: Runs local MediaPipe object detection model.
 
-Use the MediaPipe backend without enabling AI:
-
-```javascript
-options.enableCamera('environment');
-options.enableDepth();
-options.enableObjectDetection();
-options.world.objects.backendConfig.activeBackend = 'mediapipe';
-```
-
-## Human pose detection
-
-Human detection uses MediaPipe on-device, then projects pose landmarks into
-world space with the depth mesh:
-
-```javascript
-const options = new xb.Options();
-options.enableHumanDetection();
-xb.init(options);
-
-const poses = await xb.world.humans.runDetection();
-const leftWrist = poses[0]?.getJointPosition(xb.PoseJointName.LeftWrist);
-```
-
-`enableHumanDetection()` enables the environment camera, depth, and required
-permission. Configure cadence and MediaPipe thresholds through
-`options.world.humans`.
-
-## Face landmark detection
-
-Face detection returns 478 landmarks per face, optional ARKit-style
-blendshapes, and an optional rigid facial transformation matrix:
-
-```javascript
-const options = new xb.Options();
-options.enableFaceDetection();
-xb.init(options);
-
-const faces = await xb.world.faces.runDetection();
-const nose = faces[0]?.getLandmarkPosition(xb.FaceLandmarkName.NoseTip);
-const jawOpen = faces[0]?.getBlendshape('jawOpen');
-```
-
-## Semantic segmentation
-
-Segmentation runs continuously by default after it is enabled. Read
-`latestMask`, or request one inference explicitly:
-
-```javascript
-const options = new xb.Options();
-options.enableSegmentation();
-xb.init(options);
-
-const mask = await xb.world.segmentation.runSegmentation();
-if (mask) {
-  console.log(mask.width, mask.height, mask.data);
-}
-```
-
-The category values are exported as `xb.SegmentCategory`. Segmentation is
-on-device and does not require depth.
-
-For working samples, see <CodeSearchLink path="samples/depthmesh/main.js"/>,
-
-<CodeSearchLink path="templates/8_objects/index.html" />,
-<CodeSearchLink path="demos/face_mirror/index.html" />, and
-<CodeSearchLink path="demos/magic_window/index.html" />.
+For working samples, see <CodeSearchLink path="samples/depthmesh/main.js"/> and <CodeSearchLink path="templates/8_objects/index.html"/>.
