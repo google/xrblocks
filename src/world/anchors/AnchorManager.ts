@@ -291,11 +291,13 @@ export class AnchorManager extends Script {
     try {
       const uuid = await request.call(tracked.anchor);
       tracked.uuid = uuid;
+      const before = this.store.load();
       const saved = this.store.save({
         uuid,
         label: tracked.label,
         createdAt: Date.now(),
       });
+      if (saved) this.releaseEvicted(before, uuid);
       this.debug(`persisted ${id} as ${uuid} (stored: ${saved})`);
       return saved;
     } catch (error) {
@@ -433,6 +435,25 @@ export class AnchorManager extends Script {
       this.releasePersistentHandle(record.uuid);
     }
     this.store.clear();
+  }
+
+  /**
+   * Releases handles the store dropped to stay under its cap.
+   *
+   * The store evicts silently, so without this the oldest handles stay
+   * allocated on the platform with no record left able to name them.
+   *
+   * @param before - Records present immediately before the save.
+   * @param saved - Handle just written, which is never evicted.
+   */
+  private releaseEvicted(before: AnchorRecord[], saved: string): void {
+    const kept = new Set(this.store.load().map((r) => r.uuid));
+    for (const record of before) {
+      if (record.uuid !== saved && !kept.has(record.uuid)) {
+        this.debug(`store evicted ${record.uuid}`);
+        this.releasePersistentHandle(record.uuid);
+      }
+    }
   }
 
   /**

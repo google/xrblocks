@@ -720,3 +720,58 @@ describe('AnchorManager persistent handle cleanup', () => {
     expect(store.records).toEqual([]);
   });
 });
+
+describe('AnchorManager eviction cleanup', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  /**
+   * A store that keeps at most one record, evicting the older one.
+   * @returns The capped store.
+   */
+  function cappedStore() {
+    const records: AnchorRecord[] = [];
+    return {
+      records,
+      load: () => [...records],
+      save: (r: AnchorRecord) => {
+        records.push(r);
+        while (records.length > 1) records.shift();
+        return true;
+      },
+      remove: () => {},
+      clear: () => void records.splice(0, records.length),
+    };
+  }
+
+  it('releases the handle of a record pushed out by the cap', async () => {
+    const store = cappedStore();
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    (
+      env.frame.createAnchor as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementation(async () =>
+      fakeAnchor(`uuid-${store.records.length}`)
+    );
+    manager.update(0, env.frame);
+
+    const a = await manager.create(POSE, 'first');
+    await manager.persist(a!.id);
+    const b = await manager.create(POSE, 'second');
+    await manager.persist(b!.id);
+
+    // The store silently dropped uuid-0, so nothing else will ever name it.
+    expect(env.session.deletePersistentAnchor).toHaveBeenCalledWith('uuid-0');
+  });
+
+  it('does not release the handle it just saved', async () => {
+    const store = cappedStore();
+    const {manager} = makeManager(store);
+    const env = fakeEnv({persistentUuid: 'uuid-only'});
+    manager.update(0, env.frame);
+    const a = await manager.create(POSE, 'first');
+    await manager.persist(a!.id);
+    expect(env.session.deletePersistentAnchor).not.toHaveBeenCalled();
+  });
+});
