@@ -79,8 +79,9 @@ export class LocalStorageAnchorStore implements AnchorStore {
   /**
    * Saves a record, replacing any existing entry with the same uuid.
    * @param record - The record to save.
+   * @returns Whether the record was committed.
    */
-  save(record: AnchorRecord): void {
+  save(record: AnchorRecord): boolean {
     const records = this.load();
     const index = records.findIndex((r) => r.uuid === record.uuid);
     if (index >= 0) {
@@ -93,7 +94,7 @@ export class LocalStorageAnchorStore implements AnchorStore {
       records.sort((a, b) => a.createdAt - b.createdAt);
       records.splice(0, records.length - this.maxRecords);
     }
-    this.write(records);
+    return this.write(records);
   }
 
   /**
@@ -101,7 +102,7 @@ export class LocalStorageAnchorStore implements AnchorStore {
    * @param uuid - Handle of the record to remove.
    */
   remove(uuid: string): void {
-    this.write(this.load().filter((r) => r.uuid !== uuid));
+    void this.write(this.load().filter((r) => r.uuid !== uuid));
   }
 
   /** Removes every saved record. */
@@ -114,15 +115,17 @@ export class LocalStorageAnchorStore implements AnchorStore {
     }
   }
 
-  private write(records: AnchorRecord[]): void {
+  private write(records: AnchorRecord[]): boolean {
     if (!this.storage) {
       console.warn('[anchors] no storage available; anchors will not persist');
-      return;
+      return false;
     }
     try {
       this.storage.setItem(this.key, JSON.stringify(records));
+      return true;
     } catch (error) {
       console.warn('[anchors] could not save anchors', error);
+      return false;
     }
   }
 }
@@ -135,9 +138,27 @@ export class LocalStorageAnchorStore implements AnchorStore {
 function isAnchorRecord(value: unknown): value is AnchorRecord {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<AnchorRecord>;
-  return (
-    typeof candidate.uuid === 'string' &&
-    candidate.uuid.length > 0 &&
-    typeof candidate.label === 'string'
-  );
+  if (
+    typeof candidate.uuid !== 'string' ||
+    candidate.uuid.length === 0 ||
+    typeof candidate.label !== 'string'
+  ) {
+    return false;
+  }
+  // A pose is optional, but a malformed one would be indexed blindly during a
+  // simulated restore and take the whole batch down with it.
+  return candidate.pose === undefined || isStorablePose(candidate.pose);
+}
+
+/**
+ * Checks a stored pose has the arrays a restore will index into.
+ * @param value - Candidate pose parsed from storage.
+ * @returns Whether the pose is usable.
+ */
+function isStorablePose(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const pose = value as {position?: unknown; orientation?: unknown};
+  const numbers = (v: unknown, length: number) =>
+    Array.isArray(v) && v.length === length && v.every(Number.isFinite);
+  return numbers(pose.position, 3) && numbers(pose.orientation, 4);
 }

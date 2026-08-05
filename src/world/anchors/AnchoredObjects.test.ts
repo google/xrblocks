@@ -16,6 +16,7 @@ function memoryStore(seed: AnchorRecord[] = []): AnchorStore {
       const i = records.findIndex((x) => x.uuid === r.uuid);
       if (i >= 0) records[i] = r;
       else records.push(r);
+      return true;
     },
     remove: (uuid) => {
       const i = records.findIndex((x) => x.uuid === uuid);

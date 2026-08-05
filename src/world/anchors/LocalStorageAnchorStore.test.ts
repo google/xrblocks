@@ -157,3 +157,80 @@ describe('LocalStorageAnchorStore', () => {
     expect(storage.getItem(KEY)).toBeNull();
   });
 });
+
+describe('LocalStorageAnchorStore write reporting', () => {
+  it('reports success when the record is committed', () => {
+    const store = new LocalStorageAnchorStore(KEY, 128, storage);
+    expect(store.save(record('a'))).toBe(true);
+  });
+
+  it('reports failure when storage is disabled', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new LocalStorageAnchorStore(KEY, 128, null);
+    // Reporting success here would let an app tell a user their anchor was
+    // saved when nothing was written.
+    expect(store.save(record('a'))).toBe(false);
+  });
+
+  it('reports failure when the write throws', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwing = {
+      ...storage,
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+    };
+    expect(
+      new LocalStorageAnchorStore(KEY, 128, throwing).save(record('a'))
+    ).toBe(false);
+  });
+});
+
+describe('LocalStorageAnchorStore pose validation', () => {
+  it('drops records whose pose is malformed', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    storage.setItem(
+      KEY,
+      JSON.stringify([
+        {uuid: 'bad', label: 'bad', createdAt: 1, pose: {position: [1, 2]}},
+        {uuid: 'ok', label: 'ok', createdAt: 2},
+      ])
+    );
+    expect(
+      new LocalStorageAnchorStore(KEY, 128, storage).load().map((r) => r.uuid)
+    ).toEqual(['ok']);
+  });
+
+  it('keeps records with a well formed pose', () => {
+    storage.setItem(
+      KEY,
+      JSON.stringify([
+        {
+          uuid: 'ok',
+          label: 'ok',
+          createdAt: 1,
+          pose: {position: [1, 2, 3], orientation: [0, 0, 0, 1]},
+        },
+      ])
+    );
+    expect(
+      new LocalStorageAnchorStore(KEY, 128, storage).load()[0].pose?.position
+    ).toEqual([1, 2, 3]);
+  });
+
+  it('drops a pose containing non-numbers', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    storage.setItem(
+      KEY,
+      JSON.stringify([
+        {
+          uuid: 'bad',
+          label: 'bad',
+          createdAt: 1,
+          pose: {position: [1, 'x', 3], orientation: [0, 0, 0, 1]},
+        },
+      ])
+    );
+    expect(new LocalStorageAnchorStore(KEY, 128, storage).load()).toEqual([]);
+  });
+});

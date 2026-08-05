@@ -16,8 +16,10 @@ export interface AnchorStore {
   /**
    * Saves a record, replacing any existing entry with the same uuid.
    * @param record - The record to save.
+   * @returns Whether the record was actually committed. Callers must not tell
+   *     a user their anchor was saved when storage quietly refused it.
    */
-  save(record: AnchorRecord): void;
+  save(record: AnchorRecord): boolean;
 
   /**
    * Removes a single record.

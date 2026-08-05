@@ -273,13 +273,12 @@ export class AnchorManager extends Script {
     if (this.capability === 'simulated') {
       const anchor = tracked.anchor as unknown as SimulatorAnchor;
       tracked.uuid = tracked.id;
-      this.store.save({
+      return this.store.save({
         uuid: tracked.id,
         label: tracked.label,
         createdAt: Date.now(),
         pose: anchor.toStorablePose(),
       });
-      return true;
     }
     if (this.capability !== 'persistent') {
       this.debug(`cannot persist ${id}: platform is ${this.capability}`);
@@ -293,9 +292,13 @@ export class AnchorManager extends Script {
     try {
       const uuid = await request.call(tracked.anchor);
       tracked.uuid = uuid;
-      this.store.save({uuid, label: tracked.label, createdAt: Date.now()});
-      this.debug(`persisted ${id} as ${uuid}`);
-      return true;
+      const saved = this.store.save({
+        uuid,
+        label: tracked.label,
+        createdAt: Date.now(),
+      });
+      this.debug(`persisted ${id} as ${uuid} (stored: ${saved})`);
+      return saved;
     } catch (error) {
       this.lastError = error;
       console.warn('[anchors] could not persist anchor', error);
