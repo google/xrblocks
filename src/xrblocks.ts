@@ -172,6 +172,7 @@ export * from './world/anchors/AnchorStore';
 export * from './world/anchors/AnchorTypes';
 export * from './world/anchors/AnchorsOptions';
 export * from './world/anchors/LocalStorageAnchorStore';
+export * from './world/anchors/SimulatorAnchor';
 export * from './world/planes/DetectedPlane';
 export * from './world/planes/PlaneDetector';
 export * from './world/planes/PlanesOptions';

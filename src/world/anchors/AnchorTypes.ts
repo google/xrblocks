@@ -1,3 +1,5 @@
+import {StorablePose} from './SimulatorAnchor';
+
 /**
  * Shared types for the spatial anchor subsystem.
  *
@@ -18,7 +20,12 @@ export type AnchorCapability =
   /** Anchors can be created, but not carried into a later session. */
   | 'session-only'
   /** Anchors can be created and restored in later sessions. */
-  | 'persistent';
+  | 'persistent'
+  /**
+   * No platform anchors; the subsystem is holding poses itself so an app can
+   * be developed on desktop. Nothing here is really pinned to the room.
+   */
+  | 'simulated';
 
 /** A saved anchor, as written to storage. */
 export interface AnchorRecord {
@@ -28,6 +35,11 @@ export interface AnchorRecord {
   label: string;
   /** Epoch milliseconds when the handle was saved; used for eviction order. */
   createdAt: number;
+  /**
+   * Pose to rebuild from, present only for simulated anchors. Real anchors are
+   * re-localised by the platform, so storing a pose for them would be wrong.
+   */
+  pose?: StorablePose;
 }
 
 /**

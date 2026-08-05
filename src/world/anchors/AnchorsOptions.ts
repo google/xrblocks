@@ -24,6 +24,15 @@ export class AnchorsOptions {
    */
   persistent = false;
 
+  /**
+   * Whether to hold poses locally when the platform has no anchor support.
+   *
+   * Off by default: on a real headset a silent stand-in would look like
+   * working anchors while nothing is actually pinned. Demos and desktop
+   * development opt in deliberately.
+   */
+  simulatorFallback = false;
+
   /** Storage key used when persistence is enabled. */
   storageKey = 'xrblocks.anchors';
 

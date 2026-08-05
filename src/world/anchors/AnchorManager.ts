@@ -6,6 +6,7 @@ import {WorldOptions} from '../WorldOptions';
 import {anchorCapability} from './AnchorCapability';
 import {AnchorStore} from './AnchorStore';
 import {LocalStorageAnchorStore} from './LocalStorageAnchorStore';
+import {SimulatorAnchor} from './SimulatorAnchor';
 import {
   AnchorCapability,
   AnchorRecord,
@@ -101,7 +102,11 @@ export class AnchorManager extends Script {
   override update(_time?: number, frame?: XRFrame) {
     if (!frame) return;
     this.currentFrame = frame;
-    this.capability = anchorCapability(frame.session, frame);
+    const probed = anchorCapability(frame.session, frame);
+    this.capability =
+      probed === 'unsupported' && this.options?.anchors.simulatorFallback
+        ? 'simulated'
+        : probed;
     if (this.capability === 'unsupported') {
       if (!this.warnedUnsupported) {
         this.warnedUnsupported = true;
@@ -130,6 +135,9 @@ export class AnchorManager extends Script {
     space?: XRSpace
   ): Promise<TrackedAnchor | null> {
     const frame = this.currentFrame;
+    if (this.capability === 'simulated') {
+      return this.createSimulated(pose, label);
+    }
     if (!frame || typeof frame.createAnchor !== 'function') {
       return null;
     }
@@ -170,6 +178,17 @@ export class AnchorManager extends Script {
   async persist(id: string): Promise<boolean> {
     const tracked = this.anchors.get(id);
     if (!tracked) return false;
+    if (this.capability === 'simulated') {
+      const anchor = tracked.anchor as unknown as SimulatorAnchor;
+      tracked.uuid = tracked.id;
+      this.store.save({
+        uuid: tracked.id,
+        label: tracked.label,
+        createdAt: Date.now(),
+        pose: anchor.toStorablePose(),
+      });
+      return true;
+    }
     if (this.capability !== 'persistent') {
       this.debug(`cannot persist ${id}: platform is ${this.capability}`);
       return false;
@@ -204,6 +223,9 @@ export class AnchorManager extends Script {
   async restoreAll(): Promise<AnchorRestoreResult[]> {
     const records = this.store.load();
     if (records.length === 0) return [];
+    if (this.capability === 'simulated') {
+      return records.map((record) => this.restoreSimulated(record));
+    }
     const session = this.currentFrame?.session;
     const restore = session?.restorePersistentAnchor;
     if (this.capability !== 'persistent' || typeof restore !== 'function') {
@@ -322,6 +344,52 @@ export class AnchorManager extends Script {
         this.debug(`platform released ${id}`);
       }
     }
+  }
+
+  /**
+   * Creates a locally held anchor for environments without platform support.
+   * @param pose - Pose to hold.
+   * @param label - Label carried through persistence.
+   * @returns The tracked anchor.
+   */
+  private createSimulated(
+    pose: XRRigidTransform,
+    label: string
+  ): TrackedAnchor {
+    const id = `anchor-${nextAnchorId++}`;
+    const tracked: TrackedAnchor = {
+      id,
+      label,
+      anchor: new SimulatorAnchor(id, pose) as unknown as XRAnchor,
+    };
+    this.anchors.set(id, tracked);
+    this.debug(`created simulated ${id} (${label})`);
+    return tracked;
+  }
+
+  /**
+   * Rebuilds a simulated anchor from its stored pose.
+   * @param record - The saved record.
+   * @returns The outcome for this record.
+   */
+  private restoreSimulated(record: AnchorRecord): AnchorRestoreResult {
+    const existing = this.findByUuid(record.uuid);
+    if (existing) return {record, status: 'restored', anchor: existing};
+    if (!record.pose) {
+      // Saved by a real platform, so there is no pose to rebuild from here.
+      return {record, status: 'not-found'};
+    }
+    const tracked: TrackedAnchor = {
+      id: `anchor-${nextAnchorId++}`,
+      label: record.label,
+      uuid: record.uuid,
+      anchor: SimulatorAnchor.fromStorablePose(
+        record.uuid,
+        record.pose
+      ) as unknown as XRAnchor,
+    };
+    this.anchors.set(tracked.id, tracked);
+    return {record, status: 'restored', anchor: tracked};
   }
 
   /**
