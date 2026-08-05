@@ -262,12 +262,6 @@ document.addEventListener('DOMContentLoaded', function () {
   options.hands.enabled = true;
   options.hands.visualization = true;
   options.hands.visualizeMeshes = true;
-  options.simulator.environments = [
-    {
-      name: 'Empty',
-      manifestPath: 'data:application/json,%7B%22objects%22%3A%5B%5D%7D',
-    },
-  ];
 
   xb.add(new WalkthroughManager());
   xb.init(options);
