@@ -38,8 +38,10 @@ export class MyClass extends xb.Script {
 
 ## Global controller functions
 
-The following functions are called on every object when the corresponding event is received by any controller.
-Each callback receives an event. The `THREE.Group` corresponding to the controller can be retrieved from `event.target`.
+The following functions are called on every object when the corresponding
+event is received by any controller. Read the controller from
+`event.source.controller`. Ray-based select events also provide the current
+`event.surface` and `event.intersection` when that surface is still hit.
 
 - `onSelectStart(event)` - Called when any controller begins selecting.
 - `onSelectEnd(event)` - Called when any controller finishes selecting.
