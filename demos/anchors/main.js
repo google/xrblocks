@@ -16,6 +16,24 @@ const MARKER_RADIUS = 0.06;
 const MARKER_COLOR = 0x8a7bff;
 const RESTORED_COLOR = 0x4ec9a0;
 
+/**
+ * Releases the GPU resources an object holds before it is dropped.
+ *
+ * three.js does not free buffers or programs when an object leaves the scene
+ * graph, so deleting anchors in a long session would otherwise grow VRAM use
+ * without bound.
+ *
+ * @param object - The object being discarded.
+ */
+function disposeObject(object) {
+  object.traverse((child) => {
+    child.geometry?.dispose?.();
+    const material = child.material;
+    if (Array.isArray(material)) material.forEach((m) => m.dispose?.());
+    else material?.dispose?.();
+  });
+}
+
 class AnchorsDemo extends xb.Script {
   constructor() {
     super();
@@ -141,14 +159,17 @@ class AnchorsDemo extends xb.Script {
     for (const id of [...this.markers.keys()]) {
       anchors.delete(id);
       const mesh = this.markers.get(id);
-      if (mesh) xb.core.scene.remove(mesh);
+      if (mesh) {
+        xb.core.scene.remove(mesh);
+        disposeObject(mesh);
+      }
       this.markers.delete(id);
     }
     anchors.forgetAll();
     this.setStatus('forgot every saved marker');
   }
 
-  update(_time, frame) {
+  update() {
     const anchors = this.anchors;
     if (!anchors) return;
 

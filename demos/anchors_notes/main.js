@@ -24,6 +24,24 @@ const CARD_DISTANCE = 0.9;
 const FRESH_COLOR = 0x6a5acd;
 const RESTORED_COLOR = 0x2f7d63;
 
+/**
+ * Releases the GPU resources an object holds before it is dropped.
+ *
+ * three.js does not free buffers or programs when an object leaves the scene
+ * graph, so deleting anchors in a long session would otherwise grow VRAM use
+ * without bound.
+ *
+ * @param object - The object being discarded.
+ */
+function disposeObject(object) {
+  object.traverse((child) => {
+    child.geometry?.dispose?.();
+    const material = child.material;
+    if (Array.isArray(material)) material.forEach((m) => m.dispose?.());
+    else material?.dispose?.();
+  });
+}
+
 class AnchorNotesDemo extends xb.Script {
   constructor() {
     super();
@@ -190,8 +208,9 @@ class AnchorNotesDemo extends xb.Script {
     anchors?.delete(id);
     xb.core.scene.remove(entry.group);
     // troika Text holds GPU resources, so release them rather than leaking on
-    // every delete.
+    // every delete. The card behind it holds its own geometry and material.
     entry.text.dispose?.();
+    disposeObject(entry.group);
     this.notes.delete(id);
     this.refreshList();
     this.setStatus('deleted a note');
@@ -207,6 +226,7 @@ class AnchorNotesDemo extends xb.Script {
       if (entry) {
         xb.core.scene.remove(entry.group);
         entry.text.dispose?.();
+        disposeObject(entry.group);
       }
       this.notes.delete(id);
     }
