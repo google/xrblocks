@@ -59,10 +59,10 @@ function createDepthOpacityControl(onInput) {
   const panel = new xb.UIPanel({
     style: {
       width: 620,
-      position: 'absolute',
+      positionType: 'absolute',
       left: '50%',
       bottom: 32,
-      transform: {translateX: '-50%'},
+      transformTranslateX: '-50%',
       flexDirection: 'column',
       gap: 8,
       padding: 18,
