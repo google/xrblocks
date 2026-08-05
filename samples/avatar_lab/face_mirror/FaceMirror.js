@@ -1,9 +1,6 @@
 import * as xb from 'xrblocks';
-import {UICore} from 'uiblocks';
-import {FEATURED_BLENDSHAPES} from './FaceMeshIndices.js';
 import {FaceWireframe} from './FaceWireframe.js';
 import {FaceSpatialHud} from './FaceSpatialHud.js';
-import './FaceMirrorStatus.js';
 
 export class FaceMirror extends xb.Script {
   static dependencies = {
@@ -12,15 +9,11 @@ export class FaceMirror extends xb.Script {
 
   init({world}) {
     this.world = world;
-    this.uiCore = new UICore(this);
 
     this.wireframe = new FaceWireframe();
     this.add(this.wireframe);
 
-    this.statusEl = document.querySelector('face-mirror-status');
-    this.statusEl.blendshapes = FEATURED_BLENDSHAPES;
-
-    this.spatialHud = new FaceSpatialHud(this.uiCore);
+    this.spatialHud = new FaceSpatialHud(this);
 
     if (this.world.faces) {
       this.world.faces.start(this);
@@ -35,7 +28,6 @@ export class FaceMirror extends xb.Script {
   displayFaces(faces) {
     if (!faces || faces.length === 0) {
       const msg = 'No face detected. Look at the camera.';
-      this.statusEl.updateState(msg);
       this.spatialHud.updateState(msg);
       this.wireframe.setVisible(false);
       this.resetBars();
@@ -47,7 +39,6 @@ export class FaceMirror extends xb.Script {
       (face.blendshapes.length
         ? ` | ${face.blendshapes.length} blendshapes`
         : '');
-    this.statusEl.updateState(status);
     this.spatialHud.updateState(status);
     this.wireframe.setVisible(true);
     this.wireframe.updateFace(face);
@@ -55,12 +46,10 @@ export class FaceMirror extends xb.Script {
   }
 
   updateBars(face) {
-    this.statusEl.updateBars(face);
     this.spatialHud.updateBars(face);
   }
 
   resetBars() {
-    this.statusEl.resetBars();
     this.spatialHud.resetBars();
   }
 
