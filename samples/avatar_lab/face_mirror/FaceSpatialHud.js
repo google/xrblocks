@@ -29,6 +29,8 @@ export class FaceSpatialHud {
         style: {
           width: '0%',
           height: '100%',
+          flexShrink: 0,
+          alignSelf: 'flex-start',
           backgroundColor: xb.ui.theme.colors.primary,
           borderRadius: 5,
         },
@@ -39,21 +41,31 @@ export class FaceSpatialHud {
             width: '100%',
             height: 22,
             flexDirection: 'row',
+            justifyContent: 'space-between',
             alignItems: 'center',
             gap: 10,
+            overflow: 'hidden',
           },
           children: [
             new xb.UIText({
               text: name,
-              style: {width: 180, fontSize: 15},
+              style: {
+                width: 180,
+                flexShrink: 0,
+                fontSize: 15,
+                whiteSpace: 'nowrap',
+                textOverflow: 'ellipsis',
+              },
             }),
             new xb.UIPanel({
               pointerEvents: 'none',
               style: {
-                flexGrow: 1,
-                flexShrink: 1,
+                width: 300,
+                flexShrink: 0,
                 height: 10,
                 flexDirection: 'row',
+                justifyContent: 'flex-start',
+                alignItems: 'stretch',
                 backgroundColor: xb.ui.theme.colors.raisedSurface,
                 borderRadius: 5,
                 overflow: 'hidden',
