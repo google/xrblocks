@@ -208,3 +208,21 @@ describe('AnchorManager.getPose for simulated anchors', () => {
     expect(pose?.transform.position).toMatchObject({x: 7, y: 8, z: 9});
   });
 });
+
+describe('simulated anchors and platform pruning', () => {
+  it('are not pruned by an empty platform tracked set', async () => {
+    // A device with no anchor support can still expose an empty trackedAnchors
+    // set, which would otherwise wipe every locally held anchor each frame.
+    const {manager} = makeManager();
+    const frame = {
+      session: {},
+      getPose: () => null,
+      trackedAnchors: new Set(),
+    } as unknown as XRFrame;
+    manager.update(0, frame);
+    const tracked = await manager.create(POSE, 'sofa');
+    expect(tracked).not.toBeNull();
+    manager.update(1, frame);
+    expect(manager.getAll()).toHaveLength(1);
+  });
+});

@@ -104,6 +104,15 @@ function makeManager(store = memoryStore(), renderer = fakeRenderer()) {
 
 const POSE = {} as XRRigidTransform;
 
+/**
+ * Lets pending microtasks settle.
+ *
+ * create() reaches its retry queue only after the first attempt rejects, so a
+ * synchronous update() would otherwise pump an empty queue.
+ * @returns A promise resolved on the next macrotask.
+ */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -181,7 +190,10 @@ describe('AnchorManager.create', () => {
       .fn()
       .mockRejectedValue(new Error('boom'));
     manager.update(0, frame);
-    await expect(manager.create(POSE, 'sofa')).resolves.toBeNull();
+    const pending = manager.create(POSE, 'sofa');
+    await tick();
+    manager.update(1, frame); // lets the single retry settle
+    await expect(pending).resolves.toBeNull();
     expect(String(manager.lastError)).toContain('boom');
   });
 
@@ -192,9 +204,12 @@ describe('AnchorManager.create', () => {
     const working = vi.fn(async () => fakeAnchor('uuid-2'));
     (env.frame as unknown as {createAnchor: unknown}).createAnchor = failing;
     manager.update(0, env.frame);
-    await manager.create(POSE, 'first');
-    (env.frame as unknown as {createAnchor: unknown}).createAnchor = working;
+    const first = manager.create(POSE, 'first');
+    await tick();
     manager.update(1, env.frame);
+    await first;
+    (env.frame as unknown as {createAnchor: unknown}).createAnchor = working;
+    manager.update(2, env.frame);
     await expect(manager.create(POSE, 'second')).resolves.not.toBeNull();
   });
 
@@ -548,5 +563,95 @@ describe('AnchorManager.getPose reference space default', () => {
     const custom = {__other: true} as unknown as XRReferenceSpace;
     manager.getPose(tracked!.id, custom);
     expect(getPose.mock.calls[0][1]).toBe(custom);
+  });
+});
+
+describe('AnchorManager frame validity', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('retries on the next live frame when the cached frame is inactive', async () => {
+    // Apps create anchors from DOM handlers, which fire after the cached frame
+    // has gone inactive and createAnchor starts rejecting.
+    const {manager} = makeManager();
+    const stale = fakeEnv();
+    (stale.frame as unknown as {createAnchor: unknown}).createAnchor = vi
+      .fn()
+      .mockRejectedValue(new Error('InvalidStateError'));
+    manager.update(0, stale.frame);
+
+    const pending = manager.create(POSE, 'sofa');
+    await tick();
+    const live = fakeEnv();
+    manager.update(1, live.frame);
+    const tracked = await pending;
+
+    expect(tracked).not.toBeNull();
+    expect(live.frame.createAnchor).toHaveBeenCalled();
+  });
+
+  it('resolves retried creations in the order they were requested', async () => {
+    const {manager} = makeManager();
+    const stale = fakeEnv();
+    (stale.frame as unknown as {createAnchor: unknown}).createAnchor = vi
+      .fn()
+      .mockRejectedValue(new Error('InvalidStateError'));
+    manager.update(0, stale.frame);
+    const a = manager.create(POSE, 'first');
+    const b = manager.create(POSE, 'second');
+    await tick();
+    const live = fakeEnv();
+    manager.update(1, live.frame);
+    const [ra, rb] = await Promise.all([a, b]);
+    expect([ra.label, rb.label]).toEqual(['first', 'second']);
+  });
+
+  it('fails retried creations when the session ends first', async () => {
+    const {manager} = makeManager();
+    const stale = fakeEnv();
+    (stale.frame as unknown as {createAnchor: unknown}).createAnchor = vi
+      .fn()
+      .mockRejectedValue(new Error('InvalidStateError'));
+    manager.update(0, stale.frame);
+    const pending = manager.create(POSE, 'sofa');
+    await tick();
+    manager.onSessionEnded();
+    await expect(pending).resolves.toBeNull();
+  });
+});
+
+describe('AnchorManager session end', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('drops anchors from the ended session but keeps saved records', async () => {
+    const store = memoryStore();
+    const {manager} = makeManager(store);
+    const env = fakeEnv({persistentUuid: 'uuid-keep'});
+    manager.update(0, env.frame);
+    const tracked = await manager.create(POSE, 'sofa');
+    await manager.persist(tracked.id);
+
+    manager.onSessionEnded();
+
+    expect(manager.getAll()).toHaveLength(0);
+    expect(store.load()).toHaveLength(1);
+  });
+
+  it('restores into the new session rather than reusing dead anchors', async () => {
+    const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    manager.update(0, env.frame);
+    await manager.restoreAll();
+    manager.onSessionEnded();
+
+    const next = fakeEnv();
+    manager.update(2, next.frame);
+    const results = await manager.restoreAll();
+    expect(results.map((r) => r.status)).toEqual(['restored']);
+    expect(next.session.restorePersistentAnchor).toHaveBeenCalled();
   });
 });

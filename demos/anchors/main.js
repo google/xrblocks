@@ -20,7 +20,7 @@ class AnchorsDemo extends xb.Script {
   constructor() {
     super();
     this.markers = new Map();
-    this.restored = false;
+    this.restoredUnder = new Set();
     this.scratchPosition = new THREE.Vector3();
     this.scratchQuaternion = new THREE.Quaternion();
   }
@@ -152,10 +152,12 @@ class AnchorsDemo extends xb.Script {
     const anchors = this.anchors;
     if (!anchors) return;
 
-    // Restore once, after the first update has established capability. There
-    // is no XRFrame on desktop, so this must not wait for one.
-    if (!this.restored) {
-      this.restored = true;
+    // Restore once per backing. Before entering XR the capability is
+    // 'simulated', and records saved by a real headset have no pose to rebuild
+    // from, so a single attempt at startup would leave them lost forever.
+    // Retrying on the upgrade to real anchors is what makes them come back.
+    if (!this.restoredUnder.has(anchors.capability)) {
+      this.restoredUnder.add(anchors.capability);
       this.restoreSaved();
     }
 

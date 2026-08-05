@@ -61,6 +61,13 @@ export class AnchorManager extends Script {
   private renderer?: THREE.WebGLRenderer;
   private currentFrame?: XRFrame;
   private warnedUnsupported = false;
+  private readonly pendingCreates: Array<{
+    pose: XRRigidTransform;
+    label: string;
+    space?: XRSpace;
+    resolve: (value: TrackedAnchor | null) => void;
+    retried: boolean;
+  }> = [];
 
   /**
    * @param store - Storage for persistent handles. Defaults to local storage,
@@ -125,6 +132,32 @@ export class AnchorManager extends Script {
       return;
     }
     this.pruneUntracked(frame);
+    void this.flushPendingCreates(frame);
+  }
+
+  /**
+   * Releases everything belonging to a session that has ended.
+   *
+   * Anchors do not survive their session, so keeping them would leave dead
+   * handles that later restores would treat as already restored. Saved records
+   * are untouched, since restoring them is the entire point.
+   */
+  onSessionEnded(): void {
+    for (const tracked of this.anchors.values()) {
+      try {
+        tracked.anchor.delete?.();
+      } catch {
+        // The session is gone; nothing useful to do.
+      }
+    }
+    this.anchors.clear();
+    this.currentFrame = undefined;
+    this.capability = this.options?.anchors.simulatorFallback
+      ? 'simulated'
+      : 'unsupported';
+    for (const pending of this.pendingCreates.splice(0)) {
+      pending.resolve(null);
+    }
   }
 
   /**
@@ -141,10 +174,10 @@ export class AnchorManager extends Script {
     label: string,
     space?: XRSpace
   ): Promise<TrackedAnchor | null> {
-    const frame = this.currentFrame;
     if (this.capability === 'simulated') {
       return this.createSimulated(pose, label);
     }
+    const frame = this.currentFrame;
     if (!frame || typeof frame.createAnchor !== 'function') {
       return null;
     }
@@ -158,8 +191,60 @@ export class AnchorManager extends Script {
       );
       return null;
     }
+    const immediate = await this.createOnFrame(frame, pose, label, anchorSpace);
+    if (immediate) return immediate;
+    // Only a rejected createAnchor reaches here, and the usual cause is a
+    // frame that went inactive because the app created from an input handler.
+    // Retry exactly once on the next live frame rather than looping.
+    return new Promise((resolve) => {
+      this.pendingCreates.push({
+        pose,
+        label,
+        space: anchorSpace,
+        resolve,
+        retried: true,
+      });
+    });
+  }
+
+  /**
+   * Runs queued creations against a live frame.
+   * @param frame - The frame currently being rendered.
+   */
+  private async flushPendingCreates(frame: XRFrame): Promise<void> {
+    if (this.pendingCreates.length === 0) return;
+    for (const pending of this.pendingCreates.splice(0)) {
+      pending.resolve(
+        await this.createOnFrame(
+          frame,
+          pending.pose,
+          pending.label,
+          pending.space!
+        )
+      );
+    }
+  }
+
+  /**
+   * Creates an anchor on a frame known to be active.
+   * @param frame - The frame currently being rendered.
+   * @param pose - Pose for the new anchor.
+   * @param label - Label carried through persistence.
+   * @param space - Space the pose is expressed in.
+   * @returns The tracked anchor, or null when it could not be created.
+   */
+  private async createOnFrame(
+    frame: XRFrame,
+    pose: XRRigidTransform,
+    label: string,
+    space: XRSpace
+  ): Promise<TrackedAnchor | null> {
+    // The retry path may be handed a different frame from the one create()
+    // checked, so verify support here rather than relying on the caller.
+    const createAnchor = frame.createAnchor;
+    if (typeof createAnchor !== 'function') return null;
     try {
-      const anchor = await frame.createAnchor(pose, anchorSpace);
+      const anchor = await createAnchor.call(frame, pose, space);
       if (!anchor) return null;
       const tracked: TrackedAnchor = {
         id: `anchor-${nextAnchorId++}`,
@@ -358,6 +443,9 @@ export class AnchorManager extends Script {
    * @param frame - The current XR frame.
    */
   private pruneUntracked(frame: XRFrame): void {
+    // Simulated anchors are not known to the platform, so its tracked set says
+    // nothing about them and would remove every one of them.
+    if (this.capability === 'simulated') return;
     const tracked = frame.trackedAnchors;
     // Absent means the platform does not report the set, which is different
     // from reporting an empty set; only the latter means everything is gone.
