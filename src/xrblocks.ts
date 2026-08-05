@@ -68,6 +68,7 @@ export * from './physics/PhysicsOptions';
 export * from './placement/FaceCamera';
 export * from './placement/FollowHead';
 export * from './placement/FollowObject';
+export * from './placement/Orbit';
 export {TransformScript} from './placement/TransformScript';
 export * from './placement/VisibilityTransition';
 export * from './simulator/controlModes/SimulatorControlMode';

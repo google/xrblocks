@@ -6,6 +6,12 @@ export type FaceCameraMode = 'cylindrical' | 'spherical';
 
 export const DEFAULT_FACE_CAMERA_SMOOTHING = 0.1;
 
+// Reusable instances to avoid creating objects in the render loop.
+const target = new THREE.Vector3();
+const worldQuaternion = new THREE.Quaternion();
+const localQuaternion = new THREE.Quaternion();
+const lookAtMatrix = new THREE.Matrix4();
+
 export function faceCameraSlerpAlpha(
   smoothing: number,
   deltaSeconds: number
@@ -21,13 +27,16 @@ export function faceCameraQuaternion(
   mode: FaceCameraMode = 'cylindrical'
 ): THREE.Quaternion | undefined {
   if (!cameraPosition) return undefined;
-  const target = cameraPosition.clone();
+  target.copy(cameraPosition);
   if (mode === 'cylindrical') target.y = worldPosition.y;
   if (target.distanceToSquared(worldPosition) < 1e-8) return undefined;
 
-  const worldQuaternion = new THREE.Quaternion().setFromRotationMatrix(
-    new THREE.Matrix4().lookAt(target, worldPosition, UP)
+  worldQuaternion.setFromRotationMatrix(
+    lookAtMatrix.lookAt(target, worldPosition, UP)
   );
   if (!parentWorldQuaternion) return worldQuaternion;
-  return parentWorldQuaternion.clone().invert().multiply(worldQuaternion);
+  return localQuaternion
+    .copy(parentWorldQuaternion)
+    .invert()
+    .multiply(worldQuaternion);
 }
