@@ -10,9 +10,6 @@ export class EarthAnimation {
   }
 
   update(deltaTime) {
-    const gltfScene = this?.model?.gltf?.scene;
-    if (gltfScene) {
-      gltfScene.rotation.y += this.speed * deltaTime;
-    }
+    if (this.model) this.model.rotation.y += this.speed * deltaTime;
   }
 }

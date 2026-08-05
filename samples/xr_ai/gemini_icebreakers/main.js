@@ -4,21 +4,17 @@ import * as xb from 'xrblocks';
 
 import {GeminiIcebreakers} from './GeminiIcebreakers.js';
 
-const options = new xb.Options({
-  antialias: true,
-  reticles: {enabled: true},
-  visualizeRays: true,
-});
+const options = new xb.Options();
 options.enableAI();
 options.enableCamera();
-// Request microphone permission before entering XR.
 options.permissions.microphone = true;
+options.controllers.visualizeRays = true;
+options.setAppTitle('Gemini Icebreakers');
+options.setAppDescription('Explore 3D conversation starters with Gemini Live.');
 
 async function start() {
   xb.add(new GeminiIcebreakers());
   await xb.init(options);
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-  start();
-});
+document.addEventListener('DOMContentLoaded', () => void start());
