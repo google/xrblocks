@@ -1,5 +1,17 @@
 import * as THREE from 'three';
 
+import {
+  type HoverEvent,
+  type LongSelectEvent,
+  type ObjectGrabEvent,
+  type ObjectTouchEvent,
+  type ObjectTouchStartEvent,
+  type SelectEndEvent,
+  type SelectEvent,
+  type SelectionEndReason,
+  type Script,
+} from '../core/Script.js';
+import {ReticleOptions, type RaycastMode} from '../core/Options.js';
 import type {Controller} from '../input/Controller.js';
 import {objectIsDescendantOf} from '../utils/SceneGraphUtils.js';
 import {DirectTouch, type DirectTouchContact} from './DirectTouch.js';
@@ -8,22 +20,12 @@ import {HitRegistry} from './HitRegistry.js';
 import {HitResolver} from './HitResolver.js';
 import {
   getInteractionSource,
-  type HoverEvent,
   type InteractionDependencies,
   type InteractionFrameInput,
-  type InteractionReticleOptions,
   InteractionSourceState,
-  type LongSelectEvent,
-  type ObjectGrabEvent,
-  type ObjectTouchEvent,
-  type ObjectTouchStartEvent,
-  type RaycastMode,
   type RaySourceInput,
   type ResolvedRay,
-  type SelectEndEvent,
-  type SelectEvent,
   type SelectionCapture,
-  type SelectionEndReason,
 } from './InteractionTypes.js';
 import {
   dispatchInteractionPath,
@@ -70,10 +72,6 @@ interface TouchState {
 type ActiveCapture = {kind: 'none'} | {kind: 'auxiliary'} | TargetCapture;
 
 const DEFAULT_LONG_SELECT_DURATION = 0.75;
-const DEFAULT_RETICLE_OPTIONS: InteractionReticleOptions = {
-  projectOnDepthMesh: false,
-  defaultRenderDistance: 0,
-};
 
 /** Owns all logical target, hover, capture, completion, and cancellation state. */
 export class Interaction {
@@ -116,8 +114,7 @@ export class Interaction {
       dependencies.camera,
       dependencies.timer
     );
-    this.reticleOptions =
-      dependencies.reticleOptions ?? DEFAULT_RETICLE_OPTIONS;
+    this.reticleOptions = dependencies.reticleOptions ?? new ReticleOptions();
     this.reticle =
       dependencies.reticle ?? new ReticlePresenter(this.reticleOptions);
     this.longSelectDuration =
@@ -499,7 +496,7 @@ export class Interaction {
     const resolved = this.resolvedRays.get(controller);
 
     const claimedScale = this.runManipulationTransition(() =>
-      this.manipulation.tryClaimScale(snapshot, resolved)
+      this.manipulation.tryClaimScale(snapshot)
     );
     if (this.suppressedUntilRelease.has(controller)) return;
     if (claimedScale) {
@@ -1236,6 +1233,6 @@ function selectionBelongsTo(
 ): boolean {
   return (
     objectIsDescendantOf(selection.target, object) ||
-    selection.scriptPath.includes(object)
+    selection.scriptPath.includes(object as Script)
   );
 }

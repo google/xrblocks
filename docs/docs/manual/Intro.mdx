@@ -57,9 +57,7 @@ For a pre-configured template using TypeScript and Vite, check out <CodeSearchLi
 
 #### Handling Optional Dependencies
 
-XR Blocks is designed to be modular. Features such as GenAI, physics,
-computer vision, Gaussian splats, and spatial UI use external
-packages so applications only load what they need.
+XR Blocks is designed to be highly modular. Features like GenAI, physics, hand tracking, and advanced UI blocks are kept external so you only bundle what you actually use.
 
 If you want to install **all** optional dependencies at once (for example, to simplify TypeScript compilation or enable all features), run:
 
@@ -92,7 +90,7 @@ Otherwise, manage dependencies based on your tooling:
 
 - **AI Integration**: `@google/genai` (Gemini), `openai` (OpenAI)
 - **Physics**: `@dimforge/rapier3d`
-- **UI Systems**: `lit` (Simulator UI overlay), `@pmndrs/uikit` (spatial UI), `@preact/signals-core` (layout state)
+- **UI Systems**: `lit` (Simulator UI overlay), `@pmndrs/uikit` (Rich UI blocks), `@preact/signals-core` (State management)
 - **Gaussian Splatting**: `@sparkjsdev/spark`
 - **Text Rendering**: `troika-three-text`
 - **Vision & Audio (MediaPipe)**: `@mediapipe/tasks-vision` (Hands/Face/Objects), `@mediapipe/tasks-audio` (Audio classification)
@@ -103,16 +101,6 @@ Otherwise, manage dependencies based on your tooling:
 ## Creating an Interactive Scene
 
 XR Blocks uses a singleton engine driven by a script lifecycle. Rather than managing the renderer and canvas yourself, you write your app as one or more `xb.Script` subclasses and register them.
-
-:::important Public API
-
-For the main SDK, import only symbols exported by `xrblocks` (the source of
-truth is `src/xrblocks.ts`). Addons use their documented entry files under
-`xrblocks/addons/...`. Files that are not re-exported are internal and may
-change without notice. Keep the `three` version aligned with the XR Blocks peer
-dependency and do not bundle a second copy.
-
-:::
 
 Upon importing, XR Blocks automatically creates the core singleton which manages the lifecycle, camera, and renderer.
 

@@ -1,5 +1,7 @@
 export {UICard} from './components/UICard';
 export type {
+  UICardAnchorX,
+  UICardAnchorY,
   UICardEdgeOptions,
   UICardOptions,
   UISize,
@@ -9,7 +11,11 @@ export type {UIOverlayOptions} from './components/UIOverlay';
 export {UIButton} from './components/UIButton';
 export type {UIButtonOptions} from './components/UIButton';
 export {UIIcon} from './components/UIIcon';
-export type {UIIconOptions} from './components/UIIcon';
+export type {
+  UIIconOptions,
+  UIIconVariant,
+  UIIconWeight,
+} from './components/UIIcon';
 export {UIImage} from './components/UIImage';
 export type {UIImageOptions} from './components/UIImage';
 export {UIPanel} from './components/UIPanel';
@@ -31,6 +37,7 @@ export type {
   UIStateStyle,
   UIStyle,
   UIUnit,
+  UIVector2,
 } from './UIElement';
 export type {
   UITheme,

@@ -1,13 +1,12 @@
 import * as THREE from 'three';
 
-import {UI_OVERLAY_LAYER} from '../../constants';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {ui} from '../UI';
 import {
   collectUIRoots,
   getUIElementKind,
-  getUIRevision,
+  getUIStructureRevision,
   type UIElement,
 } from '../UIElement';
 import type {
@@ -20,7 +19,7 @@ import type {
 interface MountRecord {
   readonly root: UIElement;
   readonly mount: UIMount;
-  rootRevision: number;
+  structureRevision: number;
   unregisterHits: (() => void)[];
   visible: boolean;
   connected: boolean;
@@ -53,7 +52,6 @@ export class UIRenderer {
   private renderer?: THREE.WebGLRenderer;
   private publicScene?: THREE.Scene;
   private themeRevision = -1;
-  private connectedOverlayCount = 0;
 
   constructor(
     private readonly interaction: Interaction,
@@ -110,9 +108,6 @@ export class UIRenderer {
       if (record && !record.connected) {
         record.connected = true;
         record.needsSync = true;
-        if (getUIElementKind(root) === 'overlay') {
-          this.connectedOverlayCount++;
-        }
       }
       if (record && record.order !== order) {
         record.order = order;
@@ -152,33 +147,6 @@ export class UIRenderer {
     }
   }
 
-  /** Renders connected overlays through the camera used for the world pass. */
-  renderOverlay(camera: THREE.Camera): void {
-    if (
-      this.connectedOverlayCount === 0 ||
-      !this.renderer ||
-      !this.publicScene
-    ) {
-      return;
-    }
-    for (const record of this.mounts.values()) {
-      if (record.connected && getUIElementKind(record.root) === 'overlay') {
-        syncRootTransform(record.root, record.mount.object, camera);
-      }
-    }
-    const originalLayers = camera.layers.mask;
-    const originalAutoClear = this.renderer.autoClear;
-    try {
-      camera.layers.set(UI_OVERLAY_LAYER);
-      this.renderer.autoClear = false;
-      this.renderer.clearDepth();
-      this.renderer.render(this.publicScene, camera);
-    } finally {
-      camera.layers.mask = originalLayers;
-      this.renderer.autoClear = originalAutoClear;
-    }
-  }
-
   /** Cancels hit mappings and releases one disconnected public root. */
   release(root: UIElement): void {
     this.unmount(root);
@@ -194,7 +162,6 @@ export class UIRenderer {
     this.themeRevision = -1;
     this.viewport.width = 0;
     this.viewport.height = 0;
-    this.connectedOverlayCount = 0;
     this.privateRoot.removeFromParent();
     this.publicScene = undefined;
     this.renderer = undefined;
@@ -242,21 +209,19 @@ export class UIRenderer {
     this.mounts.set(root, {
       root,
       mount,
-      rootRevision: -1,
+      structureRevision: -1,
       unregisterHits: [],
       visible: effectiveVisible(root),
       connected: true,
       needsSync: true,
       order,
     });
-    if (getUIElementKind(root) === 'overlay') this.connectedOverlayCount++;
   }
 
   private disconnect(root: UIElement): void {
     const record = this.mounts.get(root);
     if (!record || !record.connected) return;
     record.connected = false;
-    if (getUIElementKind(root) === 'overlay') this.connectedOverlayCount--;
     record.mount.object.visible = false;
     this.interaction.cancelObject(root, 'removed');
     for (const unregister of record.unregisterHits) unregister();
@@ -266,9 +231,6 @@ export class UIRenderer {
   private unmount(root: UIElement): void {
     const record = this.mounts.get(root);
     if (!record) return;
-    if (record.connected && getUIElementKind(root) === 'overlay') {
-      this.connectedOverlayCount--;
-    }
     for (const unregister of record.unregisterHits) unregister();
     record.mount.object.removeFromParent();
     record.mount.dispose();
@@ -292,15 +254,15 @@ export class UIRenderer {
       record.visible = visible;
       record.mount.object.visible = visible;
       syncRootTransform(record.root, record.mount.object, camera);
-      const rootRevision = getUIRevision(record.root);
+      const structureRevision = getUIStructureRevision(record.root);
       if (
         record.needsSync ||
-        record.rootRevision !== rootRevision ||
+        record.structureRevision !== structureRevision ||
         themeChanged ||
         (viewportChanged && getUIElementKind(record.root) === 'overlay')
       ) {
         record.needsSync = false;
-        record.rootRevision = rootRevision;
+        record.structureRevision = structureRevision;
         for (const unregister of record.unregisterHits) unregister();
         const mappings = record.mount.sync(
           ui.theme,
@@ -309,8 +271,9 @@ export class UIRenderer {
           record.order
         );
         record.unregisterHits.length = 0;
+        const overlay = getUIElementKind(record.root) === 'overlay';
         for (const mapping of mappings) {
-          record.unregisterHits.push(this.registerHit(mapping));
+          record.unregisterHits.push(this.registerHit(mapping, overlay));
         }
       }
       record.mount.update(deltaSeconds);
@@ -333,8 +296,9 @@ export class UIRenderer {
       : (0 as const),
   });
 
-  private registerHit(mapping: UIHitMapping): () => void {
+  private registerHit(mapping: UIHitMapping, overlay: boolean): () => void {
     mapping.physical.userData.xrblocksHitOrder = mapping.physical.renderOrder;
+    mapping.physical.userData.xrblocksOverlay = overlay;
     return this.interaction.registerHitSurface(
       mapping.physical,
       mapping.logical

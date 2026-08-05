@@ -58,6 +58,7 @@ export class PanelShaderMaterial extends THREE.ShaderMaterial {
         'void main() { gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0); }',
       transparent: true,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
       dithering: true,
       ...parameters,
       uniforms: {

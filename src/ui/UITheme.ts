@@ -59,7 +59,7 @@ const UI_ELEMENT_KINDS = new Set<UIElementKind>([
 
 export const grayGlassTheme = createThemeSnapshot({
   colors: {
-    surface: 'rgba(28, 28, 32, 0.78)',
+    surface: 'rgba(5, 5, 5, 0.6)',
     raisedSurface: 'rgba(255, 255, 255, 0.08)',
     primary: '#61dafb',
     primaryText: '#282c34',
@@ -72,15 +72,7 @@ export const grayGlassTheme = createThemeSnapshot({
   borderRadius: 32,
   styles: {
     card: {
-      backgroundColor: {
-        gradientType: 'linear',
-        rotation: 90,
-        stops: [
-          {position: 0, color: 'rgba(55, 55, 65, 0.75)'},
-          {position: 0.4, color: 'rgba(32, 32, 38, 0.80)'},
-          {position: 1, color: 'rgba(18, 18, 22, 0.85)'},
-        ],
-      },
+      backgroundColor: 'rgba(5, 5, 5, 0.6)',
       borderColor: {
         gradientType: 'linear',
         rotation: 90,
@@ -94,7 +86,7 @@ export const grayGlassTheme = createThemeSnapshot({
       borderRadius: 32,
       padding: 24,
       gap: 16,
-      innerShadowColor: 'rgba(255, 255, 255, 0.05)',
+      innerShadowColor: 'rgba(150, 150, 150, 0.05)',
       innerShadowBlur: 24,
     },
     button: {

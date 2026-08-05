@@ -1,53 +1,49 @@
 import * as xb from 'xrblocks';
 
-/** Renders a movable spatial UI card with two actions. */
+/**
+ * Rending a draggable spatial UI panel with SDF font libraries, and icons
+ * buttons using XR Blocks.
+ */
 export class UIManager extends xb.Script {
   constructor() {
     super();
 
-    const question = new xb.UIText({
+    // Adds an interactive SpatialPanel as a container for UI elements.
+    const panel = new xb.SpatialPanel({backgroundColor: '#2b2b2baa'});
+    this.add(panel);
+
+    const grid = panel.addGrid();
+    // `weight` defines the perentage of a view's dimension to its parent.
+    // Here, question occupies 70% of the height of the panel.
+    const question = grid.addRow({weight: 0.7}).addText({
       text: 'Welcome to UI Playground! Is it your first time here?',
-      style: {
-        flexGrow: 1,
-        fontSize: 28,
-        color: '#ffffff',
-        textAlign: 'center',
-      },
+      fontColor: '#ffffff',
+      fontSize: 0.08,
     });
+    this.question = question;
 
-    const actions = new xb.UIPanel({
-      style: {flexDirection: 'row', gap: 16},
-      children: [
-        new xb.UIButton({
-          icon: 'check_circle',
-          ariaLabel: 'Yes',
-          onClick: () => this._onYes(),
-          style: {flexGrow: 1, padding: 16, backgroundColor: '#0f9d58'},
-        }),
-        new xb.UIButton({
-          icon: 'cancel',
-          ariaLabel: 'No',
-          onClick: () => this._onNo(),
-          style: {flexGrow: 1, padding: 16, backgroundColor: '#d93025'},
-        }),
-      ],
-    });
+    // ctrlRow occupies 30% of the height of the panel.
+    const ctrlRow = grid.addRow({weight: 0.3});
 
-    const card = new xb.UICard({
-      size: {width: 0.6, height: 0.35},
-      manipulation: true,
-      edge: {scale: true},
-      style: {
-        flexDirection: 'column',
-        gap: 20,
-        padding: 24,
-        backgroundColor: '#2b2b2b',
-        borderRadius: 24,
-      },
-      children: [question, actions],
-    });
-    card.position.set(0, 1.4, -1);
-    this.add(card);
+    // The `text` field defines the icon of the button from Material Icons in
+    // https://fonts.google.com/icons
+    const yesButton = ctrlRow
+      .addCol({weight: 0.5})
+      .addIconButton({text: 'check_circle', fontSize: 0.5});
+
+    // onTriggered defines unified behavior for `onSelected`, `onClicked`,
+    // `onPinched`, `onTouched` for buttons.
+    yesButton.onTriggered = () => {
+      this._onYes();
+    };
+
+    const noButton = ctrlRow
+      .addCol({weight: 0.5})
+      .addIconButton({text: 'cancel', fontSize: 0.5});
+
+    noButton.onTriggered = () => {
+      this._onNo();
+    };
   }
 
   _onYes() {

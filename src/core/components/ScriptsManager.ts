@@ -201,10 +201,8 @@ export class ScriptsManager
       sourceType === 'direct-touch'
         ? DIRECT_TOUCH_TARGET_HOOKS
         : RAY_TARGET_HOOKS;
-    return (
-      hooks.some((hook) => this.hasIndexedHook(script, hook)) ||
-      this.hasIndexedHook(script, 'onObjectManipulate')
-    );
+    // Manipulation targets are resolved separately for each hit.
+    return hooks.some((hook) => this.hasIndexedHook(script, hook));
   };
 
   hasTargetHook = (
@@ -238,12 +236,7 @@ export class ScriptsManager
     else this.callSelectEnd(event as SelectEndEvent);
   };
 
-  invokeManipulation = (
-    object: THREE.Object3D,
-    event: ManipulationEvent
-  ): boolean => {
-    if (!this.isScript(object)) return false;
-    const script = object as Script;
+  invokeManipulation = (script: Script, event: ManipulationEvent): boolean => {
     if (!this.hasOverriddenHook(script, 'onObjectManipulate')) return false;
     return this.callTargeted([script], 'onObjectManipulate', (target) =>
       target.onObjectManipulate(event)

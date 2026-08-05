@@ -88,7 +88,9 @@ export class ModelViewer extends Script {
   };
 
   private readonly loader = new ModelLoader();
-  private readonly bounds = new THREE.Box3();
+  /** Local bounds of the presented model. */
+  readonly boundingBox = new THREE.Box3();
+  private readonly visualRoot = new THREE.Object3D();
   private readonly animationActions: THREE.AnimationAction[] = [];
   private readonly occludableMaterials = new WeakSet<THREE.Material>();
   private readonly occludableShaders = new Set<Shader>();
@@ -125,6 +127,9 @@ export class ModelViewer extends Script {
   }: ModelViewerOptions = {}) {
     super();
     this.name = 'ModelViewer';
+    this.visualRoot.name = 'ModelViewerVisual';
+    this.visualRoot.xb = {pointerEvents: 'none'};
+    this.add(this.visualRoot);
     this.origin = origin;
     this.autoplay = autoplay;
     this.occlusionEnabled = occlusion;
@@ -207,8 +212,8 @@ export class ModelViewer extends Script {
     const bounds = getGroupBoundingBox([content]);
     alignOrigin(content, bounds, this.origin);
     this.contentRoot = content;
-    this.bounds.copy(bounds);
-    this.add(content);
+    this.boundingBox.copy(bounds);
+    this.visualRoot.add(content);
     this.finishModelLoad();
   }
 
@@ -274,8 +279,8 @@ export class ModelViewer extends Script {
 
     this.gltf = gltf;
     this.contentRoot = gltf.scene;
-    this.bounds.copy(bounds);
-    this.add(gltf.scene);
+    this.boundingBox.copy(bounds);
+    this.visualRoot.add(gltf.scene);
     this.setupAnimations(gltf);
     this.finishModelLoad();
   }
@@ -290,15 +295,12 @@ export class ModelViewer extends Script {
       throw this.staleModelLoadError();
     }
 
-    splatMesh.raycast = () => {};
     const root = new THREE.Object3D();
     root.add(splatMesh);
     applyAssetTransform(root, source);
     root.updateMatrix();
 
-    const bounds = (await splatMesh.getBoundingBox(false)).applyMatrix4(
-      root.matrix
-    );
+    const bounds = splatMesh.boundingBox.clone().applyMatrix4(root.matrix);
     if (!this.isModelLoadCurrent(generation)) {
       splatMesh.dispose();
       root.clear();
@@ -308,8 +310,8 @@ export class ModelViewer extends Script {
 
     this.splatMesh = splatMesh;
     this.contentRoot = root;
-    this.bounds.copy(bounds);
-    this.add(root);
+    this.boundingBox.copy(bounds);
+    this.visualRoot.add(root);
     await this.createSparkRendererIfNeeded(generation);
     this.assertModelLoadCurrent(generation);
     this.finishModelLoad();
@@ -336,24 +338,23 @@ export class ModelViewer extends Script {
     if (!this.contentRoot) return;
 
     const config = normalizeManipulationConfig(this.xb?.manipulation);
-    this.registerHitSurface(this.contentRoot);
 
-    if (this.bounds.isEmpty()) {
+    if (this.boundingBox.isEmpty()) {
       this.applyShadows();
       if (this.occlusionEnabled) this.applyOcclusion();
       return;
     }
 
     if (config?.rotate) {
-      const rotationHitSurface = new RotationHitSurface(this.bounds);
+      const rotationHitSurface = new RotationHitSurface(this.boundingBox);
       this.rotationHitSurface = rotationHitSurface;
       this.add(rotationHitSurface);
       this.registerHitSurface(rotationHitSurface);
     }
 
     if (config?.translate) {
-      const size = this.bounds.getSize(new THREE.Vector3());
-      const center = this.bounds.getCenter(new THREE.Vector3());
+      const size = this.boundingBox.getSize(new THREE.Vector3());
+      const center = this.boundingBox.getCenter(new THREE.Vector3());
       const platform = new ModelViewerPlatform(
         size.x + PLATFORM_MARGIN,
         size.z + PLATFORM_MARGIN,
@@ -361,7 +362,7 @@ export class ModelViewer extends Script {
       );
       platform.position.set(
         center.x,
-        this.bounds.min.y - PLATFORM_THICKNESS / 2,
+        this.boundingBox.min.y - PLATFORM_THICKNESS / 2,
         center.z
       );
       platform.setHovered(this.hoveringControllers.size > 0);
@@ -525,7 +526,7 @@ export class ModelViewer extends Script {
     }
     this.contentRoot?.removeFromParent();
     this.contentRoot = undefined;
-    this.bounds.makeEmpty();
+    this.boundingBox.makeEmpty();
   }
 }
 

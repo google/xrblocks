@@ -24,6 +24,6 @@ export class UIText extends UIElement {
       throw new Error('UIText.text must be a string.');
     if (value === this._text) return;
     this._text = value;
-    this.markUIDirty();
+    this.markUIContentDirty();
   }
 }

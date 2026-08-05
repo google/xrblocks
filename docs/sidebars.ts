@@ -46,7 +46,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Spatial UI',
       collapsed: false,
-      items: ['samples/ModelViewer', 'samples/UI'],
+      items: ['samples/ModelViewer', 'samples/UI', 'samples/UIBlocks'],
     },
     {
       type: 'category',

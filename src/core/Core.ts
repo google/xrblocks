@@ -111,10 +111,7 @@ export class Core {
   /** Private interaction runtime. */
   private interaction!: Interaction;
   private reticleOptions = new ReticleOptions();
-  private reticlePresenter = new ReticlePresenter(
-    this.reticleOptions,
-    this.input.reticles
-  );
+  private reticlePresenter = new ReticlePresenter(this.reticleOptions);
   private uiRenderer!: UIRenderer;
   private physicsInterval?: ReturnType<typeof setInterval>;
   private rendererContainer?: HTMLDivElement;
@@ -893,7 +890,5 @@ export class Core {
     } else {
       this.renderer.render(this.scene, camera);
     }
-    this.uiRenderer.renderOverlay(camera);
-    this.reticlePresenter.render(this.renderer, camera);
   }
 }

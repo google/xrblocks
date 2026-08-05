@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 
+import type {Script} from '../../core/Script';
 import type {InteractionSource} from '../InteractionTypes';
 import type {FaceCameraMode} from '../../utils/FaceCameraMath';
 
@@ -61,7 +62,7 @@ export interface BaseManipulationEvent {
   readonly target: THREE.Object3D;
   readonly surface: THREE.Object3D;
   readonly owner: THREE.Object3D;
-  readonly currentTarget: THREE.Object3D;
+  readonly currentTarget: Script;
   readonly defaultPrevented: boolean;
   preventDefault(): void;
 }

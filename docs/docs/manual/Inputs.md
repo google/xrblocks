@@ -5,24 +5,25 @@ title: Input & Controllers
 
 ## Input
 
-The [`Input`](/api/classes/Input) object at `xb.core.input` provides access to
-controllers. The interaction system delivers raycast targets through object
-selection and hover callbacks.
+The [`Input`](/api/classes/Input) object available at `xb.core.input` provides access to controllers and raycasting results.
+Intersection results can be queries using the [`intersectionsForController`](/api/classes/Input#intersectionsforcontroller) property which maps controllers to raycast results.
+Raycast results are automatically updated when the controller begins selecting.
 
 For example, to detect which item is selected:
 
 ```js
 export class ItemSelectionScript extends xb.Script {
-  onObjectSelectStart(event) {
-    console.log('Item selected:', event.target);
-    console.log('Selected by:', event.source.controller);
-    return true;
+  onSelectStart(event) {
+    const controller = event.target;
+    const intersections = xb.core.input.intersectionsForController(controller);
+    if (intersections.length > 0) {
+      console.log('Item selected:', intersections[0].object);
+    }
   }
 }
 ```
 
-When a controller begins selecting, `Input` also sets
-`controller.userData.selected` to `true`.
+When a controller begins selecting, XRInput also sets `controller.userData.selected` to `true`.
 This can be used to loop over controllers which are selecting.
 For example:
 

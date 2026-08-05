@@ -5,9 +5,9 @@ import {
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
+import {signal} from '@preact/signals-core';
 import * as THREE from 'three';
 
-import {UI_OVERLAY_LAYER} from '../../constants';
 import {UIButton} from '../components/UIButton';
 import {UICard, getUICardEdgeOptions} from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
@@ -16,6 +16,7 @@ import {UISlider} from '../components/UISlider';
 import {UIText} from '../components/UIText';
 import {
   getUIElementKind,
+  getUIContentRevision,
   getUIRevision,
   invalidateUIElement,
   isUIElement,
@@ -34,7 +35,10 @@ import type {
 } from './UIBackend';
 
 const ICON_BASE =
-  'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/400/outlined/';
+  'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/';
+const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
+const OVERLAY_Z_INDEX_STEP = 100_000_000;
+const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
 
 type PresentationUpdate = (stateFor: UIPresentationStateFor) => void;
 
@@ -67,8 +71,9 @@ class UIKitMount implements UIMount {
       viewport,
       stateFor,
       getUIElementKind(this.root) === 'overlay'
-        ? Number(this.root.style.zIndex ?? 0) * 1_000_000_000 +
-            rootOrder * 1_000_000
+        ? OVERLAY_RENDER_ORDER_BASE +
+            Number(this.root.style.zIndex ?? 0) * OVERLAY_Z_INDEX_STEP +
+            rootOrder * OVERLAY_ROOT_ORDER_STEP
         : undefined,
       {value: 0},
       this.icons,
@@ -148,20 +153,35 @@ function createNode(
     ? ([new THREE.Vector3(), new THREE.Vector3()] as const)
     : undefined;
   const presentation = stateFor(element, cursorPoints);
-  const styleFor = (state: UIPresentationState) =>
-    toUIKitStyle(resolveStyle(element, state, theme));
+  const overlayRenderOrder =
+    rootStack === undefined
+      ? undefined
+      : rootStack +
+        Number(element.style.zIndex ?? 0) * 1_000 +
+        sequence.value++;
+  const styleFor = (state: UIPresentationState): Record<string, unknown> => {
+    const style = toUIKitStyle(resolveStyle(element, state, theme));
+    if (overlayRenderOrder !== undefined) {
+      style.depthTest = false;
+      style.depthWrite = false;
+      style.renderOrder = overlayRenderOrder;
+    }
+    return style;
+  };
   const style = styleFor(presentation);
   let node: THREE.Object3D;
   let blocksHits = true;
   let applyPresentation: (state: UIPresentationState) => void;
+  let applyContent: (() => void) | undefined;
   let edge: UICardEdge | undefined;
 
   if (kind === 'text') {
     const text = element as UIText;
+    const textContent = signal(text.text);
     const propertiesFor = (state: UIPresentationState) => {
       const nextStyle = styleFor(state);
       return {
-        text: text.text,
+        text: textContent,
         color:
           (nextStyle.color as THREE.ColorRepresentation | undefined) ??
           theme.colors.text,
@@ -171,6 +191,9 @@ function createNode(
     };
     const textNode = new Text(propertiesFor(presentation));
     node = textNode;
+    applyContent = () => {
+      textContent.value = text.text;
+    };
     applyPresentation = (state) =>
       textNode.resetProperties(propertiesFor(state));
   } else if (kind === 'image') {
@@ -185,9 +208,9 @@ function createNode(
     applyPresentation = (state) =>
       imageNode.resetProperties(propertiesFor(state));
   } else if (kind === 'icon') {
-    const icon = (element as UIIcon).icon || 'question_mark';
+    const icon = element as UIIcon;
     const propertiesFor = (state: UIPresentationState) => ({
-      content: icons.get(icon, element),
+      content: icons.get(iconAssetPath(icon), element),
       ...styleFor(state),
       pointerEvents: element.xb?.pointerEvents ?? 'auto',
     });
@@ -253,7 +276,7 @@ function createNode(
     applyPresentation = (state) => {
       const nextPanelProperties = propertiesFor(state);
       panel.setProperties(
-        clearRemovedProperties(previousPanelProperties, nextPanelProperties)
+        changedProperties(previousPanelProperties, nextPanelProperties)
       );
       previousPanelProperties = nextPanelProperties;
       if (kind === 'button') {
@@ -271,13 +294,19 @@ function createNode(
   }
 
   let revision = getUIRevision(element);
+  let contentRevision = getUIContentRevision(element);
   let presentationKey = stateKey(presentation);
   let pointerEvents = element.xb?.pointerEvents;
   presentationUpdates.push((stateFor) => {
     const state = stateFor(element, cursorPoints);
     const nextRevision = getUIRevision(element);
+    const nextContentRevision = getUIContentRevision(element);
     const nextKey = stateKey(state);
     const nextPointerEvents = element.xb?.pointerEvents;
+    if (nextContentRevision !== contentRevision) {
+      contentRevision = nextContentRevision;
+      applyContent?.();
+    }
     if (
       nextRevision !== revision ||
       nextKey !== presentationKey ||
@@ -296,13 +325,7 @@ function createNode(
   });
 
   node.visible = element.visible;
-  if (rootStack !== undefined) {
-    node.renderOrder =
-      rootStack + Number(element.style.zIndex ?? 0) * 1_000 + sequence.value++;
-  }
-  if (kind === 'overlay') {
-    node.traverse((object) => object.layers.set(UI_OVERLAY_LAYER));
-  }
+  if (overlayRenderOrder !== undefined) node.renderOrder = overlayRenderOrder;
   if (blocksHits) {
     mappings.push({
       physical: node,
@@ -312,11 +335,14 @@ function createNode(
   return node;
 }
 
-function clearRemovedProperties(
+function changedProperties(
   previous: Record<string, unknown>,
   next: Record<string, unknown>
 ): Record<string, unknown> {
-  const properties = {...next};
+  const properties: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(next)) {
+    if (!Object.is(previous[key], value)) properties[key] = value;
+  }
   for (const key of Object.keys(previous)) {
     if (!(key in next)) properties[key] = undefined;
   }
@@ -392,18 +418,19 @@ function panelDefaults(
     defaults.flexDirection = style.flexDirection ?? 'column';
     defaults.justifyContent = style.justifyContent ?? 'center';
     defaults.alignItems = style.alignItems ?? 'stretch';
-    defaults.pixelSize = 0.001;
+    defaults.pixelSize = card.pixelSize;
     defaults.sizeX = card.size.width;
     defaults.sizeY = card.size.height;
-    defaults.width = card.size.width * 1000;
-    defaults.height = card.size.height * 1000;
+    defaults.width = card.size.width / card.pixelSize;
+    defaults.height = card.size.height / card.pixelSize;
+    defaults.anchorX = card.anchorX;
+    defaults.anchorY = card.anchorY;
   } else if (kind === 'overlay') {
     defaults.pixelSize = 1;
     defaults.sizeX = viewport.width;
     defaults.sizeY = viewport.height;
     defaults.width = viewport.width;
     defaults.height = viewport.height;
-    defaults.depthTest = false;
   }
   return defaults;
 }
@@ -422,7 +449,7 @@ function addButtonContent(
   if (button.icon) {
     content.push(
       new Svg({
-        content: icons.get(button.icon, button),
+        content: icons.get(defaultIconAssetPath(button.icon), button),
         width: 24,
         height: 24,
         color: contentColor,
@@ -457,7 +484,7 @@ function updateButtonContent(
   if (button.icon) {
     const icon = content[index++] as Svg;
     icon.resetProperties({
-      content: icons.get(button.icon, button),
+      content: icons.get(defaultIconAssetPath(button.icon), button),
       width: 24,
       height: 24,
       color: contentColor,
@@ -488,16 +515,16 @@ class IconCache {
   >();
   private disposed = false;
 
-  get(name: string, subscriber: UIElement): string {
-    const cached = this.content.get(name);
+  get(path: string, subscriber: UIElement): string {
+    const cached = this.content.get(path);
     if (cached) return cached;
-    let request = this.pending.get(name);
+    let request = this.pending.get(path);
     if (!request) {
       const controller = new AbortController();
       const newRequest = {controller, subscribers: new Set<UIElement>()};
       request = newRequest;
-      this.pending.set(name, newRequest);
-      void fetch(`${ICON_BASE}${encodeURIComponent(name)}.svg`, {
+      this.pending.set(path, newRequest);
+      void fetch(`${ICON_BASE}${path}`, {
         signal: controller.signal,
       })
         .then((response) => {
@@ -508,15 +535,15 @@ class IconCache {
         .then((content) => {
           if (this.disposed) return;
           if (!content.includes('<svg')) throw new Error('Invalid icon SVG.');
-          this.content.set(name, content);
+          this.content.set(path, content);
           for (const subscriber of newRequest.subscribers) {
             invalidateUIElement(subscriber);
           }
         })
         .catch(() => {
-          if (!this.disposed) this.content.set(name, FALLBACK_ICON);
+          if (!this.disposed) this.content.set(path, FALLBACK_ICON);
         })
-        .finally(() => this.pending.delete(name));
+        .finally(() => this.pending.delete(path));
     }
     request.subscribers.add(subscriber);
     return FALLBACK_ICON;
@@ -620,22 +647,33 @@ function toUIKitStyle(style: UIStyle): Record<string, unknown> {
           ? 'strokeColor'
           : key === 'borderWidth'
             ? 'strokeWidth'
-            : key === 'borderRadius'
-              ? 'cornerRadius'
-              : key === 'top'
-                ? 'positionTop'
-                : key === 'right'
-                  ? 'positionRight'
-                  : key === 'bottom'
-                    ? 'positionBottom'
-                    : key === 'left'
-                      ? 'positionLeft'
-                      : key === 'rowGap'
-                        ? 'gapRow'
-                        : key === 'columnGap'
-                          ? 'gapColumn'
-                          : key;
+            : key === 'borderAlign'
+              ? 'strokeAlign'
+              : key === 'borderRadius'
+                ? 'cornerRadius'
+                : key === 'top'
+                  ? 'positionTop'
+                  : key === 'right'
+                    ? 'positionRight'
+                    : key === 'bottom'
+                      ? 'positionBottom'
+                      : key === 'left'
+                        ? 'positionLeft'
+                        : key === 'rowGap'
+                          ? 'gapRow'
+                          : key === 'columnGap'
+                            ? 'gapColumn'
+                            : key;
     result[mapped] = value;
   }
   return result;
+}
+
+function iconAssetPath(icon: UIIcon): string {
+  const name = `${encodeURIComponent(icon.icon)}${icon.filled ? '-fill' : ''}`;
+  return `${icon.weight}/${icon.variant}/${name}.svg`;
+}
+
+function defaultIconAssetPath(icon: string): string {
+  return `400/outlined/${encodeURIComponent(icon)}.svg`;
 }
