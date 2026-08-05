@@ -45,11 +45,14 @@ export class FaceWireframe extends xb.Script {
   }
 
   setVisible(v) {
+    if (!this.pointCloud || !this.wireframeLines) return;
     this.pointCloud.visible = v;
     this.wireframeLines.visible = v;
   }
 
   updateFace(face) {
+    if (!this.pointGeometry || !this.lineGeometry) return;
+
     // Update points
     const pts = this.pointGeometry.attributes.position.array;
     for (let i = 0; i < face.landmarks.length; i++) {
