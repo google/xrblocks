@@ -1,5 +1,6 @@
 import type {ManipulationOptions} from '../../interaction/manipulation/ManipulationTypes';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
+import {type UIAppearance, validateUIAppearance} from '../UIAppearance';
 import {UIElement, type UIElementOptions} from '../UIElement';
 
 export interface UISize {
@@ -19,6 +20,7 @@ export interface UICardOptions extends UIElementOptions {
   pixelSize?: number;
   anchorX?: UICardAnchorX;
   anchorY?: UICardAnchorY;
+  appearance?: UIAppearance;
   manipulation?: boolean | ManipulationOptions;
   edge?: boolean | UICardEdgeOptions;
 }
@@ -29,6 +31,7 @@ export class UICard extends UIElement {
   readonly pixelSize: number;
   readonly anchorX: UICardAnchorX;
   readonly anchorY: UICardAnchorY;
+  readonly appearance: UIAppearance;
   private readonly sizeTarget: UISize;
   private readonly sizeProxy: UISize;
   private readonly edgeTarget: Required<UICardEdgeOptions> = {
@@ -42,6 +45,7 @@ export class UICard extends UIElement {
     pixelSize = 0.001,
     anchorX = 'center',
     anchorY = 'center',
+    appearance = 'surface',
     manipulation,
     edge = false,
     ...options
@@ -50,10 +54,12 @@ export class UICard extends UIElement {
     validatePixelSize(pixelSize);
     validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
     validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
+    validateUIAppearance(appearance);
     super('card', options);
     this.pixelSize = pixelSize;
     this.anchorX = anchorX;
     this.anchorY = anchorY;
+    this.appearance = appearance;
     this.sizeTarget = {...size};
     this.sizeProxy = new Proxy(this.sizeTarget, {
       set: (target, property, value) => {

@@ -12,6 +12,8 @@ export interface SelectEvent {
   readonly target?: THREE.Object3D;
   readonly currentTarget?: Script;
   readonly surface?: THREE.Object3D;
+  /** Current ray intersection on `surface`, when the source still hits it. */
+  readonly intersection?: THREE.Intersection;
 }
 
 export type SelectionEndReason =

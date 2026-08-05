@@ -1,4 +1,5 @@
 export {UICard} from './components/UICard';
+export type {UIAppearance} from './UIAppearance';
 export type {
   UICardAnchorX,
   UICardAnchorY,
@@ -45,9 +46,16 @@ export type {
   UITheme,
   UIThemeColors,
   UIThemePresetName,
+  UIThemeStyleRole,
   UIThemeStyles,
   UIThemeUpdate,
 } from './UITheme';
+export type {
+  UIValidationBounds,
+  UIValidationCode,
+  UIValidationIssue,
+  UIValidationReport,
+} from './UIValidation';
 export type {
   ColorStop,
   GradientPaint,

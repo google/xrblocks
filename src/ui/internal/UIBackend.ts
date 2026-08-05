@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 
 import type {UIElement} from '../UIElement';
 import type {UITheme} from '../UITheme';
+import type {UIValidationIssue} from '../UIValidation';
 
 export interface UIHitMapping {
   readonly physical: THREE.Object3D;
@@ -30,6 +31,7 @@ export interface UIMount {
   ): UIHitMapping[];
   present(stateFor: UIPresentationStateFor): void;
   update(deltaSeconds: number): void;
+  validate(): readonly UIValidationIssue[];
   dispose(): void;
 }
 

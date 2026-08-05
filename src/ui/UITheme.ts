@@ -1,6 +1,10 @@
 import {cloneUIStyle} from './UIElement';
 import type {UIElementKind, UIStyle} from './UIElement';
 
+export type UIThemeStyleRole =
+  | 'surface'
+  | Exclude<UIElementKind, 'card' | 'overlay'>;
+
 export interface UIThemeColors {
   readonly surface: string;
   readonly raisedSurface: string;
@@ -15,7 +19,7 @@ export interface UIThemeColors {
 
 /** UIKit-facing styles applied before an element's own style. */
 export type UIThemeStyles = Readonly<
-  Partial<Record<UIElementKind, Readonly<UIStyle>>>
+  Partial<Record<UIThemeStyleRole, Readonly<UIStyle>>>
 >;
 
 export interface UITheme {
@@ -46,9 +50,8 @@ const COLOR_PROPERTIES = [
 
 const COLOR_PROPERTY_SET = new Set<string>(COLOR_PROPERTIES);
 const THEME_PROPERTIES = new Set(['colors', 'borderRadius', 'styles']);
-const UI_ELEMENT_KINDS = new Set<UIElementKind>([
-  'card',
-  'overlay',
+const UI_THEME_STYLE_ROLES = new Set<UIThemeStyleRole>([
+  'surface',
   'panel',
   'text',
   'button',
@@ -71,8 +74,16 @@ export const grayGlassTheme = createThemeSnapshot({
   },
   borderRadius: 32,
   styles: {
-    card: {
-      backgroundColor: 'rgba(5, 5, 5, 0.6)',
+    surface: {
+      backgroundColor: {
+        gradientType: 'linear',
+        rotation: 90,
+        stops: [
+          {position: 0, color: 'rgba(55, 55, 65, 0.75)'},
+          {position: 0.4, color: 'rgba(32, 32, 38, 0.80)'},
+          {position: 1, color: 'rgba(18, 18, 22, 0.85)'},
+        ],
+      },
       borderColor: {
         gradientType: 'linear',
         rotation: 90,
@@ -127,7 +138,7 @@ export const colorfulTheme = createThemeSnapshot({
   },
   borderRadius: 32,
   styles: {
-    card: {
+    surface: {
       backgroundColor: 'rgba(10, 17, 31, 0.96)',
       borderColor: '#8ff0df',
       borderWidth: 3,
@@ -215,14 +226,14 @@ function cloneColors(
 
 function cloneThemeStyles(value: unknown): UIThemeStyles {
   validateRecord(value, 'UI theme styles');
-  const styles: Partial<Record<UIElementKind, Readonly<UIStyle>>> = {};
+  const styles: Partial<Record<UIThemeStyleRole, Readonly<UIStyle>>> = {};
   for (const [kind, style] of Object.entries(
     value as Record<string, unknown>
   )) {
-    if (!UI_ELEMENT_KINDS.has(kind as UIElementKind)) {
+    if (!UI_THEME_STYLE_ROLES.has(kind as UIThemeStyleRole)) {
       throw new Error(`Invalid UI theme style kind "${kind}".`);
     }
-    styles[kind as UIElementKind] = cloneUIStyle(style as UIStyle);
+    styles[kind as UIThemeStyleRole] = cloneUIStyle(style as UIStyle);
   }
   return styles;
 }
