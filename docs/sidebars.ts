@@ -71,7 +71,6 @@ const sidebars: SidebarsConfig = {
         'samples/Lipsync',
         'samples/Face-Mirror',
         'samples/Magic-Window',
-        'samples/Netblocks',
       ],
     },
     {

@@ -1,11 +1,13 @@
 import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import * as uikit from '@pmndrs/uikit';
+import {raycastSortFunction} from 'uiblocks';
 import * as xb from 'xrblocks';
 
 import {GNMControls} from './GNMControls.js';
 import {GNMHeadModel} from './GNMModel.js';
 import {GNMScene} from './GNMScene.js';
+import {GNMSpatialUI} from './GNMSpatialUI.js';
 import {GNMSamplers} from './SemanticSampler.js';
 
 // Model weights are hosted on a CDN (pinned to a commit) rather than checked
@@ -66,6 +68,7 @@ async function start() {
     options.xrButton.endText = '<i id="xrlogo"></i> EXIT XR';
 
     const scene = new GNMScene(model, samplers);
+    scene.spatialUI = new GNMSpatialUI(scene);
     xb.add(scene);
     window.gnm = {model, samplers, scene};
 
@@ -74,6 +77,7 @@ async function start() {
     document.getElementById('gnm-loading')?.remove();
 
     await xb.init(options);
+    xb.core.input.raycaster.sortFunction = raycastSortFunction;
   } catch (error) {
     setLoadingProgress(0, `Failed to load: ${error.message}`);
     console.error(error);

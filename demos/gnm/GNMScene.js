@@ -1,8 +1,5 @@
 import * as THREE from 'three';
-import {raycastSortFunction} from 'uiblocks';
 import * as xb from 'xrblocks';
-
-import {GNMSpatialUI} from './GNMSpatialUI.js';
 
 /**
  * GNMScene — renders the GNM parametric head and animates it.
@@ -67,20 +64,24 @@ export class GNMScene extends xb.Script {
     /** Called with a status string (e.g. current tour expression). */
     this.onStatus = null;
 
-    // uiblocks UICore must be constructed with the owning Script.
-    this.spatialUI = new GNMSpatialUI(this);
+    // The entry point owns the UI. This keeps the model scene independent of
+    // one UI renderer and lets the same head run in focused samples.
+    this.spatialUI = null;
   }
 
   init() {
     const model = this.model;
 
-    // The head + overlays live under `anchor`, which is wrapped in a
-    // ModelViewer so the user can grab the pedestal to move it and grab the
-    // head to rotate it. The ModelViewer is positioned in _setupModelViewer()
-    // once the mesh (and thus its bounding box) exists.
+    // The head + overlays live under `anchor`, which is presented by the
+    // current ModelViewer API after the first geometry update.
     this.anchor = new THREE.Group();
-    this.modelViewer = new xb.ModelViewer({});
-    this.modelViewer.add(this.anchor);
+    // Match the original GNM viewer: the invisible cylinder rotates the model
+    // and the pedestal translates it. The head itself is not a hit surface.
+    this.anchor.xb = {pointerEvents: 'none'};
+    this.modelViewer = new xb.ModelViewer({
+      origin: 'center',
+      platformMargin: new THREE.Vector2(0.12, 0.12),
+    });
     this.add(this.modelViewer);
 
     // ---- Geometry --------------------------------------------------------
@@ -211,34 +212,27 @@ export class GNMScene extends xb.Script {
     }
     this.add(hemisphere);
 
-    // Required for raycasting against uiblocks panels.
-    if (xb.core.input?.raycaster) {
-      xb.core.input.raycaster.sortFunction = raycastSortFunction;
-    }
-    this.spatialUI.build();
-
     // First shape.
     this.model.dirty = true;
     this._refreshGeometry();
 
     // Now that geometry exists, wrap it in the ModelViewer pedestal.
     this._setupModelViewer();
+
+    // Build controls only after the first valid head geometry exists. A UI
+    // setup problem must not leave the model with an empty vertex buffer.
+    this.spatialUI?.build();
   }
 
   /**
-   * Configures the ModelViewer around the head: a rotation proxy (grab the
-   * head to rotate) and a platform (grab the pedestal to move it), then places
-   * the whole thing so the head centre sits at the intended world position.
+   * Presents the generated head through ModelViewer, then places its centered
+   * origin at the intended world position. ModelViewer creates its current
+   * rotation and translation surfaces from the computed content bounds.
    */
   _setupModelViewer() {
     const viewer = this.modelViewer;
-    viewer.setupBoundingBox();
-    viewer.setupRaycastCylinder();
-    // A tighter pedestal than the default so it reads as a stand for the bust.
-    viewer.setupPlatform(new THREE.Vector2(0.12, 0.12));
-    const size = new THREE.Vector3();
-    viewer.bbox.getSize(size);
-    viewer.position.set(0, WORLD_HEAD_Y - size.y / 2, WORLD_HEAD_Z);
+    viewer.setContent(this.anchor);
+    viewer.position.set(0, WORLD_HEAD_Y, WORLD_HEAD_Z);
     this._modelViewerHomeY = viewer.position.y;
   }
 
