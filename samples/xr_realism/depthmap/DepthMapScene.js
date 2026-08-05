@@ -45,6 +45,7 @@ function createDepthOpacityControl(onInput) {
   });
   const header = new xb.UIPanel({
     style: {
+      width: '100%',
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
@@ -63,7 +64,7 @@ function createDepthOpacityControl(onInput) {
     max: 1,
     step: 0.01,
     value: 1,
-    style: {height: 42},
+    style: {width: '100%', height: 42, borderRadius: 14},
     onInput: (opacity) => {
       valueText.text = `${Math.round(opacity * 100)}%`;
       onInput(opacity);
@@ -76,6 +77,8 @@ function createDepthOpacityControl(onInput) {
       left: '50%',
       bottom: 32,
       transform: {translateX: '-50%'},
+      flexDirection: 'column',
+      gap: 8,
     },
     children: [header, slider],
   });
