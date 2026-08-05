@@ -77,18 +77,15 @@ export class AnimalBehavior {
   public static updateDragTransform(
     isDragging: boolean,
     draggedAnimal: THREE.Object3D | null,
-    dragSource: THREE.Object3D | string | null,
+    dragSource: THREE.Object3D | null,
     raycaster: THREE.Raycaster,
-    pointer: THREE.Vector2,
     camera: THREE.Camera | null,
     depthMesh: THREE.Object3D | null | undefined,
     dragDistance: number
   ) {
     if (!isDragging || !draggedAnimal || !camera) return;
 
-    if (dragSource === 'desktop') {
-      raycaster.setFromCamera(pointer, camera);
-    } else if (dragSource instanceof THREE.Object3D) {
+    if (dragSource) {
       dragSource.updateMatrixWorld(true);
       InteractionUtils.setRaycasterFromXRController(raycaster, dragSource);
     }
@@ -454,7 +451,7 @@ export class AnimalBehavior {
   public static updateBreathing(
     spawnedAnimals: Map<number, THREE.Object3D>,
     time: number,
-    animalModels: {scale: number; talking: boolean}[],
+    animalModels: {scale: number; talking?: boolean}[],
     isDragging: boolean,
     camera: THREE.Camera | null
   ) {

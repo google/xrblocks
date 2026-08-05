@@ -7,12 +7,12 @@ description: >-
   3D-positioned audio, voice recording, or text-to-speech / speech-to-text. Covers
   `xb.core.sound` (`startRecording`/`stopRecording`/`playRecordedAudio`,
   `getAudioListener`, `setMasterVolume`) and the exported `SpeechRecognizer` /
-  `SpeechSynthesizer` / `SoundSynthesizer` classes. See samples/sound.
+  `SpeechSynthesizer` / `SoundSynthesizer` classes. See demos/sound.
 ---
 
 # xb-sound: spatial audio & speech
 
-`xb.sound` (a.k.a. `xb.core.sound`) manages audio. See `samples/sound`, `demos/sound_detector`,
+`xb.sound` (a.k.a. `xb.core.sound`) manages audio. See `demos/sound`, `demos/sound_detector`,
 and [`src/sound/`](../../src/sound) (which has its own README).
 
 ## Spatial (positional) audio
@@ -52,5 +52,5 @@ and `xb.BackgroundMusic`). Use them for speech-to-text and text-to-speech; see
 - Microphone access prompts for permission; set `options.permissions.microphone = true` (or
   use a feature that requests it) before relying on recording.
 - Recorded data is Int16 PCM; convert to a `THREE` `AudioBuffer` for positional playback
-  (see the conversion in [`samples/sound/main.js`](../../samples/sound/main.js)).
+  (see the conversion in [`demos/sound/main.js`](../../demos/sound/main.js)).
 - Call `xb.core.sound.disableAudio()` to tear down capture when done.

@@ -75,45 +75,63 @@ xb.core.sound.setMasterVolume(0.8); // Set master volume between 0.0 and 1.0
 
 ## Speech Recognition (Speech-to-Text)
 
-The SDK provides a wrapper around the browser's Web Speech API for transcription via `SpeechRecognizer`:
+`CoreSound` creates the recognizer during initialization when
+`options.sound.speechRecognizer.enabled` is true. It is enabled by default.
+Configure it before `xb.init()` and listen for Three.js-style events:
 
 ```javascript
-import {SpeechRecognizer} from 'xrblocks';
+class VoiceInput extends xb.Script {
+  init() {
+    const recognizer = xb.core.sound.speechRecognizer;
+    if (!recognizer) return;
 
-const recognizer = new SpeechRecognizer();
+    recognizer.addEventListener('result', (event) => {
+      console.log('Transcript:', event.transcript);
+      console.log('Final:', event.isFinal);
+    });
+    recognizer.addEventListener('error', (event) => {
+      console.error('Recognition error:', event.error);
+    });
 
-recognizer.onStart = () => console.log('Listening...');
-recognizer.onResult = (text) => console.log('Transcribed Text:', text);
-recognizer.onError = (err) => console.error('Recognition error:', err);
+    recognizer.start();
+  }
+}
 
-// Start listening
-recognizer.start();
-
-// Stop listening
-recognizer.stop();
+const options = new xb.Options();
+options.permissions.microphone = true;
+options.sound.speechRecognizer.lang = 'en-US';
+options.sound.speechRecognizer.interimResults = true;
+xb.add(new VoiceInput());
+xb.init(options);
 ```
 
 ---
 
 ## Speech Synthesis (Text-to-Speech)
 
-Use `SpeechSynthesizer` to convert text strings to spoken audio output:
+Enable the subsystem-managed synthesizer before initialization, then call its
+`speak(text, lang, pitch, rate)` method:
 
 ```javascript
-import {SpeechSynthesizer} from 'xrblocks';
+const options = new xb.Options();
+options.sound.speechSynthesizer.enabled = true;
+options.sound.speechSynthesizer.allowInterruptions = true;
+xb.init(options);
 
-const synthesizer = new SpeechSynthesizer();
-
-// Configure speech settings
-synthesizer.setVoice('en-US'); // Set locale voice
-synthesizer.setPitch(1.0);
-synthesizer.setRate(1.0); // Speed
-
-// Speak a text string
-synthesizer.speak('Hello! Welcome to the XR experience.');
+await xb.core.sound.speechSynthesizer?.speak(
+  'Hello! Welcome to the XR experience.',
+  'en-US',
+  1.0, // pitch
+  1.0 // rate
+);
 
 // Stop speaking
-synthesizer.cancel();
+xb.core.sound.speechSynthesizer?.cancel();
 ```
 
-For full implementation examples, see <CodeSearchLink path="samples/sound/main.js"/> or refer to the source at <CodeSearchLink path="src/sound/README.md"/>.
+Speech recognition depends on the browser's Web Speech API and may be
+unavailable. Always guard the optional `speechRecognizer` and
+`speechSynthesizer` properties. For complete examples, see
+
+<CodeSearchLink path="demos/sound/main.js" /> and
+<CodeSearchLink path="src/sound/README.md" />.
