@@ -8,6 +8,8 @@ import type {GradientPaint, Paint, StrokeAlign} from './types/ShaderTypes';
 
 export type UIUnit = number | `${number}%` | 'auto';
 export type UIPosition = number | `${number}%`;
+/** CSS-like line height: numbers are multipliers; px and % are explicit. */
+export type UILineHeight = number | `${number}px` | `${number}%`;
 export type UIColor = Paint;
 export type UIVector2 = THREE.Vector2 | [number, number];
 
@@ -61,7 +63,8 @@ export interface UIStyle extends UIStateStyle {
   marginLeft?: number;
   fontSize?: number;
   fontWeight?: number | 'normal' | 'medium' | 'bold';
-  lineHeight?: number;
+  /** Like CSS: numbers multiply fontSize; use px or % strings for explicit units. */
+  lineHeight?: UILineHeight;
   textAlign?: 'left' | 'center' | 'right';
   innerShadowColor?: Paint;
   innerShadowBlur?: number;
@@ -209,7 +212,6 @@ const NUMBER_KEYS = new Set<keyof UIStyle>([
   'borderWidth',
   'borderRadius',
   'fontSize',
-  'lineHeight',
   'innerShadowBlur',
   'innerShadowSpread',
   'innerShadowFalloff',
@@ -611,6 +613,11 @@ function validateStyle(
       throw new Error('UI style "fontWeight" must be positive and finite.');
     }
   }
+  if (property === 'lineHeight' && !isLineHeight(value)) {
+    throw new Error(
+      'UI style "lineHeight" must be a nonnegative number, pixel value, or percentage.'
+    );
+  }
   if (POSITION_KEYS.has(property as keyof UIStyle) && !isUIPosition(value)) {
     throw new Error(
       `UI style "${property}" must be a finite number or percentage.`
@@ -679,6 +686,13 @@ function isUIPosition(value: unknown): value is UIPosition {
   return (
     (typeof value === 'number' && Number.isFinite(value)) ||
     (typeof value === 'string' && /^-?\d+(?:\.\d+)?%$/.test(value))
+  );
+}
+
+function isLineHeight(value: unknown): value is UILineHeight {
+  return (
+    (typeof value === 'number' && Number.isFinite(value) && value >= 0) ||
+    (typeof value === 'string' && /^\d+(?:\.\d+)?(?:px|%)$/.test(value))
   );
 }
 

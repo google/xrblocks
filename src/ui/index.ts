@@ -35,6 +35,7 @@ export type {
 export type {
   UIColor,
   UIElementOptions,
+  UILineHeight,
   UIPosition,
   UIStateStyle,
   UIStyle,
