@@ -6,6 +6,10 @@ import {
 } from '../../../camera/CameraUtils';
 import {DetectedBodyPose, PoseLandmark} from '../DetectedBodyPose';
 import {BaseHumanBackend, HumanBackendContext} from '../HumanDetectorBackend';
+import {
+  MEDIAPIPE_MODULE_URL,
+  MediaPipeVisionWorkerClient,
+} from '../../shared/MediaPipeVisionWorker';
 
 let FilesetResolver: typeof MEDIAPIPE.FilesetResolver | undefined;
 let PoseLandmarker: typeof MEDIAPIPE.PoseLandmarker | undefined;
@@ -124,10 +128,18 @@ export function processPoseLandmarkerResult(
 }
 
 /**
- * Human Pose detector backend implementation using MediaPipe's Pose Landmark Detector.
- * Runs locally on the device.
+ * Human Pose detector backend implementation using MediaPipe's Pose Landmark
+ * Detector. Runs locally on the device.
+ *
+ * Inference is offloaded to a web worker by default so a detection pass does
+ * not stall the render loop. The worker has to use the CPU delegate, because
+ * MediaPipe's wasm pipeline only creates a GPU surface when it finds a real
+ * DOM canvas. Apps that would rather have GPU inference and can absorb the
+ * main-thread stall can set `useWorker: false`; that is also the automatic
+ * fallback when the environment has no `Worker` or the worker fails to start.
  */
 export class MediaPipeHumanBackend extends BaseHumanBackend {
+  private client: MediaPipeVisionWorkerClient | null = null;
   private poseLandmarker: MEDIAPIPE.PoseLandmarker | null = null;
   private initializationPromise: Promise<void>;
 
@@ -162,17 +174,12 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
     cameraParametersSnapshot: CameraParametersSnapshot
   ): Promise<DetectedBodyPose[]> {
     await this.initializationPromise;
-    if (!this.poseLandmarker) {
-      return [];
-    }
 
-    let result: MEDIAPIPE.PoseLandmarkerResult;
-    try {
-      result = this.poseLandmarker.detect(snapshot.imageData);
-    } catch (error: unknown) {
-      console.error('MediaPipe Pose detection run failed:', error);
-      return [];
-    }
+    const result = this.client
+      ? ((await this.client.detect(
+          snapshot.imageData
+        )) as MEDIAPIPE.PoseLandmarkerResult | null)
+      : this.detectOnMainThread(snapshot.imageData);
 
     if (!result || !result.landmarks || result.landmarks.length === 0) {
       return [];
@@ -185,7 +192,72 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
     );
   }
 
+  private detectOnMainThread(
+    imageData: ImageData
+  ): MEDIAPIPE.PoseLandmarkerResult | null {
+    if (!this.poseLandmarker) {
+      return null;
+    }
+    try {
+      return this.poseLandmarker.detect(imageData);
+    } catch (error: unknown) {
+      console.error('MediaPipe Pose detection run failed:', error);
+      return null;
+    }
+  }
+
   private async tryInitializePoseLandmarker(): Promise<void> {
+    const humansOptions = this.context.options.humans.backendConfig.mediapipe;
+
+    if (
+      humansOptions.useWorker &&
+      MediaPipeVisionWorkerClient.isSupported() &&
+      (await this.tryInitializeWorker())
+    ) {
+      return;
+    }
+
+    await this.initializeOnMainThread();
+  }
+
+  /**
+   * @returns True when the worker is up and ready to serve detections.
+   */
+  private async tryInitializeWorker(): Promise<boolean> {
+    const humansOptions = this.context.options.humans.backendConfig.mediapipe;
+    const client = new MediaPipeVisionWorkerClient('MediaPipeHumanBackend');
+    try {
+      await client.init({
+        mediapipeModuleUrl: MEDIAPIPE_MODULE_URL,
+        wasmFilesUrl: humansOptions.wasmFilesUrl,
+        taskName: 'PoseLandmarker',
+        taskOptions: {
+          baseOptions: {
+            modelAssetPath: humansOptions.modelAssetPath,
+            delegate: 'CPU',
+          },
+          runningMode: 'IMAGE',
+          numPoses: humansOptions.numPoses,
+          minPoseDetectionConfidence: humansOptions.minPoseDetectionConfidence,
+          minPosePresenceConfidence: humansOptions.minPosePresenceConfidence,
+          minTrackingConfidence: humansOptions.minTrackingConfidence,
+        },
+      });
+      this.client = client;
+      return true;
+    } catch (error: unknown) {
+      // A worker failure must not take pose detection down with it, so fall
+      // back to the main thread rather than reporting the backend unavailable.
+      console.warn(
+        'MediaPipe pose worker failed to start, falling back to main-thread inference:',
+        error
+      );
+      client.dispose();
+      return false;
+    }
+  }
+
+  private async initializeOnMainThread(): Promise<void> {
     if (this.poseLandmarker) return;
 
     await loadMediaPipeModule();
@@ -208,6 +280,8 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
   }
 
   override dispose() {
+    this.client?.dispose();
+    this.client = null;
     this.poseLandmarker?.close();
     this.poseLandmarker = null;
   }
