@@ -34,8 +34,10 @@ export type {
 export type {
   UIColor,
   UIElementOptions,
+  UIPosition,
   UIStateStyle,
   UIStyle,
+  UITransform,
   UIUnit,
   UIVector2,
 } from './UIElement';
