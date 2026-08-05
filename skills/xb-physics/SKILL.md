@@ -13,7 +13,8 @@ description: >-
 # xb-physics: Rapier rigid-body physics
 
 Physics is enabled by giving `Options` the Rapier module; your `Script` then sets up bodies in
-`initPhysics()`. See `demos/ballpit`, `demos/splash`, and `demos/drone`.
+`initPhysics()`. See `samples/advanced/ballpit`, `samples/advanced/splash`, and
+`demos/drone`.
 
 ## Enable
 
@@ -23,7 +24,7 @@ import * as xb from 'xrblocks';
 
 const options = new xb.Options();
 options.physics.RAPIER = RAPIER; // assigning RAPIER enables physics
-// options.physics.useEventQueue = true;  // opt in to collision events (see demos/splash)
+// options.physics.useEventQueue = true;  // opt in to collision events (see samples/advanced/splash)
 xb.init(options);
 ```
 
@@ -37,7 +38,7 @@ class Balls extends xb.Script {
   // around the Rapier world — create rigid bodies/colliders here.
   initPhysics(physics) {
     this.physics = physics;
-    // …create RAPIER bodies/colliders; see demos/ballpit/BallPit.js for the full API…
+    // …create RAPIER bodies/colliders; see samples/advanced/ballpit/BallPit.js for the full API…
   }
 
   // Called each physics step — apply forces, sync transforms, read collisions.
@@ -61,7 +62,8 @@ Now thrown objects bounce off the live depth mesh of the environment.
 ## Notes
 
 - The exact body/collider API is Rapier's, accessed through the `physics` instance passed to
-  `initPhysics()` — copy the patterns in [`demos/ballpit/BallPit.js`](../../demos/ballpit/BallPit.js)
+  `initPhysics()` — copy the patterns in
+  [`samples/advanced/ballpit/BallPit.js`](../../samples/advanced/ballpit/BallPit.js)
   and [`src/physics/Physics.ts`](../../src/physics/Physics.ts).
 - Add the Rapier dependency to your importmap (the repo uses
   `@dimforge/rapier3d-simd-compat`).

@@ -59,4 +59,5 @@ options.physics.RAPIER = RAPIER;
 
 - Depth sensing requires a device/runtime that supports the WebXR Depth Sensing API; the
   simulator provides a simulated depth source for desktop testing.
-- Depth + physics is the recipe behind `demos/ballpit` and `demos/splash`.
+- Depth + physics is the recipe behind `samples/advanced/ballpit` and
+  `samples/advanced/splash`.
