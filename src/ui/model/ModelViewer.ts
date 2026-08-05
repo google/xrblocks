@@ -406,7 +406,7 @@ export class ModelViewer extends Script {
     });
     if (this.platform) {
       this.platform.castShadow = false;
-      this.platform.receiveShadow = this.receiveShadow;
+      this.platform.receiveShadow = false;
     }
   }
 
