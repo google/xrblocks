@@ -53,6 +53,7 @@ skill points to it; start app-generation work from the workflow layer.
 | [`xb-head-gestures`](xb-head-gestures/SKILL.md) | Detect completed head nod and shake motions                          |
 | [`xb-depth`](xb-depth/SKILL.md)                 | Add depth sensing, occlusion, and depth-mesh colliders               |
 | [`xb-world`](xb-world/SKILL.md)                 | Detect real-world planes, meshes, and objects                        |
+| [`xb-anchors`](xb-anchors/SKILL.md)             | Pin content to a real place and restore it in a later session        |
 | [`xb-context`](xb-context/SKILL.md)             | Read agent-facing scene context, visible objects, and SOM labels     |
 | [`xb-ai`](xb-ai/SKILL.md)                       | Query Gemini/OpenAI, run a live session, generate images             |
 | [`xb-physics`](xb-physics/SKILL.md)             | Add Rapier rigid-body physics                                        |
