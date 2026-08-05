@@ -55,6 +55,8 @@ function fakeEnv(
     persistentUuid?: string;
     restoreImpl?: (uuid: string) => Promise<unknown>;
     trackedAnchors?: Set<unknown>;
+    hasPersistentHandle?: boolean;
+    canDeletePersistent?: boolean;
   } = {}
 ): FakeEnv {
   const {
@@ -82,6 +84,8 @@ function fakeEnv(
     restorePersistentAnchor: canRestore
       ? vi.fn(restoreImpl ?? (async () => fakeAnchor()))
       : undefined,
+    deletePersistentAnchor:
+      opts.canDeletePersistent === false ? undefined : vi.fn(async () => {}),
   } as unknown as XRSession;
   (frame as unknown as {session: XRSession}).session = session;
   return {frame, session, created};
@@ -654,5 +658,65 @@ describe('AnchorManager session end', () => {
     const results = await manager.restoreAll();
     expect(results.map((r) => r.status)).toEqual(['restored']);
     expect(next.session.restorePersistentAnchor).toHaveBeenCalled();
+  });
+});
+
+describe('AnchorManager persistent handle cleanup', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  /**
+   * Creates and persists one anchor against a live frame.
+   * @returns The manager, session and the tracked anchor's id.
+   */
+  async function persistOne() {
+    const {manager, store} = makeManager();
+    const env = fakeEnv({persistentUuid: 'uuid-keep'});
+    manager.update(0, env.frame);
+    const tracked = await manager.create(POSE, 'thing');
+    await manager.persist(tracked!.id);
+    return {manager, store, session: env.session, id: tracked!.id};
+  }
+
+  it('releases the platform handle when an anchor is deleted', async () => {
+    const {manager, session, id} = await persistOne();
+    manager.delete(id);
+    // Dropping only our own record leaves the handle allocated on the
+    // headset forever, and the platform caps how many may exist.
+    expect(session.deletePersistentAnchor).toHaveBeenCalledWith('uuid-keep');
+  });
+
+  it('releases every platform handle when everything is forgotten', async () => {
+    const {manager, session} = await persistOne();
+    manager.forgetAll();
+    expect(session.deletePersistentAnchor).toHaveBeenCalledWith('uuid-keep');
+  });
+
+  it('releases handles for records that were never restored', async () => {
+    const store = memoryStore([{uuid: 'uuid-old', label: 'old', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    manager.update(0, env.frame);
+    manager.forgetAll();
+    expect(env.session.deletePersistentAnchor).toHaveBeenCalledWith('uuid-old');
+  });
+
+  it('still forgets records when the platform cannot delete handles', async () => {
+    const store = memoryStore([{uuid: 'uuid-old', label: 'old', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    manager.update(0, fakeEnv({canDeletePersistent: false}).frame);
+    expect(() => manager.forgetAll()).not.toThrow();
+    expect(store.records).toEqual([]);
+  });
+
+  it('survives a rejected handle deletion', async () => {
+    const {manager, store, session, id} = await persistOne();
+    (
+      session.deletePersistentAnchor as ReturnType<typeof vi.fn>
+    ).mockRejectedValue(new Error('nope'));
+    expect(() => manager.delete(id)).not.toThrow();
+    await tick();
+    expect(store.records).toEqual([]);
   });
 });

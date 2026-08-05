@@ -79,10 +79,9 @@ export class AnchorManager extends Script {
 
   /**
    * Initializes the manager.
-   * @param dependencies - Resolved dependencies.
-   * @param dependencies.options - World options carrying the anchor settings.
-   * @param dependencies.renderer - Renderer supplying the reference space that
-   *     anchor poses are expressed against.
+   * @param dependencies - Resolved dependencies: the world options carrying
+   *     the anchor settings, and the renderer supplying the reference space
+   *     that anchor poses are expressed against.
    */
   override init({
     options,
@@ -407,7 +406,10 @@ export class AnchorManager extends Script {
     const tracked = this.anchors.get(id);
     if (!tracked) return;
     this.anchors.delete(id);
-    if (tracked.uuid) this.store.remove(tracked.uuid);
+    if (tracked.uuid) {
+      this.store.remove(tracked.uuid);
+      this.releasePersistentHandle(tracked.uuid);
+    }
     try {
       tracked.anchor.delete?.();
     } catch (error) {
@@ -425,7 +427,36 @@ export class AnchorManager extends Script {
 
   /** Forgets every saved handle, leaving live anchors alone. */
   forgetAll(): void {
+    // Read before clearing: records the app never restored this session are
+    // the only place their platform handles are named.
+    for (const record of this.store.load()) {
+      this.releasePersistentHandle(record.uuid);
+    }
     this.store.clear();
+  }
+
+  /**
+   * Asks the platform to drop a persistent handle.
+   *
+   * Platforms cap how many handles an origin may hold, so forgetting a record
+   * on our side without this slowly fills that quota with anchors no app can
+   * name any more.
+   *
+   * @param uuid - The persistent handle to release.
+   */
+  private releasePersistentHandle(uuid: string): void {
+    const session =
+      this.currentFrame?.session ?? this.renderer?.xr.getSession();
+    const remove = session?.deletePersistentAnchor;
+    // Optional in WebXR, and absent entirely for simulated anchors.
+    if (typeof remove !== 'function') return;
+    try {
+      void Promise.resolve(remove.call(session, uuid)).catch((error) => {
+        this.debug(`could not release handle ${uuid}: ${error}`);
+      });
+    } catch (error) {
+      this.debug(`could not release handle ${uuid}: ${error}`);
+    }
   }
 
   /** Releases every tracked anchor. Saved handles are left in storage. */
