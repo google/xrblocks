@@ -2,14 +2,6 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 class DepthMeshVisualizer extends xb.Script {
-  currentSliderController = null;
-  depthMeshAlphaSlider = new xb.FreestandingSlider(
-    /*start=*/ 1.0,
-    /*min=*/ 0.0,
-    /*max=*/ 1.0,
-    /*scale*/ 5.0
-  );
-
   constructor() {
     super();
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 3);
@@ -18,38 +10,72 @@ class DepthMeshVisualizer extends xb.Script {
   }
 
   init() {
-    xb.core.depth.depthMesh.material.uniforms.uOpacity.value =
-      this.depthMeshAlphaSlider.startingValue;
-  }
-
-  onSelectStart(event) {
-    this.currentSliderController = event.target;
-    this.depthMeshAlphaSlider.setInitialPoseFromController(
-      this.currentSliderController
+    xb.core.depth.depthMesh.material.uniforms.uOpacity.value = 1;
+    this.add(
+      createDepthOpacityControl((opacity) => {
+        xb.core.depth.depthMesh.material.uniforms.uOpacity.value = opacity;
+      })
     );
   }
+}
 
-  onSelectEnd(event) {
-    const controller = event.target;
-    if (this.currentSliderController == controller) {
-      const opacity = this.depthMeshAlphaSlider.getValueFromController(
-        this.currentSliderController
-      );
-      xb.core.depth.depthMesh.material.uniforms.uOpacity.value = opacity;
-      this.depthMeshAlphaSlider.updateValue(opacity);
-    }
-    this.currentSliderController = null;
-  }
-
-  update() {
-    if (this.currentSliderController) {
-      const opacity = this.depthMeshAlphaSlider.getValueFromController(
-        this.currentSliderController
-      );
-      xb.core.depth.depthMesh.material.uniforms.uOpacity.value = opacity;
-      console.log('opacity:' + opacity);
-    }
-  }
+function createDepthOpacityControl(onInput) {
+  const valueText = new xb.UIText({
+    text: '100%',
+    style: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: '#ffffff',
+      textAlign: 'right',
+    },
+  });
+  const header = new xb.UIPanel({
+    style: {
+      width: '100%',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    children: [
+      new xb.UIText({
+        text: 'DEPTH OPACITY',
+        style: {fontSize: 24, fontWeight: 'bold', color: '#ffffff'},
+      }),
+      valueText,
+    ],
+  });
+  const slider = new xb.UISlider({
+    ariaLabel: 'Depth opacity',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    value: 1,
+    style: {width: '100%', height: 42, borderRadius: 14},
+    onInput: (opacity) => {
+      valueText.text = `${Math.round(opacity * 100)}%`;
+      onInput(opacity);
+    },
+  });
+  const panel = new xb.UIPanel({
+    style: {
+      width: 620,
+      position: 'absolute',
+      left: '50%',
+      bottom: 32,
+      transform: {translateX: '-50%'},
+      flexDirection: 'column',
+      gap: 8,
+      padding: 18,
+      backgroundColor: 'rgba(28, 28, 32, 0.9)',
+      borderColor: 'rgba(255, 255, 255, 0.22)',
+      borderWidth: 1.5,
+      borderRadius: 24,
+    },
+    children: [header, slider],
+  });
+  const overlay = new xb.UIOverlay({children: [panel]});
+  overlay.name = 'Depth opacity control';
+  return overlay;
 }
 
 document.addEventListener('DOMContentLoaded', function () {
