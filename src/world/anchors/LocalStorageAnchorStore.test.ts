@@ -114,11 +114,20 @@ describe('LocalStorageAnchorStore', () => {
     ).toEqual(['a', 'b']);
   });
 
-  it('survives storage being unavailable', () => {
+  it('survives storage being explicitly disabled', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const store = new LocalStorageAnchorStore(KEY, 128, undefined);
+    const store = new LocalStorageAnchorStore(KEY, 128, null);
     expect(() => store.save(record('a'))).not.toThrow();
     expect(store.load()).toEqual([]);
+  });
+
+  it('falls back to real storage when none is given', () => {
+    // Omitting the argument must reach localStorage rather than silently
+    // disabling persistence, which is the difference null now expresses.
+    const store = new LocalStorageAnchorStore('omitted.key', 128);
+    store.save(record('a'));
+    expect(store.load().map((r) => r.uuid)).toEqual(['a']);
+    store.clear();
   });
 
   it('survives a storage quota error on write', () => {
