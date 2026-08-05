@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 487fbd1
- * @builddate 2026-08-05T21:36:38.695Z
+ * @commitid d0893e6
+ * @builddate 2026-08-05T23:27:53.701Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -11138,6 +11138,15 @@ class HumansOptions {
                 wasmFilesUrl: 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
                 modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
                 /**
+                 * Run inference in a web worker so a detection pass does not stall the
+                 * render loop. The worker is limited to the CPU delegate because
+                 * MediaPipe only creates a GPU surface for a real DOM canvas, so set
+                 * this to false to trade a blocked main thread for GPU inference.
+                 * Falls back to the main thread automatically when workers are
+                 * unavailable.
+                 */
+                useWorker: true,
+                /**
                  * The maximum number of simultaneous human poses/bodies to track.
                  */
                 numPoses: 1,
@@ -19178,6 +19187,198 @@ class BaseHumanBackend {
     dispose() { }
 }
 
+// Shared plumbing for running MediaPipe vision tasks off the main thread.
+//
+// MediaPipe's `detect()` is synchronous and can take tens of milliseconds,
+// which stalls the render loop when it runs on the main thread. Every vision
+// backend has the same needs (spawn a worker, load a model once, run one
+// detect per snapshot), so the worker source and the client live here rather
+// than being copied per backend.
+//
+// The worker source is inlined as a string and instantiated via a Blob URL so
+// the SDK still ships as one bundle and the rollup pipeline does not need to
+// know about worker entry points.
+//
+// Wire protocol (every message carries a numeric `id` so replies can be
+// correlated with requests):
+//   { id, type: 'init', config: {...} }
+//   { id, type: 'detect', imageBitmap }   // bitmap is transferred, not cloned
+// Replies:
+//   { id, ok: true }
+//   { id, ok: true, result }
+//   { id, ok: false, error }
+/**
+ * CDN module the worker dynamic-imports for MediaPipe. Workers cannot see the
+ * host page's importmap, so they need an absolute URL. Bump this in lockstep
+ * with the importmap entries in the demos that use MediaPipe.
+ */
+const MEDIAPIPE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs';
+// The worker is written as a plain string rather than a module so it can be
+// spawned from a Blob URL. Keep it dependency-free.
+const MEDIA_PIPE_VISION_WORKER_SOURCE = /* js */ `
+let task = null;
+
+async function init(config) {
+  const mod = await import(config.mediapipeModuleUrl);
+  const { FilesetResolver } = mod;
+  const TaskClass = mod[config.taskName];
+  if (!TaskClass) {
+    throw new Error('unknown MediaPipe task: ' + config.taskName);
+  }
+  const vision = await FilesetResolver.forVisionTasks(config.wasmFilesUrl);
+  task = await TaskClass.createFromOptions(vision, config.taskOptions);
+}
+
+self.onmessage = async (event) => {
+  const { id, type } = event.data;
+  try {
+    if (type === 'init') {
+      await init(event.data.config);
+      self.postMessage({ id, ok: true });
+    } else if (type === 'detect') {
+      if (!task) throw new Error('worker not initialized');
+      const bitmap = event.data.imageBitmap;
+      const result = task.detect(bitmap);
+      bitmap.close();
+      self.postMessage({ id, ok: true, result });
+    } else {
+      throw new Error('unknown message type: ' + type);
+    }
+  } catch (err) {
+    self.postMessage({
+      id,
+      ok: false,
+      error: (err && err.message) || String(err),
+    });
+  }
+};
+`;
+/**
+ * Runs a single MediaPipe vision task in a dedicated web worker.
+ *
+ * Results are whatever the task's `detect()` returns, as a structured-clonable
+ * object. Callers cast to the matching MediaPipe result type and do their own
+ * post-processing on the main thread, since that work usually needs the live
+ * depth mesh and camera matrices.
+ */
+class MediaPipeVisionWorkerClient {
+    /**
+     * @param label - Name used in error messages, e.g. `MediaPipeFaceBackend`.
+     */
+    constructor(label) {
+        this.label = label;
+        this.worker = null;
+        this.workerUrl = null;
+        this.nextRequestId = 0;
+        this.pendingRequests = new Map();
+    }
+    /** Whether this environment can host the worker at all. */
+    static isSupported() {
+        return typeof Worker !== 'undefined' && typeof Blob !== 'undefined';
+    }
+    /**
+     * Spawns the worker and loads the model. Resolves once the task is ready.
+     *
+     * @param config - Module URLs and task options for the worker.
+     */
+    async init(config) {
+        if (this.worker) {
+            return;
+        }
+        if (!MediaPipeVisionWorkerClient.isSupported()) {
+            throw new Error('Web Workers are not available in this environment');
+        }
+        const blob = new Blob([MEDIA_PIPE_VISION_WORKER_SOURCE], {
+            type: 'text/javascript',
+        });
+        this.workerUrl = URL.createObjectURL(blob);
+        this.worker = new Worker(this.workerUrl);
+        this.worker.onmessage = (event) => {
+            const { id } = event.data;
+            const pending = this.pendingRequests.get(id);
+            if (!pending)
+                return;
+            this.pendingRequests.delete(id);
+            if (event.data.ok) {
+                pending.resolve(event.data);
+            }
+            else {
+                pending.reject(new Error(event.data.error || 'worker error'));
+            }
+        };
+        this.worker.onerror = (event) => {
+            console.error(`${this.label} worker errored:`, event.message);
+        };
+        await this.send({ type: 'init', config });
+    }
+    /**
+     * Runs one detection pass.
+     *
+     * The snapshot is converted to an `ImageBitmap` so its pixel buffer can be
+     * transferred rather than copied; `ImageData` is structured-clonable but
+     * that means a full copy on every frame.
+     *
+     * @param imageData - Camera snapshot to run the task over.
+     * @returns The raw task result, or null when the pass could not run.
+     */
+    async detect(imageData) {
+        if (!this.worker) {
+            return null;
+        }
+        let bitmap;
+        try {
+            bitmap = await createImageBitmap(imageData);
+        }
+        catch (error) {
+            console.error(`${this.label}: failed to create ImageBitmap:`, error);
+            return null;
+        }
+        try {
+            const reply = (await this.send({ type: 'detect', imageBitmap: bitmap }, [
+                bitmap,
+            ]));
+            return reply.result ?? null;
+        }
+        catch (error) {
+            console.error(`${this.label}: worker detection failed:`, error);
+            return null;
+        }
+    }
+    /**
+     * Terminates the worker and revokes its Blob URL. Safe to call repeatedly.
+     */
+    dispose() {
+        if (this.worker) {
+            this.worker.terminate();
+            this.worker = null;
+        }
+        if (this.workerUrl) {
+            URL.revokeObjectURL(this.workerUrl);
+            this.workerUrl = null;
+        }
+        // Reject anything still in flight so awaiting callers don't hang forever.
+        for (const { reject } of this.pendingRequests.values()) {
+            reject(new Error(`${this.label} disposed`));
+        }
+        this.pendingRequests.clear();
+    }
+    /**
+     * Promise-wraps one request/response round trip. The worker echoes the
+     * request id back so overlapping calls stay correlated.
+     */
+    send(payload, transfer = []) {
+        const worker = this.worker;
+        if (!worker) {
+            return Promise.reject(new Error('worker not spawned'));
+        }
+        const id = this.nextRequestId++;
+        return new Promise((resolve, reject) => {
+            this.pendingRequests.set(id, { resolve, reject });
+            worker.postMessage({ id, ...payload }, transfer);
+        });
+    }
+}
+
 let FilesetResolver$1;
 let PoseLandmarker;
 // --- Attempt Dynamic Import ---
@@ -19197,12 +19398,87 @@ async function loadMediaPipeModule$1() {
     }
 }
 /**
- * Human Pose detector backend implementation using MediaPipe's Pose Landmark Detector.
- * Runs locally on the device.
+ * Convert a raw MediaPipe `PoseLandmarkerResult` into `DetectedBodyPose`
+ * objects with world-space joint positions.
+ *
+ * Extracted as a free function so unit tests can drive it directly without
+ * standing up the full backend lifecycle, and because this work has to stay on
+ * the render thread: it reads the live depth mesh and camera matrices.
+ *
+ * For each landmark a depth-mesh raycast (`transformRgbUvToWorld`) is tried
+ * first; when the ray misses, the point is back-projected through the camera
+ * frustum and placed ~1.5 m out, modulated by the landmark's relative z.
+ *
+ * @param result - Raw result from the MediaPipe pose task.
+ * @param depthMeshSnapshot - Depth mesh to raycast against.
+ * @param cameraParametersSnapshot - Camera matrices for back-projection.
+ * @returns One `DetectedBodyPose` per person in the result.
+ */
+function processPoseLandmarkerResult(result, depthMeshSnapshot, cameraParametersSnapshot) {
+    const detectedPoses = [];
+    // Process each detected person
+    for (let i = 0; i < result.landmarks.length; i++) {
+        const mpLandmarks = result.landmarks[i];
+        const mpWorldLandmarks = result.worldLandmarks?.[i] || [];
+        const landmarks = [];
+        let xmin = 1;
+        let ymin = 1;
+        let xmax = 0;
+        let ymax = 0;
+        // Map landmarks and calculate bounding box in normalized screen space
+        for (let j = 0; j < mpLandmarks.length; j++) {
+            const lm = mpLandmarks[j];
+            const wLm = mpWorldLandmarks[j];
+            xmin = Math.min(xmin, lm.x);
+            ymin = Math.min(ymin, lm.y);
+            xmax = Math.max(xmax, lm.x);
+            ymax = Math.max(ymax, lm.y);
+            // Transform screen UV to WebXR World Position
+            const uv = new THREE.Vector2(lm.x, lm.y);
+            const worldCoords = transformRgbUvToWorld(uv, depthMeshSnapshot, cameraParametersSnapshot);
+            let wp;
+            if (worldCoords) {
+                wp = worldCoords.worldPosition;
+            }
+            else {
+                // Robust fallback estimation when physical depth mesh raycast misses
+                const origin = new THREE.Vector3().applyMatrix4(cameraParametersSnapshot.worldFromView);
+                const clipVec = new THREE.Vector3(2 * lm.x - 1, 2 * (1.0 - lm.y) - 1, -1);
+                const direction = clipVec
+                    .applyMatrix4(cameraParametersSnapshot.worldFromClip)
+                    .sub(origin)
+                    .normalize();
+                wp = origin.addScaledVector(direction, 1.5 + (lm.z || 0));
+            }
+            landmarks.push({
+                x: lm.x,
+                y: lm.y,
+                z: wLm ? wLm.z : lm.z,
+                visibility: lm.visibility,
+                worldPosition: wp,
+            });
+        }
+        const boundingBox = new THREE.Box2(new THREE.Vector2(xmin, ymin), new THREE.Vector2(xmax, ymax));
+        const bodyPose = new DetectedBodyPose(i, landmarks, boundingBox);
+        detectedPoses.push(bodyPose);
+    }
+    return detectedPoses;
+}
+/**
+ * Human Pose detector backend implementation using MediaPipe's Pose Landmark
+ * Detector. Runs locally on the device.
+ *
+ * Inference is offloaded to a web worker by default so a detection pass does
+ * not stall the render loop. The worker has to use the CPU delegate, because
+ * MediaPipe's wasm pipeline only creates a GPU surface when it finds a real
+ * DOM canvas. Apps that would rather have GPU inference and can absorb the
+ * main-thread stall can set `useWorker: false`; that is also the automatic
+ * fallback when the environment has no `Worker` or the worker fails to start.
  */
 class MediaPipeHumanBackend extends BaseHumanBackend {
     constructor(context) {
         super(context);
+        this.client = null;
         this.poseLandmarker = null;
         this.initializationPromise = this.tryInitializePoseLandmarker();
     }
@@ -19226,73 +19502,70 @@ class MediaPipeHumanBackend extends BaseHumanBackend {
     }
     async detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot) {
         await this.initializationPromise;
-        if (!this.poseLandmarker) {
-            return [];
-        }
-        let result;
-        try {
-            result = this.poseLandmarker.detect(snapshot.imageData);
-        }
-        catch (error) {
-            console.error('MediaPipe Pose detection run failed:', error);
-            return [];
-        }
+        const result = this.client
+            ? (await this.client.detect(snapshot.imageData))
+            : this.detectOnMainThread(snapshot.imageData);
         if (!result || !result.landmarks || result.landmarks.length === 0) {
             return [];
         }
-        return this.processDetectionResult(result, depthMeshSnapshot, cameraParametersSnapshot);
+        return processPoseLandmarkerResult(result, depthMeshSnapshot, cameraParametersSnapshot);
     }
-    processDetectionResult(result, depthMeshSnapshot, cameraParametersSnapshot) {
-        const detectedPoses = [];
-        // Process each detected person
-        for (let i = 0; i < result.landmarks.length; i++) {
-            const mpLandmarks = result.landmarks[i];
-            const mpWorldLandmarks = result.worldLandmarks?.[i] || [];
-            const landmarks = [];
-            let xmin = 1;
-            let ymin = 1;
-            let xmax = 0;
-            let ymax = 0;
-            // Map landmarks and calculate bounding box in normalized screen space
-            for (let j = 0; j < mpLandmarks.length; j++) {
-                const lm = mpLandmarks[j];
-                const wLm = mpWorldLandmarks[j];
-                xmin = Math.min(xmin, lm.x);
-                ymin = Math.min(ymin, lm.y);
-                xmax = Math.max(xmax, lm.x);
-                ymax = Math.max(ymax, lm.y);
-                // Transform screen UV to WebXR World Position
-                const uv = new THREE.Vector2(lm.x, lm.y);
-                const worldCoords = transformRgbUvToWorld(uv, depthMeshSnapshot, cameraParametersSnapshot);
-                let wp;
-                if (worldCoords) {
-                    wp = worldCoords.worldPosition;
-                }
-                else {
-                    // Robust fallback estimation when physical depth mesh raycast misses
-                    const origin = new THREE.Vector3().applyMatrix4(cameraParametersSnapshot.worldFromView);
-                    const clipVec = new THREE.Vector3(2 * lm.x - 1, 2 * (1.0 - lm.y) - 1, -1);
-                    const direction = clipVec
-                        .applyMatrix4(cameraParametersSnapshot.worldFromClip)
-                        .sub(origin)
-                        .normalize();
-                    wp = origin.addScaledVector(direction, 1.5 + (lm.z || 0));
-                }
-                landmarks.push({
-                    x: lm.x,
-                    y: lm.y,
-                    z: wLm ? wLm.z : lm.z,
-                    visibility: lm.visibility,
-                    worldPosition: wp,
-                });
-            }
-            const boundingBox = new THREE.Box2(new THREE.Vector2(xmin, ymin), new THREE.Vector2(xmax, ymax));
-            const bodyPose = new DetectedBodyPose(i, landmarks, boundingBox);
-            detectedPoses.push(bodyPose);
+    detectOnMainThread(imageData) {
+        if (!this.poseLandmarker) {
+            return null;
         }
-        return detectedPoses;
+        try {
+            return this.poseLandmarker.detect(imageData);
+        }
+        catch (error) {
+            console.error('MediaPipe Pose detection run failed:', error);
+            return null;
+        }
     }
     async tryInitializePoseLandmarker() {
+        const humansOptions = this.context.options.humans.backendConfig.mediapipe;
+        if (humansOptions.useWorker &&
+            MediaPipeVisionWorkerClient.isSupported() &&
+            (await this.tryInitializeWorker())) {
+            return;
+        }
+        await this.initializeOnMainThread();
+    }
+    /**
+     * @returns True when the worker is up and ready to serve detections.
+     */
+    async tryInitializeWorker() {
+        const humansOptions = this.context.options.humans.backendConfig.mediapipe;
+        const client = new MediaPipeVisionWorkerClient('MediaPipeHumanBackend');
+        try {
+            await client.init({
+                mediapipeModuleUrl: MEDIAPIPE_MODULE_URL,
+                wasmFilesUrl: humansOptions.wasmFilesUrl,
+                taskName: 'PoseLandmarker',
+                taskOptions: {
+                    baseOptions: {
+                        modelAssetPath: humansOptions.modelAssetPath,
+                        delegate: 'CPU',
+                    },
+                    runningMode: 'IMAGE',
+                    numPoses: humansOptions.numPoses,
+                    minPoseDetectionConfidence: humansOptions.minPoseDetectionConfidence,
+                    minPosePresenceConfidence: humansOptions.minPosePresenceConfidence,
+                    minTrackingConfidence: humansOptions.minTrackingConfidence,
+                },
+            });
+            this.client = client;
+            return true;
+        }
+        catch (error) {
+            // A worker failure must not take pose detection down with it, so fall
+            // back to the main thread rather than reporting the backend unavailable.
+            console.warn('MediaPipe pose worker failed to start, falling back to main-thread inference:', error);
+            client.dispose();
+            return false;
+        }
+    }
+    async initializeOnMainThread() {
         if (this.poseLandmarker)
             return;
         await loadMediaPipeModule$1();
@@ -19311,6 +19584,8 @@ class MediaPipeHumanBackend extends BaseHumanBackend {
         });
     }
     dispose() {
+        this.client?.dispose();
+        this.client = null;
         this.poseLandmarker?.close();
         this.poseLandmarker = null;
     }
@@ -19838,86 +20113,6 @@ class BaseFaceBackend {
     dispose() { }
 }
 
-// Source code for the MediaPipe FaceLandmarker web worker. Inlined as a
-// string and instantiated via Blob URL so the SDK ships in one bundle
-// without the rollup pipeline having to know about worker entry points.
-//
-// The worker dynamically imports `@mediapipe/tasks-vision` from a CDN URL
-// (workers don't share the host page's importmap), loads the
-// FaceLandmarker model once on `init`, then runs synchronous
-// `detect(imageBitmap)` calls per request. ImageBitmaps are transferable
-// so the snapshot pixel buffer doesn't get cloned across the worker
-// boundary.
-//
-// Wire protocol (all messages carry a numeric `id` so the main thread can
-// correlate request/response pairs):
-//   { id, type: 'init', config: { mediapipeModuleUrl, wasmFilesUrl,
-//                                  modelAssetPath, numFaces, ... } }
-//   { id, type: 'detect', imageBitmap: ImageBitmap }           // transfer the bitmap
-// Replies:
-//   { id, ok: true }
-//   { id, ok: true, result: FaceLandmarkerResult }
-//   { id, ok: false, error: string }
-//
-// The result object is a structured-clonable subset of MediaPipe's
-// FaceLandmarkerResult (plain landmarks, blendshape categories, transform
-// matrix data arrays). Float32Arrays inside `facialTransformationMatrixes`
-// clone cheaply, no transfer list needed.
-const MEDIA_PIPE_FACE_WORKER_SOURCE = /* js */ `
-let landmarker = null;
-
-async function init(config) {
-  const mod = await import(config.mediapipeModuleUrl);
-  const { FilesetResolver, FaceLandmarker } = mod;
-  const vision = await FilesetResolver.forVisionTasks(config.wasmFilesUrl);
-  landmarker = await FaceLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath: config.modelAssetPath,
-      // CPU delegate in the worker. GPU would need an OffscreenCanvas
-      // surface and MediaPipe's wasm pipeline only spins one up when it
-      // finds a real DOM canvas, which workers don't have.
-      delegate: 'CPU',
-    },
-    runningMode: 'IMAGE',
-    numFaces: config.numFaces,
-    minFaceDetectionConfidence: config.minFaceDetectionConfidence,
-    minFacePresenceConfidence: config.minFacePresenceConfidence,
-    minTrackingConfidence: config.minTrackingConfidence,
-    outputFaceBlendshapes: config.outputFaceBlendshapes,
-    outputFacialTransformationMatrixes: config.outputFacialTransformationMatrixes,
-  });
-}
-
-self.onmessage = async (event) => {
-  const { id, type } = event.data;
-  try {
-    if (type === 'init') {
-      await init(event.data.config);
-      self.postMessage({ id, ok: true });
-    } else if (type === 'detect') {
-      if (!landmarker) throw new Error('worker not initialized');
-      const bitmap = event.data.imageBitmap;
-      const result = landmarker.detect(bitmap);
-      bitmap.close();
-      self.postMessage({ id, ok: true, result });
-    } else {
-      throw new Error('unknown message type: ' + type);
-    }
-  } catch (err) {
-    self.postMessage({
-      id,
-      ok: false,
-      error: (err && err.message) || String(err),
-    });
-  }
-};
-`;
-
-// CDN module the worker dynamic-imports for MediaPipe. Workers can't see
-// the host page's importmap so we hand them an absolute URL. Pinned to a
-// version that matches the SDK's tested matrix; bump in lockstep with
-// any importmap updates in demos/face_mirror/index.html.
-const MEDIAPIPE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs';
 /**
  * Convert a raw MediaPipe `FaceLandmarkerResult` into an array of
  * `DetectedFace` objects with world-space positions, blendshape
@@ -20028,10 +20223,7 @@ function processFaceLandmarkerResult(result, depthMeshSnapshot, cameraParameters
 class MediaPipeFaceBackend extends BaseFaceBackend {
     constructor(context) {
         super(context);
-        this.worker = null;
-        this.workerUrl = null;
-        this.nextRequestId = 0;
-        this.pendingRequests = new Map();
+        this.client = new MediaPipeVisionWorkerClient('MediaPipeFaceBackend');
         this.initializationPromise = this.tryInitializeFaceLandmarker();
     }
     async isAvailable() {
@@ -20054,32 +20246,7 @@ class MediaPipeFaceBackend extends BaseFaceBackend {
     }
     async detect(snapshot, depthMeshSnapshot, cameraParametersSnapshot) {
         await this.initializationPromise;
-        if (!this.worker) {
-            return [];
-        }
-        // Convert the snapshot to an ImageBitmap so the pixel buffer can be
-        // transferred (zero-copy) into the worker. ImageData itself is
-        // structured-cloneable but that means a full pixel copy per detect;
-        // ImageBitmap moves ownership.
-        let bitmap;
-        try {
-            bitmap = await createImageBitmap(snapshot.imageData);
-        }
-        catch (error) {
-            console.error('Failed to create ImageBitmap for face detection:', error);
-            return [];
-        }
-        let workerResult;
-        try {
-            const reply = (await this.send({ type: 'detect', imageBitmap: bitmap }, [
-                bitmap,
-            ]));
-            workerResult = reply.result;
-        }
-        catch (error) {
-            console.error('MediaPipe Face detection (worker) failed:', error);
-            return [];
-        }
+        const workerResult = (await this.client.detect(snapshot.imageData));
         if (!workerResult ||
             !workerResult.faceLandmarks ||
             workerResult.faceLandmarks.length === 0) {
@@ -20088,60 +20255,26 @@ class MediaPipeFaceBackend extends BaseFaceBackend {
         return processFaceLandmarkerResult(workerResult, depthMeshSnapshot, cameraParametersSnapshot);
     }
     /**
-     * Tear down the worker and revoke the Blob URL it was constructed
-     * from. Safe to call multiple times.
+     * Tear down the worker. Safe to call multiple times.
      */
     dispose() {
-        if (this.worker) {
-            this.worker.terminate();
-            this.worker = null;
-        }
-        if (this.workerUrl) {
-            URL.revokeObjectURL(this.workerUrl);
-            this.workerUrl = null;
-        }
-        // Reject any in-flight requests so callers don't hang.
-        for (const { reject } of this.pendingRequests.values()) {
-            reject(new Error('MediaPipeFaceBackend disposed'));
-        }
-        this.pendingRequests.clear();
+        this.client.dispose();
     }
     async tryInitializeFaceLandmarker() {
-        if (this.worker)
-            return;
-        if (typeof Worker === 'undefined') {
-            throw new Error('Web Workers are not available in this environment');
-        }
-        // Spawn the worker from an inlined Blob URL so we don't have to
-        // teach the rollup pipeline about a separate worker entry point.
-        const blob = new Blob([MEDIA_PIPE_FACE_WORKER_SOURCE], {
-            type: 'text/javascript',
-        });
-        this.workerUrl = URL.createObjectURL(blob);
-        this.worker = new Worker(this.workerUrl);
-        this.worker.onmessage = (event) => {
-            const { id } = event.data;
-            const pending = this.pendingRequests.get(id);
-            if (!pending)
-                return;
-            this.pendingRequests.delete(id);
-            if (event.data.ok) {
-                pending.resolve(event.data);
-            }
-            else {
-                pending.reject(new Error(event.data.error || 'worker error'));
-            }
-        };
-        this.worker.onerror = (event) => {
-            console.error('MediaPipe face worker errored:', event.message);
-        };
         const facesOptions = this.context.options.faces.backendConfig.mediapipe;
-        await this.send({
-            type: 'init',
-            config: {
-                mediapipeModuleUrl: MEDIAPIPE_MODULE_URL,
-                wasmFilesUrl: facesOptions.wasmFilesUrl,
-                modelAssetPath: facesOptions.modelAssetPath,
+        await this.client.init({
+            mediapipeModuleUrl: MEDIAPIPE_MODULE_URL,
+            wasmFilesUrl: facesOptions.wasmFilesUrl,
+            taskName: 'FaceLandmarker',
+            taskOptions: {
+                baseOptions: {
+                    modelAssetPath: facesOptions.modelAssetPath,
+                    // CPU delegate in the worker. GPU would need an OffscreenCanvas
+                    // surface and MediaPipe's wasm pipeline only spins one up when it
+                    // finds a real DOM canvas, which workers don't have.
+                    delegate: 'CPU',
+                },
+                runningMode: 'IMAGE',
                 numFaces: facesOptions.numFaces,
                 minFaceDetectionConfidence: facesOptions.minFaceDetectionConfidence,
                 minFacePresenceConfidence: facesOptions.minFacePresenceConfidence,
@@ -20149,22 +20282,6 @@ class MediaPipeFaceBackend extends BaseFaceBackend {
                 outputFaceBlendshapes: facesOptions.outputFaceBlendshapes,
                 outputFacialTransformationMatrixes: facesOptions.outputFacialTransformationMatrixes,
             },
-        });
-    }
-    /**
-     * Promise-wrap a single request/response round trip with the worker.
-     * The worker echoes back the request `id` so we can correlate replies
-     * even when multiple detect() calls overlap.
-     */
-    send(payload, transfer = []) {
-        if (!this.worker) {
-            return Promise.reject(new Error('worker not spawned'));
-        }
-        const id = this.nextRequestId++;
-        const worker = this.worker;
-        return new Promise((resolve, reject) => {
-            this.pendingRequests.set(id, { resolve, reject });
-            worker.postMessage({ id, ...payload }, transfer);
         });
     }
 }

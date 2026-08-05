@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 487fbd1
- * @builddate 2026-08-05T21:36:38.695Z
+ * @commitid d0893e6
+ * @builddate 2026-08-05T23:27:53.701Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4605,6 +4605,15 @@ declare class HumansOptions {
         mediapipe: {
             wasmFilesUrl: string;
             modelAssetPath: string;
+            /**
+             * Run inference in a web worker so a detection pass does not stall the
+             * render loop. The worker is limited to the CPU delegate because
+             * MediaPipe only creates a GPU surface for a real DOM canvas, so set
+             * this to false to trade a blocked main thread for GPU inference.
+             * Falls back to the main thread automatically when workers are
+             * unavailable.
+             */
+            useWorker: boolean;
             /**
              * The maximum number of simultaneous human poses/bodies to track.
              */
