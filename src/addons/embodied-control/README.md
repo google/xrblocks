@@ -197,9 +197,9 @@ embodied.applyControl({
 
 ---
 
-## Sample
+## Demo
 
-See `samples/embodied_control/` for a sidebar-driven simulator sample. It
+See `demos/embodied_control/` for a sidebar-driven simulator demo. It
 disables manual simulator controls and runs locomotion, hand motion, and
 pinch-select steps only through `EmbodiedControl`.
 

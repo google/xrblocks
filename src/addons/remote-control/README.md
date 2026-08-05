@@ -138,39 +138,39 @@ In another terminal, start the local relay:
 npx xrblocks-remote-control
 ```
 
-Open the sample:
+Open the demo:
 
 ```text
-http://127.0.0.1:8080/samples/remote_control/
+http://127.0.0.1:8080/demos/remote_control/
 ```
 
 For multiple pages on one relay, open each with a different session:
 
 ```text
-http://127.0.0.1:8080/samples/remote_control/?remoteControlSession=run-1
-http://127.0.0.1:8080/samples/remote_control/?remoteControlSession=run-2
+http://127.0.0.1:8080/demos/remote_control/?remoteControlSession=run-1
+http://127.0.0.1:8080/demos/remote_control/?remoteControlSession=run-2
 ```
 
 Then send commands from a third terminal:
 
 ```bash
-node samples/remote_control/send.mjs observe
-node samples/remote_control/send.mjs get-camera '{"screenshot":true}'
-node samples/remote_control/send.mjs step-forward
-node samples/remote_control/send.mjs get-hands
-node samples/remote_control/send.mjs get-state
-node samples/remote_control/send.mjs screenshot
-node samples/remote_control/send.mjs tool getCamera '{"screenshot":true}'
-node samples/remote_control/send.mjs get-cube
-node samples/remote_control/send.mjs nudge-cube
-node samples/remote_control/send.mjs nudge-cube '{"dx":0.25}'
-node samples/remote_control/send.mjs reset-cube
+node demos/remote_control/send.mjs observe
+node demos/remote_control/send.mjs get-camera '{"screenshot":true}'
+node demos/remote_control/send.mjs step-forward
+node demos/remote_control/send.mjs get-hands
+node demos/remote_control/send.mjs get-state
+node demos/remote_control/send.mjs screenshot
+node demos/remote_control/send.mjs tool getCamera '{"screenshot":true}'
+node demos/remote_control/send.mjs get-cube
+node demos/remote_control/send.mjs nudge-cube
+node demos/remote_control/send.mjs nudge-cube '{"dx":0.25}'
+node demos/remote_control/send.mjs reset-cube
 ```
 
 Target a non-default session with `REMOTE_CONTROL_SESSION`:
 
 ```bash
-REMOTE_CONTROL_SESSION=run-1 node samples/remote_control/send.mjs get-state
+REMOTE_CONTROL_SESSION=run-1 node demos/remote_control/send.mjs get-state
 ```
 
 Each command prints the JSON response. `observe`, `get-camera`, `get-hands`,

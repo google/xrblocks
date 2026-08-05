@@ -1,3 +1,5 @@
+import type {ThinkingLevel} from '@google/genai';
+
 import {Gemini} from '../../../ai/Gemini';
 import {GeminiResponse} from '../../../ai/AITypes';
 import {parseBase64DataURL} from '../../../utils/utils';
@@ -27,7 +29,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     const geminiOptions = this.context.options.objects.backendConfig.gemini;
     return {
       thinkingConfig: {
-        thinkingBudget: 0,
+        thinkingLevel: 'MINIMAL' as ThinkingLevel,
       },
       responseMimeType: 'application/json',
       responseSchema: geminiOptions.responseSchema,

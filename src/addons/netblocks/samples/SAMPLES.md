@@ -34,8 +34,8 @@ action.
 
 ## Integration sample
 
-- **shared room** — `samples/netblocks/index.html` (in the repo root
-  `samples/` folder, alongside the `uiblocks` integration sample)
+- **shared room** — `demos/netblocks/index.html` (in the repo root
+  `demos/` folder)
   Combines presence, shared cubes, emoji RPC, and spatial voice into a
   single demo room.
 

@@ -14,7 +14,7 @@ description: >-
 
 Physics is enabled by giving `Options` the Rapier module; your `Script` then sets up bodies in
 `initPhysics()`. See `samples/advanced/ballpit`, `samples/advanced/splash`, and
-`demos/drone`.
+`samples/advanced/drone`.
 
 ## Enable
 

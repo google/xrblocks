@@ -1077,8 +1077,12 @@ class InteractionPlayground extends xb.Script {
   }
 
   addModeOverlay() {
-    const modeBadge = createPanel(
-      {
+    this.modeOverlay = new xb.UIOverlay({
+      pointerEvents: 'none',
+      style: {
+        position: 'absolute',
+        top: 24,
+        left: 24,
         padding: 16,
         flexDirection: 'row',
         gap: 12,
@@ -1087,24 +1091,14 @@ class InteractionPlayground extends xb.Script {
         borderColor: raycastMode === 'select' ? '#fbbf24' : '#22d3ee',
         borderRadius: 18,
       },
-      {pointerEvents: 'none'}
-    );
-    modeBadge.add(
-      createIcon('radar', {width: 32, height: 32, color: UI_THEME.accent}),
-      createText(`RAYCAST: ${raycastMode.toUpperCase()}`, {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: UI_THEME.text,
-      })
-    );
-    this.modeOverlay = new xb.UIOverlay({
-      pointerEvents: 'none',
-      style: {
-        alignItems: 'flex-start',
-        justifyContent: 'flex-start',
-        padding: 24,
-      },
-      children: [modeBadge],
+      children: [
+        createIcon('radar', {width: 32, height: 32, color: UI_THEME.accent}),
+        createText(`RAYCAST: ${raycastMode.toUpperCase()}`, {
+          fontSize: 24,
+          fontWeight: 'bold',
+          color: UI_THEME.text,
+        }),
+      ],
     });
     this.modeOverlay.name = 'Raycast mode overlay';
     this.add(this.modeOverlay);

@@ -7,4 +7,4 @@ or in the simulator.
 
 For gesture configuration details, see https://xrblocks.github.io/docs/manual/HandGestures/.
 
-For an on-screen HUD and richer feedback, see `samples/gestures_heuristic/`.
+For an on-screen HUD and richer feedback, see `demos/gestures_heuristic/`.
