@@ -145,6 +145,13 @@ const leftWrist = poses[0]?.getJointPosition(xb.PoseJointName.LeftWrist);
 permission. Configure cadence and MediaPipe thresholds through
 `options.world.humans`.
 
+Inference runs in a web worker by default so a detection pass does not stall
+the render loop. Workers have no DOM canvas for MediaPipe to draw on, so the
+worker uses the CPU delegate; set
+`options.world.humans.backendConfig.mediapipe.useWorker = false` to run on the
+main thread with the GPU delegate instead. When the browser has no worker
+support the SDK falls back to the main thread on its own.
+
 ## Face landmark detection
 
 Face detection returns 478 landmarks per face, optional ARKit-style

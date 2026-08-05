@@ -158,12 +158,14 @@ const nose = faces[0]?.getLandmarkPosition(xb.FaceLandmarkName.NoseTip);
 const jawOpen = faces[0]?.getBlendshape('jawOpen');
 ```
 
-Human detection loads `@mediapipe/tasks-vision` through the app. Face detection
-runs MediaPipe in a worker using the backend's configured CDN URL; its TypeScript
-types still come from `@mediapipe/tasks-vision`. Face projection can use
-`three-mesh-bvh` and falls back to Three.js raycasting if it is absent. Results
-may be empty while camera or depth data warms up. Continuous polling uses
-`start(client)` / `stop(client)` and the matching
+Human and face detection both run MediaPipe in a worker using the backend's
+configured CDN URL; their TypeScript types still come from
+`@mediapipe/tasks-vision`. Human detection also imports that package directly
+for its main-thread fallback, which kicks in when the browser has no worker
+support or `options.world.humans.backendConfig.mediapipe.useWorker` is false.
+Face projection can use `three-mesh-bvh` and falls back to Three.js raycasting
+if it is absent. Results may be empty while camera or depth data warms up.
+Continuous polling uses `start(client)` / `stop(client)` and the matching
 `options.world.humans.pollingIntervalMs` or
 `options.world.faces.pollingIntervalMs`.
 
