@@ -114,21 +114,21 @@ describe('AnchorManager capability', () => {
 
   it('becomes persistent once a capable frame is seen', () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     expect(manager.capability).toBe('persistent');
   });
 
   it('becomes session-only when the session cannot restore', () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv({canRestore: false});
+    const {frame} = fakeEnv({canRestore: false});
     manager.update(0, frame);
     expect(manager.capability).toBe('session-only');
   });
 
   it('warns at most once about an unsupported platform', () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv({canCreate: false});
+    const {frame} = fakeEnv({canCreate: false});
     manager.update(0, frame);
     manager.update(1, frame);
     manager.update(2, frame);
@@ -146,7 +146,7 @@ describe('AnchorManager.create', () => {
 
   it('returns null when the platform cannot create anchors', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv({canCreate: false});
+    const {frame} = fakeEnv({canCreate: false});
     manager.update(0, frame);
     await expect(manager.create(POSE, 'sofa')).resolves.toBeNull();
   });
@@ -158,7 +158,7 @@ describe('AnchorManager.create', () => {
 
   it('creates and tracks an anchor', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'sofa');
     expect(tracked).not.toBeNull();
@@ -168,7 +168,7 @@ describe('AnchorManager.create', () => {
 
   it('records the error and returns null when creation rejects', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     (frame.createAnchor as unknown as ReturnType<typeof vi.fn>) = vi
       .fn()
       .mockRejectedValue(new Error('boom'));
@@ -192,7 +192,7 @@ describe('AnchorManager.create', () => {
 
   it('gives each anchor a distinct id', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     const a = await manager.create(POSE, 'a');
     const b = await manager.create(POSE, 'b');
@@ -207,7 +207,7 @@ describe('AnchorManager persistence', () => {
 
   it('saves a handle when the platform supports persistence', async () => {
     const {manager, store} = makeManager();
-    const {frame, session} = fakeEnv({persistentUuid: 'uuid-abc'});
+    const {frame} = fakeEnv({persistentUuid: 'uuid-abc'});
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'lamp');
     await expect(manager.persist(tracked!.id)).resolves.toBe(true);
@@ -217,7 +217,7 @@ describe('AnchorManager persistence', () => {
 
   it('does not save when the platform is session-only', async () => {
     const {manager, store} = makeManager();
-    const {frame, session} = fakeEnv({canRestore: false});
+    const {frame} = fakeEnv({canRestore: false});
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'lamp');
     await expect(manager.persist(tracked!.id)).resolves.toBe(false);
@@ -226,7 +226,7 @@ describe('AnchorManager persistence', () => {
 
   it('does not save when the anchor has no persistent handle api', async () => {
     const {manager, store} = makeManager();
-    const {frame, session} = fakeEnv({hasPersistentHandle: false});
+    const {frame} = fakeEnv({hasPersistentHandle: false});
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'lamp');
     await expect(manager.persist(tracked!.id)).resolves.toBe(false);
@@ -235,14 +235,14 @@ describe('AnchorManager persistence', () => {
 
   it('returns false for an unknown id', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     await expect(manager.persist('missing')).resolves.toBe(false);
   });
 
   it('records the error when requesting a handle rejects', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'lamp');
     (
@@ -261,7 +261,7 @@ describe('AnchorManager.restoreAll', () => {
   it('reports unsupported without touching the store', async () => {
     const store = memoryStore([{uuid: 'a', label: 'a', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame, session} = fakeEnv({canRestore: false});
+    const {frame} = fakeEnv({canRestore: false});
     manager.update(0, frame);
     const results = await manager.restoreAll();
     expect(results.map((r) => r.status)).toEqual(['unsupported']);
@@ -271,7 +271,7 @@ describe('AnchorManager.restoreAll', () => {
   it('restores a saved handle', async () => {
     const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     const results = await manager.restoreAll();
     expect(results.map((r) => r.status)).toEqual(['restored']);
@@ -282,7 +282,7 @@ describe('AnchorManager.restoreAll', () => {
   it('reports not-found when the platform rejects the handle', async () => {
     const store = memoryStore([{uuid: 'a', label: 'a', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame, session} = fakeEnv({
+    const {frame} = fakeEnv({
       restoreImpl: async () => {
         throw new Error('cannot localise');
       },
@@ -299,7 +299,7 @@ describe('AnchorManager.restoreAll', () => {
       {uuid: 'c', label: 'c', createdAt: 3},
     ]);
     const {manager} = makeManager(store);
-    const {frame, session} = fakeEnv({
+    const {frame} = fakeEnv({
       restoreImpl: async (uuid: string) => {
         if (uuid === 'bad') throw new Error('cannot localise');
         return fakeAnchor();
@@ -324,7 +324,7 @@ describe('AnchorManager.restoreAll', () => {
       }))
     );
     const {manager} = makeManager(store);
-    const {frame, session} = fakeEnv({
+    const {frame} = fakeEnv({
       restoreImpl: async (uuid: string) => {
         if (uuid.endsWith('3')) throw new Error('nope');
         return fakeAnchor();
@@ -340,7 +340,7 @@ describe('AnchorManager.restoreAll', () => {
 
   it('returns an empty list when nothing is stored', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     await expect(manager.restoreAll()).resolves.toEqual([]);
   });
@@ -353,7 +353,7 @@ describe('AnchorManager lifecycle', () => {
 
   it('delete removes the anchor and releases it', async () => {
     const {manager} = makeManager();
-    const {frame, session} = fakeEnv();
+    const {frame} = fakeEnv();
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'sofa');
     manager.delete(tracked!.id);
@@ -363,7 +363,7 @@ describe('AnchorManager lifecycle', () => {
 
   it('delete also forgets the stored handle', async () => {
     const {manager, store} = makeManager();
-    const {frame, session} = fakeEnv({persistentUuid: 'uuid-x'});
+    const {frame} = fakeEnv({persistentUuid: 'uuid-x'});
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'sofa');
     await manager.persist(tracked!.id);
@@ -396,7 +396,7 @@ describe('AnchorManager lifecycle', () => {
 
   it('dispose clears tracked anchors without clearing storage', async () => {
     const {manager, store} = makeManager();
-    const {frame, session} = fakeEnv({persistentUuid: 'uuid-y'});
+    const {frame} = fakeEnv({persistentUuid: 'uuid-y'});
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'sofa');
     await manager.persist(tracked!.id);
@@ -407,7 +407,7 @@ describe('AnchorManager lifecycle', () => {
 
   it('forget clears saved handles', async () => {
     const {manager, store} = makeManager();
-    const {frame, session} = fakeEnv({persistentUuid: 'uuid-z'});
+    const {frame} = fakeEnv({persistentUuid: 'uuid-z'});
     manager.update(0, frame);
     const tracked = await manager.create(POSE, 'sofa');
     await manager.persist(tracked!.id);

@@ -6,6 +6,7 @@ import {placeObjectAtIntersectionFacingTarget} from '../utils/ObjectPlacement';
 
 import {ObjectDetector} from './objects/ObjectDetector';
 import {PlaneDetector} from './planes/PlaneDetector';
+import {AnchorManager} from './anchors/AnchorManager';
 import {WorldOptions} from './WorldOptions';
 import {MeshDetector} from './mesh/MeshDetector';
 import {SoundDetector} from './sounds/SoundDetector';
@@ -53,6 +54,7 @@ export class World extends Script {
    * Not recommended for anchoring.
    */
   planes?: PlaneDetector;
+  anchors?: AnchorManager;
 
   /**
    * The object recognition module instance. Null if not enabled.
@@ -142,6 +144,11 @@ export class World extends Script {
     if (this.options.meshes.enabled) {
       this.meshes = new MeshDetector();
       this.add(this.meshes);
+    }
+
+    if (this.options.anchors.enabled) {
+      this.anchors = new AnchorManager();
+      this.add(this.anchors);
     }
 
     if (this.options.sounds.enabled) {
