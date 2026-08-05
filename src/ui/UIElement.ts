@@ -66,6 +66,7 @@ export interface UIStyle extends UIStateStyle {
   /** Like CSS: numbers multiply fontSize; use px or % strings for explicit units. */
   lineHeight?: UILineHeight;
   textAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
   innerShadowColor?: Paint;
   innerShadowBlur?: number;
   innerShadowPosition?: UIVector2;
@@ -80,7 +81,7 @@ export interface UIStyle extends UIStateStyle {
   display?: 'flex' | 'none';
   overflow?: 'visible' | 'hidden';
   objectFit?: 'contain' | 'cover' | 'fill';
-  whiteSpace?: 'normal' | 'nowrap';
+  whiteSpace?: 'normal' | 'nowrap' | 'pre-line';
   textOverflow?: 'clip' | 'ellipsis';
   ':hover'?: UIStateStyle;
   ':active'?: UIStateStyle;
@@ -157,6 +158,7 @@ const STYLE_KEYS = new Set<keyof UIStyle>([
   'fontWeight',
   'lineHeight',
   'textAlign',
+  'verticalAlign',
   'innerShadowColor',
   'innerShadowBlur',
   'innerShadowPosition',
@@ -272,9 +274,10 @@ const ENUM_VALUES: Partial<Record<keyof UIStyle, readonly unknown[]>> = {
   display: ['flex', 'none'],
   fontWeight: ['normal', 'medium', 'bold'],
   textAlign: ['left', 'center', 'right'],
+  verticalAlign: ['top', 'middle', 'bottom'],
   overflow: ['visible', 'hidden'],
   objectFit: ['contain', 'cover', 'fill'],
-  whiteSpace: ['normal', 'nowrap'],
+  whiteSpace: ['normal', 'nowrap', 'pre-line'],
   textOverflow: ['clip', 'ellipsis'],
 };
 

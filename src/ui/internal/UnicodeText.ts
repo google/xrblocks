@@ -3,8 +3,7 @@ import {Image, type ImageProperties} from '@pmndrs/uikit';
 import * as THREE from 'three';
 
 type TextAlign = 'left' | 'center' | 'right';
-type WhiteSpace = 'normal' | 'nowrap';
-type TextOverflow = 'clip' | 'ellipsis';
+type WhiteSpace = 'normal' | 'nowrap' | 'pre-line';
 
 export interface UnicodeTextProperties extends Record<string, unknown> {
   text: string;
@@ -14,7 +13,6 @@ export interface UnicodeTextProperties extends Record<string, unknown> {
   lineHeight?: number | `${number}px` | `${number}%`;
   textAlign?: TextAlign;
   whiteSpace?: WhiteSpace;
-  textOverflow?: TextOverflow;
 }
 
 interface TextMetricsStyle {
@@ -23,7 +21,6 @@ interface TextMetricsStyle {
   lineHeight: number;
   textAlign: TextAlign;
   whiteSpace: WhiteSpace;
-  textOverflow: TextOverflow;
 }
 
 interface TextLayout {
@@ -133,6 +130,8 @@ export class UnicodeText extends Image {
       this.canvas.width !== pixelWidth ||
       this.canvas.height !== pixelHeight
     ) {
+      // Force Three.js to allocate matching GPU storage before the next upload.
+      this.canvasTexture.dispose();
       this.canvas.width = pixelWidth;
       this.canvas.height = pixelHeight;
     }
@@ -150,21 +149,14 @@ export class UnicodeText extends Image {
       style,
       width
     );
-    const lines = fitLines(
-      this.context,
-      layout.lines,
-      width,
-      Math.max(1, Math.floor(height / style.lineHeight)),
-      style.textOverflow
-    );
     const x =
       style.textAlign === 'center'
         ? width / 2
         : style.textAlign === 'right'
           ? width
           : 0;
-    for (let index = 0; index < lines.length; index++) {
-      this.context.fillText(lines[index], x, index * style.lineHeight);
+    for (let index = 0; index < layout.lines.length; index++) {
+      this.context.fillText(layout.lines[index], x, index * style.lineHeight);
     }
     this.canvasTexture.needsUpdate = true;
     this.root.peek().requestRender?.();
@@ -183,7 +175,6 @@ function imageProperties(
     lineHeight: _lineHeight,
     textAlign: _textAlign,
     whiteSpace: _whiteSpace,
-    textOverflow: _textOverflow,
     ...layoutProperties
   } = properties;
   return {
@@ -202,7 +193,6 @@ function metricsStyle(properties: UnicodeTextProperties): TextMetricsStyle {
     lineHeight: resolveLineHeight(properties.lineHeight, fontSize),
     textAlign: properties.textAlign ?? 'left',
     whiteSpace: properties.whiteSpace ?? 'normal',
-    textOverflow: properties.textOverflow ?? 'clip',
   };
 }
 
@@ -245,12 +235,14 @@ function layoutText(
   style: TextMetricsStyle,
   availableWidth: number
 ): TextLayout {
+  const paragraphs =
+    style.whiteSpace === 'pre-line'
+      ? text.split(/\r?\n/u).map((line) => line.replace(/[\t ]+/gu, ' ').trim())
+      : [text.replace(/\s+/gu, ' ').trim()];
   const lines =
     style.whiteSpace === 'nowrap'
-      ? [text.replace(/\s+/gu, ' ').trim()]
-      : text
-          .split(/\r?\n/u)
-          .flatMap((line) => wrapLine(context, line, availableWidth));
+      ? paragraphs
+      : paragraphs.flatMap((line) => wrapLine(context, line, availableWidth));
   const width = lines.reduce(
     (maximum, line) => Math.max(maximum, context.measureText(line).width),
     0
@@ -298,28 +290,6 @@ function wrapLine(
   }
   if (current || lines.length === 0) lines.push(current.trimEnd());
   return lines;
-}
-
-function fitLines(
-  context: CanvasRenderingContext2D,
-  lines: string[],
-  width: number,
-  maximumLines: number,
-  overflow: TextOverflow
-): string[] {
-  if (lines.length <= maximumLines) return lines;
-  const visible = lines.slice(0, maximumLines);
-  if (overflow !== 'ellipsis') return visible;
-  const suffix = '…';
-  let finalLine = visible[visible.length - 1];
-  while (
-    finalLine &&
-    context.measureText(`${finalLine}${suffix}`).width > width
-  ) {
-    finalLine = graphemes(finalLine).slice(0, -1).join('');
-  }
-  visible[visible.length - 1] = `${finalLine}${suffix}`;
-  return visible;
 }
 
 function widestCharacter(

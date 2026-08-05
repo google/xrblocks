@@ -63,6 +63,11 @@ columns. All non-root UI elements must be under one card or overlay.
 Styles support flex layout, spacing, text, borders, solid or gradient paint,
 shadows, and `:hover`, `:active`, and `:disabled` states.
 
+For transcripts or multilingual text, use `UIText` directly. It selects its
+Unicode glyph renderer internally without replacing the mounted layout node.
+Use `whiteSpace: 'pre-line'`, `verticalAlign: 'bottom'`, a fixed `height`, and
+`overflow: 'hidden'` when the newest wrapped lines must remain visible.
+
 After a mounted layout completes, call `xb.ui.validate(root)` to check for
 overflow, clipped text, invalid layout, and overlay content outside the
 viewport.

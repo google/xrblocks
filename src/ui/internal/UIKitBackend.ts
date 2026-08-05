@@ -6,7 +6,6 @@ import {
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
-import {signal} from '@preact/signals-core';
 import * as THREE from 'three';
 
 import {UIButton} from '../components/UIButton';
@@ -29,8 +28,7 @@ import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {UICardEdge} from './UICardEdge';
-import {usesUnicodeTextRenderer} from './TextRendererSelection';
-import {UnicodeText, type UnicodeTextProperties} from './UnicodeText';
+import {AdaptiveText, type AdaptiveTextProperties} from './AdaptiveText';
 import type {
   UIBackend,
   UIHitMapping,
@@ -233,16 +231,15 @@ function createNode(
   let node: THREE.Object3D;
   let blocksHits = true;
   let applyPresentation: (state: UIPresentationState) => void;
-  let applyContent: (() => void) | undefined;
+  let applyContent: ((state: UIPresentationState) => void) | undefined;
   let edge: UICardEdge | undefined;
 
   if (kind === 'text') {
     const text = element as UIText;
-    const textContent = signal(text.text);
     const propertiesFor = (state: UIPresentationState) => {
       const nextStyle = styleFor(state);
       return {
-        text: textContent,
+        text: text.text,
         color:
           (nextStyle.color as THREE.ColorRepresentation | undefined) ??
           theme.colors.text,
@@ -250,25 +247,15 @@ function createNode(
         pointerEvents: element.xb?.pointerEvents ?? 'auto',
       };
     };
-    if (usesUnicodeTextRenderer(text)) {
-      const unicodePropertiesFor = (state: UIPresentationState) => ({
-        ...propertiesFor(state),
-        text: text.text,
-      });
-      const textNode = new UnicodeText(
-        unicodePropertiesFor(presentation) as UnicodeTextProperties
+    const textNode = new AdaptiveText(
+      propertiesFor(presentation) as AdaptiveTextProperties
+    );
+    node = textNode;
+    applyPresentation = (state) =>
+      textNode.updateTextProperties(
+        propertiesFor(state) as AdaptiveTextProperties
       );
-      node = textNode;
-      applyPresentation = (state) =>
-        textNode.setTextProperties(
-          unicodePropertiesFor(state) as UnicodeTextProperties
-        );
-    } else {
-      const textNode = new Text(propertiesFor(presentation));
-      node = textNode;
-      applyPresentation = (state) =>
-        textNode.resetProperties(propertiesFor(state));
-    }
+    applyContent = applyPresentation;
   } else if (kind === 'image') {
     const image = element as UIImage;
     const propertiesFor = (state: UIPresentationState) => ({
@@ -383,7 +370,7 @@ function createNode(
     const nextPointerEvents = element.xb?.pointerEvents;
     if (nextContentRevision !== contentRevision) {
       contentRevision = nextContentRevision;
-      applyContent?.();
+      applyContent?.(state);
     }
     if (
       nextRevision !== revision ||

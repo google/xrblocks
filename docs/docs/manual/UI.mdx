@@ -102,3 +102,27 @@ mounted layout is available.
 - `ModelViewer`: model display and manipulation surface
 
 Every UI component and public UI type is exported from `xrblocks`.
+
+## Text layout
+
+`UIText` automatically uses a system-font canvas when its content contains
+glyphs that are not available in UIkit's default atlas. The mounted layout
+node stays stable when dynamic text changes between native and Unicode
+rendering.
+
+Use `whiteSpace: 'pre-line'` to preserve explicit line breaks. A fixed-height
+text viewport can keep its newest lines visible by combining bottom alignment
+with clipped overflow:
+
+```js
+const transcript = new xb.UIText({
+  text: 'You: Hello\n\nGemini: 你好',
+  style: {
+    width: '100%',
+    height: 240,
+    whiteSpace: 'pre-line',
+    verticalAlign: 'bottom',
+    overflow: 'hidden',
+  },
+});
+```
