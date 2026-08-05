@@ -78,10 +78,18 @@ class AnchorNotesDemo extends xb.Script {
 
     camera.getWorldPosition(this.scratchPosition);
     camera.getWorldQuaternion(this.scratchQuaternion);
+    // Pinning twice without moving would put both notes at the same point and
+    // render them on top of each other, so fan them out across the view.
+    const index = this.notes.size;
+    const spread = new THREE.Vector3(
+      ((index % 3) - 1) * 0.42,
+      Math.floor(index / 3) * -0.3,
+      0
+    ).applyQuaternion(this.scratchQuaternion);
     const forward = new THREE.Vector3(0, 0, -CARD_DISTANCE).applyQuaternion(
       this.scratchQuaternion
     );
-    const target = this.scratchPosition.clone().add(forward);
+    const target = this.scratchPosition.clone().add(forward).add(spread);
 
     const pose = new XRRigidTransform(
       {x: target.x, y: target.y, z: target.z},

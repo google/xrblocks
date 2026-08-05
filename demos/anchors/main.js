@@ -59,7 +59,15 @@ class AnchorsDemo extends xb.Script {
     const forward = new THREE.Vector3(0, 0, -0.8).applyQuaternion(
       this.scratchQuaternion
     );
-    const target = this.scratchPosition.clone().add(forward);
+    // Dropping twice from the same spot would stack markers exactly, so fan
+    // them out enough to stay individually visible.
+    const index = this.markers.size;
+    const spread = new THREE.Vector3(
+      ((index % 3) - 1) * 0.32,
+      Math.floor(index / 3) * -0.24,
+      0
+    ).applyQuaternion(this.scratchQuaternion);
+    const target = this.scratchPosition.clone().add(forward).add(spread);
 
     const pose = new XRRigidTransform(
       {x: target.x, y: target.y, z: target.z},
