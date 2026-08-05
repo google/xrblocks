@@ -3,8 +3,7 @@ import {loadLiteRt, setWebGpuDevice} from '@litertjs/core';
 import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
 // TensorFlow.js + WebGPU backend
 import * as tf from '@tensorflow/tfjs';
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
+import '@tensorflow/tfjs-backend-webgpu';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -84,9 +83,11 @@ export class CustomGestureRecognizer {
 
       await this.loadModel(liteRt);
 
-      if (this.model) {
-        console.log('Model Details: ', this.model.getInputDetails());
+      if (!this.model) {
+        this.modelState = 'Error';
+        return;
       }
+      console.log('Model Details: ', this.model.getInputDetails());
       this.modelState = 'Ready';
     } catch (error) {
       this.modelState = 'Error';
@@ -110,13 +111,16 @@ export class CustomGestureRecognizer {
       return UNKNOWN_GESTURE;
     }
 
+    let tensor;
+    let tensorReshaped;
+    let result;
     try {
       const relativeBoneAngles = xb.getRelativeBoneAngles(context);
-      const tensor = tf.tensor1d(relativeBoneAngles);
-      const tensorReshaped = tensor.reshape([1, relativeBoneAngles.length, 1]);
-      const result = runWithTfjsTensors(this.model, tensorReshaped);
+      tensor = tf.tensor1d(relativeBoneAngles);
+      tensorReshaped = tensor.reshape([1, relativeBoneAngles.length, 1]);
+      result = runWithTfjsTensors(this.model, tensorReshaped);
 
-      const scores = result[0].as1D().arraySync();
+      const scores = result[0].dataSync();
       if (scores.length == 7) {
         let maxScore = scores[0];
         let idx = 0;
@@ -130,6 +134,10 @@ export class CustomGestureRecognizer {
       }
     } catch (error) {
       console.error('Error:', error);
+    } finally {
+      tensor?.dispose();
+      tensorReshaped?.dispose();
+      result?.forEach((output) => output.dispose());
     }
     return UNKNOWN_GESTURE;
   }
@@ -170,112 +178,131 @@ export class CustomGestureRecognizer {
  * A demo scene that uses a custom ML model to detect and display static hand
  * gestures for both hands in real-time.
  */
-export class CustomGestureDemo extends xb.Script {
-  constructor() {
+export class HandGestureDemo extends xb.Script {
+  constructor(gestureRecognizer) {
     super();
+    this.gestureRecognizer = gestureRecognizer;
+    this.modelState = gestureRecognizer.modelState;
 
-    // Initializes UI.
-    {
-      // Make a root panel>grid>row>controlPanel>grid
-      const panel = new xb.SpatialPanel({backgroundColor: '#00000000'});
-      this.add(panel);
+    const leftHand = this.createHandPanel('Left');
+    this.leftHandImage = leftHand.image;
+    this.leftHandLabel = leftHand.label;
+    const rightHand = this.createHandPanel('Right');
+    this.rightHandImage = rightHand.image;
+    this.rightHandLabel = rightHand.label;
 
-      const grid = panel.addGrid();
+    const handRow = new xb.UIPanel({
+      style: {
+        width: '100%',
+        flexDirection: 'row',
+        gap: 20,
+        alignItems: 'stretch',
+      },
+      children: [leftHand.panel, rightHand.panel],
+    });
 
-      // Show user data
-      const dataRow = grid.addRow({weight: 0.3});
-      // Left hand image and text
-      const leftCol = dataRow.addCol({weight: 0.5});
-      const leftHandRow = leftCol.addRow({weight: 0.5});
-      // Indentation
-      leftHandRow.addCol({weight: 0.4});
-      this.leftHandImage = leftHandRow.addCol({weight: 0.2}).addImage({
-        src: GESTURE_IMAGES[0],
-        scaleFactor: 0.3,
-      });
-      this.leftHandLabel = leftCol.addRow({weight: 0.5}).addText({
-        text: 'Loading...',
-        fontColor: '#ffffff',
-      });
-      const rightCol = dataRow.addCol({weight: 0.5});
-      const rightHandRow = rightCol.addRow({weight: 0.5});
-      // Indentation
-      rightHandRow.addCol({weight: 0.4});
-      // Image
-      this.rightHandImage = rightHandRow.addCol({weight: 0.2}).addImage({
-        src: GESTURE_IMAGES[0],
-        scaleFactor: 0.3,
-      });
-      this.rightHandLabel = rightCol.addRow({weight: 0.4}).addText({
-        text: 'Loading...',
-        fontColor: '#ffffff',
-      });
+    const examples = new xb.UIPanel({
+      style: {
+        width: '100%',
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: 12,
+      },
+      children: GESTURE_IMAGES.slice(1, 8).map(
+        (src, index) =>
+          new xb.UIImage({
+            src,
+            ariaLabel: GESTURE_LABELS[index + 1],
+            style: {
+              width: 74,
+              height: 74,
+              objectFit: 'contain',
+              backgroundColor: '#ffffff12',
+              borderRadius: 14,
+            },
+          })
+      ),
+    });
 
-      // Indentation
-      grid.addRow({weight: 0.1});
+    this.modelStatus = new xb.UIText({
+      text: 'Loading gesture model...',
+      style: {fontSize: 18, color: '#b8c2d9', textAlign: 'center'},
+    });
 
-      // Control row
-      const controlRow = grid.addRow({weight: 0.6});
-      const ctrlPanel = controlRow.addPanel({backgroundColor: '#00000055'});
-      const ctrlGrid = ctrlPanel.addGrid();
-      {
-        // Left indentation
-        ctrlGrid.addCol({weight: 0.1});
-
-        // Middle column
-        const midColumn = ctrlGrid.addCol({weight: 0.8});
-
-        midColumn.addRow({weight: 0.1});
-        midColumn.addRow({weight: 0.2}).addText({
-          text: 'Perform one of these gestures',
-          fontColor: '#ffffff',
-        });
-        midColumn
-          .addRow({weight: 0.2})
-          .addText({text: '(either hand):', fontColor: '#ffffff'});
-        const gesturesRow = midColumn.addRow({weight: 0.5});
-        gesturesRow.addCol({weight: 0.1});
-        gesturesRow
-          .addCol({weight: 0.1})
-          .addImage({src: 'images/fist.png', scaleFactor: 0.3});
-        gesturesRow
-          .addCol({weight: 0.1})
-          .addImage({src: 'images/thumb.png', scaleFactor: 0.3});
-        gesturesRow
-          .addCol({weight: 0.1})
-          .addImage({src: 'images/thumb_down.png', scaleFactor: 0.3});
-        gesturesRow
-          .addCol({weight: 0.1})
-          .addImage({src: 'images/point.png', scaleFactor: 0.3});
-        gesturesRow
-          .addCol({weight: 0.1})
-          .addImage({src: 'images/victory.png', scaleFactor: 0.3});
-        gesturesRow
-          .addCol({weight: 0.1})
-          .addImage({src: 'images/rock.png', scaleFactor: 0.3});
-        gesturesRow
-          .addCol({weight: 0.1})
-          .addImage({src: 'images/shaka.png', scaleFactor: 0.3});
-
-        // Vertical alignment on the description text element.
-        midColumn.addRow({weight: 0.1});
-
-        // Right indentation.
-        ctrlGrid.addCol({weight: 0.1});
-      }
-
-      const orbiter = ctrlGrid.addOrbiter();
-      orbiter.addExitButton();
-
-      panel.updateLayouts();
-
-      this.panel = panel;
-    }
+    this.card = new xb.UICard({
+      size: {width: 1.0, height: 0.68},
+      manipulation: true,
+      edge: {scale: true},
+      style: {
+        padding: 34,
+        gap: 20,
+        backgroundColor: '#111827ee',
+        borderColor: '#5eead4',
+        borderWidth: 3,
+        borderRadius: 32,
+      },
+      children: [
+        new xb.UIText({
+          text: 'HAND GESTURES',
+          style: {
+            fontSize: 22,
+            fontWeight: 'bold',
+            color: '#5eead4',
+            textAlign: 'center',
+          },
+        }),
+        handRow,
+        new xb.UIText({
+          text: 'Try one of these gestures with either hand',
+          style: {fontSize: 22, color: '#ffffff', textAlign: 'center'},
+        }),
+        examples,
+        this.modelStatus,
+      ],
+    });
+    this.card.name = 'Hand gesture recognition card';
+    this.add(this.card);
 
     this.activeGestures = {
       left: new Map(),
       right: new Map(),
     };
+  }
+
+  createHandPanel(hand) {
+    const image = new xb.UIImage({
+      src: GESTURE_IMAGES[0],
+      ariaLabel: `${hand} hand gesture`,
+      style: {width: 130, height: 130, objectFit: 'contain'},
+    });
+    const label = new xb.UIText({
+      text: 'NONE',
+      style: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        color: '#ffffff',
+        textAlign: 'center',
+      },
+    });
+    const panel = new xb.UIPanel({
+      style: {
+        flexGrow: 1,
+        padding: 18,
+        gap: 8,
+        alignItems: 'center',
+        backgroundColor: '#ffffff0d',
+        borderRadius: 22,
+      },
+      children: [
+        new xb.UIText({
+          text: hand.toUpperCase(),
+          style: {fontSize: 18, color: '#94a3b8', textAlign: 'center'},
+        }),
+        image,
+        label,
+      ],
+    });
+    return {panel, image, label};
   }
 
   init() {
@@ -284,6 +311,7 @@ export class CustomGestureDemo extends xb.Script {
     const light = new THREE.DirectionalLight(0xffffff, 1.5);
     light.position.set(0, 4, 0);
     this.add(light);
+    this.card.position.set(0, xb.user.height + 0.05, -1.35);
 
     const gestures = xb.core.gestureRecognition;
     if (!gestures) return;
@@ -319,11 +347,23 @@ export class CustomGestureDemo extends xb.Script {
     const label = GESTURE_LABELS[index >= 0 ? index : 0];
 
     if (hand === 'left') {
-      this.leftHandImage.load(image);
-      this.leftHandLabel.setText(label);
+      this.leftHandImage.src = image;
+      this.leftHandLabel.text = label;
     } else {
-      this.rightHandImage.load(image);
-      this.rightHandLabel.setText(label);
+      this.rightHandImage.src = image;
+      this.rightHandLabel.text = label;
+    }
+  }
+
+  update() {
+    if (this.modelState === this.gestureRecognizer.modelState) return;
+    this.modelState = this.gestureRecognizer.modelState;
+    if (this.modelState === 'Ready') {
+      this.modelStatus.text = 'Model ready - Move your hands into view';
+      this.modelStatus.style.color = '#5eead4';
+    } else if (this.modelState === 'Error') {
+      this.modelStatus.text = 'The gesture model could not load';
+      this.modelStatus.style.color = '#fb7185';
     }
   }
 
