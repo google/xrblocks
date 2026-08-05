@@ -57,11 +57,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   );
 
   const options = new xb.Options();
-  // Depth mesh: used by VRMAvatarScript.onSelectEnd to pick a walk target on the
-  // real-world floor. The mesh is invisible (xrDepthMeshOptions) and downsampled
-  // for raycasts, so it's cheap.
   options.enableDepth();
+  options.enableReticles();
+  options.reticles.projectOnDepthMesh = true;
   options.setAppTitle('VRM Avatar Companion');
+  options.setAppDescription(
+    'Point at a detected floor surface and release Select to move the avatar.'
+  );
 
   await xb.init(options);
 });

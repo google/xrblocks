@@ -2,10 +2,10 @@ import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import * as xb from 'xrblocks';
 
-import {GNMControls} from '../../../demos/gnm/GNMControls.js';
-import {GNMHeadModel} from '../../../demos/gnm/GNMModel.js';
-import {GNMScene} from '../../../demos/gnm/GNMScene.js';
-import {GNMSamplers} from '../../../demos/gnm/SemanticSampler.js';
+import {GNMControls} from './GNMControls.js';
+import {GNMHeadModel} from './GNMModel.js';
+import {GNMScene} from './GNMScene.js';
+import {GNMSamplers} from './SemanticSampler.js';
 import {GNMSpatialUI} from './GNMSpatialUI.js';
 
 const CDN_ASSETS_BASE =

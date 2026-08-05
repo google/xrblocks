@@ -182,75 +182,12 @@ class ContextBugtestScene extends xb.Script {
   }
 
   createContextCard() {
-    const card = new xb.UICard({
-      size: {width: 0.72, height: 0.42},
-      manipulation: {
-        actions: {translate: {faceCamera: true}},
-        handle: {action: xb.ManipulationAction.Translate},
-      },
-      edge: true,
-    });
-    card.name = 'UIBlocks Debug Card';
-    card.position.set(0, xb.user.height + 0.05, -1.32);
-    this.add(card);
-
-    const panel = new xb.UIPanel({
-      style: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#0a0e12',
-        borderWidth: 3,
-        borderColor: '#42d9ff',
-        borderRadius: 32,
-        padding: 28,
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 24,
-      },
-    });
-    panel.name = 'UIBlocks Debug Panel';
-    card.add(panel);
-
-    panel.add(
-      new xb.UIText({
-        text: 'UIBlocks Card',
-        style: {
-          fontSize: 44,
-          fontWeight: 'bold',
-          color: '#42d9ff',
-        },
-      })
-    );
-    panel.add(
-      new xb.UIText({
-        text: 'draggable semantic surface',
-        style: {
-          fontSize: 28,
-          color: 'white',
-          textAlign: 'center',
-        },
-      })
-    );
     const actionButton = new xb.UIButton({
       label: 'Ping',
       onClick: () => {
         console.log('UIBlocks debug action clicked');
       },
-      style: {
-        width: 260,
-        height: 72,
-        backgroundColor: '#245a6a',
-        borderWidth: 2,
-        borderColor: '#7cecff',
-        borderRadius: 24,
-        justifyContent: 'center',
-        alignItems: 'center',
-        color: '#ffffff',
-        fontSize: 30,
-        fontWeight: 'bold',
-        textAlign: 'center',
-      },
+      style: {width: 260},
     });
     actionButton.name = 'UIBlocks Action Button';
     actionButton.userData.semantic = {
@@ -260,7 +197,34 @@ class ContextBugtestScene extends xb.Script {
       source: 'uiblocks',
       traits: ['selectable'],
     };
-    panel.add(actionButton);
+
+    const card = new xb.UICard({
+      size: {width: 0.72, height: 0.42},
+      manipulation: {
+        actions: {translate: {faceCamera: true}},
+        handle: {action: xb.ManipulationAction.Translate},
+      },
+      edge: true,
+      style: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 24,
+      },
+      children: [
+        new xb.UIText({
+          text: 'UIBlocks Card',
+          style: {fontSize: 44, fontWeight: 'bold'},
+        }),
+        new xb.UIText({
+          text: 'draggable semantic surface',
+          style: {fontSize: 28, textAlign: 'center'},
+        }),
+        actionButton,
+      ],
+    });
+    card.name = 'UIBlocks Debug Card';
+    card.position.set(0, xb.user.height + 0.05, -1.32);
+    this.add(card);
 
     return card;
   }
@@ -390,7 +354,11 @@ class ContextOutputVisualizer {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const options = new xb.Options()
-    .enableAutomationMode({hideSimulatorUi: false})
+    .enableAutomationMode({
+      hideSimulatorUi: false,
+      defaultMode: xb.SimulatorMode.USER,
+      enableHands: false,
+    })
     .enableContext();
   options.context.scene.pollingIntervalMs = refreshMs;
 
