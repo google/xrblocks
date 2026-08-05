@@ -90,6 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const options = new xb.Options();
   options.enableDepth();
   options.enableReticles();
+  options.reticles.projectOnDepthMesh = true;
   options.setAppTitle('Avatar Lab · VRM Companion');
   options.setAppDescription(
     'Load a VRM avatar, then point at the floor to make it walk.'
