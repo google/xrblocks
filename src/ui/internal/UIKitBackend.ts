@@ -339,6 +339,10 @@ function createNode(
         changedProperties(previousPanelProperties, nextPanelProperties)
       );
       previousPanelProperties = nextPanelProperties;
+      blocksHits =
+        kind === 'button' ||
+        kind === 'slider' ||
+        !isTransparent(nextPanelProperties.fillColor);
       if (kind === 'button') {
         updateButtonContent(
           buttonContent,
@@ -376,6 +380,7 @@ function createNode(
       presentationKey = nextKey;
       pointerEvents = nextPointerEvents;
       applyPresentation(state);
+      setPhysicalHitEnabled(node, blocksHits && nextPointerEvents !== 'none');
     }
     node.visible = element.visible;
     edge?.setCursorPoints(
@@ -385,15 +390,22 @@ function createNode(
   });
 
   node.visible = element.visible;
+  setPhysicalHitEnabled(
+    node,
+    blocksHits && element.xb?.pointerEvents !== 'none'
+  );
   elementNodes.set(element, node as Component);
   if (overlayRenderOrder !== undefined) node.renderOrder = overlayRenderOrder;
-  if (blocksHits) {
-    mappings.push({
-      physical: node,
-      logical: element,
-    });
-  }
+  mappings.push({
+    physical: node,
+    logical: element,
+  });
   return node;
+}
+
+function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {
+  object.xb ??= {};
+  object.xb.pointerEvents = enabled ? 'auto' : 'none';
 }
 
 function changedProperties(

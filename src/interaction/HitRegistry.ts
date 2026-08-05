@@ -80,6 +80,7 @@ export class HitRegistry {
     intersections.length = publicCount;
 
     for (const {physical} of this.registered) {
+      if (physical.xb?.pointerEvents === 'none') continue;
       if (this.isBelowScene(physical, scene) && !hasPrivateAncestor(physical)) {
         continue;
       }
@@ -101,6 +102,7 @@ export class HitRegistry {
     const box = new THREE.Box3();
     const center = new THREE.Vector3();
     for (const {physical} of this.touchCandidates.values()) {
+      if (physical.xb?.pointerEvents === 'none') continue;
       if (!effectiveVisible(physical)) continue;
       try {
         box.setFromObject(physical);

@@ -39,6 +39,7 @@ export class HitResolver {
   ): ResolvedRay | undefined {
     for (const rawIntersection of intersections) {
       const registered = this.registry.resolve(rawIntersection.object);
+      if (registered.physical.xb?.pointerEvents === 'none') continue;
       if (
         registered.logical === rawIntersection.object &&
         hasPrivateAncestor(rawIntersection.object)
