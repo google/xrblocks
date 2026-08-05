@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 import {Script} from '../../core/Script';
 import {WorldOptions} from '../WorldOptions';
 
@@ -36,7 +38,10 @@ let nextAnchorId = 0;
  * throws.
  */
 export class AnchorManager extends Script {
-  static dependencies = {options: WorldOptions};
+  static dependencies = {
+    options: WorldOptions,
+    renderer: THREE.WebGLRenderer,
+  };
 
   /** What the current platform supports; refreshed each frame. */
   capability: AnchorCapability = 'unsupported';
@@ -52,6 +57,7 @@ export class AnchorManager extends Script {
   private readonly anchors = new Map<string, TrackedAnchor>();
   private store!: AnchorStore;
   private options!: WorldOptions;
+  private renderer?: THREE.WebGLRenderer;
   private currentFrame?: XRFrame;
   private warnedUnsupported = false;
 
@@ -67,9 +73,18 @@ export class AnchorManager extends Script {
    * Initializes the manager.
    * @param dependencies - Resolved dependencies.
    * @param dependencies.options - World options carrying the anchor settings.
+   * @param dependencies.renderer - Renderer supplying the reference space that
+   *     anchor poses are expressed against.
    */
-  override init({options}: {options: WorldOptions}) {
+  override init({
+    options,
+    renderer,
+  }: {
+    options: WorldOptions;
+    renderer?: THREE.WebGLRenderer;
+  }) {
     this.options = options;
+    this.renderer = renderer;
     this.store =
       this.injectedStore ??
       new LocalStorageAnchorStore(
@@ -118,8 +133,18 @@ export class AnchorManager extends Script {
     if (!frame || typeof frame.createAnchor !== 'function') {
       return null;
     }
+    // An XRSession is not an XRSpace. The two are interchangeable to the type
+    // checker only because XRSpace is declared as an empty interface, so
+    // passing a session here would compile and then misplace every anchor.
+    const anchorSpace = space ?? this.referenceSpace();
+    if (!anchorSpace) {
+      console.warn(
+        '[anchors] no reference space available; cannot create an anchor'
+      );
+      return null;
+    }
     try {
-      const anchor = await frame.createAnchor(pose, space ?? frame.session!);
+      const anchor = await frame.createAnchor(pose, anchorSpace);
       if (!anchor) return null;
       const tracked: TrackedAnchor = {
         id: `anchor-${nextAnchorId++}`,
@@ -199,6 +224,10 @@ export class AnchorManager extends Script {
     record: AnchorRecord,
     session: XRSession
   ): Promise<AnchorRestoreResult> {
+    // restoreAll may be called more than once; without this a second call
+    // mints a duplicate TrackedAnchor for every stored record.
+    const existing = this.findByUuid(record.uuid);
+    if (existing) return {record, status: 'restored', anchor: existing};
     try {
       const anchor = await session.restorePersistentAnchor!(record.uuid);
       if (!anchor) return {record, status: 'not-found'};
@@ -209,7 +238,7 @@ export class AnchorManager extends Script {
         uuid: record.uuid,
       };
       this.anchors.set(tracked.id, tracked);
-      return {record, status: 'restored'};
+      return {record, status: 'restored', anchor: tracked};
     } catch (error) {
       // Expected whenever the user is somewhere else; not an error state.
       this.debug(`could not restore ${record.uuid}: ${error}`);
@@ -227,7 +256,13 @@ export class AnchorManager extends Script {
     const tracked = this.anchors.get(id);
     const frame = this.currentFrame;
     if (!tracked || !frame) return null;
-    return frame.getPose(tracked.anchor.anchorSpace, referenceSpace) ?? null;
+    try {
+      // An XRFrame is only valid inside its own callback, so reading a pose
+      // from outside the frame loop throws rather than returning nothing.
+      return frame.getPose(tracked.anchor.anchorSpace, referenceSpace) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -287,6 +322,26 @@ export class AnchorManager extends Script {
         this.debug(`platform released ${id}`);
       }
     }
+  }
+
+  /**
+   * The reference space anchor poses are expressed against.
+   * @returns The reference space, or undefined when none is available yet.
+   */
+  private referenceSpace(): XRSpace | undefined {
+    return this.renderer?.xr?.getReferenceSpace() ?? undefined;
+  }
+
+  /**
+   * Finds a tracked anchor by its persistent handle.
+   * @param uuid - Persistent handle to look for.
+   * @returns The tracked anchor, or undefined.
+   */
+  private findByUuid(uuid: string): TrackedAnchor | undefined {
+    for (const tracked of this.anchors.values()) {
+      if (tracked.uuid === uuid) return tracked;
+    }
+    return undefined;
   }
 
   /**

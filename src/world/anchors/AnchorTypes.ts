@@ -51,4 +51,21 @@ export interface AnchorRestoreResult {
   record: AnchorRecord;
   /** How the attempt ended. */
   status: AnchorRestoreStatus;
+  /**
+   * The anchor now being tracked, when the attempt succeeded.
+   *
+   * Handed back so callers can attach content immediately instead of scanning
+   * the tracked set and matching on uuid.
+   */
+  anchor?: TrackedAnchorLike;
+}
+
+/** The shape of a tracked anchor, as surfaced in restore results. */
+export interface TrackedAnchorLike {
+  /** Stable id within the session. */
+  id: string;
+  /** Caller-supplied label. */
+  label: string;
+  /** Persistent handle, when one has been requested. */
+  uuid?: string;
 }

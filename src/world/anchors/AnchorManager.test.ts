@@ -86,11 +86,19 @@ function fakeEnv(
   return {frame, session, created};
 }
 
-function makeManager(store = memoryStore()) {
+const REF_SPACE = {__ref: true} as unknown as XRReferenceSpace;
+
+function fakeRenderer(refSpace: XRReferenceSpace | null = REF_SPACE) {
+  return {
+    xr: {getReferenceSpace: () => refSpace},
+  } as unknown as import('three').WebGLRenderer;
+}
+
+function makeManager(store = memoryStore(), renderer = fakeRenderer()) {
   const options = new WorldOptions();
   options.anchors.enablePersistence();
   const manager = new AnchorManager(store);
-  manager.init({options});
+  manager.init({options, renderer});
   return {manager, store, options};
 }
 
@@ -413,5 +421,101 @@ describe('AnchorManager lifecycle', () => {
     await manager.persist(tracked!.id);
     manager.forgetAll();
     expect(store.load()).toEqual([]);
+  });
+});
+
+describe('AnchorManager reference space', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('creates anchors against the reference space, never the session', async () => {
+    const {manager} = makeManager();
+    const env = fakeEnv();
+    manager.update(0, env.frame);
+    await manager.create(POSE, 'sofa');
+    const call = (env.frame.createAnchor as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    expect(call[1]).toBe(REF_SPACE);
+    expect(call[1]).not.toBe(env.session);
+  });
+
+  it('prefers an explicitly supplied space', async () => {
+    const {manager} = makeManager();
+    const env = fakeEnv();
+    const custom = {__custom: true} as unknown as XRSpace;
+    manager.update(0, env.frame);
+    await manager.create(POSE, 'sofa', custom);
+    const call = (env.frame.createAnchor as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    expect(call[1]).toBe(custom);
+  });
+
+  it('refuses to create without a reference space rather than guessing', async () => {
+    const {manager} = makeManager(memoryStore(), fakeRenderer(null));
+    const env = fakeEnv();
+    manager.update(0, env.frame);
+    await expect(manager.create(POSE, 'sofa')).resolves.toBeNull();
+  });
+});
+
+describe('AnchorManager restore idempotency', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('does not duplicate anchors when restoreAll runs twice', async () => {
+    const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    const {frame} = fakeEnv();
+    manager.update(0, frame);
+    await manager.restoreAll();
+    await manager.restoreAll();
+    expect(manager.getAll()).toHaveLength(1);
+  });
+
+  it('reports an already-restored record as restored', async () => {
+    const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    const {frame} = fakeEnv();
+    manager.update(0, frame);
+    await manager.restoreAll();
+    const second = await manager.restoreAll();
+    expect(second.map((r) => r.status)).toEqual(['restored']);
+  });
+
+  it('hands back the tracked anchor so callers need not rescan', async () => {
+    const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    const {frame} = fakeEnv();
+    manager.update(0, frame);
+    const [result] = await manager.restoreAll();
+    expect(result.anchor).toBeDefined();
+    expect(result.anchor!.label).toBe('sofa');
+    expect(manager.getAll()[0].id).toBe(result.anchor!.id);
+  });
+});
+
+describe('AnchorManager.getPose', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('returns null instead of throwing on a stale frame', async () => {
+    const {manager} = makeManager();
+    const env = fakeEnv();
+    manager.update(0, env.frame);
+    const tracked = await manager.create(POSE, 'sofa');
+    (env.frame as unknown as {getPose: unknown}).getPose = () => {
+      throw new Error('InvalidStateError');
+    };
+    expect(() => manager.getPose(tracked!.id, REF_SPACE)).not.toThrow();
+    expect(manager.getPose(tracked!.id, REF_SPACE)).toBeNull();
+  });
+
+  it('returns null for an unknown id', () => {
+    const {manager} = makeManager();
+    manager.update(0, fakeEnv().frame);
+    expect(manager.getPose('missing', REF_SPACE)).toBeNull();
   });
 });
