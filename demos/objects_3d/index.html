@@ -360,19 +360,22 @@
       }
       // SlimSAM's ViT runs 1024x1024 / patch 16 = 4096 tokens over 12 heads,
       // so the attention MatMul binds a 4096*4096*12 element buffer: 384 MB at
-      // fp16, 768 MB at fp32. The WebGPU spec default maxStorageBufferBindingSize
-      // is only 128 MB, and onnxruntime already asks for the adapter maximum, so
-      // on a device that caps at the default this can't be raised. It surfaces
-      // as an uncaught "Binding size ... is larger than the maximum storage
-      // buffer binding size" validation error mid-encode rather than a clean
-      // load failure, so the limit has to be checked before picking webgpu.
+      // fp16. The WebGPU spec default maxStorageBufferBindingSize is only
+      // 128 MB and onnxruntime already asks for the adapter maximum, so a
+      // device capped at the default logs uncaught "Binding size ... is larger
+      // than the maximum storage buffer binding size" validation errors.
+      // Those are noisy but recoverable: ORT falls back per-node and still
+      // produces masks. Routing such devices to wasm instead is *worse* --
+      // ORT's wasm backend runs synchronously on the main thread and stalls
+      // the render loop for a minute or more, which reads as a frozen app on
+      // a headset. So warn about the limit but keep running on the GPU.
       const SAM_ATTENTION_ELEMENTS = 4096 * 4096 * 12;
 
       // Load configurations to try in order. transformers.js does not quietly
       // downgrade when `device` is passed explicitly: an unsupported backend
       // throws, so probe the adapter instead of assuming `navigator.gpu`
-      // means webgpu+fp16 will work. fp16 also needs the shader-f16 feature,
-      // which plenty of mobile/XR GPUs don't expose.
+      // means webgpu+fp16 will work. fp16 needs the shader-f16 feature, which
+      // plenty of mobile/XR GPUs don't expose.
       async function samLoadCandidates() {
         const cpu = {device: 'wasm', dtype: 'fp32'};
         let adapter = null;
@@ -383,20 +386,21 @@
         }
         if (!adapter) return [cpu];
         const maxBinding = adapter.limits.maxStorageBufferBindingSize ?? 0;
-        const fits = (bytesPerElement) =>
-          maxBinding >= SAM_ATTENTION_ELEMENTS * bytesPerElement;
-        const gpu = [];
-        if (adapter.features.has('shader-f16') && fits(2))
-          gpu.push({device: 'webgpu', dtype: 'fp16'});
-        if (fits(4)) gpu.push({device: 'webgpu', dtype: 'fp32'});
-        if (!gpu.length) {
+        if (maxBinding < SAM_ATTENTION_ELEMENTS * 2) {
           console.warn(
             `[objects_3d] webgpu maxStorageBufferBindingSize ${maxBinding} is ` +
-              `too small for SAM (needs ${SAM_ATTENTION_ELEMENTS * 2}); using cpu`
+              `below SAM's ${SAM_ATTENTION_ELEMENTS * 2} byte attention ` +
+              `binding; expect WebGPU validation warnings during encode`
           );
         }
-        // Keep the cpu entry last so a driver-level webgpu failure that the
-        // limits and feature list didn't predict still ends up with a model.
+        const gpu = [];
+        if (adapter.features.has('shader-f16')) {
+          gpu.push({device: 'webgpu', dtype: 'fp16'});
+        }
+        gpu.push({device: 'webgpu', dtype: 'fp32'});
+        // Keep the cpu entry last so an environment where webgpu can't load at
+        // all still gets a model. It is deliberately last: wasm blocks the main
+        // thread, so it must never pre-empt a usable GPU configuration.
         return [...gpu, cpu];
       }
 
