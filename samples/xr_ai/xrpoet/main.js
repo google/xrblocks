@@ -5,20 +5,18 @@ import * as xb from 'xrblocks';
 import {PoemGenerator} from './PoemGenerator.js';
 
 const options = new xb.Options();
-options.enableUI();
 options.enableAI();
 options.enableCamera();
 options.setAppTitle('XR Poet');
+options.setAppDescription('Turn a camera view into a short Gemini poem.');
 
-function start() {
+async function start() {
   try {
-    xb.init(options);
     xb.add(new PoemGenerator());
+    await xb.init(options);
   } catch (error) {
     console.error('Failed to initialize XR app:', error);
   }
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-  start();
-});
+document.addEventListener('DOMContentLoaded', () => void start());

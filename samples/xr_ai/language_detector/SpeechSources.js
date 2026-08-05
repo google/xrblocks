@@ -16,7 +16,7 @@ export class GeminiLiveSource {
   }
 
   static isAvailable() {
-    return !!xb.core?.ai;
+    return !!xb.core?.ai?.isAvailable?.();
   }
 
   onTranscript(fn) {
@@ -33,26 +33,33 @@ export class GeminiLiveSource {
       return;
     }
     this._running = true;
-    await xb.core.sound?.enableAudio?.();
-    await new Promise((resolve, reject) => {
-      xb.core.ai.setLiveCallbacks({
-        onopen: resolve,
-        onmessage: (msg) => this._handleMessage(msg),
-        onerror: (e) => {
-          this._handlers.error?.(e);
-          reject(e);
-        },
-        onclose: (e) => {
-          this._running = false;
-          if (e?.code && e.code !== 1000) {
-            this._handlers.error?.(
-              new Error(`Gemini closed: ${e.reason || e.code}`)
-            );
-          }
-        },
+    try {
+      await xb.core.sound?.enableAudio?.();
+      await new Promise((resolve, reject) => {
+        xb.core.ai.setLiveCallbacks({
+          onopen: resolve,
+          onmessage: (msg) => this._handleMessage(msg),
+          onerror: (e) => {
+            this._handlers.error?.(e);
+            reject(e);
+          },
+          onclose: (e) => {
+            this._running = false;
+            if (e?.code && e.code !== 1000) {
+              this._handlers.error?.(
+                new Error(`Gemini closed: ${e.reason || e.code}`)
+              );
+            }
+          },
+        });
+        xb.core.ai
+          .startLiveSession({inputAudioTranscription: {}})
+          .catch(reject);
       });
-      xb.core.ai.startLiveSession({inputAudioTranscription: {}}).catch(reject);
-    });
+    } catch (error) {
+      this._running = false;
+      throw error;
+    }
   }
 
   async stop() {

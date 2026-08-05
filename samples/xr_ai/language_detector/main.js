@@ -5,6 +5,7 @@ import {LanguageDetectorDemo} from './LanguageDetectorDemo.js';
 
 const options = new xb.Options();
 options.enableAI();
+options.permissions.microphone = true;
 
 options.setAppTitle('Language Detector');
 options.setAppDescription(
@@ -12,7 +13,7 @@ options.setAppDescription(
 );
 options.xrButton.showEnterSimulatorButton = true;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   xb.add(new LanguageDetectorDemo());
-  xb.init(options);
+  await xb.init(options);
 });
