@@ -7,8 +7,14 @@ import {MAX_GRADIENT_STOPS} from './constants/GradientPanelConstants';
 import type {GradientPaint, Paint, StrokeAlign} from './types/ShaderTypes';
 
 export type UIUnit = number | `${number}%` | 'auto';
+export type UIPosition = number | `${number}%`;
 export type UIColor = Paint;
 export type UIVector2 = THREE.Vector2 | [number, number];
+
+export interface UITransform {
+  translateX?: UIPosition;
+  translateY?: UIPosition;
+}
 
 export interface UIStateStyle {
   backgroundColor?: UIColor;
@@ -33,11 +39,12 @@ export interface UIStyle extends UIStateStyle {
   flexGrow?: number;
   flexShrink?: number;
   flexBasis?: number | 'auto';
-  positionType?: 'relative' | 'absolute';
-  top?: number;
-  right?: number;
-  bottom?: number;
-  left?: number;
+  position?: 'relative' | 'absolute';
+  top?: UIPosition;
+  right?: UIPosition;
+  bottom?: UIPosition;
+  left?: UIPosition;
+  transform?: UITransform;
   zIndex?: number;
   gap?: number;
   rowGap?: number;
@@ -117,11 +124,12 @@ const STYLE_KEYS = new Set<keyof UIStyle>([
   'flexGrow',
   'flexShrink',
   'flexBasis',
-  'positionType',
+  'position',
   'top',
   'right',
   'bottom',
   'left',
+  'transform',
   'zIndex',
   'gap',
   'rowGap',
@@ -183,10 +191,6 @@ const NUMBER_KEYS = new Set<keyof UIStyle>([
   'maxHeight',
   'flexGrow',
   'flexShrink',
-  'top',
-  'right',
-  'bottom',
-  'left',
   'zIndex',
   'gap',
   'rowGap',
@@ -212,6 +216,13 @@ const NUMBER_KEYS = new Set<keyof UIStyle>([
   'dropShadowBlur',
   'dropShadowSpread',
   'dropShadowFalloff',
+]);
+
+const POSITION_KEYS = new Set<keyof UIStyle>([
+  'top',
+  'right',
+  'bottom',
+  'left',
 ]);
 
 const PAINT_KEYS = new Set<keyof UIStyle>([
@@ -254,7 +265,7 @@ const ENUM_VALUES: Partial<Record<keyof UIStyle, readonly unknown[]>> = {
   justifyContent: ['flex-start', 'center', 'flex-end', 'space-between'],
   alignItems: ['flex-start', 'center', 'flex-end', 'stretch'],
   alignSelf: ['auto', 'flex-start', 'center', 'flex-end', 'stretch'],
-  positionType: ['relative', 'absolute'],
+  position: ['relative', 'absolute'],
   borderAlign: ['inside', 'center', 'outside'],
   display: ['flex', 'none'],
   fontWeight: ['normal', 'medium', 'bold'],
@@ -441,14 +452,7 @@ function createStyleProxy<T extends UIStyle | UIStateStyle>(
         onChange(property, previous, undefined);
         return true;
       }
-      const next =
-        isStateStyleKey(property) && value && typeof value === 'object'
-          ? createStyleProxy(
-              cloneStyleValue(value) as UIStateStyle,
-              true,
-              onChange
-            )
-          : value;
+      const next = createNestedStyleValue(property, value, onChange);
       const previous = Reflect.get(object, property);
       if (previous === next) return true;
       Reflect.set(object, property, next);
@@ -462,6 +466,52 @@ function createStyleProxy<T extends UIStyle | UIStateStyle>(
       if (typeof property === 'string') {
         onChange(property, previous, undefined);
       }
+      return true;
+    },
+  });
+}
+
+function createNestedStyleValue(
+  property: string,
+  value: unknown,
+  onChange: (property: string, previous: unknown, next: unknown) => void
+): unknown {
+  if (!value || typeof value !== 'object') return value;
+  if (isStateStyleKey(property)) {
+    return createStyleProxy(
+      cloneStyleValue(value) as UIStateStyle,
+      true,
+      onChange
+    );
+  }
+  if (property === 'transform') {
+    return createTransformProxy(
+      cloneStyleValue(value) as UITransform,
+      onChange
+    );
+  }
+  return value;
+}
+
+function createTransformProxy(
+  transform: UITransform,
+  onChange: (property: string, previous: unknown, next: unknown) => void
+): UITransform {
+  return new Proxy(transform, {
+    set(object, property, value) {
+      if (property !== 'translateX' && property !== 'translateY') return false;
+      validateTransformValue(property, value);
+      const previous = Reflect.get(object, property);
+      if (value === undefined) Reflect.deleteProperty(object, property);
+      else Reflect.set(object, property, value);
+      onChange('transform', previous, value);
+      return true;
+    },
+    deleteProperty(object, property) {
+      if (property !== 'translateX' && property !== 'translateY') return false;
+      const previous = Reflect.get(object, property);
+      if (!Reflect.deleteProperty(object, property)) return false;
+      onChange('transform', previous, undefined);
       return true;
     },
   });
@@ -527,6 +577,10 @@ function validateStyle(
     }
     return;
   }
+  if (property === 'transform') {
+    validateTransform(value);
+    return;
+  }
   if (
     NUMBER_KEYS.has(property as keyof UIStyle) &&
     (typeof value !== 'number' || !Number.isFinite(value))
@@ -556,6 +610,11 @@ function validateStyle(
     if (!Number.isFinite(value) || value <= 0) {
       throw new Error('UI style "fontWeight" must be positive and finite.');
     }
+  }
+  if (POSITION_KEYS.has(property as keyof UIStyle) && !isUIPosition(value)) {
+    throw new Error(
+      `UI style "${property}" must be a finite number or percentage.`
+    );
   }
   const enumValues = ENUM_VALUES[property as keyof UIStyle];
   if (
@@ -614,6 +673,33 @@ function isUIUnit(value: unknown): value is UIUnit {
     value === 'auto' ||
     (typeof value === 'string' && /^-?\d+(?:\.\d+)?%$/.test(value))
   );
+}
+
+function isUIPosition(value: unknown): value is UIPosition {
+  return (
+    (typeof value === 'number' && Number.isFinite(value)) ||
+    (typeof value === 'string' && /^-?\d+(?:\.\d+)?%$/.test(value))
+  );
+}
+
+function validateTransform(value: unknown): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('UI style "transform" must be an object.');
+  }
+  for (const [property, nested] of Object.entries(value)) {
+    if (property !== 'translateX' && property !== 'translateY') {
+      throw new Error(`Unknown UI transform property "${property}".`);
+    }
+    validateTransformValue(property, nested);
+  }
+}
+
+function validateTransformValue(property: string, value: unknown): void {
+  if (value !== undefined && !isUIPosition(value)) {
+    throw new Error(
+      `UI transform "${property}" must be a finite number or percentage.`
+    );
+  }
 }
 
 function isPaint(value: unknown): value is Paint {

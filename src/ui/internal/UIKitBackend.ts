@@ -46,12 +46,14 @@ class UIKitMount implements UIMount {
   object: THREE.Object3D = new THREE.Group();
   private rendered?: Container;
   private presentationUpdates: PresentationUpdate[] = [];
+  private readonly isOverlay: boolean;
 
   constructor(
     private readonly root: UIElement,
     private readonly icons: IconCache
   ) {
     this.object.name = `Private ${root.name}`;
+    this.isOverlay = getUIElementKind(root) === 'overlay';
   }
 
   sync(
@@ -91,6 +93,7 @@ class UIKitMount implements UIMount {
 
   update(deltaSeconds: number): void {
     this.rendered?.update(deltaSeconds);
+    if (this.isOverlay) this.rendered?.traverse(setOverlayLayer);
   }
 
   dispose(): void {
@@ -562,6 +565,16 @@ function addSliderContent(
   slider: UISlider,
   theme: UITheme
 ): () => void {
+  const thumbSize = 28;
+  const rail = new Container({
+    positionType: 'absolute',
+    positionLeft: thumbSize / 2,
+    positionRight: thumbSize / 2,
+    positionTop: '50%',
+    transformTranslateY: '-50%',
+    height: thumbSize,
+    pointerEvents: 'none',
+  });
   const track = new GradientPanel({
     positionType: 'absolute',
     positionLeft: 0,
@@ -587,9 +600,9 @@ function addSliderContent(
     positionTop: '50%',
     transformTranslateX: '-50%',
     transformTranslateY: '-50%',
-    width: 28,
-    height: 28,
-    cornerRadius: 14,
+    width: thumbSize,
+    height: thumbSize,
+    cornerRadius: thumbSize / 2,
     pointerEvents: 'none',
   });
   const update = () => {
@@ -608,7 +621,8 @@ function addSliderContent(
     });
   };
   update();
-  panel.add(track, fill, thumb);
+  rail.add(track, fill, thumb);
+  panel.add(rail);
   return update;
 }
 
@@ -630,40 +644,49 @@ function toUIKitStyle(style: UIStyle): Record<string, unknown> {
     result.gapRow = style.gap;
     result.gapColumn = style.gap;
   }
+  if (style.transform?.translateX !== undefined) {
+    result.transformTranslateX = style.transform.translateX;
+  }
+  if (style.transform?.translateY !== undefined) {
+    result.transformTranslateY = style.transform.translateY;
+  }
   for (const [key, value] of Object.entries(style)) {
     if (
       key.startsWith(':') ||
       value === undefined ||
       key === 'padding' ||
       key === 'margin' ||
-      key === 'gap'
+      key === 'gap' ||
+      key === 'transform'
     ) {
       continue;
     }
     const mapped =
-      key === 'backgroundColor'
-        ? 'fillColor'
-        : key === 'borderColor'
-          ? 'strokeColor'
-          : key === 'borderWidth'
-            ? 'strokeWidth'
-            : key === 'borderAlign'
-              ? 'strokeAlign'
-              : key === 'borderRadius'
-                ? 'cornerRadius'
-                : key === 'top'
-                  ? 'positionTop'
-                  : key === 'right'
-                    ? 'positionRight'
-                    : key === 'bottom'
-                      ? 'positionBottom'
-                      : key === 'left'
-                        ? 'positionLeft'
-                        : key === 'rowGap'
-                          ? 'gapRow'
-                          : key === 'columnGap'
-                            ? 'gapColumn'
-                            : key;
+      key === 'position'
+        ? 'positionType'
+        : key === 'backgroundColor'
+          ? 'fillColor'
+          : key === 'borderColor'
+            ? 'strokeColor'
+            : key === 'borderWidth'
+              ? 'strokeWidth'
+              : key === 'borderAlign'
+                ? 'strokeAlign'
+                : key === 'borderRadius'
+                  ? 'cornerRadius'
+                  : key === 'top'
+                    ? 'positionTop'
+                    : key === 'right'
+                      ? 'positionRight'
+                      : key === 'bottom'
+                        ? 'positionBottom'
+                        : key === 'left'
+                          ? 'positionLeft'
+                          : key === 'rowGap'
+                            ? 'gapRow'
+                            : key === 'columnGap'
+                              ? 'gapColumn'
+                              : key;
     result[mapped] = value;
   }
   return result;
