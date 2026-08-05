@@ -86,7 +86,7 @@ describe('AnchoredObjects', () => {
 
     const scene = new THREE.Group();
     const second = new AnchoredObjects(makeManager(store), scene);
-    const factory = vi.fn((label: string) => makeObject(0, 0, 0));
+    const factory = vi.fn((_label: string) => makeObject(0, 0, 0));
     const restored = await second.restore(factory);
 
     expect(restored).toBe(1);
