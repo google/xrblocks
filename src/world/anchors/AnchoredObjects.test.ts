@@ -157,3 +157,39 @@ describe('AnchoredObjects', () => {
     expect(scene.children).not.toContain(object);
   });
 });
+
+describe('AnchoredObjects repeated restore', () => {
+  it('does not add a second object for an anchor it already holds', async () => {
+    const store = memoryStore();
+    const manager = makeManager(store);
+    const first = new AnchoredObjects(manager, new THREE.Group());
+    await first.anchor(makeObject(1, 2, 3), 'lamp');
+
+    const scene = new THREE.Group();
+    const objects = new AnchoredObjects(makeManager(store), scene);
+    const factory = vi.fn((_label: string) => makeObject(0, 0, 0));
+
+    expect(await objects.restore(factory)).toBe(1);
+    // A demo that restores once per capability change calls this again; the
+    // old mesh would otherwise be stranded in the scene, untracked and
+    // never updated.
+    expect(await objects.restore(factory)).toBe(0);
+    expect(scene.children).toHaveLength(1);
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps tracking the object it restored first', async () => {
+    const store = memoryStore();
+    await new AnchoredObjects(makeManager(store), new THREE.Group()).anchor(
+      makeObject(1, 2, 3),
+      'lamp'
+    );
+    const scene = new THREE.Group();
+    const objects = new AnchoredObjects(makeManager(store), scene);
+    await objects.restore(() => makeObject(0, 0, 0));
+    const kept = [...objects.getAll().values()][0];
+    await objects.restore(() => makeObject(9, 9, 9));
+    expect([...objects.getAll().values()][0]).toBe(kept);
+    expect(scene.children[0]).toBe(kept);
+  });
+});

@@ -109,6 +109,10 @@ export class AnchoredObjects {
     let restored = 0;
     for (const result of await this.manager.restoreAll()) {
       if (result.status !== 'restored' || !result.anchor) continue;
+      // restoreAll hands back the anchor it already has, so a second restore
+      // would build a duplicate object and strand the first one in the scene,
+      // untracked and never moved again.
+      if (this.objects.has(result.anchor.id)) continue;
       const object = factory(result.record.label, result.record);
       if (!object) continue;
       this.parent.add(object);
