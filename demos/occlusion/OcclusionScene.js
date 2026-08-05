@@ -1,148 +1,127 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import {ModelManager} from 'xrblocks/addons/ui/ModelManager.js';
 
-import {ANIMALS_DATA} from './animals_data.js';
-import {DepthMeshClone} from './DepthMeshClone.js';
-
-const kLightX = xb.getUrlParamFloat('lightX', 0);
-const kLightY = xb.getUrlParamFloat('lightY', 500);
-const kLightZ = xb.getUrlParamFloat('lightZ', -10);
+const CAT_SOURCE = {
+  url: 'models/Cat/cat.gltf',
+  path: xb.XR_BLOCKS_ASSETS_PATH,
+};
 
 export class OcclusionScene extends xb.Script {
+  static dependencies = {
+    camera: THREE.Camera,
+    depth: xb.Depth,
+    user: xb.User,
+  };
+
   constructor() {
     super();
-    this.pointer = new THREE.Vector3();
-    this.depthMeshClone = new DepthMeshClone();
-    this.raycaster = new THREE.Raycaster();
-    this.modelManager = new ModelManager(
-      ANIMALS_DATA,
-      /*enableOcclusion=*/ true
-    );
-    this.modelManager.layers.enable(xb.OCCLUDABLE_ITEMS_LAYER);
-    this.add(this.modelManager);
-    this.instructionText =
-      'Pinch on the environment and try hiding the cat behind sofa!';
-    this.instructionCol = null;
+    this.camera = null;
+    this.depth = null;
+    this.user = null;
+
+    this.cat = new xb.ModelViewer({
+      occlusion: true,
+      manipulation: true,
+      castShadow: true,
+      receiveShadow: true,
+    });
+    this.cat.name = 'Occlusion cat';
+    this.cat.visible = false;
+    this.add(this.cat);
+
+    this.instructionText = new xb.UIText({
+      text: 'Click or pinch the environment to place the cat.',
+      pointerEvents: 'none',
+      style: {
+        width: '100%',
+        fontSize: 24,
+        color: '#ffffff',
+        textAlign: 'center',
+      },
+    });
+    this.add(this.createInstructions());
   }
 
-  init() {
+  async init({camera, depth, user}) {
+    this.camera = camera;
+    this.depth = depth;
+    this.user = user;
     this.addLights();
-    xb.showReticleOnDepthMesh(true);
-    this.addPanel();
+    await this.cat.load(CAT_SOURCE);
   }
 
-  addPanel() {
-    const panel = new xb.SpatialPanel({
-      backgroundColor: '#00000000',
-      useDefaultPosition: false,
-      showEdge: false,
-    });
-    panel.position.set(0, 1.6, -1.0);
-    panel.isRoot = true;
-    this.add(panel);
-
-    const grid = panel.addGrid();
-    grid.addRow({weight: 0.05});
-    // Space for orbiter
-    grid.addRow({weight: 0.1});
-
-    const controlRow = grid.addRow({weight: 0.3});
-    const ctrlPanel = controlRow.addPanel({backgroundColor: '#000000bb'});
-    const ctrlGrid = ctrlPanel.addGrid();
-
-    const midColumn = ctrlGrid.addCol({weight: 0.9});
-    midColumn.addRow({weight: 0.3});
-    const gesturesRow = midColumn.addRow({weight: 0.4});
-    gesturesRow.addCol({weight: 0.05});
-
-    const textCol = gesturesRow.addCol({weight: 1.0});
-    this.instructionCol = textCol.addRow({weight: 1.0}).addText({
-      text: `${this.instructionText}`,
-      fontColor: '#ffffff',
-      fontSize: 0.05,
-    });
-
-    gesturesRow.addCol({weight: 0.01});
-    midColumn.addRow({weight: 0.1});
-
-    const orbiter = ctrlGrid.addOrbiter();
-    orbiter.addExitButton();
-
-    panel.updateLayouts();
-
-    this.panel = panel;
-    this.frameId = 0;
-  }
-
-  onSimulatorStarted() {
-    this.instructionText =
-      'Click on the environment and try hiding the cat behind sofa!';
-    if (this.instructionCol) {
-      this.instructionCol.setText(this.instructionText);
+  onSelectStart(event) {
+    const depthMesh = this.depth?.depthMesh;
+    const controllerIndex = this.user?.controllers.indexOf(
+      event.source.controller
+    );
+    if (!depthMesh || controllerIndex === undefined || controllerIndex < 0) {
+      return;
     }
+
+    const intersection = this.user.getIntersectionAt(
+      depthMesh,
+      controllerIndex
+    );
+    if (!intersection) return;
+
+    this.cat.position.copy(intersection.point);
+    this.cat.lookAt(
+      this.camera.position.x,
+      this.cat.position.y,
+      this.camera.position.z
+    );
+    this.cat.visible = true;
+    this.instructionText.text =
+      'Move around and hide the cat behind furniture to see occlusion.';
   }
 
   addLights() {
     this.add(new THREE.HemisphereLight(0xbbbbbb, 0x888888, 3));
     const light = new THREE.DirectionalLight(0xffffff, 2);
-    light.position.set(kLightX, kLightY, kLightZ);
+    light.position.set(0, 500, -10);
     light.castShadow = true;
-    light.shadow.mapSize.width = 2048; // Default is usually 1024
-    light.shadow.mapSize.height = 2048; // Default is usually 1024
+    light.shadow.mapSize.set(2048, 2048);
     this.add(light);
   }
 
-  updatePointerPosition(event) {
-    // (-1 to +1) for both components
-    this.pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-    this.pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    // scale pointer.x from [-1, 0] to [-1, 1]
-    this.pointer.x = 1 + 2 * this.pointer.x;
-  }
-
-  onSelectStart(event) {
-    const controller = event.target;
-    if (xb.core.input.intersectionsForController.get(controller).length > 0) {
-      const intersection =
-        xb.core.input.intersectionsForController.get(controller)[0];
-      if (intersection.handleSelectRaycast) {
-        intersection.handleSelectRaycast(intersection);
-        return;
-      } else if (intersection.object.handleSelectRaycast) {
-        intersection.object.handleSelectRaycast(intersection);
-        return;
-      } else if (intersection.object == xb.core.depth.depthMesh) {
-        this.onDepthMeshSelectStart(intersection);
-        return;
-      }
-    }
-  }
-
-  onDepthMeshSelectStart(intersection) {
-    this.modelManager.positionModelAtIntersection(intersection, xb.core.camera);
-  }
-
-  onPointerDown(event) {
-    this.updatePointerPosition(event);
-    const cameras = xb.core.renderer.xr.getCamera().cameras;
-    if (cameras.length == 0) return;
-    const camera = cameras[0];
-    this.raycaster.setFromCamera(this.pointer, camera);
-    const intersections = this.raycaster.intersectObjects(
-      xb.core.input.reticleTargets
-    );
-    for (let intersection of intersections) {
-      if (intersection.handleSelectRaycast) {
-        intersection.handleSelectRaycast(intersection);
-        return;
-      } else if (intersection.object.handleSelectRaycast) {
-        intersection.object.handleSelectRaycast(intersection);
-        return;
-      } else if (intersection.object == xb.core.depth.depthMesh) {
-        this.modelManager.positionModelAtIntersection(intersection, camera);
-        return;
-      }
-    }
+  createInstructions() {
+    const panel = new xb.UIPanel({
+      pointerEvents: 'none',
+      style: {
+        width: 680,
+        position: 'absolute',
+        left: '50%',
+        bottom: 32,
+        transform: {translateX: '-50%'},
+        flexDirection: 'column',
+        gap: 8,
+        padding: 18,
+        backgroundColor: 'rgba(28, 28, 32, 0.9)',
+        borderColor: 'rgba(255, 255, 255, 0.22)',
+        borderWidth: 1.5,
+        borderRadius: 24,
+      },
+      children: [
+        new xb.UIText({
+          text: 'OCCLUSION',
+          pointerEvents: 'none',
+          style: {
+            width: '100%',
+            fontSize: 24,
+            fontWeight: 'bold',
+            color: '#ffffff',
+            textAlign: 'center',
+          },
+        }),
+        this.instructionText,
+      ],
+    });
+    const overlay = new xb.UIOverlay({
+      pointerEvents: 'none',
+      children: [panel],
+    });
+    overlay.name = 'Occlusion instructions';
+    return overlay;
   }
 }
