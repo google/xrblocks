@@ -5,8 +5,15 @@ that with your contribution, we can inspire more hackers, designers, and
 practitioners to unleash their creativity! Let's make AI + XR accessible to
 everyone so they may bring their ideas to life faster.
 
-For advanced demo to demonstrate creative use cases, we suggest you submit to
-`/demos/`.
+For advanced samples that demonstrate creative use cases, use
+`/samples/advanced/`.
+
+## Running Samples Locally
+
+Follow the [development guide](../README.md#development-guide) to serve the
+repository, then open your sample path, for example:
+
+- `http://localhost:8080/samples/spatial_ui/uiblocks/`
 
 ## Contributing a New Sample
 

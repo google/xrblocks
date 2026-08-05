@@ -107,7 +107,7 @@ export function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(
     update(_time?: number, _frame?: XRFrame) {}
 
     /**
-     * Enables depth-aware interactions with physics. See /demos/ballpit
+     * Enables depth-aware interactions with physics. See /samples/advanced/ballpit
      */
     initPhysics(_physics: Physics): void | Promise<void> {}
     physicsStep() {}
