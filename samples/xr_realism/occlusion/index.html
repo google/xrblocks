@@ -1,11 +1,15 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <title>3DGS Scene Walkthrough | XR Blocks</title>
+    <title>Occlusion | XR Blocks</title>
     <meta charset="utf-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
     />
     <link rel="stylesheet" href="../demo.css" />
     <script>
@@ -17,7 +21,6 @@
           "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
           "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
           "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-          "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.1.0/spark.module.js",
           "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
           "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
           "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
@@ -38,6 +41,10 @@
   </head>
 
   <body>
+    <div
+      class="background-image"
+      style="background-image: url('textures/background.webp')"
+    ></div>
     <script type="module" src="main.js"></script>
   </body>
 </html>
