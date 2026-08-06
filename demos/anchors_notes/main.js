@@ -33,6 +33,14 @@ const NOTE_SPREAD_Y = 0.3;
  * they fit on one line at this size.
  */
 const BUTTON_FONT_SIZE = 0.25;
+/**
+ * The keyboard addon places its own panel at this offset from wherever the
+ * Keyboard object sits, so a position set here is not where it lands. Setting
+ * it without compensating drops the keys straight through the status panel.
+ */
+const KEYBOARD_INTERNAL_OFFSET = {y: 1.2, z: -1};
+/** Where the keys should actually end up: below the panel and within reach. */
+const KEYBOARD_TARGET = {y: 1.0, z: -1.3};
 
 const FRESH_COLOR = 0x6a5acd;
 const RESTORED_COLOR = 0x2f7d63;
@@ -92,20 +100,20 @@ class AnchorNotesDemo extends xb.Script {
       backgroundColor: '#141322F0',
       useDefaultPosition: false,
       showEdge: true,
-      width: 1.1,
-      height: 0.6,
+      width: 1.2,
+      height: 0.75,
     });
     panel.isRoot = true;
-    panel.position.set(0, xb.user.height + 0.35, -xb.user.panelDistance);
+    panel.position.set(0, xb.user.height + 0.25, -xb.user.panelDistance);
     this.add(panel);
 
     const grid = panel.addGrid();
-    grid.addRow({weight: 0.2}).addText({
+    grid.addRow({weight: 0.18}).addText({
       text: 'Anchored Notes',
       fontSize: 0.07,
       fontColor: '#ffb877',
     });
-    this.draftView = grid.addRow({weight: 0.24}).addText({
+    this.draftView = grid.addRow({weight: 0.22}).addText({
       text: 'Type on the keyboard below',
       fontSize: 0.045,
       fontColor: '#ffffff',
@@ -116,7 +124,7 @@ class AnchorNotesDemo extends xb.Script {
       fontColor: '#b9b3d0',
     });
 
-    const buttons = grid.addRow({weight: 0.3});
+    const buttons = grid.addRow({weight: 0.4});
     const pin = buttons.addCol({weight: 0.5}).addTextButton({
       text: 'Pin',
       fontSize: BUTTON_FONT_SIZE,
@@ -132,7 +140,11 @@ class AnchorNotesDemo extends xb.Script {
 
     const keyboard = new Keyboard();
     this.add(keyboard);
-    keyboard.position.set(0, xb.user.height - 0.35, -xb.user.panelDistance);
+    keyboard.position.set(
+      0,
+      KEYBOARD_TARGET.y - KEYBOARD_INTERNAL_OFFSET.y,
+      KEYBOARD_TARGET.z - KEYBOARD_INTERNAL_OFFSET.z
+    );
     keyboard.onTextChanged = (text) => this.setDraft(text);
     keyboard.onEnterPressed = () => this.pinNote();
     this.keyboard = keyboard;
