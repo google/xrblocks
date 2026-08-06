@@ -71,7 +71,6 @@ const sidebars: SidebarsConfig = {
         'samples/Lipsync',
         'samples/Face-Mirror',
         'samples/Magic-Window',
-        'samples/Netblocks',
       ],
     },
     {
@@ -79,6 +78,7 @@ const sidebars: SidebarsConfig = {
       label: 'XR Interaction',
       collapsed: false,
       items: [
+        'samples/Head-Gestures',
         'samples/XR-Emoji',
         'samples/Custom-Gestures',
         'samples/RockPaperScissors',
@@ -109,7 +109,6 @@ const sidebars: SidebarsConfig = {
         'samples/ScreenWiper',
         'samples/Drone',
         'samples/Math-Tutor',
-        'samples/AI-Simulator',
         'samples/Virtual-Screens',
       ],
     },

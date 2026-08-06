@@ -11,29 +11,57 @@ export class CameraViewManager extends xb.Script {
 
   constructor() {
     super();
-    this.panel = new xb.SpatialPanel({
-      backgroundColor: '#2b2b2baa',
-      useDefaultPosition: true,
+    this.cameraLabel = new xb.UIText({
+      text: 'Initializing camera...',
+      style: {
+        fontSize: 24,
+        color: '#ffffff',
+        textAlign: 'center',
+      },
     });
-    const grid = this.panel.addGrid();
-    this.videoView = grid.addRow({weight: 0.7}).addVideo();
-    const txtRow = grid.addRow({weight: 0.15});
-    this.cameraLabel = txtRow
-      .addCol({weight: 1})
-      .addText({text: 'Camera', fontColor: '#ffffff', fontSize: 0.05});
-    const ctrlRow = grid.addRow({weight: 0.2});
-    this.prevCameraButton = ctrlRow.addCol({weight: 0.5}).addIconButton({
-      text: 'skip_previous',
-      fontSize: 0.5,
+    this.videoView = new xb.UIImage({
+      src: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',
+      ariaLabel: 'Live device camera preview',
+      style: {
+        width: '100%',
+        flexGrow: 1,
+        minHeight: 180,
+        objectFit: 'contain',
+        backgroundColor: '#111111',
+        borderRadius: 16,
+      },
     });
-    this.nextCameraButton = ctrlRow.addCol({weight: 0.5}).addIconButton({
-      text: 'skip_next',
-      fontSize: 0.5,
+    const controls = new xb.UIPanel({
+      style: {width: '100%', flexDirection: 'row', gap: 16},
+      children: [
+        new xb.UIButton({
+          icon: 'skip_previous',
+          ariaLabel: 'Use previous camera',
+          onClick: () => this.cycleCamera_(-1),
+          style: {flexGrow: 1, padding: 14},
+        }),
+        new xb.UIButton({
+          icon: 'skip_next',
+          ariaLabel: 'Use next camera',
+          onClick: () => this.cycleCamera_(1),
+          style: {flexGrow: 1, padding: 14},
+        }),
+      ],
     });
-
-    this.prevCameraButton.onTriggered = () => this.cycleCamera_(-1);
-    this.nextCameraButton.onTriggered = () => this.cycleCamera_(1);
-
+    this.panel = new xb.UICard({
+      size: {width: 0.8, height: 0.68},
+      manipulation: true,
+      edge: {scale: true},
+      style: {
+        flexDirection: 'column',
+        gap: 16,
+        padding: 20,
+        backgroundColor: '#2b2b2baa',
+        borderRadius: 24,
+      },
+      children: [this.videoView, this.cameraLabel, controls],
+    });
+    this.panel.position.set(0, 1.45, -1.2);
     this.add(this.panel);
   }
 
@@ -41,23 +69,25 @@ export class CameraViewManager extends xb.Script {
     this.cameraStream_ = xb.core.deviceCamera;
 
     // Listen for camera state changes to update UI
-    this.cameraStream_.addEventListener('statechange', (event) => {
+    this.onCameraStateChange_ = (event) => {
       const cameraStateLabel = {
         initializing: 'Initializing camera...',
         no_devices_found: 'Camera unsupported on this browser/device',
         error: 'Camera failed to start',
       };
-      this.cameraLabel.setText(
-        event.device?.label || cameraStateLabel[event.state] || 'Camera'
-      );
+      this.cameraLabel.text =
+        event.device?.label || cameraStateLabel[event.state] || 'Camera';
       if (event.state === 'streaming') {
-        this.videoView.load(this.cameraStream_);
+        this.videoView.src = this.cameraStream_.texture;
       }
-    });
-    this.cameraLabel.setText(
-      this.cameraStream_.getCurrentDevice()?.label || 'Camera'
+    };
+    this.cameraStream_.addEventListener(
+      'statechange',
+      this.onCameraStateChange_
     );
-    this.videoView.load(this.cameraStream_);
+    this.cameraLabel.text =
+      this.cameraStream_.getCurrentDevice()?.label || 'Camera';
+    this.videoView.src = this.cameraStream_.texture;
   }
 
   /**
@@ -76,7 +106,6 @@ export class CameraViewManager extends xb.Script {
 
 document.addEventListener('DOMContentLoaded', function () {
   const options = new xb.Options();
-  options.enableUI();
   options.enableCamera();
   xb.add(new CameraViewManager());
   xb.init(options);

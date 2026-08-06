@@ -2,8 +2,8 @@
 
 XR Blocks (`import * as xb from 'xrblocks'`) is a WebXR SDK for building **AI + XR** apps
 (Android XR / VR / AR) that also run in a **desktop simulator**. This file is the quick "how
-to build with it" context for agents; deep, task-specific guides and their index
-live in [`skills/`](skills/).
+to build with it" context for agents; deep, task-specific guides live in [`skills/`](skills/),
+and the full in-tree overview is [`src/SKILL.md`](src/SKILL.md).
 
 ## Rules of Engagement
 

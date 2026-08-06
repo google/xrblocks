@@ -72,9 +72,7 @@ export class TestRunner {
   }
 
   static async create(config: TestRunnerConfig = {}): Promise<TestRunner> {
-    await Core.instance?.dispose();
-    Core.instance = undefined;
-    const core = new Core();
+    const core = Core.instance || new Core();
     const options = config.options || new Options();
 
     options.enableSimulator = true;

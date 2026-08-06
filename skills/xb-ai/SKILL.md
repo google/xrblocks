@@ -13,7 +13,7 @@ description: >-
 # xb-ai: Gemini / OpenAI integration
 
 `xb.ai` (a.k.a. `xb.core.ai`) wraps Gemini (default) and OpenAI. See `templates/6_ai`,
-`templates/7_ai_live`, and `demos/xrpoet`.
+`templates/7_ai_live`, and `samples/xr_ai/xrpoet`.
 
 ## Setup & keys
 

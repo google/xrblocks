@@ -1,6 +1,5 @@
 import * as xb from 'xrblocks';
 import * as THREE from 'three';
-import {UICore, UIText, UIPanel, HeadLeashBehavior} from 'uiblocks';
 import {StrokeRenderer} from './StrokeRenderer.js';
 import {PerfectShapeRenderer} from './PerfectShapeRenderer.js';
 
@@ -21,7 +20,6 @@ export class UnistrokeTracker extends xb.Script {
     this.scene = scene;
     console.log('UnistrokeTracker initialized');
 
-    this.uiCore = new UICore(this);
     this.initHudText();
 
     this.strokeRenderer = new StrokeRenderer(this.scene);
@@ -35,16 +33,14 @@ export class UnistrokeTracker extends xb.Script {
     // Attach listeners to StrokeRecognizer
     this.unistrokeRecognizer.addEventListener('unistrokestart', () => {
       this.strokeRenderer.clear();
-      this.hudText.setText('Capturing...');
-      this.hudTextScore.setText('');
+      this.hudText.text = 'Capturing...';
+      this.hudTextScore.text = '';
     });
 
     this.unistrokeRecognizer.addEventListener('unistrokeupdate', (e) => {
       const pt = e.detail.point;
       this.strokeRenderer.addPoint(pt);
-      this.hudTextCoords.setText(
-        `Coords: ${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)}`
-      );
+      this.hudTextCoords.text = `Coords: ${pt.x.toFixed(2)}, ${pt.y.toFixed(2)}, ${pt.z.toFixed(2)}`;
     });
 
     this.unistrokeRecognizer.addEventListener('unistrokeend', (e) => {
@@ -54,10 +50,8 @@ export class UnistrokeTracker extends xb.Script {
         console.log(
           `Recognized: ${recognizedShape} with confidence ${confidence}`
         );
-        this.hudText.setText(`Recognized: ${recognizedShape}`);
-        this.hudTextScore.setText(
-          `Confidence: ${Math.round(confidence * 100)}%`
-        );
+        this.hudText.text = `Recognized: ${recognizedShape}`;
+        this.hudTextScore.text = `Confidence: ${Math.round(confidence * 100)}%`;
 
         if (recognizedShape !== 'Unknown' && confidence > 0.6) {
           const points = this.strokeRenderer.getPoints();
@@ -70,57 +64,65 @@ export class UnistrokeTracker extends xb.Script {
   }
 
   /**
-   * Initializes the HUD display using uiblocks components.
+   * Initializes the view-fixed HUD display.
    */
   initHudText() {
-    const card = this.uiCore.createCard({
-      name: 'HUDCard',
-      sizeX: 0.5,
-      sizeY: 0.2,
-      position: new THREE.Vector3(0, 0.3, -1.0),
-      behaviors: [
-        new HeadLeashBehavior({
-          offset: new THREE.Vector3(0, 0.3, -1.0),
-          posLerp: 0.1,
-          rotLerp: 0.1,
-        }),
-      ],
+    const card = new xb.UICard({
+      size: {width: 0.5, height: 0.2},
+      pointerEvents: 'none',
+    });
+    card.name = 'HUDCard';
+    this.add(card);
+    card.add(
+      new xb.FollowHead({
+        offset: new THREE.Vector3(0, 0.3, -1.0),
+        smoothing: 0.1,
+      }),
+      new xb.FaceCamera({mode: 'spherical', smoothing: 0.1})
+    );
+
+    const panel = new xb.UIPanel({
+      pointerEvents: 'none',
+      style: {
+        width: '100%',
+        height: '100%',
+        flexDirection: 'column',
+        padding: 20,
+        gap: 10,
+        backgroundColor: '#1a1a1acc',
+        borderRadius: 20,
+        borderWidth: 2,
+        borderColor: '#ffffff33',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
     });
 
-    const panel = new UIPanel({
-      flexDirection: 'column',
-      padding: 20,
-      gap: 10,
-      fillColor: '#1a1a1acc', // Semi-transparent dark bg
-      cornerRadius: 20,
-      strokeWidth: 2,
-      strokeColor: '#ffffff33',
-      justifyContent: 'center',
-      alignItems: 'center',
-      width: '100%',
-      height: '100%',
-    });
     card.add(panel);
 
-    this.hudText = new UIText('Pinch to start', {
-      color: '#00ffff',
-      fontSize: 24,
-      fontWeight: 'bold',
-      textAlign: 'center',
+    this.hudText = new xb.UIText({
+      text: 'Pinch to start',
+      pointerEvents: 'none',
+      style: {
+        color: '#00ffff',
+        fontSize: 24,
+        fontWeight: 'bold',
+        textAlign: 'center',
+      },
     });
     panel.add(this.hudText);
 
-    this.hudTextScore = new UIText('', {
-      color: '#00ffff',
-      fontSize: 20,
-      textAlign: 'center',
+    this.hudTextScore = new xb.UIText({
+      text: '',
+      pointerEvents: 'none',
+      style: {color: '#00ffff', fontSize: 20, textAlign: 'center'},
     });
     panel.add(this.hudTextScore);
 
-    this.hudTextCoords = new UIText('', {
-      color: '#00ffff',
-      fontSize: 16,
-      textAlign: 'center',
+    this.hudTextCoords = new xb.UIText({
+      text: '',
+      pointerEvents: 'none',
+      style: {color: '#00ffff', fontSize: 16, textAlign: 'center'},
     });
     panel.add(this.hudTextCoords);
   }

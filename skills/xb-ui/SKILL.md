@@ -1,83 +1,75 @@
 ---
 name: xb-ui
 description: >-
-  Build spatial UI in an XR Blocks app with the core `xb.SpatialPanel` system — a
-  grid of rows and columns holding text, text buttons, icon buttons, and images,
-  with a unified `onTriggered` select handler. Use for HUDs, menus, dialogs, and
-  control panels when you want a lightweight, no-extra-dependency UI. For rich
-  flexbox layouts with gradients, strokes, and shadows, use xb-uiblocks instead.
-  Covers `addGrid`/`addRow`/`addCol`/`addText`/`addTextButton`/`addIconButton`,
-  panel positioning, and the `enableUI()` setup.
+  Build flex-layout spatial UI with UICard, UIOverlay, UIPanel, UIText, UIImage,
+  UIIcon, UIButton, and UISlider. Use for HUDs, menus, dialogs, and controls.
 ---
 
-# xb-ui: core spatial UI (`SpatialPanel`)
+# xb-ui: spatial UI
 
-A `SpatialPanel` hosts a grid; rows and columns nest to lay out views. Lightweight and
-dependency-free. (For gradients/shadows/flexbox fidelity, use [`xb-uiblocks`](../xb-uiblocks/SKILL.md).)
-This is for rapid prototyping, if authoring advanced spatial UI, use `xb-uiblocks` skill.
+XR Blocks provides one UI system from the main `xrblocks` export. It starts
+with the engine and needs no addon registration.
 
-## Setup
-
-```js
-const options = new xb.Options();
-options.enableUI(); // spatial UI + reticles
-xb.init(options);
-```
-
-## Build a panel
+## World-space card
 
 ```js
-class Menu extends xb.Script {
-  init() {
-    const panel = new xb.SpatialPanel({
-      backgroundColor: '#1a1a1abb',
-      width: 2.5,
-      height: 1.5,
-    });
-    panel.position.set(0, xb.user.height, -xb.user.panelDistance);
-    this.add(panel);
+const card = new xb.UICard({
+  size: {width: 0.6, height: 0.35},
+  manipulation: true,
+  edge: {scale: true},
+  style: {
+    flexDirection: 'column',
+    gap: 16,
+    backgroundColor: '#202124',
+    borderRadius: 24,
+  },
+  children: [
+    new xb.UIText({
+      text: 'Welcome',
+      style: {fontSize: 32, color: '#ffffff'},
+    }),
+    new xb.UIButton({
+      label: 'Continue',
+      onClick: () => console.log('continue'),
+      style: {padding: 16, backgroundColor: '#4285f4'},
+    }),
+  ],
+});
 
-    const grid = panel.addGrid();
-
-    // Rows take a `weight` = fraction of the parent's height.
-    grid.addRow({weight: 0.6}).addText({
-      text: 'Welcome to XR',
-      fontColor: '#ffffff',
-      fontSize: 0.08,
-    });
-
-    const controls = grid.addRow({weight: 0.4});
-
-    // Columns take a `weight` = fraction of the row's width.
-    const yes = controls.addCol({weight: 0.5}).addIconButton({
-      text: 'check_circle', // Material icon name (fonts.google.com/icons)
-      fontSize: 0.5,
-    });
-    const send = controls.addCol({weight: 0.5}).addTextButton({
-      text: 'Send',
-      fontColor: '#ffffff',
-      backgroundColor: '#4285f4',
-      fontSize: 0.24,
-    });
-
-    // onTriggered unifies click / pinch / touch on a button.
-    yes.onTriggered = () => console.log('yes');
-    send.onTriggered = () => console.log('send');
-
-    panel.updateLayouts(); // call after building if you set positions manually
-  }
-}
+card.position.set(0, 1.4, -1);
+xb.add(card);
 ```
 
-## Cheatsheet
+Use `UIOverlay` instead of `UICard` for a view-space surface:
 
-- **Panel**: `new xb.SpatialPanel({backgroundColor, width, height, useDefaultPosition})`;
-  set `panel.position` and (for a manually placed root) `panel.isRoot = true`.
-- **Containers**: `panel.addGrid()` → `grid.addRow({weight})` → `row.addCol({weight})`.
-- **Views**: `.addText({text, fontColor, fontSize})`,
-  `.addTextButton({text, fontColor, backgroundColor, fontSize})`,
-  `.addIconButton({text: '<material_icon>', fontSize})`. Update text via `view.text = '…'`.
-- **Scrolling text**: `new xb.ScrollingTroikaTextView({text, fontSize})` then `.addText(str)`.
-- **Interactions**: assign `button.onTriggered = () => {…}`; colors are hex strings.
+```js
+const overlay = new xb.UIOverlay({
+  style: {
+    width: 420,
+    position: 'absolute',
+    left: '50%',
+    bottom: 24,
+    transform: {translateX: '-50%'},
+  },
+  children: [new xb.UIText({text: 'Ready'})],
+});
+```
 
-See `templates/1_ui`, `templates/6_ai`, and `samples/sound` for complete panels.
+Cards and overlays use the theme's `surface` appearance by default. Do not
+wrap either root in a full-size painted panel. Set `appearance: 'none'` for a
+transparent root. Use nested `UIPanel` elements only for neutral flex rows and
+columns. All non-root UI elements must be under one card or overlay.
+
+Styles support flex layout, spacing, text, borders, solid or gradient paint,
+shadows, and `:hover`, `:active`, and `:disabled` states.
+
+For transcripts or multilingual text, use `UIText` directly. It selects its
+Unicode glyph renderer internally without replacing the mounted layout node.
+Use `whiteSpace: 'pre-line'`, `verticalAlign: 'bottom'`, a fixed `height`, and
+`overflow: 'hidden'` when the newest wrapped lines must remain visible.
+
+After a mounted layout completes, call `xb.ui.validate(root)` to check for
+overflow, clipped text, invalid layout, and overlay content outside the
+viewport.
+
+See `templates/1_ui` and `docs/docs/manual/UI.mdx` for complete examples.

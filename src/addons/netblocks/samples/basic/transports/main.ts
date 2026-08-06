@@ -122,7 +122,6 @@ class TransportsSample extends xb.Script {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const options = new xb.Options();
-  options.enableUI();
   options.reticles.enabled = true;
   options.controllers.visualizeRays = false;
   const app = new TransportsSample();

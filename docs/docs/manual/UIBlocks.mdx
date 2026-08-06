@@ -7,13 +7,9 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 # UI Blocks (Addon)
 
-The `uiblocks` addon is the preferred spatial UI system for XR Blocks apps. It
-builds on **`@pmndrs/uikit`** and the Yoga flexbox layout engine.
+The `uiblocks` addon provides a rich spatial UI system built on top of **`@pmndrs/uikit`** (powered by the Yoga flexbox layout engine).
 
-Start with `uiblocks` for menus, HUDs, cards, labels, and controls, including
-simple surfaces. Use the core [Spatial UI](UI.mdx) system only when a concrete
-constraint prevents loading UIBlocks or an existing app requires legacy
-`SpatialPanel` integration.
+Use `uiblocks` when you need complex layouts, nested margins, CSS-like borders, gradients, rounded corners, or drop shadows. For basic panels, use the core [Spatial UI](UI.mdx) panels.
 
 :::warning
 
@@ -64,7 +60,6 @@ Do not mix core UI classes (`Panel`, `SpatialPanel`) and `uiblocks` classes (`UI
 To render UI blocks, instantiate a `UICore` manager parented to your script, create a pivot-facing `UICard`, and build panels within it:
 
 ```javascript
-import * as xb from 'xrblocks';
 import {UICore, UIPanel, UIText} from 'uiblocks';
 import * as THREE from 'three';
 
@@ -122,17 +117,14 @@ class MenuScript extends xb.Script {
 ### Formatting Rules
 
 - **Borders**: To follow rounded corners properly, use `strokeWidth` and `strokeColor` instead of `borderWidth`/`borderColor`.
-- **Colors**: Solid colors accept hex (including alpha), `rgb()` / `rgba()`,
-  CSS color names, numeric Three.js colors, or `THREE.Color`. `hsla()` is not
-  supported by the addon's alpha-aware parser.
-- **Buttons**: There is no dedicated button primitive. Build buttons with the
-  `onClick` option on a styled `UIPanel`:
+- **Colors**: Colors must be standard hex strings (e.g. `'#ff0000'`) or `THREE.Color` references. Do not use `rgba()` or `hsla()`.
+- **Buttons**: There is no dedicated button primitive. Build buttons by placing click handlers on a styled `UIPanel`:
   ```javascript
   const button = new UIPanel({
     padding: 10,
     fillColor: '#222222',
-    onClick: () => console.log('Button clicked!'),
   });
+  button.onClick = () => console.log('Button clicked!');
   ```
 
 ---
@@ -160,22 +152,14 @@ card.addBehavior(
 // 2. HeadLeashBehavior: makes the UI smoothly follow the user's head position
 card.addBehavior(
   new HeadLeashBehavior({
-    offset: new THREE.Vector3(0, -0.1, -1.2),
-    posLerp: 0.1,
-    rotLerp: 0.1,
+    distance: 1.2,
+    heightOffset: -0.1,
+    lerpSpeed: 0.05,
   })
 );
 
 // 3. BillboardBehavior: keeps the card rotated to always face the user
-card.addBehavior(new BillboardBehavior({mode: 'cylindrical'}));
+card.addBehavior(new BillboardBehavior());
 ```
-
-Use the bare `from 'uiblocks'` specifier consistently. Browser-native apps map
-that exact name to `build/addons/uiblocks/src/index.js`; the `xrblocks/addons/`
-prefix does not resolve it. Copy the complete peer-dependency map from the
-
-<CodeSearchLink path="samples/uiblocks/index.html" /> or
-<CodeSearchLink path="src/addons/uiblocks/README.md" />, keeping `uiblocks` and
-`xrblocks` on the same build commit or package version.
 
 For complete reference implementation details, styling props, and troubleshooting tips, see <CodeSearchLink path="src/addons/uiblocks/SKILL.md"/>.

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
+import {ReticleOptions} from '../core/Options.js';
 import type {Controller} from '../input/Controller.js';
 import type {
-  InteractionReticleOptions,
   InteractionSourceState,
   ResolvedRay,
   ReticlePresentationObserver,
@@ -13,28 +13,7 @@ const WORLD_NORMAL = new THREE.Vector3();
 
 /** Presents resolved state. It never performs a raycast or changes targeting. */
 export class ReticlePresenter implements ReticlePresentationObserver {
-  private readonly scene = new THREE.Scene();
-
-  constructor(
-    private readonly options: InteractionReticleOptions = {
-      defaultRenderDistance: 0,
-    },
-    private readonly reticles?: THREE.Object3D
-  ) {
-    if (reticles) this.scene.add(reticles);
-  }
-
-  /** Draws reticles after every world and UI pass. */
-  render(renderer: THREE.WebGLRenderer, camera: THREE.Camera): void {
-    if (!this.reticles || this.reticles.children.length === 0) return;
-    const autoClear = renderer.autoClear;
-    try {
-      renderer.autoClear = false;
-      renderer.render(this.scene, camera);
-    } finally {
-      renderer.autoClear = autoClear;
-    }
-  }
+  constructor(private readonly options = new ReticleOptions()) {}
 
   present(
     snapshot: InteractionSourceState,
@@ -67,9 +46,8 @@ export class ReticlePresenter implements ReticlePresentationObserver {
     if (!resolved || beyondPresentationRange) {
       reticle.intersection = undefined;
       reticle.targetObject = undefined;
-      setHovering(reticle, false);
-      const defaultRenderDistance = this.options.defaultRenderDistance ?? 0;
-      if (defaultRenderDistance <= 0) {
+      reticle.setHovering(false);
+      if (this.options.defaultRenderDistance <= 0) {
         reticle.visible = false;
         return;
       }
@@ -77,7 +55,7 @@ export class ReticlePresenter implements ReticlePresentationObserver {
       reticle.visible = true;
       reticle.position
         .copy(ray.origin)
-        .addScaledVector(reticle.direction, defaultRenderDistance);
+        .addScaledVector(reticle.direction, this.options.defaultRenderDistance);
       WORLD_NORMAL.copy(reticle.direction).negate();
       reticle.setRotationFromNormalVector(WORLD_NORMAL);
       return;
@@ -88,7 +66,7 @@ export class ReticlePresenter implements ReticlePresentationObserver {
     reticle.intersection = intersection;
     const showsTarget = resolved.reticleMode === 'auto';
     reticle.targetObject = showsTarget ? resolved.target : undefined;
-    setHovering(reticle, showsTarget && resolved.target !== undefined);
+    reticle.setHovering(showsTarget && resolved.target !== undefined);
     reticle.position.copy(intersection.point);
 
     if (intersection.normal) {
@@ -108,13 +86,6 @@ export class ReticlePresenter implements ReticlePresentationObserver {
     controller.reticle.visible = false;
     controller.reticle.intersection = undefined;
     controller.reticle.targetObject = undefined;
-    setHovering(controller.reticle, false);
+    controller.reticle.setHovering(false);
   }
-}
-
-function setHovering(reticle: THREE.Object3D, hovering: boolean): void {
-  const hoverable = reticle as THREE.Object3D & {
-    setHovering?: (value: boolean) => void;
-  };
-  hoverable.setHovering?.(hovering);
 }

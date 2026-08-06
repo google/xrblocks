@@ -4,6 +4,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HAND_JOINT_NAMES} from '../input/components/HandJointNames';
 import {Handedness} from '../input/Hands';
 import {Input} from '../input/Input';
+import {disposeObjectChildren} from '../utils/ThreeDisposal';
 import type {DeepReadonly} from '../utils/Types';
 
 import {SimulatorHandPoseChangeRequestEvent} from './events/SimulatorHandEvents';
@@ -568,6 +569,26 @@ export class SimulatorHands {
     );
     this.handPosePanelElement = element as SimulatorHandPoseHTMLElement;
     this.updateHandPosePanel();
+  }
+
+  dispose() {
+    this.handPosePanelElement?.removeEventListener(
+      SimulatorHandPoseChangeRequestEvent.type,
+      this.onHandPoseChangeRequest
+    );
+    this.handPosePanelElement = undefined;
+    this.onHandednessChanged = undefined;
+    disposeObjectChildren(this.leftController);
+    disposeObjectChildren(this.rightController);
+    this.leftController.removeFromParent();
+    this.rightController.removeFromParent();
+    this.leftHand = undefined;
+    this.rightHand = undefined;
+    this.leftHandBones.length = 0;
+    this.rightHandBones.length = 0;
+    this.physics = undefined;
+    this.camera = undefined;
+    this.simulatorOptions = undefined;
   }
 
   onHandPoseChangeRequest = (event: Event) => {

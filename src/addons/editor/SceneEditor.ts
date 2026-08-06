@@ -26,7 +26,7 @@ export interface SceneEditorOptions {
  * outliner (label/visibility/lock), undo/redo, and simulator manifest
  * export/import. Desktop mouse in the simulator only -- permanently out
  * of scope for real XR controllers (all hit-testing gates on
- * `event.target === xb.core.input.mouseController`, which a real XR
+ * `event.source.controller === xb.core.input.mouseController`, which a real XR
  * controller never satisfies).
  *
  * Usage: `xb.add(new SceneEditor({}))`. Every dependency (SceneManager,

@@ -21,6 +21,7 @@ export type TransformSpace = 'world' | 'local';
  * permanently out of scope for this addon.
  */
 export class SelectionManager extends xb.Script {
+  private readonly raycaster = new THREE.Raycaster();
   sceneManager: SceneManager;
   selectedSet = new Set<SceneInstance>();
   primary: SceneInstance | null = null;
@@ -149,7 +150,7 @@ export class SelectionManager extends xb.Script {
 
   override onSelectStart(event: SelectEvent) {
     if (!this.editorActive) return;
-    const controller = event.target;
+    const controller = event.source.controller;
     if (controller !== xb.core.input.mouseController) return;
 
     // Defer to the gizmo's own scoped handle raycast before running our
@@ -161,8 +162,10 @@ export class SelectionManager extends xb.Script {
     // avoids stealing clicks meant to start a drag.
     if (this.transformGizmo?.hitTestActiveHandle(controller)) return;
 
-    xb.core.input.setRaycasterFromController(controller);
-    const hit = xb.core.input.raycaster.intersectObjects(
+    this.raycaster.setFromXRController(
+      controller as unknown as THREE.XRTargetRaySpace
+    );
+    const hit = this.raycaster.intersectObjects(
       this.sceneManager.list().map((candidate) => candidate.object),
       true
     )[0];

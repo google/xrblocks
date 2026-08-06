@@ -5,23 +5,8 @@ that with your contribution, we can inspire more hackers, designers, and
 practitioners to unleash their creativity! Let's make AI + XR accessible to
 everyone so they may bring their ideas to life faster.
 
-For basic demos to demonstrate the use of a particular module, we suggest you
+For basic demo to demonstrate the use of a particular module, we suggest you
 submit to `/samples/`.
-
-## Contributing Guidelines
-
-In addition to [CONTRIBUTING.md](../CONTRIBUTING.md), here are a few key points for contributing to XR Blocks:
-
-- **Preferred Demo Contributions:** We prefer new demos that demonstrate novel features in interactive perception, XR realism, embodied interactions, interactive graphics, or Gemini capabilities. Note that 3D applications without any XR-specific features may be rejected. Preferred types of contributions include:
-  1. Novel use cases with open Hugging Face models.
-  2. Porting more features from [ARCore Depth Lab](https://github.com/googlesamples/arcore-depth-lab) and [ARChat](https://github.com/google/archat) to XR.
-  3. Converting MIT / Apache 2 shaders to XR (e.g., from [Shadertoy](https://www.shadertoy.com/view/4sX3Rn); remember to give credit in the demo's README).
-  4. Finding novel use cases for Gemini.
-  5. Adding accessibility and security layers.
-
-- **Requirements:** All demo submissions MUST include a screen recording in the desktop simulator and a screen recording on device (preferably an Android XR device).
-
-- **AI code:** For AI-generated code, there should be a real person behind it to take responsibility.
 
 ## Running Demos Locally
 
@@ -39,20 +24,23 @@ Review and sign the
 [Contributor Licence Agreement](https://cla.developers.google.com/about) (CLA).
 Now you are ready to create a pull request :)
 
-### Step 2: Create your demo
+### Step 2: Create your sample
 
 Follow README.md in the root folder to set up your development workflow. Create
-a new demo by starting from scratch or an existing template from `/templates/`
+a new sample by starting from scratch or an existing template from `/templates/`
 or `/samples/`.
 
 When using third-party assets, make sure they are compatible with Apache 2
 license and add corresponding LICENSE file to the demo folder. Please submit large assets as a PR to https://github.com/xrblocks/proprietary-assets and use a jsdelivr CDN link to reference them.
 
-For demos with third-party npm dependencies or requiring a build, please configure a `package.json` using `pnpm` and add your project to the `build_all.sh` script. See `drone` for an example.
+For demos with third-party npm dependencies or requiring a build, configure a
+`package.json` and add the project to the repository build.
 
 ### Step 3: Create a pull request
 
-Now that your files are created and configured correctly, commit and [create a pull request](https://github.com/google/xrblocks/compare) (refer to [the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request) for assistance). Make sure to complete the required checklist (including simulator/device testing and asset guidelines).
+Now that your files are created and configured correctly, commit and create a
+pull request by following
+[the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request).
 
 ## Community Guidelines
 

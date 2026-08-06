@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {Handedness} from '../input/Hands';
 import {Input} from '../input/Input';
+import {Interaction} from '../interaction/Interaction';
 import {Keycodes} from '../utils/Keycodes';
 
 import {SimulatorControllerMode} from './controlModes/SimulatorControllerMode';
@@ -34,8 +35,11 @@ export class SimulatorControls {
 
   simulatorModeControls: SimulatorControlMode;
   simulatorModes: {[key: string]: SimulatorControlMode};
-  renderer!: THREE.WebGLRenderer;
+  renderer?: THREE.WebGLRenderer;
   private simulatorOptions?: SimulatorOptions;
+  private activePointerId?: number;
+  private connected = false;
+  private initialized = false;
   #enabled = true;
   get enabled() {
     return this.#enabled;
@@ -123,12 +127,14 @@ export class SimulatorControls {
   init({
     camera,
     input,
+    interaction,
     timer,
     renderer,
     simulatorOptions,
   }: {
     camera: THREE.Camera;
     input: Input;
+    interaction: Interaction;
     timer: THREE.Timer;
     renderer: THREE.WebGLRenderer;
     simulatorOptions: SimulatorOptions;
@@ -137,6 +143,7 @@ export class SimulatorControls {
       this.simulatorModes[mode].init({
         camera,
         input,
+        interaction,
         timer,
         domElement: renderer.domElement,
         simulatorOptions,
@@ -147,20 +154,54 @@ export class SimulatorControls {
     this.simulatorControllerState.currentControllerIndex =
       simulatorOptions.defaultHand === Handedness.LEFT ? 0 : 1;
     this.simulatorOptions = simulatorOptions;
+    this.initialized = true;
     this.connect();
   }
 
   connect() {
-    const domElement = this.renderer.domElement;
+    if (this.connected) return;
+    const domElement = this.renderer?.domElement;
+    if (!domElement) throw new Error('SimulatorControls is not initialized.');
     document.addEventListener('keyup', this.onKeyUp);
     document.addEventListener('keydown', this.onKeyDown);
     domElement.addEventListener('pointermove', this.onPointerMove);
     domElement.addEventListener('pointerdown', this.onPointerDown);
     domElement.addEventListener('pointerup', this.onPointerUp);
+    domElement.addEventListener('pointercancel', this.onPointerCancel);
+    domElement.addEventListener(
+      'lostpointercapture',
+      this.onLostPointerCapture
+    );
     domElement.addEventListener('wheel', this.onWheel, {passive: false});
     domElement.addEventListener('contextmenu', preventDefault);
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('visibilitychange', this.onBlur);
+    this.connected = true;
+  }
+
+  disconnect() {
+    if (!this.connected) return;
+    const domElement = this.renderer?.domElement;
+    if (!domElement) {
+      this.connected = false;
+      return;
+    }
+    document.removeEventListener('keyup', this.onKeyUp);
+    document.removeEventListener('keydown', this.onKeyDown);
+    domElement.removeEventListener('pointermove', this.onPointerMove);
+    domElement.removeEventListener('pointerdown', this.onPointerDown);
+    domElement.removeEventListener('pointerup', this.onPointerUp);
+    domElement.removeEventListener('pointercancel', this.onPointerCancel);
+    domElement.removeEventListener(
+      'lostpointercapture',
+      this.onLostPointerCapture
+    );
+    domElement.removeEventListener('wheel', this.onWheel);
+    domElement.removeEventListener('contextmenu', preventDefault);
+    window.removeEventListener('blur', this.onBlur);
+    document.removeEventListener('visibilitychange', this.onBlur);
+    this.connected = false;
+    this.onBlur();
   }
 
   update() {
@@ -172,16 +213,29 @@ export class SimulatorControls {
     this.simulatorModeControls.onPointerMove(event);
   };
 
-  onPointerDown = (event: MouseEvent) => {
+  onPointerDown = (event: PointerEvent) => {
     if (!this.enabled) return;
     this.simulatorModeControls.onPointerDown(event);
     this.pointerDown = true;
+    this.activePointerId = event.pointerId;
+    this.renderer?.domElement.setPointerCapture?.(event.pointerId);
   };
 
-  onPointerUp = (event: MouseEvent) => {
+  onPointerUp = (event: PointerEvent) => {
     if (!this.enabled) return;
-    this.simulatorModeControls.onPointerUp(event);
-    this.pointerDown = false;
+    this.endPointerInteraction(event);
+    this.releasePointerCapture(event.pointerId);
+  };
+
+  onPointerCancel = (event: PointerEvent) => {
+    this.endPointerInteraction(event);
+    this.releasePointerCapture(event.pointerId);
+  };
+
+  onLostPointerCapture = (event: PointerEvent) => {
+    if (event.pointerId !== this.activePointerId) return;
+    this.activePointerId = undefined;
+    this.endPointerInteraction(event);
   };
 
   onWheel = (event: WheelEvent) => {
@@ -222,6 +276,7 @@ export class SimulatorControls {
 
   onBlur = () => {
     this.downKeys.clear();
+    this.cancelPointerInteraction();
   };
 
   setSimulatorMode(mode: SimulatorMode) {
@@ -235,13 +290,35 @@ export class SimulatorControls {
   }
 
   setSimulatorSettingsPanelElement(element: ISimulatorSettingsPanelElement) {
+    this.simulatorSettingsPanelElement?.removeEventListener(
+      'setSimulatorMode',
+      this.onSetSimulatorMode
+    );
     element.simulatorMode = this.simulatorMode;
-    element.addEventListener('setSimulatorMode', (event) => {
-      if (event instanceof SetSimulatorModeEvent) {
-        this.setSimulatorMode(event.simulatorMode);
-      }
-    });
+    element.addEventListener('setSimulatorMode', this.onSetSimulatorMode);
     this.simulatorSettingsPanelElement = element;
+  }
+
+  private onSetSimulatorMode = (event: Event) => {
+    if (event instanceof SetSimulatorModeEvent) {
+      this.setSimulatorMode(event.simulatorMode);
+    }
+  };
+
+  dispose() {
+    this.disconnect();
+    if (this.initialized) {
+      this.simulatorModeControls.onModeDeactivated();
+      this.initialized = false;
+    }
+    this.simulatorSettingsPanelElement?.removeEventListener(
+      'setSimulatorMode',
+      this.onSetSimulatorMode
+    );
+    this.simulatorSettingsPanelElement = undefined;
+    this.simulatorOptions = undefined;
+    this.setEnabled(false);
+    this.renderer = undefined;
   }
 
   setEnabled(value: boolean) {
@@ -251,6 +328,30 @@ export class SimulatorControls {
     this.#enabled = value;
     if (!value) {
       this.downKeys.clear();
+      this.cancelPointerInteraction();
+    }
+  }
+
+  private cancelPointerInteraction() {
+    if (!this.pointerDown && this.activePointerId === undefined) return;
+    this.endPointerInteraction(new MouseEvent('mouseup'));
+    this.releasePointerCapture();
+  }
+
+  private endPointerInteraction(event: MouseEvent) {
+    this.simulatorModeControls.onPointerUp(event);
+    this.pointerDown = false;
+  }
+
+  private releasePointerCapture(pointerId = this.activePointerId) {
+    if (pointerId === undefined) return;
+    const domElement = this.renderer?.domElement;
+    if (!domElement) return;
+    if (pointerId === this.activePointerId) {
+      this.activePointerId = undefined;
+    }
+    if (domElement.hasPointerCapture?.(pointerId)) {
+      domElement.releasePointerCapture(pointerId);
     }
   }
 }

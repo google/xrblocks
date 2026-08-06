@@ -11,7 +11,9 @@ export class PinchFilter {
     (event: THREE.BaseEvent) => void
   >();
 
-  constructor(private handleEventFn: (event: ControllerEvent) => void) {}
+  constructor(
+    private readonly handleEventFn: (event: ControllerEvent) => void
+  ) {}
 
   private getOrCreateForwardingListener(type: keyof ControllerEventMap) {
     let listener = this.forwardingListeners.get(type);
@@ -75,12 +77,7 @@ export class PinchFilter {
     return false;
   }
 
-  updateController(
-    controller: Controller,
-    dispatchEventFn: (event: ControllerEvent) => void,
-    setRaycasterFn: (c: Controller) => void,
-    performRaycastFn: (c: Controller) => void
-  ) {
+  updateController(controller: Controller) {
     if (controller.gamepad && controller.gamepad.buttons[0] !== undefined) {
       const pinchValue = controller.gamepad.buttons[0].value;
       const isPinching = pinchValue >= 1.0;
@@ -88,9 +85,7 @@ export class PinchFilter {
 
       if (isPinching && !wasPinching) {
         controller.userData.selected = true;
-        setRaycasterFn(controller);
-        performRaycastFn(controller);
-        dispatchEventFn({
+        this.handleEventFn({
           type: 'selectstart',
           target: controller,
           data: controller.inputSource,
@@ -98,13 +93,13 @@ export class PinchFilter {
         } as FilterableControllerEvent);
       } else if (!isPinching && wasPinching) {
         controller.userData.selected = false;
-        dispatchEventFn({
+        this.handleEventFn({
           type: 'select',
           target: controller,
           data: controller.inputSource,
           isCustom: true,
         } as FilterableControllerEvent);
-        dispatchEventFn({
+        this.handleEventFn({
           type: 'selectend',
           target: controller,
           data: controller.inputSource,

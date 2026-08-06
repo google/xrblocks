@@ -1,17 +1,18 @@
 import * as THREE from 'three';
 
+import type {Script} from '../../core/Script';
 import type {Controller} from '../../input/Controller';
 import {
   resumeTransformScripts,
   suspendTransformScripts,
 } from '../../placement/TransformScript';
 import {objectIsDescendantOf} from '../../utils/SceneGraphUtils';
+import {getUIElementKind, isUIElement} from '../../ui/UIElement';
 import {
   InteractionSourceState,
   type InteractionSource,
   type ManipulationResolution,
   type ResolvedManipulationAction,
-  type ResolvedRay,
   type SelectionCapture,
 } from '../InteractionTypes';
 import {
@@ -36,7 +37,7 @@ import {ScaleDriver} from './drivers/ScaleDriver';
 import {TranslateDriver} from './drivers/TranslateDriver';
 
 export type DispatchManipulationEvent = (
-  script: THREE.Object3D,
+  script: Script,
   event: ManipulationEvent
 ) => boolean | void;
 
@@ -53,12 +54,8 @@ interface Session {
   primaryAction?: ResolvedManipulationAction;
   auxiliary?: InteractionSourceState;
   phase?: ActivePhase;
-  cardEdge?: {
-    primaryCorner?: CardCorner;
-  };
+  cardEdge?: true;
 }
-
-type CardCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
 interface ActivePhase {
   action: ResolvedManipulationAction;
@@ -96,6 +93,9 @@ export class ManipulationManager {
     let handle: THREE.Object3D | undefined;
 
     for (const current of path) {
+      if (isUIElement(current) && getUIElementKind(current) === 'overlay') {
+        return undefined;
+      }
       const options = current.xb;
       if (!hasChildHandle && options?.manipulationHandle !== undefined) {
         hasChildHandle = true;
@@ -184,9 +184,7 @@ export class ManipulationManager {
     };
     const edge = getCardEdge(session.owner);
     if (edge && resolution.handle) {
-      session.cardEdge = {
-        primaryCorner: edge.scale ? getCardCorner(capture.uv) : undefined,
-      };
+      session.cardEdge = true;
     }
     const baseline = session.primaryAction
       ? this.captureBaseline(session, session.primaryAction)
@@ -213,31 +211,13 @@ export class ManipulationManager {
   }
 
   /** Claims a free spatial Select for Scale before normal target resolution. */
-  tryClaimScale(
-    snapshot: InteractionSourceState,
-    resolved?: ResolvedRay
-  ): boolean {
+  tryClaimScale(snapshot: InteractionSourceState): boolean {
     if (snapshot.sourceType === 'gaze' || this.roles.has(snapshot.controller)) {
       return false;
     }
     let eligible: Session | undefined;
     for (const session of this.sessions.values()) {
       if (!session.config.scale || session.auxiliary) continue;
-      const edge = getCardEdge(session.owner);
-      let matches = true;
-      if (edge?.scale) {
-        const primaryCorner = session.cardEdge?.primaryCorner;
-        const corner =
-          resolved?.manipulation?.owner === session.owner &&
-          resolved.manipulation.handle
-            ? getCardCorner(resolved.intersection.uv)
-            : undefined;
-        matches =
-          primaryCorner !== undefined &&
-          corner !== undefined &&
-          oppositeCorner(primaryCorner) === corner;
-      }
-      if (!matches) continue;
       if (eligible) return false;
       eligible = session;
     }
@@ -418,9 +398,7 @@ export class ManipulationManager {
       !session.owner.visible ||
       session.owner.parent !== session.ownerParent ||
       !objectIsDescendantOf(session.primary.capture.surface, session.owner) ||
-      (session.cardEdge && !edge) ||
-      (session.cardEdge?.primaryCorner &&
-        (!edge?.scale || !current.scale || !current.translate))
+      (session.cardEdge && !edge)
     ) {
       this.cancelOwner(session.owner);
       return false;
@@ -604,29 +582,23 @@ export class ManipulationManager {
 
 function getCardEdge(
   owner: THREE.Object3D
-):
-  | {readonly scale?: boolean; readonly translateFromSurface?: boolean}
-  | undefined {
-  return owner.xb?.manipulationSurface;
-}
-
-function oppositeCorner(corner: CardCorner): CardCorner {
-  if (corner === 'top-left') return 'bottom-right';
-  if (corner === 'top-right') return 'bottom-left';
-  if (corner === 'bottom-left') return 'top-right';
-  return 'top-left';
-}
-
-function getCardCorner(uv: THREE.Vector2 | undefined): CardCorner | undefined {
-  if (!uv) return undefined;
-  const horizontal = uv.x <= 0.2 ? 'left' : uv.x >= 0.8 ? 'right' : undefined;
-  const vertical = uv.y <= 0.2 ? 'bottom' : uv.y >= 0.8 ? 'top' : undefined;
-  return horizontal && vertical ? `${vertical}-${horizontal}` : undefined;
+): {readonly translateFromSurface?: boolean} | undefined {
+  const candidate = owner as THREE.Object3D & {
+    readonly edge?: false | {readonly translateFromSurface?: boolean};
+  };
+  if (
+    !isUIElement(owner) ||
+    getUIElementKind(owner) !== 'card' ||
+    !candidate.edge
+  ) {
+    return undefined;
+  }
+  return candidate.edge;
 }
 
 function createEvent(
   session: Session,
-  currentTarget: THREE.Object3D,
+  currentTarget: Script,
   phase: ManipulationPhase,
   proposal: Proposal,
   preventState: {value: boolean}

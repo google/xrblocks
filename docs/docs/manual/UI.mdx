@@ -3,161 +3,126 @@ sidebar_position: 8
 title: Spatial UI
 ---
 
-XR Blocks includes this lightweight, legacy grid UI for 2D elements in a scene
-panel. New app surfaces should start with [UI Blocks](UIBlocks.mdx); use the
-core system below only when UIBlocks dependencies cannot be loaded or an
-existing `SpatialPanel` integration must be preserved.
+XR Blocks includes one built-in spatial UI system. It uses flex layout and
+supports world-space cards, view-space overlays, text, images, icons, buttons,
+and sliders.
 
-## View
+The renderer starts with XR Blocks. Applications do not need to register a
+separate UI addon.
 
-The [`View`](/api/classes/View) class extends [`Script`](/api/classes/Script)
-with layout utilities for rendering 2D interfaces in 3D space:
+## World-space cards
 
-1. Relative positioning and sizing
-2. Setting the render order based on the scene graph depth
-
-### Relative positioning and sizing
-
-Object extending the view class are positioned and sized relative to their parent. \
-
-1. `x` and `y` set the relative position the view where `-0.5` and `0.5` represent the left and right edges of the parent view.
-2. `width` and `height` set the relative size of the view where `1.0` represents the full width or height of the parent view.
-
-The `updateLayout()` function applies the relative position to the `position` and `scale` properties of the view and computes a new `aspectRatio` property based on the parent view.
-It is automatically called when the view is added to another view or when `updateLayoutsBFS` is called from any parent view.
-
-Child classes may override `updateLayout` to respond to changes in position or scale.
-
-### Coordinate system
-
-The coordinate system within a view is uniformly scaled such that the origin `(0, 0, 0)` represents the center of the view and the range `[-0.5,0.5] x [-0.5,0.5]` represents the largest square which fits within the view.
-View objects provide a `aspectRatio` property which provides a true ratio of width over height.
-
-Each view provides `rangeX` and `rangeY`, which give its width and height in
-its own coordinate system based on the aspect ratio.
-For example, a landscape view with a `16:9` aspect ratio will have a `rangeX == 16/9` and a `rangeY == 1`.
-
-## Available Views
-
-The following views are provided as initial building blocks:
-
-### Panel
-
-The `Panel` class provides a root view with a rounded rectangle mesh to serve as a background. It also positions itself in front of the user by default.
-
-For example:
+Use [`UICard`](/api/classes/UICard) as the root of a UI tree. Its `size` is in
+meters. Child layout values use the UIKit layout coordinate system. Cards use
+the theme's `surface` appearance by default.
 
 ```js
-const panel = new xb.Panel({
-  width: 1.0,
-  height: 1.0,
-  backgroundColor: '#00000000',
-  useDefaultPosition: true,
+import * as xb from 'xrblocks';
+
+const card = new xb.UICard({
+  size: {width: 0.6, height: 0.35},
+  manipulation: true,
+  edge: {scale: true},
+  style: {
+    flexDirection: 'column',
+    gap: 16,
+    padding: 24,
+    backgroundColor: '#202124',
+    borderRadius: 24,
+  },
 });
+card.position.set(0, 1.4, -1);
+
+card.add(
+  new xb.UIText({
+    text: 'Welcome',
+    style: {fontSize: 32, color: '#ffffff'},
+  }),
+  new xb.UIButton({
+    label: 'Continue',
+    onClick: () => console.log('Continue'),
+    style: {padding: 16, backgroundColor: '#4285f4'},
+  })
+);
+
+xb.add(card);
+xb.init(new xb.Options());
 ```
 
-### Spatial Panel
+Set `manipulation: true` to let the user move and scale a card. Set `edge` to
+show its manipulation surface.
 
-A `SpatialPanel` is a draggable version of the `Panel` class.
+## View-space overlays
 
-For example:
+Use [`UIOverlay`](/api/classes/UIOverlay) for content fixed to the view. Its
+world transform does not affect rendering. An overlay is a bounded themed
+surface positioned inside a private full-viewport layout container.
 
 ```js
-const panel = new xb.SpatialPanel({
-  backgroundColor: '#00000000',
-  useDefaultPosition: true,
-  showEdge: true,
+const overlay = new xb.UIOverlay({
+  style: {
+    width: 360,
+    position: 'absolute',
+    left: '50%',
+    bottom: 24,
+    transform: {translateX: '-50%'},
+  },
+  children: [new xb.UIText({text: 'Ready', style: {fontSize: 24}})],
 });
+
+xb.add(overlay);
 ```
 
-Build content with the panel's grid helpers and use `onTriggered` for unified
-mouse, controller, and hand activation:
+Set `appearance: 'none'` on a card or overlay when it must be a transparent
+layout root. The default `appearance: 'surface'` applies
+`theme.styles.surface`. `UIPanel` remains a neutral nested layout element.
+
+## Validate layout
+
+After the UI renderer completes a frame, validate one mounted root or every
+mounted root:
 
 ```js
-const grid = panel.addGrid();
-grid.addRow({weight: 0.6}).addText({
-  text: 'Welcome',
-  fontColor: '#ffffff',
-  fontSize: 0.08,
-});
-
-const button = grid.addRow({weight: 0.4}).addTextButton({
-  text: 'Continue',
-  backgroundColor: '#4285f4',
-  fontColor: '#ffffff',
-});
-button.onTriggered = () => console.log('Continue');
-
-panel.updateLayouts();
+const report = xb.ui.validate(overlay);
+if (!report.ok) console.table(report.issues);
 ```
 
-### Grid View
+The report identifies invalid layout, overflowing content, clipped text, and
+overlay surfaces outside the viewport. `ready` is false when no completed
+mounted layout is available.
 
-The `Grid` class splits a view into weighted rows and columns.
+## Components
 
-### Image View
+- `UIPanel`: passive layout and visual grouping
+- `UIText`: text content
+- `UIImage`: URL-backed or texture-backed image
+- `UIIcon`: Material Symbol icon
+- `UIButton`: accessible button with `onClick`
+- `UISlider`: horizontal value input
+- `ModelViewer`: model display and manipulation surface
 
-The `ImageView` class displays an image from a URL.
+Every UI component and public UI type is exported from `xrblocks`.
 
-### Text View
+## Text layout
 
-The `TextView` class adds text using the [`troika-three-text` library](https://github.com/protectwise/troika).
+`UIText` automatically uses a system-font canvas when its content contains
+glyphs that are not available in UIkit's default atlas. The mounted layout
+node stays stable when dynamic text changes between native and Unicode
+rendering.
 
-### Horizontal and Vertical Pagers
-
-The `HorizontalPager` and `VerticalPager` classes provide scrolling pages to your views.
-
-They can be combined with the following additional classes:
-
-- `PagerState` which holds the current page and automatically scrolls to the nearest page.
-- `PageIndicator` adds a small page indicator ◦◦•◦◦ based on the pager state.
-
-### Scrolling Text View
-
-The `ScrollingTroikaTextView` class provides a text view where the text moves upwards out of the view when a new line is added.
-
----
-
-## Virtual Keyboard (Addon)
-
-The QWERTY **Virtual Keyboard** addon allows users to type text using a customizable spatial interface in VR/AR.
-
-To use the keyboard, add it to your imports and setup:
+Use `whiteSpace: 'pre-line'` to preserve explicit line breaks. A fixed-height
+text viewport can keep its newest lines visible by combining bottom alignment
+with clipped overflow:
 
 ```js
-import {Keyboard} from 'xrblocks/addons/virtualkeyboard/Keyboard.js';
+const transcript = new xb.UIText({
+  text: 'You: Hello\n\nGemini: 你好',
+  style: {
+    width: '100%',
+    height: 240,
+    whiteSpace: 'pre-line',
+    verticalAlign: 'bottom',
+    overflow: 'hidden',
+  },
+});
 ```
-
-### Setup & Usage
-
-To display the virtual keyboard, create an instance, initialize it, and add it to the scene:
-
-```javascript
-class KeyboardInputScript extends xb.Script {
-  init() {
-    // Create the virtual keyboard
-    this.keyboard = new Keyboard();
-    this.add(this.keyboard);
-
-    // Listen to typing events
-    this.keyboard.onTextChanged = (text) => {
-      console.log('Current buffer:', text);
-    };
-
-    this.keyboard.onEnterPressed = (text) => {
-      console.log('Submitted text:', text);
-      this.keyboard.setText(''); // Clear buffer
-    };
-  }
-}
-```
-
-By default, the keyboard initializes at a comfortable position in front of the user: `(0, 1.2, -1)` with physical dimensions of `1.0m` width and `0.555m` height.
-
-### How It Works
-
-- **UI Layout**: Organizes keys across **6 rows** (symbols, numbers, top letter row, middle letter row, bottom letter row, and space bar) using standard `Grid` components.
-- **State Management**:
-  - **Transient Shift**: Pressing **Shift** switches letters to uppercase temporarily, resetting automatically after typing one character.
-  - **Caps Lock**: Pressing **Caps Lock** enables persistent uppercase typing.
-- **Styling**: Leverages dark charcoal panels (`#1a1a1b`), slate gray special keys (`#3e4a59`), and a blue-teal Action/Enter key (`#449eb9`).
