@@ -133,17 +133,18 @@
           sans-serif;
         color: #8d86a8;
       }
-      #siblings a {
-        color: #b9a7ff;
+      #siblings a.picker {
+        color: #9177c7;
         text-decoration: none;
-        border-bottom: 1px dotted #6a5acd;
+        pointer-events: auto;
+        opacity: 0.85;
       }
-      #siblings a:hover {
-        color: #fff;
+      #siblings a.picker:hover {
+        opacity: 1;
+        text-decoration: underline;
       }
       #siblings b {
-        color: #d7d2ea;
-        font-weight: 600;
+        color: #9177c7;
       }
     </style>
   </head>
@@ -165,9 +166,8 @@
       <ul id="note-list"></ul>
       <button id="forget">Clear notes</button>
       <nav id="siblings">
-        <a href="../anchors/">← markers</a>
-        <span><b>notes</b></span>
-        <a href="../anchors_gallery/">gallery →</a>
+        <a class="picker" href="../anchors_home/">← anchors demos</a>
+        · <b>notes</b>
       </nav>
     </div>
     <script type="module" src="main.js"></script>
