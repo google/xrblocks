@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import {LipsyncMouth} from 'lipsync';
 

@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import * as xb from 'xrblocks';
@@ -100,9 +98,7 @@ class NavMeshWireframe extends xb.Script {
   }
 
   showRandomPath() {
-    const result = xb.core.simulator.navMesh.findRandomPathFrom(
-      xb.core.camera.position
-    );
+    const result = xb.core.simulator.findRandomUserPath();
     if (!result) {
       this.pathButton.textContent = 'No Path';
       window.setTimeout(() => {
@@ -185,10 +181,7 @@ class NavMeshWireframe extends xb.Script {
     desiredCameraPosition.copy(xb.core.camera.position).add(waypointDelta);
     desiredCameraPosition.y =
       currentFootPosition.y + waypointDelta.y + eyeHeight;
-    xb.core.simulator.navMesh.applyUserMovement(
-      xb.core.camera,
-      desiredCameraPosition
-    );
+    xb.core.simulator.moveUser(desiredCameraPosition);
 
     remainingPathStart.copy(xb.core.camera.position);
     remainingPathStart.y -= eyeHeight;

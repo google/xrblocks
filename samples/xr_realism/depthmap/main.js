@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/instructions/SimulatorInstructions.js';
-
 import * as xb from 'xrblocks';
 
 import {DepthMapScene} from './DepthMapScene.js';

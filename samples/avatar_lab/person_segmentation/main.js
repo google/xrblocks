@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as xb from 'xrblocks';
 
 import {MagicWindow} from '../../../demos/magic_window/MagicWindow.js';

@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import {TubePainter} from 'three/addons/misc/TubePainter.js';
 import * as xb from 'xrblocks';
