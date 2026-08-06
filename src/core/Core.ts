@@ -731,6 +731,13 @@ export class Core {
       this.lighting.update();
     }
 
+    // XREffects renders each eye manually with XR camera auto-update disabled.
+    // Keep the public camera at the current headset pose so view-space UI and
+    // scripts do not use the stale pose from before the XR session started.
+    if (this.effects && this.renderer.xr.isPresenting) {
+      this.renderer.xr.updateCamera(this.camera);
+    }
+
     this.input.sampleSources();
 
     // Traverse the scene to find all scripts.
