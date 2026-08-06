@@ -82,6 +82,12 @@ class AnchorNotesDemo extends xb.Script {
     input?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') this.pinNote();
     });
+    // The simulator walks the camera on WASD, so writing a note containing any
+    // of those letters would otherwise carry you across the room while you
+    // type. Resolved on each event rather than once here, since the simulator
+    // may not exist yet when this runs.
+    input?.addEventListener('focus', () => this.setSimulatorControls(false));
+    input?.addEventListener('blur', () => this.setSimulatorControls(true));
     document
       .getElementById('forget')
       ?.addEventListener('click', () => this.forgetAll());
@@ -93,6 +99,16 @@ class AnchorNotesDemo extends xb.Script {
 
   get anchors() {
     return xb.core.world?.anchors;
+  }
+
+  /**
+   * Turns the simulator's keyboard movement on or off.
+   *
+   * @param enabled - Whether WASD should drive the camera.
+   */
+  setSimulatorControls(enabled) {
+    const controls = xb.core?.simulator?.controls;
+    if (controls) controls.enabled = enabled;
   }
 
   /** Builds the in-headset controls and the spatial keyboard. */
