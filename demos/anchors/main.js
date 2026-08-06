@@ -15,6 +15,11 @@ import * as xb from 'xrblocks';
 const MARKER_RADIUS = 0.06;
 /** How far in front of the user a new marker is placed, in metres. */
 const MARKER_DISTANCE = 0.8;
+/** Markers dropped without moving fan out across a row this wide. */
+const MARKERS_PER_ROW = 3;
+/** Horizontal and vertical gap between fanned-out markers, in metres. */
+const MARKER_SPREAD_X = 0.32;
+const MARKER_SPREAD_Y = 0.24;
 const MARKER_COLOR = 0x8a7bff;
 const RESTORED_COLOR = 0x4ec9a0;
 
@@ -135,8 +140,8 @@ class AnchorsDemo extends xb.Script {
     // them out enough to stay individually visible.
     const index = this.markers.size;
     const spread = new THREE.Vector3(
-      ((index % 3) - 1) * 0.32,
-      Math.floor(index / 3) * -0.24,
+      ((index % MARKERS_PER_ROW) - 1) * MARKER_SPREAD_X,
+      Math.floor(index / MARKERS_PER_ROW) * -MARKER_SPREAD_Y,
       0
     ).applyQuaternion(this.scratchQuaternion);
     const target = this.scratchPosition.clone().add(forward).add(spread);
