@@ -71,7 +71,7 @@ function lerpHandPoseRotations(
 }
 
 function applyHandJoints(
-  bones: THREE.Object3D[],
+  bones: Array<THREE.Object3D | undefined>,
   joints: DeepReadonly<SimulatorHandPoseJoints>
 ) {
   for (let i = 0; i < bones.length; i++) {
@@ -85,7 +85,7 @@ function applyHandJoints(
 }
 
 function lerpHandJoints(
-  bones: THREE.Object3D[],
+  bones: Array<THREE.Object3D | undefined>,
   joints: DeepReadonly<SimulatorHandPoseJoints>,
   lerpSpeed: number
 ) {
@@ -105,8 +105,8 @@ export class SimulatorHands {
   rightController = new THREE.Object3D();
   leftHand?: THREE.Group;
   rightHand?: THREE.Group;
-  leftHandBones: THREE.Object3D[] = [];
-  rightHandBones: THREE.Object3D[] = [];
+  leftHandBones: Array<THREE.Object3D | undefined> = [];
+  rightHandBones: Array<THREE.Object3D | undefined> = [];
   leftHandPose? = SimulatorHandPose.RELAXED;
   rightHandPose? = SimulatorHandPose.RELAXED;
   leftHandAtMaxRange = false;
@@ -191,9 +191,8 @@ export class SimulatorHands {
           }
           HAND_JOINT_NAMES.forEach((jointName) => {
             const bone = gltf.scene.getObjectByName(jointName);
-            if (bone) {
-              bones.push(bone);
-            } else {
+            bones.push(bone);
+            if (!bone) {
               console.warn(
                 `Couldn't find ${jointName} in ${handednessName} hand mesh`
               );
@@ -208,6 +207,10 @@ export class SimulatorHands {
                 : this.rightHandCurrentRotations
             )
           );
+          // Three.js starts reading every joint as soon as it receives the
+          // connected event. Populate the complete joint map first so a frame
+          // cannot render a partially connected simulator hand.
+          this.syncHandJoints();
           this.input.hands[isLeft ? 0 : 1]?.dispatchEvent?.({
             type: 'connected',
             data: {
@@ -475,44 +478,42 @@ export class SimulatorHands {
     const hands = this.input.hands;
     const leftHand = hands[0];
     if (leftHand) {
-      this.leftController.updateWorldMatrix(true, false);
-      leftHand.position.setFromMatrixPosition(this.leftController.matrixWorld);
-      leftHand.setRotationFromMatrix(this.leftController.matrixWorld);
-      leftHand.updateMatrix();
-      for (let i = 0; i < this.leftHandBones.length; i++) {
-        const joint = HAND_JOINT_NAMES[i];
-        if (!(joint in leftHand.joints)) {
-          leftHand.joints[joint] = new THREE.Group() as THREE.XRJointSpace;
-          leftHand.add(leftHand.joints[joint]);
-        }
-        leftHand.joints[joint]!.position.copy(this.leftHandBones[i].position);
-        leftHand.joints[joint]!.quaternion.copy(
-          this.leftHandBones[i].quaternion
-        );
-        leftHand.updateWorldMatrix(false, true);
-      }
+      this.syncXRHandJoints(leftHand, this.leftController, this.leftHandBones);
     }
     const rightHand = hands[1];
     if (rightHand) {
-      this.rightController.updateWorldMatrix(true, false);
-      rightHand.position.setFromMatrixPosition(
-        this.rightController.matrixWorld
+      this.syncXRHandJoints(
+        rightHand,
+        this.rightController,
+        this.rightHandBones
       );
-      rightHand.setRotationFromMatrix(this.rightController.matrixWorld);
-      rightHand.updateMatrix();
-      for (let i = 0; i < this.rightHandBones.length; i++) {
-        const joint = HAND_JOINT_NAMES[i];
-        if (!(joint in rightHand.joints)) {
-          rightHand.joints[joint] = new THREE.Group() as THREE.XRJointSpace;
-          rightHand.add(rightHand.joints[joint]);
-        }
-        rightHand.joints[joint]!.position.copy(this.rightHandBones[i].position);
-        rightHand.joints[joint]!.quaternion.copy(
-          this.rightHandBones[i].quaternion
-        );
-        rightHand.updateWorldMatrix(false, true);
-      }
     }
+  }
+
+  private syncXRHandJoints(
+    hand: THREE.XRHandSpace,
+    controller: THREE.Object3D,
+    bones: Array<THREE.Object3D | undefined>
+  ) {
+    controller.updateWorldMatrix(true, false);
+    hand.position.setFromMatrixPosition(controller.matrixWorld);
+    hand.setRotationFromMatrix(controller.matrixWorld);
+    hand.updateMatrix();
+    for (let i = 0; i < HAND_JOINT_NAMES.length; i++) {
+      const jointName = HAND_JOINT_NAMES[i];
+      let joint = hand.joints[jointName];
+      if (!joint) {
+        joint = new THREE.Group() as THREE.XRJointSpace;
+        hand.joints[jointName] = joint;
+        hand.add(joint);
+      }
+      const bone = bones[i];
+      joint.visible = bone !== undefined;
+      if (!bone) continue;
+      joint.position.copy(bone.position);
+      joint.quaternion.copy(bone.quaternion);
+    }
+    hand.updateWorldMatrix(false, true);
   }
 
   setLeftHandPinching(pinching = true) {
