@@ -151,7 +151,10 @@ Set `options.simulator.physics.enabled = false` before initialization to disable
 simulator's isolated physics world without disabling the app's regular Rapier world. This
 also disables simulator room, object, and hand collision.
 
-Use `xb.core.simulator.objects.addObjects(definitions)` for runtime additions. The
+The simulator runtime loads only when simulator startup is requested. After desktop
+`xb.init()`, `await xb.core.startSimulator()`, or `onSimulatorStarted()`, first verify
+that `xb.core.simulator` is defined. Then use
+`xb.core.simulator.objects.addObjects(definitions)` for runtime additions. The
 matching plural APIs are `get(ids?)`, `removeObjects(ids)`, and `clear()`. An object
 definition accepts either `assetPath` or `object`, optional transform arrays,
 `physics: false | 'fixed' | 'dynamic'`, and `detectObject` plus `label`. Simulator

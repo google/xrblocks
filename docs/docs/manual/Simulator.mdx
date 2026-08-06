@@ -40,6 +40,18 @@ Upon launching an XR Blocks experience in a desktop browser, a run in simulator 
   ![Run in simulator button](assets/run_in_simulator_button.webp)
 </div>
 
+The simulator runtime is loaded only when simulator startup is requested. On a desktop
+autostart path, `await xb.init(options)` waits for that load. Applications can also request
+startup directly and receive the runtime:
+
+```js
+await xb.init(options);
+const simulator = await xb.core.startSimulator();
+```
+
+Before startup completes, `xb.core.simulator` is `undefined`. Scripts that react to either
+desktop or real XR startup should use `onSimulatorStarted()` before accessing it.
+
 For automation or external remote runs, call `options.enableAutomationMode()` before `xb.init(options)`.
 This applies a desktop simulator startup preset with simulator autostart, hands, camera input, agent context, and hidden simulator control panels.
 Pages that construct a plain `new xb.Options()` can also opt into the same preset with `?xrAutomation=1`.
