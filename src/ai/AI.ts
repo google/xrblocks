@@ -18,6 +18,9 @@ export type KeysJson = {
   openai?: {apiKey?: string};
 };
 
+type ApiKeySource = 'options' | 'url' | 'session' | 'keys.json' | 'none';
+type ResolvedApiKey = {key: string | null; source: ApiKeySource};
+
 const SUPPORTED_MODELS = {
   gemini: Gemini,
   openai: OpenAI,
@@ -104,8 +107,15 @@ export class AI extends Script {
     ModelClass: typeof Gemini | typeof OpenAI,
     modelOptions: ModelOptions
   ) {
-    let apiKey = await this.resolveApiKey(modelOptions);
-    if (this.options.promptForApiKey && !isRunningInGeminiCanvas()) {
+    const resolvedKey = await this.resolveApiKeyWithSource(modelOptions);
+    let apiKey = resolvedKey.key;
+    const keyBypassesPrompt =
+      resolvedKey.source === 'url' || resolvedKey.source === 'keys.json';
+    if (
+      this.options.promptForApiKey &&
+      !keyBypassesPrompt &&
+      !isRunningInGeminiCanvas()
+    ) {
       apiKey = await promptForApiKey(this.options.model, apiKey);
     }
     if (!apiKey || !this.isValidApiKey(apiKey)) {
@@ -137,39 +147,46 @@ export class AI extends Script {
   }
 
   async resolveApiKey(modelOptions: ModelOptions): Promise<string | null> {
+    return (await this.resolveApiKeyWithSource(modelOptions)).key;
+  }
+
+  private async resolveApiKeyWithSource(
+    modelOptions: ModelOptions
+  ): Promise<ResolvedApiKey> {
     const modelName = this.options.model;
 
     // 1. Check options
     if (modelOptions.apiKey) {
-      return modelOptions.apiKey;
+      return {key: modelOptions.apiKey, source: 'options'};
     }
 
-    // 2. Check URL parameters for the configured generic key name.
-    const genericKey = getUrlParameter(this.options.globalUrlParams.key);
-    if (genericKey) {
-      return genericKey;
-    }
+    // 2. Check generic and model-specific URL parameters.
+    const urlKey = this.getUrlApiKey(modelOptions);
+    if (urlKey) return {key: urlKey, source: 'url'};
 
-    // 3. Check URL parameters for model-specific key
-    const modelKey = getUrlParameter(modelOptions.urlParam);
-    if (modelKey) return modelKey;
-
-    // 4. Check the current-page prototype key when the prompt opt-in owns it.
+    // 3. Check the current-page prototype key when the prompt opt-in owns it.
     if (this.options.promptForApiKey) {
       const sessionKey = getSessionApiKey(modelName);
-      if (sessionKey) return sessionKey;
+      if (sessionKey) return {key: sessionKey, source: 'session'};
     }
 
-    // 5. Check keys.json file.
+    // 4. Check keys.json file.
     const keysFromFile = await this.loadKeysFromFile();
     if (keysFromFile) {
       const keyFromFile = keysFromFile[modelName]?.apiKey;
       if (keyFromFile) {
-        return keyFromFile;
+        return {key: keyFromFile, source: 'keys.json'};
       }
     }
 
-    return null;
+    return {key: null, source: 'none'};
+  }
+
+  private getUrlApiKey(modelOptions: ModelOptions): string | null {
+    return (
+      getUrlParameter(this.options.globalUrlParams.key) ||
+      getUrlParameter(modelOptions.urlParam)
+    );
   }
 
   isValidApiKey(key: string) {

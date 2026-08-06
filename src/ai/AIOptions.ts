@@ -29,7 +29,8 @@ export class AIOptions {
   /**
    * Show a browser dialog before AI starts so a prototype user can provide,
    * replace, or remove an API key kept only for the current page. Disabled by
-   * default.
+   * default. The dialog is skipped when the page URL or keys.json already
+   * provides a key.
    */
   promptForApiKey = false;
   gemini = new GeminiOptions();
