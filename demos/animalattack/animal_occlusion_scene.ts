@@ -145,10 +145,11 @@ export class AnimalOcclusionScene extends xb.Script {
     animalData: AnimalModel
   ) {
     try {
-      const {rotY, path, file, tint} = animalData;
+      const {scale, rotY, path, file, tint} = animalData;
       await modelViewer.load({
         url: file,
         path,
+        scale,
         rotation: {x: 0, y: THREE.MathUtils.degToRad(rotY), z: 0},
       });
 
@@ -433,8 +434,7 @@ export class AnimalOcclusionScene extends xb.Script {
       this.spawnedAnimals,
       time,
       ANIMAL_MODELS,
-      this.isDragging,
-      this.camera
+      this.isDragging
     );
   }
 }
