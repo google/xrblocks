@@ -32,6 +32,7 @@ export type XRCompoundControl = {
 };
 
 export type EmbodiedControlStep = {
+  /** Finite duration greater than zero. Defaults to one configured tick. */
   durationMs?: number;
   control?: XRCompoundControl;
 };
@@ -41,7 +42,7 @@ export type EmbodiedControlOptions = {
   autoPause?: boolean;
   /** Yield to animation frames while stepping so visual demos animate in real time. */
   realTime?: boolean;
-  /** Simulated frame length used while executing a step. */
+  /** Finite simulated frame length greater than zero. */
   tickMs?: number;
   /** Clamp hand joint rotations through simulator biomechanical constraints. */
   applyHandRotationConstraints?: boolean;
