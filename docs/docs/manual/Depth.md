@@ -3,14 +3,17 @@ sidebar_position: 9
 title: Depth & Occlusion
 ---
 
-## Getting started
+# Depth and occlusion
 
-To use depth, initiailize `core` with `options.depth` set to a new `xb.DepthOptions` based on `xrDepthMeshOptions` or `xrDepthMeshPhysicsOptions`:
+XR Blocks can read WebXR depth data, build a live room mesh, project reticles onto real
+surfaces, occlude virtual content, and create optional environment colliders.
+
+## Enable depth
 
 ```js
 const options = new xb.Options();
-options.depth = new xb.DepthOptions(xrDepthMeshOptions);
-xb.init(options);
+options.enableDepth();
+await xb.init(options);
 ```
 
 Each object by access request to enable depth by calling `core.depth.resumeDepth(this)` and request to stop depth with `core.depth.pauseDepth(this)`.
@@ -53,22 +56,63 @@ Our SDK supports per-object transparency-based occlusion.
 Transparency-baesd occlusion works by computing an occlusion map blurring the difference between the depth of virtual contents and the environment depth.
 This occlusion map is interpreted by each virtual object to set their transparency value within the fragment shader.
 
-### Model Viewer
-
-Our `ModelViewer` class supports loading GLTF objects and enabling transparency on them. To do this, add `addOcclusionToShader: true` when calling `loadGLTFModel`.
-
 ### Other objects
 
 To enable occlusion on other objects, their fragment shader needs to interpret the occlusion map.
 For built-in THREE.js materials, XR Blocks provides a helper function to inject the logic using `onBeforeCompile`:
 
 ```js
-material.onBeforeCompile = (shader) => {
-  OcclusionUtils.addOcclusionToShader(shader);
-  shader.uniforms.occlusionEnabled.value = true;
-  material.userData.shader = shader;
-  xb.core.depth.occludableShaders.add(shader);
-};
+import RAPIER from '@dimforge/rapier3d-simd-compat';
+
+options.depth = new xb.DepthOptions(xb.xrDepthMeshPhysicsOptions);
+options.depth.depthMesh.colliderUpdateFps = 5;
+options.physics.RAPIER = RAPIER;
 ```
 
-Occlusion can be enabled and disabled at runtime by setting the value for the `occlusionEnabled` uniform of the shader.
+## Runtime depth data
+
+After initialization, use `xb.depth` or `xb.core.depth`:
+
+- `depthData`: per-view WebXR depth information.
+- `depthArray`: decoded depth values.
+- `getDepth(u, v)`: read left-view depth at normalized coordinates.
+- `depthMesh`: reconstructed real-world geometry.
+- `depthTextures`: GPU depth resources for render passes.
+
+Depth sensing is device-dependent. Guard sensor reads and verify them on the target device.
+The desktop simulator supplies simulated depth for application and interaction testing.
+
+## Depth-aware reticles
+
+Configure reticle projection before initialization:
+
+```js
+options.enableDepth();
+options.enableReticles();
+options.reticles.projectOnDepthMesh = true;
+```
+
+Use `xb.user.getRayIntersection(controllerId)` to read the current resolved hit. Reticle
+projection controls where the cursor is drawn; it does not create a second targeting API.
+
+## Model occlusion
+
+Enable depth, then construct a model viewer with occlusion:
+
+```js
+const viewer = new xb.ModelViewer({occlusion: true});
+this.add(viewer);
+await viewer.load('./model.glb');
+```
+
+For custom Three.js materials, inject the XR Blocks occlusion shader code in
+`material.onBeforeCompile` and add the resulting shader to
+`xb.core.depth.occludableShaders`. Copy the full working pattern from
+`samples/xr_realism/occlusion`.
+
+## Examples
+
+- `samples/xr_realism/depthmap`: inspect and visualize depth textures.
+- `samples/xr_realism/depthmesh`: use reconstructed environment geometry.
+- `samples/xr_realism/occlusion`: hide virtual content behind real geometry.
+- `samples/advanced/ballpit`: combine depth mesh and physics.

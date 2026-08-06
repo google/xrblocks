@@ -3,52 +3,91 @@ sidebar_position: 11
 title: Model Viewer
 ---
 
-The [`ModelViewer`](/api/classes/ModelViewer) class provides a convenient way to display 3D models in the scene and provide standard interactions for moving, rotating, and scaling the 3D model similar to [ARCore Scene Viewer](https://developers.google.com/ar/develop/scene-viewer).
-See [`DragManager`](DragManager.md) for details about these interactions.
+# Model Viewer
 
-## Usage
+[`ModelViewer`](/api/classes/ModelViewer) loads and presents one glTF, GLB, or Gaussian
+splat model. It can also present an existing `THREE.Object3D`. The viewer normalizes the
+model origin and supplies standard move, rotate, and scale interaction.
 
-Model Viewer can be used with a GLTF model file or an existing [`THREE.Object3D`](https://threejs.org/docs/#api/en/core/Object3D) object.
+## Load a model
 
-### Loading a GLTF Model
-
-To load a GLTF model, call `loadGLTFModel` with a options object providing the path of the model and the model file name.
-Internally, this will load the GLTF model using [`GLTFLoader`](https://threejs.org/docs/#examples/en/loaders/GLTFLoader) with [`DracoLoader`](https://threejs.org/docs/#examples/en/loaders/DRACOLoader) and [`KTX2Loader`](https://threejs.org/docs/#examples/en/loaders/KTX2Loader) addons.
-
-Once loaded, the model viewer will have a `gltf` property and add the `gltf.scene` as a child.
+Add the viewer to the scene before awaiting `load()`:
 
 ```js
-const model = new ModelViewer({});
-model.loadGLTFModel({
-  data: {
-    scale: {x: 0.015, y: 0.015, z: 0.015},
-    path: './',
-    model: 'chess_compressed.glb',
-  },
-  renderer: xb.core.renderer,
-});
+class ModelScene extends xb.Script {
+  async init() {
+    this.add(new THREE.HemisphereLight(0xffffff, 0x555555, 3));
+
+    const viewer = new xb.ModelViewer({
+      origin: 'bottom-center',
+      manipulation: true,
+      autoplay: true,
+      occlusion: false,
+    });
+    viewer.position.set(0, 0.7, -1.2);
+    this.add(viewer);
+
+    await viewer.load({
+      url: 'models/Cat/cat.gltf',
+      path: 'https://cdn.jsdelivr.net/gh/xrblocks/assets@main/',
+      scale: 0.5,
+      rotation: {x: 0, y: Math.PI, z: 0},
+    });
+  }
+}
 ```
 
-### Adding an existing Object3D
+`load()` accepts a URL string or a `ModelSource` object. Supported file extensions are
+`.gltf`, `.glb`, `.ply`, `.spz`, `.splat`, and `.ksplat`. Rotation values are radians.
 
-If you have an existing loaded `THREE.Object3D` object, it can be added as a child of the `ModelViewer` object.
-In this case, the model viewer will require some setup to make it interactable.
-After adding the object or objects, please call `setupBoundingBox`.
-Then call `setupRaycastCylinder` or `setupRaycastBox` to enable raycasting to the ModelViewer and `setupPlatform` to add a platform below the model.
+Splat models require `@sparkjsdev/spark` in the application dependency set or import map.
+
+## Present an existing object
 
 ```js
-const model = new ModelViewer({});
-model.add(
-  new THREE.Mesh(
-    new THREE.CylinderGeometry(0.15, 0.15, 0.4),
-    new THREE.MeshPhongMaterial({color: 0xdb5461})
-  )
-);
-model.setupBoundingBox();
-model.setupRaycastCylinder();
-model.setupPlatform();
+const viewer = new xb.ModelViewer({origin: 'center'});
+viewer.setContent(new THREE.Mesh(geometry, material));
+viewer.position.set(0, 1.2, -1);
+this.add(viewer);
 ```
 
-### Sample
+`setContent()` replaces the active model. `ModelViewer` owns and disposes its active
+content when it is replaced or when the viewer is disposed.
 
-See [`samples/spatial_ui/modelviewer/`](/samples/ModelViewer) for a sample of model viewer with both a GLTF model and a loaded three.js object.
+## Options
+
+- `origin`: `'bottom-center'`, `'center'`, or `'source'`.
+- `manipulation`: `true`, `false`, or a `ManipulationOptions` object.
+- `platformMargin`: extra width and depth around the model.
+- `autoplay`: play loaded glTF animations automatically.
+- `occlusion`: register supported materials with the depth occlusion system.
+- `castShadow` and `receiveShadow`: apply shadow settings to loaded content.
+
+Use `viewer.boundingBox` after loading when the application must inspect normalized size.
+
+## Animation
+
+```js
+viewer.playAnimation();
+viewer.playAnimation({once: true});
+```
+
+`playAnimation()` restarts all clips stored in the loaded glTF. Applications that require
+named clip control should load and own the glTF in a dedicated `Script`.
+
+## Manipulation
+
+`manipulation: true` enables the standard move, Y-axis rotate, and scale actions. Use a
+narrow configuration when the model must allow only selected actions:
+
+```js
+viewer.manipulation = {
+  actions: {rotate: {axis: 'y'}},
+  handle: {action: 'rotate'},
+};
+```
+
+Set `manipulation: false` when another object owns interaction.
+
+For complete examples, see the [Model Viewer sample](/samples/ModelViewer) and
+`samples/spatial_ui/modelviewer/` in the repository.

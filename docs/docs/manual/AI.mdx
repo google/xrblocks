@@ -20,6 +20,7 @@ import * as xb from 'xrblocks';
 
 const options = new xb.Options();
 options.enableAI();
+options.ai.promptForApiKey = true; // optional local-prototype browser prompt
 
 // Configure the backend model (default: 'gemini')
 options.ai.model = 'gemini';
@@ -37,6 +38,11 @@ Never ship API keys in production client-side code.
 - **Local Prototyping**: You can pass keys via the `?key=YOUR_KEY` URL parameter or save a `keys.json` (`{"gemini": {"apiKey": "..."}}`) in the root directory.
 - **Production Deployment**: You must configure a proxy server to forward AI requests from your client apps to Gemini endpoints. For Gemini Live, you should authenticate clients using [Gemini Live API Ephemeral Tokens](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) instead of embedding long-lived developer keys.
   :::
+
+For a local prototype, `promptForApiKey` shows a browser dialog before AI initialization.
+The dialog is skipped when the URL or `keys.json` already supplies a key. The entered key
+is kept only for the current page session. This prompt is not a production authentication
+system.
 
 ---
 
@@ -129,13 +135,12 @@ You can generate 2D images dynamically in your application (e.g. creating textur
 
 ```javascript
 // Generate an image from prompt
-const result = await xb.ai.generate(
+const imageDataUrl = await xb.ai.generate(
   'a futuristic low-poly treehouse in 3D',
   'image'
 );
 
-// Retrieve generated URL or base64 data
-console.log('Generated image url:', result.url);
+image.src = imageDataUrl;
 ```
 
 For templates and complete projects, see <CodeSearchLink path="templates/06_ai_query/index.html"/>, <CodeSearchLink path="templates/07_ai_live_assistant/index.html"/>, or the advanced poetry sample <CodeSearchLink path="samples/xr_ai/xrpoet/index.html"/>.

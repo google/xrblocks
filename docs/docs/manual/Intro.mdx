@@ -23,7 +23,8 @@ This is the fastest way to get started. You can use an import map to load XR Blo
 
 For a starter template, see <CodeSearchLink path="templates/00_basic/index.html"/> (note that while templates in the repository use relative paths for local development, your project should use the CDN URLs below).
 
-To use an import map, add the following script tag to your `index.html` page.
+To use an import map, add the following script tag to your `index.html` page. This minimal
+map supports the core engine. Feature templates include the extra mappings they require.
 
 ```html
 <script type="importmap">
@@ -47,17 +48,19 @@ To pin a build of XR Blocks, replace `build` with an SHA from the [build branch]
 
 ### Option B: Using npm & a Bundler
 
-You can install XR Blocks and its peer dependency `three.js` via npm:
+Install XR Blocks and its required peer dependencies with:
 
 ```bash
-npm install xrblocks three
+npm install xrblocks three @pmndrs/uikit @preact/signals-core
 ```
 
 For a pre-configured template using TypeScript and Vite, check out <CodeSearchLink path="templates/13_typescript_vite/src/main.ts"/> (and its associated <CodeSearchLink path="templates/13_typescript_vite/package.json"/> and <CodeSearchLink path="templates/13_typescript_vite/tsconfig.json"/>).
 
 #### Handling Optional Dependencies
 
-XR Blocks is designed to be highly modular. Features like GenAI, physics, hand tracking, and advanced UI blocks are kept external so you only bundle what you actually use.
+XR Blocks keeps large providers external so applications can select the features they use.
+The built-in spatial UI uses `@pmndrs/uikit` and `@preact/signals-core`; it is not a
+separate XR Blocks add-on. Lit supplies the optional simulator browser interface.
 
 If you want to install **all** optional dependencies at once (for example, to simplify TypeScript compilation or enable all features), run:
 
@@ -90,11 +93,28 @@ Otherwise, manage dependencies based on your tooling:
 
 - **AI Integration**: `@google/genai` (Gemini), `openai` (OpenAI)
 - **Physics**: `@dimforge/rapier3d`
-- **UI Systems**: `lit` (Simulator UI overlay), `@pmndrs/uikit` (Rich UI blocks), `@preact/signals-core` (State management)
+- **Built-in spatial UI**: `@pmndrs/uikit`, `@preact/signals-core`
+- **Simulator browser interface**: `lit`
 - **Gaussian Splatting**: `@sparkjsdev/spark`
 - **Text Rendering**: `troika-three-text`
 - **Vision & Audio (MediaPipe)**: `@mediapipe/tasks-vision` (Hands/Face/Objects), `@mediapipe/tasks-audio` (Audio classification)
 - **Performance & Utilities**: `three-mesh-bvh` (Accelerated raycasting)
+
+#### Deploy the complete build
+
+XR Blocks uses private lazy-loaded chunks for features such as the built-in UI and simulator.
+Copy and serve the complete package `build/` directory:
+
+```text
+build/
+├── xrblocks.js
+├── xrblocks.min.js
+├── internal/
+└── addons/
+```
+
+Do not deploy only `xrblocks.js`, and do not import files from `build/internal/` directly.
+Those filenames are implementation details.
 
 ---
 
