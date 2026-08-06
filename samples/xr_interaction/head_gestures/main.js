@@ -4,7 +4,16 @@ import * as xb from 'xrblocks';
 
 class HeadGestureDemo extends xb.Script {
   init() {
-    this.gestureText = new xb.UIText({text: 'Waiting for a head gesture'});
+    this.gestureText = new xb.UIText({
+      text: 'Waiting for a head gesture',
+      style: {
+        width: '100%',
+        flexGrow: 1,
+        fontSize: 32,
+        textAlign: 'center',
+        verticalAlign: 'middle',
+      },
+    });
 
     const card = new xb.UICard({
       size: {width: 0.6, height: 0.2},

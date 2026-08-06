@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 const CHIPS_PER_PAGE = 8;
+const SELECTED_BLUE = '#4f8ce0';
 
 function prettify(name) {
   return name
@@ -64,7 +65,7 @@ export class GNMSpatialUI {
       children: [
         new xb.UIIcon({
           icon,
-          style: {width: 26, height: 26},
+          style: {width: 26, height: 26, color: '#ffffff'},
         }),
         new xb.UIText({
           text: title,
@@ -109,12 +110,8 @@ export class GNMSpatialUI {
     return {
       button,
       setToggled(toggled) {
-        button.style.backgroundColor = toggled
-          ? xb.ui.theme.colors.primary
-          : undefined;
-        button.style.color = toggled
-          ? xb.ui.theme.colors.primaryText
-          : undefined;
+        button.style.backgroundColor = toggled ? SELECTED_BLUE : undefined;
+        button.style.color = toggled ? '#ffffff' : undefined;
       },
       setLabel(value) {
         button.label = value;
