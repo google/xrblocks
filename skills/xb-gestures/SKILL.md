@@ -71,4 +71,4 @@ class GestureLogger extends xb.Script {
 - Tune providers/thresholds via `options.gestures` (see
   [`src/input/gestures/GestureRecognitionOptions.ts`](../../src/input/gestures/GestureRecognitionOptions.ts)).
 - Heuristic detectors ship by default; custom TF-Lite / PyTorch gesture models can be wired in.
-- See `templates/heuristic_hand_gestures` and `demos/sim_hand_poses` for full examples.
+- See `templates/12_hand_gestures` and `demos/sim_hand_poses` for full examples.

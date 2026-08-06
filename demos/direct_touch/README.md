@@ -12,8 +12,9 @@ Each target shows live callback counts in this order:
 - `GRAB`: start / grabbing frames / end
 - `SELECT`: start / end
 
-Use **Touch + Select** to confirm that direct touch also completes the unified
-selection callbacks. Use **Prevent Select** to confirm that
+Use **Touch + Select** to confirm that direct touch starts the unified
+selection on contact, keeps it active while touching, and completes it when
+contact ends. Use **Prevent Select** to confirm that
 `event.preventDefault()` keeps both selection counts at zero. Use
 **Touch + Grab** to touch with the index finger and then pinch without leaving
 the target.
