@@ -28,14 +28,24 @@
   </head>
 
   <body>
-    <div
-      id="status"
-      style="
+    <style>
+      /* One wrapping bar rather than three absolutely positioned boxes, so the
+         controls stay reachable on a narrow phone screen instead of sliding
+         under each other. */
+      #controls {
         position: fixed;
         top: 12px;
         left: 12px;
+        right: 12px;
         z-index: 50;
-        max-width: 60vw;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      #status {
+        flex: 1 1 220px;
+        min-width: 0;
         padding: 10px 14px;
         border-radius: 12px;
         background: rgba(16, 14, 26, 0.9);
@@ -43,46 +53,28 @@
         font:
           13px/1.45 system-ui,
           sans-serif;
-      "
-    >
-      starting…
-    </div>
-    <button
-      id="drop"
-      style="
-        position: fixed;
-        top: 12px;
-        right: 132px;
-        z-index: 50;
+      }
+      #controls button {
+        flex: 0 0 auto;
         padding: 10px 18px;
         border: none;
         border-radius: 24px;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #drop {
         background: #6a5acd;
-        color: #fff;
-        font-size: 14px;
-        cursor: pointer;
-      "
-    >
-      Drop marker
-    </button>
-    <button
-      id="forget"
-      style="
-        position: fixed;
-        top: 12px;
-        right: 12px;
-        z-index: 50;
-        padding: 10px 18px;
-        border: none;
-        border-radius: 24px;
+      }
+      #forget {
         background: #3a3550;
-        color: #fff;
-        font-size: 14px;
-        cursor: pointer;
-      "
-    >
-      Forget all
-    </button>
+      }
+    </style>
+    <div id="controls">
+      <div id="status">starting…</div>
+      <button id="drop">Drop marker</button>
+      <button id="forget">Forget all</button>
+    </div>
     <script type="module" src="main.js"></script>
   </body>
 </html>
