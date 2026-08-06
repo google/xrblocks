@@ -884,3 +884,42 @@ describe('AnchorManager simulated handles', () => {
     expect(store.records[0].uuid).toBe(first);
   });
 });
+
+describe('AnchorManager uses the handle the platform minted', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('saves each anchor under the handle the platform minted', async () => {
+    const store = memoryStore();
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    let n = 0;
+    (
+      env.frame.createAnchor as unknown as ReturnType<typeof vi.fn>
+    ).mockImplementation(async () => fakeAnchor(`platform-uuid-${n++}`));
+    manager.update(0, env.frame);
+
+    const a = await manager.create(POSE, 'a');
+    const b = await manager.create(POSE, 'b');
+    await manager.persist(a!.id);
+    await manager.persist(b!.id);
+
+    // Never the session-local id, which restarts on reload and would collide.
+    expect(store.records.map((r) => r.uuid)).toEqual([
+      'platform-uuid-0',
+      'platform-uuid-1',
+    ]);
+  });
+
+  it('updates one record when the same anchor is saved twice', async () => {
+    const store = memoryStore();
+    const {manager} = makeManager(store);
+    const env = fakeEnv({persistentUuid: 'stable-handle'});
+    manager.update(0, env.frame);
+    const a = await manager.create(POSE, 'a');
+    await manager.persist(a!.id);
+    await manager.persist(a!.id);
+    expect(store.records).toHaveLength(1);
+  });
+});
