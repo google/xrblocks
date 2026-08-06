@@ -11,7 +11,9 @@ options.deviceCamera.videoConstraints = {
   height: {ideal: 720},
   facingMode: 'environment',
 };
-options.reticles.enabled = false;
+options.reticles.enabled = true;
+options.reticles.projectOnDepthMesh = true;
+options.reticles.defaultRenderDistance = 8;
 options.controllers.visualizeRays = false;
 options.enableObjectDetection();
 options.enableDepth();

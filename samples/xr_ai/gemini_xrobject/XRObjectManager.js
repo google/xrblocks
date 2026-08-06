@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
-import {TouchableSphere} from './TouchableSphere.js';
+import {ObjectQuestionCard} from './ObjectQuestionCard.js';
 
 const LONG_SELECT_DELAY_MS = 1000;
 const HOLD_INDICATOR_RADIUS = 0.028;
 
 /**
  * Manages the lifecycle of object detection, user interaction via voice, and
- * the visualization of detected objects as interactive spheres. This class
+ * the visualization of detected objects as interactive cards. This class
  * serves as the main application logic for the demo.
  * @extends {xb.Script}
  */
@@ -26,17 +26,16 @@ export class XRObjectManager extends xb.Script {
    */
   constructor() {
     super();
-    this.objectSphereRadius = 0.03;
-    this.activeSphere = null;
+    this.activeCard = null;
     this.detecting = false;
     this.longSelectTimeout = null;
     this.holdStartedAt = null;
     this.holdSource = null;
-    this.spheres = new Set();
+    this.cards = new Set();
     this.onSpeechResult = (event) => this.handleSpeechResult(event);
     this.onSpeechEnd = () => {
-      this.activeSphere?.setActive(false);
-      this.activeSphere = null;
+      this.activeCard?.setActive(false);
+      this.activeCard = null;
     };
 
     this.holdIndicatorGeometry = new THREE.SphereGeometry(
@@ -89,7 +88,7 @@ export class XRObjectManager extends xb.Script {
   onSelectStart(event) {
     this.cancelLongSelect();
     this.removeHoldIndicator();
-    if (event.target instanceof TouchableSphere) return;
+    if (this.isQuestionCardTarget(event.target)) return;
     this.holdSource = event.source;
     this.holdStartedAt = performance.now();
     this.createHoldIndicator();
@@ -170,6 +169,7 @@ export class XRObjectManager extends xb.Script {
     this.sound = sound;
     this.user = user;
     this.world = world;
+    this.add(this.createInstructions());
 
     if (this.sound.speechRecognizer) {
       this.sound.speechRecognizer.addEventListener(
@@ -195,13 +195,13 @@ export class XRObjectManager extends xb.Script {
       return;
     }
 
-    if (!this.activeSphere) {
-      console.warn('Speech result received, but no active sphere is set.');
+    if (!this.activeCard) {
+      console.warn('Speech result received, but no active card is set.');
       return;
     }
 
-    // Check if the active sphere has an image to query against.
-    if (!this.activeSphere.object.image) {
+    // Check if the active card has an image to query against.
+    if (!this.activeCard.object.image) {
       const warningMsg =
         "I don't have a specific image for that object, so I can't answer questions about it.";
       console.warn(warningMsg);
@@ -211,11 +211,11 @@ export class XRObjectManager extends xb.Script {
 
     const prompt = {
       question: transcript,
-      object: this.activeSphere.object.label,
+      object: this.activeCard.object.label,
     };
     this.queryObjectInformation(
       JSON.stringify(prompt),
-      this.activeSphere.object.image
+      this.activeCard.object.image
     )
       .then((response) => {
         try {
@@ -234,7 +234,7 @@ export class XRObjectManager extends xb.Script {
 
   /**
    * Triggers the `ObjectDetector` to find objects in the scene and creates an
-   * interactive sphere for each detected object.
+   * interactive card for each detected object.
    */
   async queryObjectDetection() {
     if (this.detecting) return;
@@ -248,9 +248,9 @@ export class XRObjectManager extends xb.Script {
     this.detecting = true;
     try {
       const detectedObjects = await this.world.objects.runDetection();
-      this.clearSpheres();
+      this.clearCards();
       for (const detectedObject of detectedObjects) {
-        this.createSphereWithLabel(detectedObject);
+        this.createQuestionCard(detectedObject);
       }
     } catch (error) {
       console.error('Object detection failed:', error);
@@ -300,65 +300,91 @@ export class XRObjectManager extends xb.Script {
   }
 
   /**
-   * Handles the start of a touch event on a sphere, activating speech
-   * recognition.
-   * @param {Event} event - The selection event from the TouchableSphere.
+   * Handles the start of a card press, activating speech recognition.
    */
-  onSphereTouchStart(event) {
-    if (
-      typeof event.target !== 'object' ||
-      !(event.target instanceof TouchableSphere)
-    ) {
-      return;
-    }
-
+  onCardPressStart(card) {
     if (this.sound.speechSynthesizer?.isSpeaking) {
-      event.target.setActive(false);
+      card.setActive(false);
       return;
     }
 
-    // Set the active sphere for the speech result handler to use.
-    this.activeSphere = event.target;
-    this.activeSphere.setActive(true);
+    this.activeCard = card;
+    this.activeCard.setActive(true);
     this.sound.speechRecognizer?.start();
   }
 
   /**
-   * Handles the end of a touch event on a sphere, stopping speech recognition.
-   * @param {Event} event - The selection event from the TouchableSphere.
+   * Handles the end of a card press, stopping speech recognition.
    */
-  onSphereTouchEnd(event) {
-    if (
-      typeof event.target !== 'object' ||
-      !(event.target instanceof TouchableSphere)
-    ) {
-      return;
-    }
+  onCardPressEnd() {
     this.sound.speechRecognizer?.stop();
   }
 
   /**
-   * Creates a `TouchableSphere` instance for a detected object and adds it to
-   * the scene.
+   * Creates a voice button for a detected object and adds it to the scene.
    * @param {xb.DetectedObject} detectedObject - The object data from the
    * ObjectDetector.
    */
-  createSphereWithLabel(detectedObject) {
-    const touchableSphereInstance = new TouchableSphere(
+  createQuestionCard(detectedObject) {
+    let card;
+    card = new ObjectQuestionCard(
       detectedObject,
-      this.objectSphereRadius,
-      (event) => this.onSphereTouchStart(event),
-      (event) => this.onSphereTouchEnd(event)
+      () => this.onCardPressStart(card),
+      () => this.onCardPressEnd()
     );
 
-    this.spheres.add(touchableSphereInstance);
-    this.add(touchableSphereInstance);
+    this.cards.add(card);
+    this.add(card);
   }
 
-  clearSpheres() {
-    for (const sphere of this.spheres) sphere.removeFromParent();
-    this.spheres.clear();
-    this.activeSphere = null;
+  isQuestionCardTarget(target) {
+    for (const card of this.cards) {
+      if (card.owns(target)) return true;
+    }
+    return false;
+  }
+
+  clearCards() {
+    for (const card of this.cards) card.removeFromParent();
+    this.cards.clear();
+    this.activeCard = null;
+  }
+
+  createInstructions() {
+    const overlay = new xb.UIOverlay({
+      pointerEvents: 'none',
+      style: {
+        width: 720,
+        position: 'absolute',
+        left: '50%',
+        bottom: 32,
+        transform: {translateX: '-50%'},
+        flexDirection: 'column',
+        gap: 8,
+      },
+      children: [
+        new xb.UIText({
+          text: 'XR OBJECTS',
+          pointerEvents: 'none',
+          style: {
+            fontSize: 24,
+            fontWeight: 'bold',
+            textAlign: 'center',
+          },
+        }),
+        new xb.UIText({
+          text: 'Hold a pinch or press on empty space for one second to scan. Then point at an object button, hold while you ask a question, and release to stop listening.',
+          pointerEvents: 'none',
+          style: {
+            fontSize: 20,
+            lineHeight: 1.4,
+            textAlign: 'center',
+          },
+        }),
+      ],
+    });
+    overlay.name = 'XR Objects instructions';
+    return overlay;
   }
 
   dispose() {
@@ -370,7 +396,7 @@ export class XRObjectManager extends xb.Script {
     );
     this.sound?.speechRecognizer?.removeEventListener('end', this.onSpeechEnd);
     this.sound?.speechRecognizer?.stop();
-    this.clearSpheres();
+    this.clearCards();
     this.holdIndicatorGeometry.dispose();
     this.holdIndicatorOuterMaterial.dispose();
     this.holdIndicatorInnerMaterial.dispose();
