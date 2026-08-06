@@ -804,17 +804,20 @@ describe('AnchorManager platform handles', () => {
     expect(manager.platformHandles()).toEqual([]);
   });
 
-  it('finds handles that no saved record names any more', () => {
-    const store = memoryStore([{uuid: 'uuid-a', label: 'kept', createdAt: 1}]);
+  it('reports handles this store never saved, since the list is origin wide', () => {
+    const store = memoryStore([{uuid: 'mine', label: 'mine', createdAt: 1}]);
     const {manager} = makeManager(store);
     const env = fakeEnv();
     (
       env.session as unknown as {persistentAnchors: string[]}
-    ).persistentAnchors = ['uuid-a', 'uuid-orphan'];
+    ).persistentAnchors = ['mine', 'belongs-to-another-page'];
     manager.update(0, env.frame);
-    // Clearing site data strands handles: the platform still holds them but
-    // nothing left on our side can name them.
-    expect(manager.orphanedHandles()).toEqual(['uuid-orphan']);
+    // Another page on the same origin owns the second one. Treating it as a
+    // leak and releasing it would delete that page's anchors.
+    expect(manager.platformHandles()).toEqual([
+      'mine',
+      'belongs-to-another-page',
+    ]);
   });
 });
 

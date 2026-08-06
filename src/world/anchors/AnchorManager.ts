@@ -453,6 +453,10 @@ export class AnchorManager extends Script {
    * empty result therefore means "nothing to report", not "the platform holds
    * none".
    *
+   * Scoped to the origin, not to this store. Two pages on one origin see each
+   * other's handles here, so a handle missing from your own records is not
+   * evidence of a leak and must not be deleted on that basis.
+   *
    * @returns The handles, or an empty array when unavailable.
    */
   platformHandles(): string[] {
@@ -462,19 +466,6 @@ export class AnchorManager extends Script {
       }
     )?.persistentAnchors;
     return handles ? [...handles] : [];
-  }
-
-  /**
-   * Handles the platform holds that no saved record names any more.
-   *
-   * Clearing site data drops our records while the platform keeps its
-   * handles, stranding them against its quota with nothing able to name them.
-   *
-   * @returns The stranded handles.
-   */
-  orphanedHandles(): string[] {
-    const known = new Set(this.store.load().map((r) => r.uuid));
-    return this.platformHandles().filter((uuid) => !known.has(uuid));
   }
 
   /** Forgets every saved handle, leaving live anchors alone. */
