@@ -59,9 +59,14 @@ class RotationHitSurface extends THREE.Mesh<
 > {
   constructor(bounds: THREE.Box3) {
     const size = bounds.getSize(new THREE.Vector3());
-    const radius = 0.05 + 0.5 * Math.min(size.x, size.z);
+    const geometry = new THREE.CylinderGeometry(1, 1, 1);
+    geometry.scale(
+      0.05 + 0.5 * size.x,
+      Math.max(size.y, 0.001),
+      0.05 + 0.5 * size.z
+    );
     super(
-      new THREE.CylinderGeometry(radius, radius, Math.max(size.y, 0.001)),
+      geometry,
       new THREE.MeshBasicMaterial({colorWrite: false, depthWrite: false})
     );
     bounds.getCenter(this.position);
