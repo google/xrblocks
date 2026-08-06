@@ -10,9 +10,19 @@ import * as xb from 'xrblocks';
 // own map from anchor to mesh. This one hands that job to AnchoredObjects,
 // which owns the map and copies poses across every frame, so the app only says
 // what to place and what to rebuild.
+//
+// It also restores orientation, not just position. The marker demo copies a
+// position onto a sphere, where facing is invisible and does not matter. Here
+// a piece is placed at the angle you were looking and comes back at it, which
+// is what the helper is doing on the app's behalf every frame.
 
-/** Shapes cycle in this order so repeated placements stay distinguishable. */
-const SHAPES = ['cube', 'sphere', 'cone', 'torus'];
+/**
+ * Shapes cycle in this order so repeated placements stay distinguishable.
+ * All of them show which way they are facing, which is the point here: a
+ * piece is placed at the angle you were looking and comes back at that same
+ * angle, so it is the full pose being restored rather than just a point.
+ */
+const SHAPES = ['cube', 'cone', 'torus'];
 /** How far in front of the user a new piece is placed, in metres. */
 const PLACE_DISTANCE = 0.9;
 /**
@@ -43,13 +53,11 @@ const BUTTON_FONT_SIZE = 0.25;
 function makeShape(shape, color) {
   const s = PIECE_SIZE;
   const geometry =
-    shape === 'sphere'
-      ? new THREE.SphereGeometry(s, 24, 16)
-      : shape === 'cone'
-        ? new THREE.ConeGeometry(s, s * 2, 24)
-        : shape === 'torus'
-          ? new THREE.TorusGeometry(s, s * 0.4, 16, 32)
-          : new THREE.BoxGeometry(s * 1.6, s * 1.6, s * 1.6);
+    shape === 'cone'
+      ? new THREE.ConeGeometry(s, s * 2, 24)
+      : shape === 'torus'
+        ? new THREE.TorusGeometry(s, s * 0.4, 16, 32)
+        : new THREE.BoxGeometry(s * 1.6, s * 1.6, s * 1.6);
   return new THREE.Mesh(
     geometry,
     new THREE.MeshStandardMaterial({
@@ -164,7 +172,7 @@ class AnchoredGalleryDemo extends xb.Script {
       return;
     }
     this.placed++;
-    this.setStatus(`Placed a ${shape}`);
+    this.setStatus(`Placed a ${shape} facing the way you are looking`);
   }
 
   /**
@@ -197,7 +205,9 @@ class AnchoredGalleryDemo extends xb.Script {
     this.placed = Math.max(this.placed, gallery.getAll().size);
     this.setStatus(
       this.describeCapability(
-        restored > 0 ? `Rebuilt ${restored} pieces` : 'Nothing saved yet'
+        restored > 0
+          ? `Rebuilt ${restored} pieces at the angles they were left`
+          : 'Nothing saved yet'
       )
     );
   }
