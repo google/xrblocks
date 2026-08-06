@@ -437,17 +437,9 @@ export class Depth {
         this.rawValueToMeters,
         0,
         (this.gpuDepthData[0] as unknown as {depthNear: number} | undefined)
-          ?.depthNear
-      );
-    }
-    const rightDepthTexture = this.getTexture(1);
-    if (rightDepthTexture) {
-      this.occlusionPass!.setDepthTexture(
-        rightDepthTexture,
-        this.rawValueToMeters,
-        1,
-        (this.gpuDepthData[1] as unknown as {depthNear: number} | undefined)
-          ?.depthNear
+          ?.depthNear,
+        this.depthViewMatrices[0],
+        this.depthProjectionMatrices[0]
       );
     }
     const xrIsPresenting = this.renderer.xr.isPresenting;

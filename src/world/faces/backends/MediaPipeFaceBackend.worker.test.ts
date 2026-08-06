@@ -106,8 +106,16 @@ describe('MediaPipeFaceBackend worker lifecycle', () => {
     expect(FakeWorker.instances).toHaveLength(1);
     const init = lastInit();
     expect(init.type).toBe('init');
-    expect(init.config.modelAssetPath).toBe('model://');
-    expect(init.config.numFaces).toBe(1);
+    expect(init.config.taskName).toBe('FaceLandmarker');
+    const taskOptions = init.config.taskOptions as {
+      baseOptions: {modelAssetPath: string; delegate: string};
+      numFaces: number;
+    };
+    expect(taskOptions.baseOptions.modelAssetPath).toBe('model://');
+    // The wasm pipeline only creates a GPU surface for a real DOM canvas,
+    // which a worker doesn't have, so the delegate has to stay on CPU.
+    expect(taskOptions.baseOptions.delegate).toBe('CPU');
+    expect(taskOptions.numFaces).toBe(1);
     // Drain init so the backend reports as available.
     FakeWorker.instances[0].triggerMessage({id: init.id, ok: true});
     expect(
@@ -192,7 +200,7 @@ describe('MediaPipeFaceBackend worker lifecycle', () => {
     worker.triggerMessage({id: detectMsg.id, ok: false, error: 'boom'});
     await expect(p).resolves.toEqual([]);
     expect(errSpy).toHaveBeenCalledWith(
-      'MediaPipe Face detection (worker) failed:',
+      'MediaPipeFaceBackend: worker detection failed:',
       expect.objectContaining({message: 'boom'})
     );
     errSpy.mockRestore();

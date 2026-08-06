@@ -24,6 +24,15 @@ export class HumansOptions {
       modelAssetPath:
         'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
       /**
+       * Run inference in a web worker so a detection pass does not stall the
+       * render loop. The worker is limited to the CPU delegate because
+       * MediaPipe only creates a GPU surface for a real DOM canvas, so set
+       * this to false to trade a blocked main thread for GPU inference.
+       * Falls back to the main thread automatically when workers are
+       * unavailable.
+       */
+      useWorker: true,
+      /**
        * The maximum number of simultaneous human poses/bodies to track.
        */
       numPoses: 1,
