@@ -133,6 +133,9 @@
           sans-serif;
         color: #8d86a8;
       }
+      #siblings {
+        margin-bottom: 8px;
+      }
       #siblings a.picker {
         color: #9177c7;
         text-decoration: none;
@@ -151,6 +154,10 @@
 
   <body>
     <div id="panel">
+      <nav id="siblings">
+        <a class="picker" href="../anchors_home/">← anchors demos</a>
+        · <b>notes</b>
+      </nav>
       <div id="capability">detecting anchor support…</div>
       <div id="status">starting…</div>
       <div id="compose">
@@ -165,10 +172,6 @@
       </div>
       <ul id="note-list"></ul>
       <button id="forget">Clear notes</button>
-      <nav id="siblings">
-        <a class="picker" href="../anchors_home/">← anchors demos</a>
-        · <b>notes</b>
-      </nav>
     </div>
     <script type="module" src="main.js"></script>
   </body>
