@@ -73,6 +73,7 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       new PanelShaderMaterial({
         fragmentShader: UICardEdgeFragmentShader,
         depthWrite: false,
+        side: THREE.DoubleSide,
         uniforms: createUniforms(),
       }),
       inputProperties,

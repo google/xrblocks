@@ -538,6 +538,7 @@ function panelDefaults(
   }
   if (kind === 'card') {
     const card = element as UICard;
+    defaults.backfaceColor = defaults.fillColor;
     defaults.pixelSize = card.pixelSize;
     defaults.sizeX = card.size.width;
     defaults.sizeY = card.size.height;
