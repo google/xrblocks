@@ -25,6 +25,7 @@ async function activateScripts(
 
 class RecordingButton extends UIButton {
   starts: SelectEvent[] = [];
+  selecting: SelectEvent[] = [];
   ends: SelectEndEvent[] = [];
   longSelects: LongSelectEvent[] = [];
   touchStarts: ObjectTouchStartEvent[] = [];
@@ -37,6 +38,10 @@ class RecordingButton extends UIButton {
   override onObjectSelectEnd(event: SelectEndEvent): true {
     this.ends.push(event);
     return true;
+  }
+
+  override onSelecting(event: SelectEvent): void {
+    this.selecting.push(event);
   }
 
   override onObjectLongSelect(event: LongSelectEvent): true {
@@ -150,7 +155,7 @@ describe('Interaction public behavior', () => {
     expect(interaction.getResolvedRay(source)?.surface).toBe(logical);
   });
 
-  it('dispatches touch first, honors prevention, suspends the ray, and activates once on contact', async () => {
+  it('keeps selection active for the full direct-touch contact', async () => {
     const clicked = vi.fn();
     const button = new RecordingButton({label: 'Touch', onClick: clicked});
     button.onObjectTouchStart = (event) => {
@@ -201,17 +206,32 @@ describe('Interaction public behavior', () => {
       raySources: [ray(hand, false)],
       directTouches: [touch],
     });
-    expect(acceptedClick).toHaveBeenCalledOnce();
-    expect(accepted.ends.at(-1)).toMatchObject({
-      completed: true,
-      reason: 'released',
+    expect(accepted.touchStarts).toHaveLength(1);
+    expect(accepted.starts).toHaveLength(1);
+    expect(accepted.ends).toHaveLength(0);
+    expect(acceptedClick).not.toHaveBeenCalled();
+    expect(interaction.isSelectingAt(accepted)).toBe(true);
+    expect(accepted.selecting).toHaveLength(1);
+    expect(accepted.selecting[0].source.type).toBe('direct-touch');
+
+    interaction.update({
+      raySources: [ray(hand, false)],
+      directTouches: [touch],
     });
+    expect(accepted.selecting).toHaveLength(2);
+    expect(accepted.ends).toHaveLength(0);
+
     interaction.update({
       raySources: [ray(hand, false)],
       directTouches: [{...touch, point: new THREE.Vector3(2, 0, 0)}],
     });
     expect(acceptedClick).toHaveBeenCalledOnce();
-    expect(accepted.ends.at(-1)?.source.type).toBe('direct-touch');
+    expect(accepted.ends.at(-1)).toMatchObject({
+      completed: true,
+      reason: 'released',
+      source: {type: 'direct-touch'},
+    });
+    expect(interaction.isSelectingAt(accepted)).toBe(false);
   });
 
   it('jumps and streams a slider, commits once, and restores on cancellation', async () => {
