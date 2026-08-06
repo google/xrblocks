@@ -291,6 +291,7 @@ options.world.enableAnchorPersistence();
 // Desktop has no tracking system to anchor against; opt into locally held
 // poses so the demo is usable without a headset.
 options.world.anchors.simulatorFallback = true;
+options.world.anchors.debugging = true;
 // Its own store, so this demo and the other anchor demos never rebuild each
 // other's content.
 options.world.anchors.storageKey = 'xrblocks.anchors.gallery';
