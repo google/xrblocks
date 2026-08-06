@@ -3,9 +3,9 @@ import {
   Core,
   Simulator,
   type SimulatorHandPose,
+  type SimulatorHandPoseRotations,
   User,
   World,
-  type SimulatorHandPoseRotations,
 } from 'xrblocks';
 
 import {
@@ -30,11 +30,19 @@ const targetCameraPosition = new THREE.Vector3();
 const euler = new THREE.Euler();
 const quaternion = new THREE.Quaternion();
 
+function requirePositiveFinite(value: number, name: string): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError(`${name} must be a finite number greater than zero.`);
+  }
+  return value;
+}
+
 function mergeOptions(
   options: EmbodiedControlOptions
 ): EmbodiedControlExecutorOptions {
+  const tickMs = options.tickMs ?? DEFAULT_EMBODIED_CONTROL_OPTIONS.tickMs;
   return {
-    tickMs: options.tickMs ?? DEFAULT_EMBODIED_CONTROL_OPTIONS.tickMs,
+    tickMs: requirePositiveFinite(tickMs, 'tickMs'),
     applyHandRotationConstraints:
       options.applyHandRotationConstraints ??
       DEFAULT_EMBODIED_CONTROL_OPTIONS.applyHandRotationConstraints,
@@ -76,7 +84,10 @@ export class EmbodiedControlExecutor {
     applyTick: TimedMotionTick
   ) {
     return runTimedMotion({
-      requestedDurationMs,
+      requestedDurationMs: requirePositiveFinite(
+        requestedDurationMs,
+        'durationMs'
+      ),
       tickMs: this.options.tickMs,
       realTime: this.options.realTime,
       applyTick,
@@ -87,6 +98,7 @@ export class EmbodiedControlExecutor {
     if (this.activeStep) {
       throw new EmbodiedControlBusyError();
     }
+    this.validateControl(control);
     this.applyControlFraction(
       control,
       1,
@@ -98,6 +110,8 @@ export class EmbodiedControlExecutor {
     if (this.activeStep) {
       throw new EmbodiedControlBusyError();
     }
+    const control = step.control ?? {};
+    this.validateControl(control);
     this.activeStep = true;
 
     try {
@@ -107,7 +121,7 @@ export class EmbodiedControlExecutor {
 
       await this.runTimedMotion(durationMs, (_elapsed, currentTick, total) => {
         this.applyControlFraction(
-          step.control || {},
+          control,
           currentTick / total,
           initialCameraQuaternion
         );
@@ -205,15 +219,14 @@ export class EmbodiedControlExecutor {
     if (control.selectStart) {
       this.applyHandSelect(handIndex, true);
       return;
-    } else if (control.selectEnd) {
+    }
+    if (control.selectEnd) {
       this.applyHandSelect(handIndex, false);
       return;
     }
-
     if (control.pose) {
       this.applyHandPose(handIndex, control.pose);
     }
-
     if (control.rotations) {
       this.applyHandRotations(handIndex, control.rotations);
     }
@@ -229,11 +242,11 @@ export class EmbodiedControlExecutor {
   }
 
   private applyHandSelect(handIndex: number, selected: boolean) {
-    const {simulator} = this.dependencies;
+    const {hands} = this.dependencies.simulator;
     if (handIndex === 0) {
-      simulator.hands.setLeftHandPinching(selected);
+      hands.setLeftHandPinching(selected);
     } else {
-      simulator.hands.setRightHandPinching(selected);
+      hands.setRightHandPinching(selected);
     }
   }
 
@@ -241,22 +254,45 @@ export class EmbodiedControlExecutor {
     handIndex: number,
     rotations: SimulatorHandPoseRotations
   ) {
-    const {simulator} = this.dependencies;
+    const {hands} = this.dependencies.simulator;
     const mergedRotations =
       handIndex === 0
-        ? {...simulator.hands.leftHandTargetRotations, ...rotations}
-        : {...simulator.hands.rightHandTargetRotations, ...rotations};
-
+        ? {...hands.leftHandTargetRotations, ...rotations}
+        : {...hands.rightHandTargetRotations, ...rotations};
     if (handIndex === 0) {
-      simulator.hands.setLeftHandRotations(
+      hands.setLeftHandRotations(
         mergedRotations,
         this.options.applyHandRotationConstraints
       );
     } else {
-      simulator.hands.setRightHandRotations(
+      hands.setRightHandRotations(
         mergedRotations,
         this.options.applyHandRotationConstraints
       );
+    }
+  }
+
+  private validateControl(control: XRCompoundControl) {
+    for (const hand of [control.leftHand, control.rightHand]) {
+      if (!hand) continue;
+      if (hand?.selectStart && hand.selectEnd) {
+        throw new Error(
+          'A hand control cannot contain both selectStart and selectEnd.'
+        );
+      }
+      if (hand.pose && hand.rotations) {
+        throw new Error(
+          'A hand control cannot contain both pose and rotations.'
+        );
+      }
+      if (
+        (hand.selectStart || hand.selectEnd) &&
+        (hand.pose || hand.rotations)
+      ) {
+        throw new Error(
+          'A hand control cannot combine selection with pose or rotations.'
+        );
+      }
     }
   }
 
@@ -362,11 +398,12 @@ export class EmbodiedControlExecutor {
       const targetWorldPos = new THREE.Vector3();
       this.getTargetWorldPosition(target, targetWorldPos);
 
-      if (velocity === undefined || velocity <= 0) {
+      if (velocity === undefined) {
         camera.lookAt(targetWorldPos);
         core.stepFrame(this.options.tickMs);
         return;
       }
+      requirePositiveFinite(velocity, 'velocity');
 
       const Q_s = camera.quaternion.clone();
       camera.lookAt(targetWorldPos);
@@ -374,6 +411,10 @@ export class EmbodiedControlExecutor {
       camera.quaternion.copy(Q_s);
 
       const angle = Q_s.angleTo(Q_t);
+      if (angle === 0) {
+        core.stepFrame(this.options.tickMs);
+        return;
+      }
       const durationMs = (angle / velocity) * 1000;
 
       await this.runTimedMotion(durationMs, (elapsed, currentTick, total) => {
@@ -408,13 +449,14 @@ export class EmbodiedControlExecutor {
       );
       const targetQuat = new THREE.Quaternion().setFromRotationMatrix(matrix);
 
-      if (velocity === undefined || velocity <= 0) {
+      if (velocity === undefined) {
         simulator.simulatorControllerState.localControllerOrientations[
           handIndex
         ].copy(targetQuat);
         core.stepFrame(this.options.tickMs);
         return;
       }
+      requirePositiveFinite(velocity, 'velocity');
 
       const startQuat =
         simulator.simulatorControllerState.localControllerOrientations[
@@ -422,6 +464,10 @@ export class EmbodiedControlExecutor {
         ].clone();
 
       const angle = startQuat.angleTo(targetQuat);
+      if (angle === 0) {
+        core.stepFrame(this.options.tickMs);
+        return;
+      }
       const durationMs = (angle / velocity) * 1000;
 
       await this.runTimedMotion(durationMs, (elapsed, currentTick, total) => {
@@ -449,13 +495,14 @@ export class EmbodiedControlExecutor {
         .clone()
         .applyMatrix4(camera.matrixWorldInverse);
 
-      if (velocity === undefined || velocity <= 0) {
+      if (velocity === undefined) {
         simulator.simulatorControllerState.localControllerPositions[
           handIndex
         ].copy(targetCamSpace);
         core.stepFrame(this.options.tickMs);
         return;
       }
+      requirePositiveFinite(velocity, 'velocity');
 
       const startPos =
         simulator.simulatorControllerState.localControllerPositions[
@@ -463,6 +510,10 @@ export class EmbodiedControlExecutor {
         ].clone();
 
       const distance = startPos.distanceTo(targetCamSpace);
+      if (distance === 0) {
+        core.stepFrame(this.options.tickMs);
+        return;
+      }
       const durationMs = (distance / velocity) * 1000;
 
       await this.runTimedMotion(durationMs, (elapsed, currentTick, total) => {
@@ -480,6 +531,7 @@ export class EmbodiedControlExecutor {
     options: {durationMs?: number} = {}
   ): Promise<void> {
     const {durationMs = 200} = options;
+    requirePositiveFinite(durationMs, 'durationMs');
     const {simulator} = this.dependencies;
     // Change the lerp speed to allow the hand to pinch and open all the way.
     const originalLerpSpeed = simulator.hands.lerpSpeed;
