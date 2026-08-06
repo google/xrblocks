@@ -18,11 +18,13 @@ import * as xb from 'xrblocks';
 
 /**
  * Shapes cycle in this order so repeated placements stay distinguishable.
- * All of them show which way they are facing, which is the point here: a
- * piece is placed at the angle you were looking and comes back at that same
- * angle, so it is the full pose being restored rather than just a point.
+ *
+ * Each one has to read differently from every angle, since the whole point
+ * here is that a piece comes back facing the way it was left. A sphere shows
+ * nothing, and a cone or a torus is symmetric about its own axis, so spinning
+ * one looks identical. These are not.
  */
-const SHAPES = ['cube', 'cone', 'torus'];
+const SHAPES = ['arrow', 'knot', 'cube'];
 /** How far in front of the user a new piece is placed, in metres. */
 const PLACE_DISTANCE = 0.9;
 /**
@@ -52,21 +54,42 @@ const BUTTON_FONT_SIZE = 0.25;
  */
 function makeShape(shape, color) {
   const s = PIECE_SIZE;
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.3,
+    roughness: 0.45,
+  });
+
+  if (shape === 'arrow') {
+    // Reads unambiguously from any angle, which a single primitive does not.
+    const group = new THREE.Group();
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(s * 0.28, s * 0.28, s * 1.8, 16),
+      material
+    );
+    shaft.rotation.x = Math.PI / 2;
+    const head = new THREE.Mesh(
+      new THREE.ConeGeometry(s * 0.6, s * 1.1, 20),
+      material
+    );
+    head.rotation.x = -Math.PI / 2;
+    head.position.z = -s * 1.4;
+    // A fin, so rolling the arrow about its own length is visible too.
+    const fin = new THREE.Mesh(
+      new THREE.BoxGeometry(s * 0.12, s * 0.9, s * 0.7),
+      material
+    );
+    fin.position.set(0, s * 0.55, s * 0.7);
+    group.add(shaft, head, fin);
+    return group;
+  }
+
   const geometry =
-    shape === 'cone'
-      ? new THREE.ConeGeometry(s, s * 2, 24)
-      : shape === 'torus'
-        ? new THREE.TorusGeometry(s, s * 0.4, 16, 32)
-        : new THREE.BoxGeometry(s * 1.6, s * 1.6, s * 1.6);
-  return new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.3,
-      roughness: 0.45,
-    })
-  );
+    shape === 'knot'
+      ? new THREE.TorusKnotGeometry(s * 0.7, s * 0.25, 64, 12)
+      : new THREE.BoxGeometry(s * 1.6, s * 1.6, s * 1.6);
+  return new THREE.Mesh(geometry, material);
 }
 
 class AnchoredGalleryDemo extends xb.Script {
