@@ -104,19 +104,28 @@ class AnchorsDemo extends xb.Script {
     });
 
     const buttons = grid.addRow({weight: 0.4});
-    const drop = buttons.addCol({weight: 0.5}).addTextButton({
+    const drop = buttons.addCol({weight: 0.33}).addTextButton({
       text: 'Drop',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#6a5acdE0',
     });
     drop.onTriggered = () => this.dropMarker();
 
-    const forget = buttons.addCol({weight: 0.5}).addTextButton({
+    const forget = buttons.addCol({weight: 0.34}).addTextButton({
       text: 'Clear',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
     forget.onTriggered = () => this.forgetAll();
+
+    // Recovery for a device whose anchor cap is full of handles no record
+    // names any more, which forgetAll cannot reach.
+    const release = buttons.addCol({weight: 0.33}).addTextButton({
+      text: 'Release',
+      fontSize: BUTTON_FONT_SIZE,
+      backgroundColor: '#7a3b46E0',
+    });
+    release.onTriggered = () => this.releaseEverything();
 
     this.panel = panel;
   }
@@ -260,6 +269,35 @@ class AnchorsDemo extends xb.Script {
     this.markers.set(tracked.id, mesh);
   }
 
+  /**
+   * Releases every handle the device holds for this site.
+   *
+   * Deliberately separate from Clear: it reaches handles no record names any
+   * more, and it is origin wide, so the other anchor demos lose theirs too.
+   */
+  async releaseEverything() {
+    const anchors = this.anchors;
+    if (!anchors) return;
+    const before = anchors.platformHandles().length;
+    this.setStatus(`releasing ${before} handles the device holds…`);
+    const released = await anchors.releaseAllPlatformHandles();
+    for (const id of [...this.markers.keys()]) {
+      const mesh = this.markers.get(id);
+      if (mesh) {
+        xb.core.scene.remove(mesh);
+        mesh.traverse(xb.disposeRenderableResources);
+      }
+      this.markers.delete(id);
+    }
+    // The platform's list does not shrink as handles go, so reading it back
+    // here would suggest nothing happened. The accepted count is the truth.
+    this.setStatus(
+      released === before
+        ? `Released all ${released}. Leave and re-enter the session to use them.`
+        : `Released ${released} of ${before}. Leave and re-enter, then try again.`
+    );
+  }
+
   /** Clears every saved handle and removes the markers. */
   forgetAll() {
     const anchors = this.anchors;
@@ -273,29 +311,8 @@ class AnchorsDemo extends xb.Script {
       }
       this.markers.delete(id);
     }
-    const held = anchors.platformHandles().length;
     anchors.forgetAll();
     this.setStatus('Cleared every saved marker');
-    // deletePersistentAnchor is asynchronous, so the platform still lists the
-    // handles for a moment. Re-reading is the only way to see whether the
-    // release actually landed, which local state cannot show.
-    if (held > 0) this.reportRelease(held);
-  }
-
-  /**
-   * Reports whether the platform actually let go of its handles.
-   * @param held - How many it was holding before the release.
-   */
-  async reportRelease(held) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, HANDLE_RELEASE_SETTLE_MS)
-    );
-    const left = this.anchors?.platformHandles().length ?? 0;
-    this.setStatus(
-      left === 0
-        ? `Cleared every saved marker, and the device released all ${held}`
-        : `Cleared every saved marker, but the device still holds ${left} of ${held}`
-    );
   }
 
   update() {
