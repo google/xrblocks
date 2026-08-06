@@ -22,11 +22,12 @@ import {Keyboard} from 'xrblocks/addons/virtualkeyboard/Keyboard.js';
 const CARD_WIDTH = 0.42;
 const CARD_HEIGHT = 0.26;
 const CARD_DISTANCE = 0.9;
-/** Notes pinned without moving fan out across a row this wide. */
-const NOTES_PER_ROW = 3;
-/** Horizontal and vertical gap between fanned-out notes, in metres. */
-const NOTE_SPREAD_X = 0.42;
-const NOTE_SPREAD_Y = 0.3;
+/**
+ * How close two notes may be before the new one is nudged aside, in metres.
+ * A note goes exactly where you are looking; this only stops one landing
+ * invisibly inside another when you pin twice without moving.
+ */
+const NOTE_MIN_SEPARATION = 0.46;
 /**
  * Button label size. Much larger than the default 0.05, which is legible on a
  * monitor but not at panel distance in a headset. Labels are single words so
@@ -181,16 +182,11 @@ class AnchorNotesDemo extends xb.Script {
     camera.getWorldQuaternion(this.scratchQuaternion);
     // Pinning twice without moving would put both notes at the same point and
     // render them on top of each other, so fan them out across the view.
-    const index = this.notes.size;
-    const spread = new THREE.Vector3(
-      ((index % NOTES_PER_ROW) - 1) * NOTE_SPREAD_X,
-      Math.floor(index / NOTES_PER_ROW) * -NOTE_SPREAD_Y,
-      0
-    ).applyQuaternion(this.scratchQuaternion);
     const forward = new THREE.Vector3(0, 0, -CARD_DISTANCE).applyQuaternion(
       this.scratchQuaternion
     );
-    const target = this.scratchPosition.clone().add(forward).add(spread);
+    const target = this.scratchPosition.clone().add(forward);
+    this.separate(target, this.scratchQuaternion);
 
     const pose = new XRRigidTransform(
       {x: target.x, y: target.y, z: target.z},
@@ -237,6 +233,25 @@ class AnchorNotesDemo extends xb.Script {
         return 'this browser has no anchor support';
       default:
         return 'storage refused the write, so it will be gone on reload';
+    }
+  }
+
+  /**
+   * Nudges a target sideways until it is not inside an existing note.
+   *
+   * @param target - Position to adjust in place.
+   * @param facing - The head orientation, so the nudge is sideways on screen.
+   */
+  separate(target, facing) {
+    const step = new THREE.Vector3(NOTE_MIN_SEPARATION, 0, 0).applyQuaternion(
+      facing
+    );
+    for (let i = 0; i < this.notes.size + 1; i++) {
+      const clash = [...this.notes.values()].some(
+        (n) => n.group.position.distanceTo(target) < NOTE_MIN_SEPARATION
+      );
+      if (!clash) return;
+      target.add(step);
     }
   }
 
