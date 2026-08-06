@@ -245,8 +245,27 @@ class AnchorsDemo extends xb.Script {
       }
       this.markers.delete(id);
     }
+    const held = anchors.platformHandles().length;
     anchors.forgetAll();
     this.setStatus('forgot every saved marker');
+    // deletePersistentAnchor is asynchronous, so the platform still lists the
+    // handles for a moment. Re-reading is the only way to see whether the
+    // release actually landed, which local state cannot show.
+    if (held > 0) this.reportRelease(held);
+  }
+
+  /**
+   * Reports whether the platform actually let go of its handles.
+   * @param held - How many it was holding before the release.
+   */
+  async reportRelease(held) {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const left = this.anchors?.platformHandles().length ?? 0;
+    this.setStatus(
+      left === 0
+        ? `forgot every saved marker, and the device released all ${held}`
+        : `forgot every saved marker, but the device still holds ${left} of ${held}`
+    );
   }
 
   update() {
