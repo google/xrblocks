@@ -9,7 +9,6 @@ export declare class Keyboard extends xb.Script {
     private subspace;
     private mainGrid;
     constructor();
-    init(): void;
     private createKeyboard;
     private createRow;
     private addKey;

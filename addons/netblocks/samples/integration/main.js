@@ -463,18 +463,10 @@ class IntegrationSample extends NetSample {
         this._buildKeyboard(session);
     }
     _buildKeyboard(session) {
-        // Subclass to override init() (which would otherwise reset the
-        // keyboard's transform to its default position above the user).
-        class PositionedKeyboard extends Keyboard {
-            init() {
-                super.init();
-                const sub = this.subspace;
-                sub.position.set(-0.7, 0.7, -0.7);
-                sub.scale.setScalar(0.6);
-                sub.rotation.set(-Math.PI / 6, 0, 0);
-            }
-        }
-        const keyboard = new PositionedKeyboard();
+        const keyboard = new Keyboard();
+        keyboard.position.set(-0.7, 0.7, -0.7);
+        keyboard.scale.setScalar(0.6);
+        keyboard.rotation.set(-Math.PI / 6, 0, 0);
         this._keyboard = keyboard;
         xb.add(keyboard);
         keyboard.onTextChanged = (text) => {

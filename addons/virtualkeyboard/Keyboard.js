@@ -4,6 +4,8 @@ import * as xb from 'xrblocks';
 const KEY_WIDTH = 0.07;
 const KEY_HEIGHT = 0.08;
 const FONT_SIZE = 0.45;
+/** Where the keyboard sits when an app does not place it itself. */
+const DEFAULT_KEYBOARD_POSITION = { x: 0, y: 1.2, z: -1 };
 const KEYBOARD_COLOR = '#1a1a1b';
 const DEFAULT_KEY_COLOR = '#333334';
 const SPECIAL_KEY_COLOR = '#3e4a59';
@@ -89,6 +91,10 @@ class Keyboard extends xb.Script {
             backgroundColor: KEYBOARD_COLOR,
             width: TOTAL_KEYBOARD_WIDTH,
             height: TOTAL_KEYBOARD_HEIGHT,
+            // Sits at the keyboard's own origin, so the keys land wherever the
+            // keyboard is put. Left on, the panel would place itself in front of the
+            // user and ignore that entirely.
+            useDefaultPosition: false,
         });
         this.subspace.isRoot = true;
         this.add(this.subspace);
@@ -96,9 +102,12 @@ class Keyboard extends xb.Script {
         this.subspace.add(this.mainGrid);
         this.createKeyboard();
         this.subspace.updateLayouts();
-    }
-    init() {
-        this.subspace.position.set(0, 1.2, -1);
+        // Default placement, in front of the user and a little above waist height.
+        // Set on the keyboard itself rather than on the panel inside it, so an app
+        // that assigns a position simply replaces this instead of being offset by
+        // it. Previously this was applied in init(), which runs after the app has
+        // positioned the keyboard and so silently moved it somewhere else.
+        this.position.set(DEFAULT_KEYBOARD_POSITION.x, DEFAULT_KEYBOARD_POSITION.y, DEFAULT_KEYBOARD_POSITION.z);
     }
     createKeyboard() {
         KEY_LAYOUT.forEach((rowData, index) => {
