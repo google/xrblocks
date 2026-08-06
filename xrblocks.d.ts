@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid d0893e6
- * @builddate 2026-08-05T23:27:53.701Z
+ * @commitid 2965866
+ * @builddate 2026-08-06T03:25:06.880Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9161,11 +9161,13 @@ declare class OcclusionPass extends Pass {
     private occlusionUniforms;
     private occlusionQuad;
     private depthNear;
+    private depthViewMatrices;
+    private depthProjectionMatrices;
     private lastOcclusionMapSize;
     private lastKawaseBlurSize;
     constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, useFloatDepth?: boolean, renderToScreen?: boolean, occludableItemsLayer?: number);
     private setupKawaseBlur;
-    setDepthTexture(depthTexture: THREE.Texture, rawValueToMeters: number, viewId: number, depthNear?: number): void;
+    setDepthTexture(depthTexture: THREE.Texture, rawValueToMeters: number, viewId: number, depthNear?: number, depthViewMatrix?: THREE.Matrix4, depthProjectionMatrix?: THREE.Matrix4): void;
     /**
      * Render the occlusion map.
      * @param renderer - The three.js renderer.

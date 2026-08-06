@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid d0893e6
- * @builddate 2026-08-05T23:27:53.701Z
+ * @commitid 2965866
+ * @builddate 2026-08-06T03:25:06.880Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5529,7 +5529,7 @@ class DepthOptions {
         this.usagePreference = [];
         this.dataFormatPreference = ['float32', 'luminance-alpha'];
         this.depthTypeRequest = ['raw'];
-        this.matchDepthView = true;
+        this.matchDepthView = false;
         deepMerge(this, options);
     }
 }
@@ -5937,6 +5937,8 @@ class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
             cameraFar: { value: camera.far },
             cameraNear: { value: camera.near },
             uFloatDepth: { value: useFloatDepth },
+            uDepthViewMatrix: { value: camera.matrixWorldInverse.clone() },
+            uDepthProjectionMatrix: { value: camera.projectionMatrix.clone() },
             // Used for interpreting Quest 3 depth.
             uDepthNear: { value: 0 },
         };
@@ -5945,16 +5947,20 @@ class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
             this.uniforms = shader.uniforms;
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', [
+                'uniform mat4 uDepthProjectionMatrix;',
+                'uniform mat4 uDepthViewMatrix;',
                 'varying vec2 vTexCoord;',
                 'varying float vVirtualDepth;',
                 '#include <common>',
             ].join('\n'))
                 .replace('#include <fog_vertex>', [
                 '#include <fog_vertex>',
-                'vec4 view_position = modelViewMatrix * vec4( position, 1.0 );',
-                'vVirtualDepth = -view_position.z;',
-                'gl_Position = gl_Position / gl_Position.w;',
-                'vTexCoord = 0.5 + 0.5 * gl_Position.xy;',
+                'vec4 world_position = modelMatrix * vec4( position, 1.0 );',
+                'vec4 depth_view_position = uDepthViewMatrix * world_position;',
+                'vVirtualDepth = -depth_view_position.z;',
+                'vec4 depth_clip_position = uDepthProjectionMatrix * depth_view_position;',
+                'vec2 depth_ndc = depth_clip_position.xy / max(0.00001, depth_clip_position.w);',
+                'vTexCoord = 0.5 + 0.5 * depth_ndc;',
             ].join('\n'));
             shader.fragmentShader = shader.fragmentShader
                 .replace('uniform vec3 diffuse;', [
@@ -5995,7 +6001,9 @@ class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
                 'vec4 texCoord = vec4(vTexCoord, 0, 1);',
                 'vec2 uv = vec2(texCoord.x, uIsTextureArray?texCoord.y:(1.0 - texCoord.y));',
                 'highp float real_depth = uIsTextureArray ? DepthArrayGetMeters(uDepthTextureArray, uv) : DepthGetMeters(uDepthTexture, uv);',
-                'gl_FragColor = vec4(step(vVirtualDepth, real_depth), 1.0, 0.0, 1.0);',
+                'bool outOfBounds = uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || vVirtualDepth <= 0.0;',
+                'float isNotOccluded = outOfBounds ? 1.0 : step(vVirtualDepth, real_depth);',
+                'gl_FragColor = vec4(isNotOccluded, 1.0, 0.0, 1.0);',
             ].join('\n'));
         };
     }
@@ -6027,6 +6035,8 @@ class OcclusionPass extends Pass {
         this.occludableItemsLayer = occludableItemsLayer;
         this.depthTextures = [];
         this.depthNear = [];
+        this.depthViewMatrices = [];
+        this.depthProjectionMatrices = [];
         // Cached dimensions of the render targets so we only call setSize()
         // when they actually changed. setSize() forces a GPU texture
         // reallocation even when called with the same dimensions, which
@@ -6096,12 +6106,18 @@ class OcclusionPass extends Pass {
         });
         return new FullScreenQuad(kawase1Material);
     }
-    setDepthTexture(depthTexture, rawValueToMeters, viewId, depthNear) {
+    setDepthTexture(depthTexture, rawValueToMeters, viewId, depthNear, depthViewMatrix, depthProjectionMatrix) {
         this.depthTextures[viewId] = depthTexture;
         this.occlusionMapUniforms.uRawValueToMeters.value = rawValueToMeters;
         this.occlusionMeshMaterial.uniforms.uRawValueToMeters.value =
             rawValueToMeters;
         this.depthNear[viewId] = depthNear;
+        if (depthViewMatrix) {
+            this.depthViewMatrices[viewId] = depthViewMatrix;
+        }
+        if (depthProjectionMatrix) {
+            this.depthProjectionMatrices[viewId] = depthProjectionMatrix;
+        }
         depthTexture.needsUpdate = true;
     }
     /**
@@ -6142,12 +6158,16 @@ class OcclusionPass extends Pass {
         else {
             this.occlusionMeshMaterial.uniforms.uDepthTexture.value = texture;
         }
+        const camera = renderer.xr.getCamera().cameras[viewId] || this.camera;
+        this.occlusionMeshMaterial.uniforms.uDepthViewMatrix.value =
+            this.depthViewMatrices[viewId] || camera.matrixWorldInverse;
+        this.occlusionMeshMaterial.uniforms.uDepthProjectionMatrix.value =
+            this.depthProjectionMatrices[viewId] || camera.projectionMatrix;
         this.scene.overrideMaterial = this.occlusionMeshMaterial;
         renderer.getDrawingBufferSize(dimensions);
         this.resizeOcclusionMap(dimensions);
         const renderTarget = this.occlusionMapTexture;
         renderer.setRenderTarget(renderTarget);
-        const camera = renderer.xr.getCamera().cameras[viewId] || this.camera;
         const originalCameraLayers = Array.from(Array(32).keys()).filter((element) => camera.layers.isEnabled(element));
         camera.layers.set(this.occludableItemsLayer);
         renderer.render(this.scene, camera);
@@ -6570,12 +6590,7 @@ class Depth {
         const leftDepthTexture = this.getTexture(0);
         if (leftDepthTexture) {
             this.occlusionPass.setDepthTexture(leftDepthTexture, this.rawValueToMeters, 0, this.gpuDepthData[0]
-                ?.depthNear);
-        }
-        const rightDepthTexture = this.getTexture(1);
-        if (rightDepthTexture) {
-            this.occlusionPass.setDepthTexture(rightDepthTexture, this.rawValueToMeters, 1, this.gpuDepthData[1]
-                ?.depthNear);
+                ?.depthNear, this.depthViewMatrices[0], this.depthProjectionMatrices[0]);
         }
         const xrIsPresenting = this.renderer.xr.isPresenting;
         this.renderer.xr.isPresenting = false;
