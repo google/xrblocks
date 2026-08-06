@@ -26,6 +26,11 @@ export type AIModel = 'gemini' | 'openai';
 export class AIOptions {
   enabled = false;
   model: AIModel = 'gemini';
+  /**
+   * Show a browser dialog before AI starts so a prototype user can provide,
+   * replace, or remove a locally stored API key. Disabled by default.
+   */
+  promptForApiKey = false;
   gemini = new GeminiOptions();
   openai = new OpenAIOptions();
   globalUrlParams = {
