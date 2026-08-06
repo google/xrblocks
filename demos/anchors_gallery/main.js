@@ -152,19 +152,28 @@ class AnchoredGalleryDemo extends xb.Script {
     });
 
     const buttons = grid.addRow({weight: 0.4});
-    const place = buttons.addCol({weight: 0.5}).addTextButton({
+    const place = buttons.addCol({weight: 0.34}).addTextButton({
       text: 'Place',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#c2703bE0',
     });
     place.onTriggered = () => this.placeShape();
 
-    const clear = buttons.addCol({weight: 0.5}).addTextButton({
+    const clear = buttons.addCol({weight: 0.33}).addTextButton({
       text: 'Clear',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
     clear.onTriggered = () => this.clearGallery();
+
+    // The anchor budget belongs to the browser, so it can fill up from any of
+    // these demos. The way out has to be reachable from each of them.
+    const release = buttons.addCol({weight: 0.33}).addTextButton({
+      text: 'Release',
+      fontSize: BUTTON_FONT_SIZE,
+      backgroundColor: '#7a3b46E0',
+    });
+    release.onTriggered = () => this.releaseEverything();
 
     this.panel = panel;
   }
@@ -232,6 +241,29 @@ class AnchoredGalleryDemo extends xb.Script {
           ? `Rebuilt ${restored} pieces at the angles they were left`
           : 'Nothing saved yet'
       )
+    );
+  }
+
+  /**
+   * Releases every handle the device holds for this site.
+   *
+   * Separate from Clear: it reaches handles no record names any more, and it
+   * is origin wide, so the other anchor demos lose theirs too.
+   */
+  async releaseEverything() {
+    const anchors = this.anchors;
+    if (!anchors) return;
+    const before = anchors.platformHandles().length;
+    this.setStatus(`Releasing ${before} handles the device holds…`);
+    const released = await anchors.releaseAllPlatformHandles();
+    this.gallery?.clear();
+    this.placed = 0;
+    // The platform's list does not shrink as handles go, so reading it back
+    // would suggest nothing happened. The accepted count is the truth.
+    this.setStatus(
+      released === before
+        ? `Released all ${released}. Leave and re-enter the session to use them.`
+        : `Released ${released} of ${before}. Leave and re-enter, then try again.`
     );
   }
 
