@@ -198,7 +198,7 @@ export class HandGestureDemo extends xb.Script {
         gap: 20,
         alignItems: 'stretch',
       },
-      children: [leftHand.panel, rightHand.panel],
+      children: [rightHand.panel, leftHand.panel],
     });
 
     const examples = new xb.UIPanel({
@@ -282,7 +282,7 @@ export class HandGestureDemo extends xb.Script {
       children: [
         new xb.UIText({
           text: hand.toUpperCase(),
-          style: {fontSize: 18, textAlign: 'center'},
+          style: {fontSize: 28, fontWeight: 'bold', textAlign: 'center'},
         }),
         image,
         label,
