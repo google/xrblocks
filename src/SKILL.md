@@ -135,11 +135,14 @@ navmesh, and objects. Relative asset paths resolve from the manifest, and absolu
 CDN URLs are accepted. The navmesh represents the walkable floor surface; XR Blocks uses it
 to ground/constrain the Simulator User only, not simulated hands/controllers.
 Author it in the same local coordinates as the simulator scene; XR Blocks
-applies the same environment placement transform to both. `SimulatorNavMesh`
-also exposes high-level helpers for reachable location/object checks and random
-reachable path generation, without exposing `three-pathfinding` groups or nodes.
+applies the same environment placement transform to both. The simulator owns the
+navmesh implementation and does not expose `three-pathfinding` groups or nodes.
 CDN/importmap apps that enable this need
 `"three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js"`.
+
+The simulator browser interface loads automatically when Lit is available. CDN/importmap
+apps need both `"lit"` and `"lit/"` mappings. If Lit is unavailable, the simulator
+continues without the browser interface and writes one informational console message.
 
 Simulator hand physics is opt-in with `options.simulator.handPhysics.enabled = true` and
 requires Rapier. The top-level `leftHandOrigin` and `rightHandOrigin` values are shared
