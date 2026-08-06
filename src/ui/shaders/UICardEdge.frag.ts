@@ -10,6 +10,7 @@ export const UICardEdgeFragmentShader =
 varying vec2 vUv;
 
 uniform vec2 u_resolution;
+uniform float u_opacity;
 uniform float u_card_corner_radius;
 uniform float u_edge_margin;
 uniform float u_edge_width;
@@ -145,6 +146,8 @@ void main() {
         accumColor = mix(accumColor, debugColor, debugColor.a);
         accumColor.a = max(accumColor.a, debugColor.a);
     }
+
+    accumColor.a *= u_opacity;
 
     gl_FragColor = accumColor;
 

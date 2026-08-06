@@ -46,6 +46,7 @@ export type WritableSignalProperties<T> = {
  * Provides default uniforms safe for general use:
  * - `u_time`: 0.0 (safe default for animated shaders)
  * - `u_resolution`: 1x1 (updated automatically by PanelLayer)
+ * - `u_opacity`: 1.0 (updated automatically from the UI opacity property)
  *
  * Subclasses should extend this and add their own specific uniforms.
  */
@@ -64,6 +65,7 @@ export class PanelShaderMaterial extends THREE.ShaderMaterial {
       uniforms: {
         u_time: {value: 0},
         u_resolution: {value: new THREE.Vector2(1, 1)},
+        u_opacity: {value: 1},
         ...parameters?.uniforms,
       },
     });
@@ -122,6 +124,21 @@ export abstract class PanelLayer<
       if (size) {
         this.material.uniforms.u_resolution.value.set(size[0], size[1]);
       }
+    }, this.abortSignal);
+
+    // Custom shader layers do not use UIKit's built-in panel material, so they
+    // must apply the resolved opacity property through a shared uniform.
+    abortableEffect(() => {
+      const opacity = (
+        this.properties as unknown as {
+          signal: SignalProperties<TProps>;
+        }
+      ).signal.opacity?.value;
+
+      this.material.uniforms.u_opacity.value =
+        typeof opacity === 'string'
+          ? Number.parseFloat(opacity) / 100
+          : (opacity ?? 1);
     }, this.abortSignal);
   }
 
