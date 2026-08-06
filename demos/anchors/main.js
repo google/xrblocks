@@ -68,7 +68,7 @@ class AnchorsDemo extends xb.Script {
 
     // Exposed so the demo can be inspected from the console while iterating.
     window.anchorsDemo = this;
-    this.setStatus('waiting for the first update…');
+    this.setStatus('Waiting for the first update…');
   }
 
   get anchors() {
@@ -97,7 +97,7 @@ class AnchorsDemo extends xb.Script {
     });
 
     this.statusText = grid.addRow({weight: 0.3}).addText({
-      text: 'starting…',
+      text: 'Starting…',
       fontSize: 0.04,
       fontColor: '#d7d2ea',
     });
@@ -111,7 +111,7 @@ class AnchorsDemo extends xb.Script {
     drop.onTriggered = () => this.dropMarker();
 
     const forget = buttons.addCol({weight: 0.5}).addTextButton({
-      text: 'Forget',
+      text: 'Clear',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
@@ -149,7 +149,7 @@ class AnchorsDemo extends xb.Script {
     const label = `marker ${this.markers.size + 1}`;
     const tracked = await anchors.create(pose, label);
     if (!tracked) {
-      this.setStatus('could not create an anchor here');
+      this.setStatus('Could not create an anchor here');
       return;
     }
     // Persisting is what makes the marker outlive the session.
@@ -157,8 +157,8 @@ class AnchorsDemo extends xb.Script {
     this.addMarkerMesh(tracked, MARKER_COLOR, target);
     this.setStatus(
       saved
-        ? `dropped ${label} and saved it`
-        : `dropped ${label}, but ${this.whyNotSaved()}`
+        ? `Dropped ${label} and saved it`
+        : `Dropped ${label}, but ${this.whyNotSaved()}`
     );
   }
 
@@ -192,7 +192,7 @@ class AnchorsDemo extends xb.Script {
     if (!anchors) return;
     const results = await anchors.restoreAll();
     if (results.length === 0) {
-      this.setStatus(this.describeCapability('nothing saved yet'));
+      this.setStatus(this.describeCapability('Nothing saved yet'));
       return;
     }
     let restored = 0;
@@ -207,7 +207,7 @@ class AnchorsDemo extends xb.Script {
     const orphans = anchors.orphanedHandles().length;
     this.setStatus(
       this.describeCapability(
-        `restored ${restored} of ${results.length} saved markers` +
+        `Restored ${restored} of ${results.length} saved markers` +
           (missing > 0 ? `, ${missing} could not be found here` : '') +
           (orphans > 0 ? `, ${orphans} stranded on the device` : '')
       )
@@ -250,7 +250,7 @@ class AnchorsDemo extends xb.Script {
     }
     const held = anchors.platformHandles().length;
     anchors.forgetAll();
-    this.setStatus('forgot every saved marker');
+    this.setStatus('Cleared every saved marker');
     // deletePersistentAnchor is asynchronous, so the platform still lists the
     // handles for a moment. Re-reading is the only way to see whether the
     // release actually landed, which local state cannot show.
@@ -268,8 +268,8 @@ class AnchorsDemo extends xb.Script {
     const left = this.anchors?.platformHandles().length ?? 0;
     this.setStatus(
       left === 0
-        ? `forgot every saved marker, and the device released all ${held}`
-        : `forgot every saved marker, but the device still holds ${left} of ${held}`
+        ? `Cleared every saved marker, and the device released all ${held}`
+        : `Cleared every saved marker, but the device still holds ${left} of ${held}`
     );
   }
 
@@ -307,10 +307,10 @@ class AnchorsDemo extends xb.Script {
   describeCapability(message) {
     const capability = this.anchors?.capability ?? 'unsupported';
     const prefix = {
-      persistent: 'real anchors, saved across sessions',
-      'session-only': 'real anchors, but this platform cannot save them',
-      simulated: 'simulated anchors (desktop) — not really pinned to a room',
-      unsupported: 'no anchor support on this platform',
+      persistent: 'Real anchors, saved across sessions',
+      'session-only': 'Real anchors, but this platform cannot save them',
+      simulated: 'Simulated anchors (desktop), not really pinned to a room',
+      unsupported: 'No anchor support on this platform',
     }[capability];
     return `${prefix}. ${message}`;
   }
