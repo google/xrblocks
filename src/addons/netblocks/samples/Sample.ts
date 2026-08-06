@@ -1,5 +1,4 @@
 import * as xb from 'xrblocks';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import {enableNet, JoinRoomOptions, NetCore, WebRTCTransport} from 'netblocks';
 
 import {buildRoomCodeHud, getRoomCodeFromUrl} from './roomCode';

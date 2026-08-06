@@ -1,4 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import './GeminiLivePanel.js';
 
 import * as xb from 'xrblocks';
