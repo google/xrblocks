@@ -549,7 +549,7 @@ export class Interaction {
       ) {
         action = 'none';
       }
-    } else if (wantsManipulation) {
+    } else if (wantsManipulation && !touch) {
       action = 'manipulate';
     }
     if (gaze && semantic?.kind !== 'button') action = 'none';
@@ -739,7 +739,7 @@ export class Interaction {
             true
           );
         }
-        this.updateGrab(touchState, contact);
+        this.updateGrab(touchState, contact, snapshot);
       } catch (error) {
         this.touches.delete(contact.controller);
         this.cancelFailedCapture(contact.controller, error);
@@ -753,7 +753,7 @@ export class Interaction {
     if (contact.phase === 'move') {
       try {
         this.dispatchTouch(touch, 'onObjectTouching');
-        this.updateGrab(touch, contact);
+        this.updateGrab(touch, contact, snapshot);
       } catch (error) {
         this.touches.delete(contact.controller);
         this.cancelFailedCapture(contact.controller, error);
@@ -764,7 +764,7 @@ export class Interaction {
     this.touches.delete(contact.controller);
     this.suppressedUntilRelease.add(contact.controller);
     try {
-      this.finishGrab(touch);
+      this.finishGrab(touch, snapshot);
       this.dispatchTouch(touch, 'onObjectTouchEnd');
     } finally {
       if (!touch.prevented) {
@@ -797,7 +797,7 @@ export class Interaction {
     const touch = this.touches.get(controller);
     if (!touch) return;
     this.touches.delete(controller);
-    this.finishGrab(touch);
+    this.finishGrab(touch, this.sourceStates.get(controller));
     this.dispatchTouch(touch, 'onObjectTouchEnd');
   }
 
@@ -847,9 +847,13 @@ export class Interaction {
     };
   }
 
-  private updateGrab(touch: TouchState, contact: DirectTouchContact): void {
+  private updateGrab(
+    touch: TouchState,
+    contact: DirectTouchContact,
+    snapshot: InteractionSourceState
+  ): void {
     if (!contact.selected || !touch.hand) {
-      this.finishGrab(touch);
+      this.finishGrab(touch, snapshot);
       return;
     }
     const event = this.createGrabEvent(touch);
@@ -861,6 +865,7 @@ export class Interaction {
         'onObjectGrabStart',
         event
       );
+      this.startGrabManipulation(touch, snapshot);
     } else {
       dispatchInteractionPath(
         this.callbacks,
@@ -871,8 +876,41 @@ export class Interaction {
     }
   }
 
-  private finishGrab(touch: TouchState): void {
+  private startGrabManipulation(
+    touch: TouchState,
+    snapshot: InteractionSourceState
+  ): void {
+    const capture = this.captures.get(touch.selection.source);
+    if (
+      capture?.kind !== 'target' ||
+      !capture.touch ||
+      capture.action !== 'select' ||
+      !capture.selection.manipulation
+    ) {
+      return;
+    }
+    capture.action = 'manipulate';
+    if (!this.manipulation.tryStart(capture.selection, snapshot)) {
+      capture.action = 'select';
+    }
+  }
+
+  private finishGrab(
+    touch: TouchState,
+    snapshot?: InteractionSourceState
+  ): void {
     if (!touch.grabbing || !touch.hand) return;
+    const capture = this.captures.get(touch.selection.source);
+    if (
+      capture?.kind === 'target' &&
+      capture.touch &&
+      capture.action === 'manipulate'
+    ) {
+      this.runManipulationTransition(() =>
+        this.manipulation.end(touch.selection.source, snapshot)
+      );
+      capture.action = 'select';
+    }
     touch.grabbing = false;
     dispatchInteractionPath(
       this.callbacks,

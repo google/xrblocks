@@ -221,18 +221,24 @@ export function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(
     onHovering(_event: HoverEvent): boolean | void {}
     /**
      * Called when a hand's index finger starts touching this object.
+     * Direct touch starts the object's selection lifecycle by default. Call
+     * `event.preventDefault()` to handle contact without selecting.
      */
     onObjectTouchStart(_event: ObjectTouchStartEvent): boolean | void {}
     /**
      * Called every frame that a hand's index finger is touching this object.
+     * The object remains selected during these frames unless touch selection
+     * was prevented when contact started.
      */
     onObjectTouching(_event: ObjectTouchEvent): boolean | void {}
     /**
      * Called when a hand's index finger stops touching this object.
+     * This ends the default selection lifecycle after the touch callback.
      */
     onObjectTouchEnd(_event: ObjectTouchEvent): boolean | void {}
     /**
      * Called when a hand starts grabbing this object (touching + pinching).
+     * A grab starts built-in direct-touch manipulation when enabled.
      */
     onObjectGrabStart(_event: ObjectGrabEvent) {}
     /**
@@ -241,6 +247,7 @@ export function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(
     onObjectGrabbing(_event: ObjectGrabEvent) {}
     /**
      * Called when a hand stops grabbing this object.
+     * This ends built-in direct-touch manipulation without ending contact.
      */
     onObjectGrabEnd(_event: ObjectGrabEvent) {}
 
