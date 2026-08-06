@@ -817,3 +817,70 @@ describe('AnchorManager platform handles', () => {
     expect(manager.orphanedHandles()).toEqual(['uuid-orphan']);
   });
 });
+
+describe('AnchorManager simulated handles', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  /**
+   * A manager with the desktop fallback active.
+   * @param store - Store to back it with.
+   * @returns The manager.
+   */
+  function simulated(store: ReturnType<typeof memoryStore>) {
+    const options = new WorldOptions();
+    options.anchors.enablePersistence();
+    options.anchors.simulatorFallback = true;
+    const manager = new AnchorManager(store);
+    manager.init({options, renderer: fakeRenderer()});
+    manager.update(0, undefined);
+    return manager;
+  }
+
+  it('does not overwrite a record that happens to match the next id', async () => {
+    // A page reload restarts the id counter, so a fresh anchor can be handed
+    // an id a previously saved record already used as its handle. Seeding the
+    // store with the id this manager is about to mint reproduces that without
+    // depending on the counter's current value.
+    const store = memoryStore();
+    const manager = simulated(store);
+    const probe = await manager.create(POSE, 'probe');
+    const nextId = `anchor-${Number(probe!.id.split('-')[1]) + 1}`;
+    store.records.push({
+      uuid: nextId,
+      label: 'saved earlier',
+      createdAt: 1,
+      pose: {position: [1, 0, 0], orientation: [0, 0, 0, 1]},
+    });
+
+    const tracked = await manager.create(POSE, 'new one');
+    expect(tracked!.id).toBe(nextId);
+    await manager.persist(tracked!.id);
+
+    expect(store.records.map((r) => r.label)).toContain('saved earlier');
+    expect(store.records).toHaveLength(2);
+  });
+
+  it('gives every simulated anchor its own handle', async () => {
+    const store = memoryStore();
+    const manager = simulated(store);
+    const a = await manager.create(POSE, 'a');
+    const b = await manager.create(POSE, 'b');
+    await manager.persist(a!.id);
+    await manager.persist(b!.id);
+    const uuids = store.records.map((r) => r.uuid);
+    expect(new Set(uuids).size).toBe(2);
+  });
+
+  it('keeps a handle stable across repeated saves', async () => {
+    const store = memoryStore();
+    const manager = simulated(store);
+    const a = await manager.create(POSE, 'a');
+    await manager.persist(a!.id);
+    const first = store.records[0].uuid;
+    await manager.persist(a!.id);
+    expect(store.records).toHaveLength(1);
+    expect(store.records[0].uuid).toBe(first);
+  });
+});

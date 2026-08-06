@@ -28,6 +28,22 @@ export interface TrackedAnchor {
 let nextAnchorId = 0;
 
 /**
+ * Mints a handle for a simulated anchor.
+ *
+ * Deliberately not the anchor's id: that counter restarts whenever the page
+ * loads, so a fresh anchor would eventually be handed an id a stored record
+ * already used, and saving it would overwrite that record.
+ *
+ * @returns A handle that will not collide with an existing one.
+ */
+function simulatedHandle(): string {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return `sim-${uuid}`;
+  // randomUUID needs a secure context, which a plain http dev server is not.
+  return `sim-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
  * Creates and tracks spatial anchors, and restores previously saved ones.
  *
  * Anchors let content stay attached to a real place as the platform refines
@@ -271,9 +287,11 @@ export class AnchorManager extends Script {
     if (!tracked) return false;
     if (this.capability === 'simulated') {
       const anchor = tracked.anchor as unknown as SimulatorAnchor;
-      tracked.uuid = tracked.id;
+      // Minted once and kept, so saving the same anchor twice updates its
+      // record instead of adding another.
+      tracked.uuid ??= simulatedHandle();
       return this.store.save({
-        uuid: tracked.id,
+        uuid: tracked.uuid,
         label: tracked.label,
         createdAt: Date.now(),
         pose: anchor.toStorablePose(),
