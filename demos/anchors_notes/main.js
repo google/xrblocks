@@ -22,6 +22,11 @@ import {Keyboard} from 'xrblocks/addons/virtualkeyboard/Keyboard.js';
 const CARD_WIDTH = 0.42;
 const CARD_HEIGHT = 0.26;
 const CARD_DISTANCE = 0.9;
+/** Notes pinned without moving fan out across a row this wide. */
+const NOTES_PER_ROW = 3;
+/** Horizontal and vertical gap between fanned-out notes, in metres. */
+const NOTE_SPREAD_X = 0.42;
+const NOTE_SPREAD_Y = 0.3;
 const FRESH_COLOR = 0x6a5acd;
 const RESTORED_COLOR = 0x2f7d63;
 
@@ -177,8 +182,8 @@ class AnchorNotesDemo extends xb.Script {
     // render them on top of each other, so fan them out across the view.
     const index = this.notes.size;
     const spread = new THREE.Vector3(
-      ((index % 3) - 1) * 0.42,
-      Math.floor(index / 3) * -0.3,
+      ((index % NOTES_PER_ROW) - 1) * NOTE_SPREAD_X,
+      Math.floor(index / NOTES_PER_ROW) * -NOTE_SPREAD_Y,
       0
     ).applyQuaternion(this.scratchQuaternion);
     const forward = new THREE.Vector3(0, 0, -CARD_DISTANCE).applyQuaternion(
