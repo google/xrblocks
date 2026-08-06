@@ -60,6 +60,8 @@ export class SimulatorInterface {
   private interfaceVisible = true;
   private _gamepadToast?: GamepadToastElement;
   private _gamepadSettings?: GamepadSettingsElement;
+  private gamepadController?: GamepadController;
+  private simulatorHands?: SimulatorHands;
 
   /**
    * Initialize the simulator interface.
@@ -82,6 +84,7 @@ export class SimulatorInterface {
     }
     this.showGeminiLivePanel(simulatorOptions);
     this.createHandPosePanel(simulatorOptions, simulatorHands);
+    this.simulatorHands = simulatorHands;
     simulatorHands.onHandednessChanged = (handedness) => {
       this._ensureGamepadToast().flash(
         `Active Hand: ${handedness === 'left' ? 'Left' : 'Right'}`
@@ -217,13 +220,41 @@ export class SimulatorInterface {
 
   private _initGamepadUI(input: Input) {
     const gp = input.gamepadController;
-    gp.addEventListener('connected', () => {
-      if (!gp.hasShownToast) {
-        gp.hasShownToast = true;
-        this.showGamepadToast(gp);
-      }
-    });
+    this.gamepadController?.removeEventListener(
+      'connected',
+      this.onGamepadConnected
+    );
+    this.gamepadController = gp;
+    gp.addEventListener('connected', this.onGamepadConnected);
     gp.onOpenSettings = () => this.toggleGamepadSettings(gp);
+  }
+
+  private onGamepadConnected = () => {
+    const gp = this.gamepadController;
+    if (!gp || gp.hasShownToast) return;
+    gp.hasShownToast = true;
+    this.showGamepadToast(gp);
+  };
+
+  dispose() {
+    if (this.gamepadController) {
+      this.gamepadController.removeEventListener(
+        'connected',
+        this.onGamepadConnected
+      );
+      this.gamepadController.onOpenSettings = undefined;
+      this.gamepadController = undefined;
+    }
+    if (this.simulatorHands) {
+      this.simulatorHands.onHandednessChanged = undefined;
+      this.simulatorHands = undefined;
+    }
+    for (const element of this.elements) element.remove();
+    this.elements.length = 0;
+    this._gamepadToast?.remove();
+    this._gamepadToast = undefined;
+    this._gamepadSettings?.remove();
+    this._gamepadSettings = undefined;
   }
 
   private _ensureGamepadToast(): GamepadToastElement {

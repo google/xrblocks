@@ -12,8 +12,6 @@ The `xb.world` subsystem exposes real-world environment understanding to your ap
 1. **Plane Detection**: Real-world horizontal and vertical surfaces (floors, walls, tables).
 2. **Mesh Detection**: Environmental reconstruction of complex geometry.
 3. **Object Detection**: Identifying real objects (e.g., cups, laptops, chairs) using AI models.
-4. **Human and Face Detection**: On-device pose and facial landmark detection.
-5. **Segmentation**: On-device per-pixel person/background categories.
 
 ---
 
@@ -104,7 +102,7 @@ class ScannerScript extends xb.Script {
 
     // detectedObjects is an array of THREE.Object3D nodes positioned at their actual real-world coords
     for (const obj of detectedObjects) {
-      console.log(`Detected: ${obj.label} (UUID: ${obj.uuid})`);
+      console.log(`Detected: ${obj.name} (ID: ${obj.userData.objectId})`);
     }
   }
 }
@@ -112,8 +110,7 @@ class ScannerScript extends xb.Script {
 
 ### Backends
 
-Object detection uses the backend selected by
-`options.world.objects.backendConfig.activeBackend`:
+Under the hood, object detection uses pluggable backends selected via `options.world.objects.backend`:
 
 - **`GeminiDetectorBackend`**: Queries Gemini models using visual camera frames (requires AI API keys, see the [Generative AI](AI.mdx) guide).
 - **`MediaPipeDetectorBackend`**: Runs local MediaPipe object detection model.
@@ -189,5 +186,5 @@ on-device and does not require depth.
 For working samples, see <CodeSearchLink path="samples/depthmesh/main.js"/>,
 
 <CodeSearchLink path="templates/8_objects/index.html" />,
-<CodeSearchLink path="demos/face_mirror/index.html" />, and
+<CodeSearchLink path="samples/avatar_lab/face_mirror/index.html" />, and
 <CodeSearchLink path="demos/magic_window/index.html" />.

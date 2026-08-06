@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import type {Script} from '../core/Script.js';
 import type {
   InteractionCallbackDispatch,
   InteractionSourceType,
@@ -38,6 +39,7 @@ export class HitResolver {
   ): ResolvedRay | undefined {
     for (const rawIntersection of intersections) {
       const registered = this.registry.resolve(rawIntersection.object);
+      if (registered.physical.xb?.pointerEvents === 'none') continue;
       if (
         registered.logical === rawIntersection.object &&
         hasPrivateAncestor(rawIntersection.object)
@@ -76,7 +78,9 @@ export class HitResolver {
             manipulation?.owner
           ));
       const scriptPath = target
-        ? eligiblePath.filter((object) => this.callbacks.isScript(object))
+        ? (eligiblePath.filter((object) =>
+            this.callbacks.isScript(object)
+          ) as Script[])
         : [];
 
       return {

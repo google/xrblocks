@@ -6,6 +6,10 @@ import {XRSystems} from '../core/components/XRSystems';
 import {Input} from './Input';
 import {Controller} from './Controller';
 
+function updateInput(input: Input) {
+  input.sampleSources();
+}
+
 describe('Input head gestures', () => {
   it('creates head gestures without enabling controllers', () => {
     const input = new Input();
@@ -14,7 +18,6 @@ describe('Input head gestures', () => {
     const systemsGroup = new XRSystems();
 
     input.init({
-      scene: new THREE.Scene(),
       systemsGroup,
       options,
       renderer: {} as THREE.WebGLRenderer,
@@ -24,32 +27,48 @@ describe('Input head gestures', () => {
     expect(input.headGestures).toBeDefined();
     expect(systemsGroup.children).toContain(input.headGestures);
   });
+});
 
-  it('leaves the optional child undefined when disabled', () => {
+describe('Input direct touch', () => {
+  it('reports the contact point, selection, and wrist without scanning the scene', () => {
     const input = new Input();
-    const options = new Options();
-    options.controllers.enabled = false;
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData.selected = true;
+    const indexTip = new THREE.Object3D();
+    const wrist = new THREE.Object3D();
+    input.controllers = [controller];
+    input.hands = [
+      {
+        joints: {'index-finger-tip': indexTip, wrist},
+      } as unknown as THREE.XRHandSpace,
+    ];
+    input.controllersEnabled = false;
 
-    input.init({
-      scene: new THREE.Scene(),
-      systemsGroup: new XRSystems(),
-      options,
-      renderer: {} as THREE.WebGLRenderer,
+    updateInput(input);
+
+    const frame = input.getFrame();
+
+    expect(frame.directTouches).toHaveLength(1);
+    expect(frame.directTouches[0]).toMatchObject({
+      controller,
+      handIndex: 0,
+      hand: wrist,
+      selected: true,
     });
-
-    expect(input.headGestures).toBeUndefined();
+    expect(frame.directTouches[0].point.toArray()).toEqual([0, 0, 0]);
+    expect(frame.directTouches[0]).not.toHaveProperty('intersections');
   });
 });
 
-describe('Input resilience and cleanup', () => {
-  it('dispatches selectend and resets selected state upon disconnection', () => {
+describe('Input events', () => {
+  it('reports disconnection and stops forwarding controller events after dispose', () => {
     const input = new Input();
     const mockController = new THREE.Object3D() as unknown as Controller;
     mockController.userData = {connected: true, selected: true};
 
     const selectEndSpy = vi.fn();
-    input.bindListener('selectend', selectEndSpy);
     input.controllers.push(mockController);
+    input.bindListener('selectend', selectEndSpy);
 
     input.defaultOnDisconnected({
       type: 'disconnected',
@@ -62,25 +81,14 @@ describe('Input resilience and cleanup', () => {
       type: 'selectend',
       target: mockController,
     });
-  });
-
-  it('removes event listeners from controllers on dispose', () => {
-    const input = new Input();
-    const mockController = new THREE.Object3D() as unknown as Controller;
-    mockController.userData = {connected: true};
-
-    const addSpy = vi.spyOn(mockController, 'addEventListener');
-    const removeSpy = vi.spyOn(mockController, 'removeEventListener');
-
-    input.controllers.push(mockController);
-    input.bindListener('selectstart', vi.fn());
-
-    expect(addSpy).toHaveBeenCalled();
-    const listenerAdded = addSpy.mock.calls[0][1];
 
     input.dispose();
 
-    expect(removeSpy).toHaveBeenCalledWith('selectstart', listenerAdded);
+    mockController.dispatchEvent({
+      type: 'selectend',
+      target: mockController,
+    });
+    expect(selectEndSpy).toHaveBeenCalledOnce();
   });
 });
 

@@ -35,6 +35,8 @@ export class SimulatorDepth {
   // setTimeout-based fence polling chains stack up and dominate the
   // main thread.
   private updateInFlight = false;
+  private disposed = false;
+  private resourcesDisposed = false;
 
   constructor(private simulatorScene: SimulatorScene) {}
 
@@ -42,6 +44,8 @@ export class SimulatorDepth {
    * Initialize Simulator Depth.
    */
   init(renderer: THREE.WebGLRenderer, camera: THREE.Camera, depth: Depth) {
+    this.disposed = false;
+    this.resourcesDisposed = false;
     this.renderer = renderer;
     this.camera = camera;
     this.depth = depth;
@@ -71,6 +75,7 @@ export class SimulatorDepth {
   }
 
   update() {
+    if (this.disposed) return;
     this.updateDepthCamera();
     // Skip if an earlier updateDepth() is still resolving its readback
     // fence. We'd just race ourselves and stack up promises (the
@@ -81,6 +86,7 @@ export class SimulatorDepth {
     this.updateInFlight = true;
     this.updateDepth().finally(() => {
       this.updateInFlight = false;
+      if (this.disposed) this.disposeResources();
     });
   }
 
@@ -133,6 +139,7 @@ export class SimulatorDepth {
       this.depthHeight,
       this.depthBuffer
     );
+    if (this.disposed) return;
 
     // Flip the depth buffer.
     if (this.depthBufferSlice.length != this.depthWidth) {
@@ -172,5 +179,17 @@ export class SimulatorDepth {
       0,
       'float32'
     );
+  }
+
+  dispose() {
+    this.disposed = true;
+    if (!this.updateInFlight) this.disposeResources();
+  }
+
+  private disposeResources() {
+    if (this.resourcesDisposed) return;
+    this.resourcesDisposed = true;
+    this.depthRenderTarget?.dispose();
+    this.depthMaterial?.dispose();
   }
 }

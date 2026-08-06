@@ -13,6 +13,9 @@ const version = packageJson.version;
 const buildTarget = process.env.XRBLOCKS_BUILD ?? 'all';
 const buildExamples = buildTarget !== 'sdk';
 
+// Private chunks are generated files and must not survive across builds.
+fs.rmSync(path.join('build', 'internal'), {recursive: true, force: true});
+
 // Get the current commit ID (short hash)
 let commitId = 'unknown';
 try {
@@ -52,6 +55,11 @@ ${apache2License}
     "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
     "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
     "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+    "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+    "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+    "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+    "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+    "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
     "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
     "lit/": "https://esm.run/lit@3/",
     "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
@@ -84,19 +92,16 @@ const externalPackages = [
   'vitest',
 ];
 
-const xrblocksPackages = [
-  'xrblocks',
-  'uiblocks',
-  'netblocks',
-  /xrblocks\/addons\//,
-];
+const xrblocksPackages = ['xrblocks', 'netblocks', /xrblocks\/addons\//];
 
 const sdkBuilds = [
   {
     input: 'src/entry.ts',
     external: externalPackages,
     output: {
-      file: 'build/xrblocks.js',
+      dir: 'build',
+      entryFileNames: 'xrblocks.js',
+      chunkFileNames: 'internal/[name].js',
       format: 'esm',
       banner: bannerText,
       sourcemap: true,
@@ -124,7 +129,9 @@ const sdkBuilds = [
     input: 'src/entry.ts',
     external: externalPackages,
     output: {
-      file: 'build/xrblocks.min.js',
+      dir: 'build',
+      entryFileNames: 'xrblocks.min.js',
+      chunkFileNames: 'internal/[name].min.js',
       format: 'esm',
       sourcemap: true,
     },
@@ -145,6 +152,8 @@ const sdkBuilds = [
         ignore: [
           'src/addons/**/cli/**',
           'src/addons/**/server/**',
+          'src/addons/**/samples/**',
+          'src/addons/virtualkeyboard/**',
           'src/addons/**/*.d.ts',
           'src/addons/**/*.test.{js,ts}',
         ],

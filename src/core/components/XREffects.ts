@@ -70,7 +70,7 @@ export class XREffects {
   /**
    * Renders the XR effects.
    */
-  render() {
+  render(camera: THREE.Camera) {
     this.renderer.getDrawingBufferSize(this.dimensions);
     this.setupRenderTargets(this.dimensions);
     this.renderer.xr.cameraAutoUpdate = false;
@@ -81,7 +81,7 @@ export class XREffects {
     if (this.renderer.xr.isPresenting) {
       this.renderXr();
     } else {
-      this.renderSimulator();
+      this.renderSimulator(camera);
     }
   }
 
@@ -91,8 +91,6 @@ export class XREffects {
     const xrEnabled = renderer.xr.enabled;
     const xrIsPresenting = renderer.xr.isPresenting;
     const renderTargets = this.renderTargets;
-    const viewport = new THREE.Vector4();
-    renderer.getViewport(viewport);
     renderer.xr.cameraAutoUpdate = false;
     renderer.xr.enabled = false;
     const deltaTime = this.timer.getDelta();
@@ -152,16 +150,24 @@ export class XREffects {
     }
   }
 
-  private renderSimulator() {
+  private renderSimulator(camera: THREE.Camera) {
     const defaultTarget = this.renderer.getRenderTarget()!;
     const renderer = this.renderer;
     const xrEnabled = renderer.xr.enabled;
     const xrIsPresenting = renderer.xr.isPresenting;
-    const viewport = new THREE.Vector4();
-    renderer.getViewport(viewport);
     renderer.xr.cameraAutoUpdate = false;
     renderer.xr.enabled = false;
     const deltaTime = this.timer.getDelta();
+    if (this.passes.length === 0) {
+      renderer.setRenderTarget(defaultTarget);
+      renderer.render(this.scene, camera);
+      renderer.xr.enabled = xrEnabled;
+      renderer.xr.isPresenting = xrIsPresenting;
+      return;
+    }
+    renderer.setRenderTarget(this.renderTargets[0]);
+    renderer.clear();
+    renderer.render(this.scene, camera);
     renderer.setRenderTarget(defaultTarget);
     renderer.clear();
     renderer.xr.isPresenting = false;

@@ -12,7 +12,7 @@
     "dev": "concurrently \"npm:build:watch\" \"npm:serve\"",
     "start": "npm run dev",
     "build:watch": "rollup -c -w",
-    "serve": "http-server --cors -a 127.0.0.1 -p 8080",
+    "serve": "http-server --cors -c-1 -a 127.0.0.1 -p 8080",
     "build": "echo \"Building xrblocks.js...\" && rollup -c --failAfterWarnings",
     "build:sdk": "rollup -c --failAfterWarnings --forceExit --environment XRBLOCKS_BUILD:sdk",
     "prepare": "npm run build",
@@ -84,6 +84,8 @@
     "ws": "^8.18.3"
   },
   "peerDependencies": {
+    "@pmndrs/uikit": "^1.0.64",
+    "@preact/signals-core": "^1.14.0",
     "three": "^0.184.0"
   },
   "overrides": {

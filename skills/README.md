@@ -2,44 +2,20 @@
 
 Focused, task-oriented skills for building **AI + XR** apps with the XR Blocks SDK
 (`import * as xb from 'xrblocks'`). Each subfolder is one skill with a `SKILL.md` whose YAML
-`description` tells an agent _what it does and when to use it_. Apply
-**`xb-implement`** as the shared foundation, then use **`xb-build-app`** or
-**`xb-contribute-sdk`** for the requested outcome and compose only the focused
-workflow skills the request actually triggers.
+`description` tells an agent _what it does and when to use it_. Start with **`xb-core`**, then
+pull in feature skills as needed.
 
-For repo/build/architecture rules see [`../AGENTS.md`](../AGENTS.md); for the
-agent rules of engagement and SDK app overview see
-[`../CONTEXT.md`](../CONTEXT.md).
+For repo/build/architecture rules see [`../AGENTS.md`](../AGENTS.md); for the agent rules of
+engagement see [`../CONTEXT.md`](../CONTEXT.md); for the full SDK overview see
+[`../src/SKILL.md`](../src/SKILL.md).
 
 ## Naming convention
 
-Workflow skills use `xb-<verb>-<outcome>` so their invocation matches a developer
-intent, such as `xb-build-app` or `xb-add-ai`. Existing capability references use
-`xb-<area>`. The `xb-` prefix matches the `xb` import alias.
+`xb-<area>` for a capability, `xb-<area>-<action>` for a narrower task (mirrors the
+`gws-<service>[-<action>]` scheme in [googleworkspace/cli](https://github.com/googleworkspace/cli)).
+The `xb-` prefix matches the `xb` import alias.
 
-## Primary workflow skills
-
-All implementation workflows first apply the shared
-[`xb-implement`](xb-implement/SKILL.md) foundation. It grounds APIs, lifecycle,
-ownership, dependencies, cleanup, and unavailable states; the primary workflow
-then owns the requested outcome.
-
-| Skill                                                   | Use when you need to…                                              |
-| ------------------------------------------------------- | ------------------------------------------------------------------ |
-| [`xb-implement`](xb-implement/SKILL.md)                 | Apply the required implementation foundation                       |
-| [`xb-build-app`](xb-build-app/SKILL.md)                 | Build an app through a simulator or XR user-testing handoff        |
-| [`xb-add-interactions`](xb-add-interactions/SKILL.md)   | Generate hands, gaze, grabbing, gesture, or manipulation behavior  |
-| [`xb-add-spatial-ui`](xb-add-spatial-ui/SKILL.md)       | Add a usable menu, HUD, card, dashboard, label, or control surface |
-| [`xb-add-world-sensing`](xb-add-world-sensing/SKILL.md) | Make the app observe and react to the physical world               |
-| [`xb-add-ai`](xb-add-ai/SKILL.md)                       | Add complete query, Live, generation, or tool-driven AI behavior   |
-| [`xb-automate-app`](xb-automate-app/SKILL.md)           | Expose browser or remote controls to an external process           |
-| [`xb-contribute-sdk`](xb-contribute-sdk/SKILL.md)       | Change SDK seams, public APIs, tests, examples, and docs together  |
-
-## Supporting capability references
-
-The workflow skills above consolidate these narrower references and the manual.
-Use a capability reference when debugging that subsystem or when a workflow
-skill points to it; start app-generation work from the workflow layer.
+## Registry
 
 | Skill                                           | Use when you need to…                                                |
 | ----------------------------------------------- | -------------------------------------------------------------------- |
@@ -63,5 +39,5 @@ skill points to it; start app-generation work from the workflow layer.
 | [`xb-testing`](xb-testing/SKILL.md)             | Write sequential functional, integration, or simulator tests         |
 
 Deep references some skills link to live next to the code:
-[`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),
+[`../src/SKILL.md`](../src/SKILL.md), [`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),
 [`../src/addons/netblocks/SKILL.md`](../src/addons/netblocks/SKILL.md), [`../src/addons/lipsync/SKILL.md`](../src/addons/lipsync/SKILL.md).

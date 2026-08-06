@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+import type {RaycastMode, ReticleOptions} from '../core/Options.js';
+import type {
+  LongSelectEvent,
+  Script,
+  SelectEndEvent,
+  SelectEvent,
+} from '../core/Script.js';
 import type {Controller} from '../input/Controller.js';
 import type {
   ManipulationAction,
@@ -10,26 +17,14 @@ import type {
 
 export type PointerEvents = 'auto' | 'none';
 export type ReticleMode = 'auto' | 'surface' | 'hidden';
-export type RaycastMode = 'continuous' | 'select';
-
-export interface InteractionReticleOptions {
-  projectOnDepthMesh?: boolean;
-  maxDistance?: number;
-  defaultRenderDistance?: number;
-}
-
-export interface ManipulationSurfaceOptions {
-  scale?: boolean;
-  translateFromSurface?: boolean;
-}
 
 export interface XBObjectOptions {
+  /** Whether this object and its descendants participate in pointer hits. */
   pointerEvents?: PointerEvents;
   interactionEnabled?: boolean;
   reticleMode?: ReticleMode;
   manipulation?: boolean | ManipulationOptions;
   manipulationHandle?: ManipulationHandleOptions | 'none';
-  manipulationSurface?: ManipulationSurfaceOptions;
 }
 
 declare module 'three' {
@@ -52,60 +47,6 @@ export interface InteractionSource {
   readonly type: InteractionSourceType;
   readonly handedness: 'left' | 'right' | 'none';
   readonly controller: Controller;
-}
-
-export interface SelectEvent {
-  readonly source: InteractionSource;
-  readonly target?: THREE.Object3D;
-  readonly currentTarget?: THREE.Object3D;
-  readonly surface?: THREE.Object3D;
-}
-
-export type SelectionEndReason =
-  | 'released'
-  | 'released-outside'
-  | 'source-lost'
-  | 'pointer-cancel'
-  | 'removed'
-  | 'hidden'
-  | 'disabled';
-
-export interface SelectEndEvent extends SelectEvent {
-  readonly completed: boolean;
-  readonly reason: SelectionEndReason;
-}
-
-export interface LongSelectEvent extends SelectEvent {
-  readonly duration: number;
-}
-
-export interface ObjectTouchEvent {
-  readonly source: InteractionSource;
-  readonly target: THREE.Object3D;
-  readonly currentTarget?: THREE.Object3D;
-  readonly surface: THREE.Object3D;
-  readonly handIndex: number;
-  readonly hand?: THREE.Object3D;
-  readonly touchPosition: THREE.Vector3;
-}
-
-export interface ObjectTouchStartEvent extends ObjectTouchEvent {
-  readonly defaultPrevented: boolean;
-  preventDefault(): void;
-}
-
-export interface ObjectGrabEvent {
-  readonly source: InteractionSource;
-  readonly target: THREE.Object3D;
-  readonly currentTarget?: THREE.Object3D;
-  readonly surface: THREE.Object3D;
-  readonly handIndex: number;
-  readonly hand: THREE.Object3D;
-  readonly touchPosition: THREE.Vector3;
-}
-
-export interface HoverEvent extends SelectEvent {
-  readonly intersection?: THREE.Intersection;
 }
 
 export interface RaySourceInput {
@@ -200,7 +141,7 @@ export interface ResolvedRay {
   /** Public object that owns the hit. */
   readonly surface: THREE.Object3D;
   readonly target?: THREE.Object3D;
-  readonly scriptPath: readonly THREE.Object3D[];
+  readonly scriptPath: readonly Script[];
   readonly objectPath: readonly THREE.Object3D[];
   readonly reticleMode: ReticleMode;
   readonly semanticControl?: THREE.Object3D;
@@ -215,7 +156,7 @@ export interface SelectionCapture {
   readonly owner: THREE.Object3D;
   readonly point: THREE.Vector3;
   readonly uv?: THREE.Vector2;
-  readonly scriptPath: readonly THREE.Object3D[];
+  readonly scriptPath: readonly Script[];
   readonly manipulation?: ManipulationResolution;
 }
 
@@ -276,7 +217,7 @@ export interface InteractionCallbackDispatch {
     hook: Hook,
     event: GlobalInteractionEvent<Hook>
   ): void;
-  invokeManipulation(script: THREE.Object3D, event: ManipulationEvent): boolean;
+  invokeManipulation(script: Script, event: ManipulationEvent): boolean;
 }
 
 export interface ReticlePresentationObserver {
@@ -294,7 +235,7 @@ export interface InteractionDependencies {
   camera?: THREE.Camera;
   timer?: THREE.Timer;
   reticle?: ReticlePresentationObserver;
-  reticleOptions?: InteractionReticleOptions;
+  reticleOptions?: ReticleOptions;
   longSelectDuration?: number;
 }
 

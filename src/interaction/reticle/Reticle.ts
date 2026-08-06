@@ -5,6 +5,7 @@ import {ReticleShader} from './ReticleShader';
 
 const HOVER_RING_BRIGHTNESS = 0.4;
 const HOVER_RING_OPACITY = 0.7;
+const RETICLE_RENDER_ORDER = 2_000_000_000;
 
 /**
  * A 3D visual marker used to indicate a user's aim or interaction
@@ -23,7 +24,10 @@ export class Reticle extends THREE.Mesh<
   direction = new THREE.Vector3();
 
   /** Ensures the reticle is drawn on top of other transparent objects. */
-  renderOrder = 1000;
+  renderOrder = RETICLE_RENDER_ORDER;
+
+  /** The smoothing factor for rotational slerp interpolation. */
+  rotationSmoothing: number;
 
   /** The z-offset to prevent visual artifacts (z-fighting). */
   offset: number;
@@ -56,7 +60,7 @@ export class Reticle extends THREE.Mesh<
    * objects. Defaults to `false` to ensure it is always visible.
    */
   constructor(
-    public rotationSmoothing = 0.8,
+    rotationSmoothing = 0.8,
     offset = 0.001,
     size = 0.019,
     depthTest = false
@@ -71,6 +75,7 @@ export class Reticle extends THREE.Mesh<
         vertexShader: ReticleShader.vertexShader,
         fragmentShader: ReticleShader.fragmentShader,
         depthTest: depthTest,
+        depthWrite: false,
         transparent: true,
       })
     );

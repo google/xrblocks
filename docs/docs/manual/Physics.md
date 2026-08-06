@@ -40,7 +40,7 @@ XR Blocks supports the different 3D variants of RAPIER by using a virtual import
 ## Physics
 
 The [`Physics`](/api/classes/Physics) controller will initialize `RAPIER`, create a RAPIER world, and call [`world.step`](https://rapier.rs/javascript3d/classes/World.html#step) for every physics step.
-It is accessible from `xb.core.physics` and has the following properties:
+Is is accessible from `xb.core.physics` and has the following properties:
 
 1. `RAPIER` - the global `RAPIER` object.
 2. `blendedWorld` - the global `RAPIER.world` object.
@@ -60,7 +60,6 @@ export class Ball extends xb.Script {
 
   initPhysics(physics) {
     const RAPIER = physics.RAPIER;
-    const world = physics.blendedWorld;
     const desc = RAPIER.RigidBodyDesc.dynamic().setTranslation(
       ...this.position
     );
