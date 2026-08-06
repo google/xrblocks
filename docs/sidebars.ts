@@ -41,7 +41,6 @@ const sidebars: SidebarsConfig = {
     'templates/XR-Modes',
     'templates/Environment-Physics',
     'templates/Agent-Context',
-    'templates/Spatial-Audio',
     'templates/Hand-Gestures',
     'templates/TypeScript-Vite',
     'templates/Simulator-Setup',
