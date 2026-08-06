@@ -72,34 +72,6 @@ export function promptForApiKey(
           color: #f7f8fc;
           font: 14px/1.45 'Google Sans', 'Segoe UI', system-ui, sans-serif;
         }
-        .xb-ai-key-heading {
-          display: flex;
-          gap: 14px;
-          align-items: center;
-        }
-        .xb-ai-key-mark {
-          width: 42px;
-          height: 42px;
-          flex: 0 0 42px;
-          border-radius: 13px;
-          background: linear-gradient(135deg, #d4e8ff 20%, #b9c9ff 55%, #d0a8e3);
-          box-shadow: 0 8px 24px rgba(147, 169, 255, 0.2);
-        }
-        .xb-ai-key-eyebrow {
-          margin: 0 0 2px;
-          color: #aeb9cd;
-          font-size: 11px;
-          font-weight: 650;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-        }
-        .xb-ai-key-title {
-          margin: 0;
-          color: #fff;
-          font-size: 22px;
-          font-weight: 550;
-          letter-spacing: -0.02em;
-        }
         .xb-ai-key-copy {
           margin: -4px 0 0;
           color: #bcc5d5;
@@ -201,15 +173,8 @@ export function promptForApiKey(
         }
       </style>
       <form method="dialog" class="xb-ai-key-card">
-        <header class="xb-ai-key-heading">
-          <span class="xb-ai-key-mark" aria-hidden="true"></span>
-          <div>
-            <p class="xb-ai-key-eyebrow">XR Blocks AI</p>
-            <h1 class="xb-ai-key-title">Connect ${displayName}</h1>
-          </div>
-        </header>
         <p class="xb-ai-key-copy">
-          Enter a key for this local prototype.
+          Enter a ${displayName} key for this local prototype.
           <a href="${keyUrl}" target="_blank" rel="noopener">Get an API key</a>
         </p>
         <label class="xb-ai-key-label">
