@@ -323,7 +323,9 @@ function createNode(
     }
 
     if (cardEdgeOptions) {
-      edge = new UICardEdge();
+      edge = new UICardEdge({
+        cardCornerRadius: numericCornerRadius(panelStyle.cornerRadius),
+      });
       panel.add(edge);
       edge.setCursorPoints(
         presentation.cursorPointCount > 0 ? cursorPoints?.[0] : undefined,
@@ -338,6 +340,9 @@ function createNode(
       const nextPanelProperties = propertiesFor(state);
       panel.setProperties(
         changedProperties(previousPanelProperties, nextPanelProperties)
+      );
+      edge?.setCardCornerRadius(
+        numericCornerRadius(nextPanelProperties.cornerRadius)
       );
       previousPanelProperties = nextPanelProperties;
       blocksHits =
@@ -421,6 +426,12 @@ function changedProperties(
     if (!(key in next)) properties[key] = undefined;
   }
   return properties;
+}
+
+function numericCornerRadius(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, value)
+    : 0;
 }
 
 function resolveStyle(
