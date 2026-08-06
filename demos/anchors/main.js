@@ -13,6 +13,8 @@ import * as xb from 'xrblocks';
 // the status line says which one is in use.
 
 const MARKER_RADIUS = 0.06;
+/** How far in front of the user a new marker is placed, in metres. */
+const MARKER_DISTANCE = 0.8;
 const MARKER_COLOR = 0x8a7bff;
 const RESTORED_COLOR = 0x4ec9a0;
 
@@ -126,7 +128,7 @@ class AnchorsDemo extends xb.Script {
 
     camera.getWorldPosition(this.scratchPosition);
     camera.getWorldQuaternion(this.scratchQuaternion);
-    const forward = new THREE.Vector3(0, 0, -0.8).applyQuaternion(
+    const forward = new THREE.Vector3(0, 0, -MARKER_DISTANCE).applyQuaternion(
       this.scratchQuaternion
     );
     // Dropping twice from the same spot would stack markers exactly, so fan
