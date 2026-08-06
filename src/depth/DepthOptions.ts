@@ -39,7 +39,7 @@ export class DepthOptions {
   usagePreference: XRDepthUsage[] = [];
   dataFormatPreference: XRDepthDataFormat[] = ['float32', 'luminance-alpha'];
   depthTypeRequest: XRDepthType[] = ['raw'];
-  matchDepthView = true;
+  matchDepthView = false;
 
   constructor(options?: DeepReadonly<DeepPartial<DepthOptions>>) {
     deepMerge(this, options);

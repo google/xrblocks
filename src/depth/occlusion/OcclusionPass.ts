@@ -37,6 +37,8 @@ export class OcclusionPass extends Pass {
   private occlusionUniforms: ShaderUniforms;
   private occlusionQuad: FullScreenQuad;
   private depthNear: (number | undefined)[] = [];
+  private depthViewMatrices: THREE.Matrix4[] = [];
+  private depthProjectionMatrices: THREE.Matrix4[] = [];
   // Cached dimensions of the render targets so we only call setSize()
   // when they actually changed. setSize() forces a GPU texture
   // reallocation even when called with the same dimensions, which
@@ -151,13 +153,21 @@ export class OcclusionPass extends Pass {
     depthTexture: THREE.Texture,
     rawValueToMeters: number,
     viewId: number,
-    depthNear?: number
+    depthNear?: number,
+    depthViewMatrix?: THREE.Matrix4,
+    depthProjectionMatrix?: THREE.Matrix4
   ) {
     this.depthTextures[viewId] = depthTexture;
     this.occlusionMapUniforms.uRawValueToMeters.value = rawValueToMeters;
     this.occlusionMeshMaterial.uniforms.uRawValueToMeters.value =
       rawValueToMeters;
     this.depthNear[viewId] = depthNear;
+    if (depthViewMatrix) {
+      this.depthViewMatrices[viewId] = depthViewMatrix;
+    }
+    if (depthProjectionMatrix) {
+      this.depthProjectionMatrices[viewId] = depthProjectionMatrix;
+    }
     depthTexture.needsUpdate = true;
   }
 
@@ -214,12 +224,16 @@ export class OcclusionPass extends Pass {
     } else {
       this.occlusionMeshMaterial.uniforms.uDepthTexture.value = texture;
     }
+    const camera = renderer.xr.getCamera().cameras[viewId] || this.camera;
+    this.occlusionMeshMaterial.uniforms.uDepthViewMatrix.value =
+      this.depthViewMatrices[viewId] || camera.matrixWorldInverse;
+    this.occlusionMeshMaterial.uniforms.uDepthProjectionMatrix.value =
+      this.depthProjectionMatrices[viewId] || camera.projectionMatrix;
     this.scene.overrideMaterial = this.occlusionMeshMaterial;
     renderer.getDrawingBufferSize(dimensions);
     this.resizeOcclusionMap(dimensions);
     const renderTarget = this.occlusionMapTexture;
     renderer.setRenderTarget(renderTarget);
-    const camera = renderer.xr.getCamera().cameras[viewId] || this.camera;
     const originalCameraLayers = Array.from(Array(32).keys()).filter(
       (element) => camera.layers.isEnabled(element)
     );
