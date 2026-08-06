@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   Core,
-  Simulator,
+  type Simulator,
   type SimulatorHandPose,
   type SimulatorHandPoseRotations,
   User,
@@ -158,7 +158,7 @@ export class EmbodiedControlExecutor {
         .multiplyScalar(fraction)
         .applyQuaternion(initialCameraQuaternion);
       vector.add(camera.position);
-      this.dependencies.simulator.navMesh.applyUserMovement(camera, vector);
+      this.dependencies.simulator.moveUser(vector);
     }
 
     if (control.rotate) {
@@ -344,14 +344,11 @@ export class EmbodiedControlExecutor {
         );
         targetCameraPosition.addScaledVector(forward, distance);
       }
-      this.dependencies.simulator.navMesh.applyUserMovement(
-        camera,
-        targetCameraPosition
-      );
+      this.dependencies.simulator.moveUser(targetCameraPosition);
 
       if (
         snapToGround &&
-        !this.dependencies.simulator.navMesh.constrained &&
+        !this.dependencies.simulator.userMovementConstrained &&
         world?.planes &&
         user
       ) {

@@ -6,7 +6,7 @@ import {MouseController} from '../../input/MouseController';
 import {Interaction} from '../../interaction/Interaction';
 import {SimulatorControllerState} from '../SimulatorControllerState';
 import {SimulatorHands} from '../SimulatorHands';
-import {SimulatorNavMesh} from '../scene/SimulatorNavMesh';
+import {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
 import {SimulatorUserMode} from './SimulatorUserMode';
 
 describe('SimulatorUserMode wheel scaling', () => {

@@ -1,5 +1,4 @@
 /* eslint-env browser */
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import * as THREE from 'three';
 import * as xb from 'xrblocks';

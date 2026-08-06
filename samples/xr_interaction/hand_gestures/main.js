@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as xb from 'xrblocks';
 
 import {CustomGestureRecognizer, HandGestureDemo} from './HandGestureDemo.js';

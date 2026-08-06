@@ -3,7 +3,12 @@ import {customElement} from 'lit/decorators/custom-element.js';
 import {property} from 'lit/decorators/property.js';
 import {classMap} from 'lit/directives/class-map.js';
 import {createRef, ref} from 'lit/directives/ref.js';
-import * as xb from 'xrblocks';
+
+import {SimulatorHandPoseChangeRequestEvent} from '../../../events/SimulatorHandEvents.js';
+import {
+  SIMULATOR_HAND_POSE_NAMES,
+  SimulatorHandPose,
+} from '../../../handPoses/HandPoses.js';
 
 @customElement('xrblocks-simulator-hand-pose-panel')
 export class HandPosePanel extends LitElement {
@@ -60,7 +65,7 @@ export class HandPosePanel extends LitElement {
 
   // Default to the first hand pose
   @property({type: String})
-  handPose: xb.SimulatorHandPose = Object.values(xb.SimulatorHandPose)[0];
+  handPose: SimulatorHandPose = Object.values(SimulatorHandPose)[0];
   @property({type: Boolean}) visible = true;
 
   override update(changedProperties: Map<string, unknown>) {
@@ -70,8 +75,8 @@ export class HandPosePanel extends LitElement {
     super.update(changedProperties);
   }
 
-  sendHandPoseRequest(pose: xb.SimulatorHandPose) {
-    this.dispatchEvent(new xb.SimulatorHandPoseChangeRequestEvent(pose));
+  sendHandPoseRequest(pose: SimulatorHandPose) {
+    this.dispatchEvent(new SimulatorHandPoseChangeRequestEvent(pose));
   }
 
   /**
@@ -79,8 +84,8 @@ export class HandPosePanel extends LitElement {
    */
   getHandPoseButtons() {
     const buttons = [];
-    for (const pose of Object.values(xb.SimulatorHandPose)) {
-      const poseName = xb.SIMULATOR_HAND_POSE_NAMES[pose];
+    for (const pose of Object.values(SimulatorHandPose)) {
+      const poseName = SIMULATOR_HAND_POSE_NAMES[pose];
       const classes = {
         'hand-pose-button': true,
         selected: this.handPose === pose,

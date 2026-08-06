@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {Core, Input, Options, Script, Simulator} from 'xrblocks';
+import {Core, Input, Options, Script, type Simulator} from 'xrblocks';
 import {
   EmbodiedControl,
   type EmbodiedControlOptions,
@@ -34,7 +34,6 @@ type RegisteredTool = {
 export class RemoteControl extends Script {
   static dependencies = {
     core: Core,
-    simulator: Simulator,
     input: Input,
     camera: THREE.Camera,
   };
@@ -44,7 +43,7 @@ export class RemoteControl extends Script {
 
   dependencies!: {
     core: Core;
-    simulator: Simulator;
+    simulator?: Simulator;
     input: Input;
     camera: THREE.Camera;
   };
@@ -71,14 +70,8 @@ export class RemoteControl extends Script {
     }
   }
 
-  init(dependencies: {
-    core: Core;
-    simulator: Simulator;
-    input: Input;
-    camera: THREE.Camera;
-  }) {
+  init(dependencies: {core: Core; input: Input; camera: THREE.Camera}) {
     this.dependencies = dependencies;
-    this.registerBuiltInTools();
     this.transport = new WebSocketRemoteControlTransport(
       {
         url: this.options.url,
@@ -90,7 +83,7 @@ export class RemoteControl extends Script {
     );
     this.transport.connect();
     if (dependencies.core.simulatorRunning) {
-      void this.announceSimulatorReady();
+      this.onSimulatorStarted();
     }
   }
 
@@ -100,6 +93,10 @@ export class RemoteControl extends Script {
   }
 
   override onSimulatorStarted() {
+    const simulator = this.dependencies.core.simulator;
+    if (!simulator) return;
+    this.dependencies.simulator = simulator;
+    this.registerBuiltInTools();
     void this.announceSimulatorReady();
   }
 
@@ -163,8 +160,11 @@ export class RemoteControl extends Script {
   }
 
   private registerBuiltInTools() {
+    const simulator = this.dependencies.simulator;
+    if (!simulator) return;
     for (const tool of createRemoteControlBuiltInTools({
       ...this.dependencies,
+      simulator,
       embodiedControl: this.embodiedControl,
       resolveTarget: (target) => this.resolveTarget(target),
     })) {

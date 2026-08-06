@@ -13,7 +13,7 @@ import {
   loadSimulatorSceneManifest,
   ResolvedSimulatorSceneManifest,
 } from './SimulatorEnvironmentManifest';
-import {SimulatorNavMesh} from './SimulatorNavMesh';
+import {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
 import {SimulatorObjectsManager} from './SimulatorObjects';
 import type {SimulatorPhysics} from './SimulatorPhysics';
 import {SimulatorScene} from './SimulatorScene';

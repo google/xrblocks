@@ -1,4 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import * as xb from 'xrblocks';
 import {AnimalOcclusionScene} from './animal_occlusion_scene.js';
 async function startApp() {

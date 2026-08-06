@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 
+import type {SimulatorCameraSource} from '../camera/SimulatorCameraSource';
 import {SimulatorMediaDeviceInfo} from './SimulatorMediaDeviceInfo';
 import {
   ConstrainDomStringMatch,
   evaluateConstrainDOMString,
 } from './utils/CameraUtils';
 
-export class SimulatorCamera {
+export class SimulatorCamera implements SimulatorCameraSource {
   private cameraCreated = false;
   private cameraInfo?: SimulatorMediaDeviceInfo;
   private mediaStream?: MediaStream;

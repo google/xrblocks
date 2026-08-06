@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as xb from 'xrblocks';
 
 import {GameRps} from './GameRps.js';

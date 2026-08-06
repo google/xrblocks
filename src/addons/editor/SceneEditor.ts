@@ -140,7 +140,7 @@ export class SceneEditor extends xb.Script {
   override update() {
     const active =
       xb.core.simulatorRunning &&
-      xb.core.simulator.controls.simulatorMode === xb.SimulatorMode.EDITOR &&
+      xb.core.simulator?.controls.simulatorMode === xb.SimulatorMode.EDITOR &&
       !this.inRealXRSession;
 
     this.selectionManager.editorActive = active;

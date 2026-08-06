@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import {BroadcastChannelTransport, enableNet, WebRTCTransport} from 'netblocks';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
