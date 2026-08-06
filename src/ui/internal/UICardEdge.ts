@@ -19,7 +19,7 @@ import {
 
 const DEFAULT_EDGE_PROPERTIES = {
   margin: 50,
-  cornerRadius: 40,
+  cardCornerRadius: 0,
   edgeWidth: 2,
   spotlightColor: 'rgba(255, 255, 255, 1)',
   spotlightRadius: 20,
@@ -31,8 +31,8 @@ const DEFAULT_EDGE_PROPERTIES = {
 export interface UICardEdgeProperties {
   /** Width of the manipulation band extending outward from the card edge. */
   margin?: number;
-  /** Outer edge corner radius in layout pixels. */
-  cornerRadius?: number;
+  /** Corner radius of the card surface in layout pixels. */
+  cardCornerRadius?: number;
   /** Visible shader edge width in layout pixels. */
   edgeWidth?: number;
   /** Color shared by the cursor spotlight and illuminated outline. */
@@ -47,7 +47,7 @@ export interface UICardEdgeProperties {
 
 type HandleLayerProperties = PanelLayerProperties & {
   u_edge_margin?: number;
-  u_edge_corner_radius?: number;
+  u_card_corner_radius?: number;
   u_edge_width?: number;
   u_cursor_spotlight_color?: THREE.ColorRepresentation;
   u_cursor_radius?: number;
@@ -89,8 +89,8 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       setNumber(this.material, 'u_edge_margin', signals.u_edge_margin?.value);
       setNumber(
         this.material,
-        'u_edge_corner_radius',
-        signals.u_edge_corner_radius?.value
+        'u_card_corner_radius',
+        signals.u_card_corner_radius?.value
       );
       setNumber(this.material, 'u_edge_width', signals.u_edge_width?.value);
       setColor(
@@ -141,14 +141,14 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
 export class UICardEdge extends UICardEdgeLayer {
   name = 'UICardEdge';
   readonly margin: number;
-  readonly cornerRadius: number;
+  private _cardCornerRadius: number;
   private readonly cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
   private readonly cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
 
   constructor(properties: UICardEdgeProperties = {}) {
     const resolved = {...DEFAULT_EDGE_PROPERTIES, ...properties};
     const margin = Math.max(0, resolved.margin);
-    const cornerRadius = Math.max(0, resolved.cornerRadius);
+    const cardCornerRadius = Math.max(0, resolved.cardCornerRadius);
     super({
       positionType: 'absolute',
       positionTop: -margin,
@@ -160,7 +160,7 @@ export class UICardEdge extends UICardEdgeLayer {
       pointerEvents: 'auto',
       zIndexOffset: -20,
       u_edge_margin: margin,
-      u_edge_corner_radius: cornerRadius,
+      u_card_corner_radius: cardCornerRadius,
       u_edge_width: resolved.edgeWidth,
       u_cursor_spotlight_color: resolved.spotlightColor,
       u_cursor_radius: resolved.spotlightRadius,
@@ -175,7 +175,7 @@ export class UICardEdge extends UICardEdgeLayer {
       manipulationHandle: {action: ManipulationAction.Translate},
     };
     this.margin = margin;
-    this.cornerRadius = cornerRadius;
+    this._cardCornerRadius = cardCornerRadius;
 
     const baseRaycast = this.raycast.bind(this);
     this.raycast = (raycaster, intersections) => {
@@ -191,12 +191,28 @@ export class UICardEdge extends UICardEdgeLayer {
         if (
           !size ||
           !uv ||
-          !isOuterEdgeHit(uv, size, this.margin, this.cornerRadius)
+          !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius)
         ) {
           intersections.splice(index, 1);
         }
       }
     };
+  }
+
+  get cardCornerRadius(): number {
+    return this._cardCornerRadius;
+  }
+
+  setCardCornerRadius(radius: number): void {
+    const nextRadius = Math.max(0, radius);
+    this._cardCornerRadius = nextRadius;
+    const signal = (
+      this.properties as unknown as {
+        signal: WritableSignalProperties<HandleLayerProperties>;
+      }
+    ).signal.u_card_corner_radius;
+    if (signal) signal.value = nextRadius;
+    setNumber(this.material, 'u_card_corner_radius', nextRadius);
   }
 
   setCursorPoints(first?: THREE.Vector3, second?: THREE.Vector3): void {
@@ -221,7 +237,7 @@ export class UICardEdge extends UICardEdgeLayer {
 function createUniforms(): Record<string, THREE.IUniform> {
   return {
     u_edge_margin: {value: 0},
-    u_edge_corner_radius: {value: 0},
+    u_card_corner_radius: {value: 0},
     u_edge_width: {value: 0},
     u_cursor_spotlight_color: {value: new THREE.Vector4(1, 1, 1, 1)},
     u_cursor_radius: {value: 0},
@@ -264,7 +280,7 @@ function isOuterEdgeHit(
   uv: THREE.Vector2,
   size: readonly [number, number],
   margin: number,
-  cornerRadius: number
+  cardCornerRadius: number
 ): boolean {
   const halfWidth = size[0] / 2;
   const halfHeight = size[1] / 2;
@@ -272,12 +288,12 @@ function isOuterEdgeHit(
   const y = uv.y * size[1] - halfHeight;
   const innerHalfWidth = Math.max(0, halfWidth - margin);
   const innerHalfHeight = Math.max(0, halfHeight - margin);
-  const outerRadius = Math.min(cornerRadius, halfWidth, halfHeight);
   const innerRadius = Math.min(
-    Math.max(0, outerRadius - margin),
+    cardCornerRadius,
     innerHalfWidth,
     innerHalfHeight
   );
+  const outerRadius = Math.min(innerRadius + margin, halfWidth, halfHeight);
   return (
     roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= 0 &&
     roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >= 0
