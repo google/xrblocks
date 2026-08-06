@@ -1,33 +1,69 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import type {GLTF} from 'three/addons/loaders/GLTFLoader.js';
-import type {Pathfinding as PathfindingType} from 'three-pathfinding';
 
-import {SimulatorOptions} from '../SimulatorOptions';
-import {ResolvedSimulatorSceneManifest} from './SimulatorEnvironmentManifest';
+import {SimulatorOptions} from '../../SimulatorOptions';
+import {ResolvedSimulatorSceneManifest} from '../../scene/SimulatorEnvironmentManifest';
 
 const DEFAULT_ZONE_ID = 'simulator';
 const RANDOM_PATH_SAMPLE_ATTEMPTS = 8;
+const PATHFINDING_MODULE_SPECIFIER = 'three-pathfinding';
 
-type PathfindingConstructor = {
-  new (): PathfindingType;
-  createZone: (geometry: THREE.BufferGeometry, tolerance?: number) => unknown;
-};
-type PathfindingNode = ReturnType<PathfindingType['getClosestNode']>;
+interface PathfindingNode {
+  vertexIds: number[];
+}
+
 type PathfindingZone = {
   groups: PathfindingNode[][];
   vertices: THREE.Vector3[];
 };
 
-export interface SimulatorNavMeshPath {
+interface PathfindingInstance {
+  setZoneData(zoneId: string, zone: PathfindingZone): void;
+  getGroup(zoneId: string, position: THREE.Vector3): number | null;
+  getClosestNode(
+    position: THREE.Vector3,
+    zoneId: string,
+    groupId: number,
+    checkPolygon?: boolean
+  ): PathfindingNode | null;
+  clampStep(
+    start: THREE.Vector3,
+    end: THREE.Vector3,
+    node: PathfindingNode,
+    zoneId: string,
+    groupId: number,
+    endTarget: THREE.Vector3
+  ): PathfindingNode;
+  findPath(
+    start: THREE.Vector3,
+    target: THREE.Vector3,
+    zoneId: string,
+    groupId: number
+  ): THREE.Vector3[] | null;
+}
+
+type PathfindingConstructor = {
+  new (): PathfindingInstance;
+  createZone: (
+    geometry: THREE.BufferGeometry,
+    tolerance?: number
+  ) => PathfindingZone;
+};
+
+interface PathfindingModule {
+  Pathfinding: PathfindingConstructor;
+}
+
+interface SimulatorNavMeshPath {
   target: THREE.Vector3;
   path: THREE.Vector3[];
 }
 
-export interface PreparedSimulatorNavMesh {
+interface PreparedSimulatorNavMesh {
   enabled: boolean;
   eyeHeight: number;
-  pathfinding?: PathfindingType;
+  pathfinding?: PathfindingInstance;
   zone?: PathfindingZone;
   debugGeometry?: THREE.BufferGeometry;
 }
@@ -49,7 +85,7 @@ export class SimulatorNavMesh {
   readonly debugVisualization = new THREE.Group();
 
   private Pathfinding?: PathfindingConstructor;
-  private pathfinding?: PathfindingType;
+  private pathfinding?: PathfindingInstance;
   private zone?: PathfindingZone;
   private zoneId = DEFAULT_ZONE_ID;
   private groupId: number | null = null;
@@ -428,7 +464,10 @@ export class SimulatorNavMesh {
 
   private async loadPathfinding() {
     if (!this.Pathfinding) {
-      this.Pathfinding = (await import('three-pathfinding')).Pathfinding;
+      const module = (await import(
+        PATHFINDING_MODULE_SPECIFIER
+      )) as unknown as PathfindingModule;
+      this.Pathfinding = module.Pathfinding;
     }
     return this.Pathfinding;
   }

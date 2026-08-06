@@ -180,8 +180,11 @@ describe('Core frame and simulator lifecycle', () => {
     await vi.waitFor(() =>
       expect(scripts(core).initScript).toHaveBeenCalledOnce()
     );
+    const initializingSimulator = vi.mocked(scripts(core).initScript).mock
+      .calls[0][0];
     expect(simulatorLoader).toHaveBeenCalledOnce();
     expect(core.simulatorRunning).toBe(false);
+    expect(initializingSimulator.parent).toBe(core.xrSystemsGroup);
 
     finishInit?.();
     await Promise.all([firstStart, secondStart]);

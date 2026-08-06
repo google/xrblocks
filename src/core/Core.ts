@@ -828,15 +828,18 @@ export class Core {
       const simulator = new Simulator(this.renderSceneCallback);
       simulator.effects = this.effects;
       try {
+        // Keep the simulator connected to the script lifecycle while its async
+        // initialization runs. Otherwise the frame loop treats it as removed
+        // and disposes it before startup completes.
+        this.xrSystemsGroup.add(simulator);
         await this.scriptsManager.initScript(simulator);
         this.assertLifecycleActive('finish simulator startup');
         this.simulator = simulator;
         this.registry.register(simulator);
-        this.registry.register(simulator.navMesh);
-        this.xrSystemsGroup.add(simulator);
         this.onSimulatorStarted();
         return simulator;
       } catch (error) {
+        simulator.removeFromParent();
         try {
           simulator.dispose();
         } catch (cleanupError) {

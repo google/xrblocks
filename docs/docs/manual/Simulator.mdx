@@ -16,6 +16,8 @@ To support all features of the simulator, please add the following dependencies 
 {
   "imports": {
     "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+    "lit/": "https://esm.run/lit@3/",
+    "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
     "xrblocks": "sdk/xrblocks.js",
     "xrblocks/addons/": "sdk/addons/"
   }
@@ -25,14 +27,12 @@ To support all features of the simulator, please add the following dependencies 
 Or using npm:
 
 ```bash
-npm i lit
+npm i lit three-pathfinding
 ```
 
-Then in your script please add the following import which adds lit components to show HTML-based UI elements when running the simulator, such as simulator instructions and the mode indicator.
-
-```js
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-```
+The simulator loads its browser interface automatically. If Lit is not available,
+the simulator continues without this interface and writes one informational message
+to the console. `three-pathfinding` loads only when navmesh constraints are enabled.
 
 Upon launching an XR Blocks experience in a desktop browser, a run in simulator button should appear:
 
@@ -176,7 +176,7 @@ Currently, the simulator supports the following features:
 
 Notably, the following features are not supported.
 
-## UI Addons
+## Browser interface
 
 ### Simulator Instructions
 
@@ -186,8 +186,7 @@ When launching the simulator, a modal with instructions will be shown to the use
   ![Simulator instructions](assets/simulator_instructions.webp)
 </div>
 
-This modal is created by adding a `<xrblocks-simulator-instructions></xrblocks-simulator-instructions>` component into the document body.
-See `sdk/addons/simulator/instructions/SimulatorInstructions.js` for the source code of this web component.
+The simulator adds the instruction element to the document body automatically.
 
 To customize the simulator instructions, use the following options when initializing `Core`:
 

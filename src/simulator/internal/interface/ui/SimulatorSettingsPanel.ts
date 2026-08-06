@@ -2,12 +2,21 @@ import {css, html, LitElement} from 'lit';
 import {customElement} from 'lit/decorators/custom-element.js';
 import {property} from 'lit/decorators/property.js';
 import {state} from 'lit/decorators/state.js';
-import * as xb from 'xrblocks';
+
+import {SetSimulatorEnvironmentEvent} from '../../../events/SimulatorEnvironmentEvents.js';
+import {ShowSimulatorInstructionsEvent} from '../../../events/SimulatorInstructionsEvents.js';
+import {SetSimulatorModeEvent} from '../../../events/SimulatorModeEvents.js';
+import {SetSimulatorHandPhysicsEvent} from '../../../events/SimulatorPhysicsEvents.js';
+import {ISimulatorSettingsPanelElement} from '../../../interfaces/ISimulatorSettingsPanelElement.js';
+import {
+  SimulatorEnvironment,
+  SimulatorMode,
+} from '../../../SimulatorOptions.js';
 
 @customElement('xrblocks-simulator-settings')
 export class SimulatorSettingsPanel
   extends LitElement
-  implements xb.ISimulatorSettingsPanelElement
+  implements ISimulatorSettingsPanelElement
 {
   static styles = css`
     :host {
@@ -175,9 +184,9 @@ export class SimulatorSettingsPanel
     }
   `;
 
-  @property({type: Array}) environments: xb.SimulatorEnvironment[] = [];
+  @property({type: Array}) environments: SimulatorEnvironment[] = [];
   @property({type: Number}) activeEnvironmentIndex = 0;
-  @property({type: String}) simulatorMode = xb.SimulatorMode.USER;
+  @property({type: String}) simulatorMode = SimulatorMode.USER;
   @property({type: Boolean}) instructionsEnabled = false;
   @property({type: Boolean}) handPhysicsAvailable = false;
   @property({type: Boolean}) handPhysicsEnabled = false;
@@ -192,36 +201,36 @@ export class SimulatorSettingsPanel
     const select = e.target as HTMLSelectElement;
     const idx = parseInt(select.value, 10);
     this.activeEnvironmentIndex = idx;
-    this.dispatchEvent(new xb.SetSimulatorEnvironmentEvent(idx));
+    this.dispatchEvent(new SetSimulatorEnvironmentEvent(idx));
   }
 
   private _onModeChange(e: Event) {
     const select = e.target as HTMLSelectElement;
-    const newMode = select.value as xb.SimulatorMode;
+    const newMode = select.value as SimulatorMode;
     this.simulatorMode = newMode;
-    this.dispatchEvent(new xb.SetSimulatorModeEvent(newMode));
+    this.dispatchEvent(new SetSimulatorModeEvent(newMode));
   }
 
   private _onHandPhysicsChange(e: Event) {
     const input = e.target as HTMLInputElement;
     this.handPhysicsEnabled = input.checked;
     this.dispatchEvent(
-      new xb.SetSimulatorHandPhysicsEvent(this.handPhysicsEnabled)
+      new SetSimulatorHandPhysicsEvent(this.handPhysicsEnabled)
     );
   }
 
   private _onShowInstructions() {
     this._isOpen = false;
-    this.dispatchEvent(new xb.ShowSimulatorInstructionsEvent());
+    this.dispatchEvent(new ShowSimulatorInstructionsEvent());
   }
 
   render() {
     const modes = [
-      {label: 'User', value: xb.SimulatorMode.USER},
-      {label: 'Navigation', value: xb.SimulatorMode.POSE},
-      {label: 'Hands', value: xb.SimulatorMode.CONTROLLER},
-      {label: 'Pointer Lock', value: xb.SimulatorMode.POINTER_LOCK},
-      {label: 'Editor', value: xb.SimulatorMode.EDITOR},
+      {label: 'User', value: SimulatorMode.USER},
+      {label: 'Navigation', value: SimulatorMode.POSE},
+      {label: 'Hands', value: SimulatorMode.CONTROLLER},
+      {label: 'Pointer Lock', value: SimulatorMode.POINTER_LOCK},
+      {label: 'Editor', value: SimulatorMode.EDITOR},
     ];
 
     return html`
