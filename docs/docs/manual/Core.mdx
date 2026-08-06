@@ -100,11 +100,13 @@ xb.init(options);
 
 When the user clicks the "Enter XR" button to launch the experience, the SDK's [`XRButton`](/api/classes/XRButton) click handler automatically queries the `PermissionsManager` to request and confirm these permissions in the flat 2D browser window _before_ transitioning the user into the WebXR immersive view.
 
-### 4. Input Raycaster
+### 4. Interaction
 
-The [`Raycaster`](/api/classes/Raycaster) manages 3D raycasting against the scene graph using inputs (mouse, gaze, or WebXR controllers).
+The [`Interaction`](/api/classes/Interaction) system manages ray and direct-touch
+input from the mouse, gaze, hands, and WebXR controllers.
 
-It automatically processes hovering states and intersection targets, and dispatches pointer-events on scripts. Custom sorting (such as the `raycastSortFunction` from UI Blocks) is configured here.
+It resolves targets, tracks hover and selection state, manages input capture,
+and dispatches interaction callbacks to scripts.
 
 ### 5. Screenshot Synthesizer
 
