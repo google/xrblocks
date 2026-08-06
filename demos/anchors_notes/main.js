@@ -79,7 +79,7 @@ class AnchorNotesDemo extends xb.Script {
 
     // Exposed so the demo can be inspected from the console while iterating.
     window.anchorNotesDemo = this;
-    this.setStatus('waiting for the first update…');
+    this.setStatus('Waiting for the first update…');
   }
 
   get anchors() {
@@ -106,12 +106,12 @@ class AnchorNotesDemo extends xb.Script {
       fontColor: '#ffb877',
     });
     this.draftView = grid.addRow({weight: 0.24}).addText({
-      text: 'type on the keyboard below',
+      text: 'Type on the keyboard below',
       fontSize: 0.045,
       fontColor: '#ffffff',
     });
     this.statusText = grid.addRow({weight: 0.22}).addText({
-      text: 'starting…',
+      text: 'Starting…',
       fontSize: 0.034,
       fontColor: '#b9b3d0',
     });
@@ -124,7 +124,7 @@ class AnchorNotesDemo extends xb.Script {
     });
     pin.onTriggered = () => this.pinNote();
     const forget = buttons.addCol({weight: 0.5}).addTextButton({
-      text: 'Forget',
+      text: 'Clear',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
@@ -146,7 +146,7 @@ class AnchorNotesDemo extends xb.Script {
   setDraft(text) {
     this.draftText = text;
     if (this.draftView) {
-      this.draftView.text = text.trim() || 'type on the keyboard below';
+      this.draftView.text = text.trim() || 'Type on the keyboard below';
     }
   }
 
@@ -159,7 +159,7 @@ class AnchorNotesDemo extends xb.Script {
     // keyboard in XR.
     const text = ((input?.value || this.draftText) ?? '').trim();
     if (!text) {
-      this.setStatus('type something before pinning a note');
+      this.setStatus('Type something before pinning a note');
       return;
     }
     const camera = xb.core.camera;
@@ -188,7 +188,7 @@ class AnchorNotesDemo extends xb.Script {
     // restores. This is the whole point of the demo.
     const tracked = await anchors.create(pose, text);
     if (!tracked) {
-      this.setStatus('could not anchor a note here');
+      this.setStatus('Could not anchor a note here');
       return;
     }
     // Persisting is what makes the note outlive the session.
@@ -199,8 +199,8 @@ class AnchorNotesDemo extends xb.Script {
     this.setDraft('');
     this.setStatus(
       saved
-        ? `pinned "${this.short(text)}" and saved it`
-        : `pinned "${this.short(text)}", but ${this.whyNotSaved()}`
+        ? `Pinned "${this.short(text)}" and saved it`
+        : `Pinned "${this.short(text)}", but ${this.whyNotSaved()}`
     );
   }
 
@@ -234,7 +234,7 @@ class AnchorNotesDemo extends xb.Script {
     if (!anchors) return;
     const results = await anchors.restoreAll();
     if (results.length === 0) {
-      this.setStatus('no saved notes yet, write one above');
+      this.setStatus(this.describeCapability('No saved notes yet'));
       return;
     }
     let restored = 0;
@@ -247,8 +247,10 @@ class AnchorNotesDemo extends xb.Script {
     }
     const missing = results.length - restored;
     this.setStatus(
-      `restored ${restored} of ${results.length} saved notes` +
-        (missing > 0 ? `, ${missing} could not be found here` : '')
+      this.describeCapability(
+        `Restored ${restored} of ${results.length} saved notes` +
+          (missing > 0 ? `, ${missing} could not be found here` : '')
+      )
     );
   }
 
@@ -310,7 +312,7 @@ class AnchorNotesDemo extends xb.Script {
     entry.group.traverse(xb.disposeRenderableResources);
     this.notes.delete(id);
     this.refreshList();
-    this.setStatus('deleted a note');
+    this.setStatus('Deleted a note');
   }
 
   /** Clears every saved handle and removes the cards. */
@@ -329,7 +331,7 @@ class AnchorNotesDemo extends xb.Script {
     }
     anchors.forgetAll();
     this.refreshList();
-    this.setStatus('forgot every saved note');
+    this.setStatus('Cleared every saved note');
   }
 
   update(_time, frame) {
@@ -392,6 +394,26 @@ class AnchorNotesDemo extends xb.Script {
 
       list.appendChild(item);
     }
+  }
+
+  /**
+   * Prefixes a message with which anchor backing is in use.
+   *
+   * The capability line next to it is DOM, so it disappears the moment the
+   * session starts. This is what carries the same information into the panel.
+   *
+   * @param message - Message to prefix.
+   * @returns The decorated message.
+   */
+  describeCapability(message) {
+    const capability = this.anchors?.capability ?? 'unsupported';
+    const prefix = {
+      persistent: 'Real anchors, saved across sessions',
+      'session-only': 'Real anchors, but this platform cannot save them',
+      simulated: 'Simulated anchors (desktop), not really pinned to a room',
+      unsupported: 'No anchor support on this platform',
+    }[capability];
+    return `${prefix}. ${message}`;
   }
 
   /** Shows the current anchor backing plainly in the UI. */
