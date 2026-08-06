@@ -38,6 +38,8 @@ class AnchorsDemo extends xb.Script {
   constructor() {
     super();
     this.markers = new Map();
+    this.statusText = null;
+    this.panel = null;
     this.restoredUnder = new Set();
     this.scratchPosition = new THREE.Vector3();
     this.scratchQuaternion = new THREE.Quaternion();
@@ -49,6 +51,11 @@ class AnchorsDemo extends xb.Script {
     key.position.set(0.6, 1, 0.8);
     xb.core.scene.add(key);
 
+    this.createPanel();
+
+    // The DOM controls only exist outside an immersive session. xrblocks does
+    // not request dom-overlay, so once the headset or phone enters XR the page
+    // is gone and the spatial panel above is the only way to reach the demo.
     document
       .getElementById('drop')
       ?.addEventListener('click', () => this.dropMarker());
@@ -63,6 +70,51 @@ class AnchorsDemo extends xb.Script {
 
   get anchors() {
     return xb.core.world?.anchors;
+  }
+
+  /** Builds the in-headset controls. */
+  createPanel() {
+    const panel = new xb.SpatialPanel({
+      backgroundColor: '#1a1a1aF0',
+      useDefaultPosition: false,
+      showEdge: true,
+      width: 1.0,
+      height: 0.6,
+    });
+    panel.isRoot = true;
+    panel.position.set(0, xb.user.height, -xb.user.panelDistance);
+    this.add(panel);
+
+    const grid = panel.addGrid();
+
+    grid.addRow({weight: 0.22}).addText({
+      text: 'Spatial Anchors',
+      fontSize: 0.08,
+      fontColor: '#8a7bff',
+    });
+
+    this.statusText = grid.addRow({weight: 0.34}).addText({
+      text: 'starting…',
+      fontSize: 0.036,
+      fontColor: '#d7d2ea',
+    });
+
+    const buttons = grid.addRow({weight: 0.34});
+    const drop = buttons.addCol({weight: 0.5}).addTextButton({
+      text: 'Drop marker',
+      fontSize: 0.05,
+      backgroundColor: '#6a5acdE0',
+    });
+    drop.onTriggered = () => this.dropMarker();
+
+    const forget = buttons.addCol({weight: 0.5}).addTextButton({
+      text: 'Forget all',
+      fontSize: 0.05,
+      backgroundColor: '#3a3550E0',
+    });
+    forget.onTriggered = () => this.forgetAll();
+
+    this.panel = panel;
   }
 
   /** Places a marker a little in front of the user. */
@@ -214,11 +266,14 @@ class AnchorsDemo extends xb.Script {
   setStatus(message) {
     const el = document.getElementById('status');
     if (el) el.textContent = message;
+    // The panel is the only readable surface once the session starts.
+    if (this.statusText) this.statusText.text = message;
     console.log(`[anchors demo] ${message}`);
   }
 }
 
 const options = new xb.Options({antialias: true, reticles: {enabled: true}});
+options.controllers.visualizeRays = true;
 options.world.enableAnchorPersistence();
 // Desktop has no tracking system to anchor against; opt into locally held
 // poses so the demo is usable without a headset.
