@@ -27,6 +27,8 @@ const MARKER_SPREAD_Y = 0.24;
  */
 const HANDLE_RELEASE_SETTLE_MS = 600;
 const MARKER_COLOR = 0x8a7bff;
+/** The same colour as a CSS string, for the panel's title text. */
+const MARKER_COLOR_CSS = '#8a7bff';
 const RESTORED_COLOR = 0x4ec9a0;
 
 /**
@@ -103,7 +105,7 @@ class AnchorsDemo extends xb.Script {
     grid.addRow({weight: 0.22}).addText({
       text: 'Spatial Anchors',
       fontSize: 0.08,
-      fontColor: '#8a7bff',
+      fontColor: MARKER_COLOR_CSS,
     });
 
     this.statusText = grid.addRow({weight: 0.34}).addText({
