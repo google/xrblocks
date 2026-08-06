@@ -48,6 +48,9 @@ resolves when movement is complete. By default, `EmbodiedControl` pauses the
 core after initialization so frames advance only when `step()` is called. This
 is useful for repeatable tests.
 
+Explicit durations, `tickMs` values, and velocities must be finite numbers
+greater than zero. Omit a velocity to snap in one frame.
+
 For visual demos, pass `realTime: true` so the browser paints intermediate
 frames while a step is executing:
 
@@ -109,6 +112,8 @@ rightHand: {
 
 Hand `move` and `rotate` are relative to the current simulator controller pose.
 `rotations` applies sparse simulator hand joint rotations in radians.
+When `pose` and `rotations` are supplied together, the named pose is the base
+and the sparse rotations override it in one hand-state update.
 
 Use `selectStart` and `selectEnd` for WebXR-like hand selection. In the
 simulator these call `setLeftHandPinching()` / `setRightHandPinching()`, which
