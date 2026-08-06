@@ -18,7 +18,7 @@ export class PoemGenerator extends xb.Script {
       ariaLabel: 'Live camera preview',
       style: {
         width: 360,
-        height: 360,
+        height: 202.5,
         objectFit: 'cover',
       },
     });
@@ -115,7 +115,7 @@ export class PoemGenerator extends xb.Script {
 
     this.isProcessing = true;
     this.captureButton.disabled = true;
-    this.statusText.text = 'Writing your poem. . .';
+    this.statusText.text = 'Writing...';
 
     try {
       const snapshot = await this.deviceCamera.getSnapshot({
@@ -137,7 +137,7 @@ export class PoemGenerator extends xb.Script {
       if (!poem) throw new Error('Gemini returned an empty response.');
 
       this.responseText.text = poem.trim();
-      this.statusText.text = 'Poem complete';
+      this.statusText.text = 'Completed';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.responseText.text = `Could not write the poem.\n\n${message}`;
