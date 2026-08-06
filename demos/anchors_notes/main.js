@@ -3,6 +3,7 @@ import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import * as THREE from 'three';
 import {Text} from 'troika-three-text';
 import * as xb from 'xrblocks';
+import {Keyboard} from 'xrblocks/addons/virtualkeyboard/Keyboard.js';
 
 // Anchored notes demo: type a note, pin it in space where you are looking, and
 // the notes come back the next time you load the page.
@@ -52,6 +53,11 @@ class AnchorNotesDemo extends xb.Script {
     this.scratchPosition = new THREE.Vector3();
     this.scratchQuaternion = new THREE.Quaternion();
     this.cameraPosition = new THREE.Vector3();
+    // What the spatial keyboard currently holds. The DOM input is unreachable
+    // inside an immersive session, so in XR this is the only source of text.
+    this.draftText = '';
+    this.statusText = null;
+    this.draftView = null;
   }
 
   async init() {
@@ -60,6 +66,11 @@ class AnchorNotesDemo extends xb.Script {
     key.position.set(0.6, 1, 0.8);
     xb.core.scene.add(key);
 
+    this.createPanel();
+
+    // The DOM controls below only exist outside an immersive session, since
+    // xrblocks never requests dom-overlay. In XR the panel and keyboard above
+    // are the only way to reach the demo.
     const input = document.getElementById('note-input');
     document
       .getElementById('pin')
@@ -81,12 +92,78 @@ class AnchorNotesDemo extends xb.Script {
     return xb.core.world?.anchors;
   }
 
+  /** Builds the in-headset controls and the spatial keyboard. */
+  createPanel() {
+    const panel = new xb.SpatialPanel({
+      backgroundColor: '#141322F0',
+      useDefaultPosition: false,
+      showEdge: true,
+      width: 1.1,
+      height: 0.6,
+    });
+    panel.isRoot = true;
+    panel.position.set(0, xb.user.height + 0.35, -xb.user.panelDistance);
+    this.add(panel);
+
+    const grid = panel.addGrid();
+    grid.addRow({weight: 0.2}).addText({
+      text: 'Anchored Notes',
+      fontSize: 0.07,
+      fontColor: '#ffb877',
+    });
+    this.draftView = grid.addRow({weight: 0.24}).addText({
+      text: 'type on the keyboard below',
+      fontSize: 0.045,
+      fontColor: '#ffffff',
+    });
+    this.statusText = grid.addRow({weight: 0.22}).addText({
+      text: 'starting…',
+      fontSize: 0.034,
+      fontColor: '#b9b3d0',
+    });
+
+    const buttons = grid.addRow({weight: 0.3});
+    const pin = buttons.addCol({weight: 0.5}).addTextButton({
+      text: 'Pin note',
+      fontSize: 0.048,
+      backgroundColor: '#c2703bE0',
+    });
+    pin.onTriggered = () => this.pinNote();
+    const forget = buttons.addCol({weight: 0.5}).addTextButton({
+      text: 'Forget all',
+      fontSize: 0.048,
+      backgroundColor: '#3a3550E0',
+    });
+    forget.onTriggered = () => this.forgetAll();
+
+    const keyboard = new Keyboard();
+    this.add(keyboard);
+    keyboard.position.set(0, xb.user.height - 0.35, -xb.user.panelDistance);
+    keyboard.onTextChanged = (text) => this.setDraft(text);
+    keyboard.onEnterPressed = () => this.pinNote();
+    this.keyboard = keyboard;
+    this.panel = panel;
+  }
+
+  /**
+   * Records what the spatial keyboard holds and shows it on the panel.
+   * @param text - The current keyboard buffer.
+   */
+  setDraft(text) {
+    this.draftText = text;
+    if (this.draftView) {
+      this.draftView.text = text.trim() || 'type on the keyboard below';
+    }
+  }
+
   /** Pins the text currently in the input a little in front of the user. */
   async pinNote() {
     const anchors = this.anchors;
     if (!anchors) return;
     const input = document.getElementById('note-input');
-    const text = (input?.value ?? '').trim();
+    // Either surface may hold the text: the DOM box on desktop, the spatial
+    // keyboard in XR.
+    const text = ((input?.value || this.draftText) ?? '').trim();
     if (!text) {
       this.setStatus('type something before pinning a note');
       return;
@@ -124,6 +201,8 @@ class AnchorNotesDemo extends xb.Script {
     const saved = await anchors.persist(tracked.id);
     this.addNoteCard(tracked, FRESH_COLOR, false, target);
     if (input) input.value = '';
+    this.keyboard?.setText?.('');
+    this.setDraft('');
     this.setStatus(
       saved
         ? `pinned "${this.short(text)}" and saved it`
@@ -326,6 +405,8 @@ class AnchorNotesDemo extends xb.Script {
   setStatus(message) {
     const el = document.getElementById('status');
     if (el) el.textContent = message;
+    // The panel is the only readable surface once the session starts.
+    if (this.statusText) this.statusText.text = message;
     console.log(`[anchor notes demo] ${message}`);
   }
 }
