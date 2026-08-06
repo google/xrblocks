@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 
-import {SimulatorCamera} from '../simulator/SimulatorCamera';
-import {SimulatorMediaDeviceInfo} from '../simulator/SimulatorMediaDeviceInfo';
 import {
   StreamState,
   VideoStream,
@@ -13,10 +11,14 @@ import {
   DeviceCameraOptions,
   RgbToDepthParams,
 } from './CameraOptions';
+import type {
+  CameraDeviceInfo,
+  SimulatorCameraSource,
+} from './SimulatorCameraSource';
 
 export type MediaOrSimulatorMediaDeviceInfo =
   | MediaDeviceInfo
-  | SimulatorMediaDeviceInfo;
+  | CameraDeviceInfo;
 
 type XRDeviceCameraDetails = VideoStreamDetails & {
   width?: number;
@@ -32,7 +34,7 @@ type XRDeviceCameraDetails = VideoStreamDetails & {
 export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private static readonly XR_CAMERA_ACCESS_TIMEOUT_MS = 5000;
 
-  simulatorCamera?: SimulatorCamera;
+  simulatorCamera?: SimulatorCameraSource;
   rgbToDepthParams: RgbToDepthParams;
   protected videoConstraints_: MediaTrackConstraints;
   private isInitializing_ = false;
@@ -395,7 +397,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     }
   }
 
-  registerSimulatorCamera(simulatorCamera?: SimulatorCamera) {
+  registerSimulatorCamera(simulatorCamera?: SimulatorCameraSource) {
     this.simulatorCamera = simulatorCamera;
   }
 

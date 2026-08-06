@@ -28,6 +28,10 @@ function scripts(core: Core): ScriptsManager {
   return (core as unknown as {scriptsManager: ScriptsManager}).scriptsManager;
 }
 
+type SimulatorLoader = () => Promise<
+  typeof import('../simulator/Simulator.js')
+>;
+
 describe('Core frame and simulator lifecycle', () => {
   let core: Core;
 
@@ -158,6 +162,13 @@ describe('Core frame and simulator lifecycle', () => {
         })
     );
     scripts(core).onSimulatorStarted = vi.fn();
+    const simulatorLoader = vi.fn<SimulatorLoader>(
+      () => import('../simulator/Simulator.js')
+    );
+    (core as unknown as {simulatorLoader: SimulatorLoader}).simulatorLoader =
+      simulatorLoader;
+    expect(simulatorLoader).not.toHaveBeenCalled();
+    expect(core.simulator).toBeUndefined();
 
     const startSimulator = (
       core as unknown as {startSimulator: () => Promise<void>}
@@ -166,7 +177,10 @@ describe('Core frame and simulator lifecycle', () => {
     const firstStart = startSimulator();
     const secondStart = startSimulator();
 
-    expect(scripts(core).initScript).toHaveBeenCalledOnce();
+    await vi.waitFor(() =>
+      expect(scripts(core).initScript).toHaveBeenCalledOnce()
+    );
+    expect(simulatorLoader).toHaveBeenCalledOnce();
     expect(core.simulatorRunning).toBe(false);
 
     finishInit?.();
@@ -178,6 +192,7 @@ describe('Core frame and simulator lifecycle', () => {
     await startSimulator();
 
     expect(scripts(core).initScript).toHaveBeenCalledOnce();
+    expect(simulatorLoader).toHaveBeenCalledOnce();
     expect(scripts(core).onSimulatorStarted).toHaveBeenCalledOnce();
   });
 });
