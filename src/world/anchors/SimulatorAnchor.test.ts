@@ -149,3 +149,62 @@ describe('AnchorManager simulator fallback', () => {
     expect(second.manager.getAll()[0].label).toBe('chair');
   });
 });
+
+describe('AnchorManager without any XR frame', () => {
+  it('still activates the fallback when there is no frame at all', async () => {
+    // Desktop never produces an XRFrame, so waiting for one would leave the
+    // subsystem permanently inert outside a headset.
+    const {manager} = makeManager();
+    manager.update(0, undefined);
+    expect(manager.capability).toBe('simulated');
+    await expect(manager.create(POSE, 'sofa')).resolves.not.toBeNull();
+  });
+
+  it('stays unsupported with no frame when the fallback is off', () => {
+    const options = new WorldOptions();
+    options.anchors.enablePersistence();
+    const manager = new AnchorManager(memoryStore());
+    manager.init({options});
+    manager.update(0, undefined);
+    expect(manager.capability).toBe('unsupported');
+  });
+
+  it('persists and restores with no frame present', async () => {
+    const store = memoryStore();
+    const first = makeManager(store);
+    first.manager.update(0, undefined);
+    const tracked = await first.manager.create(POSE, 'plant');
+    await first.manager.persist(tracked.id);
+
+    const second = makeManager(store);
+    second.manager.update(0, undefined);
+    const results = await second.manager.restoreAll();
+    expect(results.map((r) => r.status)).toEqual(['restored']);
+  });
+});
+
+describe('AnchorManager.getPose for simulated anchors', () => {
+  it('reports the held pose without a frame or reference space', async () => {
+    const {manager} = makeManager();
+    manager.update(0, undefined);
+    const tracked = await manager.create(POSE, 'sofa');
+    const pose = manager.getPose(tracked.id);
+    expect(pose?.transform.position).toMatchObject({x: 1, y: 2, z: 3});
+  });
+
+  it('reports the pose of a restored simulated anchor', async () => {
+    const store = memoryStore([
+      {
+        uuid: 'sim-a',
+        label: 'lamp',
+        createdAt: 1,
+        pose: {position: [7, 8, 9], orientation: [0, 0, 0, 1]},
+      },
+    ]);
+    const {manager} = makeManager(store);
+    manager.update(0, undefined);
+    const [result] = await manager.restoreAll();
+    const pose = manager.getPose(result.anchor.id);
+    expect(pose?.transform.position).toMatchObject({x: 7, y: 8, z: 9});
+  });
+});

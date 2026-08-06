@@ -100,7 +100,14 @@ export class AnchorManager extends Script {
    * @param frame - The current XR frame.
    */
   override update(_time?: number, frame?: XRFrame) {
-    if (!frame) return;
+    if (!frame) {
+      // Outside an immersive session there is no XRFrame at all, so waiting
+      // for one would leave the fallback permanently inert on desktop.
+      if (this.options?.anchors.simulatorFallback) {
+        this.capability = 'simulated';
+      }
+      return;
+    }
     this.currentFrame = frame;
     const probed = anchorCapability(frame.session, frame);
     this.capability =
@@ -270,14 +277,25 @@ export class AnchorManager extends Script {
 
   /**
    * Reads an anchor's current pose.
+   *
    * @param id - Id of a tracked anchor.
-   * @param referenceSpace - Space to express the pose in.
+   * @param referenceSpace - Space to express the pose in. Not needed for
+   *     simulated anchors, which hold their own pose.
    * @returns The pose, or null when the anchor is not currently tracked.
    */
-  getPose(id: string, referenceSpace: XRReferenceSpace): XRPose | null {
+  getPose(id: string, referenceSpace?: XRReferenceSpace): XRPose | null {
     const tracked = this.anchors.get(id);
+    if (!tracked) return null;
+    // Simulated anchors have no tracked space to resolve against, and there is
+    // no frame at all on desktop, so read the pose they are holding.
+    if (SimulatorAnchor.isSimulatorAnchor(tracked.anchor)) {
+      const {position, orientation} = (
+        tracked.anchor as unknown as SimulatorAnchor
+      ).pose;
+      return {transform: {position, orientation}} as unknown as XRPose;
+    }
     const frame = this.currentFrame;
-    if (!tracked || !frame) return null;
+    if (!frame || !referenceSpace) return null;
     try {
       // An XRFrame is only valid inside its own callback, so reading a pose
       // from outside the frame loop throws rather than returning nothing.
