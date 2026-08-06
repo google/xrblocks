@@ -170,9 +170,18 @@ Continuous polling uses `start(client)` / `stop(client)` and the matching
 `options.world.faces.pollingIntervalMs`.
 
 The simulator supplies camera and depth plumbing, but it has no human/face
-ground-truth override. Use it for state wiring with a suitable visible fixture;
-hand off real projection, permission, and tracking to the target device.
-See [`demos/face_mirror/`](../../../demos/face_mirror/) and
+ground-truth override: it renders the virtual room as the camera feed, and that
+room never contains a person. Because `enableFaceDetection()`,
+`enableHumanDetection()`, and `enableSegmentation()` all select the environment
+camera, person-facing detection on desktop silently returns nothing unless you
+call `options.enableCamera('user')` after the `enable*Detection()` call, which
+routes the stream at the real webcam. Do not disable the simulator camera to
+achieve this: on desktop it is what supplies the camera pose, and without a pose
+`getCameraParametersSnapshot()` returns null and detection is skipped before the
+model runs. This is simulator-only; a headset never starts the simulator. Hand
+off real projection, permission, and tracking to the target device.
+See [`demos/human_pose_detector/`](../../../demos/human_pose_detector/),
+[`demos/face_mirror/`](../../../demos/face_mirror/) and
 [`docs/docs/manual/World.mdx`](../../../docs/docs/manual/World.mdx).
 
 ## Segmentation
