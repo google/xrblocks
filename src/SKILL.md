@@ -86,7 +86,6 @@ These chainable methods **exist** — verified in [`core/Options.ts`](core/Optio
 
 ```js
 const options = new xb.Options();
-options.enableUI(); // spatial UI + reticles
 options.enableReticles(); // pointing cursor
 options.enableControllers(); // tracked controllers
 options.enableHands(); // hand tracking (joints, pinch)
@@ -173,7 +172,7 @@ Override only what you need (all verified against `core/Script.ts` and `core/Use
 | `init(deps?)`                                         | once, after registration; may return a Promise; receives injected deps |
 | `update(time?, frame?)`                               | every frame                                                            |
 | `initPhysics(physics)` / `physicsStep()`              | physics setup / per physics step                                       |
-| `onSelectStart(e)` / `onSelectEnd(e)`                 | pinch (XR) or click (desktop)                                          |
+| `onSelectStart(e)` / `onSelectEnd(e)`                 | pinch, click, or direct-touch contact                                  |
 | `onSqueezeStart(e)` / `onSqueezeEnd(e)`               | grip button                                                            |
 | `onKeyDown(e)` / `onKeyUp(e)`                         | keyboard (`e.code`)                                                    |
 | `onXRSessionStarted(session?)` / `onXRSessionEnded()` | entering/leaving XR                                                    |
@@ -183,6 +182,8 @@ Override only what you need (all verified against `core/Script.ts` and `core/Use
 the event handled and stop it propagating to ancestors:
 `onObjectSelectStart/End`, `onObjectTouchStart/Touching/End`,
 `onObjectGrabStart/Grabbing/End`, `onHoverEnter/Hovering/Exit`.
+Direct touch selects for the full contact by default. Call
+`e.preventDefault()` in `onObjectTouchStart(e)` to keep touch independent.
 
 ## Talking to the user, world, and AI
 
@@ -199,7 +200,8 @@ xb.user.getReticleTarget(0); // object under controller 0's reticle
 xb.user.hands; // hand joints when enableHands()
 xb.input.headGestures; // optional completed nod/shake detector
 
-// AI (xb.ai — see ai/AI.ts). Requires a key (?key=... or keys.json) — guard it.
+// AI (xb.ai — see ai/AI.ts). Local prototypes can opt into the browser key
+// prompt with options.ai.promptForApiKey = true. Guard model calls.
 if (xb.ai.isAvailable()) {
   const res = await xb.ai.query({prompt: 'Write a haiku about dust.'});
   // multimodal: xb.ai.query({type: 'multiPart', parts: [{text}, {inlineData:{data,mimeType}}]})
@@ -212,78 +214,72 @@ if (xb.ai.isAvailable()) {
 
 ## Spatial UI (core)
 
-The core UI is a declarative grid built from `xb.SpatialPanel` (see
-[`ui/layouts/SpatialPanel.ts`](ui/layouts/SpatialPanel.ts) and `templates/1_ui`):
+The core UI uses flex-layout components from the main `xrblocks` export. See
+[`ui/`](ui) and `templates/1_spatial_ui`:
 
 ```js
-const panel = new xb.SpatialPanel({
-  backgroundColor: '#2b2b2baa',
-  width: 2.5,
-  height: 1.5,
+const status = new xb.UIText({text: 'Ready'});
+const card = new xb.UICard({
+  size: {width: 0.6, height: 0.35},
+  manipulation: true,
+  edge: {scale: true},
+  style: {
+    flexDirection: 'column',
+    gap: 16,
+    padding: 20,
+    backgroundColor: '#202124',
+    borderRadius: 24,
+  },
+  children: [
+    status,
+    new xb.UIButton({
+      label: 'Continue',
+      onClick: () => {
+        status.text = 'Selected';
+      },
+    }),
+  ],
 });
-panel.position.set(0, xb.user.height, -xb.user.panelDistance);
-this.add(panel);
-
-const grid = panel.addGrid();
-grid
-  .addRow({weight: 0.7})
-  .addText({text: 'Hello XR', fontColor: '#fff', fontSize: 0.08});
-const button = grid
-  .addRow({weight: 0.3})
-  .addCol({weight: 1})
-  .addIconButton({text: 'check_circle', fontSize: 0.5}); // `text` = Material icon name
-button.onTriggered = () => console.log('clicked/pinched/touched'); // unified select
+card.position.set(0, 1.4, -1);
+this.add(card);
 ```
 
-`onTriggered` unifies click / pinch / touch on buttons. For flexbox-rich cards,
-gradients, and shadows, use the **uiblocks addon** instead — see
-[`addons/uiblocks/SKILL.md`](addons/uiblocks/SKILL.md) and "two UI systems" below.
+Use `UIOverlay` for view-space controls. UI roots accept `UIPanel`, `UIText`,
+`UIImage`, `UIIcon`, `UIButton`, and `UISlider` children. Buttons use the same
+click, pinch, and controller selection path.
 
 ## Directory map (read deeper on demand)
 
-| Path                                                                                 | What lives there                                                                                                                                                               |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`core/`](core)                                                                      | `Core` singleton, `Script`, `Options`, `User`, DI `Registry`, `XRButton`, WebXR session mgmt                                                                                   |
-| [`input/`](input)                                                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `headGestures/`; `strokes/`                                                                                             |
-| [`world/`](world)                                                                    | `World` + `planes/`, `mesh/`, `objects/` (Gemini & MediaPipe backends), `sounds/`                                                                                              |
-| [`context/`](context)                                                                | Agent-facing scene context: semantic tree, visible objects, Set-of-Mark screenshots                                                                                            |
-| [`depth/`](depth)                                                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                                                                                       |
-| [`ai/`](ai)                                                                          | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                                                                                |
-| [`agent/`](agent)                                                                    | agent framework: tools, memory, context (WIP — see `agent/README.md`)                                                                                                          |
-| [`ui/`](ui)                                                                          | core spatial UI: `SpatialPanel`, `Grid`/`Row`/`Col`, views, `ModelViewer`, `Reticle`                                                                                           |
-| [`ux/`](ux)                                                                          | `DragManager`, reusable interaction behaviors                                                                                                                                  |
-| [`simulator/`](simulator)                                                            | desktop XR simulator; [`simulator/scene/`](simulator/scene) owns the simulated physical environment, navigation, depth, and sensing adapters                                   |
-| [`sound/`](sound)                                                                    | spatial audio, speech recognizer/synthesizer (see `sound/README.md`)                                                                                                           |
-| [`physics/`](physics)                                                                | Rapier3D integration                                                                                                                                                           |
-| [`lighting/`](lighting), [`camera/`](camera), [`video/`](video), [`stereo/`](stereo) | light estimation, device camera, video streams, stereo utils                                                                                                                   |
-| [`utils/`](utils)                                                                    | `ModelLoader`, dependency injection, helpers                                                                                                                                   |
-| [`addons/`](addons)                                                                  | opt-in modules, each often with its own README/skills: `uiblocks`, `netblocks`, `lipsync`, `testing`, `glasses`, `volumes`, `virtualkeyboard`, `agenthands`, simulator UI, ... |
-
-## Two UI systems — pick deliberately
-
-- **Core UI** (`xb.SpatialPanel` + `.addGrid()/.addRow()/.addCol()/.addText()/.add*Button()`)
-  — lightweight, no extra deps, good for HUDs, menus, and quick panels.
-- **uiblocks addon** (`UICard`, `UIPanel`, `UIText`, `UIImage`, `UIIcon`) — full flexbox
-  layout (`@pmndrs/uikit`), gradients, strokes, drop/inner shadows, and spatial behaviors.
-  Import from `xrblocks/addons/uiblocks/src` and call `options.uikit.enable(uikit)`.
-  See [`addons/uiblocks/SKILL.md`](addons/uiblocks/SKILL.md).
-
-Don't mix the two on the same panel, and don't import `UIPanel`/`UICard` from `xrblocks`
-core — they only exist in the uiblocks addon.
+| Path                                                                                 | What lives there                                                                                                                                                   |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`core/`](core)                                                                      | `Core` singleton, `Script`, `Options`, `User`, DI `Registry`, `XRButton`, WebXR session mgmt                                                                       |
+| [`input/`](input)                                                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `headGestures/`; `strokes/`                                                                                 |
+| [`world/`](world)                                                                    | `World` + `planes/`, `mesh/`, `objects/` (Gemini & MediaPipe backends), `sounds/`                                                                                  |
+| [`context/`](context)                                                                | Agent-facing scene context: semantic tree, visible objects, Set-of-Mark screenshots                                                                                |
+| [`depth/`](depth)                                                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                                                                           |
+| [`ai/`](ai)                                                                          | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                                                                    |
+| [`agent/`](agent)                                                                    | agent framework: tools, memory, context (WIP — see `agent/README.md`)                                                                                              |
+| [`ui/`](ui)                                                                          | core flex-layout spatial UI: cards, overlays, panels, text, images, buttons, sliders, themes, and `ModelViewer`                                                    |
+| [`simulator/`](simulator)                                                            | desktop XR simulator; [`simulator/scene/`](simulator/scene) owns the simulated physical environment, navigation, depth, and sensing adapters                       |
+| [`sound/`](sound)                                                                    | spatial audio, speech recognizer/synthesizer (see `sound/README.md`)                                                                                               |
+| [`physics/`](physics)                                                                | Rapier3D integration                                                                                                                                               |
+| [`lighting/`](lighting), [`camera/`](camera), [`video/`](video), [`stereo/`](stereo) | light estimation, device camera, video streams, stereo utils                                                                                                       |
+| [`utils/`](utils)                                                                    | `ModelLoader`, dependency injection, helpers                                                                                                                       |
+| [`addons/`](addons)                                                                  | opt-in modules, each often with its own README/skills: `netblocks`, `lipsync`, `testing`, `glasses`, `volumes`, `virtualkeyboard`, `agenthands`, simulator UI, ... |
 
 ## Common hallucinated-API mistakes to avoid
 
-| ❌ Don't                                                    | ✅ Do                                                                     |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `options.enablePhysics()`                                   | `options.physics.RAPIER = RAPIER` + implement `initPhysics()`             |
-| Use `xb.core.renderer` / `xb.core.physics` in a constructor | They're created during `xb.init()`; use them in/after `init()`            |
-| `new xb.UIPanel(...)` / `new xb.UICard(...)`                | Those are the **uiblocks addon**; core uses `xb.SpatialPanel().addGrid()` |
-| `xb.ai.query('text')` (bare string)                         | `xb.ai.query({prompt: 'text'})`, and guard with `xb.ai.isAvailable()`     |
-| Assume AI works with no key                                 | Provide `?key=...` or `keys.json`; handle the unavailable case            |
-| `rgba()`/`hsla()` colors in UI                              | hex strings (`'#ffffff'`) or `THREE.Color`                                |
-| Drive your own `requestAnimationFrame` loop                 | Put per-frame logic in `update(time, frame)`                              |
-| Forget `xb.add(script)` before `xb.init()`                  | Register every Script first                                               |
-| Import bare `three` without the pinned importmap            | Use the importmap from the README / a template                            |
+| ❌ Don't                                                    | ✅ Do                                                                 |
+| ----------------------------------------------------------- | --------------------------------------------------------------------- |
+| `options.enablePhysics()`                                   | `options.physics.RAPIER = RAPIER` + implement `initPhysics()`         |
+| Use `xb.core.renderer` / `xb.core.physics` in a constructor | They're created during `xb.init()`; use them in/after `init()`        |
+| Import UI primitives from an old addon                      | Use `xb.UICard`, `xb.UIPanel`, and the other main-package UI exports  |
+| `xb.ai.query('text')` (bare string)                         | `xb.ai.query({prompt: 'text'})`, and guard with `xb.ai.isAvailable()` |
+| Assume AI works with no key                                 | Provide `?key=...` or `keys.json`; handle the unavailable case        |
+| `rgba()`/`hsla()` colors in UI                              | hex strings (`'#ffffff'`) or `THREE.Color`                            |
+| Drive your own `requestAnimationFrame` loop                 | Put per-frame logic in `update(time, frame)`                          |
+| Forget `xb.add(script)` before `xb.init()`                  | Register every Script first                                           |
+| Import bare `three` without the pinned importmap            | Use the importmap from the README / a template                        |
 
 ## Design principles (honor these when contributing)
 

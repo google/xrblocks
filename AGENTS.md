@@ -67,7 +67,7 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 | `src/addons/` | Opt-in modules built separately: `testing`, `netblocks`, `lipsync`, `glasses`, `simulator`, `volumes`, `virtualkeyboard`, `agenthands`, ... |
 | `samples/`    | Focused examples and richer showcases under `samples/advanced/` (served by the docs site)                                                   |
 | `demos/`      | Experimental applications and development showcases                                                                                         |
-| `templates/`  | Minimal starting points (`0_basic`, `1_ui`, `2_hands`, `6_ai`, ...)                                                                         |
+| `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                    |
 | `docs/`       | Docusaurus manual + samples/templates pages                                                                                                 |
 | `skills/`     | Agent skill registry (`xb-*`) — focused, task-oriented guides                                                                               |
 | `build/`      | **Generated** bundle output — do not edit                                                                                                   |
@@ -83,7 +83,7 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 | `depth/`                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                       |
 | `ai/`                                       | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                |
 | `agent/`                                    | agent framework: tools, memory, context (WIP)                                                                  |
-| `ui/`                                       | core spatial UI: `SpatialPanel`, `Grid`/`Row`/`Col`, views, `ModelViewer`, `Reticle`                           |
+| `ui/`                                       | core spatial UI: cards, overlays, panels, text, images, buttons, sliders, themes, `ModelViewer`    |
 | `ux/`                                       | `DragManager`, reusable interaction behaviors                                                                  |
 | `simulator/`                                | desktop XR simulator (manifest environments, physical objects, virtual user/hands/depth/planes, control modes) |
 | `sound/`                                    | spatial audio, speech recognizer/synthesizer                                                                   |

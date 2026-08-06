@@ -12,8 +12,9 @@ description: >-
 
 # xb-world — world understanding (planes, meshes, objects)
 
-`xb.world` exposes the real environment to your app. See `templates/8_objects`,
-`samples/depthmesh`, and `src/world/`.
+`xb.world` exposes the real environment to your app. See
+`templates/3_spatial_placement`, `templates/8_scene_understanding`,
+`samples/xr_realism/depthmesh`, and `src/world/`.
 
 ## Plane detection
 

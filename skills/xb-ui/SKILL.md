@@ -72,4 +72,4 @@ After a mounted layout completes, call `xb.ui.validate(root)` to check for
 overflow, clipped text, invalid layout, and overlay content outside the
 viewport.
 
-See `templates/1_ui` and `docs/docs/manual/UI.mdx` for complete examples.
+See `templates/1_spatial_ui` and `docs/docs/manual/UI.mdx` for complete examples.

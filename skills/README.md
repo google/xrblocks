@@ -20,8 +20,7 @@ The `xb-` prefix matches the `xb` import alias.
 | Skill                                           | Use when you need to…                                                |
 | ----------------------------------------------- | -------------------------------------------------------------------- |
 | [`xb-core`](xb-core/SKILL.md)                   | Bootstrap an app: `Script`, `Options`, the frame loop, run it        |
-| [`xb-ui`](xb-ui/SKILL.md)                       | Build a HUD/menu with the core `SpatialPanel` grid                   |
-| [`xb-uiblocks`](xb-uiblocks/SKILL.md)           | Build rich flexbox UI (gradients, shadows) via the uiblocks addon    |
+| [`xb-ui`](xb-ui/SKILL.md)                       | Build flex-layout spatial cards, overlays, menus, and controls       |
 | [`xb-modelviewer`](xb-modelviewer/SKILL.md)     | Load & display GLTF / splat / primitive 3D models                    |
 | [`xb-hands`](xb-hands/SKILL.md)                 | Use hand tracking (joints, pinch, touch, grab)                       |
 | [`xb-agenthands`](xb-agenthands/SKILL.md)       | Give an AI agent gesturing hands + an orb that point at real objects |
@@ -39,5 +38,6 @@ The `xb-` prefix matches the `xb` import alias.
 | [`xb-testing`](xb-testing/SKILL.md)             | Write sequential functional, integration, or simulator tests         |
 
 Deep references some skills link to live next to the code:
-[`../src/SKILL.md`](../src/SKILL.md), [`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),
-[`../src/addons/netblocks/SKILL.md`](../src/addons/netblocks/SKILL.md), [`../src/addons/lipsync/SKILL.md`](../src/addons/lipsync/SKILL.md).
+[`../src/SKILL.md`](../src/SKILL.md),
+[`../src/addons/netblocks/SKILL.md`](../src/addons/netblocks/SKILL.md), and
+[`../src/addons/lipsync/SKILL.md`](../src/addons/lipsync/SKILL.md).

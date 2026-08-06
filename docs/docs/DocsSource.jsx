@@ -1,28 +1,54 @@
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import CodeBlock from '@theme/CodeBlock';
-import { useState, useEffect } from 'react';
+import {useEffect, useState} from 'react';
 
 export function DocsSource({
   template,
   sample,
   demo,
-  filename = "main.js",
+  filename = 'main.js',
 }) {
-  const { siteConfig } = useDocusaurusContext();
-  const [source, setSource] = useState("");
+  const {siteConfig} = useDocusaurusContext();
+  const [source, setSource] = useState('');
+  const baseUrl = siteConfig.customFields.xrblocksBaseUrl;
+
   useEffect(() => {
-    let src = siteConfig.customFields.xrblocksBaseUrl
-    if (template) {
-      src = src + "templates/" + template + "/" + filename;
-    } else if (sample) {
-      src = src + "samples/" + sample + "/" + filename;
-    } else if (demo) {
-      src = src + "demos/" + demo + "/" + filename;
-    } else {
-      console.warn("DocsSource: No 'template', 'sample', or 'demo' prop provided. Source will be empty.");
+    const collection = template
+      ? `templates/${template}`
+      : sample
+        ? `samples/${sample}`
+        : demo
+          ? `demos/${demo}`
+          : '';
+
+    if (!collection) {
+      console.warn(
+        "DocsSource: No 'template', 'sample', or 'demo' prop provided."
+      );
+      setSource('');
+      return;
     }
 
-    fetch(src).then(code => code.text()).then(text => setSource(text)).catch(err => console.error(err));
-  });
-  return <CodeBlock language="js" title={filename} showLineNumbers>{source}</CodeBlock>;
+    const controller = new AbortController();
+    fetch(`${baseUrl}${collection}/${filename}`, {signal: controller.signal})
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Could not load ${filename}: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(setSource)
+      .catch((error) => {
+        if (error.name !== 'AbortError') console.error(error);
+      });
+
+    return () => controller.abort();
+  }, [baseUrl, demo, filename, sample, template]);
+
+  const language = filename.endsWith('.ts') ? 'ts' : 'js';
+  return (
+    <CodeBlock language={language} title={filename} showLineNumbers>
+      {source}
+    </CodeBlock>
+  );
 }
