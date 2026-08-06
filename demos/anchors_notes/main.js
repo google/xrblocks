@@ -34,14 +34,8 @@ const NOTE_MIN_SEPARATION = 0.46;
  * they fit on one line at this size.
  */
 const BUTTON_FONT_SIZE = 0.25;
-/**
- * The keyboard addon places its own panel at this offset from wherever the
- * Keyboard object sits, so a position set here is not where it lands. Setting
- * it without compensating drops the keys straight through the status panel.
- */
-const KEYBOARD_INTERNAL_OFFSET = {y: 1.2, z: -1};
-/** Where the keys should actually end up: below the panel and within reach. */
-const KEYBOARD_TARGET = {y: 1.0, z: -1.3};
+/** Where the keys sit: below the status panel and within reach. */
+const KEYBOARD_POSITION = {y: 1.0, z: -1.3};
 
 const FRESH_COLOR = 0x6a5acd;
 const RESTORED_COLOR = 0x2f7d63;
@@ -166,11 +160,7 @@ class AnchorNotesDemo extends xb.Script {
 
     const keyboard = new Keyboard();
     this.add(keyboard);
-    keyboard.position.set(
-      0,
-      KEYBOARD_TARGET.y - KEYBOARD_INTERNAL_OFFSET.y,
-      KEYBOARD_TARGET.z - KEYBOARD_INTERNAL_OFFSET.z
-    );
+    keyboard.position.set(0, KEYBOARD_POSITION.y, KEYBOARD_POSITION.z);
     keyboard.onTextChanged = (text) => this.setDraft(text);
     keyboard.onEnterPressed = () => this.pinNote();
     this.keyboard = keyboard;
