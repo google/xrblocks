@@ -43,10 +43,11 @@ event is received by any controller. Read the controller from
 `event.source.controller`. Ray-based select events also provide the current
 `event.surface` and `event.intersection` when that surface is still hit.
 
-- `onSelectStart(event)` - Called when any controller begins selecting.
-- `onSelectEnd(event)` - Called when any controller finishes selecting.
-- `onSelect(event)` - Called when any controller completes a select action.
+- `onSelectStart(event)` - Called when any source begins selecting.
+- `onSelectEnd(event)` - Called when any source finishes selecting. Read `completed` and `reason`.
+- `onSelect(event)` - Called when any source completes a valid select action.
 - `onSelecting(event)` - Called every frame for each controller that is selecting.
+- `onLongSelect(event)` - Called once when a captured selection reaches the configured hold delay.
 
 - `onSqueezeStart(event)` - Called when any controller begins squeezing.
 - `onSqueezeEnd(event)` - Called when any controller finishes squeezing.
@@ -61,10 +62,18 @@ Object specific callbacks are called only when the action is performed while the
 Events are propagated up the scene graph from the initial object.
 
 - `onObjectSelectStart(event)` - Called on the current object the controller starts selecting. Return true to prevent propagation.
-- `onObjectSelectEnd(event)` - Called on the previously selected object the controller stops selecting. Return true to prevent propagation.
+- `onObjectSelectEnd(event)` - Called on the previously selected object when selection ends. Return true to prevent propagation.
+- `onObjectLongSelect(event)` - Called after a held object selection reaches the long-select delay.
+- `onObjectManipulate(event)` - Called for automatic manipulation start, move, end, and cancel phases.
 
-- `onHoverEnter(controller)` - Called when the user hovering over the current object. Always propagates up the scene graph.
-- `onHoverExit(controller)` - Called when the user hovers out of the current object. Always propagates up the scene graph.
+- `onHoverEnter(event)` / `onHovering(event)` / `onHoverExit(event)` - Hover lifecycle. Return true to stop propagation.
+- `onObjectTouchStart(event)` / `onObjectTouching(event)` / `onObjectTouchEnd(event)` - Direct-touch lifecycle.
+- `onObjectGrabStart(event)` / `onObjectGrabbing(event)` / `onObjectGrabEnd(event)` - Touch-plus-pinch grab lifecycle.
+
+`event.target` is the logical object, `event.surface` is the physical hit mesh, and
+`event.source.controller` identifies the source controller. See
+[Interaction and Manipulation](Interaction.md) for capture, cancellation, touch, and
+manipulation rules.
 
 ## Physics functions
 

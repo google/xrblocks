@@ -49,8 +49,9 @@ xb.add(card);
 xb.init(new xb.Options());
 ```
 
-Set `manipulation: true` to let the user move and scale a card. Set `edge` to
-show its manipulation surface.
+Set `manipulation: true` to enable the default card movement and scale actions. Set
+`edge` to show the enabled actions. The edge does not enable actions that are absent from
+the manipulation configuration.
 
 ## View-space overlays
 
@@ -103,6 +104,50 @@ mounted layout is available.
 
 Every UI component and public UI type is exported from `xrblocks`.
 
+## Controls and direct updates
+
+Use semantic controls instead of attaching raw pointer listeners to panels:
+
+```js
+const status = new xb.UIText({text: 'Ready'});
+const slider = new xb.UISlider({
+  ariaLabel: 'Volume',
+  min: 0,
+  max: 1,
+  step: 0.05,
+  value: 0.5,
+  onInput: (value) => (status.text = `Volume ${value}`),
+  onChange: (value) => saveVolume(value),
+});
+```
+
+`onInput` reports live captured changes. `onChange` reports one completed changed
+interaction. A canceled slider interaction restores its starting value.
+
+Update component properties directly. Nested style and size changes are observed:
+
+```js
+status.text = 'Complete';
+button.disabled = true;
+button.style.backgroundColor = 'rgba(66, 133, 244, 0.7)';
+card.size.width = 0.72;
+```
+
+A `UIButton` with custom children must have an `ariaLabel`. Do not combine custom button
+children with the `label` or `icon` convenience fields.
+
+## Themes and appearance
+
+Set the global theme by preset name or provide a theme update:
+
+```js
+xb.ui.theme = 'grayGlass';
+// Other built-in preset: 'colorful'
+```
+
+Cards and overlays use the theme `surface` appearance by default. Use
+`appearance: 'none'` for a transparent layout root. `UIPanel` has no root appearance.
+
 ## Text layout
 
 `UIText` automatically uses a system-font canvas when its content contains
@@ -126,3 +171,6 @@ const transcript = new xb.UIText({
   },
 });
 ```
+
+See `templates/01_spatial_ui` for a complete card with buttons, slider input, direct state
+updates, and theme switching.

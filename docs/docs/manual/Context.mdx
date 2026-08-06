@@ -1,0 +1,68 @@
+---
+sidebar_position: 12
+title: Agent Context
+---
+
+# Agent context
+
+The context subsystem converts the live XR scene into compact data for agents and external
+automation. It can produce a semantic tree, visible-object state, and a Set-of-Mark image.
+
+## Enable context
+
+```js
+const options = new xb.Options();
+options.enableContext();
+await xb.init(options);
+```
+
+Use a narrower method when the application needs fewer streams:
+
+```js
+options.enableSceneContext();
+options.enableVisibleObjectsContext();
+options.enableSetOfMarkContext();
+```
+
+## Capture one consistent snapshot
+
+```js
+const context = await xb.context.scene.runContextDetection({
+  semanticTree: true,
+  visibleObjects: true,
+  setOfMark: true,
+});
+
+console.log(context.semanticTree.nodes);
+console.log(context.visibleObjects.nodes);
+console.log(context.setOfMark.marks);
+```
+
+Nodes have stable `ctx_*` identifiers, names, roles, parent and child relationships,
+visibility, object identifiers, and interaction state. Set-of-Mark labels reuse those
+stable identifiers between snapshots.
+
+Give meaningful `name` values to application objects and use semantic UI components such
+as `UIButton`. Mark private helper geometry with `object.userData.xrblocksPrivate = true`
+when it must not enter agent context.
+
+## Continuous polling
+
+```js
+const client = {};
+xb.context.scene.start(client);
+
+// Read tree, visibleObjects, or setOfMark after polling.
+xb.context.scene.stop(client);
+```
+
+Configure the shared polling interval through
+`options.context.scene.pollingIntervalMs`.
+
+## Automation
+
+`options.enableAutomationMode()` enables context with desktop simulator defaults. The URL
+parameter `?xrAutomation=1` applies the same preset. Add `?debug=1` when browser tooling
+needs `window.xb` and `window.xbReady`.
+
+See `templates/11_agent_context` for a context-to-AI example.
