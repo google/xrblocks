@@ -19,6 +19,13 @@ The `xb-` prefix matches the `xb` import alias.
 
 | Skill                                           | Use when you need to…                                                |
 | ----------------------------------------------- | -------------------------------------------------------------------- |
+| [`xb-build-app`](xb-build-app/SKILL.md)         | Build an app through a simulator or XR user-testing handoff          |
+| [`xb-add-interactions`](xb-add-interactions/SKILL.md) | Generate hands, gaze, grabbing, gesture, or manipulation behavior |
+| [`xb-add-spatial-ui`](xb-add-spatial-ui/SKILL.md) | Add a usable menu, HUD, card, dashboard, label, or control surface |
+| [`xb-add-world-sensing`](xb-add-world-sensing/SKILL.md) | Make the app observe and react to the physical world          |
+| [`xb-add-ai`](xb-add-ai/SKILL.md)               | Add complete query, Live, generation, or tool-driven AI behavior     |
+| [`xb-automate-app`](xb-automate-app/SKILL.md)   | Expose browser or remote controls to an external process             |
+| [`xb-contribute-sdk`](xb-contribute-sdk/SKILL.md) | Change SDK seams, public APIs, tests, examples, and docs together  |
 | [`xb-core`](xb-core/SKILL.md)                   | Bootstrap an app: `Script`, `Options`, the frame loop, run it        |
 | [`xb-ui`](xb-ui/SKILL.md)                       | Build flex-layout spatial cards, overlays, menus, and controls       |
 | [`xb-modelviewer`](xb-modelviewer/SKILL.md)     | Load & display GLTF / splat / primitive 3D models                    |

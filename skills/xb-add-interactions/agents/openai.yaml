@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Add XR Interactions'
+  short_description: 'Generate complete XR interaction behavior and handoff'
+  default_prompt: 'Use $xb-add-interactions to generate and implement these XR Blocks interactions for user testing.'
