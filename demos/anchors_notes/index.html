@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Anchored Notes | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <link rel="stylesheet" href="../../samples/main.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/"
+        }
+      }
+    </script>
+    <style>
+      #panel {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 50;
+        width: 320px;
+        max-width: 80vw;
+        padding: 14px;
+        border-radius: 14px;
+        background: rgba(16, 14, 26, 0.92);
+        color: #d7d2ea;
+        font:
+          13px/1.45 system-ui,
+          sans-serif;
+        box-sizing: border-box;
+      }
+      #capability {
+        margin-bottom: 10px;
+        font-weight: 600;
+        color: #b7aef0;
+      }
+      #status {
+        margin-bottom: 12px;
+        min-height: 1.4em;
+      }
+      #compose {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      #note-input {
+        flex: 1;
+        min-width: 0;
+        padding: 9px 11px;
+        border: none;
+        border-radius: 10px;
+        background: #2a2640;
+        color: #fff;
+        font-size: 14px;
+      }
+      #pin {
+        padding: 9px 16px;
+        border: none;
+        border-radius: 10px;
+        background: #6a5acd;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #note-list {
+        list-style: none;
+        margin: 0 0 12px;
+        padding: 0;
+        max-height: 40vh;
+        overflow-y: auto;
+      }
+      #note-list li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      #note-list .note-text {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #note-list .note-restored {
+        color: #4ec9a0;
+      }
+      #note-list .note-delete {
+        flex: none;
+        width: 26px;
+        height: 26px;
+        border: none;
+        border-radius: 8px;
+        background: #3a3550;
+        color: #fff;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      #forget {
+        width: 100%;
+        padding: 9px 16px;
+        border: none;
+        border-radius: 10px;
+        background: #3a3550;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="panel">
+      <div id="capability">detecting anchor support…</div>
+      <div id="status">starting…</div>
+      <div id="compose">
+        <input
+          id="note-input"
+          type="text"
+          placeholder="Write a note, then pin it where you look"
+          maxlength="120"
+          autocomplete="off"
+        />
+        <button id="pin">Pin note</button>
+      </div>
+      <ul id="note-list"></ul>
+      <button id="forget">Forget all notes</button>
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
