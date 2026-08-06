@@ -27,6 +27,13 @@ const NOTES_PER_ROW = 3;
 /** Horizontal and vertical gap between fanned-out notes, in metres. */
 const NOTE_SPREAD_X = 0.42;
 const NOTE_SPREAD_Y = 0.3;
+/**
+ * Button label size. Much larger than the default 0.05, which is legible on a
+ * monitor but not at panel distance in a headset. Labels are single words so
+ * they fit on one line at this size.
+ */
+const BUTTON_FONT_SIZE = 0.25;
+
 const FRESH_COLOR = 0x6a5acd;
 const RESTORED_COLOR = 0x2f7d63;
 
@@ -111,14 +118,14 @@ class AnchorNotesDemo extends xb.Script {
 
     const buttons = grid.addRow({weight: 0.3});
     const pin = buttons.addCol({weight: 0.5}).addTextButton({
-      text: 'Pin note',
-      fontSize: 0.048,
+      text: 'Pin',
+      fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#c2703bE0',
     });
     pin.onTriggered = () => this.pinNote();
     const forget = buttons.addCol({weight: 0.5}).addTextButton({
-      text: 'Forget all',
-      fontSize: 0.048,
+      text: 'Forget',
+      fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
     forget.onTriggered = () => this.forgetAll();
