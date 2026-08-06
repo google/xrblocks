@@ -99,3 +99,5 @@ Use `onObjectManipulate(event)` to observe `start`, `move`, `end`, and `cancel` 
 Call `event.preventDefault()` during a start event to suppress the automatic transform.
 
 See `templates/02_object_interaction` for ray, direct-touch, and manipulation behavior.
+See [Placement scripts](Placement.md) for transform behaviors that suspend and
+rebase automatically during manipulation.

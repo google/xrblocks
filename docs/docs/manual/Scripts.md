@@ -94,3 +94,7 @@ export const Script = ScriptMixin(THREE.Object3D);
 ```
 
 To determine if an object is an `Script`, check for the `isXRScript` property rather than `instanceof`.
+
+See [Placement scripts](Placement.md) for built-in scripts that follow the
+viewer or another object, face the camera, orbit a target, and animate
+visibility.
