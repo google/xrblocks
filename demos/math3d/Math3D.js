@@ -96,7 +96,7 @@ export class Math3D extends xb.Script {
 
     this.keyboard = new Keyboard();
     this.add(this.keyboard);
-    this.keyboard.position.set(0, -0.3, 0);
+    this.keyboard.position.set(0, 0.9, -1);
 
     const startFn = this.mathObjects[0].functionText;
 
