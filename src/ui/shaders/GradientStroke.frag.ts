@@ -19,6 +19,7 @@ uniform int u_stroke_numStops;
 uniform float u_stroke_width;
 uniform float u_stroke_align; // Offset from edge (0=center, >0 outside, <0 inside).
 uniform vec2 u_resolution;
+uniform float u_opacity;
 uniform float u_corner_radius;
 uniform float u_drop_shadow_margin;
 
@@ -79,7 +80,7 @@ void main() {
         );
     }
 
-    gl_FragColor = vec4(finalColor.rgb, finalColor.a * alphaMask);
+    gl_FragColor = vec4(finalColor.rgb, finalColor.a * alphaMask * u_opacity);
 
     #include <dithering_fragment>
 }

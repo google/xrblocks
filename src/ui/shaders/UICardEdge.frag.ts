@@ -10,7 +10,8 @@ export const UICardEdgeFragmentShader =
 varying vec2 vUv;
 
 uniform vec2 u_resolution;
-uniform float u_edge_corner_radius;
+uniform float u_opacity;
+uniform float u_card_corner_radius;
 uniform float u_edge_margin;
 uniform float u_edge_width;
 uniform vec4 u_cursor_spotlight_color;
@@ -30,8 +31,17 @@ void main() {
     vec2 p = pos - center;
     vec2 halfSize = size * 0.5;
 
-    float effR = min(u_edge_corner_radius, min(halfSize.x, halfSize.y));
-    float distToEdge = sdRoundedBox(p, halfSize, effR);
+    float margin = max(0.0, u_edge_margin);
+    vec2 innerHalfSize = max(vec2(0.0), halfSize - margin);
+    float innerRadius = min(
+        max(0.0, u_card_corner_radius),
+        min(innerHalfSize.x, innerHalfSize.y)
+    );
+    float outerRadius = min(
+        innerRadius + margin,
+        min(halfSize.x, halfSize.y)
+    );
+    float distToEdge = sdRoundedBox(p, halfSize, outerRadius);
 
     float aa = fwidth(distToEdge);
     float alphaMask = 1.0 - smoothstep(-0.5 * aa, 0.5 * aa, distToEdge);
@@ -40,9 +50,6 @@ void main() {
 
     vec4 debugColor = vec4(0.0);
 
-    float margin = max(0.0, u_edge_margin);
-    vec2 innerHalfSize = max(vec2(0.0), halfSize - margin);
-    float innerRadius = max(0.0, effR - margin);
     float distToInner = sdRoundedBox(p, innerHalfSize, innerRadius);
     float innerAA = fwidth(distToInner);
     float edgeBandMask = smoothstep(
@@ -139,6 +146,8 @@ void main() {
         accumColor = mix(accumColor, debugColor, debugColor.a);
         accumColor.a = max(accumColor.a, debugColor.a);
     }
+
+    accumColor.a *= u_opacity;
 
     gl_FragColor = accumColor;
 
