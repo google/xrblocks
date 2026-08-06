@@ -9,6 +9,12 @@ import {AnchorCapability} from './AnchorTypes';
  * of an XR session says nothing about any of them, so each is probed directly
  * rather than inferred.
  *
+ * `persistent` is therefore a statement about the session, not a promise about
+ * any particular anchor: whether an anchor can hand back a handle is only
+ * knowable once that anchor exists. {@link AnchorManager.persist} reports that
+ * per anchor, so treat this as "saving is worth offering" rather than
+ * "saving will work".
+ *
  * @param session - The active XR session, if any.
  * @param frame - The current XR frame, if any.
  * @returns What the platform supports.
