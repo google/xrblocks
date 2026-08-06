@@ -514,8 +514,7 @@ export class AnchorManager extends Script {
    * @param uuid - The persistent handle to release.
    */
   private releasePersistentHandle(uuid: string): void {
-    const session =
-      this.currentFrame?.session ?? this.renderer?.xr.getSession();
+    const session = this.currentSession();
     const remove = session?.deletePersistentAnchor;
     // Optional in WebXR, and absent entirely for simulated anchors.
     if (typeof remove !== 'function') return;
