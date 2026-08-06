@@ -98,8 +98,9 @@ Maximum number of anchors reached!
 The number of persistent anchors a browser can hold is capped **across every origin**,
 not per site, so a headset can refuse yours because of anchors saved by a completely
 different page ([immersive-web/anchors#79](https://github.com/immersive-web/anchors/issues/79)).
-Browsers are not currently allowed to evict old anchors to make room, so once it is full
-it stays full until something releases handles.
+The spec allows a user agent to evict an entry to make room for a new one, but nothing
+appears to do that yet, so in practice a full budget stays full until something releases
+handles.
 
 The budget belongs to the browser and is shared by every site in it, so a page visited
 months ago can be holding the slot yours needs. It is also small: on a Quest 3 in August
@@ -117,6 +118,9 @@ What follows from that:
 - Do not read `platformHandles()` back to confirm a release. The list does not
   necessarily shrink during a session, and it contains a blank entry even on an origin
   that has never saved anything.
+- Do not promise that a release button will fix a full budget. The platform can refuse a
+  new anchor while reporting no handles at all for your origin, which leaves the page
+  with nothing it can name and nothing it can free.
 
 ### Which cleanup to offer
 
@@ -138,10 +142,9 @@ In order, least destructive first:
 
 1. `releaseAllPlatformHandles()` from within the app. Frees everything the origin still
    names, which is enough whenever the records survived.
-2. Clear the **browser app's data** from the headset's storage settings, not the browsing
-   data from inside the browser. The two are different: clearing browsing data empties
-   the handle list while leaving the anchors themselves in place, which looks like a full
-   budget with nothing in it.
+2. Clear the browser's data from the headset's own storage settings. Once the platform
+   reports no handles while still refusing new anchors there is nothing left for the page
+   to name, so recovery has to come from outside it.
 3. Re-running space setup does not help. Anchors outlive the boundary.
 
 ## Capability
