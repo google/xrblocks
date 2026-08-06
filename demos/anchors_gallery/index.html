@@ -29,36 +29,57 @@
 
   <body>
     <style>
-      /* One wrapping bar rather than three absolutely positioned boxes, so the
-         controls stay reachable on a narrow phone screen instead of sliding
-         under each other. */
-      #controls {
+      /* Stacked boxes in the top left, same shape as the netblocks samples:
+         the way back and the current page first, then the status, then the
+         controls in their own box underneath. */
+      #ui {
         position: fixed;
         top: 12px;
         left: 12px;
-        right: 12px;
         z-index: 50;
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
+        align-items: flex-start;
         gap: 8px;
-        align-items: center;
+        max-width: 360px;
       }
-      #status {
-        flex: 1 1 220px;
-        min-width: 0;
+      #hud {
         padding: 10px 14px;
-        border-radius: 12px;
-        background: rgba(16, 14, 26, 0.9);
+        border-radius: 8px;
+        background: rgba(20, 20, 30, 0.7);
         color: #d7d2ea;
         font:
           13px/1.45 system-ui,
           sans-serif;
       }
+      #hud a.picker {
+        color: #9177c7;
+        text-decoration: none;
+        opacity: 0.85;
+      }
+      #hud a.picker:hover {
+        opacity: 1;
+        text-decoration: underline;
+      }
+      #hud b {
+        color: #9177c7;
+      }
+      #status {
+        margin-top: 6px;
+      }
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: rgba(20, 20, 30, 0.7);
+      }
       #controls button {
         flex: 0 0 auto;
         padding: 10px 18px;
         border: none;
-        border-radius: 24px;
+        border-radius: 8px;
         color: #fff;
         font-size: 14px;
         cursor: pointer;
@@ -69,40 +90,17 @@
       #forget {
         background: #3a3550;
       }
-      /* Cross-links to the sibling anchor demos, matching the picker links
-         in samples/netblocks. DOM only, so they are a way in before the
-         session starts rather than navigation from inside it. */
-      #siblings {
-        flex: 1 0 100%;
-        display: flex;
-        gap: 12px;
-        font:
-          12px/1.4 system-ui,
-          sans-serif;
-        color: #8d86a8;
-      }
-      #siblings a.picker {
-        color: #9177c7;
-        text-decoration: none;
-        pointer-events: auto;
-        opacity: 0.85;
-      }
-      #siblings a.picker:hover {
-        opacity: 1;
-        text-decoration: underline;
-      }
-      #siblings b {
-        color: #9177c7;
-      }
     </style>
-    <div id="controls">
-      <div id="status">starting…</div>
-      <button id="drop">Place shape</button>
-      <button id="forget">Clear pieces</button>
-      <nav id="siblings">
+    <div id="ui">
+      <div id="hud">
         <a class="picker" href="../anchors_home/">← anchors demos</a>
         · <b>gallery</b>
-      </nav>
+        <div id="status">Starting…</div>
+      </div>
+      <div id="controls">
+        <button id="drop">Place shape</button>
+        <button id="forget">Clear pieces</button>
+      </div>
     </div>
     <script type="module" src="main.js"></script>
   </body>
