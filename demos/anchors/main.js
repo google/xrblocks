@@ -198,8 +198,16 @@ class AnchorsDemo extends xb.Script {
         );
       case 'unsupported':
         return 'this browser has no anchor support';
-      default:
-        return 'storage refused the write, so it will be gone on reload';
+      default: {
+        // The platform can refuse a handle for its own reasons, and it says
+        // why. Reporting that beats blaming storage, which is usually not the
+        // thing that said no.
+        const error = this.anchors?.lastError;
+        const detail = error
+          ? String(error.message ?? error).slice(0, 120)
+          : 'no reason given';
+        return `the save was refused: ${detail}`;
+      }
     }
   }
 
