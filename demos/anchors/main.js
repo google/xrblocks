@@ -20,6 +20,12 @@ const MARKERS_PER_ROW = 3;
 /** Horizontal and vertical gap between fanned-out markers, in metres. */
 const MARKER_SPREAD_X = 0.32;
 const MARKER_SPREAD_Y = 0.24;
+/**
+ * How long to wait before re-reading the platform's handle list after a
+ * forget. deletePersistentAnchor is asynchronous, so the handles are still
+ * listed for a moment after the call returns.
+ */
+const HANDLE_RELEASE_SETTLE_MS = 600;
 const MARKER_COLOR = 0x8a7bff;
 const RESTORED_COLOR = 0x4ec9a0;
 
@@ -266,7 +272,9 @@ class AnchorsDemo extends xb.Script {
    * @param held - How many it was holding before the release.
    */
   async reportRelease(held) {
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await new Promise((resolve) =>
+      setTimeout(resolve, HANDLE_RELEASE_SETTLE_MS)
+    );
     const left = this.anchors?.platformHandles().length ?? 0;
     this.setStatus(
       left === 0
