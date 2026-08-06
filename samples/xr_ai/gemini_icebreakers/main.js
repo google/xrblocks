@@ -4,6 +4,7 @@ import {GeminiIcebreakers} from './GeminiIcebreakers.js';
 
 const options = new xb.Options();
 options.enableAI();
+options.ai.promptForApiKey = true;
 options.enableCamera();
 options.permissions.microphone = true;
 options.controllers.visualizeRays = false;

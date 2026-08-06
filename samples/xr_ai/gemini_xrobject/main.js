@@ -26,11 +26,9 @@ options.sound.speechSynthesizer.enabled = true;
 options.sound.speechRecognizer.enabled = true;
 options.sound.speechRecognizer.playSimulatorActivationSounds = true;
 
-// options.ai.gemini.config is dynamic and defined in XRObjectManager. A Gemini
-// API key needs to be provided in the URL:
-// /samples/xr_ai/gemini_xrobject/?key=...
-// or provided with `keys.json` in the same directory.
+// options.ai.gemini.config is dynamic and defined in XRObjectManager.
 options.enableAI();
+options.ai.promptForApiKey = true;
 options.world.objects.backendConfig.activeBackend = 'gemini';
 options.world.objects.showDebugVisualizations = false;
 options.setAppTitle('Gemini XR-Objects');
