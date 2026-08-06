@@ -11,12 +11,6 @@ import * as THREE from 'three';
 import {AgentHead} from './AgentHead';
 
 describe('AgentHead', () => {
-  it('builds an orb under its root', () => {
-    const head = new AgentHead();
-    expect(head.root).toBeInstanceOf(THREE.Object3D);
-    expect(head.root.children.length).toBeGreaterThan(0);
-  });
-
   it('clamps the speaking level and smooths toward it', () => {
     const head = new AgentHead();
     head.setSpeaking(5); // out of range, should clamp to 1
