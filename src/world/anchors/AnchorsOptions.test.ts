@@ -33,3 +33,29 @@ describe('AnchorsOptions', () => {
     expect(options.persistent).toBe(true);
   });
 });
+
+describe('defaultAnchorStorageKey', () => {
+  it('gives a directory and its index page the same key', () => {
+    // Reaching a demo by its directory or by index.html is the same page, so
+    // anchors saved through one route must be visible from the other.
+    expect(defaultAnchorStorageKey('/demos/anchors/index.html')).toBe(
+      defaultAnchorStorageKey('/demos/anchors/')
+    );
+  });
+
+  it('still separates different pages', () => {
+    expect(defaultAnchorStorageKey('/demos/anchors/')).not.toBe(
+      defaultAnchorStorageKey('/demos/anchors_notes/')
+    );
+  });
+
+  it('treats a missing trailing slash as the same directory', () => {
+    expect(defaultAnchorStorageKey('/demos/anchors')).toBe(
+      defaultAnchorStorageKey('/demos/anchors/')
+    );
+  });
+
+  it('falls back when there is no pathname', () => {
+    expect(defaultAnchorStorageKey()).toBe('xrblocks.anchors');
+  });
+});

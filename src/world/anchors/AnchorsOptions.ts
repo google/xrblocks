@@ -12,7 +12,14 @@ import {DeepPartial} from '../../utils/Types';
  * @returns The storage key to default to.
  */
 export function defaultAnchorStorageKey(pathname?: string): string {
-  return pathname ? `xrblocks.anchors:${pathname}` : 'xrblocks.anchors';
+  if (!pathname) return 'xrblocks.anchors';
+  // Keyed on the directory rather than the raw path, because the same page is
+  // reachable both as a directory and as its index file. Keying on the path
+  // gave those two routes separate stores, so anchors saved through one were
+  // invisible through the other while the platform still held their handles.
+  const withoutFile = pathname.replace(/\/[^/]*\.[^/]*$/, '/');
+  const directory = withoutFile.endsWith('/') ? withoutFile : `${withoutFile}/`;
+  return `xrblocks.anchors:${directory}`;
 }
 
 /**
