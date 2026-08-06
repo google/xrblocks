@@ -26,6 +26,11 @@ const MARKER_SPREAD_Y = 0.24;
  * listed for a moment after the call returns.
  */
 const HANDLE_RELEASE_SETTLE_MS = 600;
+/**
+ * Button label size. The default 0.05 is hard to read at panel distance in a
+ * headset, where the panel sits nearly two metres away.
+ */
+const BUTTON_FONT_SIZE = 0.075;
 const MARKER_COLOR = 0x8a7bff;
 /** The same colour as a CSS string, for the panel's title text. */
 const MARKER_COLOR_CSS = '#8a7bff';
@@ -75,8 +80,8 @@ class AnchorsDemo extends xb.Script {
       backgroundColor: '#1a1a1aF0',
       useDefaultPosition: false,
       showEdge: true,
-      width: 1.0,
-      height: 0.6,
+      width: 1.2,
+      height: 0.7,
     });
     panel.isRoot = true;
     panel.position.set(0, xb.user.height, -xb.user.panelDistance);
@@ -90,23 +95,23 @@ class AnchorsDemo extends xb.Script {
       fontColor: MARKER_COLOR_CSS,
     });
 
-    this.statusText = grid.addRow({weight: 0.34}).addText({
+    this.statusText = grid.addRow({weight: 0.3}).addText({
       text: 'starting…',
-      fontSize: 0.036,
+      fontSize: 0.04,
       fontColor: '#d7d2ea',
     });
 
-    const buttons = grid.addRow({weight: 0.34});
+    const buttons = grid.addRow({weight: 0.4});
     const drop = buttons.addCol({weight: 0.5}).addTextButton({
       text: 'Drop marker',
-      fontSize: 0.05,
+      fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#6a5acdE0',
     });
     drop.onTriggered = () => this.dropMarker();
 
     const forget = buttons.addCol({weight: 0.5}).addTextButton({
       text: 'Forget all',
-      fontSize: 0.05,
+      fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
     forget.onTriggered = () => this.forgetAll();
