@@ -34,7 +34,13 @@ export interface UIThemeUpdate {
   readonly styles?: UIThemeStyles;
 }
 
-export type UIThemePresetName = 'grayGlass' | 'colorful';
+export type UIThemePresetName =
+  | 'grayGlass'
+  | 'colorful'
+  | 'glimmer'
+  | 'glimmerOpaque'
+  | 'glimmerAmber'
+  | 'glimmerGreen';
 
 const COLOR_PROPERTIES = [
   'surface',
@@ -173,10 +179,85 @@ export const colorfulTheme = createThemeSnapshot({
   },
 });
 
+export const glimmerTheme = createGlimmerTheme({
+  surface: 'rgba(5, 5, 5, 0.65)',
+  raisedSurface: 'rgba(255, 255, 255, 0.08)',
+  primary: '#3b82f6',
+  secondaryText: 'rgba(255, 255, 255, 0.85)',
+  outline: 'rgba(255, 255, 255, 0.35)',
+  disabledSurface: 'rgba(255, 255, 255, 0.04)',
+  disabledText: 'rgba(255, 255, 255, 0.4)',
+  borderStops: [
+    'rgba(255, 255, 255, 0.5)',
+    'rgba(255, 255, 255, 0.25)',
+    'rgba(255, 255, 255, 0.35)',
+  ],
+  buttonHover: '#2563eb',
+  buttonActive: '#1d4ed8',
+  buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
+});
+
+export const glimmerOpaqueTheme = createGlimmerTheme({
+  surface: 'rgba(15, 23, 42, 0.96)',
+  raisedSurface: 'rgba(30, 41, 59, 0.96)',
+  primary: '#3b82f6',
+  secondaryText: '#cbd5e1',
+  outline: 'rgba(255, 255, 255, 0.35)',
+  disabledSurface: 'rgba(51, 65, 85, 0.5)',
+  disabledText: '#94a3b8',
+  borderStops: [
+    'rgba(255, 255, 255, 0.5)',
+    'rgba(255, 255, 255, 0.25)',
+    'rgba(255, 255, 255, 0.35)',
+  ],
+  buttonHover: '#2563eb',
+  buttonActive: '#1d4ed8',
+});
+
+export const glimmerAmberTheme = createGlimmerTheme({
+  surface: 'rgba(25, 18, 5, 0.75)',
+  raisedSurface: 'rgba(255, 193, 7, 0.12)',
+  primary: '#f59e0b',
+  secondaryText: 'rgba(255, 255, 255, 0.85)',
+  outline: 'rgba(251, 191, 36, 0.45)',
+  disabledSurface: 'rgba(255, 255, 255, 0.04)',
+  disabledText: 'rgba(255, 255, 255, 0.4)',
+  borderStops: [
+    'rgba(251, 191, 36, 0.55)',
+    'rgba(251, 191, 36, 0.25)',
+    'rgba(251, 191, 36, 0.35)',
+  ],
+  buttonHover: '#d97706',
+  buttonActive: '#b45309',
+  buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
+});
+
+export const glimmerGreenTheme = createGlimmerTheme({
+  surface: 'rgba(5, 20, 10, 0.75)',
+  raisedSurface: 'rgba(16, 185, 129, 0.12)',
+  primary: '#10b981',
+  secondaryText: 'rgba(255, 255, 255, 0.85)',
+  outline: 'rgba(52, 211, 153, 0.45)',
+  disabledSurface: 'rgba(255, 255, 255, 0.04)',
+  disabledText: 'rgba(255, 255, 255, 0.4)',
+  borderStops: [
+    'rgba(52, 211, 153, 0.55)',
+    'rgba(52, 211, 153, 0.25)',
+    'rgba(52, 211, 153, 0.35)',
+  ],
+  buttonHover: '#059669',
+  buttonActive: '#047857',
+  buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
+});
+
 export const uiThemePresets: Readonly<Record<UIThemePresetName, UITheme>> =
   Object.freeze({
     grayGlass: grayGlassTheme,
     colorful: colorfulTheme,
+    glimmer: glimmerTheme,
+    glimmerOpaque: glimmerOpaqueTheme,
+    glimmerAmber: glimmerAmberTheme,
+    glimmerGreen: glimmerGreenTheme,
   });
 
 export const defaultTheme: UITheme = grayGlassTheme;
@@ -210,6 +291,80 @@ export function updateThemeSnapshot(
         ? theme.borderRadius
         : update.borderRadius,
     styles: update.styles === undefined ? theme.styles : update.styles,
+  });
+}
+
+interface GlimmerThemeOptions {
+  readonly surface: string;
+  readonly raisedSurface: string;
+  readonly primary: string;
+  readonly secondaryText: string;
+  readonly outline: string;
+  readonly disabledSurface: string;
+  readonly disabledText: string;
+  readonly borderStops: readonly [string, string, string];
+  readonly buttonHover: string;
+  readonly buttonActive: string;
+  readonly buttonDisabledSurface?: string;
+}
+
+function createGlimmerTheme(options: GlimmerThemeOptions): UITheme {
+  return createThemeSnapshot({
+    colors: {
+      surface: options.surface,
+      raisedSurface: options.raisedSurface,
+      primary: options.primary,
+      primaryText: '#ffffff',
+      text: '#ffffff',
+      secondaryText: options.secondaryText,
+      outline: options.outline,
+      disabledSurface: options.disabledSurface,
+      disabledText: options.disabledText,
+    },
+    borderRadius: 32,
+    styles: {
+      surface: {
+        backgroundColor: options.surface,
+        borderColor: {
+          gradientType: 'linear',
+          rotation: 90,
+          stops: [
+            {position: 0, color: options.borderStops[0]},
+            {position: 0.5, color: options.borderStops[1]},
+            {position: 1, color: options.borderStops[2]},
+          ],
+        },
+        borderWidth: 2,
+        borderRadius: 32,
+        padding: 22,
+        gap: 12,
+        innerShadowColor: 'rgba(150, 150, 150, 0.05)',
+        innerShadowBlur: 32,
+      },
+      button: {
+        height: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingLeft: 16,
+        paddingRight: 16,
+        backgroundColor: options.primary,
+        color: '#ffffff',
+        borderWidth: 0,
+        borderRadius: 16,
+        ':hover': {backgroundColor: options.buttonHover},
+        ':active': {backgroundColor: options.buttonActive},
+        ':disabled': {
+          backgroundColor:
+            options.buttonDisabledSurface ?? options.disabledSurface,
+          color: options.disabledText,
+        },
+      },
+      text: {
+        color: '#ffffff',
+      },
+    },
   });
 }
 

@@ -30,6 +30,15 @@ const UI_THEME = Object.freeze({
   sampleSize: 32,
 });
 
+const UI_THEME_PRESETS = Object.freeze([
+  'grayGlass',
+  'colorful',
+  'glimmer',
+  'glimmerOpaque',
+  'glimmerAmber',
+  'glimmerGreen',
+]);
+
 function markFeature(feature) {
   activePlayground?.markFeature(feature);
 }
@@ -455,7 +464,7 @@ class InteractionPlayground extends xb.Script {
   resettableObjects = [];
   eventMessages = [];
   featureBadges = new Map();
-  alternateTheme = false;
+  themeIndex = 0;
 
   async init() {
     xb.core.scene.background = new THREE.Color(0x090d18);
@@ -1118,9 +1127,10 @@ class InteractionPlayground extends xb.Script {
   }
 
   toggleTheme() {
-    this.alternateTheme = !this.alternateTheme;
-    xb.ui.theme = this.alternateTheme ? 'colorful' : 'grayGlass';
-    report(`UI theme ${this.alternateTheme ? 'colorful' : 'grayGlass'}`, 'ui');
+    this.themeIndex = (this.themeIndex + 1) % UI_THEME_PRESETS.length;
+    const theme = UI_THEME_PRESETS[this.themeIndex];
+    xb.ui.theme = theme;
+    report(`UI theme ${theme}`, 'ui');
   }
 
   rememberInitialTransforms() {
