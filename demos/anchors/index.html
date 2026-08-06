@@ -69,11 +69,40 @@
       #forget {
         background: #3a3550;
       }
+      /* Cross-links to the sibling anchor demos, matching the picker links
+         in samples/netblocks. DOM only, so they are a way in before the
+         session starts rather than navigation from inside it. */
+      #siblings {
+        flex: 1 0 100%;
+        display: flex;
+        gap: 12px;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+        color: #8d86a8;
+      }
+      #siblings a {
+        color: #b9a7ff;
+        text-decoration: none;
+        border-bottom: 1px dotted #6a5acd;
+      }
+      #siblings a:hover {
+        color: #fff;
+      }
+      #siblings b {
+        color: #d7d2ea;
+        font-weight: 600;
+      }
     </style>
     <div id="controls">
       <div id="status">starting…</div>
       <button id="drop">Drop marker</button>
       <button id="forget">Clear markers</button>
+      <nav id="siblings">
+        <span><b>markers</b></span>
+        <a href="../anchors_notes/">notes →</a>
+        <a href="../anchors_gallery/">gallery →</a>
+      </nav>
     </div>
     <script type="module" src="main.js"></script>
   </body>
