@@ -1,27 +1,15 @@
-const STORAGE_PREFIX = 'xrblocks.ai.';
+const sessionApiKeys = new Map<string, string>();
 
-export function getStoredApiKey(modelName: string): string | null {
-  try {
-    return window.localStorage.getItem(`${STORAGE_PREFIX}${modelName}.apiKey`);
-  } catch {
-    return null;
-  }
+export function getSessionApiKey(modelName: string): string | null {
+  return sessionApiKeys.get(modelName) ?? null;
 }
 
-export function storeApiKey(modelName: string, apiKey: string) {
-  try {
-    window.localStorage.setItem(`${STORAGE_PREFIX}${modelName}.apiKey`, apiKey);
-  } catch {
-    // Storage can be unavailable in private or embedded browser contexts.
-  }
+export function setSessionApiKey(modelName: string, apiKey: string) {
+  sessionApiKeys.set(modelName, apiKey);
 }
 
-export function clearStoredApiKey(modelName: string) {
-  try {
-    window.localStorage.removeItem(`${STORAGE_PREFIX}${modelName}.apiKey`);
-  } catch {
-    // Storage can be unavailable in private or embedded browser contexts.
-  }
+export function clearSessionApiKey(modelName: string) {
+  sessionApiKeys.delete(modelName);
 }
 
 /** A dependency-free browser dialog for local AI prototypes. */
@@ -181,14 +169,14 @@ export function promptForApiKey(
           API key
           <input class="xb-ai-key-input" name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" />
         </label>
-        <p class="xb-ai-key-note">Saved only in this browser. Use a server-managed key in production.</p>
-        <p class="xb-ai-key-status" data-status>${configuredKey ? 'A saved key is ready to use.' : ''}</p>
+        <p class="xb-ai-key-note">Kept only until this page reloads or closes. Use a server-managed key in production.</p>
+        <p class="xb-ai-key-status" data-status>${configuredKey ? 'A key is ready to use.' : ''}</p>
         <menu class="xb-ai-key-actions">
-          <button class="xb-ai-key-button xb-ai-key-button--primary ${configuredKey ? '' : 'xb-ai-key-button--wide'}" value="save">Save and continue</button>
-          ${configuredKey ? '<button class="xb-ai-key-button" value="configured">Use saved key</button>' : ''}
+          <button class="xb-ai-key-button xb-ai-key-button--primary ${configuredKey ? '' : 'xb-ai-key-button--wide'}" value="session">Use for this session</button>
+          ${configuredKey ? '<button class="xb-ai-key-button" value="configured">Use available key</button>' : ''}
           <button class="xb-ai-key-button xb-ai-key-button--wide" value="skip">Continue without AI</button>
         </menu>
-        ${configuredKey ? '<button class="xb-ai-key-clear" value="clear">Forget saved key</button>' : ''}
+        ${configuredKey ? '<button class="xb-ai-key-clear" value="clear">Clear key</button>' : ''}
       </form>`;
 
     const finish = (key: string | null) => {
@@ -203,22 +191,22 @@ export function promptForApiKey(
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const action = (event.submitter as HTMLButtonElement | null)?.value;
-      if (action === 'save') {
+      if (action === 'session') {
         const apiKey = input.value.trim();
         if (!apiKey) {
           status.textContent = 'Enter an API key or continue without one.';
           input.focus();
           return;
         }
-        storeApiKey(modelName, apiKey);
+        setSessionApiKey(modelName, apiKey);
         finish(apiKey);
         return;
       }
       if (action === 'clear') {
-        clearStoredApiKey(modelName);
+        clearSessionApiKey(modelName);
         selectedConfiguredKey = null;
         input.value = '';
-        status.textContent = 'The saved browser key was cleared.';
+        status.textContent = 'The session key was cleared.';
         dialog
           .querySelector<HTMLButtonElement>('button[value="configured"]')
           ?.remove();
@@ -226,7 +214,7 @@ export function promptForApiKey(
           .querySelector<HTMLButtonElement>('button[value="clear"]')
           ?.remove();
         dialog
-          .querySelector<HTMLButtonElement>('button[value="save"]')
+          .querySelector<HTMLButtonElement>('button[value="session"]')
           ?.classList.add('xb-ai-key-button--wide');
         return;
       }

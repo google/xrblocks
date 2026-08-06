@@ -5,7 +5,7 @@ import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 import {getUrlParameter} from '../utils/utils';
 
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
-import {getStoredApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
+import {getSessionApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
 import {GeminiResponse} from './AITypes';
 import {Gemini, GeminiQueryInput} from './Gemini';
 import {OpenAI} from './OpenAI';
@@ -44,7 +44,7 @@ const SUPPORTED_MODELS = {
  * 1. Multiple Key Sources (Priority Order):
  *    - Model option
  *    - Generic and model-specific URL parameters
- *    - Browser local storage
+ *    - Current-page memory
  *    - keys.json file
  * 2. keys.json Support:
  *    - Structure: \{"gemini": \{"apiKey": "YOUR_KEY_HERE"\}\}
@@ -154,10 +154,10 @@ export class AI extends Script {
     const modelKey = getUrlParameter(modelOptions.urlParam);
     if (modelKey) return modelKey;
 
-    // 4. Check the browser-local prototype key when the prompt opt-in owns it.
+    // 4. Check the current-page prototype key when the prompt opt-in owns it.
     if (this.options.promptForApiKey) {
-      const storedKey = getStoredApiKey(modelName);
-      if (storedKey) return storedKey;
+      const sessionKey = getSessionApiKey(modelName);
+      if (sessionKey) return sessionKey;
     }
 
     // 5. Check keys.json file.

@@ -28,7 +28,8 @@ export class AIOptions {
   model: AIModel = 'gemini';
   /**
    * Show a browser dialog before AI starts so a prototype user can provide,
-   * replace, or remove a locally stored API key. Disabled by default.
+   * replace, or remove an API key kept only for the current page. Disabled by
+   * default.
    */
   promptForApiKey = false;
   gemini = new GeminiOptions();
