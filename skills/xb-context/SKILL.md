@@ -52,8 +52,9 @@ console.log(context.setOfMark.marks);
 ```
 
 Each semantic node has a stable `ctx_*` id, role, name, parent/children
-relationships, object id, visibility flags, and optional `view` state. SOM marks
-reuse stable labels so labels do not realign between app snapshots.
+relationships, object id, visibility, local `pointerEvents` and
+`interactionEnabled` settings, and optional `view` state. SOM marks reuse stable
+labels so labels do not realign between app snapshots.
 
 ## Continuous Polling
 

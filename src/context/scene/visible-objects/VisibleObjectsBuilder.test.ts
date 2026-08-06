@@ -28,6 +28,8 @@ describe('createVisibleObjectsContext', () => {
             role: 'object',
             name: 'Target',
             visible: true,
+            pointerEvents: 'auto',
+            interactionEnabled: true,
             position: [0, 0, -2],
             children: [],
           },

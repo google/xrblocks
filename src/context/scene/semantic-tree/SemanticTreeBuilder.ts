@@ -31,6 +31,23 @@ type SemanticObject = THREE.Object3D & {
   };
 };
 
+type SemanticDescription = Pick<
+  SemanticNode,
+  | 'role'
+  | 'name'
+  | 'source'
+  | 'text'
+  | 'traits'
+  | 'disabled'
+  | 'selected'
+  | 'hovered'
+  | 'value'
+  | 'min'
+  | 'max'
+  | 'pointerEvents'
+  | 'interactionEnabled'
+>;
+
 export interface SemanticTreeInternal {
   tree: SemanticTree;
   nodeObjects: Map<string, THREE.Object3D>;
@@ -127,60 +144,35 @@ function shouldPruneObject(object: THREE.Object3D): boolean {
 function describeSemanticObject(
   object: THREE.Object3D,
   interaction?: Interaction
-): {
-  role: string;
-  name: string;
-  source: SemanticSource;
-  text?: string;
-  traits?: string[];
-  disabled?: boolean;
-  selected?: boolean;
-  hovered?: boolean;
-  value?: number;
-  min?: number;
-  max?: number;
-} | null {
+): SemanticDescription | null {
   const semanticObject = object as SemanticObject;
   const override = semanticObject.userData.semantic;
-
-  if (override?.role || override?.name) {
-    return {
-      role: override.role ?? inferRole(object),
-      name: override.name ?? inferName(object),
-      source: override.source ?? 'app',
-      text: override.text ?? inferText(object),
-      traits: override.traits ?? inferTraits(object),
-      disabled: override.disabled ?? inferDisabled(object),
-      selected: interaction?.isSelectingAt(object),
-      hovered: interaction?.isHovered(object),
-      ...inferValue(object),
-    };
-  }
-
-  const role = inferRole(object);
+  const hasExplicitIdentity = hasExplicitSemanticIdentity(object);
+  const role = resolveRole(object);
   if (!role) {
     return null;
   }
 
-  const isImplementationMesh =
-    object instanceof THREE.Mesh && hasSemanticAncestor(object);
-  if (isImplementationMesh) {
-    return null;
+  if (!hasExplicitIdentity) {
+    const isImplementationMesh =
+      object instanceof THREE.Mesh && hasSemanticAncestor(object);
+    if (isImplementationMesh || isLayoutOnlyContainer(object, role)) {
+      return null;
+    }
   }
 
-  if (isLayoutOnlyContainer(object, role)) {
-    return null;
-  }
-
+  const disabled = override?.disabled ?? inferDisabled(object);
   return {
     role,
-    name: inferName(object),
-    source: inferSource(object),
-    text: inferText(object),
-    traits: inferTraits(object),
-    disabled: inferDisabled(object),
+    name: override?.name ?? inferName(object),
+    source: override?.source ?? inferSource(object),
+    text: override?.text ?? inferText(object),
+    traits: mergeTraits(inferTraits(object, disabled), override?.traits),
+    disabled,
     selected: interaction?.isSelectingAt(object),
     hovered: interaction?.isHovered(object),
+    pointerEvents: object.xb?.pointerEvents ?? 'auto',
+    interactionEnabled: object.xb?.interactionEnabled ?? true,
     ...inferValue(object),
   };
 }
@@ -188,8 +180,9 @@ function describeSemanticObject(
 function hasSemanticAncestor(object: THREE.Object3D): boolean {
   let parent = object.parent;
   while (parent) {
-    const role = inferRole(parent);
-    if (role && !isLayoutOnlyContainer(parent, role)) {
+    const hasExplicitIdentity = hasExplicitSemanticIdentity(parent);
+    const role = resolveRole(parent);
+    if (role && (hasExplicitIdentity || !isLayoutOnlyContainer(parent, role))) {
       return true;
     }
     parent = parent.parent;
@@ -197,11 +190,20 @@ function hasSemanticAncestor(object: THREE.Object3D): boolean {
   return false;
 }
 
+function hasExplicitSemanticIdentity(object: THREE.Object3D): boolean {
+  const semantic = (object as SemanticObject).userData.semantic;
+  return Boolean(semantic?.role || semantic?.name);
+}
+
+function resolveRole(object: THREE.Object3D): string {
+  const semantic = (object as SemanticObject).userData.semantic;
+  if (semantic?.role) return semantic.role;
+  const inferredRole = inferRole(object);
+  if (inferredRole) return inferredRole;
+  return semantic?.name ? inferExplicitRole(object) : '';
+}
+
 function inferRole(object: THREE.Object3D): string {
-  const semanticObject = object as SemanticObject;
-  if (semanticObject.userData.semantic?.role) {
-    return semanticObject.userData.semantic.role;
-  }
   if (isUIElement(object)) {
     const kind = getUIElementKind(object);
     if (kind === 'button') return 'button';
@@ -217,6 +219,10 @@ function inferRole(object: THREE.Object3D): string {
   return '';
 }
 
+function inferExplicitRole(object: THREE.Object3D): string {
+  return object.children.length > 0 ? 'group' : 'object';
+}
+
 function inferName(object: THREE.Object3D): string {
   const semanticObject = object as SemanticObject;
   return (
@@ -224,42 +230,44 @@ function inferName(object: THREE.Object3D): string {
     semanticObject.label ??
     semanticObject.text ??
     semanticObject.icon ??
-    semanticObject.userData.semantic?.name ??
-    semanticObject.userData.semantic?.text ??
     object.name ??
     `${object.type}_${object.id}`
   );
 }
 
 function inferText(object: THREE.Object3D): string | undefined {
-  const semanticObject = object as SemanticObject;
-  return semanticObject.userData.semantic?.text ?? semanticObject.text;
+  return (object as SemanticObject).text;
 }
 
 function inferSource(object: THREE.Object3D): SemanticSource {
-  if ((object as SemanticObject).userData.semantic?.source) {
-    return (object as SemanticObject).userData.semantic!.source!;
-  }
   if (isUIElement(object)) return 'xrblocks';
   return 'three';
 }
 
-function inferTraits(object: THREE.Object3D): string[] | undefined {
-  const semanticObject = object as SemanticObject;
-  const traits = new Set<string>(
-    semanticObject.userData.semantic?.traits ?? []
-  );
-  if (semanticObject.xb?.manipulation) traits.add('manipulable');
+function inferTraits(
+  object: THREE.Object3D,
+  disabled: boolean | undefined
+): string[] | undefined {
+  const traits = new Set<string>();
+  if (object.xb?.manipulation) traits.add('manipulable');
   if (
     isUIElement(object) &&
     (getUIElementKind(object) === 'button' ||
       getUIElementKind(object) === 'slider') &&
     object.xb?.interactionEnabled !== false &&
-    !inferDisabled(object)
+    !disabled
   ) {
     traits.add('selectable');
   }
   return traits.size ? [...traits] : undefined;
+}
+
+function mergeTraits(
+  inferred: string[] | undefined,
+  explicit: string[] | undefined
+): string[] | undefined {
+  if (!inferred?.length && !explicit?.length) return undefined;
+  return [...new Set([...(inferred ?? []), ...(explicit ?? [])])];
 }
 
 function inferValue(
@@ -271,8 +279,7 @@ function inferValue(
 }
 
 function inferDisabled(object: THREE.Object3D): boolean | undefined {
-  const semanticObject = object as SemanticObject;
-  return semanticObject.userData.semantic?.disabled ?? semanticObject.disabled;
+  return (object as SemanticObject).disabled;
 }
 
 function isLayoutOnlyContainer(object: THREE.Object3D, role: string): boolean {
@@ -297,6 +304,8 @@ function createSemanticNode(
     role: semantic.role,
     name: semantic.name,
     visible: isEffectivelyVisible(object),
+    pointerEvents: semantic.pointerEvents,
+    interactionEnabled: semantic.interactionEnabled,
     position: [
       roundContextNumber(tempPosition.x),
       roundContextNumber(tempPosition.y),
