@@ -87,7 +87,7 @@ class AnchoredGalleryDemo extends xb.Script {
       ?.addEventListener('click', () => this.clearGallery());
 
     window.anchorGalleryDemo = this;
-    this.setStatus('waiting for the first update…');
+    this.setStatus('Waiting for the first update…');
   }
 
   get anchors() {
@@ -114,7 +114,7 @@ class AnchoredGalleryDemo extends xb.Script {
       fontColor: '#ffa657',
     });
     this.statusText = grid.addRow({weight: 0.3}).addText({
-      text: 'starting…',
+      text: 'Starting…',
       fontSize: 0.04,
       fontColor: '#d7d2ea',
     });
@@ -165,11 +165,11 @@ class AnchoredGalleryDemo extends xb.Script {
     // keep in step here, which is the whole point of AnchoredObjects.
     const tracked = await gallery.anchor(mesh, shape);
     if (!tracked) {
-      this.setStatus('could not anchor a piece here');
+      this.setStatus('Could not anchor a piece here');
       return;
     }
     this.placed++;
-    this.setStatus(`placed a ${shape}`);
+    this.setStatus(`Placed a ${shape}`);
   }
 
   /** Rebuilds the pieces saved in a previous session. */
@@ -182,7 +182,7 @@ class AnchoredGalleryDemo extends xb.Script {
     this.placed = Math.max(this.placed, gallery.getAll().size);
     this.setStatus(
       this.describeCapability(
-        restored > 0 ? `rebuilt ${restored} pieces` : 'nothing saved yet'
+        restored > 0 ? `Rebuilt ${restored} pieces` : 'Nothing saved yet'
       )
     );
   }
@@ -192,7 +192,7 @@ class AnchoredGalleryDemo extends xb.Script {
     if (!this.gallery) return;
     this.gallery.clear();
     this.placed = 0;
-    this.setStatus('cleared the gallery');
+    this.setStatus('Cleared every saved piece');
   }
 
   update() {
@@ -222,10 +222,10 @@ class AnchoredGalleryDemo extends xb.Script {
   describeCapability(message) {
     const capability = this.anchors?.capability ?? 'unsupported';
     const prefix = {
-      persistent: 'real anchors, saved across sessions',
-      'session-only': 'real anchors, but this platform cannot save them',
-      simulated: 'simulated anchors (desktop) — not really pinned to a room',
-      unsupported: 'no anchor support on this platform',
+      persistent: 'Real anchors, saved across sessions',
+      'session-only': 'Real anchors, but this platform cannot save them',
+      simulated: 'Simulated anchors (desktop), not really pinned to a room',
+      unsupported: 'No anchor support on this platform',
     }[capability];
     return `${prefix}. ${message}`;
   }
