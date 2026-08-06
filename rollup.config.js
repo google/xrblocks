@@ -61,8 +61,8 @@ ${apache2License}
     "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
     "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
     "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
-    "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
-    "lit/": "https://esm.run/lit@3/",
+    "lit": "https://esm.sh/lit@3.3.1",
+    "lit/": "https://esm.sh/lit@3.3.1/",
     "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
     2. If the app focus on standalone objects, spawn it in front of the user in
     WebXR and rescale to reasonable physical size. Wrap them with xb.ModelViewer
