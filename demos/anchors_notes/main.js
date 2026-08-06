@@ -142,18 +142,27 @@ class AnchorNotesDemo extends xb.Script {
     });
 
     const buttons = grid.addRow({weight: 0.4});
-    const pin = buttons.addCol({weight: 0.5}).addTextButton({
+    const pin = buttons.addCol({weight: 0.34}).addTextButton({
       text: 'Pin',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#c2703bE0',
     });
     pin.onTriggered = () => this.pinNote();
-    const forget = buttons.addCol({weight: 0.5}).addTextButton({
+    const forget = buttons.addCol({weight: 0.33}).addTextButton({
       text: 'Clear',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
     forget.onTriggered = () => this.forgetAll();
+
+    // The anchor budget belongs to the browser, so it can fill up from any of
+    // these demos. The way out has to be reachable from each of them.
+    const release = buttons.addCol({weight: 0.33}).addTextButton({
+      text: 'Release',
+      fontSize: BUTTON_FONT_SIZE,
+      backgroundColor: '#7a3b46E0',
+    });
+    release.onTriggered = () => this.releaseEverything();
 
     const keyboard = new Keyboard();
     this.add(keyboard);
@@ -345,6 +354,37 @@ class AnchorNotesDemo extends xb.Script {
     xb.core.scene.add(group);
     this.notes.set(tracked.id, {group, text: label, restored});
     this.refreshList();
+  }
+
+  /**
+   * Releases every handle the device holds for this site.
+   *
+   * Separate from Clear: it reaches handles no record names any more, and it
+   * is origin wide, so the other anchor demos lose theirs too.
+   */
+  async releaseEverything() {
+    const anchors = this.anchors;
+    if (!anchors) return;
+    const before = anchors.platformHandles().length;
+    this.setStatus(`Releasing ${before} handles the device holds…`);
+    const released = await anchors.releaseAllPlatformHandles();
+    for (const id of [...this.notes.keys()]) {
+      const entry = this.notes.get(id);
+      if (entry) {
+        xb.core.scene.remove(entry.group);
+        entry.text.dispose?.();
+        entry.group.traverse(xb.disposeRenderableResources);
+      }
+      this.notes.delete(id);
+    }
+    this.refreshList();
+    // The platform's list does not shrink as handles go, so reading it back
+    // would suggest nothing happened. The accepted count is the truth.
+    this.setStatus(
+      released === before
+        ? `Released all ${released}. Leave and re-enter the session to use them.`
+        : `Released ${released} of ${before}. Leave and re-enter, then try again.`
+    );
   }
 
   /**
