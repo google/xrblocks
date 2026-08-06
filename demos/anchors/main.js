@@ -22,12 +22,6 @@ const MARKER_DISTANCE = 0.8;
  */
 const MARKER_MIN_SEPARATION = 0.14;
 /**
- * How long to wait before re-reading the platform's handle list after a
- * forget. deletePersistentAnchor is asynchronous, so the handles are still
- * listed for a moment after the call returns.
- */
-const HANDLE_RELEASE_SETTLE_MS = 600;
-/**
  * Button label size. Much larger than the default 0.05, which is legible on a
  * monitor but not at panel distance in a headset. Labels are single words so
  * they fit on one line at this size.
