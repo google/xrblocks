@@ -14,7 +14,7 @@ const buildTarget = process.env.XRBLOCKS_BUILD ?? 'all';
 const buildExamples = buildTarget !== 'sdk';
 
 // Private chunks are generated files and must not survive across builds.
-fs.rmSync(path.join('build', 'internal'), { recursive: true, force: true });
+fs.rmSync(path.join('build', 'internal'), {recursive: true, force: true});
 fs.rmSync(path.join('build', 'addons'), {recursive: true, force: true});
 
 // Get the current commit ID (short hash)
