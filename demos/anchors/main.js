@@ -199,10 +199,14 @@ class AnchorsDemo extends xb.Script {
       this.addMarkerMesh(result.anchor, RESTORED_COLOR);
     }
     const missing = results.length - restored;
+    // On a runtime that persists, this says whether the platform still holds
+    // handles nothing can name, which is the one thing local state cannot show.
+    const orphans = anchors.orphanedHandles().length;
     this.setStatus(
       this.describeCapability(
         `restored ${restored} of ${results.length} saved markers` +
-          (missing > 0 ? `, ${missing} could not be found here` : '')
+          (missing > 0 ? `, ${missing} could not be found here` : '') +
+          (orphans > 0 ? `, ${orphans} stranded on the device` : '')
       )
     );
   }

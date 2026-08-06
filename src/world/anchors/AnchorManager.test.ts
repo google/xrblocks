@@ -95,7 +95,7 @@ const REF_SPACE = {__ref: true} as unknown as XRReferenceSpace;
 
 function fakeRenderer(refSpace: XRReferenceSpace | null = REF_SPACE) {
   return {
-    xr: {getReferenceSpace: () => refSpace},
+    xr: {getReferenceSpace: () => refSpace, getSession: () => null},
   } as unknown as import('three').WebGLRenderer;
 }
 
@@ -773,5 +773,47 @@ describe('AnchorManager eviction cleanup', () => {
     const a = await manager.create(POSE, 'first');
     await manager.persist(a!.id);
     expect(env.session.deletePersistentAnchor).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnchorManager platform handles', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('lists the handles the platform is holding', () => {
+    const {manager} = makeManager();
+    const env = fakeEnv();
+    (
+      env.session as unknown as {persistentAnchors: string[]}
+    ).persistentAnchors = ['uuid-a', 'uuid-b'];
+    manager.update(0, env.frame);
+    expect(manager.platformHandles()).toEqual(['uuid-a', 'uuid-b']);
+  });
+
+  it('reports nothing when the platform does not expose the list', () => {
+    const {manager} = makeManager();
+    manager.update(0, fakeEnv().frame);
+    // Chrome implements anchors without persistence, so this is absent there
+    // rather than empty, and must not look like "the platform holds none".
+    expect(manager.platformHandles()).toEqual([]);
+  });
+
+  it('reports nothing before a session exists', () => {
+    const {manager} = makeManager();
+    expect(manager.platformHandles()).toEqual([]);
+  });
+
+  it('finds handles that no saved record names any more', () => {
+    const store = memoryStore([{uuid: 'uuid-a', label: 'kept', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    (
+      env.session as unknown as {persistentAnchors: string[]}
+    ).persistentAnchors = ['uuid-a', 'uuid-orphan'];
+    manager.update(0, env.frame);
+    // Clearing site data strands handles: the platform still holds them but
+    // nothing left on our side can name them.
+    expect(manager.orphanedHandles()).toEqual(['uuid-orphan']);
   });
 });

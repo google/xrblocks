@@ -427,6 +427,38 @@ export class AnchorManager extends Script {
     return [...this.anchors.values()];
   }
 
+  /**
+   * Every persistent handle the platform is currently holding for this origin.
+   *
+   * Only the headset runtimes implement this; Chrome ships the anchors module
+   * without persistence, where the attribute is absent rather than empty. An
+   * empty result therefore means "nothing to report", not "the platform holds
+   * none".
+   *
+   * @returns The handles, or an empty array when unavailable.
+   */
+  platformHandles(): string[] {
+    const handles = (
+      this.currentSession() as unknown as {
+        persistentAnchors?: readonly string[];
+      }
+    )?.persistentAnchors;
+    return handles ? [...handles] : [];
+  }
+
+  /**
+   * Handles the platform holds that no saved record names any more.
+   *
+   * Clearing site data drops our records while the platform keeps its
+   * handles, stranding them against its quota with nothing able to name them.
+   *
+   * @returns The stranded handles.
+   */
+  orphanedHandles(): string[] {
+    const known = new Set(this.store.load().map((r) => r.uuid));
+    return this.platformHandles().filter((uuid) => !known.has(uuid));
+  }
+
   /** Forgets every saved handle, leaving live anchors alone. */
   forgetAll(): void {
     // Read before clearing: records the app never restored this session are
@@ -435,6 +467,22 @@ export class AnchorManager extends Script {
       this.releasePersistentHandle(record.uuid);
     }
     this.store.clear();
+  }
+
+  /**
+   * The session to ask about anchors.
+   *
+   * Prefers the frame's own session, falling back to the renderer so calls
+   * made outside the frame loop still reach the platform.
+   *
+   * @returns The session, or undefined.
+   */
+  private currentSession(): XRSession | undefined {
+    return (
+      this.currentFrame?.session ??
+      this.renderer?.xr.getSession?.() ??
+      undefined
+    );
   }
 
   /**
