@@ -28,6 +28,9 @@ export type GradientPanelProperties = Omit<
   /** Fill color or gradient. */
   fillColor?: Paint;
 
+  /** Optional fill rendered only on the rear face. */
+  backfaceColor?: Paint;
+
   /** Inner shadow color or gradient. */
   innerShadowColor?: Paint;
   /** Blurring radius of the inner shadow. */
@@ -75,6 +78,8 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
   // Fill
   /** Signal storing the fill color/gradient. */
   private fillColorSignal: Signal<Paint>;
+  /** Signal storing the optional rear-face color/gradient. */
+  private backfaceColorSignal?: Signal<Paint>;
 
   // Inner Shadow
   /** Signal storing the inner shadow color/gradient. */
@@ -119,6 +124,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
   private dropShadowLayer!: DropShadowLayer;
   /** Layer for rendering the fill. */
   private fillLayer!: FillLayer;
+  /** Optional layer for rendering one clean rear surface. */
+  private backfaceLayer?: FillLayer;
+  /** Optional layer for rendering the card stroke on the rear surface. */
+  private backfaceStrokeLayer?: StrokeLayer;
   /** Layer for rendering the inner shadow. */
   private innerShadowLayer!: InnerShadowLayer;
   /** Layer for rendering the stroke. */
@@ -136,6 +145,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     const fillColorSignal = signal(
       properties.fillColor ?? DEFAULT_GRADIENT_PANEL_PROPS.fillColor
     );
+    const backfaceColorSignal =
+      properties.backfaceColor === undefined
+        ? undefined
+        : signal(properties.backfaceColor);
 
     // Inner Shadow.
     const innerShadowColorSignal = signal(
@@ -248,6 +261,14 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       fillColor: fillColorSignal,
     });
 
+    if (backfaceColorSignal) {
+      this.backfaceLayer = new FillLayer({
+        fillColor: backfaceColorSignal,
+      });
+      this.backfaceLayer.name = 'BackfaceLayer';
+      this.backfaceLayer.material.side = THREE.BackSide;
+    }
+
     // Inner Shadow
     this.innerShadowLayer = new InnerShadowLayer({
       innerShadowColor: innerShadowColorSignal,
@@ -266,7 +287,19 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       strokeAlign: strokeAlignSignal,
     });
 
+    if (this.backfaceLayer) {
+      this.backfaceStrokeLayer = new StrokeLayer({
+        strokeColor: strokeColorSignal,
+        strokeWidth: strokeWidthSignal,
+        strokeAlign: strokeAlignSignal,
+      });
+      this.backfaceStrokeLayer.name = 'BackfaceStrokeLayer';
+      this.backfaceStrokeLayer.material.side = THREE.BackSide;
+    }
+
     // Add Layers in correct order.
+    if (this.backfaceLayer) this.addLayer(this.backfaceLayer);
+    if (this.backfaceStrokeLayer) this.addLayer(this.backfaceStrokeLayer);
     this.addLayer(this.dropShadowLayer);
     this.addLayer(this.fillLayer);
     this.addLayer(this.innerShadowLayer);
@@ -276,6 +309,7 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     this.cornerRadiusSignal = cornerRadiusSignal;
 
     this.fillColorSignal = fillColorSignal;
+    this.backfaceColorSignal = backfaceColorSignal;
 
     this.innerShadowColorSignal = innerShadowColorSignal;
     this.innerShadowBlurSignal = innerShadowBlurSignal;
@@ -306,6 +340,16 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       ...absProps,
       zIndexOffset: -10,
       pointerEvents: properties.pointerEvents ?? 'auto',
+    });
+
+    this.backfaceLayer?.setProperties({
+      ...absProps,
+      zIndexOffset: -12,
+    });
+
+    this.backfaceStrokeLayer?.setProperties({
+      ...absProps,
+      zIndexOffset: -11,
     });
 
     // Inner Shadow
@@ -380,6 +424,9 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       const level = nestingLevelSignal.value;
       // Physically separate sequential layers inside local Group Z-stack.
       const baseZ = level * 0.01;
+      if (this.backfaceLayer) this.backfaceLayer.position.z = baseZ - 0.001;
+      if (this.backfaceStrokeLayer)
+        this.backfaceStrokeLayer.position.z = baseZ - 0.002;
       this.dropShadowLayer.position.z = baseZ;
       this.fillLayer.position.z = baseZ + 0.001;
       this.innerShadowLayer.position.z = baseZ + 0.002;
@@ -389,6 +436,8 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       for (const child of this.children) {
         if (
           child === this.dropShadowLayer ||
+          child === this.backfaceLayer ||
+          child === this.backfaceStrokeLayer ||
           child === this.fillLayer ||
           child === this.innerShadowLayer ||
           child === this.strokeLayer
@@ -417,6 +466,8 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     for (const obj of objects) {
       if (
         obj === this.dropShadowLayer ||
+        obj === this.backfaceLayer ||
+        obj === this.backfaceStrokeLayer ||
         obj === this.fillLayer ||
         obj === this.innerShadowLayer ||
         obj === this.strokeLayer
@@ -443,6 +494,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
   /** Sets the fill color or gradient. */
   setFillColor(c: Paint) {
     this.fillColorSignal.value = c;
+  }
+  /** Sets the optional rear-face color or gradient. */
+  setBackfaceColor(c: Paint) {
+    if (this.backfaceColorSignal) this.backfaceColorSignal.value = c;
   }
   /** Sets the inner shadow color or gradient. */
   setInnerShadowColor(c: Paint) {
@@ -510,6 +565,7 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     // and not passed to super if not needed.
     const {
       fillColor,
+      backfaceColor,
       innerShadowColor,
       innerShadowBlur,
       innerShadowPosition,
@@ -533,6 +589,9 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     // 1. Fill.
     if (fillColor !== undefined) {
       this.setFillColor(fillColor);
+    }
+    if (backfaceColor !== undefined) {
+      this.setBackfaceColor(backfaceColor);
     }
 
     // 2. Inner Shadow.

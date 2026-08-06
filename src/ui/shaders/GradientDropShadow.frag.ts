@@ -8,6 +8,7 @@ export const GradientDropShadowFragmentShader =
 varying vec2 vUv;
 
 uniform vec2 u_resolution;
+uniform float u_opacity;
 uniform float u_corner_radius;
 uniform float u_drop_shadow_margin;
 
@@ -114,7 +115,7 @@ void main() {
     }
 
     // Apply opacity.
-    float finalAlpha = finalColor.a * shadowAlpha * alphaMask;
+    float finalAlpha = finalColor.a * shadowAlpha * alphaMask * u_opacity;
 
     gl_FragColor = vec4(finalColor.rgb, finalAlpha);
 

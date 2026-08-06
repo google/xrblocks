@@ -258,15 +258,32 @@ function createNode(
     applyContent = applyPresentation;
   } else if (kind === 'image') {
     const image = element as UIImage;
-    const propertiesFor = (state: UIPresentationState) => ({
-      src: image.src,
-      ...styleFor(state),
-      pointerEvents: element.xb?.pointerEvents ?? 'auto',
-    });
-    const imageNode = new Image(propertiesFor(presentation));
+    const propertiesFor = (state: UIPresentationState) => {
+      const {cornerRadius: rawCornerRadius, ...style} = styleFor(state);
+      const cornerRadius = numericCornerRadius(rawCornerRadius);
+      return {
+        src: image.src,
+        ...style,
+        borderTopLeftRadius: cornerRadius,
+        borderTopRightRadius: cornerRadius,
+        borderBottomLeftRadius: cornerRadius,
+        borderBottomRightRadius: cornerRadius,
+        pointerEvents: element.xb?.pointerEvents ?? 'auto',
+      };
+    };
+    const initialProperties = propertiesFor(presentation);
+    const imageNode = new Image(initialProperties);
+    imageNode.material.opacity = resolvedOpacity(
+      (initialProperties as Record<string, unknown>).opacity
+    );
     node = imageNode;
-    applyPresentation = (state) =>
-      imageNode.resetProperties(propertiesFor(state));
+    applyPresentation = (state) => {
+      const properties = propertiesFor(state);
+      imageNode.resetProperties(properties);
+      imageNode.material.opacity = resolvedOpacity(
+        (properties as Record<string, unknown>).opacity
+      );
+    };
   } else if (kind === 'icon') {
     const icon = element as UIIcon;
     const propertiesFor = (state: UIPresentationState) => ({
@@ -323,7 +340,9 @@ function createNode(
     }
 
     if (cardEdgeOptions) {
-      edge = new UICardEdge();
+      edge = new UICardEdge({
+        cardCornerRadius: numericCornerRadius(panelStyle.cornerRadius),
+      });
       panel.add(edge);
       edge.setCursorPoints(
         presentation.cursorPointCount > 0 ? cursorPoints?.[0] : undefined,
@@ -338,6 +357,9 @@ function createNode(
       const nextPanelProperties = propertiesFor(state);
       panel.setProperties(
         changedProperties(previousPanelProperties, nextPanelProperties)
+      );
+      edge?.setCardCornerRadius(
+        numericCornerRadius(nextPanelProperties.cornerRadius)
       );
       previousPanelProperties = nextPanelProperties;
       blocksHits =
@@ -423,6 +445,20 @@ function changedProperties(
   return properties;
 }
 
+function numericCornerRadius(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, value)
+    : 0;
+}
+
+function resolvedOpacity(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.endsWith('%')) {
+    return Number.parseFloat(value) / 100;
+  }
+  return 1;
+}
+
 function resolveStyle(
   element: UIElement,
   state: UIPresentationState,
@@ -502,6 +538,7 @@ function panelDefaults(
   }
   if (kind === 'card') {
     const card = element as UICard;
+    defaults.backfaceColor = defaults.fillColor;
     defaults.pixelSize = card.pixelSize;
     defaults.sizeX = card.size.width;
     defaults.sizeY = card.size.height;

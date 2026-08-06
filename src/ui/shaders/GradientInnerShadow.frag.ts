@@ -8,6 +8,7 @@ export const GradientInnerShadowFragmentShader =
 varying vec2 vUv;
 
 uniform vec2 u_resolution;
+uniform float u_opacity;
 uniform float u_corner_radius;
 uniform float u_drop_shadow_margin;
 
@@ -145,7 +146,7 @@ void main() {
     shadowStrength = pow(shadowStrength, max(0.001, u_inner_falloff));
 
     // Calculate finally alpha.
-    float finalAlpha = finalColor.a * shadowStrength * alphaMask;
+    float finalAlpha = finalColor.a * shadowStrength * alphaMask * u_opacity;
 
     gl_FragColor = vec4(finalColor.rgb, finalAlpha);
 
