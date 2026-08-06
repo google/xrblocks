@@ -72,19 +72,18 @@ export * from './lighting/Lighting';
 export * from './lighting/LightingOptions';
 export * from './physics/Physics';
 export * from './physics/PhysicsOptions';
-export * from './simulator/controlModes/SimulatorControlMode';
+export type {SimulatorControlMode} from './simulator/controlModes/SimulatorControlMode';
 export * from './simulator/events/SimulatorEvents';
 export * from './simulator/handPoses/HandPoseFK';
 export * from './simulator/handPoses/HandPoseJoints';
 export * from './simulator/handPoses/HandPoseRotations';
 export * from './simulator/handPoses/HandPoses';
-export * from './simulator/Simulator';
-export * from './simulator/SimulatorCamera';
-export * from './simulator/SimulatorConstants';
-export * from './simulator/SimulatorControllerState';
-export * from './simulator/SimulatorControls';
-export * from './simulator/scene/SimulatorDepth';
-export * from './simulator/scene/SimulatorDepthMaterial';
+export type {Simulator} from './simulator/Simulator';
+export type {SimulatorCamera} from './simulator/SimulatorCamera';
+export type {SimulatorControllerState} from './simulator/SimulatorControllerState';
+export type {SimulatorControls} from './simulator/SimulatorControls';
+export type {SimulatorDepth} from './simulator/scene/SimulatorDepth';
+export type {SimulatorDepthMaterial} from './simulator/scene/SimulatorDepthMaterial';
 export type {
   SimulatorObjectDefinition,
   SimulatorPhysicsMode,
@@ -93,21 +92,20 @@ export type {
   SimulatorSceneManifest,
   SimulatorVector3Tuple,
 } from './simulator/scene/SimulatorEnvironmentManifest';
-export * from './simulator/SimulatorHands';
-export * from './simulator/SimulatorInterface';
-export * from './simulator/SimulatorMediaDeviceInfo';
-export * from './simulator/scene/SimulatorNavMesh';
+export type {SimulatorHands} from './simulator/SimulatorHands';
+export type {SimulatorInterface} from './simulator/SimulatorInterface';
+export type {SimulatorMediaDeviceInfo} from './simulator/SimulatorMediaDeviceInfo';
+export type {SimulatorNavMesh} from './simulator/scene/SimulatorNavMesh';
 export type {
   SimulatorObject,
   SimulatorObjectUpdate,
   SimulatorObjects,
 } from './simulator/scene/SimulatorObjects';
 export * from './simulator/SimulatorOptions';
-export * from './simulator/SimulatorPointerLockController';
-export * from './simulator/interfaces/ISimulatorSettingsPanelElement';
-export * from './simulator/scene/SimulatorScene';
-export * from './simulator/SimulatorUser';
-export * from './simulator/userActions/actions';
+export type {SimulatorPointerLockController} from './simulator/SimulatorPointerLockController';
+export type {ISimulatorSettingsPanelElement} from './simulator/interfaces/ISimulatorSettingsPanelElement';
+export type {SimulatorScene} from './simulator/scene/SimulatorScene';
+export type {SimulatorUser} from './simulator/SimulatorUser';
 export * from './singletons';
 export * from './sound/AudioListener';
 export * from './sound/AudioPlayer';
