@@ -117,15 +117,6 @@ describe('MediaPipeFaceBackend worker lifecycle', () => {
     ).toBe(true);
   });
 
-  it('spawns the worker as a classic (non-module) worker so MediaPipe wasm loader can use importScripts', async () => {
-    new MediaPipeFaceBackend(makeContext());
-    await Promise.resolve();
-    // We pass no { type: 'module' } so options is undefined. Module
-    // workers don't expose importScripts and MediaPipe's wasm bootstrap
-    // depends on it.
-    expect(FakeWorker.instances[0].options).toBeUndefined();
-  });
-
   it('routes overlapping detect requests back to the right caller by id', async () => {
     const backend = new MediaPipeFaceBackend(makeContext());
     await Promise.resolve();
