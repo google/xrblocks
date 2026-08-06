@@ -61,16 +61,16 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 
 ### Repository layout
 
-| Path          | Purpose                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/`        | SDK source — one folder per subsystem                                                                                                       |
-| `src/addons/` | Opt-in modules built separately: `testing`, `netblocks`, `lipsync`, `glasses`, `simulator`, `volumes`, `virtualkeyboard`, `agenthands`, ... |
-| `samples/`    | Focused examples and richer showcases under `samples/advanced/` (served by the docs site)                                                   |
-| `demos/`      | Experimental applications and development showcases                                                                                         |
-| `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                    |
-| `docs/`       | Docusaurus manual + samples/templates pages                                                                                                 |
-| `skills/`     | Agent skill registry (`xb-*`) — focused, task-oriented guides                                                                               |
-| `build/`      | **Generated** bundle output — do not edit                                                                                                   |
+| Path          | Purpose                                                                                                                                      |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/`        | SDK source — one folder per subsystem                                                                                                        |
+| `src/addons/` | Opt-in and experimental modules built separately: `testing`, `netblocks`, `lipsync`, `agenthands`, `embodied-control`, `remote-control`, ... |
+| `samples/`    | Focused examples and richer showcases under `samples/advanced/` (served by the docs site)                                                    |
+| `demos/`      | Experimental applications and development showcases                                                                                          |
+| `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                     |
+| `docs/`       | Docusaurus manual + samples/templates pages                                                                                                  |
+| `skills/`     | Agent skill registry (`xb-*`) — focused, task-oriented guides                                                                                |
+| `build/`      | **Generated** bundle output — do not edit                                                                                                    |
 
 ### `src/` subsystems
 
@@ -84,7 +84,7 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 | `ai/`                                       | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                |
 | `agent/`                                    | agent framework: tools, memory, context (WIP)                                                                  |
 | `ui/`                                       | core spatial UI: cards, overlays, panels, text, images, buttons, sliders, themes, `ModelViewer`                |
-| `ux/`                                       | `DragManager`, reusable interaction behaviors                                                                  |
+| `interaction/`                              | unified ray, gaze, mouse, direct-touch, selection, capture, and manipulation pipeline                          |
 | `simulator/`                                | desktop XR simulator (manifest environments, physical objects, virtual user/hands/depth/planes, control modes) |
 | `sound/`                                    | spatial audio, speech recognizer/synthesizer                                                                   |
 | `physics/`                                  | Rapier3D integration                                                                                           |

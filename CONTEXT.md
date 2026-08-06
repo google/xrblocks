@@ -15,13 +15,16 @@ and the full in-tree overview is [`src/SKILL.md`](src/SKILL.md).
   owns them. Per-frame logic goes in `update(time, frame)`.
 - **Guard AI.** AI needs a key and may be unavailable — wrap calls in
   `if (xb.ai.isAvailable())`.
+- **Use the built-in UI.** Import `UICard`, `UIOverlay`, and their child components from
+  `xrblocks`. UI starts when a card or overlay enters the scene; there is no UI enable call.
 - **Test in the simulator first.** It runs automatically on desktop browser without WebXR plugins; `?formFactor=desktop`
   forces it to start. Use `options.enableAutomationMode()` or `?xrAutomation=1` for
   automation-oriented simulator startup. Subsystems created during `xb.init()`
   (e.g. `xb.core.renderer`) are undefined in a constructor — use them in/after
   `init()`.
-- **Units & colors.** World/position values are meters; UI sizes use meters or "layout
-  pixels"/`fontSize`. Colors are hex strings (`'#ffffff'`) or `THREE.Color`.
+- **Units & colors.** World positions and `UICard.size` use meters. Descendant UI layout
+  values use numeric layout units, percentage strings, or `auto` where supported. UI colors accept CSS color strings, including `rgba()`, and
+  Three.js color representations.
 
 ## Core Pattern
 
@@ -63,6 +66,9 @@ options.enableStrokes(); // $1 unistroke recognition
 options.enableDepth(); // depth sensing + depth mesh
 options.enablePlaneDetection(); // detected planes in xb.world
 options.enableObjectDetection(); // object detection (also enables camera permission)
+options.enableHumanDetection(); // on-device body pose landmarks
+options.enableFaceDetection(); // face landmarks and blendshapes
+options.enableSegmentation(); // on-device semantic mask
 options.enableContext(); // agent-facing scene context in xb.context
 options.enableSceneContext(); // semantic tree only
 options.enableVisibleObjectsContext(); // semantic tree + view visibility
@@ -85,11 +91,16 @@ options.physics.RAPIER = RAPIER; // enables physics
 - Globals: `xb.core`, `xb.scene`, `xb.user`, `xb.world`, `xb.context`, `xb.ai`,
   `xb.depth`, `xb.sound`, `xb.input`, `xb.camera`; helpers `xb.add()`, `xb.init()`,
   `xb.getDeltaTime()`.
-- Lifecycle hooks: `init`, `update`, `initPhysics`/`physicsStep`, `onSelectStart/End`,
+- Lifecycle hooks: `init`, `update`, `dispose`, `initPhysics`/`physicsStep`, `onSelectStart/End`,
   `onSqueezeStart/End`, `onKeyDown/Up`, `onXRSessionStarted/Ended`, `onSimulatorStarted`.
 - Object-targeted hooks (return `true` to stop propagation): `onObjectSelectStart/End`,
+  `onObjectLongSelect`, `onObjectManipulate`,
   `onObjectTouchStart/Touching/End`, `onObjectGrabStart/Grabbing/End`,
   `onHoverEnter/Hovering/Exit`.
+
+Current targeting queries are `xb.user.getRayIntersection(controllerId)` and
+`xb.user.getIntersectionAt(object, controllerId)`. Configure manipulation through
+`object.xb.manipulation`.
 
 ## Build / Run / Simulate
 
