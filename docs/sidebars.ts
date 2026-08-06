@@ -109,7 +109,6 @@ const sidebars: SidebarsConfig = {
         'samples/ScreenWiper',
         'samples/Drone',
         'samples/Math-Tutor',
-        'samples/AI-Simulator',
         'samples/Virtual-Screens',
       ],
     },
