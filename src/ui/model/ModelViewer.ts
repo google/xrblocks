@@ -23,6 +23,10 @@ import {ModelViewerPlatform} from './ModelViewerPlatform';
 
 const PLATFORM_MARGIN = 0.2;
 const PLATFORM_THICKNESS = 0.02;
+const ROTATION_PROXY_MAX_ASPECT = 2;
+const ROTATION_PROXY_PADDING_RATIO = 0.2;
+const ROTATION_PROXY_MIN_PADDING = 0.01;
+const ROTATION_PROXY_MAX_PADDING = 0.05;
 const GLTF_EXTENSIONS = new Set(['gltf', 'glb']);
 const SPLAT_EXTENSIONS = new Set(['ply', 'spz', 'splat', 'ksplat']);
 
@@ -59,11 +63,20 @@ class RotationHitSurface extends THREE.Mesh<
 > {
   constructor(bounds: THREE.Box3) {
     const size = bounds.getSize(new THREE.Vector3());
+    const halfX = 0.5 * size.x;
+    const halfZ = 0.5 * size.z;
+    const shortRadius = Math.min(halfX, halfZ);
+    const maxRadius = shortRadius * ROTATION_PROXY_MAX_ASPECT;
+    const padding = THREE.MathUtils.clamp(
+      shortRadius * ROTATION_PROXY_PADDING_RATIO,
+      ROTATION_PROXY_MIN_PADDING,
+      ROTATION_PROXY_MAX_PADDING
+    );
     const geometry = new THREE.CylinderGeometry(1, 1, 1);
     geometry.scale(
-      0.05 + 0.5 * size.x,
+      Math.min(halfX, maxRadius) + padding,
       Math.max(size.y, 0.001),
-      0.05 + 0.5 * size.z
+      Math.min(halfZ, maxRadius) + padding
     );
     super(
       geometry,
