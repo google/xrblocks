@@ -27,10 +27,11 @@ const MARKER_SPREAD_Y = 0.24;
  */
 const HANDLE_RELEASE_SETTLE_MS = 600;
 /**
- * Button label size. The default 0.05 is hard to read at panel distance in a
- * headset, where the panel sits nearly two metres away.
+ * Button label size. Much larger than the default 0.05, which is legible on a
+ * monitor but not at panel distance in a headset. Labels are single words so
+ * they fit on one line at this size.
  */
-const BUTTON_FONT_SIZE = 0.075;
+const BUTTON_FONT_SIZE = 0.25;
 const MARKER_COLOR = 0x8a7bff;
 /** The same colour as a CSS string, for the panel's title text. */
 const MARKER_COLOR_CSS = '#8a7bff';
@@ -103,14 +104,14 @@ class AnchorsDemo extends xb.Script {
 
     const buttons = grid.addRow({weight: 0.4});
     const drop = buttons.addCol({weight: 0.5}).addTextButton({
-      text: 'Drop marker',
+      text: 'Drop',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#6a5acdE0',
     });
     drop.onTriggered = () => this.dropMarker();
 
     const forget = buttons.addCol({weight: 0.5}).addTextButton({
-      text: 'Forget all',
+      text: 'Forget',
       fontSize: BUTTON_FONT_SIZE,
       backgroundColor: '#3a3550E0',
     });
