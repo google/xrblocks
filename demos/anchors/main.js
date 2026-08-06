@@ -15,11 +15,12 @@ import * as xb from 'xrblocks';
 const MARKER_RADIUS = 0.06;
 /** How far in front of the user a new marker is placed, in metres. */
 const MARKER_DISTANCE = 0.8;
-/** Markers dropped without moving fan out across a row this wide. */
-const MARKERS_PER_ROW = 3;
-/** Horizontal and vertical gap between fanned-out markers, in metres. */
-const MARKER_SPREAD_X = 0.32;
-const MARKER_SPREAD_Y = 0.24;
+/**
+ * How close two markers may be before the new one is nudged aside, in metres.
+ * A marker goes exactly where you are looking; this only stops one landing
+ * invisibly inside another when you drop twice without moving.
+ */
+const MARKER_MIN_SEPARATION = 0.14;
 /**
  * How long to wait before re-reading the platform's handle list after a
  * forget. deletePersistentAnchor is asynchronous, so the handles are still
@@ -132,15 +133,8 @@ class AnchorsDemo extends xb.Script {
     const forward = new THREE.Vector3(0, 0, -MARKER_DISTANCE).applyQuaternion(
       this.scratchQuaternion
     );
-    // Dropping twice from the same spot would stack markers exactly, so fan
-    // them out enough to stay individually visible.
-    const index = this.markers.size;
-    const spread = new THREE.Vector3(
-      ((index % MARKERS_PER_ROW) - 1) * MARKER_SPREAD_X,
-      Math.floor(index / MARKERS_PER_ROW) * -MARKER_SPREAD_Y,
-      0
-    ).applyQuaternion(this.scratchQuaternion);
-    const target = this.scratchPosition.clone().add(forward).add(spread);
+    const target = this.scratchPosition.clone().add(forward);
+    this.separate(target, this.scratchQuaternion);
 
     const pose = new XRRigidTransform(
       {x: target.x, y: target.y, z: target.z},
@@ -160,6 +154,29 @@ class AnchorsDemo extends xb.Script {
         ? `Dropped ${label} and saved it`
         : `Dropped ${label}, but ${this.whyNotSaved()}`
     );
+  }
+
+  /**
+   * Nudges a target sideways until it is not inside an existing marker.
+   *
+   * Placement follows where you are looking, so two drops from the same spot
+   * would otherwise leave one marker hidden inside another.
+   *
+   * @param target - Position to adjust in place.
+   * @param facing - The head orientation, so the nudge is sideways on screen.
+   */
+  separate(target, facing) {
+    const step = new THREE.Vector3(MARKER_MIN_SEPARATION, 0, 0).applyQuaternion(
+      facing
+    );
+    // Bounded so a crowded spot cannot spin here forever.
+    for (let i = 0; i < this.markers.size + 1; i++) {
+      const clash = [...this.markers.values()].some(
+        (m) => m.position.distanceTo(target) < MARKER_MIN_SEPARATION
+      );
+      if (!clash) return;
+      target.add(step);
+    }
   }
 
   /**
