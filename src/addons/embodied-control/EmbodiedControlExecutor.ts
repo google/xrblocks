@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   Core,
-  Simulator,
+  type Simulator,
   type SimulatorHandPose,
   User,
   World,
