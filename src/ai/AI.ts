@@ -5,6 +5,7 @@ import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 import {getUrlParameter} from '../utils/utils';
 
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
+import {getStoredApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
 import {GeminiResponse} from './AITypes';
 import {Gemini, GeminiQueryInput} from './Gemini';
 import {OpenAI} from './OpenAI';
@@ -13,11 +14,8 @@ export type ModelClass = Gemini | OpenAI;
 export type ModelOptions = GeminiOptions | OpenAIOptions;
 
 export type KeysJson = {
-  [key: string]:
-    | string
-    | {
-        apiKey?: string;
-      };
+  gemini?: {apiKey?: string};
+  openai?: {apiKey?: string};
 };
 
 const SUPPORTED_MODELS = {
@@ -44,9 +42,10 @@ const SUPPORTED_MODELS = {
  * API Key Management Features:
  *
  * 1. Multiple Key Sources (Priority Order):
- *    - URL Parameter: ?key=\<api_key\>
- *    - keys.json file: Local configuration file
- *    - User Prompt: Interactive fallback
+ *    - Model option
+ *    - Generic and model-specific URL parameters
+ *    - Browser local storage
+ *    - keys.json file
  * 2. keys.json Support:
  *    - Structure: \{"gemini": \{"apiKey": "YOUR_KEY_HERE"\}\}
  *    - Automatically loads if present
@@ -105,7 +104,10 @@ export class AI extends Script {
     ModelClass: typeof Gemini | typeof OpenAI,
     modelOptions: ModelOptions
   ) {
-    const apiKey = await this.resolveApiKey(modelOptions);
+    let apiKey = await this.resolveApiKey(modelOptions);
+    if (this.options.promptForApiKey && !isRunningInGeminiCanvas()) {
+      apiKey = await promptForApiKey(this.options.model, apiKey);
+    }
     if (!apiKey || !this.isValidApiKey(apiKey)) {
       // Initialize the model anyway so runtime key flows (e.g. a key prompt
       // or host-injected credentials) can still succeed later.
@@ -116,7 +118,7 @@ export class AI extends Script {
             'fail, verify your Google login or report bugs on GitHub.'
         );
       } else {
-        console.error(
+        console.warn(
           `No valid API key found for ${this.options.model}. ` +
             'Provide one via AIOptions, the ?key= URL parameter, or ' +
             'keys.json; queries will fail until a key is configured.'
@@ -142,8 +144,8 @@ export class AI extends Script {
       return modelOptions.apiKey;
     }
 
-    // 2. Check URL parameters for 'key'
-    const genericKey = getUrlParameter('key');
+    // 2. Check URL parameters for the configured generic key name.
+    const genericKey = getUrlParameter(this.options.globalUrlParams.key);
     if (genericKey) {
       return genericKey;
     }
@@ -152,30 +154,16 @@ export class AI extends Script {
     const modelKey = getUrlParameter(modelOptions.urlParam);
     if (modelKey) return modelKey;
 
-    // 4. Check URL parameters for geminiKey64
-    const geminiKey64 = getUrlParameter('geminiKey64');
-    if (geminiKey64) {
-      try {
-        return window.atob(geminiKey64);
-      } catch {
-        console.warn(
-          'Ignoring malformed base64 in the geminiKey64 URL parameter.'
-        );
-      }
+    // 4. Check the browser-local prototype key when the prompt opt-in owns it.
+    if (this.options.promptForApiKey) {
+      const storedKey = getStoredApiKey(modelName);
+      if (storedKey) return storedKey;
     }
 
-    // 5. Check keys.json file
+    // 5. Check keys.json file.
     const keysFromFile = await this.loadKeysFromFile();
     if (keysFromFile) {
-      const modelNameWithApiKeySuffix = modelName + `ApiKey`;
-      let keyFromFile: string | null | undefined = null;
-      if (typeof keysFromFile[modelName] === 'object') {
-        keyFromFile = keysFromFile[modelName]?.apiKey;
-      } else if (typeof keysFromFile[modelNameWithApiKeySuffix] === 'string') {
-        keyFromFile = keysFromFile[modelNameWithApiKeySuffix];
-      } else if (typeof keysFromFile[modelName] === 'string') {
-        keyFromFile = keysFromFile[modelName];
-      }
+      const keyFromFile = keysFromFile[modelName]?.apiKey;
       if (keyFromFile) {
         return keyFromFile;
       }
@@ -271,12 +259,6 @@ export class AI extends Script {
       this.model.isLiveAvailable()
     );
   }
-
-  /**
-   * In simulator mode, pop up a 2D UI to request Gemini key;
-   * In XR mode, show a 3D UI to instruct users to get an API key.
-   */
-  triggerKeyPopup() {}
 
   async generate(
     prompt: string | string[],
