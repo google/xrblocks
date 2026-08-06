@@ -79,6 +79,7 @@ export * from './simulator/handPoses/HandPoseJoints';
 export * from './simulator/handPoses/HandPoseRotations';
 export * from './simulator/handPoses/HandPoses';
 export type {Simulator} from './simulator/Simulator';
+export type {SimulatorUserPath} from './simulator/Simulator';
 export type {SimulatorCamera} from './simulator/SimulatorCamera';
 export type {SimulatorControllerState} from './simulator/SimulatorControllerState';
 export type {SimulatorControls} from './simulator/SimulatorControls';
@@ -93,9 +94,7 @@ export type {
   SimulatorVector3Tuple,
 } from './simulator/scene/SimulatorEnvironmentManifest';
 export type {SimulatorHands} from './simulator/SimulatorHands';
-export type {SimulatorInterface} from './simulator/SimulatorInterface';
 export type {SimulatorMediaDeviceInfo} from './simulator/SimulatorMediaDeviceInfo';
-export type {SimulatorNavMesh} from './simulator/scene/SimulatorNavMesh';
 export type {
   SimulatorObject,
   SimulatorObjectUpdate,
@@ -103,7 +102,6 @@ export type {
 } from './simulator/scene/SimulatorObjects';
 export * from './simulator/SimulatorOptions';
 export type {SimulatorPointerLockController} from './simulator/SimulatorPointerLockController';
-export type {ISimulatorSettingsPanelElement} from './simulator/interfaces/ISimulatorSettingsPanelElement';
 export type {SimulatorScene} from './simulator/scene/SimulatorScene';
 export type {SimulatorUser} from './simulator/SimulatorUser';
 export * from './singletons';

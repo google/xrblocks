@@ -17,7 +17,7 @@ import {SimulatorControllerState} from './SimulatorControllerState';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
 import {SimulatorMode, SimulatorOptions} from './SimulatorOptions';
-import {SimulatorNavMesh} from './scene/SimulatorNavMesh';
+import {SimulatorNavMesh} from './internal/navmesh/SimulatorNavMesh';
 import {ISimulatorSettingsPanelElement} from './interfaces/ISimulatorSettingsPanelElement';
 
 function preventDefault(event: Event) {
@@ -57,7 +57,7 @@ export class SimulatorControls {
   constructor(
     public simulatorControllerState: SimulatorControllerState,
     public hands: SimulatorHands,
-    public navMesh: SimulatorNavMesh,
+    private readonly navMesh: SimulatorNavMesh,
     setStereoRenderMode: (_: SimulatorRenderMode) => void,
     private userInterface: SimulatorInterface
   ) {
@@ -218,7 +218,9 @@ export class SimulatorControls {
     this.simulatorModeControls.onPointerDown(event);
     this.pointerDown = true;
     this.activePointerId = event.pointerId;
-    this.renderer?.domElement.setPointerCapture?.(event.pointerId);
+    if (this.simulatorMode !== SimulatorMode.POINTER_LOCK) {
+      this.renderer?.domElement.setPointerCapture?.(event.pointerId);
+    }
   };
 
   onPointerUp = (event: PointerEvent) => {

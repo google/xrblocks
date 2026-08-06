@@ -1,7 +1,7 @@
 import {html} from 'lit';
 import {customElement} from 'lit/decorators/custom-element.js';
 import {property} from 'lit/decorators/property.js';
-import type {SimulatorCustomInstruction} from 'xrblocks';
+import type {SimulatorCustomInstruction} from '../../../SimulatorOptions.js';
 
 import {SimulatorInstructionsCard} from './SimulatorInstructionsCard.js';
 
@@ -10,7 +10,7 @@ export class CustomInstruction extends SimulatorInstructionsCard {
   @property() customInstruction!: SimulatorCustomInstruction;
 
   getHeaderContents() {
-    return html`${this.customInstruction.header}`;
+    return html`<h1>${this.customInstruction.header}</h1>`;
   }
 
   getImageContents() {
@@ -25,7 +25,7 @@ export class CustomInstruction extends SimulatorInstructionsCard {
   }
 
   getDescriptionContents() {
-    return html`${this.customInstruction.description}`;
+    return html`<p>${this.customInstruction.description}</p>`;
   }
 
   render() {
