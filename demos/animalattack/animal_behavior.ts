@@ -45,10 +45,6 @@ const BOB_AMP = 0.005;
 const FALL_SPEED = 12.0;
 const FALL_GROUND_OFFSET = 1.5;
 
-const DISTANCE_SCALE_START = 2.0;
-const DISTANCE_SCALE_MULT = 0.6;
-const DISTANCE_SCALE_MAX = 6.0;
-
 const BREATH_FREQ = 4;
 const BREATH_AMP = 0.03;
 const TALK_FREQ = 20;
@@ -452,23 +448,12 @@ export class AnimalBehavior {
     spawnedAnimals: Map<number, THREE.Object3D>,
     time: number,
     animalModels: {scale: number; talking?: boolean}[],
-    isDragging: boolean,
-    camera: THREE.Camera | null
+    isDragging: boolean
   ) {
     for (const modelViewer of spawnedAnimals.values()) {
-      const {userData, position, scale} = modelViewer;
+      const {userData, scale} = modelViewer;
       const animalData = animalModels[userData.typeIndex];
-      let distanceScale = 1.0;
-
-      if (camera && position.y > ACTIVE_Y_THRESHOLD) {
-        const dist = position.distanceTo(camera.position);
-        distanceScale = Math.min(
-          1.0 + Math.max(0, dist - DISTANCE_SCALE_START) * DISTANCE_SCALE_MULT,
-          DISTANCE_SCALE_MAX
-        );
-      }
-
-      const baseScale = animalData.scale * distanceScale;
+      const baseScale = animalData.scale;
       const breath =
         baseScale +
         Math.sin(time * BREATH_FREQ + userData.animalIndex) *

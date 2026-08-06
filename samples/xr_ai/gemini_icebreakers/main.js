@@ -8,7 +8,7 @@ const options = new xb.Options();
 options.enableAI();
 options.enableCamera();
 options.permissions.microphone = true;
-options.controllers.visualizeRays = true;
+options.controllers.visualizeRays = false;
 options.setAppTitle('Gemini Icebreakers');
 options.setAppDescription('Explore 3D conversation starters with Gemini Live.');
 
