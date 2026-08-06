@@ -206,8 +206,32 @@ class AnchorNotesDemo extends xb.Script {
     this.setStatus(
       saved
         ? `pinned "${this.short(text)}" and saved it`
-        : `pinned "${this.short(text)}", but it will not survive a reload`
+        : `pinned "${this.short(text)}", but ${this.whyNotSaved()}`
     );
+  }
+
+  /**
+   * Explains why a marker could not be saved.
+   *
+   * `persist()` returns a plain false, which cannot distinguish "this platform
+   * has no way to save anchors" from "the write was refused". The capability
+   * says which, and the difference matters: one is worth retrying, the other
+   * never will be.
+   *
+   * @returns A human-readable reason.
+   */
+  whyNotSaved() {
+    switch (this.anchors?.capability) {
+      case 'session-only':
+        return (
+          'this browser has no way to save anchors, so it will be gone ' +
+          'on reload'
+        );
+      case 'unsupported':
+        return 'this browser has no anchor support';
+      default:
+        return 'storage refused the write, so it will be gone on reload';
+    }
   }
 
   /** Rebuilds cards for notes restored from a previous session. */
