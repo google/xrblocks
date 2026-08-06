@@ -50,7 +50,7 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRSystems} from './components/XRSystems';
 
-type CoreLifecycleState =
+export type CoreLifecycleState =
   | 'new'
   | 'initializing'
   | 'running'
@@ -193,6 +193,11 @@ export class Core {
 
   get isPaused() {
     return this._isPaused;
+  }
+
+  /** Current state of this terminal Core lifetime. */
+  get lifecycle(): CoreLifecycleState {
+    return this.lifecycleState;
   }
 
   pause() {

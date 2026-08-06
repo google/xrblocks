@@ -1,6 +1,7 @@
 import './setup';
 import * as THREE from 'three';
 import {
+  core as xrCore,
   Core,
   Options,
   Script,
@@ -20,6 +21,7 @@ export interface TestRunnerConfig {
   embodiedOptions?: EmbodiedControlOptions;
 }
 
+/** Owns the single terminal Core lifetime in its test process or browser page. */
 export class TestRunner {
   readonly core: Core;
   readonly embodiedControl: EmbodiedControl;
@@ -28,6 +30,8 @@ export class TestRunner {
   readonly actions: EmbodiedControl;
 
   private caughtErrors: Error[] = [];
+  private errorListenerAttached = false;
+  private destroyPromise?: Promise<void>;
   private readonly handleScriptException = (event: {
     error: Error;
     scriptName: string;
@@ -49,6 +53,7 @@ export class TestRunner {
       ScriptsManagerEventType.EXCEPTION,
       this.handleScriptException
     );
+    this.errorListenerAttached = true;
 
     // Set up the dynamic actions proxy.
     this.actions = new Proxy(this.embodiedControl, {
@@ -72,7 +77,13 @@ export class TestRunner {
   }
 
   static async create(config: TestRunnerConfig = {}): Promise<TestRunner> {
-    const core = Core.instance || new Core();
+    const core = xrCore;
+    if (core.lifecycle !== 'new') {
+      throw new Error(
+        `TestRunner requires a new Core lifetime, but Core is ${core.lifecycle}. ` +
+          'Use a separate test process or browser page for another runtime.'
+      );
+    }
     const options = config.options || new Options();
 
     options.enableSimulator = true;
@@ -86,8 +97,6 @@ export class TestRunner {
       },
     ];
     options.simulator.activeEnvironmentIndex = 0;
-
-    core.options = options;
 
     if (config.scripts) {
       for (const script of config.scripts) {
@@ -104,34 +113,49 @@ export class TestRunner {
     core.scene.add(embodiedControl);
     const runner = new TestRunner(core, embodiedControl);
 
-    await core.init(options);
+    try {
+      await core.init(options);
 
-    while (!core.simulatorRunning) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-
-    // Automatically re-trigger hand bone loading under JSDOM to populate virtual hand skeletons.
-    if (core.simulator?.hands) {
-      core.simulator.hands.leftHandBones = [];
-      core.simulator.hands.rightHandBones = [];
-      core.simulator.hands.loadMeshes();
-    }
-
-    for (let i = 0; i < Math.min(2, core.input.controllers.length); i++) {
-      const controller = core.input.controllers[i];
-      controller.userData.connected = true;
-      if (i === 0) {
-        core.input.leftController = controller;
-      } else if (i === 1) {
-        core.input.rightController = controller;
+      while (!core.simulatorRunning) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
       }
+
+      await embodiedControl.ready;
+
+      // Populate virtual hand skeletons under JSDOM after simulator startup.
+      if (core.simulator?.hands) {
+        core.simulator.hands.leftHandBones = [];
+        core.simulator.hands.rightHandBones = [];
+        await core.simulator.hands.loadMeshes();
+      }
+
+      for (let i = 0; i < Math.min(2, core.input.controllers.length); i++) {
+        const controller = core.input.controllers[i];
+        controller.userData.connected = true;
+        if (i === 0) {
+          core.input.leftController = controller;
+        } else if (i === 1) {
+          core.input.rightController = controller;
+        }
+      }
+
+      core.camera.updateMatrixWorld(true);
+      core.camera.matrixWorldInverse.copy(core.camera.matrixWorld).invert();
+
+      runner.checkErrors();
+      return runner;
+    } catch (error) {
+      runner.removeErrorListener();
+      try {
+        await core.dispose();
+      } catch (cleanupError) {
+        console.error(
+          'TestRunner cleanup failed after creation failed.',
+          cleanupError
+        );
+      }
+      throw error;
     }
-
-    core.camera.updateMatrixWorld(true);
-    core.camera.matrixWorldInverse.copy(core.camera.matrixWorld).invert();
-
-    runner.checkErrors();
-    return runner;
   }
 
   /**
@@ -149,22 +173,33 @@ export class TestRunner {
 
   /** Disposes the Core lifetime owned by this runner. */
   async destroy(): Promise<void> {
+    this.destroyPromise ??= this.finishDestroy();
+    return this.destroyPromise;
+  }
+
+  private async finishDestroy(): Promise<void> {
     let firstError: unknown;
     try {
       this.checkErrors();
     } catch (error) {
       firstError = error;
     }
-    this.core.scriptsManager.removeEventListener(
-      ScriptsManagerEventType.EXCEPTION,
-      this.handleScriptException
-    );
+    this.removeErrorListener();
     try {
       await this.core.dispose();
     } catch (error) {
       firstError ??= error;
     }
     if (firstError !== undefined) throw firstError;
+  }
+
+  private removeErrorListener() {
+    if (!this.errorListenerAttached) return;
+    this.errorListenerAttached = false;
+    this.core.scriptsManager.removeEventListener(
+      ScriptsManagerEventType.EXCEPTION,
+      this.handleScriptException
+    );
   }
 
   private checkErrors() {
