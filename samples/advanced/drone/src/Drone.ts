@@ -18,6 +18,7 @@ export class Drone extends xb.Script {
   ) {
     super();
     this.add(this.keyboardControls);
+    this.add(this.createInstructions());
     this.moveSpeed = moveSpeed;
     this.rotationSpeed = rotationSpeed;
   }
@@ -70,6 +71,43 @@ export class Drone extends xb.Script {
 
   update() {
     this.updateRigidBody();
+  }
+
+  createInstructions() {
+    const overlay = new xb.UIOverlay({
+      pointerEvents: 'none',
+      style: {
+        width: 720,
+        position: 'absolute',
+        left: '50%',
+        bottom: 32,
+        transform: {translateX: '-50%'},
+        gap: 8,
+      },
+      children: [
+        new xb.UIText({
+          text: 'DRONE CONTROLS',
+          pointerEvents: 'none',
+          style: {
+            fontSize: 24,
+            fontWeight: 'bold',
+            textAlign: 'center',
+          },
+        }),
+        new xb.UIText({
+          text: 'Desktop: Use the arrow keys to move and Page Up or Page Down to change altitude.\nXR: Use the left stick to move. Use the right stick to turn and change altitude.',
+          pointerEvents: 'none',
+          style: {
+            fontSize: 20,
+            lineHeight: 1.4,
+            textAlign: 'center',
+            whiteSpace: 'pre-line',
+          },
+        }),
+      ],
+    });
+    overlay.name = 'Drone controls';
+    return overlay;
   }
 
   updateRigidBody() {
