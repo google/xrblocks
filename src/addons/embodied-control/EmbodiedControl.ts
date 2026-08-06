@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {Core, Script, Simulator} from 'xrblocks';
+import {Core, Script, type Simulator} from 'xrblocks';
 
 import {EmbodiedControlExecutor} from './EmbodiedControlExecutor';
 import {
@@ -12,7 +12,6 @@ import {
 export class EmbodiedControl extends Script {
   static dependencies = {
     core: Core,
-    simulator: Simulator,
     camera: THREE.Camera,
   };
 
@@ -20,6 +19,7 @@ export class EmbodiedControl extends Script {
   executor?: EmbodiedControlExecutor;
   private options: Required<EmbodiedControlOptions>;
   private core?: Core;
+  private camera?: THREE.Camera;
   private autoPauseScheduled = false;
   private autoPauseComplete = false;
   private readyComplete = false;
@@ -38,9 +38,10 @@ export class EmbodiedControl extends Script {
     };
   }
 
-  init(dependencies: {core: Core; simulator: Simulator; camera: THREE.Camera}) {
+  init(dependencies: {core: Core; camera: THREE.Camera}) {
     this.core = dependencies.core;
-    this.executor = new EmbodiedControlExecutor(dependencies, this.options);
+    this.camera = dependencies.camera;
+    this.initializeExecutor();
     if (this.options.autoPause && dependencies.core.simulatorRunning) {
       this.scheduleAutoPause();
     } else if (!this.options.autoPause) {
@@ -49,9 +50,20 @@ export class EmbodiedControl extends Script {
   }
 
   override onSimulatorStarted() {
+    this.initializeExecutor();
     if (this.options.autoPause) {
       this.scheduleAutoPause();
     }
+  }
+
+  private initializeExecutor() {
+    if (this.executor || !this.core || !this.camera) return;
+    const simulator: Simulator | undefined = this.core.simulator;
+    if (!simulator) return;
+    this.executor = new EmbodiedControlExecutor(
+      {core: this.core, simulator, camera: this.camera},
+      this.options
+    );
   }
 
   private scheduleAutoPause() {

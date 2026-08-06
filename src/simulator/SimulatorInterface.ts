@@ -12,6 +12,12 @@ import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.
 import {ShowSimulatorInstructionsEvent} from './events/SimulatorInstructionsEvents.js';
 import {SetSimulatorHandPhysicsEvent} from './events/SimulatorPhysicsEvents.js';
 
+type SimulatorElementsLoader = () => Promise<unknown>;
+
+function loadSimulatorElements() {
+  return import('./internal/interface/SimulatorElements.js');
+}
+
 /** Minimal interface for the gamepad toast element. */
 interface GamepadToastElement extends HTMLElement {
   show(controls: Record<string, string>, duration?: number): void;
@@ -62,11 +68,16 @@ export class SimulatorInterface {
   private _gamepadSettings?: GamepadSettingsElement;
   private gamepadController?: GamepadController;
   private simulatorHands?: SimulatorHands;
+  private elementsAvailable?: Promise<boolean>;
+
+  constructor(
+    private readonly simulatorElementsLoader: SimulatorElementsLoader = loadSimulatorElements
+  ) {}
 
   /**
    * Initialize the simulator interface.
    */
-  init(
+  async init(
     simulatorOptions: SimulatorOptions,
     simulatorControls: SimulatorControls,
     simulatorHands: SimulatorHands,
@@ -74,6 +85,8 @@ export class SimulatorInterface {
     setEnvironment?: (environment: SimulatorEnvironment) => Promise<void>,
     handPhysicsAvailable = false
   ) {
+    if (!(await this.ensureElementsAvailable())) return;
+
     if (setEnvironment) {
       this.createSimulatorSettingsPanel(
         simulatorOptions,
@@ -94,6 +107,19 @@ export class SimulatorInterface {
       this.showInstructions(simulatorOptions);
     }
     if (input) this._initGamepadUI(input);
+  }
+
+  private ensureElementsAvailable(): Promise<boolean> {
+    this.elementsAvailable ??= this.simulatorElementsLoader()
+      .then(() => true)
+      .catch((error: unknown) => {
+        console.info(
+          'The simulator interface was not shown because Lit is not available. Add "lit" and "lit/" to the import map to enable it.',
+          error
+        );
+        return false;
+      });
+    return this.elementsAvailable;
   }
 
   createSimulatorSettingsPanel(

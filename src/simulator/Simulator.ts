@@ -19,7 +19,7 @@ import {SimulatorControls} from './SimulatorControls';
 import {SimulatorDepth} from './scene/SimulatorDepth';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
-import {SimulatorNavMesh} from './scene/SimulatorNavMesh';
+import {SimulatorNavMesh} from './internal/navmesh/SimulatorNavMesh';
 import {SimulatorOptions} from './SimulatorOptions';
 import type {SimulatorEnvironment} from './SimulatorOptions';
 import {SimulatorScene} from './scene/SimulatorScene';
@@ -34,6 +34,11 @@ import {SimulatorPhysics} from './scene/SimulatorPhysics';
 import {SimulatorWorld} from './scene/SimulatorWorld';
 import {SparkRendererHolder} from '../utils/SparkRendererHolder';
 import {World} from '../world/World';
+
+export interface SimulatorUserPath {
+  target: THREE.Vector3;
+  path: THREE.Vector3[];
+}
 
 export class Simulator extends Script {
   private static readonly dependencies = {
@@ -52,7 +57,7 @@ export class Simulator extends Script {
   editorIcon = 'simulation';
   simulatorScene = new SimulatorScene();
   simulatorWorld = new SimulatorWorld();
-  navMesh = new SimulatorNavMesh();
+  private readonly navMesh = new SimulatorNavMesh();
   private simulatorObjects = new SimulatorObjectsManager();
   objects: SimulatorObjects = this.simulatorObjects;
   private environment?: SimulatorEnvironmentManager;
@@ -105,6 +110,18 @@ export class Simulator extends Script {
   ) {
     super();
     this.add(this.simulatorUser);
+  }
+
+  get userMovementConstrained() {
+    return this.navMesh.constrained;
+  }
+
+  moveUser(desiredCameraPosition: THREE.Vector3) {
+    this.navMesh.applyUserMovement(this.mainCamera, desiredCameraPosition);
+  }
+
+  findRandomUserPath(): SimulatorUserPath | null {
+    return this.navMesh.findRandomPathFrom(this.mainCamera.position);
   }
 
   async init({
@@ -174,7 +191,7 @@ export class Simulator extends Script {
     }
     await this.environment.setEnvironment(initialEnvironment);
     await this.environment.resolveEnvironmentNames(this.options.environments);
-    this.userInterface.init(
+    await this.userInterface.init(
       simulatorOptions,
       this.controls,
       this.hands,
@@ -411,7 +428,7 @@ export class Simulator extends Script {
 
   // Called by core when the simulator is running.
   renderScene() {
-    if (!this.renderer) return;
+    if (!this.initialized || !this.renderer) return;
     if (!this.options.renderToRenderTexture) return;
     // Allocate a new render target if the resolution changes.
     if (
@@ -444,7 +461,7 @@ export class Simulator extends Script {
   // Called by core after renderScene.
   renderSimulatorScene() {
     const renderer = this.renderer;
-    if (!renderer) return;
+    if (!this.initialized || !renderer) return;
     this.onBeforeSimulatorSceneRender();
     this.renderSimulatorSceneToCanvas(this.getRenderCamera());
     this.onSimulatorSceneRendered();

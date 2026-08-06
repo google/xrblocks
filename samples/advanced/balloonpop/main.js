@@ -1,6 +1,5 @@
 import * as xb from 'xrblocks';
 import RAPIER from '@dimforge/rapier3d-simd-compat';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import {BalloonGame, GROUP_WORLD} from './BalloonPop.js';
 
 document.addEventListener('DOMContentLoaded', () => {

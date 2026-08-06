@@ -122,7 +122,7 @@ export class ScenePanel extends xb.Script {
   }
 
   exportManifest() {
-    const manifest = xb.core.simulator.activeEnvironmentManifest;
+    const manifest = xb.core.simulator?.activeEnvironmentManifest;
     if (!manifest) {
       this.setStatus('No active simulator environment');
       return;
@@ -160,7 +160,11 @@ export class ScenePanel extends xb.Script {
     ).href;
     this.setStatus(`Loading ${fileName}...`);
     try {
-      await xb.core.simulator.setEnvironment(manifestPath);
+      const simulator = xb.core.simulator;
+      if (!simulator) {
+        throw new Error('The simulator is not running.');
+      }
+      await simulator.setEnvironment(manifestPath);
       this.selectionManager.clearSelection();
       this.setStatus(`Loaded ${fileName}`);
     } catch (error) {

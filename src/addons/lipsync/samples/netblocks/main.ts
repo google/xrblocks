@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import type {UserEventDetail} from 'netblocks';
 import {BroadcastChannelTransport} from 'netblocks';
 

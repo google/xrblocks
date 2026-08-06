@@ -1,4 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import * as uikit from '@pmndrs/uikit';
 import * as xb from 'xrblocks';
 

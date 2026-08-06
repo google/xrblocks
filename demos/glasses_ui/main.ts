@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 import {SystemUI} from 'xrblocks/addons/glasses/ui/SystemUI.js';

@@ -22,7 +22,7 @@ import {UIRenderer} from '../ui/internal/UIRenderer';
 import {isUIElement} from '../ui/UIElement';
 import {Lighting} from '../lighting/Lighting';
 import {Physics} from '../physics/Physics';
-import {Simulator} from '../simulator/Simulator';
+import type {Simulator} from '../simulator/Simulator';
 import {SimulatorOptions} from '../simulator/SimulatorOptions';
 import {CoreSound} from '../sound/CoreSound';
 import {SoundOptions} from '../sound/SoundOptions';
@@ -56,6 +56,13 @@ export type CoreLifecycleState =
   | 'running'
   | 'disposing'
   | 'disposed';
+
+type SimulatorModule = typeof import('../simulator/Simulator.js');
+type SimulatorLoader = () => Promise<SimulatorModule>;
+
+function loadSimulatorModule(): Promise<SimulatorModule> {
+  return import('../simulator/Simulator.js');
+}
 
 /**
  * Core is the central engine of the XR Blocks framework, acting as a
@@ -105,8 +112,9 @@ export class Core {
   private renderSceneCallback = (cameraOverride?: THREE.Camera) =>
     this.renderScene(cameraOverride);
 
-  /** Manages the desktop XR simulator. */
-  simulator = new Simulator(this.renderSceneCallback);
+  /** The desktop XR simulator after its runtime chunk has loaded. */
+  simulator?: Simulator;
+  private simulatorLoader!: SimulatorLoader;
 
   /** Private interaction runtime. */
   private interaction!: Interaction;
@@ -133,7 +141,7 @@ export class Core {
 
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
-  private startingSimulator?: Promise<void>;
+  private startingSimulator?: Promise<Simulator>;
   private onWebXRSessionStarted = (event: {session: XRSession}) => {
     void this.onXRSessionStarted(event.session);
   };
@@ -234,11 +242,12 @@ export class Core {
    * It initializes core components and abstractions like the scene, camera,
    * user, UI, AI, and input managers.
    */
-  constructor() {
+  constructor(simulatorLoader: SimulatorLoader = loadSimulatorModule) {
     if (Core.instance) {
       return Core.instance;
     }
     Core.instance = this;
+    this.simulatorLoader = simulatorLoader;
 
     this.interaction = new Interaction({
       callbacks: this.scriptsManager,
@@ -276,8 +285,6 @@ export class Core {
     this.registry.register(this.user);
     this.registry.register(this.interaction);
     this.registry.register(this.sound);
-    this.registry.register(this.simulator);
-    this.registry.register(this.simulator.navMesh);
     this.registry.register(this.scriptsManager);
     this.registry.register(this.depth);
     this.registry.register(this.world);
@@ -314,6 +321,13 @@ export class Core {
         button?.dispose();
       },
       () => this.disposeWebXRSessionManager(),
+      async () => {
+        try {
+          await this.startingSimulator;
+        } catch {
+          // Startup observes the disposing lifecycle and cleans up its runtime.
+        }
+      },
       () => this.scriptsManager.dispose(),
       () => {
         this.simulatorRunning = false;
@@ -653,7 +667,6 @@ export class Core {
     // Sets up postprocessing effects.
     if (options.usePostprocessing) {
       this.effects = new XREffects(this.renderer, this.scene, this.timer);
-      this.simulator.effects = this.effects;
     }
 
     // Sets up AI services.
@@ -723,7 +736,7 @@ export class Core {
     this.timer.update(time);
     const deltaSeconds = this.timer.getDelta();
     if (this.simulatorRunning) {
-      this.simulator.simulatorUpdate();
+      this.simulator?.simulatorUpdate();
     }
     this.depth.update(frame);
 
@@ -776,7 +789,7 @@ export class Core {
       this.deviceCamera
     );
     if (this.simulatorRunning) {
-      this.simulator.renderSimulatorScene();
+      this.simulator?.renderSimulatorScene();
     }
   };
 
@@ -807,22 +820,45 @@ export class Core {
     this.scriptsManager.onXRSessionStarted(session);
   }
 
-  private startSimulator = async () => {
+  startSimulator = async (): Promise<Simulator> => {
     this.assertLifecycleActive('start the simulator');
-    if (this.simulatorRunning) return;
+    if (this.simulatorRunning && this.simulator) return this.simulator;
     if (this.startingSimulator) return this.startingSimulator;
 
     this.startingSimulator = (async () => {
       this.xrButton?.dispose();
       this.xrButton = undefined;
-      this.xrSystemsGroup.add(this.simulator);
-      await this.scriptsManager.initScript(this.simulator);
-      this.assertLifecycleActive('finish simulator startup');
-      this.onSimulatorStarted();
+      const {Simulator} = await this.simulatorLoader();
+      this.assertLifecycleActive('load the simulator runtime');
+      const simulator = new Simulator(this.renderSceneCallback);
+      simulator.effects = this.effects;
+      try {
+        // Keep the simulator connected to the script lifecycle while its async
+        // initialization runs. Otherwise the frame loop treats it as removed
+        // and disposes it before startup completes.
+        this.xrSystemsGroup.add(simulator);
+        await this.scriptsManager.initScript(simulator);
+        this.assertLifecycleActive('finish simulator startup');
+        this.simulator = simulator;
+        this.registry.register(simulator);
+        this.onSimulatorStarted();
+        return simulator;
+      } catch (error) {
+        simulator.removeFromParent();
+        try {
+          simulator.dispose();
+        } catch (cleanupError) {
+          console.error(
+            'Simulator cleanup failed after startup failed.',
+            cleanupError
+          );
+        }
+        throw error;
+      }
     })();
 
     try {
-      await this.startingSimulator;
+      return await this.startingSimulator;
     } finally {
       this.startingSimulator = undefined;
     }
@@ -881,7 +917,7 @@ export class Core {
   };
 
   private renderSimulatorAndScene() {
-    if (this.simulatorRunning) {
+    if (this.simulatorRunning && this.simulator) {
       this.simulator.renderScene();
     } else {
       this.renderScene();
@@ -889,7 +925,7 @@ export class Core {
   }
 
   private getFrameCamera(): THREE.Camera {
-    if (!this.simulatorRunning) return this.camera;
+    if (!this.simulatorRunning || !this.simulator) return this.camera;
     return this.simulator.getRenderCamera() ?? this.camera;
   }
 

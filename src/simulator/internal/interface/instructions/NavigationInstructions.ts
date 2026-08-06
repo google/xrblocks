@@ -1,11 +1,12 @@
 import {html} from 'lit';
 import {customElement} from 'lit/decorators/custom-element.js';
-import * as xb from 'xrblocks';
+
+import {XR_BLOCKS_ASSETS_PATH} from '../../../../constants.js';
 
 import {SimulatorInstructionsCard} from './SimulatorInstructionsCard.js';
 
 const SIMULATOR_NAVIGATION_VIDEO_PATH =
-  xb.XR_BLOCKS_ASSETS_PATH +
+  XR_BLOCKS_ASSETS_PATH +
   'simulator/instructions/xr_blocks_simulator_navigation.webm';
 
 @customElement('xrblocks-simulator-navigation-instructions')

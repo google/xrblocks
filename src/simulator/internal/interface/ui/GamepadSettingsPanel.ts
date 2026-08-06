@@ -2,11 +2,16 @@ import {css, html, LitElement} from 'lit';
 import {customElement} from 'lit/decorators/custom-element.js';
 import {property} from 'lit/decorators/property.js';
 import {state} from 'lit/decorators/state.js';
-import * as xb from 'xrblocks';
+
+import {GamepadController} from '../../../../input/GamepadController.js';
+import {
+  GamepadAction,
+  GamepadBindings,
+} from '../../../../input/GamepadBindings.js';
 
 import {buttonName} from './GamepadToast.js';
 
-const ACTION_LABELS: Record<xb.GamepadAction, string> = {
+const ACTION_LABELS: Record<GamepadAction, string> = {
   select: 'Select / Interact',
   cycleHandPoseLeft: 'Previous Hand Pose',
   cycleHandPoseRight: 'Next Hand Pose',
@@ -21,7 +26,7 @@ const ACTION_LABELS: Record<xb.GamepadAction, string> = {
 // Actions hidden from the rebind list. openSettings must always stay bound
 // so users can never lock themselves out of the menu.
 const REBINDABLE_ACTIONS = (
-  Object.keys(ACTION_LABELS) as xb.GamepadAction[]
+  Object.keys(ACTION_LABELS) as GamepadAction[]
 ).filter((a) => a !== 'openSettings');
 
 @customElement('xrblocks-gamepad-settings')
@@ -159,22 +164,22 @@ export class GamepadSettingsPanel extends LitElement {
     }
   `;
 
-  @property({type: Object}) bindings?: xb.GamepadBindings;
-  @property({type: Object}) gamepadController?: xb.GamepadController;
-  @state() private _listeningAction: xb.GamepadAction | null = null;
+  @property({type: Object}) bindings?: GamepadBindings;
+  @property({type: Object}) gamepadController?: GamepadController;
+  @state() private _listeningAction: GamepadAction | null = null;
   @state() private _bindingSnapshot: Record<string, number> = {};
   @state() private _focusedIndex = 0;
   private _rafId: number | null = null;
   private _prevStickY = 0;
   private _navPrevButtons: boolean[] = [];
 
-  private _navJustPressed(gp: xb.GamepadController, index: number): boolean {
+  private _navJustPressed(gp: GamepadController, index: number): boolean {
     const down = gp.activeGamepad?.buttons[index]?.pressed ?? false;
     const wasDown = this._navPrevButtons[index] ?? false;
     return down && !wasDown;
   }
 
-  private _navUpdatePrev(gp: xb.GamepadController) {
+  private _navUpdatePrev(gp: GamepadController) {
     const buttons = gp.activeGamepad?.buttons;
     if (!buttons) return;
     for (let i = 0; i < buttons.length; i++) {
@@ -305,7 +310,7 @@ export class GamepadSettingsPanel extends LitElement {
     }
   }
 
-  private _startListening(action: xb.GamepadAction) {
+  private _startListening(action: GamepadAction) {
     this._listeningAction = action;
     this.gamepadController?.captureNextButtonPress((buttonIndex: number) => {
       this.bindings?.setBinding(action, buttonIndex);

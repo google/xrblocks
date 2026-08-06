@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import * as xb from 'xrblocks';
@@ -23,13 +21,13 @@ class NavMeshWireframe extends xb.Script {
   routePoints = [];
   routeIndex = 0;
 
-  async init() {
+  init() {
     this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
+  }
 
-    const simulatorOptions = xb.core.options.simulator;
-    const activeEnvironment =
-      simulatorOptions.environments[simulatorOptions.activeEnvironmentIndex];
-    const navMeshPath = activeEnvironment?.navMeshPath;
+  async onSimulatorStarted() {
+    const manifest = xb.core.simulator.activeEnvironmentManifest;
+    const navMeshPath = manifest?.navMeshPath;
     if (!navMeshPath) {
       console.warn('No navmesh path configured for the active environment.');
       return;
@@ -48,11 +46,11 @@ class NavMeshWireframe extends xb.Script {
     }
     const group = new THREE.Group();
 
-    gltf.scene.position.set(
-      simulatorOptions.initialScenePosition.x,
-      simulatorOptions.initialScenePosition.y,
-      simulatorOptions.initialScenePosition.z
-    );
+    if (manifest.position) gltf.scene.position.fromArray(manifest.position);
+    if (manifest.quaternion) {
+      gltf.scene.quaternion.fromArray(manifest.quaternion);
+    }
+    if (manifest.scale) gltf.scene.scale.fromArray(manifest.scale);
     gltf.scene.updateMatrixWorld(true);
     gltf.scene.traverse((object) => {
       if (!object.isMesh || !object.geometry) return;
@@ -100,9 +98,7 @@ class NavMeshWireframe extends xb.Script {
   }
 
   showRandomPath() {
-    const result = xb.core.simulator.navMesh.findRandomPathFrom(
-      xb.core.camera.position
-    );
+    const result = xb.core.simulator.findRandomUserPath();
     if (!result) {
       this.pathButton.textContent = 'No Path';
       window.setTimeout(() => {
@@ -185,10 +181,7 @@ class NavMeshWireframe extends xb.Script {
     desiredCameraPosition.copy(xb.core.camera.position).add(waypointDelta);
     desiredCameraPosition.y =
       currentFootPosition.y + waypointDelta.y + eyeHeight;
-    xb.core.simulator.navMesh.applyUserMovement(
-      xb.core.camera,
-      desiredCameraPosition
-    );
+    xb.core.simulator.moveUser(desiredCameraPosition);
 
     remainingPathStart.copy(xb.core.camera.position);
     remainingPathStart.y -= eyeHeight;
