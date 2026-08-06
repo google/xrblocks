@@ -732,24 +732,12 @@ export class Interaction {
         const prevented = this.dispatchTouchStart(touchState);
         touchState.prevented = prevented;
         if (!prevented) {
-          const capture = this.startTargetCapture(
+          this.startTargetCapture(
             contact.controller,
             snapshot,
             contact.resolved,
             true
           );
-          if (
-            capture.action === 'select' ||
-            (capture.action === 'semantic' &&
-              capture.semantic?.kind === 'button')
-          ) {
-            this.endSelection(
-              contact.controller,
-              'released',
-              capture.selection.target,
-              snapshot
-            );
-          }
         }
         this.updateGrab(touchState, contact);
       } catch (error) {
