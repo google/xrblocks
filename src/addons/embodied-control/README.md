@@ -112,8 +112,9 @@ rightHand: {
 
 Hand `move` and `rotate` are relative to the current simulator controller pose.
 `rotations` applies sparse simulator hand joint rotations in radians.
-When `pose` and `rotations` are supplied together, the named pose is the base
-and the sparse rotations override it in one hand-state update.
+`pose` and `rotations` are mutually exclusive. Selection commands also cannot
+include either visual field. Use a named pinching pose or `selectStart` when the
+hand should begin a logical selection.
 
 Use `selectStart` and `selectEnd` for WebXR-like hand selection. In the
 simulator these call `setLeftHandPinching()` / `setRightHandPinching()`, which

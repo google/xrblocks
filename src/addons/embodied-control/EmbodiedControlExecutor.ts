@@ -1,5 +1,12 @@
 import * as THREE from 'three';
-import {Core, Simulator, User, World} from 'xrblocks';
+import {
+  Core,
+  Simulator,
+  type SimulatorHandPose,
+  type SimulatorHandPoseRotations,
+  User,
+  World,
+} from 'xrblocks';
 
 import {
   DEFAULT_EMBODIED_CONTROL_OPTIONS,
@@ -209,26 +216,81 @@ export class EmbodiedControlExecutor {
       controller.visible = control.visible;
     }
 
-    simulator.hands.setHandState(
-      handIndex,
-      {
-        pose: control.pose,
-        rotations: control.rotations,
-        selected: control.selectStart
-          ? true
-          : control.selectEnd
-            ? false
-            : undefined,
-      },
-      this.options.applyHandRotationConstraints
-    );
+    if (control.selectStart) {
+      this.applyHandSelect(handIndex, true);
+      return;
+    }
+    if (control.selectEnd) {
+      this.applyHandSelect(handIndex, false);
+      return;
+    }
+    if (control.pose) {
+      this.applyHandPose(handIndex, control.pose);
+    }
+    if (control.rotations) {
+      this.applyHandRotations(handIndex, control.rotations);
+    }
+  }
+
+  private applyHandPose(handIndex: number, pose: SimulatorHandPose) {
+    const {hands} = this.dependencies.simulator;
+    if (handIndex === 0) {
+      hands.setLeftHandLerpPose(pose);
+    } else {
+      hands.setRightHandLerpPose(pose);
+    }
+  }
+
+  private applyHandSelect(handIndex: number, selected: boolean) {
+    const {hands} = this.dependencies.simulator;
+    if (handIndex === 0) {
+      hands.setLeftHandPinching(selected);
+    } else {
+      hands.setRightHandPinching(selected);
+    }
+  }
+
+  private applyHandRotations(
+    handIndex: number,
+    rotations: SimulatorHandPoseRotations
+  ) {
+    const {hands} = this.dependencies.simulator;
+    const mergedRotations =
+      handIndex === 0
+        ? {...hands.leftHandTargetRotations, ...rotations}
+        : {...hands.rightHandTargetRotations, ...rotations};
+    if (handIndex === 0) {
+      hands.setLeftHandRotations(
+        mergedRotations,
+        this.options.applyHandRotationConstraints
+      );
+    } else {
+      hands.setRightHandRotations(
+        mergedRotations,
+        this.options.applyHandRotationConstraints
+      );
+    }
   }
 
   private validateControl(control: XRCompoundControl) {
     for (const hand of [control.leftHand, control.rightHand]) {
+      if (!hand) continue;
       if (hand?.selectStart && hand.selectEnd) {
         throw new Error(
           'A hand control cannot contain both selectStart and selectEnd.'
+        );
+      }
+      if (hand.pose && hand.rotations) {
+        throw new Error(
+          'A hand control cannot contain both pose and rotations.'
+        );
+      }
+      if (
+        (hand.selectStart || hand.selectEnd) &&
+        (hand.pose || hand.rotations)
+      ) {
+        throw new Error(
+          'A hand control cannot combine selection with pose or rotations.'
         );
       }
     }

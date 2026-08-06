@@ -18,9 +18,9 @@ export type HandControl = {
   selectStart?: boolean;
   /** End the hand's primary select gesture. In the simulator this releases a pinch. */
   selectEnd?: boolean;
-  /** Apply one of the simulator's named hand poses. */
+  /** Apply one named pose. Cannot be combined with rotations or selection. */
   pose?: SimulatorHandPose;
-  /** Sparse angular joint targets in radians. */
+  /** Sparse joint targets. Cannot be combined with pose or selection. */
   rotations?: SimulatorHandPoseRotations;
   visible?: boolean;
 };
