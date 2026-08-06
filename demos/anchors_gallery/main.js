@@ -15,11 +15,12 @@ import * as xb from 'xrblocks';
 const SHAPES = ['cube', 'sphere', 'cone', 'torus'];
 /** How far in front of the user a new piece is placed, in metres. */
 const PLACE_DISTANCE = 0.9;
-/** Pieces placed without moving fan out across a row this wide. */
-const PIECES_PER_ROW = 3;
-/** Horizontal and vertical gap between fanned-out pieces, in metres. */
-const PIECE_SPREAD_X = 0.36;
-const PIECE_SPREAD_Y = 0.28;
+/**
+ * How close two pieces may be before the new one is nudged aside, in metres.
+ * A piece goes exactly where you are looking; this only stops one landing
+ * invisibly inside another when you place twice without moving.
+ */
+const PIECE_MIN_SEPARATION = 0.22;
 /** Edge length of a placed piece, in metres. */
 const PIECE_SIZE = 0.09;
 /** Colour of a freshly placed piece, and of one rebuilt from storage. */
@@ -151,14 +152,8 @@ class AnchoredGalleryDemo extends xb.Script {
     const forward = new THREE.Vector3(0, 0, -PLACE_DISTANCE).applyQuaternion(
       this.scratchQuaternion
     );
-    // Placing twice from the same spot would stack the pieces exactly.
-    const index = this.placed;
-    const spread = new THREE.Vector3(
-      ((index % PIECES_PER_ROW) - 1) * PIECE_SPREAD_X,
-      Math.floor(index / PIECES_PER_ROW) * -PIECE_SPREAD_Y,
-      0
-    ).applyQuaternion(this.scratchQuaternion);
-    mesh.position.copy(this.scratchPosition).add(forward).add(spread);
+    mesh.position.copy(this.scratchPosition).add(forward);
+    this.separate(mesh.position, this.scratchQuaternion);
     mesh.quaternion.copy(this.scratchQuaternion);
 
     // One call anchors it, saves it, and adopts the mesh. There is no map to
@@ -170,6 +165,26 @@ class AnchoredGalleryDemo extends xb.Script {
     }
     this.placed++;
     this.setStatus(`Placed a ${shape}`);
+  }
+
+  /**
+   * Nudges a target sideways until it is not inside an existing piece.
+   *
+   * @param target - Position to adjust in place.
+   * @param facing - The head orientation, so the nudge is sideways on screen.
+   */
+  separate(target, facing) {
+    const step = new THREE.Vector3(PIECE_MIN_SEPARATION, 0, 0).applyQuaternion(
+      facing
+    );
+    const placed = [...(this.gallery?.getAll().values() ?? [])];
+    for (let i = 0; i < placed.length + 1; i++) {
+      const clash = placed.some(
+        (o) => o.position.distanceTo(target) < PIECE_MIN_SEPARATION
+      );
+      if (!clash) return;
+      target.add(step);
+    }
   }
 
   /** Rebuilds the pieces saved in a previous session. */
