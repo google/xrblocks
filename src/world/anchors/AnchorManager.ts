@@ -465,7 +465,9 @@ export class AnchorManager extends Script {
         persistentAnchors?: readonly string[];
       }
     )?.persistentAnchors;
-    return handles ? [...handles] : [];
+    // Blank entries have been seen in the wild, and the platform refuses to
+    // delete them, so they are not handles as far as anything here cares.
+    return handles ? [...handles].filter((uuid) => !!uuid) : [];
   }
 
   /** Forgets every saved handle, leaving live anchors alone. */
@@ -525,12 +527,24 @@ export class AnchorManager extends Script {
   private releasePersistentHandle(uuid: string): void {
     const session = this.currentSession();
     const remove = session?.deletePersistentAnchor;
-    // Optional in WebXR, and absent entirely for simulated anchors.
-    if (typeof remove !== 'function') return;
+    // Optional in WebXR, and absent entirely for simulated anchors. Said out
+    // loud, because a silent no-op here looks identical to a release that
+    // worked, and the handle stays against the platform's cap either way.
+    if (!session) {
+      this.debug(`cannot release ${uuid}: no session`);
+      return;
+    }
+    if (typeof remove !== 'function') {
+      this.debug(
+        `cannot release ${uuid}: platform has no deletePersistentAnchor`
+      );
+      return;
+    }
     try {
-      void Promise.resolve(remove.call(session, uuid)).catch((error) => {
-        this.debug(`could not release handle ${uuid}: ${error}`);
-      });
+      void Promise.resolve(remove.call(session, uuid)).then(
+        () => this.debug(`released handle ${uuid}`),
+        (error) => this.debug(`could not release handle ${uuid}: ${error}`)
+      );
     } catch (error) {
       this.debug(`could not release handle ${uuid}: ${error}`);
     }
