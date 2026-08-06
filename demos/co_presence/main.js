@@ -45,8 +45,8 @@ class CoPresence extends xb.Script {
       ? new WebRTCTransport()
       : new BroadcastChannelTransport();
     const roomId = this.roomCode
-      ? `avatar-lab-presence-${this.roomCode}`
-      : 'avatar-lab-presence-local';
+      ? `xrblocks-co-presence-${this.roomCode}`
+      : 'xrblocks-co-presence-local';
 
     this.status.text = 'Connecting…';
     try {
@@ -59,7 +59,7 @@ class CoPresence extends xb.Script {
       this.session.addEventListener('user-leave', () => this.refreshStatus());
       this.refreshStatus();
     } catch (error) {
-      console.error('[avatar_lab/co_presence]', error);
+      console.error('[demos/co_presence]', error);
       this.status.text = `Connection failed: ${error.message}`;
       this.status.style.color = '#ff9a9a';
     }
@@ -216,7 +216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   xb.add(new CoPresence());
   const options = new xb.Options();
   options.enableReticles();
-  options.setAppTitle('Avatar Lab · Co-presence');
+  options.setAppTitle('Co-presence');
   options.setAppDescription(
     'Join a room and see remote head and hand poses as lightweight avatars.'
   );
