@@ -926,3 +926,62 @@ describe('AnchorManager uses the handle the platform minted', () => {
     expect(store.records).toHaveLength(1);
   });
 });
+
+describe('AnchorManager releaseAllPlatformHandles', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('releases every handle the platform lists, not just recorded ones', async () => {
+    // The recovery path: once records are gone, nothing names the handles, but
+    // the platform still counts them against its cap.
+    const store = memoryStore();
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    const held = ['a', 'b', 'c'];
+    (
+      env.session as unknown as {persistentAnchors: string[]}
+    ).persistentAnchors = held;
+    manager.update(0, env.frame);
+
+    expect(await manager.releaseAllPlatformHandles()).toBe(3);
+    expect(env.session.deletePersistentAnchor).toHaveBeenCalledTimes(3);
+    for (const uuid of held) {
+      expect(env.session.deletePersistentAnchor).toHaveBeenCalledWith(uuid);
+    }
+  });
+
+  it('forgets local records too, so nothing points at a released handle', async () => {
+    const store = memoryStore([{uuid: 'a', label: 'x', createdAt: 1}]);
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    (
+      env.session as unknown as {persistentAnchors: string[]}
+    ).persistentAnchors = ['a'];
+    manager.update(0, env.frame);
+    await manager.releaseAllPlatformHandles();
+    expect(store.records).toEqual([]);
+  });
+
+  it('counts only the ones the platform accepted', async () => {
+    const store = memoryStore();
+    const {manager} = makeManager(store);
+    const env = fakeEnv();
+    (
+      env.session as unknown as {persistentAnchors: string[]}
+    ).persistentAnchors = ['a', 'b'];
+    (
+      env.session.deletePersistentAnchor as ReturnType<typeof vi.fn>
+    ).mockImplementation(async (uuid: string) => {
+      if (uuid === 'b') throw new Error('refused');
+    });
+    manager.update(0, env.frame);
+    expect(await manager.releaseAllPlatformHandles()).toBe(1);
+  });
+
+  it('reports nothing when the platform cannot delete handles', async () => {
+    const {manager} = makeManager();
+    manager.update(0, fakeEnv({canDeletePersistent: false}).frame);
+    expect(await manager.releaseAllPlatformHandles()).toBe(0);
+  });
+});

@@ -470,6 +470,48 @@ export class AnchorManager extends Script {
     return handles ? [...handles].filter((uuid) => !!uuid) : [];
   }
 
+  /**
+   * Releases every persistent handle the platform is holding for this origin.
+   *
+   * A recovery path, not routine cleanup. Platforms cap how many persistent
+   * anchors may exist, and once local records are gone nothing names the
+   * handles any more, so {@link AnchorManager.forgetAll} cannot reach them and
+   * the cap stays full forever. This reads the platform's own list instead.
+   *
+   * Origin wide and destructive: another page on the same origin loses its
+   * anchors too. Offer it as an explicit choice, never as automatic cleanup.
+   *
+   * The platform's list is not guaranteed to shrink as handles are released,
+   * so do not read it back afterwards to judge whether this worked. The
+   * returned count is what the platform actually accepted.
+   *
+   * @returns How many handles the platform accepted a release for.
+   */
+  async releaseAllPlatformHandles(): Promise<number> {
+    const session = this.currentSession();
+    const remove = session?.deletePersistentAnchor;
+    if (!session || typeof remove !== 'function') {
+      this.debug('cannot release: platform has no deletePersistentAnchor');
+      return 0;
+    }
+    const handles = this.platformHandles();
+    let released = 0;
+    for (const uuid of handles) {
+      try {
+        await remove.call(session, uuid);
+        released++;
+        this.debug(`released handle ${uuid}`);
+      } catch (error) {
+        this.lastError = error;
+        this.debug(`could not release handle ${uuid}: ${error}`);
+      }
+    }
+    // Local records would otherwise point at handles that no longer exist.
+    this.store.clear();
+    this.debug(`released ${released} of ${handles.length} platform handles`);
+    return released;
+  }
+
   /** Forgets every saved handle, leaving live anchors alone. */
   forgetAll(): void {
     // Read before clearing: records the app never restored this session are
