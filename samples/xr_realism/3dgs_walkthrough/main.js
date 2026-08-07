@@ -40,6 +40,8 @@ const moveDirection = new THREE.Vector3();
  */
 class WalkthroughManager extends xb.Script {
   async init() {
+    xb.core.transition?.toVR({color: 0x000000});
+
     this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
     this.sceneText = new xb.UIText({
       text: '',
@@ -258,6 +260,8 @@ class WalkthroughManager extends xb.Script {
 
 document.addEventListener('DOMContentLoaded', function () {
   const options = new xb.Options();
+  options.enableXRTransitions();
+  options.transition.defaultBackgroundColor = 0x000000;
   options.reticles.enabled = false;
   options.hands.enabled = true;
   options.hands.visualization = true;
