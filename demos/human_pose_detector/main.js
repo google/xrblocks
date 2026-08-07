@@ -40,4 +40,3 @@ async function start() {
 document.addEventListener('DOMContentLoaded', function () {
   void start();
 });
-

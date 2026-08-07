@@ -2,6 +2,12 @@ import * as xb from 'xrblocks';
 import * as THREE from 'three';
 import {UICore, UIText, UIPanel} from 'uiblocks';
 
+// The pose model reports all 33 landmarks even when it cannot see them, so a
+// body that is only half in frame still comes back with legs, guessed from a
+// prior and often pointing the wrong way. Drawing those is worse than drawing
+// nothing, so joints the model is unsure about are skipped.
+const MIN_JOINT_VISIBILITY = 0.5;
+
 export class PoseDisplay extends xb.Script {
   static dependencies = {camera: THREE.Camera, world: xb.World};
 
@@ -221,18 +227,26 @@ export class PoseDisplay extends xb.Script {
     const firstPose = poses[0];
     this.statusText.setText('Tracking Active');
 
-    this.updateJointMarkers(firstPose);
+    const tracked = this.updateJointMarkers(firstPose);
     this.updateConnectorMeshes();
 
-    this.statusDetailsText.setText('Full body skeleton tracked successfully.');
+    this.statusDetailsText.setText(
+      tracked < this.jointMarkers.size
+        ? `Tracking ${tracked} of ${this.jointMarkers.size} joints.\nStep back to bring your whole body into frame.`
+        : 'Full body skeleton tracked successfully.'
+    );
   }
 
   updateJointMarkers(firstPose) {
-    if (!this.jointMarkers) return;
+    if (!this.jointMarkers) return 0;
 
+    let tracked = 0;
     this.jointMarkers.forEach((marker, jointName) => {
-      const pos = firstPose.getJointPosition(jointName);
+      const pos = firstPose.getJointPosition(jointName, {
+        minVisibility: MIN_JOINT_VISIBILITY,
+      });
       if (pos) {
+        tracked++;
         // Convert target position to local space first
         const targetLocalPos = pos.clone();
         this.worldToLocal(targetLocalPos);
@@ -249,6 +263,8 @@ export class PoseDisplay extends xb.Script {
         marker.visible = false;
       }
     });
+
+    return tracked;
   }
 
   updateConnectorMeshes() {
