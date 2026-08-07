@@ -24,10 +24,18 @@ export class CameraPreview extends xb.Script {
     `;
 
     this.canvas = document.createElement('canvas');
-    // Mirrored for display only. MediaPipe still receives the raw frame.
-    this.canvas.style.cssText =
-      'width: 100%; display: block; transform: scaleX(-1);';
     this.context = this.canvas.getContext('2d');
+    // Mirrored for display only, so the preview reads like a selfie. The frames
+    // handed to MediaPipe are never flipped. Click to toggle, since some
+    // capture paths already deliver a mirrored stream.
+    this.mirrored = true;
+    this.applyMirror();
+    this.canvas.title = 'click to flip the preview';
+    this.canvas.style.cursor = 'pointer';
+    this.canvas.addEventListener('click', () => {
+      this.mirrored = !this.mirrored;
+      this.applyMirror();
+    });
 
     this.status = document.createElement('div');
     this.status.style.cssText =
@@ -38,6 +46,11 @@ export class CameraPreview extends xb.Script {
     document.body.appendChild(this.container);
 
     this.lastFrameAtMs = 0;
+  }
+
+  applyMirror() {
+    this.canvas.style.cssText = `width: 100%; display: block; cursor: pointer;
+      transform: scaleX(${this.mirrored ? -1 : 1});`;
   }
 
   update() {
