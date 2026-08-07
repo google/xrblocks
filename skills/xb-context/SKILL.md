@@ -13,7 +13,7 @@ description: >-
 # xb-context — agent-facing scene context
 
 `xb.context.scene` summarizes the XR scene for agents. It is not DOM-based: it
-traverses XR Blocks, UIBlocks, and meaningful Three.js objects, omitting internal
+traverses XR Blocks UI and meaningful Three.js objects, omitting internal
 helpers such as `XRSystems` descendants and depth meshes.
 
 ## Enable Context

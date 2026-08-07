@@ -40,6 +40,15 @@ options.simulator.defaultMode = xb.SimulatorMode.POSE;
 
 For scripts that react to physical hand contact (e.g., button presses, picking up virtual items), use the built-in direct touch and grab hooks.
 
+Direct touch starts the unified object-selection lifecycle by default:
+`onObjectTouchStart` is followed by `onObjectSelectStart`, `onSelecting` runs
+while contact continues, and `onObjectTouchEnd` is followed by
+`onObjectSelectEnd`. Call `event.preventDefault()` from
+`onObjectTouchStart` when contact should not select the object.
+For objects with built-in manipulation, contact selects the object and pinch
+starts manipulation. Releasing the pinch ends manipulation while contact can
+continue.
+
 To use these, implement them directly in your [`Script`](/api/classes/Script):
 
 ```javascript
@@ -118,4 +127,4 @@ update(time, frame) {
   - `2` - Both hands active
 - **`HandJointNames`**: A list of joints (e.g., thumb tip, index tip, wrist, middle mcp) exported from the SDK.
 
-For a complete reference implementation, see <CodeSearchLink path="templates/2_hands/index.html"/>.
+For a complete reference implementation, see <CodeSearchLink path="templates/02_object_interaction/index.html"/>.

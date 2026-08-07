@@ -4,6 +4,7 @@ import {LanguageDetectorDemo} from './LanguageDetectorDemo.js';
 
 const options = new xb.Options();
 options.enableAI();
+options.ai.promptForApiKey = true;
 options.permissions.microphone = true;
 
 options.setAppTitle('Language Detector');

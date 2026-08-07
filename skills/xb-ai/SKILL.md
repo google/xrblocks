@@ -6,25 +6,30 @@ description: >-
   and image generation. Use to answer questions, describe what the camera sees,
   drive conversational agents, or generate content from an XR scene. Covers
   `enableAI()`, `xb.ai.isAvailable()`, `xb.ai.query()`, `startLiveSession()`,
-  `generate()`, and local API-key handling (`?key=` / `keys.json`). Always guard
+  `generate()`, and local API-key handling (`?key=`, `keys.json`, or the opt-in
+  browser prompt). Always guard
   calls with `isAvailable()`; never ship keys in production client code.
 ---
 
 # xb-ai: Gemini / OpenAI integration
 
-`xb.ai` (a.k.a. `xb.core.ai`) wraps Gemini (default) and OpenAI. See `templates/6_ai`,
-`templates/7_ai_live`, and `samples/xr_ai/xrpoet`.
+`xb.ai` (a.k.a. `xb.core.ai`) wraps Gemini (default) and OpenAI. See
+`templates/6_ai_query`, `templates/7_ai_live_assistant`, and
+`samples/xr_ai/xrpoet`.
 
 ## Setup & keys
 
 ```js
 const options = new xb.Options();
 options.enableAI();
+options.ai.promptForApiKey = true; // local prototypes only
 xb.init(options);
 ```
 
-For **local prototyping**, supply a key via the `?key=YOUR_KEY` URL parameter or a `keys.json`
-(`{"gemini": {"apiKey": "…"}}`) served next to the app.
+For **local prototyping**, opt into the browser prompt, supply a key through the
+`?key=YOUR_KEY` URL parameter, or serve a `keys.json`
+(`{"gemini": {"apiKey": "…"}}`) next to the app. The prompt can store a
+model-specific key in local storage. It is disabled by default.
 
 > [!IMPORTANT]
 > The `?key=`/`keys.json` paths are for prototyping ONLY. In production, proxy AI calls through

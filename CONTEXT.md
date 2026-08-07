@@ -13,8 +13,6 @@ and the full in-tree overview is [`src/SKILL.md`](src/SKILL.md).
 - **One engine, script-driven.** Subclass `xb.Script`, `xb.add()` it, then `xb.init(options)`.
   Do **not** write your own `requestAnimationFrame` loop, camera, or WebXR session — `Core`
   owns them. Per-frame logic goes in `update(time, frame)`.
-- **Enable features through `Options`**, not by poking internals: `options.enableUI()`,
-  `enableHands()`, `enableDepth()`, etc. (full list below).
 - **Guard AI.** AI needs a key and may be unavailable — wrap calls in
   `if (xb.ai.isAvailable())`.
 - **Test in the simulator first.** It runs automatically on desktop browser without WebXR plugins; `?formFactor=desktop`
@@ -57,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ```js
 const options = new xb.Options();
-options.enableUI(); // spatial UI + reticles
 options.enableReticles(); // pointing cursor
 options.enableHands(); // hand tracking
 options.enableGestures(); // pinch/fist/point/spread/thumbs-up/open-palm
@@ -109,6 +106,6 @@ an in-page browser driver needs the automation preset and direct SDK access.
 ## Task Recipes -> Skills/
 
 For "how do I do X", use the focused skills in [`skills/`](skills/): `xb-core`, `xb-ui`,
-`xb-uiblocks`, `xb-modelviewer`, `xb-hands`, `xb-gestures`, `xb-head-gestures`, `xb-depth`, `xb-world`,
+`xb-modelviewer`, `xb-hands`, `xb-gestures`, `xb-head-gestures`, `xb-depth`, `xb-world`,
 `xb-context`, `xb-ai`, `xb-physics`, `xb-simulator`, `xb-netblocks`, `xb-sound`,
 `xb-testing`.

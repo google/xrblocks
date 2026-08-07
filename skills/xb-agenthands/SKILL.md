@@ -85,7 +85,7 @@ class MyAgent extends xb.Script {
 }
 
 xb.add(new MyAgent());
-xb.init(new xb.Options().enableAI().enableUI());
+xb.init(new xb.Options().enableAI());
 ```
 
 ## Gesture markup
