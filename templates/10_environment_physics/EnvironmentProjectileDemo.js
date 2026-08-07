@@ -62,7 +62,10 @@ export class EnvironmentProjectileDemo extends xb.Script {
     for (const projectile of [...this.projectiles]) {
       projectile.mesh.position.copy(projectile.body.translation());
       projectile.mesh.quaternion.copy(projectile.body.rotation());
-      if (now - projectile.bornAt > 12000 || projectile.mesh.position.y < -4)
+      if (
+        now - projectile.bornAt > 12000 /*ms*/ ||
+        projectile.mesh.position.y < -4
+      )
         this.removeProjectile(projectile);
     }
   }
