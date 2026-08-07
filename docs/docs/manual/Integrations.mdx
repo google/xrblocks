@@ -26,3 +26,18 @@ To use any of these features, simply add the corresponding packages and their de
 XR Blocks loads these libraries only when the corresponding feature starts. Browser import-map
 applications must map every transitive bare specifier used by the selected feature. Copy the
 verified mappings from `rollup.config.js` or the closest current template.
+
+## Built-in UI and renderer extensions
+
+`@pmndrs/uikit` and `@preact/signals-core` are peer dependencies of the built-in
+UI renderer. They are not the application UI API. Ordinary applications import
+`UICard`, `UIOverlay`, `UIPanel`, `UIText`, `UIButton`, and other semantic
+components from `xrblocks`.
+
+XR Blocks currently has no public low-level adapter for composing directly with
+the built-in UIKit backend. Files under `src/ui/internal/` and
+`build/internal/` are private. A specialized addon can expose its own renderer
+through an addon public entry, but it must integrate input through supported XR
+Blocks interaction surfaces and must not import private built-in UI files.
+
+See [Spatial UI](UI.mdx) for the supported component and extension boundary.

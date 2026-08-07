@@ -40,14 +40,16 @@ options.simulator.defaultMode = xb.SimulatorMode.POSE;
 
 For scripts that react to physical hand contact (e.g., button presses, picking up virtual items), use the built-in direct touch and grab hooks.
 
-Direct touch starts the unified object-selection lifecycle by default:
-`onObjectTouchStart` is followed by `onObjectSelectStart`, `onSelecting` runs
-while contact continues, and `onObjectTouchEnd` is followed by
-`onObjectSelectEnd`. Call `event.preventDefault()` from
-`onObjectTouchStart` when contact should not select the object.
-For objects with built-in manipulation, contact selects the object and pinch
-starts manipulation. Releasing the pinch ends manipulation while contact can
-continue.
+Direct touch, selection, grab, and manipulation are related but separate
+lifecycles. Touch starts selection by default. A pinch while touching starts a
+grab and can start automatic manipulation. Releasing the pinch ends grab and
+manipulation while touch and selection can continue. Call
+`event.preventDefault()` from `onObjectTouchStart` when contact must not start
+the default selection.
+
+Read [Interaction and Manipulation](Interaction.md#touch-selection-grab-and-manipulation-are-separate)
+for the complete phase table, propagation, cancellation, concurrent object
+owners, and two-source scale.
 
 To use these, implement them directly in your [`Script`](/api/classes/Script):
 
@@ -59,6 +61,7 @@ export class GrabbableItem extends xb.Script {
       new THREE.MeshStandardMaterial({color: 0x00ff00})
     );
     this.add(this.box);
+    this.xb = {manipulation: true};
   }
 
   onObjectTouchStart(event) {
@@ -73,20 +76,28 @@ export class GrabbableItem extends xb.Script {
     // event.handIndex (0 | 1)
     // event.hand (THREE.Object3D representing the wrist joint group)
     console.log('Grabbed by hand index:', event.handIndex);
+    this.box.material.emissive.set(0x225522);
   }
 
   onObjectGrabbing(event) {
-    // Triggers every frame while the object remains grabbed
-    // Example: parent/move the object with the hand wrist group
-    this.position.copy(event.hand.position);
+    // Continuous feedback only. The interaction system preserves the
+    // hand-to-object offset and owns the configured transform.
+    console.log('Grab point:', event.touchPosition);
   }
 
   onObjectGrabEnd(event) {
     // Triggers when the grab/pinch is released
     this.box.material.color.set(0x00ff00);
+    this.box.material.emissive.set(0x000000);
   }
 }
 ```
+
+Configure transform behavior through `object.xb.manipulation`. Do not copy the
+object directly to the wrist in `onObjectGrabbing`: that snaps the object,
+duplicates the interaction system, and loses multi-source ownership. The
+built-in system preserves the initial offset, supports independent objects at
+the same time, and supports two-source scale when enabled.
 
 ---
 

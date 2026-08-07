@@ -69,7 +69,8 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 | `demos/`      | Experimental applications and development showcases                                                                                          |
 | `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                     |
 | `docs/`       | Docusaurus manual + samples/templates pages                                                                                                  |
-| `skills/`     | Agent skill registry (`xb-*`) — focused, task-oriented guides                                                                                |
+| `skills/`     | Consumer task skills shipped through the repository's Codex plugin                                                                           |
+| `.agents/`    | Repository-local agent workflows; currently the complete SDK contribution seam                                                               |
 | `build/`      | **Generated** bundle output — do not edit                                                                                                    |
 
 ### `src/` subsystems
@@ -109,9 +110,11 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 2. Expose a chainable `enable*()` on `Options` if it is user-facing.
 3. Wire the subsystem into `Core` and the frame loop / DI `Registry`.
 4. Re-export public types from `src/xrblocks.ts`.
-5. Add colocated `*.test.ts`, a `samples/`/`templates/` example, and — for a distinct
-   capability — a `skills/xb-*` entry (see [`skills/README.md`](skills/README.md)).
-6. Update `CONTEXT.md`, `README.md`, `AGENTS.md` and `src/SKILL.md` with the changes.
+5. Add or adjust the smallest colocated `*.test.ts` proof and one executable
+   sample or template when the public pattern needs teaching.
+6. Update the one manual page or agent workflow that owns the changed concept.
+   A new API capability does not require a new skill or blanket edits to every
+   overview.
 
 ## AI & API-Key Security
 
@@ -124,8 +127,14 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 
 ## Agent Docs & Skills
 
-- [`CONTEXT.md`](CONTEXT.md) — rules of engagement for building apps with the SDK.
-- [`src/SKILL.md`](src/SKILL.md) — in-tree SDK overview for app developers.
-- [`skills/`](skills/) — focused `xb-*` skills (UI, hands, gestures, head gestures, depth, world, AI,
-  physics, simulator, sound, multiplayer). Index + naming convention in
-  [`skills/README.md`](skills/README.md).
+- [`CONTEXT.md`](CONTEXT.md) — compact contract for agents building apps with the SDK.
+- [`docs/docs/manual/`](docs/docs/manual/) — canonical concepts, setup, behavior,
+  limits, and examples.
+- [`skills/`](skills/) — consumer task workflows exposed by
+  [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json).
+- [`.agents/skills/xb-contribute-sdk/`](.agents/skills/xb-contribute-sdk/) —
+  repository-local complete-seam contribution workflow.
+
+A skill is justified by an independently useful task process and distinct
+invocation, not by a source subsystem. Exact public API truth remains in
+[`src/xrblocks.ts`](src/xrblocks.ts), addon public entries, and source TSDoc.

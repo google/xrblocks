@@ -5,10 +5,15 @@ title: Depth & Occlusion
 
 # Depth and occlusion
 
-XR Blocks can read WebXR depth data, build a live room mesh, project reticles onto real
-surfaces, occlude virtual content, and create optional environment colliders.
+XR Blocks can read WebXR depth data, maintain a live environment mesh, project
+reticles onto reconstructed surfaces, occlude supported virtual content, and
+provide optional environment collision geometry.
 
-## Enable depth
+Depth is device-dependent. The desktop simulator provides synthetic depth from
+its environment so applications can test state and interaction, but native
+sensor quality and performance require the target XR device.
+
+## Enable the default depth mesh
 
 ```js
 const options = new xb.Options();
@@ -16,75 +21,54 @@ options.enableDepth();
 await xb.init(options);
 ```
 
+`enableDepth()` installs the current default `xrDepthMeshOptions`. Configure
+depth before initialization because it affects requested WebXR session
+features. A device can reject or omit required depth support; represent that as
+an explicit unsupported or startup-failure state.
+
 Each object by access request to enable depth by calling `core.depth.resumeDepth(this)` and request to stop depth with `core.depth.pauseDepth(this)`.
 When supported by the browser, `Depth` will automatically pause depth sensing when no objects are using depth.
 
-## Depth
+Application scripts do not call internal pause/resume ownership methods. XR
+Blocks owns sensor acquisition and mesh updates.
 
-When depth is enabled, a `Depth` controller will be added to `core.depth` and will call `getDepthInformation` and cache the depth array every frame.
-If the depth mesh or depth texture are enabled, these will also be updated every frame.
+## Runtime data
 
-The depth can be accessed using the following properties and methods in `Depth` object available from `core.depth`:
+After initialization, use `xb.depth`:
 
-1. `depthData` - An array containing the left and right depth data objects. Each object has `data`, `width`, `height`, and `rawValueToMeters`.
-2. `depthArray` - An array containing the left and right depth arrays.
-3. `rawValueToMeters` - the factor to convert the depth into meters.
-4. `getDepth(u, v)` - Gets the depth value of the left camera from normalized u, v coordinates.
+| Member             | Meaning                                              |
+| ------------------ | ---------------------------------------------------- |
+| `depthData`        | Per-view WebXR depth information when available      |
+| `depthArray`       | Decoded per-view depth values                        |
+| `rawValueToMeters` | Conversion factor for raw depth values               |
+| `getDepth(u, v)`   | Left-view distance at normalized image coordinates   |
+| `depthMesh`        | Live reconstructed environment geometry when enabled |
+| `depthTextures`    | GPU depth resources used by supported render paths   |
 
-## Depth Mesh
+Guard reads. Missing data during startup, an unsupported session, or a lost
+sensor is normal runtime state. Do not keep displaying an old measurement as
+if it were current.
 
-A depth mesh is a 3D mesh created by projecting depth values from the depth texture.
-To enable the depth mesh, initiailize `core` with `options.depth` set to `xrDepthMeshOptions` or `xrDepthMeshPhysicsOptions`.
-The depth mesh will use the left camera depth and attach itself as a child of the left camera.
+## Mesh resolution and update cost
 
-By default, the depth will use a downsampled 40x40 mesh for raycasts and collisions.
-To disable this behavior and use a 160x160 full resolution mesh for raycasts and collisions, set `useDownsampledGeometry` to `false` in the depth options.
-To continuously update the full resolution mesh, set `updateFullResolutionGeometry` to `true` in the depth options.
-
-When physics is enabled, the depth mesh will create a mesh collider in the RAPIER world and update it at a fixed rate.
-To configure the collider update rate, set `options.depth.depthMesh.colliderUpdateFps`.
-
-## Depth Texture
-
-A depth texture is a depth array stored on GPU which can be used for shaders such as occlusion or depth visualizations.
-To enable the depth mesh, initiailize `core` with `options.depth.depthTexture.enabled = true`;
-
-## Transparency-based Occlusion
-
-Our SDK supports per-object transparency-based occlusion.
-
-Transparency-baesd occlusion works by computing an occlusion map blurring the difference between the depth of virtual contents and the environment depth.
-This occlusion map is interpreted by each virtual object to set their transparency value within the fragment shader.
-
-### Other objects
-
-To enable occlusion on other objects, their fragment shader needs to interpret the occlusion map.
-For built-in THREE.js materials, XR Blocks provides a helper function to inject the logic using `onBeforeCompile`:
+The default depth mesh uses downsampled geometry for raycasts and collision.
+Configure the mesh before initialization when the application needs another
+trade-off:
 
 ```js
-import RAPIER from '@dimforge/rapier3d-simd-compat';
-
-options.depth = new xb.DepthOptions(xb.xrDepthMeshPhysicsOptions);
-options.depth.depthMesh.colliderUpdateFps = 5;
-options.physics.RAPIER = RAPIER;
+options.enableDepth();
+options.depth.depthMesh.useDownsampledGeometry = false;
+options.depth.depthMesh.updateFullResolutionGeometry = true;
+options.depth.depthMesh.depthMeshUpdateFps = 30;
 ```
 
-## Runtime depth data
-
-After initialization, use `xb.depth` or `xb.core.depth`:
-
-- `depthData`: per-view WebXR depth information.
-- `depthArray`: decoded depth values.
-- `getDepth(u, v)`: read left-view depth at normalized coordinates.
-- `depthMesh`: reconstructed real-world geometry.
-- `depthTextures`: GPU depth resources for render passes.
-
-Depth sensing is device-dependent. Guard sensor reads and verify them on the target device.
-The desktop simulator supplies simulated depth for application and interaction testing.
+Full-resolution geometry and continuous updates increase CPU and GPU work. Use
+the lowest fidelity and cadence that satisfy the behavior, then verify the
+choice on the target device.
 
 ## Depth-aware reticles
 
-Configure reticle projection before initialization:
+Reticles belong to the unified interaction pipeline:
 
 ```js
 options.enableDepth();
@@ -92,12 +76,16 @@ options.enableReticles();
 options.reticles.projectOnDepthMesh = true;
 ```
 
-Use `xb.user.getRayIntersection(controllerId)` to read the current resolved hit. Reticle
-projection controls where the cursor is drawn; it does not create a second targeting API.
+Projection changes where the reticle is drawn. The reticle does not own target
+data. Inside a callback, read `event.intersection`. Outside an event, read the
+current resolved hit with `xb.user.getRayIntersection(controllerId)`.
+
+See [Interaction and Manipulation](Interaction.md) for `target`, `surface`,
+capture, and event-hit lifetime.
 
 ## Model occlusion
 
-Enable depth, then construct a model viewer with occlusion:
+Enable depth, then opt a model viewer into the supported occlusion path:
 
 ```js
 const viewer = new xb.ModelViewer({occlusion: true});
@@ -105,14 +93,54 @@ this.add(viewer);
 await viewer.load('./model.glb');
 ```
 
-For custom Three.js materials, inject the XR Blocks occlusion shader code in
-`material.onBeforeCompile` and add the resulting shader to
-`xb.core.depth.occludableShaders`. Copy the full working pattern from
-`samples/xr_realism/occlusion`.
+For supported loaded glTF materials, `ModelViewer` injects XR Blocks occlusion
+logic and registers the resulting shaders. Transparency is only one rendering
+property: setting `material.transparent = true` does not by itself implement
+occlusion, disable depth writes, or disable pointer input.
+
+For a custom Three.js material, use the complete shader-injection and cleanup
+pattern from `samples/xr_realism/occlusion`. Custom renderers and splats can
+require their own depth integration.
+
+## Environment collision
+
+Depth does not enable physics. Configure Rapier separately:
+
+```js
+import RAPIER from '@dimforge/rapier3d-simd-compat';
+
+const options = new xb.Options();
+options.enableDepth();
+options.physics.RAPIER = RAPIER;
+options.depth.depthMesh.colliderUpdateFps = 5;
+```
+
+When physics and the depth mesh are enabled, XR Blocks maintains the configured
+environment collider. `xrDepthMeshPhysicsOptions` changes depth mesh rendering
+and geometry choices; it is not the physics switch.
+
+Use a low collider update rate unless the application requires faster response.
+Native depth noise and incomplete room coverage can make environment collision
+unstable, so include a reset or escape behavior for dynamic objects.
+
+## Presets and direct options
+
+- `xrDepthMeshOptions`: normal live depth mesh.
+- `xrDepthMeshVisualizationOptions`: diagnostic texture and mesh choices.
+- `xrDepthMeshPhysicsOptions`: mesh choices suited to environment collision and
+  received shadows; still requires Rapier configuration.
+
+Create or modify `DepthOptions` only for a specific mesh, texture, occlusion,
+resolution, or update requirement. Prefer `enableDepth()` for ordinary use.
 
 ## Examples
 
-- `samples/xr_realism/depthmap`: inspect and visualize depth textures.
-- `samples/xr_realism/depthmesh`: use reconstructed environment geometry.
-- `samples/xr_realism/occlusion`: hide virtual content behind real geometry.
-- `samples/advanced/ballpit`: combine depth mesh and physics.
+- `samples/xr_realism/depthmap`: depth values and textures.
+- `samples/xr_realism/depthmesh`: reconstructed geometry.
+- `samples/xr_realism/reticle`: resolved hits and reticle presentation.
+- `samples/xr_realism/occlusion`: material occlusion integration.
+- `samples/advanced/ballpit`: depth mesh with Rapier physics.
+
+For each feature, test supported, warming-up, missing-data, session-failure, and
+sensor-loss states. State which simulator evidence is synthetic and which
+native behavior remains for device acceptance.
