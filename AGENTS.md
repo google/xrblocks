@@ -70,7 +70,6 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 | `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                     |
 | `docs/`       | Docusaurus manual + samples/templates pages                                                                                                  |
 | `skills/`     | Portable consumer task skills for agents building XR Blocks applications                                                                     |
-| `.agents/`    | Repository-local agent workflows; currently the complete SDK contribution seam                                                               |
 | `build/`      | **Generated** bundle output — do not edit                                                                                                    |
 
 ### `src/` subsystems
@@ -132,8 +131,8 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
   limits, and examples.
 - [`skills/`](skills/) — portable consumer task workflows using the Agent
   Skills directory format.
-- [`.agents/skills/xb-contribute-sdk/`](.agents/skills/xb-contribute-sdk/) —
-  repository-local complete-seam contribution workflow.
+- [`skills/xb-contribute-sdk/`](skills/xb-contribute-sdk/) — repository
+  complete-seam contribution workflow.
 
 A skill is justified by an independently useful task process and distinct
 invocation, not by a source subsystem. Exact public API truth remains in

@@ -11,6 +11,7 @@ export interface SelectEvent {
   readonly source: InteractionSource;
   readonly target?: THREE.Object3D;
   readonly currentTarget?: Script;
+  /** Public hit surface. Private renderer meshes are normalized to their owner. */
   readonly surface?: THREE.Object3D;
   /** Current ray intersection on `surface`, when the source still hits it. */
   readonly intersection?: THREE.Intersection;
@@ -40,6 +41,7 @@ export interface ObjectTouchEvent {
   readonly source: InteractionSource;
   readonly target: THREE.Object3D;
   readonly currentTarget?: Script;
+  /** Public contact surface. Private renderer meshes are normalized to it. */
   readonly surface: THREE.Object3D;
   readonly handIndex: number;
   readonly hand?: THREE.Object3D;
@@ -55,6 +57,7 @@ export interface ObjectGrabEvent {
   readonly source: InteractionSource;
   readonly target: THREE.Object3D;
   readonly currentTarget?: Script;
+  /** Public contact surface. Private renderer meshes are normalized to it. */
   readonly surface: THREE.Object3D;
   readonly handIndex: number;
   readonly hand: THREE.Object3D;
@@ -79,7 +82,7 @@ export interface KeyEvent {
  * See /docs/manual/Scripts.md for the full documentation.
  *
  * It manages user, objects, and interaction between user and objects.
- * See `/templates/0_basic/` for an example to start with.
+ * See `/templates/00_basic/` for an example to start with.
  * # Supported interaction functions to extend:
  *
  * onSelectStart(event)
