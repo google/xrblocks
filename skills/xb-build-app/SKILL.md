@@ -1,156 +1,98 @@
 ---
 name: xb-build-app
-description: >-
-  Handoff-ready builder for complete XR Blocks applications. Use when creating
-  or repairing an app scaffold, implementing its primary experience flow,
-  combining several SDK capabilities, or preparing the result for user testing
-  in the desktop simulator or on an XR device.
+description: Build or extend a complete XR Blocks application. Use when the request concerns an app scaffold, a whole experience, several SDK areas, or an end-to-end simulator or XR handoff rather than one focused subsystem.
 ---
 
 # Build an XR Blocks app
 
-Deliver a **handoff-ready vertical slice**: the smallest complete version of the
-primary experience that a user can open, operate, and judge in the simulator or
-XR. Own the implementation and smoke checks; package deeper experiential and
-device acceptance as a clear user test handoff.
-
-Reach for the focused `xb-add-*` skills when the slice needs interaction,
-spatial UI, world sensing, or AI.
+Deliver a **handoff-ready vertical slice**: the smallest complete experience a
+user can open, operate, and judge.
 
 ## 1. Write the experience contract
 
-Resolve from the request and existing files:
+Resolve the first visible state, primary user action, observable result, target
+surface, headset input, desktop equivalent, permissions, assets, services, and
+unsupported states. Make reasonable spatial choices when the request leaves
+them open.
 
-- what appears on first load;
-- the primary user action and visible or audible response;
-- the intended test surface: simulator, XR device, or both;
-- the headset input and useful desktop equivalent;
-- required capabilities, assets, permissions, and external services;
-- the observable state the user should reach.
+Complete this step when the slice can be stated as: “On surface S, the user
+does X, the app observes Y, and the experience becomes Z.”
 
-Choose sensible spatial and interaction details when the request leaves them
-open. This step is complete when the slice can be stated as: “On surface S, the
-user does X, the app observes Y, and the experience becomes Z.”
+## 2. Choose one executable foundation
 
-## 2. Choose one working foundation
+Read [`../../CONTEXT.md`](../../CONTEXT.md). Preserve an existing application's
+delivery model. For a new browser-module app, start from
+[`../../templates/00_basic/`](../../templates/00_basic/). For a bundled
+TypeScript app, start from
+[`../../templates/13_typescript_vite/`](../../templates/13_typescript_vite/).
+Choose a more focused template only when its feature is central.
 
-Read [`../../CONTEXT.md`](../../CONTEXT.md). Preserve an existing app's delivery
-model and closest working patterns. For a new repo-hosted JavaScript app, start
-from [`../../templates/0_basic/`](../../templates/0_basic/); choose a closer
-template only when its capability is central. For a bundled TypeScript app,
-inspect [`../../templates/typescript/`](../../templates/typescript/).
+For browser modules, read
+[`references/import-maps.md`](references/import-maps.md) before changing the
+import map. Verify every XR Blocks symbol in
+[`../../src/xrblocks.ts`](../../src/xrblocks.ts) or an addon's public entry.
 
-For browser-native modules, read
-[`references/import-maps.md`](references/import-maps.md) before editing HTML.
-Its rules are mandatory whenever the app imports an addon, `uiblocks`, or a new
-external package.
+Complete this step when the app has one launch command, one entry URL, and one
+dependency graph in which every bare import resolves.
 
-The foundation is ready when the app has one launch command and entry URL, and
-every bare specifier resolves to one intended dependency graph.
-
-## 3. Implement the complete slice
-
-Treat [`../../src/xrblocks.ts`](../../src/xrblocks.ts) as the public core API and
-verify addon symbols against their public entry. Copy lifecycle and
-configuration patterns from the nearest template, sample, demo, or manual page.
-Source implementations clarify behavior; public entries define what app code
-may import.
-
-If any API, option, lifecycle, addon setup, or runtime behavior is unclear,
-refer to [`../../docs/docs/manual/`](../../docs/docs/manual/) before proceeding.
+## 3. Build the complete slice
 
 Use the engine-owned shape:
 
 ```js
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 class MainScript extends xb.Script {
   init() {
     this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
-    // Create the initial scene and wire the primary action.
+  }
+
+  dispose() {
+    // Release resources this script owns.
   }
 }
 
-const options = new xb.Options(); // defaults to auto; URL may select desktop
+const options = new xb.Options();
 xb.add(new MainScript());
 await xb.init(options);
 ```
 
-Construct plain `xb.Options` to retain its `formFactor: 'auto'` default and its
-constructor-parsed URL override. This lets one entry select XR when supported
-and fall back to the simulator otherwise. Load `SimulatorAddons` so the
-settings, instructions, and hand-pose UI are registered whenever that simulator
-path starts.
+Register scripts before initialization. Use engine-created objects only in or
+after `init()`. Put frame behavior in `update()` and release owned GPU, media,
+listener, timer, worker, and network resources in `dispose()`.
 
-Register every script before `xb.init(options)`. Access engine-created objects
-in or after `init()`. Put per-frame behavior in `update()` and release owned GPU,
-media, listener, and timer resources in `dispose()`. Place content in meters
-using `xb.user.height`, `xb.user.objectDistance`, and `xb.user.panelDistance`.
+Use the focused skill when the slice needs spatial UI, interaction, world
+sensing, or AI. Use the corresponding manual as concept authority and its
+linked template or sample as executable evidence. Addon-specific setup comes
+from that addon's README and public entry, not from an addon skill.
 
-Use `xb-add-spatial-ui` and its UIBlocks-first path for app UI. For physics,
-assign Rapier to `options.physics.RAPIER`; XR Blocks has no `enablePhysics()`.
+Complete this step when first load, primary action, observable result, and all
+normal unavailable states are implemented without placeholders.
 
-This step is complete when the launch entry contains the full first-load →
-primary-action → observable-result path with no placeholder branch in that path.
+## 4. Prepare simulator and XR paths
 
-## 4. Prepare the simulator and XR paths
+Read
+[`references/simulator-and-xr-handoff.md`](references/simulator-and-xr-handoff.md).
+Keep normal startup on `formFactor: 'auto'`. Supply an exact desktop simulator
+route for the primary action. Declare device permissions and session features
+before initialization. Share app state and scene setup across simulator and XR
+rather than creating separate applications.
 
-Read [`references/simulator-and-xr-handoff.md`](references/simulator-and-xr-handoff.md),
-then follow the selected surface branch.
+Complete this step when each selected surface has an exact URL, entry action,
+input instructions, expected result, and named device-only limitations.
 
-Keep the app's normal startup on `formFactor: 'auto'` with `SimulatorAddons`
-loaded. For a simulator-specific handoff URL, append `?formFactor=desktop` to
-force that branch, choose a useful `xb.SimulatorMode`, and preserve visible
-simulator controls. Provide a mouse, keyboard, controller, or simulated-hand
-route to the primary action.
+## 5. Prove and hand off the slice
 
-For an XR handoff, preserve the Enter XR flow, declare camera, microphone, or
-geolocation permissions in `Options` before initialization, and use
-`enableVR()` only when the experience targets immersive VR rather than AR.
-Represent unsupported sensing and unavailable external services as visible app
-states. Use shared startup code when `onSimulatorStarted()` and
-`onXRSessionStarted()` need the same scene transition.
+Build or type-check the exact entry, run focused tests, and start the simulator
+route when the environment permits it. Check module resolution, initialization,
+first render, input affordances, handler registration, cleanup, and relevant
+console output. Verify intended public imports against the current entry even
+when the build is green.
 
-This step is complete when the selected surface has an exact URL, entry action,
-input instructions, expected result, and explicit device-only limitations.
+Return the launch command and URL, target surface, input steps, expected result,
+required permissions or services, completed checks, and remaining real-device
+checks.
 
-## 5. Bring the app to smoke-ready
-
-Finish the code, then run the checks available in the working environment:
-
-- build or serve the exact app entry;
-- run existing focused tests, type checks, lint, or builds that cover changed
-  code in proportion to the change;
-- load the selected simulator URL when browser access is available;
-- confirm module resolution, initialization, first render, visible interaction
-  affordances, registered handlers, and a clean relevant console;
-- verify the XR launch button, requested session mode, and pre-session
-  permission setup from code when a real XR device is unavailable.
-
-Add narrow automated tests when the app already has a test structure or when
-pure state logic benefits from one. Keep comfort, ergonomics, tracking quality,
-passthrough alignment, device performance, and extended-session behavior in the
-user acceptance handoff.
-
-This step is complete when every available smoke check passes, or an
-environment-only check is named precisely for the user to run.
-
-## 6. Hand the user a testable app
-
-Return a compact test card containing:
-
-1. launch command and exact simulator or XR URL;
-2. target surface and required device/browser;
-3. input steps for the primary experience flow;
-4. expected visible or audible result;
-5. permissions, keys, assets, or services the user must provide;
-6. smoke checks completed and their result;
-7. remaining simulator or XR acceptance checks.
-
-Finish when the implementation is complete, the available smoke checks pass,
-and the user can begin meaningful testing without discovering setup or control
-instructions themselves. The user's acceptance session—not this skill—decides
-comfort, experiential quality, and device readiness.
+Finish when every available check passes and the user can begin meaningful
+testing without discovering setup, controls, or expected behavior from code.

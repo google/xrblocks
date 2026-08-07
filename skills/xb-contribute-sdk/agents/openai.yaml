@@ -1,4 +1,6 @@
 interface:
   display_name: 'Contribute to XR Blocks'
-  short_description: 'Complete SDK seams from source through docs'
-  default_prompt: 'Use $xb-contribute-sdk to implement and validate this XR Blocks SDK change as a complete seam.'
+  short_description: 'Complete one SDK change across every seam'
+  default_prompt: 'Use $xb-contribute-sdk to complete this XR Blocks SDK change across implementation, proof, exports, and documentation.'
+policy:
+  allow_implicit_invocation: true

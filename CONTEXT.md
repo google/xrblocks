@@ -106,15 +106,16 @@ continuous placement.
 
 ## Task workflows
 
-The repository provides five portable consumer workflows:
+The repository provides six portable consumer workflows:
 
 - `xb-build-app`
 - `xb-add-spatial-ui`
 - `xb-add-interactions`
 - `xb-add-world-sensing`
 - `xb-add-ai`
+- `xb-debug-app`
 
-Repository contributors use `.agents/skills/xb-contribute-sdk`.
+Repository contributors use `skills/xb-contribute-sdk`.
 
 The workflows are not tied to one agent host. Each host can install or expose
 the `skills/<name>/` directories through its supported discovery mechanism.
