@@ -32,6 +32,57 @@ async function loadMediaPipeModule() {
   }
 }
 
+/** Where the metric skeleton is placed when depth projection is off. */
+const METRIC_SKELETON_DISTANCE_METRES = 2;
+
+const cameraPosition = new THREE.Vector3();
+const cameraRight = new THREE.Vector3();
+const cameraUp = new THREE.Vector3();
+const cameraForward = new THREE.Vector3();
+
+/**
+ * Places a MediaPipe world landmark in front of the viewer, preserving the
+ * body's real proportions.
+ *
+ * World landmarks are metres from the centre of the hips, with x toward the
+ * person's right, y downward and z toward the camera. Screen landmarks cannot
+ * be used for this: they depend on camera intrinsics, and joints outside the
+ * frame are extrapolated, so a half-visible body produces legs that shoot off
+ * into the distance.
+ *
+ * x is deliberately not negated, which makes the skeleton behave like a mirror:
+ * raise your right hand and the skeleton's hand rises on the same side of the
+ * screen.
+ *
+ * @param metric - Metric landmark from MediaPipe, in metres.
+ * @param worldFromView - Camera pose.
+ * @param target - Vector to write the result into.
+ * @returns The world position for the landmark.
+ */
+function placeMetricLandmark(
+  metric: {x: number; y: number; z: number},
+  worldFromView: THREE.Matrix4,
+  target: THREE.Vector3
+): THREE.Vector3 {
+  cameraPosition.setFromMatrixPosition(worldFromView);
+  cameraRight.setFromMatrixColumn(worldFromView, 0).normalize();
+  cameraUp.setFromMatrixColumn(worldFromView, 1).normalize();
+  // Cameras look down -Z.
+  cameraForward.setFromMatrixColumn(worldFromView, 2).normalize().negate();
+
+  return (
+    target
+      .copy(cameraPosition)
+      .addScaledVector(
+        cameraForward,
+        METRIC_SKELETON_DISTANCE_METRES + (metric.z || 0)
+      )
+      .addScaledVector(cameraRight, metric.x || 0)
+      // y runs downward in MediaPipe's frame and upward in three.js.
+      .addScaledVector(cameraUp, -(metric.y || 0))
+  );
+}
+
 /**
  * Convert a raw MediaPipe `PoseLandmarkerResult` into `DetectedBodyPose`
  * objects with world-space joint positions.
@@ -92,6 +143,15 @@ export function processPoseLandmarkerResult(
       let wp: THREE.Vector3 | undefined;
       if (worldCoords) {
         wp = worldCoords.worldPosition;
+      } else if (!useDepthProjection && wLm) {
+        // Not projecting, and MediaPipe gave us a metric skeleton: use it so
+        // the body keeps its real proportions regardless of camera intrinsics
+        // or joints sitting outside the frame.
+        wp = placeMetricLandmark(
+          wLm,
+          cameraParametersSnapshot.worldFromView,
+          new THREE.Vector3()
+        );
       } else {
         // Robust fallback estimation when physical depth mesh raycast misses
         const origin = new THREE.Vector3().applyMatrix4(
@@ -115,6 +175,9 @@ export function processPoseLandmarkerResult(
         z: wLm ? wLm.z : lm.z,
         visibility: lm.visibility,
         worldPosition: wp,
+        metricPosition: wLm
+          ? new THREE.Vector3(wLm.x, wLm.y, wLm.z)
+          : undefined,
       });
     }
 

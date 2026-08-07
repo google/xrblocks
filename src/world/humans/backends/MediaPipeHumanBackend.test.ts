@@ -59,6 +59,123 @@ beforeEach(() => {
 });
 
 describe('processPoseLandmarkerResult', () => {
+  it('builds a metric skeleton when projection is disabled', () => {
+    // With real proportions the shoulder span should be its true width, not
+    // whatever the camera's field of view implies.
+    vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
+    const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();
+
+    const [pose] = processPoseLandmarkerResult(
+      makeMpResult({
+        landmarks: [
+          [
+            {x: 0.4, y: 0.5, z: 0},
+            {x: 0.6, y: 0.5, z: 0},
+          ],
+        ],
+        worldLandmarks: [
+          [
+            {x: -0.2, y: 0, z: 0},
+            {x: 0.2, y: 0, z: 0},
+          ],
+        ],
+      }),
+      depthMeshSnapshot,
+      cameraParametersSnapshot,
+      {useDepthProjection: false}
+    );
+
+    const left = pose.landmarks[0].worldPosition!;
+    const right = pose.landmarks[1].worldPosition!;
+    expect(left.distanceTo(right)).toBeCloseTo(0.4);
+  });
+
+  it('puts the metric skeleton in front of the viewer', () => {
+    vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
+    const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();
+
+    const [pose] = processPoseLandmarkerResult(
+      makeMpResult({
+        landmarks: [[{x: 0.5, y: 0.5, z: 0}]],
+        worldLandmarks: [[{x: 0, y: 0, z: 0}]],
+      }),
+      depthMeshSnapshot,
+      cameraParametersSnapshot,
+      {useDepthProjection: false}
+    );
+
+    // Camera sits at y = 1.6 looking down -Z, so the hips land 2 m ahead.
+    const wp = pose.landmarks[0].worldPosition!;
+    expect(wp.z).toBeCloseTo(-2);
+    expect(wp.y).toBeCloseTo(1.6);
+  });
+
+  it('puts the head above the hips', () => {
+    vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
+    const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();
+
+    const [pose] = processPoseLandmarkerResult(
+      makeMpResult({
+        landmarks: [
+          [
+            {x: 0.5, y: 0.2, z: 0},
+            {x: 0.5, y: 0.8, z: 0},
+          ],
+        ],
+        // MediaPipe's y runs downward, so the head is negative.
+        worldLandmarks: [
+          [
+            {x: 0, y: -0.6, z: 0},
+            {x: 0, y: 0, z: 0},
+          ],
+        ],
+      }),
+      depthMeshSnapshot,
+      cameraParametersSnapshot,
+      {useDepthProjection: false}
+    );
+
+    const head = pose.landmarks[0].worldPosition!;
+    const hips = pose.landmarks[1].worldPosition!;
+    expect(head.y).toBeGreaterThan(hips.y);
+  });
+
+  it('exposes the raw metric landmark', () => {
+    vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
+    const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();
+
+    const [pose] = processPoseLandmarkerResult(
+      makeMpResult({
+        landmarks: [[{x: 0.5, y: 0.5, z: 0}]],
+        worldLandmarks: [[{x: 0.1, y: -0.2, z: 0.3}]],
+      }),
+      depthMeshSnapshot,
+      cameraParametersSnapshot
+    );
+
+    expect(pose.landmarks[0].metricPosition!.toArray()).toEqual([
+      0.1, -0.2, 0.3,
+    ]);
+  });
+
+  it('falls back to the view ray without metric landmarks', () => {
+    vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
+    const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();
+
+    const [pose] = processPoseLandmarkerResult(
+      makeMpResult({landmarks: [[{x: 0.5, y: 0.5, z: 0}]]}),
+      depthMeshSnapshot,
+      cameraParametersSnapshot,
+      {useDepthProjection: false}
+    );
+
+    const cameraOrigin = new THREE.Vector3(0, 1.6, 0);
+    expect(
+      pose.landmarks[0].worldPosition!.distanceTo(cameraOrigin)
+    ).toBeCloseTo(1.5);
+    expect(pose.landmarks[0].metricPosition).toBeUndefined();
+  });
+
   it('skips the depth raycast when projection is disabled', () => {
     // A person on a webcam feed is not part of the simulator's depth mesh, so
     // raycasting would land every joint on the surrounding room geometry.
