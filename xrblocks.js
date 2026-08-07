@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 2b6ec13
- * @builddate 2026-08-07T05:15:06.127Z
+ * @commitid b6e8351
+ * @builddate 2026-08-07T14:54:43.197Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6478,9 +6478,14 @@ class Depth {
     updateGPUDepthData(depthData, viewId) {
         this.gpuDepthData[viewId] = depthData;
         this.updateDepthMatrices(depthData, viewId);
+        // Reading the depth target back is a synchronous GPU stall, and in stereo
+        // this runs once per eye. Only the first view's CPU depth is ever
+        // consumed: getDepth, getDepthInMeters, getVertex and the depth mesh all
+        // read index 0. So the second eye's readback stalls the pipeline for data
+        // nothing looks at.
         // For now, assume that we need cpu depth only if depth mesh is enabled.
         // In the future, add a separate option.
-        const needCpuDepth = this.options.depthMesh.enabled;
+        const needCpuDepth = this.options.depthMesh.enabled && viewId === 0;
         const cpuDepth = needCpuDepth && this.gpuDepthConverter
             ? this.gpuDepthConverter.convertGPUToCPU(depthData)
             : null;
