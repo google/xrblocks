@@ -86,8 +86,6 @@ xb.user.isSelectingAt(object);
 xb.user.isManipulating(object);
 ```
 
-
-
 ## Reticles present targeting
 
 A reticle is a visual presentation of the resolved hit. It is not a data owner
