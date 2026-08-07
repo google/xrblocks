@@ -106,7 +106,7 @@ continuous placement.
 
 ## Task workflows
 
-The Codex plugin exposes five consumer workflows:
+The repository provides five portable consumer workflows:
 
 - `xb-build-app`
 - `xb-add-spatial-ui`
@@ -115,3 +115,6 @@ The Codex plugin exposes five consumer workflows:
 - `xb-add-ai`
 
 Repository contributors use `.agents/skills/xb-contribute-sdk`.
+
+The workflows are not tied to one agent host. Each host can install or expose
+the `skills/<name>/` directories through its supported discovery mechanism.

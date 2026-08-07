@@ -1,6 +1,7 @@
 {
-  "skill": "xb-ai",
-  "template": "templates/0_basic",
+  "skill": "xb-add-ai",
+  "reference_files": ["docs/docs/manual/AI.mdx", "docs/docs/manual/Sound.mdx"],
+  "template": "templates/06_ai_query",
   "edit_file": "main.js",
   "expected_imports": [],
   "expected_apis": ["enableAI", "xb.ai", "query"],
