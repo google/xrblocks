@@ -1,0 +1,20 @@
+{
+  "skill": "xb-debug-app",
+  "reference_files": [
+    "docs/docs/manual/Core.mdx",
+    "docs/docs/manual/UI.mdx",
+    "docs/docs/manual/Interaction.md"
+  ],
+  "template": "templates/01_spatial_ui",
+  "edit_file": "main.js",
+  "expected_imports": ["xrblocks"],
+  "expected_apis": ["UICard", "UIText", "UIButton"],
+  "forbidden_patterns": [
+    "enableUI\\(",
+    "SpatialPanel",
+    "TextView",
+    "TextButton",
+    "UICore",
+    "uiblocks"
+  ]
+}

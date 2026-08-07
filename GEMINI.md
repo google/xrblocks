@@ -1,16 +1,11 @@
-# GEMINI.md
+# Gemini repository guidance
 
-When working in this repository, follow all guidelines in [AGENTS.md](AGENTS.md).
+Follow [`AGENTS.md`](AGENTS.md) when changing this repository.
 
-Pick the doc that matches what you are doing:
+For application authoring, read [`CONTEXT.md`](CONTEXT.md), then use the manual
+page and focused template or sample for the requested task. Verify every public
+symbol against [`src/xrblocks.ts`](src/xrblocks.ts) or the relevant addon's
+public entry. Do not infer public APIs from implementation filenames.
 
-- **Contributing to the SDK** (editing `src/`): [AGENTS.md](AGENTS.md) is the source of
-  truth for build, test, architecture, and conventions.
-- **Building an XR app with the SDK**: read [CONTEXT.md](CONTEXT.md) for the rules of
-  engagement, then use the focused skills in [`skills/`](skills/) (e.g. `xb-core`,
-  `xb-ui`, `xb-hands`, `xb-depth`, `xb-ai`).
-- **In-tree SDK overview**: [`src/SKILL.md`](src/SKILL.md).
-
-> The single most important rule: **only call APIs that exist.** Verify against
-> [`src/xrblocks.ts`](src/xrblocks.ts) (the full public surface) or copy a working
-> pattern from `samples/`, `templates/`, or `demos/` before generating code.
+The consumer task workflows live in [`skills/`](skills/). Addon-specific
+reference lives in the addon's README and source TSDoc.

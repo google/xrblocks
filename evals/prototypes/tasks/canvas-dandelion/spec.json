@@ -1,8 +1,12 @@
 {
-  "skill": "xb-modelviewer",
-  "template": "templates/0_basic",
+  "skill": "xb-add-spatial-ui",
+  "reference_files": [
+    "docs/docs/manual/ModelViewer.md",
+    "docs/docs/manual/Interaction.md"
+  ],
+  "template": "templates/00_basic",
   "edit_file": "main.js",
   "expected_imports": [],
-  "expected_apis": ["ModelViewer", "loadGLTFModel"],
-  "forbidden_patterns": ["new GLTFLoader\\(\\)"]
+  "expected_apis": ["ModelViewer", ".load(", "manipulation"],
+  "forbidden_patterns": ["new GLTFLoader\\(\\)", "loadGLTFModel"]
 }

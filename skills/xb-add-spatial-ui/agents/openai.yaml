@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Add XR Blocks Spatial UI'
+  short_description: 'Build usable UI with the current built-in system'
+  default_prompt: 'Use $xb-add-spatial-ui to build a usable spatial interface with the current XR Blocks UI.'
+policy:
+  allow_implicit_invocation: true

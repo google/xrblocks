@@ -13,7 +13,7 @@ For advanced samples that demonstrate creative use cases, use
 Follow the [development guide](../README.md#development-guide) to serve the
 repository, then open your sample path, for example:
 
-- `http://localhost:8080/samples/spatial_ui/uiblocks/`
+- `http://localhost:8080/samples/spatial_ui/modelviewer/`
 
 ## Contributing a New Sample
 

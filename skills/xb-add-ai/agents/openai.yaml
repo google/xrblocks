@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Add XR Blocks AI'
+  short_description: 'Connect AI input to an observable XR result'
+  default_prompt: 'Use $xb-add-ai to implement this AI behavior with explicit provider states, disclosure, and cleanup.'
+policy:
+  allow_implicit_invocation: true

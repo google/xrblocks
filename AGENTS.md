@@ -61,16 +61,16 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 
 ### Repository layout
 
-| Path          | Purpose                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/`        | SDK source — one folder per subsystem                                                                                                       |
-| `src/addons/` | Opt-in modules built separately: `testing`, `netblocks`, `lipsync`, `glasses`, `simulator`, `volumes`, `virtualkeyboard`, `agenthands`, ... |
-| `samples/`    | Focused examples and richer showcases under `samples/advanced/` (served by the docs site)                                                   |
-| `demos/`      | Experimental applications and development showcases                                                                                         |
-| `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                    |
-| `docs/`       | Docusaurus manual + samples/templates pages                                                                                                 |
-| `skills/`     | Agent skill registry (`xb-*`) — focused, task-oriented guides                                                                               |
-| `build/`      | **Generated** bundle output — do not edit                                                                                                   |
+| Path          | Purpose                                                                                                                                      |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/`        | SDK source — one folder per subsystem                                                                                                        |
+| `src/addons/` | Opt-in and experimental modules built separately: `testing`, `netblocks`, `lipsync`, `agenthands`, `embodied-control`, `remote-control`, ... |
+| `samples/`    | Focused examples and richer showcases under `samples/advanced/` (served by the docs site)                                                    |
+| `demos/`      | Experimental applications and development showcases                                                                                          |
+| `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                     |
+| `docs/`       | Docusaurus manual + samples/templates pages                                                                                                  |
+| `skills/`     | Portable consumer task skills for agents building XR Blocks applications                                                                     |
+| `build/`      | **Generated** bundle output — do not edit                                                                                                    |
 
 ### `src/` subsystems
 
@@ -84,7 +84,7 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 | `ai/`                                       | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                |
 | `agent/`                                    | agent framework: tools, memory, context (WIP)                                                                  |
 | `ui/`                                       | core spatial UI: cards, overlays, panels, text, images, buttons, sliders, themes, `ModelViewer`                |
-| `ux/`                                       | `DragManager`, reusable interaction behaviors                                                                  |
+| `interaction/`                              | unified ray, gaze, mouse, direct-touch, selection, capture, and manipulation pipeline                          |
 | `simulator/`                                | desktop XR simulator (manifest environments, physical objects, virtual user/hands/depth/planes, control modes) |
 | `sound/`                                    | spatial audio, speech recognizer/synthesizer                                                                   |
 | `physics/`                                  | Rapier3D integration                                                                                           |
@@ -109,9 +109,11 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 2. Expose a chainable `enable*()` on `Options` if it is user-facing.
 3. Wire the subsystem into `Core` and the frame loop / DI `Registry`.
 4. Re-export public types from `src/xrblocks.ts`.
-5. Add colocated `*.test.ts`, a `samples/`/`templates/` example, and — for a distinct
-   capability — a `skills/xb-*` entry (see [`skills/README.md`](skills/README.md)).
-6. Update `CONTEXT.md`, `README.md`, `AGENTS.md` and `src/SKILL.md` with the changes.
+5. Add or adjust the smallest colocated `*.test.ts` proof and one executable
+   sample or template when the public pattern needs teaching.
+6. Update the one manual page or agent workflow that owns the changed concept.
+   A new API capability does not require a new skill or blanket edits to every
+   overview.
 
 ## AI & API-Key Security
 
@@ -124,8 +126,14 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 
 ## Agent Docs & Skills
 
-- [`CONTEXT.md`](CONTEXT.md) — rules of engagement for building apps with the SDK.
-- [`src/SKILL.md`](src/SKILL.md) — in-tree SDK overview for app developers.
-- [`skills/`](skills/) — focused `xb-*` skills (UI, hands, gestures, head gestures, depth, world, AI,
-  physics, simulator, sound, multiplayer). Index + naming convention in
-  [`skills/README.md`](skills/README.md).
+- [`CONTEXT.md`](CONTEXT.md) — compact contract for agents building apps with the SDK.
+- [`docs/docs/manual/`](docs/docs/manual/) — canonical concepts, setup, behavior,
+  limits, and examples.
+- [`skills/`](skills/) — portable consumer task workflows using the Agent
+  Skills directory format.
+- [`skills/xb-contribute-sdk/`](skills/xb-contribute-sdk/) — repository
+  complete-seam contribution workflow.
+
+A skill is justified by an independently useful task process and distinct
+invocation, not by a source subsystem. Exact public API truth remains in
+[`src/xrblocks.ts`](src/xrblocks.ts), addon public entries, and source TSDoc.

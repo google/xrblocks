@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Add XR Blocks Interactions'
+  short_description: 'Design events, feedback, and manipulation'
+  default_prompt: 'Use $xb-add-interactions to implement these XR Blocks interactions with current event semantics.'
+policy:
+  allow_implicit_invocation: true
