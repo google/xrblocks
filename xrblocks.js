@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid b6e8351
- * @builddate 2026-08-07T14:54:43.197Z
+ * @commitid 7f552a4
+ * @builddate 2026-08-07T21:53:38.514Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -25269,6 +25269,15 @@ class Core {
         this.registry.register(this.xrSystemsGroup);
     }
     dispose() {
+        // Physics steps off the render loop on its own interval, so it keeps
+        // running after teardown unless the handle is cleared. Freeing the Rapier
+        // world matters too: it holds WASM memory that garbage collection cannot
+        // reclaim on its own.
+        if (this.physicsIntervalId !== undefined) {
+            clearInterval(this.physicsIntervalId);
+            this.physicsIntervalId = undefined;
+        }
+        this.physics?.dispose();
         this.input.dispose();
         window.removeEventListener('resize', this.onWindowResize);
     }
@@ -25456,7 +25465,7 @@ class Core {
         await this.scriptsManager.syncScriptsWithScene(this.scene);
         this.renderer.setAnimationLoop(this.update);
         if (this.physics) {
-            setInterval(this.physicsStep, 1000 * this.physics.timestep);
+            this.physicsIntervalId = setInterval(this.physicsStep, 1000 * this.physics.timestep);
         }
         if (this.options.reticles.enabled) {
             this.input.addReticles();
