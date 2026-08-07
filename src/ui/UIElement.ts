@@ -360,15 +360,11 @@ export abstract class UIElement extends Script {
 
   private markUIStyleDirty = (
     property: string,
-    previous: unknown,
-    next: unknown
+    _previous: unknown,
+    _next: unknown
   ): void => {
     this.markUIDirty();
-    if (
-      property === 'zIndex' ||
-      (property === 'backgroundColor' &&
-        isTransparentPaint(previous) !== isTransparentPaint(next))
-    ) {
+    if (property === 'zIndex') {
       this.markUIStructureDirty();
     }
   };
@@ -761,17 +757,6 @@ function isSolidColor(value: unknown): value is THREE.ColorRepresentation {
     value instanceof THREE.Color ||
     (typeof value === 'number' && Number.isFinite(value)) ||
     (typeof value === 'string' && value.trim().length > 0)
-  );
-}
-
-function isTransparentPaint(value: unknown): boolean {
-  if (value === undefined || value === 'transparent') return true;
-  if (typeof value !== 'string') return false;
-  const compact = value.replace(/\s/g, '').toLowerCase();
-  return (
-    /^#[0-9a-f]{3}0$/u.test(compact) ||
-    /^#[0-9a-f]{6}00$/u.test(compact) ||
-    /^(?:rgba|hsla)\([^)]*,0(?:\.0+)?\)$/u.test(compact)
   );
 }
 

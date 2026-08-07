@@ -3,6 +3,7 @@ import * as xb from 'xrblocks';
 
 const CHIPS_PER_PAGE = 8;
 const SELECTED_BLUE = '#4f8ce0';
+const SELECTED_HOVER_BLUE = '#6ba3ed';
 
 function prettify(name) {
   return name
@@ -112,6 +113,9 @@ export class GNMSpatialUI {
       setToggled(toggled) {
         button.style.backgroundColor = toggled ? SELECTED_BLUE : undefined;
         button.style.color = toggled ? '#ffffff' : undefined;
+        button.style[':hover'] = toggled
+          ? {backgroundColor: SELECTED_HOVER_BLUE, color: '#ffffff'}
+          : {color: xb.ui.theme.colors.text};
       },
       setLabel(value) {
         button.label = value;
@@ -257,7 +261,10 @@ export class GNMSpatialUI {
         index + 2
       )) {
         const button = this.button(controls, label, {
-          onClick: () => setValue(!getValue()),
+          onClick: () => {
+            setValue(!getValue());
+            this.update();
+          },
         });
         this.toggles.push({button, getValue});
       }
@@ -272,7 +279,10 @@ export class GNMSpatialUI {
       },
     });
     this.button(actions, 'Neutral all', {
-      onClick: () => scene.resetToNeutral(),
+      onClick: () => {
+        scene.resetToNeutral();
+        this.update();
+      },
     });
   }
 
@@ -289,7 +299,10 @@ export class GNMSpatialUI {
       ['regions', 'Regions'],
     ]) {
       const button = this.button(modeRow, label, {
-        onClick: () => scene.setMaterialMode(mode),
+        onClick: () => {
+          scene.setMaterialMode(mode);
+          this.update();
+        },
       });
       this.modeButtons.push({button, mode});
     }
@@ -323,7 +336,10 @@ export class GNMSpatialUI {
         index + 2
       )) {
         const button = this.button(controls, label, {
-          onClick: () => setValue(!getValue()),
+          onClick: () => {
+            setValue(!getValue());
+            this.update();
+          },
         });
         this.toggles.push({button, getValue});
       }
