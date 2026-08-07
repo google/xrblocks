@@ -14,6 +14,19 @@ export class HumansOptions {
   pollingIntervalMs = 0;
 
   /**
+   * Project each landmark onto the depth mesh to find its world position.
+   *
+   * This is what you want when the people being detected are physically in
+   * front of you, since the ray lands on their actual body. Turn it off when
+   * the camera is showing someone who is not part of the depth scene, such as a
+   * webcam feed on the desktop simulator: every ray would then hit the
+   * surrounding geometry instead and the skeleton would be smeared across it.
+   * With projection off, landmarks are placed along the view ray at a fixed
+   * distance, which keeps the body correctly proportioned.
+   */
+  useDepthProjection = true;
+
+  /**
    * Configuration options for the active pose detection backend.
    */
   backendConfig = {
