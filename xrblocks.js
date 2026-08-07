@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 7f552a4
- * @builddate 2026-08-07T21:53:38.514Z
+ * @commitid 46c0753
+ * @builddate 2026-08-07T22:15:44.669Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13724,6 +13724,32 @@ class SimulatorDepth {
         // setTimeout-based fence polling chains stack up and dominate the
         // main thread.
         this.updateInFlight = false;
+        /**
+         * Longest a depth buffer is allowed to go without being refreshed while
+         * nothing detectable has changed, in milliseconds.
+         *
+         * This is not only a hedge against animation the skip cannot see, such as
+         * skinning or vertex shaders. It is also what keeps the depth mesh's
+         * position attribute version advancing while the scene sits still.
+         * `FaceRecognizer`, `HumanRecognizer`, and `ObjectDetector` each cache a
+         * cloned depth mesh, and its BVH, keyed on that version. If this were
+         * removed, a stationary scene would freeze the version, those caches would
+         * never invalidate, and per-landmark raycasts would keep hitting a stale
+         * clone. That is the failure this repository already fixed once, where the
+         * face wireframe only appeared while the camera was moving.
+         *
+         * Raising it trades depth freshness for fewer readbacks; setting it to
+         * `Infinity` would reintroduce that bug.
+         */
+        this.maxDepthAgeMs = 500;
+        this.lastDepthPosition = new THREE.Vector3(NaN, NaN, NaN);
+        this.lastDepthQuaternion = new THREE.Quaternion(NaN, NaN, NaN, NaN);
+        this.lastSceneSignature = NaN;
+        this.lastDepthUpdateMs = -Infinity;
+        // Scratch used to hash the raw bits of a float, so the signature reacts to
+        // any change rather than relying on a tolerance.
+        this.hashFloat = new Float64Array(1);
+        this.hashInts = new Int32Array(this.hashFloat.buffer);
     }
     /**
      * Initialize Simulator Depth.
@@ -13760,11 +13786,66 @@ class SimulatorDepth {
         // was a dominant main-thread cost in perf traces before this).
         if (this.updateInFlight)
             return;
+        // Reading the depth target back stalls the GPU pipeline: the buffer is
+        // only 160x160 but the readback has to wait for the render to finish, so
+        // it costs far more than its size suggests. When neither the view nor
+        // anything in the scene has moved the result would be identical, so skip
+        // the whole render + readback and keep the previous buffer.
+        if (!this.depthNeedsUpdate())
+            return;
         this.renderDepthScene();
+        this.markDepthUpdated();
         this.updateInFlight = true;
         this.updateDepth().finally(() => {
             this.updateInFlight = false;
         });
+    }
+    /**
+     * Whether the depth buffer would differ from the one already captured.
+     *
+     * @returns True when the camera moved, the scene moved, or the buffer has
+     * gone stale.
+     */
+    depthNeedsUpdate() {
+        if (performance.now() - this.lastDepthUpdateMs >= this.maxDepthAgeMs) {
+            return true;
+        }
+        if (!this.depthCamera.position.equals(this.lastDepthPosition) ||
+            !this.depthCamera.quaternion.equals(this.lastDepthQuaternion)) {
+            return true;
+        }
+        return this.computeSceneSignature() !== this.lastSceneSignature;
+    }
+    /**
+     * Cheap hash over the world transforms of everything the depth pass draws.
+     *
+     * Anything that moves, rotates, scales, or is shown or hidden changes the
+     * hash, so a still camera in front of a moving object still refreshes. This
+     * is arithmetic over a few hundred nodes, which is orders of magnitude
+     * cheaper than the GPU stall a readback costs.
+     *
+     * @returns A hash of the scene's current visible transforms.
+     */
+    computeSceneSignature() {
+        let hash = 0;
+        this.simulatorScene.traverse((object) => {
+            hash = (hash ^ (object.visible ? 0x9e3779b9 : 0x85ebca6b)) | 0;
+            if (!object.visible)
+                return;
+            const e = object.matrixWorld.elements;
+            for (let i = 0; i < 16; i++) {
+                this.hashFloat[0] = e[i];
+                hash = Math.imul(hash ^ this.hashInts[0], 0x27220a95) | 0;
+                hash = Math.imul(hash ^ this.hashInts[1], 0x27220a95) | 0;
+            }
+        });
+        return hash;
+    }
+    markDepthUpdated() {
+        this.lastDepthPosition.copy(this.depthCamera.position);
+        this.lastDepthQuaternion.copy(this.depthCamera.quaternion);
+        this.lastSceneSignature = this.computeSceneSignature();
+        this.lastDepthUpdateMs = performance.now();
     }
     updateDepthCamera() {
         const renderingCamera = this.camera;

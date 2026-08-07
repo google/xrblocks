@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 7f552a4
- * @builddate 2026-08-07T21:53:38.514Z
+ * @commitid 46c0753
+ * @builddate 2026-08-07T22:15:44.669Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6423,6 +6423,30 @@ declare class SimulatorDepth {
     autoUpdateDepthCameraTransform: boolean;
     private projectionMatrixArray;
     private updateInFlight;
+    /**
+     * Longest a depth buffer is allowed to go without being refreshed while
+     * nothing detectable has changed, in milliseconds.
+     *
+     * This is not only a hedge against animation the skip cannot see, such as
+     * skinning or vertex shaders. It is also what keeps the depth mesh's
+     * position attribute version advancing while the scene sits still.
+     * `FaceRecognizer`, `HumanRecognizer`, and `ObjectDetector` each cache a
+     * cloned depth mesh, and its BVH, keyed on that version. If this were
+     * removed, a stationary scene would freeze the version, those caches would
+     * never invalidate, and per-landmark raycasts would keep hitting a stale
+     * clone. That is the failure this repository already fixed once, where the
+     * face wireframe only appeared while the camera was moving.
+     *
+     * Raising it trades depth freshness for fewer readbacks; setting it to
+     * `Infinity` would reintroduce that bug.
+     */
+    maxDepthAgeMs: number;
+    private lastDepthPosition;
+    private lastDepthQuaternion;
+    private lastSceneSignature;
+    private lastDepthUpdateMs;
+    private readonly hashFloat;
+    private readonly hashInts;
     constructor(simulatorScene: SimulatorScene);
     /**
      * Initialize Simulator Depth.
@@ -6430,6 +6454,25 @@ declare class SimulatorDepth {
     init(renderer: THREE.WebGLRenderer, camera: THREE.Camera, depth: Depth): void;
     createRenderTarget(): void;
     update(): void;
+    /**
+     * Whether the depth buffer would differ from the one already captured.
+     *
+     * @returns True when the camera moved, the scene moved, or the buffer has
+     * gone stale.
+     */
+    private depthNeedsUpdate;
+    /**
+     * Cheap hash over the world transforms of everything the depth pass draws.
+     *
+     * Anything that moves, rotates, scales, or is shown or hidden changes the
+     * hash, so a still camera in front of a moving object still refreshes. This
+     * is arithmetic over a few hundred nodes, which is orders of magnitude
+     * cheaper than the GPU stall a readback costs.
+     *
+     * @returns A hash of the scene's current visible transforms.
+     */
+    private computeSceneSignature;
+    private markDepthUpdated;
     private updateDepthCamera;
     private renderDepthScene;
     private updateDepth;
