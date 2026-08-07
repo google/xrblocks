@@ -146,8 +146,10 @@ describe('SimulatorDepth.update inflight guard', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // The scene can animate under a still camera, so staleness still forces a
-    // refresh even with no movement.
+    // Two reasons this has to keep firing with nothing moving. The scene can
+    // animate in ways a transform hash cannot see, and the detectors cache a
+    // cloned depth mesh keyed on the position attribute version, so the
+    // version has to keep advancing or those caches never invalidate.
     depthSim.maxDepthAgeMs = 0;
     depthSim.update();
 

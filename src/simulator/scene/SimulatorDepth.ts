@@ -38,9 +38,20 @@ export class SimulatorDepth {
 
   /**
    * Longest a depth buffer is allowed to go without being refreshed while
-   * nothing detectable has changed, in milliseconds. The skip keys off camera
-   * and scene transforms, which cannot see vertex-level animation such as
-   * skinning or vertex shaders, so this bounds worst-case staleness.
+   * nothing detectable has changed, in milliseconds.
+   *
+   * This is not only a hedge against animation the skip cannot see, such as
+   * skinning or vertex shaders. It is also what keeps the depth mesh's
+   * position attribute version advancing while the scene sits still.
+   * `FaceRecognizer`, `HumanRecognizer`, and `ObjectDetector` each cache a
+   * cloned depth mesh, and its BVH, keyed on that version. If this were
+   * removed, a stationary scene would freeze the version, those caches would
+   * never invalidate, and per-landmark raycasts would keep hitting a stale
+   * clone. That is the failure this repository already fixed once, where the
+   * face wireframe only appeared while the camera was moving.
+   *
+   * Raising it trades depth freshness for fewer readbacks; setting it to
+   * `Infinity` would reintroduce that bug.
    */
   maxDepthAgeMs = 500;
 
