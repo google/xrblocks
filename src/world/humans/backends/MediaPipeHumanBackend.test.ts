@@ -59,6 +59,40 @@ beforeEach(() => {
 });
 
 describe('processPoseLandmarkerResult', () => {
+  it('skips the depth raycast when projection is disabled', () => {
+    // A person on a webcam feed is not part of the simulator's depth mesh, so
+    // raycasting would land every joint on the surrounding room geometry.
+    vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
+    const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();
+
+    const [pose] = processPoseLandmarkerResult(
+      makeMpResult({landmarks: [[{x: 0.5, y: 0.5, z: 0}]]}),
+      depthMeshSnapshot,
+      cameraParametersSnapshot,
+      {useDepthProjection: false}
+    );
+
+    expect(transformRgbUvToWorld).not.toHaveBeenCalled();
+    // Falls back to the view ray, keeping the body correctly proportioned.
+    const cameraOrigin = new THREE.Vector3(0, 1.6, 0);
+    expect(
+      pose.landmarks[0].worldPosition!.distanceTo(cameraOrigin)
+    ).toBeCloseTo(1.5);
+  });
+
+  it('projects onto the depth mesh by default', () => {
+    vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
+    const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();
+
+    processPoseLandmarkerResult(
+      makeMpResult({landmarks: [[{x: 0.5, y: 0.5, z: 0}]]}),
+      depthMeshSnapshot,
+      cameraParametersSnapshot
+    );
+
+    expect(transformRgbUvToWorld).toHaveBeenCalled();
+  });
+
   it('returns one pose per detected person', () => {
     vi.mocked(transformRgbUvToWorld).mockReturnValue(HIT as never);
     const {depthMeshSnapshot, cameraParametersSnapshot} = makeSnapshots();

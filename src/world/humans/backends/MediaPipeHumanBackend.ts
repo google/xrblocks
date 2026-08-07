@@ -44,15 +44,21 @@ async function loadMediaPipeModule() {
  * first; when the ray misses, the point is back-projected through the camera
  * frustum and placed ~1.5 m out, modulated by the landmark's relative z.
  *
+ * Pass `useDepthProjection: false` when the detected person is not part of the
+ * depth scene, such as a webcam feed on the desktop simulator. Every ray would
+ * otherwise hit the surrounding geometry and stretch the skeleton across it.
+ *
  * @param result - Raw result from the MediaPipe pose task.
  * @param depthMeshSnapshot - Depth mesh to raycast against.
  * @param cameraParametersSnapshot - Camera matrices for back-projection.
+ * @param options - Projection behaviour.
  * @returns One `DetectedBodyPose` per person in the result.
  */
 export function processPoseLandmarkerResult(
   result: MEDIAPIPE.PoseLandmarkerResult,
   depthMeshSnapshot: THREE.Mesh,
-  cameraParametersSnapshot: CameraParametersSnapshot
+  cameraParametersSnapshot: CameraParametersSnapshot,
+  {useDepthProjection = true}: {useDepthProjection?: boolean} = {}
 ): DetectedBodyPose[] {
   const detectedPoses: DetectedBodyPose[] = [];
 
@@ -79,11 +85,9 @@ export function processPoseLandmarkerResult(
 
       // Transform screen UV to WebXR World Position
       const uv = new THREE.Vector2(lm.x, lm.y);
-      const worldCoords = transformRgbUvToWorld(
-        uv,
-        depthMeshSnapshot,
-        cameraParametersSnapshot
-      );
+      const worldCoords = useDepthProjection
+        ? transformRgbUvToWorld(uv, depthMeshSnapshot, cameraParametersSnapshot)
+        : null;
 
       let wp: THREE.Vector3 | undefined;
       if (worldCoords) {
@@ -188,7 +192,11 @@ export class MediaPipeHumanBackend extends BaseHumanBackend {
     return processPoseLandmarkerResult(
       result,
       depthMeshSnapshot,
-      cameraParametersSnapshot
+      cameraParametersSnapshot,
+      {
+        useDepthProjection:
+          this.context.options.humans.useDepthProjection !== false,
+      }
     );
   }
 
