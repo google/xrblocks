@@ -3,18 +3,32 @@ sidebar_position: 8
 title: Spatial UI
 ---
 
-XR Blocks includes one built-in spatial UI system. It uses flex layout and
-supports world-space cards, view-space overlays, text, images, icons, buttons,
-and sliders.
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
-The renderer starts with XR Blocks. Applications do not need to register a
-separate UI addon.
+# Spatial UI
+
+XR Blocks includes one built-in spatial UI system. It provides flex layout,
+world-space cards, view-space overlays, text, images, icons, buttons, sliders,
+themes, validation, and model presentation.
+
+Import UI components from `xrblocks`. The renderer starts with XR Blocks when a
+UI root enters the scene. Applications do not enable UI, initialize UIKit,
+register a renderer, or install a second UI raycaster.
+
+## Choose the root by coordinate space
+
+| Type                                  | Coordinate space | Size and position                                       | Use for                                                                 |
+| ------------------------------------- | ---------------- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [`UICard`](/api/classes/UICard)       | World space      | `size` and object transforms use meters                 | Menus, tools, labels, model controls, and movable surfaces in the scene |
+| [`UIOverlay`](/api/classes/UIOverlay) | View space       | Layout is relative to a private full-viewport container | HUDs, status, instructions, and view-fixed controls                     |
+| [`UIPanel`](/api/classes/UIPanel)     | Its UI parent    | Descendant UIKit layout units                           | Nested rows, columns, sections, and visual grouping                     |
+
+`UIPanel` is not a scene root. Put it inside a `UICard` or `UIOverlay`.
+Use `FollowHead` on a card when content must remain a real world-space object
+that follows the viewer. Use an overlay when it must remain fixed to the 2D
+viewport.
 
 ## World-space cards
-
-Use [`UICard`](/api/classes/UICard) as the root of a UI tree. Its `size` is in
-meters. Child layout values use the UIKit layout coordinate system. Cards use
-the theme's `surface` appearance by default.
 
 ```js
 import * as xb from 'xrblocks';
@@ -22,7 +36,7 @@ import * as xb from 'xrblocks';
 const card = new xb.UICard({
   size: {width: 0.6, height: 0.35},
   manipulation: true,
-  edge: {scale: true},
+  edge: true,
   style: {
     flexDirection: 'column',
     gap: 16,
@@ -41,23 +55,22 @@ card.add(
   new xb.UIButton({
     label: 'Continue',
     onClick: () => console.log('Continue'),
-    style: {padding: 16, backgroundColor: '#4285f4'},
   })
 );
 
 xb.add(card);
-xb.init(new xb.Options());
+await xb.init(new xb.Options());
 ```
 
-Set `manipulation: true` to enable the default card movement and scale actions. Set
-`edge` to show the enabled actions. The edge does not enable actions that are absent from
-the manipulation configuration.
+`manipulation: true` enables the card's standard face-camera move and scale
+behavior. `edge: true` adds the outer translation hit band and requires
+translation to be enabled. Two-source scale uses the card's scale action; the
+edge does not enable a missing action.
 
 ## View-space overlays
 
-Use [`UIOverlay`](/api/classes/UIOverlay) for content fixed to the view. Its
-world transform does not affect rendering. An overlay is a bounded themed
-surface positioned inside a private full-viewport layout container.
+An overlay's world transform does not control its rendered position. Layout it
+inside the view-space container:
 
 ```js
 const overlay = new xb.UIOverlay({
@@ -74,90 +87,40 @@ const overlay = new xb.UIOverlay({
 xb.add(overlay);
 ```
 
-Set `appearance: 'none'` on a card or overlay when it must be a transparent
-layout root. The default `appearance: 'surface'` applies
-`theme.styles.surface`. `UIPanel` remains a neutral nested layout element.
+Cards and overlays use the theme's `surface` appearance by default. Set
+`appearance: 'none'` for a transparent root used only for layout. `UIPanel` is
+a neutral nested element unless its style or theme role gives it an appearance.
 
-## Validate layout
+## Layout units and text
 
-After the UI renderer completes a frame, validate one mounted root or every
-mounted root:
+UI values have two separate unit systems:
 
-```js
-const report = xb.ui.validate(overlay);
-if (!report.ok) console.table(report.issues);
-```
+| Property                                                              | Meaning                                                 |
+| --------------------------------------------------------------------- | ------------------------------------------------------- |
+| `UICard.size` and world transforms                                    | Meters                                                  |
+| Descendant numeric width, height, gap, padding, margin, and font size | UIKit layout units                                      |
+| Percentage strings                                                    | Percentage of the applicable parent layout size         |
+| `auto`                                                                | Content or flex layout chooses the size where supported |
+| Numeric `lineHeight`                                                  | Multiplier of `fontSize`, like CSS unitless line height |
+| `lineHeight: 'Npx'`                                                   | Explicit UIKit pixel value                              |
+| `lineHeight: 'N%'`                                                    | Percentage of `fontSize`                                |
 
-The report identifies invalid layout, overflowing content, clipped text, and
-overlay surfaces outside the viewport. `ready` is false when no completed
-mounted layout is available.
-
-## Components
-
-- `UIPanel`: passive layout and visual grouping
-- `UIText`: text content
-- `UIImage`: URL-backed or texture-backed image
-- `UIIcon`: Material Symbol icon
-- `UIButton`: accessible button with `onClick`
-- `UISlider`: horizontal value input
-- `ModelViewer`: model display and manipulation surface
-
-Every UI component and public UI type is exported from `xrblocks`.
-
-## Controls and direct updates
-
-Use semantic controls instead of attaching raw pointer listeners to panels:
+These produce different line spacing:
 
 ```js
-const status = new xb.UIText({text: 'Ready'});
-const slider = new xb.UISlider({
-  ariaLabel: 'Volume',
-  min: 0,
-  max: 1,
-  step: 0.05,
-  value: 0.5,
-  onInput: (value) => (status.text = `Volume ${value}`),
-  onChange: (value) => saveVolume(value),
+new xb.UIText({
+  text: 'Compact\nmultiline text',
+  style: {fontSize: 24, lineHeight: 1.2}, // 1.2 * fontSize
+});
+
+new xb.UIText({
+  text: 'Fixed\nmultiline text',
+  style: {fontSize: 24, lineHeight: '32px'},
 });
 ```
 
-`onInput` reports live captured changes. `onChange` reports one completed changed
-interaction. A canceled slider interaction restores its starting value.
-
-Update component properties directly. Nested style and size changes are observed:
-
-```js
-status.text = 'Complete';
-button.disabled = true;
-button.style.backgroundColor = 'rgba(66, 133, 244, 0.7)';
-card.size.width = 0.72;
-```
-
-A `UIButton` with custom children must have an `ariaLabel`. Do not combine custom button
-children with the `label` or `icon` convenience fields.
-
-## Themes and appearance
-
-Set the global theme by preset name or provide a theme update:
-
-```js
-xb.ui.theme = 'grayGlass';
-// Other built-in preset: 'colorful'
-```
-
-Cards and overlays use the theme `surface` appearance by default. Use
-`appearance: 'none'` for a transparent layout root. `UIPanel` has no root appearance.
-
-## Text layout
-
-`UIText` automatically uses a system-font canvas when its content contains
-glyphs that are not available in UIkit's default atlas. The mounted layout
-node stays stable when dynamic text changes between native and Unicode
-rendering.
-
-Use `whiteSpace: 'pre-line'` to preserve explicit line breaks. A fixed-height
-text viewport can keep its newest lines visible by combining bottom alignment
-with clipped overflow:
+Use `whiteSpace: 'pre-line'` to preserve explicit line breaks. Combine a fixed
+height, bottom alignment, and clipped overflow for a newest-first transcript:
 
 ```js
 const transcript = new xb.UIText({
@@ -172,5 +135,137 @@ const transcript = new xb.UIText({
 });
 ```
 
-See `templates/01_spatial_ui` for a complete card with buttons, slider input, direct state
-updates, and theme switching.
+`UIText` uses a system-font canvas when the default atlas lacks a glyph. The
+mounted UI element remains stable when text changes between native and Unicode
+rendering.
+
+## Semantic controls and telemetry
+
+Use semantic controls instead of raw pointer listeners:
+
+```js
+const status = new xb.UIText({text: 'Ready'});
+const slider = new xb.UISlider({
+  ariaLabel: 'Volume',
+  min: 0,
+  max: 1,
+  step: 0.05,
+  value: 0.5,
+  onInput: (value) => (status.text = `Volume ${value.toFixed(2)}`),
+  onChange: (value) => saveVolume(value),
+});
+```
+
+`onInput` reports live captured changes. `onChange` reports one completed
+changed interaction. A canceled slider restores its starting value.
+
+Application status, diagnostics, and telemetry are also UI semantics. Use a
+mounted `UIText`, `UIPanel`, or disabled control instead of drawing text into a
+canvas sprite:
+
+```js
+const diagnostics = new xb.UIText({
+  text: 'Tracking: waiting',
+  style: {fontSize: 18, color: '#fbbc04'},
+});
+
+function showTrackingState(state) {
+  diagnostics.text = `Tracking: ${state}`;
+  diagnostics.style.color = state === 'ready' ? '#34a853' : '#fbbc04';
+}
+```
+
+This keeps status readable, layout-aware, themeable, and available to the same
+interaction and scene-context systems as application UI.
+
+## Retained updates
+
+Update public properties directly:
+
+```js
+status.text = 'Complete';
+button.disabled = true;
+button.style.backgroundColor = 'rgba(66, 133, 244, 0.7)';
+card.size.width = 0.72;
+```
+
+Content, nested styles, and size mutations update retained backend bindings.
+They do not require removing and recreating the complete UI tree. Add or remove
+children only when the application structure actually changes.
+
+A `UIButton` with custom children must have an `ariaLabel`. Do not combine
+custom children with the `label` or `icon` convenience fields.
+
+## Visual, depth, and pointer participation
+
+These controls are independent:
+
+| Concern                      | Control                                                 | Effect                                                              |
+| ---------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------- |
+| Render the object tree       | `object.visible`                                        | Hides rendering and excludes the hidden branch from interaction     |
+| Visual alpha                 | UI style `opacity` or an alpha color                    | Changes appearance; does not disable input                          |
+| Pointer blocking             | UI style or object `pointerEvents`, set to auto or none | Includes or excludes the object branch from hit resolution          |
+| Logical interaction boundary | `interactionEnabled` or `object.xb.interactionEnabled`  | Prevents ancestors past that boundary from becoming logical targets |
+| Three.js depth testing       | `material.depthTest`                                    | Controls whether existing depth occludes a custom Three.js material |
+| Three.js depth writing       | `material.depthWrite`                                   | Controls whether a custom material writes depth for later draws     |
+
+A transparent object can still write depth and receive input. Set the control
+for the behavior you want instead of using transparency as a proxy for depth or
+interaction.
+
+## Themes change palette and structure
+
+Select a built-in preset:
+
+```js
+xb.ui.theme = 'grayGlass';
+// Also: colorful, glimmer, glimmerOpaque, glimmerAmber, glimmerGreen
+```
+
+A theme contains colors, a shared border radius, and optional style roles for
+`surface`, `panel`, `text`, `button`, `slider`, `image`, and `icon`. A style
+role can change padding, gap, border width, radius, component height, hover
+state, and other layout or appearance properties. Theme changes are not
+limited to color.
+
+Use `xb.ui.setTheme(update)` for a partial update. Use local element styles for
+intentional exceptions. Theme snapshots are validated and detached from the
+object passed by the application.
+
+## Model and placement composition
+
+Use [`ModelViewer`](ModelViewer.md) for a supported interactive glTF, splat, or
+existing `THREE.Object3D`. Use [Placement scripts](Placement.md) when a card must
+follow another object, follow the viewer, face the camera, orbit, or animate
+visibility. Attach placement scripts to a `UICard` root, not to a nested
+`UIPanel`.
+
+Built-in manipulation suspends direct placement-script children while the user
+moves the root and rebases them when manipulation ends.
+
+## Extension boundary
+
+Ordinary applications use the semantic classes exported from `xrblocks`. The
+UIKit renderer and files under `src/ui/internal/` or `build/internal/` are
+private implementation details.
+
+There is currently no public low-level adapter for direct UIKit composition.
+A specialized addon can own a separate renderer behind its own public entry,
+but it must expose interaction surfaces through supported XR Blocks APIs and
+must not import the private built-in UI backend.
+
+## Validate layout
+
+After the UI renderer completes a frame, validate one mounted root or all roots:
+
+```js
+const report = xb.ui.validate(overlay);
+if (!report.ok) console.table(report.issues);
+```
+
+The report identifies invalid layout, overflow, clipped text, and overlay
+surfaces outside the viewport. `ready` is false when no completed mounted layout
+is available.
+
+See <CodeSearchLink path="templates/01_spatial_ui" /> for buttons, slider
+input, direct updates, and theme switching.

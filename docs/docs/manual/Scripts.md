@@ -70,8 +70,9 @@ Events are propagated up the scene graph from the initial object.
 - `onObjectTouchStart(event)` / `onObjectTouching(event)` / `onObjectTouchEnd(event)` - Direct-touch lifecycle.
 - `onObjectGrabStart(event)` / `onObjectGrabbing(event)` / `onObjectGrabEnd(event)` - Touch-plus-pinch grab lifecycle.
 
-`event.target` is the logical object, `event.surface` is the physical hit mesh, and
-`event.source.controller` identifies the source controller. See
+`event.target` is the logical object, `event.surface` is the public hit surface,
+and `event.source.controller` identifies the source controller. Private
+renderer meshes are normalized to their public owner. See
 [Interaction and Manipulation](Interaction.md) for capture, cancellation, touch, and
 manipulation rules.
 

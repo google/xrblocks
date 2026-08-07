@@ -5,108 +5,72 @@ title: World Understanding
 
 import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
-# World Understanding
+# World understanding
 
-The `xb.world` subsystem exposes real-world environment understanding to your application. This includes:
+`xb.world` exposes enabled physical-world evidence. Configure each branch before
+initialization, then convert fresh evidence into explicit application state.
+Every branch can be unsupported, warming up, empty, stale, or failed.
 
-1. **Plane Detection**: Real-world horizontal and vertical surfaces (floors, walls, tables).
-2. **Mesh Detection**: Environmental reconstruction of complex geometry.
-3. **Object Detection**: Identifying real objects (e.g., cups, laptops, chairs) using AI models.
+## Choose the evidence
 
----
+| Evidence                               | Enable                                                       | Typical reaction                                 |
+| -------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
+| Coarse floors, walls, and tables       | `options.enablePlaneDetection()`                             | One-time placement or surface-specific state     |
+| Platform room geometry                 | `options.world.enableMeshDetection()`                        | Visualization, collision, or room-aware behavior |
+| Live per-pixel distance and depth mesh | `options.enableDepth()`                                      | Reticle projection, occlusion, or collision      |
+| Named physical objects                 | `options.enableObjectDetection()` plus backend prerequisites | Labels, grounded actions, or scene state         |
+| Human body joints                      | `options.enableHumanDetection()`                             | Pose-aware application behavior                  |
+| Face landmarks and expressions         | `options.enableFaceDetection()`                              | Avatar or expression behavior                    |
+| Person segmentation mask               | `options.enableSegmentation()`                               | Camera effects or person/background separation   |
 
-## Plane Detection
+Use [Depth and Occlusion](Depth.md) for depth details. Use
+[Placement scripts](Placement.md) to distinguish one-time room placement from
+continuous follow, face, orbit, and visibility behavior.
 
-Plane detection is useful for placing virtual models (e.g., characters, furniture) on real-world surfaces.
+## Plane detection
 
-### Setup
-
-Enable plane detection in your options:
-
-```javascript
-import * as xb from 'xrblocks';
-
+```js
 const options = new xb.Options();
 options.enablePlaneDetection();
-xb.init(options);
+await xb.init(options);
 ```
 
-### Auto-Placing Objects
+Planes are coarse semantic surfaces supplied by WebXR or the simulator. The
+plane collection can remain empty on unsupported devices.
 
-Use the built-in helper function to place virtual models on the first detected horizontal surface:
+For one-time placement, let XR Blocks inspect available planes and meshes:
 
-```javascript
-class PlacementScript extends xb.Script {
-  init() {
-    const model = this.createVirtualModel();
-    this.add(model);
-
-    // Attempts to place the model on a horizontal surface (e.g., table)
-    // with a timeout of 30 seconds
-    xb.world
-      .placeOnHorizontalSurface(model, {seconds: 30})
-      .then(() => console.log('Successfully placed!'))
-      .catch((err) => console.warn('Placement timed out:', err));
-  }
-}
+```js
+const placed = await xb.world.placeOnHorizontalSurface(model, {seconds: 15});
+if (!placed) showPlacementUnavailable();
 ```
 
----
+The result is a boolean. Treat `false` as a normal no-suitable-surface result.
+The helper places once; it does not keep the object anchored or facing the
+viewer. Read [Placement scripts](Placement.md) for continuous behavior and
+manipulation rebasing.
 
-## Mesh Detection
+## Scene mesh detection
 
-Scene mesh detection allows you to reconstruct the geometry of the surrounding environment, which is useful for spatial occlusion, real physics collisions, and shadow mapping.
-
-Enable mesh detection and show debug visualizations:
-
-```javascript
+```js
 const options = new xb.Options();
 options.world.enableMeshDetection();
-options.world.meshes.showDebugVisualizations = true; // Visualize reconstructed geometry
-xb.init(options);
+options.world.meshes.showDebugVisualizations = true;
+await xb.init(options);
 ```
 
----
+Scene meshes are platform-reconstructed room geometry. Read current meshes from
+`xb.world.meshes.xrMeshToThreeMesh`. The map can be empty and native support is
+experimental. The simulator can inject its environment meshes through the same
+runtime branch.
 
-## Object Detection (AI / Vision)
+When Rapier is configured, enabled scene meshes can create environment
+colliders. Mesh detection does not enable physics by itself.
 
-Object detection detects physical items in the environment, lifts their 2D camera coordinates into 3D space using depth mapping, and positions them as interactive `THREE.Object3D` entities in your scene.
+## Object detection
 
-### Requirements
-
-This feature requires the environment camera feed, generative AI/vision backends, and depth mapping:
-
-```javascript
-const options = new xb.Options();
-options.enableAI(); // Generative AI backend
-options.enableCamera('environment'); // Real camera passthrough feed
-options.enableDepth(); // Depth estimation for 3D positioning
-
-options.world.enableObjectDetection();
-options.world.objects.showDebugVisualizations = true; // Visual labels over items
-
-xb.init(options);
-```
-
-### Running Object Detection
-
-Object detection is run on-demand (e.g., when a user pinches or clicks a button) because it triggers external model queries:
-
-```javascript
-class ScannerScript extends xb.Script {
-  async onSelectEnd() {
-    console.log('Running object detection scanner...');
-
-    // Runs a visual query against the environment feed
-    const detectedObjects = await xb.world.objects.runDetection();
-
-    // detectedObjects is an array of THREE.Object3D nodes positioned at their actual real-world coords
-    for (const obj of detectedObjects) {
-      console.log(`Detected: ${obj.name} (ID: ${obj.userData.objectId})`);
-    }
-  }
-}
-```
+Object detection captures the environment camera, finds named items in 2D, and
+uses depth to ground them in world space. Choose the backend explicitly.
 
 ### Backends
 
@@ -115,69 +79,126 @@ Under the hood, object detection uses pluggable backends selected via `options.w
 - **`GeminiDetectorBackend`**: Queries Gemini models using visual camera frames (requires AI API keys, see the [Generative AI](AI.mdx) guide).
 - **`MediaPipeDetectorBackend`**: Runs local MediaPipe object detection model.
 
-Use the MediaPipe backend without enabling AI:
 
-```javascript
+Gemini setup:
+
+```js
+const options = new xb.Options();
+options.enableAI();
+options.enableCamera('environment');
+options.enableDepth();
+options.enableObjectDetection();
+options.world.objects.backendConfig.activeBackend = 'gemini';
+```
+
+This branch sends captured image data to Google and requires prototype or
+production credentials as described in [Generative AI](AI.mdx).
+
+On-device MediaPipe setup:
+
+```js
+const options = new xb.Options();
 options.enableCamera('environment');
 options.enableDepth();
 options.enableObjectDetection();
 options.world.objects.backendConfig.activeBackend = 'mediapipe';
 ```
 
+Run one detection:
+
+```js
+const objects = await xb.world.objects.runDetection();
+for (const object of objects) {
+  console.log(object.name, object.position);
+}
+```
+
+Concurrent calls share the active detection. A new run clears previous
+detected-object scene nodes before publishing current results. Treat `[]` as a
+normal warm-up, empty, unavailable, or failed result and update application
+state accordingly.
+
+For continuous ownership, pair the same client object:
+
+```js
+const client = {};
+xb.world.objects.start(client);
+// Later:
+xb.world.objects.stop(client);
+```
+
+Use `options.world.objects.pollingIntervalMs` to control cadence. The desktop
+simulator can supply deterministic object ground truth when
+`options.world.objects.simulatorOverride = true` and its environment defines
+detectable objects.
+
 ## Human pose detection
 
-Human detection uses MediaPipe on-device, then projects pose landmarks into
-world space with the depth mesh:
+`enableHumanDetection()` declares camera permission and enables the environment
+camera and depth prerequisites:
 
-```javascript
+```js
 const options = new xb.Options();
 options.enableHumanDetection();
-xb.init(options);
+await xb.init(options);
 
 const poses = await xb.world.humans.runDetection();
 const leftWrist = poses[0]?.getJointPosition(xb.PoseJointName.LeftWrist);
 ```
 
-`enableHumanDetection()` enables the environment camera, depth, and required
-permission. Configure cadence and MediaPipe thresholds through
-`options.world.humans`.
+Human detection uses on-device MediaPipe and projects supported joints into
+world space with depth. Guard empty results and missing joints. Use
+`start(client)` and `stop(client)` for continuous ownership.
 
 ## Face landmark detection
 
-Face detection returns 478 landmarks per face, optional ARKit-style
-blendshapes, and an optional rigid facial transformation matrix:
+`enableFaceDetection()` declares camera permission and enables camera and depth:
 
-```javascript
+```js
 const options = new xb.Options();
 options.enableFaceDetection();
-xb.init(options);
+await xb.init(options);
 
 const faces = await xb.world.faces.runDetection();
 const nose = faces[0]?.getLandmarkPosition(xb.FaceLandmarkName.NoseTip);
 const jawOpen = faces[0]?.getBlendshape('jawOpen');
 ```
 
+Each result can contain world-space landmarks, optional blendshapes, and an
+optional facial transformation. Guard every optional output. Use
+`start(client)` and `stop(client)` for continuous ownership.
+
 ## Semantic segmentation
 
-Segmentation runs continuously by default after it is enabled. Read
-`latestMask`, or request one inference explicitly:
+Segmentation is an on-device 2D camera operation and does not require depth:
 
-```javascript
+```js
 const options = new xb.Options();
 options.enableSegmentation();
-xb.init(options);
+await xb.init(options);
 
 const mask = await xb.world.segmentation.runSegmentation();
-if (mask) {
-  console.log(mask.width, mask.height, mask.data);
-}
+if (mask) console.log(mask.width, mask.height, mask.data);
 ```
 
-The category values are exported as `xb.SegmentCategory`. Segmentation is
-on-device and does not require depth.
+Read `latestMask` for the newest completed inference. `null` is a normal
+not-ready or unavailable state. Category values are exported as
+`xb.SegmentCategory`.
 
-For working samples, see <CodeSearchLink path="samples/xr_realism/depthmesh/index.html"/>,
+## Freshness, permission, and cleanup
 
-<CodeSearchLink path="templates/08_scene_understanding/index.html" />,
-<CodeSearchLink path="samples/avatar_lab/face_mirror/index.html" />, and
-<CodeSearchLink path="demos/magic_window/index.html" />.
+- Declare camera and other permissions before entering immersive XR.
+- Lock explicit requests when duplicate work has no meaning.
+- Use the matching `start(client)` and `stop(client)` pair for continuous
+  detectors.
+- Clear old visible results when a new detection is empty or stale.
+- Distinguish synthetic simulator evidence from native device evidence.
+- Stop application-owned polling and media resources in `dispose()`.
+
+## Executable evidence
+
+- <CodeSearchLink path="templates/03_spatial_placement" />
+- <CodeSearchLink path="templates/08_scene_understanding" />
+- <CodeSearchLink path="samples/xr_realism/depthmesh" />
+- <CodeSearchLink path="samples/avatar_lab/face_mirror" />
+- <CodeSearchLink path="samples/avatar_lab/person_segmentation" />

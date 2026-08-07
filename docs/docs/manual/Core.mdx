@@ -1,151 +1,365 @@
 ---
 sidebar_position: 3
+title: Core and Initialization
 ---
 
-import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+# Core and initialization
 
-XR Blocks SDK is wrapped around a singleton instance of [`Core`](/api/classes/Core) exported as [`xb.core`](/api/variables/core).
-
-The [`Core`](/api/classes/Core) object is resposible for:
-
-1. Setup of all components such as the renderer, scene, input, depth, physics, simulator, etc.
-2. Calling lifecycle functions in all [`Script`](Scripts.md) entities and XR Blocks components.
-
-## Init
-
-To initialize the [`Core`](/api/classes/Core) object, call [`xb.init()`](/api/functions/init) or [`xb.init(options)`](/api/functions/init) with a provided set of options.
-
-For a set of options, see <CodeSearchLink path="src/core/Options.ts"/>.
-
-For example:
+XR Blocks runs one engine singleton. Application code imports the public module,
+registers scripts and scene objects, then calls `xb.init(options)` once.
 
 ```js
 import * as xb from 'xrblocks';
 
 const options = new xb.Options();
-xb.init(options);
+xb.add(new MainScript());
+await xb.init(options);
 ```
 
----
+The active singleton is available as `xb.core`. Normal applications do not
+construct another `Core`, renderer, camera, animation loop, input resolver, UI
+renderer, or WebXR session manager.
 
-## Core Components
+## Engine ownership
 
-The singleton `Core` orchestrates several core modules located under <CodeSearchLink path="src/core/components/"/> to manage active WebXR sessions, input processing, scripting lifecycle, and rendering options.
+`Core` owns:
 
-### 1. Registry
+- the public scene, camera, renderer, and frame loop;
+- WebXR session entry and exit;
+- script discovery and lifecycle calls;
+- input sampling and interaction resolution;
+- built-in UI rendering;
+- enabled world, depth, physics, sound, context, AI, and simulator subsystems;
+- subsystem initialization and disposal order.
 
-The [`Registry`](/api/classes/Registry) is a service locator container that stores option configurations and active singleton subsystems.
+Put application behavior in [`Script`](Scripts.md) objects. Register them before
+initialization. Engine-created objects can be undefined in a constructor, so use
+them in or after `init()`.
 
-Subsystems are registered using their class constructors, which allows other parts of the SDK to look them up.
+## Configure before initialization
 
-```javascript
-import * as xb from 'xrblocks';
-import {World} from 'xrblocks';
+`Options` is the application configuration boundary:
 
-// Retrieve the active World subsystem instance
-const worldSubsystem = xb.core.registry.get(World);
+```js
+const options = new xb.Options();
+options.enableHands();
+options.enableReticles();
+options.enablePlaneDetection();
+
+xb.add(new MainScript());
+await xb.init(options);
 ```
 
-### 2. Dependency Injection
+Configure optional dependencies, permissions, WebXR session features, and
+subsystem options before `xb.init(options)`. Changing a configuration object
+after initialization does not reconstruct the runtime automatically.
 
-XR Blocks features an automated dependency injection pattern for scripts.
+Use the feature's manual page for exact prerequisites. There is no general rule
+that every subsystem has an `enable*()` method. For example, Rapier is assigned
+to `options.physics.RAPIER`, while built-in UI starts automatically when a UI
+root enters the scene.
 
 Instead of accessing singletons or looking up dependencies inside constructor code, scripts declare their requirements as static properties. During script initialization, the [`Registry`](/api/classes/Registry) automatically resolves them.
 
 - Specify dependencies by defining a static `dependencies` dictionary mapping local keys to constructor classes.
 - The manager will automatically query those classes and inject the resolved instances as an object parameter inside your script's `init()` method.
 
-```javascript
-import * as xb from 'xrblocks';
-import {AI, AIOptions} from 'xrblocks';
+## Permissions before immersive XR
 
-class SmartAgentScript extends xb.Script {
-  // 1. Declare what this script depends on
-  static dependencies = {
-    ai: AI,
-    aiOptions: AIOptions,
-  };
+Browser permission prompts can be restricted after an immersive session starts.
+Declare required permissions before initialization:
 
-  // 2. Resolved dependencies are injected here during startup
-  init({ai, aiOptions}) {
-    this.ai = ai;
-    this.aiOptions = aiOptions;
+```js
+const options = new xb.Options();
+options.permissions.camera = true;
+options.permissions.microphone = true;
 
-    if (this.aiOptions.enabled && this.ai.isAvailable()) {
-      console.log('Dependencies injected successfully!');
+await xb.init(options);
+```
+
+Top-level helpers such as `enableCamera()`, `enableHumanDetection()`, and
+`enableFaceDetection()` set their documented permission prerequisites. Verify
+each helper instead of assuming that a nested option does the same work.
+
+The Enter XR flow requests declared browser permissions from the flat page
+before session entry. Applications must still present denied, unsupported, and
+session-start failure states.
+
+## Public singleton access
+
+Use the narrowest public facade needed by the application:
+
+```js
+xb.scene;
+xb.user;
+xb.world;
+xb.depth;
+xb.context;
+xb.ai;
+xb.sound;
+xb.input;
+xb.camera;
+```
+
+Some advanced public services remain under `xb.core`, such as the screenshot
+synthesizer and wait-frame utility:
+
+The [`ScreenshotSynthesizer`](/api/classes/ScreenshotSynthesizer) captures visual snapshots of the 3D scene (with optional overlay on top of the physical camera texture in AR). This is useful for capturing camera frames to feed into visual generative AI queries.
+
+```js
+const dataUrl = await xb.core.screenshotSynthesizer.getScreenshot(true);
+await xb.core.waitFrame.waitFrame();
+```
+
+Guard optional runtime services. An exported type or constructor does not prove
+that its subsystem is enabled in the current runtime.
+
+## Construction, injection, and type imports
+
+These are separate uses of a class name:
+
+| Use                                         | Meaning                                                                    |
+| ------------------------------------------- | -------------------------------------------------------------------------- |
+| `xb.core`                                   | Access the one active engine singleton                                     |
+| `new xb.ModelViewer()`                      | Construct a public application-owned scene object or helper                |
+| `static dependencies = {world: xb.World}`   | Ask the engine registry to inject an enabled runtime service into a script |
+| `import type {SelectEvent} from 'xrblocks'` | Use a TypeScript declaration only; no runtime object is constructed        |
+
+Dependency injection is useful for reusable scripts that need explicit,
+testable runtime services:
+
+```ts
+class WorldAwareScript extends xb.Script {
+  static dependencies = {world: xb.World};
+
+  init({world}: {world: xb.World}) {
+    this.world = world;
+  }
+}
+```
+
+Ordinary applications can use the public singleton facades. SDK source should
+prefer declared dependencies when a subsystem relationship must be testable.
+The registry itself is engine architecture, not an application service locator
+for guessing internal components.
+
+## XR rendering effects
+
+[`XREffects`](/api/classes/XREffects) is the engine-owned post-processing
+pipeline. It renders the scene to intermediate targets, runs registered
+[`XRPass`](/api/classes/XRPass) objects in order, and writes the final image to
+the active XR or simulator target. Normal applications do not construct an
+`XREffects` instance or replace the engine renderer.
+
+Post-processing is off by default. Enable it before initialization:
+
+```js
+const options = new xb.Options();
+options.usePostprocessing = true;
+
+xb.add(new MainScript());
+await xb.init(options);
+```
+
+When enabled, the engine constructs `xb.core.effects` before it initializes
+application scripts. A script can therefore register a pass in `init()`:
+
+```js
+class MainScript extends xb.Script {
+  init() {
+    const effects = xb.core.effects;
+    if (!effects) {
+      throw new Error('This application requires post-processing.');
+    }
+
+    this.depthPass = new DepthVisualizationPass();
+    effects.addPass(this.depthPass);
+  }
+
+  update() {
+    this.depthPass.updateEnvironmentalDepthTexture(xb.depth);
+  }
+}
+```
+
+This is the setup pattern used by the
+[Depth Map sample](../samples/04-DepthMap.mdx). Register passes once during
+initialization, not once per frame. `addPass()` appends a pass, so registration
+order is also rendering order.
+
+### Render flow
+
+With post-processing enabled, one frame follows this path:
+
+```text
+scene and camera
+  -> scene color + depth render target
+  -> XRPass 1
+  -> XRPass 2
+  -> ...
+  -> active XR framebuffer or simulator canvas
+```
+
+In an immersive XR session, `XREffects` renders each XR camera separately. It
+calls each pass with a `viewId`, normally `0` for the first eye and `1` for the
+second. In the desktop simulator, it calls the same pass interface with
+`viewId = 0`. A pass can use the identifier to choose an eye-specific depth or
+camera texture without creating a separate pipeline.
+
+The `XRPass.render()` arguments follow the three.js post-processing convention:
+
+```js
+render(
+  renderer,
+  writeBuffer,
+  readBuffer,
+  deltaTime,
+  maskActive,
+  viewId
+) {
+  this.uniforms.tDiffuse.value = readBuffer.texture;
+  this.uniforms.uView.value = viewId;
+  renderer.setRenderTarget(writeBuffer);
+  this.fullScreenQuad.render(renderer);
+}
+```
+
+- `readBuffer` contains the scene or the preceding pass output.
+- `writeBuffer` is the next intermediate target, or the final active target for
+  the last pass.
+- `deltaTime` is the elapsed frame time in seconds.
+- `viewId` selects the current XR view.
+- `maskActive` is provided for compatibility with the pass interface.
+
+The engine resizes and reuses its intermediate color and depth targets when the
+drawing-buffer dimensions change. It also updates the public camera from the
+headset pose before scripts and view-space UI run, because the effects pipeline
+renders XR eyes manually.
+
+### Pass ownership and limits
+
+`XREffects` owns registered passes after `addPass()`. During engine disposal it
+disposes the intermediate render targets and calls `dispose()` on each pass.
+Custom passes must release their shader materials, full-screen quads, textures,
+and other GPU resources from `dispose()`.
+
+There is no pass-removal API. To turn an effect on and off at runtime, keep the
+pass registered and change a uniform or an `enabled` field implemented by the
+pass. The Depth Map sample follows this pattern by changing its visualization
+opacity.
+
+Do not enable `usePostprocessing` for an immersive XR application without
+registering a pass. The XR pipeline expects at least one pass to copy or
+transform the offscreen scene into the active framebuffer. Applications that
+do not need image-space effects should leave post-processing disabled and let
+the engine render the scene directly.
+
+## AR and VR background transitions
+
+`XRTransition` creates a smooth visual change between transparent passthrough
+and a colored virtual background while the application continues to run. It is
+an optional engine component, accessed as `xb.core.transition`. Applications do
+not construct it directly.
+
+Enable and configure it before initialization:
+
+```js
+const options = new xb.Options().enableXRTransitions();
+options.transition.transitionTime = 0.75;
+options.transition.defaultBackgroundColor = 0x101828;
+
+xb.add(new MainScript());
+await xb.init(options);
+```
+
+| Option                              | Default    | Meaning                                      |
+| ----------------------------------- | ---------- | -------------------------------------------- |
+| `transition.enabled`                | `false`    | Whether the engine creates the component     |
+| `transition.transitionTime`         | `0.5`      | Fade duration in seconds                     |
+| `transition.defaultBackgroundColor` | `0xffffff` | Color used by `toVR()` when none is supplied |
+
+The component starts in AR mode with a transparent background. Call `toVR()`
+to fade toward a colored background and `toAR()` to fade back to passthrough:
+
+```js
+class MainScript extends xb.Script {
+  onSelectEnd() {
+    const transition = xb.core.transition;
+    if (!transition) return;
+
+    if (transition.currentMode === 'AR') {
+      transition.toVR({color: 0x101828});
+    } else {
+      transition.toAR();
     }
   }
 }
 ```
 
-### 3. Permissions Manager
+See the complete interactive pattern in the
+[XR Modes template](../templates/09-XR-Modes.mdx).
 
-The `PermissionsManager` manages requests for browser capabilities like camera, microphone, and geolocation.
+`toVR()` also accepts `targetAlpha`:
 
-:::tip
+```js
+xb.core.transition?.toVR({
+  color: 0x172554,
+  targetAlpha: 0.85,
+});
+```
 
-Current XR browsers like Google Chrome restrict prompting the user for permissions (such as camera or microphone dialogs) once an immersive WebXR session has started.
+`targetAlpha` is clamped to the range `0` through `1`. Use `1` for an opaque
+background or a lower value to keep some passthrough visible. Calling `toVR()`
+without a color uses `defaultBackgroundColor`. Calling `toAR()` always targets
+zero opacity.
 
-You **must** specify the required permissions inside [`Options`](/api/classes/Options) before starting the WebXR session:
+Internally, the component keeps a back-facing sphere centered on the active
+camera and interpolates its material opacity each frame. Virtual scene content
+continues to render in front of this background. The component does not receive
+pointer events, so it does not block ray or direct-touch interaction.
 
-```javascript
+`currentMode` changes to `'AR'` or `'VR'` when a transition starts. It reports
+the requested target mode, not whether the fade has finished. A new `toAR()` or
+`toVR()` call can reverse an in-progress fade from its current opacity.
+
+### Visual mode is not WebXR session mode
+
+`XRTransition` does not start or end a WebXR session, and it does not replace an
+`immersive-ar` session with an `immersive-vr` session. It changes the visual
+background inside the current application session.
+
+Use `options.enableVR()` before `xb.init()` when the application must request an
+`immersive-vr` session instead of the default `immersive-ar` session:
+
+```js
 const options = new xb.Options();
-options.permissions.camera = true;
-options.permissions.microphone = true;
-
-xb.init(options);
+options.enableVR();
+await xb.init(options);
 ```
 
-:::
+`enableVR()` and `enableXRTransitions()` solve separate problems and neither
+enables the other. The transition component also does not require
+`usePostprocessing`.
 
-When the user clicks the "Enter XR" button to launch the experience, the SDK's [`XRButton`](/api/classes/XRButton) click handler automatically queries the `PermissionsManager` to request and confirm these permissions in the flat 2D browser window _before_ transitioning the user into the WebXR immersive view.
+### Do not confuse the transition APIs
 
-### 4. Interaction
+| API                    | Owner                    | What changes                                       |
+| ---------------------- | ------------------------ | -------------------------------------------------- |
+| `xb.core.effects`      | Engine render pipeline   | The final rendered pixels through `XRPass` objects |
+| `xb.core.transition`   | Optional engine script   | Passthrough-to-color background opacity            |
+| `VisibilityTransition` | Application scene object | One parent object's scale and visibility           |
 
-The [`Interaction`](/api/classes/Interaction) system manages ray and direct-touch
-input from the mouse, gaze, hands, and WebXR controllers.
+Use [`VisibilityTransition`](Placement.md#animate-show-and-hide) when one panel,
+model, or other object must animate in or out. It does not change the XR
+background or add a post-processing pass.
 
-It resolves targets, tracks hover and selection state, manages input capture,
-and dispatches interaction callbacks to scripts.
+## Simulator and automation startup
 
-### 5. Screenshot Synthesizer
+`new xb.Options()` defaults to automatic form-factor selection. Use
+`?formFactor=desktop` to force the simulator. Use
+`options.enableAutomationMode()` or `?xrAutomation=1` for the simulator and
+context preset used by external automation. `?debug=1` separately exposes
+`window.xb` and `window.xbReady` to an in-page driver.
 
-The [`ScreenshotSynthesizer`](/api/classes/ScreenshotSynthesizer) captures visual snapshots of the 3D scene (with optional overlay on top of the physical camera texture in AR). This is useful for capturing camera frames to feed into visual generative AI queries.
-
-```javascript
-// Captures a snapshot of the virtual scene overlaying the physical camera stream
-const dataUrl = await xb.core.screenshotSynthesizer.getScreenshot(true);
-```
-
-### 6. Scripts Manager
-
-The [`ScriptsManager`](/api/classes/ScriptsManager) drives lifecycle hooks
-(`init`, `update`, `dispose`, and select/hover events) on all registered
-[`Script`](Scripts.md) components.
-
-It iterates over all script-enabled `THREE.Object3D` nodes in the active scene graph on every tick of the main loop to run their update callbacks.
-
-### 7. Wait Frame
-
-The [`WaitFrame`](/api/classes/WaitFrame) component exposes an asynchronous promise utility to yield script execution until the next animation frame begins.
-
-```javascript
-// Pause execution until the next loop tick
-await xb.core.waitFrame.waitFrame();
-```
-
-### 8. WebXR Session Manager
-
-The `WebXRSessionManager` wraps raw WebXR session setup, handles session starting, stopping, and input source list modifications (detecting controllers/hands connections).
-
-### 9. XR Button
-
-The [`XRButton`](/api/classes/XRButton) creates and manages the floating HTML button overlay (`Enter AR` / `Enter VR`) that triggers WebXR initialization when clicked.
-
-### 10. XR Effects
-
-The [`XREffects`](/api/classes/XREffects) component orchestrates rendering configurations, postprocessing setups, and handles resolution/depth buffers configs.
-
-### 11. XR Transition
-
-The `XRTransition` component manages smooth fade transitions (in/out) when transitioning between immersive modes (AR/VR) or entering/exiting a session.
+Read [Simulator](Simulator.mdx) for modes, manifests, synthetic sensors, and
+handoff limits.
