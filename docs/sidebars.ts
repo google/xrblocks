@@ -30,15 +30,20 @@ const sidebars: SidebarsConfig = {
 
   templatesSidebar: [
     'templates/Basic',
-    'templates/UI',
-    'templates/Hands',
-    'templates/Depth',
+    'templates/Spatial-UI',
+    'templates/Object-Interaction',
+    'templates/Spatial-Placement',
     'templates/Stereo',
-    'templates/Camera',
-    'templates/AI',
-    'templates/AI-Live',
-    'templates/Objects',
-    'templates/XR-Toggle',
+    'templates/Camera-View',
+    'templates/AI-Query',
+    'templates/AI-Live-Assistant',
+    'templates/Scene-Understanding',
+    'templates/XR-Modes',
+    'templates/Environment-Physics',
+    'templates/Agent-Context',
+    'templates/Hand-Gestures',
+    'templates/TypeScript-Vite',
+    'templates/Simulator-Setup',
   ],
 
   samplesSidebar: [
@@ -46,7 +51,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Spatial UI',
       collapsed: false,
-      items: ['samples/ModelViewer', 'samples/UI', 'samples/UIBlocks'],
+      items: ['samples/ModelViewer', 'samples/UI'],
     },
     {
       type: 'category',

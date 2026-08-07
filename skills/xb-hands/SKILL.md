@@ -31,9 +31,11 @@ xb.init(options);
 
 ## Reacting to hands
 
-`xb.user` drives direct interaction. Pinch maps to select, so `onSelectStart/End` already
-covers "pinch". For direct touch and grab of meshes in the scene, use the object-targeted
-hooks on your `Script` (return `true` to stop propagation):
+`xb.user` drives direct interaction. Pinch and direct-touch contact map to selection. A
+direct-touch selection remains active until contact ends. For direct touch and grab of
+meshes in the scene, use the object-targeted hooks on your `Script` (return `true` to stop
+propagation). Call `e.preventDefault()` in `onObjectTouchStart(e)` when touch should not
+select:
 
 ```js
 class Grabbable extends xb.Script {
@@ -72,4 +74,4 @@ xb.user.isSelecting(0); // is hand 0 pinching?
 - Joint name constants are exported (`HandJointNames`).
 - Touch detection uses each mesh's bounding box vs. the index fingertip; grab = touch +
   pinch. See [`src/core/User.ts`](../../src/core/User.ts) for exact semantics.
-- See `templates/2_hands` for a complete example.
+- See `templates/2_object_interaction` for a complete example.
