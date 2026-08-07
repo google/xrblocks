@@ -69,7 +69,7 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 | `demos/`      | Experimental applications and development showcases                                                                                          |
 | `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                     |
 | `docs/`       | Docusaurus manual + samples/templates pages                                                                                                  |
-| `skills/`     | Consumer task skills shipped through the repository's Codex plugin                                                                           |
+| `skills/`     | Portable consumer task skills for agents building XR Blocks applications                                                                     |
 | `.agents/`    | Repository-local agent workflows; currently the complete SDK contribution seam                                                               |
 | `build/`      | **Generated** bundle output — do not edit                                                                                                    |
 
@@ -130,8 +130,8 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 - [`CONTEXT.md`](CONTEXT.md) — compact contract for agents building apps with the SDK.
 - [`docs/docs/manual/`](docs/docs/manual/) — canonical concepts, setup, behavior,
   limits, and examples.
-- [`skills/`](skills/) — consumer task workflows exposed by
-  [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json).
+- [`skills/`](skills/) — portable consumer task workflows using the Agent
+  Skills directory format.
 - [`.agents/skills/xb-contribute-sdk/`](.agents/skills/xb-contribute-sdk/) —
   repository-local complete-seam contribution workflow.
 
