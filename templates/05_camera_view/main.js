@@ -33,7 +33,7 @@ class CameraView extends xb.Script {
     this.camera = xb.core.deviceCamera;
     this.onStateChange = (event) => this.updateState(event);
     this.camera.addEventListener('statechange', this.onStateChange);
-    if (this.camera.state === 'streaming')
+    if (this.camera.state === 'streaming') 
       this.preview.src = this.camera.texture;
   }
 

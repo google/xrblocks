@@ -12,7 +12,7 @@ class SpatialPlacement extends xb.Script {
     this.object.position.set(0, -10, 0);
     this.add(this.object);
     void xb.world
-      .placeOnHorizontalSurface(this.object, {seconds: 15})
+      .placeOnHorizontalSurface(this.object)
       .then((placed) => (this.object.visible = placed));
   }
 
