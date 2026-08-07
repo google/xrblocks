@@ -292,6 +292,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
     it('should catch and emit physicsStep exceptions without crashing physics simulation', () => {
       core.physics = {
         physicsStep: vi.fn(),
+        dispose: vi.fn(),
       } as unknown as Physics;
 
       const script1 = {
@@ -337,6 +338,7 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
       core.scriptsManager.catchExceptions = false;
       core.physics = {
         physicsStep: vi.fn(),
+        dispose: vi.fn(),
       } as unknown as Physics;
 
       const script1 = {
@@ -368,6 +370,31 @@ describe('Core and ScriptsManager exception handling via EventDispatcher', () =>
       expect(script1.physicsStep).toHaveBeenCalled();
       expect(script2.physicsStep).not.toHaveBeenCalled();
       expect(events.length).toBe(0);
+    });
+
+    it('stops the physics interval and frees the world on dispose', () => {
+      vi.useFakeTimers();
+      const physicsStep = vi.fn();
+      const dispose = vi.fn();
+      core.physics = {
+        physicsStep,
+        dispose,
+        timestep: 0.01,
+      } as unknown as Physics;
+      const intervalId = setInterval(physicsStep, 10);
+      (core as unknown as {physicsIntervalId?: unknown}).physicsIntervalId =
+        intervalId;
+
+      core.dispose();
+
+      // The interval keeps physics stepping off the render loop, so leaving it
+      // running outlives the session.
+      physicsStep.mockClear();
+      vi.advanceTimersByTime(100);
+      expect(physicsStep).not.toHaveBeenCalled();
+      // Rapier holds WASM memory that GC cannot reclaim on its own.
+      expect(dispose).toHaveBeenCalled();
+      vi.useRealTimers();
     });
   });
 
