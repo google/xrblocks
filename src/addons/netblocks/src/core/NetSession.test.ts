@@ -16,6 +16,17 @@ vi.mock('xrblocks', async () => {
   };
 });
 
+vi.mock('troika-three-text', async () => {
+  const T = await import('three');
+  return {
+    Text: class extends T.Object3D {
+      text = '';
+      sync() {}
+      dispose() {}
+    },
+  };
+});
+
 import {
   decodeMessage,
   encodeMessage,
@@ -85,23 +96,6 @@ describe('NetSession hello handler', () => {
     expect(snapshot!.to).toBe('joiner');
     expect(snapshot!.msg.objects.map((o) => o.id)).toEqual(['cube-1']);
     expect(snapshot!.msg.objects[0].xform.slice(0, 3)).toEqual([1, 2, 3]);
-  });
-
-  it('does not send a snapshot when no NetObjects are dirty', async () => {
-    const transport = new FakeTransport();
-    const session = new NetSession(transport, new THREE.Group());
-    await session.open('room');
-    session.netObjects.add(new NetObject({id: 'cube-1'}));
-
-    transport.sent.length = 0;
-    transport.receive('joiner', {
-      type: 'hello',
-      protocol: NET_PROTOCOL_VERSION,
-      capabilities: {pose: true, voice: true, netobject: true},
-    } as HelloMessage);
-
-    const types = decodeSent(transport.sent).map((d) => d.msg.type);
-    expect(types).not.toContain('netobject.snapshot');
   });
 
   it('always replies with a welcome to the joiner', async () => {

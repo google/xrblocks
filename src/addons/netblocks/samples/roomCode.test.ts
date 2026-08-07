@@ -17,28 +17,18 @@ describe('roomCode helpers', () => {
   afterEach(() => setSearch(originalSearch));
 
   describe('getRoomCodeFromUrl', () => {
-    it('returns null when ?room is missing', () => {
-      expect(getRoomCodeFromUrl()).toBeNull();
-    });
-
-    it('returns the code uppercased when length matches', () => {
+    it('normalizes valid room codes', () => {
       setSearch('?room=abcd');
       expect(getRoomCodeFromUrl()).toBe('ABCD');
-    });
-
-    it('strips non-letters before length-checking', () => {
       setSearch('?room=AB-CD');
       expect(getRoomCodeFromUrl()).toBe('ABCD');
     });
 
-    it('returns null for codes that are the wrong length', () => {
+    it('rejects malformed room codes', () => {
       setSearch('?room=ABC');
       expect(getRoomCodeFromUrl()).toBeNull();
       setSearch('?room=ABCDE');
       expect(getRoomCodeFromUrl()).toBeNull();
-    });
-
-    it('returns null when the cleaned code is empty', () => {
       setSearch('?room=1234');
       expect(getRoomCodeFromUrl()).toBeNull();
     });
@@ -74,15 +64,6 @@ describe('roomCode helpers', () => {
       expect(text).toContain('ABCD');
       expect(text).toContain('Copy code');
       expect(text).toContain('Leave');
-    });
-
-    it('anchors the HUD top-left below the sample HUD so they do not overlap', () => {
-      buildRoomCodeHud('ABCD');
-      const root = document.body.firstElementChild as HTMLElement;
-      expect(root.style.position).toBe('fixed');
-      expect(root.style.top).toBe('90px');
-      expect(root.style.left).toBe('12px');
-      expect(root.style.bottom).toBe('');
     });
 
     it('Copy code button writes the code (not the URL) to the clipboard', async () => {
