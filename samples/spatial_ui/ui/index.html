@@ -115,8 +115,15 @@
 
       class MainScript extends xb.Script {
         init() {
-          const light = new THREE.HemisphereLight(0xffffff, 0x666666, 3.6);
+          const light = new THREE.HemisphereLight(0xffffff, 0x666666, 2.6);
           this.add(light);
+
+          const lightPreview = new THREE.Mesh(
+            new THREE.SphereGeometry(0.12, 32, 16),
+            new THREE.MeshStandardMaterial({color: 0x55ccff})
+          );
+          lightPreview.position.set(0, 0.75, -1.1);
+          this.add(lightPreview);
 
           const activity = new xb.UIText({
             text: 'Choose an action.',
@@ -184,7 +191,7 @@
             style: {width: '100%', height: 48},
             onInput: (value) => {
               lightValue.text = `${value}%`;
-              light.intensity = 1 + value * 0.04;
+              light.intensity = value * 0.04;
             },
           });
 
@@ -245,7 +252,7 @@
             activity.text = 'Choose an action.';
             lightSlider.value = 65;
             lightValue.text = '65%';
-            light.intensity = 3.6;
+            light.intensity = 2.6;
             cards.forEach((card) => {
               const initial = card.userData.initialTransform;
               card.position.copy(initial.position);
