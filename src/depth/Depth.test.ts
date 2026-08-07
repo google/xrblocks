@@ -143,4 +143,71 @@ describe('Depth', () => {
       vi.restoreAllMocks();
     });
   });
+  describe('updateGPUDepthData readback', () => {
+    /**
+     * Depth with just enough wired up to exercise the GPU depth path.
+     */
+    function createDepthWithConverter(convertGPUToCPU: () => unknown) {
+      const depth = createDepth();
+      depth.options = {
+        depthMesh: {enabled: true},
+        depthTexture: {enabled: false},
+      } as never;
+      (depth as unknown as {gpuDepthConverter: unknown}).gpuDepthConverter = {
+        convertGPUToCPU,
+      };
+      // updateDepthMatrices needs these populated per view.
+      vi.spyOn(
+        depth as unknown as {updateDepthMatrices: () => void},
+        'updateDepthMatrices'
+      ).mockImplementation(() => {});
+      return depth;
+    }
+
+    const fakeDepthData = {
+      width: 2,
+      height: 2,
+      data: new Float32Array([1, 2, 3, 4]).buffer,
+    } as unknown as XRWebGLDepthInformation;
+
+    it('reads back the first view, which is the one anything consumes', () => {
+      const convert = vi.fn(() => ({
+        width: 2,
+        height: 2,
+        data: new Float32Array([1, 2, 3, 4]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert);
+
+      depth.updateGPUDepthData(fakeDepthData, 0);
+
+      expect(convert).toHaveBeenCalledTimes(1);
+      expect(depth.depthArray[0]).toBeInstanceOf(Float32Array);
+    });
+
+    it('does not read back the second view', () => {
+      // The readback is a synchronous GPU stall and nothing reads index 1, so
+      // running it for the second eye costs a stall per frame for nothing.
+      const convert = vi.fn(() => ({
+        width: 2,
+        height: 2,
+        data: new Float32Array([1, 2, 3, 4]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert);
+
+      depth.updateGPUDepthData(fakeDepthData, 1);
+
+      expect(convert).not.toHaveBeenCalled();
+    });
+
+    it('still records the raw GPU depth for every view', () => {
+      // The per-view GPU data and matrices are still needed, only the CPU
+      // readback is skipped.
+      const convert = vi.fn(() => null);
+      const depth = createDepthWithConverter(convert);
+
+      depth.updateGPUDepthData(fakeDepthData, 1);
+
+      expect(depth.gpuDepthData[1]).toBe(fakeDepthData);
+    });
+  });
 });
