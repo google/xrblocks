@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 17f9f89
- * @builddate 2026-08-06T15:02:57.369Z
+ * @commitid 2b6ec13
+ * @builddate 2026-08-07T05:15:06.127Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4598,6 +4598,18 @@ declare class HumansOptions {
      */
     pollingIntervalMs: number;
     /**
+     * Project each landmark onto the depth mesh to find its world position.
+     *
+     * This is what you want when the people being detected are physically in
+     * front of you, since the ray lands on their actual body. Turn it off when
+     * the camera is showing someone who is not part of the depth scene, such as a
+     * webcam feed on the desktop simulator: every ray would then hit the
+     * surrounding geometry instead and the skeleton would be smeared across it.
+     * With projection off, landmarks are placed along the view ray at a fixed
+     * distance, which keeps the body correctly proportioned.
+     */
+    useDepthProjection: boolean;
+    /**
      * Configuration options for the active pose detection backend.
      */
     backendConfig: {
@@ -7073,6 +7085,17 @@ interface PoseLandmark {
      * The probability [0.0, 1.0] that the landmark is visible (not occluded).
      */
     visibility?: number;
+    /**
+     * Position in metres relative to the centre of the hips, straight from
+     * MediaPipe's world landmarks, with x toward the person's right, y downward
+     * and z toward the camera.
+     *
+     * Unlike {@link worldPosition} this is independent of where the person is in
+     * the room and of the camera's intrinsics, so it can be used to render a
+     * correctly proportioned skeleton anywhere. Undefined when the backend does
+     * not provide metric landmarks.
+     */
+    metricPosition?: THREE.Vector3;
     /**
      * The back-projected 3D position in WebXR world space, measured in meters.
      * Null or undefined if depth projection was unsuccessful.
