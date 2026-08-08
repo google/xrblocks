@@ -6,7 +6,8 @@
   "types": "build/xrblocks.d.ts",
   "type": "module",
   "bin": {
-    "xrblocks-remote-control": "./src/addons/remote-control/server/relay.js"
+    "xrblocks-remote-control": "./src/addons/remote-control/server/relay.js",
+    "xrblocks-mcp": "./src/addons/mcp/server/bin.js"
   },
   "scripts": {
     "dev": "concurrently \"npm:build:watch\" \"npm:serve\"",
