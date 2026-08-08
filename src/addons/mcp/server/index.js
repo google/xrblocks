@@ -175,6 +175,35 @@ export function loadSymbols() {
   return cachedSymbols;
 }
 
+/**
+ * Shortens a skill description for the listing.
+ *
+ * `list_skills` is the tool an agent calls first, so its whole output lands in
+ * the context window before any real work starts. The full descriptions run to
+ * a thousand characters each and mostly enumerate covered APIs, which only
+ * matters once a skill has been chosen. Keeping the leading sentences answers
+ * "is this the one I want", and `get_skill` still returns everything.
+ *
+ * @param {string} description - Full frontmatter description.
+ * @param {number} maxLength - Soft character budget.
+ * @returns {string} A shortened description.
+ */
+export function summarize(description, maxLength = 220) {
+  const text = (description || '').trim();
+  if (!text) return '(no description)';
+  if (text.length <= maxLength) return text;
+
+  // Prefer cutting on a sentence boundary so the result reads as prose. Avoid
+  // splitting on the dot in an API name like `xb.core.sound`.
+  let out = '';
+  for (const sentence of text.split(/(?<=[.!?])\s+(?=[A-Z(`])/)) {
+    if (out && (out + ' ' + sentence).length > maxLength) break;
+    out = out ? `${out} ${sentence}` : sentence;
+  }
+  if (!out) out = text.slice(0, maxLength).replace(/\s+\S*$/, '');
+  return out.length < text.length ? `${out} …` : out;
+}
+
 export const TOOLS = [
   {
     name: 'list_skills',
@@ -228,9 +257,13 @@ export function callTool(name, args = {}) {
       return {text: `No skills found under ${SKILLS_DIR}.`, isError: true};
     }
     const body = skills
-      .map((s) => `## ${s.name}\n${s.description || '(no description)'}`)
+      .map((s) => `## ${s.name}\n${summarize(s.description)}`)
       .join('\n\n');
-    return {text: `${skills.length} XR Blocks skills:\n\n${body}`};
+    return {
+      text:
+        `${skills.length} XR Blocks skills. Descriptions are shortened here; ` +
+        `call get_skill for the full text and code examples.\n\n${body}`,
+    };
   }
 
   if (name === 'get_skill') {

@@ -5,8 +5,40 @@ import {
   loadSkills,
   loadSymbols,
   parseFrontmatter,
+  summarize,
   TOOLS,
 } from './index.js';
+
+describe('summarize', () => {
+  it('leaves a short description alone', () => {
+    expect(summarize('Add depth sensing.')).toBe('Add depth sensing.');
+  });
+
+  it('cuts on a sentence boundary and marks the elision', () => {
+    const text =
+      'Add depth sensing to an app. Use for occlusion and physics colliders. ' +
+      'Covers enableDepth(), the DepthOptions presets, colliderUpdateFps, and ' +
+      'showReticleOnDepthMesh, plus a great deal of further detail that only ' +
+      'matters once the skill has actually been chosen by the agent.';
+    const short = summarize(text);
+
+    expect(short.length).toBeLessThan(text.length);
+    expect(short).toContain('Add depth sensing to an app.');
+    expect(short.endsWith('…')).toBe(true);
+  });
+
+  it('does not split on the dot inside an API name', () => {
+    const text =
+      'Play audio via xb.core.sound in an app and do a number of other ' +
+      'things too, described at considerable length for the listing case.';
+
+    expect(summarize(text, 40)).not.toMatch(/xb\.$/);
+  });
+
+  it('handles an empty description', () => {
+    expect(summarize('')).toBe('(no description)');
+  });
+});
 
 describe('parseFrontmatter', () => {
   it('reads a folded description block', () => {
@@ -139,6 +171,15 @@ describe('list_skills', () => {
 
     expect(text).toContain(`${skills.length} XR Blocks skills`);
     expect(text).toContain('xb-depth');
+  });
+
+  it('stays small enough to be the first call an agent makes', () => {
+    // The full descriptions total roughly 3k tokens, which is a lot to spend
+    // before any work starts. get_skill still returns everything.
+    const {text} = callTool('list_skills');
+
+    expect(text.length).toBeLessThan(8000);
+    expect(text).toContain('call get_skill for the full text');
   });
 });
 
