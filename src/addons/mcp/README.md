@@ -70,6 +70,12 @@ nothing, so the agent is told not to call the symbol rather than left to guess.
 `search_api` reads `build/xrblocks.d.ts`, which is generated. In a clone, run
 `npm run build:sdk` first or the tool will say so.
 
+The indexing rules are pinned against a fixture so they run without a build,
+and a separate workflow builds the SDK and runs the same tests against the real
+generated file. A fixture cannot notice the definition generator changing its
+output format, and that failure is silent: real names stop resolving and the
+tool starts calling them fake.
+
 The JSON-RPC stdio transport is implemented directly rather than via
 `@modelcontextprotocol/sdk`. This package has one runtime dependency, and a
 dependency in a shipped binary is paid by everyone who installs the SDK. The
