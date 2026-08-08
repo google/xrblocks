@@ -32,6 +32,7 @@ const PACKAGE_ROOT = resolve(
   '../../../..'
 );
 const SKILLS_DIR = join(PACKAGE_ROOT, 'skills');
+const TYPES_FILE = join(PACKAGE_ROOT, 'build', 'xrblocks.d.ts');
 
 /**
  * Reads the `name` and `description` out of a SKILL.md YAML frontmatter block.
@@ -90,6 +91,90 @@ export function loadSkills() {
   return skills.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+let cachedSymbols = null;
+
+/**
+ * Extracts the declared public symbols from the built type definitions.
+ *
+ * The barrel at `src/xrblocks.ts` is almost entirely `export * from`, so it
+ * names nothing itself. The generated `.d.ts` is the only place the real
+ * surface is enumerated.
+ *
+ * Indexes members as well as top-level declarations, because much of the API
+ * an app actually calls is methods on a class rather than free functions:
+ * `enableDepth()` is a method on `Options`, not a top-level export, and an
+ * index that missed it would tell an agent a real API does not exist.
+ *
+ * @returns {Array<{name: string, kind: string, owner: string|null, signature: string}>} Symbols.
+ */
+export function loadSymbols() {
+  if (cachedSymbols) return cachedSymbols;
+  cachedSymbols = [];
+  if (!existsSync(TYPES_FILE)) return cachedSymbols;
+
+  const topLevel =
+    /^(?:export\s+)?(?:declare\s+)?(abstract class|class|function|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
+  // Indented members: methods, properties, getters. Skips private/# members.
+  const member =
+    /^\s+(?:(?:public|protected|readonly|static|abstract|get|set)\s+)*([A-Za-z_$][\w$]*)\s*[(<:?]/;
+
+  const seen = new Set();
+  let owner = null;
+  let depth = 0;
+
+  for (const raw of readFileSync(TYPES_FILE, 'utf8').split(/\r?\n/)) {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) continue;
+
+    const top = line.match(topLevel);
+    if (top) {
+      const [, kind, name] = top;
+      owner = /class|interface/.test(kind) ? name : null;
+      depth = 0;
+      const key = `${kind}:${name}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        cachedSymbols.push({
+          name,
+          kind,
+          owner: null,
+          signature: line.trim().replace(/\s+/g, ' '),
+        });
+      }
+      continue;
+    }
+
+    if (owner) {
+      // Track nesting so we only take direct members of the type.
+      const opens = (line.match(/\{/g) || []).length;
+      const closes = (line.match(/\}/g) || []).length;
+      if (/^\}/.test(line.trim()) && depth === 0) {
+        owner = null;
+        continue;
+      }
+      if (depth === 0) {
+        const mem = line.match(member);
+        if (mem && !mem[1].startsWith('_')) {
+          const name = mem[1];
+          const key = `member:${owner}.${name}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            cachedSymbols.push({
+              name,
+              kind: 'member',
+              owner,
+              signature: `${owner}.${line.trim().replace(/\s+/g, ' ')}`,
+            });
+          }
+        }
+      }
+      depth += opens - closes;
+      if (depth < 0) depth = 0;
+    }
+  }
+  return cachedSymbols;
+}
+
 export const TOOLS = [
   {
     name: 'list_skills',
@@ -107,6 +192,23 @@ export const TOOLS = [
         name: {type: 'string', description: 'Skill name, e.g. xb-depth.'},
       },
       required: ['name'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'search_api',
+    description:
+      "Search the XR Blocks public API surface for a symbol. Use this to confirm a class, function, or option actually exists before writing code that calls it, rather than guessing. Returns matching declarations from the SDK's type definitions.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Symbol name or fragment, e.g. enableDepth or Reticle.',
+        },
+        limit: {type: 'number', description: 'Max results, default 25.'},
+      },
+      required: ['query'],
       additionalProperties: false,
     },
   },
@@ -147,6 +249,44 @@ export function callTool(name, args = {}) {
       };
     }
     return {text: readFileSync(skill.path, 'utf8')};
+  }
+
+  if (name === 'search_api') {
+    const query = String(args.query || '').trim();
+    if (!query) {
+      return {text: 'Missing required argument: query.', isError: true};
+    }
+    const symbols = loadSymbols();
+    if (!symbols.length) {
+      return {
+        text:
+          `No type definitions found at ${TYPES_FILE}. Run "npm run build:sdk" ` +
+          `so the API surface can be searched.`,
+        isError: true,
+      };
+    }
+    const needle = query.toLowerCase();
+    const limit = Number(args.limit) > 0 ? Number(args.limit) : 25;
+    const exact = [];
+    const partial = [];
+    for (const s of symbols) {
+      const lower = s.name.toLowerCase();
+      if (lower === needle) exact.push(s);
+      else if (lower.includes(needle)) partial.push(s);
+    }
+    const hits = [...exact, ...partial].slice(0, limit);
+    if (!hits.length) {
+      return {
+        text:
+          `No XR Blocks API matches "${query}". It is likely not a real symbol, ` +
+          `so do not call it. Use list_skills to find the right area instead.`,
+      };
+    }
+    return {
+      text:
+        `${hits.length} match(es) for "${query}":\n\n` +
+        hits.map((s) => `${s.kind} ${s.name}\n    ${s.signature}`).join('\n'),
+    };
   }
 
   return {text: `Unknown tool: ${name}`, isError: true};

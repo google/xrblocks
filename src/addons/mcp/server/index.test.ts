@@ -1,6 +1,12 @@
 import {describe, expect, it} from 'vitest';
 
-import {callTool, loadSkills, parseFrontmatter, TOOLS} from './index.js';
+import {
+  callTool,
+  loadSkills,
+  loadSymbols,
+  parseFrontmatter,
+  TOOLS,
+} from './index.js';
 
 describe('parseFrontmatter', () => {
   it('reads a folded description block', () => {
@@ -54,6 +60,62 @@ describe('loadSkills', () => {
   });
 });
 
+describe('loadSymbols', () => {
+  it('indexes class members, not just top-level declarations', () => {
+    // enableDepth() is a method on Options rather than a free function. An
+    // index that only saw top-level declarations would report a real API as
+    // missing, which is worse than not answering at all.
+    const symbols = loadSymbols();
+    const enableDepth = symbols.find((s) => s.name === 'enableDepth');
+
+    expect(enableDepth).toBeDefined();
+    expect(enableDepth.kind).toBe('member');
+    expect(enableDepth.owner).toBe('Options');
+  });
+
+  it('indexes top-level classes', () => {
+    const symbols = loadSymbols();
+
+    expect(symbols.find((s) => s.name === 'Options')).toBeDefined();
+  });
+});
+
+describe('search_api', () => {
+  it('finds a real API', () => {
+    const {text, isError} = callTool('search_api', {query: 'enableDepth'});
+
+    expect(isError).toBeFalsy();
+    expect(text).toContain('enableDepth');
+  });
+
+  it('tells the caller a hallucinated API does not exist', () => {
+    // These are APIs a model actually invented when generating xrblocks code
+    // without grounding, which is the failure this tool exists to catch.
+    for (const fake of ['createXRScene', 'useGesture', 'playGesture']) {
+      const {text} = callTool('search_api', {query: fake});
+      expect(text).toContain('No XR Blocks API matches');
+    }
+  });
+
+  it('is case insensitive', () => {
+    expect(callTool('search_api', {query: 'enabledepth'}).text).toContain(
+      'enableDepth'
+    );
+  });
+
+  it('reports a missing query rather than returning everything', () => {
+    const {isError} = callTool('search_api', {query: '  '});
+
+    expect(isError).toBe(true);
+  });
+
+  it('honours the result limit', () => {
+    const {text} = callTool('search_api', {query: 'enable', limit: 3});
+
+    expect(text).toMatch(/^3 match\(es\)/);
+  });
+});
+
 describe('get_skill', () => {
   it('returns the full text of a skill', () => {
     const {text, isError} = callTool('get_skill', {name: 'xb-depth'});
@@ -85,6 +147,7 @@ describe('tool declarations', () => {
     expect(TOOLS.map((t) => t.name).sort()).toEqual([
       'get_skill',
       'list_skills',
+      'search_api',
     ]);
     for (const tool of TOOLS) {
       expect(tool.description.length).toBeGreaterThan(20);
