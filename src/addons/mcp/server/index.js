@@ -18,7 +18,7 @@
  * stdio, which is the MCP stdio transport, with no runtime dependencies so it
  * adds nothing to an app's install.
  */
-import {existsSync, readdirSync, readFileSync} from 'node:fs';
+import {existsSync, readdirSync, readFileSync, statSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
@@ -99,6 +99,7 @@ export function loadSkills() {
 }
 
 let cachedSymbols = null;
+let cachedMtime = 0;
 
 /**
  * Reads the names the package actually exports.
@@ -130,7 +131,10 @@ export function parseExportedNames(text) {
 }
 
 /**
- * Extracts the public API symbols from the built type definitions.
+ * Indexes the public API symbols in a set of type definitions.
+ *
+ * Kept separate from reading the file so it can be tested against a fixture:
+ * `build/xrblocks.d.ts` is generated and is not present in a fresh clone.
  *
  * The barrel at `src/xrblocks.ts` is almost entirely `export * from`, so it
  * names nothing itself. The generated `.d.ts` is the only place the real
@@ -141,13 +145,11 @@ export function parseExportedNames(text) {
  * `enableDepth()` is a method on `Options`, not a top-level export, and an
  * index that missed it would tell an agent a real API does not exist.
  *
+ * @param {string} source - Contents of a .d.ts bundle.
  * @returns {Array<{name: string, kind: string, owner: string|null, signature: string}>} Symbols.
  */
-export function loadSymbols() {
-  if (cachedSymbols) return cachedSymbols;
-  if (!existsSync(TYPES_FILE)) return [];
-  const source = readFileSync(TYPES_FILE, 'utf8');
-  cachedSymbols = [];
+export function indexSymbols(source) {
+  const symbols = [];
 
   const exported = parseExportedNames(source);
 
@@ -185,7 +187,7 @@ export function loadSymbols() {
       const key = `${kind}:${name}`;
       if (!seen.has(key)) {
         seen.add(key);
-        cachedSymbols.push({
+        symbols.push({
           name,
           kind,
           owner: null,
@@ -217,7 +219,7 @@ export function loadSymbols() {
           const key = `member:${owner}.${name}`;
           if (!seen.has(key)) {
             seen.add(key);
-            cachedSymbols.push({
+            symbols.push({
               name,
               kind: 'member',
               owner,
@@ -232,12 +234,28 @@ export function loadSymbols() {
       if (suppressed >= 0 && depth <= suppressed) suppressed = -1;
     }
   }
+  return symbols;
+}
+
+/**
+ * Loads the public API symbols from the built type definitions.
+ *
+ * Re-indexes when the file changes, so building the SDK while a client holds
+ * the server open does not leave a freshly added API reported as fake.
+ *
+ * @returns {Array<{name: string, kind: string, owner: string|null, signature: string}>} Symbols.
+ */
+export function loadSymbols() {
+  if (!existsSync(TYPES_FILE)) return [];
+  const mtime = statSync(TYPES_FILE).mtimeMs;
+  if (cachedSymbols && cachedMtime === mtime) return cachedSymbols;
+  cachedSymbols = indexSymbols(readFileSync(TYPES_FILE, 'utf8'));
+  cachedMtime = mtime;
   return cachedSymbols;
 }
 
 /**
  * Shortens a skill description for the listing.
- *
  * `list_skills` is the tool an agent calls first, so its whole output lands in
  * the context window before any real work starts. The full descriptions run to
  * a thousand characters each and mostly enumerate covered APIs, which only

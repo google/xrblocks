@@ -1,8 +1,10 @@
+import {existsSync} from 'node:fs';
 import {describe, expect, it} from 'vitest';
 
 import {
   callTool,
   handle,
+  indexSymbols,
   loadSkills,
   loadSymbols,
   parseExportedNames,
@@ -10,6 +12,11 @@ import {
   summarize,
   TOOLS,
 } from './index.js';
+
+// `build/xrblocks.d.ts` is generated, so it is missing in a fresh clone and on
+// CI, which runs the tests without a build. Assertions against the real file
+// are skipped there; the indexing rules are covered by a fixture instead.
+const hasTypes = existsSync('build/xrblocks.d.ts');
 
 /** Collects what the server would write, instead of hitting stdout. */
 function exchange(message: unknown) {
@@ -204,31 +211,67 @@ describe('loadSkills', () => {
   });
 });
 
-describe('loadSymbols', () => {
+// A miniature stand-in for the generated bundle. `build/xrblocks.d.ts` is a
+// build artifact and is absent in a fresh clone and on CI, so the indexing
+// rules are pinned against this instead of the real file.
+const FIXTURE = `
+declare class Options {
+    enableDepth(): this;
+}
+declare class Gemini {
+    query(prompt: string): Promise<string>;
+    protected queryOnce(): void;
+}
+declare class ModelViewer {
+    protected controlBar?: THREE.Mesh;
+    constructor({ raycastToChildren, }: {
+        raycastToChildren?: boolean | undefined;
+    });
+    getSessionState(): {
+        toolCount: number;
+    };
+}
+declare class Reticle {
+}
+declare const musicLibrary: Record<string, string>;
+declare enum SimulatorMode {
+    POINTER_LOCK = "pointerlock"
+}
+type AutomationModeOptions = {
+    hideSimulatorUi?: boolean;
+};
+type sdk_Reticle = Reticle;
+declare namespace sdk {
+    export { sdk_Reticle as Reticle };
+}
+export { Gemini, ModelViewer, Options, Reticle, SimulatorMode };
+export type { AutomationModeOptions };
+`;
+
+describe('indexSymbols', () => {
+  const symbols = indexSymbols(FIXTURE);
+  const find = (name: string) => symbols.find((s) => s.name === name);
+  const names = new Set(symbols.map((s) => s.name));
+
   it('indexes class members, not just top-level declarations', () => {
     // enableDepth() is a method on Options rather than a free function. An
     // index that only saw top-level declarations would report a real API as
     // missing, which is worse than not answering at all.
-    const symbols = loadSymbols();
-    const enableDepth = symbols.find((s) => s.name === 'enableDepth');
+    const enableDepth = find('enableDepth');
 
     expect(enableDepth).toBeDefined();
-    expect(enableDepth.kind).toBe('member');
-    expect(enableDepth.owner).toBe('Options');
+    expect(enableDepth!.kind).toBe('member');
+    expect(enableDepth!.owner).toBe('Options');
   });
 
   it('indexes top-level classes', () => {
-    const symbols = loadSymbols();
-
-    expect(symbols.find((s) => s.name === 'Options')).toBeDefined();
+    expect(find('Options')).toBeDefined();
   });
 
   it('leaves out declarations the package does not export', () => {
     // The generated bundle carries every declaration rollup pulled in,
     // including internal helpers and sdk_-prefixed aliases. Reporting those as
     // real APIs is the exact failure this tool exists to prevent.
-    const names = new Set(loadSymbols().map((s) => s.name));
-
     expect(names.has('sdk_Reticle')).toBe(false);
     expect(names.has('musicLibrary')).toBe(false);
     // The alias target is the real public name and must survive.
@@ -236,17 +279,15 @@ describe('loadSymbols', () => {
   });
 
   it('leaves out protected members, which an app cannot call', () => {
-    const symbols = loadSymbols();
-
     expect(
       symbols.find((s) => s.owner === 'Gemini' && s.name === 'queryOnce')
+    ).toBeUndefined();
+    expect(
+      symbols.find((s) => s.owner === 'ModelViewer' && s.name === 'controlBar')
     ).toBeUndefined();
   });
 
   it('indexes members of exported type aliases and enums', () => {
-    const symbols = loadSymbols();
-    const find = (name: string) => symbols.find((s) => s.name === name);
-
     // Property on an exported `type X = {...}` alias.
     expect(find('hideSimulatorUi')).toBeDefined();
     // Value on an exported enum.
@@ -254,42 +295,46 @@ describe('loadSymbols', () => {
   });
 
   it('indexes fields of inline option bags and returned shapes', () => {
-    // These are written inline inside a signature rather than as their own
-    // type, but they are what an app actually passes and reads:
+    // Written inline inside a signature rather than as their own type, but
+    // they are what an app passes and reads:
     // `new ModelViewer({raycastToChildren})`, `getSessionState().toolCount`.
-    const names = new Set(loadSymbols().map((s) => s.name));
-
     expect(names.has('raycastToChildren')).toBe(true);
     expect(names.has('toolCount')).toBe(true);
   });
+});
 
-  it('does not index a protected field that has no public counterpart', () => {
+describe('loadSymbols', () => {
+  // Only meaningful once the SDK has been built.
+  it.skipIf(!hasTypes)('indexes the real generated definitions', () => {
     const symbols = loadSymbols();
+    const enableDepth = symbols.find((s) => s.name === 'enableDepth');
 
-    expect(
-      symbols.find((s) => s.owner === 'ModelViewer' && s.name === 'controlBar')
-    ).toBeUndefined();
+    expect(symbols.length).toBeGreaterThan(500);
+    expect(enableDepth?.owner).toBe('Options');
   });
 });
 
 describe('search_api', () => {
-  it('finds a real API', () => {
+  it.skipIf(!hasTypes)('finds a real API', () => {
     const {text, isError} = callTool('search_api', {query: 'enableDepth'});
 
     expect(isError).toBeFalsy();
     expect(text).toContain('enableDepth');
   });
 
-  it('tells the caller a hallucinated API does not exist', () => {
-    // These are APIs a model actually invented when generating xrblocks code
-    // without grounding, which is the failure this tool exists to catch.
-    for (const fake of ['createXRScene', 'useGesture', 'playGesture']) {
-      const {text} = callTool('search_api', {query: fake});
-      expect(text).toContain('No XR Blocks API matches');
+  it.skipIf(!hasTypes)(
+    'tells the caller a hallucinated API does not exist',
+    () => {
+      // These are APIs a model actually invented when generating xrblocks code
+      // without grounding, which is the failure this tool exists to catch.
+      for (const fake of ['createXRScene', 'useGesture', 'playGesture']) {
+        const {text} = callTool('search_api', {query: fake});
+        expect(text).toContain('No XR Blocks API matches');
+      }
     }
-  });
+  );
 
-  it('is case insensitive', () => {
+  it.skipIf(!hasTypes)('is case insensitive', () => {
     expect(callTool('search_api', {query: 'enabledepth'}).text).toContain(
       'enableDepth'
     );
@@ -301,11 +346,21 @@ describe('search_api', () => {
     expect(isError).toBe(true);
   });
 
-  it('honours the result limit', () => {
+  it.skipIf(!hasTypes)('honours the result limit', () => {
     const {text} = callTool('search_api', {query: 'enable', limit: 3});
 
     expect(text).toMatch(/^3 match\(es\)/);
   });
+
+  it.skipIf(hasTypes)(
+    'says to build the SDK when definitions are absent',
+    () => {
+      const {text, isError} = callTool('search_api', {query: 'enableDepth'});
+
+      expect(isError).toBe(true);
+      expect(text).toContain('npm run build:sdk');
+    }
+  );
 });
 
 describe('get_skill', () => {
