@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 46c0753
- * @builddate 2026-08-07T22:15:44.669Z
+ * @commitid 1145610
+ * @builddate 2026-08-08T15:57:59.147Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7166,10 +7166,18 @@ declare class DetectedBodyPose extends THREE.Object3D {
      * Returns the 3D world space position of a specific joint/landmark in meters.
      * Exposes both standard MediaPipe landmark mappings and composite VRM/humanoid landmarks.
      *
+     * The pose model always returns all landmarks, including ones it could not
+     * actually see, so a body that is only half in frame still reports legs. Pass
+     * `minVisibility` to drop those guesses instead of drawing them.
+     *
      * @param name - The name of the joint (standard or composite).
-     * @returns A clone of the 3D world space position vector, or `null` if the joint is undetected or unprojected.
+     * @param options - Set `minVisibility` to reject landmarks the model is not
+     *   confident about. Defaults to 0, which keeps every landmark.
+     * @returns A clone of the 3D world space position vector, or `null` if the joint is undetected, unprojected, or below `minVisibility`.
      */
-    getJointPosition(name: PoseJointName | string): THREE.Vector3 | null;
+    getJointPosition(name: PoseJointName | string, { minVisibility }?: {
+        minVisibility?: number;
+    }): THREE.Vector3 | null;
 }
 
 /**

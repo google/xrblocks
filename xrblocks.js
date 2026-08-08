@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.19.0
- * @commitid 46c0753
- * @builddate 2026-08-07T22:15:44.669Z
+ * @commitid 1145610
+ * @builddate 2026-08-08T15:57:59.147Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -19158,13 +19158,24 @@ class DetectedBodyPose extends THREE.Object3D {
      * Returns the 3D world space position of a specific joint/landmark in meters.
      * Exposes both standard MediaPipe landmark mappings and composite VRM/humanoid landmarks.
      *
+     * The pose model always returns all landmarks, including ones it could not
+     * actually see, so a body that is only half in frame still reports legs. Pass
+     * `minVisibility` to drop those guesses instead of drawing them.
+     *
      * @param name - The name of the joint (standard or composite).
-     * @returns A clone of the 3D world space position vector, or `null` if the joint is undetected or unprojected.
+     * @param options - Set `minVisibility` to reject landmarks the model is not
+     *   confident about. Defaults to 0, which keeps every landmark.
+     * @returns A clone of the 3D world space position vector, or `null` if the joint is undetected, unprojected, or below `minVisibility`.
      */
-    getJointPosition(name) {
+    getJointPosition(name, { minVisibility = 0 } = {}) {
         const getMPWorldPos = (index) => {
             const lm = this.landmarks[index];
-            return lm && lm.worldPosition ? lm.worldPosition.clone() : null;
+            if (!lm || !lm.worldPosition)
+                return null;
+            if (minVisibility > 0 && (lm.visibility ?? 0) < minVisibility) {
+                return null;
+            }
+            return lm.worldPosition.clone();
         };
         switch (name) {
             case PoseJointName.Nose:
@@ -19216,8 +19227,10 @@ class DetectedBodyPose extends THREE.Object3D {
             }
             case PoseJointName.Spine: {
                 // Spine is lower center torso (between hips and chest)
-                const hips = this.getJointPosition(PoseJointName.Hips);
-                const chest = this.getJointPosition(PoseJointName.Chest);
+                const hips = this.getJointPosition(PoseJointName.Hips, { minVisibility });
+                const chest = this.getJointPosition(PoseJointName.Chest, {
+                    minVisibility,
+                });
                 if (hips && chest) {
                     return new THREE.Vector3()
                         .addVectors(hips, chest)
@@ -19236,7 +19249,9 @@ class DetectedBodyPose extends THREE.Object3D {
                 return lShoulder || rShoulder || null;
             }
             case PoseJointName.Neck: {
-                const chest = this.getJointPosition(PoseJointName.Chest);
+                const chest = this.getJointPosition(PoseJointName.Chest, {
+                    minVisibility,
+                });
                 const nose = getMPWorldPos(0);
                 if (chest && nose) {
                     return new THREE.Vector3()
