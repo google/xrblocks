@@ -101,7 +101,36 @@ export function loadSkills() {
 let cachedSymbols = null;
 
 /**
- * Extracts the declared public symbols from the built type definitions.
+ * Reads the names the package actually exports.
+ *
+ * The generated bundle contains every declaration rollup pulled in, including
+ * internal helpers and `sdk_`-prefixed aliases, so the declarations alone are a
+ * much wider set than the public surface. The trailing `export {...}` and
+ * `export type {...}` statements are the authoritative list, so the index is
+ * filtered against them. Without this the tool confirms internal names as real
+ * APIs, which is the failure it exists to prevent.
+ *
+ * @param {string} text - Contents of the .d.ts bundle.
+ * @returns {Set<string>} Exported names.
+ */
+export function parseExportedNames(text) {
+  const names = new Set();
+  // Only top-level statements; the ones nested in `declare namespace sdk` are
+  // indented and re-export the internal aliases.
+  for (const match of text.matchAll(/^export\s+(?:type\s+)?\{([^}]*)\}/gm)) {
+    for (const part of match[1].split(',')) {
+      const entry = part.trim();
+      if (!entry) continue;
+      // `sdk_Reticle as Reticle` is exported under the alias.
+      const as = entry.match(/\bas\s+([A-Za-z_$][\w$]*)$/);
+      names.add(as ? as[1] : entry);
+    }
+  }
+  return names;
+}
+
+/**
+ * Extracts the public API symbols from the built type definitions.
  *
  * The barrel at `src/xrblocks.ts` is almost entirely `export * from`, so it
  * names nothing itself. The generated `.d.ts` is the only place the real
@@ -116,28 +145,43 @@ let cachedSymbols = null;
  */
 export function loadSymbols() {
   if (cachedSymbols) return cachedSymbols;
+  if (!existsSync(TYPES_FILE)) return [];
+  const source = readFileSync(TYPES_FILE, 'utf8');
   cachedSymbols = [];
-  if (!existsSync(TYPES_FILE)) return cachedSymbols;
+
+  const exported = parseExportedNames(source);
 
   const topLevel =
     /^(?:export\s+)?(?:declare\s+)?(abstract class|class|function|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
-  // Indented members: methods, properties, getters. Skips private/# members.
+  // Indented members: methods, properties, getters, enum values. `protected`
+  // and `private` members are deliberately excluded, since an app cannot call
+  // them and reporting them invites exactly the wrong code.
   const member =
-    /^\s+(?:(?:public|protected|readonly|static|abstract|get|set)\s+)*([A-Za-z_$][\w$]*)\s*[(<:?]/;
+    /^\s+(?:(?:public|readonly|static|abstract|get|set)\s+)*([A-Za-z_$][\w$]*)\s*[(<:?,=]/;
+  const nonPublic = /^\s+(?:private|protected|#)/;
 
   const seen = new Set();
   let owner = null;
   let depth = 0;
+  // Depth at which a private/protected member started, so its nested shape is
+  // skipped too. -1 means nothing is being suppressed.
+  let suppressed = -1;
 
-  for (const raw of readFileSync(TYPES_FILE, 'utf8').split(/\r?\n/)) {
+  for (const raw of source.split(/\r?\n/)) {
     const line = raw.replace(/\s+$/, '');
     if (!line.trim()) continue;
 
     const top = line.match(topLevel);
     if (top) {
       const [, kind, name] = top;
-      owner = /class|interface/.test(kind) ? name : null;
+      // A `type X = {` alias and an `enum X {` both own members worth indexing,
+      // not just classes and interfaces.
+      const ownsMembers =
+        /class|interface|enum/.test(kind) ||
+        (kind === 'type' && /\{\s*$/.test(line));
+      owner = ownsMembers && exported.has(name) ? name : null;
       depth = 0;
+      if (!exported.has(name)) continue;
       const key = `${kind}:${name}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -152,14 +196,21 @@ export function loadSymbols() {
     }
 
     if (owner) {
-      // Track nesting so we only take direct members of the type.
+      // Track nesting so a private member's inline shape can be skipped.
       const opens = (line.match(/\{/g) || []).length;
       const closes = (line.match(/\}/g) || []).length;
       if (/^\}/.test(line.trim()) && depth === 0) {
         owner = null;
+        suppressed = -1;
         continue;
       }
-      if (depth === 0) {
+      if (suppressed < 0 && nonPublic.test(line)) suppressed = depth;
+
+      // Index at any depth, not just direct members: option bags and returned
+      // shapes are written inline in the declarations, so fields like
+      // `new ModelViewer({raycastToChildren})` or `getSessionState().toolCount`
+      // only exist nested inside a signature.
+      if (suppressed < 0) {
         const mem = line.match(member);
         if (mem && !mem[1].startsWith('_')) {
           const name = mem[1];
@@ -177,6 +228,8 @@ export function loadSymbols() {
       }
       depth += opens - closes;
       if (depth < 0) depth = 0;
+      // The private member's shape has closed, so resume indexing.
+      if (suppressed >= 0 && depth <= suppressed) suppressed = -1;
     }
   }
   return cachedSymbols;

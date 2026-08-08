@@ -5,6 +5,7 @@ import {
   handle,
   loadSkills,
   loadSymbols,
+  parseExportedNames,
   parseFrontmatter,
   summarize,
   TOOLS,
@@ -93,6 +94,30 @@ describe('JSON-RPC transport', () => {
     expect(result.isError).toBe(false);
     expect(result.content[0].type).toBe('text');
     expect(result.content[0].text).toContain('xb-depth');
+  });
+});
+
+describe('parseExportedNames', () => {
+  it('takes the alias rather than the internal name', () => {
+    const names = parseExportedNames(
+      'export { sdk_Reticle as Reticle, Core };'
+    );
+    expect(names.has('Reticle')).toBe(true);
+    expect(names.has('sdk_Reticle')).toBe(false);
+    expect(names.has('Core')).toBe(true);
+  });
+
+  it('reads type-only exports too', () => {
+    const names = parseExportedNames('export type { DepthOptions };');
+    expect(names.has('DepthOptions')).toBe(true);
+  });
+
+  it('ignores the indented re-exports inside the namespace block', () => {
+    const names = parseExportedNames(
+      '    export type { sdk_Foo as Foo };\nexport { Bar };'
+    );
+    expect(names.has('Bar')).toBe(true);
+    expect(names.has('Foo')).toBe(false);
   });
 });
 
@@ -196,6 +221,54 @@ describe('loadSymbols', () => {
     const symbols = loadSymbols();
 
     expect(symbols.find((s) => s.name === 'Options')).toBeDefined();
+  });
+
+  it('leaves out declarations the package does not export', () => {
+    // The generated bundle carries every declaration rollup pulled in,
+    // including internal helpers and sdk_-prefixed aliases. Reporting those as
+    // real APIs is the exact failure this tool exists to prevent.
+    const names = new Set(loadSymbols().map((s) => s.name));
+
+    expect(names.has('sdk_Reticle')).toBe(false);
+    expect(names.has('musicLibrary')).toBe(false);
+    // The alias target is the real public name and must survive.
+    expect(names.has('Reticle')).toBe(true);
+  });
+
+  it('leaves out protected members, which an app cannot call', () => {
+    const symbols = loadSymbols();
+
+    expect(
+      symbols.find((s) => s.owner === 'Gemini' && s.name === 'queryOnce')
+    ).toBeUndefined();
+  });
+
+  it('indexes members of exported type aliases and enums', () => {
+    const symbols = loadSymbols();
+    const find = (name: string) => symbols.find((s) => s.name === name);
+
+    // Property on an exported `type X = {...}` alias.
+    expect(find('hideSimulatorUi')).toBeDefined();
+    // Value on an exported enum.
+    expect(find('POINTER_LOCK')).toBeDefined();
+  });
+
+  it('indexes fields of inline option bags and returned shapes', () => {
+    // These are written inline inside a signature rather than as their own
+    // type, but they are what an app actually passes and reads:
+    // `new ModelViewer({raycastToChildren})`, `getSessionState().toolCount`.
+    const names = new Set(loadSymbols().map((s) => s.name));
+
+    expect(names.has('raycastToChildren')).toBe(true);
+    expect(names.has('toolCount')).toBe(true);
+  });
+
+  it('does not index a protected field that has no public counterpart', () => {
+    const symbols = loadSymbols();
+
+    expect(
+      symbols.find((s) => s.owner === 'ModelViewer' && s.name === 'controlBar')
+    ).toBeUndefined();
   });
 });
 
