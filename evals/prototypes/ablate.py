@@ -15,8 +15,10 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 
 from google import genai
 from google.genai import types
@@ -74,10 +76,16 @@ def run_variant(
 
     label = "baseline" if ablate_idx is None else f"no-{sections[ablate_idx][0]}"
     safe_label = re.sub(r"[^a-zA-Z0-9._-]+", "-", label).strip("-")
-    workspace = pathlib.Path(f"/tmp/xrblocks-ablate-{task_id}-{safe_label}")
+    workspace = (
+        pathlib.Path(tempfile.gettempdir())
+        / f"xrblocks-ablate-{task_id}-{safe_label}"
+    )
     if workspace.exists():
-        subprocess.run(["rm", "-rf", str(workspace)], check=False)
-    subprocess.run(["cp", "-r", str(REPO_ROOT / template_rel), str(workspace)], check=True)
+        shutil.rmtree(workspace, ignore_errors=True)
+    # On Windows rmtree can empty the directory but fail to remove the
+    # directory itself, if anything is briefly holding a handle on it, so
+    # allow copying into what is left.
+    shutil.copytree(REPO_ROOT / template_rel, workspace, dirs_exist_ok=True)
 
     system_prompt = build_prompt(sections, ablate_idx)
     user_msg = (
@@ -106,7 +114,7 @@ def run_variant(
 
     scorer = REPO_ROOT / "evals" / "prototypes" / "score_proto.py"
     score = subprocess.run(
-        ["python3", str(scorer), str(task_dir), str(workspace)],
+        [sys.executable, str(scorer), str(task_dir), str(workspace)],
         capture_output=True,
         text=True,
         check=True,
