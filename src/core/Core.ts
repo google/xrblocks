@@ -132,6 +132,7 @@ export class Core {
   depth = new Depth();
   lighting?: Lighting;
   physics?: Physics;
+  private physicsIntervalId?: ReturnType<typeof setInterval>;
   xrButton?: XRButton;
   effects?: XREffects;
   ai = new AI();
@@ -249,6 +250,15 @@ export class Core {
   }
 
   dispose() {
+    // Physics steps off the render loop on its own interval, so it keeps
+    // running after teardown unless the handle is cleared. Freeing the Rapier
+    // world matters too: it holds WASM memory that garbage collection cannot
+    // reclaim on its own.
+    if (this.physicsIntervalId !== undefined) {
+      clearInterval(this.physicsIntervalId);
+      this.physicsIntervalId = undefined;
+    }
+    this.physics?.dispose();
     this.input.dispose();
     window.removeEventListener('resize', this.onWindowResize);
   }
@@ -505,7 +515,10 @@ export class Core {
     this.renderer.setAnimationLoop(this.update);
 
     if (this.physics) {
-      setInterval(this.physicsStep, 1000 * this.physics.timestep);
+      this.physicsIntervalId = setInterval(
+        this.physicsStep,
+        1000 * this.physics.timestep
+      );
     }
 
     if (this.options.reticles.enabled) {
