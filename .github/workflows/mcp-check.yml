@@ -43,9 +43,10 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      # search_api reads the generated definitions, and the test workflow does
-      # not build. Without this, a format change in the generated .d.ts would
-      # silently stop real API names resolving and nothing would notice.
+      # search_api reads the generated definitions. The test workflow only
+      # builds them as a side effect of `npm ci`, which it skips on a
+      # node_modules cache hit, so the check against the real file would run
+      # only sometimes. Building here makes it deterministic.
       - name: Build SDK
         run: npm run build:sdk
 

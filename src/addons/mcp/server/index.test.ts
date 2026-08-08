@@ -13,9 +13,11 @@ import {
   TOOLS,
 } from './index.js';
 
-// `build/xrblocks.d.ts` is generated, so it is missing in a fresh clone and on
-// CI, which runs the tests without a build. Assertions against the real file
-// are skipped there; the indexing rules are covered by a fixture instead.
+// `build/xrblocks.d.ts` is generated, so it is missing in a fresh clone. On CI
+// it depends on cache state: the test workflow only runs `npm ci` on a
+// node_modules cache miss, and it is `npm ci` that triggers the `prepare`
+// build. Assertions against the real file are skipped when it is absent; the
+// indexing rules are covered by a fixture so they run either way.
 const hasTypes = existsSync('build/xrblocks.d.ts');
 
 /** Collects what the server would write, instead of hitting stdout. */
