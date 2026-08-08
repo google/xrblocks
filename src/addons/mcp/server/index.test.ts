@@ -2,12 +2,99 @@ import {describe, expect, it} from 'vitest';
 
 import {
   callTool,
+  handle,
   loadSkills,
   loadSymbols,
   parseFrontmatter,
   summarize,
   TOOLS,
 } from './index.js';
+
+/** Collects what the server would write, instead of hitting stdout. */
+function exchange(message: unknown) {
+  const sent: Array<Record<string, unknown>> = [];
+  handle(message, (msg: Record<string, unknown>) => sent.push(msg));
+  return sent;
+}
+
+describe('JSON-RPC transport', () => {
+  it('answers initialize with the version the client asked for', () => {
+    const [res] = exchange({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {protocolVersion: '2025-06-18'},
+    });
+    expect((res.result as Record<string, unknown>).protocolVersion).toBe(
+      '2025-06-18'
+    );
+  });
+
+  it('falls back to the newest version it speaks when the client asks for an unknown one', () => {
+    const [res] = exchange({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {protocolVersion: '1999-01-01'},
+    });
+    // Answering with the oldest can make a modern client hang up even though
+    // both sides would have agreed on a later version.
+    expect((res.result as Record<string, unknown>).protocolVersion).toBe(
+      '2025-06-18'
+    );
+  });
+
+  it('never answers a notification', () => {
+    // No id means notification, whatever the method.
+    expect(exchange({jsonrpc: '2.0', method: 'tools/list'})).toHaveLength(0);
+    expect(
+      exchange({jsonrpc: '2.0', method: 'notifications/initialized'})
+    ).toHaveLength(0);
+  });
+
+  it('answers ping, which clients use as a health check', () => {
+    const [res] = exchange({jsonrpc: '2.0', id: 7, method: 'ping'});
+    expect(res).toEqual({jsonrpc: '2.0', id: 7, result: {}});
+  });
+
+  it('rejects a non-object message instead of throwing', () => {
+    for (const bad of [null, 42, 'hello', []]) {
+      const [res] = exchange(bad);
+      expect((res.error as Record<string, unknown>).code).toBe(-32600);
+    }
+  });
+
+  it('reports an unknown method as -32601', () => {
+    const [res] = exchange({jsonrpc: '2.0', id: 2, method: 'resources/list'});
+    expect((res.error as Record<string, unknown>).code).toBe(-32601);
+  });
+
+  it('reports an unknown tool as -32602', () => {
+    const [res] = exchange({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {name: 'no_such_tool', arguments: {}},
+    });
+    expect((res.error as Record<string, unknown>).code).toBe(-32602);
+  });
+
+  it('wraps a tool result in the MCP content envelope', () => {
+    const [res] = exchange({
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/call',
+      params: {name: 'list_skills', arguments: {}},
+    });
+    const result = res.result as {
+      content: Array<{type: string; text: string}>;
+      isError: boolean;
+    };
+    expect(result.isError).toBe(false);
+    expect(result.content[0].type).toBe('text');
+    expect(result.content[0].text).toContain('xb-depth');
+  });
+});
 
 describe('summarize', () => {
   it('leaves a short description alone', () => {

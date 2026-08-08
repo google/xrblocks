@@ -23,7 +23,14 @@ import {dirname, join, resolve} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 
-const PROTOCOL_VERSION = '2024-11-05';
+// Versions we will echo back if a client asks for one of them, oldest first.
+// The tool surface is the same in each; only the handshake differs.
+const SUPPORTED_PROTOCOL_VERSIONS = ['2024-11-05', '2025-03-26', '2025-06-18'];
+// What we answer with when the client asks for something we do not know. The
+// newest we speak, since replying with the oldest can make a modern client
+// disconnect even though both sides would have agreed on a later one.
+const PROTOCOL_VERSION =
+  SUPPORTED_PROTOCOL_VERSIONS[SUPPORTED_PROTOCOL_VERSIONS.length - 1];
 const SERVER_NAME = 'xrblocks';
 
 // src/addons/mcp/server/index.js -> package root
@@ -347,21 +354,57 @@ function send(msg) {
 }
 
 /**
- * Handles a single JSON-RPC request.
+ * Handles a single JSON-RPC message.
  *
- * @param {object} req - Parsed request.
+ * @param {unknown} req - Parsed message.
+ * @param {(msg: object) => void} write - Where to write the response. Defaults
+ *   to stdout; tests pass a collector.
  */
-export function handle(req) {
+export function handle(req, write = send) {
+  // A message with no `id` property is a notification and must never be
+  // answered, whatever its method. An explicit `id: null` is a request, and is
+  // answered with a null id.
+  const isNotification =
+    typeof req === 'object' && req !== null && !Object.hasOwn(req, 'id');
+
+  if (typeof req !== 'object' || req === null || Array.isArray(req)) {
+    write({
+      jsonrpc: '2.0',
+      id: null,
+      error: {code: -32600, message: 'Invalid Request'},
+    });
+    return;
+  }
+
   const {id, method, params} = req;
-  // Notifications carry no id and must not be answered.
-  const isNotification = id === undefined || id === null;
+
+  if (typeof method !== 'string') {
+    if (isNotification) return;
+    write({
+      jsonrpc: '2.0',
+      id: id ?? null,
+      error: {
+        code: -32600,
+        message: 'Invalid Request: method must be a string',
+      },
+    });
+    return;
+  }
+
+  if (isNotification) return;
 
   if (method === 'initialize') {
-    send({
+    // Echo the client's version when we speak it, otherwise answer with ours
+    // and let the client decide whether it can continue.
+    const asked = params?.protocolVersion;
+    const version = SUPPORTED_PROTOCOL_VERSIONS.includes(asked)
+      ? asked
+      : PROTOCOL_VERSION;
+    write({
       jsonrpc: '2.0',
       id,
       result: {
-        protocolVersion: PROTOCOL_VERSION,
+        protocolVersion: version,
         capabilities: {tools: {}},
         serverInfo: {name: SERVER_NAME, version: readVersion()},
       },
@@ -369,22 +412,33 @@ export function handle(req) {
     return;
   }
 
+  if (method === 'ping') {
+    write({jsonrpc: '2.0', id, result: {}});
+    return;
+  }
+
   if (method === 'tools/list') {
-    send({jsonrpc: '2.0', id, result: {tools: TOOLS}});
+    write({jsonrpc: '2.0', id, result: {tools: TOOLS}});
     return;
   }
 
   if (method === 'tools/call') {
+    const toolName = params?.name;
+    if (!TOOLS.some((t) => t.name === toolName)) {
+      write({
+        jsonrpc: '2.0',
+        id,
+        error: {code: -32602, message: `Unknown tool: ${toolName}`},
+      });
+      return;
+    }
     let result;
     try {
-      result = callTool(params?.name, params?.arguments || {});
+      result = callTool(toolName, params?.arguments || {});
     } catch (err) {
-      result = {
-        text: `Tool ${params?.name} failed: ${err.message}`,
-        isError: true,
-      };
+      result = {text: `Tool ${toolName} failed: ${err.message}`, isError: true};
     }
-    send({
+    write({
       jsonrpc: '2.0',
       id,
       result: {
@@ -395,9 +449,7 @@ export function handle(req) {
     return;
   }
 
-  if (isNotification) return;
-
-  send({
+  write({
     jsonrpc: '2.0',
     id,
     error: {code: -32601, message: `Method not found: ${method}`},
@@ -414,8 +466,22 @@ export function serve() {
     try {
       req = JSON.parse(trimmed);
     } catch {
-      return; // Not one of our messages; ignore rather than kill the transport.
+      send({
+        jsonrpc: '2.0',
+        id: null,
+        error: {code: -32700, message: 'Parse error'},
+      });
+      return;
     }
-    handle(req);
+    try {
+      handle(req);
+    } catch (err) {
+      // One bad message must not take the transport down with it.
+      send({
+        jsonrpc: '2.0',
+        id: null,
+        error: {code: -32603, message: `Internal error: ${err.message}`},
+      });
+    }
   });
 }
