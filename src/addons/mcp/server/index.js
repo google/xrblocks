@@ -12,7 +12,7 @@
  *
  * Run with:
  *
- *   npx xrblocks-mcp
+ *   npx --package=xrblocks xrblocks-mcp
  *
  * or point an MCP client at this file directly. Speaks JSON-RPC 2.0 over
  * stdio, which is the MCP stdio transport, with no runtime dependencies so it

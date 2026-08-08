@@ -25,7 +25,7 @@ your client's MCP config (Claude Desktop, Copilot CLI at
     "xrblocks": {
       "type": "stdio",
       "command": "npx",
-      "args": ["xrblocks-mcp"]
+      "args": ["--yes", "--package=xrblocks", "xrblocks-mcp"]
     }
   }
 }

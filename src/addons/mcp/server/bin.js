@@ -8,7 +8,7 @@
  *
  * Run with:
  *
- *   npx xrblocks-mcp
+ *   npx --package=xrblocks xrblocks-mcp
  */
 import {serve} from './index.js';
 
