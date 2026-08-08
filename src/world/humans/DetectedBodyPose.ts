@@ -54,6 +54,18 @@ export interface PoseLandmark {
    * The probability [0.0, 1.0] that the landmark is visible (not occluded).
    */
   visibility?: number;
+
+  /**
+   * Position in metres relative to the centre of the hips, straight from
+   * MediaPipe's world landmarks, with x toward the person's right, y downward
+   * and z toward the camera.
+   *
+   * Unlike {@link worldPosition} this is independent of where the person is in
+   * the room and of the camera's intrinsics, so it can be used to render a
+   * correctly proportioned skeleton anywhere. Undefined when the backend does
+   * not provide metric landmarks.
+   */
+  metricPosition?: THREE.Vector3;
   /**
    * The back-projected 3D position in WebXR world space, measured in meters.
    * Null or undefined if depth projection was unsuccessful.

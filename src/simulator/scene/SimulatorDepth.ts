@@ -36,6 +36,35 @@ export class SimulatorDepth {
   // main thread.
   private updateInFlight = false;
 
+  /**
+   * Longest a depth buffer is allowed to go without being refreshed while
+   * nothing detectable has changed, in milliseconds.
+   *
+   * This is not only a hedge against animation the skip cannot see, such as
+   * skinning or vertex shaders. It is also what keeps the depth mesh's
+   * position attribute version advancing while the scene sits still.
+   * `FaceRecognizer`, `HumanRecognizer`, and `ObjectDetector` each cache a
+   * cloned depth mesh, and its BVH, keyed on that version. If this were
+   * removed, a stationary scene would freeze the version, those caches would
+   * never invalidate, and per-landmark raycasts would keep hitting a stale
+   * clone. That is the failure this repository already fixed once, where the
+   * face wireframe only appeared while the camera was moving.
+   *
+   * Raising it trades depth freshness for fewer readbacks; setting it to
+   * `Infinity` would reintroduce that bug.
+   */
+  maxDepthAgeMs = 500;
+
+  private lastDepthPosition = new THREE.Vector3(NaN, NaN, NaN);
+  private lastDepthQuaternion = new THREE.Quaternion(NaN, NaN, NaN, NaN);
+  private lastSceneSignature = NaN;
+  private lastDepthUpdateMs = -Infinity;
+
+  // Scratch used to hash the raw bits of a float, so the signature reacts to
+  // any change rather than relying on a tolerance.
+  private readonly hashFloat = new Float64Array(1);
+  private readonly hashInts = new Int32Array(this.hashFloat.buffer);
+
   constructor(private simulatorScene: SimulatorScene) {}
 
   /**
@@ -77,11 +106,69 @@ export class SimulatorDepth {
     // setTimeout-based fence poll inside readRenderTargetPixelsAsync
     // was a dominant main-thread cost in perf traces before this).
     if (this.updateInFlight) return;
+    // Reading the depth target back stalls the GPU pipeline: the buffer is
+    // only 160x160 but the readback has to wait for the render to finish, so
+    // it costs far more than its size suggests. When neither the view nor
+    // anything in the scene has moved the result would be identical, so skip
+    // the whole render + readback and keep the previous buffer.
+    if (!this.depthNeedsUpdate()) return;
     this.renderDepthScene();
+    this.markDepthUpdated();
     this.updateInFlight = true;
     this.updateDepth().finally(() => {
       this.updateInFlight = false;
     });
+  }
+
+  /**
+   * Whether the depth buffer would differ from the one already captured.
+   *
+   * @returns True when the camera moved, the scene moved, or the buffer has
+   * gone stale.
+   */
+  private depthNeedsUpdate() {
+    if (performance.now() - this.lastDepthUpdateMs >= this.maxDepthAgeMs) {
+      return true;
+    }
+    if (
+      !this.depthCamera.position.equals(this.lastDepthPosition) ||
+      !this.depthCamera.quaternion.equals(this.lastDepthQuaternion)
+    ) {
+      return true;
+    }
+    return this.computeSceneSignature() !== this.lastSceneSignature;
+  }
+
+  /**
+   * Cheap hash over the world transforms of everything the depth pass draws.
+   *
+   * Anything that moves, rotates, scales, or is shown or hidden changes the
+   * hash, so a still camera in front of a moving object still refreshes. This
+   * is arithmetic over a few hundred nodes, which is orders of magnitude
+   * cheaper than the GPU stall a readback costs.
+   *
+   * @returns A hash of the scene's current visible transforms.
+   */
+  private computeSceneSignature() {
+    let hash = 0;
+    this.simulatorScene.traverse((object: THREE.Object3D) => {
+      hash = (hash ^ (object.visible ? 0x9e3779b9 : 0x85ebca6b)) | 0;
+      if (!object.visible) return;
+      const e = object.matrixWorld.elements;
+      for (let i = 0; i < 16; i++) {
+        this.hashFloat[0] = e[i];
+        hash = Math.imul(hash ^ this.hashInts[0], 0x27220a95) | 0;
+        hash = Math.imul(hash ^ this.hashInts[1], 0x27220a95) | 0;
+      }
+    });
+    return hash;
+  }
+
+  private markDepthUpdated() {
+    this.lastDepthPosition.copy(this.depthCamera.position);
+    this.lastDepthQuaternion.copy(this.depthCamera.quaternion);
+    this.lastSceneSignature = this.computeSceneSignature();
+    this.lastDepthUpdateMs = performance.now();
   }
 
   private updateDepthCamera() {
