@@ -3,6 +3,6 @@
   "template": "templates/0_basic",
   "edit_file": "main.js",
   "expected_imports": [],
-  "expected_apis": ["enableGestures", "xb.core.gestureRecognition", "thumbs"],
+  "expected_apis": ["enableGestures", "xb.core.gestureRecognition", "thumbs-up"],
   "forbidden_patterns": ["navigator\\.xr\\.", "MediaPipe"]
 }
