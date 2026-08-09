@@ -1,0 +1,8 @@
+{
+  "skill": "xb-context",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": [],
+  "expected_apis": ["enableContext", "xb.context.scene", "runContextDetection"],
+  "forbidden_patterns": ["scene\\.traverse\\(", "MediaPipe"]
+}
