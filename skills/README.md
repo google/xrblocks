@@ -65,3 +65,11 @@ skill points to it; start app-generation work from the workflow layer.
 Deep references some skills link to live next to the code:
 [`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),
 [`../src/addons/netblocks/SKILL.md`](../src/addons/netblocks/SKILL.md), [`../src/addons/lipsync/SKILL.md`](../src/addons/lipsync/SKILL.md).
+
+## Serving these to an agent
+
+These skills are files, so any agent with filesystem access can read them
+directly. For agents that reach a project over the Model Context Protocol
+instead, [`../src/addons/mcp/`](../src/addons/mcp/README.md) serves them as
+tools (`list_skills`, `get_skill`) alongside a `search_api` lookup over the
+SDK's public surface.
