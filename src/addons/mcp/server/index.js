@@ -436,15 +436,27 @@ export function callTool(name, args = {}) {
       };
     }
     const needle = query.toLowerCase();
+    // An agent naturally asks about the thing it would write, and that is a
+    // path: `xb.input.headGestures`, not `headGestures`. Symbols are indexed
+    // under their own name, so fall back to the last segment rather than
+    // telling the caller a real API does not exist.
+    const tail = needle.split('.').filter(Boolean).pop() ?? needle;
     const limit = Number(args.limit) > 0 ? Number(args.limit) : 25;
-    const exact = [];
-    const partial = [];
-    for (const s of symbols) {
-      const lower = s.name.toLowerCase();
-      if (lower === needle) exact.push(s);
-      else if (lower.includes(needle)) partial.push(s);
-    }
-    const hits = [...exact, ...partial].slice(0, limit);
+
+    const search = (term) => {
+      const exact = [];
+      const partial = [];
+      for (const s of symbols) {
+        const lower = s.name.toLowerCase();
+        if (lower === term) exact.push(s);
+        else if (lower.includes(term)) partial.push(s);
+      }
+      return [...exact, ...partial];
+    };
+
+    let hits = search(needle);
+    if (!hits.length && tail !== needle) hits = search(tail);
+    hits = hits.slice(0, limit);
 
     if (!hits.length) {
       return {

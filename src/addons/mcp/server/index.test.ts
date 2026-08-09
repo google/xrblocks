@@ -386,6 +386,26 @@ describe('search_api', () => {
     );
   });
 
+  it.skipIf(!hasTypes)('resolves a dotted path to its last segment', () => {
+    // An agent asks about what it would write, `xb.input.headGestures`, not
+    // the bare symbol name it happens to be indexed under.
+    const {text} = callTool('search_api', {
+      query: 'xb.core.gestureRecognition',
+    });
+
+    expect(text).not.toContain('not a real symbol');
+    expect(text).toContain('gestureRecognition');
+  });
+
+  it.skipIf(!hasTypes)(
+    'still rejects a dotted path with an invented tail',
+    () => {
+      const {text} = callTool('search_api', {query: 'xb.input.mindReading'});
+
+      expect(text).toContain('not a real symbol');
+    }
+  );
+
   it.skipIf(!hasTypes)('finds APIs that live in an addon', () => {
     // These build to build/addons/, not into the core bundle.
     for (const api of ['AgentHands', 'LipsyncMouth']) {
