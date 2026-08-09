@@ -2,12 +2,14 @@ import {
   Component,
   Container,
   Image,
+  type ImageOutProperties,
   Svg,
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
 import * as THREE from 'three';
 
+import {getSemanticControl} from '../../interaction/SemanticControl';
 import {UIButton} from '../components/UIButton';
 import {UICard, getUICardEdgeOptions} from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
@@ -15,11 +17,11 @@ import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
 import {UISlider} from '../components/UISlider';
 import {UIText} from '../components/UIText';
+import {DEFAULT_GRADIENT_PANEL_PROPS} from '../constants/GradientPanelConstants';
 import {
   getUIElementKind,
-  getUIContentRevision,
   getUIRevision,
-  invalidateUIElement,
+  getUIStructureRevision,
   isUIElement,
   type UIElement,
   type UIStyle,
@@ -43,13 +45,16 @@ const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
 
-type PresentationUpdate = (stateFor: UIPresentationStateFor) => void;
-
 class UIKitMount implements UIMount {
   object: THREE.Object3D = new THREE.Group();
   private rendered?: Container;
-  private presentationUpdates: PresentationUpdate[] = [];
-  private readonly elementNodes = new Map<UIElement, Component>();
+  private binding?: UIKitNodeBinding;
+  private readonly readyWork: Array<() => void> = [];
+  private structureRevision = -1;
+  private hitMappingsChanged = true;
+  private disposed = false;
+  private viewportWidth = -1;
+  private viewportHeight = -1;
   private readonly isOverlay: boolean;
 
   constructor(
@@ -60,53 +65,65 @@ class UIKitMount implements UIMount {
     this.isOverlay = getUIElementKind(root) === 'overlay';
   }
 
-  sync(
+  commit(
     theme: UITheme,
     viewport: {width: number; height: number},
-    stateFor: UIPresentationStateFor,
     rootOrder: number
-  ): UIHitMapping[] {
-    this.rendered?.removeFromParent();
-    this.rendered?.dispose();
-    this.presentationUpdates = [];
-    this.elementNodes.clear();
-    const mappings: UIHitMapping[] = [];
-    const rendered = createNode(
-      this.root,
+  ): readonly UIHitMapping[] | undefined {
+    if (this.disposed) return undefined;
+    for (const work of this.readyWork.splice(0)) work();
+
+    const rootStack = this.isOverlay
+      ? OVERLAY_RENDER_ORDER_BASE +
+        Number(this.root.style.zIndex ?? 0) * OVERLAY_Z_INDEX_STEP +
+        rootOrder * OVERLAY_ROOT_ORDER_STEP
+      : undefined;
+    const context: CommitContext = {
       theme,
-      mappings,
-      viewport,
-      stateFor,
-      getUIElementKind(this.root) === 'overlay'
-        ? OVERLAY_RENDER_ORDER_BASE +
-            Number(this.root.style.zIndex ?? 0) * OVERLAY_Z_INDEX_STEP +
-            rootOrder * OVERLAY_ROOT_ORDER_STEP
-        : undefined,
-      {value: 0},
-      this.icons,
-      this.presentationUpdates,
-      this.elementNodes
-    ) as Container;
-    this.rendered = this.isOverlay
-      ? createOverlayViewport(rendered, viewport)
-      : rendered;
-    this.object.add(this.rendered);
-    return mappings;
+      rootStack,
+      sequence: {value: 0},
+    };
+    if (!this.binding) {
+      this.binding = new UIKitNodeBinding(
+        this.root,
+        this.icons,
+        this.enqueue,
+        context
+      );
+      this.rendered = this.isOverlay
+        ? createOverlayViewport(this.binding.node as Container, viewport)
+        : (this.binding.node as Container);
+      this.viewportWidth = viewport.width;
+      this.viewportHeight = viewport.height;
+      this.structureRevision = getUIStructureRevision(this.root);
+      this.object.add(this.rendered);
+      this.hitMappingsChanged = true;
+    }
+
+    if (this.structureRevision !== getUIStructureRevision(this.root)) {
+      this.structureRevision = getUIStructureRevision(this.root);
+      this.binding.reconcileTree(context);
+      this.hitMappingsChanged = true;
+    }
+    if (this.isOverlay) this.updateViewport(viewport);
+    if (this.binding.commit(context)) this.hitMappingsChanged = true;
+
+    if (!this.hitMappingsChanged) return undefined;
+    this.hitMappingsChanged = false;
+    return this.binding.hitMappings();
   }
 
   present(stateFor: UIPresentationStateFor): void {
-    for (const update of this.presentationUpdates) {
-      update(stateFor);
-    }
+    this.binding?.present(stateFor);
   }
 
   update(deltaSeconds: number): void {
-    this.rendered?.update(deltaSeconds);
+    this.rendered?.update(deltaSeconds * 1000);
   }
 
   validate(): readonly UIValidationIssue[] {
     const issues: UIValidationIssue[] = [];
-    for (const [element, node] of this.elementNodes) {
+    for (const [element, node] of this.binding?.elementNodes() ?? []) {
       const size = node.size.peek();
       const center = node.relativeCenter.peek();
       if (
@@ -151,11 +168,40 @@ class UIKitMount implements UIMount {
   }
 
   dispose(): void {
-    this.rendered?.dispose();
+    this.disposed = true;
+    this.readyWork.length = 0;
+    const binding = this.binding;
+    const rendered = this.rendered;
+    binding?.dispose();
+    if (rendered && rendered !== binding?.node) {
+      rendered.removeFromParent();
+      rendered.dispose();
+    }
+    this.binding = undefined;
     this.rendered = undefined;
-    this.presentationUpdates = [];
-    this.elementNodes.clear();
     this.object.clear();
+  }
+
+  private enqueue = (work: () => void): void => {
+    if (!this.disposed) this.readyWork.push(work);
+  };
+
+  private updateViewport(viewport: {width: number; height: number}): void {
+    const wrapper = this.rendered;
+    if (
+      !wrapper ||
+      (this.viewportWidth === viewport.width &&
+        this.viewportHeight === viewport.height)
+    )
+      return;
+    this.viewportWidth = viewport.width;
+    this.viewportHeight = viewport.height;
+    wrapper.setProperties({
+      width: viewport.width,
+      height: viewport.height,
+      sizeX: viewport.width,
+      sizeY: viewport.height,
+    });
   }
 }
 
@@ -193,237 +239,430 @@ export function createUIBackend(): UIBackend {
   return new UIKitBackend();
 }
 
-function createNode(
-  element: UIElement,
-  theme: UITheme,
-  mappings: UIHitMapping[],
-  viewport: {width: number; height: number},
-  stateFor: UIPresentationStateFor,
-  rootStack: number | undefined,
-  sequence: {value: number},
-  icons: IconCache,
-  presentationUpdates: PresentationUpdate[],
-  elementNodes: Map<UIElement, Component>
-): THREE.Object3D {
-  const kind = getUIElementKind(element);
-  const cardEdgeOptions =
-    kind === 'card' ? getUICardEdgeOptions(element as UICard) : undefined;
-  const cursorPoints = cardEdgeOptions
-    ? ([new THREE.Vector3(), new THREE.Vector3()] as const)
-    : undefined;
-  const presentation = stateFor(element, cursorPoints);
-  const overlayRenderOrder =
-    rootStack === undefined
-      ? undefined
-      : rootStack +
-        Number(element.style.zIndex ?? 0) * 1_000 +
-        sequence.value++;
-  const styleFor = (state: UIPresentationState): Record<string, unknown> => {
-    const style = toUIKitStyle(resolveStyle(element, state, theme));
-    if (overlayRenderOrder !== undefined) {
+interface CommitContext {
+  readonly theme: UITheme;
+  readonly rootStack: number | undefined;
+  readonly sequence: {value: number};
+}
+
+type UIKitNode =
+  | Container
+  | Image<ImageOutProperties<unknown>>
+  | Svg
+  | AdaptiveText
+  | GradientPanel;
+
+/** A retained physical node and the small private subtree it owns. */
+class UIKitNodeBinding {
+  readonly node: UIKitNode;
+  private readonly children = new Map<UIElement, UIKitNodeBinding>();
+  private readonly childOrder: UIElement[] = [];
+  private readonly cursorPoints = [
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ] as const;
+  private readonly notifyResource = () => {
+    if (!this.disposed) this.enqueue(() => this.resourceRevision++);
+  };
+  private edge?: UICardEdge;
+  private buttonIcon?: Svg;
+  private buttonLabel?: Text;
+  private sliderContent?: SliderContent;
+  private imageTexture?: THREE.Texture;
+  private ownsImageTexture = false;
+  private imageSource?: string | THREE.Texture;
+  private imageRequest = 0;
+  private resourceRevision = 0;
+  private appliedResourceRevision = -1;
+  private revision = -1;
+  private presentationKey = -1;
+  private pointerEvents?: string;
+  private hitEnabled?: boolean;
+  private theme?: UITheme;
+  private baseProperties: Record<string, unknown> = {};
+  private presentedProperties: Record<string, unknown> = {};
+  private renderOrder?: number;
+  private disposed = false;
+
+  constructor(
+    readonly element: UIElement,
+    private readonly icons: IconCache,
+    private readonly enqueue: (work: () => void) => void,
+    context: CommitContext
+  ) {
+    const properties = this.propertiesFor(
+      context,
+      baseState(element),
+      undefined
+    );
+    const kind = getUIElementKind(element);
+    if (kind === 'text') {
+      this.node = new AdaptiveText(properties as AdaptiveTextProperties);
+    } else if (kind === 'image') {
+      this.node = new Image<ImageOutProperties<unknown>>(
+        properties,
+        undefined,
+        {loadTexture: false}
+      );
+    } else if (kind === 'icon') {
+      this.node = new Svg(properties);
+    } else {
+      this.node = new GradientPanel(properties);
+    }
+    this.baseProperties = properties;
+    this.presentedProperties = properties;
+    this.theme = context.theme;
+    this.reconcileTree(context);
+    this.commit(context);
+  }
+
+  reconcileTree(context: CommitContext): void {
+    if (!isContainerNode(this.node)) return;
+    const nextOrder = this.element.children.filter(isUIElement);
+    const next = new Map<UIElement, UIKitNodeBinding>();
+    for (const child of nextOrder) {
+      const binding =
+        this.children.get(child) ??
+        new UIKitNodeBinding(child, this.icons, this.enqueue, context);
+      next.set(child, binding);
+    }
+    for (const [element, binding] of this.children) {
+      if (!next.has(element)) binding.dispose();
+    }
+    this.children.clear();
+    this.childOrder.length = 0;
+    for (const child of nextOrder) {
+      const binding = next.get(child)!;
+      this.children.set(child, binding);
+      this.childOrder.push(child);
+      this.node.add(binding.node);
+      binding.reconcileTree(context);
+    }
+    this.ensurePrivateNodes(context.theme);
+    if (this.edge) {
+      this.edge.removeFromParent();
+      this.node.add(this.edge);
+    }
+  }
+
+  /** Returns true when physical hit mappings changed. */
+  commit(context: CommitContext): boolean {
+    if (this.disposed) return false;
+    const order =
+      context.rootStack === undefined
+        ? undefined
+        : context.rootStack +
+          Number(this.element.style.zIndex ?? 0) * 1_000 +
+          context.sequence.value++;
+    const orderChanged = order !== this.renderOrder;
+    const revision = getUIRevision(this.element);
+    const nextPointerEvents = this.element.xb?.pointerEvents;
+    const needsProperties =
+      revision !== this.revision ||
+      context.theme !== this.theme ||
+      orderChanged ||
+      nextPointerEvents !== this.pointerEvents ||
+      this.resourceRevision !== this.appliedResourceRevision;
+    let hitMappingsChanged = orderChanged;
+    if (needsProperties) {
+      this.renderOrder = order;
+      const properties = this.propertiesFor(
+        context,
+        baseState(this.element),
+        order
+      );
+      this.applyProperties(properties);
+      this.baseProperties = properties;
+      this.presentedProperties = properties;
+      this.presentationKey = -1;
+      this.revision = revision;
+      this.theme = context.theme;
+      this.appliedResourceRevision = this.resourceRevision;
+      this.ensurePrivateNodes(context.theme);
+      hitMappingsChanged = this.syncEdge(properties);
+    }
+    this.node.visible = this.element.visible;
+    this.syncImage();
+    this.setHitEnabled(this.baseProperties);
+    for (const child of this.childOrder) {
+      if (this.children.get(child)!.commit(context)) hitMappingsChanged = true;
+    }
+    return hitMappingsChanged;
+  }
+
+  present(stateFor: UIPresentationStateFor): void {
+    if (this.disposed) return;
+    const state = stateFor(
+      this.element,
+      this.edge ? this.cursorPoints : undefined
+    );
+    const key = stateKey(state);
+    if (key !== this.presentationKey) {
+      const context: CommitContext = {
+        theme: this.theme!,
+        rootStack: undefined,
+        sequence: {value: 0},
+      };
+      const properties = this.propertiesFor(context, state, this.renderOrder);
+      this.applyProperties(properties);
+      this.presentedProperties = properties;
+      this.presentationKey = key;
+      this.ensurePrivateNodes(this.theme!);
+    }
+    this.edge?.setCursorPoints(
+      state.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
+      state.cursorPointCount > 1 ? this.cursorPoints[1] : undefined
+    );
+    for (const child of this.childOrder)
+      this.children.get(child)!.present(stateFor);
+  }
+
+  hitMappings(): UIHitMapping[] {
+    const mappings: UIHitMapping[] = [
+      {physical: this.node, logical: this.element},
+    ];
+    if (this.edge) mappings.push({physical: this.edge, logical: this.element});
+    for (const child of this.childOrder) {
+      mappings.push(...this.children.get(child)!.hitMappings());
+    }
+    return mappings;
+  }
+
+  *elementNodes(): IterableIterator<[UIElement, UIKitNode]> {
+    yield [this.element, this.node];
+    for (const child of this.childOrder)
+      yield* this.children.get(child)!.elementNodes();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const child of this.children.values()) child.dispose();
+    this.children.clear();
+    this.childOrder.length = 0;
+    this.edge?.removeFromParent();
+    this.edge?.dispose();
+    this.buttonIcon?.removeFromParent();
+    this.buttonIcon?.dispose();
+    this.buttonLabel?.removeFromParent();
+    this.buttonLabel?.dispose();
+    this.sliderContent?.dispose();
+    if (this.ownsImageTexture) this.imageTexture?.dispose();
+    this.imageTexture = undefined;
+    this.node.removeFromParent();
+    this.node.dispose();
+  }
+
+  private propertiesFor(
+    context: CommitContext,
+    state: UIPresentationState,
+    renderOrder: number | undefined
+  ): Record<string, unknown> {
+    const style = toUIKitStyle(
+      resolveStyle(this.element, state, context.theme)
+    );
+    if (renderOrder !== undefined) {
       style.depthTest = false;
       style.depthWrite = false;
-      style.renderOrder = overlayRenderOrder;
+      style.renderOrder = renderOrder;
     }
-    return style;
-  };
-  const style = styleFor(presentation);
-  let node: THREE.Object3D;
-  let blocksHits = true;
-  let applyPresentation: (state: UIPresentationState) => void;
-  let applyContent: ((state: UIPresentationState) => void) | undefined;
-  let edge: UICardEdge | undefined;
-
-  if (kind === 'text') {
-    const text = element as UIText;
-    const propertiesFor = (state: UIPresentationState) => {
-      const nextStyle = styleFor(state);
+    const kind = getUIElementKind(this.element);
+    if (kind === 'text') {
       return {
-        text: text.text,
+        text: (this.element as UIText).text,
         color:
-          (nextStyle.color as THREE.ColorRepresentation | undefined) ??
-          theme.colors.text,
-        ...nextStyle,
-        pointerEvents: element.xb?.pointerEvents ?? 'auto',
+          (style.color as THREE.ColorRepresentation | undefined) ??
+          context.theme.colors.text,
+        ...style,
+        pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
-    };
-    const textNode = new AdaptiveText(
-      propertiesFor(presentation) as AdaptiveTextProperties
-    );
-    node = textNode;
-    applyPresentation = (state) =>
-      textNode.updateTextProperties(
-        propertiesFor(state) as AdaptiveTextProperties
-      );
-    applyContent = applyPresentation;
-  } else if (kind === 'image') {
-    const image = element as UIImage;
-    const propertiesFor = (state: UIPresentationState) => {
-      const {cornerRadius: rawCornerRadius, ...style} = styleFor(state);
+    }
+    if (kind === 'image') {
+      const {cornerRadius: rawCornerRadius, ...imageStyle} = style;
       const cornerRadius = numericCornerRadius(rawCornerRadius);
       return {
-        src: image.src,
-        ...style,
+        ...imageStyle,
         borderTopLeftRadius: cornerRadius,
         borderTopRightRadius: cornerRadius,
         borderBottomLeftRadius: cornerRadius,
         borderBottomRightRadius: cornerRadius,
-        pointerEvents: element.xb?.pointerEvents ?? 'auto',
+        pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
-    };
-    const initialProperties = propertiesFor(presentation);
-    const imageNode = new Image(initialProperties);
-    imageNode.material.opacity = resolvedOpacity(
-      (initialProperties as Record<string, unknown>).opacity
-    );
-    node = imageNode;
-    applyPresentation = (state) => {
-      const properties = propertiesFor(state);
-      imageNode.resetProperties(properties);
-      imageNode.material.opacity = resolvedOpacity(
-        (properties as Record<string, unknown>).opacity
-      );
-    };
-  } else if (kind === 'icon') {
-    const icon = element as UIIcon;
-    const propertiesFor = (state: UIPresentationState) => ({
-      content: icons.get(iconAssetPath(icon), element),
-      ...styleFor(state),
-      pointerEvents: element.xb?.pointerEvents ?? 'auto',
-    });
-    const iconNode = new Svg(propertiesFor(presentation));
-    node = iconNode;
-    applyPresentation = (state) =>
-      iconNode.resetProperties(propertiesFor(state));
-  } else {
-    const propertiesFor = (state: UIPresentationState) =>
-      panelDefaults(element, theme, styleFor(state));
-    const panelStyle = propertiesFor(presentation);
-    blocksHits =
-      kind === 'button' ||
-      kind === 'slider' ||
-      !isTransparent(panelStyle.fillColor);
-    const panel = new GradientPanel(panelStyle);
-    node = panel;
-    let previousPanelProperties = panelStyle;
-    let buttonContent: Array<Text | Svg> = [];
-    let updateSliderContent: (() => void) | undefined;
-
-    if (kind === 'button') {
-      buttonContent = addButtonContent(
-        panel,
-        element as UIButton,
-        theme,
-        icons,
-        style.color as THREE.ColorRepresentation | undefined
-      );
-    } else if (kind === 'slider') {
-      updateSliderContent = addSliderContent(panel, element as UISlider, theme);
     }
-
-    for (const child of element.children) {
-      if (!isUIElement(child)) continue;
-      panel.add(
-        createNode(
-          child,
-          theme,
-          mappings,
-          viewport,
-          stateFor,
-          rootStack,
-          sequence,
-          icons,
-          presentationUpdates,
-          elementNodes
-        )
-      );
+    if (kind === 'icon') {
+      return {
+        content: this.icons.get(
+          iconAssetPath(this.element as UIIcon),
+          this.notifyResource
+        ),
+        ...style,
+        pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
+      };
     }
-
-    if (cardEdgeOptions) {
-      edge = new UICardEdge({
-        cardCornerRadius: numericCornerRadius(panelStyle.cornerRadius),
-      });
-      panel.add(edge);
-      edge.setCursorPoints(
-        presentation.cursorPointCount > 0 ? cursorPoints?.[0] : undefined,
-        presentation.cursorPointCount > 1 ? cursorPoints?.[1] : undefined
-      );
-      mappings.push({
-        physical: edge,
-        logical: element,
-      });
-    }
-    applyPresentation = (state) => {
-      const nextPanelProperties = propertiesFor(state);
-      panel.setProperties(
-        changedProperties(previousPanelProperties, nextPanelProperties)
-      );
-      edge?.setCardCornerRadius(
-        numericCornerRadius(nextPanelProperties.cornerRadius)
-      );
-      previousPanelProperties = nextPanelProperties;
-      blocksHits =
-        kind === 'button' ||
-        kind === 'slider' ||
-        !isTransparent(nextPanelProperties.fillColor);
-      if (kind === 'button') {
-        updateButtonContent(
-          buttonContent,
-          element as UIButton,
-          theme,
-          icons,
-          styleFor(state).color as THREE.ColorRepresentation | undefined
-        );
-      } else if (kind === 'slider') {
-        updateSliderContent?.();
-      }
-    };
+    return panelDefaults(this.element, context.theme, style);
   }
 
-  let revision = getUIRevision(element);
-  let contentRevision = getUIContentRevision(element);
-  let presentationKey = stateKey(presentation);
-  let pointerEvents = element.xb?.pointerEvents;
-  presentationUpdates.push((stateFor) => {
-    const state = stateFor(element, cursorPoints);
-    const nextRevision = getUIRevision(element);
-    const nextContentRevision = getUIContentRevision(element);
-    const nextKey = stateKey(state);
-    const nextPointerEvents = element.xb?.pointerEvents;
-    if (nextContentRevision !== contentRevision) {
-      contentRevision = nextContentRevision;
-      applyContent?.(state);
+  private applyProperties(properties: Record<string, unknown>): void {
+    const changed = changedProperties(this.presentedProperties, properties);
+    if (Object.keys(changed).length === 0) return;
+    if (this.node instanceof AdaptiveText) {
+      this.node.updateTextProperties(properties as AdaptiveTextProperties);
+    } else {
+      this.node.setProperties(changed);
     }
-    if (
-      nextRevision !== revision ||
-      nextKey !== presentationKey ||
-      nextPointerEvents !== pointerEvents
-    ) {
-      revision = nextRevision;
-      presentationKey = nextKey;
-      pointerEvents = nextPointerEvents;
-      applyPresentation(state);
-      setPhysicalHitEnabled(node, blocksHits && nextPointerEvents !== 'none');
+    if (this.node instanceof Image) {
+      this.node.material.opacity = resolvedOpacity(properties.opacity);
     }
-    node.visible = element.visible;
-    edge?.setCursorPoints(
-      state.cursorPointCount > 0 ? cursorPoints?.[0] : undefined,
-      state.cursorPointCount > 1 ? cursorPoints?.[1] : undefined
-    );
-  });
+    if (this.renderOrder !== undefined)
+      this.node.renderOrder = this.renderOrder;
+  }
 
-  node.visible = element.visible;
-  setPhysicalHitEnabled(
-    node,
-    blocksHits && element.xb?.pointerEvents !== 'none'
-  );
-  elementNodes.set(element, node as Component);
-  if (overlayRenderOrder !== undefined) node.renderOrder = overlayRenderOrder;
-  mappings.push({
-    physical: node,
-    logical: element,
-  });
-  return node;
+  private ensurePrivateNodes(theme: UITheme): void {
+    if (!(this.node instanceof GradientPanel)) return;
+    const kind = getUIElementKind(this.element);
+    if (kind === 'button') this.updateButtonContent(theme);
+    if (kind === 'slider') {
+      this.sliderContent ??= createSliderContent(this.node);
+      this.sliderContent.update(this.element as UISlider, theme);
+    }
+  }
+
+  private updateButtonContent(theme: UITheme): void {
+    const button = this.element as UIButton;
+    const color =
+      (this.presentedProperties.color as
+        | THREE.ColorRepresentation
+        | undefined) ??
+      (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
+    if (button.icon) {
+      const properties = {
+        content: this.icons.get(
+          defaultIconAssetPath(button.icon),
+          this.notifyResource
+        ),
+        width: 24,
+        height: 24,
+        color,
+        pointerEvents: 'none' as const,
+      };
+      if (!this.buttonIcon) {
+        this.buttonIcon = new Svg(properties);
+        this.node.add(this.buttonIcon);
+      } else {
+        this.buttonIcon.setProperties(properties);
+      }
+    } else if (this.buttonIcon) {
+      this.buttonIcon.removeFromParent();
+      this.buttonIcon.dispose();
+      this.buttonIcon = undefined;
+    }
+    if (button.label) {
+      const properties = {
+        text: button.label,
+        color,
+        pointerEvents: 'none' as const,
+      };
+      if (!this.buttonLabel) {
+        this.buttonLabel = new Text(properties);
+        this.node.add(this.buttonLabel);
+      } else {
+        this.buttonLabel.setProperties(properties);
+      }
+    } else if (this.buttonLabel) {
+      this.buttonLabel.removeFromParent();
+      this.buttonLabel.dispose();
+      this.buttonLabel = undefined;
+    }
+  }
+
+  private syncEdge(properties: Record<string, unknown>): boolean {
+    if (!(this.node instanceof GradientPanel)) return false;
+    const options =
+      getUIElementKind(this.element) === 'card'
+        ? getUICardEdgeOptions(this.element as UICard)
+        : undefined;
+    if (!options && this.edge) {
+      this.edge.removeFromParent();
+      this.edge.dispose();
+      this.edge = undefined;
+      return true;
+    }
+    if (options && !this.edge) {
+      this.edge = new UICardEdge({
+        cardCornerRadius: numericCornerRadius(properties.cornerRadius),
+      });
+      this.node.add(this.edge);
+      return true;
+    }
+    this.edge?.setCardCornerRadius(
+      numericCornerRadius(properties.cornerRadius)
+    );
+    return false;
+  }
+
+  private syncImage(): void {
+    if (!(this.node instanceof Image)) return;
+    const source = (this.element as UIImage).src;
+    if (source === this.imageSource) return;
+    this.imageSource = source;
+    const request = ++this.imageRequest;
+    if (source instanceof THREE.Texture) {
+      this.replaceImageTexture(source, false);
+      return;
+    }
+    this.icons.images.load(source, this.enqueue, (texture) => {
+      if (
+        this.disposed ||
+        request !== this.imageRequest ||
+        this.imageSource !== source
+      ) {
+        texture.dispose();
+        return;
+      }
+      this.replaceImageTexture(texture, true);
+      this.resourceRevision++;
+    });
+  }
+
+  private replaceImageTexture(
+    texture: THREE.Texture,
+    ownsTexture: boolean
+  ): void {
+    const previous = this.imageTexture;
+    const previousOwned = this.ownsImageTexture;
+    this.imageTexture = texture;
+    this.ownsImageTexture = ownsTexture;
+    (this.node as Image).texture.value = texture;
+    if (previousOwned && previous && previous !== texture) previous.dispose();
+  }
+
+  private setHitEnabled(properties: Record<string, unknown>): void {
+    const kind = getUIElementKind(this.element);
+    const blocksHits =
+      kind === 'button' ||
+      kind === 'slider' ||
+      !isTransparent(properties.fillColor);
+    const pointerEvents = this.element.xb?.pointerEvents;
+    const enabled = blocksHits && pointerEvents !== 'none';
+    if (pointerEvents === this.pointerEvents && enabled === this.hitEnabled)
+      return;
+    this.pointerEvents = pointerEvents;
+    this.hitEnabled = enabled;
+    setPhysicalHitEnabled(this.node, enabled);
+  }
+}
+
+function isContainerNode(node: UIKitNode): node is Container | GradientPanel {
+  return node instanceof Container || node instanceof GradientPanel;
+}
+
+function baseState(element: UIElement): UIPresentationState {
+  return {
+    hovered: false,
+    active: false,
+    disabled: getSemanticControl(element)?.isDisabled() ?? false,
+    cursorPointCount: 0,
+  };
 }
 
 function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {
@@ -527,6 +766,30 @@ function panelDefaults(
     opacity: style.opacity ?? 1,
     strokeColor: style.strokeColor ?? 'transparent',
     strokeWidth: style.strokeWidth ?? 0,
+    strokeAlign: style.strokeAlign ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeAlign,
+    innerShadowColor:
+      style.innerShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowColor,
+    innerShadowBlur:
+      style.innerShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowBlur,
+    innerShadowPosition:
+      style.innerShadowPosition ??
+      DEFAULT_GRADIENT_PANEL_PROPS.innerShadowPosition,
+    innerShadowSpread:
+      style.innerShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowSpread,
+    innerShadowFalloff:
+      style.innerShadowFalloff ??
+      DEFAULT_GRADIENT_PANEL_PROPS.innerShadowFalloff,
+    dropShadowColor:
+      style.dropShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowColor,
+    dropShadowBlur:
+      style.dropShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowBlur,
+    dropShadowPosition:
+      style.dropShadowPosition ??
+      DEFAULT_GRADIENT_PANEL_PROPS.dropShadowPosition,
+    dropShadowSpread:
+      style.dropShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowSpread,
+    dropShadowFalloff:
+      style.dropShadowFalloff ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowFalloff,
     color: style.color,
     pointerEvents: element.xb?.pointerEvents ?? 'auto',
     ...style,
@@ -627,93 +890,28 @@ function containsBounds(
   );
 }
 
-function addButtonContent(
-  panel: GradientPanel,
-  button: UIButton,
-  theme: UITheme,
-  icons: IconCache,
-  color?: THREE.ColorRepresentation
-): Array<Text | Svg> {
-  const content: Array<Text | Svg> = [];
-  const contentColor =
-    color ??
-    (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
-  if (button.icon) {
-    content.push(
-      new Svg({
-        content: icons.get(defaultIconAssetPath(button.icon), button),
-        width: 24,
-        height: 24,
-        color: contentColor,
-        pointerEvents: 'none',
-      })
-    );
-  }
-  if (button.label) {
-    content.push(
-      new Text({
-        text: button.label,
-        color: contentColor,
-        pointerEvents: 'none',
-      })
-    );
-  }
-  if (content.length > 0) panel.add(...content);
-  return content;
-}
-
-function updateButtonContent(
-  content: readonly (Text | Svg)[],
-  button: UIButton,
-  theme: UITheme,
-  icons: IconCache,
-  color?: THREE.ColorRepresentation
-): void {
-  const contentColor =
-    color ??
-    (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
-  let index = 0;
-  if (button.icon) {
-    const icon = content[index++] as Svg;
-    icon.resetProperties({
-      content: icons.get(defaultIconAssetPath(button.icon), button),
-      width: 24,
-      height: 24,
-      color: contentColor,
-      pointerEvents: 'none',
-    });
-  }
-  if (button.label) {
-    const label = content[index] as Text;
-    label.resetProperties({
-      text: button.label,
-      color: contentColor,
-      pointerEvents: 'none',
-    });
-  }
-}
-
 const FALLBACK_ICON = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
   <path fill="#ffffff" d="M11 18h2v2h-2zm1-16a7 7 0 0 0-7 7h2a5 5 0 1 1 8.6 3.5C13.7 14.2 11 15.2 11 18h2c0-1.5 1.4-2.2 3.1-3.7A7 7 0 0 0 12 2z"/>
 </svg>`;
 
-/** Backend-owned network cache with an immediate deterministic fallback. */
+/** Backend-owned icon and texture caches. Completions are staged by bindings. */
 class IconCache {
+  readonly images = new ImageCache();
   private readonly content = new Map<string, string>();
   private readonly pending = new Map<
     string,
-    {controller: AbortController; subscribers: Set<UIElement>}
+    {controller: AbortController; subscribers: Set<() => void>}
   >();
   private disposed = false;
 
-  get(path: string, subscriber: UIElement): string {
+  get(path: string, subscriber: () => void): string {
     const cached = this.content.get(path);
     if (cached) return cached;
     let request = this.pending.get(path);
     if (!request) {
       const controller = new AbortController();
-      const newRequest = {controller, subscribers: new Set<UIElement>()};
+      const newRequest = {controller, subscribers: new Set<() => void>()};
       request = newRequest;
       this.pending.set(path, newRequest);
       void fetch(`${ICON_BASE}${path}`, {
@@ -728,12 +926,13 @@ class IconCache {
           if (this.disposed) return;
           if (!content.includes('<svg')) throw new Error('Invalid icon SVG.');
           this.content.set(path, content);
-          for (const subscriber of newRequest.subscribers) {
-            invalidateUIElement(subscriber);
-          }
+          for (const notify of newRequest.subscribers) notify();
         })
         .catch(() => {
-          if (!this.disposed) this.content.set(path, FALLBACK_ICON);
+          if (!this.disposed) {
+            this.content.set(path, FALLBACK_ICON);
+            for (const notify of newRequest.subscribers) notify();
+          }
         })
         .finally(() => this.pending.delete(path));
     }
@@ -746,14 +945,85 @@ class IconCache {
     for (const {controller} of this.pending.values()) controller.abort();
     this.pending.clear();
     this.content.clear();
+    this.images.dispose();
   }
 }
 
-function addSliderContent(
-  panel: GradientPanel,
-  slider: UISlider,
-  theme: UITheme
-): () => void {
+/** Caches decoded URL texture sources while each Image receives its own texture. */
+class ImageCache {
+  private static readonly capacity = 32;
+  private readonly loaded = new Map<string, Promise<THREE.Texture>>();
+  private readonly textures = new Set<THREE.Texture>();
+  private disposed = false;
+
+  load(
+    source: string,
+    enqueue: (work: () => void) => void,
+    ready: (texture: THREE.Texture) => void
+  ): void {
+    let request = this.loaded.get(source);
+    if (!request) {
+      const loader = new THREE.TextureLoader();
+      request = loader.loadAsync(source).then((texture) => {
+        if (this.disposed) {
+          texture.dispose();
+          throw new Error('Image cache was disposed while loading.');
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.matrixAutoUpdate = false;
+        this.textures.add(texture);
+        return texture;
+      });
+      this.loaded.set(source, request);
+      this.evictOldest();
+    } else {
+      this.loaded.delete(source);
+      this.loaded.set(source, request);
+    }
+    void request
+      .then((sourceTexture) => {
+        if (this.disposed) return;
+        enqueue(() => {
+          if (this.disposed) return;
+          const texture = sourceTexture.clone();
+          texture.matrixAutoUpdate = false;
+          ready(texture);
+        });
+      })
+      .catch(() => {
+        if (this.loaded.get(source) === request) this.loaded.delete(source);
+      });
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    for (const texture of this.textures) texture.dispose();
+    this.textures.clear();
+    this.loaded.clear();
+  }
+
+  private evictOldest(): void {
+    while (this.loaded.size > ImageCache.capacity) {
+      const oldest = this.loaded.keys().next().value as string | undefined;
+      if (!oldest) return;
+      const request = this.loaded.get(oldest);
+      this.loaded.delete(oldest);
+      void request
+        ?.then((texture) => {
+          this.textures.delete(texture);
+          texture.dispose();
+        })
+        .catch(() => undefined);
+    }
+  }
+}
+
+interface SliderContent {
+  update(slider: UISlider, theme: UITheme): void;
+  dispose(): void;
+}
+
+function createSliderContent(panel: GradientPanel): SliderContent {
   const thumbSize = 28;
   const rail = new Container({
     positionType: 'absolute',
@@ -771,7 +1041,7 @@ function addSliderContent(
     positionTop: '50%',
     transformTranslateY: '-50%',
     height: 10,
-    fillColor: theme.colors.outline,
+    fillColor: 'transparent',
     cornerRadius: 5,
     pointerEvents: 'none',
   });
@@ -794,7 +1064,7 @@ function addSliderContent(
     cornerRadius: thumbSize / 2,
     pointerEvents: 'none',
   });
-  const update = () => {
+  const update = (slider: UISlider, theme: UITheme) => {
     const ratio =
       slider.max === slider.min
         ? 0
@@ -809,10 +1079,21 @@ function addSliderContent(
       fillColor: color,
     });
   };
-  update();
   rail.add(track, fill, thumb);
   panel.add(rail);
-  return update;
+  return {
+    update,
+    dispose: () => {
+      track.removeFromParent();
+      fill.removeFromParent();
+      thumb.removeFromParent();
+      track.dispose();
+      fill.dispose();
+      thumb.dispose();
+      rail.removeFromParent();
+      rail.dispose();
+    },
+  };
 }
 
 function toUIKitStyle(style: UIStyle): Record<string, unknown> {
