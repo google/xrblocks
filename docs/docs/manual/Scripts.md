@@ -61,12 +61,12 @@ See the [WebXR Device API](https://immersive-web.github.io/webxr/input-explainer
 Object specific callbacks are called only when the action is performed while the user is pointing at a specific object.
 Events are propagated up the scene graph from the initial object.
 
-- `onObjectSelectStart(event)` - Called on the current object the controller starts selecting. Return true to prevent propagation.
-- `onObjectSelectEnd(event)` - Called on the previously selected object when selection ends. Return true to prevent propagation.
+- `onObjectSelectStart(event)` - Called on the current object the controller starts selecting. Call `event.stopPropagation()` to prevent propagation.
+- `onObjectSelectEnd(event)` - Called on the previously selected object when selection ends. Call `event.stopPropagation()` to prevent propagation.
 - `onObjectLongSelect(event)` - Called after a held object selection reaches the long-select delay.
 - `onObjectManipulate(event)` - Called for automatic manipulation start, move, end, and cancel phases.
 
-- `onHoverEnter(event)` / `onHovering(event)` / `onHoverExit(event)` - Hover lifecycle. Return true to stop propagation.
+- `onHoverEnter(event)` / `onHovering(event)` / `onHoverExit(event)` - Hover lifecycle. Call `event.stopPropagation()` to stop propagation.
 - `onObjectTouchStart(event)` / `onObjectTouching(event)` / `onObjectTouchEnd(event)` - Direct-touch lifecycle.
 - `onObjectGrabStart(event)` / `onObjectGrabbing(event)` / `onObjectGrabEnd(event)` - Touch-plus-pinch grab lifecycle.
 

@@ -13,9 +13,10 @@ grab. Source declarations are in
 | Index-tip contact  | `onObjectTouchStart`, `onObjectTouching`, `onObjectTouchEnd` |
 | Contact plus pinch | `onObjectGrabStart`, `onObjectGrabbing`, `onObjectGrabEnd`   |
 
-Targeted callbacks bubble through ancestor scripts. Return `true` to stop later
-ancestors. Keep one domain transition in either the global or targeted family
-so one source action cannot apply it twice.
+Targeted callbacks bubble through ancestor scripts. Call
+`event.stopPropagation()` to stop later ancestors. Keep one domain transition
+in either the global or targeted family so one source action cannot apply it
+twice.
 
 ## Resolved fields
 
