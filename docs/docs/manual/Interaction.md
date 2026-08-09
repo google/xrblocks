@@ -106,10 +106,10 @@ it does not create or store a separate intersection contract.
 
 These controls solve different problems:
 
-| Control                  | Meaning                                                             | Where available                                                       |
-| ------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `event.stopPropagation()` | Stop the targeted event from continuing to later ancestor scripts  | Object select, hover, touch, grab, and manipulation callback dispatch |
-| `event.preventDefault()` | Keep callbacks but suppress the framework's proposed default action | Touch start and automatic manipulation events                         |
+| Control                   | Meaning                                                             | Where available                                                       |
+| ------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `event.stopPropagation()` | Stop the targeted event from continuing to later ancestor scripts   | Object select, hover, touch, grab, and manipulation callback dispatch |
+| `event.preventDefault()`  | Keep callbacks but suppress the framework's proposed default action | Touch start and automatic manipulation events                         |
 
 For example, a child can handle touch without starting the default selection:
 
