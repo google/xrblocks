@@ -20,6 +20,10 @@ import {
 // indexing rules are covered by a fixture so they run either way.
 const hasTypes = existsSync('build/xrblocks.d.ts');
 
+// Tests that read the real definitions walk around 200 generated files, which
+// can take a while when the whole suite is competing for disk.
+const REAL_FILE_TIMEOUT_MS = 30000;
+
 /** Collects what the server would write, instead of hitting stdout. */
 function exchange(message: unknown) {
   const sent: Array<Record<string, unknown>> = [];
@@ -351,22 +355,32 @@ describe('indexSymbols', () => {
 
 describe('loadSymbols', () => {
   // Only meaningful once the SDK has been built.
-  it.skipIf(!hasTypes)('indexes the real generated definitions', () => {
-    const symbols = loadSymbols();
-    const enableDepth = symbols.find((s) => s.name === 'enableDepth');
+  // Reads every generated .d.ts, around 200 files, so it needs longer than the
+  // default when the whole suite is competing for disk.
+  it.skipIf(!hasTypes)(
+    'indexes the real generated definitions',
+    () => {
+      const symbols = loadSymbols();
+      const enableDepth = symbols.find((s) => s.name === 'enableDepth');
 
-    expect(symbols.length).toBeGreaterThan(500);
-    expect(enableDepth?.owner).toBe('Options');
-  });
+      expect(symbols.length).toBeGreaterThan(500);
+      expect(enableDepth?.owner).toBe('Options');
+    },
+    REAL_FILE_TIMEOUT_MS
+  );
 });
 
 describe('search_api', () => {
-  it.skipIf(!hasTypes)('finds a real API', () => {
-    const {text, isError} = callTool('search_api', {query: 'enableDepth'});
+  it.skipIf(!hasTypes)(
+    'finds a real API',
+    () => {
+      const {text, isError} = callTool('search_api', {query: 'enableDepth'});
 
-    expect(isError).toBeFalsy();
-    expect(text).toContain('enableDepth');
-  });
+      expect(isError).toBeFalsy();
+      expect(text).toContain('enableDepth');
+    },
+    REAL_FILE_TIMEOUT_MS
+  );
 
   it.skipIf(!hasTypes)(
     'tells the caller a hallucinated API does not exist',
@@ -380,22 +394,30 @@ describe('search_api', () => {
     }
   );
 
-  it.skipIf(!hasTypes)('is case insensitive', () => {
-    expect(callTool('search_api', {query: 'enabledepth'}).text).toContain(
-      'enableDepth'
-    );
-  });
+  it.skipIf(!hasTypes)(
+    'is case insensitive',
+    () => {
+      expect(callTool('search_api', {query: 'enabledepth'}).text).toContain(
+        'enableDepth'
+      );
+    },
+    REAL_FILE_TIMEOUT_MS
+  );
 
-  it.skipIf(!hasTypes)('resolves a dotted path to its last segment', () => {
-    // An agent asks about what it would write, `xb.input.headGestures`, not
-    // the bare symbol name it happens to be indexed under.
-    const {text} = callTool('search_api', {
-      query: 'xb.core.gestureRecognition',
-    });
+  it.skipIf(!hasTypes)(
+    'resolves a dotted path to its last segment',
+    () => {
+      // An agent asks about what it would write, `xb.input.headGestures`, not
+      // the bare symbol name it happens to be indexed under.
+      const {text} = callTool('search_api', {
+        query: 'xb.core.gestureRecognition',
+      });
 
-    expect(text).not.toContain('not a real symbol');
-    expect(text).toContain('gestureRecognition');
-  });
+      expect(text).not.toContain('not a real symbol');
+      expect(text).toContain('gestureRecognition');
+    },
+    REAL_FILE_TIMEOUT_MS
+  );
 
   it.skipIf(!hasTypes)(
     'still rejects a dotted path with an invented tail',
@@ -406,13 +428,17 @@ describe('search_api', () => {
     }
   );
 
-  it.skipIf(!hasTypes)('finds APIs that live in an addon', () => {
-    // These build to build/addons/, not into the core bundle.
-    for (const api of ['AgentHands', 'LipsyncMouth']) {
-      const {text} = callTool('search_api', {query: api});
-      expect(text).not.toContain('not a real symbol');
-    }
-  });
+  it.skipIf(!hasTypes)(
+    'finds APIs that live in an addon',
+    () => {
+      // These build to build/addons/, not into the core bundle.
+      for (const api of ['AgentHands', 'LipsyncMouth']) {
+        const {text} = callTool('search_api', {query: api});
+        expect(text).not.toContain('not a real symbol');
+      }
+    },
+    REAL_FILE_TIMEOUT_MS
+  );
 
   it('reports a missing query rather than returning everything', () => {
     const {isError} = callTool('search_api', {query: '  '});
@@ -420,11 +446,15 @@ describe('search_api', () => {
     expect(isError).toBe(true);
   });
 
-  it.skipIf(!hasTypes)('honours the result limit', () => {
-    const {text} = callTool('search_api', {query: 'enable', limit: 3});
+  it.skipIf(!hasTypes)(
+    'honours the result limit',
+    () => {
+      const {text} = callTool('search_api', {query: 'enable', limit: 3});
 
-    expect(text).toMatch(/^3 match\(es\)/);
-  });
+      expect(text).toMatch(/^3 match\(es\)/);
+    },
+    REAL_FILE_TIMEOUT_MS
+  );
 
   it.skipIf(hasTypes)(
     'says to build the SDK when definitions are absent',
