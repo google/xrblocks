@@ -44,6 +44,7 @@ const ICON_BASE =
 const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
+const imageTextureLoader = new THREE.TextureLoader();
 
 class UIKitMount implements UIMount {
   object: THREE.Object3D = new THREE.Group();
@@ -610,18 +611,29 @@ class UIKitNodeBinding {
       this.replaceImageTexture(source, false);
       return;
     }
-    this.icons.images.load(source, this.enqueue, (texture) => {
-      if (
-        this.disposed ||
-        request !== this.imageRequest ||
-        this.imageSource !== source
-      ) {
-        texture.dispose();
-        return;
-      }
-      this.replaceImageTexture(texture, true);
-      this.resourceRevision++;
-    });
+    void imageTextureLoader
+      .loadAsync(source)
+      .then((texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.matrixAutoUpdate = false;
+        if (this.disposed) {
+          texture.dispose();
+          return;
+        }
+        this.enqueue(() => {
+          if (
+            this.disposed ||
+            request !== this.imageRequest ||
+            this.imageSource !== source
+          ) {
+            texture.dispose();
+            return;
+          }
+          this.replaceImageTexture(texture, true);
+          this.resourceRevision++;
+        });
+      })
+      .catch(() => undefined);
   }
 
   private replaceImageTexture(
@@ -895,9 +907,8 @@ const FALLBACK_ICON = `
   <path fill="#ffffff" d="M11 18h2v2h-2zm1-16a7 7 0 0 0-7 7h2a5 5 0 1 1 8.6 3.5C13.7 14.2 11 15.2 11 18h2c0-1.5 1.4-2.2 3.1-3.7A7 7 0 0 0 12 2z"/>
 </svg>`;
 
-/** Backend-owned icon and texture caches. Completions are staged by bindings. */
+/** Backend-owned icon cache. Completions are staged by bindings. */
 class IconCache {
-  readonly images = new ImageCache();
   private readonly content = new Map<string, string>();
   private readonly pending = new Map<
     string,
@@ -945,76 +956,6 @@ class IconCache {
     for (const {controller} of this.pending.values()) controller.abort();
     this.pending.clear();
     this.content.clear();
-    this.images.dispose();
-  }
-}
-
-/** Caches decoded URL texture sources while each Image receives its own texture. */
-class ImageCache {
-  private static readonly capacity = 32;
-  private readonly loaded = new Map<string, Promise<THREE.Texture>>();
-  private readonly textures = new Set<THREE.Texture>();
-  private disposed = false;
-
-  load(
-    source: string,
-    enqueue: (work: () => void) => void,
-    ready: (texture: THREE.Texture) => void
-  ): void {
-    let request = this.loaded.get(source);
-    if (!request) {
-      const loader = new THREE.TextureLoader();
-      request = loader.loadAsync(source).then((texture) => {
-        if (this.disposed) {
-          texture.dispose();
-          throw new Error('Image cache was disposed while loading.');
-        }
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.matrixAutoUpdate = false;
-        this.textures.add(texture);
-        return texture;
-      });
-      this.loaded.set(source, request);
-      this.evictOldest();
-    } else {
-      this.loaded.delete(source);
-      this.loaded.set(source, request);
-    }
-    void request
-      .then((sourceTexture) => {
-        if (this.disposed) return;
-        enqueue(() => {
-          if (this.disposed) return;
-          const texture = sourceTexture.clone();
-          texture.matrixAutoUpdate = false;
-          ready(texture);
-        });
-      })
-      .catch(() => {
-        if (this.loaded.get(source) === request) this.loaded.delete(source);
-      });
-  }
-
-  dispose(): void {
-    this.disposed = true;
-    for (const texture of this.textures) texture.dispose();
-    this.textures.clear();
-    this.loaded.clear();
-  }
-
-  private evictOldest(): void {
-    while (this.loaded.size > ImageCache.capacity) {
-      const oldest = this.loaded.keys().next().value as string | undefined;
-      if (!oldest) return;
-      const request = this.loaded.get(oldest);
-      this.loaded.delete(oldest);
-      void request
-        ?.then((texture) => {
-          this.textures.delete(texture);
-          texture.dispose();
-        })
-        .catch(() => undefined);
-    }
   }
 }
 
