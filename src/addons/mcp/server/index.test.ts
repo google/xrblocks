@@ -130,6 +130,50 @@ describe('parseExportedNames', () => {
   });
 });
 
+// Addons build to their own per-file declarations rather than into the core
+// bundle, so there is no trailing export list and the `export` keyword on the
+// declaration is what makes it public.
+const ADDON_FIXTURE = `
+import { Script } from 'xrblocks';
+export type AgentHandSelector = 'left' | 'right' | 'both';
+export declare class AgentHands extends Script {
+    readonly left: AgentHand;
+    loaded: boolean;
+    private beatMotion;
+    load(loader?: GLTFLoader): Promise<void>;
+    wave(hand?: AgentHandSelector): void;
+}
+declare class NotExported {
+    hiddenHelper(): void;
+}
+`;
+
+describe('indexSymbols on an addon declaration', () => {
+  const symbols = indexSymbols(ADDON_FIXTURE);
+  const names = new Set(symbols.map((s) => s.name));
+
+  it('indexes exports declared inline, with no trailing export list', () => {
+    // Indexing only the core bundle made every addon look fake. AgentHands is
+    // real and exported, but a lookup for it used to say no.
+    expect(names.has('AgentHands')).toBe(true);
+    expect(names.has('AgentHandSelector')).toBe(true);
+  });
+
+  it('still indexes members of an exported addon class', () => {
+    expect(names.has('wave')).toBe(true);
+    expect(names.has('load')).toBe(true);
+  });
+
+  it('leaves out declarations the addon does not export', () => {
+    expect(names.has('NotExported')).toBe(false);
+    expect(names.has('hiddenHelper')).toBe(false);
+  });
+
+  it('still leaves out private members', () => {
+    expect(names.has('beatMotion')).toBe(false);
+  });
+});
+
 describe('summarize', () => {
   it('leaves a short description alone', () => {
     expect(summarize('Add depth sensing.')).toBe('Add depth sensing.');
@@ -340,6 +384,14 @@ describe('search_api', () => {
     expect(callTool('search_api', {query: 'enabledepth'}).text).toContain(
       'enableDepth'
     );
+  });
+
+  it.skipIf(!hasTypes)('finds APIs that live in an addon', () => {
+    // These build to build/addons/, not into the core bundle.
+    for (const api of ['AgentHands', 'LipsyncMouth']) {
+      const {text} = callTool('search_api', {query: api});
+      expect(text).not.toContain('not a real symbol');
+    }
   });
 
   it('reports a missing query rather than returning everything', () => {
