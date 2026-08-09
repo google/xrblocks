@@ -6,7 +6,8 @@
   "types": "build/xrblocks.d.ts",
   "type": "module",
   "bin": {
-    "xrblocks-remote-control": "./src/addons/remote-control/server/relay.js"
+    "xrblocks-remote-control": "./src/addons/remote-control/server/relay.js",
+    "xrblocks-mcp": "./src/addons/mcp/server/bin.js"
   },
   "scripts": {
     "dev": "concurrently \"npm:build:watch\" \"npm:serve\"",
@@ -49,6 +50,7 @@
     "@google/genai": "^2.7.0",
     "@mediapipe/tasks-audio": "^0.10.35",
     "@mediapipe/tasks-vision": "^0.10.34",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@pmndrs/uikit": "^1.0.64",
     "@preact/signals-core": "^1.14.0",
     "@rollup/plugin-inject": "^5.0.5",
