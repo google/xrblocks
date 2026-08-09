@@ -27,12 +27,12 @@ class GrabbableScript extends Script {
 
   override onObjectSelectStart(event: SelectEvent) {
     this.grabbedByHand = event.source.controller.userData.id;
-    return true;
+    event.stopPropagation();
   }
 
-  override onObjectSelectEnd(_event: SelectEvent) {
+  override onObjectSelectEnd(event: SelectEvent) {
     this.grabbedByHand = null;
-    return true;
+    event.stopPropagation();
   }
 }
 

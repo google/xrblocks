@@ -30,28 +30,28 @@ class RecordingButton extends UIButton {
   longSelects: LongSelectEvent[] = [];
   touchStarts: ObjectTouchStartEvent[] = [];
 
-  override onObjectSelectStart(event: SelectEvent): true {
+  override onObjectSelectStart(event: SelectEvent): void {
     this.starts.push(event);
-    return true;
+    event.stopPropagation();
   }
 
-  override onObjectSelectEnd(event: SelectEndEvent): true {
+  override onObjectSelectEnd(event: SelectEndEvent): void {
     this.ends.push(event);
-    return true;
+    event.stopPropagation();
   }
 
   override onSelecting(event: SelectEvent): void {
     this.selecting.push(event);
   }
 
-  override onObjectLongSelect(event: LongSelectEvent): true {
+  override onObjectLongSelect(event: LongSelectEvent): void {
     this.longSelects.push(event);
-    return true;
+    event.stopPropagation();
   }
 
-  override onObjectTouchStart(event: ObjectTouchStartEvent): true {
+  override onObjectTouchStart(event: ObjectTouchStartEvent): void {
     this.touchStarts.push(event);
-    return true;
+    event.stopPropagation();
   }
 }
 
@@ -161,7 +161,7 @@ describe('Interaction public behavior', () => {
     button.onObjectTouchStart = (event) => {
       event.preventDefault();
       button.touchStarts.push(event);
-      return true;
+      event.stopPropagation();
     };
     const physical = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     const unregister = interaction.registerHitSurface(physical, button);

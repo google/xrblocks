@@ -39,7 +39,7 @@ import {TranslateDriver} from './drivers/TranslateDriver';
 export type DispatchManipulationEvent = (
   script: Script,
   event: ManipulationEvent
-) => boolean | void;
+) => void;
 
 interface PrimaryRole {
   capture: SelectionCapture;
@@ -572,9 +572,18 @@ export class ManipulationManager {
   ): void {
     if (!proposal) return;
     const preventState = {value: active.defaultPrevented};
+    const propagationState = {stopped: false};
     for (const script of session.primary.capture.scriptPath) {
-      const event = createEvent(session, script, phase, proposal, preventState);
-      if (this.dispatch(script, event) === true) break;
+      const event = createEvent(
+        session,
+        script,
+        phase,
+        proposal,
+        preventState,
+        propagationState
+      );
+      this.dispatch(script, event);
+      if (propagationState.stopped) break;
     }
     if (phase === 'start') active.defaultPrevented = preventState.value;
   }
@@ -601,7 +610,8 @@ function createEvent(
   currentTarget: Script,
   phase: ManipulationPhase,
   proposal: Proposal,
-  preventState: {value: boolean}
+  preventState: {value: boolean},
+  propagationState: {stopped: boolean}
 ): ManipulationEvent {
   const common = {
     phase,
@@ -619,6 +629,9 @@ function createEvent(
     defaultPrevented: preventState.value,
     preventDefault() {
       if (phase === 'start') preventState.value = true;
+    },
+    stopPropagation() {
+      propagationState.stopped = true;
     },
   };
 

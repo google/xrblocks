@@ -72,7 +72,7 @@ type TargetDispatch = {
   [Hook in TargetedInteractionHook]: (
     script: Script,
     argument: unknown
-  ) => boolean | void;
+  ) => void;
 };
 
 const TARGET_DISPATCH: TargetDispatch = {
@@ -215,11 +215,11 @@ export class ScriptsManager
     object: THREE.Object3D,
     hook: TargetedInteractionHook,
     argument: unknown
-  ): boolean => {
-    if (!this.isScript(object)) return false;
+  ): void => {
+    if (!this.isScript(object)) return;
     const script = object as Script;
-    if (!this.hasOverriddenHook(script, hook)) return false;
-    return this.callTargeted([script], hook, (target) =>
+    if (!this.hasOverriddenHook(script, hook)) return;
+    this.callTargeted([script], hook, (target) =>
       TARGET_DISPATCH[hook](target, eventForTarget(argument, target))
     );
   };
@@ -236,9 +236,9 @@ export class ScriptsManager
     else this.callSelectEnd(event as SelectEndEvent);
   };
 
-  invokeManipulation = (script: Script, event: ManipulationEvent): boolean => {
-    if (!this.hasOverriddenHook(script, 'onObjectManipulate')) return false;
-    return this.callTargeted([script], 'onObjectManipulate', (target) =>
+  invokeManipulation = (script: Script, event: ManipulationEvent): void => {
+    if (!this.hasOverriddenHook(script, 'onObjectManipulate')) return;
+    this.callTargeted([script], 'onObjectManipulate', (target) =>
       target.onObjectManipulate(event)
     );
   };
@@ -285,23 +285,21 @@ export class ScriptsManager
   }
 
   /**
-   * Calls one targeted hook along a captured Script path. Only a literal true
-   * return value stops propagation. Developer errors use the same exception
-   * policy as global Script callbacks.
+   * Calls one targeted hook along a captured Script path. Developer errors use
+   * the same exception policy as global Script callbacks.
    */
   callTargeted(
     path: Iterable<Script>,
     context: string,
-    callback: (script: Script) => boolean | void
-  ): boolean {
+    callback: (script: Script) => void
+  ): void {
     for (const script of path) {
       try {
-        if (callback(script) === true) return true;
+        callback(script);
       } catch (error: unknown) {
         this.handleScriptError(error, script, context);
       }
     }
-    return false;
   }
 
   /**
@@ -648,7 +646,10 @@ function controllerSelectEvent(controller: Controller): SelectEvent {
     : controller.userData.isMouse
       ? 'mouse'
       : 'controller-ray';
-  return {source: getInteractionSource(controller, type)};
+  return {
+    source: getInteractionSource(controller, type),
+    stopPropagation() {},
+  };
 }
 
 function eventForTarget(argument: unknown, currentTarget: Script): unknown {

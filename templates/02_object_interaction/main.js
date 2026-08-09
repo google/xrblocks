@@ -20,26 +20,26 @@ class ObjectInteraction extends xb.MeshScript {
     if (event.source.type !== 'direct-touch') {
       this.material.color.set(0x4285f4);
     }
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectEnd(event) {
     if (event.source.type !== 'direct-touch') {
       this.material.color.set(0xfbbc04);
     }
-    return true;
+    event.stopPropagation();
   }
 
-  onObjectTouchStart() {
+  onObjectTouchStart(event) {
     // Keep the default selection enabled because automatic manipulation uses
     // that capture when grab starts. Prevent it only for touch-only objects.
     this.material.color.set(0x34a853);
-    return true;
+    event.stopPropagation();
   }
 
-  onObjectTouchEnd() {
+  onObjectTouchEnd(event) {
     this.material.color.set(0xfbbc04);
-    return true;
+    event.stopPropagation();
   }
 
   dispose() {

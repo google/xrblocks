@@ -96,7 +96,7 @@ describe('ScriptsManager lifecycle', () => {
     expect(update).toHaveBeenCalledOnce();
   });
 
-  it('isolates callback errors unless propagation is requested', () => {
+  it('isolates callback errors', () => {
     const manager = new ScriptsManager(async () => {});
     const reportError = vi.fn();
     manager.addEventListener(ScriptsManagerEventType.EXCEPTION, reportError);
@@ -105,12 +105,10 @@ describe('ScriptsManager lifecycle', () => {
     const visited: Script[] = [];
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    expect(
-      manager.callTargeted([first, second], 'update', (script) => {
-        if (script === first) throw new Error('callback failed');
-        visited.push(script);
-      })
-    ).toBe(false);
+    manager.callTargeted([first, second], 'update', (script) => {
+      if (script === first) throw new Error('callback failed');
+      visited.push(script);
+    });
     expect(visited).toEqual([second]);
     expect(reportError).toHaveBeenCalledWith(
       expect.objectContaining({context: 'update'})
