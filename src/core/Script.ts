@@ -15,6 +15,7 @@ export interface SelectEvent {
   readonly surface?: THREE.Object3D;
   /** Current ray intersection on `surface`, when the source still hits it. */
   readonly intersection?: THREE.Intersection;
+  stopPropagation(): void;
 }
 
 export type SelectionEndReason =
@@ -46,6 +47,7 @@ export interface ObjectTouchEvent {
   readonly handIndex: number;
   readonly hand?: THREE.Object3D;
   readonly touchPosition: THREE.Vector3;
+  stopPropagation(): void;
 }
 
 export interface ObjectTouchStartEvent extends ObjectTouchEvent {
@@ -62,6 +64,7 @@ export interface ObjectGrabEvent {
   readonly handIndex: number;
   readonly hand: THREE.Object3D;
   readonly touchPosition: THREE.Vector3;
+  stopPropagation(): void;
 }
 
 export interface HoverEvent extends SelectEvent {
@@ -182,77 +185,77 @@ export function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(
      * Called when a source starts selecting the object this Script represents.
      * @param _event - `event.target` is the logical object and
      * `event.source.controller` identifies the controller.
-     * @returns Whether the event was handled. If true, the event will not bubble up.
+     * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
      */
-    onObjectSelectStart(_event: SelectEvent): boolean | void {}
+    onObjectSelectStart(_event: SelectEvent): void {}
     /**
      * Called when a source stops selecting the object this Script represents.
      * @param _event - The completed state and end reason.
-     * @returns Whether the event was handled. If true, the event will not bubble up.
+     * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
      */
-    onObjectSelectEnd(_event: SelectEndEvent): boolean | void {}
+    onObjectSelectEnd(_event: SelectEndEvent): void {}
     /**
      * Called once when a captured selection is held for the long-select delay.
      * Manipulation captures do not emit this callback.
      * @param _event - The controller and completed hold duration.
-     * @returns Whether the event was handled. If true, the event will not bubble up.
+     * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
      */
-    onObjectLongSelect(_event: LongSelectEvent): boolean | void {}
+    onObjectLongSelect(_event: LongSelectEvent): void {}
     /**
-     * Called for each phase of an automatic object manipulation.
-     * Returning true stops propagation to later Script ancestors. Calling
-     * preventDefault() on a start event suppresses the automatic action.
+     * Called for each phase of an automatic object manipulation. Call
+     * `event.stopPropagation()` to stop bubbling. Calling `preventDefault()`
+     * on a start event suppresses the automatic action.
      */
-    onObjectManipulate(_event: ManipulationEvent): boolean | void {}
+    onObjectManipulate(_event: ManipulationEvent): void {}
     /**
      * Called when a source starts hovering over this object.
      * @param _event - The hover source, target, surface, and intersection.
-     * @returns Whether the event was handled. If true, the event will not bubble up.
+     * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
      */
-    onHoverEnter(_event: HoverEvent): boolean | void {}
+    onHoverEnter(_event: HoverEvent): void {}
     /**
      * Called when a source stops hovering over this object.
      * @param _event - The hover source, target, surface, and intersection.
-     * @returns Whether the event was handled. If true, the event will not bubble up.
+     * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
      */
-    onHoverExit(_event: HoverEvent): boolean | void {}
+    onHoverExit(_event: HoverEvent): void {}
     /**
      * Called while a source hovers over this object.
      * @param _event - The hover source, target, surface, and intersection.
-     * @returns Whether the event was handled. If true, the event will not bubble up.
+     * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
      */
-    onHovering(_event: HoverEvent): boolean | void {}
+    onHovering(_event: HoverEvent): void {}
     /**
      * Called when a hand's index finger starts touching this object.
      * Direct touch starts the object's selection lifecycle by default. Call
      * `event.preventDefault()` to handle contact without selecting.
      */
-    onObjectTouchStart(_event: ObjectTouchStartEvent): boolean | void {}
+    onObjectTouchStart(_event: ObjectTouchStartEvent): void {}
     /**
      * Called every frame that a hand's index finger is touching this object.
      * The object remains selected during these frames unless touch selection
      * was prevented when contact started.
      */
-    onObjectTouching(_event: ObjectTouchEvent): boolean | void {}
+    onObjectTouching(_event: ObjectTouchEvent): void {}
     /**
      * Called when a hand's index finger stops touching this object.
      * This ends the default selection lifecycle after the touch callback.
      */
-    onObjectTouchEnd(_event: ObjectTouchEvent): boolean | void {}
+    onObjectTouchEnd(_event: ObjectTouchEvent): void {}
     /**
      * Called when a hand starts grabbing this object (touching + pinching).
      * A grab starts built-in direct-touch manipulation when enabled.
      */
-    onObjectGrabStart(_event: ObjectGrabEvent) {}
+    onObjectGrabStart(_event: ObjectGrabEvent): void {}
     /**
      * Called every frame a hand is grabbing this object.
      */
-    onObjectGrabbing(_event: ObjectGrabEvent) {}
+    onObjectGrabbing(_event: ObjectGrabEvent): void {}
     /**
      * Called when a hand stops grabbing this object.
      * This ends built-in direct-touch manipulation without ending contact.
      */
-    onObjectGrabEnd(_event: ObjectGrabEvent) {}
+    onObjectGrabEnd(_event: ObjectGrabEvent): void {}
 
     /**
      * Called when the script is removed from the scene. Opposite of init.

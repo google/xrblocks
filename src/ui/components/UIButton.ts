@@ -119,12 +119,12 @@ export class UIButton extends UIElement {
     this.markUIDirty();
   }
 
-  onObjectSelectStart(_event: SelectEvent): true {
-    return true;
+  onObjectSelectStart(event: SelectEvent): void {
+    event.stopPropagation();
   }
 
-  onObjectSelectEnd(_event: SelectEvent): true {
-    return true;
+  onObjectSelectEnd(event: SelectEvent): void {
+    event.stopPropagation();
   }
 
   override add(...objects: THREE.Object3D[]): this {

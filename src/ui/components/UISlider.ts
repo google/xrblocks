@@ -121,12 +121,12 @@ export class UISlider extends UIElement {
     this.markUIDirty();
   }
 
-  onObjectSelectStart(_event: SelectEvent): true {
-    return true;
+  onObjectSelectStart(event: SelectEvent): void {
+    event.stopPropagation();
   }
 
-  onObjectSelectEnd(_event: SelectEvent): true {
-    return true;
+  onObjectSelectEnd(event: SelectEvent): void {
+    event.stopPropagation();
   }
 
   private beginInput(input: SemanticControlInput): void {

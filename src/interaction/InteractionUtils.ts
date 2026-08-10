@@ -12,9 +12,32 @@ export function dispatchInteractionPath(
   hook: TargetedInteractionHook,
   argument: unknown
 ): void {
+  const state = {stopped: false};
+  const event = eventWithPropagation(argument, state);
   for (const script of path) {
-    if (callbacks.invokeTarget(script, hook, argument) === true) return;
+    callbacks.invokeTarget(script, hook, event);
+    if (state.stopped) return;
   }
+}
+
+function eventWithPropagation(
+  argument: unknown,
+  state: {stopped: boolean}
+): unknown {
+  if (!argument || typeof argument !== 'object') return argument;
+  const event = Object.create(Object.getPrototypeOf(argument)) as Record<
+    PropertyKey,
+    unknown
+  >;
+  Object.defineProperties(event, Object.getOwnPropertyDescriptors(argument));
+  Object.defineProperty(event, 'stopPropagation', {
+    enumerable: true,
+    configurable: true,
+    value() {
+      state.stopped = true;
+    },
+  });
+  return event;
 }
 
 export function selectionInvalidReason(

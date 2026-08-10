@@ -140,13 +140,13 @@ class DirectTouchTarget extends xb.MeshScript {
     this.activeTouches.add(event.handIndex);
     if (this.preventSelection) event.preventDefault();
     this.setEvent('TOUCH START', event, EVENT_COLORS.touch);
-    return true;
+    event.stopPropagation();
   }
 
   onObjectTouching(event) {
     this.counts.touching += 1;
     this.setEvent('TOUCHING', event, EVENT_COLORS.touch);
-    return true;
+    event.stopPropagation();
   }
 
   onObjectTouchEnd(event) {
@@ -154,20 +154,20 @@ class DirectTouchTarget extends xb.MeshScript {
     this.activeTouches.delete(event.handIndex);
     this.setEvent('TOUCH END', event, EVENT_COLORS.end);
     this.flashUntil = performance.now() + 350;
-    return true;
+    event.stopPropagation();
   }
 
   onObjectGrabStart(event) {
     this.counts.grabStart += 1;
     this.activeGrabs.add(event.handIndex);
     this.setEvent('GRAB START', event, EVENT_COLORS.grab);
-    return true;
+    event.stopPropagation();
   }
 
   onObjectGrabbing(event) {
     this.counts.grabbing += 1;
     this.setEvent('GRABBING', event, EVENT_COLORS.grab);
-    return true;
+    event.stopPropagation();
   }
 
   onObjectGrabEnd(event) {
@@ -175,21 +175,21 @@ class DirectTouchTarget extends xb.MeshScript {
     this.activeGrabs.delete(event.handIndex);
     this.setEvent('GRAB END', event, EVENT_COLORS.end);
     this.flashUntil = performance.now() + 350;
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectStart(event) {
     this.counts.selectStart += 1;
     this.lastEvent = `SELECT START / ${event.source.type}`;
     this.statusDirty = true;
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectEnd(event) {
     this.counts.selectEnd += 1;
     this.lastEvent = `SELECT END / ${event.completed ? 'PASS' : event.reason}`;
     this.statusDirty = true;
-    return true;
+    event.stopPropagation();
   }
 
   update() {

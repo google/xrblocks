@@ -57,9 +57,10 @@ handler, phase state, domain transition, feedback, and release or cancel path.
 
 ## 4. Preserve event and manipulation semantics
 
-Return `true` from a targeted callback only when its ancestor propagation must
-stop. Use `event.preventDefault()` only where the event exposes it: touch start
-can suppress the default touch selection, and manipulation start can suppress
+Call `event.stopPropagation()` from a targeted callback only when its ancestor
+propagation must stop. Use `event.preventDefault()` only where the event
+exposes it: touch start can suppress the default touch selection, and
+manipulation start can suppress
 the automatic transform. Propagation and default behavior are independent.
 
 Automatic manipulation supports independent simultaneous object owners and

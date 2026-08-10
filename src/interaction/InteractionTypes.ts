@@ -211,13 +211,13 @@ export interface InteractionCallbackDispatch {
     script: THREE.Object3D,
     hook: TargetedInteractionHook,
     argument: unknown
-  ): unknown;
+  ): void;
   invokeSemantic(object: THREE.Object3D, callback: () => void): void;
   invokeGlobal<Hook extends GlobalInteractionHook>(
     hook: Hook,
     event: GlobalInteractionEvent<Hook>
   ): void;
-  invokeManipulation(script: Script, event: ManipulationEvent): boolean;
+  invokeManipulation(script: Script, event: ManipulationEvent): void;
 }
 
 export interface ReticlePresentationObserver {

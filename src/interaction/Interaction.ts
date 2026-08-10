@@ -72,6 +72,7 @@ interface TouchState {
 type ActiveCapture = {kind: 'none'} | {kind: 'auxiliary'} | TargetCapture;
 
 const DEFAULT_LONG_SELECT_DURATION = 0.75;
+const NOOP_PROPAGATION = (): void => {};
 
 /** Owns all logical target, hover, capture, completion, and cancellation state. */
 export class Interaction {
@@ -803,24 +804,21 @@ export class Interaction {
 
   private dispatchTouchStart(touch: TouchState): boolean {
     const state = {prevented: false};
-    for (const script of touch.selection.scriptPath) {
-      const event: ObjectTouchStartEvent = {
-        ...this.createTouchEvent(touch),
-        currentTarget: script,
-        get defaultPrevented() {
-          return state.prevented;
-        },
-        preventDefault() {
-          state.prevented = true;
-        },
-      };
-      if (
-        this.callbacks.invokeTarget(script, 'onObjectTouchStart', event) ===
-        true
-      ) {
-        break;
-      }
-    }
+    const event: ObjectTouchStartEvent = {
+      ...this.createTouchEvent(touch),
+      get defaultPrevented() {
+        return state.prevented;
+      },
+      preventDefault() {
+        state.prevented = true;
+      },
+    };
+    dispatchInteractionPath(
+      this.callbacks,
+      touch.selection.scriptPath,
+      'onObjectTouchStart',
+      event
+    );
     return state.prevented;
   }
 
@@ -844,6 +842,7 @@ export class Interaction {
       handIndex: touch.handIndex,
       hand: touch.hand,
       touchPosition: touch.point.clone(),
+      stopPropagation: NOOP_PROPAGATION,
     };
   }
 
@@ -1055,6 +1054,7 @@ export class Interaction {
       intersection: value?.intersection
         ? clonePublicIntersection(value.intersection, value.surface)
         : undefined,
+      stopPropagation: NOOP_PROPAGATION,
     });
     dispatchInteractionPath(
       this.callbacks,
@@ -1132,6 +1132,7 @@ export class Interaction {
       target: targetCapture?.selection.target,
       surface,
       intersection,
+      stopPropagation: NOOP_PROPAGATION,
     };
   }
 

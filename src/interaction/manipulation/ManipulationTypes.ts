@@ -65,6 +65,7 @@ export interface BaseManipulationEvent {
   readonly currentTarget: Script;
   readonly defaultPrevented: boolean;
   preventDefault(): void;
+  stopPropagation(): void;
 }
 
 export interface TranslateManipulationEvent extends BaseManipulationEvent {

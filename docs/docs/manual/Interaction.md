@@ -57,13 +57,13 @@ class SelectableCube extends xb.MeshScript {
       point: event.intersection?.point,
     });
     this.material.color.set(0x4285f4);
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectEnd(event) {
     console.log(event.completed, event.reason);
     this.material.color.set(0xfbbc04);
-    return true;
+    event.stopPropagation();
   }
 }
 ```
@@ -106,10 +106,10 @@ it does not create or store a separate intersection contract.
 
 These controls solve different problems:
 
-| Control                  | Meaning                                                             | Where available                                                       |
-| ------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Return `true`            | Stop the targeted event from continuing to later ancestor scripts   | Object select, hover, touch, grab, and manipulation callback dispatch |
-| `event.preventDefault()` | Keep callbacks but suppress the framework's proposed default action | Touch start and automatic manipulation events                         |
+| Control                   | Meaning                                                             | Where available                                                       |
+| ------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `event.stopPropagation()` | Stop the targeted event from continuing to later ancestor scripts   | Object select, hover, touch, grab, and manipulation callback dispatch |
+| `event.preventDefault()`  | Keep callbacks but suppress the framework's proposed default action | Touch start and automatic manipulation events                         |
 
 For example, a child can handle touch without starting the default selection:
 
@@ -117,11 +117,11 @@ For example, a child can handle touch without starting the default selection:
 onObjectTouchStart(event) {
   event.preventDefault(); // no default touch selection or manipulation
   this.showContactFeedback();
-  return true; // parent scripts do not also handle this touch-start event
+  event.stopPropagation(); // parent scripts do not also handle this touch-start event
 }
 ```
 
-Returning `true` does not suppress a default transform. Calling
+Calling `stopPropagation()` does not suppress a default transform. Calling
 `preventDefault()` does not stop ancestor callbacks. Use each only for its own
 purpose.
 

@@ -121,13 +121,13 @@ class InteractiveObject extends xb.MeshScript {
   onHoverEnter(event) {
     this.material.emissiveIntensity = 0.22;
     report(`${this.name}: hover enter (${describeSource(event)})`, 'selection');
-    return true;
+    event.stopPropagation();
   }
 
-  onHoverExit() {
+  onHoverExit(event) {
     this.material.emissiveIntensity = 0.04;
     report(`${this.name}: hover exit`);
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectStart(event) {
@@ -136,7 +136,7 @@ class InteractiveObject extends xb.MeshScript {
       `${this.name}: select start (${describeSource(event)})`,
       'selection'
     );
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectEnd(event) {
@@ -146,7 +146,7 @@ class InteractiveObject extends xb.MeshScript {
       `${this.name}: select end ${event.completed}/${event.reason} (${describeSource(event)})`,
       'selection'
     );
-    return true;
+    event.stopPropagation();
   }
 
   onObjectLongSelect(event) {
@@ -155,7 +155,7 @@ class InteractiveObject extends xb.MeshScript {
       `${this.name}: long select ${event.duration.toFixed(2)}s (${describeSource(event)})`,
       'long-select'
     );
-    return true;
+    event.stopPropagation();
   }
 
   onObjectTouchStart(event) {
@@ -164,12 +164,12 @@ class InteractiveObject extends xb.MeshScript {
       `${this.name}: hand ${event.handIndex} touch start (${describeSource(event)})`,
       'touch'
     );
-    return true;
+    event.stopPropagation();
   }
 
-  onObjectTouching() {
+  onObjectTouching(event) {
     markFeature('touch');
-    return true;
+    event.stopPropagation();
   }
 
   onObjectTouchEnd(event) {
@@ -178,7 +178,7 @@ class InteractiveObject extends xb.MeshScript {
       `${this.name}: hand ${event.handIndex} touch end (${describeSource(event)})`,
       'touch'
     );
-    return true;
+    event.stopPropagation();
   }
 
   onObjectGrabStart(event) {
@@ -208,7 +208,8 @@ class InteractiveObject extends xb.MeshScript {
         `${this.name}: prevented ${event.action} (${describeSource(event)})`,
         'manipulation'
       );
-      return true;
+      event.stopPropagation();
+      return;
     }
     if (event.phase !== 'update') {
       report(
@@ -216,7 +217,7 @@ class InteractiveObject extends xb.MeshScript {
         'manipulation'
       );
     }
-    return true;
+    event.stopPropagation();
   }
 }
 
@@ -295,12 +296,12 @@ class ReticleTarget extends xb.MeshScript {
       `${this.name}: ${this.xb.reticleMode} reticle (${describeSource(event)})`,
       'reticle'
     );
-    return true;
+    event.stopPropagation();
   }
 
-  onHoverExit() {
+  onHoverExit(event) {
     this.material.emissiveIntensity = 0.08;
-    return true;
+    event.stopPropagation();
   }
 }
 
@@ -322,12 +323,12 @@ class InstrumentedPanel extends xb.UIButton {
       `${this.diagnosticLabel}: UI hover enter (${describeSource(event)})`,
       'ui'
     );
-    return true;
+    event.stopPropagation();
   }
 
-  onHoverExit() {
+  onHoverExit(event) {
     report(`${this.diagnosticLabel}: UI hover exit`);
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectStart(event) {
@@ -335,7 +336,7 @@ class InstrumentedPanel extends xb.UIButton {
       `${this.diagnosticLabel}: UI select start (${describeSource(event)})`,
       'selection'
     );
-    return true;
+    event.stopPropagation();
   }
 
   onObjectSelectEnd(event) {
@@ -343,7 +344,7 @@ class InstrumentedPanel extends xb.UIButton {
       `${this.diagnosticLabel}: UI select end ${event.completed}/${event.reason} (${describeSource(event)})`,
       'ui'
     );
-    return super.onObjectSelectEnd(event);
+    super.onObjectSelectEnd(event);
   }
 
   onObjectLongSelect(event) {
@@ -351,7 +352,7 @@ class InstrumentedPanel extends xb.UIButton {
       `${this.diagnosticLabel}: UI long select ${event.duration.toFixed(2)}s (${describeSource(event)})`,
       'long-select'
     );
-    return true;
+    event.stopPropagation();
   }
 }
 
