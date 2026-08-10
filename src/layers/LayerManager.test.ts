@@ -42,7 +42,11 @@ describe('LayerManager', () => {
 
   it('drops the binding and context when the session ends', () => {
     const manager = new LayerManager();
-    manager.setSession(fakeSession(), webglBinding, {} as WebGL2RenderingContext);
+    manager.setSession(
+      fakeSession(),
+      webglBinding,
+      {} as WebGL2RenderingContext
+    );
     manager.setSession(null);
 
     expect(manager.getBinding()).toBeNull();

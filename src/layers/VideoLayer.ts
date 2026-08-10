@@ -244,8 +244,10 @@ export class VideoLayer {
  * @returns True when extents must be halved.
  */
 function usesHalfExtents(): boolean {
-  return typeof (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding ===
-    'function';
+  return (
+    typeof (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding ===
+    'function'
+  );
 }
 
 /**

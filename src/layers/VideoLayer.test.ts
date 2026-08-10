@@ -204,7 +204,8 @@ describe('VideoLayer on the WebGL path', () => {
       texSubImage2D: vi.fn(),
       activeTexture: vi.fn(),
       getParameter: vi.fn(() => 0),
-    } as unknown as WebGL2RenderingContext & Record<string, ReturnType<typeof vi.fn>>;
+    } as unknown as WebGL2RenderingContext &
+      Record<string, ReturnType<typeof vi.fn>>;
   }
 
   function webglManager(
@@ -321,7 +322,9 @@ describe('VideoLayer quad sizing across platforms', () => {
     ) {} as unknown;
   });
 
-  function webglOnly(createQuadLayer: (init: Record<string, unknown>) => unknown) {
+  function webglOnly(
+    createQuadLayer: (init: Record<string, unknown>) => unknown
+  ) {
     const manager = new LayerManager();
     const binding = {
       createQuadLayer,
@@ -498,7 +501,10 @@ describe('VideoLayer upload throttling', () => {
     // three.js caches bindings and skips redundant calls; leaving the layer
     // texture bound makes it render with the wrong one.
     const manager = throttleSetup({needsRedraw: true});
-    const gl = manager.getContext() as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const gl = manager.getContext() as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
     const layer = new VideoLayer(manager);
     layer.attach(fakeVideo(1920, 1080), fakeSession(), space);
 
