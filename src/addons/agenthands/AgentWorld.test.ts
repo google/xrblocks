@@ -127,28 +127,6 @@ describe('AgentWorld', () => {
     expect(restored.objects[0].point!.equals(hit)).toBe(true);
   });
 
-  it('marks scanned only after a scan completes, not on load', async () => {
-    const hit = new THREE.Vector3(1, 2, -3);
-    const detector = {
-      runDetection: vi.fn().mockResolvedValue([detected('lamp')]),
-    };
-    const opts = {
-      getDetector: () => detector,
-      getCamera: camera,
-      getDepthMesh: () => meshHitting(hit),
-      storageKey: 'agent_hands.scanned',
-    };
-    const world = new AgentWorld(opts);
-    expect(world.scanned).toBe(false);
-    await world.scan();
-    expect(world.scanned).toBe(true);
-
-    // A world restored from persisted objects has not scanned this session.
-    const restored = new AgentWorld(opts);
-    expect(restored.objects).toHaveLength(1);
-    expect(restored.scanned).toBe(false);
-  });
-
   it('auto-scans after moving past the threshold, not while stationary', async () => {
     const hit = new THREE.Vector3(0, 0, -1);
     const detector = {

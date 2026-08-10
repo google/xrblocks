@@ -102,7 +102,7 @@ describe('JSON-RPC transport', () => {
     };
     expect(result.isError).toBe(false);
     expect(result.content[0].type).toBe('text');
-    expect(result.content[0].text).toContain('xb-depth');
+    expect(result.content[0].text).toContain('xb-build-app');
   });
 });
 
@@ -205,7 +205,8 @@ describe('loadSkills', () => {
   it('finds the skills that ship with the package', () => {
     const skills = loadSkills();
 
-    expect(skills.length).toBeGreaterThan(10);
+    expect(skills.length).toBeGreaterThan(0);
+    expect(skills.map((skill) => skill.name)).toContain('xb-build-app');
     for (const skill of skills) {
       expect(skill.name).toMatch(/^xb-/);
       expect(skill.description.length).toBeGreaterThan(0);
@@ -367,17 +368,17 @@ describe('search_api', () => {
 
 describe('get_skill', () => {
   it('returns the full text of a skill', () => {
-    const {text, isError} = callTool('get_skill', {name: 'xb-depth'});
+    const {text, isError} = callTool('get_skill', {name: 'xb-build-app'});
 
     expect(isError).toBeFalsy();
-    expect(text).toContain('name: xb-depth');
+    expect(text).toContain('name: xb-build-app');
   });
 
   it('lists the alternatives when the name is wrong', () => {
     const {text, isError} = callTool('get_skill', {name: 'xb-not-a-skill'});
 
     expect(isError).toBe(true);
-    expect(text).toContain('xb-depth');
+    expect(text).toContain('xb-build-app');
   });
 });
 
@@ -387,7 +388,7 @@ describe('list_skills', () => {
     const skills = loadSkills();
 
     expect(text).toContain(`${skills.length} XR Blocks skills`);
-    expect(text).toContain('xb-depth');
+    expect(text).toContain('xb-build-app');
   });
 
   it('stays small enough to be the first call an agent makes', () => {

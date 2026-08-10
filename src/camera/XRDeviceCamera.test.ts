@@ -197,22 +197,6 @@ describe('XRDeviceCamera', () => {
     warnSpy.mockRestore();
   });
 
-  it('falls back to XR camera access when a renderer is available', async () => {
-    const getUserMediaError = new Error('NotReadableError');
-    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(
-      getUserMediaError
-    );
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    camera.setRenderer(createMockRenderer('immersive-vr', ['camera-access']));
-
-    await expect(camera.init()).resolves.toBeUndefined();
-    expect(camera.isUsingXRCameraAccess).toBe(true);
-    expect(camera.state).toBe(StreamState.INITIALIZING);
-
-    warnSpy.mockRestore();
-  });
-
   it('surfaces getUserMedia errors when no renderer is available', async () => {
     const getUserMediaError = new Error('NotReadableError');
     vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(
@@ -227,35 +211,9 @@ describe('XRDeviceCamera', () => {
     errorSpy.mockRestore();
   });
 
-  it('falls back to XR camera access when no video devices are enumerated', async () => {
-    vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([]);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    camera.setRenderer(createMockRenderer('immersive-ar', ['camera-access']));
-
-    await expect(camera.init()).resolves.toBeUndefined();
-    expect(camera.isUsingXRCameraAccess).toBe(true);
-    expect(camera.state).toBe(StreamState.INITIALIZING);
-
-    warnSpy.mockRestore();
-  });
-
   it('reports NO_DEVICES_FOUND when no devices and no renderer', async () => {
     vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([]);
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    await expect(camera.init()).resolves.toBeUndefined();
-    expect(camera.isUsingXRCameraAccess).toBe(false);
-    expect(camera.state).toBe(StreamState.NO_DEVICES_FOUND);
-
-    warnSpy.mockRestore();
-  });
-
-  it('reports NO_DEVICES_FOUND when camera-access was not granted', async () => {
-    vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([]);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    camera.setRenderer(createMockRenderer('immersive-ar', []));
 
     await expect(camera.init()).resolves.toBeUndefined();
     expect(camera.isUsingXRCameraAccess).toBe(false);

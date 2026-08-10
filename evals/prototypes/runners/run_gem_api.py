@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Gem-faithful eval runner: hit the Gemini API directly with skill content
-in the system prompt, no filesystem access for the model.
+"""Canvas-style eval runner: hit the Gemini API with an agent guidance package
+in the system prompt and no file-system access for the model.
 
-Mirrors the production Canvas Gem ("XR Blocks for Gemini Canvas") which:
-  - has skill content baked into its system prompt
+Mirrors a Canvas deployment which:
+  - has the app contract, task workflow, and canonical references in its prompt
   - has NO filesystem visibility into the xrblocks repo
   - asks the model to produce a complete main.js from scratch
 
@@ -35,18 +35,25 @@ TASKS = EVALS / "prototypes" / "tasks"
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
 
 
-def build_system_prompt(skill_name: str) -> str:
-    """Concatenate the specific xb-* skill's content for the system prompt.
+def build_system_prompt(skill_name: str, reference_files: list[str]) -> str:
+    """Build the agent guidance supplied to the Canvas-style model.
 
-    Mirrors how the Canvas Gem embeds skill content. We use only the skill
-    that's relevant to the task to avoid context bloat. To compare against
-    the full Gem behavior, you could load all xb-* skills here.
+    A task skill supplies the workflow. CONTEXT.md and the task's explicit
+    manual or addon references supply SDK facts. This keeps skills small and
+    avoids treating a second SDK overview as an API authority.
     """
-    parts: list[str] = []
+    parts: list[str] = [f"# XR Blocks app contract\n\n{(REPO_ROOT / 'CONTEXT.md').read_text()}"]
 
     skill_md = REPO_ROOT / "skills" / skill_name / "SKILL.md"
-    if skill_md.exists():
-        parts.append(f"# {skill_name}\n\n{skill_md.read_text()}")
+    if not skill_md.is_file():
+        raise FileNotFoundError(f"task skill does not exist: {skill_md}")
+    parts.append(f"# Task skill: {skill_name}\n\n{skill_md.read_text()}")
+
+    for reference_file in reference_files:
+        reference_path = _safe_join(REPO_ROOT, reference_file, "spec.reference_files")
+        if not reference_path.is_file():
+            raise FileNotFoundError(f"task reference does not exist: {reference_path}")
+        parts.append(f"# Reference: {reference_file}\n\n{reference_path.read_text()}")
 
     return "\n\n---\n\n".join(parts)
 
@@ -88,6 +95,7 @@ def run_task(task_id: str, mode: str) -> dict:
     task_dir = _safe_join(TASKS, task_id, "task_id")
     spec = json.loads((task_dir / "spec.json").read_text())
     skill_name = spec["skill"]
+    reference_files = spec.get("reference_files", [])
     template_rel = spec["template"]
     edit_file = spec["edit_file"]
 
@@ -119,7 +127,7 @@ def run_task(task_id: str, mode: str) -> dict:
 
     system_prompt = ""
     if mode == "with-skill":
-        system_prompt = build_system_prompt(skill_name)
+        system_prompt = build_system_prompt(skill_name, reference_files)
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:

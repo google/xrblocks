@@ -11,6 +11,7 @@ export class XRButton {
   public domElement = document.createElement('div');
   public simulatorButtonElement = document.createElement('button');
   public xrButtonElement = document.createElement('button');
+  private disposed = false;
 
   constructor(
     private sessionManager: WebXRSessionManager,
@@ -40,20 +41,26 @@ export class XRButton {
 
     this.sessionManager.addEventListener(
       WebXRSessionEventType.UNSUPPORTED,
-      this.showXRNotSupported.bind(this)
+      this.onUnsupported
     );
-    this.sessionManager.addEventListener(WebXRSessionEventType.READY, () =>
-      this.onSessionReady()
+    this.sessionManager.addEventListener(
+      WebXRSessionEventType.READY,
+      this.onReady
     );
     this.sessionManager.addEventListener(
       WebXRSessionEventType.SESSION_START,
-      () => this.onSessionStarted()
+      this.onSessionStart
     );
     this.sessionManager.addEventListener(
       WebXRSessionEventType.SESSION_END,
-      this.onSessionEnded.bind(this)
+      this.onSessionEnd
     );
   }
+
+  private onUnsupported = () => this.showXRNotSupported();
+  private onReady = () => this.onSessionReady();
+  private onSessionStart = () => this.onSessionStarted();
+  private onSessionEnd = () => this.onSessionEnded();
 
   private createSimulatorButton() {
     this.simulatorButtonElement.classList.add(XRBUTTON_CLASS);
@@ -106,6 +113,7 @@ export class XRButton {
           allowVideoFallback: allowsVideoFallback,
         })
         .then((result) => {
+          if (this.disposed) return;
           if (result.granted) {
             this.sessionManager.startSession();
           } else {
@@ -123,9 +131,36 @@ export class XRButton {
 
   private async onSessionStarted() {
     this.xrButtonElement.innerHTML = this.endText;
+    this.xrButtonElement.onclick = () => {
+      void this.sessionManager.endSession();
+    };
   }
 
   private onSessionEnded() {
-    this.xrButtonElement.innerHTML = this.startText;
+    this.onSessionReady();
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.sessionManager.removeEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      this.onUnsupported
+    );
+    this.sessionManager.removeEventListener(
+      WebXRSessionEventType.READY,
+      this.onReady
+    );
+    this.sessionManager.removeEventListener(
+      WebXRSessionEventType.SESSION_START,
+      this.onSessionStart
+    );
+    this.sessionManager.removeEventListener(
+      WebXRSessionEventType.SESSION_END,
+      this.onSessionEnd
+    );
+    this.simulatorButtonElement.onclick = null;
+    this.xrButtonElement.onclick = null;
+    this.domElement.remove();
   }
 }

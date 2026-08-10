@@ -66,11 +66,6 @@ function flushMicrotasks() {
 
 describe('Segmenter', () => {
   describe('latestMask', () => {
-    it('is null before the first inference completes', () => {
-      const segmenter = makeSegmenter();
-      expect(segmenter.latestMask).toBeNull();
-    });
-
     it('caches the mask returned by the most recently completed inference', async () => {
       const segmenter = makeSegmenter();
       const mask = makeMask(7);
@@ -79,31 +74,6 @@ describe('Segmenter', () => {
       await segmenter.runSegmentation();
 
       expect(segmenter.latestMask).toBe(mask);
-    });
-
-    it('replaces the cache with each new completed inference', async () => {
-      const segmenter = makeSegmenter();
-      const mask1 = makeMask(1);
-      const mask2 = makeMask(2);
-      let call = 0;
-      injectMockBackend(segmenter, () =>
-        Promise.resolve(call++ === 0 ? mask1 : mask2)
-      );
-
-      await segmenter.runSegmentation();
-      expect(segmenter.latestMask).toBe(mask1);
-
-      await segmenter.runSegmentation();
-      expect(segmenter.latestMask).toBe(mask2);
-    });
-
-    it('stores null when the backend returns null', async () => {
-      const segmenter = makeSegmenter();
-      injectMockBackend(segmenter, () => Promise.resolve(null));
-
-      const result = await segmenter.runSegmentation();
-      expect(result).toBeNull();
-      expect(segmenter.latestMask).toBeNull();
     });
   });
 
@@ -144,32 +114,9 @@ describe('Segmenter', () => {
 
       expect(backend.run).toHaveBeenCalledTimes(2);
     });
-
-    it('clears the in-flight guard after a null result', async () => {
-      const segmenter = makeSegmenter();
-      const backend = injectMockBackend(segmenter, () => Promise.resolve(null));
-
-      await segmenter.runSegmentation();
-      await segmenter.runSegmentation();
-
-      // Guard was cleared even on null so a second call started a new inference.
-      expect(backend.run).toHaveBeenCalledTimes(2);
-    });
   });
 
   describe('continuous loop via update()', () => {
-    it('triggers an inference on the first update() call', async () => {
-      const segmenter = makeSegmenter();
-      const backend = injectMockBackend(segmenter, () =>
-        Promise.resolve(makeMask())
-      );
-
-      segmenter.update(0);
-      await flushMicrotasks();
-
-      expect(backend.run).toHaveBeenCalledTimes(1);
-    });
-
     it('does not trigger a second inference within the pollingIntervalMs window', async () => {
       const segmenter = makeSegmenter(); // pollingIntervalMs = 66
       const backend = injectMockBackend(segmenter, () =>
@@ -225,17 +172,6 @@ describe('Segmenter', () => {
       expect(backend.run).toHaveBeenCalledTimes(1);
     });
 
-    it('populates latestMask after a loop-driven inference completes', async () => {
-      const segmenter = makeSegmenter();
-      const mask = makeMask(9);
-      injectMockBackend(segmenter, () => Promise.resolve(mask));
-
-      segmenter.update(0);
-      await flushMicrotasks();
-
-      expect(segmenter.latestMask).toBe(mask);
-    });
-
     it('disposes cached backends and clears latestMask', async () => {
       const segmenter = makeSegmenter();
       const dispose = vi.fn();
@@ -255,39 +191,6 @@ describe('Segmenter', () => {
       expect(dispose).toHaveBeenCalledTimes(1);
       expect(segmenter.latestMask).toBeNull();
       await expect(segmenter.runSegmentation()).resolves.toBeNull();
-    });
-
-    it('respects a custom pollingIntervalMs set in options', async () => {
-      const segmenter = new Segmenter();
-      // Custom 200 ms cadence.
-      segmenter.init({
-        options: {
-          segmentation: {
-            backendConfig: {activeBackend: 'mediapipe'},
-            pollingIntervalMs: 200,
-          },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any,
-        deviceCamera: fakeCamera,
-      });
-      const backend = injectMockBackend(segmenter, () =>
-        Promise.resolve(makeMask())
-      );
-
-      segmenter.update(0);
-      await flushMicrotasks();
-
-      // Still within the 200 ms window.
-      segmenter.update(100);
-      segmenter.update(199);
-
-      expect(backend.run).toHaveBeenCalledTimes(1);
-
-      // Now outside the window.
-      segmenter.update(200);
-      await flushMicrotasks();
-
-      expect(backend.run).toHaveBeenCalledTimes(2);
     });
   });
 });

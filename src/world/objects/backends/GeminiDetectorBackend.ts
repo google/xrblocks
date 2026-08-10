@@ -1,5 +1,6 @@
-import {Gemini} from '../../../ai/Gemini';
 import type {ThinkingLevel} from '@google/genai';
+
+import {Gemini} from '../../../ai/Gemini';
 import {GeminiResponse} from '../../../ai/AITypes';
 import {parseBase64DataURL} from '../../../utils/utils';
 import {BaseDetectorBackend} from '../ObjectDetectorBackend';

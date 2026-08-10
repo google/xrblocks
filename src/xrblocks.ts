@@ -17,7 +17,6 @@ export * from './context/ContextOptions';
 export * from './context/scene/SceneDetector';
 export * from './context/scene/SceneOptions';
 export * from './context/shared/SemanticTypes';
-export * from './core/components/Raycaster';
 export * from './core/components/Registry';
 export * from './core/components/ScreenshotSynthesizer';
 export * from './core/components/ScriptsManager';
@@ -26,7 +25,6 @@ export * from './core/components/XRButton';
 export * from './core/components/XREffects';
 export * from './core/Core';
 export * from './core/Options';
-export * from './core/UIKitOptions';
 export * from './core/Script';
 export * from './core/User';
 export * from './StylizedFace';
@@ -61,23 +59,32 @@ export * from './input/headGestures/HeadGestureTypes';
 export * from './input/headGestures/gestureRecognizers/HeuristicHeadGestureRecognizer';
 export * from './input/Input';
 export * from './input/MouseController';
+export type {
+  InteractionSource,
+  InteractionSourceType,
+  PointerEvents,
+  ReticleMode,
+  XBObjectOptions,
+} from './interaction/InteractionTypes';
+export {Interaction} from './interaction/Interaction';
+export * from './interaction/manipulation/ManipulationTypes';
 export * from './lighting/Lighting';
 export * from './lighting/LightingOptions';
 export * from './physics/Physics';
 export * from './physics/PhysicsOptions';
-export * from './simulator/controlModes/SimulatorControlMode';
+export type {SimulatorControlMode} from './simulator/controlModes/SimulatorControlMode';
 export * from './simulator/events/SimulatorEvents';
 export * from './simulator/handPoses/HandPoseFK';
 export * from './simulator/handPoses/HandPoseJoints';
 export * from './simulator/handPoses/HandPoseRotations';
 export * from './simulator/handPoses/HandPoses';
-export * from './simulator/Simulator';
-export * from './simulator/SimulatorCamera';
-export * from './simulator/SimulatorConstants';
-export * from './simulator/SimulatorControllerState';
-export * from './simulator/SimulatorControls';
-export * from './simulator/scene/SimulatorDepth';
-export * from './simulator/scene/SimulatorDepthMaterial';
+export type {Simulator} from './simulator/Simulator';
+export type {SimulatorUserPath} from './simulator/Simulator';
+export type {SimulatorCamera} from './simulator/SimulatorCamera';
+export type {SimulatorControllerState} from './simulator/SimulatorControllerState';
+export type {SimulatorControls} from './simulator/SimulatorControls';
+export type {SimulatorDepth} from './simulator/scene/SimulatorDepth';
+export type {SimulatorDepthMaterial} from './simulator/scene/SimulatorDepthMaterial';
 export type {
   SimulatorObjectDefinition,
   SimulatorPhysicsMode,
@@ -86,21 +93,17 @@ export type {
   SimulatorSceneManifest,
   SimulatorVector3Tuple,
 } from './simulator/scene/SimulatorEnvironmentManifest';
-export * from './simulator/SimulatorHands';
-export * from './simulator/SimulatorInterface';
-export * from './simulator/SimulatorMediaDeviceInfo';
-export * from './simulator/scene/SimulatorNavMesh';
+export type {SimulatorHands} from './simulator/SimulatorHands';
+export type {SimulatorMediaDeviceInfo} from './simulator/SimulatorMediaDeviceInfo';
 export type {
   SimulatorObject,
   SimulatorObjectUpdate,
   SimulatorObjects,
 } from './simulator/scene/SimulatorObjects';
 export * from './simulator/SimulatorOptions';
-export * from './simulator/SimulatorPointerLockController';
-export * from './simulator/interfaces/ISimulatorSettingsPanelElement';
-export * from './simulator/scene/SimulatorScene';
-export * from './simulator/SimulatorUser';
-export * from './simulator/userActions/actions';
+export type {SimulatorPointerLockController} from './simulator/SimulatorPointerLockController';
+export type {SimulatorScene} from './simulator/scene/SimulatorScene';
+export type {SimulatorUser} from './simulator/SimulatorUser';
 export * from './singletons';
 export * from './sound/AudioListener';
 export * from './sound/AudioPlayer';
@@ -113,36 +116,13 @@ export * from './sound/SpatialAudio';
 export * from './sound/SpeechRecognizer';
 export * from './sound/SpeechSynthesizer';
 export * from './stereo/utils';
-export * from './ui/components/ExitButton';
-export * from './ui/components/IconButton';
-export * from './ui/components/IconView';
-export * from './ui/components/ImageView';
-export * from './ui/components/LabelView';
-export * from './ui/components/MaterialSymbolsView';
-export * from './ui/components/ScrollingTroikaTextView';
-export * from './ui/components/TextButton';
-export * from './ui/components/TextView';
-export * from './ui/components/VideoView';
-export * from './ui/core/Panel';
-export * from './ui/core/PanelMesh';
-export * from './ui/core/Reticle';
-export * from './ui/core/View';
-export * from './ui/interaction/AnimatableNumber';
-export * from './ui/interaction/FreestandingSlider';
-export * from './ui/interaction/ModelViewer';
-export * from './ui/interaction/SketchPanel';
-export * from './ui/layouts/Col';
-export * from './ui/layouts/Grid';
-export * from './ui/layouts/HorizontalPager';
-export * from './ui/layouts/Orbiter';
-export * from './ui/layouts/PageIndicator';
-export * from './ui/layouts/Pager';
-export * from './ui/layouts/PagerState';
-export * from './ui/layouts/Row';
-export * from './ui/layouts/SpatialPanel';
-export * from './ui/layouts/TextScrollerState';
-export * from './ui/layouts/VerticalPager';
-export * from './ui/UI';
+export * from './placement/FaceCamera';
+export * from './placement/FollowHead';
+export * from './placement/FollowObject';
+export * from './placement/Orbit';
+export {TransformScript} from './placement/TransformScript';
+export * from './placement/VisibilityTransition';
+export * from './ui/index';
 export * from './utils/BVHRaycast';
 export * from './utils/DependencyInjection';
 export * from './utils/HelperConstants';
@@ -155,8 +135,6 @@ export * from './utils/SceneGraphUtils';
 export * from './utils/SparkRendererHolder';
 export * from './utils/Types';
 export * from './utils/utils';
-export * from './ux/DragManager';
-export * from './ux/UX';
 export * from './video/VideoFileStream';
 export * from './video/VideoStream';
 export * from './world/mesh/DetectedMesh';
@@ -181,20 +159,3 @@ export * from './world/faces/FacesOptions';
 export * from './world/segmentation/SegmentationMask';
 export * from './world/segmentation/Segmenter';
 export * from './world/segmentation/SegmentationOptions';
-
-export type {IconButtonOptions} from './ui/components/IconButton';
-export type {IconViewOptions} from './ui/components/IconView';
-export type {ImageViewOptions} from './ui/components/ImageView';
-export type {LabelViewOptions} from './ui/components/LabelView';
-export type {ScrollingTroikaTextViewOptions} from './ui/components/ScrollingTroikaTextView';
-export type {TextButtonOptions} from './ui/components/TextButton';
-export type {TextViewOptions} from './ui/components/TextView';
-export type {VideoViewOptions} from './ui/components/VideoView';
-export type {PanelOptions} from './ui/core/PanelOptions';
-export type {ViewOptions} from './ui/core/ViewOptions';
-export type {ColOptions} from './ui/layouts/Col';
-export type {GridOptions} from './ui/layouts/Grid';
-export type {PagerOptions} from './ui/layouts/Pager';
-export type {RowOptions} from './ui/layouts/Row';
-export type {SpatialPanelOptions} from './ui/layouts/SpatialPanel';
-export type {UIJsonNode, UIJsonNodeOptions} from './ui/UI';

@@ -1,0 +1,433 @@
+import {cloneUIStyle} from './UIElement';
+import type {UIElementKind, UIStyle} from './UIElement';
+
+export type UIThemeStyleRole =
+  | 'surface'
+  | Exclude<UIElementKind, 'card' | 'overlay'>;
+
+export interface UIThemeColors {
+  readonly surface: string;
+  readonly raisedSurface: string;
+  readonly primary: string;
+  readonly primaryText: string;
+  readonly text: string;
+  readonly secondaryText: string;
+  readonly outline: string;
+  readonly disabledSurface: string;
+  readonly disabledText: string;
+}
+
+/** UIKit-facing styles applied before an element's own style. */
+export type UIThemeStyles = Readonly<
+  Partial<Record<UIThemeStyleRole, Readonly<UIStyle>>>
+>;
+
+export interface UITheme {
+  readonly colors: UIThemeColors;
+  readonly borderRadius: number;
+  readonly styles?: UIThemeStyles;
+}
+
+export interface UIThemeUpdate {
+  readonly colors?: Partial<UIThemeColors>;
+  readonly borderRadius?: number;
+  readonly styles?: UIThemeStyles;
+}
+
+export type UIThemePresetName =
+  | 'grayGlass'
+  | 'colorful'
+  | 'glimmer'
+  | 'glimmerOpaque'
+  | 'glimmerAmber'
+  | 'glimmerGreen';
+
+const COLOR_PROPERTIES = [
+  'surface',
+  'raisedSurface',
+  'primary',
+  'primaryText',
+  'text',
+  'secondaryText',
+  'outline',
+  'disabledSurface',
+  'disabledText',
+] as const satisfies readonly (keyof UIThemeColors)[];
+
+const COLOR_PROPERTY_SET = new Set<string>(COLOR_PROPERTIES);
+const THEME_PROPERTIES = new Set(['colors', 'borderRadius', 'styles']);
+const UI_THEME_STYLE_ROLES = new Set<UIThemeStyleRole>([
+  'surface',
+  'panel',
+  'text',
+  'button',
+  'slider',
+  'image',
+  'icon',
+]);
+
+export const grayGlassTheme = createThemeSnapshot({
+  colors: {
+    surface: 'rgba(5, 5, 5, 0.6)',
+    raisedSurface: 'rgba(255, 255, 255, 0.08)',
+    primary: '#61dafb',
+    primaryText: '#282c34',
+    text: '#ffffff',
+    secondaryText: '#aab2c0',
+    outline: 'rgba(255, 255, 255, 0.18)',
+    disabledSurface: '#282c3466',
+    disabledText: '#aab2c0',
+  },
+  borderRadius: 32,
+  styles: {
+    surface: {
+      backgroundColor: {
+        gradientType: 'linear',
+        rotation: 90,
+        stops: [
+          {position: 0, color: 'rgba(55, 55, 65, 0.75)'},
+          {position: 0.4, color: 'rgba(32, 32, 38, 0.80)'},
+          {position: 1, color: 'rgba(18, 18, 22, 0.85)'},
+        ],
+      },
+      borderColor: {
+        gradientType: 'linear',
+        rotation: 90,
+        stops: [
+          {position: 0, color: 'rgba(255, 255, 255, 0.42)'},
+          {position: 0.5, color: 'rgba(255, 255, 255, 0.14)'},
+          {position: 1, color: 'rgba(255, 255, 255, 0.22)'},
+        ],
+      },
+      borderWidth: 1.5,
+      borderRadius: 32,
+      padding: 24,
+      gap: 16,
+      innerShadowColor: 'rgba(150, 150, 150, 0.05)',
+      innerShadowBlur: 24,
+    },
+    button: {
+      height: 46,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 10,
+      paddingLeft: 20,
+      paddingRight: 20,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      color: '#ffffff',
+      borderColor: 'rgba(255, 255, 255, 0.18)',
+      borderWidth: 1.5,
+      borderRadius: 23,
+      ':hover': {backgroundColor: 'rgba(255, 255, 255, 0.14)'},
+      ':disabled': {
+        backgroundColor: '#282c3466',
+        color: '#aab2c0',
+      },
+    },
+    text: {
+      color: '#ffffff',
+    },
+  },
+});
+
+export const colorfulTheme = createThemeSnapshot({
+  colors: {
+    surface: 'rgba(10, 17, 31, 0.96)',
+    raisedSurface: 'rgba(22, 35, 58, 0.96)',
+    primary: '#22d3ee',
+    primaryText: '#111827',
+    text: '#f8fafc',
+    secondaryText: '#cbd5e1',
+    outline: '#8ff0df',
+    disabledSurface: 'rgba(71, 85, 105, 0.45)',
+    disabledText: '#94a3b8',
+  },
+  borderRadius: 32,
+  styles: {
+    surface: {
+      backgroundColor: 'rgba(10, 17, 31, 0.96)',
+      borderColor: '#8ff0df',
+      borderWidth: 3,
+      borderRadius: 32,
+      padding: 24,
+      gap: 16,
+    },
+    button: {
+      height: 46,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 10,
+      paddingLeft: 20,
+      paddingRight: 20,
+      backgroundColor: '#233653',
+      color: '#f8fafc',
+      borderColor: '#8ff0df',
+      borderWidth: 2,
+      borderRadius: 22,
+      ':hover': {backgroundColor: '#315274'},
+      ':active': {backgroundColor: '#7c3aed'},
+      ':disabled': {
+        backgroundColor: 'rgba(71, 85, 105, 0.45)',
+        color: '#94a3b8',
+      },
+    },
+    text: {
+      color: '#f8fafc',
+    },
+  },
+});
+
+export const glimmerTheme = createGlimmerTheme({
+  surface: 'rgba(5, 5, 5, 0.65)',
+  raisedSurface: 'rgba(255, 255, 255, 0.08)',
+  primary: '#3b82f6',
+  secondaryText: 'rgba(255, 255, 255, 0.85)',
+  outline: 'rgba(255, 255, 255, 0.35)',
+  disabledSurface: 'rgba(255, 255, 255, 0.04)',
+  disabledText: 'rgba(255, 255, 255, 0.4)',
+  borderStops: [
+    'rgba(255, 255, 255, 0.5)',
+    'rgba(255, 255, 255, 0.25)',
+    'rgba(255, 255, 255, 0.35)',
+  ],
+  buttonHover: '#2563eb',
+  buttonActive: '#1d4ed8',
+  buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
+});
+
+export const glimmerOpaqueTheme = createGlimmerTheme({
+  surface: 'rgba(15, 23, 42, 0.96)',
+  raisedSurface: 'rgba(30, 41, 59, 0.96)',
+  primary: '#3b82f6',
+  secondaryText: '#cbd5e1',
+  outline: 'rgba(255, 255, 255, 0.35)',
+  disabledSurface: 'rgba(51, 65, 85, 0.5)',
+  disabledText: '#94a3b8',
+  borderStops: [
+    'rgba(255, 255, 255, 0.5)',
+    'rgba(255, 255, 255, 0.25)',
+    'rgba(255, 255, 255, 0.35)',
+  ],
+  buttonHover: '#2563eb',
+  buttonActive: '#1d4ed8',
+});
+
+export const glimmerAmberTheme = createGlimmerTheme({
+  surface: 'rgba(25, 18, 5, 0.75)',
+  raisedSurface: 'rgba(255, 193, 7, 0.12)',
+  primary: '#f59e0b',
+  secondaryText: 'rgba(255, 255, 255, 0.85)',
+  outline: 'rgba(251, 191, 36, 0.45)',
+  disabledSurface: 'rgba(255, 255, 255, 0.04)',
+  disabledText: 'rgba(255, 255, 255, 0.4)',
+  borderStops: [
+    'rgba(251, 191, 36, 0.55)',
+    'rgba(251, 191, 36, 0.25)',
+    'rgba(251, 191, 36, 0.35)',
+  ],
+  buttonHover: '#d97706',
+  buttonActive: '#b45309',
+  buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
+});
+
+export const glimmerGreenTheme = createGlimmerTheme({
+  surface: 'rgba(5, 20, 10, 0.75)',
+  raisedSurface: 'rgba(16, 185, 129, 0.12)',
+  primary: '#10b981',
+  secondaryText: 'rgba(255, 255, 255, 0.85)',
+  outline: 'rgba(52, 211, 153, 0.45)',
+  disabledSurface: 'rgba(255, 255, 255, 0.04)',
+  disabledText: 'rgba(255, 255, 255, 0.4)',
+  borderStops: [
+    'rgba(52, 211, 153, 0.55)',
+    'rgba(52, 211, 153, 0.25)',
+    'rgba(52, 211, 153, 0.35)',
+  ],
+  buttonHover: '#059669',
+  buttonActive: '#047857',
+  buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
+});
+
+export const uiThemePresets: Readonly<Record<UIThemePresetName, UITheme>> =
+  Object.freeze({
+    grayGlass: grayGlassTheme,
+    colorful: colorfulTheme,
+    glimmer: glimmerTheme,
+    glimmerOpaque: glimmerOpaqueTheme,
+    glimmerAmber: glimmerAmberTheme,
+    glimmerGreen: glimmerGreenTheme,
+  });
+
+export const defaultTheme: UITheme = grayGlassTheme;
+
+/** Creates a detached, deeply frozen theme snapshot. */
+export function createThemeSnapshot(value: UITheme): UITheme {
+  validateRecord(value, 'UI theme');
+  validateThemeProperties(value);
+  const colors = cloneColors(value.colors, false) as UIThemeColors;
+  const borderRadius = validateBorderRadius(value.borderRadius);
+  const styles =
+    value.styles === undefined ? undefined : cloneThemeStyles(value.styles);
+  return deepFreeze({colors, borderRadius, ...(styles ? {styles} : undefined)});
+}
+
+/** Applies a partial update and returns one new immutable snapshot. */
+export function updateThemeSnapshot(
+  theme: UITheme,
+  update: UIThemeUpdate
+): UITheme {
+  validateRecord(update, 'UI theme update');
+  validateThemeProperties(update);
+  const colors =
+    update.colors === undefined
+      ? theme.colors
+      : {...theme.colors, ...cloneColors(update.colors, true)};
+  return createThemeSnapshot({
+    colors,
+    borderRadius:
+      update.borderRadius === undefined
+        ? theme.borderRadius
+        : update.borderRadius,
+    styles: update.styles === undefined ? theme.styles : update.styles,
+  });
+}
+
+interface GlimmerThemeOptions {
+  readonly surface: string;
+  readonly raisedSurface: string;
+  readonly primary: string;
+  readonly secondaryText: string;
+  readonly outline: string;
+  readonly disabledSurface: string;
+  readonly disabledText: string;
+  readonly borderStops: readonly [string, string, string];
+  readonly buttonHover: string;
+  readonly buttonActive: string;
+  readonly buttonDisabledSurface?: string;
+}
+
+function createGlimmerTheme(options: GlimmerThemeOptions): UITheme {
+  return createThemeSnapshot({
+    colors: {
+      surface: options.surface,
+      raisedSurface: options.raisedSurface,
+      primary: options.primary,
+      primaryText: '#ffffff',
+      text: '#ffffff',
+      secondaryText: options.secondaryText,
+      outline: options.outline,
+      disabledSurface: options.disabledSurface,
+      disabledText: options.disabledText,
+    },
+    borderRadius: 32,
+    styles: {
+      surface: {
+        backgroundColor: options.surface,
+        borderColor: {
+          gradientType: 'linear',
+          rotation: 90,
+          stops: [
+            {position: 0, color: options.borderStops[0]},
+            {position: 0.5, color: options.borderStops[1]},
+            {position: 1, color: options.borderStops[2]},
+          ],
+        },
+        borderWidth: 2,
+        borderRadius: 32,
+        padding: 22,
+        gap: 12,
+        innerShadowColor: 'rgba(150, 150, 150, 0.05)',
+        innerShadowBlur: 32,
+      },
+      button: {
+        height: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingLeft: 16,
+        paddingRight: 16,
+        backgroundColor: options.primary,
+        color: '#ffffff',
+        borderWidth: 0,
+        borderRadius: 16,
+        ':hover': {backgroundColor: options.buttonHover},
+        ':active': {backgroundColor: options.buttonActive},
+        ':disabled': {
+          backgroundColor:
+            options.buttonDisabledSurface ?? options.disabledSurface,
+          color: options.disabledText,
+        },
+      },
+      text: {
+        color: '#ffffff',
+      },
+    },
+  });
+}
+
+function cloneColors(
+  value: unknown,
+  partial: boolean
+): UIThemeColors | Partial<UIThemeColors> {
+  validateRecord(value, 'UI theme colors');
+  const colors = value as Record<string, unknown>;
+  for (const [property, color] of Object.entries(colors)) {
+    if (!COLOR_PROPERTY_SET.has(property) || typeof color !== 'string') {
+      throw new Error(`Invalid UI theme color "${property}".`);
+    }
+  }
+  if (!partial) {
+    for (const property of COLOR_PROPERTIES) {
+      if (typeof colors[property] !== 'string') {
+        throw new Error(`Invalid UI theme color "${property}".`);
+      }
+    }
+  }
+  return {...colors} as Partial<UIThemeColors>;
+}
+
+function cloneThemeStyles(value: unknown): UIThemeStyles {
+  validateRecord(value, 'UI theme styles');
+  const styles: Partial<Record<UIThemeStyleRole, Readonly<UIStyle>>> = {};
+  for (const [kind, style] of Object.entries(
+    value as Record<string, unknown>
+  )) {
+    if (!UI_THEME_STYLE_ROLES.has(kind as UIThemeStyleRole)) {
+      throw new Error(`Invalid UI theme style kind "${kind}".`);
+    }
+    styles[kind as UIThemeStyleRole] = cloneUIStyle(style as UIStyle);
+  }
+  return styles;
+}
+
+function validateThemeProperties(value: object): void {
+  for (const property of Object.keys(value)) {
+    if (!THEME_PROPERTIES.has(property)) {
+      throw new Error(`Invalid UI theme property "${property}".`);
+    }
+  }
+}
+
+function validateBorderRadius(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error('Invalid UI theme property "borderRadius".');
+  }
+  return value;
+}
+
+function validateRecord(value: unknown, name: string): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${name} must be an object.`);
+  }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
+}

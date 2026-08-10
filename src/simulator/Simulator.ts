@@ -9,6 +9,7 @@ import {Options} from '../core/Options';
 import {Script} from '../core/Script';
 import {Depth} from '../depth/Depth';
 import {Input} from '../input/Input';
+import {Interaction} from '../interaction/Interaction';
 import {Physics} from '../physics/Physics';
 
 import {SimulatorCamera} from './SimulatorCamera';
@@ -18,7 +19,7 @@ import {SimulatorControls} from './SimulatorControls';
 import {SimulatorDepth} from './scene/SimulatorDepth';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
-import {SimulatorNavMesh} from './scene/SimulatorNavMesh';
+import {SimulatorNavMesh} from './internal/navmesh/SimulatorNavMesh';
 import {SimulatorOptions} from './SimulatorOptions';
 import type {SimulatorEnvironment} from './SimulatorOptions';
 import {SimulatorScene} from './scene/SimulatorScene';
@@ -34,10 +35,16 @@ import {SimulatorWorld} from './scene/SimulatorWorld';
 import {SparkRendererHolder} from '../utils/SparkRendererHolder';
 import {World} from '../world/World';
 
+export interface SimulatorUserPath {
+  target: THREE.Vector3;
+  path: THREE.Vector3[];
+}
+
 export class Simulator extends Script {
-  static dependencies = {
+  private static readonly dependencies = {
     simulatorOptions: SimulatorOptions,
     input: Input,
+    interaction: Interaction,
     timer: THREE.Timer,
     camera: THREE.Camera,
     renderer: THREE.WebGLRenderer,
@@ -50,7 +57,7 @@ export class Simulator extends Script {
   editorIcon = 'simulation';
   simulatorScene = new SimulatorScene();
   simulatorWorld = new SimulatorWorld();
-  navMesh = new SimulatorNavMesh();
+  private readonly navMesh = new SimulatorNavMesh();
   private simulatorObjects = new SimulatorObjectsManager();
   objects: SimulatorObjects = this.simulatorObjects;
   private environment?: SimulatorEnvironmentManager;
@@ -84,7 +91,7 @@ export class Simulator extends Script {
 
   simulatorCamera?: SimulatorCamera;
   options!: SimulatorOptions;
-  renderer!: THREE.WebGLRenderer;
+  renderer?: THREE.WebGLRenderer;
   mainCamera!: THREE.Camera;
   mainScene!: THREE.Scene;
 
@@ -95,6 +102,7 @@ export class Simulator extends Script {
   private registry?: Registry;
   private world?: World;
   private objectDetectionSource?: SimulatorObjectDetectionSource;
+  private deviceCamera?: XRDeviceCamera;
   private useSimulatorObjectDetection = false;
 
   constructor(
@@ -104,9 +112,22 @@ export class Simulator extends Script {
     this.add(this.simulatorUser);
   }
 
+  get userMovementConstrained() {
+    return this.navMesh.constrained;
+  }
+
+  moveUser(desiredCameraPosition: THREE.Vector3) {
+    this.navMesh.applyUserMovement(this.mainCamera, desiredCameraPosition);
+  }
+
+  findRandomUserPath(): SimulatorUserPath | null {
+    return this.navMesh.findRandomPathFrom(this.mainCamera.position);
+  }
+
   async init({
     simulatorOptions,
     input,
+    interaction,
     timer,
     camera,
     renderer,
@@ -118,6 +139,7 @@ export class Simulator extends Script {
   }: {
     simulatorOptions: SimulatorOptions;
     input: Input;
+    interaction: Interaction;
     timer: THREE.Timer;
     camera: THREE.Camera;
     renderer: THREE.WebGLRenderer;
@@ -130,6 +152,7 @@ export class Simulator extends Script {
     if (this.initialized) return;
     // Get optional dependencies from the registry.
     const deviceCamera = registry.get(XRDeviceCamera);
+    this.deviceCamera = deviceCamera;
     const physics = registry.get(Physics);
     this.simulatorPhysics =
       physics && simulatorOptions.physics.enabled
@@ -168,7 +191,7 @@ export class Simulator extends Script {
     }
     await this.environment.setEnvironment(initialEnvironment);
     await this.environment.resolveEnvironmentNames(this.options.environments);
-    this.userInterface.init(
+    await this.userInterface.init(
       simulatorOptions,
       this.controls,
       this.hands,
@@ -192,7 +215,14 @@ export class Simulator extends Script {
       camera,
       simulatorOptions,
     });
-    this.controls.init({camera, input, timer, renderer, simulatorOptions});
+    this.controls.init({
+      camera,
+      input,
+      interaction,
+      timer,
+      renderer,
+      simulatorOptions,
+    });
     if (
       deviceCamera &&
       !this.simulatorCamera &&
@@ -290,18 +320,58 @@ export class Simulator extends Script {
   }
 
   override dispose() {
-    this.world?.objects?.setSimulatorSource(undefined);
-    this.environment?.dispose();
-    this.environment = undefined;
-    this.simulatorPhysics?.dispose();
-    this.simulatorPhysics = undefined;
-    this.setVideoPath(undefined);
-    this.virtualSceneFullScreenQuad?.material?.dispose();
-    this.virtualSceneFullScreenQuad?.dispose();
-    this.virtualSceneFullScreenQuad = undefined;
-    this.virtualSceneRenderTarget?.dispose();
-    this.virtualSceneRenderTarget = undefined;
+    let firstError: unknown;
+    const cleanups = [
+      () => this.controls.dispose(),
+      () => this.userInterface.dispose(),
+      () => this.hands.dispose(),
+      () => this.depth.dispose(),
+      () => {
+        const deviceCamera = this.deviceCamera;
+        this.deviceCamera = undefined;
+        deviceCamera?.registerSimulatorCamera(undefined);
+      },
+      () => {
+        const simulatorCamera = this.simulatorCamera;
+        this.simulatorCamera = undefined;
+        simulatorCamera?.dispose();
+      },
+      () => this.world?.objects?.setSimulatorSource(undefined),
+      () => {
+        const environment = this.environment;
+        this.environment = undefined;
+        environment?.dispose();
+      },
+      () => {
+        const simulatorPhysics = this.simulatorPhysics;
+        this.simulatorPhysics = undefined;
+        simulatorPhysics?.dispose();
+      },
+      () => this.setVideoPath(undefined),
+      () => {
+        const quad = this.virtualSceneFullScreenQuad;
+        this.virtualSceneFullScreenQuad = undefined;
+        quad?.material?.dispose();
+        quad?.dispose();
+      },
+      () => {
+        const target = this.virtualSceneRenderTarget;
+        this.virtualSceneRenderTarget = undefined;
+        target?.dispose();
+      },
+    ];
+    for (const cleanup of cleanups) {
+      try {
+        cleanup();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+    this.effects = undefined;
+    this.renderDepthPass = false;
+    this.renderer = undefined;
     this.initialized = false;
+    if (firstError !== undefined) throw firstError;
   }
 
   simulatorUpdate() {
@@ -358,7 +428,7 @@ export class Simulator extends Script {
 
   // Called by core when the simulator is running.
   renderScene() {
-    if (!this.renderer) return;
+    if (!this.initialized || !this.renderer) return;
     if (!this.options.renderToRenderTexture) return;
     // Allocate a new render target if the resolution changes.
     if (
@@ -390,11 +460,13 @@ export class Simulator extends Script {
   // Then composites the virtual render with the simulator render.
   // Called by core after renderScene.
   renderSimulatorScene() {
+    const renderer = this.renderer;
+    if (!this.initialized || !renderer) return;
     this.onBeforeSimulatorSceneRender();
     this.renderSimulatorSceneToCanvas(this.getRenderCamera());
     this.onSimulatorSceneRendered();
     if (this.options.renderToRenderTexture) {
-      this.virtualSceneFullScreenQuad!.render(this.renderer);
+      this.virtualSceneFullScreenQuad!.render(renderer);
     } else {
       // Temporary workaround since splats look faded when rendered to a render
       // texture.
@@ -403,15 +475,17 @@ export class Simulator extends Script {
   }
 
   private renderSimulatorSceneToCanvas(camera: THREE.Camera) {
+    const renderer = this.renderer;
+    if (!renderer) return;
     if (this.sparkRenderer) {
       this.sparkRenderer.encodeLinear = false;
     }
-    this.renderer.setRenderTarget(null);
+    renderer.setRenderTarget(null);
     if (this.backgroundVideoQuad) {
-      this.backgroundVideoQuad.render(this.renderer);
+      this.backgroundVideoQuad.render(renderer);
     }
-    this.renderer.render(this.simulatorScene, camera);
-    this.renderer.clearDepth();
+    renderer.render(this.simulatorScene, camera);
+    renderer.clearDepth();
   }
 
   private setVideoPath(path?: string) {

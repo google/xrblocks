@@ -3,85 +3,179 @@ sidebar_position: 11
 title: Model Viewer
 ---
 
-The [`ModelViewer`](/api/classes/ModelViewer) class provides a convenient way to display 3D models in the scene and provide standard interactions for moving, rotating, and scaling the 3D model similar to [ARCore Scene Viewer](https://developers.google.com/ar/develop/scene-viewer).
-See [`DragManager`](DragManager.md) for details about these interactions.
+# Model Viewer
 
-## Usage
+[`ModelViewer`](/api/classes/ModelViewer) loads and presents one glTF, GLB, or
+Gaussian splat model. It can also present an existing `THREE.Object3D`. The
+viewer normalizes origin, records local bounds, and supplies standard move,
+rotate, and scale interaction without exposing its private hit meshes.
 
-Model Viewer can be used with a GLTF model file or an existing [`THREE.Object3D`](https://threejs.org/docs/#api/en/core/Object3D) object.
+## Load a model
 
-### Loading a GLTF Model
-
-To load a GLTF model, call `loadGLTFModel` with an options object providing the path and model filename.
-Internally, this will load the GLTF model using [`GLTFLoader`](https://threejs.org/docs/#examples/en/loaders/GLTFLoader) with [`DracoLoader`](https://threejs.org/docs/#examples/en/loaders/DRACOLoader) and [`KTX2Loader`](https://threejs.org/docs/#examples/en/loaders/KTX2Loader) addons.
-
-Once loaded, the model viewer will have a `gltf` property and add the `gltf.scene` as a child.
+Add the viewer to the scene before awaiting `load()` so its engine dependencies
+are initialized:
 
 ```js
-const model = new xb.ModelViewer({});
-this.add(model);
-await model.loadGLTFModel({
-  data: {
-    scale: {x: 0.015, y: 0.015, z: 0.015},
-    path: './',
-    model: 'chess_compressed.glb',
-  },
-  renderer: xb.core.renderer,
-});
-```
+class ModelScene extends xb.Script {
+  async init() {
+    this.add(new THREE.HemisphereLight(0xffffff, 0x555555, 3));
 
-### Adding an existing Object3D
+    const viewer = new xb.ModelViewer({
+      origin: 'bottom-center',
+      manipulation: true,
+      autoplay: true,
+      occlusion: false,
+    });
+    viewer.position.set(0, 0.7, -1.2);
+    this.add(viewer);
 
-If you have an existing loaded `THREE.Object3D` object, it can be added as a child of the `ModelViewer` object.
-In this case, the model viewer will require some setup to make it interactable.
-After adding the object or objects, please call `setupBoundingBox`.
-Then call `setupRaycastCylinder` or `setupRaycastBox` to enable raycasting to the ModelViewer and `setupPlatform` to add a platform below the model.
-
-```js
-const model = new xb.ModelViewer({});
-model.add(
-  new THREE.Mesh(
-    new THREE.CylinderGeometry(0.15, 0.15, 0.4),
-    new THREE.MeshPhongMaterial({color: 0xdb5461})
-  )
-);
-model.setupBoundingBox();
-model.setupRaycastCylinder();
-model.setupPlatform();
-this.add(model);
-```
-
-### Loading a Gaussian splat
-
-`ModelViewer` can load `.spz` Gaussian splats when the optional
-`@sparkjsdev/spark` dependency is available:
-
-```js
-const model = new xb.ModelViewer({castShadow: false, receiveShadow: false});
-this.add(model);
-await model.loadSplatModel({
-  data: {
-    model: './scene.spz',
-    scale: {x: 0.6, y: 0.6, z: 0.6},
-  },
-});
-```
-
-### Placing a model on a detected surface
-
-Wait until XR or the simulator has started before placing against detected
-world geometry:
-
-```js
-onXRSessionStarted() {
-  return xb.world.placeOnHorizontalSurface(this.model, {seconds: 30});
-}
-
-onSimulatorStarted() {
-  return this.onXRSessionStarted();
+    await viewer.load({
+      url: 'models/Cat/cat.gltf',
+      path: 'https://cdn.jsdelivr.net/gh/xrblocks/assets@main/',
+      scale: 0.5,
+      rotation: {x: 0, y: Math.PI, z: 0},
+    });
+  }
 }
 ```
 
-### Sample
+`load()` accepts a URL string or a `ModelSource` object. Supported extensions
+are `.gltf`, `.glb`, `.ply`, `.spz`, `.splat`, and `.ksplat`. Rotation values
+are radians. `path` is only for glTF related-resource resolution.
 
-See [`/samples/modelviewer/`](/samples/ModelViewer) for a sample of model viewer with both a GLTF model and a loaded three.js object.
+Splat models require `@sparkjsdev/spark` in the application dependency graph.
+
+## Transform and scale pipeline
+
+The viewer applies transforms in this order:
+
+```text
+source file transforms
+  -> ModelSource scale and rotation
+  -> local bounds calculation
+  -> origin alignment translation
+  -> ModelViewer local transform
+  -> ancestor transforms
+  -> world-space rendered size
+```
+
+These scale concepts are different:
+
+| Layer                             | Owner                          | Effect                                                    |
+| --------------------------------- | ------------------------------ | --------------------------------------------------------- |
+| Authored asset units              | glTF or splat file             | Establishes the source dimensions                         |
+| `ModelSource.scale`               | Loaded content root            | Normalizes asset units before bounds and origin alignment |
+| Animated node scale               | glTF animation                 | Changes animated hierarchy nodes after load               |
+| `viewer.scale` and ancestor scale | Scene hierarchy                | Changes the complete presented viewer in world space      |
+| Manipulation scale                | User interaction on the viewer | Updates viewer hierarchy scale within configured limits   |
+
+Use `ModelSource.scale` to correct the asset's authored units or orientation.
+Use the viewer transform for application placement and user-controlled physical
+size. XR Blocks does not currently provide a meter-based `fit()` operation or a
+physical-width option. Measure `viewer.boundingBox`, compute the required scale,
+and set `viewer.scale` when the application needs a specific world size.
+
+For example, fit the loaded local height to 0.8 meters before ancestor scaling:
+
+```js
+const size = viewer.boundingBox.getSize(new THREE.Vector3());
+if (size.y > 0) viewer.scale.setScalar(0.8 / size.y);
+```
+
+## Origin alignment
+
+`origin` controls the content root after asset transform and bounds calculation:
+
+| Origin          | Result                                                                              |
+| --------------- | ----------------------------------------------------------------------------------- |
+| `bottom-center` | Places the horizontal center at local X/Z zero and the lowest bound at local Y zero |
+| `center`        | Places the bounds center at local origin                                            |
+| `source`        | Preserves the transformed source origin                                             |
+
+Origin alignment changes the loaded content below the viewer. It does not move
+the viewer object itself.
+
+## Bounds and non-Mesh content
+
+`viewer.boundingBox` is the normalized local box captured when content loads or
+is set. It is the contract applications should inspect. Do not assume the
+presented content is one `THREE.Mesh`: glTF roots are object hierarchies and
+splat renderables have their own bounds path.
+
+Three.js hierarchy bounds depend on renderable children with computable
+geometry bounds. Custom shaders, procedural rendering, empty groups, helpers,
+and renderables without geometry bounds can produce an empty box. When bounds
+are empty, the viewer cannot create bounds-derived interaction proxies or
+calculate a physical fit. Supply a bounded wrapper or manage interaction in a
+dedicated `Script` for that content.
+
+The captured box does not automatically expand for later animation extremes or
+arbitrary hierarchy edits. Recreate or reload the presentation when the app
+needs new canonical bounds.
+
+## Present an existing object
+
+```js
+const viewer = new xb.ModelViewer({origin: 'center'});
+viewer.setContent(new THREE.Mesh(geometry, material));
+viewer.position.set(0, 1.2, -1);
+this.add(viewer);
+```
+
+`setContent()` replaces the active presentation and aligns its current bounds.
+The caller retains ownership of geometry, materials, and textures supplied this
+way. The viewer removes the object when it is replaced or disposed but does not
+dispose caller-owned resources.
+
+Models loaded through `load()` are viewer-owned and are disposed when replaced
+or when the viewer is disposed.
+
+## Animation
+
+```js
+viewer.playAnimation();
+viewer.playAnimation({once: true});
+```
+
+`playAnimation()` restarts every clip stored in the loaded glTF. `autoplay`
+starts all clips after load. Applications that require named clip selection or
+independent animation ownership should load and own the glTF in a dedicated
+`Script`.
+
+Animation node transforms and viewer manipulation are separate hierarchy
+layers. Manipulation changes the viewer; animation continues inside the loaded
+content root.
+
+## Interaction ownership
+
+`manipulation: true` enables move, Y-axis rotate, and scale. The viewer creates
+private bounds-derived surfaces for translation and rotation and registers them
+as physical surfaces whose logical target is the public `ModelViewer`.
+
+```js
+viewer.manipulation = {
+  actions: {rotate: {axis: 'y'}},
+  handle: {action: 'rotate'},
+};
+```
+
+Event code sees the viewer through the public `event.target` and
+`event.surface` contract. XR Blocks normalizes private proxy hits to the viewer;
+do not traverse or retain private proxy children.
+
+Set `manipulation: false` when another object owns interaction. Read
+[Interaction and Manipulation](Interaction.md) for concurrent owners,
+two-source scale, event phases, and cancellation.
+
+## Placement and occlusion
+
+Place and manipulate the `ModelViewer` root, not the loaded content root. Use
+[Placement scripts](Placement.md) when the viewer must follow, face, or orbit a
+target. Direct placement scripts suspend and rebase during manipulation.
+
+Set `occlusion: true` only with depth enabled. The viewer registers supported
+loaded glTF materials with the depth occlusion system. Splat and arbitrary
+caller-owned material behavior can require a separate rendering path.
+
+For complete examples, see the [Model Viewer sample](/samples/ModelViewer) and
+`samples/spatial_ui/modelviewer`.
