@@ -3,12 +3,7 @@ import * as THREE from 'three';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {setUIValidator, ui} from '../UI';
-import {
-  collectUIRoots,
-  getUIElementKind,
-  getUIStructureRevision,
-  type UIElement,
-} from '../UIElement';
+import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
   UIBackend,
   UIBackendModule,
@@ -24,11 +19,9 @@ import {
 interface MountRecord {
   readonly root: UIElement;
   readonly mount: UIMount;
-  structureRevision: number;
   unregisterHits: (() => void)[];
   visible: boolean;
   connected: boolean;
-  needsSync: boolean;
   order: number;
 }
 
@@ -56,7 +49,6 @@ export class UIRenderer {
   private backendState: BackendState = {kind: 'idle'};
   private renderer?: THREE.WebGLRenderer;
   private publicScene?: THREE.Scene;
-  private themeRevision = -1;
 
   constructor(
     private readonly interaction: Interaction,
@@ -114,11 +106,9 @@ export class UIRenderer {
       const record = this.mounts.get(root);
       if (record && !record.connected) {
         record.connected = true;
-        record.needsSync = true;
       }
       if (record && record.order !== order) {
         record.order = order;
-        record.needsSync = true;
       }
     }
     if (roots.length === 0) return;
@@ -150,9 +140,6 @@ export class UIRenderer {
   present(): void {
     for (const record of this.mounts.values()) {
       if (!record.connected) continue;
-      if (record.structureRevision !== getUIStructureRevision(record.root)) {
-        continue;
-      }
       record.mount.present(this.presentationStateFor);
     }
   }
@@ -169,7 +156,6 @@ export class UIRenderer {
     if (backendState.kind === 'ready') backendState.backend.dispose();
     this.roots.length = 0;
     this.connectedRoots.clear();
-    this.themeRevision = -1;
     this.viewport.width = 0;
     this.viewport.height = 0;
     setUIValidator(undefined);
@@ -220,11 +206,9 @@ export class UIRenderer {
     this.mounts.set(root, {
       root,
       mount,
-      structureRevision: -1,
       unregisterHits: [],
       visible: effectiveVisible(root),
       connected: true,
-      needsSync: true,
       order,
     });
   }
@@ -249,13 +233,8 @@ export class UIRenderer {
   }
 
   private reconcileMounts(deltaSeconds: number, camera: THREE.Camera): void {
-    const viewportChanged =
-      this.viewport.width !== window.innerWidth ||
-      this.viewport.height !== window.innerHeight;
     this.viewport.width = window.innerWidth;
     this.viewport.height = window.innerHeight;
-    const themeChanged = this.themeRevision !== ui.revision;
-    this.themeRevision = ui.revision;
     for (const record of this.mounts.values()) {
       if (!record.connected) continue;
       const visible = effectiveVisible(record.root);
@@ -265,22 +244,13 @@ export class UIRenderer {
       record.visible = visible;
       record.mount.object.visible = visible;
       syncRootTransform(record.root, record.mount.object, camera);
-      const structureRevision = getUIStructureRevision(record.root);
-      if (
-        record.needsSync ||
-        record.structureRevision !== structureRevision ||
-        themeChanged ||
-        (viewportChanged && getUIElementKind(record.root) === 'overlay')
-      ) {
-        record.needsSync = false;
-        record.structureRevision = structureRevision;
+      const mappings = record.mount.commit(
+        ui.theme,
+        this.viewport,
+        record.order
+      );
+      if (mappings) {
         for (const unregister of record.unregisterHits) unregister();
-        const mappings = record.mount.sync(
-          ui.theme,
-          this.viewport,
-          this.presentationStateFor,
-          record.order
-        );
         record.unregisterHits.length = 0;
         const overlay = getUIElementKind(record.root) === 'overlay';
         for (const mapping of mappings) {

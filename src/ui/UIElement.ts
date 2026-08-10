@@ -110,7 +110,6 @@ export type UIElementKind =
 interface UIElementState {
   readonly kind: UIElementKind;
   revision: number;
-  contentRevision: number;
   structureRevision: number;
 }
 
@@ -294,7 +293,6 @@ export abstract class UIElement extends Script {
     states.set(this, {
       kind,
       revision: 0,
-      contentRevision: 0,
       structureRevision: 0,
     });
     this.addEventListener('added', this.assertPlacement);
@@ -348,10 +346,9 @@ export abstract class UIElement extends Script {
     if (state) state.revision++;
   };
 
-  /** Marks content that can update through a retained backend binding. */
+  /** Marks durable content for the next renderer commit. */
   protected markUIContentDirty = (): void => {
-    const state = states.get(this);
-    if (state) state.contentRevision++;
+    this.markUIDirty();
   };
 
   protected markUIStructureDirty = (): void => {
@@ -359,14 +356,11 @@ export abstract class UIElement extends Script {
   };
 
   private markUIStyleDirty = (
-    property: string,
+    _property: string,
     _previous: unknown,
     _next: unknown
   ): void => {
     this.markUIDirty();
-    if (property === 'zIndex') {
-      this.markUIStructureDirty();
-    }
   };
 
   private assertPlacement = (): void => {
@@ -398,11 +392,6 @@ export function getUIRevision(element: UIElement): number {
   return states.get(element)!.revision;
 }
 
-/** Returns the revision for content that does not replace backend nodes. */
-export function getUIContentRevision(element: UIElement): number {
-  return states.get(element)!.contentRevision;
-}
-
 /** Returns the revision that changes only when the physical UI tree changes. */
 export function getUIStructureRevision(element: UIElement): number {
   return states.get(element)!.structureRevision;
@@ -416,12 +405,6 @@ export function collectUIRoots(target: UIElement[]): void {
     if (root) target.push(root);
     else rootReferences.delete(reference);
   }
-}
-
-/** Invalidates one public wrapper after private asynchronous resource work. */
-export function invalidateUIElement(element: UIElement): void {
-  const state = states.get(element);
-  if (state) state.revision++;
 }
 
 /** Validates and detaches a style from caller-owned mutable values. */

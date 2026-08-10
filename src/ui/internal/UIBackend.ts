@@ -23,12 +23,15 @@ export type UIPresentationStateFor = (
 
 export interface UIMount {
   readonly object: THREE.Object3D;
-  sync(
+  /**
+   * Commits durable public state before layout and hit testing. A mapping list
+   * is returned only when physical hit objects changed.
+   */
+  commit(
     theme: UITheme,
     viewport: {width: number; height: number},
-    stateFor: UIPresentationStateFor,
     rootOrder: number
-  ): UIHitMapping[];
+  ): readonly UIHitMapping[] | undefined;
   present(stateFor: UIPresentationStateFor): void;
   update(deltaSeconds: number): void;
   validate(): readonly UIValidationIssue[];

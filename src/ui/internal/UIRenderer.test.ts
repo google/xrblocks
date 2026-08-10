@@ -21,7 +21,7 @@ describe('UIRenderer validation', () => {
     };
     const mount: UIMount = {
       object: new THREE.Group(),
-      sync: () => [],
+      commit: () => [],
       present: vi.fn(),
       update: vi.fn(),
       validate: () => [issue],
@@ -49,7 +49,7 @@ describe('UIRenderer validation', () => {
 });
 
 describe('UIRenderer presentation', () => {
-  it('defers presentation when the public UI structure changes', async () => {
+  it('commits durable changes before it presents interaction paint', async () => {
     const button = new UIButton({label: 'Toggle'});
     const card = new UICard({
       size: {width: 0.4, height: 0.2},
@@ -57,10 +57,14 @@ describe('UIRenderer presentation', () => {
     });
     const scene = new THREE.Scene();
     scene.add(card);
+    const calls: string[] = [];
     const mount: UIMount = {
       object: new THREE.Group(),
-      sync: vi.fn(() => []),
-      present: vi.fn(),
+      commit: vi.fn(() => {
+        calls.push('commit');
+        return [];
+      }),
+      present: vi.fn(() => calls.push('present')),
       update: vi.fn(),
       validate: () => [],
       dispose: vi.fn(),
@@ -76,17 +80,13 @@ describe('UIRenderer presentation', () => {
     await renderer.initialize(scene, {} as THREE.WebGLRenderer);
     renderer.reconcile(0, new THREE.PerspectiveCamera());
     renderer.present();
-    expect(mount.present).toHaveBeenCalledOnce();
-    vi.mocked(mount.present).mockClear();
+    calls.length = 0;
 
     button.icon = 'check';
-    renderer.present();
-    expect(mount.present).not.toHaveBeenCalled();
-
     renderer.reconcile(0, new THREE.PerspectiveCamera());
     renderer.present();
-    expect(mount.sync).toHaveBeenCalledTimes(2);
-    expect(mount.present).toHaveBeenCalledOnce();
+    expect(mount.commit).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual(['commit', 'present']);
 
     renderer.dispose();
   });
