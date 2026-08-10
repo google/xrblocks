@@ -125,6 +125,7 @@ export class Math3D extends xb.Script {
         color: gridVectors[i].color,
       });
       var axisLine = new THREE.Line(axisGeometry, axisMaterial);
+      axisLine.xb = {pointerEvents: 'none'};
       axes.push(axisLine);
     }
     return axes;
@@ -179,6 +180,7 @@ export class Math3D extends xb.Script {
     });
     material.opacity = 0.75;
     const mesh = new THREE.Mesh(graphGeometry, material);
+    mesh.xb = {pointerEvents: 'none'};
     return mesh;
   }
 }
