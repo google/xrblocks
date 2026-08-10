@@ -125,13 +125,13 @@ export function getDeltaTime() {
 }
 
 /**
- * A shortcut for `core.timer.getElapsed()`. Gets the total time in seconds
- * since the application started.
+ * Gets elapsed time in seconds from the simulation or render clock.
+ * Simulation time excludes pauses and is the default.
+ * @param clock Clock used to measure elapsed time.
  * @returns The elapsed time in seconds.
- * @see {@link THREE.Timer.getElapsed}
  */
-export function getElapsedTime() {
-  return core.timer.getElapsed();
+export function getElapsedTime(clock: 'simulation' | 'render' = 'simulation') {
+  return clock === 'simulation' ? core.elapsedTime : core.timer.getElapsed();
 }
 
 /**

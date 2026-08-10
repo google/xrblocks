@@ -122,6 +122,7 @@ export class Core {
   private reticlePresenter = new ReticlePresenter(this.reticleOptions);
   private uiRenderer!: UIRenderer;
   private physicsInterval?: ReturnType<typeof setInterval>;
+  private manualPhysicsAccumulatorMs = 0;
   private rendererContainer?: HTMLDivElement;
   private lifecycleState: CoreLifecycleState = 'new';
   private initializationPromise?: Promise<void>;
@@ -203,6 +204,10 @@ export class Core {
     return this._isPaused;
   }
 
+  get elapsedTime() {
+    return this.simulationTimer.getElapsedMs() / 1000;
+  }
+
   /** Current state of this terminal Core lifetime. */
   get lifecycle(): CoreLifecycleState {
     return this.lifecycleState;
@@ -226,11 +231,20 @@ export class Core {
 
     this.isSteppingFrame = true;
     try {
+      const scaledDtMs = dtMs * this.timer.getTimescale();
       this.simulationTimer.step(dtMs, this.timer.getTimescale());
       this.manualStepTime += dtMs;
       this.update(this.manualStepTime, undefined as unknown as XRFrame);
       if (this.physics) {
-        this.physicsStep();
+        this.manualPhysicsAccumulatorMs += scaledDtMs;
+        const physicsStepMs = this.physics.timestep * 1000;
+        while (this.manualPhysicsAccumulatorMs >= physicsStepMs - 1e-9) {
+          this.physicsStep();
+          this.manualPhysicsAccumulatorMs = Math.max(
+            0,
+            this.manualPhysicsAccumulatorMs - physicsStepMs
+          );
+        }
       }
     } finally {
       this.isSteppingFrame = false;
