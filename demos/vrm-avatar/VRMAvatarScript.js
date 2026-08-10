@@ -22,6 +22,12 @@ import * as xb from 'xrblocks';
 import {VRMAvatar} from './VRMAvatar.js';
 
 export class VRMAvatarScript extends xb.Script {
+  static dependencies = {
+    camera: THREE.Camera,
+    depth: xb.Depth,
+    timer: THREE.Timer,
+  };
+
   /**
    * Constructs a new VRMAvatarScript.
    * @param {object} [opts={}] Initialization options.
@@ -53,13 +59,11 @@ export class VRMAvatarScript extends xb.Script {
     this._walkToTarget = null; // THREE.Vector3 world pos, or null when idle
 
     // Reusable temporaries
-    this._prevUserPos = new THREE.Vector3();
-    this._userPosNow = new THREE.Vector3();
-    this._deltaPos = new THREE.Vector3();
     this._walkDir = new THREE.Vector3();
     this._walkFaceQuat = new THREE.Quaternion();
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this._planeHit = new THREE.Vector3();
+    this._raycaster = new THREE.Raycaster();
   }
 
   // -------------------------------------------------------------------------
@@ -70,7 +74,11 @@ export class VRMAvatarScript extends xb.Script {
    * Initializes the avatar and loads necessary resources.
    * @returns {Promise<void>}
    */
-  async init() {
+  async init({camera, depth, timer}) {
+    this._camera = camera;
+    this._depth = depth;
+    this._timer = timer;
+
     if (!this._vrmUrl) {
       console.error('[VRMAvatarScript] vrmUrl is required.');
       return;
@@ -104,8 +112,6 @@ export class VRMAvatarScript extends xb.Script {
 
     this._placeAvatarFacingUser();
 
-    this._prevUserPos.copy(this._getUserPosition());
-
     this._avatar.play(this._idleUrl ? 'idle' : 'walk');
 
     this._loaded = true;
@@ -118,26 +124,22 @@ export class VRMAvatarScript extends xb.Script {
 
   /**
    * Handles the XR select end event to set a walk target.
-   * @param {Event} event The select end event.
+   * @param {xb.SelectEndEvent} event The select end event.
    * @returns {void}
    */
   onSelectEnd(event) {
-    console.log('onSelectEnd triggered');
     if (!this._loaded) return;
 
-    let hit = null;
-
-    // Prefer depth mesh (real XR environment)
-    const depthMesh = xb.core.depth?.depthMesh;
-    if (depthMesh) {
-      const hits = xb.core.input.intersectObjectByEvent(event, depthMesh);
-      if (hits.length > 0) hit = hits[0].point.clone();
-    }
+    const depthMesh = this._depth.depthMesh;
+    let hit =
+      event.surface === depthMesh && event.intersection
+        ? event.intersection.point.clone()
+        : null;
 
     // Fallback: intersect the y=0 ground plane (simulator / no depth)
     if (!hit) {
-      xb.core.input.setRaycasterFromController(event.target);
-      const planeHit = xb.core.input.raycaster.ray.intersectPlane(
+      this._raycaster.setFromXRController(event.source.controller);
+      const planeHit = this._raycaster.ray.intersectPlane(
         this._groundPlane,
         this._planeHit
       );
@@ -157,14 +159,27 @@ export class VRMAvatarScript extends xb.Script {
    * @param {XRFrame} [frame] XR frame (may be null on desktop).
    * @returns {void}
    */
-  update(time, frame) {
+  update() {
     if (!this._loaded) return;
 
-    const delta = xb.core.timer.getDelta();
+    const delta = this._timer.getDelta();
 
-    this._updateMovement(delta);
     if (this._walkToTarget) this._updateWalkTo(delta);
     this._avatar.update(delta);
+  }
+
+  /** Current user-facing state for sample UI. */
+  get state() {
+    if (!this._loaded) return 'Loading avatar';
+    return this._walkToTarget ? 'Walking' : 'Ready';
+  }
+
+  /** Returns the companion to its initial position in front of the user. */
+  resetPosition() {
+    if (!this._loaded) return;
+    this._walkToTarget = null;
+    this._placeAvatarFacingUser();
+    this._avatar.play(this._idleUrl ? 'idle' : 'walk');
   }
 
   // -------------------------------------------------------------------------
@@ -172,7 +187,7 @@ export class VRMAvatarScript extends xb.Script {
   // -------------------------------------------------------------------------
 
   _getUserPosition() {
-    const p = xb.core.camera.position.clone();
+    const p = this._camera.position.clone();
     p.y = 0;
     return p;
   }
@@ -183,7 +198,7 @@ export class VRMAvatarScript extends xb.Script {
   _placeAvatarFacingUser() {
     const userPos = this._getUserPosition();
     const forward = new THREE.Vector3();
-    xb.core.camera.getWorldDirection(forward);
+    this._camera.getWorldDirection(forward);
     forward.y = 0;
     if (forward.lengthSq() < 1e-10) forward.set(0, 0, -1);
     forward.normalize();
@@ -204,12 +219,6 @@ export class VRMAvatarScript extends xb.Script {
       this._walkDir
     );
     root.quaternion.copy(this._walkFaceQuat);
-  }
-
-  _updateMovement(delta) {
-    this._userPosNow.copy(this._getUserPosition());
-    this._deltaPos.subVectors(this._userPosNow, this._prevUserPos);
-    this._prevUserPos.copy(this._userPosNow);
   }
 
   _updateWalkTo(delta) {

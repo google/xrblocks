@@ -1,4 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import * as xb from 'xrblocks';
 
 import {UnistrokeTracker} from './UnistrokeTracker.js';

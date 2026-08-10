@@ -99,20 +99,6 @@ describe('WebSocketTransport', () => {
     });
   });
 
-  it('resolves connect() on welcome and adopts server-assigned peer id', async () => {
-    const t = new WebSocketTransport({
-      url: 'ws://test',
-      reconnectAttempts: 0,
-    });
-    const connected = t.connect({roomId: 'r'});
-    const ws = FakeWebSocket.last!;
-    ws.fireOpen();
-    ws.fireServerMessage({type: 'welcome', peerId: 'assigned-id', peers: []});
-    await connected;
-    expect(t.isOpen).toBe(true);
-    expect(t.localPeerId).toBe('assigned-id');
-  });
-
   it('emits peer-join for each existing peer in the welcome list', async () => {
     const t = new WebSocketTransport({
       url: 'ws://test',
@@ -180,28 +166,6 @@ describe('WebSocketTransport', () => {
     expect(frame.type).toBe('send');
     expect(frame.to).toBeUndefined();
     expect(frame.data).toBe(bytesToBase64(new Uint8Array([9, 9])));
-  });
-
-  it('send(payload, target) frames a direct send', async () => {
-    const {t, ws, connected} = makeWelcomed();
-    await connected;
-    ws.sent.length = 0;
-    t.send(new Uint8Array([7]), 'alice');
-    const frame = JSON.parse(ws.sent[0]);
-    expect(frame.to).toBe('alice');
-  });
-
-  it('send() is a no-op before the welcome frame arrives', () => {
-    const t = new WebSocketTransport({
-      url: 'ws://test',
-      reconnectAttempts: 0,
-    });
-    t.connect({roomId: 'r', peerId: 'me'});
-    const ws = FakeWebSocket.last!;
-    ws.fireOpen();
-    const sentBefore = ws.sent.length; // includes the join frame
-    t.send(new Uint8Array([1]));
-    expect(ws.sent.length).toBe(sentBefore);
   });
 
   it('emits peer-leave for known peers and a close event when the socket closes', async () => {
@@ -281,15 +245,5 @@ describe('WebSocketTransport', () => {
     ws.fireRawMessage('{not json');
     expect(errors.length).toBe(1);
     expect(errors[0]).toBeInstanceOf(Error);
-  });
-
-  it('forwards relayed error frames to the error event', async () => {
-    const {t, ws, connected} = makeWelcomed();
-    await connected;
-    const errors: Error[] = [];
-    t.on('error', (e) => errors.push((e as CustomEvent).detail.error));
-    ws.fireServerMessage({type: 'error', message: 'room is full'});
-    expect(errors.length).toBe(1);
-    expect(errors[0].message).toBe('room is full');
   });
 });

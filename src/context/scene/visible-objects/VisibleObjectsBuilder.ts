@@ -175,9 +175,6 @@ function isObjectInLineOfSight({
     if (isSemanticInternalObject(hit.object)) {
       return false;
     }
-    if (ignoresReticleRaycast(hit.object)) {
-      return false;
-    }
     if (
       isDescendantOf(hit.object, object) ||
       isDescendantOf(object, hit.object)
@@ -191,20 +188,6 @@ function isObjectInLineOfSight({
   });
 
   return occludingHit === undefined;
-}
-
-function ignoresReticleRaycast(object: THREE.Object3D): boolean {
-  let current: THREE.Object3D | null = object;
-  while (current) {
-    if (
-      'ignoreReticleRaycast' in current &&
-      current.ignoreReticleRaycast === true
-    ) {
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
 }
 
 function isOpacityOccluding(

@@ -9,31 +9,35 @@ XR Blocks is designed to be modular and lightweight. Many features are enabled o
 
 The following table lists the optional dependencies supported by XR Blocks and the features they unlock.
 
-| Feature                    | Dependency                                                               | Description                                                                                                                                    |
-| :------------------------- | :----------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Physics**                | [`@dimforge/rapier3d`](https://www.npmjs.com/package/@dimforge/rapier3d) | Enables physics simulation for 3D objects, including rigid body dynamics, colliders, and gravity. Required for any physics-based interactions. |
-| **Generative AI (Gemini)** | [`@google/genai`](https://www.npmjs.com/package/@google/genai)           | Enables integration with Google's Gemini models, including Multimodal Live API support for real-time audio/video interaction.                  |
-| **Generative AI (OpenAI)** | [`openai`](https://www.npmjs.com/package/openai)                         | Enables integration with OpenAI's models for text generation and chat capabilities.                                                            |
-| **UI System**              | [`lit`](https://www.npmjs.com/package/lit)                               | Used for rendering HTML-based UI overlays and the built-in Simulator UI components when running the simulator.                                 |
-| **Text Rendering**         | [`troika-three-text`](https://www.npmjs.com/package/troika-three-text)   | Provides high-quality, signed-distance-field (SDF) 3D text rendering. Essential for readable and crisp text in 3D space.                       |
-| **Gaussian Splatting**     | [`@sparkjsdev/spark`](https://www.npmjs.com/package/@sparkjsdev/spark)   | Enables viewing of Gaussian Splatting models, allowing for photorealistic scene rendering.                                                     |
-| **UI Blocks**              | `@pmndrs/uikit`, `@preact/signals-core`                                  | Provides Yoga/flexbox-based rich spatial UI. Follow the complete UIBlocks import map because UIKit also has browser-side peers.                |
-| **Vision**                 | `@mediapipe/tasks-vision`                                                | Enables MediaPipe object, human, face, hand-pose, and segmentation backends.                                                                   |
-| **Audio classification**   | `@mediapipe/tasks-audio`                                                 | Enables on-device sound classification.                                                                                                        |
-| **Accelerated raycasting** | `three-mesh-bvh`                                                         | Enables BVH-accelerated mesh raycasting where configured.                                                                                      |
-| **Navigation**             | `three-pathfinding`                                                      | Supports simulator navigation meshes and path-constrained movement.                                                                            |
+| Feature                    | Dependency                                                                                                                                   | Description                                                                                                                                            |
+| :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Physics**                | [`@dimforge/rapier3d`](https://www.npmjs.com/package/@dimforge/rapier3d)                                                                     | Enables physics simulation for 3D objects, including rigid body dynamics, colliders, and gravity. Required for any physics-based interactions.         |
+| **Generative AI (Gemini)** | [`@google/genai`](https://www.npmjs.com/package/@google/genai)                                                                               | Enables integration with Google's Gemini models, including Multimodal Live API support for real-time audio/video interaction.                          |
+| **Generative AI (OpenAI)** | [`openai`](https://www.npmjs.com/package/openai)                                                                                             | Enables integration with OpenAI's models for text generation and chat capabilities.                                                                    |
+| **Built-in spatial UI**    | [`@pmndrs/uikit`](https://www.npmjs.com/package/@pmndrs/uikit), [`@preact/signals-core`](https://www.npmjs.com/package/@preact/signals-core) | Renders `UICard`, `UIOverlay`, and their child components. These are required peer dependencies, not a separate XR Blocks add-on.                      |
+| **Simulator browser UI**   | [`lit`](https://www.npmjs.com/package/lit)                                                                                                   | Registers simulator settings, instructions, hand-pose, and optional Gemini Live panels. The simulator continues without these panels if Lit is absent. |
+| **Simulator navmesh**      | [`three-pathfinding`](https://www.npmjs.com/package/three-pathfinding)                                                                       | Constrains the simulated user to an environment navmesh when enabled.                                                                                  |
+| **Text Rendering**         | [`troika-three-text`](https://www.npmjs.com/package/troika-three-text)                                                                       | Provides high-quality, signed-distance-field (SDF) 3D text rendering. Essential for readable and crisp text in 3D space.                               |
+| **Gaussian Splatting**     | [`@sparkjsdev/spark`](https://www.npmjs.com/package/@sparkjsdev/spark)                                                                       | Enables viewing of Gaussian Splatting models, allowing for photorealistic scene rendering.                                                             |
 
 ## Installing Integrations
 
-Install only the dependencies needed by the features you use. Most integrations
-are loaded lazily, but they are not universally auto-configured: physics needs
-`options.physics.RAPIER`, UI Blocks needs `options.uikit.enable(uikit)`, and
-camera/AI/vision capabilities must be enabled through `Options`.
+To use any of these features, simply add the corresponding packages and their dependencies to your importmap or install them using npm.
+XR Blocks loads these libraries only when the corresponding feature starts. Browser import-map
+applications must map every transitive bare specifier used by the selected feature. Copy the
+verified mappings from `rollup.config.js` or the closest current template.
 
-For import-map applications, copy dependency entries from a working template
-or sample. Several browser packages require multiple related specifiers; a
-single top-level URL is not always sufficient.
+## Built-in UI and renderer extensions
 
-For TypeScript projects that intentionally omit optional dependencies, use
-`skipLibCheck` or install the relevant packages as development dependencies so
-their imported declaration types resolve.
+`@pmndrs/uikit` and `@preact/signals-core` are peer dependencies of the built-in
+UI renderer. They are not the application UI API. Ordinary applications import
+`UICard`, `UIOverlay`, `UIPanel`, `UIText`, `UIButton`, and other semantic
+components from `xrblocks`.
+
+XR Blocks currently has no public low-level adapter for composing directly with
+the built-in UIKit backend. Files under `src/ui/internal/` and
+`build/internal/` are private. A specialized addon can expose its own renderer
+through an addon public entry, but it must integrate input through supported XR
+Blocks interaction surfaces and must not import private built-in UI files.
+
+See [Spatial UI](UI.mdx) for the supported component and extension boundary.

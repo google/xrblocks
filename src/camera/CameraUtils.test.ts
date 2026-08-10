@@ -22,23 +22,17 @@ function makeDeviceCamera(withSimulatorCamera: boolean): XRDeviceCamera {
 }
 
 describe('isDeviceCameraPoseAvailable', () => {
-  it('is false with no device camera and no XR cameras', () => {
+  it('is false before either camera source is ready', () => {
     expect(isDeviceCameraPoseAvailable(undefined, null)).toBe(false);
-  });
-
-  it('is false when the XR array camera has no cameras yet', () => {
     expect(isDeviceCameraPoseAvailable(undefined, makeXrCameras(0))).toBe(
       false
     );
   });
 
-  it('is true once the simulator camera is registered', () => {
+  it('is true when the simulator or XR camera is ready', () => {
     expect(isDeviceCameraPoseAvailable(makeDeviceCamera(true), null)).toBe(
       true
     );
-  });
-
-  it('is true once the XR session exposes cameras', () => {
     expect(isDeviceCameraPoseAvailable(undefined, makeXrCameras(2))).toBe(true);
   });
 });

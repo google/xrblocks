@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 
+import type {SimulatorCameraSource} from '../camera/SimulatorCameraSource';
 import {SimulatorMediaDeviceInfo} from './SimulatorMediaDeviceInfo';
 import {
   ConstrainDomStringMatch,
   evaluateConstrainDOMString,
 } from './utils/CameraUtils';
 
-export class SimulatorCamera {
+export class SimulatorCamera implements SimulatorCameraSource {
   private cameraCreated = false;
   private cameraInfo?: SimulatorMediaDeviceInfo;
   private mediaStream?: MediaStream;
@@ -132,5 +133,14 @@ export class SimulatorCamera {
       return this.mediaStream;
     }
     return null;
+  }
+
+  dispose() {
+    for (const track of this.mediaStream?.getTracks() ?? []) track.stop();
+    this.mediaStream = undefined;
+    this.cameraInfo = undefined;
+    this.canvas = undefined;
+    this.context = undefined;
+    this.cameraCreated = false;
   }
 }

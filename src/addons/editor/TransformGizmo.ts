@@ -411,13 +411,11 @@ type DragState = TranslateDrag | RotateDrag | ScaleDrag;
  * Translate + rotate + scale transform gizmo for the current selection.
  * Desktop mouse only: drag math reads xb.core.input.mouseController
  * directly -- real XR controller support is permanently out of scope for
- * this addon. Bespoke drag math throughout -- DragManager's
- * translate/rotate/scale are respectively an unconstrained 6-DOF delta, a
- * hardcoded world-Y yaw, and a two-controller-only gesture, none usable
- * for constrained dragging, arbitrary-axis rotation, or single-pointer
- * scaling.
+ * this addon. Its constrained handles use editor-specific math instead of the
+ * application's automatic object manipulation actions.
  */
 export class TransformGizmo extends xb.Script {
+  private readonly raycaster = new THREE.Raycaster();
   selectionManager: SelectionManager;
   commandHistory: CommandHistory | null;
 
@@ -574,12 +572,15 @@ export class TransformGizmo extends xb.Script {
     return this.translateHandles.children;
   }
 
-  updateHover() {
-    xb.core.input.setRaycasterFromController(xb.core.input.mouseController);
-    const hits = xb.core.input.raycaster.intersectObjects(
-      this.getActiveHandles(),
-      true
+  private setRay(controller: THREE.Object3D): void {
+    this.raycaster.setFromXRController(
+      controller as unknown as THREE.XRTargetRaySpace
     );
+  }
+
+  updateHover() {
+    this.setRay(xb.core.input.mouseController);
+    const hits = this.raycaster.intersectObjects(this.getActiveHandles(), true);
     const record = hits.length > 0 ? this.findRecord(hits[0].object) : null;
     this.setHoveredRecord(record);
   }
@@ -622,16 +623,13 @@ export class TransformGizmo extends xb.Script {
     if (!this.visible) return null;
     if (this.selectionManager.selectedList().length === 0) return null;
 
-    xb.core.input.setRaycasterFromController(controller);
-    const hits = xb.core.input.raycaster.intersectObjects(
-      this.getActiveHandles(),
-      true
-    );
+    this.setRay(controller);
+    const hits = this.raycaster.intersectObjects(this.getActiveHandles(), true);
     return hits.length > 0 ? hits[0] : null;
   }
 
   override onSelectStart(event: SelectEvent) {
-    const controller = event.target;
+    const controller = event.source.controller;
     if (controller !== xb.core.input.mouseController) return;
 
     const hit = this.hitTestActiveHandle(controller);
@@ -647,7 +645,7 @@ export class TransformGizmo extends xb.Script {
   }
 
   override onSelectEnd(event: SelectEvent) {
-    if (event.target !== xb.core.input.mouseController) return;
+    if (event.source.controller !== xb.core.input.mouseController) return;
     this.endDrag();
   }
 
@@ -680,9 +678,9 @@ export class TransformGizmo extends xb.Script {
       axisDirections,
       planeNormals
     );
-    xb.core.input.setRaycasterFromController(controller);
+    this.setRay(controller);
     const startPoint = new THREE.Vector3();
-    if (!xb.core.input.raycaster.ray.intersectPlane(plane, startPoint)) {
+    if (!this.raycaster.ray.intersectPlane(plane, startPoint)) {
       return;
     }
 
@@ -716,7 +714,7 @@ export class TransformGizmo extends xb.Script {
       axisDir,
       pivot
     );
-    xb.core.input.setRaycasterFromController(controller);
+    this.setRay(controller);
     const startAngle = this.computeRingAngle(plane, pivot, handleData.axis!);
     if (startAngle == null) return;
 
@@ -776,9 +774,9 @@ export class TransformGizmo extends xb.Script {
       plane = new THREE.Plane().setFromNormalAndCoplanarPoint(eye, pivot);
     }
 
-    xb.core.input.setRaycasterFromController(controller);
+    this.setRay(controller);
     const startPoint = new THREE.Vector3();
-    if (!xb.core.input.raycaster.ray.intersectPlane(plane, startPoint)) {
+    if (!this.raycaster.ray.intersectPlane(plane, startPoint)) {
       return;
     }
 
@@ -843,7 +841,7 @@ export class TransformGizmo extends xb.Script {
   ): number | null {
     const {u, v} = RING_BASIS_BY_AXIS[axisName];
     const hit = new THREE.Vector3();
-    if (!xb.core.input.raycaster.ray.intersectPlane(plane, hit)) return null;
+    if (!this.raycaster.ray.intersectPlane(plane, hit)) return null;
     const rel = hit.sub(pivot);
     return Math.atan2(rel.dot(v), rel.dot(u));
   }
@@ -904,7 +902,7 @@ export class TransformGizmo extends xb.Script {
 
   updateRotateDrag(drag: RotateDrag) {
     const {controller, plane, pivot, axis, axisDir, startAngle, targets} = drag;
-    xb.core.input.setRaycasterFromController(controller);
+    this.setRay(controller);
     const currentAngle = this.computeRingAngle(plane, pivot, axis);
     if (currentAngle == null) return;
 
@@ -938,10 +936,9 @@ export class TransformGizmo extends xb.Script {
       planeAxes,
       targets,
     } = drag;
-    xb.core.input.setRaycasterFromController(controller);
+    this.setRay(controller);
     const currentPoint = new THREE.Vector3();
-    if (!xb.core.input.raycaster.ray.intersectPlane(plane, currentPoint))
-      return;
+    if (!this.raycaster.ray.intersectPlane(plane, currentPoint)) return;
 
     // Raw world-space offset on the drag plane, projected onto the
     // handle's own axis/plane basis (world-aligned or, in local space,
@@ -970,10 +967,9 @@ export class TransformGizmo extends xb.Script {
   updateScaleDrag(drag: ScaleDrag) {
     const {controller, plane, pivot, startPoint, handleData, axisDir, targets} =
       drag;
-    xb.core.input.setRaycasterFromController(controller);
+    this.setRay(controller);
     const currentPoint = new THREE.Vector3();
-    if (!xb.core.input.raycaster.ray.intersectPlane(plane, currentPoint))
-      return;
+    if (!this.raycaster.ray.intersectPlane(plane, currentPoint)) return;
 
     let scaleTransform: (relative: THREE.Vector3) => THREE.Vector3;
     let axis: AxisName | null;

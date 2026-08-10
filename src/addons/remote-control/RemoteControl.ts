@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {Core, Input, Options, Script, Simulator} from 'xrblocks';
+import {Core, Input, Options, Script, type Simulator} from 'xrblocks';
 import {
   EmbodiedControl,
   type EmbodiedControlOptions,
@@ -22,7 +22,6 @@ import {
 } from './WebSocketRemoteControlTransport';
 
 export type RemoteControlOptions = WebSocketRemoteControlTransportOptions & {
-  embodiedControl?: EmbodiedControl;
   embodiedOptions?: EmbodiedControlOptions;
   tools?: Record<string, RemoteControlToolHandler>;
 };
@@ -35,23 +34,23 @@ type RegisteredTool = {
 export class RemoteControl extends Script {
   static dependencies = {
     core: Core,
-    simulator: Simulator,
     input: Input,
     camera: THREE.Camera,
   };
 
   editorIcon = 'settings_remote';
-  embodiedControl: EmbodiedControl;
   transport?: WebSocketRemoteControlTransport;
 
   dependencies!: {
     core: Core;
-    simulator: Simulator;
+    simulator?: Simulator;
     input: Input;
     camera: THREE.Camera;
   };
 
   private tools = new Map<string, RegisteredTool>();
+  private readonly embodiedControl: EmbodiedControl;
+  private simulatorReadyAnnounced = false;
 
   static configureOptions(options = new Options()) {
     return (
@@ -63,26 +62,16 @@ export class RemoteControl extends Script {
 
   constructor(private options: RemoteControlOptions = {}) {
     super();
-    this.embodiedControl =
-      options.embodiedControl ?? new EmbodiedControl(options.embodiedOptions);
+    this.embodiedControl = new EmbodiedControl(options.embodiedOptions);
+    this.add(this.embodiedControl);
 
     for (const [name, handler] of Object.entries(options.tools ?? {})) {
       this.registerTool(name, handler);
     }
   }
 
-  init(dependencies: {
-    core: Core;
-    simulator: Simulator;
-    input: Input;
-    camera: THREE.Camera;
-  }) {
+  init(dependencies: {core: Core; input: Input; camera: THREE.Camera}) {
     this.dependencies = dependencies;
-    if (!this.embodiedControl.executor) {
-      this.embodiedControl.init(dependencies);
-    }
-
-    this.registerBuiltInTools();
     this.transport = new WebSocketRemoteControlTransport(
       {
         url: this.options.url,
@@ -93,19 +82,22 @@ export class RemoteControl extends Script {
       (request) => this.handleRequest(request)
     );
     this.transport.connect();
+    if (dependencies.core.simulatorRunning) {
+      this.onSimulatorStarted();
+    }
   }
 
   dispose() {
     this.transport?.disconnect();
+    this.transport = undefined;
   }
 
   override onSimulatorStarted() {
-    if (
-      !this.dependencies.core.scriptsManager.scripts.has(this.embodiedControl)
-    ) {
-      this.embodiedControl.onSimulatorStarted();
-    }
-    this.transport?.announceSimulatorReady();
+    const simulator = this.dependencies.core.simulator;
+    if (!simulator) return;
+    this.dependencies.simulator = simulator;
+    this.registerBuiltInTools();
+    void this.announceSimulatorReady();
   }
 
   registerTool(
@@ -168,8 +160,11 @@ export class RemoteControl extends Script {
   }
 
   private registerBuiltInTools() {
+    const simulator = this.dependencies.simulator;
+    if (!simulator) return;
     for (const tool of createRemoteControlBuiltInTools({
       ...this.dependencies,
+      simulator,
       embodiedControl: this.embodiedControl,
       resolveTarget: (target) => this.resolveTarget(target),
     })) {
@@ -180,6 +175,13 @@ export class RemoteControl extends Script {
         });
       }
     }
+  }
+
+  private async announceSimulatorReady() {
+    await this.embodiedControl.ready;
+    if (this.simulatorReadyAnnounced || !this.transport) return;
+    this.simulatorReadyAnnounced = true;
+    this.transport.announceSimulatorReady();
   }
 
   private resolveTarget(

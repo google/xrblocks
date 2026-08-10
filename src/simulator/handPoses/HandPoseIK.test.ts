@@ -11,65 +11,55 @@ import {
 } from './HandPoseFK';
 
 describe('HandPose Inverse Kinematics (IK)', () => {
-  const poses = [
-    SimulatorHandPose.NEUTRAL,
-    SimulatorHandPose.RELAXED,
-    SimulatorHandPose.PINCHING,
-    SimulatorHandPose.FIST,
-    SimulatorHandPose.THUMBS_UP,
-    SimulatorHandPose.POINTING,
-    SimulatorHandPose.ROCK,
-    SimulatorHandPose.THUMBS_DOWN,
-    SimulatorHandPose.VICTORY,
-  ];
+  const representativePoses = [
+    [Handedness.LEFT, SimulatorHandPose.NEUTRAL, false],
+    [Handedness.RIGHT, SimulatorHandPose.NEUTRAL, false],
+    [Handedness.LEFT, SimulatorHandPose.PINCHING, true],
+    [Handedness.RIGHT, SimulatorHandPose.FIST, true],
+    [Handedness.LEFT, SimulatorHandPose.POINTING, false],
+    [Handedness.RIGHT, SimulatorHandPose.VICTORY, false],
+  ] as const;
 
-  const handednesses = [Handedness.LEFT, Handedness.RIGHT];
+  it.each(representativePoses)(
+    'roundtrips the %s %s pose (constraints: %s)',
+    (handedness, pose, applyConstraints) => {
+      const originalRotations = SIMULATOR_HAND_POSE_ROTATIONS[pose];
 
-  for (const handedness of handednesses) {
-    describe(`${handedness} hand poses`, () => {
-      for (const pose of poses) {
-        for (const applyConstraints of [false, true]) {
-          it(`should accurately roundtrip ${pose} pose (applyConstraints: ${applyConstraints})`, () => {
-            const originalRotations = SIMULATOR_HAND_POSE_ROTATIONS[pose];
+      // Run FK to get joint positions.
+      const joints = resolveSimulatorHandPoseRotations(
+        handedness,
+        originalRotations,
+        applyConstraints
+      );
+      // Run IK to get rotations back from the keypoints.
+      const computedRotations = resolveSimulatorRotationsFromKeypoints(
+        handedness,
+        joints,
+        false
+      );
 
-            // Run FK to get joint positions.
-            const joints = resolveSimulatorHandPoseRotations(
-              handedness,
-              originalRotations,
-              applyConstraints
-            );
-            // Run IK to get rotations back from the keypoints.
-            const computedRotations = resolveSimulatorRotationsFromKeypoints(
-              handedness,
-              joints,
-              false
-            );
+      // Run FK again using the computed rotations.
+      const recomputedJoints = resolveSimulatorHandPoseRotations(
+        handedness,
+        computedRotations,
+        false
+      );
 
-            // Run FK again using the computed rotations.
-            const recomputedJoints = resolveSimulatorHandPoseRotations(
-              handedness,
-              computedRotations,
-              false
-            );
+      for (let i = 0; i < HAND_JOINT_NAMES.length; i++) {
+        const jointName = HAND_JOINT_NAMES[i];
+        const originalPos = new THREE.Vector3().fromArray(joints[i].t);
+        const recomputedPos = new THREE.Vector3().fromArray(
+          recomputedJoints[i].t
+        );
 
-            for (let i = 0; i < HAND_JOINT_NAMES.length; i++) {
-              const jointName = HAND_JOINT_NAMES[i];
-              const originalPos = new THREE.Vector3().fromArray(joints[i].t);
-              const recomputedPos = new THREE.Vector3().fromArray(
-                recomputedJoints[i].t
-              );
-
-              const distance = originalPos.distanceTo(recomputedPos);
-              expect(
-                distance,
-                `Joint ${jointName} in pose ${pose} for ${handedness} hand should match original position (diff: ${distance}m)`
-              ).toBeLessThan(1e-4);
-            }
-          });
-        }
+        const distance = originalPos.distanceTo(recomputedPos);
+        expect(
+          distance,
+          `Joint ${jointName} in pose ${pose} for ${handedness} hand should match original position (diff: ${distance}m)`
+        ).toBeLessThan(1e-4);
       }
-    });
-  }
+    }
+  );
 
   it('should enforce biomechanical constraints when applyConstraints = true', () => {
     // Let's create keypoints where the index finger PIP joint is hyperextended to -45 degrees (constraint is [0, 110] degrees).

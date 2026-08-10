@@ -57,7 +57,7 @@ describe('MCP conformance', () => {
 
     expect(result.isError).toBe(false);
     expect(content[0].type).toBe('text');
-    expect(content[0].text).toContain('xb-depth');
+    expect(content[0].text).toContain('xb-build-app');
   });
 
   it('answers ping', async () => {

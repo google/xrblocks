@@ -1,31 +1,28 @@
-# XR Blocks — Agent Context
+# XR Blocks agent contract
 
-XR Blocks (`import * as xb from 'xrblocks'`) is a WebXR SDK for building **AI + XR** apps
-(Android XR / VR / AR) that also run in a **desktop simulator**. This file is the quick "how
-to build with it" context for agents; deep, task-specific guides and their index
-live in [`skills/`](skills/).
+XR Blocks is a WebXR SDK for AI and XR applications that also run in its
+desktop simulator. Use this file as the compact authoring contract. Load the
+manual page and executable example for the specific task instead of guessing
+from subsystem names.
 
-## Rules of Engagement
+## Authority order
 
-- **Only call APIs that exist.** Verify against [`src/xrblocks.ts`](src/xrblocks.ts) (the full
-  public surface) or copy a working pattern from `samples/`, `templates/`, or `demos/`.
-  Hallucinated APIs are the most common failure mode.
-- **One engine, script-driven.** Subclass `xb.Script`, `xb.add()` it, then `xb.init(options)`.
-  Do **not** write your own `requestAnimationFrame` loop, camera, or WebXR session — `Core`
-  owns them. Per-frame logic goes in `update(time, frame)`.
-- **Enable features through `Options`**, not by poking internals: `options.enableUI()`,
-  `enableHands()`, `enableDepth()`, etc. (full list below).
-- **Guard AI.** AI needs a key and may be unavailable — wrap calls in
-  `if (xb.ai.isAvailable())`.
-- **Test in the simulator first.** It runs automatically on desktop browser without WebXR plugins; `?formFactor=desktop`
-  forces it to start. Use `options.enableAutomationMode()` or `?xrAutomation=1` for
-  automation-oriented simulator startup. Subsystems created during `xb.init()`
-  (e.g. `xb.core.renderer`) are undefined in a constructor — use them in/after
-  `init()`.
-- **Units & colors.** World/position values are meters; UI sizes use meters or "layout
-  pixels"/`fontSize`. Colors are hex strings (`'#ffffff'`) or `THREE.Color`.
+When sources disagree, use this order:
 
-## Core Pattern
+1. [`src/xrblocks.ts`](src/xrblocks.ts) and an addon's public entry define what
+   application code can import.
+2. Source TSDoc and generated declarations define signatures, defaults, return
+   values, and lifecycle details.
+3. [`docs/docs/manual/`](docs/docs/manual/) defines concepts, setup, behavior,
+   limits, and current composition patterns.
+4. [`templates/`](templates/) and [`samples/`](samples/) provide executable
+   patterns. Prefer a focused template or sample over a large demo.
+5. Consumer task skills define the process for completing a task. They are not
+   API catalogs.
+
+If a symbol is not exported by the intended public entry, it is internal.
+
+## Application shape
 
 ```js
 import * as THREE from 'three';
@@ -34,81 +31,91 @@ import * as xb from 'xrblocks';
 class MainScript extends xb.Script {
   init() {
     this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
-    this.cube = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, 0.3, 0.3),
-      new THREE.MeshStandardMaterial({color: 0x4285f4})
-    );
-    this.cube.position.set(0, xb.user.height - 0.3, -xb.user.objectDistance);
-    this.add(this.cube);
   }
-  onSelectEnd() {
-    // desktop click OR XR pinch
-    this.cube.material.color.set(Math.random() * 0xffffff);
+
+  update() {
+    // Per-frame application behavior.
+  }
+
+  dispose() {
+    // Release owned GPU, listener, timer, media, and network resources.
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  xb.add(new MainScript());
-  xb.init(new xb.Options());
-});
-```
-
-## Enabling Features (`xb.Options`)
-
-```js
 const options = new xb.Options();
-options.enableUI(); // spatial UI + reticles
-options.enableReticles(); // pointing cursor
-options.enableHands(); // hand tracking
-options.enableGestures(); // pinch/fist/point/spread/thumbs-up/open-palm
-options.enableHeadGestures(); // completed nod/shake events in xb.input.headGestures
-options.enableStrokes(); // $1 unistroke recognition
-options.enableDepth(); // depth sensing + depth mesh
-options.enablePlaneDetection(); // detected planes in xb.world
-options.enableObjectDetection(); // object detection (also enables camera permission)
-options.enableContext(); // agent-facing scene context in xb.context
-options.enableSceneContext(); // semantic tree only
-options.enableVisibleObjectsContext(); // semantic tree + view visibility
-options.enableSetOfMarkContext(); // semantic tree + visible objects + SOM image
-options.enableCamera('environment'); // passthrough device camera
-options.enableAI(); // Gemini/OpenAI via xb.ai
-options.enableXRTransitions(); // fade transitions
-options.enableVR(); // immersive-vr instead of immersive-ar
+xb.add(new MainScript());
+await xb.init(options);
 ```
 
-There is **no** `enablePhysics()`:
+- Register scripts before `xb.init(options)`.
+- Use engine-created objects only in or after `init()`.
+- Put frame behavior in `update()`. XR Blocks owns the renderer, camera,
+  animation loop, WebXR session, input resolution, and UI renderer.
+- Configure permissions and optional subsystems before initialization.
+- Use `formFactor: 'auto'` unless the application intentionally targets only
+  one surface. `?formFactor=desktop` forces the simulator.
 
-```js
-import RAPIER from '@dimforge/rapier3d-simd-compat';
-options.physics.RAPIER = RAPIER; // enables physics
-```
+## Spatial and UI units
 
-## Key Globals & Lifecycle
+- World positions, model dimensions, placement offsets, and `UICard.size` use
+  meters.
+- Descendant UI layout numbers use UIKit layout units. Percent strings and
+  `auto` are accepted where the property type permits them.
+- Numeric `lineHeight` is a multiplier of `fontSize`. Use a `px` or percentage
+  string for an explicit line height.
+- Use `UICard` for world-space UI, `UIOverlay` for view-space UI, and `UIPanel`
+  only as a nested layout group.
+- Built-in UI starts automatically and participates in the normal interaction
+  pipeline. There is no application UI enable call or second UI raycaster.
 
-- Globals: `xb.core`, `xb.scene`, `xb.user`, `xb.world`, `xb.context`, `xb.ai`,
-  `xb.depth`, `xb.sound`, `xb.input`, `xb.camera`; helpers `xb.add()`, `xb.init()`,
-  `xb.getDeltaTime()`.
-- Lifecycle hooks: `init`, `update`, `initPhysics`/`physicsStep`, `onSelectStart/End`,
-  `onSqueezeStart/End`, `onKeyDown/Up`, `onXRSessionStarted/Ended`, `onSimulatorStarted`.
-- Object-targeted hooks (return `true` to stop propagation): `onObjectSelectStart/End`,
-  `onObjectTouchStart/Touching/End`, `onObjectGrabStart/Grabbing/End`,
-  `onHoverEnter/Hovering/Exit`.
+## Interaction vocabulary
 
-## Build / Run / Simulate
+XR Blocks resolves one hit for each source:
 
-```bash
-npm ci && npm run dev     # builds in watch mode + serves http://127.0.0.1:8080
-```
+- `source`: the mouse, gaze, hand, or tracked-controller interaction source.
+- `target`: the logical object that owns the behavior.
+- `surface`: the public object representing the hit surface. Private renderer
+  meshes are normalized to their public owner.
+- `currentTarget`: the script currently receiving a bubbled callback.
+- `intersection`: the resolved ray hit when the source still intersects the
+  surface.
 
-Open a sample/template/demo under that URL; add `?formFactor=desktop` to force the simulator.
-For external automation or remote runs, configure `new xb.Options().enableAutomationMode()` or
-add `?xrAutomation=1`. Automation mode enables agent context. Add `?debug=1` to expose
-the SDK as `window.xb` and initialization as `window.xbReady`; combine both flags when
-an in-page browser driver needs the automation preset and direct SDK access.
+Use the event's resolved fields inside callbacks. Query
+`xb.user.getRayIntersection()` only when code outside an event needs the current
+hit. A reticle displays the resolved hit; it is not a second source of target
+data.
 
-## Task Recipes -> Skills/
+Configure automatic manipulation through `object.xb.manipulation`. It supports
+independent simultaneous object owners and two-source scale. Read
+[Interaction](docs/docs/manual/Interaction.md) and
+[Placement](docs/docs/manual/Placement.md) before implementing manipulation or
+continuous placement.
 
-For "how do I do X", use the focused skills in [`skills/`](skills/): `xb-core`, `xb-ui`,
-`xb-uiblocks`, `xb-modelviewer`, `xb-hands`, `xb-gestures`, `xb-head-gestures`, `xb-depth`, `xb-world`,
-`xb-context`, `xb-ai`, `xb-physics`, `xb-simulator`, `xb-netblocks`, `xb-sound`,
-`xb-testing`.
+## Security and runtime limits
+
+- Never commit provider keys. URL keys and `keys.json` are local-prototype
+  mechanisms only. Production applications use a server-controlled proxy or
+  short-lived credentials.
+- Camera, microphone, geolocation, depth, and world-sensing support depend on
+  the browser and device. Declare required permissions before entering XR and
+  provide visible unsupported, denied, pending, empty, and failure states.
+- `three` is a peer dependency. Use one aligned version and one import-map or
+  bundler dependency graph.
+- The package uses private lazy-loaded chunks. Deploy the complete `build/`
+  directory and do not import `build/internal/` files.
+
+## Task workflows
+
+The repository provides six portable consumer workflows:
+
+- `xb-build-app`
+- `xb-add-spatial-ui`
+- `xb-add-interactions`
+- `xb-add-world-sensing`
+- `xb-add-ai`
+- `xb-debug-app`
+
+Repository contributors use `skills/xb-contribute-sdk`.
+
+The workflows are not tied to one agent host. Each host can install or expose
+the `skills/<name>/` directories through its supported discovery mechanism.

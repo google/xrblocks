@@ -44,7 +44,7 @@ The VRM model and all animation assets (T-pose, idle, and walking GLB files) are
 `VRMAvatar.js` includes a full `MESH2MOTION_VRM_RIG_MAP` mapping Mesh2Motion bone naming conventions to the VRM 1.0 specification. `retargetGLBClip()` remaps bone names, utilizes `Tpose.glb` as a pristine reference rest pose, and corrects rest-pose rotations. Root motion on the hips X/Z axes is zeroed out to prevent position drift on loop.
 
 **Depth mesh floor detection**
-On device, `onSelectEnd` raycasts against `xb.core.depth.depthMesh` for accurate floor hits. When depth mesh is not enabled, it falls back to intersecting the y=0 ground plane.
+On device, `onSelectEnd` uses the callback's `event.surface` and `event.intersection` values for accurate depth-mesh floor hits. `options.reticles.projectOnDepthMesh` keeps the reticle on that same surface. The avatar root uses `pointerEvents: 'none'`, so its meshes do not block the floor reticle. When the depth mesh is not available, the demo casts from `event.source.controller` to the y=0 ground plane.
 
 ---
 
@@ -52,7 +52,7 @@ On device, `onSelectEnd` raycasts against `xb.core.depth.depthMesh` for accurate
 
 - **`.vrma` format** — `@pixiv/three-vrm-animation` (VRM Animation format) is not used. Mesh2Motion GLB retargeting is sufficient for walk/idle.
 - **First-person mode** — VRM first-person metadata (head mesh hiding) is not configured.
-- **MToon** — MToon anime-style materials load correctly at `three@0.182.0` but may render as standard material fallback on some devices.
+- **MToon** — MToon anime-style materials may render as standard material fallback on some devices.
 - **Quest test** — simulator tested and working. Depth sensing is enabled via `options.enableDepth()` using the standard WebXR Depth Sensing API, which Quest 3 supports, but on-device testing has not been done yet.
 
 ---
@@ -61,10 +61,10 @@ On device, `onSelectEnd` raycasts against `xb.core.depth.depthMesh` for accurate
 
 | Package            | Version   | Source      |
 | ------------------ | --------- | ----------- |
-| `three`            | `0.182.0` | CDN         |
+| `three`            | `0.184.0` | CDN         |
 | `@pixiv/three-vrm` | `^3`      | CDN         |
-| `xrblocks`         | `0.12.0`  | Local build |
-| `xrblocks/addons/` | `0.12.0`  | Local build |
+| `xrblocks`         | `0.20.0`  | Local build |
+| `xrblocks/addons/` | `0.20.0`  | Local build |
 
 All other dependencies (troika, rapier3d, lit) are CDN — see the import map in `index.html`.
 

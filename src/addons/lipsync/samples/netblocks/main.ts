@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import type {UserEventDetail} from 'netblocks';
 import {BroadcastChannelTransport} from 'netblocks';
 
@@ -36,8 +35,8 @@ class NetblocksLipsyncSample extends NetSample {
   // itself — that's the avatar's `face` field.
   private drivers = new Map<string, LipsyncMouth>();
   private domBtn?: HTMLButtonElement;
-  private spatialBtn?: xb.TextButton;
-  private spatialStatus?: xb.TextView;
+  private spatialBtn?: xb.UIButton;
+  private spatialStatus?: xb.UIText;
 
   protected override getJoinOptions() {
     return {
@@ -80,10 +79,12 @@ class NetblocksLipsyncSample extends NetSample {
       const on = (e as CustomEvent<{on: boolean}>).detail.on;
       const label = on ? '🔇 Disable voice' : '🎙️ Enable voice';
       if (this.domBtn) this.domBtn.textContent = label;
-      this.spatialBtn?.setText(label);
-      this.spatialStatus?.setText(
-        on ? 'voice: on. other tabs will see your mouth' : 'voice: off'
-      );
+      if (this.spatialBtn) this.spatialBtn.label = label;
+      if (this.spatialStatus) {
+        this.spatialStatus.text = on
+          ? 'voice: on. other tabs will see your mouth'
+          : 'voice: off';
+      }
     });
 
     this.buildDomButton(session);
@@ -119,31 +120,47 @@ class NetblocksLipsyncSample extends NetSample {
   }
 
   private buildSpatialPanel(session: NonNullable<this['net']['session']>) {
-    const panel = new xb.SpatialPanel({
-      width: 1.0,
-      height: 0.5,
-      backgroundColor: '#1a1a2add',
+    const panel = new xb.UICard({
+      size: {width: 1.0, height: 0.5},
+      manipulation: {
+        actions: {translate: {faceCamera: true}},
+        handle: {action: 'translate'},
+      },
+      edge: true,
+      style: {backgroundColor: '#1a1a2add'},
     });
-    const grid = panel.addGrid();
-    grid.addRow({weight: 0.25}).addText({
-      text: '🎙️ Lipsync · netblocks',
-      fontSize: 0.06,
-      fontColor: '#bfa9ff',
-      textAlign: 'center',
+    const content = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: '100%',
+        padding: 28,
+        flexDirection: 'column',
+        gap: 16,
+      },
     });
-    this.spatialStatus = grid.addRow({weight: 0.25}).addText({
+    content.add(
+      new xb.UIText({
+        text: '🎙️ Lipsync · netblocks',
+        style: {color: '#bfa9ff', fontSize: 34, textAlign: 'center'},
+      })
+    );
+    this.spatialStatus = new xb.UIText({
       text: 'voice: off',
-      fontSize: 0.05,
-      fontColor: '#7ac0ff',
-      textAlign: 'center',
+      style: {color: '#7ac0ff', fontSize: 28, textAlign: 'center'},
     });
-    this.spatialBtn = grid.addRow({weight: 0.5}).addTextButton({
-      text: '🎙️ Enable voice',
-      fontColor: '#ffffff',
-      backgroundColor: '#9177c7',
-      fontSize: 0.18,
+    this.spatialBtn = new xb.UIButton({
+      label: '🎙️ Enable voice',
+      onClick: () => this.toggleVoice(session),
+      style: {
+        height: 76,
+        backgroundColor: '#9177c7',
+        color: '#ffffff',
+        fontSize: 28,
+        borderRadius: 18,
+      },
     });
-    this.spatialBtn.onTriggered = () => this.toggleVoice(session);
+    content.add(this.spatialStatus, this.spatialBtn);
+    panel.add(content);
     panel.position.set(-1.0, 1.5, -1.4);
     panel.rotation.y = Math.PI / 8;
     this.add(panel);
@@ -159,7 +176,7 @@ class NetblocksLipsyncSample extends NetSample {
         await session.voice.enable(session.transport.remotePeerIds);
       } catch (err) {
         const msg = (err as Error).message;
-        this.spatialStatus?.setText(`voice error: ${msg}`);
+        if (this.spatialStatus) this.spatialStatus.text = `voice error: ${msg}`;
       }
     }
   }

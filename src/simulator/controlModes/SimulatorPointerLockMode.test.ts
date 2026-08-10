@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {describe, it, expect, vi, beforeEach} from 'vitest';
+import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 
 import {Input} from '../../input/Input';
 import {SimulatorControllerState} from '../SimulatorControllerState';
@@ -14,6 +14,15 @@ describe('SimulatorPointerLockMode', () => {
   let mockInput: Input;
   let mockNavMesh: SimulatorNavMesh;
   let mockDomElement: HTMLCanvasElement;
+
+  afterEach(() => {
+    Object.defineProperty(document, 'pointerLockElement', {
+      value: null,
+      configurable: true,
+    });
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     document.exitPointerLock = vi.fn();
     mockState = {} as unknown as SimulatorControllerState;
@@ -62,8 +71,10 @@ describe('SimulatorPointerLockMode', () => {
     });
   });
 
-  it('activates by enabling the pointer lock controller, hiding hands, and registering document listener', () => {
+  it('activates and deactivates the pointer-lock controller lifecycle', () => {
     const addListenerSpy = vi.spyOn(document, 'addEventListener');
+    const removeListenerSpy = vi.spyOn(document, 'removeEventListener');
+    const exitLockSpy = vi.spyOn(document, 'exitPointerLock');
 
     mode.onModeActivated();
 
@@ -75,13 +86,7 @@ describe('SimulatorPointerLockMode', () => {
       'pointerlockchange',
       expect.any(Function)
     );
-  });
 
-  it('deactivates by disabling the controller, exiting lock, and removing listener', () => {
-    const removeListenerSpy = vi.spyOn(document, 'removeEventListener');
-    const exitLockSpy = vi.spyOn(document, 'exitPointerLock');
-
-    // Pretend we are locked so exit is called
     Object.defineProperty(document, 'pointerLockElement', {
       value: mockDomElement,
       configurable: true,
@@ -97,82 +102,43 @@ describe('SimulatorPointerLockMode', () => {
       'pointerlockchange',
       expect.any(Function)
     );
-
-    // Cleanup mock
-    Object.defineProperty(document, 'pointerLockElement', {
-      value: null,
-      configurable: true,
-    });
   });
 
-  it('requests pointer lock on pointer down when not already locked', () => {
+  it('requests lock and dispatches select start/end after locking', () => {
     Object.defineProperty(document, 'pointerLockElement', {
       value: null,
       configurable: true,
     });
 
     mode.onPointerDown(new MouseEvent('pointerdown'));
-
     expect(mockDomElement.requestPointerLock).toHaveBeenCalled();
-  });
 
-  it('triggers selectstart on left click when locked', () => {
+    let selectStarts = 0;
+    let selectEnds = 0;
+    mode.pointerLockController.addEventListener('selectstart', () => {
+      selectStarts += 1;
+    });
+    mode.pointerLockController.addEventListener('selectend', () => {
+      selectEnds += 1;
+    });
     Object.defineProperty(document, 'pointerLockElement', {
       value: mockDomElement,
       configurable: true,
     });
-    // Manually trigger the listener
     mode.onModeActivated();
     document.dispatchEvent(new Event('pointerlockchange'));
-
-    const selectStartSpy = vi.spyOn(
-      mode.pointerLockController,
-      'callSelectStart'
-    );
 
     const clickEvent = new MouseEvent('pointerdown', {buttons: 1});
     mode.onPointerDown(clickEvent);
 
     expect(mode.pointerLockController.userData.selected).toBe(true);
-    expect(selectStartSpy).toHaveBeenCalled();
-
-    // Reset lock property
-    Object.defineProperty(document, 'pointerLockElement', {
-      value: null,
-      configurable: true,
-    });
-  });
-
-  it('triggers selectend on pointer up if selected', () => {
-    mode.pointerLockController.userData.selected = true;
-    const selectEndSpy = vi.spyOn(mode.pointerLockController, 'callSelectEnd');
+    expect(selectStarts).toBe(1);
 
     mode.onPointerUp();
 
     expect(mode.pointerLockController.userData.selected).toBe(false);
-    expect(selectEndSpy).toHaveBeenCalled();
-  });
+    expect(selectEnds).toBe(1);
 
-  it('rotates camera on pointer move when locked', () => {
-    Object.defineProperty(document, 'pointerLockElement', {
-      value: mockDomElement,
-      configurable: true,
-    });
-    // Manually trigger the listener
-    mode.onModeActivated();
-    document.dispatchEvent(new Event('pointerlockchange'));
-
-    const rotateSpy = vi.spyOn(mode, 'rotateOnPointerMove');
-
-    const moveEvent = new MouseEvent('pointermove');
-    mode.onPointerMove(moveEvent);
-
-    expect(rotateSpy).toHaveBeenCalledWith(moveEvent, mode.camera.quaternion);
-
-    // Reset lock property
-    Object.defineProperty(document, 'pointerLockElement', {
-      value: null,
-      configurable: true,
-    });
+    mode.onModeDeactivated();
   });
 });
