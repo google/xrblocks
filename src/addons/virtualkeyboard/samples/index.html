@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtual keyboard</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #181a20;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../../../build/xrblocks.js",
+          "xrblocks/addons/": "../../../../build/addons/"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <script type="module">
+      import * as xb from 'xrblocks';
+      import {Keyboard} from 'xrblocks/addons/virtualkeyboard/Keyboard.js';
+
+      const draft = new xb.UIText({
+        text: 'Type something',
+        style: {
+          width: '100%',
+          minHeight: 48,
+          fontSize: 26,
+          textAlign: 'center',
+        },
+      });
+
+      const keyboard = new Keyboard({
+        onValueChange: (value) => {
+          draft.text = value || 'Type something';
+        },
+        onSubmit: (value) => {
+          draft.text = value ? `Submitted: ${value}` : 'Type something';
+          keyboard.setValue('');
+        },
+      });
+
+      const card = new xb.UICard({
+        size: {width: 0.95, height: 0.5},
+        manipulation: true,
+        edge: true,
+        style: {
+          flexDirection: 'column',
+          gap: 12,
+          padding: 20,
+          backgroundColor: '#202124',
+          borderRadius: 24,
+        },
+        children: [draft, keyboard],
+      });
+      card.position.set(0, 1.2, -1);
+
+      xb.add(card);
+      await xb.init(new xb.Options());
+    </script>
+  </body>
+</html>
