@@ -1,14 +1,4 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
-import * as uikit from '@pmndrs/uikit';
 import * as THREE from 'three';
-import {
-  ManipulationBehavior,
-  UICore,
-  UIPanel,
-  UIText,
-  raycastSortFunction,
-} from 'uiblocks';
 import * as xb from 'xrblocks';
 
 const refreshMs = 3000;
@@ -71,8 +61,12 @@ function createDraggableCube({name, color, position}) {
   const group = new THREE.Group();
   group.name = name;
   group.position.copy(position);
-  group.draggable = true;
-  group.draggingMode = xb.DragMode.TRANSLATING;
+  group.xb = {
+    manipulation: {
+      actions: {translate: {faceCamera: false}},
+      handle: {action: xb.ManipulationAction.Translate},
+    },
+  };
   group.userData.semantic = {
     role: 'draggable-object',
     name,
@@ -97,8 +91,12 @@ function createDraggableSphere({name, color, position}) {
   const group = new THREE.Group();
   group.name = name;
   group.position.copy(position);
-  group.draggable = true;
-  group.draggingMode = xb.DragMode.TRANSLATING;
+  group.xb = {
+    manipulation: {
+      actions: {translate: {faceCamera: false}},
+      handle: {action: xb.ManipulationAction.Translate},
+    },
+  };
   group.userData.semantic = {
     role: 'draggable-object',
     name,
@@ -123,8 +121,12 @@ function createDraggableTorus({name, color, position}) {
   const group = new THREE.Group();
   group.name = name;
   group.position.copy(position);
-  group.draggable = true;
-  group.draggingMode = xb.DragMode.TRANSLATING;
+  group.xb = {
+    manipulation: {
+      actions: {translate: {faceCamera: false}},
+      handle: {action: xb.ManipulationAction.Translate},
+    },
+  };
   group.userData.semantic = {
     role: 'draggable-object',
     name,
@@ -146,16 +148,7 @@ function createDraggableTorus({name, color, position}) {
 }
 
 class ContextBugtestScene extends xb.Script {
-  constructor() {
-    super();
-    this.uiCore = new UICore(this);
-  }
-
   init() {
-    if (xb.core.input.raycaster) {
-      xb.core.input.raycaster.sortFunction = raycastSortFunction;
-    }
-
     this.add(new THREE.HemisphereLight(0xffffff, 0x606060, 2.8));
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
     keyLight.position.set(1.2, 2.6, 1.4);
@@ -183,69 +176,16 @@ class ContextBugtestScene extends xb.Script {
       this.add(object);
     }
 
-    this.createUiblocksCard();
+    this.createContextCard();
   }
 
-  createUiblocksCard() {
-    const card = this.uiCore.createCard({
-      name: 'UIBlocks Debug Card',
-      sizeX: 0.72,
-      sizeY: 0.42,
-      position: new THREE.Vector3(0, xb.user.height + 0.05, -1.32),
-      behaviors: [
-        new ManipulationBehavior({
-          draggable: true,
-          faceCamera: true,
-          manipulationMargin: 80,
-          manipulationCornerRadius: 36,
-        }),
-      ],
-    });
-
-    const panel = new UIPanel({
-      width: '100%',
-      height: '100%',
-      fillColor: '#0a0e12',
-      strokeWidth: 3,
-      strokeColor: '#42d9ff',
-      cornerRadius: 32,
-      padding: 28,
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center',
-      gap: 24,
-    });
-    panel.name = 'UIBlocks Debug Panel';
-    card.add(panel);
-
-    panel.add(
-      new UIText('UIBlocks Card', {
-        fontSize: 44,
-        fontWeight: 'bold',
-        color: '#42d9ff',
-      })
-    );
-    panel.add(
-      new UIText('draggable semantic surface', {
-        fontSize: 28,
-        color: 'white',
-        textAlign: 'center',
-      })
-    );
-    const actionButton = new UIPanel({
-      width: 260,
-      height: 72,
-      fillColor: '#245a6a',
-      strokeWidth: 2,
-      strokeColor: '#7cecff',
-      cornerRadius: 24,
-      pointerEvents: 'auto',
-      justifyContent: 'center',
-      alignItems: 'center',
+  createContextCard() {
+    const actionButton = new xb.UIButton({
+      label: 'Ping',
       onClick: () => {
         console.log('UIBlocks debug action clicked');
-        return true;
       },
+      style: {width: 260},
     });
     actionButton.name = 'UIBlocks Action Button';
     actionButton.userData.semantic = {
@@ -255,15 +195,34 @@ class ContextBugtestScene extends xb.Script {
       source: 'uiblocks',
       traits: ['selectable'],
     };
-    actionButton.add(
-      new UIText('Ping', {
-        fontSize: 30,
-        fontWeight: 'bold',
-        color: '#ffffff',
-        textAlign: 'center',
-      })
-    );
-    panel.add(actionButton);
+
+    const card = new xb.UICard({
+      size: {width: 0.72, height: 0.42},
+      manipulation: {
+        actions: {translate: {faceCamera: true}},
+        handle: {action: xb.ManipulationAction.Translate},
+      },
+      edge: true,
+      style: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 24,
+      },
+      children: [
+        new xb.UIText({
+          text: 'UIBlocks Card',
+          style: {fontSize: 44, fontWeight: 'bold'},
+        }),
+        new xb.UIText({
+          text: 'draggable semantic surface',
+          style: {fontSize: 28, textAlign: 'center'},
+        }),
+        actionButton,
+      ],
+    });
+    card.name = 'UIBlocks Debug Card';
+    card.position.set(0, xb.user.height + 0.05, -1.32);
+    this.add(card);
 
     return card;
   }
@@ -393,10 +352,12 @@ class ContextOutputVisualizer {
 
 document.addEventListener('DOMContentLoaded', async () => {
   const options = new xb.Options()
-    .enableUI()
-    .enableAutomationMode({hideSimulatorUi: false})
+    .enableAutomationMode({
+      hideSimulatorUi: false,
+      defaultMode: xb.SimulatorMode.USER,
+      enableHands: false,
+    })
     .enableContext();
-  options.uikit.enable(uikit);
   options.context.scene.pollingIntervalMs = refreshMs;
 
   xb.add(new ContextBugtestScene());

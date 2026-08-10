@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import {Script} from '../core/Script.js';
-import {Reticle} from '../ui/core/Reticle.js';
+import {Reticle} from '../interaction/reticle/Reticle.js';
 import {Controller} from '../input/Controller.js';
 
 interface SimulatorPointerLockControllerEventMap

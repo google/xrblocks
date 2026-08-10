@@ -71,7 +71,17 @@ export class SceneManager extends xb.Script {
   }
 
   override init() {
-    this.simulatorObjects = xb.core.simulator.objects;
+    this.bindSimulator();
+  }
+
+  override onSimulatorStarted() {
+    this.bindSimulator();
+  }
+
+  private bindSimulator() {
+    const simulator = xb.core.simulator;
+    if (!simulator) return;
+    this.simulatorObjects = simulator.objects;
     this.syncEnvironment(true);
   }
 
@@ -81,7 +91,7 @@ export class SceneManager extends xb.Script {
 
   private syncEnvironment(initial = false) {
     if (!this.simulatorObjects) return;
-    const nextManifest = xb.core.simulator.activeEnvironmentManifest;
+    const nextManifest = xb.core.simulator?.activeEnvironmentManifest;
     const environmentChanged = nextManifest !== this.manifest;
     if (environmentChanged) {
       this.manifest = nextManifest;

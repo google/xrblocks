@@ -1,5 +1,3 @@
-import {ModelViewer} from '../../ui/interaction/ModelViewer.js';
-
 import {SimulatorControlMode} from './SimulatorControlMode.js';
 
 const WHEEL_SCALE_SPEED = 0.001;
@@ -39,9 +37,6 @@ export class SimulatorUserMode extends SimulatorControlMode {
 
   onPointerMove(event: MouseEvent) {
     this.input.mouseController.updateMousePositionFromEvent(event);
-    if (this.input.mouseController.userData.connected) {
-      this.input.updateController(this.input.mouseController);
-    }
     if (event.buttons & 2) {
       this.rotateOnPointerMove(event, this.camera.quaternion);
     }
@@ -63,18 +58,12 @@ export class SimulatorUserMode extends SimulatorControlMode {
     if (!mouseController.userData.connected) {
       return false;
     }
-    this.input.updateController(mouseController);
 
-    let target =
-      this.input.intersectionsForController.get(mouseController)?.[0]?.object;
-    while (target && !(target instanceof ModelViewer)) {
-      target = target.parent ?? undefined;
-    }
-    if (!(target instanceof ModelViewer) || !target.scalable) {
-      return false;
-    }
-
-    target.scale.multiplyScalar(Math.exp(-deltaY * WHEEL_SCALE_SPEED));
-    return true;
+    return (
+      this.interaction?.queueScaleIntent(
+        mouseController,
+        Math.exp(-deltaY * WHEEL_SCALE_SPEED)
+      ) ?? false
+    );
   }
 }

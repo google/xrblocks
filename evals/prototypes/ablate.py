@@ -53,14 +53,34 @@ def split_sections(skill_md: pathlib.Path) -> list[tuple[str, str]]:
     return chunks
 
 
-def build_prompt(sections: list[tuple[str, str]], ablate_idx: int | None) -> str:
-    parts = []
+def load_reference_content(reference_files: list[str]) -> list[str]:
+    parts = ["# XR Blocks app contract\n\n" + (REPO_ROOT / "CONTEXT.md").read_text()]
+    for reference_file in reference_files:
+        reference_path = (REPO_ROOT / reference_file).resolve()
+        try:
+            reference_path.relative_to(REPO_ROOT.resolve())
+        except ValueError as e:
+            raise ValueError(f"reference file escapes the repository: {reference_file!r}") from e
+        if not reference_path.is_file():
+            raise FileNotFoundError(f"task reference does not exist: {reference_path}")
+        parts.append(f"# Reference: {reference_file}\n\n{reference_path.read_text()}")
+    return parts
+
+
+def build_prompt(
+    sections: list[tuple[str, str]],
+    ablate_idx: int | None,
+    reference_files: list[str],
+) -> str:
+    parts = load_reference_content(reference_files)
+    skill_parts = []
     for i, (label, text) in enumerate(sections):
         if i == ablate_idx:
-            parts.append(f"(section `{label}` removed for ablation)\n")
+            skill_parts.append(f"(section `{label}` removed for ablation)\n")
         else:
-            parts.append(text)
-    return "".join(parts)
+            skill_parts.append(text)
+    parts.insert(1, "# Ablated task skill\n\n" + "".join(skill_parts))
+    return "\n\n---\n\n".join(parts)
 
 
 def run_variant(
@@ -87,7 +107,7 @@ def run_variant(
     # allow copying into what is left.
     shutil.copytree(REPO_ROOT / template_rel, workspace, dirs_exist_ok=True)
 
-    system_prompt = build_prompt(sections, ablate_idx)
+    system_prompt = build_prompt(sections, ablate_idx, spec.get("reference_files", []))
     user_msg = (
         f"You are helping me build an xrblocks app. Return only the complete "
         f"contents of `{edit_file}` inside a single ```javascript fenced "

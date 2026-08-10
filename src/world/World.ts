@@ -214,9 +214,7 @@ export class World extends Script {
    * (currently planes) and places a 3D object at the intersection point,
    * oriented to face the user.
    *
-   * We recommend using /templates/3_depth/ to anchor objects based on
-   * depth mesh for mixed reality experience for accuracy. This function is
-   * design for demonstration purposes.
+   * See /templates/3_spatial_placement/ for a complete placement example.
    *
    * @param objectToPlace - The object to position in the
    * world.

@@ -6,13 +6,13 @@ import {
   Image,
   InProperties,
 } from '@pmndrs/uikit';
-import {TextWithEmoji} from '../../uiblocks/src/core/primitives/TextWithEmoji';
 import {computed} from '@preact/signals-core';
 
 import {ActionButton} from './ActionButton';
 import {ButtonProperties} from './ButtonProperties';
 import {CardActionButton} from './CardActionButton';
 import {CardTitleChip} from './CardTitleChip';
+import {TextWithEmoji} from './TextWithEmoji';
 
 /** Default properties for the Card component. */
 export const cardDefaults = {

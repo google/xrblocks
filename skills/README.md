@@ -1,76 +1,27 @@
-# XR Blocks Skills
+# XR Blocks skills
 
-Focused, task-oriented skills for building **AI + XR** apps with the XR Blocks SDK
-(`import * as xb from 'xrblocks'`). Each subfolder is one skill with a `SKILL.md` whose YAML
-`description` tells an agent _what it does and when to use it_. Apply
-**`xb-implement`** as the shared foundation, then use **`xb-build-app`** or
-**`xb-contribute-sdk`** for the requested outcome and compose only the focused
-workflow skills the request actually triggers.
+This directory contains portable task workflows for agents that build XR
+Blocks applications or contribute to the SDK. Each skill follows the Agent
+Skills directory format: a required `SKILL.md` plus optional `references/`,
+`scripts/`, and `assets/`.
 
-For repo/build/architecture rules see [`../AGENTS.md`](../AGENTS.md); for the
-agent rules of engagement and SDK app overview see
-[`../CONTEXT.md`](../CONTEXT.md).
+Agent hosts can expose or install these directories through their supported
+skill-discovery mechanism. This README is a human-readable index, not a
+platform-specific manifest or discovery mechanism.
 
-## Naming convention
+| Skill                                                   | Task outcome                                                     |
+| ------------------------------------------------------- | ---------------------------------------------------------------- |
+| [`xb-build-app`](xb-build-app/SKILL.md)                 | Deliver one complete, testable XR Blocks experience slice        |
+| [`xb-add-spatial-ui`](xb-add-spatial-ui/SKILL.md)       | Build a usable interface with the current built-in UI            |
+| [`xb-add-interactions`](xb-add-interactions/SKILL.md)   | Turn user intent into current events, feedback, and manipulation |
+| [`xb-add-world-sensing`](xb-add-world-sensing/SKILL.md) | Connect physical-world evidence to observable app state          |
+| [`xb-add-ai`](xb-add-ai/SKILL.md)                       | Connect one AI input and provider path to an observable result   |
+| [`xb-debug-app`](xb-debug-app/SKILL.md)                 | Trace one broken behavior from red evidence to a proved repair   |
+| [`xb-contribute-sdk`](xb-contribute-sdk/SKILL.md)       | Complete one SDK change across every affected repository seam    |
 
-Workflow skills use `xb-<verb>-<outcome>` so their invocation matches a developer
-intent, such as `xb-build-app` or `xb-add-ai`. Existing capability references use
-`xb-<area>`. The `xb-` prefix matches the `xb` import alias.
+Exact API facts belong to public entries and TSDoc. Concepts and examples
+belong to the manual, templates, and samples. Skills contain task steps,
+branch selection, and checkable completion criteria.
 
-## Primary workflow skills
-
-All implementation workflows first apply the shared
-[`xb-implement`](xb-implement/SKILL.md) foundation. It grounds APIs, lifecycle,
-ownership, dependencies, cleanup, and unavailable states; the primary workflow
-then owns the requested outcome.
-
-| Skill                                                   | Use when you need to…                                              |
-| ------------------------------------------------------- | ------------------------------------------------------------------ |
-| [`xb-implement`](xb-implement/SKILL.md)                 | Apply the required implementation foundation                       |
-| [`xb-build-app`](xb-build-app/SKILL.md)                 | Build an app through a simulator or XR user-testing handoff        |
-| [`xb-add-interactions`](xb-add-interactions/SKILL.md)   | Generate hands, gaze, grabbing, gesture, or manipulation behavior  |
-| [`xb-add-spatial-ui`](xb-add-spatial-ui/SKILL.md)       | Add a usable menu, HUD, card, dashboard, label, or control surface |
-| [`xb-add-world-sensing`](xb-add-world-sensing/SKILL.md) | Make the app observe and react to the physical world               |
-| [`xb-add-ai`](xb-add-ai/SKILL.md)                       | Add complete query, Live, generation, or tool-driven AI behavior   |
-| [`xb-automate-app`](xb-automate-app/SKILL.md)           | Expose browser or remote controls to an external process           |
-| [`xb-contribute-sdk`](xb-contribute-sdk/SKILL.md)       | Change SDK seams, public APIs, tests, examples, and docs together  |
-
-## Supporting capability references
-
-The workflow skills above consolidate these narrower references and the manual.
-Use a capability reference when debugging that subsystem or when a workflow
-skill points to it; start app-generation work from the workflow layer.
-
-| Skill                                           | Use when you need to…                                                |
-| ----------------------------------------------- | -------------------------------------------------------------------- |
-| [`xb-core`](xb-core/SKILL.md)                   | Bootstrap an app: `Script`, `Options`, the frame loop, run it        |
-| [`xb-ui`](xb-ui/SKILL.md)                       | Build a HUD/menu with the core `SpatialPanel` grid                   |
-| [`xb-uiblocks`](xb-uiblocks/SKILL.md)           | Build rich flexbox UI (gradients, shadows) via the uiblocks addon    |
-| [`xb-modelviewer`](xb-modelviewer/SKILL.md)     | Load & display GLTF / splat / primitive 3D models                    |
-| [`xb-hands`](xb-hands/SKILL.md)                 | Use hand tracking (joints, pinch, touch, grab)                       |
-| [`xb-agenthands`](xb-agenthands/SKILL.md)       | Give an AI agent gesturing hands + an orb that point at real objects |
-| [`xb-gestures`](xb-gestures/SKILL.md)           | Detect pinch/fist/point/spread/thumbs-up/open-palm                   |
-| [`xb-head-gestures`](xb-head-gestures/SKILL.md) | Detect completed head nod and shake motions                          |
-| [`xb-depth`](xb-depth/SKILL.md)                 | Add depth sensing, occlusion, and depth-mesh colliders               |
-| [`xb-world`](xb-world/SKILL.md)                 | Detect real-world planes, meshes, and objects                        |
-| [`xb-anchors`](xb-anchors/SKILL.md)             | Pin content to a real place and restore it in a later session        |
-| [`xb-context`](xb-context/SKILL.md)             | Read agent-facing scene context, visible objects, and SOM labels     |
-| [`xb-ai`](xb-ai/SKILL.md)                       | Query Gemini/OpenAI, run a live session, generate images             |
-| [`xb-physics`](xb-physics/SKILL.md)             | Add Rapier rigid-body physics                                        |
-| [`xb-simulator`](xb-simulator/SKILL.md)         | Develop/test in the desktop simulator                                |
-| [`xb-netblocks`](xb-netblocks/SKILL.md)         | Add multiplayer presence, shared objects, voice                      |
-| [`xb-lipsync`](xb-lipsync/SKILL.md)             | Drive audio-driven avatar mouths from any `MediaStream`              |
-| [`xb-sound`](xb-sound/SKILL.md)                 | Play spatial audio, record, recognize/synthesize speech              |
-| [`xb-testing`](xb-testing/SKILL.md)             | Write sequential functional, integration, or simulator tests         |
-
-Deep references some skills link to live next to the code:
-[`../src/addons/uiblocks/SKILL.md`](../src/addons/uiblocks/SKILL.md),
-[`../src/addons/netblocks/SKILL.md`](../src/addons/netblocks/SKILL.md), [`../src/addons/lipsync/SKILL.md`](../src/addons/lipsync/SKILL.md).
-
-## Serving these to an agent
-
-These skills are files, so any agent with filesystem access can read them
-directly. For agents that reach a project over the Model Context Protocol
-instead, [`../src/addons/mcp/`](../src/addons/mcp/README.md) serves them as
-tools (`list_skills`, `get_skill`) alongside a `search_api` lookup over the
-SDK's public surface.
+`xb-contribute-sdk` is repository-facing. The other workflows are for
+applications that consume XR Blocks.

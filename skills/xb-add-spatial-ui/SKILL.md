@@ -1,78 +1,83 @@
 ---
 name: xb-add-spatial-ui
-description: >-
-  Add a spatial interface to an XR Blocks app. Use for menus,
-  HUDs, cards, dashboards, dialogs, labels, buttons, controls, or object-attached
-  interfaces, including fixing their layout, styling, placement, or interaction.
+description: Build spatial UI in XR Blocks. Use when adding cards, overlays, panels, text, controls, model-viewer interfaces, layout, styling, themes, or UI placement with the built-in UI system.
 ---
 
 # Add spatial UI
 
 Build a **usable surface**: information and controls that remain legible,
-targetable, and observable in their intended spatial pose.
+targetable, and observable in their intended pose.
 
-## 1. Specify the surface contract
+## 1. Write the surface contract
 
-Record:
+Record every displayed value and action, its state owner, spatial anchor,
+appearance states, update cadence, desktop input, XR input, and observable
+result.
 
-- the values the surface presents and the actions it exposes;
-- whether it is world-fixed, object-anchored, head-leashed, or billboarded;
-- when it appears, moves, updates, and disappears;
-- the desktop and XR input paths that must operate it.
+Complete this step when every value and control has a user purpose, source,
+anchor, and testable result.
 
-The contract is complete when every displayed value and control has a user
-purpose, state source, spatial anchor, and observable result.
+## 2. Select the correct UI root
 
-## 2. Establish the UIBlocks foundation
+Read [`../../docs/docs/manual/UI.mdx`](../../docs/docs/manual/UI.mdx) before
+implementation.
 
-Use the `uiblocks` addon for app UI. Its flexbox layout, rich styling,
-interactive panels, and spatial behaviors make it the stable default even for a
-simple first surface. Keep each physical surface entirely within UIBlocks.
+- Use `UICard` for a world-space surface measured and positioned in meters.
+- Use `UIOverlay` for a bounded view-space surface.
+- Use `UIPanel` only inside a card or overlay for layout or visual grouping.
 
-Before implementation, read
-[references/uiblocks.md](references/uiblocks.md) completely. Copy its verified
-bare `uiblocks` import, import map or bundler setup, renderer registration, and
-raycast sorting. Confirm imported addon symbols exist in
-`src/addons/uiblocks/src/index.ts` rather than assuming they belong to core
-`xrblocks`.
+Import components from `xrblocks`. Built-in UI starts automatically and joins
+the normal XR Blocks interaction pipeline. Application code does not enable a
+UI subsystem, register UIKit, or install a second raycaster.
 
-Use core `xb.SpatialPanel` only after identifying a concrete constraint that
-UIBlocks cannot satisfy, such as an environment that cannot load its browser
-peers or an explicitly required legacy `SpatialPanel` integration. Record the
-constraint, then read
-[references/core-ui-fallback.md](references/core-ui-fallback.md). A preference
-for fewer setup lines is not a constraint.
+Complete this step when one root owns the intended coordinate space and every
+nested element has one layout parent.
 
-The foundation is complete when the app resolves `xrblocks`, `uiblocks`,
-`three`, and UIBlocks peers from one dependency graph; calls `enableUI()` and
-`options.uikit.enable(uikit)` before `xb.init()`; and installs
-`raycastSortFunction` before controls are created.
+## 3. Compose semantic UI
 
-## 3. Compose one coherent surface
+Build reading order with `UIPanel`, `UIText`, `UIImage`, and `UIIcon`. Use
+`UIButton` and `UISlider` for actions instead of raw pointer handlers. Use
+`ModelViewer` for supported interactive model presentation. Use semantic UI for
+status, telemetry, instructions, and debug state instead of canvas sprites.
 
-Create one `UICard` per spatial pivot and partition it with nested `UIPanel`
-flex layouts. Establish a small density, type, spacing, shape, and color scale;
-then add `UIText`, `UIImage`, and `UIIcon` in reading order. Compose buttons from
-an interactive `UIPanel` plus content. Use behaviors for leash, billboard,
-manipulation, anchoring, and show/hide motion when the surface contract calls for
-them.
+Treat `UICard.size` and world transforms as meters. Treat descendant numeric
+layout values as UIKit layout units. Treat numeric `lineHeight` as a font-size
+multiplier; use `px` or `%` strings for explicit units.
 
-The surface is complete when every required value is visible, the layout fits
-inside the card at its intended physical dimensions, and every state-changing
-control has hover feedback plus an observable click result.
+Complete this step when all content fits at the intended physical size and each
+state-changing control has hover or active feedback plus an observable result.
 
-## 4. Prepare the spatial UI handoff
+## 4. Connect state, theme, and spatial behavior
 
-Build or type-check the app and load its initial surface when browser access is
-available. Confirm imports, renderer registration, layout construction,
-raycast sorting, control handlers, feedback states, and cleanup are present
-without relevant startup errors.
+Update component properties directly. Keep mounted text and controls stable;
+change structure only when the application structure changes. Use a theme
+preset or theme update for shared palette and structural roles, then use local
+styles for exceptions.
 
-Give the user the exact simulator/XR URL, intended viewing pose, input path, and
-one short instruction per control. State the expected idle, hover, active,
-disabled, and result visuals that apply. Hand off spatial judgments—legibility
-over the real background, target size, occlusion, reach, head motion, and
-repositioning—as an explicit checklist.
+Use `pointerEvents`, `interactionEnabled`, visibility, material depth behavior,
+and opacity for their separate purposes. Transparency alone does not disable
+depth writes or input.
 
-Finish when the surface implementation is complete and the user can evaluate
-every control and spatial state without inferring expected behavior from code.
+Read [`../../docs/docs/manual/Placement.md`](../../docs/docs/manual/Placement.md)
+when the root follows, faces, or orbits another object. Read
+[`../../docs/docs/manual/Interaction.md`](../../docs/docs/manual/Interaction.md)
+for manipulation and target semantics.
+
+Complete this step when state changes update the intended mounted element,
+theme changes produce the intended structure and palette, and placement does
+not compete with user manipulation.
+
+## 5. Validate and hand off
+
+Build or type-check the app. After a completed UI frame, run `xb.ui.validate()`
+for the root or all roots. Check overflow, clipping, disabled behavior, input,
+cleanup, and relevant console output. Start from
+[`../../templates/01_spatial_ui/`](../../templates/01_spatial_ui/) or the
+closest focused sample for executable evidence.
+
+Give the user the exact URL, viewing pose, input route, control instructions,
+and expected idle, hover, active, disabled, and result states. Name real-device
+checks for legibility, target size, occlusion, reach, and head motion.
+
+Finish when validation and available smoke checks pass and the user can test
+every control and state without inferring expected behavior from source.

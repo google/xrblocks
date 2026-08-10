@@ -83,11 +83,6 @@ export const RIGHT_VIEW_ONLY_LAYER = 2;
  */
 export const OCCLUDABLE_ITEMS_LAYER = 3;
 
-/**
- * Layer used for rendering overlaid UI text. Currently only used for LabelView.
- */
-export const UI_OVERLAY_LAYER = 4;
-
 // --- Camera ---
 
 /**

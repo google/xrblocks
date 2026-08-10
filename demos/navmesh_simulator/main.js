@@ -1,6 +1,5 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import * as xb from 'xrblocks';
 
 const EYE_HEIGHT = 1.5;
@@ -26,7 +25,51 @@ class NavMeshWireframe extends xb.Script {
     this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
   }
 
-  onSimulatorStarted() {
+  async onSimulatorStarted() {
+    const manifest = xb.core.simulator.activeEnvironmentManifest;
+    const navMeshPath = manifest?.navMeshPath;
+    if (!navMeshPath) {
+      console.warn('No navmesh path configured for the active environment.');
+      return;
+    }
+
+    const loader = new GLTFLoader();
+    let gltf;
+    try {
+      gltf = await loader.loadAsync(navMeshPath);
+    } catch (error) {
+      console.warn(
+        `Failed to load navmesh wireframe at ${navMeshPath}.`,
+        error
+      );
+      return;
+    }
+    const group = new THREE.Group();
+
+    if (manifest.position) gltf.scene.position.fromArray(manifest.position);
+    if (manifest.quaternion) {
+      gltf.scene.quaternion.fromArray(manifest.quaternion);
+    }
+    if (manifest.scale) gltf.scene.scale.fromArray(manifest.scale);
+    gltf.scene.updateMatrixWorld(true);
+    gltf.scene.traverse((object) => {
+      if (!object.isMesh || !object.geometry) return;
+      const geometry = object.geometry.clone();
+      geometry.applyMatrix4(object.matrixWorld);
+      const edges = new THREE.EdgesGeometry(geometry, 1);
+      const wireframe = new THREE.LineSegments(
+        edges,
+        new THREE.LineBasicMaterial({
+          color: 0x00e5ff,
+          transparent: true,
+          opacity: 0.9,
+          depthTest: false,
+        })
+      );
+      wireframe.renderOrder = 1000;
+      group.add(wireframe);
+    });
+    this.add(group);
     this.createPathButton();
   }
 
@@ -55,9 +98,7 @@ class NavMeshWireframe extends xb.Script {
   }
 
   showRandomPath() {
-    const result = xb.core.simulator.navMesh.findRandomPathFrom(
-      xb.core.camera.position
-    );
+    const result = xb.core.simulator.findRandomUserPath();
     if (!result) {
       this.pathButton.textContent = 'No Path';
       window.setTimeout(() => {
@@ -140,10 +181,7 @@ class NavMeshWireframe extends xb.Script {
     desiredCameraPosition.copy(xb.core.camera.position).add(waypointDelta);
     desiredCameraPosition.y =
       currentFootPosition.y + waypointDelta.y + eyeHeight;
-    xb.core.simulator.navMesh.applyUserMovement(
-      xb.core.camera,
-      desiredCameraPosition
-    );
+    xb.core.simulator.moveUser(desiredCameraPosition);
 
     remainingPathStart.copy(xb.core.camera.position);
     remainingPathStart.y -= eyeHeight;
@@ -160,7 +198,6 @@ document.addEventListener('DOMContentLoaded', () => {
   options.setAppTitle('Simulator Navmesh');
   options.simulator.defaultMode = xb.SimulatorMode.POINTER_LOCK;
   options.simulator.navMesh.enabled = true;
-  options.simulator.navMesh.showDebugVisualizations = true;
   options.simulator.navMesh.eyeHeight = EYE_HEIGHT;
   options.simulator.initialCameraPosition = {
     x: START_FOOT_POSITION.x,

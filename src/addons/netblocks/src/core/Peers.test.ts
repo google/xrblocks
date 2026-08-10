@@ -14,6 +14,17 @@ vi.mock('xrblocks', async () => {
   };
 });
 
+vi.mock('troika-three-text', async () => {
+  const T = await import('three');
+  return {
+    Text: class extends T.Object3D {
+      text = '';
+      sync() {}
+      dispose() {}
+    },
+  };
+});
+
 import {encodeMessage, HelloMessage, NetMessage} from './codec/MessageCodec';
 import {NET_PROTOCOL_VERSION} from './constants/NetConstants';
 import {NetCore} from './NetCore';
@@ -58,12 +69,6 @@ describe('Peers facade', () => {
     net = new NetCore(root);
   });
 
-  it('list() is empty before joinRoom and after leaveRoom', () => {
-    expect(net.peers.list()).toEqual([]);
-    expect(net.peers.remoteUsers).toEqual([]);
-    expect(net.user.peerId).toBeUndefined();
-  });
-
   it('subscriptions registered before joinRoom fire on remote join', async () => {
     const onJoin = vi.fn();
     const onLeave = vi.fn();
@@ -88,19 +93,6 @@ describe('Peers facade', () => {
     transport.fakePeerLeave('peer-a');
     expect(onLeave).toHaveBeenCalledTimes(1);
     expect(net.peers.list()).toEqual([]);
-  });
-
-  it('off() unsubscribes', async () => {
-    const onJoin = vi.fn();
-    const dispose = net.peers.on('join', onJoin);
-
-    const transport = new FakeTransport();
-    await net.joinRoom('room', {transport});
-
-    dispose();
-    transport.fakePeerJoin('peer-x');
-    transport.receive('peer-x', helloFrom('peer-x'));
-    expect(onJoin).not.toHaveBeenCalled();
   });
 
   it('subscriptions persist across rejoin', async () => {

@@ -113,7 +113,9 @@ export class ModelLoader {
     const {SplatMesh} = await import('@sparkjsdev/spark'); // Dynamic import
     const splatMesh = new SplatMesh({url});
     await splatMesh.initialized;
-    return splatMesh;
+    return Object.assign(splatMesh, {
+      boundingBox: splatMesh.getBoundingBox(false),
+    });
   }
 
   /**

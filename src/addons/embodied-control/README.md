@@ -48,6 +48,9 @@ resolves when movement is complete. By default, `EmbodiedControl` pauses the
 core after initialization so frames advance only when `step()` is called. This
 is useful for repeatable tests.
 
+Explicit durations, `tickMs` values, and velocities must be finite numbers
+greater than zero. Omit a velocity to snap in one frame.
+
 For visual demos, pass `realTime: true` so the browser paints intermediate
 frames while a step is executing:
 
@@ -74,7 +77,6 @@ await embodied.step({
     },
     rightHand: {
       move: [0, 0, -0.18],
-      pose: xb.SimulatorHandPose.POINTING,
       selectStart: true,
     },
     leftHand: {
@@ -103,23 +105,22 @@ rightHand: {
   rotate?: [pitchDegrees, yawDegrees, rollDegrees];
   selectStart?: boolean;
   selectEnd?: boolean;
-  pose?: SimulatorHandPose;
   rotations?: SimulatorHandPoseRotations;
   visible?: boolean;
 }
 ```
 
 Hand `move` and `rotate` are relative to the current simulator controller pose.
-`pose` applies one of the nine named `SimulatorHandPose` values. `rotations`
-applies sparse simulator hand joint rotations in radians. When both are
-supplied, the named pose is applied first and sparse rotations override its
-joint targets.
+`rotations` applies sparse simulator hand joint rotations in radians.
+`pose` and `rotations` are mutually exclusive. Selection commands also cannot
+include either visual field. Use a named pinching pose or `selectStart` when the
+hand should begin a logical selection.
 
 Use `selectStart` and `selectEnd` for WebXR-like hand selection. In the
 simulator these call `setLeftHandPinching()` / `setRightHandPinching()`, which
 emits the normal XR Blocks `selectstart` / `selectend` events and updates the
-controller selected state. Applying the named `PINCHING` pose has the same
-selection transitions; raw joint `rotations` do not begin selection.
+controller selected state. This is different from passing raw pinching
+`rotations`, which only changes the visual hand pose.
 
 ---
 
@@ -202,9 +203,9 @@ embodied.applyControl({
 
 ---
 
-## Sample
+## Demo
 
-See `samples/embodied_control/` for a sidebar-driven simulator sample. It
+See `demos/embodied_control/` for a sidebar-driven simulator demo. It
 disables manual simulator controls and runs locomotion, hand motion, and
 pinch-select steps only through `EmbodiedControl`.
 

@@ -1,1 +1,3 @@
-Build me a quick volleyball scene. There should be a ball floating just in front of me at chest height that I can hit with my hand. The ball should fall, bounce off the floor, and react to my hand when I swing at it. Keep the cylinder from the starter template somewhere off to the side.
+Use the physics-ready starter to build a small volleyball scene. Put a ball at
+chest height that can fall and bounce from a static floor. Let a direct hand
+interaction apply motion to the ball when the user strikes it.

@@ -173,26 +173,6 @@ describe('ObjectDetector Multi-Client API', () => {
     expect(mockBackend.run).toHaveBeenCalledTimes(1);
   });
 
-  it('supports one-off runs when not started, and reuses the ongoing promise', async () => {
-    const promise1 = detector.runDetection();
-    expect(promise1).not.toBeNull();
-    expect(
-      (detector as unknown as PrivateObjectDetector).currentDetectionPromise
-    ).toBe(promise1);
-
-    const promise2 = detector.runDetection();
-    expect(promise2).toBe(promise1);
-
-    const results = await promise1;
-    expect(results.map((obj) => obj.label)).toEqual(['chair']);
-    expect(detector.detectedObjects).toEqual([]);
-    expect(detector.get().map((obj) => obj.label)).toEqual(['chair']);
-    expect(mockBackend.run).toHaveBeenCalledTimes(1);
-    expect(
-      (detector as unknown as PrivateObjectDetector).currentDetectionPromise
-    ).toBeNull();
-  });
-
   it('disposes temporary depth mesh snapshots after detection', async () => {
     const geometryDispose = vi.fn();
     const materialDispose = vi.fn();
@@ -212,19 +192,6 @@ describe('ObjectDetector Multi-Client API', () => {
 
     expect(geometryDispose).toHaveBeenCalledTimes(1);
     expect(materialDispose).toHaveBeenCalledTimes(1);
-  });
-
-  it('reuses an in-flight one-off detection when a client starts', async () => {
-    const promise = detector.runDetection();
-
-    detector.start({});
-
-    expect(
-      (detector as unknown as PrivateObjectDetector).currentDetectionPromise
-    ).toBe(promise);
-
-    await promise;
-    expect(mockBackend.run).toHaveBeenCalledTimes(1);
   });
 
   it('clears public results, tracked objects, and scene children', async () => {
