@@ -10,6 +10,7 @@ export interface TestRunnerConfig {
     /** Options passed to the underlying EmbodiedControl addon. */
     embodiedOptions?: EmbodiedControlOptions;
 }
+/** Owns the single terminal Core lifetime in its test process or browser page. */
 export declare class TestRunner {
     readonly core: Core;
     readonly embodiedControl: EmbodiedControl;
@@ -17,16 +18,18 @@ export declare class TestRunner {
     readonly camera: THREE.Camera;
     readonly actions: EmbodiedControl;
     private caughtErrors;
-    private boundExceptionListener;
+    private errorListenerAttached;
+    private destroyPromise?;
+    private readonly handleScriptException;
     private constructor();
     static create(config?: TestRunnerConfig): Promise<TestRunner>;
     /**
      * Retrieves a loaded script instance from the dependency injection registry.
      */
     getScript<T extends Script>(klass: Constructor<T>): T;
-    /**
-     * Destroys the test runner, cleans up the scene, window events, and resets mocks.
-     */
+    /** Disposes the Core lifetime owned by this runner. */
     destroy(): Promise<void>;
+    private finishDestroy;
+    private removeErrorListener;
     private checkErrors;
 }

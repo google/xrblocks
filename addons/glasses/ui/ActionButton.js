@@ -2,7 +2,7 @@ import { Container } from '@pmndrs/uikit';
 import { computed } from '@preact/signals-core';
 import { HighlightMaterial } from './HighlightMaterial.js';
 import { MaterialSymbolsIcon } from './MaterialSymbolsIcon.js';
-import { TextWithEmoji } from '../../uiblocks/src/core/primitives/TextWithEmoji.js';
+import { TextWithEmoji } from './TextWithEmoji.js';
 import 'three';
 import './utils.js';
 

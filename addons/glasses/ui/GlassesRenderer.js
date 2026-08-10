@@ -1,3 +1,4 @@
+import { reversePainterSortStable } from '@pmndrs/uikit';
 import * as THREE from 'three';
 
 class GlassesRenderer extends THREE.Mesh {
@@ -29,6 +30,8 @@ class GlassesRenderer extends THREE.Mesh {
     render(renderer) {
         const presentingToXr = renderer.xr.isPresenting;
         const originalRenderTarget = renderer.getRenderTarget();
+        renderer.localClippingEnabled = true;
+        renderer.setTransparentSort(reversePainterSortStable);
         renderer.xr.isPresenting = false;
         renderer.setRenderTarget(this.renderTarget);
         renderer.clearColor();

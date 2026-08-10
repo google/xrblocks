@@ -15,9 +15,9 @@ export type HandControl = {
     selectStart?: boolean;
     /** End the hand's primary select gesture. In the simulator this releases a pinch. */
     selectEnd?: boolean;
-    /** Apply one of the simulator's named hand poses. */
+    /** Apply one named pose. Cannot be combined with rotations or selection. */
     pose?: SimulatorHandPose;
-    /** Sparse angular joint targets in radians. */
+    /** Sparse joint targets. Cannot be combined with pose or selection. */
     rotations?: SimulatorHandPoseRotations;
     visible?: boolean;
 };
@@ -27,6 +27,7 @@ export type XRCompoundControl = {
     rightHand?: HandControl;
 };
 export type EmbodiedControlStep = {
+    /** Finite duration greater than zero. Defaults to one configured tick. */
     durationMs?: number;
     control?: XRCompoundControl;
 };
@@ -35,7 +36,7 @@ export type EmbodiedControlOptions = {
     autoPause?: boolean;
     /** Yield to animation frames while stepping so visual demos animate in real time. */
     realTime?: boolean;
-    /** Simulated frame length used while executing a step. */
+    /** Finite simulated frame length greater than zero. */
     tickMs?: number;
     /** Clamp hand joint rotations through simulator biomechanical constraints. */
     applyHandRotationConstraints?: boolean;

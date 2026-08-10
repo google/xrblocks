@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { Core, Script, Simulator } from 'xrblocks';
+import { Core, Script } from 'xrblocks';
 import { EmbodiedControlExecutor } from './EmbodiedControlExecutor';
 import { type EmbodiedControlOptions, type EmbodiedControlStep, type XRCompoundControl } from './EmbodiedControlTypes';
 export declare class EmbodiedControl extends Script {
     static dependencies: {
         core: typeof Core;
-        simulator: typeof Simulator;
         camera: typeof THREE.Camera;
     };
     editorIcon: string;
     executor?: EmbodiedControlExecutor;
     private options;
     private core?;
+    private camera?;
     private autoPauseScheduled;
     private autoPauseComplete;
     private readyComplete;
@@ -21,10 +21,10 @@ export declare class EmbodiedControl extends Script {
     constructor(options?: EmbodiedControlOptions);
     init(dependencies: {
         core: Core;
-        simulator: Simulator;
         camera: THREE.Camera;
     }): void;
     onSimulatorStarted(): void;
+    private initializeExecutor;
     private scheduleAutoPause;
     private markReady;
     private afterRenderedFrame;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Script, Simulator, Core } from 'xrblocks';
+import { Script, Core } from 'xrblocks';
 import { EmbodiedControlExecutor } from './EmbodiedControlExecutor.js';
 import { DEFAULT_EMBODIED_CONTROL_OPTIONS } from './EmbodiedControlTypes.js';
 import './EmbodiedControlTiming.js';
@@ -7,7 +7,6 @@ import './EmbodiedControlTiming.js';
 class EmbodiedControl extends Script {
     static { this.dependencies = {
         core: Core,
-        simulator: Simulator,
         camera: THREE.Camera,
     }; }
     constructor(options = {}) {
@@ -27,7 +26,8 @@ class EmbodiedControl extends Script {
     }
     init(dependencies) {
         this.core = dependencies.core;
-        this.executor = new EmbodiedControlExecutor(dependencies, this.options);
+        this.camera = dependencies.camera;
+        this.initializeExecutor();
         if (this.options.autoPause && dependencies.core.simulatorRunning) {
             this.scheduleAutoPause();
         }
@@ -36,9 +36,18 @@ class EmbodiedControl extends Script {
         }
     }
     onSimulatorStarted() {
+        this.initializeExecutor();
         if (this.options.autoPause) {
             this.scheduleAutoPause();
         }
+    }
+    initializeExecutor() {
+        if (this.executor || !this.core || !this.camera)
+            return;
+        const simulator = this.core.simulator;
+        if (!simulator)
+            return;
+        this.executor = new EmbodiedControlExecutor({ core: this.core, simulator, camera: this.camera }, this.options);
     }
     scheduleAutoPause() {
         if (this.autoPauseScheduled || this.autoPauseComplete)

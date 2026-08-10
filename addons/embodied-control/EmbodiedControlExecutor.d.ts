@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Core, Simulator } from 'xrblocks';
+import { Core, type Simulator } from 'xrblocks';
 import { type XRCompoundControl, type EmbodiedControlOptions, type EmbodiedControlStep } from './EmbodiedControlTypes';
 export type EmbodiedControlExecutorDependencies = {
     core: Core;
@@ -26,6 +26,7 @@ export declare class EmbodiedControlExecutor {
     private applyHandPose;
     private applyHandSelect;
     private applyHandRotations;
+    private validateControl;
     private executeAction;
     private getTargetWorldPosition;
     teleportTo(target: THREE.Vector3 | [number, number, number] | THREE.Object3D, options?: {

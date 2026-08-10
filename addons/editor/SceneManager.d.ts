@@ -49,6 +49,8 @@ export declare class SceneManager extends xb.Script {
     private simulatorObjects?;
     constructor({ modelsDir, commandHistory, }?: SceneManagerOptions);
     init(): void;
+    onSimulatorStarted(): void;
+    private bindSimulator;
     update(): void;
     private syncEnvironment;
     spawn(fileName: string, { transform, state, id, skipHistory }?: SpawnOptions): Promise<SceneInstance | null>;

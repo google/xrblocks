@@ -18,7 +18,16 @@ class SceneManager extends xb.Script {
         this.commandHistory = commandHistory;
     }
     init() {
-        this.simulatorObjects = xb.core.simulator.objects;
+        this.bindSimulator();
+    }
+    onSimulatorStarted() {
+        this.bindSimulator();
+    }
+    bindSimulator() {
+        const simulator = xb.core.simulator;
+        if (!simulator)
+            return;
+        this.simulatorObjects = simulator.objects;
         this.syncEnvironment(true);
     }
     update() {
@@ -27,7 +36,7 @@ class SceneManager extends xb.Script {
     syncEnvironment(initial = false) {
         if (!this.simulatorObjects)
             return;
-        const nextManifest = xb.core.simulator.activeEnvironmentManifest;
+        const nextManifest = xb.core.simulator?.activeEnvironmentManifest;
         const environmentChanged = nextManifest !== this.manifest;
         if (environmentChanged) {
             this.manifest = nextManifest;

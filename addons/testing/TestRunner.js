@@ -1,27 +1,29 @@
 import './setup.js';
-import * as THREE from 'three';
-import { ScriptsManagerEventType, Core, Options } from 'xrblocks';
+import { ScriptsManagerEventType, core, Options } from 'xrblocks';
 import { EmbodiedControl } from '../embodied-control/EmbodiedControl.js';
 import '../embodied-control/EmbodiedControlExecutor.js';
 import 'vitest';
+import 'three';
 import 'three/addons/loaders/GLTFLoader.js';
 import '../embodied-control/EmbodiedControlTypes.js';
 import '../embodied-control/EmbodiedControlTiming.js';
 
+/** Owns the single terminal Core lifetime in its test process or browser page. */
 class TestRunner {
     constructor(core, embodiedControl) {
         this.caughtErrors = [];
-        this.core = core;
-        this.embodiedControl = embodiedControl;
-        this.scene = core.scene;
-        this.camera = core.camera;
-        this.boundExceptionListener = (event) => {
+        this.errorListenerAttached = false;
+        this.handleScriptException = (event) => {
             const error = event.error ||
                 new Error(`Exception in script: ${event.scriptName} (${event.context})`);
             this.caughtErrors.push(error);
         };
-        // Hook error handling
-        core.scriptsManager.addEventListener(ScriptsManagerEventType.EXCEPTION, this.boundExceptionListener);
+        this.core = core;
+        this.embodiedControl = embodiedControl;
+        this.scene = core.scene;
+        this.camera = core.camera;
+        core.scriptsManager.addEventListener(ScriptsManagerEventType.EXCEPTION, this.handleScriptException);
+        this.errorListenerAttached = true;
         // Set up the dynamic actions proxy.
         this.actions = new Proxy(this.embodiedControl, {
             get: (target, prop) => {
@@ -41,7 +43,11 @@ class TestRunner {
         });
     }
     static async create(config = {}) {
-        const core = Core.instance || new Core();
+        const core$1 = core;
+        if (core$1.lifecycle !== 'new') {
+            throw new Error(`TestRunner requires a new Core lifetime, but Core is ${core$1.lifecycle}. ` +
+                'Use a separate test process or browser page for another runtime.');
+        }
         const options = config.options || new Options();
         options.enableSimulator = true;
         options.xrButton.alwaysAutostartSimulator = true;
@@ -53,10 +59,9 @@ class TestRunner {
             },
         ];
         options.simulator.activeEnvironmentIndex = 0;
-        core.options = options;
         if (config.scripts) {
             for (const script of config.scripts) {
-                core.scene.add(script);
+                core$1.scene.add(script);
             }
         }
         const embodiedOptions = {
@@ -65,32 +70,45 @@ class TestRunner {
             ...config.embodiedOptions,
         };
         const embodiedControl = new EmbodiedControl(embodiedOptions);
-        core.scene.add(embodiedControl);
-        await core.init(options);
-        while (!core.simulatorRunning) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        // Automatically re-trigger hand bone loading under JSDOM to populate virtual hand skeletons.
-        if (core.simulator?.hands) {
-            core.simulator.hands.leftHandBones = [];
-            core.simulator.hands.rightHandBones = [];
-            core.simulator.hands.loadMeshes();
-        }
-        for (let i = 0; i < Math.min(2, core.input.controllers.length); i++) {
-            const controller = core.input.controllers[i];
-            controller.userData.connected = true;
-            if (i === 0) {
-                core.input.leftController = controller;
+        core$1.scene.add(embodiedControl);
+        const runner = new TestRunner(core$1, embodiedControl);
+        try {
+            await core$1.init(options);
+            while (!core$1.simulatorRunning) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
             }
-            else if (i === 1) {
-                core.input.rightController = controller;
+            await embodiedControl.ready;
+            // Populate virtual hand skeletons under JSDOM after simulator startup.
+            if (core$1.simulator?.hands) {
+                core$1.simulator.hands.leftHandBones = [];
+                core$1.simulator.hands.rightHandBones = [];
+                await core$1.simulator.hands.loadMeshes();
             }
+            for (let i = 0; i < Math.min(2, core$1.input.controllers.length); i++) {
+                const controller = core$1.input.controllers[i];
+                controller.userData.connected = true;
+                if (i === 0) {
+                    core$1.input.leftController = controller;
+                }
+                else if (i === 1) {
+                    core$1.input.rightController = controller;
+                }
+            }
+            core$1.camera.updateMatrixWorld(true);
+            core$1.camera.matrixWorldInverse.copy(core$1.camera.matrixWorld).invert();
+            runner.checkErrors();
+            return runner;
         }
-        core.camera.updateMatrixWorld(true);
-        core.camera.matrixWorldInverse.copy(core.camera.matrixWorld).invert();
-        const runner = new TestRunner(core, embodiedControl);
-        runner.checkErrors();
-        return runner;
+        catch (error) {
+            runner.removeErrorListener();
+            try {
+                await core$1.dispose();
+            }
+            catch (cleanupError) {
+                console.error('TestRunner cleanup failed after creation failed.', cleanupError);
+            }
+            throw error;
+        }
     }
     /**
      * Retrieves a loaded script instance from the dependency injection registry.
@@ -102,59 +120,34 @@ class TestRunner {
         }
         return script;
     }
-    /**
-     * Destroys the test runner, cleans up the scene, window events, and resets mocks.
-     */
+    /** Disposes the Core lifetime owned by this runner. */
     async destroy() {
-        this.checkErrors();
-        // Remove exception listener
-        this.core.scriptsManager.removeEventListener(ScriptsManagerEventType.EXCEPTION, this.boundExceptionListener);
-        const coreInternal = this.core;
-        if (coreInternal.onWindowResize) {
-            window.removeEventListener('resize', coreInternal.onWindowResize);
+        this.destroyPromise ??= this.finishDestroy();
+        return this.destroyPromise;
+    }
+    async finishDestroy() {
+        let firstError;
+        try {
+            this.checkErrors();
         }
-        this.core.scene.clear();
-        await this.core.scriptsManager.syncScriptsWithScene(this.core.scene);
-        this.core.scene.add(this.core.xrSystemsGroup);
-        // Clear Input lists and maps to prevent duplicate controller registration across tests.
-        const input = this.core.input;
-        input.controllers.length = 0;
-        input.controllerGrips.length = 0;
-        input.hands.length = 0;
-        input.leftController = undefined;
-        input.rightController = undefined;
-        input.intersectionsForController.clear();
-        input.activeControllers.clear();
-        input.listeners.clear();
-        const depth = this.core.depth;
-        depth.view.length = 0;
-        depth.cpuDepthData.length = 0;
-        depth.gpuDepthData.length = 0;
-        depth.depthArray.length = 0;
-        const coreWritable = this.core;
-        coreWritable.effects = undefined;
-        const registryInternal = this.core.registry;
-        registryInternal.instances.clear();
-        this.core.registry.register(this.core.registry);
-        this.core.registry.register(this.core, Core);
-        this.core.registry.register(this.core.scene, THREE.Scene);
-        this.core.registry.register(this.core.camera, THREE.Camera);
-        this.core.registry.register(this.core.timer, THREE.Timer);
-        this.core.registry.register(this.core.input);
-        this.core.registry.register(this.core.user);
-        this.core.registry.register(this.core.ui);
-        this.core.registry.register(this.core.sound);
-        this.core.registry.register(this.core.dragManager);
-        this.core.registry.register(this.core.simulator);
-        this.core.registry.register(this.core.scriptsManager);
-        this.core.registry.register(this.core.depth);
-        this.core.registry.register(this.core.world);
-        this.core.registry.register(this.core.xrSystemsGroup);
-        if (this.core.renderer) {
-            this.core.renderer.dispose();
-            this.core.renderer.domElement.remove();
-            coreWritable.renderer = undefined;
+        catch (error) {
+            firstError = error;
         }
+        this.removeErrorListener();
+        try {
+            await this.core.dispose();
+        }
+        catch (error) {
+            firstError ??= error;
+        }
+        if (firstError !== undefined)
+            throw firstError;
+    }
+    removeErrorListener() {
+        if (!this.errorListenerAttached)
+            return;
+        this.errorListenerAttached = false;
+        this.core.scriptsManager.removeEventListener(ScriptsManagerEventType.EXCEPTION, this.handleScriptException);
     }
     checkErrors() {
         if (this.caughtErrors.length > 0) {

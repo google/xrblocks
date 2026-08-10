@@ -18,7 +18,7 @@ import './SceneManifest.js';
  * outliner (label/visibility/lock), undo/redo, and simulator manifest
  * export/import. Desktop mouse in the simulator only -- permanently out
  * of scope for real XR controllers (all hit-testing gates on
- * `event.target === xb.core.input.mouseController`, which a real XR
+ * `event.source.controller === xb.core.input.mouseController`, which a real XR
  * controller never satisfies).
  *
  * Usage: `xb.add(new SceneEditor({}))`. Every dependency (SceneManager,
@@ -90,7 +90,7 @@ class SceneEditor extends xb.Script {
      * content, not editor chrome, and render normally even in a real headset. */
     update() {
         const active = xb.core.simulatorRunning &&
-            xb.core.simulator.controls.simulatorMode === xb.SimulatorMode.EDITOR &&
+            xb.core.simulator?.controls.simulatorMode === xb.SimulatorMode.EDITOR &&
             !this.inRealXRSession;
         this.selectionManager.editorActive = active;
         this.commandHistory.editorActive = active;

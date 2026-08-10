@@ -15,6 +15,7 @@ const MIN_FRAME_DISTANCE = 0.4;
 class SelectionManager extends xb.Script {
     constructor(sceneManager) {
         super();
+        this.raycaster = new THREE.Raycaster();
         this.selectedSet = new Set();
         this.primary = null;
         this.mode = 'translate';
@@ -130,7 +131,7 @@ class SelectionManager extends xb.Script {
     onSelectStart(event) {
         if (!this.editorActive)
             return;
-        const controller = event.target;
+        const controller = event.source.controller;
         if (controller !== xb.core.input.mouseController)
             return;
         // Defer to the gizmo's own scoped handle raycast before running our
@@ -142,8 +143,8 @@ class SelectionManager extends xb.Script {
         // avoids stealing clicks meant to start a drag.
         if (this.transformGizmo?.hitTestActiveHandle(controller))
             return;
-        xb.core.input.setRaycasterFromController(controller);
-        const hit = xb.core.input.raycaster.intersectObjects(this.sceneManager.list().map((candidate) => candidate.object), true)[0];
+        this.raycaster.setFromXRController(controller);
+        const hit = this.raycaster.intersectObjects(this.sceneManager.list().map((candidate) => candidate.object), true)[0];
         let instance = hit
             ? this.sceneManager.getInstanceForObject(hit.object)
             : undefined;

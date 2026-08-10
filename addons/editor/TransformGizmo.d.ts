@@ -74,13 +74,11 @@ type DragState = TranslateDrag | RotateDrag | ScaleDrag;
  * Translate + rotate + scale transform gizmo for the current selection.
  * Desktop mouse only: drag math reads xb.core.input.mouseController
  * directly -- real XR controller support is permanently out of scope for
- * this addon. Bespoke drag math throughout -- DragManager's
- * translate/rotate/scale are respectively an unconstrained 6-DOF delta, a
- * hardcoded world-Y yaw, and a two-controller-only gesture, none usable
- * for constrained dragging, arbitrary-axis rotation, or single-pointer
- * scaling.
+ * this addon. Its constrained handles use editor-specific math instead of the
+ * application's automatic object manipulation actions.
  */
 export declare class TransformGizmo extends xb.Script {
+    private readonly raycaster;
     selectionManager: SelectionManager;
     commandHistory: CommandHistory | null;
     translateHandles: THREE.Group<THREE.Object3DEventMap>;
@@ -116,6 +114,7 @@ export declare class TransformGizmo extends xb.Script {
      * single-object behavior automatically -- see the drag update methods. */
     computeGroupPivot(selectedList: SceneInstance[]): THREE.Vector3;
     getActiveHandles(): THREE.Object3D[];
+    private setRay;
     updateHover(): void;
     findRecord(pickObject: THREE.Object3D): HandleRecord | null;
     setHoveredRecord(record: HandleRecord | null): void;

@@ -10,7 +10,7 @@ function nextAnimationFrame() {
 }
 async function runTimedMotion(options) {
     const { requestedDurationMs, tickMs, realTime, applyTick } = options;
-    const durationMs = requestedDurationMs > 0 ? requestedDurationMs : tickMs;
+    const durationMs = requestedDurationMs;
     let elapsedMs = 0;
     const advanceTo = (targetElapsedMs) => {
         while (elapsedMs < targetElapsedMs) {

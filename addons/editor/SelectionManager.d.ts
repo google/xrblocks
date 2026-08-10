@@ -14,6 +14,7 @@ export type TransformSpace = 'world' | 'local';
  * permanently out of scope for this addon.
  */
 export declare class SelectionManager extends xb.Script {
+    private readonly raycaster;
     sceneManager: SceneManager;
     selectedSet: Set<SceneInstance>;
     primary: SceneInstance | null;

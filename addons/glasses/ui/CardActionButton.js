@@ -6,7 +6,7 @@ import { BoxShadow } from './BoxShadow.js';
 import './HighlightMaterial.js';
 import './MaterialSymbolsIcon.js';
 import './utils.js';
-import '../../uiblocks/src/core/primitives/TextWithEmoji.js';
+import './TextWithEmoji.js';
 
 // Shadows from bottom to top.
 const shadowDefinitions = [

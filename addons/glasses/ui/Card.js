@@ -1,9 +1,9 @@
 import { contentDefaults, Container, Image, abortableEffect } from '@pmndrs/uikit';
-import { TextWithEmoji } from '../../uiblocks/src/core/primitives/TextWithEmoji.js';
 import { computed } from '@preact/signals-core';
 import { ActionButton } from './ActionButton.js';
 import { CardActionButton } from './CardActionButton.js';
 import { CardTitleChip } from './CardTitleChip.js';
+import { TextWithEmoji } from './TextWithEmoji.js';
 import './HighlightMaterial.js';
 import 'three';
 import './MaterialSymbolsIcon.js';

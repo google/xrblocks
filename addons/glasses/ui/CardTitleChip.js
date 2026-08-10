@@ -1,5 +1,5 @@
 import { Container } from '@pmndrs/uikit';
-import { TextWithEmoji } from '../../uiblocks/src/core/primitives/TextWithEmoji.js';
+import { TextWithEmoji } from './TextWithEmoji.js';
 import '@preact/signals-core';
 
 class CardTitleChip extends Container {

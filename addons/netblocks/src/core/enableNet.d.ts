@@ -8,7 +8,7 @@ declare module 'xrblocks' {
 /**
  * Register the netblocks addon with the running xrblocks core. Idempotent —
  * calling it again returns the existing NetCore. Must be called after
- * `xb.init()` so `xb.core.scene` and `xb.core.scriptsManager` are ready.
+ * `xb.init()` so `xb.core.scene` is ready.
  *
  * After this call:
  * - `xb.core.net` holds the NetCore instance.
