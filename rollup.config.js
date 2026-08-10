@@ -154,7 +154,6 @@ const sdkBuilds = [
           'src/addons/**/cli/**',
           'src/addons/**/server/**',
           'src/addons/**/samples/**',
-          'src/addons/virtualkeyboard/**',
           'src/addons/**/*.d.ts',
           'src/addons/**/*.test.{js,ts}',
         ],
