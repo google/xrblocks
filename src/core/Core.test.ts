@@ -111,6 +111,29 @@ describe('Core frame and simulator lifecycle', () => {
     await disposal;
   });
 
+  it('stops the physics interval and disposes physics', async () => {
+    vi.useFakeTimers();
+    const physicsStep = vi.fn();
+    const dispose = vi.fn();
+    core.physics = {
+      physicsStep,
+      dispose,
+      timestep: 0.01,
+    } as unknown as Core['physics'];
+    const interval = setInterval(physicsStep, 10);
+    (
+      core as unknown as {physicsInterval?: ReturnType<typeof setInterval>}
+    ).physicsInterval = interval;
+
+    await core.dispose();
+
+    physicsStep.mockClear();
+    vi.advanceTimersByTime(100);
+    expect(physicsStep).not.toHaveBeenCalled();
+    expect(dispose).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
   it('reports script callback errors through ScriptsManager events', async () => {
     const script = new Script();
     vi.spyOn(script, 'update').mockImplementation(() => {

@@ -20,8 +20,10 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 
 from google import genai
 from google.genai import types
@@ -103,10 +105,16 @@ def run_task(task_id: str, mode: str) -> dict:
     # sweeps can co-exist without overwriting each other's files (which the
     # judge needs to re-read).
     model_slug = MODEL.replace("/", "-")
-    workspace = pathlib.Path(f"/tmp/xrblocks-gem-{model_slug}-{task_id}-{mode}")
+    workspace = (
+        pathlib.Path(tempfile.gettempdir())
+        / f"xrblocks-gem-{model_slug}-{task_id}-{mode}"
+    )
     if workspace.exists():
-        subprocess.run(["rm", "-rf", str(workspace)], check=False)
-    subprocess.run(["cp", "-r", str(template_dir), str(workspace)], check=True)
+        shutil.rmtree(workspace, ignore_errors=True)
+    # On Windows rmtree can empty the directory but fail to remove the
+    # directory itself, if anything is briefly holding a handle on it, so
+    # allow copying into what is left.
+    shutil.copytree(template_dir, workspace, dirs_exist_ok=True)
 
     # Build prompt.
     task_body = (task_dir / "prompt.md").read_text()
@@ -167,7 +175,7 @@ def run_task(task_id: str, mode: str) -> dict:
     result_path = result_dir / f"{task_id}.json"
 
     score_proc = subprocess.run(
-        ["python3", str(scorer), str(task_dir), str(workspace)],
+        [sys.executable, str(scorer), str(task_dir), str(workspace)],
         capture_output=True,
         text=True,
         check=True,

@@ -4,7 +4,7 @@
   "template": "templates/06_ai_query",
   "edit_file": "main.js",
   "expected_imports": [],
-  "expected_apis": ["enableAI", "xb.ai", "isAvailable", "query"],
+  "expected_apis": ["enableAI", "xb.ai", "isAvailable", ".query("],
   "forbidden_patterns": [
     "fetch\\(['\"]https://generativelanguage",
     "OPENAI_API_KEY",

@@ -1,0 +1,1 @@
+When I pinch, I want the app to tell me what's around me right now: the things it knows about in the room, and which of those I'm actually looking at from where I'm standing. Print that list out so I can read it.
