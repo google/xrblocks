@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 6610bbe
- * @builddate 2026-08-10T20:04:21.837Z
+ * @commitid bce06cb
+ * @builddate 2026-08-10T21:37:10.535Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3492,7 +3492,7 @@ const DIGIT_JOINTS = {
         'pinky-finger-tip',
     ],
 };
-const EPSILON$4 = 1e-6;
+const EPSILON$5 = 1e-6;
 function getFingerJoint(context, finger, suffix) {
     const prefix = FINGER_PREFIX[finger];
     return context.getJoint(`${prefix}-${suffix}`);
@@ -3628,7 +3628,7 @@ function getThumbDirection(context) {
 function getThumbOpposition(context, finger = 'index') {
     const distance = getFingertipDistance(context, 'thumb', finger);
     const scale = getPalmWidth(context) ?? estimateHandScale(context);
-    if (distance === null || scale < EPSILON$4)
+    if (distance === null || scale < EPSILON$5)
         return 0;
     return clamp01(1 - distance / (scale * 0.7));
 }
@@ -3731,13 +3731,13 @@ function normalizeStraightness(bendCosine) {
     return clamp01((bendCosine - 0.55) / 0.4);
 }
 
-const EPSILON$3 = 1e-6;
+const EPSILON$4 = 1e-6;
 function detectPinch(context, config) {
     const distance = getFingertipDistance(context, 'thumb', 'index');
     if (distance === null || !Number.isFinite(distance))
         return undefined;
     const scale = getPalmWidth(context) ?? estimateHandScale(context);
-    if (scale < EPSILON$3)
+    if (scale < EPSILON$4)
         return { confidence: 0 };
     const threshold = Math.max(config.threshold ?? 0, scale * 0.32, 0.025);
     const distanceScore = clamp01((threshold * 1.8 - distance) / (threshold * 1.2));
@@ -3784,7 +3784,7 @@ function detectFist(context, config) {
     const scale = getPalmWidth(context) ?? estimateHandScale(context);
     const palmDistances = FINGER_ORDER.map((finger) => getFingertipPalmDistance(context, finger)).filter((distance) => distance !== null);
     const palmDistanceAverage = average(palmDistances);
-    const palmDistanceScore = scale > EPSILON$3 ? clamp01(1 - palmDistanceAverage / (scale * 1.35)) : 0;
+    const palmDistanceScore = scale > EPSILON$4 ? clamp01(1 - palmDistanceAverage / (scale * 1.35)) : 0;
     const thumbWrap = Math.max(getThumbOpposition(context, 'index'), getThumbOpposition(context, 'middle'));
     const thumbStraightness = getThumbStraightness(context);
     const thumbVertical = getThumbVerticalDirection(context);
@@ -3810,7 +3810,7 @@ function detectThumbsUp(context, config) {
     const otherCurl = average(FINGER_ORDER.map((finger) => getFingerClosedScore(context, finger)));
     const indexDistance = getFingertipDistance(context, 'thumb', 'index');
     const scale = getPalmWidth(context) ?? estimateHandScale(context);
-    const separation = indexDistance !== null && scale > EPSILON$3
+    const separation = indexDistance !== null && scale > EPSILON$4
         ? clamp01((indexDistance - scale * 0.65) / (scale * 0.5))
         : 0;
     const thumbWrapPenalty = Math.max(getThumbOpposition(context, 'index'), getThumbOpposition(context, 'middle'));
@@ -3835,7 +3835,7 @@ function detectThumbsDown(context, config) {
     const otherCurl = average(FINGER_ORDER.map((finger) => getFingerClosedScore(context, finger)));
     const indexDistance = getFingertipDistance(context, 'thumb', 'index');
     const scale = getPalmWidth(context) ?? estimateHandScale(context);
-    const separation = indexDistance !== null && scale > EPSILON$3
+    const separation = indexDistance !== null && scale > EPSILON$4
         ? clamp01((indexDistance - scale * 0.65) / (scale * 0.5))
         : 0;
     const thumbWrapPenalty = Math.max(getThumbOpposition(context, 'index'), getThumbOpposition(context, 'middle'));
@@ -3887,7 +3887,7 @@ function getFingerClosedScore(context, finger) {
 function getFingerExtensionScore(context, finger) {
     const distance = getFingertipPalmDistance(context, finger);
     const scale = getPalmWidth(context) ?? estimateHandScale(context);
-    if (distance === null || scale < EPSILON$3)
+    if (distance === null || scale < EPSILON$4)
         return 0;
     return clamp01((distance - scale * 0.45) / (scale * 0.85));
 }
@@ -3927,7 +3927,7 @@ function detectSpread(context, config) {
 }
 function getTipSpreadScore(context) {
     const scale = getPalmWidth(context) ?? estimateHandScale(context);
-    if (scale < EPSILON$3)
+    if (scale < EPSILON$4)
         return 0;
     const distances = [
         getFingertipDistance(context, 'index', 'middle'),
@@ -7629,7 +7629,7 @@ const ManipulationAction = {
     None: 'none',
 };
 
-const EPSILON$2 = 1e-8;
+const EPSILON$3 = 1e-8;
 function normalizeManipulationConfig(value) {
     if (!value)
         return undefined;
@@ -7670,7 +7670,7 @@ function normalizeRotationAxis(axis) {
             : axis === 'z'
                 ? new THREE.Vector3(0, 0, 1)
                 : new THREE.Vector3(axis.x, axis.y, axis.z);
-    if (!isFiniteVector$1(vector) || vector.lengthSq() < EPSILON$2)
+    if (!isFiniteVector$1(vector) || vector.lengthSq() < EPSILON$3)
         return undefined;
     return vector.normalize();
 }
@@ -7726,7 +7726,7 @@ function faceCameraQuaternion(worldPosition, cameraPosition, parentWorldQuaterni
     return result.copy(parentWorldQuaternion).invert().multiply(worldQuaternion);
 }
 
-const EPSILON$1 = 1e-8;
+const EPSILON$2 = 1e-8;
 function worldPositionToLocal(worldPosition, parentWorldMatrix) {
     if (!parentWorldMatrix)
         return worldPosition.clone();
@@ -7738,7 +7738,7 @@ function worldQuaternionToLocal(worldQuaternion, parentWorldQuaternion) {
     return parentWorldQuaternion.clone().invert().multiply(worldQuaternion);
 }
 function clampScaleFactor(factor, baseline, options) {
-    const minimum = scaleLimitVector(options.minScale, EPSILON$1, false);
+    const minimum = scaleLimitVector(options.minScale, EPSILON$2, false);
     const maximum = scaleLimitVector(options.maxScale, Infinity, true);
     if (!minimum || !maximum)
         return NaN;
@@ -7749,7 +7749,7 @@ function clampScaleFactor(factor, baseline, options) {
     return THREE.MathUtils.clamp(factor, minimumFactor, maximumFactor);
 }
 function isPositiveFinite(value) {
-    return Number.isFinite(value) && value > EPSILON$1;
+    return Number.isFinite(value) && value > EPSILON$2;
 }
 function isFiniteVector(value) {
     return (Number.isFinite(value.x) &&
@@ -22214,6 +22214,7 @@ class PermissionsManager {
     }
 }
 
+const EPSILON$1 = 1e-9;
 function loadSimulatorModule() {
     return import('./Simulator.js');
 }
@@ -22241,6 +22242,9 @@ class Core {
     get isPaused() {
         return this._isPaused;
     }
+    get elapsedTime() {
+        return this.simulationTimer.getElapsedMs() / 1000;
+    }
     /** Current state of this terminal Core lifetime. */
     get lifecycle() {
         return this.lifecycleState;
@@ -22258,11 +22262,17 @@ class Core {
         }
         this.isSteppingFrame = true;
         try {
+            const scaledDtMs = dtMs * this.timer.getTimescale();
             this.simulationTimer.step(dtMs, this.timer.getTimescale());
             this.manualStepTime += dtMs;
             this.update(this.manualStepTime, undefined);
             if (this.physics) {
-                this.physicsStep();
+                this.manualPhysicsAccumulatorMs += scaledDtMs;
+                const physicsStepMs = this.physics.timestep * 1000;
+                while (this.manualPhysicsAccumulatorMs >= physicsStepMs - EPSILON$1) {
+                    this.physicsStep();
+                    this.manualPhysicsAccumulatorMs = Math.max(0, this.manualPhysicsAccumulatorMs - physicsStepMs);
+                }
             }
         }
         finally {
@@ -22307,6 +22317,7 @@ class Core {
         this.renderSceneCallback = (cameraOverride) => this.renderScene(cameraOverride);
         this.reticleOptions = new ReticleOptions();
         this.reticlePresenter = new ReticlePresenter(this.reticleOptions);
+        this.manualPhysicsAccumulatorMs = 0;
         this.lifecycleState = 'new';
         /** Manages real-world understanding: planes, meshes, objects, and sounds. */
         this.world = new World();
@@ -24528,13 +24539,13 @@ function getDeltaTime() {
     return core.timer.getDelta();
 }
 /**
- * A shortcut for `core.timer.getElapsed()`. Gets the total time in seconds
- * since the application started.
+ * Gets elapsed time in seconds from the simulation or render clock.
+ * Simulation time excludes pauses and is the default.
+ * @param clock - Clock used to measure elapsed time.
  * @returns The elapsed time in seconds.
- * @see {@link THREE.Timer.getElapsed}
  */
-function getElapsedTime() {
-    return core.timer.getElapsed();
+function getElapsedTime(clock = 'simulation') {
+    return clock === 'simulation' ? core.elapsedTime : core.timer.getElapsed();
 }
 /**
  * Retrieves the left camera from the stereoscopic XR camera rig.

@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 6610bbe
- * @builddate 2026-08-10T20:04:21.837Z
+ * @commitid bce06cb
+ * @builddate 2026-08-10T21:37:10.535Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -8453,6 +8453,7 @@ declare class Core {
     private reticlePresenter;
     private uiRenderer;
     private physicsInterval?;
+    private manualPhysicsAccumulatorMs;
     private rendererContainer?;
     private lifecycleState;
     private initializationPromise?;
@@ -8497,6 +8498,7 @@ declare class Core {
     get renderer(): THREE.WebGLRenderer;
     set renderer(renderer: THREE.WebGLRenderer);
     get isPaused(): boolean;
+    get elapsedTime(): number;
     /** Current state of this terminal Core lifetime. */
     get lifecycle(): CoreLifecycleState;
     pause(): void;
@@ -9372,12 +9374,12 @@ declare function initScript(script: Script): Promise<void>;
  */
 declare function getDeltaTime(): number;
 /**
- * A shortcut for `core.timer.getElapsed()`. Gets the total time in seconds
- * since the application started.
+ * Gets elapsed time in seconds from the simulation or render clock.
+ * Simulation time excludes pauses and is the default.
+ * @param clock - Clock used to measure elapsed time.
  * @returns The elapsed time in seconds.
- * @see {@link THREE.Timer.getElapsed}
  */
-declare function getElapsedTime(): number;
+declare function getElapsedTime(clock?: 'simulation' | 'render'): number;
 /**
  * Retrieves the left camera from the stereoscopic XR camera rig.
  * @returns The left eye's camera.
