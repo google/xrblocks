@@ -64,6 +64,12 @@ export function getDeviceCameraClipFromView(
     simulatorCamera.far = renderCamera.far;
     simulatorCamera.updateProjectionMatrix();
     return simulatorCamera.projectionMatrix;
+  } else if (
+    deviceCamera.hasXRCameraParams &&
+    deviceCamera.xrCameraClipFromView
+  ) {
+    // Intrinsics straight from the WebXR view, whatever device this is.
+    return deviceCamera.xrCameraClipFromView;
   } else {
     return DEVICE_CAMERA_PARAMETERS[targetDevice].projectionMatrix;
   }
@@ -77,6 +83,12 @@ export function getDeviceCameraWorldFromView(
 ): THREE.Matrix4 {
   if (deviceCamera?.simulatorCamera) {
     return renderCamera.matrixWorld.clone();
+  } else if (
+    deviceCamera?.hasXRCameraParams &&
+    deviceCamera.xrCameraWorldFromView
+  ) {
+    // Pose straight from the WebXR view, in the same space three renders in.
+    return deviceCamera.xrCameraWorldFromView.clone();
   } else if (xrCameras && xrCameras.cameras.length > 0) {
     const target = new THREE.Matrix4();
     DEVICE_CAMERA_PARAMETERS[targetDevice].getCameraPose(
@@ -144,6 +156,7 @@ export function isDeviceCameraPoseAvailable(
 ): boolean {
   return !!(
     deviceCamera?.simulatorCamera ||
+    deviceCamera?.hasXRCameraParams ||
     (xrCameras && xrCameras.cameras.length > 0)
   );
 }
