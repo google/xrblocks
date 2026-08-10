@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -39,11 +37,9 @@ const PIECE_SIZE = 0.09;
 const FRESH_COLOR = 0xffa657;
 const RESTORED_COLOR = 0x4ec9a0;
 /**
- * Button label size. Much larger than the default 0.05, which is legible on a
- * monitor but not at panel distance in a headset. Labels are single words so
- * they fit on one line at this size.
+ * Button label size in retained UI layout units.
  */
-const BUTTON_FONT_SIZE = 0.25;
+const BUTTON_FONT_SIZE = 38;
 
 /**
  * Builds the mesh for a piece.
@@ -128,52 +124,75 @@ class AnchoredGalleryDemo extends xb.Script {
 
   /** Builds the in-headset controls. */
   createPanel() {
-    const panel = new xb.SpatialPanel({
-      backgroundColor: '#141322F0',
-      useDefaultPosition: false,
-      showEdge: true,
-      width: 1.2,
-      height: 0.7,
+    this.statusText = new xb.UIText({
+      text: 'Starting…',
+      style: {
+        flexGrow: 1,
+        fontSize: 34,
+        lineHeight: 1.25,
+        color: '#d7d2ea',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+      },
     });
-    panel.isRoot = true;
+
+    const panel = new xb.UICard({
+      size: {width: 1.2, height: 0.7},
+      manipulation: true,
+      edge: {translateFromSurface: true},
+      style: {
+        flexDirection: 'column',
+        gap: 28,
+        padding: 40,
+        backgroundColor: '#141322',
+      },
+      children: [
+        new xb.UIText({
+          text: 'Anchored Gallery',
+          style: {
+            fontSize: 64,
+            fontWeight: 'bold',
+            color: '#ffa657',
+            textAlign: 'center',
+          },
+        }),
+        this.statusText,
+        new xb.UIPanel({
+          style: {width: '100%', height: 120, flexDirection: 'row', gap: 20},
+          children: [
+            new xb.UIButton({
+              label: 'Place',
+              onClick: () => this.placeShape(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#c2703b',
+              },
+            }),
+            new xb.UIButton({
+              label: 'Clear',
+              onClick: () => this.clearGallery(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#3a3550',
+              },
+            }),
+            new xb.UIButton({
+              label: 'Release',
+              onClick: () => this.releaseEverything(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#7a3b46',
+              },
+            }),
+          ],
+        }),
+      ],
+    });
     panel.position.set(0, xb.user.height, -xb.user.panelDistance);
     this.add(panel);
-
-    const grid = panel.addGrid();
-    grid.addRow({weight: 0.22}).addText({
-      text: 'Anchored Gallery',
-      fontSize: 0.08,
-      fontColor: '#ffa657',
-    });
-    this.statusText = grid.addRow({weight: 0.3}).addText({
-      text: 'Starting…',
-      fontSize: 0.04,
-      fontColor: '#d7d2ea',
-    });
-
-    const buttons = grid.addRow({weight: 0.4});
-    const place = buttons.addCol({weight: 0.34}).addTextButton({
-      text: 'Place',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#c2703bE0',
-    });
-    place.onTriggered = () => this.placeShape();
-
-    const clear = buttons.addCol({weight: 0.33}).addTextButton({
-      text: 'Clear',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#3a3550E0',
-    });
-    clear.onTriggered = () => this.clearGallery();
-
-    // The anchor budget belongs to the browser, so it can fill up from any of
-    // these demos. The way out has to be reachable from each of them.
-    const release = buttons.addCol({weight: 0.33}).addTextButton({
-      text: 'Release',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#7a3b46E0',
-    });
-    release.onTriggered = () => this.releaseEverything();
 
     this.panel = panel;
   }

@@ -1,9 +1,6 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import {Text} from 'troika-three-text';
 import * as xb from 'xrblocks';
-import {Keyboard} from 'xrblocks/addons/virtualkeyboard/Keyboard.js';
 
 // Anchored notes demo: type a note, pin it in space where you are looking, and
 // the notes come back the next time you load the page.
@@ -29,14 +26,9 @@ const CARD_DISTANCE = 0.9;
  */
 const NOTE_MIN_SEPARATION = 0.46;
 /**
- * Button label size. Much larger than the default 0.05, which is legible on a
- * monitor but not at panel distance in a headset. Labels are single words so
- * they fit on one line at this size.
+ * Button label size in retained UI layout units.
  */
-const BUTTON_FONT_SIZE = 0.25;
-/** Where the keys sit: below the status panel and within reach. */
-const KEYBOARD_POSITION = {y: 1.0, z: -1.3};
-
+const BUTTON_FONT_SIZE = 38;
 const FRESH_COLOR = 0x6a5acd;
 const RESTORED_COLOR = 0x2f7d63;
 
@@ -50,8 +42,8 @@ class AnchorNotesDemo extends xb.Script {
     this.scratchPosition = new THREE.Vector3();
     this.scratchQuaternion = new THREE.Quaternion();
     this.cameraPosition = new THREE.Vector3();
-    // What the spatial keyboard currently holds. The DOM input is unreachable
-    // inside an immersive session, so in XR this is the only source of text.
+    // Keep a copy of the browser input because the page is not visible inside
+    // an immersive session.
     this.draftText = '';
     this.statusText = null;
     this.draftView = null;
@@ -66,9 +58,10 @@ class AnchorNotesDemo extends xb.Script {
     this.createPanel();
 
     // The DOM controls below only exist outside an immersive session, since
-    // xrblocks never requests dom-overlay. In XR the panel and keyboard above
-    // are the only way to reach the demo.
+    // xrblocks never requests dom-overlay. Type the note before entering XR;
+    // the spatial panel remains available to pin it inside the session.
     const input = document.getElementById('note-input');
+    input?.addEventListener('input', () => this.setDraft(input.value));
     document
       .getElementById('pin')
       ?.addEventListener('click', () => this.pinNote());
@@ -105,76 +98,101 @@ class AnchorNotesDemo extends xb.Script {
     if (controls) controls.enabled = enabled;
   }
 
-  /** Builds the in-headset controls and the spatial keyboard. */
+  /** Builds the in-headset controls. */
   createPanel() {
-    const panel = new xb.SpatialPanel({
-      backgroundColor: '#141322F0',
-      useDefaultPosition: false,
-      showEdge: true,
-      width: 1.2,
-      height: 0.75,
+    this.draftView = new xb.UIText({
+      text: 'Type a note in the browser before entering XR',
+      style: {
+        fontSize: 40,
+        color: '#ffffff',
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+        textOverflow: 'ellipsis',
+      },
     });
-    panel.isRoot = true;
+    this.statusText = new xb.UIText({
+      text: 'Starting…',
+      style: {
+        flexGrow: 1,
+        fontSize: 32,
+        lineHeight: 1.2,
+        color: '#b9b3d0',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+      },
+    });
+
+    const panel = new xb.UICard({
+      size: {width: 1.2, height: 0.75},
+      manipulation: true,
+      edge: {translateFromSurface: true},
+      style: {
+        flexDirection: 'column',
+        gap: 22,
+        padding: 36,
+        backgroundColor: '#141322',
+      },
+      children: [
+        new xb.UIText({
+          text: 'Anchored Notes',
+          style: {
+            fontSize: 60,
+            fontWeight: 'bold',
+            color: '#ffb877',
+            textAlign: 'center',
+          },
+        }),
+        this.draftView,
+        this.statusText,
+        new xb.UIPanel({
+          style: {width: '100%', height: 112, flexDirection: 'row', gap: 20},
+          children: [
+            new xb.UIButton({
+              label: 'Pin',
+              onClick: () => this.pinNote(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#c2703b',
+              },
+            }),
+            new xb.UIButton({
+              label: 'Clear',
+              onClick: () => this.forgetAll(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#3a3550',
+              },
+            }),
+            new xb.UIButton({
+              label: 'Release',
+              onClick: () => this.releaseEverything(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#7a3b46',
+              },
+            }),
+          ],
+        }),
+      ],
+    });
     panel.position.set(0, xb.user.height + 0.25, -xb.user.panelDistance);
     this.add(panel);
 
-    const grid = panel.addGrid();
-    grid.addRow({weight: 0.18}).addText({
-      text: 'Anchored Notes',
-      fontSize: 0.07,
-      fontColor: '#ffb877',
-    });
-    this.draftView = grid.addRow({weight: 0.22}).addText({
-      text: 'Type on the keyboard below',
-      fontSize: 0.045,
-      fontColor: '#ffffff',
-    });
-    this.statusText = grid.addRow({weight: 0.22}).addText({
-      text: 'Starting…',
-      fontSize: 0.034,
-      fontColor: '#b9b3d0',
-    });
-
-    const buttons = grid.addRow({weight: 0.4});
-    const pin = buttons.addCol({weight: 0.34}).addTextButton({
-      text: 'Pin',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#c2703bE0',
-    });
-    pin.onTriggered = () => this.pinNote();
-    const forget = buttons.addCol({weight: 0.33}).addTextButton({
-      text: 'Clear',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#3a3550E0',
-    });
-    forget.onTriggered = () => this.forgetAll();
-
-    // The anchor budget belongs to the browser, so it can fill up from any of
-    // these demos. The way out has to be reachable from each of them.
-    const release = buttons.addCol({weight: 0.33}).addTextButton({
-      text: 'Release',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#7a3b46E0',
-    });
-    release.onTriggered = () => this.releaseEverything();
-
-    const keyboard = new Keyboard();
-    this.add(keyboard);
-    keyboard.position.set(0, KEYBOARD_POSITION.y, KEYBOARD_POSITION.z);
-    keyboard.onTextChanged = (text) => this.setDraft(text);
-    keyboard.onEnterPressed = () => this.pinNote();
-    this.keyboard = keyboard;
     this.panel = panel;
   }
 
   /**
-   * Records what the spatial keyboard holds and shows it on the panel.
-   * @param text - The current keyboard buffer.
+   * Records what the browser input holds and shows it on the panel.
+   * @param text - The current note draft.
    */
   setDraft(text) {
     this.draftText = text;
     if (this.draftView) {
-      this.draftView.text = text.trim() || 'Type on the keyboard below';
+      this.draftView.text =
+        text.trim() || 'Type a note in the browser before entering XR';
     }
   }
 
@@ -183,8 +201,7 @@ class AnchorNotesDemo extends xb.Script {
     const anchors = this.anchors;
     if (!anchors) return;
     const input = document.getElementById('note-input');
-    // Either surface may hold the text: the DOM box on desktop, the spatial
-    // keyboard in XR.
+    // The draft remains available after the DOM box disappears in XR.
     const text = ((input?.value || this.draftText) ?? '').trim();
     if (!text) {
       this.setStatus('Type something before pinning a note');
@@ -218,7 +235,6 @@ class AnchorNotesDemo extends xb.Script {
     const saved = await anchors.persist(tracked.id);
     this.addNoteCard(tracked, FRESH_COLOR, false, target);
     if (input) input.value = '';
-    this.keyboard?.setText?.('');
     this.setDraft('');
     this.setStatus(
       saved

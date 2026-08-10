@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -22,11 +20,9 @@ const MARKER_DISTANCE = 0.8;
  */
 const MARKER_MIN_SEPARATION = 0.14;
 /**
- * Button label size. Much larger than the default 0.05, which is legible on a
- * monitor but not at panel distance in a headset. Labels are single words so
- * they fit on one line at this size.
+ * Button label size in retained UI layout units.
  */
-const BUTTON_FONT_SIZE = 0.25;
+const BUTTON_FONT_SIZE = 38;
 const MARKER_COLOR = 0x8a7bff;
 /** The same colour as a CSS string, for the panel's title text. */
 const MARKER_COLOR_CSS = '#8a7bff';
@@ -72,54 +68,75 @@ class AnchorsDemo extends xb.Script {
 
   /** Builds the in-headset controls. */
   createPanel() {
-    const panel = new xb.SpatialPanel({
-      backgroundColor: '#1a1a1aF0',
-      useDefaultPosition: false,
-      showEdge: true,
-      width: 1.2,
-      height: 0.7,
+    this.statusText = new xb.UIText({
+      text: 'Starting…',
+      style: {
+        flexGrow: 1,
+        fontSize: 34,
+        lineHeight: 1.25,
+        color: '#d7d2ea',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+      },
     });
-    panel.isRoot = true;
+
+    const panel = new xb.UICard({
+      size: {width: 1.2, height: 0.7},
+      manipulation: true,
+      edge: {translateFromSurface: true},
+      style: {
+        flexDirection: 'column',
+        gap: 28,
+        padding: 40,
+        backgroundColor: '#1a1a1a',
+      },
+      children: [
+        new xb.UIText({
+          text: 'Spatial Anchors',
+          style: {
+            fontSize: 64,
+            fontWeight: 'bold',
+            color: MARKER_COLOR_CSS,
+            textAlign: 'center',
+          },
+        }),
+        this.statusText,
+        new xb.UIPanel({
+          style: {width: '100%', height: 120, flexDirection: 'row', gap: 20},
+          children: [
+            new xb.UIButton({
+              label: 'Drop',
+              onClick: () => this.dropMarker(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#6a5acd',
+              },
+            }),
+            new xb.UIButton({
+              label: 'Clear',
+              onClick: () => this.forgetAll(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#3a3550',
+              },
+            }),
+            new xb.UIButton({
+              label: 'Release',
+              onClick: () => this.releaseEverything(),
+              style: {
+                flexGrow: 1,
+                fontSize: BUTTON_FONT_SIZE,
+                backgroundColor: '#7a3b46',
+              },
+            }),
+          ],
+        }),
+      ],
+    });
     panel.position.set(0, xb.user.height, -xb.user.panelDistance);
     this.add(panel);
-
-    const grid = panel.addGrid();
-
-    grid.addRow({weight: 0.22}).addText({
-      text: 'Spatial Anchors',
-      fontSize: 0.08,
-      fontColor: MARKER_COLOR_CSS,
-    });
-
-    this.statusText = grid.addRow({weight: 0.3}).addText({
-      text: 'Starting…',
-      fontSize: 0.04,
-      fontColor: '#d7d2ea',
-    });
-
-    const buttons = grid.addRow({weight: 0.4});
-    const drop = buttons.addCol({weight: 0.33}).addTextButton({
-      text: 'Drop',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#6a5acdE0',
-    });
-    drop.onTriggered = () => this.dropMarker();
-
-    const forget = buttons.addCol({weight: 0.34}).addTextButton({
-      text: 'Clear',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#3a3550E0',
-    });
-    forget.onTriggered = () => this.forgetAll();
-
-    // Recovery for a device whose anchor cap is full of handles no record
-    // names any more, which forgetAll cannot reach.
-    const release = buttons.addCol({weight: 0.33}).addTextButton({
-      text: 'Release',
-      fontSize: BUTTON_FONT_SIZE,
-      backgroundColor: '#7a3b46E0',
-    });
-    release.onTriggered = () => this.releaseEverything();
 
     this.panel = panel;
   }

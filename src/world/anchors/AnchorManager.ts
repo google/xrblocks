@@ -72,7 +72,7 @@ export class AnchorManager extends Script {
   lastError: unknown = null;
 
   private readonly anchors = new Map<string, TrackedAnchor>();
-  private store!: AnchorStore;
+  private store?: AnchorStore;
   private options!: WorldOptions;
   private renderer?: THREE.WebGLRenderer;
   private currentFrame?: XRFrame;
@@ -283,6 +283,7 @@ export class AnchorManager extends Script {
    * @returns Whether a handle was saved.
    */
   async persist(id: string): Promise<boolean> {
+    if (!this.store) return false;
     const tracked = this.anchors.get(id);
     if (!tracked) return false;
     if (this.capability === 'simulated') {
@@ -335,6 +336,10 @@ export class AnchorManager extends Script {
    * @returns One result per saved record, in stored order.
    */
   async restoreAll(): Promise<AnchorRestoreResult[]> {
+    // World can expose this child during its own init, one scene scan before
+    // ScriptsManager initializes newly added children. Treat that brief state
+    // as not ready; callers can retry once the capability changes.
+    if (!this.store) return [];
     const records = this.store.load();
     if (records.length === 0) return [];
     if (this.capability === 'simulated') {
@@ -426,7 +431,7 @@ export class AnchorManager extends Script {
     const tracked = this.anchors.get(id);
     if (!tracked) return;
     this.anchors.delete(id);
-    if (tracked.uuid) {
+    if (tracked.uuid && this.store) {
       this.store.remove(tracked.uuid);
       this.releasePersistentHandle(tracked.uuid);
     }
@@ -507,13 +512,14 @@ export class AnchorManager extends Script {
       }
     }
     // Local records would otherwise point at handles that no longer exist.
-    this.store.clear();
+    this.store?.clear();
     this.debug(`released ${released} of ${handles.length} platform handles`);
     return released;
   }
 
   /** Forgets every saved handle, leaving live anchors alone. */
   forgetAll(): void {
+    if (!this.store) return;
     // Read before clearing: records the app never restored this session are
     // the only place their platform handles are named.
     for (const record of this.store.load()) {
@@ -548,6 +554,7 @@ export class AnchorManager extends Script {
    * @param saved - Handle just written, which is never evicted.
    */
   private releaseEvicted(before: AnchorRecord[], saved: string): void {
+    if (!this.store) return;
     const kept = new Set(this.store.load().map((r) => r.uuid));
     for (const record of before) {
       if (record.uuid !== saved && !kept.has(record.uuid)) {
