@@ -47,6 +47,7 @@ export * from './input/HandsOptions';
 export * from './layers/LayerCapability';
 export * from './layers/LayerManager';
 export * from './layers/LayersOptions';
+export * from './layers/VideoLayer';
 export * from './input/strokes/StrokeRecognition';
 export * from './input/gestures/GestureRecognition';
 export * from './input/gestures/GestureRecognitionOptions';
