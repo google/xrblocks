@@ -594,6 +594,9 @@ export class Core {
     if (options.world.meshes.enabled) {
       webXROptionalFeatures.push('mesh-detection');
     }
+    if (options.world.anchors.enabled) {
+      webXROptionalFeatures.push('anchors');
+    }
 
     // Sets up lighting.
     if (options.lighting.enabled) {
