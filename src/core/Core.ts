@@ -59,6 +59,7 @@ export type CoreLifecycleState =
 
 type SimulatorModule = typeof import('../simulator/Simulator.js');
 type SimulatorLoader = () => Promise<SimulatorModule>;
+const EPSILON = 1e-9;
 
 function loadSimulatorModule(): Promise<SimulatorModule> {
   return import('../simulator/Simulator.js');
@@ -238,7 +239,7 @@ export class Core {
       if (this.physics) {
         this.manualPhysicsAccumulatorMs += scaledDtMs;
         const physicsStepMs = this.physics.timestep * 1000;
-        while (this.manualPhysicsAccumulatorMs >= physicsStepMs - 1e-9) {
+        while (this.manualPhysicsAccumulatorMs >= physicsStepMs - EPSILON) {
           this.physicsStep();
           this.manualPhysicsAccumulatorMs = Math.max(
             0,
