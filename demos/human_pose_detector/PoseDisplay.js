@@ -25,7 +25,16 @@ export class PoseDisplay extends xb.Script {
   }
 
   initHudText() {
-    this.hudCard = new xb.UICard({size: {width: 0.46, height: 0.18}});
+    this.hudCard = new xb.UICard({
+      size: {width: 0.46, height: 0.18},
+      manipulation: true,
+      edge: true,
+      style: {
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'stretch',
+      },
+    });
     this.hudCard.name = 'PoseHUDCard';
     this.add(this.hudCard);
     this.hudCard.add(
@@ -36,36 +45,11 @@ export class PoseDisplay extends xb.Script {
       new xb.FaceCamera({mode: 'spherical', smoothing: 1})
     );
 
-    const hudPanel = new xb.UIPanel({
-      style: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: 'rgba(15, 18, 25, 0.85)',
-        innerShadowColor: 'rgba(100, 180, 255, 0.15)',
-        innerShadowBlur: 80,
-        borderWidth: 3,
-        borderColor: {
-          gradientType: 'linear',
-          rotation: 45,
-          stops: [
-            {position: 0, color: '#4796e3'},
-            {position: 1, color: '#9b5de5'},
-          ],
-        },
-        borderRadius: 24,
-        padding: 20,
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'stretch',
-      },
-    });
-
     this.titleText = new xb.UIText({
       text: 'HUMAN POSE DETECTOR',
       style: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#00f0ff',
         textAlign: 'center',
         width: '100%',
       },
@@ -75,19 +59,9 @@ export class PoseDisplay extends xb.Script {
       text: 'Tracking Active...',
       style: {
         fontSize: 16,
-        color: '#a0aec0',
+        opacity: 0.72,
         textAlign: 'center',
         width: '100%',
-        paddingBottom: 8,
-      },
-    });
-
-    const separator = new xb.UIPanel({
-      style: {
-        width: '100%',
-        height: 2,
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
-        marginBottom: 8,
       },
     });
 
@@ -95,19 +69,13 @@ export class PoseDisplay extends xb.Script {
       text: 'Waiting for body detection...',
       style: {
         fontSize: 14,
-        fontWeight: 'normal',
-        color: '#e2e8f0',
+        opacity: 0.86,
         textAlign: 'center',
         width: '100%',
       },
     });
 
-    hudPanel.add(this.titleText);
-    hudPanel.add(this.statusText);
-    hudPanel.add(separator);
-    hudPanel.add(this.statusDetailsText);
-
-    this.hudCard.add(hudPanel);
+    this.hudCard.add(this.titleText, this.statusText, this.statusDetailsText);
   }
 
   initJointMarkers() {
@@ -217,11 +185,10 @@ export class PoseDisplay extends xb.Script {
     const tracked = this.updateJointMarkers(firstPose);
     this.updateConnectorMeshes();
 
-    this.statusDetailsText.setText(
+    this.statusDetailsText.text =
       tracked < this.jointMarkers.size
         ? `Tracking ${tracked} of ${this.jointMarkers.size} joints.\nStep back to bring your whole body into frame.`
-        : 'Full body skeleton tracked successfully.'
-    );
+        : 'Full body skeleton tracked successfully.';
   }
 
   updateJointMarkers(firstPose) {
