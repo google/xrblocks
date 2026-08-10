@@ -127,7 +127,7 @@ export function getDeltaTime() {
 /**
  * Gets elapsed time in seconds from the simulation or render clock.
  * Simulation time excludes pauses and is the default.
- * @param clock Clock used to measure elapsed time.
+ * @param clock - Clock used to measure elapsed time.
  * @returns The elapsed time in seconds.
  */
 export function getElapsedTime(clock: 'simulation' | 'render' = 'simulation') {
