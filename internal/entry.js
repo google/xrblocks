@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid b241108
- * @builddate 2026-08-10T19:45:07.973Z
+ * @commitid 6610bbe
+ * @builddate 2026-08-10T20:04:21.837Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5626,6 +5626,92 @@ class SegmentationOptions {
     }
 }
 
+/**
+ * Builds the default storage key for a page.
+ *
+ * Scoped to the path because anchors are stored per origin: two apps served
+ * from one host would otherwise restore each other's anchors, which reads as
+ * mysterious content appearing on first run rather than as a shared store.
+ *
+ * @param pathname - Page path; omit when there is no document.
+ * @returns The storage key to default to.
+ */
+function defaultAnchorStorageKey(pathname) {
+    if (!pathname)
+        return 'xrblocks.anchors';
+    // Keyed on the directory rather than the raw path, because the same page is
+    // reachable both as a directory and as its index file. Keying on the path
+    // gave those two routes separate stores, so anchors saved through one were
+    // invisible through the other while the platform still held their handles.
+    const withoutFile = pathname.replace(/\/[^/]*\.[^/]*$/, '/');
+    const directory = withoutFile.endsWith('/') ? withoutFile : `${withoutFile}/`;
+    return `xrblocks.anchors:${directory}`;
+}
+/**
+ * Configuration for the spatial anchor subsystem.
+ *
+ * Anchors pin content to a real place so the platform keeps it there as its
+ * understanding of the room improves. With {@link AnchorsOptions.persistent}
+ * enabled, anchor handles are saved so the same content can be restored in a
+ * later session.
+ */
+class AnchorsOptions {
+    constructor(options) {
+        /** Logs anchor lifecycle transitions. */
+        this.debugging = false;
+        /** Whether the anchor subsystem is created at all. */
+        this.enabled = false;
+        /**
+         * Whether anchor handles are saved so they can be restored in a later
+         * session. Requires platform support for persistent handles; when the
+         * platform only offers session-scoped anchors this degrades to in-session
+         * behaviour rather than failing.
+         */
+        this.persistent = false;
+        /**
+         * Whether to hold poses locally when the platform has no anchor support.
+         *
+         * Off by default: on a real headset a silent stand-in would look like
+         * working anchors while nothing is actually pinned. Demos and desktop
+         * development opt in deliberately.
+         */
+        this.simulatorFallback = false;
+        /**
+         * Storage key used when persistence is enabled.
+         *
+         * Defaults to a page-scoped key. Set it explicitly to share anchors between
+         * pages, or to keep a stable key if the app might move path.
+         */
+        this.storageKey = defaultAnchorStorageKey(typeof location === 'undefined' ? undefined : location.pathname);
+        /**
+         * Upper bound on saved handles. Persistent handles accumulate across
+         * sessions and would otherwise grow without limit; the oldest are evicted
+         * first once the cap is reached.
+         */
+        this.maxStoredAnchors = 128;
+        if (options) {
+            deepMerge(this, options);
+        }
+    }
+    /**
+     * Enables anchors.
+     * @returns This options object, for chaining.
+     */
+    enable() {
+        this.enabled = true;
+        return this;
+    }
+    /**
+     * Enables anchors and saves handles for restoration in later sessions.
+     * @returns This options object, for chaining.
+     */
+    enablePersistence() {
+        this.enabled = true;
+        this.persistent = true;
+        return this;
+    }
+}
+
 class WorldOptions {
     constructor(options) {
         this.debugging = false;
@@ -5638,6 +5724,7 @@ class WorldOptions {
         this.humans = new HumansOptions();
         this.faces = new FacesOptions();
         this.segmentation = new SegmentationOptions();
+        this.anchors = new AnchorsOptions();
         if (options) {
             deepMerge(this, options);
         }
@@ -5664,6 +5751,23 @@ class WorldOptions {
     enableMeshDetection() {
         this.enabled = true;
         this.meshes.enable();
+        return this;
+    }
+    /**
+     * Enables spatial anchors.
+     */
+    enableAnchors() {
+        this.enabled = true;
+        this.anchors.enable();
+        return this;
+    }
+    /**
+     * Enables spatial anchors and saves their handles so anchored content can be
+     * restored in a later session.
+     */
+    enableAnchorPersistence() {
+        this.enabled = true;
+        this.anchors.enablePersistence();
         return this;
     }
     /**
@@ -16859,6 +16963,9 @@ function disposeMaterial(material, except = new Set()) {
         }
     }
 }
+function disposeMeshResources(mesh) {
+    disposeRenderableResources(mesh);
+}
 function disposeRenderableResources(object) {
     const renderable = object;
     renderable.geometry?.dispose?.();
@@ -17769,6 +17876,900 @@ class PlaneDetector extends Script {
         this._debugMaterial?.dispose();
         this.usingSimulatorPlanes = false;
         this._xrRefSpace = undefined;
+    }
+}
+
+/**
+ * Determines what the running platform can do with anchors.
+ *
+ * The anchor APIs are optional in three independent places: a frame may not be
+ * able to create anchors, a session may not be able to restore them, and an
+ * individual anchor may not be able to hand back a persistent handle. Presence
+ * of an XR session says nothing about any of them, so each is probed directly
+ * rather than inferred.
+ *
+ * `persistent` is therefore a statement about the session, not a promise about
+ * any particular anchor: whether an anchor can hand back a handle is only
+ * knowable once that anchor exists. {@link AnchorManager.persist} reports that
+ * per anchor, so treat this as "saving is worth offering" rather than
+ * "saving will work".
+ *
+ * @param session - The active XR session, if any.
+ * @param frame - The current XR frame, if any.
+ * @returns What the platform supports.
+ */
+function anchorCapability(session, frame) {
+    if (!frame || !session)
+        return 'unsupported';
+    if (typeof frame.createAnchor !== 'function')
+        return 'unsupported';
+    return typeof session.restorePersistentAnchor === 'function'
+        ? 'persistent'
+        : 'session-only';
+}
+
+/**
+ * Resolves the default backing storage.
+ *
+ * `localStorage` throws on access in some privacy modes rather than merely
+ * being absent, so this never lets that reach the caller.
+ *
+ * @returns Browser local storage, or undefined when it cannot be used.
+ */
+function defaultStorage() {
+    try {
+        return typeof localStorage === 'undefined' ? undefined : localStorage;
+    }
+    catch {
+        return undefined;
+    }
+}
+/**
+ * Persists anchor handles in browser local storage.
+ *
+ * Every operation degrades to a no-op rather than throwing: a missing or full
+ * store should cost the caller its persistence, not its session.
+ */
+class LocalStorageAnchorStore {
+    /**
+     * @param key - Storage key to read and write.
+     * @param maxRecords - Cap on saved records; oldest are evicted first.
+     * @param storage - Backing storage. Omit to use `localStorage`; pass `null`
+     *     to disable persistence entirely. `null` is distinct from omission so
+     *     callers can opt out explicitly instead of relying on a default.
+     */
+    constructor(key, maxRecords, storage) {
+        this.key = key;
+        this.maxRecords = maxRecords;
+        this.storage =
+            storage === undefined ? defaultStorage() : (storage ?? undefined);
+    }
+    /**
+     * Reads every saved record.
+     * @returns Saved records, oldest first, or an empty array.
+     */
+    load() {
+        if (!this.storage)
+            return [];
+        let raw = null;
+        try {
+            raw = this.storage.getItem(this.key);
+        }
+        catch (error) {
+            console.warn('[anchors] could not read stored anchors', error);
+            return [];
+        }
+        if (!raw)
+            return [];
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                console.warn('[anchors] stored anchors were not a list; ignoring');
+                return [];
+            }
+            return parsed.filter(isAnchorRecord);
+        }
+        catch (error) {
+            console.warn('[anchors] stored anchors were unreadable', error);
+            return [];
+        }
+    }
+    /**
+     * Saves a record, replacing any existing entry with the same uuid.
+     * @param record - The record to save.
+     * @returns Whether the record was committed.
+     */
+    save(record) {
+        const records = this.load();
+        const index = records.findIndex((r) => r.uuid === record.uuid);
+        if (index >= 0) {
+            records[index] = record;
+        }
+        else {
+            records.push(record);
+        }
+        // Only trim when growing, so re-saving an existing handle never evicts.
+        if (index < 0 && records.length > this.maxRecords) {
+            records.sort((a, b) => a.createdAt - b.createdAt);
+            records.splice(0, records.length - this.maxRecords);
+        }
+        return this.write(records);
+    }
+    /**
+     * Removes a single record.
+     * @param uuid - Handle of the record to remove.
+     */
+    remove(uuid) {
+        void this.write(this.load().filter((r) => r.uuid !== uuid));
+    }
+    /** Removes every saved record. */
+    clear() {
+        if (!this.storage)
+            return;
+        try {
+            this.storage.removeItem(this.key);
+        }
+        catch (error) {
+            console.warn('[anchors] could not clear stored anchors', error);
+        }
+    }
+    write(records) {
+        if (!this.storage) {
+            console.warn('[anchors] no storage available; anchors will not persist');
+            return false;
+        }
+        try {
+            this.storage.setItem(this.key, JSON.stringify(records));
+            return true;
+        }
+        catch (error) {
+            console.warn('[anchors] could not save anchors', error);
+            return false;
+        }
+    }
+}
+/**
+ * Narrows an unknown parsed value to a usable record.
+ * @param value - Candidate parsed from storage.
+ * @returns Whether the value is a usable record.
+ */
+function isAnchorRecord(value) {
+    if (!value || typeof value !== 'object')
+        return false;
+    const candidate = value;
+    if (typeof candidate.uuid !== 'string' ||
+        candidate.uuid.length === 0 ||
+        typeof candidate.label !== 'string') {
+        return false;
+    }
+    // A pose is optional, but a malformed one would be indexed blindly during a
+    // simulated restore and take the whole batch down with it.
+    return candidate.pose === undefined || isStorablePose(candidate.pose);
+}
+/**
+ * Checks a stored pose has the arrays a restore will index into.
+ * @param value - Candidate pose parsed from storage.
+ * @returns Whether the pose is usable.
+ */
+function isStorablePose(value) {
+    if (!value || typeof value !== 'object')
+        return false;
+    const pose = value;
+    const numbers = (v, length) => Array.isArray(v) && v.length === length && v.every(Number.isFinite);
+    return numbers(pose.position, 3) && numbers(pose.orientation, 4);
+}
+
+/**
+ * A stand-in anchor for environments with no WebXR anchor support.
+ *
+ * The desktop simulator has no tracking system to anchor against, so this
+ * holds the pose itself. It is deliberately a separate type rather than a
+ * silent substitute: anchoring here proves the app's own wiring, not that the
+ * platform can re-localise anything, and callers can tell the difference via
+ * {@link SimulatorAnchor.isSimulatorAnchor}.
+ */
+class SimulatorAnchor {
+    /**
+     * @param handle - Identifier used as this anchor's persistent handle.
+     * @param pose - Pose to hold.
+     */
+    constructor(handle, pose) {
+        this.handle = handle;
+        /** Marks the instance so it can be recognised after type erasure. */
+        this.isSimulatorAnchor = true;
+        /** Stands in for `XRAnchor.anchorSpace`; never a real tracked space. */
+        this.anchorSpace = {};
+        /**
+         * Returns this anchor's handle.
+         * @returns The handle it was constructed with.
+         */
+        this.requestPersistentHandle = async () => this.handle;
+        this.pose = {
+            position: {
+                x: pose.position?.x ?? 0,
+                y: pose.position?.y ?? 0,
+                z: pose.position?.z ?? 0,
+            },
+            orientation: {
+                x: pose.orientation?.x ?? 0,
+                y: pose.orientation?.y ?? 0,
+                z: pose.orientation?.z ?? 0,
+                w: pose.orientation?.w ?? 1,
+            },
+        };
+    }
+    /** Matches the `XRAnchor.delete` shape; nothing to release. */
+    delete() { }
+    /**
+     * The held pose in storable form.
+     * @returns The pose as plain arrays.
+     */
+    toStorablePose() {
+        return {
+            position: [
+                this.pose.position.x,
+                this.pose.position.y,
+                this.pose.position.z,
+            ],
+            orientation: [
+                this.pose.orientation.x,
+                this.pose.orientation.y,
+                this.pose.orientation.z,
+                this.pose.orientation.w,
+            ],
+        };
+    }
+    /**
+     * Rebuilds an anchor from a stored pose.
+     * @param handle - Handle to restore under.
+     * @param pose - Previously stored pose.
+     * @returns The rebuilt anchor.
+     */
+    static fromStorablePose(handle, pose) {
+        return new SimulatorAnchor(handle, {
+            position: {
+                x: pose.position[0],
+                y: pose.position[1],
+                z: pose.position[2],
+            },
+            orientation: {
+                x: pose.orientation[0],
+                y: pose.orientation[1],
+                z: pose.orientation[2],
+                w: pose.orientation[3],
+            },
+        });
+    }
+    /**
+     * Whether an anchor is simulated rather than platform-provided.
+     * @param anchor - Anchor to test.
+     * @returns True when the anchor is a {@link SimulatorAnchor}.
+     */
+    static isSimulatorAnchor(anchor) {
+        return !!anchor && anchor.isSimulatorAnchor === true;
+    }
+}
+
+let nextAnchorId = 0;
+/**
+ * Mints a handle for a simulated anchor.
+ *
+ * Deliberately not the anchor's id: that counter restarts whenever the page
+ * loads, so a fresh anchor would eventually be handed an id a stored record
+ * already used, and saving it would overwrite that record.
+ *
+ * @returns A handle that will not collide with an existing one.
+ */
+function simulatedHandle() {
+    const uuid = globalThis.crypto?.randomUUID?.();
+    if (uuid)
+        return `sim-${uuid}`;
+    // randomUUID needs a secure context, which a plain http dev server is not.
+    return `sim-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+/**
+ * Creates and tracks spatial anchors, and restores previously saved ones.
+ *
+ * Anchors let content stay attached to a real place as the platform refines
+ * its understanding of the room. With persistence enabled, handles are saved
+ * so the same content can be recovered in a later session.
+ *
+ * Every anchor API this uses is optional in WebXR, so the manager degrades
+ * quietly: on a platform without anchors, creation returns `null` and nothing
+ * throws.
+ */
+class AnchorManager extends Script {
+    static { this.dependencies = {
+        options: WorldOptions,
+        renderer: THREE.WebGLRenderer,
+    }; }
+    /**
+     * @param store - Storage for persistent handles. Defaults to local storage,
+     *     configured from options during {@link AnchorManager.init}.
+     */
+    constructor(injectedStore) {
+        super();
+        this.injectedStore = injectedStore;
+        /** What the current platform supports; refreshed each frame. */
+        this.capability = 'unsupported';
+        /**
+         * The most recent failure, or null.
+         *
+         * Exposed rather than only logged so callers can surface anchor problems in
+         * their own UI instead of leaving the user with silently missing content.
+         */
+        this.lastError = null;
+        this.anchors = new Map();
+        this.warnedUnsupported = false;
+        this.pendingCreates = [];
+    }
+    /**
+     * Initializes the manager.
+     * @param dependencies - Resolved dependencies: the world options carrying
+     *     the anchor settings, and the renderer supplying the reference space
+     *     that anchor poses are expressed against.
+     */
+    init({ options, renderer, }) {
+        this.options = options;
+        this.renderer = renderer;
+        this.store =
+            this.injectedStore ??
+                new LocalStorageAnchorStore(options.anchors.storageKey, options.anchors.maxStoredAnchors);
+    }
+    /**
+     * Refreshes platform capability and drops anchors the platform has released.
+     * @param _time - Frame timestamp, unused.
+     * @param frame - The current XR frame.
+     */
+    update(_time, frame) {
+        if (!frame) {
+            // Outside an immersive session there is no XRFrame at all, so waiting
+            // for one would leave the fallback permanently inert on desktop.
+            if (this.options?.anchors.simulatorFallback) {
+                this.capability = 'simulated';
+            }
+            return;
+        }
+        this.currentFrame = frame;
+        const probed = anchorCapability(frame.session, frame);
+        this.capability =
+            probed === 'unsupported' && this.options?.anchors.simulatorFallback
+                ? 'simulated'
+                : probed;
+        if (this.capability === 'unsupported') {
+            if (!this.warnedUnsupported) {
+                this.warnedUnsupported = true;
+                console.warn('[anchors] this platform does not support anchors; content will ' +
+                    'not stay pinned across sessions');
+            }
+            return;
+        }
+        this.pruneUntracked(frame);
+        void this.flushPendingCreates(frame);
+    }
+    /**
+     * Releases everything belonging to a session that has ended.
+     *
+     * Anchors do not survive their session, so keeping them would leave dead
+     * handles that later restores would treat as already restored. Saved records
+     * are untouched, since restoring them is the entire point.
+     */
+    onSessionEnded() {
+        for (const tracked of this.anchors.values()) {
+            try {
+                tracked.anchor.delete?.();
+            }
+            catch {
+                // The session is gone; nothing useful to do.
+            }
+        }
+        this.anchors.clear();
+        this.currentFrame = undefined;
+        this.capability = this.options?.anchors.simulatorFallback
+            ? 'simulated'
+            : 'unsupported';
+        for (const pending of this.pendingCreates.splice(0)) {
+            pending.resolve(null);
+        }
+    }
+    /**
+     * Creates an anchor at a pose.
+     *
+     * @param pose - Pose for the new anchor.
+     * @param label - Label carried through persistence.
+     * @param space - Space the pose is expressed in. Defaults to the frame's
+     *     own reference space when the platform provides one.
+     * @returns The tracked anchor, or null when it could not be created.
+     */
+    async create(pose, label, space) {
+        if (this.capability === 'simulated') {
+            return this.createSimulated(pose, label);
+        }
+        const frame = this.currentFrame;
+        if (!frame || typeof frame.createAnchor !== 'function') {
+            return null;
+        }
+        // An XRSession is not an XRSpace. The two are interchangeable to the type
+        // checker only because XRSpace is declared as an empty interface, so
+        // passing a session here would compile and then misplace every anchor.
+        const anchorSpace = space ?? this.referenceSpace();
+        if (!anchorSpace) {
+            console.warn('[anchors] no reference space available; cannot create an anchor');
+            return null;
+        }
+        const immediate = await this.createOnFrame(frame, pose, label, anchorSpace);
+        if (immediate)
+            return immediate;
+        // Only a rejected createAnchor reaches here, and the usual cause is a
+        // frame that went inactive because the app created from an input handler.
+        // Retry exactly once on the next live frame rather than looping.
+        return new Promise((resolve) => {
+            this.pendingCreates.push({
+                pose,
+                label,
+                space: anchorSpace,
+                resolve,
+                retried: true,
+            });
+        });
+    }
+    /**
+     * Runs queued creations against a live frame.
+     * @param frame - The frame currently being rendered.
+     */
+    async flushPendingCreates(frame) {
+        if (this.pendingCreates.length === 0)
+            return;
+        for (const pending of this.pendingCreates.splice(0)) {
+            pending.resolve(await this.createOnFrame(frame, pending.pose, pending.label, pending.space));
+        }
+    }
+    /**
+     * Creates an anchor on a frame known to be active.
+     * @param frame - The frame currently being rendered.
+     * @param pose - Pose for the new anchor.
+     * @param label - Label carried through persistence.
+     * @param space - Space the pose is expressed in.
+     * @returns The tracked anchor, or null when it could not be created.
+     */
+    async createOnFrame(frame, pose, label, space) {
+        // The retry path may be handed a different frame from the one create()
+        // checked, so verify support here rather than relying on the caller.
+        const createAnchor = frame.createAnchor;
+        if (typeof createAnchor !== 'function')
+            return null;
+        try {
+            const anchor = await createAnchor.call(frame, pose, space);
+            if (!anchor)
+                return null;
+            const tracked = {
+                id: `anchor-${nextAnchorId++}`,
+                label,
+                anchor,
+            };
+            this.anchors.set(tracked.id, tracked);
+            this.debug(`created ${tracked.id} (${label})`);
+            return tracked;
+        }
+        catch (error) {
+            this.lastError = error;
+            console.warn('[anchors] could not create anchor', error);
+            return null;
+        }
+    }
+    /**
+     * Saves an anchor's handle so it can be restored in a later session.
+     *
+     * @param id - Id of a tracked anchor.
+     * @returns Whether a handle was saved.
+     */
+    async persist(id) {
+        if (!this.store)
+            return false;
+        const tracked = this.anchors.get(id);
+        if (!tracked)
+            return false;
+        if (this.capability === 'simulated') {
+            const anchor = tracked.anchor;
+            // Minted once and kept, so saving the same anchor twice updates its
+            // record instead of adding another.
+            tracked.uuid ??= simulatedHandle();
+            return this.store.save({
+                uuid: tracked.uuid,
+                label: tracked.label,
+                createdAt: Date.now(),
+                pose: anchor.toStorablePose(),
+            });
+        }
+        if (this.capability !== 'persistent') {
+            this.debug(`cannot persist ${id}: platform is ${this.capability}`);
+            return false;
+        }
+        const request = tracked.anchor.requestPersistentHandle;
+        if (typeof request !== 'function') {
+            this.debug(`cannot persist ${id}: anchor has no persistent handle`);
+            return false;
+        }
+        try {
+            const uuid = await request.call(tracked.anchor);
+            tracked.uuid = uuid;
+            const before = this.store.load();
+            const saved = this.store.save({
+                uuid,
+                label: tracked.label,
+                createdAt: Date.now(),
+            });
+            if (saved)
+                this.releaseEvicted(before, uuid);
+            this.debug(`persisted ${id} as ${uuid} (stored: ${saved})`);
+            return saved;
+        }
+        catch (error) {
+            this.lastError = error;
+            console.warn('[anchors] could not persist anchor', error);
+            return false;
+        }
+    }
+    /**
+     * Restores every saved anchor.
+     *
+     * Re-localisation is probabilistic, so a handle that cannot be resolved here
+     * is reported as `not-found` rather than treated as an error, and one
+     * failure never stops the rest of the batch.
+     *
+     * @returns One result per saved record, in stored order.
+     */
+    async restoreAll() {
+        // World can expose this child during its own init, one scene scan before
+        // ScriptsManager initializes newly added children. Treat that brief state
+        // as not ready; callers can retry once the capability changes.
+        if (!this.store)
+            return [];
+        const records = this.store.load();
+        if (records.length === 0)
+            return [];
+        if (this.capability === 'simulated') {
+            return records.map((record) => this.restoreSimulated(record));
+        }
+        const session = this.currentFrame?.session;
+        const restore = session?.restorePersistentAnchor;
+        if (this.capability !== 'persistent' || typeof restore !== 'function') {
+            return records.map((record) => ({ record, status: 'unsupported' }));
+        }
+        return Promise.all(records.map((record) => this.restoreOne(record, session)));
+    }
+    /**
+     * Restores a single record.
+     * @param record - The saved record to restore.
+     * @param session - Session able to restore handles.
+     * @returns The outcome for this record.
+     */
+    async restoreOne(record, session) {
+        // restoreAll may be called more than once; without this a second call
+        // mints a duplicate TrackedAnchor for every stored record.
+        const existing = this.findByUuid(record.uuid);
+        if (existing)
+            return { record, status: 'restored', anchor: existing };
+        try {
+            const anchor = await session.restorePersistentAnchor(record.uuid);
+            if (!anchor)
+                return { record, status: 'not-found' };
+            const tracked = {
+                id: `anchor-${nextAnchorId++}`,
+                label: record.label,
+                anchor,
+                uuid: record.uuid,
+            };
+            this.anchors.set(tracked.id, tracked);
+            return { record, status: 'restored', anchor: tracked };
+        }
+        catch (error) {
+            // Expected whenever the user is somewhere else; not an error state.
+            this.debug(`could not restore ${record.uuid}: ${error}`);
+            return { record, status: 'not-found' };
+        }
+    }
+    /**
+     * Reads an anchor's current pose.
+     *
+     * @param id - Id of a tracked anchor.
+     * @param referenceSpace - Space to express the pose in. Not needed for
+     *     simulated anchors, which hold their own pose.
+     * @returns The pose, or null when the anchor is not currently tracked.
+     */
+    getPose(id, referenceSpace) {
+        const tracked = this.anchors.get(id);
+        if (!tracked)
+            return null;
+        // Simulated anchors have no tracked space to resolve against, and there is
+        // no frame at all on desktop, so read the pose they are holding.
+        if (SimulatorAnchor.isSimulatorAnchor(tracked.anchor)) {
+            const { position, orientation } = tracked.anchor.pose;
+            return { transform: { position, orientation } };
+        }
+        const frame = this.currentFrame;
+        // The manager already holds the renderer, so callers should not have to
+        // thread a reference space through every read.
+        const space = referenceSpace ?? this.referenceSpace();
+        if (!frame || !space)
+            return null;
+        try {
+            // An XRFrame is only valid inside its own callback, so reading a pose
+            // from outside the frame loop throws rather than returning nothing.
+            return (frame.getPose(tracked.anchor.anchorSpace, space) ??
+                null);
+        }
+        catch {
+            return null;
+        }
+    }
+    /**
+     * Stops tracking an anchor and forgets any saved handle for it.
+     * @param id - Id of a tracked anchor.
+     */
+    delete(id) {
+        const tracked = this.anchors.get(id);
+        if (!tracked)
+            return;
+        this.anchors.delete(id);
+        if (tracked.uuid && this.store) {
+            this.store.remove(tracked.uuid);
+            this.releasePersistentHandle(tracked.uuid);
+        }
+        try {
+            tracked.anchor.delete?.();
+        }
+        catch (error) {
+            this.debug(`anchor ${id} could not be released: ${error}`);
+        }
+    }
+    /**
+     * Every anchor currently tracked.
+     * @returns The tracked anchors.
+     */
+    getAll() {
+        return [...this.anchors.values()];
+    }
+    /**
+     * Every persistent handle the platform is currently holding for this origin.
+     *
+     * Only the headset runtimes implement this; Chrome ships the anchors module
+     * without persistence, where the attribute is absent rather than empty. An
+     * empty result therefore means "nothing to report", not "the platform holds
+     * none".
+     *
+     * Scoped to the origin, not to this store. Two pages on one origin see each
+     * other's handles here, so a handle missing from your own records is not
+     * evidence of a leak and must not be deleted on that basis.
+     *
+     * @returns The handles, or an empty array when unavailable.
+     */
+    platformHandles() {
+        const handles = this.currentSession()?.persistentAnchors;
+        // Blank entries have been seen in the wild, and the platform refuses to
+        // delete them, so they are not handles as far as anything here cares.
+        return handles ? [...handles].filter((uuid) => !!uuid) : [];
+    }
+    /**
+     * Releases every persistent handle the platform is holding for this origin.
+     *
+     * A recovery path, not routine cleanup. Platforms cap how many persistent
+     * anchors may exist, and once local records are gone nothing names the
+     * handles any more, so {@link AnchorManager.forgetAll} cannot reach them and
+     * the cap stays full forever. This reads the platform's own list instead.
+     *
+     * Origin wide and destructive: another page on the same origin loses its
+     * anchors too. Offer it as an explicit choice, never as automatic cleanup.
+     *
+     * The platform's list is not guaranteed to shrink as handles are released,
+     * so do not read it back afterwards to judge whether this worked. The
+     * returned count is what the platform actually accepted.
+     *
+     * @returns How many handles the platform accepted a release for.
+     */
+    async releaseAllPlatformHandles() {
+        const session = this.currentSession();
+        const remove = session?.deletePersistentAnchor;
+        if (!session || typeof remove !== 'function') {
+            this.debug('cannot release: platform has no deletePersistentAnchor');
+            return 0;
+        }
+        const handles = this.platformHandles();
+        let released = 0;
+        for (const uuid of handles) {
+            try {
+                await remove.call(session, uuid);
+                released++;
+                this.debug(`released handle ${uuid}`);
+            }
+            catch (error) {
+                this.lastError = error;
+                this.debug(`could not release handle ${uuid}: ${error}`);
+            }
+        }
+        // Local records would otherwise point at handles that no longer exist.
+        this.store?.clear();
+        this.debug(`released ${released} of ${handles.length} platform handles`);
+        return released;
+    }
+    /** Forgets every saved handle, leaving live anchors alone. */
+    forgetAll() {
+        if (!this.store)
+            return;
+        // Read before clearing: records the app never restored this session are
+        // the only place their platform handles are named.
+        for (const record of this.store.load()) {
+            this.releasePersistentHandle(record.uuid);
+        }
+        this.store.clear();
+    }
+    /**
+     * The session to ask about anchors.
+     *
+     * Prefers the frame's own session, falling back to the renderer so calls
+     * made outside the frame loop still reach the platform.
+     *
+     * @returns The session, or undefined.
+     */
+    currentSession() {
+        return (this.currentFrame?.session ??
+            this.renderer?.xr.getSession?.() ??
+            undefined);
+    }
+    /**
+     * Releases handles the store dropped to stay under its cap.
+     *
+     * The store evicts silently, so without this the oldest handles stay
+     * allocated on the platform with no record left able to name them.
+     *
+     * @param before - Records present immediately before the save.
+     * @param saved - Handle just written, which is never evicted.
+     */
+    releaseEvicted(before, saved) {
+        if (!this.store)
+            return;
+        const kept = new Set(this.store.load().map((r) => r.uuid));
+        for (const record of before) {
+            if (record.uuid !== saved && !kept.has(record.uuid)) {
+                this.debug(`store evicted ${record.uuid}`);
+                this.releasePersistentHandle(record.uuid);
+            }
+        }
+    }
+    /**
+     * Asks the platform to drop a persistent handle.
+     *
+     * Platforms cap how many handles an origin may hold, so forgetting a record
+     * on our side without this slowly fills that quota with anchors no app can
+     * name any more.
+     *
+     * @param uuid - The persistent handle to release.
+     */
+    releasePersistentHandle(uuid) {
+        // Simulator handles name local pose records only. They were never issued
+        // by an XRSession and must not be sent to the platform for deletion.
+        if (uuid.startsWith('sim-'))
+            return;
+        const session = this.currentSession();
+        const remove = session?.deletePersistentAnchor;
+        // Optional in WebXR, and absent entirely for simulated anchors. Said out
+        // loud, because a silent no-op here looks identical to a release that
+        // worked, and the handle stays against the platform's cap either way.
+        if (!session) {
+            this.debug(`cannot release ${uuid}: no session`);
+            return;
+        }
+        if (typeof remove !== 'function') {
+            this.debug(`cannot release ${uuid}: platform has no deletePersistentAnchor`);
+            return;
+        }
+        try {
+            void Promise.resolve(remove.call(session, uuid)).then(() => this.debug(`released handle ${uuid}`), (error) => this.debug(`could not release handle ${uuid}: ${error}`));
+        }
+        catch (error) {
+            this.debug(`could not release handle ${uuid}: ${error}`);
+        }
+    }
+    /** Releases every tracked anchor. Saved handles are left in storage. */
+    dispose() {
+        for (const tracked of this.anchors.values()) {
+            try {
+                tracked.anchor.delete?.();
+            }
+            catch {
+                // Nothing useful to do while tearing down.
+            }
+        }
+        this.anchors.clear();
+        this.currentFrame = undefined;
+    }
+    /**
+     * Drops anchors the platform no longer reports as tracked.
+     * @param frame - The current XR frame.
+     */
+    pruneUntracked(frame) {
+        // Simulated anchors are not known to the platform, so its tracked set says
+        // nothing about them and would remove every one of them.
+        if (this.capability === 'simulated')
+            return;
+        const tracked = frame.trackedAnchors;
+        // Absent means the platform does not report the set, which is different
+        // from reporting an empty set; only the latter means everything is gone.
+        if (!tracked)
+            return;
+        for (const [id, entry] of [...this.anchors]) {
+            if (!tracked.has(entry.anchor)) {
+                this.anchors.delete(id);
+                this.debug(`platform released ${id}`);
+            }
+        }
+    }
+    /**
+     * Creates a locally held anchor for environments without platform support.
+     * @param pose - Pose to hold.
+     * @param label - Label carried through persistence.
+     * @returns The tracked anchor.
+     */
+    createSimulated(pose, label) {
+        const id = `anchor-${nextAnchorId++}`;
+        const tracked = {
+            id,
+            label,
+            anchor: new SimulatorAnchor(id, pose),
+        };
+        this.anchors.set(id, tracked);
+        this.debug(`created simulated ${id} (${label})`);
+        return tracked;
+    }
+    /**
+     * Rebuilds a simulated anchor from its stored pose.
+     * @param record - The saved record.
+     * @returns The outcome for this record.
+     */
+    restoreSimulated(record) {
+        const existing = this.findByUuid(record.uuid);
+        if (existing)
+            return { record, status: 'restored', anchor: existing };
+        if (!record.pose) {
+            // Saved by a real platform, so there is no pose to rebuild from here.
+            return { record, status: 'not-found' };
+        }
+        const tracked = {
+            id: `anchor-${nextAnchorId++}`,
+            label: record.label,
+            uuid: record.uuid,
+            anchor: SimulatorAnchor.fromStorablePose(record.uuid, record.pose),
+        };
+        this.anchors.set(tracked.id, tracked);
+        return { record, status: 'restored', anchor: tracked };
+    }
+    /**
+     * The reference space anchor poses are expressed against.
+     * @returns The reference space, or undefined when none is available yet.
+     */
+    referenceSpace() {
+        return this.renderer?.xr?.getReferenceSpace() ?? undefined;
+    }
+    /**
+     * Finds a tracked anchor by its persistent handle.
+     * @param uuid - Persistent handle to look for.
+     * @returns The tracked anchor, or undefined.
+     */
+    findByUuid(uuid) {
+        for (const tracked of this.anchors.values()) {
+            if (tracked.uuid === uuid)
+                return tracked;
+        }
+        return undefined;
+    }
+    /**
+     * Logs when anchor debugging is enabled.
+     * @param message - Message to log.
+     */
+    debug(message) {
+        if (this.options?.anchors.debugging) {
+            console.log(`[anchors] ${message}`);
+        }
     }
 }
 
@@ -20765,6 +21766,10 @@ class World extends Script {
             this.meshes = new MeshDetector();
             this.add(this.meshes);
         }
+        if (this.options.anchors.enabled) {
+            this.anchors = new AnchorManager();
+            this.add(this.anchors);
+        }
         if (this.options.sounds.enabled) {
             this.sounds = new SoundDetector();
             this.add(this.sounds);
@@ -21766,6 +22771,9 @@ class Core {
         }
         if (options.world.meshes.enabled) {
             webXROptionalFeatures.push('mesh-detection');
+        }
+        if (options.world.anchors.enabled) {
+            webXROptionalFeatures.push('anchors');
         }
         // Sets up lighting.
         if (options.lighting.enabled) {
@@ -25391,6 +26399,149 @@ class VideoFileStream extends VideoStream {
 }
 
 /**
+ * Builds a pose, using the platform type when it exists.
+ *
+ * XRRigidTransform is a browser global that is absent outside a WebXR-capable
+ * page, so constructing it unconditionally would make this unusable under test
+ * and in the simulator. The simulated path only reads position and orientation,
+ * and a real device always provides the constructor.
+ *
+ * @param position - World position.
+ * @param quaternion - World orientation.
+ * @returns A pose accepted by the anchor subsystem.
+ */
+function makePose(position, quaternion) {
+    const p = { x: position.x, y: position.y, z: position.z };
+    const o = {
+        x: quaternion.x,
+        y: quaternion.y,
+        z: quaternion.z,
+        w: quaternion.w,
+    };
+    const Ctor = globalThis.XRRigidTransform;
+    return Ctor
+        ? new Ctor(p, o)
+        : { position: p, orientation: o };
+}
+/**
+ * Keeps `THREE.Object3D`s attached to spatial anchors.
+ *
+ * {@link AnchorManager} deals in anchors and poses; every app on top of it
+ * otherwise repeats the same work of holding a map from anchor to object and
+ * copying poses across each frame. This owns that, so an app anchors an object
+ * and then forgets about it.
+ */
+class AnchoredObjects {
+    /**
+     * @param manager - The anchor subsystem to attach through.
+     * @param parent - Object to add anchored content to, usually the scene.
+     */
+    constructor(manager, parent) {
+        this.manager = manager;
+        this.parent = parent;
+        this.objects = new Map();
+    }
+    /**
+     * Anchors an object where it currently sits, and saves it.
+     *
+     * @param object - Object to pin. Added to the parent if not already in it.
+     * @param label - Label to restore it by later.
+     * @returns The tracked anchor, or null when anchoring is unavailable.
+     */
+    async anchor(object, label) {
+        const position = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+        object.getWorldPosition(position);
+        object.getWorldQuaternion(quaternion);
+        const tracked = await this.manager.create(makePose(position, quaternion), label);
+        if (!tracked)
+            return null;
+        await this.manager.persist(tracked.id);
+        if (object.parent !== this.parent)
+            this.parent.add(object);
+        this.objects.set(tracked.id, object);
+        return tracked;
+    }
+    /**
+     * Rebuilds objects for every anchor saved in a previous session.
+     *
+     * @param factory - Builds the object for a restored anchor.
+     * @returns How many objects were restored.
+     */
+    async restore(factory) {
+        let restored = 0;
+        for (const result of await this.manager.restoreAll()) {
+            if (result.status !== 'restored' || !result.anchor)
+                continue;
+            // restoreAll hands back the anchor it already has, so a second restore
+            // would build a duplicate object and strand the first one in the scene,
+            // untracked and never moved again.
+            if (this.objects.has(result.anchor.id))
+                continue;
+            const object = factory(result.record.label, result.record);
+            if (!object)
+                continue;
+            this.parent.add(object);
+            this.objects.set(result.anchor.id, object);
+            restored++;
+        }
+        return restored;
+    }
+    /**
+     * Moves every attached object onto its anchor's current pose.
+     *
+     * Call once per frame. Anchors drift as the platform refines its map of the
+     * room, which is the whole point of anchoring rather than storing a position.
+     *
+     * @param referenceSpace - Space to read poses in. Not needed for simulated
+     *     anchors, which hold their own pose.
+     */
+    update(referenceSpace) {
+        for (const [id, object] of this.objects) {
+            const pose = this.manager.getPose(id, referenceSpace);
+            if (!pose)
+                continue;
+            const { position, orientation } = pose.transform;
+            object.position.set(position.x, position.y, position.z);
+            object.quaternion.set(orientation.x, orientation.y, orientation.z, orientation.w);
+        }
+    }
+    /**
+     * Detaches an anchored object and forgets its anchor.
+     * @param id - Id of the anchor to remove.
+     */
+    remove(id) {
+        const object = this.objects.get(id);
+        if (object) {
+            this.parent.remove(object);
+            this.objects.delete(id);
+        }
+        this.manager.delete(id);
+    }
+    /**
+     * The object attached to an anchor.
+     * @param id - Id of the anchor.
+     * @returns The object, or undefined.
+     */
+    get(id) {
+        return this.objects.get(id);
+    }
+    /**
+     * Every attached object, keyed by anchor id.
+     * @returns The attached objects.
+     */
+    getAll() {
+        return this.objects;
+    }
+    /** Detaches everything and forgets every saved anchor. */
+    clear() {
+        for (const id of [...this.objects.keys()])
+            this.remove(id);
+        this.manager.forgetAll();
+    }
+}
+
+/**
  * Per-pixel semantic categories emitted by the selfie multiclass segmentation
  * model. Index `0` is the background; every other index is part of a person,
  * so anything `>= 1` can be treated as foreground.
@@ -25411,6 +26562,9 @@ var sdk = /*#__PURE__*/Object.freeze({
     AIOptions: AIOptions,
     ActiveControllers: ActiveControllers,
     Agent: Agent,
+    AnchorManager: AnchorManager,
+    AnchoredObjects: AnchoredObjects,
+    AnchorsOptions: AnchorsOptions,
     AudioListener: AudioListener,
     AudioPlayer: AudioPlayer,
     BACK: BACK,
@@ -25480,6 +26634,7 @@ var sdk = /*#__PURE__*/Object.freeze({
     Lighting: Lighting,
     LightingOptions: LightingOptions,
     LoadingSpinnerManager: LoadingSpinnerManager,
+    LocalStorageAnchorStore: LocalStorageAnchorStore,
     ManipulationAction: ManipulationAction,
     MediaPipeHandContext: MediaPipeHandContext,
     MediaPipeHandPoseEstimator: MediaPipeHandPoseEstimator,
@@ -25529,6 +26684,7 @@ var sdk = /*#__PURE__*/Object.freeze({
     SetSimulatorHandPhysicsEvent: SetSimulatorHandPhysicsEvent,
     SetSimulatorModeEvent: SetSimulatorModeEvent,
     ShowSimulatorInstructionsEvent: ShowSimulatorInstructionsEvent,
+    SimulatorAnchor: SimulatorAnchor,
     get SimulatorHandPose () { return SimulatorHandPose; },
     SimulatorHandPoseChangeRequestEvent: SimulatorHandPoseChangeRequestEvent,
     get SimulatorMode () { return SimulatorMode; },
@@ -25579,6 +26735,7 @@ var sdk = /*#__PURE__*/Object.freeze({
     _getBvhImportStatus: _getBvhImportStatus,
     add: add,
     ai: ai,
+    anchorCapability: anchorCapability,
     applyBVH: applyBVH,
     applySimulatorHandPoseRotationConstraints: applySimulatorHandPoseRotationConstraints,
     average: average,
@@ -25590,8 +26747,14 @@ var sdk = /*#__PURE__*/Object.freeze({
     context: context,
     core: core,
     cropImage: cropImage,
+    defaultAnchorStorageKey: defaultAnchorStorageKey,
     depth: depth,
     disposeBVH: disposeBVH,
+    disposeMaterial: disposeMaterial,
+    disposeMeshResources: disposeMeshResources,
+    disposeObjectChildren: disposeObjectChildren,
+    disposeObjectTree: disposeObjectTree,
+    disposeRenderableResources: disposeRenderableResources,
     enableAcceleratedRaycast: enableAcceleratedRaycast,
     estimateHandScale: estimateHandScale,
     extractYaw: extractYaw,
@@ -25673,5 +26836,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { CategoryVolumes as $, getUICardEdgeOptions as A, getSemanticControl as B, UICard as C, Depth as D, UIOverlay as E, XR_BLOCKS_ASSETS_PATH as F, SIMULATOR_HAND_POSE_NAMES as G, Handedness as H, Interaction as I, AI as J, Keycodes as K, AIOptions as L, ModelLoader as M, ActiveControllers as N, Options as O, Physics as P, Agent as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UIText as U, AudioListener as V, WaitFrame as W, XRDeviceCamera as X, AudioPlayer as Y, BACK as Z, BackgroundMusic as _, Script as a, ModelViewer as a$, Context as a0, ContextOptions as a1, Core as a2, CoreSound as a3, DEFAULT_DEVICE_CAMERA_HEIGHT as a4, DEFAULT_DEVICE_CAMERA_WIDTH as a5, DEFAULT_RGB_TO_DEPTH_PARAMS as a6, DEVICE_CAMERA_PARAMETERS as a7, DOWN as a8, DepthMesh as a9, GestureRecognition as aA, GestureRecognitionOptions as aB, GetWeatherTool as aC, HAND_BONE_IDX_CONNECTION_MAP as aD, HAND_INDEX_TO_LABEL as aE, HAND_JOINT_COUNT as aF, HAND_JOINT_IDX_CONNECTION_MAP as aG, Hands as aH, HandsOptions as aI, HeadGestureRecognition as aJ, HeadGestureRecognitionOptions as aK, HeuristicGestureRecognizer as aL, HeuristicHeadGestureRecognizer as aM, HumanRecognizer as aN, HumansOptions as aO, InputOptions as aP, InteractionOptions as aQ, LEFT as aR, LEFT_VIEW_ONLY_LAYER as aS, Lighting as aT, LightingOptions as aU, LoadingSpinnerManager as aV, MediaPipeHandContext as aW, MediaPipeHandPoseEstimator as aX, MeshDetectionOptions as aY, MeshDetector as aZ, MeshScript as a_, DepthMeshOptions as aa, DepthOptions as ab, DepthTextures as ac, DetectedBodyPose as ad, DetectedFace as ae, DetectedMesh as af, DetectedObject as ag, DetectedPlane as ah, DeviceCameraOptions as ai, FINGER_ORDER as aj, FORWARD as ak, FaceCamera as al, FaceLandmarkName as am, FaceRecognizer as an, FacesOptions as ao, FollowHead as ap, FollowObject as aq, GEMINI_DEFAULT_FLASH_MODEL as ar, GEMINI_DEFAULT_IMAGE_MODEL as as, GEMINI_DEFAULT_LIVE_MODEL as at, GamepadBindings as au, GamepadController as av, GazeController as aw, Gemini as ax, GeminiOptions as ay, GenerateSkyboxTool as az, SimulatorMode as b, ZERO_VECTOR3 as b$, MouseController as b0, NUM_HANDS as b1, OCCLUDABLE_ITEMS_LAYER as b2, ObjectDetector as b3, ObjectsOptions as b4, OcclusionPass as b5, OcclusionUtils as b6, OpenAI as b7, OpenAIOptions as b8, Orbit as b9, SpeechRecognizerOptions as bA, SpeechSynthesizer as bB, SpeechSynthesizerOptions as bC, StreamState as bD, StrokeRecognizer as bE, StylizedFace as bF, TensorFlowHandPoseEstimator as bG, Tool as bH, UIButton as bI, UIIcon as bJ, UIImage as bK, UIPanel as bL, UISlider as bM, UP as bN, User as bO, VIEW_DEPTH_GAP as bP, VideoFileStream as bQ, VideoStream as bR, VisibilityTransition as bS, VolumeCategory as bT, WebXRHandContext as bU, WebXRHandPoseEstimator as bV, WorldOptions as bW, XRButton as bX, XREffects as bY, XRPass as bZ, XRTransitionOptions as b_, PhysicsOptions as ba, PlaneDetector as bb, PlanesOptions as bc, PoseJointName as bd, RIGHT as be, RIGHT_VIEW_ONLY_LAYER as bf, ReticleOptions as bg, Reticles as bh, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bi, SOUND_PRESETS as bj, SceneDetector as bk, SceneOptions as bl, SceneSetOfMarkOptions as bm, SceneVisibilityOptions as bn, ScreenshotSynthesizer as bo, ScriptMixin as bp, ScriptsManager as bq, ScriptsManagerEventType as br, SegmentCategory as bs, SegmentationOptions as bt, Segmenter as bu, SkyboxAgent as bv, SoundOptions as bw, SoundSynthesizer as bx, SpatialAudio as by, SpeechRecognizer as bz, SetSimulatorModeEvent as c, loadingSpinnerManager as c$, ZERO_VISEME as c0, _getBvhImportStatus as c1, add as c2, ai as c3, applyBVH as c4, average as c5, camera as c6, clamp$1 as c7, clamp01 as c8, clampRotationToAngle as c9, getPalmNormal as cA, getPalmPose as cB, getPalmRight as cC, getPalmUp as cD, getPalmWidth as cE, getRelativeBoneAngles as cF, getThumbBendAngles as cG, getThumbCurl as cH, getThumbDirection as cI, getThumbOpposition as cJ, getThumbStraightness as cK, getThumbVerticalDirection as cL, getUrlParamBool as cM, getUrlParamFloat as cN, getUrlParamInt as cO, getUrlParameter as cP, getVec4ByColorString as cQ, getXrCameraLeft as cR, getXrCameraRight as cS, init as cT, initScript as cU, input as cV, intrinsicsToProjectionMatrix as cW, isBVHReady as cX, isDeviceCameraPoseAvailable as cY, lerp as cZ, loadStereoImageAsTextures as c_, context as ca, core as cb, cropImage as cc, depth as cd, disposeBVH as ce, enableAcceleratedRaycast as cf, estimateHandScale as cg, extractYaw as ch, getAdjacentFingerSpreads as ci, getBoneVectors as cj, getCameraParametersSnapshot as ck, getColorHex as cl, getDeltaTime as cm, getDeviceCameraClipFromView as cn, getDeviceCameraWorldFromClip as co, getDeviceCameraWorldFromView as cp, getElapsedTime as cq, getFingerBendAngles as cr, getFingerCurl as cs, getFingerDirection as ct, getFingerJoint as cu, getFingerPalmAlignment as cv, getFingerSpread as cw, getFingerStraightness as cx, getFingertipDistance as cy, getFingertipPalmDistance as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, lookAtRotation as d0, objectIsDescendantOf as d1, parseBase64DataURL as d2, parseSimulatorHandPoseRotations as d3, placeObjectAtIntersectionFacingTarget as d4, print as d5, resolveSimulatorRotationsFromKeypoints as d6, scene as d7, showOnlyInLeftEye as d8, showOnlyInRightEye as d9, sound as da, timer as db, transformRgbUvToWorld as dc, traverseUtil as dd, ui as de, urlParams as df, user as dg, visualizeDepth as dh, visualizeDepthMap as di, world as dj, xrDepthMeshOptions as dk, xrDepthMeshPhysicsOptions as dl, xrDepthMeshVisualizationOptions as dm, xrDeviceCameraEnvironmentContinuousOptions as dn, xrDeviceCameraEnvironmentOptions as dp, xrDeviceCameraUserContinuousOptions as dq, xrDeviceCameraUserOptions as dr, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIElementKind as w, getUIStructureRevision as x, isUIElement as y, getUIRevision as z };
+export { AudioPlayer as $, getUICardEdgeOptions as A, getSemanticControl as B, UICard as C, Depth as D, UIOverlay as E, XR_BLOCKS_ASSETS_PATH as F, SIMULATOR_HAND_POSE_NAMES as G, Handedness as H, Interaction as I, AI as J, Keycodes as K, AIOptions as L, ModelLoader as M, ActiveControllers as N, Options as O, Physics as P, Agent as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UIText as U, AnchorManager as V, WaitFrame as W, XRDeviceCamera as X, AnchoredObjects as Y, AnchorsOptions as Z, AudioListener as _, Script as a, MediaPipeHandPoseEstimator as a$, BACK as a0, BackgroundMusic as a1, CategoryVolumes as a2, Context as a3, ContextOptions as a4, Core as a5, CoreSound as a6, DEFAULT_DEVICE_CAMERA_HEIGHT as a7, DEFAULT_DEVICE_CAMERA_WIDTH as a8, DEFAULT_RGB_TO_DEPTH_PARAMS as a9, Gemini as aA, GeminiOptions as aB, GenerateSkyboxTool as aC, GestureRecognition as aD, GestureRecognitionOptions as aE, GetWeatherTool as aF, HAND_BONE_IDX_CONNECTION_MAP as aG, HAND_INDEX_TO_LABEL as aH, HAND_JOINT_COUNT as aI, HAND_JOINT_IDX_CONNECTION_MAP as aJ, Hands as aK, HandsOptions as aL, HeadGestureRecognition as aM, HeadGestureRecognitionOptions as aN, HeuristicGestureRecognizer as aO, HeuristicHeadGestureRecognizer as aP, HumanRecognizer as aQ, HumansOptions as aR, InputOptions as aS, InteractionOptions as aT, LEFT as aU, LEFT_VIEW_ONLY_LAYER as aV, Lighting as aW, LightingOptions as aX, LoadingSpinnerManager as aY, LocalStorageAnchorStore as aZ, MediaPipeHandContext as a_, DEVICE_CAMERA_PARAMETERS as aa, DOWN as ab, DepthMesh as ac, DepthMeshOptions as ad, DepthOptions as ae, DepthTextures as af, DetectedBodyPose as ag, DetectedFace as ah, DetectedMesh as ai, DetectedObject as aj, DetectedPlane as ak, DeviceCameraOptions as al, FINGER_ORDER as am, FORWARD as an, FaceCamera as ao, FaceLandmarkName as ap, FaceRecognizer as aq, FacesOptions as ar, FollowHead as as, FollowObject as at, GEMINI_DEFAULT_FLASH_MODEL as au, GEMINI_DEFAULT_IMAGE_MODEL as av, GEMINI_DEFAULT_LIVE_MODEL as aw, GamepadBindings as ax, GamepadController as ay, GazeController as az, SimulatorMode as b, WorldOptions as b$, MeshDetectionOptions as b0, MeshDetector as b1, MeshScript as b2, ModelViewer as b3, MouseController as b4, NUM_HANDS as b5, OCCLUDABLE_ITEMS_LAYER as b6, ObjectDetector as b7, ObjectsOptions as b8, OcclusionPass as b9, SkyboxAgent as bA, SoundOptions as bB, SoundSynthesizer as bC, SpatialAudio as bD, SpeechRecognizer as bE, SpeechRecognizerOptions as bF, SpeechSynthesizer as bG, SpeechSynthesizerOptions as bH, StreamState as bI, StrokeRecognizer as bJ, StylizedFace as bK, TensorFlowHandPoseEstimator as bL, Tool as bM, UIButton as bN, UIIcon as bO, UIImage as bP, UIPanel as bQ, UISlider as bR, UP as bS, User as bT, VIEW_DEPTH_GAP as bU, VideoFileStream as bV, VideoStream as bW, VisibilityTransition as bX, VolumeCategory as bY, WebXRHandContext as bZ, WebXRHandPoseEstimator as b_, OcclusionUtils as ba, OpenAI as bb, OpenAIOptions as bc, Orbit as bd, PhysicsOptions as be, PlaneDetector as bf, PlanesOptions as bg, PoseJointName as bh, RIGHT as bi, RIGHT_VIEW_ONLY_LAYER as bj, ReticleOptions as bk, Reticles as bl, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bm, SOUND_PRESETS as bn, SceneDetector as bo, SceneOptions as bp, SceneSetOfMarkOptions as bq, SceneVisibilityOptions as br, ScreenshotSynthesizer as bs, ScriptMixin as bt, ScriptsManager as bu, ScriptsManagerEventType as bv, SegmentCategory as bw, SegmentationOptions as bx, Segmenter as by, SimulatorAnchor as bz, SetSimulatorModeEvent as c, getXrCameraLeft as c$, XRButton as c0, XREffects as c1, XRPass as c2, XRTransitionOptions as c3, ZERO_VECTOR3 as c4, ZERO_VISEME as c5, _getBvhImportStatus as c6, add as c7, ai as c8, anchorCapability as c9, getElapsedTime as cA, getFingerBendAngles as cB, getFingerCurl as cC, getFingerDirection as cD, getFingerJoint as cE, getFingerPalmAlignment as cF, getFingerSpread as cG, getFingerStraightness as cH, getFingertipDistance as cI, getFingertipPalmDistance as cJ, getPalmNormal as cK, getPalmPose as cL, getPalmRight as cM, getPalmUp as cN, getPalmWidth as cO, getRelativeBoneAngles as cP, getThumbBendAngles as cQ, getThumbCurl as cR, getThumbDirection as cS, getThumbOpposition as cT, getThumbStraightness as cU, getThumbVerticalDirection as cV, getUrlParamBool as cW, getUrlParamFloat as cX, getUrlParamInt as cY, getUrlParameter as cZ, getVec4ByColorString as c_, applyBVH as ca, average as cb, camera as cc, clamp$1 as cd, clamp01 as ce, clampRotationToAngle as cf, context as cg, core as ch, cropImage as ci, defaultAnchorStorageKey as cj, depth as ck, disposeBVH as cl, disposeMaterial as cm, disposeMeshResources as cn, disposeRenderableResources as co, enableAcceleratedRaycast as cp, estimateHandScale as cq, extractYaw as cr, getAdjacentFingerSpreads as cs, getBoneVectors as ct, getCameraParametersSnapshot as cu, getColorHex as cv, getDeltaTime as cw, getDeviceCameraClipFromView as cx, getDeviceCameraWorldFromClip as cy, getDeviceCameraWorldFromView as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, getXrCameraRight as d0, init as d1, initScript as d2, input as d3, intrinsicsToProjectionMatrix as d4, isBVHReady as d5, isDeviceCameraPoseAvailable as d6, lerp as d7, loadStereoImageAsTextures as d8, loadingSpinnerManager as d9, xrDeviceCameraUserContinuousOptions as dA, xrDeviceCameraUserOptions as dB, lookAtRotation as da, objectIsDescendantOf as db, parseBase64DataURL as dc, parseSimulatorHandPoseRotations as dd, placeObjectAtIntersectionFacingTarget as de, print as df, resolveSimulatorRotationsFromKeypoints as dg, scene as dh, showOnlyInLeftEye as di, showOnlyInRightEye as dj, sound as dk, timer as dl, transformRgbUvToWorld as dm, traverseUtil as dn, ui as dp, urlParams as dq, user as dr, visualizeDepth as ds, visualizeDepthMap as dt, world as du, xrDepthMeshOptions as dv, xrDepthMeshPhysicsOptions as dw, xrDepthMeshVisualizationOptions as dx, xrDeviceCameraEnvironmentContinuousOptions as dy, xrDeviceCameraEnvironmentOptions as dz, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIElementKind as w, getUIStructureRevision as x, isUIElement as y, getUIRevision as z };
 //# sourceMappingURL=entry.js.map
