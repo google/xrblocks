@@ -574,6 +574,9 @@ export class AnchorManager extends Script {
    * @param uuid - The persistent handle to release.
    */
   private releasePersistentHandle(uuid: string): void {
+    // Simulator handles name local pose records only. They were never issued
+    // by an XRSession and must not be sent to the platform for deletion.
+    if (uuid.startsWith('sim-')) return;
     const session = this.currentSession();
     const remove = session?.deletePersistentAnchor;
     // Optional in WebXR, and absent entirely for simulated anchors. Said out
