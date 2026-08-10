@@ -1,313 +1,322 @@
 import * as xb from 'xrblocks';
 
-// --- Types & Interfaces ---
+type CharacterKey = {
+  kind: 'character';
+  key: string;
+  shifted?: string;
+  width?: number;
+};
 
-interface SpecialKey {
-  position: 'left' | 'right' | 'center';
-  type: 'tab' | 'backspace' | 'shift_lock' | 'enter' | 'shift' | 'space';
-  iconName?: string;
-  weight?: number;
-  backgroundColor?: string;
-  text?: string;
+type ActionKey = {
+  kind: 'action';
+  key: 'Backspace' | 'CapsLock' | 'Enter' | 'Shift' | 'Tab' | ' ';
+  icon: string;
+  width?: number;
+};
+
+type KeyDefinition = CharacterKey | ActionKey;
+
+export interface KeyboardOptions extends Omit<xb.UIPanelOptions, 'children'> {
+  value?: string;
+  onValueChange?: (value: string) => void;
+  onSubmit?: (value: string) => void;
 }
-
-interface RowLayout {
-  textKeys?: string;
-  specialKeys: SpecialKey[];
-}
-
-interface KeyboardButtonOptions extends xb.TextButtonOptions {
-  originalKey: string;
-  shiftKey: string | null;
-}
-
-// --- Constants ---
-const KEY_WIDTH = 0.07;
-const KEY_HEIGHT = 0.08;
-const FONT_SIZE = 0.45;
-
-/** Where the keyboard sits when an app does not place it itself. */
-const DEFAULT_KEYBOARD_POSITION = {x: 0, y: 1.2, z: -1};
 
 const KEYBOARD_COLOR = '#1a1a1b';
-const DEFAULT_KEY_COLOR = '#333334';
-const SPECIAL_KEY_COLOR = '#3e4a59';
-const ACTION_KEY_COLOR = '#449eb9';
+const CHARACTER_KEY_COLOR = '#333334';
+const ACTION_KEY_COLOR = '#3e4a59';
+const ACCENT_KEY_COLOR = '#449eb9';
+const HOVER_KEY_COLOR = '#566170';
+const TEXT_COLOR = '#ffffff';
 
-const COL_SPACER = 0.01;
-const ROW_SPACER = 0.015;
+const KEY_HEIGHT = 64;
+const KEY_GAP = 8;
+const ROW_GAP = 10;
 
-const KEY_LAYOUT: RowLayout[] = [
-  {textKeys: '~!@#$%^&*()_+', specialKeys: []},
-  {textKeys: '`1234567890<>', specialKeys: []},
-  {
-    textKeys: 'qwertyuiop',
-    specialKeys: [
-      {
-        position: 'left',
-        type: 'tab',
-        iconName: 'keyboard_tab',
-        weight: KEY_WIDTH * 1.2,
-      },
-      {position: 'right', type: 'backspace', iconName: 'backspace'},
-    ],
-  },
-  {
-    textKeys: 'asdfghjkl',
-    specialKeys: [
-      {
-        position: 'left',
-        type: 'shift_lock',
-        iconName: 'lock',
-        weight: KEY_WIDTH * 1.5,
-      },
-      {
-        position: 'right',
-        type: 'enter',
-        iconName: 'keyboard_return',
-        backgroundColor: ACTION_KEY_COLOR,
-      },
-    ],
-  },
-  {
-    textKeys: 'zxcvbnm,.',
-    specialKeys: [
-      {
-        position: 'left',
-        type: 'shift',
-        iconName: 'keyboard_capslock',
-        weight: KEY_WIDTH * 2.1,
-      },
-      {position: 'right', type: 'shift', iconName: 'keyboard_capslock'},
-    ],
-  },
-  {
-    specialKeys: [
-      {
-        position: 'center',
-        type: 'space',
-        iconName: 'space_bar',
-        weight: KEY_WIDTH * 9,
-      },
-    ],
-  },
+const character = (
+  key: string,
+  shifted?: string,
+  width?: number
+): CharacterKey => ({kind: 'character', key, shifted, width});
+
+const action = (
+  key: ActionKey['key'],
+  icon: string,
+  width?: number
+): ActionKey => ({kind: 'action', key, icon, width});
+
+const KEY_LAYOUT: KeyDefinition[][] = [
+  [
+    character('`', '~'),
+    character('1', '!'),
+    character('2', '@'),
+    character('3', '#'),
+    character('4', '$'),
+    character('5', '%'),
+    character('6', '^'),
+    character('7', '&'),
+    character('8', '*'),
+    character('9', '('),
+    character('0', ')'),
+    character('-', '_'),
+    character('=', '+'),
+    action('Backspace', 'backspace', 2),
+  ],
+  [
+    action('Tab', 'keyboard_tab', 1.5),
+    ...'qwertyuiop'.split('').map((key) => character(key)),
+    character('[', '{'),
+    character(']', '}'),
+    character('\\', '|'),
+  ],
+  [
+    action('CapsLock', 'keyboard_capslock', 1.8),
+    ...'asdfghjkl'.split('').map((key) => character(key)),
+    character(';', ':'),
+    character("'", '"'),
+    action('Enter', 'keyboard_return', 2.2),
+  ],
+  [
+    action('Shift', 'shift', 2.3),
+    ...'zxcvbnm'.split('').map((key) => character(key)),
+    character(',', '<'),
+    character('.', '>'),
+    character('/', '?'),
+    action('Shift', 'shift', 2.3),
+  ],
+  [action(' ', 'space_bar', 8)],
 ];
 
-const TOTAL_KEYBOARD_WIDTH = 1.0;
-const TOTAL_KEYBOARD_HEIGHT =
-  KEY_LAYOUT.length * KEY_HEIGHT + (KEY_LAYOUT.length - 1) * ROW_SPACER;
+const CHARACTER_KEYS = new Map(
+  KEY_LAYOUT.flat()
+    .filter((key): key is CharacterKey => key.kind === 'character')
+    .map((key) => [key.key, key])
+);
 
-// --- Classes ---
+/**
+ * An embeddable QWERTY keyboard for UI Blocks cards.
+ *
+ * The parent card owns world placement and lifecycle. The keyboard owns text
+ * input state, modifier state, layout, and key interaction feedback.
+ */
+export class Keyboard extends xb.UIPanel {
+  public onValueChange?: (value: string) => void;
+  public onSubmit?: (value: string) => void;
 
-class KeyboardButton extends xb.TextButton {
-  public originalKey: string;
-  public shiftKey: string | null;
+  private _value: string;
+  private shiftActive = false;
+  private capsLockActive = false;
+  private characterButtons: Array<{
+    definition: CharacterKey;
+    button: xb.UIButton;
+  }> = [];
+  private actionButtons = new Map<string, xb.UIButton[]>();
 
-  constructor(options: KeyboardButtonOptions) {
-    super(options);
-    this.originalKey = options.originalKey;
-    this.shiftKey = options.shiftKey;
+  constructor({
+    value = '',
+    onValueChange,
+    onSubmit,
+    style,
+    ...options
+  }: KeyboardOptions = {}) {
+    super({
+      ...options,
+      style: {
+        width: '100%',
+        height: 372,
+        flexDirection: 'column',
+        gap: ROW_GAP,
+        padding: 14,
+        backgroundColor: KEYBOARD_COLOR,
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: '#4a4a4d',
+        borderAlign: 'inside',
+        dropShadowColor: '#000000',
+        dropShadowBlur: 18,
+        dropShadowSpread: 1,
+        ...style,
+      },
+    });
+
+    this.name = 'Keyboard';
+    this._value = value;
+    this.onValueChange = onValueChange;
+    this.onSubmit = onSubmit;
+
+    for (const row of KEY_LAYOUT) {
+      this.add(this.createRow(row));
+    }
+  }
+
+  get value(): string {
+    return this._value;
+  }
+
+  /** Updates the value without emitting an input callback. */
+  setValue(value: string): void {
+    this._value = value;
+  }
+
+  /**
+   * Applies a key using KeyboardEvent.key names.
+   *
+   * Printable layout keys use the current Shift and Caps Lock state. The
+   * return value reports whether this keyboard handles the supplied key.
+   */
+  pressKey(key: string): boolean {
+    switch (key) {
+      case 'Backspace':
+        this.backspace();
+        return true;
+      case 'CapsLock':
+        this.capsLockActive = !this.capsLockActive;
+        this.refreshKeys();
+        return true;
+      case 'Enter':
+        this.onSubmit?.(this._value);
+        return true;
+      case 'Shift':
+        this.shiftActive = !this.shiftActive;
+        this.refreshKeys();
+        return true;
+      case 'Tab':
+        this.insert('\t');
+        return true;
+      case ' ':
+        this.insert(' ');
+        return true;
+      default: {
+        const definition = CHARACTER_KEYS.get(key);
+        if (definition) {
+          this.insert(this.displayCharacter(definition));
+          return true;
+        }
+        if (Array.from(key).length === 1) {
+          this.insert(key);
+          return true;
+        }
+        return false;
+      }
+    }
+  }
+
+  private createRow(definitions: KeyDefinition[]): xb.UIPanel {
+    const isSpaceRow = definitions.length === 1 && definitions[0]?.key === ' ';
+    const row = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: KEY_HEIGHT,
+        flexDirection: 'row',
+        gap: KEY_GAP,
+        justifyContent: isSpaceRow ? 'center' : 'flex-start',
+        alignItems: 'stretch',
+      },
+    });
+
+    for (const definition of definitions) {
+      row.add(this.createKey(definition, isSpaceRow));
+    }
+    return row;
+  }
+
+  private createKey(
+    definition: KeyDefinition,
+    isSpaceRow: boolean
+  ): xb.UIButton {
+    const button = new xb.UIButton({
+      ...(definition.kind === 'character'
+        ? {label: this.displayCharacter(definition)}
+        : {icon: definition.icon, ariaLabel: actionLabel(definition.key)}),
+      style: {
+        height: '100%',
+        width: isSpaceRow ? '55%' : undefined,
+        flexBasis: isSpaceRow ? undefined : 0,
+        flexGrow: isSpaceRow ? undefined : (definition.width ?? 1),
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: this.baseKeyColor(definition),
+        color: TEXT_COLOR,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#55555a',
+        borderAlign: 'inside',
+        fontSize: 28,
+        fontWeight: 'bold',
+        ':hover': {backgroundColor: HOVER_KEY_COLOR},
+        ':active': {backgroundColor: '#687688'},
+      },
+      onClick: () => this.pressKey(definition.key),
+    });
+    button.name = `KeyboardKey:${definition.key}`;
+
+    if (definition.kind === 'character') {
+      this.characterButtons.push({definition, button});
+    } else {
+      const buttons = this.actionButtons.get(definition.key) ?? [];
+      buttons.push(button);
+      this.actionButtons.set(definition.key, buttons);
+    }
+
+    return button;
+  }
+
+  private insert(text: string): void {
+    this._value += text;
+    this.onValueChange?.(this._value);
+
+    if (this.shiftActive) {
+      this.shiftActive = false;
+      this.refreshKeys();
+    }
+  }
+
+  private backspace(): void {
+    const codePoints = Array.from(this._value);
+    if (codePoints.length === 0) return;
+
+    codePoints.pop();
+    this._value = codePoints.join('');
+    this.onValueChange?.(this._value);
+  }
+
+  private displayCharacter(definition: CharacterKey): string {
+    const isLetter = /^[a-z]$/i.test(definition.key);
+    if (isLetter) {
+      return this.shiftActive !== this.capsLockActive
+        ? definition.key.toUpperCase()
+        : definition.key.toLowerCase();
+    }
+    return this.shiftActive
+      ? (definition.shifted ?? definition.key)
+      : definition.key;
+  }
+
+  private baseKeyColor(definition: KeyDefinition): string {
+    if (definition.kind === 'character') return CHARACTER_KEY_COLOR;
+    if (definition.key === 'Enter') return ACCENT_KEY_COLOR;
+    if (definition.key === 'Shift' && this.shiftActive) return ACCENT_KEY_COLOR;
+    if (definition.key === 'CapsLock' && this.capsLockActive)
+      return ACCENT_KEY_COLOR;
+    return ACTION_KEY_COLOR;
+  }
+
+  private refreshKeys(): void {
+    for (const {definition, button} of this.characterButtons) {
+      button.label = this.displayCharacter(definition);
+    }
+    for (const key of ['Shift', 'CapsLock']) {
+      for (const button of this.actionButtons.get(key) ?? []) {
+        const definition = KEY_LAYOUT.flat().find(
+          (candidate) => candidate.kind === 'action' && candidate.key === key
+        );
+        if (definition)
+          button.style.backgroundColor = this.baseKeyColor(definition);
+      }
+    }
   }
 }
 
-export class Keyboard extends xb.Script {
-  private keyText: string = '';
-  private isShifted: boolean = false;
-  private isCapsLockOn: boolean = false;
-  private textButtons: KeyboardButton[] = [];
-
-  public onTextChanged: ((text: string) => void) | null = null;
-  public onEnterPressed: ((text: string) => void) | null = null;
-
-  private subspace: xb.SpatialPanel;
-  private mainGrid: xb.Grid;
-
-  constructor() {
-    super();
-
-    this.subspace = new xb.SpatialPanel({
-      showEdge: true,
-      backgroundColor: KEYBOARD_COLOR,
-      width: TOTAL_KEYBOARD_WIDTH,
-      height: TOTAL_KEYBOARD_HEIGHT,
-      // Sits at the keyboard's own origin, so the keys land wherever the
-      // keyboard is put. Left on, the panel would place itself in front of the
-      // user and ignore that entirely.
-      useDefaultPosition: false,
-    });
-    this.subspace.isRoot = true;
-    this.add(this.subspace);
-
-    this.mainGrid = new xb.Grid({height: TOTAL_KEYBOARD_WIDTH});
-    this.subspace.add(this.mainGrid);
-
-    this.createKeyboard();
-    this.subspace.updateLayouts();
-
-    // Default placement, in front of the user and a little above waist height.
-    // Set on the keyboard itself rather than on the panel inside it, so an app
-    // that assigns a position simply replaces this instead of being offset by
-    // it. Previously this was applied in init(), which runs after the app has
-    // positioned the keyboard and so silently moved it somewhere else.
-    this.position.set(
-      DEFAULT_KEYBOARD_POSITION.x,
-      DEFAULT_KEYBOARD_POSITION.y,
-      DEFAULT_KEYBOARD_POSITION.z
-    );
-  }
-
-  private createKeyboard(): void {
-    KEY_LAYOUT.forEach((rowData, index) => {
-      this.createRow(rowData);
-      if (index < KEY_LAYOUT.length - 1) {
-        this.mainGrid.addRow({weight: ROW_SPACER});
-      }
-    });
-  }
-
-  private createRow(rowData: RowLayout): void {
-    const row = this.mainGrid.addRow({weight: KEY_HEIGHT * (1.0 / 0.56)});
-
-    if (rowData.specialKeys.some((k) => k.type === 'space')) {
-      const spaceKey = rowData.specialKeys.find((k) => k.type === 'space')!;
-      const sidePadding = (TOTAL_KEYBOARD_WIDTH - (spaceKey.weight || 0)) / 2;
-      row.addCol({weight: sidePadding});
-      this.addKey(row, spaceKey);
-      row.addCol({weight: sidePadding});
-      return;
-    }
-
-    const leftSpecial = rowData.specialKeys.filter(
-      (k) => k.position === 'left' || k.position === 'center'
-    );
-    const rightSpecial = rowData.specialKeys.filter(
-      (k) => k.position === 'right'
-    );
-    const textKeys = rowData.textKeys ? rowData.textKeys.split('') : [];
-    let usedWidth = 0;
-
-    leftSpecial.forEach((keyData) => {
-      const w = keyData.weight || KEY_WIDTH;
-      this.addKey(row, keyData);
-      usedWidth += w + COL_SPACER;
-      row.addCol({weight: COL_SPACER});
-    });
-
-    textKeys.forEach((char, i) => {
-      this.addKey(row, char);
-      usedWidth += KEY_WIDTH;
-
-      if (i < textKeys.length - 1 || rightSpecial.length > 0) {
-        row.addCol({weight: COL_SPACER});
-        usedWidth += COL_SPACER;
-      }
-    });
-
-    rightSpecial.forEach((keyData) => {
-      const remainingWidth = TOTAL_KEYBOARD_WIDTH + 0.03 - usedWidth;
-      this.addKey(row, {...keyData, weight: remainingWidth});
-    });
-  }
-
-  private addKey(
-    row: ReturnType<xb.Grid['addRow']>,
-    data: string | SpecialKey,
-    shiftChar: string | null = null
-  ): void {
-    const isObject = typeof data === 'object';
-    const weight = isObject ? data.weight || KEY_WIDTH : KEY_WIDTH;
-    const backgroundColor = isObject
-      ? data.backgroundColor || SPECIAL_KEY_COLOR
-      : DEFAULT_KEY_COLOR;
-
-    const keyPanel = row.addCol({weight: weight}).addPanel({
-      backgroundColor: backgroundColor,
-    });
-
-    keyPanel.useBorderlessShader = true;
-
-    if (isObject && data.iconName) {
-      const btn = new xb.IconButton({
-        text: data.iconName,
-        fontSize: FONT_SIZE,
-        backgroundColor: 0x00000000,
-      });
-      btn.onTriggered = () => this.handleSpecialKey(data.type);
-      keyPanel.add(btn);
-    } else {
-      const char = typeof data === 'string' ? data : data.text || '';
-      const btn = new KeyboardButton({
-        text: char,
-        fontSize: FONT_SIZE,
-        originalKey: char,
-        shiftKey: shiftChar,
-        backgroundColor: '#00000000',
-      });
-      this.textButtons.push(btn);
-      btn.onTriggered = () => this.handleKeyPress(btn.text);
-      keyPanel.add(btn);
-    }
-  }
-
-  private handleKeyPress(char: string): void {
-    this.keyText += char;
-    this.onTextChanged?.(this.keyText);
-    if (this.isShifted) {
-      this.isShifted = false;
-      this.refreshKeyboard();
-    }
-  }
-
-  private handleSpecialKey(type: SpecialKey['type']): void {
-    switch (type) {
-      case 'backspace':
-        this.keyText = this.keyText.slice(0, -1);
-        break;
-      case 'space':
-        this.handleKeyPress(' ');
-        break;
-      case 'shift':
-        this.isShifted = !this.isShifted;
-        this.refreshKeyboard();
-        break;
-      case 'shift_lock':
-        this.isCapsLockOn = !this.isCapsLockOn;
-        this.refreshKeyboard();
-        break;
-      case 'tab':
-        this.handleKeyPress('\t');
-        break;
-      case 'enter':
-        this.onEnterPressed?.(this.keyText);
-        break;
-      default:
-        console.warn(`Unhandled special key type: ${type}`);
-    }
-    this.onTextChanged?.(this.keyText);
-  }
-
-  private refreshKeyboard(): void {
-    this.textButtons.forEach((button) => {
-      const isLetter =
-        button.originalKey.length === 1 && /[a-z]/i.test(button.originalKey);
-      let newText: string;
-      const produceUpper = this.isShifted !== this.isCapsLockOn;
-
-      if (isLetter) {
-        newText = produceUpper
-          ? button.originalKey.toUpperCase()
-          : button.originalKey.toLowerCase();
-      } else {
-        newText = this.isShifted
-          ? button.shiftKey || button.originalKey
-          : button.originalKey;
-      }
-      button.setText(newText);
-    });
-  }
-
-  public setText(text: string): void {
-    this.keyText = text;
-    this.onTextChanged?.(this.keyText);
-  }
+function actionLabel(key: ActionKey['key']): string {
+  return key === ' ' ? 'Space' : key.replace(/([a-z])([A-Z])/g, '$1 $2');
 }

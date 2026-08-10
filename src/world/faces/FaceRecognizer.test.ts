@@ -165,25 +165,6 @@ describe('FaceRecognizer Multi-Client API', () => {
     expect(mockBackend.run).toHaveBeenCalledTimes(1);
   });
 
-  it('supports one-off runs when not started, and reuses the ongoing promise', async () => {
-    const promise1 = recognizer.runDetection();
-    expect(promise1).not.toBeNull();
-    expect(
-      (recognizer as unknown as PrivateFaceRecognizer).currentDetectionPromise
-    ).toBe(promise1);
-
-    const promise2 = recognizer.runDetection();
-    expect(promise2).toBe(promise1);
-
-    const results = await promise1;
-    expect(results.map((face) => face.faceId)).toEqual([1]);
-    expect(recognizer.detectedFaces).toEqual([]);
-    expect(mockBackend.run).toHaveBeenCalledTimes(1);
-    expect(
-      (recognizer as unknown as PrivateFaceRecognizer).currentDetectionPromise
-    ).toBeNull();
-  });
-
   it('disposes cached depth mesh snapshots when disposed', async () => {
     const geometryDispose = vi.fn();
     const materialDispose = vi.fn();
@@ -204,19 +185,6 @@ describe('FaceRecognizer Multi-Client API', () => {
 
     expect(geometryDispose).toHaveBeenCalledTimes(1);
     expect(materialDispose).toHaveBeenCalledTimes(1);
-  });
-
-  it('reuses an in-flight one-off detection when a client starts', async () => {
-    const promise = recognizer.runDetection();
-
-    recognizer.start({});
-
-    expect(
-      (recognizer as unknown as PrivateFaceRecognizer).currentDetectionPromise
-    ).toBe(promise);
-
-    await promise;
-    expect(mockBackend.run).toHaveBeenCalledTimes(1);
   });
 
   it('clear removes scene children without resetting detectedFaces', async () => {

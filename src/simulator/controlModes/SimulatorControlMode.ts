@@ -2,11 +2,12 @@ import * as THREE from 'three';
 
 import {GamepadController} from '../../input/GamepadController.js';
 import {Input} from '../../input/Input.js';
+import {Interaction} from '../../interaction/Interaction.js';
 import {Keycodes} from '../../utils/Keycodes';
 import {SimulatorRenderMode} from '../SimulatorConstants';
 import {SimulatorControllerState} from '../SimulatorControllerState';
 import {SimulatorHands} from '../SimulatorHands.js';
-import {SimulatorNavMesh} from '../scene/SimulatorNavMesh';
+import {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
 import {SimulatorHandPose} from '../handPoses/HandPoses';
 import {SimulatorOptions} from '../SimulatorOptions';
 
@@ -29,6 +30,7 @@ const HAND_POSES = Object.values(SimulatorHandPose);
 export class SimulatorControlMode {
   camera!: THREE.Camera;
   input!: Input;
+  interaction?: Interaction;
   timer!: THREE.Timer;
   domElement?: HTMLCanvasElement;
   simulatorOptions?: SimulatorOptions;
@@ -52,18 +54,21 @@ export class SimulatorControlMode {
   init({
     camera,
     input,
+    interaction,
     timer,
     domElement,
     simulatorOptions,
   }: {
     camera: THREE.Camera;
     input: Input;
+    interaction?: Interaction;
     timer: THREE.Timer;
     domElement?: HTMLCanvasElement;
     simulatorOptions?: SimulatorOptions;
   }) {
     this.camera = camera;
     this.input = input;
+    this.interaction = interaction;
     this.timer = timer;
     this.domElement = domElement;
     this.simulatorOptions = simulatorOptions;

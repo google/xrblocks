@@ -17,7 +17,6 @@ import {SimulatorMode, SimulatorOptions} from '../simulator/SimulatorOptions';
 import {SoundOptions} from '../sound/SoundOptions';
 import {deepMerge} from '../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../utils/Types';
-import {UIKitOptions} from './UIKitOptions.js';
 import {WorldOptions} from '../world/WorldOptions';
 import {getUrlParamBool, getUrlParameter} from '../utils/utils';
 import {Handedness} from '../input/Hands';
@@ -37,8 +36,6 @@ export class InputOptions {
   visualization = false;
   /** Whether to show the ray lines extending from the controllers. */
   visualizeRays = false;
-  /** Whether to perform raycast on update. This is needed for the reticle to work properly. */
-  performRaycastOnUpdate = true;
 }
 
 /**
@@ -46,12 +43,26 @@ export class InputOptions {
  */
 export class ReticleOptions {
   enabled = true;
+  /** Whether reticles use the real-world depth mesh as a surface. */
+  projectOnDepthMesh = false;
   /**
-   * When set to a positive value, the reticle is placed at this distance
-   * (in meters) along the controller ray when no intersection is found,
-   * instead of being hidden. Set to 0 to hide the reticle on miss.
+   * Maximum reticle drawing distance in meters. It does not limit targeting.
    */
-  defaultDistance = 0;
+  maxDistance?: number;
+  /**
+   * Distance in meters at which to render the reticle when no valid hit is
+   * found. Set to 0 to hide the reticle on a miss.
+   */
+  defaultRenderDistance = 0;
+}
+
+export type RaycastMode = 'continuous' | 'select';
+
+export class InteractionOptions {
+  /** When to sample ray intersections for interaction. */
+  raycastMode: RaycastMode = 'continuous';
+  /** Seconds a stable object selection must be held before long-select. */
+  longSelectDuration = 0.75;
 }
 
 /**
@@ -128,12 +139,12 @@ export class Options {
   headGestures = new HeadGestureRecognitionOptions();
   strokes = new StrokeRecognitionOptions();
   reticles = new ReticleOptions();
+  interaction = new InteractionOptions();
   sound = new SoundOptions();
   ai = new AIOptions();
   simulator = new SimulatorOptions();
   world = new WorldOptions();
   context = new ContextOptions();
-  uikit = new UIKitOptions();
   physics = new PhysicsOptions();
   layers = new LayersOptions();
   transition = new XRTransitionOptions();
@@ -235,16 +246,6 @@ export class Options {
    */
   enableVR() {
     this.xrSessionMode = 'immersive-vr';
-    return this;
-  }
-
-  /**
-   * Enables a standard set of options for a UI-focused experience.
-   * @returns The instance for chaining.
-   */
-  enableUI() {
-    this.antialias = true;
-    this.reticles.enabled = true;
     return this;
   }
 

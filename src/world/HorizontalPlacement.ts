@@ -273,6 +273,7 @@ export async function placeOnHorizontalSurface(
 
       // Calculate bounding box at the origin to find bottom offset along world Y axis
       const tempBox = getObjectBoundingBox(objectToPlace);
+      if (!hasFiniteBounds(tempBox)) continue;
       const bottomOffset = -tempBox.min.y;
 
       // Set final position, offsetting vertically so bottom of bbox aligns with horizontal plane
@@ -282,6 +283,7 @@ export async function placeOnHorizontalSurface(
 
       // Calculate bounding box and verify intersections with scene obstacles
       const objectBox = getObjectBoundingBox(objectToPlace);
+      if (!hasFiniteBounds(objectBox)) continue;
 
       // Shrink and shift collision box slightly to avoid grounding collisions with the table mesh
       const collisionBox = objectBox.clone();
@@ -362,32 +364,25 @@ function isDescendantOf(
 }
 
 function getObjectBoundingBox(object: THREE.Object3D): THREE.Box3 {
-  // If the object has a pre-calculated bounding box (e.g. ModelViewer), use it directly
-  if ('bbox' in object) {
-    const customBbox = (object as {bbox?: THREE.Box3}).bbox;
-    if (customBbox && !customBbox.isEmpty()) {
-      object.updateMatrixWorld(true);
-      return customBbox.clone().applyMatrix4(object.matrixWorld);
-    }
-  }
-
   const box = new THREE.Box3();
 
   function traverse(node: THREE.Object3D) {
-    if (!node.visible) return;
+    if (!node.visible || node.userData.xrblocksPrivate === true) return;
 
-    // Ignore the model viewer's platform, rotation cylinder, and control bar meshes
-    const name = node.constructor.name;
-    if (
-      name === 'ModelViewerPlatform' ||
-      name === 'RotationRaycastMesh' ||
-      node.name === 'Platform'
-    ) {
-      return;
+    const boundedObject = node as THREE.Object3D & {
+      boundingBox?: THREE.Box3 | null;
+      computeBoundingBox?: () => void;
+    };
+    if (boundedObject.boundingBox === null) {
+      boundedObject.computeBoundingBox?.();
     }
 
-    const mesh = node as THREE.Mesh;
-    if (mesh.isMesh) {
+    if (boundedObject.boundingBox) {
+      const tempBox = boundedObject.boundingBox.clone();
+      tempBox.applyMatrix4(node.matrixWorld);
+      box.union(tempBox);
+    } else {
+      const mesh = node as THREE.Mesh;
       if (mesh.geometry) {
         if (!mesh.geometry.boundingBox) {
           mesh.geometry.computeBoundingBox();
@@ -406,4 +401,16 @@ function getObjectBoundingBox(object: THREE.Object3D): THREE.Box3 {
   object.updateMatrixWorld(true);
   traverse(object);
   return box;
+}
+
+function hasFiniteBounds(box: THREE.Box3): boolean {
+  return (
+    !box.isEmpty() &&
+    Number.isFinite(box.min.x) &&
+    Number.isFinite(box.min.y) &&
+    Number.isFinite(box.min.z) &&
+    Number.isFinite(box.max.x) &&
+    Number.isFinite(box.max.y) &&
+    Number.isFinite(box.max.z)
+  );
 }

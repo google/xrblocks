@@ -1,15 +1,11 @@
 import * as xb from 'xrblocks';
 import * as THREE from 'three';
-import {UICore, UIText, UIPanel} from 'uiblocks';
 
 export class PoseDisplay extends xb.Script {
-  static dependencies = {camera: THREE.Camera, world: xb.World};
+  static dependencies = {world: xb.World};
 
-  init({camera, world}) {
-    this.camera = camera;
+  init({world}) {
     this.world = world;
-    this.uiCore = new UICore(this);
-
     this.initHudText();
 
     this.initJointMarkers();
@@ -23,69 +19,81 @@ export class PoseDisplay extends xb.Script {
   }
 
   initHudText() {
-    // Define the premium glassmorphic display card
-    this.hudCard = this.uiCore.createCard({
-      name: 'PoseHUDCard',
-      sizeX: 0.46,
-      sizeY: 0.18,
-      position: new THREE.Vector3(0, 0, -1.0),
-    });
+    this.hudCard = new xb.UICard({size: {width: 0.46, height: 0.18}});
+    this.hudCard.name = 'PoseHUDCard';
+    this.add(this.hudCard);
+    this.hudCard.add(
+      new xb.FollowHead({
+        offset: new THREE.Vector3(0, 0.22, -0.8),
+        smoothing: 1,
+      }),
+      new xb.FaceCamera({mode: 'spherical', smoothing: 1})
+    );
 
-    const hudPanel = new UIPanel({
-      width: '100%',
-      height: '100%',
-      fillColor: 'rgba(15, 18, 25, 0.85)', // Sleek dark glassmorphic backdrop
-      innerShadowColor: 'rgba(100, 180, 255, 0.15)', // Blue glow
-      innerShadowBlur: 80,
-      strokeWidth: 3,
-      strokeColor: {
-        gradientType: 'linear',
-        rotation: 45,
-        stops: [
-          {position: 0, color: '#4796e3'}, // Vibrant blue
-          {position: 1, color: '#9b5de5'}, // Vibrant purple
-        ],
+    const hudPanel = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: 'rgba(15, 18, 25, 0.85)',
+        innerShadowColor: 'rgba(100, 180, 255, 0.15)',
+        innerShadowBlur: 80,
+        borderWidth: 3,
+        borderColor: {
+          gradientType: 'linear',
+          rotation: 45,
+          stops: [
+            {position: 0, color: '#4796e3'},
+            {position: 1, color: '#9b5de5'},
+          ],
+        },
+        borderRadius: 24,
+        padding: 20,
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'stretch',
       },
-      cornerRadius: 24,
-      padding: 20,
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'stretch',
     });
 
-    // Header with a vibrant pose icon and title
-    this.titleText = new UIText('HUMAN POSE DETECTOR', {
-      fontSize: 24,
-      fontWeight: 'bold',
-      color: '#00f0ff', // Glowing cyan
-      textAlign: 'center',
-      width: '100%',
+    this.titleText = new xb.UIText({
+      text: 'HUMAN POSE DETECTOR',
+      style: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#00f0ff',
+        textAlign: 'center',
+        width: '100%',
+      },
     });
 
-    // Subtitle / Status
-    this.statusText = new UIText('Tracking Active...', {
-      fontSize: 16,
-      color: '#a0aec0',
-      textAlign: 'center',
-      width: '100%',
-      paddingBottom: 8,
+    this.statusText = new xb.UIText({
+      text: 'Tracking Active...',
+      style: {
+        fontSize: 16,
+        color: '#a0aec0',
+        textAlign: 'center',
+        width: '100%',
+        paddingBottom: 8,
+      },
     });
 
-    // Separator line
-    const separator = new UIPanel({
-      width: '100%',
-      height: 2,
-      fillColor: 'rgba(255, 255, 255, 0.15)',
-      marginBottom: 8,
+    const separator = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: 2,
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        marginBottom: 8,
+      },
     });
 
-    // Status Details Text
-    this.statusDetailsText = new UIText('Waiting for body detection...', {
-      fontSize: 14,
-      fontWeight: 'normal',
-      color: '#e2e8f0',
-      textAlign: 'center',
-      width: '100%',
+    this.statusDetailsText = new xb.UIText({
+      text: 'Waiting for body detection...',
+      style: {
+        fontSize: 14,
+        fontWeight: 'normal',
+        color: '#e2e8f0',
+        textAlign: 'center',
+        width: '100%',
+      },
     });
 
     hudPanel.add(this.titleText);
@@ -174,26 +182,6 @@ export class PoseDisplay extends xb.Script {
   }
 
   update() {
-    // Align HUD card in front of camera, positioned near the top of the view
-    if (this.hudCard && this.camera) {
-      const position = new THREE.Vector3();
-      const quaternion = new THREE.Quaternion();
-
-      this.camera.getWorldPosition(position);
-      this.camera.getWorldQuaternion(quaternion);
-
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
-
-      // Position the HUD card forward and offset upwards to act as a top visor, flat in view
-      this.hudCard.position
-        .copy(position)
-        .addScaledVector(forward, 0.8)
-        .addScaledVector(up, 0.22);
-
-      this.hudCard.quaternion.copy(quaternion);
-    }
-
     if (this.world.humans) {
       this.displayPoses(this.world.humans.poses);
     }
@@ -201,10 +189,9 @@ export class PoseDisplay extends xb.Script {
 
   displayPoses(poses) {
     if (!poses || poses.length === 0) {
-      this.statusText.setText('Searching for user...');
-      this.statusDetailsText.setText(
-        'Stand in view of the camera.\nEnsure full body is visible.'
-      );
+      this.statusText.text = 'Searching for user...';
+      this.statusDetailsText.text =
+        'Stand in view of the camera.\nEnsure full body is visible.';
       if (this.jointMarkers) {
         this.jointMarkers.forEach((marker) => {
           marker.visible = false;
@@ -219,12 +206,12 @@ export class PoseDisplay extends xb.Script {
     }
 
     const firstPose = poses[0];
-    this.statusText.setText('Tracking Active');
+    this.statusText.text = 'Tracking Active';
 
     this.updateJointMarkers(firstPose);
     this.updateConnectorMeshes();
 
-    this.statusDetailsText.setText('Full body skeleton tracked successfully.');
+    this.statusDetailsText.text = 'Full body skeleton tracked successfully.';
   }
 
   updateJointMarkers(firstPose) {

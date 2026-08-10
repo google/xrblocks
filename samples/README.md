@@ -5,15 +5,15 @@ that with your contribution, we can inspire more hackers, designers, and
 practitioners to unleash their creativity! Let's make AI + XR accessible to
 everyone so they may bring their ideas to life faster.
 
-For advanced demos demonstrating creative use cases, we suggest submitting to
-`/demos/`.
+For advanced samples that demonstrate creative use cases, use
+`/samples/advanced/`.
 
 ## Running Samples Locally
 
 Follow the [development guide](../README.md#development-guide) to serve the
 repository, then open your sample path, for example:
 
-- `http://localhost:8080/samples/ui/`
+- `http://localhost:8080/samples/spatial_ui/modelviewer/`
 
 ## Contributing a New Sample
 
@@ -31,11 +31,13 @@ a new sample by starting from scratch or an existing template from `/templates/`
 or `/samples/`.
 
 When using third-party assets, make sure they are compatible with Apache 2
-license and add corresponding LICENSE file to the sample folder. Please submit large assets as a PR to https://github.com/xrblocks/proprietary-assets and use a jsdelivr CDN link to reference them.
+license and add corresponding LICENSE file to the demo folder.
 
 ### Step 3: Create a pull request
 
-Now that your files are created and configured correctly, commit and [create a pull request](https://github.com/google/xrblocks/compare) (refer to [the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request) for assistance). Make sure to complete the required checklist.
+Now that your files are created and configured correctly, commit and create a
+pull request by following
+[the official GitHub guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request).
 
 ## Community Guidelines
 

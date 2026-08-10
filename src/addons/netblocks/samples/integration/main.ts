@@ -66,10 +66,10 @@ class IntegrationSample extends NetSample {
   private _voiceOn = false;
   private _log?: HTMLDivElement;
   private _chatPanel?: HTMLDivElement;
-  private _spatialLog?: xb.ScrollingTroikaTextView;
+  private _spatialLog?: xb.UIText;
   private _spatialLogLines: string[] = [];
-  private _spatialVoiceBtn?: xb.TextButton;
-  private _spatialDraft?: xb.TextView;
+  private _spatialVoiceBtn?: xb.UIButton;
+  private _spatialDraft?: xb.UIText;
   private _keyboard?: Keyboard;
   // Last canvas-relative pointer position (NDC space), used to bypass
   // the platform mouse raycaster (which has been returning intersections
@@ -504,90 +504,110 @@ class IntegrationSample extends NetSample {
     if (!this._spatialLog) return;
     this._spatialLogLines.push(text);
     if (this._spatialLogLines.length > 12) this._spatialLogLines.shift();
-    this._spatialLog.setText(this._spatialLogLines.join('\n'));
+    this._spatialLog.text = this._spatialLogLines.join('\n');
   }
 
   // ---- Spatial HUD (visible in immersive XR) -----------------------------
 
   private _buildSpatialHud(session: NonNullable<this['net']['session']>) {
-    const panel = new xb.SpatialPanel({
-      width: 1.4,
-      height: 1.0,
-      backgroundColor: '#1a1a2add',
-    });
-    const grid = panel.addGrid();
-
-    grid.addRow({weight: 0.1}).addText({
-      text: `💬 ${this._displayName}`,
-      fontSize: 0.05,
-      fontColor: '#bfa9ff',
-      textAlign: 'center',
-    });
-
-    this._spatialLog = new xb.ScrollingTroikaTextView({
+    this._spatialLog = new xb.UIText({
       text: '(start typing on the keyboard below to chat)',
-      fontSize: 0.04,
-      textAlign: 'left',
+      style: {
+        width: '100%',
+        flexGrow: 1,
+        minHeight: 150,
+        color: '#ffffff',
+        fontSize: 20,
+        whiteSpace: 'pre-line',
+        verticalAlign: 'bottom',
+        overflow: 'hidden',
+      },
     });
-    grid.addRow({weight: 0.55}).add(this._spatialLog);
-
-    this._spatialDraft = grid.addRow({weight: 0.13}).addText({
+    this._spatialDraft = new xb.UIText({
       text: '› ',
-      fontSize: 0.04,
-      fontColor: '#7ac0ff',
-      textAlign: 'left',
+      style: {
+        width: '100%',
+        minHeight: 36,
+        color: '#7ac0ff',
+        fontSize: 22,
+      },
     });
-
-    this._spatialVoiceBtn = grid.addRow({weight: 0.22}).addTextButton({
-      text: '🎙️ Enable voice',
-      fontColor: '#ffffff',
-      backgroundColor: '#9177c7',
-      fontSize: 0.18,
+    this._spatialVoiceBtn = new xb.UIButton({
+      label: 'Enable voice',
+      icon: 'mic',
+      style: {width: '100%', minHeight: 52, backgroundColor: '#9177c7'},
+      onClick: () => this._toggleVoice(session),
     });
-    this._spatialVoiceBtn.onTriggered = () => this._toggleVoice(session);
-
-    panel.position.set(-1.2, 1.5, -1.5);
-    panel.rotation.y = Math.PI / 8;
-    this.add(panel);
-
-    this._buildKeyboard(session);
-  }
-
-  private _buildKeyboard(session: NonNullable<this['net']['session']>) {
-    const keyboard = new Keyboard();
-    keyboard.position.set(-0.7, 0.7, -0.7);
-    keyboard.scale.setScalar(0.6);
-    keyboard.rotation.set(-Math.PI / 6, 0, 0);
+    const keyboard = new Keyboard({
+      onValueChange: (text) => {
+        if (this._spatialDraft) this._spatialDraft.text = `› ${text}`;
+      },
+      onSubmit: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const payload: ChatPayload = {
+          from: this._displayName,
+          fromId: session.localPeerId,
+          text: trimmed,
+          ts: Date.now(),
+        };
+        session.events.emit('chat-message', payload);
+        this._appendLine(payload, true);
+        keyboard.setValue('');
+        if (this._spatialDraft) this._spatialDraft.text = '› ';
+      },
+    });
     this._keyboard = keyboard;
-    xb.add(keyboard);
-    keyboard.onTextChanged = (text: string) => {
-      this._spatialDraft?.setText(`› ${text}`);
-    };
-    keyboard.onEnterPressed = (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      const payload: ChatPayload = {
-        from: this._displayName,
-        fromId: session.localPeerId,
-        text: trimmed,
-        ts: Date.now(),
-      };
-      session.events.emit('chat-message', payload);
-      this._appendLine(payload, true);
-      keyboard.setText('');
-    };
+
+    const card = new xb.UICard({
+      size: {width: 1.0, height: 0.98},
+      manipulation: true,
+      edge: true,
+      style: {
+        flexDirection: 'column',
+        gap: 12,
+        padding: 20,
+        backgroundColor: '#1a1a2add',
+        borderRadius: 24,
+      },
+      children: [
+        new xb.UIText({
+          text: `💬 ${this._displayName}`,
+          style: {
+            width: '100%',
+            color: '#bfa9ff',
+            fontSize: 26,
+            fontWeight: 'bold',
+            textAlign: 'center',
+          },
+        }),
+        this._spatialLog,
+        this._spatialDraft,
+        this._spatialVoiceBtn,
+        keyboard,
+      ],
+    });
+    card.position.set(-0.8, 1.4, -1.3);
+    card.rotation.y = Math.PI / 8;
+    this.add(card);
   }
 
   private async _toggleVoice(session: NonNullable<this['net']['session']>) {
     if (this._voiceOn) {
       session.voice.disable();
       this._voiceOn = false;
-      this._spatialVoiceBtn?.setText('🎙️ Enable voice');
+      if (this._spatialVoiceBtn) {
+        this._spatialVoiceBtn.label = 'Enable voice';
+        this._spatialVoiceBtn.icon = 'mic';
+      }
     } else {
       try {
         await session.voice.enable(session.transport.remotePeerIds);
         this._voiceOn = true;
-        this._spatialVoiceBtn?.setText('🔇 Disable voice');
+        if (this._spatialVoiceBtn) {
+          this._spatialVoiceBtn.label = 'Disable voice';
+          this._spatialVoiceBtn.icon = 'mic_off';
+        }
       } catch (err) {
         this._appendSpatialLine(`voice error: ${(err as Error).message}`);
       }

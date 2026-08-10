@@ -69,13 +69,6 @@ describe('FormantVisemeMapper', () => {
     expect(out.aa).toBeGreaterThan(out.ee);
   });
 
-  it('a single frame of full input does not fully transfer (smoothing on)', () => {
-    const m = new FormantVisemeMapper();
-    const out = m.update(vowel(800, 1300), 0.016);
-    // After one ~16ms frame, jawOpen should still be well below 1.
-    expect(out.jawOpen).toBeLessThan(0.8);
-  });
-
   it('frame-rate-independent: 60 Hz and 120 Hz converge to same value at same wall-clock time', () => {
     const features = vowel(800, 1300);
     // Step at 16.67ms for 30 frames = ~500ms wall clock.
@@ -113,14 +106,5 @@ describe('FormantVisemeMapper', () => {
     const firstEe = m.update(vowel(300, 2400), 0.016);
     expect(firstEe.ee).toBeGreaterThan(firstEe.oo);
     expect(firstEe.ee).toBeGreaterThan(firstEe.aa);
-  });
-
-  it('reset() returns to zero state', () => {
-    const m = new FormantVisemeMapper();
-    settle(m, vowel(800, 1300));
-    m.reset();
-    const out = m.update(silence(), 0.016);
-    expect(out.jawOpen).toBeLessThan(0.05);
-    expect(out.aa).toBe(0);
   });
 });

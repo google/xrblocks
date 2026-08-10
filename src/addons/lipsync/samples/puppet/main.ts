@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import {LipsyncMouth} from 'lipsync';
 
@@ -21,8 +20,8 @@ class LipsyncPuppetSample extends xb.Script {
   private mouth?: LipsyncMouth;
   private micStream?: MediaStream;
   private domBtn?: HTMLButtonElement;
-  private spatialBtn?: xb.TextButton;
-  private spatialStatus?: xb.TextView;
+  private spatialBtn?: xb.UIButton;
+  private spatialStatus?: xb.UIText;
   private started = false;
   // Scratch vectors for the per-frame face-the-camera lookAt.
   private readonly camWorld = new THREE.Vector3();
@@ -105,31 +104,47 @@ class LipsyncPuppetSample extends xb.Script {
   }
 
   private buildSpatialPanel() {
-    const panel = new xb.SpatialPanel({
-      width: 0.8,
-      height: 0.4,
-      backgroundColor: '#1a1a2add',
+    const panel = new xb.UICard({
+      size: {width: 0.8, height: 0.4},
+      manipulation: {
+        actions: {translate: {faceCamera: true}},
+        handle: {action: 'translate'},
+      },
+      edge: true,
+      style: {backgroundColor: '#1a1a2add'},
     });
-    const grid = panel.addGrid();
-    grid.addRow({weight: 0.3}).addText({
-      text: '🎙️ Lipsync puppet',
-      fontSize: 0.06,
-      fontColor: '#bfa9ff',
-      textAlign: 'center',
+    const content = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: '100%',
+        padding: 28,
+        flexDirection: 'column',
+        gap: 16,
+      },
     });
-    this.spatialStatus = grid.addRow({weight: 0.25}).addText({
+    content.add(
+      new xb.UIText({
+        text: '🎙️ Lipsync puppet',
+        style: {color: '#bfa9ff', fontSize: 34, textAlign: 'center'},
+      })
+    );
+    this.spatialStatus = new xb.UIText({
       text: 'mic: off',
-      fontSize: 0.05,
-      fontColor: '#7ac0ff',
-      textAlign: 'center',
+      style: {color: '#7ac0ff', fontSize: 28, textAlign: 'center'},
     });
-    this.spatialBtn = grid.addRow({weight: 0.45}).addTextButton({
-      text: '🎙️ Start mic',
-      fontColor: '#ffffff',
-      backgroundColor: '#9177c7',
-      fontSize: 0.18,
+    this.spatialBtn = new xb.UIButton({
+      label: '🎙️ Start mic',
+      onClick: () => this.toggleMic(),
+      style: {
+        height: 76,
+        backgroundColor: '#9177c7',
+        color: '#ffffff',
+        fontSize: 28,
+        borderRadius: 18,
+      },
     });
-    this.spatialBtn.onTriggered = () => this.toggleMic();
+    content.add(this.spatialStatus, this.spatialBtn);
+    panel.add(content);
     panel.position.set(-0.9, xb.user.height + 0.2, -1.0);
     panel.rotation.y = Math.PI / 8;
     this.add(panel);
@@ -155,13 +170,14 @@ class LipsyncPuppetSample extends xb.Script {
       this.mouth = new LipsyncMouth(stream, {target: this.face});
       this.puppetHead?.add(this.mouth);
       if (this.domBtn) this.domBtn.textContent = '🎙️ Disable mic';
-      this.spatialBtn?.setText('🎙️ Disable mic');
-      this.spatialStatus?.setText('mic: on. talk to the puppet');
+      if (this.spatialBtn) this.spatialBtn.label = '🎙️ Disable mic';
+      if (this.spatialStatus)
+        this.spatialStatus.text = 'mic: on. talk to the puppet';
     } catch (err) {
       this.started = false;
       const msg = (err as Error).message;
       if (this.domBtn) this.domBtn.textContent = `mic failed: ${msg}`;
-      this.spatialStatus?.setText(`mic failed: ${msg}`);
+      if (this.spatialStatus) this.spatialStatus.text = `mic failed: ${msg}`;
     }
   }
 
@@ -182,8 +198,8 @@ class LipsyncPuppetSample extends xb.Script {
       this.micStream = undefined;
     }
     if (this.domBtn) this.domBtn.textContent = '🎙️ Start mic';
-    this.spatialBtn?.setText('🎙️ Start mic');
-    this.spatialStatus?.setText('mic: off');
+    if (this.spatialBtn) this.spatialBtn.label = '🎙️ Start mic';
+    if (this.spatialStatus) this.spatialStatus.text = 'mic: off';
   }
 }
 

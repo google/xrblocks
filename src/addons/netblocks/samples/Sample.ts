@@ -1,5 +1,4 @@
 import * as xb from 'xrblocks';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 import {enableNet, JoinRoomOptions, NetCore, WebRTCTransport} from 'netblocks';
 
 import {buildRoomCodeHud, getRoomCodeFromUrl} from './roomCode';
@@ -56,25 +55,36 @@ export abstract class NetSample extends xb.Script {
   }
 
   private _buildXrRoomCodePanel(code: string) {
-    // Tiny SpatialPanel that mirrors the DOM HUD's room code into
+    // Tiny card that mirrors the DOM HUD's room code into
     // immersive XR, so a headset user can read the code back to a
     // friend without leaving VR. Positioned up-right of forward so
     // it doesn't fight per-sample HUDs (which typically anchor left
     // or below).
-    const panel = new xb.SpatialPanel({
-      width: 0.4,
-      height: 0.12,
-      backgroundColor: '#1a1a2add',
+    const panel = new xb.UICard({
+      size: {width: 0.4, height: 0.12},
+      manipulation: {
+        actions: {translate: {faceCamera: true}},
+        handle: {action: 'translate'},
+      },
+      edge: true,
+      style: {backgroundColor: '#1a1a2add'},
     });
-    panel
-      .addGrid()
-      .addRow()
-      .addText({
-        text: `Room  ${code}`,
-        fontSize: 0.05,
-        fontColor: '#7be3a4',
-        textAlign: 'center',
-      });
+    panel.add(
+      new xb.UIPanel({
+        style: {
+          width: '100%',
+          height: '100%',
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        children: [
+          new xb.UIText({
+            text: `Room  ${code}`,
+            style: {color: '#7be3a4', fontSize: 28, textAlign: 'center'},
+          }),
+        ],
+      })
+    );
     panel.position.set(0.8, 1.9, -1.5);
     panel.rotation.y = -Math.PI / 8;
     this.add(panel);
@@ -83,7 +93,6 @@ export abstract class NetSample extends xb.Script {
   static run<T extends NetSample>(ctor: new () => T) {
     document.addEventListener('DOMContentLoaded', async () => {
       const options = new xb.Options();
-      options.enableUI();
       options.reticles.enabled = true;
       options.controllers.visualizeRays = false;
       const app = new ctor();

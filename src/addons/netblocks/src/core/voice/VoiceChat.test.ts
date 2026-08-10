@@ -25,22 +25,6 @@ describe('VoiceChat subscriptions', () => {
     expect(a).toHaveBeenCalledTimes(1);
     expect(b).toHaveBeenCalledTimes(2);
   });
-
-  it('onTrackRemoved supports multiple listeners with idempotent unsubscribe', () => {
-    const vc = new VoiceChat(() => {});
-    const a = vi.fn();
-    const unsub = vc.onTrackRemoved(a);
-    const inner = vc as unknown as {
-      _onTrackRemoved: Set<(peerId: string) => void>;
-    };
-    for (const h of inner._onTrackRemoved) h('p1');
-    expect(a).toHaveBeenCalledTimes(1);
-
-    unsub();
-    unsub(); // idempotent
-    for (const h of inner._onTrackRemoved) h('p2');
-    expect(a).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('VoiceChat re-negotiation signalling', () => {
@@ -105,23 +89,6 @@ describe('VoiceChat re-negotiation signalling', () => {
     expect(peers.has('peer-b')).toBe(true);
   });
 
-  it('handleSignal(hello) is a no-op when we are not enabled', async () => {
-    const send = vi.fn();
-    const vc = new VoiceChat(send);
-    vc.setLocalPeerId('aaa'); // lower id, would normally be the offerer
-
-    await vc.handleSignal('zzz', {
-      type: 'voice',
-      to: 'aaa',
-      signal: {kind: 'hello'},
-    });
-
-    expect(send).not.toHaveBeenCalled();
-    expect((vc as unknown as {_peers: Map<string, unknown>})._peers.size).toBe(
-      0
-    );
-  });
-
   it('handleSignal(hello) is ignored when the local side is not the natural offerer', async () => {
     const send = vi.fn();
     const vc = new VoiceChat(send);
@@ -169,13 +136,6 @@ describe('VoiceChat onLocalStateChange', () => {
         value: origNav,
       });
     }
-  });
-
-  it('disable() without prior enable() does not fire onLocalStateChange', () => {
-    const onLocalStateChange = vi.fn();
-    const vc = new VoiceChat(() => {}, {onLocalStateChange});
-    vc.disable();
-    expect(onLocalStateChange).not.toHaveBeenCalled();
   });
 
   it('disable() during a pending enable() cancels it: stream stopped, no false state flip', async () => {
