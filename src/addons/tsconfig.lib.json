@@ -16,7 +16,6 @@
   "exclude": [
     "**/cli/**/*.ts",
     "**/samples/**/*.ts",
-    "virtualkeyboard/**/*.ts",
     "**/*.test.ts",
     "**/*.test.js"
   ],
