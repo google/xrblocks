@@ -606,15 +606,19 @@ describe('AnchorManager.getPose', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  it('returns null instead of throwing on a stale frame', async () => {
+  it('returns null instead of throwing when the space is from another session', async () => {
     const {manager} = makeManager();
     const env = fakeEnv();
     manager.update(0, env.frame);
     const tracked = await manager.create(POSE, 'sofa');
+    // getPose throws InvalidStateError when the anchor and the reference
+    // space belong to different sessions, which a caller holding a space
+    // across a session boundary can still reach.
     (env.frame as unknown as {getPose: unknown}).getPose = () => {
       throw new Error('InvalidStateError');
     };
-    expect(() => manager.getPose(tracked!.id, REF_SPACE)).toThrow();
+    expect(manager.getPose(tracked!.id, REF_SPACE)).toBeNull();
+    expect(manager.lastError).toBeInstanceOf(Error);
   });
 
   it('returns null for an unknown id', () => {

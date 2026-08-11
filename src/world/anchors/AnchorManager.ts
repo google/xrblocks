@@ -564,8 +564,17 @@ export class AnchorManager extends Script {
     const space = referenceSpace ?? this.referenceSpace();
     const frame = this.renderer?.xr.getFrame();
     if (!frame || !space) return null;
-    const pose = frame.getPose(tracked.anchor.anchorSpace, space);
-    return pose ?? null;
+    try {
+      return frame.getPose(tracked.anchor.anchorSpace, space) ?? null;
+    } catch (error) {
+      // Throws InvalidStateError when the anchor and the reference space
+      // belong to different sessions, which a caller holding a space across a
+      // session boundary can still reach. Recorded rather than swallowed, so
+      // it does not look like an untracked anchor.
+      this.lastError = error;
+      console.debug('[anchors] could not read pose for', id, error);
+      return null;
+    }
   }
 
   /**
