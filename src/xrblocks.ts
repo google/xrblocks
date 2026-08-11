@@ -23,6 +23,7 @@ export * from './core/components/ScriptsManager';
 export * from './core/components/WaitFrame';
 export * from './core/components/XRButton';
 export * from './core/components/XREffects';
+export * from './core/components/XRReferenceSpaceCache';
 export * from './core/Core';
 export * from './core/Options';
 export * from './core/Script';

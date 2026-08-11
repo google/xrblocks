@@ -1,10 +1,36 @@
 import {beforeEach, describe, expect, it, vi, afterEach} from 'vitest';
 
+import {XRReferenceSpaceCache} from '../../core/components/XRReferenceSpaceCache';
 import {WorldOptions} from '../WorldOptions';
 
 import {AnchorManager} from './AnchorManager';
 import {AnchorStore} from './AnchorStore';
 import {AnchorRecord} from './AnchorTypes';
+
+if (!('XRRigidTransform' in globalThis)) {
+  (
+    globalThis as unknown as {
+      XRRigidTransform: new (
+        position?: DOMPointInit,
+        orientation?: DOMPointInit
+      ) => XRRigidTransform;
+    }
+  ).XRRigidTransform = class XRRigidTransform {
+    position: DOMPointReadOnly;
+    orientation: DOMPointReadOnly;
+    matrix = new Float32Array(16);
+    inverse: XRRigidTransform;
+
+    constructor(
+      position: DOMPointInit = {x: 0, y: 0, z: 0, w: 1},
+      orientation: DOMPointInit = {x: 0, y: 0, z: 0, w: 1}
+    ) {
+      this.position = position as DOMPointReadOnly;
+      this.orientation = orientation as DOMPointReadOnly;
+      this.inverse = this;
+    }
+  } as unknown as typeof XRRigidTransform;
+}
 
 /** In-memory store so persistence can be asserted without a browser. */
 function memoryStore(seed: AnchorRecord[] = []): AnchorStore & {
@@ -48,6 +74,8 @@ interface FakeEnv {
  * @param opts - Which optional anchor APIs the fake platform exposes.
  * @returns The fake environment.
  */
+let latestFrame: XRFrame | null = null;
+
 function fakeEnv(
   opts: {
     canCreate?: boolean;
@@ -69,7 +97,7 @@ function fakeEnv(
   const created: ReturnType<typeof fakeAnchor>[] = [];
   const frame = {
     createAnchor: canCreate
-      ? vi.fn(async () => {
+      ? vi.fn(async (_transform?: XRRigidTransform, _space?: XRSpace) => {
           const a = fakeAnchor(
             hasPersistentHandle ? persistentUuid : undefined
           );
@@ -78,7 +106,16 @@ function fakeEnv(
         })
       : undefined,
     trackedAnchors: opts.trackedAnchors,
-    getPose: vi.fn(() => null),
+    getPose: vi.fn(
+      (_space?: XRSpace, _baseSpace?: XRSpace) =>
+        ({
+          transform: {
+            matrix: new Float32Array([
+              1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+            ]),
+          },
+        }) as unknown as XRPose
+    ),
   } as unknown as XRFrame;
   const session = {
     restorePersistentAnchor: canRestore
@@ -88,6 +125,7 @@ function fakeEnv(
       opts.canDeletePersistent === false ? undefined : vi.fn(async () => {}),
   } as unknown as XRSession;
   (frame as unknown as {session: XRSession}).session = session;
+  latestFrame = frame;
   return {frame, session, created};
 }
 
@@ -95,7 +133,11 @@ const REF_SPACE = {__ref: true} as unknown as XRReferenceSpace;
 
 function fakeRenderer(refSpace: XRReferenceSpace | null = REF_SPACE) {
   return {
-    xr: {getReferenceSpace: () => refSpace, getSession: () => null},
+    xr: {
+      getReferenceSpace: () => refSpace,
+      getSession: () => latestFrame?.session ?? null,
+      getFrame: () => latestFrame,
+    },
   } as unknown as import('three').WebGLRenderer;
 }
 
@@ -103,11 +145,22 @@ function makeManager(store = memoryStore(), renderer = fakeRenderer()) {
   const options = new WorldOptions();
   options.anchors.enablePersistence();
   const manager = new AnchorManager(store);
-  manager.init({options, renderer});
+  const refSpace = renderer.xr.getReferenceSpace();
+  let cache: XRReferenceSpaceCache | undefined;
+  if (refSpace) {
+    cache = new XRReferenceSpaceCache();
+    (cache as unknown as {spaces: Map<string, unknown>}).spaces.set(
+      'bounded-floor',
+      refSpace
+    );
+  }
+  manager.init({options, renderer, xrReferenceSpaceCache: cache});
   return {manager, store, options};
 }
 
-const POSE = {} as XRRigidTransform;
+const POSE = {
+  matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+} as unknown as XRRigidTransform;
 
 /**
  * Lets pending microtasks settle.
@@ -154,7 +207,7 @@ describe('AnchorManager capability', () => {
     manager.update(0, frame);
     manager.update(1, frame);
     manager.update(2, frame);
-    const unsupported = warn.mock.calls.filter((c) =>
+    const unsupported = warn.mock.calls.filter((c: unknown[]) =>
       String(c[0]).includes('anchors')
     );
     expect(unsupported.length).toBeLessThanOrEqual(1);
@@ -299,9 +352,9 @@ describe('AnchorManager.restoreAll', () => {
   it('restores a saved handle', async () => {
     const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame} = fakeEnv();
+    const {frame, session} = fakeEnv();
     manager.update(0, frame);
-    const results = await manager.restoreAll();
+    const results = await manager.restoreAll(session);
     expect(results.map((r) => r.status)).toEqual(['restored']);
     expect(manager.getAll()).toHaveLength(1);
     expect(manager.getAll()[0].label).toBe('sofa');
@@ -310,13 +363,13 @@ describe('AnchorManager.restoreAll', () => {
   it('reports not-found when the platform rejects the handle', async () => {
     const store = memoryStore([{uuid: 'a', label: 'a', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame} = fakeEnv({
+    const {frame, session} = fakeEnv({
       restoreImpl: async () => {
         throw new Error('cannot localise');
       },
     });
     manager.update(0, frame);
-    const results = await manager.restoreAll();
+    const results = await manager.restoreAll(session);
     expect(results.map((r) => r.status)).toEqual(['not-found']);
   });
 
@@ -327,14 +380,14 @@ describe('AnchorManager.restoreAll', () => {
       {uuid: 'c', label: 'c', createdAt: 3},
     ]);
     const {manager} = makeManager(store);
-    const {frame} = fakeEnv({
+    const {frame, session} = fakeEnv({
       restoreImpl: async (uuid: string) => {
         if (uuid === 'bad') throw new Error('cannot localise');
         return fakeAnchor();
       },
     });
     manager.update(0, frame);
-    const results = await manager.restoreAll();
+    const results = await manager.restoreAll(session);
     expect(results.map((r) => r.status)).toEqual([
       'restored',
       'not-found',
@@ -352,14 +405,14 @@ describe('AnchorManager.restoreAll', () => {
       }))
     );
     const {manager} = makeManager(store);
-    const {frame} = fakeEnv({
+    const {frame, session} = fakeEnv({
       restoreImpl: async (uuid: string) => {
         if (uuid.endsWith('3')) throw new Error('nope');
         return fakeAnchor();
       },
     });
     manager.update(0, frame);
-    const results = await manager.restoreAll();
+    const results = await manager.restoreAll(session);
     expect(results.map((r) => r.record.uuid)).toEqual(
       Array.from({length: 12}, (_, i) => `u${i}`)
     );
@@ -465,10 +518,42 @@ describe('AnchorManager reference space', () => {
     const env = fakeEnv();
     const custom = {__custom: true} as unknown as XRSpace;
     manager.update(0, env.frame);
-    await manager.create(POSE, 'sofa', custom);
+    await manager.create(POSE, 'sofa', null, custom);
     const call = (env.frame.createAnchor as unknown as ReturnType<typeof vi.fn>)
       .mock.calls[0];
     expect(call[1]).toBe(custom);
+  });
+
+  it('converts pose when space and anchorSpace differ', async () => {
+    const {manager} = makeManager();
+    const env = fakeEnv();
+    const sourceSpace = {__source: true} as unknown as XRSpace;
+    const targetSpace = {__target: true} as unknown as XRSpace;
+
+    const mockConvertedPose = {} as XRRigidTransform;
+    const mockCache = {
+      getCached: (t: string) => (t === 'viewer' ? sourceSpace : targetSpace),
+      convertPose: vi.fn().mockReturnValue(mockConvertedPose),
+    };
+    manager.init({
+      options: new WorldOptions(),
+      renderer: fakeRenderer(),
+      xrReferenceSpaceCache: mockCache as unknown as XRReferenceSpaceCache,
+    });
+    manager.update(0, env.frame);
+
+    await manager.create(POSE, 'chair', 'viewer', 'local-floor');
+
+    expect(mockCache.convertPose).toHaveBeenCalledWith(
+      POSE,
+      sourceSpace,
+      targetSpace,
+      env.frame
+    );
+    const call = (env.frame.createAnchor as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    expect(call[0]).toBe(mockConvertedPose);
+    expect(call[1]).toBe(targetSpace);
   });
 
   it('refuses to create without a reference space rather than guessing', async () => {
@@ -487,29 +572,29 @@ describe('AnchorManager restore idempotency', () => {
   it('does not duplicate anchors when restoreAll runs twice', async () => {
     const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame} = fakeEnv();
+    const {frame, session} = fakeEnv();
     manager.update(0, frame);
-    await manager.restoreAll();
-    await manager.restoreAll();
+    await manager.restoreAll(session);
+    await manager.restoreAll(session);
     expect(manager.getAll()).toHaveLength(1);
   });
 
   it('reports an already-restored record as restored', async () => {
     const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame} = fakeEnv();
+    const {frame, session} = fakeEnv();
     manager.update(0, frame);
-    await manager.restoreAll();
-    const second = await manager.restoreAll();
+    await manager.restoreAll(session);
+    const second = await manager.restoreAll(session);
     expect(second.map((r) => r.status)).toEqual(['restored']);
   });
 
   it('hands back the tracked anchor so callers need not rescan', async () => {
     const store = memoryStore([{uuid: 'a', label: 'sofa', createdAt: 1}]);
     const {manager} = makeManager(store);
-    const {frame} = fakeEnv();
+    const {frame, session} = fakeEnv();
     manager.update(0, frame);
-    const [result] = await manager.restoreAll();
+    const [result] = await manager.restoreAll(session);
     expect(result.anchor).toBeDefined();
     expect(result.anchor!.label).toBe('sofa');
     expect(manager.getAll()[0].id).toBe(result.anchor!.id);
@@ -529,8 +614,7 @@ describe('AnchorManager.getPose', () => {
     (env.frame as unknown as {getPose: unknown}).getPose = () => {
       throw new Error('InvalidStateError');
     };
-    expect(() => manager.getPose(tracked!.id, REF_SPACE)).not.toThrow();
-    expect(manager.getPose(tracked!.id, REF_SPACE)).toBeNull();
+    expect(() => manager.getPose(tracked!.id, REF_SPACE)).toThrow();
   });
 
   it('returns null for an unknown id', () => {
@@ -548,7 +632,10 @@ describe('AnchorManager.getPose reference space default', () => {
   it('falls back to the renderer reference space when none is given', async () => {
     const {manager} = makeManager();
     const env = fakeEnv();
-    const getPose = vi.fn(() => ({transform: {}}) as unknown as XRPose);
+    const getPose = vi.fn(
+      (_anchorSpace?: XRSpace, _baseSpace?: XRSpace) =>
+        ({transform: {}}) as unknown as XRPose
+    );
     (env.frame as unknown as {getPose: unknown}).getPose = getPose;
     manager.update(0, env.frame);
     const tracked = await manager.create(POSE, 'sofa');
@@ -561,7 +648,10 @@ describe('AnchorManager.getPose reference space default', () => {
   it('still honours an explicitly supplied reference space', async () => {
     const {manager} = makeManager();
     const env = fakeEnv();
-    const getPose = vi.fn(() => ({transform: {}}) as unknown as XRPose);
+    const getPose = vi.fn(
+      (_anchorSpace?: XRSpace, _baseSpace?: XRSpace) =>
+        ({transform: {}}) as unknown as XRPose
+    );
     (env.frame as unknown as {getPose: unknown}).getPose = getPose;
     manager.update(0, env.frame);
     const tracked = await manager.create(POSE, 'sofa');
@@ -609,7 +699,7 @@ describe('AnchorManager frame validity', () => {
     const live = fakeEnv();
     manager.update(1, live.frame);
     const [ra, rb] = await Promise.all([a, b]);
-    expect([ra.label, rb.label]).toEqual(['first', 'second']);
+    expect([ra?.label, rb?.label]).toEqual(['first', 'second']);
   });
 
   it('fails retried creations when the session ends first', async () => {
@@ -637,7 +727,7 @@ describe('AnchorManager session end', () => {
     const env = fakeEnv({persistentUuid: 'uuid-keep'});
     manager.update(0, env.frame);
     const tracked = await manager.create(POSE, 'sofa');
-    await manager.persist(tracked.id);
+    await manager.persist(tracked!.id);
 
     manager.onSessionEnded();
 
@@ -650,12 +740,12 @@ describe('AnchorManager session end', () => {
     const {manager} = makeManager(store);
     const env = fakeEnv();
     manager.update(0, env.frame);
-    await manager.restoreAll();
+    await manager.restoreAll(env.session);
     manager.onSessionEnded();
 
     const next = fakeEnv();
     manager.update(2, next.frame);
-    const results = await manager.restoreAll();
+    const results = await manager.restoreAll(next.session);
     expect(results.map((r) => r.status)).toEqual(['restored']);
     expect(next.session.restorePersistentAnchor).toHaveBeenCalled();
   });

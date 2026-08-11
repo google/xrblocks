@@ -20,6 +20,12 @@ import {WorldOptions} from '../world/WorldOptions';
 import {getUrlParamBool, getUrlParameter} from '../utils/utils';
 import {Handedness} from '../input/Hands';
 
+const OPTIONAL_REFERENCE_SPACES = [
+  'local-floor', // Height/floor tracking relative to user
+  'bounded-floor', // Room-scale boundary tracking (XRBoundedReferenceSpace)
+  'unbounded', // World-scale continuous movement tracking
+] as const;
+
 /**
  * Default options for XR controllers, which encompass hands by default in
  * Android XR, mouse input on desktop, tracked controllers, and gamepads.
@@ -123,7 +129,7 @@ export class Options {
   /**
    * Any additional optional features when initializing webxr.
    */
-  webxrOptionalFeatures: string[] = [];
+  webxrOptionalFeatures: string[] = [...OPTIONAL_REFERENCE_SPACES];
 
   // "local-floor" sets the scene origin at the user's feet,
   // "local" sets the scene origin near their head.

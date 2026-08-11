@@ -212,10 +212,7 @@ class AnchorsDemo extends xb.Script {
   whyNotSaved() {
     switch (this.anchors?.capability) {
       case 'session-only':
-        return (
-          'this browser has no way to save anchors, so it will be gone ' +
-          'on reload'
-        );
+        return 'this browser only supports non-persistent anchors';
       case 'unsupported':
         return 'this browser has no anchor support';
       default: {
@@ -343,7 +340,10 @@ class AnchorsDemo extends xb.Script {
     // report their own pose, so this works with or without a live frame.
     for (const [id, mesh] of this.markers) {
       const pose = anchors.getPose(id);
-      if (!pose) continue;
+      if (!pose) {
+        THREE.warnOnce('could not get pose for anchor', id);
+        continue;
+      }
       mesh.position.set(
         pose.transform.position.x,
         pose.transform.position.y,
