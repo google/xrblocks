@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid bce06cb
- * @builddate 2026-08-10T21:37:10.535Z
+ * @commitid 5688740
+ * @builddate 2026-08-11T20:00:09.526Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5804,6 +5804,11 @@ class WorldOptions {
     }
 }
 
+const OPTIONAL_REFERENCE_SPACES = [
+    'local-floor', // Height/floor tracking relative to user
+    'bounded-floor', // Room-scale boundary tracking (XRBoundedReferenceSpace)
+    'unbounded', // World-scale continuous movement tracking
+];
 /**
  * Default options for XR controllers, which encompass hands by default in
  * Android XR, mouse input on desktop, tracked controllers, and gamepads.
@@ -5913,7 +5918,7 @@ class Options {
         /**
          * Any additional optional features when initializing webxr.
          */
-        this.webxrOptionalFeatures = [];
+        this.webxrOptionalFeatures = [...OPTIONAL_REFERENCE_SPACES];
         // "local-floor" sets the scene origin at the user's feet,
         // "local" sets the scene origin near their head.
         this.referenceSpaceType = 'local-floor';
@@ -9941,7 +9946,7 @@ function getUIObjectBounds(object, target) {
     return target ? target.copy(boundsBox) : boundsBox.clone();
 }
 
-const tempPosition = new THREE.Vector3();
+const tempPosition$1 = new THREE.Vector3();
 const tempBoundsCenter = new THREE.Vector3();
 const tempBoundsSize = new THREE.Vector3();
 const tempBoundsBox$2 = new THREE.Box3();
@@ -10135,7 +10140,7 @@ function isLayoutOnlyContainer(object, role) {
 }
 function createSemanticNode(object, id, semantic, parentId) {
     object.updateMatrixWorld(true);
-    object.getWorldPosition(tempPosition);
+    object.getWorldPosition(tempPosition$1);
     const node = {
         id,
         role: semantic.role,
@@ -10144,9 +10149,9 @@ function createSemanticNode(object, id, semantic, parentId) {
         pointerEvents: semantic.pointerEvents,
         interactionEnabled: semantic.interactionEnabled,
         position: [
-            roundContextNumber(tempPosition.x),
-            roundContextNumber(tempPosition.y),
-            roundContextNumber(tempPosition.z),
+            roundContextNumber(tempPosition$1.x),
+            roundContextNumber(tempPosition$1.y),
+            roundContextNumber(tempPosition$1.z),
         ],
         children: [],
         objectId: object.id,
@@ -11451,10 +11456,7 @@ class WebXRSessionManager extends THREE.EventDispatcher {
             this.xrModeSupported = true;
             this.sessionOptions = {
                 ...this.sessionInit,
-                optionalFeatures: [
-                    'local-floor',
-                    ...(this.sessionInit.optionalFeatures || []),
-                ],
+                optionalFeatures: this.sessionInit.optionalFeatures || [],
             };
             // Fire the 'ready' event with the sessionOptions in the data payload
             this.dispatchEvent({
@@ -11842,6 +11844,77 @@ class XREffects {
         this.passes.length = 0;
         if (firstError !== undefined)
             throw firstError;
+    }
+}
+
+const REFERENCE_SPACE_TYPES = [
+    'viewer',
+    'local',
+    'local-floor',
+    'bounded-floor',
+    'unbounded',
+];
+const tempMatRel = new THREE.Matrix4();
+const tempMatPose = new THREE.Matrix4();
+const tempPosition = new THREE.Vector3();
+const tempOrientation = new THREE.Quaternion();
+const tempScale = new THREE.Vector3(1, 1, 1);
+/**
+ * Manages and caches WebXR reference spaces for the active XR session.
+ */
+class XRReferenceSpaceCache {
+    constructor() {
+        this.spaces = new Map();
+    }
+    /**
+     * Called when an XR session starts to reset the cache and request all reference spaces.
+     * @param session - The newly started WebXR session.
+     */
+    onXRSessionStart(session) {
+        this.spaces.clear();
+        session.addEventListener('end', () => this.spaces.clear(), { once: true });
+        for (const type of REFERENCE_SPACE_TYPES) {
+            session
+                .requestReferenceSpace(type)
+                .then((space) => {
+                this.spaces.set(type, space);
+                console.debug(`[XRReferenceSpaceCache] Cached reference space "${type}"`);
+            })
+                .catch((error) => {
+                console.debug(`[XRReferenceSpaceCache] Reference space "${type}" not available`, error);
+            });
+        }
+    }
+    /**
+     * Synchronously returns a reference space if it has already been cached.
+     * @param type - The reference space type to check.
+     */
+    getCached(type) {
+        return this.spaces.get(type);
+    }
+    /**
+     * Converts a pose from a source reference space to a target reference space using the active XRFrame.
+     * @param pose - The pose in the source reference space.
+     * @param from - The source reference space type or XRSpace instance.
+     * @param to - The target reference space type or XRSpace instance.
+     * @param frame - The active XR frame.
+     * @returns The converted pose in the target reference space, or null if reference spaces or relative pose cannot be resolved.
+     */
+    convertPose(pose, from, to, frame) {
+        const fromSpace = typeof from === 'string' ? this.getCached(from) : from;
+        const toSpace = typeof to === 'string' ? this.getCached(to) : to;
+        if (!fromSpace || !toSpace || !frame) {
+            return null;
+        }
+        const relativePose = frame.getPose(fromSpace, toSpace);
+        if (!relativePose) {
+            return null;
+        }
+        tempMatRel.fromArray(relativePose.transform.matrix);
+        tempMatPose.fromArray(pose.matrix);
+        tempMatRel.multiply(tempMatPose);
+        tempMatRel.decompose(tempPosition, tempOrientation, tempScale);
+        return new XRRigidTransform(tempPosition, tempOrientation);
     }
 }
 
@@ -18182,6 +18255,7 @@ class AnchorManager extends Script {
     static { this.dependencies = {
         options: WorldOptions,
         renderer: THREE.WebGLRenderer,
+        xrReferenceSpaceCache: XRReferenceSpaceCache,
     }; }
     /**
      * @param store - Storage for persistent handles. Defaults to local storage,
@@ -18209,9 +18283,10 @@ class AnchorManager extends Script {
      *     the anchor settings, and the renderer supplying the reference space
      *     that anchor poses are expressed against.
      */
-    init({ options, renderer, }) {
+    init({ options, renderer, xrReferenceSpaceCache, }) {
         this.options = options;
         this.renderer = renderer;
+        this.referenceSpaceCache = xrReferenceSpaceCache;
         this.store =
             this.injectedStore ??
                 new LocalStorageAnchorStore(options.anchors.storageKey, options.anchors.maxStoredAnchors);
@@ -18230,7 +18305,6 @@ class AnchorManager extends Script {
             }
             return;
         }
-        this.currentFrame = frame;
         const probed = anchorCapability(frame.session, frame);
         this.capability =
             probed === 'unsupported' && this.options?.anchors.simulatorFallback
@@ -18264,7 +18338,6 @@ class AnchorManager extends Script {
             }
         }
         this.anchors.clear();
-        this.currentFrame = undefined;
         this.capability = this.options?.anchors.simulatorFallback
             ? 'simulated'
             : 'unsupported';
@@ -18277,27 +18350,42 @@ class AnchorManager extends Script {
      *
      * @param pose - Pose for the new anchor.
      * @param label - Label carried through persistence.
-     * @param space - Space the pose is expressed in. Defaults to the frame's
-     *     own reference space when the platform provides one.
+     * @param poseSpace - Space the pose is expressed in. Defaults to the frame's reference space.
+     * @param anchorSpace - Space to anchor against. Defaults to 'bounded-floor'.
      * @returns The tracked anchor, or null when it could not be created.
      */
-    async create(pose, label, space) {
+    async create(pose, label, poseSpace = null, anchorSpace = 'bounded-floor') {
         if (this.capability === 'simulated') {
             return this.createSimulated(pose, label);
         }
-        const frame = this.currentFrame;
+        const frame = this.renderer?.xr.getFrame();
         if (!frame || typeof frame.createAnchor !== 'function') {
             return null;
         }
-        // An XRSession is not an XRSpace. The two are interchangeable to the type
-        // checker only because XRSpace is declared as an empty interface, so
-        // passing a session here would compile and then misplace every anchor.
-        const anchorSpace = space ?? this.referenceSpace();
-        if (!anchorSpace) {
-            console.warn('[anchors] no reference space available; cannot create an anchor');
+        const targetSpace = typeof anchorSpace === 'string'
+            ? this.referenceSpaceCache?.getCached(anchorSpace)
+            : anchorSpace;
+        if (!targetSpace) {
+            console.warn('[anchors] target anchorSpace could not be resolved:', anchorSpace);
             return null;
         }
-        const immediate = await this.createOnFrame(frame, pose, label, anchorSpace);
+        const sourceSpace = poseSpace === null
+            ? this.referenceSpace()
+            : typeof poseSpace === 'string'
+                ? this.referenceSpaceCache?.getCached(poseSpace)
+                : poseSpace;
+        if (!sourceSpace) {
+            console.warn('[anchors] source poseSpace could not be resolved:', poseSpace);
+            return null;
+        }
+        const targetPose = sourceSpace === targetSpace || !this.referenceSpaceCache
+            ? pose
+            : this.referenceSpaceCache.convertPose(pose, sourceSpace, targetSpace, frame);
+        if (!targetPose) {
+            console.warn('[anchors] could not convert pose to anchor space', pose, sourceSpace, targetSpace);
+            return null;
+        }
+        const immediate = await this.createOnFrame(frame, targetPose, label, targetSpace);
         if (immediate)
             return immediate;
         // Only a rejected createAnchor reaches here, and the usual cause is a
@@ -18305,9 +18393,9 @@ class AnchorManager extends Script {
         // Retry exactly once on the next live frame rather than looping.
         return new Promise((resolve) => {
             this.pendingCreates.push({
-                pose,
+                pose: targetPose,
                 label,
-                space: anchorSpace,
+                space: targetSpace,
                 resolve,
                 retried: true,
             });
@@ -18335,11 +18423,10 @@ class AnchorManager extends Script {
     async createOnFrame(frame, pose, label, space) {
         // The retry path may be handed a different frame from the one create()
         // checked, so verify support here rather than relying on the caller.
-        const createAnchor = frame.createAnchor;
-        if (typeof createAnchor !== 'function')
+        if (typeof frame.createAnchor !== 'function')
             return null;
         try {
-            const anchor = await createAnchor.call(frame, pose, space);
+            const anchor = await frame.createAnchor(pose, space);
             if (!anchor)
                 return null;
             const tracked = {
@@ -18419,7 +18506,7 @@ class AnchorManager extends Script {
      *
      * @returns One result per saved record, in stored order.
      */
-    async restoreAll() {
+    async restoreAll(session) {
         // World can expose this child during its own init, one scene scan before
         // ScriptsManager initializes newly added children. Treat that brief state
         // as not ready; callers can retry once the capability changes.
@@ -18431,7 +18518,6 @@ class AnchorManager extends Script {
         if (this.capability === 'simulated') {
             return records.map((record) => this.restoreSimulated(record));
         }
-        const session = this.currentFrame?.session;
         const restore = session?.restorePersistentAnchor;
         if (this.capability !== 'persistent' || typeof restore !== 'function') {
             return records.map((record) => ({ record, status: 'unsupported' }));
@@ -18479,29 +18565,24 @@ class AnchorManager extends Script {
      */
     getPose(id, referenceSpace) {
         const tracked = this.anchors.get(id);
-        if (!tracked)
+        if (!tracked) {
+            console.debug(`Anchor ${id} not tracked`);
             return null;
+        }
         // Simulated anchors have no tracked space to resolve against, and there is
         // no frame at all on desktop, so read the pose they are holding.
         if (SimulatorAnchor.isSimulatorAnchor(tracked.anchor)) {
             const { position, orientation } = tracked.anchor.pose;
             return { transform: { position, orientation } };
         }
-        const frame = this.currentFrame;
         // The manager already holds the renderer, so callers should not have to
         // thread a reference space through every read.
         const space = referenceSpace ?? this.referenceSpace();
+        const frame = this.renderer?.xr.getFrame();
         if (!frame || !space)
             return null;
-        try {
-            // An XRFrame is only valid inside its own callback, so reading a pose
-            // from outside the frame loop throws rather than returning nothing.
-            return (frame.getPose(tracked.anchor.anchorSpace, space) ??
-                null);
-        }
-        catch {
-            return null;
-        }
+        const pose = frame.getPose(tracked.anchor.anchorSpace, space);
+        return pose ?? null;
     }
     /**
      * Stops tracking an anchor and forgets any saved handle for it.
@@ -18612,9 +18693,7 @@ class AnchorManager extends Script {
      * @returns The session, or undefined.
      */
     currentSession() {
-        return (this.currentFrame?.session ??
-            this.renderer?.xr.getSession?.() ??
-            undefined);
+        return this.renderer?.xr.getSession?.() ?? undefined;
     }
     /**
      * Releases handles the store dropped to stay under its cap.
@@ -18681,7 +18760,6 @@ class AnchorManager extends Script {
             }
         }
         this.anchors.clear();
-        this.currentFrame = undefined;
     }
     /**
      * Drops anchors the platform no longer reports as tracked.
@@ -22225,6 +22303,9 @@ function loadSimulatorModule() {
  * for developers and AI agents to build interactive XR applications.
  */
 class Core {
+    get currentFrame() {
+        return this.renderer.xr.getFrame();
+    }
     /**
      * The WebGL renderer, created during {@link Core.init}. Reading it before
      * `init()` has run returns `undefined` and logs a one-time warning.
@@ -22293,6 +22374,10 @@ class Core {
          * Component responsible for waiting for the next frame.
          */
         this.waitFrame = new WaitFrame();
+        /**
+         * Caches WebXR reference spaces for the active session.
+         */
+        this.xrReferenceSpaceCache = new XRReferenceSpaceCache();
         /**
          * Registry used for dependency injection on existing subsystems.
          */
@@ -22368,7 +22453,6 @@ class Core {
             if (this._isPaused && !this.isSteppingFrame) {
                 return;
             }
-            this.currentFrame = frame;
             this.manualStepTime = Math.max(this.manualStepTime, time);
             if (!this.isSteppingFrame) {
                 this.simulationTimer.update(time, this.timer.getTimescale());
@@ -22514,6 +22598,7 @@ class Core {
         this.registry.register(this);
         this.registry.register(this.waitFrame);
         this.registry.register(this.screenshotSynthesizer);
+        this.registry.register(this.xrReferenceSpaceCache);
         this.registry.register(this.simulationTimer);
         this.registry.register(this.scene);
         this.registry.register(this.timer);
@@ -22857,6 +22942,7 @@ class Core {
     async onXRSessionStarted(session) {
         if (!this.isLifecycleActive())
             return;
+        this.xrReferenceSpaceCache.onXRSessionStart(session);
         if (this.options.deviceCamera?.enabled) {
             await this.deviceCamera.init();
             if (!this.isLifecycleActive())
@@ -26739,6 +26825,7 @@ var sdk = /*#__PURE__*/Object.freeze({
     XRDeviceCamera: XRDeviceCamera,
     XREffects: XREffects,
     XRPass: XRPass,
+    XRReferenceSpaceCache: XRReferenceSpaceCache,
     XRTransitionOptions: XRTransitionOptions,
     XR_BLOCKS_ASSETS_PATH: XR_BLOCKS_ASSETS_PATH,
     ZERO_VECTOR3: ZERO_VECTOR3,
@@ -26847,5 +26934,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { AudioPlayer as $, getUICardEdgeOptions as A, getSemanticControl as B, UICard as C, Depth as D, UIOverlay as E, XR_BLOCKS_ASSETS_PATH as F, SIMULATOR_HAND_POSE_NAMES as G, Handedness as H, Interaction as I, AI as J, Keycodes as K, AIOptions as L, ModelLoader as M, ActiveControllers as N, Options as O, Physics as P, Agent as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UIText as U, AnchorManager as V, WaitFrame as W, XRDeviceCamera as X, AnchoredObjects as Y, AnchorsOptions as Z, AudioListener as _, Script as a, MediaPipeHandPoseEstimator as a$, BACK as a0, BackgroundMusic as a1, CategoryVolumes as a2, Context as a3, ContextOptions as a4, Core as a5, CoreSound as a6, DEFAULT_DEVICE_CAMERA_HEIGHT as a7, DEFAULT_DEVICE_CAMERA_WIDTH as a8, DEFAULT_RGB_TO_DEPTH_PARAMS as a9, Gemini as aA, GeminiOptions as aB, GenerateSkyboxTool as aC, GestureRecognition as aD, GestureRecognitionOptions as aE, GetWeatherTool as aF, HAND_BONE_IDX_CONNECTION_MAP as aG, HAND_INDEX_TO_LABEL as aH, HAND_JOINT_COUNT as aI, HAND_JOINT_IDX_CONNECTION_MAP as aJ, Hands as aK, HandsOptions as aL, HeadGestureRecognition as aM, HeadGestureRecognitionOptions as aN, HeuristicGestureRecognizer as aO, HeuristicHeadGestureRecognizer as aP, HumanRecognizer as aQ, HumansOptions as aR, InputOptions as aS, InteractionOptions as aT, LEFT as aU, LEFT_VIEW_ONLY_LAYER as aV, Lighting as aW, LightingOptions as aX, LoadingSpinnerManager as aY, LocalStorageAnchorStore as aZ, MediaPipeHandContext as a_, DEVICE_CAMERA_PARAMETERS as aa, DOWN as ab, DepthMesh as ac, DepthMeshOptions as ad, DepthOptions as ae, DepthTextures as af, DetectedBodyPose as ag, DetectedFace as ah, DetectedMesh as ai, DetectedObject as aj, DetectedPlane as ak, DeviceCameraOptions as al, FINGER_ORDER as am, FORWARD as an, FaceCamera as ao, FaceLandmarkName as ap, FaceRecognizer as aq, FacesOptions as ar, FollowHead as as, FollowObject as at, GEMINI_DEFAULT_FLASH_MODEL as au, GEMINI_DEFAULT_IMAGE_MODEL as av, GEMINI_DEFAULT_LIVE_MODEL as aw, GamepadBindings as ax, GamepadController as ay, GazeController as az, SimulatorMode as b, WorldOptions as b$, MeshDetectionOptions as b0, MeshDetector as b1, MeshScript as b2, ModelViewer as b3, MouseController as b4, NUM_HANDS as b5, OCCLUDABLE_ITEMS_LAYER as b6, ObjectDetector as b7, ObjectsOptions as b8, OcclusionPass as b9, SkyboxAgent as bA, SoundOptions as bB, SoundSynthesizer as bC, SpatialAudio as bD, SpeechRecognizer as bE, SpeechRecognizerOptions as bF, SpeechSynthesizer as bG, SpeechSynthesizerOptions as bH, StreamState as bI, StrokeRecognizer as bJ, StylizedFace as bK, TensorFlowHandPoseEstimator as bL, Tool as bM, UIButton as bN, UIIcon as bO, UIImage as bP, UIPanel as bQ, UISlider as bR, UP as bS, User as bT, VIEW_DEPTH_GAP as bU, VideoFileStream as bV, VideoStream as bW, VisibilityTransition as bX, VolumeCategory as bY, WebXRHandContext as bZ, WebXRHandPoseEstimator as b_, OcclusionUtils as ba, OpenAI as bb, OpenAIOptions as bc, Orbit as bd, PhysicsOptions as be, PlaneDetector as bf, PlanesOptions as bg, PoseJointName as bh, RIGHT as bi, RIGHT_VIEW_ONLY_LAYER as bj, ReticleOptions as bk, Reticles as bl, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bm, SOUND_PRESETS as bn, SceneDetector as bo, SceneOptions as bp, SceneSetOfMarkOptions as bq, SceneVisibilityOptions as br, ScreenshotSynthesizer as bs, ScriptMixin as bt, ScriptsManager as bu, ScriptsManagerEventType as bv, SegmentCategory as bw, SegmentationOptions as bx, Segmenter as by, SimulatorAnchor as bz, SetSimulatorModeEvent as c, getXrCameraLeft as c$, XRButton as c0, XREffects as c1, XRPass as c2, XRTransitionOptions as c3, ZERO_VECTOR3 as c4, ZERO_VISEME as c5, _getBvhImportStatus as c6, add as c7, ai as c8, anchorCapability as c9, getElapsedTime as cA, getFingerBendAngles as cB, getFingerCurl as cC, getFingerDirection as cD, getFingerJoint as cE, getFingerPalmAlignment as cF, getFingerSpread as cG, getFingerStraightness as cH, getFingertipDistance as cI, getFingertipPalmDistance as cJ, getPalmNormal as cK, getPalmPose as cL, getPalmRight as cM, getPalmUp as cN, getPalmWidth as cO, getRelativeBoneAngles as cP, getThumbBendAngles as cQ, getThumbCurl as cR, getThumbDirection as cS, getThumbOpposition as cT, getThumbStraightness as cU, getThumbVerticalDirection as cV, getUrlParamBool as cW, getUrlParamFloat as cX, getUrlParamInt as cY, getUrlParameter as cZ, getVec4ByColorString as c_, applyBVH as ca, average as cb, camera as cc, clamp$1 as cd, clamp01 as ce, clampRotationToAngle as cf, context as cg, core as ch, cropImage as ci, defaultAnchorStorageKey as cj, depth as ck, disposeBVH as cl, disposeMaterial as cm, disposeMeshResources as cn, disposeRenderableResources as co, enableAcceleratedRaycast as cp, estimateHandScale as cq, extractYaw as cr, getAdjacentFingerSpreads as cs, getBoneVectors as ct, getCameraParametersSnapshot as cu, getColorHex as cv, getDeltaTime as cw, getDeviceCameraClipFromView as cx, getDeviceCameraWorldFromClip as cy, getDeviceCameraWorldFromView as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, getXrCameraRight as d0, init as d1, initScript as d2, input as d3, intrinsicsToProjectionMatrix as d4, isBVHReady as d5, isDeviceCameraPoseAvailable as d6, lerp as d7, loadStereoImageAsTextures as d8, loadingSpinnerManager as d9, xrDeviceCameraUserContinuousOptions as dA, xrDeviceCameraUserOptions as dB, lookAtRotation as da, objectIsDescendantOf as db, parseBase64DataURL as dc, parseSimulatorHandPoseRotations as dd, placeObjectAtIntersectionFacingTarget as de, print as df, resolveSimulatorRotationsFromKeypoints as dg, scene as dh, showOnlyInLeftEye as di, showOnlyInRightEye as dj, sound as dk, timer as dl, transformRgbUvToWorld as dm, traverseUtil as dn, ui as dp, urlParams as dq, user as dr, visualizeDepth as ds, visualizeDepthMap as dt, world as du, xrDepthMeshOptions as dv, xrDepthMeshPhysicsOptions as dw, xrDepthMeshVisualizationOptions as dx, xrDeviceCameraEnvironmentContinuousOptions as dy, xrDeviceCameraEnvironmentOptions as dz, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIElementKind as w, getUIStructureRevision as x, isUIElement as y, getUIRevision as z };
+export { AudioPlayer as $, getUICardEdgeOptions as A, getSemanticControl as B, UICard as C, Depth as D, UIOverlay as E, XR_BLOCKS_ASSETS_PATH as F, SIMULATOR_HAND_POSE_NAMES as G, Handedness as H, Interaction as I, AI as J, Keycodes as K, AIOptions as L, ModelLoader as M, ActiveControllers as N, Options as O, Physics as P, Agent as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UIText as U, AnchorManager as V, WaitFrame as W, XRDeviceCamera as X, AnchoredObjects as Y, AnchorsOptions as Z, AudioListener as _, Script as a, MediaPipeHandPoseEstimator as a$, BACK as a0, BackgroundMusic as a1, CategoryVolumes as a2, Context as a3, ContextOptions as a4, Core as a5, CoreSound as a6, DEFAULT_DEVICE_CAMERA_HEIGHT as a7, DEFAULT_DEVICE_CAMERA_WIDTH as a8, DEFAULT_RGB_TO_DEPTH_PARAMS as a9, Gemini as aA, GeminiOptions as aB, GenerateSkyboxTool as aC, GestureRecognition as aD, GestureRecognitionOptions as aE, GetWeatherTool as aF, HAND_BONE_IDX_CONNECTION_MAP as aG, HAND_INDEX_TO_LABEL as aH, HAND_JOINT_COUNT as aI, HAND_JOINT_IDX_CONNECTION_MAP as aJ, Hands as aK, HandsOptions as aL, HeadGestureRecognition as aM, HeadGestureRecognitionOptions as aN, HeuristicGestureRecognizer as aO, HeuristicHeadGestureRecognizer as aP, HumanRecognizer as aQ, HumansOptions as aR, InputOptions as aS, InteractionOptions as aT, LEFT as aU, LEFT_VIEW_ONLY_LAYER as aV, Lighting as aW, LightingOptions as aX, LoadingSpinnerManager as aY, LocalStorageAnchorStore as aZ, MediaPipeHandContext as a_, DEVICE_CAMERA_PARAMETERS as aa, DOWN as ab, DepthMesh as ac, DepthMeshOptions as ad, DepthOptions as ae, DepthTextures as af, DetectedBodyPose as ag, DetectedFace as ah, DetectedMesh as ai, DetectedObject as aj, DetectedPlane as ak, DeviceCameraOptions as al, FINGER_ORDER as am, FORWARD as an, FaceCamera as ao, FaceLandmarkName as ap, FaceRecognizer as aq, FacesOptions as ar, FollowHead as as, FollowObject as at, GEMINI_DEFAULT_FLASH_MODEL as au, GEMINI_DEFAULT_IMAGE_MODEL as av, GEMINI_DEFAULT_LIVE_MODEL as aw, GamepadBindings as ax, GamepadController as ay, GazeController as az, SimulatorMode as b, WorldOptions as b$, MeshDetectionOptions as b0, MeshDetector as b1, MeshScript as b2, ModelViewer as b3, MouseController as b4, NUM_HANDS as b5, OCCLUDABLE_ITEMS_LAYER as b6, ObjectDetector as b7, ObjectsOptions as b8, OcclusionPass as b9, SkyboxAgent as bA, SoundOptions as bB, SoundSynthesizer as bC, SpatialAudio as bD, SpeechRecognizer as bE, SpeechRecognizerOptions as bF, SpeechSynthesizer as bG, SpeechSynthesizerOptions as bH, StreamState as bI, StrokeRecognizer as bJ, StylizedFace as bK, TensorFlowHandPoseEstimator as bL, Tool as bM, UIButton as bN, UIIcon as bO, UIImage as bP, UIPanel as bQ, UISlider as bR, UP as bS, User as bT, VIEW_DEPTH_GAP as bU, VideoFileStream as bV, VideoStream as bW, VisibilityTransition as bX, VolumeCategory as bY, WebXRHandContext as bZ, WebXRHandPoseEstimator as b_, OcclusionUtils as ba, OpenAI as bb, OpenAIOptions as bc, Orbit as bd, PhysicsOptions as be, PlaneDetector as bf, PlanesOptions as bg, PoseJointName as bh, RIGHT as bi, RIGHT_VIEW_ONLY_LAYER as bj, ReticleOptions as bk, Reticles as bl, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bm, SOUND_PRESETS as bn, SceneDetector as bo, SceneOptions as bp, SceneSetOfMarkOptions as bq, SceneVisibilityOptions as br, ScreenshotSynthesizer as bs, ScriptMixin as bt, ScriptsManager as bu, ScriptsManagerEventType as bv, SegmentCategory as bw, SegmentationOptions as bx, Segmenter as by, SimulatorAnchor as bz, SetSimulatorModeEvent as c, getVec4ByColorString as c$, XRButton as c0, XREffects as c1, XRPass as c2, XRReferenceSpaceCache as c3, XRTransitionOptions as c4, ZERO_VECTOR3 as c5, ZERO_VISEME as c6, _getBvhImportStatus as c7, add as c8, ai as c9, getDeviceCameraWorldFromView as cA, getElapsedTime as cB, getFingerBendAngles as cC, getFingerCurl as cD, getFingerDirection as cE, getFingerJoint as cF, getFingerPalmAlignment as cG, getFingerSpread as cH, getFingerStraightness as cI, getFingertipDistance as cJ, getFingertipPalmDistance as cK, getPalmNormal as cL, getPalmPose as cM, getPalmRight as cN, getPalmUp as cO, getPalmWidth as cP, getRelativeBoneAngles as cQ, getThumbBendAngles as cR, getThumbCurl as cS, getThumbDirection as cT, getThumbOpposition as cU, getThumbStraightness as cV, getThumbVerticalDirection as cW, getUrlParamBool as cX, getUrlParamFloat as cY, getUrlParamInt as cZ, getUrlParameter as c_, anchorCapability as ca, applyBVH as cb, average as cc, camera as cd, clamp$1 as ce, clamp01 as cf, clampRotationToAngle as cg, context as ch, core as ci, cropImage as cj, defaultAnchorStorageKey as ck, depth as cl, disposeBVH as cm, disposeMaterial as cn, disposeMeshResources as co, disposeRenderableResources as cp, enableAcceleratedRaycast as cq, estimateHandScale as cr, extractYaw as cs, getAdjacentFingerSpreads as ct, getBoneVectors as cu, getCameraParametersSnapshot as cv, getColorHex as cw, getDeltaTime as cx, getDeviceCameraClipFromView as cy, getDeviceCameraWorldFromClip as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, getXrCameraLeft as d0, getXrCameraRight as d1, init as d2, initScript as d3, input as d4, intrinsicsToProjectionMatrix as d5, isBVHReady as d6, isDeviceCameraPoseAvailable as d7, lerp as d8, loadStereoImageAsTextures as d9, xrDeviceCameraEnvironmentOptions as dA, xrDeviceCameraUserContinuousOptions as dB, xrDeviceCameraUserOptions as dC, loadingSpinnerManager as da, lookAtRotation as db, objectIsDescendantOf as dc, parseBase64DataURL as dd, parseSimulatorHandPoseRotations as de, placeObjectAtIntersectionFacingTarget as df, print as dg, resolveSimulatorRotationsFromKeypoints as dh, scene as di, showOnlyInLeftEye as dj, showOnlyInRightEye as dk, sound as dl, timer as dm, transformRgbUvToWorld as dn, traverseUtil as dp, ui as dq, urlParams as dr, user as ds, visualizeDepth as dt, visualizeDepthMap as du, world as dv, xrDepthMeshOptions as dw, xrDepthMeshPhysicsOptions as dx, xrDepthMeshVisualizationOptions as dy, xrDeviceCameraEnvironmentContinuousOptions as dz, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIElementKind as w, getUIStructureRevision as x, isUIElement as y, getUIRevision as z };
 //# sourceMappingURL=entry.js.map
