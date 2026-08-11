@@ -82,7 +82,8 @@ export class AnchorManager extends Script {
   private readonly pendingCreates: Array<{
     pose: XRRigidTransform;
     label: string;
-    space?: XRSpace;
+    poseSpace: XRSpace | XRReferenceSpaceType | null;
+    anchorSpace: XRSpace | XRReferenceSpaceType;
     resolve: (value: TrackedAnchor | null) => void;
     retried: boolean;
   }> = [];
@@ -196,11 +197,77 @@ export class AnchorManager extends Script {
     if (this.capability === 'simulated') {
       return this.createSimulated(pose, label);
     }
+    // Queueing on a platform that cannot make anchors would leave the caller
+    // awaiting a promise that never settles, since update() bails before the
+    // flush when support is missing.
+    if (this.capability === 'unsupported') return null;
     const frame = this.renderer?.xr.getFrame();
-    if (!frame || typeof frame.createAnchor !== 'function') {
-      return null;
+    // three.js clears its frame at the end of the animation callback, so there
+    // is no live frame during a click handler, which is where apps actually
+    // drop anchors from. Queue rather than refuse, and let the next frame do
+    // the work.
+    if (!frame) {
+      return this.queueCreate(pose, label, poseSpace, anchorSpace, false);
     }
+    if (typeof frame.createAnchor !== 'function') return null;
+    return this.createResolved(
+      frame,
+      pose,
+      label,
+      poseSpace,
+      anchorSpace,
+      false
+    );
+  }
 
+  /**
+   * Holds a creation request until a frame is live.
+   *
+   * @param pose - Pose for the new anchor.
+   * @param label - Label carried through persistence.
+   * @param poseSpace - Space the pose is expressed in.
+   * @param anchorSpace - Space to anchor against.
+   * @param retried - Whether this request has already been requeued once.
+   * @returns The tracked anchor once a frame arrives, or null.
+   */
+  private queueCreate(
+    pose: XRRigidTransform,
+    label: string,
+    poseSpace: XRSpace | XRReferenceSpaceType | null,
+    anchorSpace: XRSpace | XRReferenceSpaceType,
+    retried: boolean
+  ): Promise<TrackedAnchor | null> {
+    return new Promise((resolve) => {
+      this.pendingCreates.push({
+        pose,
+        label,
+        poseSpace,
+        anchorSpace,
+        resolve,
+        retried,
+      });
+    });
+  }
+
+  /**
+   * Resolves spaces against a live frame and creates the anchor.
+   *
+   * @param frame - A frame known to be active.
+   * @param pose - Pose for the new anchor.
+   * @param label - Label carried through persistence.
+   * @param poseSpace - Space the pose is expressed in.
+   * @param anchorSpace - Space to anchor against.
+   * @param retried - Whether this request has already been requeued once.
+   * @returns The tracked anchor, or null when it could not be created.
+   */
+  private async createResolved(
+    frame: XRFrame,
+    pose: XRRigidTransform,
+    label: string,
+    poseSpace: XRSpace | XRReferenceSpaceType | null,
+    anchorSpace: XRSpace | XRReferenceSpaceType,
+    retried: boolean
+  ): Promise<TrackedAnchor | null> {
     const targetSpace =
       typeof anchorSpace === 'string'
         ? this.referenceSpaceCache?.getCached(anchorSpace)
@@ -252,20 +319,12 @@ export class AnchorManager extends Script {
       label,
       targetSpace
     );
-    if (immediate) return immediate;
+    if (immediate || retried) return immediate;
 
     // Only a rejected createAnchor reaches here, and the usual cause is a
-    // frame that went inactive because the app created from an input handler.
-    // Retry exactly once on the next live frame rather than looping.
-    return new Promise((resolve) => {
-      this.pendingCreates.push({
-        pose: targetPose,
-        label,
-        space: targetSpace,
-        resolve,
-        retried: true,
-      });
-    });
+    // frame that went inactive mid-call. Retry exactly once on the next live
+    // frame rather than looping.
+    return this.queueCreate(targetPose, label, targetSpace, targetSpace, true);
   }
 
   /**
@@ -274,13 +333,23 @@ export class AnchorManager extends Script {
    */
   private async flushPendingCreates(frame: XRFrame): Promise<void> {
     if (this.pendingCreates.length === 0) return;
+    if (typeof frame.createAnchor !== 'function') {
+      // The platform cannot make anchors at all, so waiting for a better frame
+      // would leave every caller hanging on a promise that never settles.
+      for (const pending of this.pendingCreates.splice(0)) {
+        pending.resolve(null);
+      }
+      return;
+    }
     for (const pending of this.pendingCreates.splice(0)) {
       pending.resolve(
-        await this.createOnFrame(
+        await this.createResolved(
           frame,
           pending.pose,
           pending.label,
-          pending.space!
+          pending.poseSpace,
+          pending.anchorSpace,
+          pending.retried
         )
       );
     }
