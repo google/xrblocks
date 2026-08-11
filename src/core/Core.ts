@@ -174,7 +174,7 @@ export class Core {
   gestureRecognition?: GestureRecognition;
   transition?: XRTransition;
   get currentFrame() {
-    return this.renderer.xr.getFrame();
+    return this._renderer?.xr.getFrame();
   }
   scriptsManager = new ScriptsManager(async (script: Script) => {
     await callInitWithDependencyInjection(script, this.registry, this);
