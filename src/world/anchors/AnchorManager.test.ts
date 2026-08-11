@@ -1221,3 +1221,20 @@ describe('AnchorManager anchor space fallback', () => {
     await expect(promise).resolves.toBeNull();
   });
 });
+
+describe('AnchorManager.restoreAll without an explicit session', () => {
+  it('falls back to the session the renderer holds', async () => {
+    // AnchoredObjects and both anchor demos call restoreAll() with no
+    // arguments, which is the shape this has to keep working for.
+    const env = strictEnv();
+    const manager = env.make(
+      memoryStore([{uuid: 'uuid-a', label: 'sofa', createdAt: 1}])
+    );
+    env.tick(manager);
+
+    const results = await manager.restoreAll();
+
+    expect(results.map((r) => r.status)).toEqual(['restored']);
+    expect(env.session.restorePersistentAnchor).toHaveBeenCalled();
+  });
+});

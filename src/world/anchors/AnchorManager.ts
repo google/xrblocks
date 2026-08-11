@@ -495,12 +495,13 @@ export class AnchorManager extends Script {
     if (this.capability === 'simulated') {
       return records.map((record) => this.restoreSimulated(record));
     }
-    const restore = session?.restorePersistentAnchor;
+    const activeSession = session ?? this.currentSession();
+    const restore = activeSession?.restorePersistentAnchor;
     if (this.capability !== 'persistent' || typeof restore !== 'function') {
       return records.map((record) => ({record, status: 'unsupported'}));
     }
     return Promise.all(
-      records.map((record) => this.restoreOne(record, session!))
+      records.map((record) => this.restoreOne(record, activeSession!))
     );
   }
 
