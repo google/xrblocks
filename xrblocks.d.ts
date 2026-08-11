@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 5688740
- * @builddate 2026-08-11T20:00:09.526Z
+ * @commitid dc13b17
+ * @builddate 2026-08-11T21:08:21.415Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5816,6 +5816,7 @@ declare class XREffects {
  */
 declare class XRReferenceSpaceCache {
     private spaces;
+    private session;
     /**
      * Called when an XR session starts to reset the cache and request all reference spaces.
      * @param session - The newly started WebXR session.
@@ -7242,6 +7243,7 @@ declare class AnchorManager extends Script {
     private renderer?;
     private referenceSpaceCache?;
     private warnedUnsupported;
+    private warnedSpaceDowngrade;
     private readonly pendingCreates;
     /**
      * @param store - Storage for persistent handles. Defaults to local storage,
@@ -7283,6 +7285,43 @@ declare class AnchorManager extends Script {
      * @returns The tracked anchor, or null when it could not be created.
      */
     create(pose: XRRigidTransform, label: string, poseSpace?: XRSpace | XRReferenceSpaceType | null, anchorSpace?: XRSpace | XRReferenceSpaceType): Promise<TrackedAnchor | null>;
+    /**
+     * Holds a creation request until a frame is live.
+     *
+     * @param pose - Pose for the new anchor.
+     * @param label - Label carried through persistence.
+     * @param poseSpace - Space the pose is expressed in.
+     * @param anchorSpace - Space to anchor against.
+     * @param retried - Whether this request has already been requeued once.
+     * @returns The tracked anchor once a frame arrives, or null.
+     */
+    private queueCreate;
+    /**
+     * Resolves spaces against a live frame and creates the anchor.
+     *
+     * @param frame - A frame known to be active.
+     * @param pose - Pose for the new anchor.
+     * @param label - Label carried through persistence.
+     * @param poseSpace - Space the pose is expressed in.
+     * @param anchorSpace - Space to anchor against.
+     * @param retried - Whether this request has already been requeued once.
+     * @returns The tracked anchor, or null when it could not be created.
+     */
+    private createResolved;
+    /**
+     * Resolves a space request to a live XRSpace.
+     *
+     * @param request - A space, a reference space name, or null for the space
+     *     the scene is currently drawn in.
+     * @returns The space, or undefined when the platform has no such space.
+     */
+    private resolveSpace;
+    /**
+     * Says once per session that a requested anchor space was unavailable.
+     *
+     * @param requested - The space that could not be resolved.
+     */
+    private warnSpaceDowngrade;
     /**
      * Runs queued creations against a live frame.
      * @param frame - The frame currently being rendered.
@@ -8518,7 +8557,7 @@ declare class Core {
     poseEstimation?: PoseEstimator;
     gestureRecognition?: GestureRecognition;
     transition?: XRTransition;
-    get currentFrame(): XRFrame;
+    get currentFrame(): XRFrame | undefined;
     scriptsManager: ScriptsManager;
     renderSceneOverride?: (renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) => void;
     webXRSessionManager?: WebXRSessionManager;

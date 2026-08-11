@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 5688740
- * @builddate 2026-08-11T20:00:09.526Z
+ * @commitid dc13b17
+ * @builddate 2026-08-11T21:08:21.415Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -11865,6 +11865,7 @@ const tempScale = new THREE.Vector3(1, 1, 1);
 class XRReferenceSpaceCache {
     constructor() {
         this.spaces = new Map();
+        this.session = null;
     }
     /**
      * Called when an XR session starts to reset the cache and request all reference spaces.
@@ -11872,11 +11873,21 @@ class XRReferenceSpaceCache {
      */
     onXRSessionStart(session) {
         this.spaces.clear();
-        session.addEventListener('end', () => this.spaces.clear(), { once: true });
+        this.session = session;
+        session.addEventListener('end', () => {
+            if (this.session === session)
+                this.session = null;
+            this.spaces.clear();
+        }, { once: true });
         for (const type of REFERENCE_SPACE_TYPES) {
             session
                 .requestReferenceSpace(type)
                 .then((space) => {
+                // These settle after the session may already have ended, and a late
+                // write would leave a dead session's space in the cache for the next
+                // one to pick up.
+                if (this.session !== session)
+                    return;
                 this.spaces.set(type, space);
                 console.debug(`[XRReferenceSpaceCache] Cached reference space "${type}"`);
             })
@@ -18275,6 +18286,7 @@ class AnchorManager extends Script {
         this.lastError = null;
         this.anchors = new Map();
         this.warnedUnsupported = false;
+        this.warnedSpaceDowngrade = false;
         this.pendingCreates = [];
     }
     /**
@@ -18341,6 +18353,7 @@ class AnchorManager extends Script {
         this.capability = this.options?.anchors.simulatorFallback
             ? 'simulated'
             : 'unsupported';
+        this.warnedSpaceDowngrade = false;
         for (const pending of this.pendingCreates.splice(0)) {
             pending.resolve(null);
         }
@@ -18358,48 +18371,124 @@ class AnchorManager extends Script {
         if (this.capability === 'simulated') {
             return this.createSimulated(pose, label);
         }
+        // Queueing on a platform that cannot make anchors would leave the caller
+        // awaiting a promise that never settles, since update() bails before the
+        // flush when support is missing.
+        if (this.capability === 'unsupported')
+            return null;
         const frame = this.renderer?.xr.getFrame();
-        if (!frame || typeof frame.createAnchor !== 'function') {
-            return null;
+        // three.js clears its frame at the end of the animation callback, so there
+        // is no live frame during a click handler, which is where apps actually
+        // drop anchors from. Queue rather than refuse, and let the next frame do
+        // the work.
+        if (!frame) {
+            return this.queueCreate(pose, label, poseSpace, anchorSpace, false);
         }
-        const targetSpace = typeof anchorSpace === 'string'
-            ? this.referenceSpaceCache?.getCached(anchorSpace)
-            : anchorSpace;
+        if (typeof frame.createAnchor !== 'function')
+            return null;
+        return this.createResolved(frame, pose, label, poseSpace, anchorSpace, false);
+    }
+    /**
+     * Holds a creation request until a frame is live.
+     *
+     * @param pose - Pose for the new anchor.
+     * @param label - Label carried through persistence.
+     * @param poseSpace - Space the pose is expressed in.
+     * @param anchorSpace - Space to anchor against.
+     * @param retried - Whether this request has already been requeued once.
+     * @returns The tracked anchor once a frame arrives, or null.
+     */
+    queueCreate(pose, label, poseSpace, anchorSpace, retried) {
+        return new Promise((resolve) => {
+            this.pendingCreates.push({
+                pose,
+                label,
+                poseSpace,
+                anchorSpace,
+                resolve,
+                retried,
+            });
+        });
+    }
+    /**
+     * Resolves spaces against a live frame and creates the anchor.
+     *
+     * @param frame - A frame known to be active.
+     * @param pose - Pose for the new anchor.
+     * @param label - Label carried through persistence.
+     * @param poseSpace - Space the pose is expressed in.
+     * @param anchorSpace - Space to anchor against.
+     * @param retried - Whether this request has already been requeued once.
+     * @returns The tracked anchor, or null when it could not be created.
+     */
+    async createResolved(frame, pose, label, poseSpace, anchorSpace, retried) {
+        // Anchoring against a space the platform did not grant is not a reason to
+        // refuse. bounded-floor needs a configured play space and is absent on
+        // plenty of hardware, so fall back to the space the scene is drawn in and
+        // say so once, rather than placing nothing at all.
+        let targetSpace = this.resolveSpace(anchorSpace);
         if (!targetSpace) {
-            console.warn('[anchors] target anchorSpace could not be resolved:', anchorSpace);
+            targetSpace = this.referenceSpace();
+            this.warnSpaceDowngrade(anchorSpace);
+        }
+        if (!targetSpace) {
+            console.warn('[anchors] no reference space available; cannot anchor');
             return null;
         }
-        const sourceSpace = poseSpace === null
-            ? this.referenceSpace()
-            : typeof poseSpace === 'string'
-                ? this.referenceSpaceCache?.getCached(poseSpace)
-                : poseSpace;
+        // A named pose space is different: the caller is asserting what the pose
+        // means, so guessing another one would put the anchor somewhere else
+        // entirely. Only the unspecified default falls back.
+        const sourceSpace = this.resolveSpace(poseSpace);
         if (!sourceSpace) {
             console.warn('[anchors] source poseSpace could not be resolved:', poseSpace);
             return null;
         }
-        const targetPose = sourceSpace === targetSpace || !this.referenceSpaceCache
-            ? pose
-            : this.referenceSpaceCache.convertPose(pose, sourceSpace, targetSpace, frame);
+        let targetPose = pose;
+        if (sourceSpace !== targetSpace) {
+            if (!this.referenceSpaceCache) {
+                // Using the pose unconverted here would silently misplace the anchor.
+                console.warn('[anchors] no reference space cache; cannot convert pose');
+                return null;
+            }
+            targetPose = this.referenceSpaceCache.convertPose(pose, sourceSpace, targetSpace, frame);
+        }
         if (!targetPose) {
             console.warn('[anchors] could not convert pose to anchor space', pose, sourceSpace, targetSpace);
             return null;
         }
         const immediate = await this.createOnFrame(frame, targetPose, label, targetSpace);
-        if (immediate)
+        if (immediate || retried)
             return immediate;
         // Only a rejected createAnchor reaches here, and the usual cause is a
-        // frame that went inactive because the app created from an input handler.
-        // Retry exactly once on the next live frame rather than looping.
-        return new Promise((resolve) => {
-            this.pendingCreates.push({
-                pose: targetPose,
-                label,
-                space: targetSpace,
-                resolve,
-                retried: true,
-            });
-        });
+        // frame that went inactive mid-call. Retry exactly once on the next live
+        // frame rather than looping.
+        return this.queueCreate(targetPose, label, targetSpace, targetSpace, true);
+    }
+    /**
+     * Resolves a space request to a live XRSpace.
+     *
+     * @param request - A space, a reference space name, or null for the space
+     *     the scene is currently drawn in.
+     * @returns The space, or undefined when the platform has no such space.
+     */
+    resolveSpace(request) {
+        if (request === null)
+            return this.referenceSpace();
+        if (typeof request !== 'string')
+            return request;
+        return this.referenceSpaceCache?.getCached(request);
+    }
+    /**
+     * Says once per session that a requested anchor space was unavailable.
+     *
+     * @param requested - The space that could not be resolved.
+     */
+    warnSpaceDowngrade(requested) {
+        if (this.warnedSpaceDowngrade)
+            return;
+        this.warnedSpaceDowngrade = true;
+        console.warn(`[anchors] ${String(requested)} is unavailable; anchoring against the ` +
+            'scene reference space instead');
     }
     /**
      * Runs queued creations against a live frame.
@@ -18408,8 +18497,16 @@ class AnchorManager extends Script {
     async flushPendingCreates(frame) {
         if (this.pendingCreates.length === 0)
             return;
+        if (typeof frame.createAnchor !== 'function') {
+            // The platform cannot make anchors at all, so waiting for a better frame
+            // would leave every caller hanging on a promise that never settles.
+            for (const pending of this.pendingCreates.splice(0)) {
+                pending.resolve(null);
+            }
+            return;
+        }
         for (const pending of this.pendingCreates.splice(0)) {
-            pending.resolve(await this.createOnFrame(frame, pending.pose, pending.label, pending.space));
+            pending.resolve(await this.createResolved(frame, pending.pose, pending.label, pending.poseSpace, pending.anchorSpace, pending.retried));
         }
     }
     /**
@@ -18518,11 +18615,12 @@ class AnchorManager extends Script {
         if (this.capability === 'simulated') {
             return records.map((record) => this.restoreSimulated(record));
         }
-        const restore = session?.restorePersistentAnchor;
+        const activeSession = session ?? this.currentSession();
+        const restore = activeSession?.restorePersistentAnchor;
         if (this.capability !== 'persistent' || typeof restore !== 'function') {
             return records.map((record) => ({ record, status: 'unsupported' }));
         }
-        return Promise.all(records.map((record) => this.restoreOne(record, session)));
+        return Promise.all(records.map((record) => this.restoreOne(record, activeSession)));
     }
     /**
      * Restores a single record.
@@ -18581,8 +18679,18 @@ class AnchorManager extends Script {
         const frame = this.renderer?.xr.getFrame();
         if (!frame || !space)
             return null;
-        const pose = frame.getPose(tracked.anchor.anchorSpace, space);
-        return pose ?? null;
+        try {
+            return frame.getPose(tracked.anchor.anchorSpace, space) ?? null;
+        }
+        catch (error) {
+            // Throws InvalidStateError when the anchor and the reference space
+            // belong to different sessions, which a caller holding a space across a
+            // session boundary can still reach. Recorded rather than swallowed, so
+            // it does not look like an untracked anchor.
+            this.lastError = error;
+            console.debug('[anchors] could not read pose for', id, error);
+            return null;
+        }
     }
     /**
      * Stops tracking an anchor and forgets any saved handle for it.
@@ -22304,7 +22412,7 @@ function loadSimulatorModule() {
  */
 class Core {
     get currentFrame() {
-        return this.renderer.xr.getFrame();
+        return this._renderer?.xr.getFrame();
     }
     /**
      * The WebGL renderer, created during {@link Core.init}. Reading it before
@@ -22823,6 +22931,11 @@ class Core {
         }
         const webXRRequiredFeatures = options.webxrRequiredFeatures;
         const webXROptionalFeatures = options.webxrOptionalFeatures;
+        // The space the scene is drawn in has to be granted, and an app that sets
+        // webxrOptionalFeatures itself would otherwise drop it and fail to start.
+        if (!webXROptionalFeatures.includes(options.referenceSpaceType)) {
+            webXROptionalFeatures.push(options.referenceSpaceType);
+        }
         // Use camera-access when the browser supports it.
         if (options.deviceCamera?.enabled) {
             webXROptionalFeatures.push('camera-access');
