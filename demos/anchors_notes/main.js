@@ -256,10 +256,7 @@ class AnchorNotesDemo extends xb.Script {
   whyNotSaved() {
     switch (this.anchors?.capability) {
       case 'session-only':
-        return (
-          'this browser has no way to save anchors, so it will be gone ' +
-          'on reload'
-        );
+        return 'created session-only anchor';
       case 'unsupported':
         return 'this browser has no anchor support';
       default: {

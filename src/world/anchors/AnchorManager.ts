@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import {XRReferenceSpaceCache} from '../../core/components/XRReferenceSpaceCache';
 import {Script} from '../../core/Script';
 import {WorldOptions} from '../WorldOptions';
 
@@ -58,6 +59,7 @@ export class AnchorManager extends Script {
   static dependencies = {
     options: WorldOptions,
     renderer: THREE.WebGLRenderer,
+    xrReferenceSpaceCache: XRReferenceSpaceCache,
   };
 
   /** What the current platform supports; refreshed each frame. */
@@ -75,7 +77,7 @@ export class AnchorManager extends Script {
   private store?: AnchorStore;
   private options!: WorldOptions;
   private renderer?: THREE.WebGLRenderer;
-  private currentFrame?: XRFrame;
+  private referenceSpaceCache?: XRReferenceSpaceCache;
   private warnedUnsupported = false;
   private readonly pendingCreates: Array<{
     pose: XRRigidTransform;
@@ -102,12 +104,15 @@ export class AnchorManager extends Script {
   override init({
     options,
     renderer,
+    xrReferenceSpaceCache,
   }: {
     options: WorldOptions;
     renderer?: THREE.WebGLRenderer;
+    xrReferenceSpaceCache?: XRReferenceSpaceCache;
   }) {
     this.options = options;
     this.renderer = renderer;
+    this.referenceSpaceCache = xrReferenceSpaceCache;
     this.store =
       this.injectedStore ??
       new LocalStorageAnchorStore(
@@ -130,7 +135,6 @@ export class AnchorManager extends Script {
       }
       return;
     }
-    this.currentFrame = frame;
     const probed = anchorCapability(frame.session, frame);
     this.capability =
       probed === 'unsupported' && this.options?.anchors.simulatorFallback
@@ -166,7 +170,6 @@ export class AnchorManager extends Script {
       }
     }
     this.anchors.clear();
-    this.currentFrame = undefined;
     this.capability = this.options?.anchors.simulatorFallback
       ? 'simulated'
       : 'unsupported';
@@ -180,42 +183,85 @@ export class AnchorManager extends Script {
    *
    * @param pose - Pose for the new anchor.
    * @param label - Label carried through persistence.
-   * @param space - Space the pose is expressed in. Defaults to the frame's
-   *     own reference space when the platform provides one.
+   * @param poseSpace - Space the pose is expressed in. Defaults to the frame's reference space.
+   * @param anchorSpace - Space to anchor against. Defaults to 'bounded-floor'.
    * @returns The tracked anchor, or null when it could not be created.
    */
   async create(
     pose: XRRigidTransform,
     label: string,
-    space?: XRSpace
+    poseSpace: XRSpace | XRReferenceSpaceType | null = null,
+    anchorSpace: XRSpace | XRReferenceSpaceType = 'bounded-floor'
   ): Promise<TrackedAnchor | null> {
     if (this.capability === 'simulated') {
       return this.createSimulated(pose, label);
     }
-    const frame = this.currentFrame;
+    const frame = this.renderer?.xr.getFrame();
     if (!frame || typeof frame.createAnchor !== 'function') {
       return null;
     }
-    // An XRSession is not an XRSpace. The two are interchangeable to the type
-    // checker only because XRSpace is declared as an empty interface, so
-    // passing a session here would compile and then misplace every anchor.
-    const anchorSpace = space ?? this.referenceSpace();
-    if (!anchorSpace) {
+
+    const targetSpace =
+      typeof anchorSpace === 'string'
+        ? this.referenceSpaceCache?.getCached(anchorSpace)
+        : anchorSpace;
+    if (!targetSpace) {
       console.warn(
-        '[anchors] no reference space available; cannot create an anchor'
+        '[anchors] target anchorSpace could not be resolved:',
+        anchorSpace
       );
       return null;
     }
-    const immediate = await this.createOnFrame(frame, pose, label, anchorSpace);
+
+    const sourceSpace =
+      poseSpace === null
+        ? this.referenceSpace()
+        : typeof poseSpace === 'string'
+          ? this.referenceSpaceCache?.getCached(poseSpace)
+          : poseSpace;
+    if (!sourceSpace) {
+      console.warn(
+        '[anchors] source poseSpace could not be resolved:',
+        poseSpace
+      );
+      return null;
+    }
+
+    const targetPose =
+      sourceSpace === targetSpace || !this.referenceSpaceCache
+        ? pose
+        : this.referenceSpaceCache.convertPose(
+            pose,
+            sourceSpace,
+            targetSpace,
+            frame
+          );
+    if (!targetPose) {
+      console.warn(
+        '[anchors] could not convert pose to anchor space',
+        pose,
+        sourceSpace,
+        targetSpace
+      );
+      return null;
+    }
+
+    const immediate = await this.createOnFrame(
+      frame,
+      targetPose,
+      label,
+      targetSpace
+    );
     if (immediate) return immediate;
+
     // Only a rejected createAnchor reaches here, and the usual cause is a
     // frame that went inactive because the app created from an input handler.
     // Retry exactly once on the next live frame rather than looping.
     return new Promise((resolve) => {
       this.pendingCreates.push({
-        pose,
+        pose: targetPose,
         label,
-        space: anchorSpace,
+        space: targetSpace,
         resolve,
         retried: true,
       });
@@ -256,10 +302,9 @@ export class AnchorManager extends Script {
   ): Promise<TrackedAnchor | null> {
     // The retry path may be handed a different frame from the one create()
     // checked, so verify support here rather than relying on the caller.
-    const createAnchor = frame.createAnchor;
-    if (typeof createAnchor !== 'function') return null;
+    if (typeof frame.createAnchor !== 'function') return null;
     try {
-      const anchor = await createAnchor.call(frame, pose, space);
+      const anchor = await frame.createAnchor(pose, space);
       if (!anchor) return null;
       const tracked: TrackedAnchor = {
         id: `anchor-${nextAnchorId++}`,
@@ -335,7 +380,7 @@ export class AnchorManager extends Script {
    *
    * @returns One result per saved record, in stored order.
    */
-  async restoreAll(): Promise<AnchorRestoreResult[]> {
+  async restoreAll(session?: XRSession | null): Promise<AnchorRestoreResult[]> {
     // World can expose this child during its own init, one scene scan before
     // ScriptsManager initializes newly added children. Treat that brief state
     // as not ready; callers can retry once the capability changes.
@@ -345,7 +390,6 @@ export class AnchorManager extends Script {
     if (this.capability === 'simulated') {
       return records.map((record) => this.restoreSimulated(record));
     }
-    const session = this.currentFrame?.session;
     const restore = session?.restorePersistentAnchor;
     if (this.capability !== 'persistent' || typeof restore !== 'function') {
       return records.map((record) => ({record, status: 'unsupported'}));
@@ -397,7 +441,10 @@ export class AnchorManager extends Script {
    */
   getPose(id: string, referenceSpace?: XRReferenceSpace): XRPose | null {
     const tracked = this.anchors.get(id);
-    if (!tracked) return null;
+    if (!tracked) {
+      console.debug(`Anchor ${id} not tracked`);
+      return null;
+    }
     // Simulated anchors have no tracked space to resolve against, and there is
     // no frame at all on desktop, so read the pose they are holding.
     if (SimulatorAnchor.isSimulatorAnchor(tracked.anchor)) {
@@ -406,21 +453,13 @@ export class AnchorManager extends Script {
       ).pose;
       return {transform: {position, orientation}} as unknown as XRPose;
     }
-    const frame = this.currentFrame;
     // The manager already holds the renderer, so callers should not have to
     // thread a reference space through every read.
     const space = referenceSpace ?? this.referenceSpace();
+    const frame = this.renderer?.xr.getFrame();
     if (!frame || !space) return null;
-    try {
-      // An XRFrame is only valid inside its own callback, so reading a pose
-      // from outside the frame loop throws rather than returning nothing.
-      return (
-        frame.getPose(tracked.anchor.anchorSpace, space as XRReferenceSpace) ??
-        null
-      );
-    } catch {
-      return null;
-    }
+    const pose = frame.getPose(tracked.anchor.anchorSpace, space);
+    return pose ?? null;
   }
 
   /**
@@ -537,11 +576,7 @@ export class AnchorManager extends Script {
    * @returns The session, or undefined.
    */
   private currentSession(): XRSession | undefined {
-    return (
-      this.currentFrame?.session ??
-      this.renderer?.xr.getSession?.() ??
-      undefined
-    );
+    return this.renderer?.xr.getSession?.() ?? undefined;
   }
 
   /**
@@ -612,7 +647,6 @@ export class AnchorManager extends Script {
       }
     }
     this.anchors.clear();
-    this.currentFrame = undefined;
   }
 
   /**

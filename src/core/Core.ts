@@ -48,6 +48,7 @@ import {Options, ReticleOptions} from './Options';
 import {Script} from './Script';
 import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
+import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
 
 export type CoreLifecycleState =
@@ -81,6 +82,10 @@ export class Core {
    * Component responsible for waiting for the next frame.
    */
   waitFrame = new WaitFrame();
+  /**
+   * Caches WebXR reference spaces for the active session.
+   */
+  xrReferenceSpaceCache = new XRReferenceSpaceCache();
   /**
    * Registry used for dependency injection on existing subsystems.
    */
@@ -168,7 +173,9 @@ export class Core {
   poseEstimation?: PoseEstimator;
   gestureRecognition?: GestureRecognition;
   transition?: XRTransition;
-  currentFrame?: XRFrame;
+  get currentFrame() {
+    return this.renderer.xr.getFrame();
+  }
   scriptsManager = new ScriptsManager(async (script: Script) => {
     await callInitWithDependencyInjection(script, this.registry, this);
     if (this.physics) {
@@ -293,6 +300,7 @@ export class Core {
     this.registry.register(this);
     this.registry.register(this.waitFrame);
     this.registry.register(this.screenshotSynthesizer);
+    this.registry.register(this.xrReferenceSpaceCache);
     this.registry.register(this.simulationTimer);
     this.registry.register(this.scene);
     this.registry.register(this.timer);
@@ -746,7 +754,6 @@ export class Core {
       return;
     }
 
-    this.currentFrame = frame;
     this.manualStepTime = Math.max(this.manualStepTime, time);
     if (!this.isSteppingFrame) {
       this.simulationTimer.update(time, this.timer.getTimescale());
@@ -831,6 +838,7 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    this.xrReferenceSpaceCache.onXRSessionStart(session);
     if (this.options.deviceCamera?.enabled) {
       await this.deviceCamera!.init();
       if (!this.isLifecycleActive()) return;
