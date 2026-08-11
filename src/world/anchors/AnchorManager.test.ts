@@ -1174,3 +1174,50 @@ describe('AnchorManager without a live frame', () => {
     await expect(manager.create(POSE, 'sofa')).resolves.toBeNull();
   });
 });
+
+describe('AnchorManager anchor space fallback', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+  });
+
+  it('still anchors when bounded-floor is not granted', async () => {
+    // bounded-floor needs a configured play space and is absent on plenty of
+    // hardware. Refusing there would be worse than the behaviour it replaced.
+    const env = strictEnv({cached: ['local-floor']});
+    const manager = env.make();
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa');
+    env.tick(manager);
+
+    await expect(promise).resolves.not.toBeNull();
+    expect(env.frame.createAnchor).toHaveBeenCalled();
+  });
+
+  it('anchors against the scene space when no cache was injected', async () => {
+    const env = strictEnv();
+    const options = new WorldOptions();
+    const manager = new AnchorManager(memoryStore());
+    manager.init({options, renderer: env.renderer});
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa');
+    env.tick(manager);
+
+    await expect(promise).resolves.not.toBeNull();
+  });
+
+  it('refuses rather than guessing when a named poseSpace is missing', async () => {
+    // The caller is asserting what the pose means, so substituting another
+    // space would put the anchor somewhere else entirely.
+    const env = strictEnv();
+    const manager = env.make();
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa', 'unbounded');
+    env.tick(manager);
+
+    await expect(promise).resolves.toBeNull();
+  });
+});

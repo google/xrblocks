@@ -79,6 +79,7 @@ export class AnchorManager extends Script {
   private renderer?: THREE.WebGLRenderer;
   private referenceSpaceCache?: XRReferenceSpaceCache;
   private warnedUnsupported = false;
+  private warnedSpaceDowngrade = false;
   private readonly pendingCreates: Array<{
     pose: XRRigidTransform;
     label: string;
@@ -174,6 +175,7 @@ export class AnchorManager extends Script {
     this.capability = this.options?.anchors.simulatorFallback
       ? 'simulated'
       : 'unsupported';
+    this.warnedSpaceDowngrade = false;
     for (const pending of this.pendingCreates.splice(0)) {
       pending.resolve(null);
     }
@@ -268,24 +270,24 @@ export class AnchorManager extends Script {
     anchorSpace: XRSpace | XRReferenceSpaceType,
     retried: boolean
   ): Promise<TrackedAnchor | null> {
-    const targetSpace =
-      typeof anchorSpace === 'string'
-        ? this.referenceSpaceCache?.getCached(anchorSpace)
-        : anchorSpace;
+    // Anchoring against a space the platform did not grant is not a reason to
+    // refuse. bounded-floor needs a configured play space and is absent on
+    // plenty of hardware, so fall back to the space the scene is drawn in and
+    // say so once, rather than placing nothing at all.
+    let targetSpace = this.resolveSpace(anchorSpace);
     if (!targetSpace) {
-      console.warn(
-        '[anchors] target anchorSpace could not be resolved:',
-        anchorSpace
-      );
+      targetSpace = this.referenceSpace();
+      this.warnSpaceDowngrade(anchorSpace);
+    }
+    if (!targetSpace) {
+      console.warn('[anchors] no reference space available; cannot anchor');
       return null;
     }
 
-    const sourceSpace =
-      poseSpace === null
-        ? this.referenceSpace()
-        : typeof poseSpace === 'string'
-          ? this.referenceSpaceCache?.getCached(poseSpace)
-          : poseSpace;
+    // A named pose space is different: the caller is asserting what the pose
+    // means, so guessing another one would put the anchor somewhere else
+    // entirely. Only the unspecified default falls back.
+    const sourceSpace = this.resolveSpace(poseSpace);
     if (!sourceSpace) {
       console.warn(
         '[anchors] source poseSpace could not be resolved:',
@@ -294,15 +296,20 @@ export class AnchorManager extends Script {
       return null;
     }
 
-    const targetPose =
-      sourceSpace === targetSpace || !this.referenceSpaceCache
-        ? pose
-        : this.referenceSpaceCache.convertPose(
-            pose,
-            sourceSpace,
-            targetSpace,
-            frame
-          );
+    let targetPose: XRRigidTransform | null = pose;
+    if (sourceSpace !== targetSpace) {
+      if (!this.referenceSpaceCache) {
+        // Using the pose unconverted here would silently misplace the anchor.
+        console.warn('[anchors] no reference space cache; cannot convert pose');
+        return null;
+      }
+      targetPose = this.referenceSpaceCache.convertPose(
+        pose,
+        sourceSpace,
+        targetSpace,
+        frame
+      );
+    }
     if (!targetPose) {
       console.warn(
         '[anchors] could not convert pose to anchor space',
@@ -325,6 +332,35 @@ export class AnchorManager extends Script {
     // frame that went inactive mid-call. Retry exactly once on the next live
     // frame rather than looping.
     return this.queueCreate(targetPose, label, targetSpace, targetSpace, true);
+  }
+
+  /**
+   * Resolves a space request to a live XRSpace.
+   *
+   * @param request - A space, a reference space name, or null for the space
+   *     the scene is currently drawn in.
+   * @returns The space, or undefined when the platform has no such space.
+   */
+  private resolveSpace(
+    request: XRSpace | XRReferenceSpaceType | null
+  ): XRSpace | undefined {
+    if (request === null) return this.referenceSpace();
+    if (typeof request !== 'string') return request;
+    return this.referenceSpaceCache?.getCached(request);
+  }
+
+  /**
+   * Says once per session that a requested anchor space was unavailable.
+   *
+   * @param requested - The space that could not be resolved.
+   */
+  private warnSpaceDowngrade(requested: XRSpace | XRReferenceSpaceType): void {
+    if (this.warnedSpaceDowngrade) return;
+    this.warnedSpaceDowngrade = true;
+    console.warn(
+      `[anchors] ${String(requested)} is unavailable; anchoring against the ` +
+        'scene reference space instead'
+    );
   }
 
   /**
