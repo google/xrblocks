@@ -66,10 +66,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       this.xrModeSupported = true;
       this.sessionOptions = {
         ...this.sessionInit,
-        optionalFeatures: [
-          'local-floor',
-          ...(this.sessionInit.optionalFeatures || []),
-        ],
+        optionalFeatures: this.sessionInit.optionalFeatures || [],
       };
 
       // Fire the 'ready' event with the sessionOptions in the data payload

@@ -48,6 +48,7 @@ import {Options, ReticleOptions} from './Options';
 import {Script} from './Script';
 import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
+import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
 
 export type CoreLifecycleState =
@@ -59,6 +60,7 @@ export type CoreLifecycleState =
 
 type SimulatorModule = typeof import('../simulator/Simulator.js');
 type SimulatorLoader = () => Promise<SimulatorModule>;
+const EPSILON = 1e-9;
 
 function loadSimulatorModule(): Promise<SimulatorModule> {
   return import('../simulator/Simulator.js');
@@ -80,6 +82,10 @@ export class Core {
    * Component responsible for waiting for the next frame.
    */
   waitFrame = new WaitFrame();
+  /**
+   * Caches WebXR reference spaces for the active session.
+   */
+  xrReferenceSpaceCache = new XRReferenceSpaceCache();
   /**
    * Registry used for dependency injection on existing subsystems.
    */
@@ -122,6 +128,7 @@ export class Core {
   private reticlePresenter = new ReticlePresenter(this.reticleOptions);
   private uiRenderer!: UIRenderer;
   private physicsInterval?: ReturnType<typeof setInterval>;
+  private manualPhysicsAccumulatorMs = 0;
   private rendererContainer?: HTMLDivElement;
   private lifecycleState: CoreLifecycleState = 'new';
   private initializationPromise?: Promise<void>;
@@ -166,7 +173,9 @@ export class Core {
   poseEstimation?: PoseEstimator;
   gestureRecognition?: GestureRecognition;
   transition?: XRTransition;
-  currentFrame?: XRFrame;
+  get currentFrame() {
+    return this.renderer.xr.getFrame();
+  }
   scriptsManager = new ScriptsManager(async (script: Script) => {
     await callInitWithDependencyInjection(script, this.registry, this);
     if (this.physics) {
@@ -203,6 +212,10 @@ export class Core {
     return this._isPaused;
   }
 
+  get elapsedTime() {
+    return this.simulationTimer.getElapsedMs() / 1000;
+  }
+
   /** Current state of this terminal Core lifetime. */
   get lifecycle(): CoreLifecycleState {
     return this.lifecycleState;
@@ -226,11 +239,20 @@ export class Core {
 
     this.isSteppingFrame = true;
     try {
+      const scaledDtMs = dtMs * this.timer.getTimescale();
       this.simulationTimer.step(dtMs, this.timer.getTimescale());
       this.manualStepTime += dtMs;
       this.update(this.manualStepTime, undefined as unknown as XRFrame);
       if (this.physics) {
-        this.physicsStep();
+        this.manualPhysicsAccumulatorMs += scaledDtMs;
+        const physicsStepMs = this.physics.timestep * 1000;
+        while (this.manualPhysicsAccumulatorMs >= physicsStepMs - EPSILON) {
+          this.physicsStep();
+          this.manualPhysicsAccumulatorMs = Math.max(
+            0,
+            this.manualPhysicsAccumulatorMs - physicsStepMs
+          );
+        }
       }
     } finally {
       this.isSteppingFrame = false;
@@ -278,6 +300,7 @@ export class Core {
     this.registry.register(this);
     this.registry.register(this.waitFrame);
     this.registry.register(this.screenshotSynthesizer);
+    this.registry.register(this.xrReferenceSpaceCache);
     this.registry.register(this.simulationTimer);
     this.registry.register(this.scene);
     this.registry.register(this.timer);
@@ -600,6 +623,9 @@ export class Core {
     if (options.layers.enabled) {
       webXROptionalFeatures.push('layers');
     }
+    if (options.world.anchors.enabled) {
+      webXROptionalFeatures.push('anchors');
+    }
 
     // Sets up lighting.
     if (options.lighting.enabled) {
@@ -734,7 +760,6 @@ export class Core {
       return;
     }
 
-    this.currentFrame = frame;
     this.manualStepTime = Math.max(this.manualStepTime, time);
     if (!this.isSteppingFrame) {
       this.simulationTimer.update(time, this.timer.getTimescale());
@@ -819,6 +844,7 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    this.xrReferenceSpaceCache.onXRSessionStart(session);
     if (this.options.deviceCamera?.enabled) {
       await this.deviceCamera!.init();
       if (!this.isLifecycleActive()) return;
