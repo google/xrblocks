@@ -130,3 +130,32 @@ describe('XRReferenceSpaceCache', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('XRReferenceSpaceCache session hygiene', () => {
+  it('ignores a reference space that resolves after the session ended', async () => {
+    // requestReferenceSpace settles asynchronously, so a slow one can land
+    // after the session is gone and leave a dead space for the next session.
+    const cache = new XRReferenceSpaceCache();
+    let resolveLate: (space: XRReferenceSpace) => void = () => {};
+    const listeners: Record<string, () => void> = {};
+    const session = {
+      requestReferenceSpace: (type: string) =>
+        type === 'local'
+          ? new Promise<XRReferenceSpace>((r) => {
+              resolveLate = r;
+            })
+          : Promise.reject(new Error('unavailable')),
+      addEventListener: (event: string, fn: () => void) => {
+        listeners[event] = fn;
+      },
+      removeEventListener: vi.fn(),
+    } as unknown as XRSession;
+
+    cache.onXRSessionStart(session);
+    listeners['end']?.();
+    resolveLate({__late: true} as unknown as XRReferenceSpace);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(cache.getCached('local')).toBeUndefined();
+  });
+});

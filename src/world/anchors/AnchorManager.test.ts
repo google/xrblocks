@@ -606,15 +606,19 @@ describe('AnchorManager.getPose', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  it('returns null instead of throwing on a stale frame', async () => {
+  it('returns null instead of throwing when the space is from another session', async () => {
     const {manager} = makeManager();
     const env = fakeEnv();
     manager.update(0, env.frame);
     const tracked = await manager.create(POSE, 'sofa');
+    // getPose throws InvalidStateError when the anchor and the reference
+    // space belong to different sessions, which a caller holding a space
+    // across a session boundary can still reach.
     (env.frame as unknown as {getPose: unknown}).getPose = () => {
       throw new Error('InvalidStateError');
     };
-    expect(() => manager.getPose(tracked!.id, REF_SPACE)).toThrow();
+    expect(manager.getPose(tracked!.id, REF_SPACE)).toBeNull();
+    expect(manager.lastError).toBeInstanceOf(Error);
   });
 
   it('returns null for an unknown id', () => {
@@ -1073,5 +1077,168 @@ describe('AnchorManager releaseAllPlatformHandles', () => {
     const {manager} = makeManager();
     manager.update(0, fakeEnv({canDeletePersistent: false}).frame);
     expect(await manager.releaseAllPlatformHandles()).toBe(0);
+  });
+});
+
+/**
+ * Renderer double that models three.js honestly: a frame exists only while an
+ * animation callback is running. The shared double above keeps one alive at
+ * all times, which is what let the no-live-frame path regress unnoticed.
+ */
+function strictEnv(opts: {cached?: XRReferenceSpaceType[]} = {}) {
+  const session = {
+    restorePersistentAnchor: vi.fn(async () => fakeAnchor('uuid-a')),
+    deletePersistentAnchor: vi.fn(async () => {}),
+  } as unknown as XRSession;
+  const frame = {
+    createAnchor: vi.fn(async () => fakeAnchor('uuid-a')),
+    getPose: vi.fn(() => ({
+      transform: {
+        matrix: new Float32Array([
+          1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+        ]),
+      },
+    })),
+    session,
+  } as unknown as XRFrame;
+
+  const sceneSpace = {__scene: true} as unknown as XRReferenceSpace;
+  const cache = new XRReferenceSpaceCache();
+  for (const type of opts.cached ?? ['bounded-floor']) {
+    (cache as unknown as {spaces: Map<string, unknown>}).spaces.set(type, {
+      __named: type,
+    });
+  }
+
+  let live: XRFrame | null = null;
+  const renderer = {
+    xr: {
+      getReferenceSpace: () => sceneSpace,
+      getSession: () => session,
+      getFrame: () => live,
+    },
+  } as unknown as import('three').WebGLRenderer;
+
+  return {
+    session,
+    frame,
+    cache,
+    renderer,
+    make(store = memoryStore()) {
+      const options = new WorldOptions();
+      options.anchors.enablePersistence();
+      const manager = new AnchorManager(store);
+      manager.init({options, renderer, xrReferenceSpaceCache: cache});
+      return manager;
+    },
+    /** Runs one animation frame, during which a frame is live. */
+    tick(manager: AnchorManager) {
+      live = frame;
+      manager.update(0, frame);
+      live = null;
+    },
+  };
+}
+
+describe('AnchorManager without a live frame', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+  });
+
+  it('creates from a click handler once the next frame arrives', async () => {
+    // three.js clears its frame at the end of the animation callback, so an
+    // app dropping an anchor from a button has no live frame at that moment.
+    const env = strictEnv();
+    const manager = env.make();
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa');
+    env.tick(manager);
+
+    expect(await promise).not.toBeNull();
+    expect(env.frame.createAnchor).toHaveBeenCalled();
+  });
+
+  it('resolves queued creates as null when the session ends first', async () => {
+    const env = strictEnv();
+    const manager = env.make();
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa');
+    manager.onSessionEnded();
+
+    await expect(promise).resolves.toBeNull();
+  });
+
+  it('does not queue forever when the platform has no anchors', async () => {
+    const env = strictEnv();
+    const manager = env.make();
+    // No tick, so capability is still the initial unsupported.
+    await expect(manager.create(POSE, 'sofa')).resolves.toBeNull();
+  });
+});
+
+describe('AnchorManager anchor space fallback', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+  });
+
+  it('still anchors when bounded-floor is not granted', async () => {
+    // bounded-floor needs a configured play space and is absent on plenty of
+    // hardware. Refusing there would be worse than the behaviour it replaced.
+    const env = strictEnv({cached: ['local-floor']});
+    const manager = env.make();
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa');
+    env.tick(manager);
+
+    await expect(promise).resolves.not.toBeNull();
+    expect(env.frame.createAnchor).toHaveBeenCalled();
+  });
+
+  it('anchors against the scene space when no cache was injected', async () => {
+    const env = strictEnv();
+    const options = new WorldOptions();
+    const manager = new AnchorManager(memoryStore());
+    manager.init({options, renderer: env.renderer});
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa');
+    env.tick(manager);
+
+    await expect(promise).resolves.not.toBeNull();
+  });
+
+  it('refuses rather than guessing when a named poseSpace is missing', async () => {
+    // The caller is asserting what the pose means, so substituting another
+    // space would put the anchor somewhere else entirely.
+    const env = strictEnv();
+    const manager = env.make();
+    env.tick(manager);
+
+    const promise = manager.create(POSE, 'sofa', 'unbounded');
+    env.tick(manager);
+
+    await expect(promise).resolves.toBeNull();
+  });
+});
+
+describe('AnchorManager.restoreAll without an explicit session', () => {
+  it('falls back to the session the renderer holds', async () => {
+    // AnchoredObjects and both anchor demos call restoreAll() with no
+    // arguments, which is the shape this has to keep working for.
+    const env = strictEnv();
+    const manager = env.make(
+      memoryStore([{uuid: 'uuid-a', label: 'sofa', createdAt: 1}])
+    );
+    env.tick(manager);
+
+    const results = await manager.restoreAll();
+
+    expect(results.map((r) => r.status)).toEqual(['restored']);
+    expect(env.session.restorePersistentAnchor).toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ const tempScale = new THREE.Vector3(1, 1, 1);
  */
 export class XRReferenceSpaceCache {
   private spaces = new Map<XRReferenceSpaceType, XRReferenceSpace>();
+  private session: XRSession | null = null;
 
   /**
    * Called when an XR session starts to reset the cache and request all reference spaces.
@@ -26,12 +27,24 @@ export class XRReferenceSpaceCache {
    */
   onXRSessionStart(session: XRSession): void {
     this.spaces.clear();
-    session.addEventListener('end', () => this.spaces.clear(), {once: true});
+    this.session = session;
+    session.addEventListener(
+      'end',
+      () => {
+        if (this.session === session) this.session = null;
+        this.spaces.clear();
+      },
+      {once: true}
+    );
 
     for (const type of REFERENCE_SPACE_TYPES) {
       session
         .requestReferenceSpace(type)
         .then((space) => {
+          // These settle after the session may already have ended, and a late
+          // write would leave a dead session's space in the cache for the next
+          // one to pick up.
+          if (this.session !== session) return;
           this.spaces.set(type, space);
           console.debug(
             `[XRReferenceSpaceCache] Cached reference space "${type}"`
