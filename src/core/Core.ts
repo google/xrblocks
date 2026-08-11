@@ -564,8 +564,13 @@ export class Core {
       this.context.setDeviceCamera(this.deviceCamera);
     }
 
-    const webXRRequiredFeatures: string[] = options.webxrRequiredFeatures;
-    const webXROptionalFeatures: string[] = options.webxrOptionalFeatures;
+    const webXRRequiredFeatures: string[] = [...options.webxrRequiredFeatures];
+    const webXROptionalFeatures: string[] = [...options.webxrOptionalFeatures];
+    // The space the scene is drawn in has to be granted, and an app that sets
+    // webxrOptionalFeatures itself would otherwise drop it and fail to start.
+    if (!webXROptionalFeatures.includes(options.referenceSpaceType)) {
+      webXROptionalFeatures.push(options.referenceSpaceType);
+    }
     // Use camera-access when the browser supports it.
     if (options.deviceCamera?.enabled) {
       webXROptionalFeatures.push('camera-access');
