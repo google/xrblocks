@@ -1,3 +1,4 @@
+import type * as THREE from 'three';
 import * as xb from 'xrblocks';
 export interface KeyboardOptions extends Omit<xb.UIPanelOptions, 'children'> {
     value?: string;
@@ -10,7 +11,7 @@ export interface KeyboardOptions extends Omit<xb.UIPanelOptions, 'children'> {
  * The parent card owns world placement and lifecycle. The keyboard owns text
  * input state, modifier state, layout, and key interaction feedback.
  */
-export declare class Keyboard extends xb.UIPanel {
+export declare class Keyboard<TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap> extends xb.UIPanel<TEventMap> {
     onValueChange?: (value: string) => void;
     onSubmit?: (value: string) => void;
     private _value;
