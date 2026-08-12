@@ -8,7 +8,9 @@ export interface UIImageOptions extends UIElementOptions {
 }
 
 /** URL-backed or caller-texture-backed image content. */
-export class UIImage extends UIElement {
+export class UIImage<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends UIElement<TEventMap> {
   name = 'UIImage';
   readonly ariaLabel?: string;
   private _src: string | THREE.Texture;

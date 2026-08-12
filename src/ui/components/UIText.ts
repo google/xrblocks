@@ -1,3 +1,5 @@
+import type * as THREE from 'three';
+
 import {UIElement, type UIElementOptions} from '../UIElement';
 
 export interface UITextOptions extends UIElementOptions {
@@ -5,7 +7,9 @@ export interface UITextOptions extends UIElementOptions {
 }
 
 /** Text content in a card or overlay layout. */
-export class UIText extends UIElement {
+export class UIText<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends UIElement<TEventMap> {
   name = 'UIText';
   private _text: string;
 
