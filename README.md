@@ -207,9 +207,9 @@ and the
 [Prettier extension](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode),
 then set Prettier as your default formatter.
 
-#### Dev tools
+#### Devtools
 
-For additional agent-first development tools including UI visualizers, 3d model visualizers, CLI based embodied XR Blocks runners, and automatic agent controls, see [XR Blocks Dev Tools](https://github.com/xrblocks/xrblocks-devtools).
+For additional agent-first development tools including UI visualizers, 3d model visualizers, CLI based embodied XR Blocks runners, and automatic agent controls, see [XR Blocks Devtools](https://github.com/xrblocks/xrblocks-devtools).
 
 #### Notice
 
