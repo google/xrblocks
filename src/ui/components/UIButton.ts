@@ -13,7 +13,9 @@ export interface UIButtonOptions extends UIElementOptions {
 }
 
 /** A semantic button that activates after a valid captured press and release. */
-export class UIButton extends UIElement {
+export class UIButton<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends UIElement<TEventMap> {
   name = 'UIButton';
   onClick?: () => void;
   private _label?: string;

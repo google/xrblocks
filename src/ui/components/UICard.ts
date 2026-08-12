@@ -1,3 +1,5 @@
+import type * as THREE from 'three';
+
 import type {ManipulationOptions} from '../../interaction/manipulation/ManipulationTypes';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {type UIAppearance, validateUIAppearance} from '../UIAppearance';
@@ -26,7 +28,9 @@ export interface UICardOptions extends UIElementOptions {
 }
 
 /** The only world-transform root in a spatial UI tree. */
-export class UICard extends UIElement {
+export class UICard<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends UIElement<TEventMap> {
   name = 'UICard';
   readonly pixelSize: number;
   readonly anchorX: UICardAnchorX;
