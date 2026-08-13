@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import {
+  DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT,
   DEFAULT_FACE_CAMERA_SMOOTHING,
   faceCameraSlerpAlpha,
 } from '../../../utils/FaceCameraMath';
@@ -32,8 +33,12 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     if (
       options.faceCamera &&
       ((options.mode !== undefined &&
+        options.mode !== 'capsule' &&
         options.mode !== 'cylindrical' &&
         options.mode !== 'spherical') ||
+        (options.capsuleHalfHeight !== undefined &&
+          (!Number.isFinite(options.capsuleHalfHeight) ||
+            options.capsuleHalfHeight < 0)) ||
         (options.smoothing !== undefined &&
           (!Number.isFinite(options.smoothing) || options.smoothing < 0)))
     ) {
@@ -82,7 +87,9 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
           worldPosition,
           this.camera?.getWorldPosition(new THREE.Vector3()),
           parent?.getWorldQuaternion(new THREE.Quaternion()),
-          baseline.options.mode
+          baseline.options.mode,
+          baseline.options.capsuleHalfHeight ??
+            DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT
         )
       : undefined;
     const rotationAlpha = this.timer

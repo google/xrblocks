@@ -188,6 +188,11 @@ translate as the surface action. `UICard` makes translation face the camera and
 can display an edge. `ModelViewer` enables move, Y-axis rotate, and scale with
 its own private interaction proxies.
 
+Face-camera translation uses `mode: 'capsule'` by default. It keeps an object
+upright within `0.25` meters above or below the camera, then tilts it toward the
+viewer. Set `capsuleHalfHeight` to change that region, or select `cylindrical`
+or `spherical` mode explicitly.
+
 Use a handle when one surface must select a specific action:
 
 ```js
