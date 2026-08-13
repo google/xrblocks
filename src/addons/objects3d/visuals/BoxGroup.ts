@@ -127,12 +127,18 @@ export function buildBoxGroup(
     })
   );
   ghostLines.renderOrder = 1;
+  // Display-only, like the label sprite below. Critically, THREE.Line raycast
+  // uses raycaster.params.Line.threshold, which defaults to 1 METER -- without
+  // this opt-out each box is an invisible hit volume inflated 1 m around its
+  // edges, stealing pointer rays from everything behind it.
+  ghostLines.raycast = () => {};
   group.add(ghostLines);
   const lines = new THREE.LineSegments(
     edges,
     new THREE.LineBasicMaterial({color, transparent: true, opacity: 0.95})
   );
   lines.renderOrder = 2;
+  lines.raycast = () => {}; // same 1 m Line-threshold trap as ghostLines above
   group.add(lines);
   const labelSprite = makeLabelSprite(label, color);
   labelSprite.position.set(0, obb.size.y / 2 + 0.06, 0);
