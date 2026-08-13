@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid a77fb51
- * @builddate 2026-08-13T00:42:19.806Z
+ * @commitid 1f45056
+ * @builddate 2026-08-13T18:18:19.676Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7711,16 +7711,20 @@ const RIGHT = Object.freeze(new THREE.Vector3(1, 0, 0));
 const ZERO_VECTOR3 = Object.freeze(new THREE.Vector3(0, 0, 0));
 
 const DEFAULT_FACE_CAMERA_SMOOTHING = 0.1;
+const DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT = 0.25;
 function faceCameraSlerpAlpha(smoothing, deltaSeconds) {
     return 1 - Math.exp(-smoothing * deltaSeconds * 60);
 }
 /** Computes the local rotation that makes an object face the camera. */
-function faceCameraQuaternion(worldPosition, cameraPosition, parentWorldQuaternion, mode = 'cylindrical', result = new THREE.Quaternion(), scratch) {
+function faceCameraQuaternion(worldPosition, cameraPosition, parentWorldQuaternion, mode = 'capsule', capsuleHalfHeight = DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT, result = new THREE.Quaternion(), scratch) {
     if (!cameraPosition)
         return undefined;
     const target = scratch?.target.copy(cameraPosition) ?? cameraPosition.clone();
     if (mode === 'cylindrical')
         target.y = worldPosition.y;
+    if (mode === 'capsule') {
+        target.y = THREE.MathUtils.clamp(worldPosition.y, cameraPosition.y - capsuleHalfHeight, cameraPosition.y + capsuleHalfHeight);
+    }
     if (target.distanceToSquared(worldPosition) < 1e-8)
         return undefined;
     const worldQuaternion = scratch?.worldQuaternion ?? new THREE.Quaternion();
@@ -7911,8 +7915,12 @@ class TranslateDriver {
         const options = session.config.translate ?? {};
         if (options.faceCamera &&
             ((options.mode !== undefined &&
+                options.mode !== 'capsule' &&
                 options.mode !== 'cylindrical' &&
                 options.mode !== 'spherical') ||
+                (options.capsuleHalfHeight !== undefined &&
+                    (!Number.isFinite(options.capsuleHalfHeight) ||
+                        options.capsuleHalfHeight < 0)) ||
                 (options.smoothing !== undefined &&
                     (!Number.isFinite(options.smoothing) || options.smoothing < 0)))) {
             return undefined;
@@ -7948,7 +7956,8 @@ class TranslateDriver {
         parent?.updateWorldMatrix(true, false);
         const localPosition = worldPositionToLocal(worldPosition, parent?.matrixWorld);
         const localQuaternion = baseline.options.faceCamera
-            ? faceCameraQuaternion(worldPosition, this.camera?.getWorldPosition(new THREE.Vector3()), parent?.getWorldQuaternion(new THREE.Quaternion()), baseline.options.mode)
+            ? faceCameraQuaternion(worldPosition, this.camera?.getWorldPosition(new THREE.Vector3()), parent?.getWorldQuaternion(new THREE.Quaternion()), baseline.options.mode, baseline.options.capsuleHalfHeight ??
+                DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT)
             : undefined;
         const rotationAlpha = this.timer
             ? faceCameraSlerpAlpha(baseline.options.smoothing ?? DEFAULT_FACE_CAMERA_SMOOTHING, this.timer.getDelta())
@@ -24824,7 +24833,9 @@ class FaceCamera extends TransformScript {
             matrix: new THREE.Matrix4(),
             worldQuaternion: new THREE.Quaternion(),
         };
-        this.mode = options.mode ?? 'cylindrical';
+        this.mode = options.mode ?? 'capsule';
+        this.capsuleHalfHeight =
+            options.capsuleHalfHeight ?? DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT;
         this.smoothing = options.smoothing ?? DEFAULT_FACE_CAMERA_SMOOTHING;
     }
     init({ camera, timer }) {
@@ -24838,7 +24849,7 @@ class FaceCamera extends TransformScript {
         object.getWorldPosition(this.worldPosition);
         this.camera.getWorldPosition(this.cameraPosition);
         const parentWorldQuaternion = object.parent?.getWorldQuaternion(this.parentWorldQuaternion);
-        const targetQuaternion = faceCameraQuaternion(this.worldPosition, this.cameraPosition, parentWorldQuaternion, this.mode, this.targetQuaternion, this.faceCameraScratch);
+        const targetQuaternion = faceCameraQuaternion(this.worldPosition, this.cameraPosition, parentWorldQuaternion, this.mode, this.capsuleHalfHeight, this.targetQuaternion, this.faceCameraScratch);
         if (!targetQuaternion)
             return;
         const alpha = faceCameraSlerpAlpha(this.smoothing, this.timer.getDelta());
