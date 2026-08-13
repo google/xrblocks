@@ -116,7 +116,9 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
         if (!isFiniteVector(localPosition)) return;
         session.owner.position.copy(localPosition);
         if (localQuaternion) {
-          session.owner.quaternion.slerp(localQuaternion, rotationAlpha);
+          const speed = delta.length();
+          const effectiveAlpha = Math.min(1, rotationAlpha + speed * 3.0);
+          session.owner.quaternion.slerp(localQuaternion, effectiveAlpha);
         }
       },
     };
