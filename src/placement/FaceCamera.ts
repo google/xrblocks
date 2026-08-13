@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import {
+  DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT,
   DEFAULT_FACE_CAMERA_SMOOTHING,
   faceCameraQuaternion,
   faceCameraSlerpAlpha,
@@ -12,6 +13,8 @@ export type {FaceCameraMode} from '../utils/FaceCameraMath';
 
 export interface FaceCameraOptions {
   mode?: FaceCameraMode;
+  /** Half-height of the upright region used by capsule mode, in meters. */
+  capsuleHalfHeight?: number;
   smoothing?: number;
 }
 
@@ -22,6 +25,7 @@ export class FaceCamera extends TransformScript {
   private camera?: THREE.Camera;
   private timer?: THREE.Timer;
   private readonly mode: FaceCameraMode;
+  private readonly capsuleHalfHeight: number;
   private readonly smoothing: number;
   private readonly worldPosition = new THREE.Vector3();
   private readonly cameraPosition = new THREE.Vector3();
@@ -35,7 +39,9 @@ export class FaceCamera extends TransformScript {
 
   constructor(options: FaceCameraOptions = {}) {
     super();
-    this.mode = options.mode ?? 'cylindrical';
+    this.mode = options.mode ?? 'capsule';
+    this.capsuleHalfHeight =
+      options.capsuleHalfHeight ?? DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT;
     this.smoothing = options.smoothing ?? DEFAULT_FACE_CAMERA_SMOOTHING;
   }
 
@@ -58,6 +64,7 @@ export class FaceCamera extends TransformScript {
       this.cameraPosition,
       parentWorldQuaternion,
       this.mode,
+      this.capsuleHalfHeight,
       this.targetQuaternion,
       this.faceCameraScratch
     );
