@@ -1,3 +1,5 @@
+import type * as THREE from 'three';
+
 import {type UIAppearance, validateUIAppearance} from '../UIAppearance';
 import {UIElement, type UIElementOptions} from '../UIElement';
 
@@ -6,7 +8,9 @@ export interface UIOverlayOptions extends UIElementOptions {
 }
 
 /** A view-space UI root. World transforms have no rendering effect. */
-export class UIOverlay extends UIElement {
+export class UIOverlay<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends UIElement<TEventMap> {
   name = 'UIOverlay';
   readonly appearance: UIAppearance;
 

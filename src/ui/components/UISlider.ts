@@ -1,3 +1,5 @@
+import type * as THREE from 'three';
+
 import type {SelectEvent} from '../../core/Script';
 import {
   registerSemanticControl,
@@ -18,7 +20,9 @@ export interface UISliderOptions extends UIElementOptions {
 }
 
 /** A horizontal slider with one exclusive captured interaction. */
-export class UISlider extends UIElement {
+export class UISlider<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends UIElement<TEventMap> {
   name = 'UISlider';
   readonly ariaLabel: string;
   onInput?: (value: number) => void;

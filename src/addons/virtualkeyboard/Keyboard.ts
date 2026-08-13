@@ -1,3 +1,4 @@
+import type * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 type CharacterKey = {
@@ -99,7 +100,9 @@ const CHARACTER_KEYS = new Map(
  * The parent card owns world placement and lifecycle. The keyboard owns text
  * input state, modifier state, layout, and key interaction feedback.
  */
-export class Keyboard extends xb.UIPanel {
+export class Keyboard<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends xb.UIPanel<TEventMap> {
   public onValueChange?: (value: string) => void;
   public onSubmit?: (value: string) => void;
 
