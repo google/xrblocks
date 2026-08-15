@@ -5,7 +5,8 @@ import {
   RenderContext,
   WithSignal,
 } from '@pmndrs/uikit';
-import {TextWithEmoji} from '../../uiblocks/src/core/primitives/TextWithEmoji';
+
+import {TextWithEmoji} from './TextWithEmoji';
 
 export type CardTitleChipOutProperties = BaseOutProperties & {
   text: string;

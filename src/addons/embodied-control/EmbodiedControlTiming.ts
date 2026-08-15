@@ -21,7 +21,7 @@ export async function runTimedMotion(options: {
   applyTick: TimedMotionTick;
 }) {
   const {requestedDurationMs, tickMs, realTime, applyTick} = options;
-  const durationMs = requestedDurationMs > 0 ? requestedDurationMs : tickMs;
+  const durationMs = requestedDurationMs;
   let elapsedMs = 0;
 
   const advanceTo = (targetElapsedMs: number) => {

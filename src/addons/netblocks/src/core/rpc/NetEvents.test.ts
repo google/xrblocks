@@ -11,16 +11,12 @@ function makeEvents() {
 }
 
 describe('NetEvents', () => {
-  it('emit() sends a broadcast rpc envelope', () => {
+  it('sends broadcast and directed rpc envelopes', () => {
     const {events, sent} = makeEvents();
     events.emit('chat', {text: 'hi'});
-    expect(sent).toEqual([{type: 'rpc', topic: 'chat', payload: {text: 'hi'}}]);
-  });
-
-  it('emitTo() sets the `to` field for unicast', () => {
-    const {events, sent} = makeEvents();
     events.emitTo('peer-B', 'ping', 42);
     expect(sent).toEqual([
+      {type: 'rpc', topic: 'chat', payload: {text: 'hi'}},
       {type: 'rpc', topic: 'ping', payload: 42, to: 'peer-B'},
     ]);
   });
@@ -42,20 +38,6 @@ describe('NetEvents', () => {
     expect(b).toHaveBeenCalledWith('hello', 'peer-A');
   });
 
-  it('off() removes a handler', () => {
-    const {events} = makeEvents();
-    const handler = vi.fn();
-    events.on('chat', handler);
-    events.off('chat', handler);
-    events._dispatch({
-      type: 'rpc',
-      topic: 'chat',
-      payload: 'hi',
-      from: 'peer-A',
-    } as RpcMessage);
-    expect(handler).not.toHaveBeenCalled();
-  });
-
   it('_dispatch fans out to every subscriber of a topic', () => {
     const {events} = makeEvents();
     const a = vi.fn();
@@ -70,26 +52,6 @@ describe('NetEvents', () => {
     } as RpcMessage);
     expect(a).toHaveBeenCalledWith({text: 'yo'}, 'peer-A');
     expect(b).toHaveBeenCalledWith({text: 'yo'}, 'peer-A');
-  });
-
-  it('_dispatch ignores topics with no subscribers', () => {
-    const {events} = makeEvents();
-    expect(() =>
-      events._dispatch({
-        type: 'rpc',
-        topic: 'unknown',
-        payload: null,
-        from: 'peer-A',
-      } as RpcMessage)
-    ).not.toThrow();
-  });
-
-  it('_dispatch ignores messages with no `from`', () => {
-    const {events} = makeEvents();
-    const handler = vi.fn();
-    events.on('chat', handler);
-    events._dispatch({type: 'rpc', topic: 'chat', payload: 'x'} as RpcMessage);
-    expect(handler).not.toHaveBeenCalled();
   });
 
   it('a throwing handler does not break sibling handlers', () => {

@@ -3,13 +3,15 @@ import * as THREE from 'three';
 import {Core} from './core/Core';
 import {Options} from './core/Options';
 import {Script} from './core/Script';
+import {ui} from './ui/UI';
 import {checkThreeVersion} from './utils/VersionCheck';
 
 checkThreeVersion();
 
 /**
  * The global singleton instance of Core, serving as the main entry point
- * for the entire XR system.
+ * for the entire XR system. This binding is stable for the module lifetime;
+ * disposing Core is terminal.
  */
 export const core = new Core();
 
@@ -79,6 +81,9 @@ export const input = core.input;
  */
 export const camera = core.camera;
 
+/** Lightweight global UI settings and theme. */
+export {ui};
+
 // --- Function Aliases ---
 // These are bound shortcuts to frequently used methods for convenience.
 
@@ -102,23 +107,11 @@ export function init(options: Options = new Options()) {
 }
 
 /**
- * A shortcut for `core.scriptsManager.initScript()`. Manually initializes a
- * script and its dependencies.
- * @param script - The script to initialize.
- * @see {@link ScriptsManager.initScript}
+ * Manually initializes a Script and resolves after its dependencies and
+ * lifecycle initialization are complete.
  */
 export function initScript(script: Script) {
   return core.scriptsManager.initScript(script);
-}
-
-/**
- * A shortcut for `core.scriptsManager.uninitScript()`. Disposes of a script
- * and removes it from the update loop.
- * @param script - The script to uninitialize.
- * @see {@link ScriptsManager.uninitScript}
- */
-export function uninitScript(script: Script) {
-  return core.scriptsManager.uninitScript(script);
 }
 
 /**
@@ -132,24 +125,13 @@ export function getDeltaTime() {
 }
 
 /**
- * A shortcut for `core.timer.getElapsed()`. Gets the total time in seconds
- * since the application started.
+ * Gets elapsed time in seconds from the simulation or render clock.
+ * Simulation time excludes pauses and is the default.
+ * @param clock - Clock used to measure elapsed time.
  * @returns The elapsed time in seconds.
- * @see {@link THREE.Timer.getElapsed}
  */
-export function getElapsedTime() {
-  return core.timer.getElapsed();
-}
-
-/**
- * Toggles whether the reticle can target the depth-sensing mesh.
- * @param value - True to add the depth mesh as a target, false to
- * remove it.
- */
-export function showReticleOnDepthMesh(value: boolean) {
-  if (core.depth.depthMesh) {
-    core.depth.depthMesh.ignoreReticleRaycast = !value;
-  }
+export function getElapsedTime(clock: 'simulation' | 'render' = 'simulation') {
+  return clock === 'simulation' ? core.elapsedTime : core.timer.getElapsed();
 }
 
 /**

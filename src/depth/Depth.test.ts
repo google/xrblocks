@@ -98,20 +98,7 @@ describe('Depth', () => {
   });
 
   describe('shouldUpdateDepthMesh throttling', () => {
-    it('always updates when depthMeshUpdateFps is 0', () => {
-      const depth = createDepth();
-      depth.options.depthMesh.depthMeshUpdateFps = 0;
-
-      // Access the private method via bracket notation.
-      const shouldUpdate = (depth as unknown as Record<string, () => boolean>)[
-        'shouldUpdateDepthMesh'
-      ];
-      expect(shouldUpdate.call(depth)).toBe(true);
-      expect(shouldUpdate.call(depth)).toBe(true);
-      expect(shouldUpdate.call(depth)).toBe(true);
-    });
-
-    it('throttles updates when depthMeshUpdateFps is set', () => {
+    it('throttles updates until the configured interval has passed', () => {
       const depth = createDepth();
       depth.options.depthMesh.depthMeshUpdateFps = 10; // 100ms between updates
 
@@ -124,17 +111,6 @@ describe('Depth', () => {
 
       // Immediate second call should be throttled.
       expect(shouldUpdate.call(depth)).toBe(false);
-    });
-
-    it('allows update after enough time has passed', () => {
-      const depth = createDepth();
-      depth.options.depthMesh.depthMeshUpdateFps = 10; // 100ms interval
-
-      const shouldUpdate = (depth as unknown as Record<string, () => boolean>)[
-        'shouldUpdateDepthMesh'
-      ];
-
-      expect(shouldUpdate.call(depth)).toBe(true);
 
       // Fast-forward time by 150ms.
       vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 150);

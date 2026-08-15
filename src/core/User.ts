@@ -3,18 +3,9 @@ import * as THREE from 'three';
 import {Controller} from '../input/Controller';
 import {Hands} from '../input/Hands';
 import {Input} from '../input/Input';
-import {View} from '../ui/core/View';
-import {objectIsDescendantOf} from '../utils/SceneGraphUtils';
+import {Interaction} from '../interaction/Interaction';
 
-import {ObjectGrabEvent, ObjectTouchEvent, Script, SelectEvent} from './Script';
-
-type MaybeXRScript = THREE.Object3D & {isXRScript?: boolean};
-type MaybeView = THREE.Object3D & {isView?: boolean};
-type MaybeHasIgnoreReticleRaycast = {
-  ignoreReticleRaycast?: boolean;
-};
-
-const tempBox = new THREE.Box3();
+import {Script} from './Script';
 
 /**
  * User is an embodied instance to manage hands, controllers, speech, and
@@ -25,9 +16,9 @@ const tempBox = new THREE.Box3();
  * To support multi-user social XR planned for future iterations.
  */
 export class User extends Script {
-  static dependencies = {
+  private static readonly dependencies = {
     input: Input,
-    scene: THREE.Scene,
+    interaction: Interaction,
   };
 
   /**
@@ -82,45 +73,17 @@ export class User extends Script {
    */
   hands?: Hands;
 
-  /**
-   * Maps a controller to the object it is currently hovering over.
-   */
-  hoveredObjectsForController = new Map<Controller, THREE.Object3D | null>();
-
-  /**
-   * Maps a controller to the object it has currently selected.
-   */
-  selectedObjectsForController = new Map<Controller, THREE.Object3D>();
-
-  /**
-   * Maps a hand index (0 or 1) to a set of meshes it is currently touching.
-   */
-  touchedObjects = new Map<number, Set<THREE.Mesh>>();
-
-  /**
-   * Maps a hand index to another map that associates a grabbed mesh with its
-   * initial grab event data.
-   */
-  grabbedObjects = new Map<number, Map<THREE.Mesh, ObjectGrabEvent>>();
-
   input!: Input;
-  scene!: THREE.Scene;
+  private interaction!: Interaction;
   controllers!: Controller[];
-
-  /**
-   * Constructs a new User.
-   */
-  constructor() {
-    super();
-  }
 
   /**
    * Initializes the User.
    */
-  init({input, scene}: {input: Input; scene: THREE.Scene}) {
+  init({input, interaction}: {input: Input; interaction: Interaction}) {
     this.input = input;
+    this.interaction = interaction;
     this.controllers = input.controllers;
-    this.scene = scene;
   }
 
   /**
@@ -156,33 +119,19 @@ export class User extends Script {
     return this.getPivot(id)?.getWorldPosition(new THREE.Vector3());
   }
 
-  /**
-   * Gets reticle's direction in THREE.Vector3.
-   * Requires reticle enabled to be called.
-   * @param controllerId -
-   */
-  getReticleDirection(controllerId: number) {
-    return this.controllers[controllerId].reticle?.direction;
+  getRay(controllerId: number, target = new THREE.Ray()) {
+    const ray = this.interaction.getSourceSnapshot(
+      this.controllers[controllerId]
+    )?.ray;
+    return ray ? target.copy(ray) : target;
   }
 
-  /**
-   * Gets the object targeted by the reticle.
-   * Requires `options.reticle.enabled`.
-   * @param id - The controller id.
-   * @returns The targeted object, or null.
-   */
-  getReticleTarget(id: number) {
-    return this.controllers[id].reticle?.targetObject;
-  }
-
-  /**
-   * Gets the intersection details from the reticle's raycast.
-   * Requires `options.reticle.enabled`.
-   * @param id - The controller id.
-   * @returns The intersection object, or null if no intersection.
-   */
-  getReticleIntersection(id: number) {
-    return this.controllers[id].reticle?.intersection;
+  getRayIntersection(controllerId: number) {
+    const controller = this.controllers[controllerId];
+    const resolved = this.interaction.getResolvedRay(controller);
+    return resolved
+      ? this.interaction.getIntersectionAt(resolved.surface, controller)
+      : null;
   }
 
   /**
@@ -191,12 +140,7 @@ export class User extends Script {
    * @returns True if a controller is pointing at the object.
    */
   isPointingAt(obj: THREE.Object3D) {
-    for (const selected of this.hoveredObjectsForController.values()) {
-      if (objectIsDescendantOf(selected, obj)) {
-        return true;
-      }
-    }
-    return false;
+    return this.interaction.isPointingAt(obj);
   }
 
   /**
@@ -205,35 +149,24 @@ export class User extends Script {
    * @returns True if a controller is selecting the object.
    */
   isSelectingAt(obj: THREE.Object3D) {
-    for (const selected of this.selectedObjectsForController.values()) {
-      if (objectIsDescendantOf(selected, obj)) {
-        return true;
-      }
-    }
-    return false;
+    return this.interaction.isSelectingAt(obj);
+  }
+
+  isManipulating(obj: THREE.Object3D) {
+    return this.interaction.isManipulating(obj);
   }
 
   /**
    * Gets the intersection point on a specific object.
-   * Not recommended for general use, since a View / ModelView's
-   * ux.positions contains the intersected points.
    * @param obj - The object to check for intersection.
    * @param id - The controller ID, or -1 for any controller.
    * @returns The intersection details, or null if no intersection.
    */
   getIntersectionAt(obj: THREE.Object3D, id = -1) {
-    if (id == -1) {
-      for (let i = 0; i < 2; ++i) {
-        if (this.getReticleTarget(i) === obj) {
-          return this.getReticleIntersection(i);
-        }
-      }
-    } else {
-      if (this.getReticleTarget(id) === obj) {
-        return this.getReticleIntersection(id);
-      }
-    }
-    return null;
+    return this.interaction.getIntersectionAt(
+      obj,
+      id < 0 ? undefined : this.controllers[id]
+    );
   }
 
   /**
@@ -287,405 +220,5 @@ export class User extends Script {
       });
     }
     return this.input.controllers[id].userData.squeezing;
-  }
-
-  /**
-   * Handles the select start event for a controller.
-   * @param event - The event object.
-   */
-  onSelectStart(event: SelectEvent) {
-    const controller = event.target;
-    const intersections = this.input.intersectionsForController
-      .get(controller)!
-      .filter((intersection) => {
-        let target: THREE.Object3D | null = intersection.object;
-        while (target) {
-          if (
-            (target as MaybeHasIgnoreReticleRaycast).ignoreReticleRaycast ===
-            true
-          ) {
-            return false;
-          }
-          target = target.parent;
-        }
-        return true;
-      });
-    if (intersections && intersections.length > 0) {
-      this.selectedObjectsForController.set(
-        controller,
-        intersections[0].object
-      );
-      this.callObjectSelectStart(event, intersections[0].object);
-    }
-  }
-
-  /**
-   * Handles the select end event for a controller.
-   * @param event - The event object.
-   */
-  onSelectEnd(event: SelectEvent) {
-    const controller = event.target;
-    const intersections = this.input.intersectionsForController.get(controller);
-    if (intersections && intersections.length > 0) {
-      const selectedObject = this.selectedObjectsForController.get(controller);
-      this.callObjectSelectEnd(event, selectedObject || null);
-      this.selectedObjectsForController.delete(controller);
-      let ancestor: THREE.Object3D | null = selectedObject || null;
-      while (ancestor) {
-        if ((ancestor as MaybeView).isView && ancestor.visible) {
-          (ancestor as View).onTriggered(controller.userData.id);
-          break;
-        }
-        ancestor = ancestor.parent;
-      }
-    }
-  }
-
-  /**
-   * Handles the squeeze start event for a controller.
-   * @param _event - The event object.
-   */
-  onSqueezeStart(_event: SelectEvent) {}
-
-  /**
-   * Handles the squeeze end event for a controller.
-   * @param _event - The event object.
-   */
-  onSqueezeEnd(_event: SelectEvent) {}
-
-  /**
-   * The main update loop called each frame. Updates hover state for all
-   * controllers.
-   */
-  update() {
-    if (this.input.controllersEnabled) {
-      for (const controller of this.input.controllers) {
-        this.updateForController(controller);
-      }
-    }
-    // Direct touch detection.
-    this.updateTouchState();
-    // Direct grab detection.
-    this.updateGrabState();
-  }
-
-  /**
-   * Checks for and handles grab events (touching + pinching).
-   */
-  updateGrabState() {
-    if (!this.hands) {
-      return;
-    }
-
-    for (let i = 0; i < this.numHands; i++) {
-      const isPinching = this.isSelecting(i);
-      const touchedMeshes = this.touchedObjects.get(i) || new Set<THREE.Mesh>();
-
-      const currentlyGrabbedMeshes = isPinching
-        ? touchedMeshes
-        : new Set<THREE.Mesh>();
-      const previouslyGrabbedMeshesMap =
-        this.grabbedObjects.get(i) || new Map();
-
-      const newlyGrabbedMeshes = [...currentlyGrabbedMeshes].filter(
-        (mesh) => !previouslyGrabbedMeshesMap.has(mesh)
-      );
-
-      const releasedMeshes = [...previouslyGrabbedMeshesMap.keys()].filter(
-        (mesh) => !currentlyGrabbedMeshes.has(mesh)
-      );
-
-      for (const mesh of newlyGrabbedMeshes) {
-        const hand = this.hands.getWrist(i);
-        if (!hand) continue;
-
-        const grabEvent = {handIndex: i, hand: hand};
-
-        if (!this.grabbedObjects.has(i)) {
-          this.grabbedObjects.set(i, new Map());
-        }
-        this.grabbedObjects.get(i)!.set(mesh, grabEvent);
-        this.callObjectGrabStart(grabEvent, mesh);
-      }
-
-      for (const mesh of releasedMeshes) {
-        const grabEvent = previouslyGrabbedMeshesMap.get(mesh);
-        this.callObjectGrabEnd(grabEvent, mesh);
-        previouslyGrabbedMeshesMap.delete(mesh);
-      }
-
-      for (const mesh of currentlyGrabbedMeshes) {
-        if (previouslyGrabbedMeshesMap.has(mesh)) {
-          const grabEvent = previouslyGrabbedMeshesMap.get(mesh);
-          this.callObjectGrabbing(grabEvent, mesh);
-        }
-      }
-    }
-  }
-
-  /**
-   * Checks for and handles touch events for the hands' index fingers.
-   */
-  updateTouchState() {
-    if (!this.hands) {
-      return;
-    }
-    for (let i = 0; i < this.numHands; i++) {
-      const indexTip = this.hands.getIndexTip(i);
-      if (!indexTip) {
-        continue;
-      }
-
-      const indexTipPosition = new THREE.Vector3();
-      indexTip.getWorldPosition(indexTipPosition);
-
-      const currentlyTouchedMeshes: THREE.Mesh[] = [];
-      this.scene.traverse((object) => {
-        if ((object as Partial<THREE.Mesh>).isMesh && object.visible) {
-          try {
-            tempBox.setFromObject(object);
-          } catch (_) {
-            return;
-          }
-          if (tempBox.containsPoint(indexTipPosition)) {
-            currentlyTouchedMeshes.push(object as THREE.Mesh);
-          }
-        }
-      });
-
-      const previouslyTouchedMeshes = this.touchedObjects.get(i) || new Set();
-      const currentMeshesSet = new Set(currentlyTouchedMeshes);
-
-      const newlyTouchedMeshes = currentlyTouchedMeshes.filter(
-        (mesh) => !previouslyTouchedMeshes.has(mesh)
-      );
-      const removedMeshes = [...previouslyTouchedMeshes].filter(
-        (mesh) => !currentMeshesSet.has(mesh)
-      );
-
-      const touchingEvent = {handIndex: i, touchPosition: indexTipPosition};
-
-      if (newlyTouchedMeshes.length > 0) {
-        for (const mesh of newlyTouchedMeshes) {
-          this.callObjectTouchStart(touchingEvent, mesh);
-        }
-      }
-
-      if (removedMeshes.length > 0) {
-        for (const mesh of removedMeshes) {
-          this.callObjectTouchEnd(touchingEvent, mesh);
-        }
-      }
-
-      for (const mesh of currentMeshesSet) {
-        this.callObjectTouching(touchingEvent, mesh);
-      }
-
-      if (currentMeshesSet.size > 0) {
-        this.touchedObjects.set(i, currentMeshesSet);
-      } else {
-        this.touchedObjects.delete(i);
-      }
-    }
-  }
-
-  /**
-   * Updates the hover state for a single controller.
-   * @param controller - The controller to update.
-   */
-  updateForController(controller: Controller) {
-    const intersections =
-      this.input.intersectionsForController.get(controller)!;
-    const currentHoverTarget =
-      intersections.length > 0 ? intersections[0].object : null;
-    const previousHoverTarget =
-      this.hoveredObjectsForController.get(controller);
-    if (previousHoverTarget !== currentHoverTarget) {
-      this.callHoverExit(controller, previousHoverTarget || null);
-      this.hoveredObjectsForController.set(controller, currentHoverTarget);
-      this.callHoverEnter(controller, currentHoverTarget);
-    } else if (previousHoverTarget) {
-      this.callOnHovering(controller, previousHoverTarget);
-    }
-  }
-
-  /**
-   * Recursively calls onHoverExit on a target and its ancestors.
-   * @param controller - The controller exiting hover.
-   * @param target - The object being exited.
-   */
-  callHoverExit(controller: Controller, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if (
-      (target as MaybeXRScript).isXRScript &&
-      (target as Script).onHoverExit(controller)
-    ) {
-      // The event was handled already so do not propagate up.
-      return;
-    }
-    this.callHoverExit(controller, target.parent);
-  }
-
-  /**
-   * Recursively calls onHoverEnter on a target and its ancestors.
-   * @param controller - The controller entering hover.
-   * @param target - The object being entered.
-   */
-  callHoverEnter(controller: Controller, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if (
-      (target as MaybeXRScript).isXRScript &&
-      (target as Script).onHoverEnter(controller)
-    ) {
-      // The event was handled already so do not propagate up.
-      return;
-    }
-    this.callHoverEnter(controller, target.parent);
-  }
-
-  /**
-   * Recursively calls onHovering on a target and its ancestors.
-   * @param controller - The controller hovering.
-   * @param target - The object being entered.
-   */
-  callOnHovering(controller: Controller, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if (
-      (target as MaybeXRScript).isXRScript &&
-      (target as Script).onHovering(controller)
-    ) {
-      // The event was handled already so do not propagate up.
-      return;
-    }
-    this.callOnHovering(controller, target.parent);
-  }
-  /**
-   * Recursively calls onObjectSelectStart on a target and its ancestors until
-   * the event is handled.
-   * @param event - The original select start event.
-   * @param target - The object being selected.
-   */
-  callObjectSelectStart(event: SelectEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if (
-      (target as MaybeXRScript).isXRScript &&
-      (target as Script).onObjectSelectStart(event)
-    ) {
-      // The event was handled already so do not propagate up.
-      return;
-    }
-    this.callObjectSelectStart(event, target.parent);
-  }
-
-  /**
-   * Recursively calls onObjectSelectEnd on a target and its ancestors until
-   * the event is handled.
-   * @param event - The original select end event.
-   * @param target - The object being un-selected.
-   */
-  callObjectSelectEnd(event: SelectEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if (
-      (target as MaybeXRScript).isXRScript &&
-      (target as Script).onObjectSelectEnd(event)
-    ) {
-      // The event was handled already so do not propagate up.
-      return;
-    }
-    this.callObjectSelectEnd(event, target.parent);
-  }
-
-  /**
-   * Recursively calls onObjectTouchStart on a target and its ancestors.
-   * @param event - The original touch start event.
-   * @param target - The object being touched.
-   */
-  callObjectTouchStart(event: ObjectTouchEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if ((target as MaybeXRScript).isXRScript) {
-      (target as Script).onObjectTouchStart(event);
-    }
-    this.callObjectTouchStart(event, target.parent);
-  }
-
-  /**
-   * Recursively calls onObjectTouching on a target and its ancestors.
-   * @param event - The original touch event.
-   * @param target - The object being touched.
-   */
-  callObjectTouching(event: ObjectTouchEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if ((target as MaybeXRScript).isXRScript) {
-      (target as Script).onObjectTouching(event);
-    }
-    this.callObjectTouching(event, target.parent);
-  }
-
-  /**
-   * Recursively calls onObjectTouchEnd on a target and its ancestors.
-   * @param event - The original touch end event.
-   * @param target - The object being un-touched.
-   */
-  callObjectTouchEnd(event: ObjectTouchEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if ((target as MaybeXRScript).isXRScript) {
-      (target as Script).onObjectTouchEnd(event);
-    }
-    this.callObjectTouchEnd(event, target.parent);
-  }
-
-  /**
-   * Recursively calls onObjectGrabStart on a target and its ancestors.
-   * @param event - The original grab start event.
-   * @param target - The object being grabbed.
-   */
-  callObjectGrabStart(event: ObjectGrabEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if ((target as MaybeXRScript).isXRScript) {
-      (target as Script).onObjectGrabStart(event);
-    }
-    this.callObjectGrabStart(event, target.parent);
-  }
-
-  /**
-   * Recursively calls onObjectGrabbing on a target and its ancestors.
-   * @param event - The original grabbing event.
-   * @param target - The object being grabbed.
-   */
-  callObjectGrabbing(event: ObjectGrabEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if ((target as MaybeXRScript).isXRScript) {
-      (target as Script).onObjectGrabbing(event);
-    }
-    this.callObjectGrabbing(event, target.parent);
-  }
-
-  /**
-   * Recursively calls onObjectGrabEnd on a target and its ancestors.
-   * @param event - The original grab end event.
-   * @param target - The object being released.
-   */
-  callObjectGrabEnd(event: ObjectGrabEvent, target: THREE.Object3D | null) {
-    if (target == null) return;
-    if ((target as MaybeXRScript).isXRScript) {
-      (target as Script).onObjectGrabEnd(event);
-    }
-    this.callObjectGrabEnd(event, target.parent);
-  }
-
-  /**
-   * Checks if a controller is selecting a specific object. Returns the
-   * intersection details if true.
-   * @param obj - The object to check for selection.
-   * @param controller - The controller performing the select.
-   * @returns The intersection object if a match is found, else null.
-   */
-  select(obj: THREE.Object3D, controller: THREE.Object3D) {
-    const intersections = this.input.intersectionsForController.get(controller);
-    return intersections &&
-      intersections.length > 0 &&
-      objectIsDescendantOf(intersections[0].object, obj)
-      ? intersections[0]
-      : null;
   }
 }

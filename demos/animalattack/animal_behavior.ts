@@ -45,10 +45,6 @@ const BOB_AMP = 0.005;
 const FALL_SPEED = 12.0;
 const FALL_GROUND_OFFSET = 1.5;
 
-const DISTANCE_SCALE_START = 2.0;
-const DISTANCE_SCALE_MULT = 0.6;
-const DISTANCE_SCALE_MAX = 6.0;
-
 const BREATH_FREQ = 4;
 const BREATH_AMP = 0.03;
 const TALK_FREQ = 20;
@@ -77,18 +73,15 @@ export class AnimalBehavior {
   public static updateDragTransform(
     isDragging: boolean,
     draggedAnimal: THREE.Object3D | null,
-    dragSource: THREE.Object3D | string | null,
+    dragSource: THREE.Object3D | null,
     raycaster: THREE.Raycaster,
-    pointer: THREE.Vector2,
     camera: THREE.Camera | null,
     depthMesh: THREE.Object3D | null | undefined,
     dragDistance: number
   ) {
     if (!isDragging || !draggedAnimal || !camera) return;
 
-    if (dragSource === 'desktop') {
-      raycaster.setFromCamera(pointer, camera);
-    } else if (dragSource instanceof THREE.Object3D) {
+    if (dragSource) {
       dragSource.updateMatrixWorld(true);
       InteractionUtils.setRaycasterFromXRController(raycaster, dragSource);
     }
@@ -454,24 +447,13 @@ export class AnimalBehavior {
   public static updateBreathing(
     spawnedAnimals: Map<number, THREE.Object3D>,
     time: number,
-    animalModels: {scale: number; talking: boolean}[],
-    isDragging: boolean,
-    camera: THREE.Camera | null
+    animalModels: {scale: number; talking?: boolean}[],
+    isDragging: boolean
   ) {
     for (const modelViewer of spawnedAnimals.values()) {
-      const {userData, position, scale} = modelViewer;
+      const {userData, scale} = modelViewer;
       const animalData = animalModels[userData.typeIndex];
-      let distanceScale = 1.0;
-
-      if (camera && position.y > ACTIVE_Y_THRESHOLD) {
-        const dist = position.distanceTo(camera.position);
-        distanceScale = Math.min(
-          1.0 + Math.max(0, dist - DISTANCE_SCALE_START) * DISTANCE_SCALE_MULT,
-          DISTANCE_SCALE_MAX
-        );
-      }
-
-      const baseScale = animalData.scale * distanceScale;
+      const baseScale = animalData.scale;
       const breath =
         baseScale +
         Math.sin(time * BREATH_FREQ + userData.animalIndex) *

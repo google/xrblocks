@@ -1,83 +1,59 @@
 # Selection and direct hands
 
-Use this reference for scene-wide hooks, ray-targeted objects, or direct hand
-contact. The authoritative event declarations are in
-[`src/core/Script.ts`](../../../src/core/Script.ts); dispatch semantics are in
-[`src/core/User.ts`](../../../src/core/User.ts).
+Read this reference for global actions, ray-targeted objects, direct touch, or
+grab. Source declarations are in
+[`../../../src/core/Script.ts`](../../../src/core/Script.ts).
 
-## Select the ownership level
+## Event ownership
 
-| Intent                    | API                                                          | Event data                               | Desktop path                                                 |
-| ------------------------- | ------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------ |
-| Scene-wide click or pinch | `onSelectStart`, `onSelecting`, `onSelectEnd`, `onSelect`    | `event.target` is the controller         | User or Pointer Lock mode; primary click                     |
-| Scene-wide tracked grip   | `onSqueezeStart`, `onSqueezing`, `onSqueezeEnd`, `onSqueeze` | `event.target` is the controller         | Controller handoff; keyboard fallback if required by the app |
-| Keyboard shortcut         | `onKeyDown`, `onKeyUp`                                       | `event.code`                             | Physical keyboard                                            |
-| Pointed object            | `onObjectSelectStart`, `onObjectSelectEnd`                   | `event.target` is the controller         | User or Pointer Lock mode; point and click                   |
-| Ray hover                 | `onHoverEnter`, `onHovering`, `onHoverExit`                  | controller object directly               | Move the simulator mouse ray                                 |
-| Index-tip contact         | `onObjectTouchStart`, `onObjectTouching`, `onObjectTouchEnd` | `handIndex`, world-space `touchPosition` | Navigation/Pose or Hands/Controller mode                     |
-| Contact plus pinch        | `onObjectGrabStart`, `onObjectGrabbing`, `onObjectGrabEnd`   | `handIndex`, wrist `hand` object         | Hands/Controller mode; Space toggles pinch                   |
+| Intent             | Public family                                                |
+| ------------------ | ------------------------------------------------------------ |
+| Scene command      | `onSelect*`, `onSqueeze*`, or `onKey*`                       |
+| Ray target         | `onObjectSelect*` and `onHover*`                             |
+| Index-tip contact  | `onObjectTouchStart`, `onObjectTouching`, `onObjectTouchEnd` |
+| Contact plus pinch | `onObjectGrabStart`, `onObjectGrabbing`, `onObjectGrabEnd`   |
 
-Controllers are enabled by default. `options.enableControllers()` exists for
-explicit configuration and runtime input can be toggled with
-`xb.core.input.enableControllers()` / `disableControllers()`. Call
-`options.enableReticles()` when pointing needs a visible target.
+Targeted callbacks bubble through ancestor scripts. Call
+`event.stopPropagation()` to stop later ancestors. Keep one domain transition
+in either the global or targeted family so one source action cannot apply it
+twice.
 
-## Global versus object events
+## Resolved fields
 
-Global select hooks run on every active `Script`. Use them for scene-owned
-commands. Object select hooks begin at the closest raycast mesh and walk up its
-ancestors; place the hook on a `Script` that contains the hit mesh. Returning
-`true` stops that object-select event at the current script.
+- `source` identifies the interaction source and controller.
+- `target` is the logical object selected by the resolver.
+- `surface` is the public hit surface. Private renderer meshes are normalized
+  to their public owner.
+- `currentTarget` is the script currently receiving the bubbled callback.
+- `intersection` is the current cloned ray hit when the source still hits the
+  captured surface. It can be absent on an end event.
+- `touchPosition` is the world-space contact point for direct touch and grab.
 
-Hover follows the same ancestor walk and may also return `true` to stop it.
-Direct touch and grab call every `Script` ancestor; their return values are
-ignored.
+Use these event values inside the callback. Use
+`xb.user.getRayIntersection(controllerId)` only when code outside an event needs
+the current resolved ray hit.
 
-Avoid applying the same state transition in a global hook and an object hook:
-both participate in the same select input. If a global script needs to know the
-ray result, inspect `event.target` with the public input API:
+## Direct-contact lifecycle
 
-```js
-onSelectStart(event) {
-  const hits = xb.core.input.intersectionsForController.get(event.target) ?? [];
-  const nearest = hits[0]?.object;
-}
+Enable hands before initialization. Touch starts selection by default:
+
+```text
+touch start -> select start -> selecting while contact continues
+grab start -> manipulation start/update/end while pinch continues
+touch end -> select end
 ```
 
-## Direct hands
+Call `event.preventDefault()` during `onObjectTouchStart` when contact must not
+start selection or automatic manipulation. Releasing a grab can end
+manipulation while touch contact and selection continue.
 
-Enable hands before initialization and choose a simulator mode deliberately:
-
-```js
-const options = new xb.Options();
-options.enableHands();
-options.hands.visualization = true;
-options.simulator.defaultMode = xb.SimulatorMode.CONTROLLER;
-```
-
-`SimulatorMode.POSE` is displayed as Navigation mode: it shows simulated hands
-while mouse drag turns the camera and the pose panel/gamepad changes poses.
-`SimulatorMode.CONTROLLER` is displayed as Hands mode: WASD/QE moves the active
-hand, `T` switches hands, and Space toggles pinch.
-
-Touch tests the index fingertip against each visible mesh's world-space bounding
-box. Grab means that mesh is currently touched and that hand is selecting. This
-is direct-contact interaction, not Rapier collision.
-
-Use the handedness enum and guard live joint data:
+Guard live hand data:
 
 ```js
-const hands = xb.user.hands;
-const tip = hands?.getIndexTip(xb.Handedness.LEFT);
-if (tip) tip.getWorldPosition(this._worldPosition);
+const tip = xb.user.hands?.getIndexTip(xb.Handedness.LEFT);
+if (tip) tip.getWorldPosition(this.worldPoint);
 ```
 
-The public names are `xb.Handedness`, `xb.HAND_JOINT_NAMES`, and
-`xb.user.hands.getJoint/getIndexTip/getThumbTip/getWrist`. Left and right map to
-`0` and `1`; `Handedness.NONE` asks `Hands` to use its dominant hand.
-
-For a complete touch/grab lifecycle and a transform that preserves the initial
-hand-to-object offset, copy the pattern in
-[`templates/2_hands/HandsInteraction.js`](../../../templates/2_hands/HandsInteraction.js).
-The simpler [hand tracking manual](../../../docs/docs/manual/Hands.mdx) describes
-joint access.
+Use the simulator hand controls from
+[`../../../templates/02_object_interaction/`](../../../templates/02_object_interaction/)
+and read the [Hands manual](../../../docs/docs/manual/Hands.mdx) for joint access.

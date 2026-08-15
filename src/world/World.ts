@@ -6,6 +6,7 @@ import {placeObjectAtIntersectionFacingTarget} from '../utils/ObjectPlacement';
 
 import {ObjectDetector} from './objects/ObjectDetector';
 import {PlaneDetector} from './planes/PlaneDetector';
+import {AnchorManager} from './anchors/AnchorManager';
 import {WorldOptions} from './WorldOptions';
 import {MeshDetector} from './mesh/MeshDetector';
 import {SoundDetector} from './sounds/SoundDetector';
@@ -53,6 +54,7 @@ export class World extends Script {
    * Not recommended for anchoring.
    */
   planes?: PlaneDetector;
+  anchors?: AnchorManager;
 
   /**
    * The object recognition module instance. Null if not enabled.
@@ -144,6 +146,11 @@ export class World extends Script {
       this.add(this.meshes);
     }
 
+    if (this.options.anchors.enabled) {
+      this.anchors = new AnchorManager();
+      this.add(this.anchors);
+    }
+
     if (this.options.sounds.enabled) {
       this.sounds = new SoundDetector();
       this.add(this.sounds);
@@ -207,9 +214,7 @@ export class World extends Script {
    * (currently planes) and places a 3D object at the intersection point,
    * oriented to face the user.
    *
-   * We recommend using /templates/3_depth/ to anchor objects based on
-   * depth mesh for mixed reality experience for accuracy. This function is
-   * design for demonstration purposes.
+   * See /templates/3_spatial_placement/ for a complete placement example.
    *
    * @param objectToPlace - The object to position in the
    * world.

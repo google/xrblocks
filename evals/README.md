@@ -1,12 +1,25 @@
-# XR Blocks Skill Evaluation Harness
+# XR Blocks Agent-Guidance Evaluation Harness
 
-A reproducible benchmark for the `xb-*` skills used by Gemini Canvas Gems when generating xrblocks apps.
+A reproducible benchmark for XR Blocks task skills and their canonical
+references when a model generates an app without repository access.
 
 ## What it tests
 
-Each task is a short "build an X with xrblocks" prompt that maps to a single skill (e.g. `netblocks-presence` tests `xb-netblocks`). We run the task twice through `gemini-2.5-pro` via the Gemini API: once with the matching `SKILL.md` injected into the system prompt, once with an empty system prompt. The agent has no filesystem access. The two outputs are scored against the same rubric and the delta is the skill's contribution.
+Each task is a short "build an X with XR Blocks" prompt. It maps to one task
+skill and zero or more canonical manual or addon references. For example,
+`netblocks-presence` uses the general `xb-build-app` workflow plus the
+netblocks README; netblocks is not a separate skill.
 
-This mirrors the Canvas Gem deployment ("XR Blocks for Gemini Canvas"), which bakes skill content into its system prompt rather than relying on filesystem-side skill discovery.
+We run the task twice through the Gemini API: once with the app contract, task
+skill, and listed references in the system prompt, and once with an empty
+system prompt. The agent has no file-system access. Both outputs use the same
+scoring specification. The difference measures the complete guidance package,
+not an alternate API manual hidden in a skill.
+
+This mirrors a prompt-injection deployment. It does not test installation or
+discovery in a specific agent host. The portable task skills and this adapter
+reuse the same workflow text, but each host can have a different delivery
+mechanism.
 
 ## Quick start
 
@@ -50,8 +63,10 @@ Results land under `evals/results/<model>/`:
 
 For finer-grained signal:
 
-- `judge.py` — `gemini-2.5-pro` rates the output against the full
-  `SKILL.md` as ground truth. Returns `accomplishes_task` and `idiomatic_xrblocks` on 1-5 scales, plus `would_merge` yes/no with a prose rationale.
+- `judge.py` — `gemini-2.5-pro` rates the output against `CONTEXT.md`, the
+  public barrel, the task skill, and the listed canonical references. The
+  public source and manuals are API authority; the skill is workflow guidance.
+  It returns task and API-lifecycle ratings plus hallucination severity.
 - `smoke.py` — Playwright + headless Chromium loads the generated
   workspace and captures uncaught errors / failed requests. Catches hallucinated import URLs that parse-only checking misses.
 - `ablate.py` — drops one skill section at a time, scores each variant.
@@ -70,8 +85,9 @@ evals/prototypes/tasks/<id>/spec.json   # the scoring spec
 
 ```json
 {
-  "skill": "xb-<area>", // which xb-* skill is being tested
-  "template": "templates/0_basic", // which template to start from
+  "skill": "xb-<task>", // one retained task workflow
+  "reference_files": ["docs/docs/manual/<Area>.mdx"], // API facts for this task
+  "template": "templates/00_basic", // which template to start from
   "edit_file": "main.js", // which file the agent should edit
   "expected_imports": ["..."], // substrings that should appear in the import lines
   "expected_apis": ["..."], // substrings that should appear anywhere in the code
@@ -79,7 +95,9 @@ evals/prototypes/tasks/<id>/spec.json   # the scoring spec
 }
 ```
 
-Aim for prompts that are unambiguous on intent but open on implementation, so the skill content (not the prompt itself) is what disambiguates the API surface.
+Use `reference_files` for canonical manuals or addon READMEs. Do not create a
+capability skill only to feed an evaluation. Keep prompts clear about intent
+and let the skill define the procedure.
 
 ## Files
 
@@ -118,9 +136,9 @@ evals/
 
 ## What it IS for
 
-- Validating that a `SKILL.md` actually moves the needle on the kinds
-  of apps users want to build.
+- Validating that a task workflow plus canonical references improves the apps
+  users want to build.
 - Catching regressions when a skill is edited: re-run the relevant
   tasks, diff the scores.
-- Surfacing real bugs in skill examples (e.g. the `xb-netblocks`
-  import-path 404 caught by `smoke.py` and fixed in google/xrblocks#349).
+- Surfacing stale API names, wrong templates, and invalid addon import paths in
+  the agent guidance package.

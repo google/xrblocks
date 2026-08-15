@@ -43,8 +43,12 @@ immersive applications with features like:
   `options.enableHeadGestures()` and subscribe through
   `xb.input.headGestures` on device or in the desktop simulator.
 - **World Understanding:** Present samples with depth sensing, geometry-aware
-  physics, and object recognition with Gemini in both XR and desktop
-  simulator.
+  physics, planes, scene meshes, object recognition, human pose, face landmarks,
+  and semantic segmentation in XR and the desktop simulator.
+- **Unified Interaction:** Use one target and capture pipeline for mouse, gaze,
+  hand rays, controllers, direct touch, spatial UI, and object manipulation.
+- **Built-in Spatial UI:** Compose world-space cards and view-space overlays from
+  flex-layout panels, text, images, icons, buttons, sliders, and themes.
 - **Agent Context:** Expose an agent-facing scene context with semantic trees,
   visible-object state, and Set-of-Mark screenshots through `xb.context`.
 - **AI Integration:** Seamlessly connect to Gemini for multimodal
@@ -202,6 +206,10 @@ If you are using VS Code, install the
 and the
 [Prettier extension](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode),
 then set Prettier as your default formatter.
+
+#### Devtools
+
+For additional agent-first development tools including UI visualizers, 3d model visualizers, CLI based embodied XR Blocks runners, and automatic agent controls, see [XR Blocks Devtools](https://github.com/xrblocks/xrblocks-devtools).
 
 #### Notice
 

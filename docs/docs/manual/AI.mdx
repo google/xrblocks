@@ -7,137 +7,206 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 # Generative AI
 
-The `xb.ai` subsystem provides native integration with Generative AI models. It natively supports **Google Gemini** for text generation, multimodal processing, image generation, and real-time audio/video loops (Gemini Live).
+`xb.ai` provides bounded Gemini and OpenAI queries plus Gemini multipart input,
+image generation, and Live audio/video sessions. AI availability, credentials,
+network responses, and media streams are runtime state; expose waiting,
+unavailable, empty, disconnected, and failed states in the application.
 
----
+## Provider setup
 
-## Setup & Configuration
+Gemini is the default provider:
 
-To enable AI integrations, set options on the [`Options`](/api/classes/Options) class:
-
-```javascript
-import * as xb from 'xrblocks';
-
+```js
 const options = new xb.Options();
 options.enableAI();
-
-// Configure the backend model (default: 'gemini')
 options.ai.model = 'gemini';
-options.ai.gemini.model = 'gemini-3.6-flash';
+options.ai.gemini.model = 'gemini-3.7-flash';
+options.ai.promptForApiKey = true; // optional local prototype prompt
 
-xb.init(options);
+await xb.init(options);
 ```
 
-### API Keys Security
+`enableAI()` enables Gemini. For OpenAI, select and enable it explicitly:
+
+```js
+const options = new xb.Options();
+options.ai.enabled = true;
+options.ai.model = 'openai';
+options.ai.openai.enabled = true;
+options.ai.openai.model = 'gpt-4.1';
+```
+
+Configure the provider before initialization and check
+`xb.ai.isAvailable()` at use time. Availability confirms local wrapper state;
+each request can still fail because of credentials, quota, network, or provider
+errors.
+
+## Credential safety
 
 :::danger
 
-Never ship API keys in production client-side code.
+Never ship long-lived provider keys in production browser code.
 
-- **Local Prototyping**: You can pass keys via the `?key=YOUR_KEY` URL parameter or save a `keys.json` (`{"gemini": {"apiKey": "..."}}`) in the root directory.
-- **Production Deployment**: The SDK's `?key=` and `keys.json` mechanisms are for local prototypes. Production applications must configure a proxy server to forward AI requests from your client apps to Gemini endpoints. For Gemini Live, you should authenticate clients using [Gemini Live API Ephemeral Tokens](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) instead of embedding long-lived developer keys.
-  :::
+Provider options, `?key=`, provider-specific URL parameters, the optional
+current-page prompt, and `keys.json` are local-prototype mechanisms. Production
+applications use a server-controlled proxy. Gemini Live clients should use
+short-lived credentials such as ephemeral tokens.
 
----
+:::
 
-## Text & Multimodal Queries
+The browser prompt stores a key only for the current page session. Encoding a
+key or putting it in a URL does not protect it.
 
-To send queries, first check if the backend is configured and ready:
+## Bounded queries
 
-```javascript
-class AIScript extends xb.Script {
-  async askQuestion() {
-    if (!xb.ai.isAvailable()) {
-      console.warn(
-        'AI is not available. Please verify API keys/configuration.'
-      );
-      return;
-    }
+Use `{prompt}` for provider-neutral text:
 
-    // 1. Text Query
+```js
+async function askQuestion() {
+  if (!xb.ai.isAvailable()) {
+    showAIState('unavailable');
+    return;
+  }
+
+  showAIState('waiting');
+  try {
     const response = await xb.ai.query({
-      prompt: 'Write a haiku about the sunset in virtual reality.',
+      prompt: 'Write a short description of this XR scene.',
     });
-    console.log(response.text);
-
-    // 2. Multimodal Query (Image + Text)
-    // Convert a canvas/image into base64 PNG data
-    const base64Image = this.captureCanvasAsBase64();
-
-    const multiResponse = await xb.ai.query({
-      type: 'multiPart',
-      parts: [
-        {inlineData: {data: base64Image, mimeType: 'image/png'}},
-        {text: 'What objects do you see in this snapshot?'},
-      ],
-    });
-    console.log(multiResponse.text);
+    const text =
+      response && typeof response === 'object' ? response.text : response;
+    showAnswer(text || 'No answer returned');
+  } catch (error) {
+    showAIState('failed');
   }
 }
 ```
 
----
+Gemini also accepts current typed multipart input:
 
-## Gemini Live (Real-Time Voice & Vision)
-
-Gemini Live provides full-duplex real-time audio and video interaction, ideal for building talking companions or agents that react directly to visual feeds.
-
-```javascript
-// 1. Define callbacks for the streaming session
-await xb.ai.setLiveCallbacks({
-  onopen: () => console.log('Live session connected!'),
-  onclose: () => console.log('Live session closed.'),
-  onmessage: (data) => {
-    // Handle incoming audio stream or server messages
-    if (data.serverContent?.modelTurn?.parts) {
-      console.log('Model responded in real-time.');
-    }
-  },
-  onerror: (err) => console.error('Streaming error:', err),
+```js
+const response = await xb.ai.query({
+  type: 'multiPart',
+  parts: [
+    {inlineData: {data: base64Png, mimeType: 'image/png'}},
+    {text: 'Name the objects relevant to this task.'},
+  ],
 });
-
-// 2. Start the connection
-const session = await xb.ai.startLiveSession({
-  responseModalities: ['AUDIO'], // Speak responses back
-  speechConfig: {
-    voiceConfig: {
-      prebuiltVoiceConfig: {voiceName: 'Aoede'},
-    },
-  },
-});
-
-// 3. Send audio or video input chunks periodically
-// e.g. Sending recorded microphone chunks:
-xb.ai.sendRealtimeInput({
-  audio: {
-    mimeType: 'audio/pcm;rate=16000',
-    data: base64PcmChunk,
-  },
-});
-
-// 4. Tear down session when finished
-// xb.ai.stopLiveSession();
 ```
 
-Use `xb.core.deviceCamera` or `xb.core.screenshotSynthesizer` to grab the virtual camera frames to send to the Live session.
+Treat `null`, missing text, and tool-only responses as expected branches.
+Prevent repeated requests while one is active unless the application explicitly
+supports concurrency.
 
----
+## Image generation
 
-## Image Generation
-
-You can generate 2D images dynamically in your application (e.g. creating textures or artwork based on user descriptions):
-
-```javascript
-// Generate an image from prompt
-const imageDataUrl = await xb.ai.generate(
+```js
+const dataUrl = await xb.ai.generate(
   'a futuristic low-poly treehouse in 3D',
   'image'
 );
 
-// The successful result is a data:image/png;base64,... string.
-if (imageDataUrl) {
-  console.log('Generated image:', imageDataUrl);
-}
+if (dataUrl?.startsWith('data:image/')) image.src = dataUrl;
 ```
 
-For templates and complete projects, see <CodeSearchLink path="templates/6_ai/index.html"/>, <CodeSearchLink path="templates/7_ai_live/index.html"/>, or the advanced poetry demo <CodeSearchLink path="demos/xrpoet/index.html"/>.
+A successful Gemini result is a data URL. It is not an object with a `url`
+field. Validate the result before loading it as a texture or UI image.
+
+## Gemini Live
+
+Register callbacks before connecting and use `onopen` as the ready transition:
+
+```js
+await xb.ai.setLiveCallbacks({
+  onopen: () => showLiveState('listening'),
+  onmessage: (message) => handleLiveMessage(message),
+  onerror: () => stopLive('failed'),
+  onclose: () => stopLive('disconnected'),
+});
+
+if (!xb.ai.isLiveAvailable()) {
+  showLiveState('unavailable');
+  return;
+}
+
+showLiveState('connecting');
+await xb.ai.startLiveSession({
+  responseModalities: ['AUDIO'],
+  speechConfig: {
+    voiceConfig: {prebuiltVoiceConfig: {voiceName: 'Aoede'}},
+  },
+  inputAudioTranscription: {},
+  outputAudioTranscription: {},
+});
+```
+
+Use current nested realtime input fields:
+
+```js
+xb.ai.sendRealtimeInput({
+  audio: {data: base64Pcm, mimeType: 'audio/pcm;rate=48000'},
+});
+
+xb.ai.sendRealtimeInput({
+  video: {data: base64Jpeg, mimeType: 'image/jpeg'},
+});
+```
+
+The flat `{data, mimeType}` shape is not the current Live input contract.
+
+`startLiveSession()` can return a provider session before the connection emits
+`onopen`. Keep the UI in `connecting` until `onopen`. Route remote close, local
+stop, error, and `dispose()` through one idempotent cleanup method that stops:
+
+- `xb.ai.stopLiveSession()`;
+- application microphone capture and owned media tracks;
+- model-audio playback;
+- screenshot or camera frame timers;
+- pending UI state and the duplicate-start lock.
+
+The `GeminiManager` addon at
+`xrblocks/addons/ai/GeminiManager.js` owns the common microphone, audio,
+camera/screenshot, tool, timer, and cleanup loop. Use it when that ownership
+matches the application. Use the lower-level facade for a materially different
+loop.
+
+## Tools and grounded actions
+
+An `xb.Tool` exposes a narrow model-requested action. Model arguments are
+untrusted input:
+
+```js
+const setColor = new xb.Tool({
+  name: 'set_object_color',
+  description: 'Set one allowed scene object to an approved hex color.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      objectId: {type: 'STRING'},
+      color: {type: 'STRING'},
+    },
+    required: ['objectId', 'color'],
+  },
+  onTriggered: async ({objectId, color}) => {
+    // Resolve objectId through an allowlist and validate color.
+    return {objectId, color};
+  },
+});
+```
+
+Validate schema, ranges, target identity, and authorization again at execution.
+Return structured failures for invalid arguments, missing targets, unknown
+tools, denied actions, and execution errors. Keep consequential actions behind
+visible confirmation.
+
+Choose the smallest grounding input that answers the question: known app state,
+semantic scene context, a Set-of-Mark image, a rendered screenshot, or a device
+camera frame. Context collection and provider transmission are separate
+decisions. Disclose and send only what the behavior requires.
+
+## Executable evidence
+
+- <CodeSearchLink path="templates/06_ai_query" />
+- <CodeSearchLink path="templates/07_ai_live_assistant" />
+- <CodeSearchLink path="templates/11_agent_context" />
+- <CodeSearchLink path="samples/xr_ai/xrpoet" />

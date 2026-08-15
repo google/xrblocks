@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Spatial Anchors | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <link rel="stylesheet" href="../../samples/main.css" />
+    <script>
+      window.litDisableBundleWarning = true;
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <style>
+      /* Stacked boxes in the top left, same shape as the netblocks samples:
+         the way back and the current page first, then the status, then the
+         controls in their own box underneath. */
+      #ui {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        max-width: 360px;
+      }
+      #hud {
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: rgba(20, 20, 30, 0.7);
+        color: #d7d2ea;
+        font:
+          13px/1.45 system-ui,
+          sans-serif;
+      }
+      #hud a.picker {
+        color: #9177c7;
+        text-decoration: none;
+        opacity: 0.85;
+      }
+      #hud a.picker:hover {
+        opacity: 1;
+        text-decoration: underline;
+      }
+      #hud b {
+        color: #9177c7;
+      }
+      #status {
+        margin-top: 6px;
+      }
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: rgba(20, 20, 30, 0.7);
+      }
+      #controls button {
+        flex: 0 0 auto;
+        padding: 10px 18px;
+        border: none;
+        border-radius: 8px;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #drop {
+        background: #6a5acd;
+      }
+      #forget {
+        background: #3a3550;
+      }
+    </style>
+    <div id="ui">
+      <div id="hud">
+        <a class="picker" href="../anchors_home/">← anchors demos</a>
+        · <b>markers</b>
+        <div id="status">Starting…</div>
+      </div>
+      <div id="controls">
+        <button id="drop">Drop marker</button>
+        <button id="forget">Clear markers</button>
+      </div>
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

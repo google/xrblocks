@@ -259,9 +259,9 @@ See [`samples/SAMPLES.md`](./samples/SAMPLES.md). Highlights:
   (or gamepad sticks) to walk around in 2D; the headset's pose drives
   it in XR.
 - `samples/basic/transports` — switch transports at runtime.
-- `samples/netblocks/` — assembled "shared room" demo combining
+- `demos/netblocks/` — assembled "shared room" demo combining
   presence + objects + chat + emoji-burst RPC + voice. (Top-level
-  headline sample.)
+  headline demo.)
 
 All samples default to `BroadcastChannelTransport` (two tabs in the same
 browser, no signaling, no rate-limit risk). A small HUD lets you "Start

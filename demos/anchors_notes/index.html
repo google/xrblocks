@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Anchored Notes | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <link rel="stylesheet" href="../../samples/main.css" />
+    <script>
+      window.litDisableBundleWarning = true;
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
+          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
+          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
+          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
+          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/"
+        }
+      }
+    </script>
+    <style>
+      #panel {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 50;
+        width: 320px;
+        max-width: 80vw;
+        padding: 14px;
+        border-radius: 14px;
+        background: rgba(16, 14, 26, 0.92);
+        color: #d7d2ea;
+        font:
+          13px/1.45 system-ui,
+          sans-serif;
+        box-sizing: border-box;
+      }
+      #capability {
+        margin-bottom: 10px;
+        font-weight: 600;
+        color: #b7aef0;
+      }
+      #status {
+        margin-bottom: 12px;
+        min-height: 1.4em;
+      }
+      #compose {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      #note-input {
+        flex: 1;
+        min-width: 0;
+        padding: 9px 11px;
+        border: none;
+        border-radius: 10px;
+        background: #2a2640;
+        color: #fff;
+        font-size: 14px;
+      }
+      #pin {
+        padding: 9px 16px;
+        border: none;
+        border-radius: 10px;
+        background: #6a5acd;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #note-list {
+        list-style: none;
+        margin: 0 0 12px;
+        padding: 0;
+        max-height: 40vh;
+        overflow-y: auto;
+      }
+      #note-list li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      #note-list .note-text {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #note-list .note-restored {
+        color: #4ec9a0;
+      }
+      #note-list .note-delete {
+        flex: none;
+        width: 26px;
+        height: 26px;
+        border: none;
+        border-radius: 8px;
+        background: #3a3550;
+        color: #fff;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      #forget {
+        width: 100%;
+        padding: 9px 16px;
+        border: none;
+        border-radius: 10px;
+        background: #3a3550;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      /* Cross-links to the sibling anchor demos, matching the picker links
+         in samples/netblocks. DOM only, so they are a way in before the
+         session starts rather than navigation from inside it. */
+      #siblings {
+        display: flex;
+        gap: 12px;
+        margin-top: 10px;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+        color: #8d86a8;
+      }
+      #siblings {
+        margin-bottom: 8px;
+      }
+      #siblings a.picker {
+        color: #9177c7;
+        text-decoration: none;
+        pointer-events: auto;
+        opacity: 0.85;
+      }
+      #siblings a.picker:hover {
+        opacity: 1;
+        text-decoration: underline;
+      }
+      #siblings b {
+        color: #9177c7;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="panel">
+      <nav id="siblings">
+        <a class="picker" href="../anchors_home/">← anchors demos</a>
+        · <b>notes</b>
+      </nav>
+      <div id="capability">detecting anchor support…</div>
+      <div id="status">starting…</div>
+      <div id="compose">
+        <input
+          id="note-input"
+          type="text"
+          placeholder="Write a note, then pin it where you look"
+          maxlength="120"
+          autocomplete="off"
+        />
+        <button id="pin">Pin note</button>
+      </div>
+      <ul id="note-list"></ul>
+      <button id="forget">Clear notes</button>
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

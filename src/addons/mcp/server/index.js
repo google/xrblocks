@@ -351,11 +351,11 @@ export const TOOLS = [
   {
     name: 'get_skill',
     description:
-      'Return the full text of one XR Blocks skill, including its worked code examples and the APIs it covers. Use a name from list_skills, for example xb-depth.',
+      'Return the full text of one XR Blocks skill, including its worked code examples and the APIs it covers. Use a name from list_skills, for example xb-build-app.',
     inputSchema: {
       type: 'object',
       properties: {
-        name: {type: 'string', description: 'Skill name, e.g. xb-depth.'},
+        name: {type: 'string', description: 'Skill name, e.g. xb-build-app.'},
       },
       required: ['name'],
       additionalProperties: false,

@@ -15,7 +15,7 @@ import {NetSample} from '../../Sample';
  *
  * The chat UI lives in two places:
  *   - a small floating DOM panel for desktop / pre-XR;
- *   - a SpatialPanel + virtual Keyboard inside the WebXR session, so
+ *   - a spatial UI card + virtual keyboard inside the WebXR session, so
  *     headset users can read and type without leaving immersive mode.
  * Both views share the same underlying message log.
  */
@@ -28,9 +28,9 @@ interface ChatPayload {
 class ChatSample extends NetSample {
   private _displayName = `User-${Math.floor(Math.random() * 1000)}`;
   private _log?: HTMLDivElement;
-  private _spatialLog?: xb.ScrollingTroikaTextView;
+  private _spatialLog?: xb.UIText;
   private _spatialLogLines: string[] = [];
-  private _spatialDraft?: xb.TextView;
+  private _spatialDraft?: xb.UIText;
   private _keyboard?: Keyboard;
 
   protected getJoinOptions() {
@@ -170,75 +170,83 @@ class ChatSample extends NetSample {
     if (!this._spatialLog) return;
     this._spatialLogLines.push(text);
     if (this._spatialLogLines.length > 12) this._spatialLogLines.shift();
-    this._spatialLog.setText(this._spatialLogLines.join('\n'));
+    this._spatialLog.text = this._spatialLogLines.join('\n');
   }
 
   private _buildSpatialHud(session: NonNullable<this['net']['session']>) {
-    const panel = new xb.SpatialPanel({
-      width: 1.4,
-      height: 0.9,
-      backgroundColor: '#1a1a2add',
-    });
-    const grid = panel.addGrid();
-
-    grid.addRow({weight: 0.12}).addText({
-      text: `💬 ${this._displayName}`,
-      fontSize: 0.05,
-      fontColor: '#bfa9ff',
-      textAlign: 'center',
-    });
-
-    this._spatialLog = new xb.ScrollingTroikaTextView({
+    this._spatialLog = new xb.UIText({
       text: '(start typing on the keyboard below to chat)',
-      fontSize: 0.04,
-      textAlign: 'left',
+      style: {
+        width: '100%',
+        flexGrow: 1,
+        minHeight: 180,
+        color: '#ffffff',
+        fontSize: 20,
+        whiteSpace: 'pre-line',
+        verticalAlign: 'bottom',
+        overflow: 'hidden',
+      },
     });
-    grid.addRow({weight: 0.7}).add(this._spatialLog);
-
-    this._spatialDraft = grid.addRow({weight: 0.18}).addText({
+    this._spatialDraft = new xb.UIText({
       text: '› ',
-      fontSize: 0.04,
-      fontColor: '#7ac0ff',
-      textAlign: 'left',
+      style: {
+        width: '100%',
+        minHeight: 36,
+        color: '#7ac0ff',
+        fontSize: 22,
+        whiteSpace: 'pre-line',
+      },
     });
-
-    panel.position.set(-1.2, 1.5, -1.5);
-    panel.rotation.y = Math.PI / 8;
-    this.add(panel);
-
-    this._buildKeyboard(session);
-  }
-
-  private _buildKeyboard(session: NonNullable<this['net']['session']>) {
-    // Subclass to override init() (which would otherwise reset the
-    // keyboard's transform to its default position above the user).
-    class PositionedKeyboard extends Keyboard {
-      override init(): void {
-        super.init();
-        const sub = (this as unknown as {subspace: xb.SpatialPanel}).subspace;
-        sub.position.set(-0.7, 0.7, -0.7);
-        sub.scale.setScalar(0.6);
-        sub.rotation.set(-Math.PI / 6, 0, 0);
-      }
-    }
-    const keyboard = new PositionedKeyboard();
+    const keyboard = new Keyboard({
+      onValueChange: (text) => {
+        if (this._spatialDraft) this._spatialDraft.text = `› ${text}`;
+      },
+      onSubmit: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        const payload: ChatPayload = {
+          from: this._displayName,
+          text: trimmed,
+          ts: Date.now(),
+        };
+        session.events.emit('chat-message', payload);
+        this._appendLine(payload, true);
+        keyboard.setValue('');
+        if (this._spatialDraft) this._spatialDraft.text = '› ';
+      },
+    });
     this._keyboard = keyboard;
-    xb.add(keyboard);
-    keyboard.onTextChanged = (text: string) => {
-      this._spatialDraft?.setText(`› ${text}`);
-    };
-    keyboard.onEnterPressed = (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      const payload: ChatPayload = {
-        from: this._displayName,
-        text: trimmed,
-        ts: Date.now(),
-      };
-      session.events.emit('chat-message', payload);
-      this._appendLine(payload, true);
-      keyboard.setText('');
-    };
+
+    const card = new xb.UICard({
+      size: {width: 1.0, height: 0.9},
+      manipulation: true,
+      edge: true,
+      style: {
+        flexDirection: 'column',
+        gap: 12,
+        padding: 20,
+        backgroundColor: '#1a1a2add',
+        borderRadius: 24,
+      },
+      children: [
+        new xb.UIText({
+          text: `💬 ${this._displayName}`,
+          style: {
+            width: '100%',
+            color: '#bfa9ff',
+            fontSize: 26,
+            fontWeight: 'bold',
+            textAlign: 'center',
+          },
+        }),
+        this._spatialLog,
+        this._spatialDraft,
+        keyboard,
+      ],
+    });
+    card.position.set(-0.8, 1.4, -1.3);
+    card.rotation.y = Math.PI / 8;
+    this.add(card);
   }
 }
 

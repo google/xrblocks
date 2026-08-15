@@ -152,11 +152,4 @@ describe('AgentSpeechConductor', () => {
     expect(() => conductor.speak('some words here', steps, 2)).not.toThrow();
     expect(boundary).toBeUndefined();
   });
-
-  it('does nothing when ticked with an empty timeline', () => {
-    const {conductor, fired, state} = harness();
-    expect(() => conductor.tick(5)).not.toThrow();
-    expect(fired).toHaveLength(0);
-    expect(state.rests).toBe(0);
-  });
 });

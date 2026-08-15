@@ -17,71 +17,25 @@ export class Math3D extends xb.Script {
     // Loads data.
     this.mathObjects = MATH_OBJECTS;
     this.graph = null;
-    this.functionDisplay = null;
     this.keyboard = null;
+    this.graphRoot = new THREE.Group();
+    this.graphRoot.position.set(0, 1.65, -1);
+    this.add(this.graphRoot);
 
-    // Initializes UI.
-    const panel = new xb.SpatialPanel({
-      backgroundColor: '#00000000',
-      useDefaultPosition: false,
-      showEdge: false,
-    });
-    panel.isRoot = true;
-    this.add(panel);
-
-    this.descriptionPagerState = new xb.PagerState({
-      pages: this.mathObjects.length,
-    });
-    const grid = panel.addGrid();
-
-    const imageRow = grid.addRow({weight: 1.0});
-    this.imagePager = new xb.HorizontalPager({
-      state: this.descriptionPagerState,
-    });
-    imageRow.addCol({weight: 1.0}).add(this.imagePager);
     const meshAxes = this.createCoordinateGridAxes();
-    for (let i = 0; i < this.mathObjects.length; i++) {
-      this.imagePager.children[i].add(meshAxes[0]);
-      this.imagePager.children[i].add(meshAxes[1]);
-      this.imagePager.children[i].add(meshAxes[2]);
-    }
-    grid.addRow({weight: 0.1});
-    const controlRow = grid.addRow({weight: 0.4});
+    this.graphRoot.add(...meshAxes);
 
-    const ctrlPanel = controlRow.addPanel({backgroundColor: '#000000D9'});
-
-    const ctrlGrid = ctrlPanel.addGrid();
-    {
-      const leftColumn = ctrlGrid.addCol({weight: 0.1});
-      const midColumn = ctrlGrid.addCol({weight: 0.8});
-      const descRow = midColumn.addRow({weight: 0.8});
-
-      this.add(this.descriptionPagerState);
-      this.descriptionPager = new xb.HorizontalPager({
-        state: this.descriptionPagerState,
-        enableRaycastOnChildren: false,
-      });
-      descRow.add(this.descriptionPager);
-
-      for (let i = 0; i < this.mathObjects.length; i++) {
-        const initialFunction = this.mathObjects[i].functionText;
-        this.functionDisplay = this.descriptionPager.children[i].add(
-          new xb.TextButton({
-            text: initialFunction,
-            fontColor: '#ffffff',
-            fontSize: 0.2,
-            backgroundColor: '#00000000', // Make background transparent
-          })
-        );
-      }
-    }
-
-    const orbiter = ctrlGrid.addOrbiter();
-    orbiter.addExitButton();
-
-    panel.updateLayouts();
-
-    this.panel = panel;
+    this.functionDisplay = new xb.UIText({
+      text: this.mathObjects[0].functionText,
+      style: {
+        width: '100%',
+        minHeight: 48,
+        color: '#ffffff',
+        fontSize: 28,
+        fontWeight: 'bold',
+        textAlign: 'center',
+      },
+    });
   }
 
   init() {
@@ -92,32 +46,36 @@ export class Math3D extends xb.Script {
     light.position.set(-0.5, 4, 1.0);
     this.add(light);
 
-    this.panel.position.set(0, 2.0, -1.0);
-
-    this.keyboard = new Keyboard();
-    this.add(this.keyboard);
-    this.keyboard.position.set(0, 0.9, -1);
-
     const startFn = this.mathObjects[0].functionText;
+    this.keyboard = new Keyboard({
+      value: startFn,
+      onValueChange: (value) => {
+        this.functionDisplay.text = value;
+      },
+      onSubmit: (value) => {
+        this.mathObjects[0].functionText = value;
+        this.updateGraph(value);
+      },
+    });
 
-    this.keyboard.setText?.(startFn) || (this.keyboard.keyText = startFn);
-
-    this.keyboard.onEnterPressed = (newFunctionText) => {
-      this.mathObjects[this.descriptionPagerState.currentPage].functionText =
-        newFunctionText;
-      this.updateGraph(newFunctionText);
-    };
-
-    this.keyboard.onTextChanged = (currentText) => {
-      const index = this.descriptionPagerState.currentPage;
-      const currentDisplay = this.descriptionPager.children[index].children[0];
-      if (currentDisplay && currentDisplay.setText) {
-        currentDisplay.setText(currentText);
-      }
-    };
+    const inputCard = new xb.UICard({
+      size: {width: 0.9, height: 0.5},
+      manipulation: true,
+      edge: true,
+      style: {
+        flexDirection: 'column',
+        gap: 12,
+        padding: 20,
+        backgroundColor: '#16171bd9',
+        borderRadius: 24,
+      },
+      children: [this.functionDisplay, this.keyboard],
+    });
+    inputCard.position.set(0, 0.9, -1);
+    inputCard.rotation.x = -Math.PI / 10;
+    this.add(inputCard);
 
     this.updateGraph('x^2 - y^2');
-    console.log('Math3D UIs: ', xb.core.ui.views);
   }
 
   updateGraph(functionText) {
@@ -130,8 +88,7 @@ export class Math3D extends xb.Script {
         this.graph.material.dispose();
       }
       this.graph = this.createParametricMesh(functionText);
-      const currentPage = this.descriptionPagerState.currentPage;
-      this.imagePager.children[currentPage].add(this.graph);
+      this.graphRoot.add(this.graph);
       this.functionDisplay.text = functionText;
     } catch (e) {
       console.error('Error creating graph:', e);
@@ -168,6 +125,7 @@ export class Math3D extends xb.Script {
         color: gridVectors[i].color,
       });
       var axisLine = new THREE.Line(axisGeometry, axisMaterial);
+      axisLine.xb = {pointerEvents: 'none'};
       axes.push(axisLine);
     }
     return axes;
@@ -222,6 +180,7 @@ export class Math3D extends xb.Script {
     });
     material.opacity = 0.75;
     const mesh = new THREE.Mesh(graphGeometry, material);
+    mesh.xb = {pointerEvents: 'none'};
     return mesh;
   }
 }
