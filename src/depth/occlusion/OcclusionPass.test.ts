@@ -154,4 +154,56 @@ describe('OcclusionPass', () => {
 
     occlusionPass.dispose();
   });
+
+  it('binds the environment depth texture to occlusionMapQuad uniforms (not occlusionMeshMaterial) in the read-buffer path (#531)', () => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera();
+    const occlusionPass = new OcclusionPass(scene, camera);
+
+    const envDepthTexture = new THREE.Texture();
+    occlusionPass.setDepthTexture(
+      /*depthTexture=*/ envDepthTexture,
+      /*rawValueToMeters=*/ 0.01,
+      /*viewId=*/ 0
+    );
+
+    const readBuffer = {
+      texture: new THREE.Texture(),
+      depthTexture: new THREE.Texture(),
+    } as unknown as THREE.WebGLRenderTarget;
+
+    const fakeRenderer = {
+      getRenderTarget: () => null,
+      setRenderTarget: () => {},
+      getDrawingBufferSize: (vec: THREE.Vector2) => vec.set(100, 100),
+      render: () => {},
+      xr: {
+        getCamera: () => ({cameras: []}),
+      },
+    } as unknown as THREE.WebGLRenderer;
+
+    const dimensions = new THREE.Vector2(100, 100);
+    occlusionPass.renderOcclusionMapFromReadBuffer(
+      fakeRenderer,
+      readBuffer,
+      dimensions,
+      0
+    );
+
+    const occlusionMapQuad = occlusionPass['occlusionMapQuad'] as unknown as {
+      material: THREE.ShaderMaterial;
+    };
+    // The shader actually rendered by this code path must have the
+    // environment depth texture bound to it.
+    expect(occlusionMapQuad.material.uniforms.uDepthTexture.value).toBe(
+      envDepthTexture
+    );
+
+    // Regression guard: occlusionMeshMaterial is unused in this path and
+    // must not silently absorb the assignment instead.
+    const overrideMat = occlusionPass['occlusionMeshMaterial'];
+    expect(overrideMat.uniforms.uDepthTexture.value).not.toBe(envDepthTexture);
+
+    occlusionPass.dispose();
+  });
 });
