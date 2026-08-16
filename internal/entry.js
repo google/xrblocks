@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 13b273c
- * @builddate 2026-08-16T07:13:06.512Z
+ * @commitid 11cbe6a
+ * @builddate 2026-08-16T07:25:28.630Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -12574,17 +12574,28 @@ class OcclusionPass extends Pass {
         this.occlusionMapUniforms.tDepth.value = readBuffer.depthTexture;
         const texture = this.depthTextures[viewId];
         const isTextureArray = texture instanceof THREE.ExternalTexture;
-        this.occlusionMeshMaterial.uniforms.uIsTextureArray.value = isTextureArray
-            ? 1.0
-            : 0;
-        this.occlusionMeshMaterial.uniforms.uViewId.value = viewId;
+        // NOTE: occlusionMapQuad (rendered below) is a ShaderMaterial whose
+        // fragment shader is OcclusionMapShader (occlusion_map.glsl), and it
+        // reads its uniforms from `occlusionMapUniforms` -- not from
+        // `occlusionMeshMaterial.uniforms`, which only backs the
+        // scene.overrideMaterial used by renderOcclusionMapFromScene(). Writing
+        // the environment depth texture into occlusionMeshMaterial here left
+        // occlusionMapQuad's uDepthTexture unbound, so it sampled as 0,
+        // producing a zero occlusion mask (fully black output). See #531.
+        //
+        // Also note: OcclusionMapShader's fragment shader currently only
+        // declares `uniform sampler2D uDepthTexture` and has no
+        // texture-array/uDepthNear/uViewId handling (unlike
+        // OcclusionMapMeshMaterial's shader), so the isTextureArray branch
+        // below is not yet functional for this read-buffer path. Tracking
+        // that as a follow-up rather than expanding scope of this fix.
+        this.occlusionMapUniforms.uIsTextureArray.value = isTextureArray ? 1.0 : 0;
+        this.occlusionMapUniforms.uViewId.value = viewId;
         if (isTextureArray) {
-            this.occlusionMeshMaterial.uniforms.uDepthTextureArray.value = texture;
-            this.occlusionMeshMaterial.uniforms.uDepthNear.value =
-                this.depthNear[viewId];
+            this.occlusionMapUniforms.uDepthTextureArray.value = texture;
         }
         else {
-            this.occlusionMeshMaterial.uniforms.uDepthTexture.value = texture;
+            this.occlusionMapUniforms.uDepthTexture.value = texture;
         }
         // First render the occlusion map to an intermediate buffer.
         renderer.getDrawingBufferSize(dimensions);
