@@ -1,3 +1,5 @@
+import type * as THREE from 'three';
+
 import {UIElement, type UIElementOptions} from '../UIElement';
 
 export type UIIconVariant = 'outlined' | 'rounded' | 'sharp';
@@ -12,7 +14,9 @@ export interface UIIconOptions extends UIElementOptions {
 }
 
 /** One Material Symbol icon. */
-export class UIIcon extends UIElement {
+export class UIIcon<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends UIElement<TEventMap> {
   name = 'UIIcon';
   readonly ariaLabel?: string;
   private _icon: string;

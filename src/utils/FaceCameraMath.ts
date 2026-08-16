@@ -2,9 +2,10 @@ import * as THREE from 'three';
 
 import {UP} from './HelperConstants';
 
-export type FaceCameraMode = 'cylindrical' | 'spherical';
+export type FaceCameraMode = 'capsule' | 'cylindrical' | 'spherical';
 
 export const DEFAULT_FACE_CAMERA_SMOOTHING = 0.1;
+export const DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT = 0.25;
 
 type FaceCameraScratch = {
   target: THREE.Vector3;
@@ -24,13 +25,21 @@ export function faceCameraQuaternion(
   worldPosition: THREE.Vector3,
   cameraPosition?: THREE.Vector3,
   parentWorldQuaternion?: THREE.Quaternion,
-  mode: FaceCameraMode = 'cylindrical',
+  mode: FaceCameraMode = 'capsule',
+  capsuleHalfHeight = DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT,
   result = new THREE.Quaternion(),
   scratch?: FaceCameraScratch
 ): THREE.Quaternion | undefined {
   if (!cameraPosition) return undefined;
   const target = scratch?.target.copy(cameraPosition) ?? cameraPosition.clone();
   if (mode === 'cylindrical') target.y = worldPosition.y;
+  if (mode === 'capsule') {
+    target.y = THREE.MathUtils.clamp(
+      worldPosition.y,
+      cameraPosition.y - capsuleHalfHeight,
+      cameraPosition.y + capsuleHalfHeight
+    );
+  }
   if (target.distanceToSquared(worldPosition) < 1e-8) return undefined;
 
   const worldQuaternion = scratch?.worldQuaternion ?? new THREE.Quaternion();

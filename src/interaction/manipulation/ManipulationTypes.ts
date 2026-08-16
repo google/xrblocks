@@ -20,6 +20,8 @@ export interface TranslateOptions {
   faceCamera?: boolean;
   /** Camera-facing rotation mode used while translating. */
   mode?: FaceCameraMode;
+  /** Half-height of the upright region used by capsule mode, in meters. */
+  capsuleHalfHeight?: number;
   /** Camera-facing rotation smoothing, matching `FaceCamera`. */
   smoothing?: number;
 }

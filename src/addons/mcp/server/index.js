@@ -40,6 +40,7 @@ const PACKAGE_ROOT = resolve(
 );
 const SKILLS_DIR = join(PACKAGE_ROOT, 'skills');
 const TYPES_FILE = join(PACKAGE_ROOT, 'build', 'xrblocks.d.ts');
+const ADDON_TYPES_DIR = join(PACKAGE_ROOT, 'build', 'addons');
 
 /**
  * Reads the `name` and `description` out of a SKILL.md YAML frontmatter block.
@@ -99,7 +100,10 @@ export function loadSkills() {
 }
 
 let cachedSymbols = null;
-let cachedMtime = 0;
+let cachedStamp = '';
+let cachedCheckedAt = 0;
+// How long to trust the cache before re-checking the files on disk.
+const STAMP_TTL_MS = 1000;
 
 /**
  * Reads the names the package actually exports.
@@ -151,10 +155,15 @@ export function parseExportedNames(text) {
 export function indexSymbols(source) {
   const symbols = [];
 
+  // The core bundle ends with `export {...}` statements naming everything
+  // public. Addon declarations are emitted per file instead, with no trailing
+  // list, and mark their exports inline as `export declare class Foo`. When
+  // there is no list, the `export` keyword on the declaration is the marker.
   const exported = parseExportedNames(source);
+  const hasExportList = exported.size > 0;
 
   const topLevel =
-    /^(?:export\s+)?(?:declare\s+)?(abstract class|class|function|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
+    /^(export\s+)?(?:declare\s+)?(abstract class|class|function|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
   // Indented members: methods, properties, getters, enum values. `protected`
   // and `private` members are deliberately excluded, since an app cannot call
   // them and reporting them invites exactly the wrong code.
@@ -175,15 +184,16 @@ export function indexSymbols(source) {
 
     const top = line.match(topLevel);
     if (top) {
-      const [, kind, name] = top;
+      const [, exportKeyword, kind, name] = top;
+      const isPublic = hasExportList ? exported.has(name) : !!exportKeyword;
       // A `type X = {` alias and an `enum X {` both own members worth indexing,
       // not just classes and interfaces.
       const ownsMembers =
         /class|interface|enum/.test(kind) ||
         (kind === 'type' && /\{\s*$/.test(line));
-      owner = ownsMembers && exported.has(name) ? name : null;
+      owner = ownsMembers && isPublic ? name : null;
       depth = 0;
-      if (!exported.has(name)) continue;
+      if (!isPublic) continue;
       const key = `${kind}:${name}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -238,19 +248,68 @@ export function indexSymbols(source) {
 }
 
 /**
+ * Collects every .d.ts under a directory.
+ *
+ * @param {string} dir - Directory to walk.
+ * @returns {string[]} Absolute paths.
+ */
+function findTypeFiles(dir) {
+  if (!existsSync(dir)) return [];
+  const found = [];
+  for (const entry of readdirSync(dir, {withFileTypes: true})) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...findTypeFiles(path));
+    else if (entry.name.endsWith('.d.ts')) found.push(path);
+  }
+  return found;
+}
+
+/**
  * Loads the public API symbols from the built type definitions.
  *
- * Re-indexes when the file changes, so building the SDK while a client holds
+ * Covers the addons as well as the core bundle. They build to separate files,
+ * and indexing only the core meant every addon looked fake: `AgentHands` and
+ * `LipsyncMouth` are real and exported, but a lookup for either said no.
+ *
+ * Re-indexes when anything changes, so building the SDK while a client holds
  * the server open does not leave a freshly added API reported as fake.
  *
  * @returns {Array<{name: string, kind: string, owner: string|null, signature: string}>} Symbols.
  */
 export function loadSymbols() {
-  if (!existsSync(TYPES_FILE)) return [];
-  const mtime = statSync(TYPES_FILE).mtimeMs;
-  if (cachedSymbols && cachedMtime === mtime) return cachedSymbols;
-  cachedSymbols = indexSymbols(readFileSync(TYPES_FILE, 'utf8'));
-  cachedMtime = mtime;
+  // Checking every input on every call means ~200 stat calls per lookup, which
+  // is most of the cost of a search. A rebuild is rare next to a lookup, so
+  // only re-check occasionally: worst case a result is a second stale, against
+  // the alternative of being stale until the server restarts.
+  const now = Date.now();
+  if (cachedSymbols && now - cachedCheckedAt < STAMP_TTL_MS) {
+    return cachedSymbols;
+  }
+  cachedCheckedAt = now;
+
+  const files = [
+    ...(existsSync(TYPES_FILE) ? [TYPES_FILE] : []),
+    ...findTypeFiles(ADDON_TYPES_DIR),
+  ];
+  if (!files.length) return [];
+
+  // Cheap stamp over the inputs, so a rebuild of any one of them re-indexes.
+  const stamp = files.map((f) => `${f}:${statSync(f).mtimeMs}`).join('|');
+  if (cachedSymbols && cachedStamp === stamp) return cachedSymbols;
+
+  const seen = new Set();
+  const symbols = [];
+  for (const file of files) {
+    for (const symbol of indexSymbols(readFileSync(file, 'utf8'))) {
+      // The same class can appear in both the core bundle and an addon file.
+      const key = `${symbol.kind}:${symbol.owner ?? ''}.${symbol.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      symbols.push(symbol);
+    }
+  }
+  cachedSymbols = symbols;
+  cachedStamp = stamp;
   return cachedSymbols;
 }
 
@@ -377,15 +436,28 @@ export function callTool(name, args = {}) {
       };
     }
     const needle = query.toLowerCase();
+    // An agent naturally asks about the thing it would write, and that is a
+    // path: `xb.input.headGestures`, not `headGestures`. Symbols are indexed
+    // under their own name, so fall back to the last segment rather than
+    // telling the caller a real API does not exist.
+    const tail = needle.split('.').filter(Boolean).pop() ?? needle;
     const limit = Number(args.limit) > 0 ? Number(args.limit) : 25;
-    const exact = [];
-    const partial = [];
-    for (const s of symbols) {
-      const lower = s.name.toLowerCase();
-      if (lower === needle) exact.push(s);
-      else if (lower.includes(needle)) partial.push(s);
-    }
-    const hits = [...exact, ...partial].slice(0, limit);
+
+    const search = (term) => {
+      const exact = [];
+      const partial = [];
+      for (const s of symbols) {
+        const lower = s.name.toLowerCase();
+        if (lower === term) exact.push(s);
+        else if (lower.includes(term)) partial.push(s);
+      }
+      return [...exact, ...partial];
+    };
+
+    let hits = search(needle);
+    if (!hits.length && tail !== needle) hits = search(tail);
+    hits = hits.slice(0, limit);
+
     if (!hits.length) {
       return {
         text:

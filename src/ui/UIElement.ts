@@ -283,7 +283,9 @@ const ENUM_VALUES: Partial<Record<keyof UIStyle, readonly unknown[]>> = {
 const states = new WeakMap<UIElement, UIElementState>();
 const rootReferences = new Set<WeakRef<UIElement>>();
 
-export abstract class UIElement extends Script {
+export abstract class UIElement<
+  TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
+> extends Script<TEventMap> {
   readonly isUI = true;
   private readonly styleTarget: UIStyle = {};
   private readonly styleProxy: UIStyle;

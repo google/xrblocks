@@ -19,7 +19,7 @@ const DEFAULT_MANIFESTS: SimulatorSceneManifest[] = [
     scenePath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_office.glb`,
     scenePlanesPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_office_planes.json`,
     navMeshPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_office_navmesh.glb`,
-    position: [3.6, 0.3, 2],
+    position: [3, 0.3, -2],
     objects: [],
   },
   {

@@ -165,19 +165,22 @@ model.add(
 ```js
 card.add(
   new xb.FaceCamera({
-    mode: 'cylindrical',
+    mode: 'capsule',
+    capsuleHalfHeight: 0.25,
     smoothing: 0.1,
   })
 );
 ```
 
-| Mode          | Behavior                                            | Typical use                               |
-| ------------- | --------------------------------------------------- | ----------------------------------------- |
-| `cylindrical` | Turns around the vertical axis and stays upright    | Panels and signs at about eye height      |
-| `spherical`   | Turns vertically and horizontally toward the camera | Labels above, below, or around the viewer |
+| Mode          | Behavior                                                    | Typical use                               |
+| ------------- | ----------------------------------------------------------- | ----------------------------------------- |
+| `capsule`     | Stays upright near eye height, then tilts toward the viewer | Panels that can move vertically           |
+| `cylindrical` | Turns around the vertical axis and always stays upright     | Panels and signs at about eye height      |
+| `spherical`   | Turns vertically and horizontally toward the camera         | Labels above, below, or around the viewer |
 
-The default mode is `cylindrical`. A higher `smoothing` value responds faster.
-The default is `0.1`.
+The default mode is `capsule`. Its upright region extends `capsuleHalfHeight`
+above and below the camera. The default half-height is `0.25` meters. A higher
+`smoothing` value responds faster. The default is `0.1`.
 
 `UICard` can accept a `TransformScript` as a direct child. Nested UI elements
 such as `UIPanel` accept UI children, not placement scripts. Attach the script
