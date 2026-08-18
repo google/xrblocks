@@ -21,6 +21,16 @@ const TEXT = '#f4f8fc';
 const MUTED = '#a8bbcf';
 const STROKE = '#40556d';
 
+// Anchor visuals are built from SOLID GEOMETRY (cylinders and bars), not from
+// AxesHelper/LineLoop. Line primitives cannot be thickened at all in WebGL:
+// LineBasicMaterial.linewidth is ignored by the renderer and every line draws
+// one pixel wide, so it shrinks to a barely-visible hairline at exactly the
+// distance you stand to check whether the tag is being tracked. Meshes are the
+// only way to get a stroke with real width.
+const AXIS_LENGTH_METERS = 0.12;
+const AXIS_RADIUS_METERS = 0.005;
+const OUTLINE_THICKNESS_METERS = 0.008;
+
 class AprilTagAnchorDemo extends xb.Script {
   constructor() {
     super();
@@ -36,7 +46,7 @@ class AprilTagAnchorDemo extends xb.Script {
       // solver refines from here whenever the geometry allows.
       calibration: {translation: [0.01, 0.02, 0]},
     });
-    this.tracker.add(new THREE.AxesHelper(0.12));
+    this.tracker.add(this.createAxes());
     this.tracker.add(this.createTagOutline());
     this.add(this.tracker);
   }
@@ -266,18 +276,63 @@ class AprilTagAnchorDemo extends xb.Script {
     }
   }
 
-  createTagOutline() {
-    const halfSize = DEFAULT_TAG25H9_SIZE_METERS / 2;
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-halfSize, halfSize, 0),
-      new THREE.Vector3(halfSize, halfSize, 0),
-      new THREE.Vector3(halfSize, -halfSize, 0),
-      new THREE.Vector3(-halfSize, -halfSize, 0),
-    ]);
-    return new THREE.LineLoop(
-      geometry,
-      new THREE.LineBasicMaterial({color: 0xffffff})
+  // Display-only overlays must never be raycast targets: they sit right where
+  // the user points and would otherwise swallow clicks meant for the dashboard.
+  makeDecorative(object3d) {
+    object3d.raycast = () => {};
+    for (const child of object3d.children) this.makeDecorative(child);
+    return object3d;
+  }
+
+  createAxes() {
+    const group = new THREE.Group();
+    // One shared cylinder, pushed up its own length so it grows FROM the
+    // origin rather than straddling it -- then each axis is just a rotation.
+    const geometry = new THREE.CylinderGeometry(
+      AXIS_RADIUS_METERS, AXIS_RADIUS_METERS, AXIS_LENGTH_METERS, 12
     );
+    geometry.translate(0, AXIS_LENGTH_METERS / 2, 0);
+    // Cylinders run along +Y, so Y is the untouched case. Colours match the
+    // dashboard legend (X red, Y green, Z blue) and AxesHelper's convention.
+    const axes = [
+      [0xff3b30, [0, 0, -Math.PI / 2]],
+      [0x34c759, [0, 0, 0]],
+      [0x2f7bff, [Math.PI / 2, 0, 0]],
+    ];
+    for (const [color, rotation] of axes) {
+      // Unlit on purpose: the overlay has to read the same under whatever
+      // lighting the room happens to have.
+      const axis = new THREE.Mesh(
+        geometry, new THREE.MeshBasicMaterial({color})
+      );
+      axis.rotation.set(...rotation);
+      group.add(axis);
+    }
+    return this.makeDecorative(group);
+  }
+
+  createTagOutline() {
+    const size = DEFAULT_TAG25H9_SIZE_METERS;
+    const half = size / 2;
+    const thickness = OUTLINE_THICKNESS_METERS;
+    const group = new THREE.Group();
+    const material = new THREE.MeshBasicMaterial({color: 0xffffff});
+    // Each bar overhangs by one thickness so the four corners overlap and
+    // close, instead of leaving a notch at every corner.
+    const horizontal = new THREE.BoxGeometry(size + thickness, thickness, thickness);
+    const vertical = new THREE.BoxGeometry(thickness, size + thickness, thickness);
+    const bars = [
+      [horizontal, 0, half],
+      [horizontal, 0, -half],
+      [vertical, -half, 0],
+      [vertical, half, 0],
+    ];
+    for (const [geometry, x, y] of bars) {
+      const bar = new THREE.Mesh(geometry, material);
+      bar.position.set(x, y, 0);
+      group.add(bar);
+    }
+    return this.makeDecorative(group);
   }
 }
 

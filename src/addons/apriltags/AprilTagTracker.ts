@@ -323,6 +323,7 @@ export class AprilTagTracker extends Script {
       smoothingTimeConstantMs: options.smoothingTimeConstantMs ?? 90,
       maxHamming: options.maxHamming ?? 1,
       minDecisionMargin: options.minDecisionMargin ?? 20,
+      persistCalibration: options.persistCalibration ?? true,
     };
     this.setCameraRotationOffset(options.cameraRotationOffset ?? {});
     this.tagId = this.validateTagId(this.options.tagId);
@@ -368,12 +369,13 @@ export class AprilTagTracker extends Script {
   }
 
   /**
-   * Suspend or resume the detection loop. While paused, camera poses keep
-   * being recorded (so the pose ring stays warm for an immediate resume),
-   * but no frames are captured, no observations are ingested, and the
-   * anchor and calibration stop changing. Use this to "freeze" a
-   * calibration session once it looks good, or to yield the device camera
-   * to another consumer without tearing the tracker down.
+   * Suspend or resume the detection loop. While paused the tracker is fully
+   * idle -- no pose recording, no frame captures, no worker traffic -- and
+   * the anchor and calibration stop changing. On resume the pose ring
+   * refills within a few frames; until then detections fall back to the
+   * current-frame pose instead of a latency-matched historical one. Use this
+   * to "freeze" a calibration session once it looks good, or to yield the
+   * device camera to another consumer without tearing the tracker down.
    */
   setDetectionPaused(paused: boolean): void {
     this.detectionPaused = paused;
@@ -528,9 +530,15 @@ export class AprilTagTracker extends Script {
     // time the frame's head pose is valid for; stamping the pose ring with it
     // (rather than the JS execution time) keeps capture-time lookups honest.
     void frame;
+    // Paused means fully idle: no pose recording, no snapshots, no worker
+    // traffic -- a frozen tracker costs nothing per frame. On resume the pose
+    // ring refills within a few frames, and until it does requestDetection
+    // falls back to the current-frame pose (`lookup(...) ?? params
+    // .worldFromView`), so the first post-resume detection is merely
+    // unwarped, never wrong.
+    if (this.detectionPaused) return;
     const poseStamp = typeof time === 'number' ? time : now();
     const params = this.recordCameraPose(poseStamp);
-    if (this.detectionPaused) return;
     if (!this.worker) this.startWorker();
     if (
       !params ||
@@ -891,6 +899,7 @@ export class AprilTagTracker extends Script {
   private loadCalibrationOnce(): void {
     if (this.calibrationLoaded) return;
     this.calibrationLoaded = true;
+    if (!this.options.persistCalibration) return;
     if (core.deviceCamera?.simulatorCamera) return;
     const data = loadPersistedAprilTagCalibration(this.targetDevice());
     if (!data) return;
@@ -910,6 +919,7 @@ export class AprilTagTracker extends Script {
   }
 
   private persistCalibration(timestamp: number): void {
+    if (!this.options.persistCalibration) return;
     if (timestamp - this.lastPersistedAt < CALIBRATION_PERSIST_INTERVAL_MS) {
       return;
     }

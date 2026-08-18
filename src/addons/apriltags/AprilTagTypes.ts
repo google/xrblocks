@@ -83,4 +83,13 @@ export interface AprilTagTrackerOptions {
     translation?: number[];
     rangeScale?: number;
   };
+  /**
+   * Whether to use localStorage for the camera calibration: restore a
+   * previously persisted calibration on startup and write the live one back
+   * whenever it converges. Set `false` for a fully session-local tracker
+   * that neither reads nor writes storage — every session then
+   * self-calibrates from scratch. A pinned `calibration` option is honored
+   * either way. @defaultValue true
+   */
+  persistCalibration?: boolean;
 }
