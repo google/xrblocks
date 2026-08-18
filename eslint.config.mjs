@@ -7,6 +7,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
+    {ignores: ['src/addons/apriltags/wasm/apriltag_wasm.js']},
     eslint.configs.recommended, tseslint.configs.recommended, {
       plugins: {tsdoc: tsdoceslint},
       files: ['**/*.ts'],

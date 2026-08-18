@@ -91,6 +91,23 @@ const externalPackages = [
 
 const xrblocksPackages = ['xrblocks', 'netblocks', /xrblocks\/addons\//];
 
+// The AprilTag worker loads the Emscripten binary at runtime. Rollup does not
+// treat `.wasm` files as module inputs, so publish it beside the worker.
+function copyAprilTagWasm() {
+  const source = path.resolve('src/addons/apriltags/wasm/apriltag_wasm.wasm');
+  return {
+    name: 'copy-apriltag-wasm',
+    generateBundle() {
+      if (!fs.existsSync(source)) return;
+      this.emitFile({
+        type: 'asset',
+        fileName: 'addons/apriltags/wasm/apriltag_wasm.wasm',
+        source: fs.readFileSync(source),
+      });
+    },
+  };
+}
+
 const sdkBuilds = [
   {
     input: 'src/entry.ts',
@@ -171,6 +188,7 @@ const sdkBuilds = [
       format: 'esm',
     },
     plugins: [
+      copyAprilTagWasm(),
       typescript({
         tsconfig: 'src/addons/tsconfig.lib.json',
         exclude: ['src/!(addons)/**/*.ts', 'src/*.ts'],

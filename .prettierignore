@@ -2,3 +2,4 @@ build/
 docs/docs/api/
 evals/tasks/
 evals/results/
+src/addons/apriltags/wasm/apriltag_wasm.js

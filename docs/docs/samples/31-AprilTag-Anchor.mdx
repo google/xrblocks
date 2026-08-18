@@ -1,0 +1,30 @@
+---
+title: AprilTag Spatial Anchor
+hide_title: true
+breadcrumbs: false
+pagination_next: null
+pagination_prev: null
+---
+
+import {SamplesIFrame} from './SamplesIFrame';
+
+<SamplesIFrame
+  demo="apriltag_tracking"
+  link="https://github.com/google/xrblocks/tree/main/demos/apriltag_tracking/"
+></SamplesIFrame>
+
+## Printed tag setup
+
+This demo detects the `tag25h9` family and starts on ID **17**. Its default
+physical width is **155.6 mm (0.1556 m)**: use the printed tag's **tag size**,
+the black-and-white code width, rather than its 200 mm total paper size.
+
+Use the panel's − and + controls to select another tag25h9 ID (0–34). The
+three axes are centered on the tag: X is red, Y is green, and Z is blue.
+
+## Persistent anchor behavior
+
+After the selected tag is observed, the demo keeps its last measured world pose
+when the tag is outside the camera view. A later valid observation smoothly
+refreshes that cached pose. Select a different ID or use **Reset anchor** to
+discard the current anchor deliberately.
