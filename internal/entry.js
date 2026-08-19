@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 4e1d219
- * @builddate 2026-08-16T07:27:47.685Z
+ * @commitid 8f32106
+ * @builddate 2026-08-19T17:28:24.966Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9863,6 +9863,202 @@ class DepthMesh extends MeshScript {
     }
 }
 
+function validateUIAppearance(value) {
+    if (value !== 'surface' && value !== 'none') {
+        throw new Error(`Invalid UI appearance "${String(value)}".`);
+    }
+}
+
+/** The only world-transform root in a spatial UI tree. */
+class UICard extends UIElement {
+    constructor({ size, pixelSize = 0.001, anchorX = 'center', anchorY = 'center', appearance = 'surface', manipulation, edge = false, ...options }) {
+        validateSize(size);
+        validatePixelSize(pixelSize);
+        validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
+        validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
+        validateUIAppearance(appearance);
+        super('card', options);
+        this.name = 'UICard';
+        this.edgeTarget = {
+            translateFromSurface: false,
+        };
+        this.edgeEnabled = false;
+        this.pixelSize = pixelSize;
+        this.anchorX = anchorX;
+        this.anchorY = anchorY;
+        this.appearance = appearance;
+        this.sizeTarget = { ...size };
+        this.sizeProxy = new Proxy(this.sizeTarget, {
+            set: (target, property, value) => {
+                if (property === 'width') {
+                    validateFixedSize(value);
+                }
+                else if (property === 'height') {
+                    validateHeight(value);
+                }
+                else {
+                    throw new Error(`Unknown UICard size property "${String(property)}".`);
+                }
+                Reflect.set(target, property, value);
+                resolvedSizes.delete(this);
+                this.markUIDirty();
+                return true;
+            },
+        });
+        this.edgeProxy = new Proxy(this.edgeTarget, {
+            set: (target, property, value) => {
+                if (property !== 'translateFromSurface' || typeof value !== 'boolean') {
+                    throw new Error(`Unknown or invalid UICard edge option "${String(property)}".`);
+                }
+                const previous = Reflect.get(target, property);
+                Reflect.set(target, property, value);
+                try {
+                    this.validateEdge();
+                }
+                catch (error) {
+                    Reflect.set(target, property, previous);
+                    throw error;
+                }
+                this.markUIDirty();
+                return true;
+            },
+        });
+        this.manipulation = manipulation;
+        this.edge = edge;
+    }
+    get size() {
+        return this.sizeProxy;
+    }
+    set size(value) {
+        validateSize(value);
+        this.sizeProxy.width = value.width;
+        this.sizeProxy.height = value.height;
+    }
+    get manipulation() {
+        return this.xb?.manipulation;
+    }
+    set manipulation(value) {
+        const normalized = normalizeCardManipulation(value);
+        this.validateEdge(this.edgeEnabled, normalized);
+        this.xb ??= {};
+        this.xb.manipulation = normalized;
+        this.markUIDirty();
+    }
+    get edge() {
+        return this.edgeEnabled ? this.edgeProxy : false;
+    }
+    set edge(value) {
+        const enabled = value !== false;
+        const options = value && value !== true ? value : {};
+        const next = {
+            translateFromSurface: options.translateFromSurface ?? false,
+        };
+        this.validateEdge(enabled, this.xb?.manipulation);
+        this.edgeEnabled = enabled;
+        this.edgeTarget.translateFromSurface = next.translateFromSurface;
+        this.markUIDirty();
+    }
+    validateEdge(enabled = this.edgeEnabled, manipulation = this.xb
+        ?.manipulation) {
+        if (!enabled)
+            return;
+        const config = normalizeManipulationConfig(manipulation);
+        if (!config?.translate) {
+            throw new Error('UICard edge requires Translate manipulation.');
+        }
+    }
+}
+function getUICardEdgeOptions(card) {
+    return card.edge || undefined;
+}
+const resolvedSizes = new WeakMap();
+/** Returns the current physical card size after layout resolves. */
+function getResolvedUICardSize(card) {
+    if (card.size.height !== 'auto') {
+        return { width: card.size.width, height: card.size.height };
+    }
+    return resolvedSizes.get(card);
+}
+/** Stores a backend-calculated physical size for an automatic-height card. */
+function setResolvedUICardSize(card, size) {
+    if (card.size.height !== 'auto')
+        return;
+    resolvedSizes.set(card, size);
+}
+function normalizeCardManipulation(value) {
+    if (value === undefined || value === false)
+        return value;
+    if (value === true) {
+        return {
+            actions: {
+                translate: { faceCamera: true },
+                scale: true,
+            },
+            handle: { action: 'translate' },
+        };
+    }
+    const actions = value.actions ? { ...value.actions } : undefined;
+    if (actions?.translate === true) {
+        actions.translate = { faceCamera: true };
+    }
+    else if (actions?.translate && typeof actions.translate === 'object') {
+        actions.translate = {
+            ...actions.translate,
+            faceCamera: actions.translate.faceCamera ?? true,
+        };
+    }
+    if (actions?.rotate && typeof actions.rotate === 'object') {
+        actions.rotate = {
+            ...actions.rotate,
+            axis: actions.rotate.axis && typeof actions.rotate.axis === 'object'
+                ? { ...actions.rotate.axis }
+                : actions.rotate.axis,
+        };
+    }
+    if (actions?.scale && typeof actions.scale === 'object') {
+        actions.scale = {
+            ...actions.scale,
+            minScale: actions.scale.minScale && typeof actions.scale.minScale === 'object'
+                ? { ...actions.scale.minScale }
+                : actions.scale.minScale,
+            maxScale: actions.scale.maxScale && typeof actions.scale.maxScale === 'object'
+                ? { ...actions.scale.maxScale }
+                : actions.scale.maxScale,
+        };
+    }
+    return {
+        ...value,
+        actions,
+        handle: value.handle ? { ...value.handle } : undefined,
+    };
+}
+function validateSize(size) {
+    if (!size)
+        throw new Error('UICard requires a size.');
+    validateFixedSize(size.width);
+    validateHeight(size.height);
+}
+function validateFixedSize(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        throw new Error('UICard fixed size values must be finite and nonnegative.');
+    }
+}
+function validateHeight(value) {
+    if (value === 'auto')
+        return;
+    validateFixedSize(value);
+}
+function validatePixelSize(pixelSize) {
+    if (!Number.isFinite(pixelSize) || pixelSize <= 0) {
+        throw new Error('UICard pixelSize must be positive and finite.');
+    }
+}
+function validateAnchor(value, allowed, property) {
+    if (!allowed.includes(value)) {
+        throw new Error(`UICard ${property} has an invalid value.`);
+    }
+}
+
 const boundsBox = new THREE.Box3();
 const boundsCorner = new THREE.Vector3();
 function isSemanticInternalObject(object) {
@@ -9939,14 +10135,16 @@ function isInternalRoot(object) {
 }
 function getUIObjectBounds(object, target) {
     const uiObject = object;
+    const resolvedCardSize = object instanceof UICard ? getResolvedUICardSize(object) : undefined;
+    const size = resolvedCardSize ?? uiObject.size;
     if (uiObject.isUI !== true ||
-        typeof uiObject.size?.width !== 'number' ||
-        typeof uiObject.size?.height !== 'number') {
+        typeof size?.width !== 'number' ||
+        typeof size.height !== 'number') {
         return null;
     }
     object.updateMatrixWorld(true);
-    const halfWidth = uiObject.size.width / 2;
-    const halfHeight = uiObject.size.height / 2;
+    const halfWidth = size.width / 2;
+    const halfHeight = size.height / 2;
     boundsBox.makeEmpty();
     for (const x of [-halfWidth, halfWidth]) {
         for (const y of [-halfHeight, halfHeight]) {
@@ -25279,177 +25477,6 @@ class VisibilityTransition extends TransformScript {
     }
 }
 
-function validateUIAppearance(value) {
-    if (value !== 'surface' && value !== 'none') {
-        throw new Error(`Invalid UI appearance "${String(value)}".`);
-    }
-}
-
-/** The only world-transform root in a spatial UI tree. */
-class UICard extends UIElement {
-    constructor({ size, pixelSize = 0.001, anchorX = 'center', anchorY = 'center', appearance = 'surface', manipulation, edge = false, ...options }) {
-        validateSize(size);
-        validatePixelSize(pixelSize);
-        validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
-        validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
-        validateUIAppearance(appearance);
-        super('card', options);
-        this.name = 'UICard';
-        this.edgeTarget = {
-            translateFromSurface: false,
-        };
-        this.edgeEnabled = false;
-        this.pixelSize = pixelSize;
-        this.anchorX = anchorX;
-        this.anchorY = anchorY;
-        this.appearance = appearance;
-        this.sizeTarget = { ...size };
-        this.sizeProxy = new Proxy(this.sizeTarget, {
-            set: (target, property, value) => {
-                if ((property !== 'width' && property !== 'height') ||
-                    typeof value !== 'number' ||
-                    !Number.isFinite(value) ||
-                    value < 0) {
-                    throw new Error('UICard size values must be finite and nonnegative.');
-                }
-                Reflect.set(target, property, value);
-                this.markUIDirty();
-                return true;
-            },
-        });
-        this.edgeProxy = new Proxy(this.edgeTarget, {
-            set: (target, property, value) => {
-                if (property !== 'translateFromSurface' || typeof value !== 'boolean') {
-                    throw new Error(`Unknown or invalid UICard edge option "${String(property)}".`);
-                }
-                const previous = Reflect.get(target, property);
-                Reflect.set(target, property, value);
-                try {
-                    this.validateEdge();
-                }
-                catch (error) {
-                    Reflect.set(target, property, previous);
-                    throw error;
-                }
-                this.markUIDirty();
-                return true;
-            },
-        });
-        this.manipulation = manipulation;
-        this.edge = edge;
-    }
-    get size() {
-        return this.sizeProxy;
-    }
-    set size(value) {
-        validateSize(value);
-        this.sizeProxy.width = value.width;
-        this.sizeProxy.height = value.height;
-    }
-    get manipulation() {
-        return this.xb?.manipulation;
-    }
-    set manipulation(value) {
-        const normalized = normalizeCardManipulation(value);
-        this.validateEdge(this.edgeEnabled, normalized);
-        this.xb ??= {};
-        this.xb.manipulation = normalized;
-        this.markUIDirty();
-    }
-    get edge() {
-        return this.edgeEnabled ? this.edgeProxy : false;
-    }
-    set edge(value) {
-        const enabled = value !== false;
-        const options = value && value !== true ? value : {};
-        const next = {
-            translateFromSurface: options.translateFromSurface ?? false,
-        };
-        this.validateEdge(enabled, this.xb?.manipulation);
-        this.edgeEnabled = enabled;
-        this.edgeTarget.translateFromSurface = next.translateFromSurface;
-        this.markUIDirty();
-    }
-    validateEdge(enabled = this.edgeEnabled, manipulation = this.xb
-        ?.manipulation) {
-        if (!enabled)
-            return;
-        const config = normalizeManipulationConfig(manipulation);
-        if (!config?.translate) {
-            throw new Error('UICard edge requires Translate manipulation.');
-        }
-    }
-}
-function getUICardEdgeOptions(card) {
-    return card.edge || undefined;
-}
-function normalizeCardManipulation(value) {
-    if (value === undefined || value === false)
-        return value;
-    if (value === true) {
-        return {
-            actions: {
-                translate: { faceCamera: true },
-                scale: true,
-            },
-            handle: { action: 'translate' },
-        };
-    }
-    const actions = value.actions ? { ...value.actions } : undefined;
-    if (actions?.translate === true) {
-        actions.translate = { faceCamera: true };
-    }
-    else if (actions?.translate && typeof actions.translate === 'object') {
-        actions.translate = {
-            ...actions.translate,
-            faceCamera: actions.translate.faceCamera ?? true,
-        };
-    }
-    if (actions?.rotate && typeof actions.rotate === 'object') {
-        actions.rotate = {
-            ...actions.rotate,
-            axis: actions.rotate.axis && typeof actions.rotate.axis === 'object'
-                ? { ...actions.rotate.axis }
-                : actions.rotate.axis,
-        };
-    }
-    if (actions?.scale && typeof actions.scale === 'object') {
-        actions.scale = {
-            ...actions.scale,
-            minScale: actions.scale.minScale && typeof actions.scale.minScale === 'object'
-                ? { ...actions.scale.minScale }
-                : actions.scale.minScale,
-            maxScale: actions.scale.maxScale && typeof actions.scale.maxScale === 'object'
-                ? { ...actions.scale.maxScale }
-                : actions.scale.maxScale,
-        };
-    }
-    return {
-        ...value,
-        actions,
-        handle: value.handle ? { ...value.handle } : undefined,
-    };
-}
-function validateSize(size) {
-    if (!size ||
-        !Number.isFinite(size.width) ||
-        !Number.isFinite(size.height) ||
-        size.width < 0 ||
-        size.height < 0) {
-        throw new Error('UICard size values must be finite and nonnegative.');
-    }
-}
-function validatePixelSize(pixelSize) {
-    if (!Number.isFinite(pixelSize) || pixelSize <= 0) {
-        throw new Error('UICard pixelSize must be positive and finite.');
-    }
-}
-function validateAnchor(value, allowed, property) {
-    if (!allowed.includes(value)) {
-        throw new Error(`UICard ${property} has an invalid value.`);
-    }
-}
-
 /** A view-space UI root. World transforms have no rendering effect. */
 class UIOverlay extends UIElement {
     constructor({ appearance = 'surface', ...options } = {}) {
@@ -27070,5 +27097,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { AudioPlayer as $, getUICardEdgeOptions as A, getSemanticControl as B, UICard as C, Depth as D, UIOverlay as E, XR_BLOCKS_ASSETS_PATH as F, SIMULATOR_HAND_POSE_NAMES as G, Handedness as H, Interaction as I, AI as J, Keycodes as K, AIOptions as L, ModelLoader as M, ActiveControllers as N, Options as O, Physics as P, Agent as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UIText as U, AnchorManager as V, WaitFrame as W, XRDeviceCamera as X, AnchoredObjects as Y, AnchorsOptions as Z, AudioListener as _, Script as a, MediaPipeHandPoseEstimator as a$, BACK as a0, BackgroundMusic as a1, CategoryVolumes as a2, Context as a3, ContextOptions as a4, Core as a5, CoreSound as a6, DEFAULT_DEVICE_CAMERA_HEIGHT as a7, DEFAULT_DEVICE_CAMERA_WIDTH as a8, DEFAULT_RGB_TO_DEPTH_PARAMS as a9, Gemini as aA, GeminiOptions as aB, GenerateSkyboxTool as aC, GestureRecognition as aD, GestureRecognitionOptions as aE, GetWeatherTool as aF, HAND_BONE_IDX_CONNECTION_MAP as aG, HAND_INDEX_TO_LABEL as aH, HAND_JOINT_COUNT as aI, HAND_JOINT_IDX_CONNECTION_MAP as aJ, Hands as aK, HandsOptions as aL, HeadGestureRecognition as aM, HeadGestureRecognitionOptions as aN, HeuristicGestureRecognizer as aO, HeuristicHeadGestureRecognizer as aP, HumanRecognizer as aQ, HumansOptions as aR, InputOptions as aS, InteractionOptions as aT, LEFT as aU, LEFT_VIEW_ONLY_LAYER as aV, Lighting as aW, LightingOptions as aX, LoadingSpinnerManager as aY, LocalStorageAnchorStore as aZ, MediaPipeHandContext as a_, DEVICE_CAMERA_PARAMETERS as aa, DOWN as ab, DepthMesh as ac, DepthMeshOptions as ad, DepthOptions as ae, DepthTextures as af, DetectedBodyPose as ag, DetectedFace as ah, DetectedMesh as ai, DetectedObject as aj, DetectedPlane as ak, DeviceCameraOptions as al, FINGER_ORDER as am, FORWARD as an, FaceCamera as ao, FaceLandmarkName as ap, FaceRecognizer as aq, FacesOptions as ar, FollowHead as as, FollowObject as at, GEMINI_DEFAULT_FLASH_MODEL as au, GEMINI_DEFAULT_IMAGE_MODEL as av, GEMINI_DEFAULT_LIVE_MODEL as aw, GamepadBindings as ax, GamepadController as ay, GazeController as az, SimulatorMode as b, WebXRHandPoseEstimator as b$, MeshDetectionOptions as b0, MeshDetector as b1, MeshScript as b2, ModelViewer as b3, MouseController as b4, NUM_HANDS as b5, OCCLUDABLE_ITEMS_LAYER as b6, ObjectDetector as b7, ObjectsOptions as b8, OcclusionPass as b9, SkyboxAgent as bA, SoundOptions as bB, SoundSynthesizer as bC, SpatialAudio as bD, SpeechRecognizer as bE, SpeechRecognizerOptions as bF, SpeechSynthesizer as bG, SpeechSynthesizerOptions as bH, StreamState as bI, StrokeRecognizer as bJ, StylizedFace as bK, TensorFlowHandPoseEstimator as bL, Tool as bM, UIButton as bN, UIElement as bO, UIIcon as bP, UIImage as bQ, UIPanel as bR, UISlider as bS, UP as bT, User as bU, VIEW_DEPTH_GAP as bV, VideoFileStream as bW, VideoStream as bX, VisibilityTransition as bY, VolumeCategory as bZ, WebXRHandContext as b_, OcclusionUtils as ba, OpenAI as bb, OpenAIOptions as bc, Orbit as bd, PhysicsOptions as be, PlaneDetector as bf, PlanesOptions as bg, PoseJointName as bh, RIGHT as bi, RIGHT_VIEW_ONLY_LAYER as bj, ReticleOptions as bk, Reticles as bl, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bm, SOUND_PRESETS as bn, SceneDetector as bo, SceneOptions as bp, SceneSetOfMarkOptions as bq, SceneVisibilityOptions as br, ScreenshotSynthesizer as bs, ScriptMixin as bt, ScriptsManager as bu, ScriptsManagerEventType as bv, SegmentCategory as bw, SegmentationOptions as bx, Segmenter as by, SimulatorAnchor as bz, SetSimulatorModeEvent as c, getUrlParameter as c$, WorldOptions as c0, XRButton as c1, XREffects as c2, XRPass as c3, XRReferenceSpaceCache as c4, XRTransitionOptions as c5, ZERO_VECTOR3 as c6, ZERO_VISEME as c7, _getBvhImportStatus as c8, add as c9, getDeviceCameraWorldFromClip as cA, getDeviceCameraWorldFromView as cB, getElapsedTime as cC, getFingerBendAngles as cD, getFingerCurl as cE, getFingerDirection as cF, getFingerJoint as cG, getFingerPalmAlignment as cH, getFingerSpread as cI, getFingerStraightness as cJ, getFingertipDistance as cK, getFingertipPalmDistance as cL, getPalmNormal as cM, getPalmPose as cN, getPalmRight as cO, getPalmUp as cP, getPalmWidth as cQ, getRelativeBoneAngles as cR, getThumbBendAngles as cS, getThumbCurl as cT, getThumbDirection as cU, getThumbOpposition as cV, getThumbStraightness as cW, getThumbVerticalDirection as cX, getUrlParamBool as cY, getUrlParamFloat as cZ, getUrlParamInt as c_, ai as ca, anchorCapability as cb, applyBVH as cc, average as cd, camera as ce, clamp$1 as cf, clamp01 as cg, clampRotationToAngle as ch, context as ci, core as cj, cropImage as ck, defaultAnchorStorageKey as cl, depth as cm, disposeBVH as cn, disposeMaterial as co, disposeMeshResources as cp, disposeRenderableResources as cq, enableAcceleratedRaycast as cr, estimateHandScale as cs, extractYaw as ct, getAdjacentFingerSpreads as cu, getBoneVectors as cv, getCameraParametersSnapshot as cw, getColorHex as cx, getDeltaTime as cy, getDeviceCameraClipFromView as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, getVec4ByColorString as d0, getXrCameraLeft as d1, getXrCameraRight as d2, init as d3, initScript as d4, input as d5, intrinsicsToProjectionMatrix as d6, isBVHReady as d7, isDeviceCameraPoseAvailable as d8, lerp as d9, xrDeviceCameraEnvironmentContinuousOptions as dA, xrDeviceCameraEnvironmentOptions as dB, xrDeviceCameraUserContinuousOptions as dC, xrDeviceCameraUserOptions as dD, loadStereoImageAsTextures as da, loadingSpinnerManager as db, lookAtRotation as dc, objectIsDescendantOf as dd, parseBase64DataURL as de, parseSimulatorHandPoseRotations as df, placeObjectAtIntersectionFacingTarget as dg, print as dh, resolveSimulatorRotationsFromKeypoints as di, scene as dj, showOnlyInLeftEye as dk, showOnlyInRightEye as dl, sound as dm, timer as dn, transformRgbUvToWorld as dp, traverseUtil as dq, ui as dr, urlParams as ds, user as dt, visualizeDepth as du, visualizeDepthMap as dv, world as dw, xrDepthMeshOptions as dx, xrDepthMeshPhysicsOptions as dy, xrDepthMeshVisualizationOptions as dz, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIElementKind as w, getUIStructureRevision as x, isUIElement as y, getUIRevision as z };
+export { AudioListener as $, isUIElement as A, getUIRevision as B, getUICardEdgeOptions as C, Depth as D, getSemanticControl as E, UIOverlay as F, XR_BLOCKS_ASSETS_PATH as G, Handedness as H, Interaction as I, SIMULATOR_HAND_POSE_NAMES as J, Keycodes as K, AI as L, ModelLoader as M, AIOptions as N, Options as O, Physics as P, ActiveControllers as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UICard as U, Agent as V, WaitFrame as W, XRDeviceCamera as X, AnchorManager as Y, AnchoredObjects as Z, AnchorsOptions as _, Script as a, MediaPipeHandContext as a$, AudioPlayer as a0, BACK as a1, BackgroundMusic as a2, CategoryVolumes as a3, Context as a4, ContextOptions as a5, Core as a6, CoreSound as a7, DEFAULT_DEVICE_CAMERA_HEIGHT as a8, DEFAULT_DEVICE_CAMERA_WIDTH as a9, GazeController as aA, Gemini as aB, GeminiOptions as aC, GenerateSkyboxTool as aD, GestureRecognition as aE, GestureRecognitionOptions as aF, GetWeatherTool as aG, HAND_BONE_IDX_CONNECTION_MAP as aH, HAND_INDEX_TO_LABEL as aI, HAND_JOINT_COUNT as aJ, HAND_JOINT_IDX_CONNECTION_MAP as aK, Hands as aL, HandsOptions as aM, HeadGestureRecognition as aN, HeadGestureRecognitionOptions as aO, HeuristicGestureRecognizer as aP, HeuristicHeadGestureRecognizer as aQ, HumanRecognizer as aR, HumansOptions as aS, InputOptions as aT, InteractionOptions as aU, LEFT as aV, LEFT_VIEW_ONLY_LAYER as aW, Lighting as aX, LightingOptions as aY, LoadingSpinnerManager as aZ, LocalStorageAnchorStore as a_, DEFAULT_RGB_TO_DEPTH_PARAMS as aa, DEVICE_CAMERA_PARAMETERS as ab, DOWN as ac, DepthMesh as ad, DepthMeshOptions as ae, DepthOptions as af, DepthTextures as ag, DetectedBodyPose as ah, DetectedFace as ai, DetectedMesh as aj, DetectedObject as ak, DetectedPlane as al, DeviceCameraOptions as am, FINGER_ORDER as an, FORWARD as ao, FaceCamera as ap, FaceLandmarkName as aq, FaceRecognizer as ar, FacesOptions as as, FollowHead as at, FollowObject as au, GEMINI_DEFAULT_FLASH_MODEL as av, GEMINI_DEFAULT_IMAGE_MODEL as aw, GEMINI_DEFAULT_LIVE_MODEL as ax, GamepadBindings as ay, GamepadController as az, SimulatorMode as b, WebXRHandContext as b$, MediaPipeHandPoseEstimator as b0, MeshDetectionOptions as b1, MeshDetector as b2, MeshScript as b3, ModelViewer as b4, MouseController as b5, NUM_HANDS as b6, OCCLUDABLE_ITEMS_LAYER as b7, ObjectDetector as b8, ObjectsOptions as b9, SimulatorAnchor as bA, SkyboxAgent as bB, SoundOptions as bC, SoundSynthesizer as bD, SpatialAudio as bE, SpeechRecognizer as bF, SpeechRecognizerOptions as bG, SpeechSynthesizer as bH, SpeechSynthesizerOptions as bI, StreamState as bJ, StrokeRecognizer as bK, StylizedFace as bL, TensorFlowHandPoseEstimator as bM, Tool as bN, UIButton as bO, UIElement as bP, UIIcon as bQ, UIImage as bR, UIPanel as bS, UISlider as bT, UP as bU, User as bV, VIEW_DEPTH_GAP as bW, VideoFileStream as bX, VideoStream as bY, VisibilityTransition as bZ, VolumeCategory as b_, OcclusionPass as ba, OcclusionUtils as bb, OpenAI as bc, OpenAIOptions as bd, Orbit as be, PhysicsOptions as bf, PlaneDetector as bg, PlanesOptions as bh, PoseJointName as bi, RIGHT as bj, RIGHT_VIEW_ONLY_LAYER as bk, ReticleOptions as bl, Reticles as bm, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bn, SOUND_PRESETS as bo, SceneDetector as bp, SceneOptions as bq, SceneSetOfMarkOptions as br, SceneVisibilityOptions as bs, ScreenshotSynthesizer as bt, ScriptMixin as bu, ScriptsManager as bv, ScriptsManagerEventType as bw, SegmentCategory as bx, SegmentationOptions as by, Segmenter as bz, SetSimulatorModeEvent as c, getUrlParamInt as c$, WebXRHandPoseEstimator as c0, WorldOptions as c1, XRButton as c2, XREffects as c3, XRPass as c4, XRReferenceSpaceCache as c5, XRTransitionOptions as c6, ZERO_VECTOR3 as c7, ZERO_VISEME as c8, _getBvhImportStatus as c9, getDeviceCameraClipFromView as cA, getDeviceCameraWorldFromClip as cB, getDeviceCameraWorldFromView as cC, getElapsedTime as cD, getFingerBendAngles as cE, getFingerCurl as cF, getFingerDirection as cG, getFingerJoint as cH, getFingerPalmAlignment as cI, getFingerSpread as cJ, getFingerStraightness as cK, getFingertipDistance as cL, getFingertipPalmDistance as cM, getPalmNormal as cN, getPalmPose as cO, getPalmRight as cP, getPalmUp as cQ, getPalmWidth as cR, getRelativeBoneAngles as cS, getThumbBendAngles as cT, getThumbCurl as cU, getThumbDirection as cV, getThumbOpposition as cW, getThumbStraightness as cX, getThumbVerticalDirection as cY, getUrlParamBool as cZ, getUrlParamFloat as c_, add as ca, ai as cb, anchorCapability as cc, applyBVH as cd, average as ce, camera as cf, clamp$1 as cg, clamp01 as ch, clampRotationToAngle as ci, context as cj, core as ck, cropImage as cl, defaultAnchorStorageKey as cm, depth as cn, disposeBVH as co, disposeMaterial as cp, disposeMeshResources as cq, disposeRenderableResources as cr, enableAcceleratedRaycast as cs, estimateHandScale as ct, extractYaw as cu, getAdjacentFingerSpreads as cv, getBoneVectors as cw, getCameraParametersSnapshot as cx, getColorHex as cy, getDeltaTime as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, getUrlParameter as d0, getVec4ByColorString as d1, getXrCameraLeft as d2, getXrCameraRight as d3, init as d4, initScript as d5, input as d6, intrinsicsToProjectionMatrix as d7, isBVHReady as d8, isDeviceCameraPoseAvailable as d9, xrDepthMeshVisualizationOptions as dA, xrDeviceCameraEnvironmentContinuousOptions as dB, xrDeviceCameraEnvironmentOptions as dC, xrDeviceCameraUserContinuousOptions as dD, xrDeviceCameraUserOptions as dE, lerp as da, loadStereoImageAsTextures as db, loadingSpinnerManager as dc, lookAtRotation as dd, objectIsDescendantOf as de, parseBase64DataURL as df, parseSimulatorHandPoseRotations as dg, placeObjectAtIntersectionFacingTarget as dh, print as di, resolveSimulatorRotationsFromKeypoints as dj, scene as dk, showOnlyInLeftEye as dl, showOnlyInRightEye as dm, sound as dn, timer as dp, transformRgbUvToWorld as dq, traverseUtil as dr, ui as ds, urlParams as dt, user as du, visualizeDepth as dv, visualizeDepthMap as dw, world as dx, xrDepthMeshOptions as dy, xrDepthMeshPhysicsOptions as dz, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIElementKind as w, getUIStructureRevision as x, setResolvedUICardSize as y, UIText as z };
 //# sourceMappingURL=entry.js.map

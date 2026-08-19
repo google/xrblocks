@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 4e1d219
- * @builddate 2026-08-16T07:27:47.685Z
+ * @commitid 8f32106
+ * @builddate 2026-08-19T17:28:24.966Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -47,7 +47,7 @@
  */
 import { Container, Component, Custom, abortableEffect, Image, Text, reversePainterSortStable, Svg } from '@pmndrs/uikit';
 import * as THREE from 'three';
-import { T as TransformScript, t as MAX_GRADIENT_STOPS, u as DEFAULT_GRADIENT_PANEL_PROPS, v as ManipulationAction, w as getUIElementKind, x as getUIStructureRevision, U as UIText, y as isUIElement, z as getUIRevision, A as getUICardEdgeOptions, B as getSemanticControl, C as UICard, E as UIOverlay } from './entry.js';
+import { T as TransformScript, t as MAX_GRADIENT_STOPS, u as DEFAULT_GRADIENT_PANEL_PROPS, v as ManipulationAction, w as getUIElementKind, x as getUIStructureRevision, U as UICard, y as setResolvedUICardSize, z as UIText, A as isUIElement, B as getUIRevision, C as getUICardEdgeOptions, E as getSemanticControl, F as UIOverlay } from './entry.js';
 import { signal, computed, effect } from '@preact/signals-core';
 import 'three/addons/postprocessing/Pass.js';
 import 'three/addons/webxr/XRControllerModelFactory.js';
@@ -2320,6 +2320,15 @@ class UIKitMount {
     }
     update(deltaSeconds) {
         this.rendered?.update(deltaSeconds * 1000);
+        if (!(this.root instanceof UICard) || !this.binding)
+            return;
+        const size = this.binding.node.size.peek();
+        if (!validPair(size))
+            return;
+        setResolvedUICardSize(this.root, {
+            width: size[0] * this.root.pixelSize,
+            height: size[1] * this.root.pixelSize,
+        });
     }
     validate() {
         const issues = [];
@@ -2904,14 +2913,19 @@ function panelDefaults(element, theme, style) {
         defaults.justifyContent = style.justifyContent ?? 'center';
         defaults.alignItems = style.alignItems ?? 'stretch';
     }
+    if (kind === 'panel') {
+        defaults.flexShrink = style.flexShrink ?? 1;
+    }
     if (kind === 'card') {
         const card = element;
         defaults.backfaceColor = defaults.fillColor;
         defaults.pixelSize = card.pixelSize;
         defaults.sizeX = card.size.width;
-        defaults.sizeY = card.size.height;
         defaults.width = card.size.width / card.pixelSize;
-        defaults.height = card.size.height / card.pixelSize;
+        if (card.size.height !== 'auto') {
+            defaults.sizeY = card.size.height;
+            defaults.height = card.size.height / card.pixelSize;
+        }
         defaults.anchorX = card.anchorX;
         defaults.anchorY = card.anchorY;
     }
