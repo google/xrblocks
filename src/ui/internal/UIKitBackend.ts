@@ -23,6 +23,7 @@ import {
   getUIRevision,
   getUIStructureRevision,
   isUIElement,
+  registerUIPresentationObject,
   type UIElement,
   type UIStyle,
 } from '../UIElement';
@@ -256,6 +257,7 @@ type UIKitNode =
 /** A retained physical node and the small private subtree it owns. */
 class UIKitNodeBinding {
   readonly node: UIKitNode;
+  private readonly unregisterPresentationObject: () => void;
   private readonly children = new Map<UIElement, UIKitNodeBinding>();
   private readonly childOrder: UIElement[] = [];
   private readonly cursorPoints = [
@@ -310,6 +312,10 @@ class UIKitNodeBinding {
     } else {
       this.node = new GradientPanel(properties);
     }
+    this.unregisterPresentationObject = registerUIPresentationObject(
+      this.element,
+      this.node
+    );
     this.baseProperties = properties;
     this.presentedProperties = properties;
     this.theme = context.theme;
@@ -438,6 +444,7 @@ class UIKitNodeBinding {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.unregisterPresentationObject();
     for (const child of this.children.values()) child.dispose();
     this.children.clear();
     this.childOrder.length = 0;
