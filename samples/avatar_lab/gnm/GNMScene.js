@@ -27,6 +27,13 @@ const MATERIAL_COLORS = [
 
 const JOINT_LABELS = ['neck', 'head', 'left eye', 'right eye'];
 
+// Indices into JOINT_LABELS, used by the face tracker to drive head and gaze.
+const HEAD_JOINT = 1;
+const EYE_JOINTS = [2, 3];
+
+// How often a tracked face refreshes the control panel's sliders.
+const TRACKED_SYNC_INTERVAL_MS = 250;
+
 const TOUR_FADE_SECONDS = 0.9;
 const TOUR_HOLD_SECONDS = 1.3;
 const MORPH_FADE_SECONDS = 1.6;
@@ -67,6 +74,13 @@ export class GNMScene extends xb.Script {
     // The entry point owns the UI. This keeps the model scene independent of
     // one UI renderer and lets the same head run in focused samples.
     this.spatialUI = null;
+
+    // Set by the entry point when photo / webcam fitting is wired up. Ticked
+    // from `update` rather than its own rAF so it survives entering XR.
+    this.faceFitter = null;
+    this.faceTracking = false;
+    this._preTrackingState = null;
+    this._lastTrackedNotify = 0;
   }
 
   init() {
@@ -84,7 +98,7 @@ export class GNMScene extends xb.Script {
     });
     this.add(this.modelViewer);
 
-    // ---- Geometry --------------------------------------------------------
+    // GNM geometry.
     const geometry = new THREE.BufferGeometry();
     this.positionAttribute = new THREE.BufferAttribute(
       new Float32Array(model.numVertices * 3),
@@ -137,7 +151,7 @@ export class GNMScene extends xb.Script {
     this.mesh.name = 'GNM Head';
     this.anchor.add(this.mesh);
 
-    // ---- Wireframe (quad edges, sharing the position attribute) ----------
+    // Wireframe mode.
     const wireGeometry = new THREE.BufferGeometry();
     wireGeometry.setAttribute('position', this.positionAttribute);
     wireGeometry.setIndex(
@@ -153,13 +167,11 @@ export class GNMScene extends xb.Script {
     );
     this.wireframe.frustumCulled = false;
     this.wireframe.visible = false;
-    // Overlay: never a reticle target — lines return no surface normal, which
-    // would otherwise trap the reticle at the origin (it also occludes the head
-    // because THREE raycasts objects even while hidden).
-    this.wireframe.ignoreReticleRaycast = true;
+    // Overlay: never a pointer target — lines return no surface normal, which
+    // would otherwise trap the reticle at the origin.
+    this.wireframe.xb = {pointerEvents: 'none'};
     this.anchor.add(this.wireframe);
 
-    // ---- Landmarks -------------------------------------------------------
     const landmarkCount = model.landmarkIndices.length / 3;
     this.landmarkPoints = new Float32Array(landmarkCount * 3);
     this.landmarkMesh = new THREE.InstancedMesh(
@@ -169,10 +181,9 @@ export class GNMScene extends xb.Script {
     );
     this.landmarkMesh.frustumCulled = false;
     this.landmarkMesh.visible = false;
-    this.landmarkMesh.ignoreReticleRaycast = true; // overlay, not a target
+    this.landmarkMesh.xb = {pointerEvents: 'none'}; // overlay, not a target
     this.anchor.add(this.landmarkMesh);
 
-    // ---- Skeleton --------------------------------------------------------
     this.jointMesh = new THREE.InstancedMesh(
       new THREE.SphereGeometry(0.0055, 12, 10),
       new THREE.MeshBasicMaterial({color: 0xffb037, depthTest: false}),
@@ -194,10 +205,9 @@ export class GNMScene extends xb.Script {
     this.skeletonGroup = new THREE.Group();
     this.skeletonGroup.add(this.jointMesh, this.boneLines);
     this.skeletonGroup.visible = false;
-    this.skeletonGroup.ignoreReticleRaycast = true; // overlay, not a target
+    this.skeletonGroup.xb = {pointerEvents: 'none'}; // overlay, not a target
     this.anchor.add(this.skeletonGroup);
 
-    // ---- Lights ----------------------------------------------------------
     const key = new THREE.DirectionalLight(0xfff1e0, 2.6);
     key.position.set(0.7, 2.3, 0.9);
     const fill = new THREE.DirectionalLight(0xbdd2ff, 1.0);
@@ -235,8 +245,6 @@ export class GNMScene extends xb.Script {
     viewer.position.set(0, WORLD_HEAD_Y, WORLD_HEAD_Z);
     this._modelViewerHomeY = viewer.position.y;
   }
-
-  // -------------------------------------------------------------- helpers --
 
   _buildMaterialColors() {
     const model = this.model;
@@ -293,8 +301,6 @@ export class GNMScene extends xb.Script {
     this.onStatus?.(text);
     this.spatialUI?.setStatus(text);
   }
-
-  // ------------------------------------------------------------ view state --
 
   setMaterialMode(mode) {
     if (!this.materials[mode]) return;
@@ -447,7 +453,108 @@ export class GNMScene extends xb.Script {
     this.onModelChanged?.();
   }
 
-  // ------------------------------------------------------------ animation --
+  /**
+   * Applies an identity solved from a photo or webcam frame.
+   *
+   * Stops the identity morph first: it owns the same blend slot, and leaving it
+   * running would walk the fitted face back off within a second.
+   *
+   * @param {!Float32Array} identity Fitted coefficients.
+   * @param {boolean=} smooth Crossfade rather than snap.
+   */
+  applyFittedIdentity(identity, smooth = true) {
+    this.setIdentityMorph(false);
+    this._applyIdentity(identity, smooth);
+  }
+
+  /**
+   * Hands the head over to the face tracker.
+   *
+   * Every driver that writes the same channels is suspended, and the previous
+   * settings are remembered so stopping the tracker gives the user back the
+   * demo they had configured. Without this the tracked expression fights the
+   * tour, and the camera-following gaze fights the tracked one.
+   */
+  beginFaceTracking() {
+    if (this._preTrackingState) return;
+    this._preTrackingState = {
+      eyesFollowCamera: this.eyesFollowCamera,
+      headFollowsCamera: this.headFollowsCamera,
+      idleSway: this.idleSway,
+      pulseEnabled: this.pulseEnabled,
+    };
+    this.setExpressionTour(false);
+    this.setIdentityMorph(false);
+    this.setPulseEnabled(false);
+    this.eyesFollowCamera = false;
+    this.headFollowsCamera = false;
+    this.idleSway = false;
+    this.faceTracking = true;
+  }
+
+  /** Restores the drivers suspended by `beginFaceTracking`. */
+  endFaceTracking() {
+    this.faceTracking = false;
+    const previous = this._preTrackingState;
+    if (!previous) return;
+    this._preTrackingState = null;
+    this.eyesFollowCamera = previous.eyesFollowCamera;
+    this.headFollowsCamera = previous.headFollowsCamera;
+    this.idleSway = previous.idleSway;
+    this.setPulseEnabled(previous.pulseEnabled);
+    // The tracker leaves the head wherever the last solved frame put it.
+    this.model.resetPose();
+    this._smoothedRotations.fill(0);
+    this.onModelChanged?.();
+  }
+
+  /**
+   * Drives the head from one solved frame.
+   *
+   * Written straight into the model rather than through the blend path: this
+   * runs at camera rate, and a crossfade would lag every frame behind by its
+   * own duration.
+   *
+   * @param {{expression: ?Float32Array, headRotation: ?Float32Array,
+   *     gaze: ?{x: number, y: number}}} solution Channels to apply; a null
+   *     channel is left alone.
+   */
+  applyTrackedFace({expression, headRotation, gaze}) {
+    const model = this.model;
+    if (expression) {
+      this._exprFade = null;
+      this.tour = null;
+      model.setExpressionVector(expression);
+    }
+    if (headRotation) {
+      model.setJointRotation(
+        HEAD_JOINT,
+        headRotation[0],
+        headRotation[1],
+        headRotation[2]
+      );
+    }
+    if (gaze) {
+      // The camera-following gaze writes the same two joints every frame, so
+      // leaving it on would silently undo the tracked one. Turning it off is
+      // visible: the View tab's toggle is refreshed from the scene each frame.
+      this.eyesFollowCamera = false;
+      // Same convention as `_updateGaze`: the eye's forward is +z, so a target
+      // to its +x is a rotation about +y and one above it is about -x.
+      for (const joint of EYE_JOINTS) {
+        model.setJointRotation(joint, -gaze.y, gaze.x, 0);
+      }
+      this._smoothedRotations.set(model.rotations);
+    }
+    // Notifying per frame would re-sync every built parameter slider — up to
+    // 636 of them — at camera rate. The sliders are a readout here, not a
+    // control, so they are refreshed a few times a second instead.
+    const now = performance.now();
+    if (now - this._lastTrackedNotify > TRACKED_SYNC_INTERVAL_MS) {
+      this._lastTrackedNotify = now;
+      this.onModelChanged?.();
+    }
+  }
 
   setExpressionTour(enabled) {
     this.tour = enabled ? {phase: 'fade', t: 0, classIndex: 0} : null;
@@ -621,8 +728,6 @@ export class GNMScene extends xb.Script {
     );
   }
 
-  // --------------------------------------------------------------- update --
-
   update() {
     const dt =
       Math.min(xb.core?.timer?.getDelta?.() ?? 0.016, 0.1) *
@@ -645,6 +750,8 @@ export class GNMScene extends xb.Script {
     this._updatePulse(dt);
     if (this.idleSway) this._updateIdleSway(this._time);
     if (this.eyesFollowCamera || this.headFollowsCamera) this._updateGaze(dt);
+    // After the drivers above, so a tracked face wins any channel they share.
+    this.faceFitter?.tick();
 
     this.spatialUI?.update();
     if (this.model.dirty) this._refreshGeometry();
@@ -704,8 +811,6 @@ export class GNMScene extends xb.Script {
     }
     this.boneAttribute.needsUpdate = true;
   }
-
-  // ---------------------------------------------------------------- export --
 
   exportOBJ() {
     const positions = this.positionAttribute.array;

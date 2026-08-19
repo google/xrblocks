@@ -1,6 +1,7 @@
 import * as xb from 'xrblocks';
 
 import {GNMControls} from './GNMControls.js';
+import {GNMFaceFitter} from './GNMFaceFitter.js';
 import {GNMHeadModel} from './GNMModel.js';
 import {GNMScene} from './GNMScene.js';
 import {GNMSamplers} from './SemanticSampler.js';
@@ -49,9 +50,15 @@ async function start() {
     scene.spatialUI = new GNMSpatialUI(scene);
     xb.add(scene);
 
-    const controls = new GNMControls(model, samplers, scene);
+    // Fitting a photo or the webcam onto the head. The 3.7 MB face landmarker
+    // is not fetched until the first fit is asked for, so the demo starts just
+    // as fast for anyone who never opens the Fit tab.
+    const faceFitter = new GNMFaceFitter(model, scene);
+    scene.faceFitter = faceFitter;
+
+    const controls = new GNMControls(model, samplers, scene, faceFitter);
     controls.attach();
-    window.gnm = {model, samplers, scene, controls};
+    window.gnm = {model, samplers, scene, controls, faceFitter};
 
     const options = new xb.Options();
     options.enableReticles();
