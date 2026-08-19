@@ -35,7 +35,7 @@
       import * as THREE from 'three';
       import * as xb from 'xrblocks';
 
-      const CARD_SIZE = {width: 0.56, height: 0.58};
+      const CARD_SIZE = {width: 0.56, height: 'auto'};
 
       function createHeader(icon, title, subtitle) {
         return new xb.UIPanel({
@@ -48,7 +48,7 @@
           children: [
             new xb.UIIcon({
               icon,
-              style: {width: 44, height: 44},
+              style: {width: 44, height: 44, color: '#ffffff'},
             }),
             new xb.UIPanel({
               style: {
@@ -84,7 +84,10 @@
             borderRadius: 18,
           },
           children: [
-            new xb.UIIcon({icon, style: {width: 34, height: 34}}),
+            new xb.UIIcon({
+              icon,
+              style: {width: 34, height: 34, color: '#ffffff'},
+            }),
             new xb.UIPanel({
               style: {
                 flexGrow: 1,
