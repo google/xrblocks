@@ -54,7 +54,7 @@ export class GNMSpatialUI {
     if (this.statusText) this.statusText.text = text || ' ';
   }
 
-  card(name, sizeX, sizeY, x, y, z, rotationY) {
+  card(name, sizeX, sizeY = 'auto', x, y, z, rotationY) {
     const card = new xb.UICard({
       size: {width: sizeX * CARD_SCALE, height: sizeY * CARD_SCALE},
       pixelSize: DEFAULT_PIXEL_SIZE * CARD_SCALE,
@@ -140,7 +140,7 @@ export class GNMSpatialUI {
   }
 
   buildSampleCard() {
-    const card = this.card('GNMSample', 0.6, 0.8, -0.62, 1.32, -0.46, 0.6);
+    const card = this.card('GNMSample', 0.6, 'auto', -0.62, 1.32, -0.46, 0.6);
     this.header(card, 'face', 'GNM Sample');
     this.sectionLabel(card, 'IDENTITY');
 
@@ -246,7 +246,7 @@ export class GNMSpatialUI {
   }
 
   buildMotionCard() {
-    const card = this.card('GNMMotion', 0.52, 0.46, 0.62, 1.52, -0.46, -0.6);
+    const card = this.card('GNMMotion', 0.52, 'auto', 0.62, 1.52, -0.46, -0.6);
     this.header(card, 'animation', 'Motion');
 
     const scene = this.scene;
@@ -303,7 +303,7 @@ export class GNMSpatialUI {
   }
 
   buildViewCard() {
-    const card = this.card('GNMView', 0.52, 0.4, 0.64, 1.08, -0.46, -0.6);
+    const card = this.card('GNMView', 0.52, 'auto', 0.64, 1.08, -0.46, -0.6);
     this.header(card, 'visibility', 'View');
 
     const scene = this.scene;
