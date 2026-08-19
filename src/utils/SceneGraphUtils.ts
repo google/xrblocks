@@ -63,3 +63,58 @@ export function traverseUtil(
   }
   return false;
 }
+
+/**
+ * Gets a world-space point on an object's rendered geometry near a reference
+ * position. Falls back to the object's world position when it has no mesh
+ * triangles. `closest` measures from `from`; `center` measures from the
+ * object's world bounding-box center.
+ */
+export function getObjectTargetPoint(
+  object: THREE.Object3D,
+  from: THREE.Vector3,
+  out: THREE.Vector3,
+  mode: 'closest' | 'center' = 'closest'
+): THREE.Vector3 {
+  object.updateWorldMatrix(true, true);
+  const reference =
+    mode === 'center'
+      ? new THREE.Box3()
+          .setFromObject(object, true)
+          .getCenter(new THREE.Vector3())
+      : from;
+  let closestDistanceSquared = Infinity;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const centroid = new THREE.Vector3();
+
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.visible) return;
+    const position = child.geometry.getAttribute('position');
+    if (!position) return;
+    const index = child.geometry.index;
+    const vertexCount = index?.count ?? position.count;
+
+    for (let offset = 0; offset + 2 < vertexCount; offset += 3) {
+      child.getVertexPosition(index?.getX(offset) ?? offset, a);
+      child.getVertexPosition(index?.getX(offset + 1) ?? offset + 1, b);
+      child.getVertexPosition(index?.getX(offset + 2) ?? offset + 2, c);
+      a.applyMatrix4(child.matrixWorld);
+      b.applyMatrix4(child.matrixWorld);
+      c.applyMatrix4(child.matrixWorld);
+      centroid
+        .copy(a)
+        .add(b)
+        .add(c)
+        .multiplyScalar(1 / 3);
+      const distanceSquared = centroid.distanceToSquared(reference);
+      if (distanceSquared < closestDistanceSquared) {
+        closestDistanceSquared = distanceSquared;
+        out.copy(centroid);
+      }
+    }
+  });
+
+  return closestDistanceSquared < Infinity ? out : object.getWorldPosition(out);
+}
