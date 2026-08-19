@@ -56,7 +56,10 @@ export class GNMSpatialUI {
 
   card(name, sizeX, sizeY = 'auto', x, y, z, rotationY) {
     const card = new xb.UICard({
-      size: {width: sizeX * CARD_SCALE, height: sizeY * CARD_SCALE},
+      size: {
+        width: sizeX * CARD_SCALE,
+        height: typeof sizeY === 'number' ? sizeY * CARD_SCALE : sizeY,
+      },
       pixelSize: DEFAULT_PIXEL_SIZE * CARD_SCALE,
       manipulation: {
         actions: {translate: {faceCamera: true}},
@@ -360,6 +363,52 @@ export class GNMSpatialUI {
         this.toggles.push({button, getValue});
       }
     }
+    this.sectionLabel(card, 'CAMERA');
+    const cameraRow = this.row(card, {gap: 8});
+    this.cameraButton = this.button(cameraRow, 'Start camera', {
+      onClick: async () => {
+        const fitter = this.scene.faceFitter;
+        if (!fitter) return;
+        if (fitter.tracking) {
+          fitter.stopCamera();
+        } else {
+          try {
+            await fitter.startCamera();
+          } catch (error) {
+            console.error('[gnm] camera failed', error);
+            this.scene._emitStatus(`camera failed: ${error.message}`);
+          }
+        }
+        this.update();
+      },
+    });
+    this.switchCameraButton = this.button(cameraRow, 'Switch camera', {
+      onClick: async () => {
+        const fitter = this.scene.faceFitter;
+        if (!fitter) return;
+        try {
+          await fitter.switchCamera();
+        } catch (error) {
+          console.error('[gnm] switch camera failed', error);
+          this.scene._emitStatus(`switch camera failed: ${error.message}`);
+        }
+        this.update();
+      },
+    });
+    this.fitIdentityButton = this.button(cameraRow, 'Fit identity', {
+      onClick: () => {
+        const fitter = this.scene.faceFitter;
+        if (!fitter) return;
+        try {
+          fitter.fitIdentityFromCamera();
+          this.scene.onModelChanged?.();
+        } catch (error) {
+          console.error('[gnm] fit identity failed', error);
+          this.scene._emitStatus(error.message);
+        }
+        this.update();
+      },
+    });
   }
 
   pickGender(index) {
@@ -425,10 +474,23 @@ export class GNMSpatialUI {
     }
 
     const mode = this.scene.materialMode;
-    if (this.lastStates.get('mode') === mode) return;
-    this.lastStates.set('mode', mode);
-    for (const entry of this.modeButtons) {
-      entry.button.setToggled(entry.mode === mode);
+    if (this.lastStates.get('mode') !== mode) {
+      this.lastStates.set('mode', mode);
+      for (const entry of this.modeButtons) {
+        entry.button.setToggled(entry.mode === mode);
+      }
+    }
+
+    if (this.cameraButton) {
+      const isTracking = !!this.scene.faceFitter?.tracking;
+      if (this.lastStates.get('cameraTracking') !== isTracking) {
+        this.lastStates.set('cameraTracking', isTracking);
+        this.cameraButton.setLabel(isTracking ? 'Stop camera' : 'Start camera');
+        this.cameraButton.setToggled(isTracking);
+      }
+      if (this.fitIdentityButton) {
+        this.fitIdentityButton.button.disabled = !isTracking;
+      }
     }
   }
 }
