@@ -402,3 +402,78 @@
     right: 4vw;
   }
 }
+
+/* ---- Fit tab: photo drop target, webcam preview, solver readout ---------- */
+
+.gnm-note {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #93a0b8;
+}
+
+.gnm-note a {
+  color: #7fb0f0;
+}
+
+.gnm-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 18px 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.gnm-drop:hover {
+  border-color: rgba(79, 140, 224, 0.6);
+  background: rgba(79, 140, 224, 0.1);
+}
+
+.gnm-drop.dragging {
+  border-color: #4f8ce0;
+  border-style: solid;
+  background: rgba(79, 140, 224, 0.22);
+}
+
+.gnm-drop strong {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.gnm-drop span {
+  font-size: 11px;
+  color: #93a0b8;
+}
+
+.gnm-fit-preview {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #05070b;
+}
+
+.gnm-readout {
+  margin: 8px 0 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: #b9c6dc;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
