@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { User, World } from 'xrblocks';
+import { getObjectTargetPoint, User, World } from 'xrblocks';
 import { DEFAULT_EMBODIED_CONTROL_OPTIONS } from './EmbodiedControlTypes.js';
 import { runTimedMotion } from './EmbodiedControlTiming.js';
 
@@ -199,7 +199,7 @@ class EmbodiedControlExecutor {
             this.activeStep = false;
         }
     }
-    getTargetWorldPosition(target, out) {
+    getTargetWorldPosition(target, out, from) {
         if (target instanceof THREE.Vector3) {
             out.copy(target);
         }
@@ -207,7 +207,10 @@ class EmbodiedControlExecutor {
             out.fromArray(target);
         }
         else if (target instanceof THREE.Object3D) {
-            target.getWorldPosition(out);
+            if (from)
+                getObjectTargetPoint(target, from, out, 'closest');
+            else
+                target.getWorldPosition(out);
         }
     }
     async teleportTo(target, options = {}) {
@@ -283,12 +286,15 @@ class EmbodiedControlExecutor {
         return this.executeAction(async () => {
             const { velocity } = options;
             const { camera, simulator, core } = this.dependencies;
+            const controllerPos = simulator.simulatorControllerState.localControllerPositions[handIndex];
+            const controllerWorldPos = controllerPos
+                .clone()
+                .applyMatrix4(camera.matrixWorld);
             const targetWorldPos = new THREE.Vector3();
-            this.getTargetWorldPosition(target, targetWorldPos);
+            this.getTargetWorldPosition(target, targetWorldPos, controllerWorldPos);
             const targetCamSpace = targetWorldPos
                 .clone()
                 .applyMatrix4(camera.matrixWorldInverse);
-            const controllerPos = simulator.simulatorControllerState.localControllerPositions[handIndex];
             const up = new THREE.Vector3(0, 1, 0);
             const matrix = new THREE.Matrix4().lookAt(controllerPos, targetCamSpace, up);
             const targetQuat = new THREE.Quaternion().setFromRotationMatrix(matrix);
@@ -317,7 +323,14 @@ class EmbodiedControlExecutor {
             const { velocity } = options;
             const { camera, simulator, core } = this.dependencies;
             const targetWorldPos = new THREE.Vector3();
-            this.getTargetWorldPosition(target, targetWorldPos);
+            const fingertip = core.input.hands[handIndex]?.joints?.['index-finger-tip'];
+            const controller = handIndex === 0
+                ? simulator.hands.leftController
+                : simulator.hands.rightController;
+            const targetSource = new THREE.Vector3();
+            (fingertip ?? controller).getWorldPosition(targetSource);
+            this.getTargetWorldPosition(target, targetWorldPos, targetSource);
+            offsetTargetByIndexFingertip(handIndex, targetWorldPos, simulator, core.input.hands);
             const targetCamSpace = targetWorldPos
                 .clone()
                 .applyMatrix4(camera.matrixWorldInverse);
@@ -368,6 +381,19 @@ class EmbodiedControlExecutor {
             simulator.hands.lerpSpeed = originalLerpSpeed;
         }
     }
+}
+function offsetTargetByIndexFingertip(handIndex, targetWorldPosition, simulator, hands) {
+    const controller = handIndex === 0
+        ? simulator.hands.leftController
+        : simulator.hands.rightController;
+    const fingertip = hands[handIndex]?.joints?.['index-finger-tip'];
+    if (!controller || !fingertip)
+        return;
+    const controllerPosition = new THREE.Vector3();
+    const fingertipPosition = new THREE.Vector3();
+    controller.getWorldPosition(controllerPosition);
+    fingertip.getWorldPosition(fingertipPosition);
+    targetWorldPosition.sub(fingertipPosition.sub(controllerPosition));
 }
 
 export { EmbodiedControlBusyError, EmbodiedControlExecutor };

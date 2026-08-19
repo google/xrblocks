@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 8f32106
- * @builddate 2026-08-19T17:28:24.966Z
+ * @commitid 95b37da
+ * @builddate 2026-08-19T17:54:02.531Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -47,7 +47,7 @@
  */
 import { Container, Component, Custom, abortableEffect, Image, Text, reversePainterSortStable, Svg } from '@pmndrs/uikit';
 import * as THREE from 'three';
-import { T as TransformScript, t as MAX_GRADIENT_STOPS, u as DEFAULT_GRADIENT_PANEL_PROPS, v as ManipulationAction, w as getUIElementKind, x as getUIStructureRevision, U as UICard, y as setResolvedUICardSize, z as UIText, A as isUIElement, B as getUIRevision, C as getUICardEdgeOptions, E as getSemanticControl, F as UIOverlay } from './entry.js';
+import { T as TransformScript, t as MAX_GRADIENT_STOPS, u as DEFAULT_GRADIENT_PANEL_PROPS, v as ManipulationAction, w as getUIElementKind, x as getUIStructureRevision, U as UICard, y as setResolvedUICardSize, z as UIText, A as registerUIPresentationObject, B as isUIElement, C as getUIRevision, E as getUICardEdgeOptions, F as getSemanticControl, G as UIOverlay } from './entry.js';
 import { signal, computed, effect } from '@preact/signals-core';
 import 'three/addons/postprocessing/Pass.js';
 import 'three/addons/webxr/XRControllerModelFactory.js';
@@ -2475,6 +2475,7 @@ class UIKitNodeBinding {
         else {
             this.node = new GradientPanel(properties);
         }
+        this.unregisterPresentationObject = registerUIPresentationObject(this.element, this.node);
         this.baseProperties = properties;
         this.presentedProperties = properties;
         this.theme = context.theme;
@@ -2591,6 +2592,7 @@ class UIKitNodeBinding {
         if (this.disposed)
             return;
         this.disposed = true;
+        this.unregisterPresentationObject();
         for (const child of this.children.values())
             child.dispose();
         this.children.clear();
