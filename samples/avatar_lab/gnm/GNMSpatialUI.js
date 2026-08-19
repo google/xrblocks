@@ -5,6 +5,21 @@ const CHIPS_PER_PAGE = 8;
 const SELECTED_BLUE = '#4f8ce0';
 const SELECTED_HOVER_BLUE = '#6ba3ed';
 
+// Uniform trim applied to every card in `card()`, so the three stay consistent
+// and there is one number to nudge rather than six.
+//
+// The cards were laid out large enough that the two upper ones topped out ~22 cm
+// above the 1.5 m default eye height, which reads as looming rather than at
+// hand. Scaling and dropping them puts every top edge at or below eye level.
+const CARD_SCALE = 0.85;
+const CARD_Y_OFFSET = -0.1;
+// UICard divides its metric size by `pixelSize` to get the layout box, so
+// scaling the two together leaves the pixel layout — every font size, gap and
+// wrap point — byte-identical, and changes only how large the card renders.
+// Scaling size alone would instead shrink the box under fixed-pixel text and
+// overflow it.
+const DEFAULT_PIXEL_SIZE = 0.001;
+
 function prettify(name) {
   return name
     .replace(/_/g, ' ')
@@ -41,7 +56,8 @@ export class GNMSpatialUI {
 
   card(name, sizeX, sizeY = 'auto', x, y, z, rotationY) {
     const card = new xb.UICard({
-      size: {width: sizeX, height: sizeY},
+      size: {width: sizeX * CARD_SCALE, height: sizeY * CARD_SCALE},
+      pixelSize: DEFAULT_PIXEL_SIZE * CARD_SCALE,
       manipulation: {
         actions: {translate: {faceCamera: true}},
         handle: {action: 'translate'},
@@ -49,7 +65,7 @@ export class GNMSpatialUI {
       edge: true,
     });
     card.name = name;
-    card.position.set(x, y, z);
+    card.position.set(x, y + CARD_Y_OFFSET, z);
     card.quaternion.setFromEuler(new THREE.Euler(0, rotationY, 0));
     this.scene.add(card);
     return card;

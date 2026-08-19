@@ -65,10 +65,17 @@ function isFormControl(element) {
 }
 
 export class GNMControls {
-  constructor(model, samplers, scene) {
+  /**
+   * @param {!GNMHeadModel} model The loaded head model.
+   * @param {!GNMSamplers} samplers Semantic identity/expression samplers.
+   * @param {!GNMScene} scene The scene being controlled.
+   * @param {?GNMFaceFitter=} faceFitter Photo/webcam fitting, if wired up.
+   */
+  constructor(model, samplers, scene, faceFitter = null) {
     this.model = model;
     this.samplers = samplers;
     this.scene = scene;
+    this.faceFitter = faceFitter;
     this._paramInputs = new Map(); // 'identity:12' -> {input, output}
     this._poseInputs = [];
     scene.onModelChanged = () => this.syncParams();
@@ -129,6 +136,7 @@ export class GNMControls {
 
     this._buildTabs([
       ['Sample', () => this._buildSampleTab()],
+      ['Fit', () => this._buildFitTab()],
       ['Identity', () => this._buildParamTab('identity')],
       ['Expression', () => this._buildParamTab('expression')],
       ['Pose', () => this._buildPoseTab()],
@@ -137,6 +145,7 @@ export class GNMControls {
       ['Save', () => this._buildSaveTab()],
     ]);
     this._bindKeyboard();
+    this._bindPageDrop();
     this._startStatsLoop();
   }
 
@@ -362,6 +371,289 @@ export class GNMControls {
       `sampled ${gender === 'blend' ? 'mixed' : gender} · ` +
         `${ethnicity === 'blend' ? 'mixed' : prettify(ethnicity)}`
     );
+  }
+
+  // ------------------------------------------------------------------- fit --
+
+  /**
+   * Photo and webcam fitting.
+   *
+   * The two halves solve different things and are laid out to say so: a photo
+   * answers "who is this face", which is solved once and kept, while the webcam
+   * answers "what is it doing", re-solved every frame on top of whatever
+   * identity is current. Fitting identity from a photo and then driving it from
+   * your own webcam is the interesting combination, and needs no extra control.
+   */
+  _buildFitTab() {
+    const fragment = document.createDocumentFragment();
+    const fitter = this.faceFitter;
+
+    if (!fitter) {
+      const missing = this._section(fragment, 'Fit to a face');
+      const note = document.createElement('p');
+      note.className = 'gnm-note';
+      note.textContent = 'Face fitting is not available in this build.';
+      missing.appendChild(note);
+      return fragment;
+    }
+
+    fitter.onStatus = (text) => this.setStatus(text);
+    fitter.onResult = (result) => this._renderFitResult(result);
+
+    // ---- Photo ----------------------------------------------------------
+    const photo = this._section(fragment, 'From a photo');
+    const hint = document.createElement('p');
+    hint.className = 'gnm-note';
+    hint.textContent =
+      'Drop a portrait anywhere on the page, or pick one below. MediaPipe ' +
+      'finds the face; the solver reads 166 skull-fixed landmarks into the ' +
+      'first 24 identity components.';
+    photo.appendChild(hint);
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      fileInput.value = ''; // allow re-picking the same file
+      if (file) this.fitImageFile(file);
+    });
+    photo.appendChild(fileInput);
+
+    this._dropZone = document.createElement('div');
+    this._dropZone.className = 'gnm-drop';
+    this._dropZone.innerHTML =
+      '<strong>Drop a photo here</strong><span>or click to choose a file</span>';
+    this._dropZone.addEventListener('click', () => fileInput.click());
+    this._bindDropTarget(this._dropZone);
+    photo.appendChild(this._dropZone);
+
+    const photoButtons = document.createElement('div');
+    photoButtons.className = 'gnm-btn-row';
+    this._button(photoButtons, 'Mona Lisa', () =>
+      this._runFit(() => fitter.fitSampleImage())
+    );
+    this._button(photoButtons, 'Reset identity', () => {
+      fitter.clearIdentity();
+      this.syncParams();
+    });
+    photo.appendChild(photoButtons);
+
+    // ---- Webcam ---------------------------------------------------------
+    const webcam = this._section(fragment, 'From the webcam');
+    const webcamHint = document.createElement('p');
+    webcamHint.className = 'gnm-note';
+    webcamHint.textContent =
+      'Expression and head pose are re-solved every frame. Hold a neutral ' +
+      'face and fit identity first, or your own face shape reads as a ' +
+      'permanent expression.';
+    webcam.appendChild(webcamHint);
+
+    const webcamButtons = document.createElement('div');
+    webcamButtons.className = 'gnm-btn-row';
+    this._cameraButton = this._button(webcamButtons, 'Start webcam', () =>
+      this._toggleCamera()
+    );
+    this._fitFrameButton = this._button(webcamButtons, 'Fit identity', () => {
+      try {
+        this.faceFitter.fitIdentityFromCamera();
+        this.syncParams();
+      } catch (error) {
+        this._reportFitError(error);
+      }
+    });
+    this._fitFrameButton.disabled = true;
+    webcam.appendChild(webcamButtons);
+
+    // ---- Channels -------------------------------------------------------
+    const channels = this._section(fragment, 'What to drive');
+    const options = fitter.options;
+    this._toggle(
+      channels,
+      'Fit identity from photos',
+      options.fitIdentity,
+      (v) => {
+        options.fitIdentity = v;
+      }
+    );
+    this._toggle(channels, 'Expression', options.trackExpression, (v) => {
+      options.trackExpression = v;
+    });
+    this._toggle(channels, 'Head pose', options.trackHead, (v) => {
+      options.trackHead = v;
+    });
+    this._toggle(channels, 'Gaze', options.trackGaze, (v) => {
+      options.trackGaze = v;
+    });
+    this._toggle(channels, 'Mirror preview', options.mirrorPreview, (v) => {
+      options.mirrorPreview = v;
+    });
+
+    // ---- Preview --------------------------------------------------------
+    const preview = this._section(fragment, 'What the tracker sees');
+    this._fitCanvas = document.createElement('canvas');
+    this._fitCanvas.className = 'gnm-fit-preview';
+    preview.appendChild(this._fitCanvas);
+    fitter.setPreviewCanvas(this._fitCanvas);
+
+    this._fitReadout = document.createElement('pre');
+    this._fitReadout.className = 'gnm-readout';
+    this._fitReadout.textContent = 'No face fitted yet.';
+    preview.appendChild(this._fitReadout);
+
+    const credit = document.createElement('p');
+    credit.className = 'gnm-note';
+    credit.innerHTML =
+      'Sample portrait: <a href="https://commons.wikimedia.org/wiki/File:' +
+      'Mona_Lisa,_by_Leonardo_da_Vinci,_from_C2RMF_retouched.jpg" ' +
+      'target="_blank" rel="noopener">Mona Lisa (C2RMF retouched scan)</a>, ' +
+      'public domain. Solver ported from <a href="https://github.com/' +
+      'edualvarado/gnm-webcam-puppet" target="_blank" rel="noopener">' +
+      'gnm-webcam-puppet</a>.';
+    preview.appendChild(credit);
+
+    return fragment;
+  }
+
+  /** Runs an async fit, reporting failure in the status line and readout. */
+  async _runFit(action) {
+    try {
+      await action();
+      this.syncParams();
+    } catch (error) {
+      this._reportFitError(error);
+    }
+  }
+
+  _reportFitError(error) {
+    console.error('[gnm] fit failed', error);
+    const message = error?.message ?? String(error);
+    this.setStatus(message);
+    if (this._fitReadout) this._fitReadout.textContent = message;
+  }
+
+  /**
+   * Fits a dropped or chosen image file, selecting the Fit tab so the result is
+   * visible when the drop landed somewhere else on the page.
+   */
+  fitImageFile(file) {
+    if (!this.faceFitter) return;
+    this._selectTabByLabel('Fit');
+    this._runFit(() => this.faceFitter.fitImage(file, file.name));
+  }
+
+  async _toggleCamera() {
+    const fitter = this.faceFitter;
+    if (fitter.tracking) {
+      fitter.stopCamera();
+      this._cameraButton.textContent = 'Start webcam';
+      this._fitFrameButton.disabled = true;
+      this.syncParams();
+      return;
+    }
+    this._cameraButton.disabled = true;
+    try {
+      await fitter.startCamera();
+      this._cameraButton.textContent = 'Stop webcam';
+      this._fitFrameButton.disabled = false;
+    } catch (error) {
+      this._reportFitError(error);
+    } finally {
+      this._cameraButton.disabled = false;
+    }
+  }
+
+  /** Formats a fit or tracked frame into the readout block. */
+  _renderFitResult(result) {
+    if (!this._fitReadout) return;
+    const lines = [];
+    if (result.rmsAfter !== undefined) {
+      lines.push(
+        `identity  ${result.points} pts · ${result.components} comps`,
+        `          ${result.rmsBefore.toFixed(2)} → ` +
+          `${result.rmsAfter.toFixed(2)} mm · peak ${result.peak.toFixed(2)}`
+      );
+    }
+    if (result.expressionRms !== undefined) {
+      lines.push(`expression  ${result.expressionRms.toFixed(2)} mm rms`);
+    }
+    if (result.headRotation) {
+      const r = Array.from(result.headRotation).map((v) => v.toFixed(2));
+      lines.push(`head      ${r.join(', ')} rad`);
+    }
+    const shapes = result.blendshapes;
+    if (shapes) {
+      const score = (name) => (shapes.get(name) ?? 0).toFixed(2);
+      // Reported, not applied: these come from a trained classifier and are far
+      // more reliable than eyelid geometry, but nothing maps them onto the GNM
+      // expression basis yet.
+      lines.push(
+        `blink     L ${score('eyeBlinkLeft')}  R ${score('eyeBlinkRight')}`,
+        `jaw/smile ${score('jawOpen')}  ` +
+          `${score('mouthSmileLeft')} / ${score('mouthSmileRight')}`
+      );
+    }
+    if (result.width) lines.push(`source    ${result.width}×${result.height}`);
+    this._fitReadout.textContent = lines.join('\n') || 'Tracking…';
+  }
+
+  _selectTabByLabel(label) {
+    const index = this._pages?.findIndex(
+      (entry) => entry.button.textContent === label
+    );
+    if (index >= 0) this._selectTab(index);
+  }
+
+  /** Wires dragover/drop on one element, without touching the page default. */
+  _bindDropTarget(element) {
+    const over = (event) => {
+      if (!this._hasImageDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      element.classList.add('dragging');
+    };
+    element.addEventListener('dragover', over);
+    element.addEventListener('dragenter', over);
+    element.addEventListener('dragleave', () =>
+      element.classList.remove('dragging')
+    );
+    element.addEventListener('drop', (event) => {
+      element.classList.remove('dragging');
+      if (!this._hasImageDrag(event)) return;
+      event.preventDefault();
+      // The zone sits inside the body-wide target, so without this a drop on
+      // it would be handled twice.
+      event.stopPropagation();
+      const file = [...event.dataTransfer.files].find((f) =>
+        f.type.startsWith('image/')
+      );
+      if (file) this.fitImageFile(file);
+    });
+  }
+
+  _hasImageDrag(event) {
+    const transfer = event.dataTransfer;
+    if (!transfer) return false;
+    // During dragover the file list is empty by design; only the types are
+    // readable, so both paths have to be checked.
+    return (
+      [...(transfer.items ?? [])].some(
+        (item) => item.kind === 'file' && item.type.startsWith('image/')
+      ) ||
+      [...(transfer.files ?? [])].some((file) => file.type.startsWith('image/'))
+    );
+  }
+
+  /**
+   * Lets a photo be dropped anywhere on the page, not just on the panel.
+   *
+   * The 3D canvas fills the window, so requiring a small target would make the
+   * feature easy to miss. The default drop behaviour — navigating away to the
+   * dropped file — is suppressed for images only.
+   */
+  _bindPageDrop() {
+    this._bindDropTarget(document.body);
   }
 
   // ---------------------------------------------------------------- params --
