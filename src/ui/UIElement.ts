@@ -281,6 +281,7 @@ const ENUM_VALUES: Partial<Record<keyof UIStyle, readonly unknown[]>> = {
 };
 
 const states = new WeakMap<UIElement, UIElementState>();
+const presentationObjects = new WeakMap<UIElement, THREE.Object3D>();
 const rootReferences = new Set<WeakRef<UIElement>>();
 
 export abstract class UIElement<
@@ -327,6 +328,13 @@ export abstract class UIElement<
   override attach(object: THREE.Object3D): this {
     validateUIChild(this, object);
     return super.attach(object);
+  }
+
+  override getWorldPosition(target: THREE.Vector3): THREE.Vector3 {
+    const presentation = presentationObjects.get(this);
+    return presentation
+      ? presentation.getWorldPosition(target)
+      : super.getWorldPosition(target);
   }
 
   get style(): UIStyle {
@@ -388,6 +396,26 @@ export function isUIElement(object: THREE.Object3D): object is UIElement {
 
 export function getUIElementKind(element: UIElement): UIElementKind {
   return states.get(element)!.kind;
+}
+
+/** Returns the rendered object that owns an element's calculated layout. */
+export function getUIPresentationObject(
+  element: THREE.Object3D
+): THREE.Object3D | undefined {
+  return presentationObjects.get(element as UIElement);
+}
+
+/** Registers one rendered object for world-space UI queries. */
+export function registerUIPresentationObject(
+  element: UIElement,
+  presentation: THREE.Object3D
+): () => void {
+  presentationObjects.set(element, presentation);
+  return () => {
+    if (presentationObjects.get(element) === presentation) {
+      presentationObjects.delete(element);
+    }
+  };
 }
 
 export function getUIRevision(element: UIElement): number {

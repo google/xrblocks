@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {XRSystems} from '../../core/components/XRSystems';
 import {DepthMesh} from '../../depth/DepthMesh';
+import {getUIPresentationObject} from '../../ui/UIElement';
 import {UICard, getResolvedUICardSize} from '../../ui/components/UICard';
 
 type BoundsObject = THREE.Object3D & {
@@ -73,11 +74,26 @@ export function getObjectBounds(
   object: THREE.Object3D,
   target?: THREE.Box3
 ): THREE.Box3 | null {
+  const presentation = getUIPresentationObject(object);
+  if (presentation) {
+    const presentationBounds = getThreeObjectBounds(presentation, target);
+    if (presentationBounds) {
+      return presentationBounds;
+    }
+  }
+
   const uiBounds = getUIObjectBounds(object, target);
   if (uiBounds) {
     return uiBounds;
   }
 
+  return getThreeObjectBounds(object, target);
+}
+
+function getThreeObjectBounds(
+  object: THREE.Object3D,
+  target?: THREE.Box3
+): THREE.Box3 | null {
   try {
     boundsBox.setFromObject(object);
   } catch (_error) {
