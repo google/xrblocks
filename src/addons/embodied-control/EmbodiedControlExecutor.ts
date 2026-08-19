@@ -487,6 +487,12 @@ export class EmbodiedControlExecutor {
       const {camera, simulator, core} = this.dependencies;
       const targetWorldPos = new THREE.Vector3();
       this.getTargetWorldPosition(target, targetWorldPos);
+      offsetTargetByIndexFingertip(
+        handIndex,
+        targetWorldPos,
+        simulator,
+        core.input.hands
+      );
 
       const targetCamSpace = targetWorldPos
         .clone()
@@ -556,4 +562,24 @@ export class EmbodiedControlExecutor {
       simulator.hands.lerpSpeed = originalLerpSpeed;
     }
   }
+}
+
+function offsetTargetByIndexFingertip(
+  handIndex: number,
+  targetWorldPosition: THREE.Vector3,
+  simulator: Simulator,
+  hands: THREE.XRHandSpace[]
+): void {
+  const controller =
+    handIndex === 0
+      ? simulator.hands.leftController
+      : simulator.hands.rightController;
+  const fingertip = hands[handIndex]?.joints?.['index-finger-tip'];
+  if (!controller || !fingertip) return;
+
+  const controllerPosition = new THREE.Vector3();
+  const fingertipPosition = new THREE.Vector3();
+  controller.getWorldPosition(controllerPosition);
+  fingertip.getWorldPosition(fingertipPosition);
+  targetWorldPosition.sub(fingertipPosition.sub(controllerPosition));
 }
