@@ -24,7 +24,7 @@ For example, open `http://127.0.0.1:8080/templates/00_basic/`.
 
 - [`02_object_interaction`](02_object_interaction): Select, touch, grab, move, and
   release an object.
-- [`03_spatial_placement`](03_spatial_placement): Find a suitable room surface and
+- [`03_spatial_placement`](03_spatial_placement): Follow a live depth raycast and
   place content.
 - [`12_hand_gestures`](12_hand_gestures): Inspect built-in heuristic gestures
   for both hands.
