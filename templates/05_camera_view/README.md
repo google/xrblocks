@@ -1,6 +1,6 @@
 # Camera View
 
-Show the live device camera in a movable spatial card.
+Show a live device camera in a movable spatial card.
 
 ## Run
 
@@ -9,5 +9,6 @@ when prompted.
 
 ## Controls
 
-Drag the camera card to move it. The preview updates when the camera stream is
-ready.
+Drag the camera card to move it. Use the previous and next buttons to cycle
+through the available cameras. The preview and camera label update when the
+selected camera stream is ready.
