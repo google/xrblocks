@@ -819,7 +819,7 @@ function panelDefaults(
   };
   if (kind === 'card' || kind === 'overlay') {
     defaults.flexDirection = style.flexDirection ?? 'column';
-    defaults.justifyContent = style.justifyContent ?? 'flex-start';
+    defaults.justifyContent = style.justifyContent ?? 'center';
     defaults.alignItems = style.alignItems ?? 'stretch';
   }
   if (kind === 'panel') {
