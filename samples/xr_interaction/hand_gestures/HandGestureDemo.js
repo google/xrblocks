@@ -228,7 +228,7 @@ export class HandGestureDemo extends xb.Script {
     });
 
     this.card = new xb.UICard({
-      size: {width: 1.0, height: 0.68},
+      size: {width: 1.0, height: 'auto'},
       manipulation: true,
       edge: {scale: true},
       children: [

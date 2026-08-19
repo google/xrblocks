@@ -34,7 +34,7 @@ viewport.
 import * as xb from 'xrblocks';
 
 const card = new xb.UICard({
-  size: {width: 0.6, height: 0.35},
+  size: {width: 0.6, height: 'auto'},
   manipulation: true,
   edge: true,
   style: {
@@ -67,6 +67,11 @@ behavior. `edge: true` adds the outer translation hit band and requires
 translation to be enabled. Two-source scale uses the card's scale action; the
 edge does not enable a missing action.
 
+Use `height: 'auto'` when the card should fit its children, gaps, and padding.
+Keep the width fixed so text wrapping and percentage-width children have a
+stable horizontal constraint. Use a numeric height when the surface must stay
+at a fixed physical size.
+
 ## View-space overlays
 
 An overlay's world transform does not control its rendered position. Layout it
@@ -97,7 +102,8 @@ UI values have two separate unit systems:
 
 | Property                                                              | Meaning                                                 |
 | --------------------------------------------------------------------- | ------------------------------------------------------- |
-| `UICard.size` and world transforms                                    | Meters                                                  |
+| Fixed `UICard.size` values and world transforms                       | Meters                                                  |
+| `UICard.size.height: 'auto'`                                          | Height calculated from child layout                     |
 | Descendant numeric width, height, gap, padding, margin, and font size | UIKit layout units                                      |
 | Percentage strings                                                    | Percentage of the applicable parent layout size         |
 | `auto`                                                                | Content or flex layout chooses the size where supported |
