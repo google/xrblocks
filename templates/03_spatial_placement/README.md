@@ -1,6 +1,6 @@
 # Spatial Placement
 
-Use depth and detected planes to place an object on a horizontal surface.
+Move a sphere to the point where the active ray hits the depth mesh.
 
 ## Run
 
@@ -9,5 +9,6 @@ XR.
 
 ## Controls
 
-No input is required. Look around the room while the template searches for a
-surface for up to 15 seconds.
+Point a hand, controller, or mouse ray at the environment. The transparent blue
+sphere follows the current depth hit. Select to place one opaque blue sphere.
+Each new selection moves the placed sphere to the new point.

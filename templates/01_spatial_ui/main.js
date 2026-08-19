@@ -51,7 +51,7 @@ class SpatialUiScene extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: {width: 0.62, height: 0.6},
+      size: {width: 0.62, height: 'auto'},
       manipulation: true,
       edge: true,
       style: {flexDirection: 'column', gap: 16, padding: 20},
