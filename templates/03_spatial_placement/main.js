@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
+const BASE_HEIGHT = 0.018;
+const CONE_HEIGHT = 0.08;
+const BALL_RADIUS = 0.025;
+
 class SpatialPlacement extends xb.Script {
   static dependencies = {
     depth: xb.Depth,
@@ -11,48 +15,89 @@ class SpatialPlacement extends xb.Script {
     this.depth = depth;
     this.user = user;
     this.add(new THREE.HemisphereLight(0xffffff, 0x3c4043, 3));
-    this.geometry = new THREE.SphereGeometry(0.08, 32, 16);
-    this.previewMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4285f4,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false,
-      roughness: 0.35,
-    });
+    this.baseGeometry = new THREE.CylinderGeometry(
+      0.045,
+      0.045,
+      BASE_HEIGHT,
+      24,
+      1,
+      true
+    );
+    this.coneGeometry = new THREE.ConeGeometry(0.035, CONE_HEIGHT, 24);
+    this.ballGeometry = new THREE.SphereGeometry(BALL_RADIUS, 24, 16);
     this.placedMaterial = new THREE.MeshStandardMaterial({
       color: 0x4285f4,
       roughness: 0.35,
+      side: THREE.DoubleSide,
     });
-    this.sphere = new THREE.Mesh(this.geometry, this.previewMaterial);
-    this.sphere.name = 'Depth hit';
-    this.sphere.visible = false;
-    this.sphere.xb = {pointerEvents: 'none'};
-    this.add(this.sphere);
+    this.previewMaterial = this.placedMaterial.clone();
+    this.previewMaterial.transparent = true;
+    this.previewMaterial.opacity = 0.35;
 
-    this.placedSphere = new THREE.Mesh(this.geometry, this.placedMaterial);
-    this.placedSphere.name = 'Placed depth hit';
-    this.placedSphere.visible = false;
-    this.placedSphere.xb = {pointerEvents: 'none'};
-    this.add(this.placedSphere);
+    this.previewMarker = this.createMarker(this.previewMaterial, 'Depth hit');
+    this.placedMarker = this.createMarker(
+      this.placedMaterial,
+      'Placed depth hit'
+    );
+    this.add(this.previewMarker, this.placedMarker);
+  }
+
+  createMarker(material, name) {
+    const marker = new THREE.Group();
+    marker.name = name;
+    marker.visible = false;
+    marker.xb = {pointerEvents: 'none'};
+
+    const base = new THREE.Mesh(this.baseGeometry, material);
+    base.position.y = BASE_HEIGHT / 2;
+
+    const cone = new THREE.Mesh(this.coneGeometry, material);
+    cone.rotation.x = Math.PI;
+    cone.position.y = BASE_HEIGHT + CONE_HEIGHT / 2;
+
+    const ball = new THREE.Mesh(this.ballGeometry, material);
+    ball.position.y = BASE_HEIGHT + CONE_HEIGHT + BALL_RADIUS;
+
+    marker.add(base, cone, ball);
+    return marker;
   }
 
   update() {
     const hit = this.depth.depthMesh
       ? this.user.getIntersectionAt(this.depth.depthMesh)
       : null;
-    this.sphere.visible = Boolean(hit);
-    if (hit) this.sphere.position.copy(hit.point);
+    this.previewMarker.visible = Boolean(hit);
+    if (hit) this.placeMarker(this.previewMarker, hit);
   }
 
   onSelectStart(event) {
-    if (event.surface !== this.depth.depthMesh || !event.intersection) return;
+    const intersection = event.intersection;
+    if (event.surface !== this.depth.depthMesh || !intersection) {
+      return;
+    }
 
-    this.placedSphere.position.copy(event.intersection.point);
-    this.placedSphere.visible = true;
+    this.placeMarker(this.placedMarker, intersection);
+    this.placedMarker.visible = true;
+  }
+
+  placeMarker(marker, intersection) {
+    const normal = intersection.normal ?? intersection.face?.normal;
+    if (!normal) {
+      marker.position.copy(intersection.point);
+      return;
+    }
+
+    xb.placeObjectAtIntersectionFacingTarget(
+      marker,
+      {...intersection, normal},
+      xb.core.camera
+    );
   }
 
   dispose() {
-    this.geometry.dispose();
+    this.baseGeometry.dispose();
+    this.coneGeometry.dispose();
+    this.ballGeometry.dispose();
     this.previewMaterial.dispose();
     this.placedMaterial.dispose();
   }
