@@ -455,6 +455,11 @@ export class GNMControls {
     this._cameraButton = this._button(webcamButtons, 'Start webcam', () =>
       this._toggleCamera()
     );
+    this._switchCameraButton = this._button(
+      webcamButtons,
+      'Switch camera',
+      () => this._switchCamera()
+    );
     this._fitFrameButton = this._button(webcamButtons, 'Fit identity', () => {
       try {
         this.faceFitter.fitIdentityFromCamera();
@@ -545,6 +550,7 @@ export class GNMControls {
 
   async _toggleCamera() {
     const fitter = this.faceFitter;
+    if (!fitter) return;
     if (fitter.tracking) {
       fitter.stopCamera();
       this._cameraButton.textContent = 'Start webcam';
@@ -553,6 +559,7 @@ export class GNMControls {
       return;
     }
     this._cameraButton.disabled = true;
+    if (this._switchCameraButton) this._switchCameraButton.disabled = true;
     try {
       await fitter.startCamera();
       this._cameraButton.textContent = 'Stop webcam';
@@ -561,6 +568,25 @@ export class GNMControls {
       this._reportFitError(error);
     } finally {
       this._cameraButton.disabled = false;
+      if (this._switchCameraButton) this._switchCameraButton.disabled = false;
+    }
+  }
+
+  async _switchCamera() {
+    const fitter = this.faceFitter;
+    if (!fitter) return;
+    this._cameraButton.disabled = true;
+    if (this._switchCameraButton) this._switchCameraButton.disabled = true;
+    try {
+      await fitter.switchCamera();
+      this._cameraButton.textContent = 'Stop webcam';
+      this._fitFrameButton.disabled = false;
+      this.syncParams();
+    } catch (error) {
+      this._reportFitError(error);
+    } finally {
+      this._cameraButton.disabled = false;
+      if (this._switchCameraButton) this._switchCameraButton.disabled = false;
     }
   }
 
@@ -1194,6 +1220,14 @@ export class GNMControls {
       this._eyesToggle.checked = scene.eyesFollowCamera;
       this._headToggle.checked = scene.headFollowsCamera;
       if (changed) this._updatePoseDisabled();
+    }
+    if (this._cameraButton && this.faceFitter) {
+      this._cameraButton.textContent = this.faceFitter.tracking
+        ? 'Stop webcam'
+        : 'Start webcam';
+    }
+    if (this._fitFrameButton && this.faceFitter) {
+      this._fitFrameButton.disabled = !this.faceFitter.tracking;
     }
   }
 

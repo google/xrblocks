@@ -34,6 +34,7 @@ import {
   closeCamera,
   decodeImage,
   FaceTracker,
+  getVideoDevices,
   openCamera,
 } from './FaceTracking.js';
 
@@ -92,6 +93,8 @@ export class GNMFaceFitter {
     this.identity = null;
     this.source = null; // {kind: 'image'|'camera', bitmap|video, width, height}
     this.tracking = false;
+    this.facingMode = 'user';
+    this.currentDeviceId = null;
     this._previewCanvas = null;
     this._previewContext = null;
     this._lastVideoTime = -1;
@@ -220,13 +223,37 @@ export class GNMFaceFitter {
   /**
    * Opens the webcam and begins per-frame retargeting.
    *
+   * @param {{facingMode?: string, deviceId?: string}=} options Camera options.
    * @return {!Promise<void>} Resolves once frames are being solved.
    */
-  async startCamera() {
-    if (this.tracking) return;
+  async startCamera(options = {}) {
+    if (options.facingMode) this.facingMode = options.facingMode;
+    if (options.deviceId !== undefined) this.currentDeviceId = options.deviceId;
+
+    if (this.source?.kind === 'camera') {
+      closeCamera(this.source.video);
+      this.source = null;
+    }
+
     await this.ensureTracker();
-    this._status('Requesting camera…');
-    const video = await openCamera();
+    const modeLabel =
+      this.facingMode === 'environment' ? 'environment' : 'front';
+    this._status(`Requesting ${modeLabel} camera…`);
+
+    const video = await openCamera({
+      facingMode: this.facingMode,
+      deviceId: this.currentDeviceId || undefined,
+    });
+
+    const track = video.srcObject?.getVideoTracks?.()[0];
+    const settings = track?.getSettings?.();
+    if (settings?.deviceId) {
+      this.currentDeviceId = settings.deviceId;
+    }
+    if (settings?.facingMode) {
+      this.facingMode = settings.facingMode;
+    }
+
     await this.tracker.beginVideo();
 
     this.source = {
@@ -241,6 +268,55 @@ export class GNMFaceFitter {
     this.tracking = true;
     this.scene.beginFaceTracking();
     this._status('Tracking — hold a neutral face and press Fit identity.');
+  }
+
+  /**
+   * Switches camera (e.g. between front/user and environment/rear, or next device).
+   *
+   * @return {!Promise<void>} Resolves once the new camera is tracking.
+   */
+  async switchCamera() {
+    let nextDeviceId = null;
+    let nextFacingMode = this.facingMode === 'user' ? 'environment' : 'user';
+
+    try {
+      const devices = await getVideoDevices();
+      if (devices.length > 1) {
+        const currentIndex = devices.findIndex(
+          (device) => device.deviceId === this.currentDeviceId
+        );
+        const nextIndex =
+          currentIndex >= 0 ? (currentIndex + 1) % devices.length : 1;
+        const nextDevice = devices[nextIndex];
+        nextDeviceId = nextDevice.deviceId;
+
+        const label = (nextDevice.label || '').toLowerCase();
+        if (
+          label.includes('back') ||
+          label.includes('rear') ||
+          label.includes('environment') ||
+          label.includes('world')
+        ) {
+          nextFacingMode = 'environment';
+        } else if (
+          label.includes('front') ||
+          label.includes('user') ||
+          label.includes('facetime') ||
+          label.includes('selfie')
+        ) {
+          nextFacingMode = 'user';
+        }
+      }
+    } catch (error) {
+      console.warn('[gnm] unable to enumerate video devices', error);
+    }
+
+    this.facingMode = nextFacingMode;
+    this.currentDeviceId = nextDeviceId;
+    await this.startCamera({
+      facingMode: this.facingMode,
+      deviceId: this.currentDeviceId || undefined,
+    });
   }
 
   /**
@@ -411,7 +487,11 @@ export class GNMFaceFitter {
 
     context.save();
     context.clearRect(0, 0, width, height);
-    if (this.options.mirrorPreview && source.kind === 'camera') {
+    if (
+      this.options.mirrorPreview &&
+      source.kind === 'camera' &&
+      this.facingMode !== 'environment'
+    ) {
       context.translate(width, 0);
       context.scale(-1, 1);
     }
