@@ -64,6 +64,27 @@ export type VideoStreamOptions = {
   willCaptureFrequently?: boolean;
 };
 
+/**
+ * Subset of the WICG `VideoFrameCallbackMetadata` fields we rely on. For
+ * camera-backed streams Chrome reports `captureTime` (when the frame left the
+ * camera pipeline) in the `performance.now()` timebase.
+ */
+export type VideoFrameMetadata = {
+  presentationTime: number;
+  expectedDisplayTime: number;
+  mediaTime: number;
+  presentedFrames: number;
+  captureTime?: number;
+  receiveTime?: number;
+};
+
+type VideoElementWithFrameCallback = HTMLVideoElement & {
+  requestVideoFrameCallback?: (
+    callback: (now: number, metadata: VideoFrameMetadata) => void
+  ) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
+};
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -177,6 +198,41 @@ export class VideoStream<
         reject(error);
       }
     }
+  }
+
+  /**
+   * Waits for the next new video frame before returning, so a subsequent
+   * {@link getSnapshot} reads fresh pixels instead of whatever (possibly
+   * stale) frame the `<video>` element currently holds. Hidden or
+   * non-composited video elements — the normal situation inside an immersive
+   * XR session — can be throttled by the browser, in which case the held
+   * frame may be arbitrarily old.
+   *
+   * Resolves with the frame's metadata (whose `captureTime`, when present,
+   * dates the pixels in the `performance.now()` timebase), or `null` when the
+   * signal is unavailable (`requestVideoFrameCallback` unsupported, no active
+   * media stream) or no frame arrived within `timeoutMs`.
+   */
+  waitForFreshFrame(timeoutMs = 400): Promise<VideoFrameMetadata | null> {
+    const video = this.video_ as VideoElementWithFrameCallback;
+    if (!this.loaded || !video.requestVideoFrameCallback || !video.srcObject) {
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+      let done = false;
+      const handle = video.requestVideoFrameCallback!((_now, metadata) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(metadata);
+      });
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        video.cancelVideoFrameCallback?.(handle);
+        resolve(null);
+      }, timeoutMs);
+    });
   }
 
   /**
