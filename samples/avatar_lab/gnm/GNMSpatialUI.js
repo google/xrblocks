@@ -5,6 +5,21 @@ const CHIPS_PER_PAGE = 8;
 const SELECTED_BLUE = '#4f8ce0';
 const SELECTED_HOVER_BLUE = '#6ba3ed';
 
+// Uniform trim applied to every card in `card()`, so the three stay consistent
+// and there is one number to nudge rather than six.
+//
+// The cards were laid out large enough that the two upper ones topped out ~22 cm
+// above the 1.5 m default eye height, which reads as looming rather than at
+// hand. Scaling and dropping them puts every top edge at or below eye level.
+const CARD_SCALE = 0.85;
+const CARD_Y_OFFSET = -0.1;
+// UICard divides its metric size by `pixelSize` to get the layout box, so
+// scaling the two together leaves the pixel layout — every font size, gap and
+// wrap point — byte-identical, and changes only how large the card renders.
+// Scaling size alone would instead shrink the box under fixed-pixel text and
+// overflow it.
+const DEFAULT_PIXEL_SIZE = 0.001;
+
 function prettify(name) {
   return name
     .replace(/_/g, ' ')
@@ -39,9 +54,13 @@ export class GNMSpatialUI {
     if (this.statusText) this.statusText.text = text || ' ';
   }
 
-  card(name, sizeX, sizeY, x, y, z, rotationY) {
+  card(name, sizeX, sizeY = 'auto', x, y, z, rotationY) {
     const card = new xb.UICard({
-      size: {width: sizeX, height: sizeY},
+      size: {
+        width: sizeX * CARD_SCALE,
+        height: typeof sizeY === 'number' ? sizeY * CARD_SCALE : sizeY,
+      },
+      pixelSize: DEFAULT_PIXEL_SIZE * CARD_SCALE,
       manipulation: {
         actions: {translate: {faceCamera: true}},
         handle: {action: 'translate'},
@@ -49,7 +68,7 @@ export class GNMSpatialUI {
       edge: true,
     });
     card.name = name;
-    card.position.set(x, y, z);
+    card.position.set(x, y + CARD_Y_OFFSET, z);
     card.quaternion.setFromEuler(new THREE.Euler(0, rotationY, 0));
     this.scene.add(card);
     return card;
@@ -124,7 +143,7 @@ export class GNMSpatialUI {
   }
 
   buildSampleCard() {
-    const card = this.card('GNMSample', 0.6, 0.8, -0.62, 1.32, -0.46, 0.6);
+    const card = this.card('GNMSample', 0.6, 'auto', -0.62, 1.32, -0.46, 0.6);
     this.header(card, 'face', 'GNM Sample');
     this.sectionLabel(card, 'IDENTITY');
 
@@ -230,7 +249,7 @@ export class GNMSpatialUI {
   }
 
   buildMotionCard() {
-    const card = this.card('GNMMotion', 0.52, 0.46, 0.62, 1.52, -0.46, -0.6);
+    const card = this.card('GNMMotion', 0.52, 'auto', 0.62, 1.52, -0.46, -0.6);
     this.header(card, 'animation', 'Motion');
 
     const scene = this.scene;
@@ -287,7 +306,7 @@ export class GNMSpatialUI {
   }
 
   buildViewCard() {
-    const card = this.card('GNMView', 0.52, 0.4, 0.64, 1.08, -0.46, -0.6);
+    const card = this.card('GNMView', 0.52, 'auto', 0.64, 1.08, -0.46, -0.6);
     this.header(card, 'visibility', 'View');
 
     const scene = this.scene;
@@ -344,6 +363,52 @@ export class GNMSpatialUI {
         this.toggles.push({button, getValue});
       }
     }
+    this.sectionLabel(card, 'CAMERA');
+    const cameraRow = this.row(card, {gap: 8});
+    this.cameraButton = this.button(cameraRow, 'Start camera', {
+      onClick: async () => {
+        const fitter = this.scene.faceFitter;
+        if (!fitter) return;
+        if (fitter.tracking) {
+          fitter.stopCamera();
+        } else {
+          try {
+            await fitter.startCamera();
+          } catch (error) {
+            console.error('[gnm] camera failed', error);
+            this.scene._emitStatus(`camera failed: ${error.message}`);
+          }
+        }
+        this.update();
+      },
+    });
+    this.switchCameraButton = this.button(cameraRow, 'Switch camera', {
+      onClick: async () => {
+        const fitter = this.scene.faceFitter;
+        if (!fitter) return;
+        try {
+          await fitter.switchCamera();
+        } catch (error) {
+          console.error('[gnm] switch camera failed', error);
+          this.scene._emitStatus(`switch camera failed: ${error.message}`);
+        }
+        this.update();
+      },
+    });
+    this.fitIdentityButton = this.button(cameraRow, 'Fit identity', {
+      onClick: () => {
+        const fitter = this.scene.faceFitter;
+        if (!fitter) return;
+        try {
+          fitter.fitIdentityFromCamera();
+          this.scene.onModelChanged?.();
+        } catch (error) {
+          console.error('[gnm] fit identity failed', error);
+          this.scene._emitStatus(error.message);
+        }
+        this.update();
+      },
+    });
   }
 
   pickGender(index) {
@@ -409,10 +474,23 @@ export class GNMSpatialUI {
     }
 
     const mode = this.scene.materialMode;
-    if (this.lastStates.get('mode') === mode) return;
-    this.lastStates.set('mode', mode);
-    for (const entry of this.modeButtons) {
-      entry.button.setToggled(entry.mode === mode);
+    if (this.lastStates.get('mode') !== mode) {
+      this.lastStates.set('mode', mode);
+      for (const entry of this.modeButtons) {
+        entry.button.setToggled(entry.mode === mode);
+      }
+    }
+
+    if (this.cameraButton) {
+      const isTracking = !!this.scene.faceFitter?.tracking;
+      if (this.lastStates.get('cameraTracking') !== isTracking) {
+        this.lastStates.set('cameraTracking', isTracking);
+        this.cameraButton.setLabel(isTracking ? 'Stop camera' : 'Start camera');
+        this.cameraButton.setToggled(isTracking);
+      }
+      if (this.fitIdentityButton) {
+        this.fitIdentityButton.button.disabled = !isTracking;
+      }
     }
   }
 }

@@ -57,8 +57,9 @@ await xb.init(options);
 
 ## Spatial and UI units
 
-- World positions, model dimensions, placement offsets, and `UICard.size` use
-  meters.
+- World positions, model dimensions, placement offsets, and fixed
+  `UICard.size` values use meters. Use `size.height: 'auto'` for a card that
+  fits its child layout while keeping a fixed width.
 - Descendant UI layout numbers use UIKit layout units. Percent strings and
   `auto` are accepted where the property type permits them.
 - Numeric `lineHeight` is a multiplier of `fontSize`. Use a `px` or percentage

@@ -5,6 +5,7 @@ export type {
   UICardAnchorY,
   UICardEdgeOptions,
   UICardOptions,
+  UIResolvedSize,
   UISize,
 } from './components/UICard';
 export {UIOverlay} from './components/UIOverlay';

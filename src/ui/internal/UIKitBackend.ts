@@ -11,7 +11,11 @@ import * as THREE from 'three';
 
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {UIButton} from '../components/UIButton';
-import {UICard, getUICardEdgeOptions} from '../components/UICard';
+import {
+  UICard,
+  getUICardEdgeOptions,
+  setResolvedUICardSize,
+} from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
@@ -23,6 +27,7 @@ import {
   getUIRevision,
   getUIStructureRevision,
   isUIElement,
+  registerUIPresentationObject,
   type UIElement,
   type UIStyle,
 } from '../UIElement';
@@ -120,6 +125,13 @@ class UIKitMount implements UIMount {
 
   update(deltaSeconds: number): void {
     this.rendered?.update(deltaSeconds * 1000);
+    if (!(this.root instanceof UICard) || !this.binding) return;
+    const size = this.binding.node.size.peek();
+    if (!validPair(size)) return;
+    setResolvedUICardSize(this.root, {
+      width: size[0] * this.root.pixelSize,
+      height: size[1] * this.root.pixelSize,
+    });
   }
 
   validate(): readonly UIValidationIssue[] {
@@ -256,6 +268,7 @@ type UIKitNode =
 /** A retained physical node and the small private subtree it owns. */
 class UIKitNodeBinding {
   readonly node: UIKitNode;
+  private readonly unregisterPresentationObject: () => void;
   private readonly children = new Map<UIElement, UIKitNodeBinding>();
   private readonly childOrder: UIElement[] = [];
   private readonly cursorPoints = [
@@ -310,6 +323,10 @@ class UIKitNodeBinding {
     } else {
       this.node = new GradientPanel(properties);
     }
+    this.unregisterPresentationObject = registerUIPresentationObject(
+      this.element,
+      this.node
+    );
     this.baseProperties = properties;
     this.presentedProperties = properties;
     this.theme = context.theme;
@@ -438,6 +455,7 @@ class UIKitNodeBinding {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.unregisterPresentationObject();
     for (const child of this.children.values()) child.dispose();
     this.children.clear();
     this.childOrder.length = 0;
@@ -811,14 +829,19 @@ function panelDefaults(
     defaults.justifyContent = style.justifyContent ?? 'center';
     defaults.alignItems = style.alignItems ?? 'stretch';
   }
+  if (kind === 'panel') {
+    defaults.flexShrink = style.flexShrink ?? 1;
+  }
   if (kind === 'card') {
     const card = element as UICard;
     defaults.backfaceColor = defaults.fillColor;
     defaults.pixelSize = card.pixelSize;
     defaults.sizeX = card.size.width;
-    defaults.sizeY = card.size.height;
     defaults.width = card.size.width / card.pixelSize;
-    defaults.height = card.size.height / card.pixelSize;
+    if (card.size.height !== 'auto') {
+      defaults.sizeY = card.size.height;
+      defaults.height = card.size.height / card.pixelSize;
+    }
     defaults.anchorX = card.anchorX;
     defaults.anchorY = card.anchorY;
   } else if (kind === 'overlay') {

@@ -22,7 +22,7 @@ class VRMLabUI extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: {width: 0.54, height: 0.34},
+      size: {width: 0.54, height: 'auto'},
       manipulation: true,
       edge: {scale: true},
       children: [
