@@ -39,6 +39,11 @@ export type {
   AprilTagTrackerOptions,
   AprilTagTrackingState,
 } from './AprilTagTypes';
+export {createAprilTagAnchorVisuals} from './AprilTagVisuals';
+export type {
+  AprilTagAnchorVisuals,
+  AprilTagAnchorVisualsOptions,
+} from './AprilTagVisuals';
 export {TagAnchorCalibrator} from './TagAnchorCalibration';
 export type {
   TagCalibrationSolveResult,
