@@ -4,6 +4,15 @@ export type SimulatorVector3Tuple = [number, number, number];
 export type SimulatorQuaternionTuple = [number, number, number, number];
 export type SimulatorPhysicsMode = false | 'fixed' | 'dynamic';
 
+export interface SimulatorLocationDefinition {
+  /** Short agent-facing description of the location's intended use. */
+  description: string;
+  /** World-space coordinates accepted directly by simulator controls. */
+  position: SimulatorVector3Tuple;
+}
+
+export type SimulatorLocations = Record<string, SimulatorLocationDefinition>;
+
 export interface SimulatorObjectDefinition {
   id?: string;
   assetPath?: string;
@@ -27,6 +36,7 @@ export interface SimulatorSceneManifest {
   position?: SimulatorVector3Tuple;
   quaternion?: SimulatorQuaternionTuple;
   scale?: SimulatorVector3Tuple;
+  locations?: SimulatorLocations;
   objects?: SimulatorObjectDefinition[];
 }
 
@@ -52,8 +62,10 @@ const MANIFEST_KEYS = new Set([
   'position',
   'quaternion',
   'scale',
+  'locations',
   'objects',
 ]);
+const LOCATION_KEYS = new Set(['description', 'position']);
 const OBJECT_KEYS = new Set([
   'id',
   'assetPath',
@@ -123,6 +135,38 @@ function parsePhysics(value: unknown, location: string): SimulatorPhysicsMode {
     throw new Error(`${location}: expected false, 'fixed', or 'dynamic'.`);
   }
   return value;
+}
+
+function parseLocations(value: unknown): SimulatorLocations | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new Error('manifest.locations: expected an object.');
+  }
+  const locations: SimulatorLocations = {};
+  for (const [name, definition] of Object.entries(value)) {
+    const location = `manifest.locations.${name}`;
+    if (!name) {
+      throw new Error('manifest.locations: expected non-empty names.');
+    }
+    if (!isRecord(definition)) {
+      throw new Error(`${location}: expected an object.`);
+    }
+    assertKnownKeys(definition, LOCATION_KEYS, location);
+    const description = parseString(
+      definition.description,
+      `${location}.description`
+    );
+    const position = parseTuple<SimulatorVector3Tuple>(
+      definition.position,
+      3,
+      `${location}.position`
+    );
+    if (!description || !position) {
+      throw new Error(`${location}: description and position are required.`);
+    }
+    locations[name] = {description, position};
+  }
+  return locations;
 }
 
 function parseObject(
@@ -251,6 +295,7 @@ export function parseSimulatorSceneManifest(
       ),
       quaternion,
       scale,
+      locations: parseLocations(value.locations),
       objects: objects.map((object) => ({
         ...object,
         assetPath: resolveOptionalUrl(object.assetPath, manifestUrl),

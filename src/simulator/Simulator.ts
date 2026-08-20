@@ -25,6 +25,7 @@ import type {SimulatorEnvironment} from './SimulatorOptions';
 import {SimulatorScene} from './scene/SimulatorScene';
 import {SimulatorUser} from './SimulatorUser';
 import {SimulatorEnvironmentManager} from './scene/SimulatorEnvironmentManager';
+import type {SimulatorLocations} from './scene/SimulatorEnvironmentManifest';
 import {SimulatorObjectDetectionSource} from '../world/objects/SimulatorObjectDetectionSource';
 import {
   type SimulatorObjects,
@@ -296,6 +297,11 @@ export class Simulator extends Script {
 
   get activeEnvironmentManifest() {
     return this.environment?.manifest;
+  }
+
+  /** Returns the named world-space locations for the active environment. */
+  getLocations(): SimulatorLocations {
+    return this.environment?.manifest?.locations ?? {};
   }
 
   physicsStep() {
