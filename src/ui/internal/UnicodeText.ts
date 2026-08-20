@@ -30,6 +30,7 @@ interface TextLayout {
 }
 
 const MAX_CANVAS_DIMENSION = 4096;
+const CANVAS_SUPERSAMPLING = 2;
 const MEASURE_MODE_UNDEFINED = 0;
 const MEASURE_MODE_EXACTLY = 1;
 const SYSTEM_FONT =
@@ -119,7 +120,7 @@ export class UnicodeText extends Image {
     const scale = Math.max(
       Number.EPSILON,
       Math.min(
-        window.devicePixelRatio || 1,
+        (window.devicePixelRatio || 1) * CANVAS_SUPERSAMPLING,
         MAX_CANVAS_DIMENSION / width,
         MAX_CANVAS_DIMENSION / height
       )
