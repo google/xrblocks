@@ -6,6 +6,7 @@ import {
 } from '@pmndrs/uikit';
 import type * as THREE from 'three';
 
+import {canRenderEmojiText, EmojiText} from './EmojiText';
 import {UnicodeText, type UnicodeTextProperties} from './UnicodeText';
 
 export interface AdaptiveTextProperties extends Record<string, unknown> {
@@ -22,8 +23,9 @@ export interface AdaptiveTextProperties extends Record<string, unknown> {
 /** Stable layout node that selects native or canvas glyph rendering internally. */
 export class AdaptiveText extends Container {
   private nativeText?: Text;
+  private emojiText?: EmojiText;
   private unicodeText?: UnicodeText;
-  private activeText?: Text | UnicodeText;
+  private activeText?: Text | EmojiText | UnicodeText;
 
   constructor(properties: AdaptiveTextProperties) {
     super(containerProperties(properties));
@@ -33,9 +35,11 @@ export class AdaptiveText extends Container {
 
   updateTextProperties(properties: AdaptiveTextProperties): void {
     this.resetProperties(containerProperties(properties));
-    const next = requiresUnicodeTextRenderer(properties.text)
-      ? this.updateUnicodeText(properties)
-      : this.updateNativeText(properties);
+    const next = canRenderEmojiText(properties.text)
+      ? this.updateEmojiText(properties)
+      : requiresUnicodeTextRenderer(properties.text)
+        ? this.updateUnicodeText(properties)
+        : this.updateNativeText(properties);
     if (next === this.activeText) return;
     this.activeText?.removeFromParent();
     this.add(next);
@@ -44,10 +48,13 @@ export class AdaptiveText extends Container {
 
   override dispose(): void {
     this.nativeText?.removeFromParent();
+    this.emojiText?.removeFromParent();
     this.unicodeText?.removeFromParent();
     this.nativeText?.dispose();
+    this.emojiText?.dispose();
     this.unicodeText?.dispose();
     this.nativeText = undefined;
+    this.emojiText = undefined;
     this.unicodeText = undefined;
     this.activeText = undefined;
     super.dispose();
@@ -58,6 +65,12 @@ export class AdaptiveText extends Container {
     if (!this.nativeText) this.nativeText = new Text(textProperties);
     else this.nativeText.resetProperties(textProperties);
     return this.nativeText;
+  }
+
+  private updateEmojiText(properties: AdaptiveTextProperties): EmojiText {
+    if (!this.emojiText) this.emojiText = new EmojiText(properties);
+    else this.emojiText.updateTextProperties(properties);
+    return this.emojiText;
   }
 
   private updateUnicodeText(properties: AdaptiveTextProperties): UnicodeText {
