@@ -169,15 +169,53 @@ export class FaceTracker {
 }
 
 /**
- * Opens the user-facing camera.
+ * Opens a camera stream (user-facing, environment-facing, or a specific device).
  *
- * @param {number=} width Ideal capture width.
- * @param {number=} height Ideal capture height.
+ * @param {{
+ *   width?: number,
+ *   height?: number,
+ *   facingMode?: string,
+ *   deviceId?: string,
+ * }|number=} optionsOrWidth Options object or ideal capture width.
+ * @param {number=} height Ideal capture height if first param is width.
+ * @param {string=} facingMode Facing mode if first param is width.
+ * @param {string=} deviceId Specific device ID if first param is width.
  * @return {!Promise<!HTMLVideoElement>} A playing, muted video element.
  */
-export async function openCamera(width = 1280, height = 720) {
+export async function openCamera(
+  optionsOrWidth = 1280,
+  height = 720,
+  facingMode = 'user',
+  deviceId = undefined
+) {
+  let width = 1280;
+  let targetFacingMode = 'user';
+  let targetDeviceId;
+
+  if (typeof optionsOrWidth === 'object' && optionsOrWidth !== null) {
+    width = optionsOrWidth.width ?? 1280;
+    height = optionsOrWidth.height ?? 720;
+    targetFacingMode = optionsOrWidth.facingMode ?? 'user';
+    targetDeviceId = optionsOrWidth.deviceId;
+  } else if (typeof optionsOrWidth === 'number') {
+    width = optionsOrWidth;
+    targetFacingMode = facingMode ?? 'user';
+    targetDeviceId = deviceId;
+  }
+
+  const videoConstraints = {
+    width: {ideal: width},
+    height: {ideal: height},
+  };
+
+  if (targetDeviceId) {
+    videoConstraints.deviceId = {exact: targetDeviceId};
+  } else if (targetFacingMode) {
+    videoConstraints.facingMode = {ideal: targetFacingMode};
+  }
+
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: {width: {ideal: width}, height: {ideal: height}, facingMode: 'user'},
+    video: videoConstraints,
     audio: false,
   });
   const video = document.createElement('video');
@@ -190,6 +228,17 @@ export async function openCamera(width = 1280, height = 720) {
   });
   await video.play();
   return video;
+}
+
+/**
+ * Queries all available video input devices.
+ *
+ * @return {!Promise<!Array<!MediaDeviceInfo>>} List of video input devices.
+ */
+export async function getVideoDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return [];
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices.filter((device) => device.kind === 'videoinput');
 }
 
 /** Stops every track behind a video element and detaches the stream. */

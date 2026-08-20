@@ -360,7 +360,11 @@
   justify-content: center;
   gap: 14px;
   z-index: 20;
-  background: radial-gradient(circle at 50% 40%, #141a26, #07090e);
+  background-color: #000;
+  background-image: url('https://xrblocks.github.io/css/bg.svg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   color: #e8ecf4;
   font-family: 'Inter', system-ui, sans-serif;
 }
