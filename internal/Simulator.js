@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 95b37da
- * @builddate 2026-08-19T17:54:02.531Z
+ * @commitid 5e162c9
+ * @builddate 2026-08-20T17:15:03.021Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2334,8 +2334,10 @@ const MANIFEST_KEYS = new Set([
     'position',
     'quaternion',
     'scale',
+    'locations',
     'objects',
 ]);
+const LOCATION_KEYS = new Set(['description', 'position']);
 const OBJECT_KEYS = new Set([
     'id',
     'assetPath',
@@ -2391,6 +2393,31 @@ function parsePhysics(value, location) {
         throw new Error(`${location}: expected false, 'fixed', or 'dynamic'.`);
     }
     return value;
+}
+function parseLocations(value) {
+    if (value === undefined)
+        return undefined;
+    if (!isRecord(value)) {
+        throw new Error('manifest.locations: expected an object.');
+    }
+    const locations = {};
+    for (const [name, definition] of Object.entries(value)) {
+        const location = `manifest.locations.${name}`;
+        if (!name) {
+            throw new Error('manifest.locations: expected non-empty names.');
+        }
+        if (!isRecord(definition)) {
+            throw new Error(`${location}: expected an object.`);
+        }
+        assertKnownKeys(definition, LOCATION_KEYS, location);
+        const description = parseString(definition.description, `${location}.description`);
+        const position = parseTuple(definition.position, 3, `${location}.position`);
+        if (!description || !position) {
+            throw new Error(`${location}: description and position are required.`);
+        }
+        locations[name] = { description, position };
+    }
+    return locations;
 }
 function parseObject(value, index, seenIds) {
     const location = `objects[${index}]`;
@@ -2471,6 +2498,7 @@ function parseSimulatorSceneManifest(value, manifestUrl) {
             position: parseTuple(value.position, 3, 'manifest.position'),
             quaternion,
             scale,
+            locations: parseLocations(value.locations),
             objects: objects.map((object) => ({
                 ...object,
                 assetPath: resolveOptionalUrl(object.assetPath, manifestUrl),
@@ -3554,6 +3582,10 @@ class Simulator extends Script {
     }
     get activeEnvironmentManifest() {
         return this.environment?.manifest;
+    }
+    /** Returns the named world-space locations for the active environment. */
+    getLocations() {
+        return this.environment?.manifest?.locations ?? {};
     }
     physicsStep() {
         this.simulatorPhysics?.step();
