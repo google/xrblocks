@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.20.0
- * @commitid 5e162c9
- * @builddate 2026-08-20T17:15:03.021Z
+ * @commitid 1f9a273
+ * @builddate 2026-08-20T21:31:08.171Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1951,7 +1951,133 @@ function roundedBoxDistance(x, y, halfWidth, halfHeight, radius) {
         radius);
 }
 
+const EMOJI_SEQUENCE_SOURCE = String.raw `(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?)*)`;
+const EMOJI_SEQUENCE_REGEX = new RegExp(EMOJI_SEQUENCE_SOURCE, 'u');
+const EMOJI_SEQUENCE_GLOBAL_REGEX = new RegExp(EMOJI_SEQUENCE_SOURCE, 'gu');
+const TEXT_SEGMENT_REGEX = new RegExp(`${EMOJI_SEQUENCE_SOURCE}|\\n|[ \\t\\r]+|[a-zA-Z0-9]+|[^a-zA-Z0-9\\s]`, 'gu');
+/** Renders ASCII text as sharp UIKit glyphs and emoji as inline images. */
+class EmojiText extends Container {
+    constructor(properties) {
+        super(emojiContainerProperties(properties));
+        this.name = 'EmojiText';
+        this.updateTextProperties(properties);
+    }
+    updateTextProperties(properties) {
+        this.resetProperties(emojiContainerProperties(properties));
+        for (const child of [...this.children]) {
+            if (child instanceof Container ||
+                child instanceof Image ||
+                child instanceof Text) {
+                child.dispose();
+            }
+        }
+        const fontSize = properties.fontSize ?? 16;
+        const emojiSize = fontSize * 1.05;
+        for (const segment of parseSegments(properties.text, fontSize)) {
+            if (segment.type === 'space') {
+                this.add(new Container({
+                    width: fontSize * 0.26 * segment.text.length,
+                    height: fontSize,
+                }));
+            }
+            else if (segment.type === 'newline') {
+                this.add(new Container({
+                    width: '100%',
+                    height: segment.blankLine ? fontSize : 0,
+                }));
+            }
+            else if (segment.type === 'emoji') {
+                this.add(new Image({
+                    src: emojiUrl(segment.text),
+                    width: emojiSize,
+                    height: emojiSize,
+                    keepAspectRatio: true,
+                    transformTranslateY: -emojiSize * 0.08,
+                    marginRight: segment.trailingSpaceWidth,
+                    pointerEvents: 'none',
+                }));
+            }
+            else {
+                this.add(new Text({
+                    text: segment.text,
+                    fontSize,
+                    lineHeight: properties.lineHeight,
+                    color: properties.color,
+                    fontWeight: properties.fontWeight,
+                    whiteSpace: 'pre',
+                    marginRight: segment.trailingSpaceWidth,
+                    pointerEvents: 'none',
+                }));
+            }
+        }
+    }
+}
+function canRenderEmojiText(value) {
+    if (!EMOJI_SEQUENCE_REGEX.test(value))
+        return false;
+    const textWithoutEmoji = value.replace(EMOJI_SEQUENCE_GLOBAL_REGEX, '');
+    return !/[^\u0020-\u007e\n\r\t]/u.test(textWithoutEmoji);
+}
+function emojiContainerProperties(properties) {
+    return {
+        flexDirection: 'row',
+        flexWrap: properties.whiteSpace === 'nowrap' ? 'nowrap' : 'wrap',
+        alignItems: 'center',
+        justifyContent: properties.textAlign === 'center'
+            ? 'center'
+            : properties.textAlign === 'right'
+                ? 'flex-end'
+                : 'flex-start',
+        color: properties.color,
+        fontSize: properties.fontSize,
+        fontWeight: properties.fontWeight,
+        lineHeight: properties.lineHeight,
+        flexShrink: 0,
+        pointerEvents: 'none',
+    };
+}
+function parseSegments(text, fontSize) {
+    const rawSegments = text.replace(/\r\n/gu, '\n').match(TEXT_SEGMENT_REGEX) ?? [];
+    const segments = [];
+    for (let index = 0; index < rawSegments.length; index++) {
+        const value = rawSegments[index];
+        if (value === '\n') {
+            segments.push({
+                type: 'newline',
+                text: value,
+                blankLine: index === 0 || rawSegments[index - 1] === '\n',
+            });
+        }
+        else if (/^[ \t\r]+$/u.test(value)) {
+            const previous = segments[segments.length - 1];
+            if (previous?.type === 'word' || previous?.type === 'emoji') {
+                previous.trailingSpaceWidth = fontSize * 0.26 * value.length;
+            }
+            else {
+                segments.push({ type: 'space', text: value });
+            }
+        }
+        else if (EMOJI_SEQUENCE_REGEX.test(value)) {
+            segments.push({ type: 'emoji', text: value });
+        }
+        else {
+            segments.push({ type: 'word', text: value.replace(/\uFE0F/gu, '') });
+        }
+    }
+    return segments;
+}
+function emojiUrl(emoji) {
+    let hex = Array.from(emoji)
+        .map((character) => character.codePointAt(0).toString(16))
+        .join('-');
+    if (!hex.includes('200d') && hex.endsWith('-fe0f')) {
+        hex = hex.slice(0, -5);
+    }
+    return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${hex}.png`;
+}
+
 const MAX_CANVAS_DIMENSION = 4096;
+const CANVAS_SUPERSAMPLING = 2;
 const MEASURE_MODE_UNDEFINED = 0;
 const MEASURE_MODE_EXACTLY = 1;
 const SYSTEM_FONT = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -2018,7 +2144,7 @@ class UnicodeText extends Image {
     draw(width, height) {
         if (!(width > 0) || !(height > 0))
             return;
-        const scale = Math.max(Number.EPSILON, Math.min(window.devicePixelRatio || 1, MAX_CANVAS_DIMENSION / width, MAX_CANVAS_DIMENSION / height));
+        const scale = Math.max(Number.EPSILON, Math.min((window.devicePixelRatio || 1) * CANVAS_SUPERSAMPLING, MAX_CANVAS_DIMENSION / width, MAX_CANVAS_DIMENSION / height));
         const pixelWidth = Math.max(1, Math.ceil(width * scale));
         const pixelHeight = Math.max(1, Math.ceil(height * scale));
         if (this.canvas.width !== pixelWidth ||
@@ -2173,9 +2299,11 @@ class AdaptiveText extends Container {
     }
     updateTextProperties(properties) {
         this.resetProperties(containerProperties(properties));
-        const next = requiresUnicodeTextRenderer(properties.text)
-            ? this.updateUnicodeText(properties)
-            : this.updateNativeText(properties);
+        const next = canRenderEmojiText(properties.text)
+            ? this.updateEmojiText(properties)
+            : requiresUnicodeTextRenderer(properties.text)
+                ? this.updateUnicodeText(properties)
+                : this.updateNativeText(properties);
         if (next === this.activeText)
             return;
         this.activeText?.removeFromParent();
@@ -2184,10 +2312,13 @@ class AdaptiveText extends Container {
     }
     dispose() {
         this.nativeText?.removeFromParent();
+        this.emojiText?.removeFromParent();
         this.unicodeText?.removeFromParent();
         this.nativeText?.dispose();
+        this.emojiText?.dispose();
         this.unicodeText?.dispose();
         this.nativeText = undefined;
+        this.emojiText = undefined;
         this.unicodeText = undefined;
         this.activeText = undefined;
         super.dispose();
@@ -2199,6 +2330,13 @@ class AdaptiveText extends Container {
         else
             this.nativeText.resetProperties(textProperties);
         return this.nativeText;
+    }
+    updateEmojiText(properties) {
+        if (!this.emojiText)
+            this.emojiText = new EmojiText(properties);
+        else
+            this.emojiText.updateTextProperties(properties);
+        return this.emojiText;
     }
     updateUnicodeText(properties) {
         const textProperties = unicodeTextProperties(properties);
