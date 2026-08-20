@@ -59,6 +59,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   options.enableDepth();
   options.enableReticles();
   options.reticles.projectOnDepthMesh = true;
+  // Pixel-level occlusion: real-world geometry (desk, doorway, furniture)
+  // hides the avatar. Needs the depth texture (occlusion map compares virtual
+  // depth against it) plus the occlusion pass itself.
+  options.depth.depthTexture.enabled = true;
+  options.depth.occlusion.enabled = true;
   options.setAppTitle('VRM Avatar Companion');
   options.setAppDescription(
     'Point at a detected floor surface and release Select to move the avatar.'

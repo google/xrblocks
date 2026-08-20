@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 import {VRMAvatar} from './VRMAvatar.js';
+import {applyOcclusionToAvatar} from './VRMOcclusion.js';
 
 export class VRMAvatarScript extends xb.Script {
   static dependencies = {
@@ -109,6 +110,13 @@ export class VRMAvatarScript extends xb.Script {
     }
 
     this.add(this._avatar.root);
+
+    // Pixel-level passthrough occlusion (real-world geometry hides the
+    // avatar). Runs after load so VRMUtils.combineSkeletons has already
+    // replaced the meshes; inert unless occlusion is enabled in options.
+    if (xb.core.options.depth?.occlusion?.enabled) {
+      applyOcclusionToAvatar(this._avatar.root);
+    }
 
     this._placeAvatarFacingUser();
 
