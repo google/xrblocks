@@ -7,6 +7,12 @@ import * as THREE from 'three';
 // nothing, so joints the model is unsure about are skipped.
 const MIN_JOINT_VISIBILITY = 0.5;
 
+// The HUD card is head-locked 0.8 m away while the skeleton lands 2 m out, so
+// the translucent card composites over the body it is describing. Joining the
+// transparent pass lets the skeleton draw last and stay readable through the
+// card, while sitting well under the reticle and overlay UI.
+const SKELETON_RENDER_ORDER = 1000;
+
 export class PoseDisplay extends xb.Script {
   static dependencies = {world: xb.World};
 
@@ -81,7 +87,11 @@ export class PoseDisplay extends xb.Script {
   initJointMarkers() {
     // Create a pool of red dot markers for all trackable body joints
     this.markerGeometry = new THREE.SphereGeometry(0.005, 16, 16);
-    this.markerMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
+    this.markerMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      // Transparent only to share the card's pass; see SKELETON_RENDER_ORDER.
+      transparent: true,
+    });
     this.jointMarkers = new Map();
 
     const allJointNames = Object.values(xb.PoseJointName);
@@ -90,6 +100,7 @@ export class PoseDisplay extends xb.Script {
       // Create dot marker
       const marker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
       marker.visible = false;
+      marker.renderOrder = SKELETON_RENDER_ORDER;
       this.add(marker);
       this.jointMarkers.set(jointName, marker);
     });
@@ -150,6 +161,7 @@ export class PoseDisplay extends xb.Script {
         this.connectorMaterial
       );
       mesh.visible = false;
+      mesh.renderOrder = SKELETON_RENDER_ORDER;
       this.add(mesh);
       this.connectorMeshes.push({jointA, jointB, mesh});
     });
