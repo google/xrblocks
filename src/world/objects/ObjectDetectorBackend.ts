@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import {FontLoader, type Font} from 'three/addons/loaders/FontLoader.js';
+import {TextGeometry} from 'three/addons/geometries/TextGeometry.js';
 import {AI} from '../../ai/AI';
 import {AIOptions} from '../../ai/AIOptions';
 import {
@@ -10,6 +12,19 @@ import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {WorldOptions} from '../WorldOptions';
 import {DetectedObject} from './DetectedObject';
 import {CameraSnapshot, NormalizedDetectedObject} from './ObjectDetector';
+
+const DEBUG_FONT_URL =
+  'https://cdn.jsdelivr.net/npm/three@0.184.0/examples/fonts/helvetiker_regular.typeface.json';
+
+let cachedFontPromise: Promise<Font> | null = null;
+
+function loadDebugFont(): Promise<Font> {
+  if (!cachedFontPromise) {
+    const loader = new FontLoader();
+    cachedFontPromise = loader.loadAsync(DEBUG_FONT_URL);
+  }
+  return cachedFontPromise;
+}
 
 /**
  * The context required by detector backends to operate.
@@ -143,21 +158,32 @@ export abstract class BaseDetectorBackend<T> {
     );
     sphere.position.copy(object.position);
 
-    // Create and configure the text label using Troika.
-    const {Text} = await import('troika-three-text');
-    const textLabel = new Text();
-    textLabel.text = object.label;
-    textLabel.fontSize = 0.07;
-    textLabel.color = 0xffffff;
-    textLabel.anchorX = 'center';
-    textLabel.anchorY = 'bottom';
-
-    // Position the label above the sphere
-    textLabel.position.copy(sphere.position);
-    textLabel.position.y += 0.04; // Offset above the sphere.
-
-    this.context.debugVisualsGroup!.add(sphere, textLabel);
-    textLabel.sync(); // Required for Troika text to appear.
+    // Create and configure the text label using Three.js TextGeometry with a CDN font.
+    try {
+      const font = await loadDebugFont();
+      const geometry = new TextGeometry(object.label, {
+        font,
+        size: 0.05,
+        depth: 0.005,
+      });
+      geometry.computeBoundingBox();
+      if (geometry.boundingBox) {
+        const xOffset =
+          -(geometry.boundingBox.max.x - geometry.boundingBox.min.x) / 2;
+        geometry.translate(xOffset, 0, 0);
+      }
+      const textMaterial = new THREE.MeshBasicMaterial({color: 0xffffff});
+      const textLabel = new THREE.Mesh(geometry, textMaterial);
+      textLabel.position.copy(sphere.position);
+      textLabel.position.y += 0.04;
+      this.context.debugVisualsGroup!.add(sphere, textLabel);
+    } catch (error) {
+      console.warn(
+        'Failed to load debug font for object detection label:',
+        error
+      );
+      this.context.debugVisualsGroup!.add(sphere);
+    }
   }
 
   /**

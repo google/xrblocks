@@ -17,11 +17,6 @@
           "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
           "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
           "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
-          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
-          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
-          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
-          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
           "lit": "https://esm.sh/lit@3.3.1",
           "lit/": "https://esm.sh/lit@3.3.1/",
           "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
@@ -266,7 +261,6 @@
       import * as THREE from 'three';
       import * as xb from 'xrblocks';
       import {GeminiManager} from 'xrblocks/addons/ai/GeminiManager.js';
-      import {Text} from 'troika-three-text';
       import {marked} from 'marked';
       import DOMPurify from 'dompurify';
 
@@ -477,6 +471,7 @@
               : [];
             if (text) list.push({text, style});
             if (!list.length) {
+              console.warn('[WorldCompanion] placeLabel: no items provided');
               return {success: false, error: 'no items provided'};
             }
 
@@ -516,9 +511,16 @@
               try {
                 if (xb.core.world?.objects) {
                   detected = await xb.core.world.objects.runDetection();
+                } else {
+                  console.warn(
+                    '[WorldCompanion] xb.core.world.objects is NOT available!'
+                  );
                 }
               } catch (e) {
-                console.warn('[placeLabel] detection threw', e);
+                console.warn(
+                  '[WorldCompanion] xb.core.world.objects.runDetection threw:',
+                  e
+                );
               }
               // Keep the richer of fresh vs a still-recent cached detection so
               // a degenerate re-detection doesn't clobber a good one.
@@ -675,7 +677,12 @@
             const snapRaycaster = new THREE.Raycaster();
             const snapToDepth = (target) => {
               const depthMesh = xb.core.depth?.depthMesh;
-              if (!depthMesh) return null;
+              if (!depthMesh) {
+                console.warn(
+                  '[WorldCompanion] snapToDepth: depthMesh not available'
+                );
+                return null;
+              }
               const dir = target.clone().sub(camPosForRange).normalize();
               snapRaycaster.set(camPosForRange, dir);
               snapRaycaster.far = MAX_ANCHOR_DIST;
@@ -687,7 +694,6 @@
             const placed = [];
             list.forEach((item, i) => {
               let match = findMatch(item.text);
-              const initialMatch = match;
               if (match && camForRange) {
                 const d = camPosForRange.distanceTo(match.position);
                 if (d > MAX_ANCHOR_DIST) {
@@ -695,6 +701,9 @@
                   if (snapped) {
                     match = {...match, position: snapped};
                   } else {
+                    console.warn(
+                      '[WorldCompanion] Match exceeded max distance and depth snap failed'
+                    );
                     match = null;
                   }
                 }
@@ -715,6 +724,9 @@
                   anchored: true,
                 });
               } else {
+                console.warn(
+                  `[WorldCompanion] Item ${i}: "${item.text}" could not be anchored (not_found)`
+                );
                 placed.push({
                   requested: item.text,
                   style: itemStyle,
@@ -748,7 +760,7 @@
                 data: {target: target?.name || target?.type || 'nothing'},
               };
             } catch (err) {
-              console.warn('[lookCloser] error', err);
+              console.warn('[WorldCompanion] [lookCloser] error', err);
               return {success: false, error: err.message};
             }
           },
@@ -758,80 +770,126 @@
       }
 
       function placeMarker(position, text, style, batchKey) {
-        // Dedupe by world position: the same physical spot only gets one
-        // label (re-labelling moves/updates it), but two different objects of
-        // the same kind keep their own labels. Skip same-batch labels so a
-        // single multi-item request doesn't merge its own items together.
-        const DEDUP_DIST = 0.4;
-        const candidates = labels.children.filter(
-          (g) => !batchKey || g.userData.batchKey !== batchKey
-        );
-        let existing = null;
-        let bestDist = DEDUP_DIST;
-        for (const g of candidates) {
-          const dist = g.position.distanceTo(position);
-          if (dist <= bestDist) {
-            bestDist = dist;
-            existing = g;
-          }
-        }
-        if (existing) {
-          if (existing.userData.style !== style) {
-            labels.remove(existing);
+        try {
+          // Normalize position to THREE.Vector3
+          const targetPos = new THREE.Vector3();
+          if (position?.isVector3) {
+            targetPos.copy(position);
+          } else if (Array.isArray(position)) {
+            targetPos.fromArray(position);
+          } else if (
+            position &&
+            typeof position.x === 'number' &&
+            typeof position.y === 'number' &&
+            typeof position.z === 'number'
+          ) {
+            targetPos.set(position.x, position.y, position.z);
           } else {
-            existing.position.copy(position);
-            existing.userData.t0 = performance.now() / 1000;
-            existing.userData.text = text;
-            const labelChild = existing.children.find(
-              (c) => c.isText || c.text
+            console.error(
+              '[WorldCompanion] placeMarker: invalid position argument:',
+              position
             );
-            if (labelChild && 'text' in labelChild) {
-              labelChild.text = text;
-              labelChild.sync && labelChild.sync();
-            }
             return;
           }
-        }
 
-        const group = new THREE.Group();
-        group.position.copy(position);
-        group.userData.style = style;
-        group.userData.text = text;
-        group.userData.t0 = performance.now() / 1000;
-        group.userData.batchKey = batchKey;
-        if (style === 'arrow') {
-          const arrow = buildArrow();
-          arrow.position.set(0, 0.25, 0);
-          group.add(arrow);
-          group.userData.arrow = arrow;
-        } else if (style === 'pulse') {
-          const ring = buildPulseRing();
-          group.add(ring);
-          group.userData.ring = ring;
-        } else {
-          const sphere = new THREE.Mesh(
-            new THREE.SphereGeometry(0.04, 16, 16),
-            new THREE.MeshBasicMaterial({color: 0xffd54f})
+          // Dedupe by world position: the same physical spot only gets one
+          // label (re-labelling moves/updates it), but two different objects of
+          // the same kind keep their own labels. Skip same-batch labels so a
+          // single multi-item request doesn't merge its own items together.
+          const DEDUP_DIST = 0.4;
+          const candidates = labels.children.filter(
+            (g) => !batchKey || g.userData.batchKey !== batchKey
           );
-          group.add(sphere);
+          let existing = null;
+          let bestDist = DEDUP_DIST;
+          for (const g of candidates) {
+            const dist = g.position.distanceTo(targetPos);
+            if (dist <= bestDist) {
+              bestDist = dist;
+              existing = g;
+            }
+          }
+          if (existing) {
+            if (existing.userData.style !== style) {
+              labels.remove(existing);
+            } else {
+              existing.position.copy(targetPos);
+              existing.userData.t0 = performance.now() / 1000;
+              existing.userData.text = text;
+              if (existing.userData.textElement) {
+                existing.userData.textElement.text = text;
+              }
+              return;
+            }
+          }
+
+          const group = new THREE.Group();
+          group.position.copy(targetPos);
+          group.userData.style = style;
+          group.userData.text = text;
+          group.userData.t0 = performance.now() / 1000;
+          group.userData.batchKey = batchKey;
+          if (style === 'arrow') {
+            const arrow = buildArrow();
+            arrow.position.set(0, 0.25, 0);
+            group.add(arrow);
+            group.userData.arrow = arrow;
+          } else if (style === 'pulse') {
+            const ring = buildPulseRing();
+            group.add(ring);
+            group.userData.ring = ring;
+          } else {
+            const sphere = new THREE.Mesh(
+              new THREE.SphereGeometry(0.04, 16, 16),
+              new THREE.MeshBasicMaterial({color: 0xffd54f})
+            );
+            group.add(sphere);
+          }
+          const textElement = new xb.UIText({
+            text,
+            style: {
+              fontSize: 24,
+              color: '#ffffff',
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+            },
+          });
+          const card = new xb.UICard({
+            size: {width: 0.35, height: 0.08},
+            pixelSize: 0.001,
+            appearance: 'surface',
+            style: {
+              width: '100%',
+              height: '100%',
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: 'rgba(0, 0, 0, 0.75)',
+              borderRadius: 12,
+              paddingLeft: 16,
+              paddingRight: 16,
+              paddingTop: 8,
+              paddingBottom: 8,
+            },
+            children: [textElement],
+          });
+          card.position.set(0, style === 'arrow' ? 0.4 : 0.06, 0);
+          group.add(card);
+          group.userData.card = card;
+          group.userData.textElement = textElement;
+          labels.add(group);
+
+          const cam = xb.core?.camera;
+          if (cam) {
+            cam.getWorldPosition(_camWorldPos);
+            group.updateWorldMatrix(true, false);
+            card.lookAt(_camWorldPos);
+          }
+        } catch (err) {
+          console.error(
+            '[WorldCompanion] placeMarker THREW AN EXCEPTION:',
+            err
+          );
         }
-        const label = new Text();
-        label.text = text;
-        label.fontSize = 0.05;
-        label.color = 0xffffff;
-        label.outlineWidth = 0.004;
-        label.outlineColor = 0x000000;
-        label.anchorX = 'center';
-        label.anchorY = 'bottom';
-        label.position.set(0, style === 'arrow' ? 0.4 : 0.06, 0);
-        label.depthOffset = -1;
-        label.renderOrder = 999;
-        label.material.depthTest = false;
-        label.material.depthWrite = false;
-        label.material.transparent = true;
-        group.add(label);
-        label.sync();
-        labels.add(group);
       }
 
       function buildArrow() {
@@ -868,33 +926,6 @@
       }
 
       const _camWorldPos = new THREE.Vector3();
-      function animateMarkers() {
-        const now = performance.now() / 1000;
-        const cam = xb.core.camera;
-        if (cam) cam.getWorldPosition(_camWorldPos);
-        for (const g of labels.children) {
-          const dt = now - (g.userData.t0 || now);
-          if (g.userData.style === 'arrow' && g.userData.arrow) {
-            g.userData.arrow.position.y = 0.25 + Math.sin(dt * 3) * 0.02;
-          } else if (g.userData.style === 'pulse' && g.userData.ring) {
-            const phase = (dt % 1.5) / 1.5;
-            const s = 1 + phase * 3;
-            g.userData.ring.scale.setScalar(s);
-            g.userData.ring.material.opacity = 0.9 * (1 - phase);
-          }
-          if (cam) {
-            for (const c of g.children) {
-              if (typeof c.text === 'string') {
-                // Troika Text reads from its local -Z side, so aim that at
-                // the camera with a plain lookAt.
-                c.lookAt(_camWorldPos);
-              }
-            }
-          }
-        }
-        requestAnimationFrame(animateMarkers);
-      }
-      requestAnimationFrame(animateMarkers);
 
       // Guards against a second start while the first is still opening (the
       // XR and DOM buttons can both fire before isAIRunning flips true).
@@ -1066,6 +1097,28 @@
           card.add(separator);
           card.add(buttonRow);
           this.add(card);
+          this.add(labels);
+        }
+
+        update() {
+          const now = performance.now() / 1000;
+          const cam = xb.core.camera;
+          if (cam) cam.getWorldPosition(_camWorldPos);
+          for (const g of labels.children) {
+            const dt = now - (g.userData.t0 || now);
+            if (g.userData.style === 'arrow' && g.userData.arrow) {
+              g.userData.arrow.position.y = 0.25 + Math.sin(dt * 3) * 0.02;
+            } else if (g.userData.style === 'pulse' && g.userData.ring) {
+              const phase = (dt % 1.5) / 1.5;
+              const s = 1 + phase * 3;
+              g.userData.ring.scale.setScalar(s);
+              g.userData.ring.material.opacity = 0.9 * (1 - phase);
+            }
+            if (cam && g.userData.card) {
+              g.updateWorldMatrix(true, false);
+              g.userData.card.lookAt(_camWorldPos);
+            }
+          }
         }
 
         // Icon + caption button mirroring a DOM control.
@@ -1117,7 +1170,6 @@
       xb.add(new WorldCompanionPanel());
 
       xb.init(options);
-      xb.core.scene.add(labels);
     </script>
   </body>
 </html>

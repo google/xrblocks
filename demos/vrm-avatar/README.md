@@ -66,7 +66,7 @@ On device, `onSelectEnd` uses the callback's `event.surface` and `event.intersec
 | `xrblocks`         | `0.20.0`  | Local build |
 | `xrblocks/addons/` | `0.20.0`  | Local build |
 
-All other dependencies (troika, rapier3d, lit) are CDN — see the import map in `index.html`.
+All other dependencies (rapier3d, lit) are CDN — see the import map in `index.html`.
 
 ---
 

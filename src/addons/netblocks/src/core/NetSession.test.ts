@@ -8,21 +8,21 @@ import * as THREE from 'three';
 // constructor, so stub that with a bare Object3D.
 vi.mock('xrblocks', async () => {
   const T = await import('three');
+  class FakeUIElement extends T.Object3D {
+    dispose() {}
+  }
   return {
     core: undefined,
     StylizedFace: class extends T.Object3D {
       dispose() {}
     },
-  };
-});
-
-vi.mock('troika-three-text', async () => {
-  const T = await import('three');
-  return {
-    Text: class extends T.Object3D {
+    UICard: FakeUIElement,
+    UIText: class extends FakeUIElement {
       text = '';
-      sync() {}
-      dispose() {}
+      constructor(opts?: {text?: string}) {
+        super();
+        this.text = opts?.text ?? '';
+      }
     },
   };
 });
