@@ -250,7 +250,6 @@ async function start() {
     await requestAudioPermission();
 
     const options = new xb.Options();
-    options.enableUI();
     options.enableHands();
     options.enableAI();
     options.setAppTitle('Generating Skybox with Gemini');
