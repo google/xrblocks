@@ -29,7 +29,6 @@
           "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
           "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.12.1/dist/signals-core.mjs",
           "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
-          "uiblocks": "../../build/addons/uiblocks/src/index.js",
           "xrblocks": "../../build/xrblocks.js",
           "xrblocks/addons/": "../../build/addons/",
           "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm",
@@ -267,13 +266,6 @@
       import * as THREE from 'three';
       import * as xb from 'xrblocks';
       import {GeminiManager} from 'xrblocks/addons/ai/GeminiManager.js';
-      import {
-        ManipulationBehavior,
-        UICore,
-        UIIcon,
-        UIPanel,
-        UIText,
-      } from 'uiblocks';
       import {Text} from 'troika-three-text';
       import {marked} from 'marked';
       import DOMPurify from 'dompurify';
@@ -371,7 +363,7 @@
 
       function setStatus(s) {
         statusEl.textContent = s;
-        if (xrStatusText) xrStatusText.setText(s.replace(/…/g, '...'));
+        if (xrStatusText) xrStatusText.text = s.replace(/…/g, '...');
       }
       function renderTranscript() {
         transcriptEl.innerHTML = DOMPurify.sanitize(
@@ -620,7 +612,7 @@
             if (xrStatusText) {
               const want = list.map((it) => it.text).join(', ');
               const got = detected.map((d) => d.label).join(', ') || '(none)';
-              xrStatusText.setText(`want: ${want} | got: ${got}`);
+              xrStatusText.text = `want: ${want} | got: ${got}`;
             }
 
             const expand = (s) => {
@@ -971,7 +963,6 @@
       clearBtn.addEventListener('click', clearLabels);
 
       const options = new xb.Options();
-      options.enableUI();
       options.enableAI();
       options.enableCamera();
       options.enableDepth();
@@ -1006,117 +997,120 @@
       });
       xb.add(geminiManager);
 
-      // Immersive control panel built with uiblocks (preferred over the older
-      // xb.SpatialPanel). Mirrors the DOM controls and shows live status. An
-      // xb.Script so UICore gets its lifecycle hooks; draggable so users can
-      // place it anywhere.
+      // Immersive control panel for XR. Mirrors the DOM controls and shows live status.
       class WorldCompanionPanel extends xb.Script {
         init() {
-          this.uiCore = new UICore(this);
-          const card = this.uiCore.createCard({
-            name: 'WorldCompanionControlCard',
-            position: new THREE.Vector3(0, 1.3, -0.8),
-            sizeX: 0.56,
-            sizeY: 0.2,
+          const card = new xb.UICard({
+            size: {width: 0.56, height: 0.22},
+            manipulation: {actions: {translate: {faceCamera: true}}},
+            edge: true,
+            style: {
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'rgba(10, 12, 16, 0.94)',
+              borderWidth: 2,
+              borderColor: 'rgba(126, 231, 135, 0.45)',
+              borderRadius: 18,
+              padding: 14,
+              flexDirection: 'column',
+              gap: 8,
+              alignItems: 'stretch',
+              justifyContent: 'center',
+            },
           });
-          const panel = new UIPanel({
-            width: '100%',
-            height: '100%',
-            fillColor: 'rgba(10, 12, 16, 0.94)',
-            strokeWidth: 2,
-            strokeColor: 'rgba(126, 231, 135, 0.45)',
-            cornerRadius: 18,
-            padding: 14,
-            flexDirection: 'column',
-            gap: 8,
-            alignItems: 'stretch',
-            justifyContent: 'center',
+          card.name = 'WorldCompanionControlCard';
+          card.position.set(0, 1.3, -0.8);
+
+          const titleText = new xb.UIText({
+            text: 'WORLD COMPANION',
+            style: {
+              fontSize: 18,
+              fontWeight: 'bold',
+              color: '#7ee787',
+              textAlign: 'center',
+              width: '100%',
+            },
           });
-          const titleText = new UIText('WORLD COMPANION', {
-            fontSize: 18,
-            fontWeight: 'bold',
-            color: '#7ee787',
-            textAlign: 'center',
-            width: '100%',
+          xrStatusText = new xb.UIText({
+            text: 'idle',
+            style: {
+              fontSize: 12,
+              color: '#8b97a7',
+              textAlign: 'center',
+              width: '100%',
+            },
           });
-          xrStatusText = new UIText('idle', {
-            fontSize: 12,
-            color: '#8b97a7',
-            textAlign: 'center',
-            width: '100%',
+          const separator = new xb.UIPanel({
+            style: {
+              width: '100%',
+              height: 1,
+              backgroundColor: 'rgba(255, 255, 255, 0.10)',
+            },
           });
-          const separator = new UIPanel({
-            width: '100%',
-            height: 1,
-            fillColor: 'rgba(255, 255, 255, 0.10)',
-          });
-          const buttonRow = new UIPanel({
-            width: '100%',
-            flexDirection: 'row',
-            gap: 10,
-            justifyContent: 'center',
-            alignItems: 'center',
+          const buttonRow = new xb.UIPanel({
+            style: {
+              width: '100%',
+              flexDirection: 'row',
+              gap: 10,
+              justifyContent: 'center',
+              alignItems: 'center',
+            },
           });
           buttonRow.add(this.makeXrButton('mic', 'talk', start));
           buttonRow.add(this.makeXrButton('stop', 'stop', stop));
           buttonRow.add(
             this.makeXrButton('delete_sweep', 'clear', clearLabels)
           );
-          panel.add(titleText);
-          panel.add(xrStatusText);
-          panel.add(separator);
-          panel.add(buttonRow);
-          card.add(panel);
-          card.addBehavior(
-            new ManipulationBehavior({draggable: true, faceCamera: true})
-          );
+          card.add(titleText);
+          card.add(xrStatusText);
+          card.add(separator);
+          card.add(buttonRow);
+          this.add(card);
         }
 
-        // Icon + caption button mirroring a DOM control. renderOrder/depthTest
-        // pin the label and icon on top of the fill so they read from every
-        // angle (the uiblocks button fill otherwise draws over nested text).
+        // Icon + caption button mirroring a DOM control.
         makeXrButton(iconName, label, onClick) {
-          const idle = '#2a2a2a';
-          const hover = '#3a3a3a';
-          const btn = new UIPanel({
-            paddingTop: 8,
-            paddingBottom: 8,
-            paddingLeft: 16,
-            paddingRight: 16,
-            cornerRadius: 12,
-            fillColor: idle,
-            strokeWidth: 1,
-            strokeColor: '#444444',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            renderOrder: 10,
-            onHoverEnter: () => btn.setFillColor(hover),
-            onHoverExit: () => btn.setFillColor(idle),
+          const btn = new xb.UIButton({
+            ariaLabel: label,
             onClick: () => {
-              btn.setFillColor('#4796e3');
-              setTimeout(() => btn.setFillColor(idle), 180);
+              btn.style.backgroundColor = '#4796e3';
+              setTimeout(() => {
+                btn.style.backgroundColor = '#2a2a2a';
+              }, 180);
               onClick();
             },
+            style: {
+              paddingTop: 8,
+              paddingBottom: 8,
+              paddingLeft: 16,
+              paddingRight: 16,
+              borderRadius: 12,
+              backgroundColor: '#2a2a2a',
+              borderWidth: 1,
+              borderColor: '#444444',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              ':hover': {backgroundColor: '#3a3a3a'},
+              ':active': {backgroundColor: '#4796e3'},
+            },
+            children: [
+              new xb.UIIcon({
+                icon: iconName,
+                ariaLabel: iconName,
+                style: {color: 'white', width: 22, height: 22},
+              }),
+              new xb.UIText({
+                text: label,
+                style: {
+                  fontSize: 14,
+                  color: '#ffffff',
+                  fontWeight: 'bold',
+                },
+              }),
+            ],
           });
-          btn.add(
-            new UIIcon(iconName, {
-              color: 'white',
-              width: 22,
-              height: 22,
-              renderOrder: 12,
-            })
-          );
-          btn.add(
-            new UIText(label, {
-              fontSize: 14,
-              color: '#ffffff',
-              fontWeight: 'bold',
-              depthTest: false,
-              renderOrder: 100,
-            })
-          );
           return btn;
         }
       }
