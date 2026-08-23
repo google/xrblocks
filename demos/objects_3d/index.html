@@ -30,7 +30,6 @@
           "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
           "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.12.1/dist/signals-core.mjs",
           "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
-          "uiblocks": "../../build/addons/uiblocks/src/index.js",
           "xrblocks": "../../build/xrblocks.js",
           "xrblocks/addons/": "../../build/addons/",
           "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs",
@@ -246,13 +245,6 @@
     <script type="module">
       import * as THREE from 'three';
       import * as xb from 'xrblocks';
-      import {
-        ManipulationBehavior,
-        UICore,
-        UIIcon,
-        UIPanel,
-        UIText,
-      } from 'uiblocks';
       import {
         FilesetResolver,
         InteractiveSegmenter,
@@ -1687,10 +1679,7 @@
       function setStatus(s) {
         const el = document.getElementById('status');
         if (el) el.textContent = s;
-        // The MSDF font uiblocks uses doesn't include the Unicode ellipsis
-        // glyph (U+2026), so swap it for three ASCII dots before handing
-        // the string to UIText, otherwise it renders as '?'.
-        if (xrStatusText) xrStatusText.setText(s.replace(/…/g, '...'));
+        if (xrStatusText) xrStatusText.text = s.replace(/…/g, '...');
       }
 
       function clearBoxes() {
@@ -2144,7 +2133,6 @@
       }
 
       const options = new xb.Options();
-      options.enableUI();
       options.enableAI();
       options.enableCamera();
       options.enableDepth();
@@ -2190,68 +2178,75 @@
         window.location.search = '?' + p.toString();
       }
 
-      // Spatial control panel for immersive XR. Built as an xb.Script so
-      // UICore + HeadLeashBehavior get the lifecycle hooks they need. The
-      // panel mirrors the DOM controls (detect / clear + detector / mask
-      // pickers) and shows live status. Uses uiblocks (preferred over the
-      // older xb.SpatialPanel per ruofei's guidance on PR #274).
+      // Spatial control panel for immersive XR. Built as an xb.Script.
+      // The panel mirrors the DOM controls (detect / clear + detector / mask
+      // pickers) and shows live status.
       class Objects3dControlPanel extends xb.Script {
         init() {
-          this.uiCore = new UICore(this);
-          const card = this.uiCore.createCard({
-            name: 'Objects3dControlCard',
-            position: new THREE.Vector3(0, 1.4, -1.0),
-            sizeX: 0.62,
-            sizeY: 0.42,
-          });
-          const panel = new UIPanel({
-            width: '100%',
-            height: '100%',
-            fillColor: 'rgba(15, 18, 25, 0.9)',
-            innerShadowColor: 'rgba(100, 180, 255, 0.12)',
-            innerShadowBlur: 60,
-            strokeWidth: 3,
-            strokeColor: {
-              gradientType: 'linear',
-              rotation: 45,
-              stops: [
-                {position: 0, color: '#4796e3'},
-                {position: 1, color: '#9b5de5'},
-              ],
+          const card = new xb.UICard({
+            size: {width: 0.62, height: 0.42},
+            manipulation: {actions: {translate: {faceCamera: true}}},
+            edge: true,
+            style: {
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'rgba(15, 18, 25, 0.9)',
+              borderWidth: 3,
+              borderColor: {
+                gradientType: 'linear',
+                rotation: 45,
+                stops: [
+                  {position: 0, color: '#4796e3'},
+                  {position: 1, color: '#9b5de5'},
+                ],
+              },
+              borderRadius: 22,
+              padding: 18,
+              flexDirection: 'column',
+              gap: 10,
+              alignItems: 'stretch',
+              justifyContent: 'flex-start',
             },
-            cornerRadius: 22,
-            padding: 18,
-            flexDirection: 'column',
-            gap: 10,
-            alignItems: 'stretch',
-            justifyContent: 'flex-start',
           });
-          const titleText = new UIText('3D OBJECT BOXES', {
-            fontSize: 22,
-            fontWeight: 'bold',
-            color: '#00f0ff',
-            textAlign: 'center',
-            width: '100%',
+          card.name = 'Objects3dControlCard';
+          card.position.set(0, 1.4, -1.0);
+
+          const titleText = new xb.UIText({
+            text: '3D OBJECT BOXES',
+            style: {
+              fontSize: 22,
+              fontWeight: 'bold',
+              color: '#00f0ff',
+              textAlign: 'center',
+              width: '100%',
+            },
           });
-          xrStatusText = new UIText('idle', {
-            fontSize: 14,
-            color: '#a0aec0',
-            textAlign: 'center',
-            width: '100%',
-            paddingBottom: 4,
+          xrStatusText = new xb.UIText({
+            text: 'idle',
+            style: {
+              fontSize: 14,
+              color: '#a0aec0',
+              textAlign: 'center',
+              width: '100%',
+              paddingBottom: 4,
+            },
           });
-          const separator = new UIPanel({
-            width: '100%',
-            height: 2,
-            fillColor: 'rgba(255, 255, 255, 0.12)',
-            marginBottom: 4,
+          const separator = new xb.UIPanel({
+            style: {
+              width: '100%',
+              height: 2,
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              marginBottom: 4,
+            },
           });
-          const buttonRow = new UIPanel({
-            width: '100%',
-            flexDirection: 'row',
-            gap: 14,
-            justifyContent: 'center',
-            alignItems: 'center',
+          const buttonRow = new xb.UIPanel({
+            style: {
+              width: '100%',
+              flexDirection: 'row',
+              gap: 14,
+              justifyContent: 'center',
+              alignItems: 'center',
+            },
           });
           buttonRow.add(this.makeXrLabeledButton('search', 'detect', detect));
           buttonRow.add(
@@ -2260,13 +2255,15 @@
               setStatus('cleared');
             })
           );
-          const pickerRow = new UIPanel({
-            width: '100%',
-            flexDirection: 'row',
-            gap: 10,
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginTop: 4,
+          const pickerRow = new xb.UIPanel({
+            style: {
+              width: '100%',
+              flexDirection: 'row',
+              gap: 10,
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginTop: 4,
+            },
           });
           pickerRow.add(
             this.makeXrCycleButton(
@@ -2284,87 +2281,58 @@
               (next) => cycleQueryParam('mask', next)
             )
           );
-          panel.add(titleText);
-          panel.add(xrStatusText);
-          panel.add(separator);
-          panel.add(buttonRow);
-          panel.add(pickerRow);
-          card.add(panel);
-          card.addBehavior(
-            new ManipulationBehavior({draggable: true, faceCamera: true})
-          );
+          card.add(titleText);
+          card.add(xrStatusText);
+          card.add(separator);
+          card.add(buttonRow);
+          card.add(pickerRow);
+          this.add(card);
         }
 
         // Detect / clear: icon + caption stacked so XR users get the same
         // affordance as the DOM "Detect 3D objects" / "Clear" buttons.
         makeXrLabeledButton(iconName, label, onClick) {
-          const idle = '#2a2a2a';
-          const hover = '#3a3a3a';
-          const btn = new UIPanel({
-            paddingTop: 8,
-            paddingBottom: 8,
-            paddingLeft: 16,
-            paddingRight: 16,
-            cornerRadius: 12,
-            fillColor: idle,
-            strokeWidth: 1,
-            strokeColor: '#444444',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            renderOrder: 10,
-            onHoverEnter: () => btn.setFillColor(hover),
-            onHoverExit: () => btn.setFillColor(idle),
+          const btn = new xb.UIButton({
+            ariaLabel: label,
             onClick: () => {
-              btn.setFillColor('#4796e3');
-              setTimeout(() => btn.setFillColor(idle), 180);
+              btn.style.backgroundColor = '#4796e3';
+              setTimeout(() => {
+                btn.style.backgroundColor = '#2a2a2a';
+              }, 180);
               onClick();
             },
-          });
-          btn.add(
-            new UIIcon(iconName, {
-              color: 'white',
-              width: 22,
-              height: 22,
-              renderOrder: 12,
-            })
-          );
-          btn.add(
-            new UIText(label, {
-              fontSize: 14,
-              color: '#ffffff',
-              fontWeight: 'bold',
-              depthTest: false,
-              renderOrder: 100,
-            })
-          );
-          return btn;
-        }
-
-        makeXrIconButton(iconName, onClick) {
-          const idle = '#2a2a2a';
-          const hover = '#3a3a3a';
-          const btn = new UIPanel({
-            width: 56,
-            height: 56,
-            cornerRadius: 12,
-            fillColor: idle,
-            strokeWidth: 1,
-            strokeColor: '#444444',
-            justifyContent: 'center',
-            alignItems: 'center',
-            onHoverEnter: () => btn.setFillColor(hover),
-            onHoverExit: () => btn.setFillColor(idle),
-            onClick: () => {
-              btn.setFillColor('#4796e3');
-              setTimeout(() => btn.setFillColor(idle), 180);
-              onClick();
+            style: {
+              paddingTop: 8,
+              paddingBottom: 8,
+              paddingLeft: 16,
+              paddingRight: 16,
+              borderRadius: 12,
+              backgroundColor: '#2a2a2a',
+              borderWidth: 1,
+              borderColor: '#444444',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              ':hover': {backgroundColor: '#3a3a3a'},
+              ':active': {backgroundColor: '#4796e3'},
             },
+            children: [
+              new xb.UIIcon({
+                icon: iconName,
+                ariaLabel: iconName,
+                style: {color: '#ffffff', width: 22, height: 22},
+              }),
+              new xb.UIText({
+                text: label,
+                style: {
+                  fontSize: 14,
+                  color: '#ffffff',
+                  fontWeight: 'bold',
+                },
+              }),
+            ],
           });
-          btn.add(
-            new UIIcon(iconName, {color: 'white', width: 32, height: 32})
-          );
           return btn;
         }
 
@@ -2372,49 +2340,60 @@
         // in the list and reloads the page so the backend gets re-initialised
         // (mirrors the DOM <select> behaviour, which also reloads on change).
         makeXrCycleButton(label, current, options, onChange) {
-          const idle = '#2a2a2a';
-          const hover = '#3a3a3a';
-          const btn = new UIPanel({
-            paddingTop: 6,
-            paddingBottom: 6,
-            paddingLeft: 12,
-            paddingRight: 12,
-            cornerRadius: 10,
-            fillColor: idle,
-            strokeWidth: 1,
-            strokeColor: '#444444',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 2,
-            renderOrder: 10,
-            onHoverEnter: () => btn.setFillColor(hover),
-            onHoverExit: () => btn.setFillColor(idle),
+          const labelColumn = new xb.UIPanel({
+            style: {
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+            },
+          });
+          labelColumn.add(
+            new xb.UIText({
+              text: label,
+              style: {
+                fontSize: 10,
+                color: '#888888',
+                textAlign: 'center',
+              },
+            })
+          );
+          const valueText = new xb.UIText({
+            text: current,
+            style: {
+              fontSize: 14,
+              color: '#ffffff',
+              fontWeight: 'bold',
+              textAlign: 'center',
+            },
+          });
+          labelColumn.add(valueText);
+
+          const btn = new xb.UIButton({
+            ariaLabel: `${label}: ${current}`,
             onClick: () => {
               const idx = options.indexOf(current);
               const next = options[(idx + 1) % options.length];
               onChange(next);
             },
+            style: {
+              paddingTop: 6,
+              paddingBottom: 6,
+              paddingLeft: 12,
+              paddingRight: 12,
+              borderRadius: 10,
+              backgroundColor: '#2a2a2a',
+              borderWidth: 1,
+              borderColor: '#444444',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              ':hover': {backgroundColor: '#3a3a3a'},
+              ':active': {backgroundColor: '#4796e3'},
+            },
+            children: [labelColumn],
           });
-          btn.add(
-            new UIText(label, {
-              fontSize: 10,
-              color: '#888888',
-              textAlign: 'center',
-              depthTest: false,
-              renderOrder: 100,
-            })
-          );
-          btn.add(
-            new UIText(current, {
-              fontSize: 14,
-              color: '#ffffff',
-              fontWeight: 'bold',
-              textAlign: 'center',
-              depthTest: false,
-              renderOrder: 100,
-            })
-          );
           return btn;
         }
       }
