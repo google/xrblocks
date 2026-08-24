@@ -156,11 +156,11 @@ gesture sequence is complete.
   Options: `velocity` in radians/second; if omitted, snaps instantly in 1
   frame.
 - **`pointTo(handIndex, target, options)`**: Rotates the controller locally in
-  camera space to point directly at the target. Options: `velocity` in
-  radians/second; if omitted, snaps instantly in 1 frame.
-- **`reachTo(handIndex, target, options)`**: Moves the controller position
-  toward the target. Options: `velocity` in meters/second; if omitted, moves
-  instantly.
+  camera space to point at a nearby rendered surface of an object target.
+  Options: `velocity` in radians/second; if omitted, snaps instantly in 1 frame.
+- **`reachTo(handIndex, target, options)`**: Moves the controller so its index
+  fingertip reaches a nearby rendered surface of an object target. Options:
+  `velocity` in meters/second; if omitted, moves instantly.
 - **`click(handIndex, options)`**: Simulates click gesture press and release.
   Options: `durationMs` (default 200ms).
 

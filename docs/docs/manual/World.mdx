@@ -201,7 +201,34 @@ not-ready or unavailable state. Category values are exported as
 - Distinguish synthetic simulator evidence from native device evidence.
 - Stop application-owned polling and media resources in `dispose()`.
 
-## Executable evidence
+## Seeing real people on the desktop simulator
+
+Face detection, human pose detection, and segmentation all look for people, but
+`enableFaceDetection()`, `enableHumanDetection()`, and `enableSegmentation()`
+each turn on the _environment_ camera, which is right on a headset: you are
+detecting the people in front of you.
+
+On desktop that same setting hands MediaPipe the simulator's rendered room,
+which never contains a person, so detection silently returns nothing. Ask for
+the user-facing camera instead:
+
+```javascript
+options.enableHumanDetection();
+// After the helper, which calls enableCamera() internally and would otherwise
+// overwrite this.
+options.enableCamera('user');
+```
+
+Do not reach for `options.simulator.deviceCamera.enabled = false` here. It does
+route frames from the real webcam, but it also stops the simulator camera being
+registered, and on desktop that is what supplies the camera _pose_. Without a
+pose, `getCameraParametersSnapshot()` returns null and detection is skipped
+before MediaPipe runs, leaving you with a working camera and no results.
+`enableCamera('user')` keeps the pose and changes only the stream.
+
+Neither affects a real headset, where the simulator never starts.
+
+For working samples, see <CodeSearchLink path="samples/depthmesh/main.js"/>,
 
 - <CodeSearchLink path="templates/03_spatial_placement" />
 - <CodeSearchLink path="templates/08_scene_understanding" />

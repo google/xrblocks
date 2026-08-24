@@ -27,7 +27,7 @@ describe('GeminiDetectorBackend', () => {
     ).buildGeminiConfig();
 
     expect(config.thinkingConfig).toEqual({
-      thinkingLevel: 'MINIMAL',
+      thinkingLevel: 'LOW',
     });
     expect(config.thinkingConfig).not.toHaveProperty('thinkingBudget');
   });

@@ -114,6 +114,12 @@ options.simulator.activeEnvironmentIndex = 0;
   "scenePlanesPath": "./room-planes.json",
   "navMeshPath": "./room-navmesh.glb",
   "position": [0, 0, 0],
+  "locations": {
+    "wall-primary": {
+      "description": "Clear wall point for ray interaction.",
+      "position": [0, 1.4, -2]
+    }
+  },
   "objects": [
     {
       "id": "chair",
@@ -134,6 +140,14 @@ Load another environment at runtime with:
 
 ```js
 await xb.core.simulator.setEnvironment('Ad Hoc Room', './ad-hoc-room.json');
+```
+
+Read the optional named world-space locations from the active environment:
+
+```js
+const locations = xb.core.simulator.getLocations();
+const wall = locations['wall-primary'];
+console.log(wall.description, wall.position);
 ```
 
 ## Navmesh constraints

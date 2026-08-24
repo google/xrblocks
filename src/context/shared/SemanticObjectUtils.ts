@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 import {XRSystems} from '../../core/components/XRSystems';
 import {DepthMesh} from '../../depth/DepthMesh';
+import {getUIPresentationObject} from '../../ui/UIElement';
+import {UICard, getResolvedUICardSize} from '../../ui/components/UICard';
 
 type BoundsObject = THREE.Object3D & {
   isUI?: boolean;
@@ -72,11 +74,26 @@ export function getObjectBounds(
   object: THREE.Object3D,
   target?: THREE.Box3
 ): THREE.Box3 | null {
+  const presentation = getUIPresentationObject(object);
+  if (presentation) {
+    const presentationBounds = getThreeObjectBounds(presentation, target);
+    if (presentationBounds) {
+      return presentationBounds;
+    }
+  }
+
   const uiBounds = getUIObjectBounds(object, target);
   if (uiBounds) {
     return uiBounds;
   }
 
+  return getThreeObjectBounds(object, target);
+}
+
+function getThreeObjectBounds(
+  object: THREE.Object3D,
+  target?: THREE.Box3
+): THREE.Box3 | null {
   try {
     boundsBox.setFromObject(object);
   } catch (_error) {
@@ -102,17 +119,20 @@ function getUIObjectBounds(
   target?: THREE.Box3
 ): THREE.Box3 | null {
   const uiObject = object as BoundsObject;
+  const resolvedCardSize =
+    object instanceof UICard ? getResolvedUICardSize(object) : undefined;
+  const size = resolvedCardSize ?? uiObject.size;
   if (
     uiObject.isUI !== true ||
-    typeof uiObject.size?.width !== 'number' ||
-    typeof uiObject.size?.height !== 'number'
+    typeof size?.width !== 'number' ||
+    typeof size.height !== 'number'
   ) {
     return null;
   }
 
   object.updateMatrixWorld(true);
-  const halfWidth = uiObject.size.width / 2;
-  const halfHeight = uiObject.size.height / 2;
+  const halfWidth = size.width / 2;
+  const halfHeight = size.height / 2;
   boundsBox.makeEmpty();
 
   for (const x of [-halfWidth, halfWidth]) {

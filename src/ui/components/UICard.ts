@@ -7,6 +7,11 @@ import {UIElement, type UIElementOptions} from '../UIElement';
 
 export interface UISize {
   width: number;
+  height: number | 'auto';
+}
+
+export interface UIResolvedSize {
+  width: number;
   height: number;
 }
 
@@ -67,15 +72,17 @@ export class UICard<
     this.sizeTarget = {...size};
     this.sizeProxy = new Proxy(this.sizeTarget, {
       set: (target, property, value) => {
-        if (
-          (property !== 'width' && property !== 'height') ||
-          typeof value !== 'number' ||
-          !Number.isFinite(value) ||
-          value < 0
-        ) {
-          throw new Error('UICard size values must be finite and nonnegative.');
+        if (property === 'width') {
+          validateFixedSize(value);
+        } else if (property === 'height') {
+          validateHeight(value);
+        } else {
+          throw new Error(
+            `Unknown UICard size property "${String(property)}".`
+          );
         }
         Reflect.set(target, property, value);
+        resolvedSizes.delete(this);
         this.markUIDirty();
         return true;
       },
@@ -161,6 +168,27 @@ export function getUICardEdgeOptions(
   return card.edge || undefined;
 }
 
+const resolvedSizes = new WeakMap<UICard, UIResolvedSize>();
+
+/** Returns the current physical card size after layout resolves. */
+export function getResolvedUICardSize(
+  card: UICard
+): Readonly<UIResolvedSize> | undefined {
+  if (card.size.height !== 'auto') {
+    return {width: card.size.width, height: card.size.height};
+  }
+  return resolvedSizes.get(card);
+}
+
+/** Stores a backend-calculated physical size for an automatic-height card. */
+export function setResolvedUICardSize(
+  card: UICard,
+  size: UIResolvedSize
+): void {
+  if (card.size.height !== 'auto') return;
+  resolvedSizes.set(card, size);
+}
+
 function normalizeCardManipulation(
   value: boolean | ManipulationOptions | undefined
 ): boolean | ManipulationOptions | undefined {
@@ -213,15 +241,20 @@ function normalizeCardManipulation(
 }
 
 function validateSize(size: UISize): void {
-  if (
-    !size ||
-    !Number.isFinite(size.width) ||
-    !Number.isFinite(size.height) ||
-    size.width < 0 ||
-    size.height < 0
-  ) {
-    throw new Error('UICard size values must be finite and nonnegative.');
+  if (!size) throw new Error('UICard requires a size.');
+  validateFixedSize(size.width);
+  validateHeight(size.height);
+}
+
+function validateFixedSize(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error('UICard fixed size values must be finite and nonnegative.');
   }
+}
+
+function validateHeight(value: unknown): asserts value is number | 'auto' {
+  if (value === 'auto') return;
+  validateFixedSize(value);
 }
 
 function validatePixelSize(pixelSize: number): void {

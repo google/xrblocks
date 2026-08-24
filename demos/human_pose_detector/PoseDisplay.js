@@ -1,6 +1,18 @@
 import * as xb from 'xrblocks';
 import * as THREE from 'three';
 
+// The pose model reports all 33 landmarks even when it cannot see them, so a
+// body that is only half in frame still comes back with legs, guessed from a
+// prior and often pointing the wrong way. Drawing those is worse than drawing
+// nothing, so joints the model is unsure about are skipped.
+const MIN_JOINT_VISIBILITY = 0.5;
+
+// The HUD card is head-locked 0.8 m away while the skeleton lands 2 m out, so
+// the translucent card composites over the body it is describing. Joining the
+// transparent pass lets the skeleton draw last and stay readable through the
+// card, while sitting well under the reticle and overlay UI.
+const SKELETON_RENDER_ORDER = 1000;
+
 export class PoseDisplay extends xb.Script {
   static dependencies = {world: xb.World};
 
@@ -19,7 +31,16 @@ export class PoseDisplay extends xb.Script {
   }
 
   initHudText() {
-    this.hudCard = new xb.UICard({size: {width: 0.46, height: 0.18}});
+    this.hudCard = new xb.UICard({
+      size: {width: 0.46, height: 0.18},
+      manipulation: true,
+      edge: true,
+      style: {
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'stretch',
+      },
+    });
     this.hudCard.name = 'PoseHUDCard';
     this.add(this.hudCard);
     this.hudCard.add(
@@ -30,36 +51,11 @@ export class PoseDisplay extends xb.Script {
       new xb.FaceCamera({mode: 'spherical', smoothing: 1})
     );
 
-    const hudPanel = new xb.UIPanel({
-      style: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: 'rgba(15, 18, 25, 0.85)',
-        innerShadowColor: 'rgba(100, 180, 255, 0.15)',
-        innerShadowBlur: 80,
-        borderWidth: 3,
-        borderColor: {
-          gradientType: 'linear',
-          rotation: 45,
-          stops: [
-            {position: 0, color: '#4796e3'},
-            {position: 1, color: '#9b5de5'},
-          ],
-        },
-        borderRadius: 24,
-        padding: 20,
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'stretch',
-      },
-    });
-
     this.titleText = new xb.UIText({
       text: 'HUMAN POSE DETECTOR',
       style: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#00f0ff',
         textAlign: 'center',
         width: '100%',
       },
@@ -69,19 +65,9 @@ export class PoseDisplay extends xb.Script {
       text: 'Tracking Active...',
       style: {
         fontSize: 16,
-        color: '#a0aec0',
+        opacity: 0.72,
         textAlign: 'center',
         width: '100%',
-        paddingBottom: 8,
-      },
-    });
-
-    const separator = new xb.UIPanel({
-      style: {
-        width: '100%',
-        height: 2,
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
-        marginBottom: 8,
       },
     });
 
@@ -89,25 +75,23 @@ export class PoseDisplay extends xb.Script {
       text: 'Waiting for body detection...',
       style: {
         fontSize: 14,
-        fontWeight: 'normal',
-        color: '#e2e8f0',
+        opacity: 0.86,
         textAlign: 'center',
         width: '100%',
       },
     });
 
-    hudPanel.add(this.titleText);
-    hudPanel.add(this.statusText);
-    hudPanel.add(separator);
-    hudPanel.add(this.statusDetailsText);
-
-    this.hudCard.add(hudPanel);
+    this.hudCard.add(this.titleText, this.statusText, this.statusDetailsText);
   }
 
   initJointMarkers() {
     // Create a pool of red dot markers for all trackable body joints
     this.markerGeometry = new THREE.SphereGeometry(0.005, 16, 16);
-    this.markerMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
+    this.markerMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      // Transparent only to share the card's pass; see SKELETON_RENDER_ORDER.
+      transparent: true,
+    });
     this.jointMarkers = new Map();
 
     const allJointNames = Object.values(xb.PoseJointName);
@@ -116,6 +100,7 @@ export class PoseDisplay extends xb.Script {
       // Create dot marker
       const marker = new THREE.Mesh(this.markerGeometry, this.markerMaterial);
       marker.visible = false;
+      marker.renderOrder = SKELETON_RENDER_ORDER;
       this.add(marker);
       this.jointMarkers.set(jointName, marker);
     });
@@ -176,6 +161,7 @@ export class PoseDisplay extends xb.Script {
         this.connectorMaterial
       );
       mesh.visible = false;
+      mesh.renderOrder = SKELETON_RENDER_ORDER;
       this.add(mesh);
       this.connectorMeshes.push({jointA, jointB, mesh});
     });
@@ -208,18 +194,25 @@ export class PoseDisplay extends xb.Script {
     const firstPose = poses[0];
     this.statusText.text = 'Tracking Active';
 
-    this.updateJointMarkers(firstPose);
+    const tracked = this.updateJointMarkers(firstPose);
     this.updateConnectorMeshes();
 
-    this.statusDetailsText.text = 'Full body skeleton tracked successfully.';
+    this.statusDetailsText.text =
+      tracked < this.jointMarkers.size
+        ? `Tracking ${tracked} of ${this.jointMarkers.size} joints.\nStep back to bring your whole body into frame.`
+        : 'Full body skeleton tracked successfully.';
   }
 
   updateJointMarkers(firstPose) {
-    if (!this.jointMarkers) return;
+    if (!this.jointMarkers) return 0;
 
+    let tracked = 0;
     this.jointMarkers.forEach((marker, jointName) => {
-      const pos = firstPose.getJointPosition(jointName);
+      const pos = firstPose.getJointPosition(jointName, {
+        minVisibility: MIN_JOINT_VISIBILITY,
+      });
       if (pos) {
+        tracked++;
         // Convert target position to local space first
         const targetLocalPos = pos.clone();
         this.worldToLocal(targetLocalPos);
@@ -236,6 +229,8 @@ export class PoseDisplay extends xb.Script {
         marker.visible = false;
       }
     });
+
+    return tracked;
   }
 
   updateConnectorMeshes() {

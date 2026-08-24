@@ -93,7 +93,7 @@ export class GameRps extends xb.Script {
     });
 
     this.card = new xb.UICard({
-      size: {width: 0.92, height: 0.72},
+      size: {width: 0.92, height: 'auto'},
       manipulation: true,
       edge: {scale: true},
       style: {

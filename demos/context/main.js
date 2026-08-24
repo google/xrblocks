@@ -183,16 +183,16 @@ class ContextBugtestScene extends xb.Script {
     const actionButton = new xb.UIButton({
       label: 'Ping',
       onClick: () => {
-        console.log('UIBlocks debug action clicked');
+        console.log('XRBlocks debug action clicked');
       },
       style: {width: 260},
     });
-    actionButton.name = 'UIBlocks Action Button';
+    actionButton.name = 'XRBlocks Action Button';
     actionButton.userData.semantic = {
       role: 'button',
       name: 'Ping Button',
       text: 'Ping',
-      source: 'uiblocks',
+      source: 'xrblocks',
       traits: ['selectable'],
     };
 
@@ -210,7 +210,7 @@ class ContextBugtestScene extends xb.Script {
       },
       children: [
         new xb.UIText({
-          text: 'UIBlocks Card',
+          text: 'XRBlocks Card',
           style: {fontSize: 44, fontWeight: 'bold'},
         }),
         new xb.UIText({
@@ -220,7 +220,7 @@ class ContextBugtestScene extends xb.Script {
         actionButton,
       ],
     });
-    card.name = 'UIBlocks Debug Card';
+    card.name = 'XRBlocks Debug Card';
     card.position.set(0, xb.user.height + 0.05, -1.32);
     this.add(card);
 
