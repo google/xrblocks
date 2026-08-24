@@ -62,9 +62,8 @@ export class RemoteUserAvatar extends THREE.Group {
   set voiceActive(on: boolean) {
     if (this._voiceActive === on) return;
     this._voiceActive = on;
-    if (this._nameLabel) {
-      this._nameLabel.text = this._labelString();
-      this._nameLabel.sync?.();
+    if (this._nameText) {
+      this._nameText.text = this._labelString();
     }
   }
 
@@ -100,12 +99,8 @@ export class RemoteUserAvatar extends THREE.Group {
   private _handGroups: [THREE.Group, THREE.Group];
   private _wristSpheres: [THREE.Mesh, THREE.Mesh];
   private _fingertipDots: [THREE.Mesh[], THREE.Mesh[]];
-  private _nameLabel?: THREE.Object3D & {
-    text?: string;
-    sync?: () => void;
-    dispose?: () => void;
-  };
-  private _nameLabelText = '';
+  private _nameLabel?: xb.UICard;
+  private _nameText?: xb.UIText;
 
   constructor(opts: RemoteUserAvatarOptions) {
     super();
@@ -161,32 +156,39 @@ export class RemoteUserAvatar extends THREE.Group {
     this.add(this.defaultMesh);
     this._headSphere.visible = false; // until a pose arrives
 
-    // Lazy-load troika SDF text for the name label so we don't pay the
-    // import cost in samples that don't need it. Catch failures so a
-    // missing optional dependency doesn't surface as an unhandled
-    // rejection at construction time.
-    this._initNameLabel().catch((err) => {
-      console.warn('[netblocks] name label init failed:', err);
-    });
+    this._initNameLabel();
   }
 
-  private async _initNameLabel(): Promise<void> {
-    const {Text} = await import('troika-three-text');
-    if ((this as unknown as {_disposed?: boolean})._disposed) return;
-    const label = new Text() as unknown as typeof this._nameLabel & object;
-    (label as {text: string}).text = this._labelString();
-    Object.assign(label as object, {
-      fontSize: 0.04,
-      color: 0xffffff,
-      outlineWidth: 0.004,
-      outlineColor: 0x000000,
-      anchorX: 'center',
-      anchorY: 'bottom',
+  private _initNameLabel(): void {
+    const text = new xb.UIText({
+      text: this._labelString(),
+      style: {
+        fontSize: 32,
+        color: '#ffffff',
+        textAlign: 'center',
+        whiteSpace: 'nowrap',
+      },
     });
-    (label as THREE.Object3D).position.set(0, 0, 0);
-    this._nameLabel = label;
-    this.add(label as unknown as THREE.Object3D);
-    label.sync?.();
+    const card = new xb.UICard({
+      size: {width: 0.35, height: 0.08},
+      pixelSize: 0.001,
+      appearance: 'surface',
+      style: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        borderRadius: 16,
+        paddingLeft: 16,
+        paddingRight: 16,
+        paddingTop: 6,
+        paddingBottom: 6,
+      },
+      children: [text],
+    });
+    card.position.set(0, 0, 0);
+    this._nameText = text;
+    this._nameLabel = card;
+    this.add(card);
   }
 
   /** Sample the smoothed pose at `now` and update the local meshes. */
@@ -223,7 +225,7 @@ export class RemoteUserAvatar extends THREE.Group {
       }
     }
 
-    // Billboard the SDF name label ~13cm above the head, facing the camera.
+    // Billboard the UI name label ~13cm above the head, facing the camera.
     if (this._nameLabel) {
       this._nameLabel.position.copy(snap.head.position);
       this._nameLabel.position.y += 0.13;
@@ -232,12 +234,11 @@ export class RemoteUserAvatar extends THREE.Group {
     }
   }
 
-  /** Update the displayed name; safe to call before troika finishes loading. */
+  /** Update the displayed name. */
   setDisplayName(name: string | undefined): void {
     this._displayName = name;
-    if (this._nameLabel) {
-      this._nameLabel.text = this._labelString();
-      this._nameLabel.sync?.();
+    if (this._nameText) {
+      this._nameText.text = this._labelString();
     }
   }
 
@@ -259,6 +260,11 @@ export class RemoteUserAvatar extends THREE.Group {
       }
     }
     this.face.dispose();
-    this._nameLabel?.dispose?.();
+    if (this._nameLabel) {
+      this.remove(this._nameLabel);
+      this._nameLabel.dispose();
+      this._nameLabel = undefined;
+      this._nameText = undefined;
+    }
   }
 }

@@ -111,12 +111,11 @@ export class GeminiSkyboxGenerator extends xb.Script {
       textAlign: 'center',
     });
 
-    const responseDisplay = new xb.ScrollingTroikaTextView({
+    const responseDisplay = grid.addRow({weight: 0.65}).addText({
       text: this.defaultText,
       fontSize: 0.03,
       textAlign: 'left',
     });
-    grid.addRow({weight: 0.65}).add(responseDisplay);
     this.transcription = new TranscriptionManager(responseDisplay);
 
     this.toggleButton = grid.addRow({weight: 0.25}).addTextButton({
