@@ -62,12 +62,12 @@ export declare class RemoteUserAvatar extends THREE.Group {
     private _wristSpheres;
     private _fingertipDots;
     private _nameLabel?;
-    private _nameLabelText;
+    private _nameText?;
     constructor(opts: RemoteUserAvatarOptions);
     private _initNameLabel;
     /** Sample the smoothed pose at `now` and update the local meshes. */
     applyPose(nowMs: number): void;
-    /** Update the displayed name; safe to call before troika finishes loading. */
+    /** Update the displayed name. */
     setDisplayName(name: string | undefined): void;
     private _labelString;
     dispose(): void;

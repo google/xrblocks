@@ -14,20 +14,15 @@
  * limitations under the License.
  *
  * @file xrblocks.js
- * @version v0.20.0
- * @commitid 1f9a273
- * @builddate 2026-08-20T21:31:08.171Z
+ * @version v0.21.0
+ * @commitid 097f03a
+ * @builddate 2026-08-24T22:08:53.078Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
  * 1. Include the following importmap for maximum compatibility:
     "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-    "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
-    "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
-    "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
-    "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
-    "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
     "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
     "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
     "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
@@ -51,6 +46,8 @@ import 'three/addons/postprocessing/Pass.js';
 import 'three/addons/webxr/XRControllerModelFactory.js';
 import 'three/addons/webxr/XRHandModelFactory.js';
 import 'three/addons/webxr/XREstimatedLight.js';
+import 'three/addons/loaders/FontLoader.js';
+import 'three/addons/geometries/TextGeometry.js';
 import 'three/addons/loaders/DRACOLoader.js';
 import 'three/addons/loaders/GLTFLoader.js';
 import 'three/addons/loaders/KTX2Loader.js';

@@ -51,9 +51,8 @@ class RemoteUserAvatar extends THREE.Group {
         if (this._voiceActive === on)
             return;
         this._voiceActive = on;
-        if (this._nameLabel) {
-            this._nameLabel.text = this._labelString();
-            this._nameLabel.sync?.();
+        if (this._nameText) {
+            this._nameText.text = this._labelString();
         }
     }
     constructor(opts) {
@@ -80,7 +79,6 @@ class RemoteUserAvatar extends THREE.Group {
          * when a host app supplies a custom avatar.
          */
         this.face = new xb.StylizedFace();
-        this._nameLabelText = '';
         this.name = `RemoteUserAvatar(${opts.peerId})`;
         this.peerId = opts.peerId;
         this._displayName = opts.displayName;
@@ -116,32 +114,38 @@ class RemoteUserAvatar extends THREE.Group {
         this._headSphere.add(this.face);
         this.add(this.defaultMesh);
         this._headSphere.visible = false; // until a pose arrives
-        // Lazy-load troika SDF text for the name label so we don't pay the
-        // import cost in samples that don't need it. Catch failures so a
-        // missing optional dependency doesn't surface as an unhandled
-        // rejection at construction time.
-        this._initNameLabel().catch((err) => {
-            console.warn('[netblocks] name label init failed:', err);
-        });
+        this._initNameLabel();
     }
-    async _initNameLabel() {
-        const { Text } = await import('troika-three-text');
-        if (this._disposed)
-            return;
-        const label = new Text();
-        label.text = this._labelString();
-        Object.assign(label, {
-            fontSize: 0.04,
-            color: 0xffffff,
-            outlineWidth: 0.004,
-            outlineColor: 0x000000,
-            anchorX: 'center',
-            anchorY: 'bottom',
+    _initNameLabel() {
+        const text = new xb.UIText({
+            text: this._labelString(),
+            style: {
+                fontSize: 32,
+                color: '#ffffff',
+                textAlign: 'center',
+                whiteSpace: 'nowrap',
+            },
         });
-        label.position.set(0, 0, 0);
-        this._nameLabel = label;
-        this.add(label);
-        label.sync?.();
+        const card = new xb.UICard({
+            size: { width: 0.35, height: 0.08 },
+            pixelSize: 0.001,
+            appearance: 'surface',
+            style: {
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                borderRadius: 16,
+                paddingLeft: 16,
+                paddingRight: 16,
+                paddingTop: 6,
+                paddingBottom: 6,
+            },
+            children: [text],
+        });
+        card.position.set(0, 0, 0);
+        this._nameText = text;
+        this._nameLabel = card;
+        this.add(card);
     }
     /** Sample the smoothed pose at `now` and update the local meshes. */
     applyPose(nowMs) {
@@ -176,7 +180,7 @@ class RemoteUserAvatar extends THREE.Group {
                 }
             }
         }
-        // Billboard the SDF name label ~13cm above the head, facing the camera.
+        // Billboard the UI name label ~13cm above the head, facing the camera.
         if (this._nameLabel) {
             this._nameLabel.position.copy(snap.head.position);
             this._nameLabel.position.y += 0.13;
@@ -185,12 +189,11 @@ class RemoteUserAvatar extends THREE.Group {
                 this._nameLabel.lookAt(cam.position);
         }
     }
-    /** Update the displayed name; safe to call before troika finishes loading. */
+    /** Update the displayed name. */
     setDisplayName(name) {
         this._displayName = name;
-        if (this._nameLabel) {
-            this._nameLabel.text = this._labelString();
-            this._nameLabel.sync?.();
+        if (this._nameText) {
+            this._nameText.text = this._labelString();
         }
     }
     _labelString() {
@@ -210,7 +213,12 @@ class RemoteUserAvatar extends THREE.Group {
             }
         }
         this.face.dispose();
-        this._nameLabel?.dispose?.();
+        if (this._nameLabel) {
+            this.remove(this._nameLabel);
+            this._nameLabel.dispose();
+            this._nameLabel = undefined;
+            this._nameText = undefined;
+        }
     }
 }
 

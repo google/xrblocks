@@ -14,20 +14,15 @@
  * limitations under the License.
  *
  * @file xrblocks.js
- * @version v0.20.0
- * @commitid 1f9a273
- * @builddate 2026-08-20T21:31:08.171Z
+ * @version v0.21.0
+ * @commitid 097f03a
+ * @builddate 2026-08-24T22:08:53.078Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
  * 1. Include the following importmap for maximum compatibility:
     "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-    "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
-    "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
-    "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
-    "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
-    "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
     "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
     "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
     "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
@@ -50,6 +45,8 @@ import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 import { XREstimatedLight } from 'three/addons/webxr/XREstimatedLight.js';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
@@ -17507,6 +17504,15 @@ class DetectedObject extends THREE.Object3D {
     }
 }
 
+const DEBUG_FONT_URL = 'https://cdn.jsdelivr.net/npm/three@0.184.0/examples/fonts/helvetiker_regular.typeface.json';
+let cachedFontPromise = null;
+function loadDebugFont() {
+    if (!cachedFontPromise) {
+        const loader = new FontLoader();
+        cachedFontPromise = loader.loadAsync(DEBUG_FONT_URL);
+    }
+    return cachedFontPromise;
+}
 /**
  * Base class for object detector backends.
  * Handles the orchestration of capturing snapshots, running detection,
@@ -17574,19 +17580,29 @@ let BaseDetectorBackend$1 = class BaseDetectorBackend {
         // Create sphere.
         const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff4285f4 }));
         sphere.position.copy(object.position);
-        // Create and configure the text label using Troika.
-        const { Text } = await import('troika-three-text');
-        const textLabel = new Text();
-        textLabel.text = object.label;
-        textLabel.fontSize = 0.07;
-        textLabel.color = 0xffffff;
-        textLabel.anchorX = 'center';
-        textLabel.anchorY = 'bottom';
-        // Position the label above the sphere
-        textLabel.position.copy(sphere.position);
-        textLabel.position.y += 0.04; // Offset above the sphere.
-        this.context.debugVisualsGroup.add(sphere, textLabel);
-        textLabel.sync(); // Required for Troika text to appear.
+        // Create and configure the text label using Three.js TextGeometry with a CDN font.
+        try {
+            const font = await loadDebugFont();
+            const geometry = new TextGeometry(object.label, {
+                font,
+                size: 0.05,
+                depth: 0.005,
+            });
+            geometry.computeBoundingBox();
+            if (geometry.boundingBox) {
+                const xOffset = -(geometry.boundingBox.max.x - geometry.boundingBox.min.x) / 2;
+                geometry.translate(xOffset, 0, 0);
+            }
+            const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const textLabel = new THREE.Mesh(geometry, textMaterial);
+            textLabel.position.copy(sphere.position);
+            textLabel.position.y += 0.04;
+            this.context.debugVisualsGroup.add(sphere, textLabel);
+        }
+        catch (error) {
+            console.warn('Failed to load debug font for object detection label:', error);
+            this.context.debugVisualsGroup.add(sphere);
+        }
     }
     /**
      * Visualizes the detections by drawing bounding boxes on a canvas and downloading the image.
@@ -21279,8 +21295,7 @@ class HumanRecognizer extends Script {
 
 // --- Dynamic Import of three-mesh-bvh ---
 //
-// Loaded the same way troika-three-text is in TextView: type-only
-// import for the SDK build, dynamic runtime import with try / catch +
+// Type-only import for the SDK build, dynamic runtime import with try / catch +
 // status tracking so apps without three-mesh-bvh installed (or without
 // it in their importmap) don't break, they just don't get the
 // accelerated raycast.
@@ -21340,10 +21355,9 @@ function isBVHReady() {
  * `computeBoundsTree` / `disposeBoundsTree` helpers to
  * `THREE.BufferGeometry`.
  *
- * Async because the BVH module is loaded on demand (same pattern as
- * troika-three-text). Resolves to `true` if the module loaded and
- * patches were applied, `false` if the module isn't available — in
- * which case meshes continue to use the stock raycaster.
+ * Async because the BVH module is loaded on demand. Resolves to `true`
+ * if the module loaded and patches were applied, `false` if the module
+ * isn't available — in which case meshes continue to use the stock raycaster.
  *
  * Safe to call multiple times. The first call kicks off the import,
  * subsequent calls share the same promise.
