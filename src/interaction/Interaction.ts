@@ -81,7 +81,7 @@ export class Interaction {
   private readonly reticle;
   private readonly reticleOptions;
   private readonly scene?: THREE.Scene;
-  private readonly registry = new HitRegistry();
+  private readonly registry: HitRegistry;
   private readonly resolver;
   private readonly directTouch;
   private longSelectDuration;
@@ -107,6 +107,7 @@ export class Interaction {
   private nextFrameSources = new Set<Controller>();
 
   constructor(dependencies: InteractionDependencies) {
+    this.registry = new HitRegistry(dependencies.camera);
     this.callbacks = dependencies.callbacks;
     this.scene = dependencies.scene;
     this.manipulation = new ManipulationManager(

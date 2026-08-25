@@ -18,6 +18,10 @@ export class HitRegistry {
     RegisteredHitSurface
   >();
 
+  constructor(camera?: THREE.Camera) {
+    if (camera) this.raycaster.camera = camera;
+  }
+
   register(physical: THREE.Object3D, logical: THREE.Object3D): () => void {
     const entry = {physical, logical};
     this.mappings.set(physical, entry);
