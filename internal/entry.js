@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.0
- * @commitid 097f03a
- * @builddate 2026-08-24T22:08:53.078Z
+ * @commitid 292f05a
+ * @builddate 2026-08-25T17:50:50.270Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6602,11 +6602,13 @@ class GazeDwell {
 
 /** Owns physical hit registration, collection, and logical mapping. */
 class HitRegistry {
-    constructor() {
+    constructor(camera) {
         this.raycaster = new THREE.Raycaster();
         this.mappings = new WeakMap();
         this.registered = new Set();
         this.touchCandidates = new Map();
+        if (camera)
+            this.raycaster.camera = camera;
     }
     register(physical, logical) {
         const entry = { physical, logical };
@@ -8680,7 +8682,6 @@ const NOOP_PROPAGATION = () => { };
 /** Owns all logical target, hover, capture, completion, and cancellation state. */
 class Interaction {
     constructor(dependencies) {
-        this.registry = new HitRegistry();
         this.gazeDwell = new GazeDwell();
         this.sourceStates = new Map();
         this.frameSnapshots = [];
@@ -8694,6 +8695,7 @@ class Interaction {
         this.scaleIntents = new Map();
         this.frameSources = new Set();
         this.nextFrameSources = new Set();
+        this.registry = new HitRegistry(dependencies.camera);
         this.callbacks = dependencies.callbacks;
         this.scene = dependencies.scene;
         this.manipulation = new ManipulationManager((script, event) => this.callbacks.invokeManipulation(script, event), (controller) => this.suppressedUntilRelease.add(controller), dependencies.camera, dependencies.timer);
