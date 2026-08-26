@@ -63,8 +63,8 @@ On device, `onSelectEnd` uses the callback's `event.surface` and `event.intersec
 | ------------------ | --------- | ----------- |
 | `three`            | `0.184.0` | CDN         |
 | `@pixiv/three-vrm` | `^3`      | CDN         |
-| `xrblocks`         | `0.21.0`  | Local build |
-| `xrblocks/addons/` | `0.21.0`  | Local build |
+| `xrblocks`         | `0.21.1`  | Local build |
+| `xrblocks/addons/` | `0.21.1`  | Local build |
 
 All other dependencies (rapier3d, lit) are CDN — see the import map in `index.html`.
 
