@@ -163,6 +163,7 @@ function isObjectInLineOfSight({
     return true;
   }
 
+  raycaster.camera = camera;
   raycaster.set(tempCameraPosition, tempDirection.normalize());
   raycaster.near = 0;
   raycaster.far = targetDistance;
