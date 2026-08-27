@@ -153,8 +153,19 @@
   text-transform: none;
 }
 
-.gnm-btn:hover {
+.gnm-btn:hover:not(:disabled) {
   background: rgba(79, 140, 224, 0.34);
+}
+
+/* A button that cannot act has to look like it. */
+.gnm-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gnm-btn.busy {
+  opacity: 0.7;
+  cursor: progress;
 }
 
 .gnm-btn.active {

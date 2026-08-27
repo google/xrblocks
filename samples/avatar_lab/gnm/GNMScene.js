@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
+import {SAMPLE_IMAGE} from './GNMFaceFitter.js';
+
 /**
  * GNMScene — renders the GNM parametric head and animates it.
  *
@@ -98,10 +100,11 @@ export class GNMScene extends xb.Script {
     });
     this.add(this.modelViewer);
 
-    // GNM geometry.
+    // GNM geometry. With UVs the mesh carries a few hundred extra vertices,
+    // split off at the texture seams; without them it is the model 1:1.
     const geometry = new THREE.BufferGeometry();
     this.positionAttribute = new THREE.BufferAttribute(
-      new Float32Array(model.numVertices * 3),
+      new Float32Array(model.numRenderVertices * 3),
       3
     );
     this.positionAttribute.setUsage(THREE.DynamicDrawUsage);
@@ -110,10 +113,20 @@ export class GNMScene extends xb.Script {
       'color',
       new THREE.BufferAttribute(this._buildMaterialColors(), 3)
     );
+    if (model.hasUvs) {
+      geometry.setAttribute(
+        'uv',
+        new THREE.BufferAttribute(model.vertexUvs, 2)
+      );
+    }
     this._regionColors = null; // built lazily for the regions mode
-    this.fullIndex = new THREE.BufferAttribute(model.triangles, 1);
+    // Skin triangles come first so the textured mode can draw them as their
+    // own group; the eyes, teeth and tongue have their own UV squares and are
+    // not in the skin texture.
+    this.fullIndex = new THREE.BufferAttribute(this._buildIndex(), 1);
     geometry.setIndex(this.fullIndex);
     this.geometry = geometry;
+    this._applyGroups(this._skinIndexCount, this.fullIndex.count);
 
     this.materials = {
       studio: new THREE.MeshStandardMaterial({
@@ -146,6 +159,19 @@ export class GNMScene extends xb.Script {
         polygonOffsetUnits: 1,
       }),
     };
+
+    // Textured mode. The map only covers the skin, so the mesh is drawn as two
+    // groups: skin with the texture, everything else with the studio palette.
+    // Registered only once a texture actually loads.
+    this.textureMaterial = new THREE.MeshStandardMaterial({
+      roughness: 0.62,
+      metalness: 0.0,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
+    this.textureUrl = null;
+    this.textureLabel = 'Texture';
     this.mesh = new THREE.Mesh(geometry, this.materials.studio);
     this.mesh.frustumCulled = false;
     this.mesh.name = 'GNM Head';
@@ -246,12 +272,46 @@ export class GNMScene extends xb.Script {
     this._modelViewerHomeY = viewer.position.y;
   }
 
+  /** Maps a render vertex back to the model vertex it was split from. */
+  _sourceVertex(v) {
+    return this.model.hasUvs ? this.model.uvSource[v] : v;
+  }
+
+  /**
+   * Index buffer with every skin triangle first, then everything else, so the
+   * two can be drawn as separate groups. Sets _skinIndexCount to the split.
+   */
+  _buildIndex() {
+    const model = this.model;
+    const triangles = model.hasUvs ? model.uvTriangles : model.triangles;
+    const skin = [];
+    const rest = [];
+    for (let t = 0; t < triangles.length; t += 3) {
+      const target = model.materialId[this._sourceVertex(triangles[t])]
+        ? rest
+        : skin;
+      target.push(triangles[t], triangles[t + 1], triangles[t + 2]);
+    }
+    this._skinIndexCount = skin.length;
+    return Uint16Array.from(skin.concat(rest));
+  }
+
+  /** Declares the skin / non-skin draw groups for the textured mode. */
+  _applyGroups(skinCount, totalCount) {
+    this.geometry.clearGroups();
+    if (skinCount > 0) this.geometry.addGroup(0, skinCount, 0);
+    if (totalCount > skinCount) {
+      this.geometry.addGroup(skinCount, totalCount - skinCount, 1);
+    }
+  }
+
   _buildMaterialColors() {
     const model = this.model;
     const palette = MATERIAL_COLORS.map((c) => new THREE.Color(c));
-    const colors = new Float32Array(model.numVertices * 3);
-    for (let v = 0; v < model.numVertices; ++v) {
-      const color = palette[model.materialId[v]] ?? palette[0];
+    const colors = new Float32Array(model.numRenderVertices * 3);
+    for (let v = 0; v < model.numRenderVertices; ++v) {
+      const color =
+        palette[model.materialId[this._sourceVertex(v)]] ?? palette[0];
       colors[v * 3] = color.r;
       colors[v * 3 + 1] = color.g;
       colors[v * 3 + 2] = color.b;
@@ -267,9 +327,9 @@ export class GNMScene extends xb.Script {
       palette.push(new THREE.Color().setHSL((i * 0.61803) % 1, 0.62, 0.55));
     }
     const neutral = new THREE.Color('#6d6d70');
-    const colors = new Float32Array(model.numVertices * 3);
-    for (let v = 0; v < model.numVertices; ++v) {
-      const id = model.regionId[v];
+    const colors = new Float32Array(model.numRenderVertices * 3);
+    for (let v = 0; v < model.numRenderVertices; ++v) {
+      const id = model.regionId[this._sourceVertex(v)];
       const color = id === 255 ? neutral : palette[id];
       colors[v * 3] = color.r;
       colors[v * 3 + 1] = color.g;
@@ -302,6 +362,183 @@ export class GNMScene extends xb.Script {
     this.spatialUI?.setStatus(text);
   }
 
+  /** True once the model carries UVs and a texture has finished loading. */
+  canShowTexture() {
+    return this.model.hasUvs && !!this.textureMaterial.map;
+  }
+
+  /**
+   * Rebuilds the render buffers after UVs arrive from a sidecar.
+   *
+   * The seam splits make the mesh a few hundred vertices longer, so the
+   * position buffer is reallocated and the index, groups and vertex colors are
+   * rebuilt around it. The wireframe shares the position attribute and has to
+   * be repointed at the new one.
+   */
+  _rebuildForUvs() {
+    const model = this.model;
+    this.positionAttribute = new THREE.BufferAttribute(
+      new Float32Array(model.numRenderVertices * 3),
+      3
+    );
+    this.positionAttribute.setUsage(THREE.DynamicDrawUsage);
+    this.geometry.setAttribute('position', this.positionAttribute);
+    this.wireframe.geometry.setAttribute('position', this.positionAttribute);
+    this.geometry.setAttribute(
+      'uv',
+      new THREE.BufferAttribute(model.vertexUvs, 2)
+    );
+    // computeVertexNormals() reuses an existing normal attribute rather than
+    // growing it, so the one sized for the pre-seam mesh would leave the new
+    // duplicate vertices with no normal at all - a black line down every seam.
+    this.geometry.deleteAttribute('normal');
+    this.geometry.setAttribute(
+      'color',
+      new THREE.BufferAttribute(this._buildMaterialColors(), 3)
+    );
+    this._regionColors = null;
+    this.fullIndex = new THREE.BufferAttribute(this._buildIndex(), 1);
+    this.geometry.setIndex(this.fullIndex);
+    this._applyGroups(this._skinIndexCount, this.fullIndex.count);
+    // Reapply whatever component filtering was in effect.
+    const hidden = this.visibleComponents.findIndex((visible) => !visible);
+    if (hidden >= 0) this.setComponentVisible(hidden, false);
+    if (this.materialMode === 'regions') this.setMaterialMode('regions');
+    this.model.dirty = true;
+    this._refreshGeometry();
+  }
+
+  /**
+   * Makes sure the model has UVs, fetching the sidecar if the loaded container
+   * predates them. Returns false with a status message if it cannot.
+   */
+  async ensureUvs() {
+    if (this.model.hasUvs) return true;
+    const urls = this.uvSidecarUrls ?? [];
+    for (const url of urls) {
+      try {
+        if (await this.model.loadUvs(url)) {
+          this._rebuildForUvs();
+          return true;
+        }
+      } catch (error) {
+        console.warn(`No GNM UV data at ${url}:`, error.message);
+      }
+    }
+    this._emitStatus(
+      'No UV data for this head. Run tools/export_gnm_web.py to write ' +
+        'gnm_head_uvs.bin next to the demo assets.'
+    );
+    return false;
+  }
+
+  /**
+   * Gives the head her face as well as her skin.
+   *
+   * The sample portrait the face fitter already ships with is the same C2RMF
+   * scan the texture was painted from, so fitting to it lands her proportions
+   * and her expression under the matching texture. That needs the landmark
+   * tracker, which is a sizeable download and wants a face to be detectable,
+   * so the precomputed eye pose stays as the fallback.
+   *
+   * @return {!Promise<string>} 'fitted', 'posed', or 'none'.
+   */
+  async _applySkinLikeness() {
+    if (this.faceFitter) {
+      try {
+        this._emitStatus(`Fitting the head to ${SAMPLE_IMAGE.name}...`);
+        await this.faceFitter.fitImage(SAMPLE_IMAGE.url, SAMPLE_IMAGE.name);
+        return 'fitted';
+      } catch (error) {
+        console.warn(`Could not fit ${SAMPLE_IMAGE.name}:`, error.message);
+      }
+    }
+    return (await this._applySkinPose()) ? 'posed' : 'none';
+  }
+
+  /**
+   * Applies the expression that ships with the texture, if there is one.
+   *
+   * The painted likeness can only go so far: GNM's neutral eyes are round and
+   * wide, and the skin texture cannot cover the eyeballs, which are their own
+   * mesh. So the texture tool solves for a small expression that hoods the
+   * lids into almonds and writes it alongside the image. Identity and pose are
+   * left alone - this only touches the expression sliders, and Neutral undoes
+   * it.
+   */
+  async _applySkinPose() {
+    for (const url of this.skinPoseUrls ?? []) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`${response.status}`);
+        const pose = await response.json();
+        const values = pose.expression;
+        if (!Array.isArray(values)) throw new Error('no expression vector');
+        if (values.length !== this.model.expressionDim) {
+          throw new Error(
+            `expression dim ${values.length} != ${this.model.expressionDim}`
+          );
+        }
+        this.model.setExpressionVector(values);
+        this.onModelChanged?.();
+        return true;
+      } catch (error) {
+        console.warn(`No GNM skin pose at ${url}:`, error.message);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Loads the skin texture and registers the 'texture' material mode.
+   *
+   * Takes one URL or a list to try in order, and resolves to false with a
+   * status message rather than throwing, so the caller can just stay put.
+   */
+  async loadTexture(urls, label) {
+    if (!(await this.ensureUvs())) return false;
+    if (this.textureUrl && this.textureMaterial.map) return true;
+    const candidates = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
+    let lastError = null;
+    for (const url of candidates) {
+      try {
+        const texture = await new THREE.TextureLoader().loadAsync(url);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.flipY = true;
+        texture.anisotropy = 8;
+        // The atlas wraps horizontally: u=0 and u=1 are the same line down the
+        // back of the head. Repeating in s means a filter tap that falls off
+        // one edge fetches the texel that really does sit next to it on the
+        // head, instead of clamping and smearing the edge along the seam. v
+        // does not wrap - that would fold the neck onto the scalp.
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        this.textureMaterial.map?.dispose();
+        this.textureMaterial.map = texture;
+        this.textureMaterial.needsUpdate = true;
+        this.textureUrl = url;
+        if (label) this.textureLabel = label;
+        this.materials.texture = this.textureMaterial;
+        const likeness = await this._applySkinLikeness();
+        const suffix = {
+          fitted: ', fitted to the painting',
+          posed: ', with her eye shape',
+          none: '',
+        }[likeness];
+        this._emitStatus(`Loaded ${label ?? 'texture'}${suffix}.`);
+        return true;
+      } catch (error) {
+        lastError = error;
+        console.warn(`No GNM skin texture at ${url}:`, error.message);
+      }
+    }
+    this._emitStatus(
+      `Could not load ${label ?? 'the texture'}` +
+        `${lastError ? `: ${lastError.message}` : '.'}`
+    );
+    return false;
+  }
+
   setMaterialMode(mode) {
     if (!this.materials[mode]) return;
     this.materialMode = mode;
@@ -313,13 +550,19 @@ export class GNMScene extends xb.Script {
     }
     if (mode === 'regions') {
       this.geometry.setAttribute('color', this._regionColors);
-    } else if (mode === 'studio') {
+    } else if (mode === 'studio' || mode === 'texture') {
       this.geometry.setAttribute(
         'color',
         new THREE.BufferAttribute(this._buildMaterialColors(), 3)
       );
     }
-    this.mesh.material = this.materials[mode];
+    // An array material makes three honour the draw groups, so only the skin
+    // group samples the texture; a single material ignores them and covers the
+    // whole mesh, which is what every other mode wants.
+    this.mesh.material =
+      mode === 'texture'
+        ? [this.textureMaterial, this.materials.studio]
+        : this.materials[mode];
   }
 
   setWireframeVisible(visible) {
@@ -341,18 +584,25 @@ export class GNMScene extends xb.Script {
     const allVisible = this.visibleComponents.every(Boolean);
     if (allVisible) {
       this.geometry.setIndex(this.fullIndex);
+      this._applyGroups(this._skinIndexCount, this.fullIndex.count);
       return;
     }
-    const {triangles, componentId} = this.model;
-    const filtered = [];
-    for (let t = 0; t < triangles.length; t += 3) {
-      if (this.visibleComponents[componentId[triangles[t]]]) {
-        filtered.push(triangles[t], triangles[t + 1], triangles[t + 2]);
-      }
+    // Filter the ordered index in place, keeping skin ahead of the rest so the
+    // draw groups stay valid.
+    const index = this.fullIndex.array;
+    const {componentId, materialId} = this.model;
+    const skin = [];
+    const rest = [];
+    for (let t = 0; t < index.length; t += 3) {
+      const source = this._sourceVertex(index[t]);
+      if (!this.visibleComponents[componentId[source]]) continue;
+      const target = materialId[source] ? rest : skin;
+      target.push(index[t], index[t + 1], index[t + 2]);
     }
     this.geometry.setIndex(
-      new THREE.BufferAttribute(Uint16Array.from(filtered), 1)
+      new THREE.BufferAttribute(Uint16Array.from(skin.concat(rest)), 1)
     );
+    this._applyGroups(skin.length, skin.length + rest.length);
   }
 
   // ------------------------------------------------------------- sampling --
@@ -761,7 +1011,17 @@ export class GNMScene extends xb.Script {
     const start = performance.now();
     this.model.computeVertices(this.positionAttribute.array);
     this.positionAttribute.needsUpdate = true;
+    // Guard the same trap as above: a normal attribute left over from a
+    // smaller mesh is silently kept by computeVertexNormals, and the vertices
+    // past its end render black.
+    const stale = this.geometry.getAttribute('normal');
+    if (stale && stale.count !== this.positionAttribute.count) {
+      this.geometry.deleteAttribute('normal');
+    }
     this.geometry.computeVertexNormals();
+    const normals = this.geometry.getAttribute('normal');
+    this.model.weldSeamNormals(normals.array);
+    normals.needsUpdate = true;
     this.geometry.boundingSphere = null;
     if (this.landmarkMesh.visible) this._updateLandmarks();
     if (this.skeletonGroup.visible) this._updateSkeleton();

@@ -147,6 +147,18 @@ export class GNMHeadModel {
     this.componentId = sections.component_id;
     this.materialId = sections.material_id;
     this.regionId = sections.region_id;
+
+    // UV sections are optional: containers exported before texturing existed
+    // (including the ones on the CDN) simply have no texture coordinates, and
+    // the viewer falls back to per-vertex colors. Seam vertices are duplicated
+    // at export, so the render mesh can be larger than the model; the first
+    // numVertices render vertices are the model's, in order.
+    this.vertexUvs = null;
+    this.uvSource = null;
+    this.uvTriangles = null;
+    this.hasUvs = false;
+    this.numRenderVertices = this.numVertices;
+    this.attachUvs(sections);
     this.landmarkIndices = sections.landmark_indices;
     this.landmarkWeights = sections.landmark_weights;
 
@@ -180,6 +192,37 @@ export class GNMHeadModel {
     const buffer = await fetchWithProgress(url, onProgress);
     const {meta, sections} = parseContainer(buffer);
     return new GNMHeadModel(meta, sections);
+  }
+
+  /**
+   * Installs UV sections, from the model container or from a sidecar fetched
+   * later. Returns whether the model now has usable texture coordinates.
+   */
+  attachUvs(sections) {
+    const uvs = sections.vertex_uvs;
+    const source = sections.uv_source;
+    const triangles = sections.uv_triangles;
+    if (!uvs || !source || !triangles) return this.hasUvs;
+    // A sidecar built from a different GNM version would silently mismap.
+    if (triangles.length !== this.triangles.length) {
+      throw new Error(
+        `UV data has ${triangles.length / 3} triangles, model has ` +
+          `${this.triangles.length / 3}.`
+      );
+    }
+    this.vertexUvs = uvs;
+    this.uvSource = source;
+    this.uvTriangles = triangles;
+    this.numRenderVertices = source.length;
+    this.hasUvs = true;
+    return true;
+  }
+
+  /** Fetches a UV sidecar written by tools/export_gnm_web.py. */
+  async loadUvs(url) {
+    const buffer = await fetchWithProgress(url);
+    const {sections} = parseContainer(buffer);
+    return this.attachUvs(sections);
   }
 
   // ---------------------------------------------------------------- params --
@@ -518,7 +561,52 @@ export class GNMHeadModel {
       out[v * 3 + 1] = oy;
       out[v * 3 + 2] = oz;
     }
+    if (this.hasUvs && out.length >= this.numRenderVertices * 3) {
+      // Seam duplicates ride along with the vertex they were split from.
+      const source = this.uvSource;
+      for (let v = V; v < this.numRenderVertices; ++v) {
+        const src = source[v] * 3;
+        out[v * 3] = out[src];
+        out[v * 3 + 1] = out[src + 1];
+        out[v * 3 + 2] = out[src + 2];
+      }
+    }
     this.dirty = false;
+  }
+
+  /**
+   * Welds vertex normals back together across the UV seams.
+   *
+   * Seam vertices are duplicated so each copy can carry its island's texture
+   * coordinate, but three.js then averages face normals per *render* vertex,
+   * so each copy only sees the faces on its own side of the seam. The shared
+   * edge ends up with two different normals and shades as a hard crease - a
+   * black line down the middle of the back of the head. Summing the copies and
+   * handing every one of them the same normal restores the smooth surface.
+   */
+  weldSeamNormals(normals) {
+    if (!this.hasUvs) return;
+    const source = this.uvSource;
+    for (let v = this.numVertices; v < this.numRenderVertices; ++v) {
+      const dst = source[v] * 3;
+      normals[dst] += normals[v * 3];
+      normals[dst + 1] += normals[v * 3 + 1];
+      normals[dst + 2] += normals[v * 3 + 2];
+    }
+    for (let v = this.numVertices; v < this.numRenderVertices; ++v) {
+      const src = source[v] * 3;
+      const x = normals[src];
+      const y = normals[src + 1];
+      const z = normals[src + 2];
+      // Idempotent: duplicates sharing a source just renormalize a unit vector.
+      const length = Math.hypot(x, y, z) || 1;
+      normals[src] = x / length;
+      normals[src + 1] = y / length;
+      normals[src + 2] = z / length;
+      normals[v * 3] = normals[src];
+      normals[v * 3 + 1] = normals[src + 1];
+      normals[v * 3 + 2] = normals[src + 2];
+    }
   }
 
   /** Barycentric landmark extraction (68 × 3 vertices/weights). */

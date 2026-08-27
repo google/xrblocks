@@ -25,6 +25,7 @@ const MATERIAL_MODES = [
   ['clay', 'Clay'],
   ['normals', 'Normals'],
   ['regions', 'Regions'],
+  ['texture', 'Mona Lisa'],
 ];
 
 const INITIAL_SLIDERS_PER_GROUP = 10;
@@ -962,7 +963,29 @@ export class GNMControls {
     return fragment;
   }
 
-  setMaterialMode(mode) {
+  async setMaterialMode(mode) {
+    // The UV sidecar and the texture are a few megabytes between them, so they
+    // are fetched the first time someone asks for the mode, not at startup.
+    if (mode === 'texture' && !this.scene.canShowTexture()) {
+      const button = this._materialButtons?.find(
+        (candidate) => candidate.dataset.mode === 'texture'
+      );
+      const label = button?.textContent;
+      if (button) {
+        button.textContent = 'Loading…';
+        button.classList.add('busy');
+      }
+      this.setStatus('Loading the Mona Lisa texture…');
+      const loaded = await this.scene.loadTexture(
+        this.scene.skinTextureUrls,
+        'Mona Lisa'
+      );
+      if (button) {
+        button.textContent = label;
+        button.classList.remove('busy');
+      }
+      if (!loaded) return;
+    }
     this.scene.setMaterialMode(mode);
     this._materialButtons?.forEach((button) =>
       button.classList.toggle('active', button.dataset.mode === mode)
@@ -1251,14 +1274,6 @@ export class GNMControls {
           break;
         case 't':
           this.scene.setExpressionTour(!this.scene.tour);
-          break;
-        case 'w':
-          if (this._wireToggle) {
-            this._wireToggle.checked = !this._wireToggle.checked;
-          }
-          this.scene.setWireframeVisible(
-            this._wireToggle?.checked ?? !this.scene.wireframe.visible
-          );
           break;
         case 'g':
           this.scene.turntable = !this.scene.turntable;
