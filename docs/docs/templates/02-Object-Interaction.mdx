@@ -2,8 +2,21 @@
 title: Object Interaction
 ---
 
-Use the common select, touch, grab, move, and release hooks with one object.
-The cube color shows the current interaction state.
+Use the common select, touch, grab, move, and release hooks with an interactive object.
+The cube's color reflects its current interaction state (idle yellow, ray-selected blue, and direct-touched green).
+
+### Desktop Controls (Hands Mode)
+
+- **Move Hand:** Use <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd>, <kbd>D</kbd> to move forward, left, backward, and right.
+- **Elevate Hand:** Use <kbd>Q</kbd> and <kbd>E</kbd> to move down and up.
+- **Switch Active Hand:** Press <kbd>T</kbd> to toggle between the left and right hand.
+- **Interact / Pinch:** Left-click or press <kbd>Space</kbd> to pinch, grab, and move the object.
+- **Rotate Camera:** Right-click and drag the mouse.
+
+### XR Controls
+
+- **Direct Touch / Grab:** Reach out with your hand to touch or grab the cube.
+- **Distant Manipulation:** Point and ray-pinch to select, move, or rotate the cube from a distance.
 
 import {DocsIFrame} from '../DocsIFrame.jsx';
 import {DocsSource} from '../DocsSource.jsx';

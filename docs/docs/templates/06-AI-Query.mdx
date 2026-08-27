@@ -2,9 +2,21 @@
 title: AI Query
 ---
 
-Send an editable text query and show its result. For local prototypes, the
-pre-launch screen accepts a Gemini API key. Production applications must send
-AI requests through a server.
+Send text queries or multimodal image inputs to Gemini and display the responses inside a spatial `UICard`.
+
+> [!NOTE]
+> For local prototyping, the pre-launch dialog accepts a Gemini API key stored locally in your browser. Production applications must proxy AI requests through a secure server.
+
+### Desktop Controls (User Mode)
+
+- **Ask Gemini:** Left-click **Ask about WebXR** or **Describe sample** to submit prompts.
+- **Move / Resize Card:** Left-click and drag the card border to reposition, or scroll with the mouse wheel to scale.
+- **Rotate:** Right-click and drag the mouse to look around.
+
+### XR Controls
+
+- **Ask Gemini:** Ray-pinch or tap the prompt buttons on the card.
+- **Reposition Card:** Pinch the card border and drag to place it in your space.
 
 import {DocsIFrame} from '../DocsIFrame.jsx';
 import {DocsSource} from '../DocsSource.jsx';
