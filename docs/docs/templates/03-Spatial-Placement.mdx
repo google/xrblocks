@@ -2,8 +2,18 @@
 title: Spatial Placement
 ---
 
-Detect suitable surfaces and place content into the room. This template uses
-the higher-level world placement API with plane detection.
+Detect physical surfaces in real time and anchor virtual content onto the environment using the WebXR Depth Sensing API and surface normal alignment.
+
+### Desktop Controls (User Mode)
+
+- **Move Camera:** Use <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd>, <kbd>D</kbd> to move forward, left, backward, and right.
+- **Elevate Camera:** Use <kbd>Q</kbd> and <kbd>E</kbd> to move down and up.
+- **Rotate Camera:** Right-click and drag the mouse to look around.
+- **Aim & Place:** Move the cursor over a surface to preview marker placement, and left-click to anchor it.
+
+### XR Controls
+
+- **Aim & Place:** Point at any detected surface in the room to view the preview marker, and ray-pinch or pull the controller trigger to place it.
 
 import {DocsIFrame} from '../DocsIFrame.jsx';
 import {DocsSource} from '../DocsSource.jsx';

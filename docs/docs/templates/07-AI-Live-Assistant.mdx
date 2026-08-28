@@ -2,9 +2,21 @@
 title: AI Live Assistant
 ---
 
-Start and stop a live Gemini audio and camera session. A spatial card shows
-connection and transcription state. Client-side keys are only for local
-prototypes.
+Start and stop real-time bidirectional multimodal audio and camera sessions with Gemini Live. A spatial `UICard` displays live connection status and real-time conversation transcripts.
+
+> [!NOTE]
+> For local prototyping, the pre-launch dialog accepts a Gemini API key stored locally in your browser. Production applications must proxy AI requests through a secure server.
+
+### Desktop Controls (User Mode)
+
+- **Toggle Assistant:** Left-click the **Start** / **Stop** button to connect or disconnect the live session.
+- **Move / Resize Card:** Left-click and drag the card border to reposition, or scroll with the mouse wheel to scale.
+- **Rotate:** Right-click and drag the mouse to look around.
+
+### XR Controls
+
+- **Toggle Assistant:** Ray-pinch or tap the **Start** / **Stop** button.
+- **Reposition Card:** Pinch the card border and drag to place it anywhere in your environment.
 
 import {DocsIFrame} from '../DocsIFrame.jsx';
 import {DocsSource} from '../DocsSource.jsx';
