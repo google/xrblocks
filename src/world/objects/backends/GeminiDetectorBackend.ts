@@ -29,7 +29,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     const geminiOptions = this.context.options.objects.backendConfig.gemini;
     return {
       // Keep detection fast by asking for as little reasoning as possible.
-      // gemini-3.7-flash doesn't support MINIMAL, only LOW.
+      // gemini-3.8-flash doesn't support MINIMAL, only LOW.
       thinkingConfig: {
         thinkingLevel: 'LOW' as ThinkingLevel,
       },
