@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 7d212b0
- * @builddate 2026-09-03T03:29:35.662Z
+ * @commitid cf6d8cc
+ * @builddate 2026-09-03T03:35:01.762Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5278,7 +5278,7 @@ const DEFAULT_MANIFESTS = [
         objects: [],
     },
     {
-        name: 'Emulator Scene V5',
+        name: 'Daytime Loft',
         scenePath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5.glb`,
         scenePlanesPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_planes.json`,
         navMeshPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_navmesh.glb`,
@@ -5286,7 +5286,7 @@ const DEFAULT_MANIFESTS = [
         objects: [],
     },
     {
-        name: 'Emulator Scene Dark',
+        name: 'Evening Loft',
         scenePath: `${SIMULATOR_SCENES_PATH}XREmulatorscene_Dark.glb`,
         scenePlanesPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_planes.json`,
         navMeshPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_navmesh.glb`,
