@@ -24,15 +24,17 @@ export class HandsInstructions extends SimulatorInstructionsCard {
     return html`
       <h2>Hands Mode</h2>
       <p>
-        From Navigation Mode, press <strong>Left Shift</strong> to enter
-        <strong>Hands Mode</strong>. This mode allows for precise manipulation
-        of virtual hands.
+        Hands Mode allows for precise manipulation of virtual hands while
+        navigating the environment.
       </p>
       <ul>
         <li>
-          <strong>Move Hand:</strong> Use the W, A, S, D keys to move it
-          forward, left, backward, and right.
+          <strong>Move Around:</strong> Hold Left Shift and use the W, A, S, D
+          keys to navigate.
         </li>
+        <li><strong>Look Around:</strong> Right-click and drag the mouse.</li>
+        <li><strong>Rotate Hand:</strong> Left-click and drag the mouse.</li>
+        <li><strong>Move Hand:</strong> Use the W, A, S, D keys.</li>
         <li>
           <strong>Elevate Hand:</strong> Use the Q (up) and E (down) keys.
         </li>
