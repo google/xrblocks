@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid eeb1e9a
- * @builddate 2026-09-03T19:09:14.858Z
+ * @commitid d9a0fd9
+ * @builddate 2026-09-03T19:34:06.953Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -248,15 +248,17 @@ let HandsInstructions = class HandsInstructions extends SimulatorInstructionsCar
         return html `
       <h2>Hands Mode</h2>
       <p>
-        From Navigation Mode, press <strong>Left Shift</strong> to enter
-        <strong>Hands Mode</strong>. This mode allows for precise manipulation
-        of virtual hands.
+        Hands Mode allows for precise manipulation of virtual hands while
+        navigating the environment.
       </p>
       <ul>
         <li>
-          <strong>Move Hand:</strong> Use the W, A, S, D keys to move it
-          forward, left, backward, and right.
+          <strong>Move Around:</strong> Hold Left Shift and use the W, A, S, D
+          keys to navigate.
         </li>
+        <li><strong>Look Around:</strong> Right-click and drag the mouse.</li>
+        <li><strong>Rotate Hand:</strong> Left-click and drag the mouse.</li>
+        <li><strong>Move Hand:</strong> Use the W, A, S, D keys.</li>
         <li>
           <strong>Elevate Hand:</strong> Use the Q (up) and E (down) keys.
         </li>

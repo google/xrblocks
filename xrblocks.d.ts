@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid eeb1e9a
- * @builddate 2026-09-03T19:09:14.858Z
+ * @commitid d9a0fd9
+ * @builddate 2026-09-03T19:34:06.953Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6350,7 +6350,7 @@ declare class SimulatorControlMode {
      */
     updateGamepad(): void;
     updateCameraPosition(): void;
-    private applyYawRelativeMovement;
+    protected applyYawRelativeMovement(localX: number, localY: number, localZ: number, deltaTime: number): void;
     /**
      * Handle gamepad buttons for simulator UI using configurable bindings.
      */

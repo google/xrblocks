@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid eeb1e9a
- * @builddate 2026-09-03T19:09:14.858Z
+ * @commitid d9a0fd9
+ * @builddate 2026-09-03T19:34:06.953Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -534,17 +534,35 @@ class SimulatorControlMode {
 }
 
 const vector3$1 = new THREE.Vector3();
-const { A_CODE, D_CODE, E_CODE, Q_CODE, S_CODE, SPACE_CODE, T_CODE, W_CODE } = Keycodes;
+const { A_CODE, D_CODE, E_CODE, LEFT_SHIFT_CODE, Q_CODE, S_CODE, SPACE_CODE, T_CODE, W_CODE, } = Keycodes;
 class SimulatorControllerMode extends SimulatorControlMode {
+    isLeftShiftMovementActive() {
+        const modeToggle = this.simulatorOptions?.modeToggle;
+        const hasConflict = Boolean(modeToggle?.enabled) && modeToggle?.toggleKey === LEFT_SHIFT_CODE;
+        return !hasConflict && this.downKeys.has(LEFT_SHIFT_CODE);
+    }
     onPointerMove(event) {
-        if (event.buttons) {
+        if (event.buttons & 2) {
+            this.rotateOnPointerMove(event, this.camera.quaternion);
+        }
+        else if (event.buttons & 1) {
             const controllerOrientation = this.simulatorControllerState.localControllerOrientations[this.simulatorControllerState.currentControllerIndex];
             this.rotateOnPointerMove(event, controllerOrientation, -2e-3);
         }
     }
     update() {
         this.updateGamepad();
+        this.updateCameraPosition();
         this.updateControllerPositions();
+    }
+    updateCameraPosition() {
+        if (!this.isLeftShiftMovementActive())
+            return;
+        const deltaTime = this.timer.getDelta();
+        const downKeys = this.downKeys;
+        this.applyYawRelativeMovement(Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)), this.navMesh.constrained
+            ? 0
+            : Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)), Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)), deltaTime);
     }
     onModeActivated() {
         this.enableSimulatorHands();
@@ -554,11 +572,13 @@ class SimulatorControllerMode extends SimulatorControlMode {
         const downKeys = this.downKeys;
         const idx = this.simulatorControllerState.currentControllerIndex;
         const localPos = this.simulatorControllerState.localControllerPositions[idx];
-        vector3$1
-            .set(Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)), Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)), Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)))
-            .multiplyScalar(deltaTime);
-        this.limitMovementAtReachEdge(idx, localPos, vector3$1);
-        localPos.add(vector3$1);
+        if (!this.isLeftShiftMovementActive()) {
+            vector3$1
+                .set(Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)), Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)), Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)))
+                .multiplyScalar(deltaTime);
+            this.limitMovementAtReachEdge(idx, localPos, vector3$1);
+            localPos.add(vector3$1);
+        }
         // Gamepad: left stick moves hand on XZ; configurable buttons on Y.
         // Skip when the tab isn't focused so background tabs don't react to
         // stick input meant for the foreground tab.
