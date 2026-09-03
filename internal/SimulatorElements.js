@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid d9a0fd9
- * @builddate 2026-09-03T19:34:06.953Z
+ * @commitid c72896c
+ * @builddate 2026-09-03T19:51:47.538Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -43,7 +43,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement } from 'lit/decorators/custom-element.js';
 import { property } from 'lit/decorators/property.js';
-import { J as XR_BLOCKS_ASSETS_PATH, S as SimulatorHandPose, e as SimulatorHandPoseChangeRequestEvent, L as SIMULATOR_HAND_POSE_NAMES, b as SimulatorMode, i as SetSimulatorEnvironmentEvent, c as SetSimulatorModeEvent, k as SetSimulatorHandPhysicsEvent, j as ShowSimulatorInstructionsEvent } from './entry.js';
+import { J as XR_BLOCKS_ASSETS_PATH, b as SimulatorMode, S as SimulatorHandPose, e as SimulatorHandPoseChangeRequestEvent, L as SIMULATOR_HAND_POSE_NAMES, i as SetSimulatorEnvironmentEvent, c as SetSimulatorModeEvent, k as SetSimulatorHandPhysicsEvent, j as ShowSimulatorInstructionsEvent } from './entry.js';
 import { state } from 'lit/decorators/state.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { createRef, ref } from 'lit/directives/ref.js';
@@ -104,6 +104,10 @@ class SimulatorInstructionsCloseEvent extends Event {
 }
 
 let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitElement {
+    constructor() {
+        super(...arguments);
+        this.continueButtonText = 'Continue';
+    }
     static { this.styles = css `
     :host {
       position: relative;
@@ -196,11 +200,14 @@ let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitEleme
       <div class="image-div">${this.getImageContents()}</div>
       <div class="description-div">${this.getDescriptionContents()}</div>
       <button type="button" @click=${this.continueButtonClicked}>
-        Continue
+        ${this.continueButtonText}
       </button>
     `;
     }
 };
+__decorate([
+    property({ type: String })
+], SimulatorInstructionsCard.prototype, "continueButtonText", void 0);
 SimulatorInstructionsCard = __decorate([
     customElement('xrblocks-simulator-instructions-card')
 ], SimulatorInstructionsCard);
@@ -362,13 +369,43 @@ let SimulatorInstructions = class SimulatorInstructions extends LitElement {
       align-items: center;
     }
   `; }
+    getSteps() {
+        const isSinglePage = this.customInstructions.length === 0;
+        const buttonText = isSinglePage ? 'Close' : 'Continue';
+        if (this.simulatorMode) {
+            switch (this.simulatorMode) {
+                case SimulatorMode.USER:
+                case SimulatorMode.EDITOR:
+                case SimulatorMode.POINTER_LOCK:
+                    return [
+                        html `<xrblocks-simulator-user-instructions
+              .continueButtonText=${buttonText}
+            />`,
+                    ];
+                case SimulatorMode.POSE:
+                    return [
+                        html `<xrblocks-simulator-navigation-instructions
+              .continueButtonText=${buttonText}
+            />`,
+                    ];
+                case SimulatorMode.CONTROLLER:
+                    return [
+                        html `<xrblocks-simulator-hands-instructions
+              .continueButtonText=${buttonText}
+            />`,
+                    ];
+            }
+        }
+        return [
+            html `<xrblocks-simulator-user-instructions />`,
+            html `<xrblocks-simulator-navigation-instructions />`,
+            html `<xrblocks-simulator-hands-instructions
+        .continueButtonText=${buttonText}
+      />`,
+        ];
+    }
     constructor() {
         super();
-        this.steps = [
-            html ` <xrblocks-simulator-user-instructions />`,
-            html ` <xrblocks-simulator-navigation-instructions />`,
-            html ` <xrblocks-simulator-hands-instructions />`,
-        ];
         this.customInstructions = [];
         this.step = 0;
         this.addEventListener(SimulatorInstructionsNextEvent.type, this.continueButtonClicked.bind(this));
@@ -378,20 +415,25 @@ let SimulatorInstructions = class SimulatorInstructions extends LitElement {
         this.remove();
     }
     continueButtonClicked() {
-        if (this.step + 1 >= this.steps.length + this.customInstructions.length) {
+        const steps = this.getSteps();
+        if (this.step + 1 >= steps.length + this.customInstructions.length) {
             this.closeInstructions();
             return;
         }
         this.step++;
     }
     render() {
-        return this.step < this.steps.length
-            ? this.steps[this.step]
+        const steps = this.getSteps();
+        return this.step < steps.length
+            ? steps[this.step]
             : html `<xrblocks-simulator-custom-instruction
-          .customInstruction=${this.customInstructions[this.step - this.steps.length]}
+          .customInstruction=${this.customInstructions[this.step - steps.length]}
         />`;
     }
 };
+__decorate([
+    property()
+], SimulatorInstructions.prototype, "simulatorMode", void 0);
 __decorate([
     property()
 ], SimulatorInstructions.prototype, "customInstructions", void 0);
@@ -1242,7 +1284,7 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
     }
     _onShowInstructions() {
         this._isOpen = false;
-        this.dispatchEvent(new ShowSimulatorInstructionsEvent());
+        this.dispatchEvent(new ShowSimulatorInstructionsEvent(this.simulatorMode));
     }
     render() {
         const modes = [

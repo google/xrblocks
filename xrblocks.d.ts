@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid d9a0fd9
- * @builddate 2026-09-03T19:34:06.953Z
+ * @commitid c72896c
+ * @builddate 2026-09-03T19:51:47.538Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6381,7 +6381,7 @@ declare class SimulatorInterface {
     init(simulatorOptions: SimulatorOptions, simulatorControls: SimulatorControls, simulatorHands: SimulatorHands, input?: Input, setEnvironment?: (environment: SimulatorEnvironment) => Promise<void>, handPhysicsAvailable?: boolean): Promise<void>;
     private ensureElementsAvailable;
     createSimulatorSettingsPanel(simulatorOptions: SimulatorOptions, simulatorControls: SimulatorControls, setEnvironment: (environment: SimulatorEnvironment) => Promise<void>, handPhysicsAvailable: boolean): void;
-    showInstructions(simulatorOptions: SimulatorOptions): void;
+    showInstructions(simulatorOptions: SimulatorOptions, simulatorMode?: SimulatorMode): void;
     showGeminiLivePanel(simulatorOptions: SimulatorOptions): void;
     createHandPosePanel(simulatorOptions: SimulatorOptions, simulatorHands: SimulatorHands): void;
     hideUiElements(): void;
@@ -9103,8 +9103,9 @@ declare class SetSimulatorModeEvent extends Event {
 }
 
 declare class ShowSimulatorInstructionsEvent extends Event {
+    simulatorMode?: SimulatorMode | undefined;
     static type: string;
-    constructor();
+    constructor(simulatorMode?: SimulatorMode | undefined);
 }
 
 declare class SetSimulatorHandPhysicsEvent extends Event {

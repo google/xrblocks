@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid d9a0fd9
- * @builddate 2026-09-03T19:34:06.953Z
+ * @commitid c72896c
+ * @builddate 2026-09-03T19:51:47.538Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1783,8 +1783,11 @@ class SimulatorInterface {
                     });
                 }
             });
-            settingsElement.addEventListener(ShowSimulatorInstructionsEvent.type, () => {
-                this.showInstructions(simulatorOptions);
+            settingsElement.addEventListener(ShowSimulatorInstructionsEvent.type, (event) => {
+                const mode = event instanceof ShowSimulatorInstructionsEvent
+                    ? event.simulatorMode
+                    : undefined;
+                this.showInstructions(simulatorOptions, mode);
             });
             settingsElement.addEventListener(SetSimulatorHandPhysicsEvent.type, (event) => {
                 if (event instanceof SetSimulatorHandPhysicsEvent) {
@@ -1794,7 +1797,7 @@ class SimulatorInterface {
             this.elements.push(settingsElement);
         }
     }
-    showInstructions(simulatorOptions) {
+    showInstructions(simulatorOptions, simulatorMode) {
         if (simulatorOptions.instructions.enabled) {
             if (document.querySelector(simulatorOptions.instructions.element)) {
                 return; // Already showing
@@ -1802,6 +1805,7 @@ class SimulatorInterface {
             const element = document.createElement(simulatorOptions.instructions.element);
             element.customInstructions =
                 simulatorOptions.instructions.customInstructions;
+            element.simulatorMode = simulatorMode;
             document.body.appendChild(element);
             this.elements.push(element);
         }

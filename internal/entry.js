@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid d9a0fd9
- * @builddate 2026-09-03T19:34:06.953Z
+ * @commitid c72896c
+ * @builddate 2026-09-03T19:51:47.538Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -24186,8 +24186,9 @@ class SetSimulatorModeEvent extends Event {
 
 class ShowSimulatorInstructionsEvent extends Event {
     static { this.type = 'showSimulatorInstructions'; }
-    constructor() {
+    constructor(simulatorMode) {
         super(ShowSimulatorInstructionsEvent.type, { bubbles: true, composed: true });
+        this.simulatorMode = simulatorMode;
     }
 }
 
