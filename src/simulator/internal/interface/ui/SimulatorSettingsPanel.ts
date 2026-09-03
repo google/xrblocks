@@ -221,7 +221,7 @@ export class SimulatorSettingsPanel
 
   private _onShowInstructions() {
     this._isOpen = false;
-    this.dispatchEvent(new ShowSimulatorInstructionsEvent());
+    this.dispatchEvent(new ShowSimulatorInstructionsEvent(this.simulatorMode));
   }
 
   render() {

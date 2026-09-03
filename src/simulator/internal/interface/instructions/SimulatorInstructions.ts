@@ -3,10 +3,13 @@ import './HandsInstructions.js';
 import './NavigationInstructions.js';
 import './UserInstructions.js';
 
-import {css, html, LitElement} from 'lit';
+import {css, html, LitElement, type TemplateResult} from 'lit';
 import {customElement} from 'lit/decorators/custom-element.js';
 import {property} from 'lit/decorators/property.js';
-import type {SimulatorCustomInstruction} from '../../../SimulatorOptions.js';
+import {
+  SimulatorMode,
+  type SimulatorCustomInstruction,
+} from '../../../SimulatorOptions.js';
 
 import {
   SimulatorInstructionsCloseEvent,
@@ -29,15 +32,49 @@ export class SimulatorInstructions extends LitElement {
     }
   `;
 
-  steps = [
-    html` <xrblocks-simulator-user-instructions />`,
-    html` <xrblocks-simulator-navigation-instructions />`,
-    html` <xrblocks-simulator-hands-instructions />`,
-  ];
+  @property() simulatorMode?: SimulatorMode;
 
   @property() customInstructions: SimulatorCustomInstruction[] = [];
 
   @property() step = 0;
+
+  getSteps(): TemplateResult[] {
+    const isSinglePage = this.customInstructions.length === 0;
+    const buttonText = isSinglePage ? 'Close' : 'Continue';
+
+    if (this.simulatorMode) {
+      switch (this.simulatorMode) {
+        case SimulatorMode.USER:
+        case SimulatorMode.EDITOR:
+        case SimulatorMode.POINTER_LOCK:
+          return [
+            html`<xrblocks-simulator-user-instructions
+              .continueButtonText=${buttonText}
+            />`,
+          ];
+        case SimulatorMode.POSE:
+          return [
+            html`<xrblocks-simulator-navigation-instructions
+              .continueButtonText=${buttonText}
+            />`,
+          ];
+        case SimulatorMode.CONTROLLER:
+          return [
+            html`<xrblocks-simulator-hands-instructions
+              .continueButtonText=${buttonText}
+            />`,
+          ];
+      }
+    }
+
+    return [
+      html`<xrblocks-simulator-user-instructions />`,
+      html`<xrblocks-simulator-navigation-instructions />`,
+      html`<xrblocks-simulator-hands-instructions
+        .continueButtonText=${buttonText}
+      />`,
+    ];
+  }
 
   constructor() {
     super();
@@ -56,7 +93,8 @@ export class SimulatorInstructions extends LitElement {
   }
 
   continueButtonClicked() {
-    if (this.step + 1 >= this.steps.length + this.customInstructions.length) {
+    const steps = this.getSteps();
+    if (this.step + 1 >= steps.length + this.customInstructions.length) {
       this.closeInstructions();
       return;
     }
@@ -64,11 +102,12 @@ export class SimulatorInstructions extends LitElement {
   }
 
   render() {
-    return this.step < this.steps.length
-      ? this.steps[this.step]
+    const steps = this.getSteps();
+    return this.step < steps.length
+      ? steps[this.step]
       : html`<xrblocks-simulator-custom-instruction
           .customInstruction=${this.customInstructions[
-            this.step - this.steps.length
+            this.step - steps.length
           ]}
         />`;
   }
