@@ -133,7 +133,7 @@ const DEFAULT_MANIFESTS: SimulatorSceneManifest[] = [
     objects: [],
   },
   {
-    name: 'Emulator Scene V5',
+    name: 'Daytime Loft',
     scenePath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5.glb`,
     scenePlanesPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_planes.json`,
     navMeshPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_navmesh.glb`,
@@ -141,7 +141,7 @@ const DEFAULT_MANIFESTS: SimulatorSceneManifest[] = [
     objects: [],
   },
   {
-    name: 'Emulator Scene Dark',
+    name: 'Evening Loft',
     scenePath: `${SIMULATOR_SCENES_PATH}XREmulatorscene_Dark.glb`,
     scenePlanesPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_planes.json`,
     navMeshPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_navmesh.glb`,
