@@ -6,6 +6,7 @@ import {SimulatorHands} from './SimulatorHands.js';
 import type {
   SimulatorCustomInstruction,
   SimulatorEnvironment,
+  SimulatorMode,
   SimulatorOptions,
 } from './SimulatorOptions.js';
 import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.js';
@@ -59,6 +60,7 @@ function btnName(index: number): string {
 
 type SimulatorInstructionsHTMLElement = HTMLElement & {
   customInstructions: SimulatorCustomInstruction[];
+  simulatorMode?: SimulatorMode;
 };
 
 export class SimulatorInterface {
@@ -161,8 +163,12 @@ export class SimulatorInterface {
       );
       settingsElement.addEventListener(
         ShowSimulatorInstructionsEvent.type,
-        () => {
-          this.showInstructions(simulatorOptions);
+        (event: Event) => {
+          const mode =
+            event instanceof ShowSimulatorInstructionsEvent
+              ? event.simulatorMode
+              : undefined;
+          this.showInstructions(simulatorOptions, mode);
         }
       );
       settingsElement.addEventListener(
@@ -177,7 +183,10 @@ export class SimulatorInterface {
     }
   }
 
-  showInstructions(simulatorOptions: SimulatorOptions) {
+  showInstructions(
+    simulatorOptions: SimulatorOptions,
+    simulatorMode?: SimulatorMode
+  ) {
     if (simulatorOptions.instructions.enabled) {
       if (document.querySelector(simulatorOptions.instructions.element)) {
         return; // Already showing
@@ -187,6 +196,7 @@ export class SimulatorInterface {
       ) as SimulatorInstructionsHTMLElement;
       element.customInstructions =
         simulatorOptions.instructions.customInstructions;
+      element.simulatorMode = simulatorMode;
       document.body.appendChild(element);
       this.elements.push(element);
     }
