@@ -3,7 +3,10 @@ import {describe, expect, it} from 'vitest';
 
 import type {ManipulationDriverSession} from './DriverTypes';
 import type {RotateOptions} from '../ManipulationTypes';
-import type {InteractionSourceState, SelectionCapture} from '../../InteractionTypes';
+import type {
+  InteractionSourceState,
+  SelectionCapture,
+} from '../../InteractionTypes';
 import {RotateDriver} from './RotateDriver';
 
 describe('RotateDriver', () => {
@@ -77,11 +80,17 @@ describe('RotateDriver', () => {
     const session = createSession({axis: 'x', sensitivity: 1});
     const baseline = driver.capture(session)!;
 
-    const twist = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 4);
-    const swing = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 3);
-    
+    const twist = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      Math.PI / 4
+    );
+    const swing = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      Math.PI / 3
+    );
+
     session.primary.snapshot.orientation.copy(swing).multiply(twist);
-    
+
     const proposal = driver.propose(session, baseline);
     expect(proposal?.angle).toBeCloseTo(Math.PI / 4);
   });
@@ -146,7 +155,10 @@ describe('RotateDriver', () => {
   it('correctly maps wrist orientation to a local-space rotated frame', () => {
     const driver = new RotateDriver();
     const session = createSession({axis: 'x', space: 'local', sensitivity: 1});
-    session.owner.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+    session.owner.quaternion.setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      Math.PI / 2
+    );
     session.owner.updateMatrixWorld(true);
 
     const baseline = driver.capture(session)!;
