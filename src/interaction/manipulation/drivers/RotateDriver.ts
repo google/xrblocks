@@ -46,11 +46,37 @@ export class RotateDriver implements ManipulationDriver<RotateBaseline> {
         -new THREE.Euler().setFromQuaternion(deltaRotation, 'YXZ').y *
         baseline.options.sensitivity;
     } else {
-      const localDelta = snapshot.position
-        .clone()
-        .sub(baseline.sourcePosition)
-        .applyQuaternion(baseline.sourceOrientationInverse);
-      angle = localDelta.x * baseline.options.sensitivity;
+      const isX = baseline.axis.x === 1 || baseline.axis.x === -1;
+      const isZ = baseline.axis.z === 1 || baseline.axis.z === -1;
+      if (isX || isZ) {
+        const worldAxis =
+          baseline.options.space === 'local'
+            ? baseline.axis.clone().applyQuaternion(baseline.worldQuaternion)
+            : baseline.axis;
+
+        const deltaRotation = snapshot.orientation
+          .clone()
+          .multiply(baseline.sourceOrientationInverse);
+
+        let twistDot =
+          deltaRotation.x * worldAxis.x +
+          deltaRotation.y * worldAxis.y +
+          deltaRotation.z * worldAxis.z;
+        let twistW = deltaRotation.w;
+
+        if (twistW < 0) {
+          twistDot = -twistDot;
+          twistW = -twistW;
+        }
+
+        angle = 2 * Math.atan2(twistDot, twistW) * baseline.options.sensitivity;
+      } else {
+        const localDelta = snapshot.position
+          .clone()
+          .sub(baseline.sourcePosition)
+          .applyQuaternion(baseline.sourceOrientationInverse);
+        angle = localDelta.x * baseline.options.sensitivity;
+      }
     }
     const offset = new THREE.Quaternion().setFromAxisAngle(
       baseline.axis,
