@@ -46,8 +46,10 @@ export class RotateDriver implements ManipulationDriver<RotateBaseline> {
         -new THREE.Euler().setFromQuaternion(deltaRotation, 'YXZ').y *
         baseline.options.sensitivity;
     } else {
-      const isX = baseline.axis.x === 1 || baseline.axis.x === -1;
-      const isZ = baseline.axis.z === 1 || baseline.axis.z === -1;
+      // Wrist rotation drives X and Z axes (pitch and roll).
+      // For Y-axis (turntable) and arbitrary custom axes, retain translation-driven sliding.
+      const isX = Math.abs(Math.abs(baseline.axis.x) - 1) < 1e-4;
+      const isZ = Math.abs(Math.abs(baseline.axis.z) - 1) < 1e-4;
       if (isX || isZ) {
         const worldAxis =
           baseline.options.space === 'local'
