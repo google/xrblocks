@@ -622,6 +622,12 @@ export class Core {
     if (options.world.meshes.enabled) {
       webXROptionalFeatures.push('mesh-detection');
     }
+    // Composition layers are optional too: without the feature the layer
+    // classes simply never appear and each layer falls back to being drawn
+    // into the scene.
+    if (options.layers.enabled) {
+      webXROptionalFeatures.push('layers');
+    }
     if (options.world.anchors.enabled) {
       webXROptionalFeatures.push('anchors');
     }
