@@ -345,23 +345,82 @@
         _samQueue = next.catch(() => {});
         return next;
       }
+      // SlimSAM's ViT runs 1024x1024 / patch 16 = 4096 tokens over 12 heads,
+      // so the attention MatMul binds a 4096*4096*12 element buffer: 384 MB at
+      // fp16. The WebGPU spec default maxStorageBufferBindingSize is only
+      // 128 MB and onnxruntime already asks for the adapter maximum, so a
+      // device capped at the default logs uncaught "Binding size ... is larger
+      // than the maximum storage buffer binding size" validation errors.
+      // Those are noisy but recoverable: ORT falls back per-node and still
+      // produces masks. Routing such devices to wasm instead is *worse* --
+      // ORT's wasm backend runs synchronously on the main thread and stalls
+      // the render loop for a minute or more, which reads as a frozen app on
+      // a headset. So warn about the limit but keep running on the GPU.
+      const SAM_ATTENTION_ELEMENTS = 4096 * 4096 * 12;
+
+      // Load configurations to try in order. transformers.js does not quietly
+      // downgrade when `device` is passed explicitly: an unsupported backend
+      // throws, so probe the adapter instead of assuming `navigator.gpu`
+      // means webgpu+fp16 will work. fp16 needs the shader-f16 feature, which
+      // plenty of mobile/XR GPUs don't expose.
+      async function samLoadCandidates() {
+        const cpu = {device: 'wasm', dtype: 'fp32'};
+        let adapter = null;
+        try {
+          adapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null;
+        } catch (e) {
+          console.warn('[objects_3d] webgpu adapter probe failed', e);
+        }
+        if (!adapter) return [cpu];
+        const maxBinding = adapter.limits.maxStorageBufferBindingSize ?? 0;
+        if (maxBinding < SAM_ATTENTION_ELEMENTS * 2) {
+          console.warn(
+            `[objects_3d] webgpu maxStorageBufferBindingSize ${maxBinding} is ` +
+              `below SAM's ${SAM_ATTENTION_ELEMENTS * 2} byte attention ` +
+              `binding; expect WebGPU validation warnings during encode`
+          );
+        }
+        const gpu = [];
+        if (adapter.features.has('shader-f16')) {
+          gpu.push({device: 'webgpu', dtype: 'fp16'});
+        }
+        gpu.push({device: 'webgpu', dtype: 'fp32'});
+        // Keep the cpu entry last so an environment where webgpu can't load at
+        // all still gets a model. It is deliberately last: wasm blocks the main
+        // thread, so it must never pre-empt a usable GPU configuration.
+        return [...gpu, cpu];
+      }
+
       function getSam() {
         if (_sam && _samProc)
           return Promise.resolve({sam: _sam, proc: _samProc});
         if (_samPromise) return _samPromise;
-        _samPromise = (async () => {
-          // Prefer webgpu when available; transformers.js falls back to
-          // wasm/cpu transparently if the backend isn't supported.
-          const device =
-            'gpu' in navigator && navigator.gpu ? 'webgpu' : 'wasm';
-          _sam = await SamModel.from_pretrained(SAM_MODEL_ID, {
-            device,
-            dtype: device === 'webgpu' ? 'fp16' : 'fp32',
-          });
-          _samProc = await AutoProcessor.from_pretrained(SAM_MODEL_ID);
-          return {sam: _sam, proc: _samProc};
+        const pending = (async () => {
+          const candidates = await samLoadCandidates();
+          let lastError = null;
+          for (const opts of candidates) {
+            try {
+              _sam = await SamModel.from_pretrained(SAM_MODEL_ID, opts);
+              _samProc = await AutoProcessor.from_pretrained(SAM_MODEL_ID);
+              return {sam: _sam, proc: _samProc};
+            } catch (e) {
+              lastError = e;
+              console.warn(
+                `[objects_3d] SAM load failed on ${opts.device}/${opts.dtype}`,
+                e
+              );
+            }
+          }
+          throw lastError ?? new Error('SAM could not be loaded');
         })();
-        return _samPromise;
+        _samPromise = pending;
+        // Never leave a rejected promise cached: getSam() hands out the
+        // cached promise, so one failed load would otherwise make every
+        // later Detect press fail until the page is reloaded.
+        pending.catch(() => {
+          if (_samPromise === pending) _samPromise = null;
+        });
+        return pending;
       }
 
       // Run the SAM encoder on a snapshot ImageData once per Detect press.
