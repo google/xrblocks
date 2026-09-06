@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid c72896c
- * @builddate 2026-09-03T19:51:47.538Z
+ * @commitid c7c697b
+ * @builddate 2026-09-06T00:48:32.547Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -7994,11 +7994,34 @@ class RotateDriver {
                     baseline.options.sensitivity;
         }
         else {
-            const localDelta = snapshot.position
-                .clone()
-                .sub(baseline.sourcePosition)
-                .applyQuaternion(baseline.sourceOrientationInverse);
-            angle = localDelta.x * baseline.options.sensitivity;
+            // Wrist rotation drives X and Z axes (pitch and roll).
+            // For Y-axis (turntable) and arbitrary custom axes, retain translation-driven sliding.
+            const isX = Math.abs(Math.abs(baseline.axis.x) - 1) < 1e-4;
+            const isZ = Math.abs(Math.abs(baseline.axis.z) - 1) < 1e-4;
+            if (isX || isZ) {
+                const worldAxis = baseline.options.space === 'local'
+                    ? baseline.axis.clone().applyQuaternion(baseline.worldQuaternion)
+                    : baseline.axis;
+                const deltaRotation = snapshot.orientation
+                    .clone()
+                    .multiply(baseline.sourceOrientationInverse);
+                let twistDot = deltaRotation.x * worldAxis.x +
+                    deltaRotation.y * worldAxis.y +
+                    deltaRotation.z * worldAxis.z;
+                let twistW = deltaRotation.w;
+                if (twistW < 0) {
+                    twistDot = -twistDot;
+                    twistW = -twistW;
+                }
+                angle = 2 * Math.atan2(twistDot, twistW) * baseline.options.sensitivity;
+            }
+            else {
+                const localDelta = snapshot.position
+                    .clone()
+                    .sub(baseline.sourcePosition)
+                    .applyQuaternion(baseline.sourceOrientationInverse);
+                angle = localDelta.x * baseline.options.sensitivity;
+            }
         }
         const offset = new THREE.Quaternion().setFromAxisAngle(baseline.axis, angle);
         let quaternion;
