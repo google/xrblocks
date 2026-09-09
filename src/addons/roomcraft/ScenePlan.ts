@@ -9,7 +9,12 @@ import {
   MAX_PART_SIZE,
   MAX_SCENE_PARTS,
   MIN_PART_SIZE,
+  MIN_MOTION_PERIOD,
+  MAX_MOTION_PERIOD,
+  MAX_MOTION_AMPLITUDE,
+  MAX_MOTION_SPEED,
   SCENE_PART_SHAPES,
+  SCENE_MOTION_AXES,
   type SceneAssetDescription,
   type SceneEdit,
   type SceneLayout,
@@ -18,6 +23,7 @@ import {
   type ScenePart,
   type ScenePartChanges,
   type ScenePartEdit,
+  type ScenePartMotion,
   type ScenePlan,
   type SceneRequest,
   type SceneVector3,
@@ -49,6 +55,7 @@ const partFields = [
   'size',
   'color',
 ] as const;
+const partUpdateFields = [...partFields, 'motion'] as const;
 
 const vectorSchema = {
   type: 'array',
@@ -58,6 +65,66 @@ const vectorSchema = {
 };
 const idSchema = {type: 'string', pattern: identifierPattern.source};
 const colorSchema = {type: 'string', pattern: '^#[0-9a-fA-F]{6}$'};
+const motionProperties = {
+  axis: {type: 'string', enum: [...SCENE_MOTION_AXES]},
+  pivot: {
+    ...vectorSchema,
+    description:
+      'Hinge or axle in part-local meters, relative to its authored center.',
+    items: {
+      type: 'number',
+      minimum: -MAX_PART_DISTANCE,
+      maximum: MAX_PART_DISTANCE,
+    },
+  },
+  phase: {
+    type: 'number',
+    minimum: 0,
+    maximum: 1,
+    description: 'Starting fraction of a full cycle. Defaults to 0.',
+  },
+};
+const motionSchema = {
+  anyOf: [
+    {type: 'null'},
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'axis', 'pivot', 'amplitude', 'period'],
+      properties: {
+        kind: {type: 'string', enum: ['swing']},
+        ...motionProperties,
+        amplitude: {
+          type: 'number',
+          minimum: 0,
+          maximum: MAX_MOTION_AMPLITUDE,
+          description:
+            'Positive radians on either side of the authored rest pose.',
+        },
+        period: {
+          type: 'number',
+          minimum: MIN_MOTION_PERIOD,
+          maximum: MAX_MOTION_PERIOD,
+        },
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'axis', 'pivot', 'speed'],
+      properties: {
+        kind: {type: 'string', enum: ['spin']},
+        ...motionProperties,
+        speed: {
+          type: 'number',
+          minimum: -MAX_MOTION_SPEED,
+          maximum: MAX_MOTION_SPEED,
+          description: 'Nonzero signed radians per second.',
+        },
+      },
+    },
+  ],
+};
 const partProperties = {
   name: {type: 'string', minLength: 1, maxLength: 80},
   shape: {type: 'string', enum: [...SCENE_PART_SHAPES]},
@@ -85,6 +152,7 @@ const partProperties = {
     items: {type: 'number', minimum: MIN_PART_SIZE, maximum: MAX_PART_SIZE},
   },
   color: colorSchema,
+  motion: motionSchema,
 };
 const partSchema = {
   type: 'object',
@@ -326,10 +394,66 @@ function partShape(value: unknown) {
   return shape;
 }
 
+function readPartMotion(value: unknown): ScenePartMotion {
+  const motion = record(value, 'Part motion');
+  const axis = SCENE_MOTION_AXES.find((axis) => axis === motion.axis);
+  if (!axis) throw new Error('Motion axis must be x, y, or z.');
+  const common = {
+    axis,
+    pivot: vector(
+      motion.pivot,
+      'motion pivot',
+      -MAX_PART_DISTANCE,
+      MAX_PART_DISTANCE
+    ),
+    ...('phase' in motion
+      ? {phase: number(motion.phase, 'Motion phase', 0, 1)}
+      : {}),
+  };
+  const fields = ['kind', 'axis', 'pivot', 'phase'];
+  if (motion.kind === 'swing') {
+    keys(
+      motion,
+      [...fields, 'amplitude', 'period'],
+      ['kind', 'axis', 'pivot', 'amplitude', 'period']
+    );
+    const amplitude = number(
+      motion.amplitude,
+      'Swing amplitude',
+      0,
+      MAX_MOTION_AMPLITUDE
+    );
+    if (amplitude === 0) throw new Error('Swing amplitude must be positive.');
+    return {
+      kind: 'swing',
+      ...common,
+      amplitude,
+      period: number(
+        motion.period,
+        'Swing period',
+        MIN_MOTION_PERIOD,
+        MAX_MOTION_PERIOD
+      ),
+    };
+  }
+  if (motion.kind === 'spin') {
+    keys(motion, [...fields, 'speed'], ['kind', 'axis', 'pivot', 'speed']);
+    const speed = number(
+      motion.speed,
+      'Spin speed',
+      -MAX_MOTION_SPEED,
+      MAX_MOTION_SPEED
+    );
+    if (speed === 0) throw new Error('Spin speed must be nonzero.');
+    return {kind: 'spin', ...common, speed};
+  }
+  throw new Error('Part motion must use swing or spin.');
+}
+
 function readPart(value: unknown): ScenePart {
   const part = record(value, 'Scene part');
-  keys(part, ['id', ...partFields]);
-  return {
+  keys(part, ['id', ...partUpdateFields], ['id', ...partFields]);
+  const result: ScenePart = {
     id: readSceneId(part.id),
     name: text(part.name, 'Part name', 80),
     shape: partShape(part.shape),
@@ -344,6 +468,10 @@ function readPart(value: unknown): ScenePart {
     size: vector(part.size, 'part size', MIN_PART_SIZE, MAX_PART_SIZE),
     color: color(part.color),
   };
+  if ('motion' in part && part.motion !== null) {
+    result.motion = readPartMotion(part.motion);
+  }
+  return result;
 }
 
 function readParts(value: unknown): ScenePart[] {
@@ -377,7 +505,7 @@ function readParts(value: unknown): ScenePart[] {
 
 function readPartChanges(value: unknown): ScenePartChanges {
   const part = record(value, 'Part changes');
-  keys(part, partFields, []);
+  keys(part, partUpdateFields, []);
   if (Object.keys(part).length === 0) {
     throw new Error('A part update must change at least one field.');
   }
@@ -407,6 +535,9 @@ function readPartChanges(value: unknown): ScenePartChanges {
     changes.size = vector(part.size, 'part size', MIN_PART_SIZE, MAX_PART_SIZE);
   }
   if ('color' in part) changes.color = color(part.color);
+  if ('motion' in part) {
+    changes.motion = part.motion === null ? null : readPartMotion(part.motion);
+  }
   return changes;
 }
 
@@ -468,10 +599,29 @@ function applyPartEdits(
       const part = parts.get(edit.id);
       if (!part) throw new Error(`Part "${edit.id}" does not exist.`);
       if (edit.op === 'remove') parts.delete(edit.id);
-      else parts.set(edit.id, {...part, ...edit.changes});
+      else {
+        const {motion, ...changes} = edit.changes;
+        const updated = {...part, ...changes};
+        if (motion === null) delete updated.motion;
+        else if (motion !== undefined) updated.motion = motion;
+        parts.set(edit.id, updated);
+      }
     }
   }
   return readParts([...parts.values()]);
+}
+
+function cloneScenePart(part: ScenePart): ScenePart {
+  const clone: ScenePart = {
+    ...part,
+    position: [...part.position],
+    rotation: [...part.rotation],
+    size: [...part.size],
+  };
+  if (part.motion) {
+    clone.motion = {...part.motion, pivot: [...part.motion.pivot]};
+  }
+  return clone;
 }
 
 export function cloneSceneObject(object: SceneObject): SceneObject {
@@ -480,12 +630,7 @@ export function cloneSceneObject(object: SceneObject): SceneObject {
       ...object,
       position: [...object.position],
       scale: [...object.scale],
-      parts: object.parts.map((part) => ({
-        ...part,
-        position: [...part.position],
-        rotation: [...part.rotation],
-        size: [...part.size],
-      })),
+      parts: object.parts.map(cloneScenePart),
     };
   }
   return {...object, position: [...object.position], scale: [...object.scale]};
@@ -754,7 +899,7 @@ function partsChanged(
       !part ||
       (edit.op === 'remove'
         ? JSON.stringify(oldPart) !== JSON.stringify(part)
-        : partFields.some(
+        : partUpdateFields.some(
             (field) =>
               Object.hasOwn(edit.changes, field) &&
               JSON.stringify(oldPart[field]) !== JSON.stringify(part[field])
@@ -810,7 +955,7 @@ export function buildScenePrompt(request: SceneRequest): string {
     'Use add for new objects, update for existing IDs, and remove only for objects the user wants removed.',
     'Never recreate or repeat untouched objects. In updates include only fields the user wants changed.',
     'Refine an existing procedural design with partEdits on its object update. Use changes:{} for part-only edits. Add new parts, update only changed part fields, and remove only explicitly unwanted parts.',
-    'Part IDs are stable within their object. Preserve untouched parts, including their IDs, parents, sizes, positions and colors. Do not resend the whole parts array for a small refinement.',
+    'Part IDs are stable within their object. Preserve untouched parts, including their IDs, parents, sizes, positions, colors and motion definitions. Do not resend the whole parts array for a small refinement.',
     'To explicitly replace an entire design, use changes.parts; to switch to a catalog asset, use changes.asset. Do not combine either replacement with partEdits.',
     'Use selectedId to resolve "this" or "that". If it is null, do not guess a selected object.',
     'Keep the existing title unless the scene theme changes. An empty edits array is allowed when no supported edit is possible.',
@@ -818,6 +963,13 @@ export function buildScenePrompt(request: SceneRequest): string {
     'Catalog sizes are physical dimensions at scale [1,1,1]. Scale is a dimensionless multiplier, not a size in meters.',
     "For procedural designs, size is each part's physical [width,height,depth]. Part positions are CENTERS in parent-local meters, and part rotations are [x,y,z] Euler radians in XYZ order.",
     'Every part needs a parent field: null for the object origin, or another part ID. Parents contribute position and rotation, NOT size. Parent references must form a forest, never a cycle.',
+    'Part positions and rotations describe the authored rest pose, not the current animated frame. Add an optional motion definition to a part for local articulated movement.',
+    'For a hinge use motion:{kind:"swing",axis:"z",pivot:[0,0.15,0],amplitude:0.6,period:2}; for an axle use motion:{kind:"spin",axis:"y",pivot:[0,0,0],speed:2}. Axis is part-local after its authored rotation, and pivot is in part-local meters relative to its center.',
+    'Swing oscillates on either side of the authored orientation; amplitude is positive radians and period is seconds. Spin speed is signed radians per second. Optional phase is a starting cycle fraction from 0 to 1, default 0; opposing wings can use phases 0 and 0.5.',
+    'Always parent moving hands, fingers, tools and feathers under the moving limb, with child positions expressed in that limb frame, so they follow it. When lengthening a limb, keep its pivot at the joint and adjust attached child positions to stay connected.',
+    'To retune motion, replace changes.motion with the full definition, preserving values you are not changing. Use changes:{motion:null} to stop a part and return it to its authored pose. Keep motion fields unchanged when only editing geometry; the runtime preserves playback phase.',
+    `Motion limits: pivots within +/-${MAX_PART_DISTANCE} meters; swing amplitude greater than 0 and at most ${MAX_MOTION_AMPLITUDE} radians; period ${MIN_MOTION_PERIOD} to ${MAX_MOTION_PERIOD} seconds; nonzero spin speed within +/-${MAX_MOTION_SPEED} radians per second. The whole-design size limit includes the full motion envelope.`,
+    'Use only these bounded local motions; never output animation code, scripts, arbitrary keyframes, or promises of navigation, autonomous agents, look-at tracking, or physics joints.',
     'Box, sphere, cylinder, cone, capsule and torus parts are centered. Cylinder/cone/capsule point along Y; the torus ring lies in XY with its hole along Z. Vary dimensions and orientation to design new objects, not merely catalog selections.',
     'Put feet or other supports so their bottoms are at local Y=0. Keep the authored origin stable during refinement; do not recenter or resize the whole object when changing its arms or adding a backpack.',
     "When changing a limb size, update attached part positions when needed to keep the design connected. Object color is a multiplicative tint; use #ffffff to preserve each part's own color. Use part edits for selective recoloring.",
