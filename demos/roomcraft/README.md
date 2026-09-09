@@ -50,7 +50,7 @@ The keyboard reuses the existing [virtualkeyboard add-on](../../src/addons/virtu
 
 Previous and Next cycle through scene objects, including objects that are difficult to point at. Remove deletes the selected object without asking Gemini; Undo restores it. Pause and Resume control part playback from the same row and stay usable while a request is running. New, Place, Undo, and Redo are available below both tabs. Examples contains the clearly labelled handcrafted starter scenes, not generated content.
 
-The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the desktop controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
+The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. On desktop, opening or recentering the studio chooses the side with less overlap from nearby authored objects, including their full motion envelopes. This is not room collision avoidance: drag the cards elsewhere if both sides are crowded. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the desktop controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
 
 ## Gemini
 
@@ -84,7 +84,7 @@ A design holds at most 48 parts, a scene holds at most 384 parts across all desi
 
 A scene holds at most 48 objects, positions stay within 10 meters of the scene origin, and scale multipliers run from 0.05 to 5.
 
-Quality depends on the model and the prompt. A request can return an awkward design, and there is no built-in robot fallback: a failed or rejected plan leaves your scene exactly as it was.
+Quality depends on the model and the prompt. A request can return an awkward design, and there is no built-in robot fallback: a failed or rejected plan leaves your scene exactly as it was. Incomplete or invalid JSON is rejected as a whole, with a suggestion to retry a smaller edit rather than applying a partial design.
 
 Only one operation runs at a time. Invalid plans, provider failures, and asset load errors leave the current scene intact and surface a message in the console.
 
