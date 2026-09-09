@@ -344,6 +344,35 @@ describe('Roomcraft part motion', () => {
     ).toBeCloseTo(0.6 * Math.sin(Math.PI / 4));
   });
 
+  it('keeps a moving design and its redo branch after incomplete provider JSON', async () => {
+    const room = createRoom(
+      [],
+      async () => '{"title":"Studio","edits":[{"op":"remove","id":"robot"},'
+    );
+    motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'update', id: 'robot', changes: {color: '#2244aa'}}],
+    });
+    await room.undo();
+    room.select('robot');
+    const before = room.layout;
+    const owner = room.getObject('robot')!;
+    const arm = owner.getObjectByName('arm')!;
+    const rotation = arm.quaternion.clone();
+    await expect(room.request('Add a moving bird')).rejects.toThrow(
+      'incomplete or invalid JSON'
+    );
+    room.update();
+    expect(room.busy).toBe(false);
+    expect(room.layout).toEqual(before);
+    expect(room.getObject('robot')).toBe(owner);
+    expect(room.selectedId).toBe('robot');
+    expect(room.canRedo).toBe(true);
+    expect(arm.quaternion.angleTo(rotation)).toBeGreaterThan(0.1);
+  });
+
   it('pauses inspection without touching layout, placement, selection, or redo', async () => {
     const room = createRoom();
     motionClock(room);
