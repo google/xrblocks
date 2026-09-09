@@ -2,7 +2,7 @@
 
 Roomcraft turns a description into actual, manipulable 3D content, then applies follow-up instructions to the same scene. "Add a lamp", "make this blue", and "remove the bookshelf" produce validated scene edits rather than a text answer or generated JavaScript.
 
-The add-on composes a trusted catalog of procedural objects and preauthored glTF models. It does not generate new meshes from text. The [interactive demo](../../../demos/roomcraft/) includes a reading nook, gallery, and miniature city that work without an API key.
+The add-on can compose trusted catalog assets or generate new procedural designs from primitive parts. A robot, sculpture, or piece of furniture does not need a predefined catalog entry: the planner describes its parts, and Roomcraft builds them as one manipulable object. This is bounded procedural geometry, not a photorealistic text-to-mesh service or execution of generated JavaScript. The [interactive demo](../../../demos/roomcraft/) includes no-key handcrafted scenes and a compound robot example.
 
 ## Run the demo
 
@@ -21,7 +21,10 @@ const options = new xb.Options();
 options.enableAI();
 options.enablePlaneDetection();
 options.ai.promptForApiKey = true; // Local prototypes only.
-options.ai.gemini.config.responseJsonSchema = SCENE_PLAN_SCHEMA;
+options.ai.gemini.config = {
+  responseMimeType: 'application/json',
+  responseJsonSchema: SCENE_PLAN_SCHEMA,
+};
 
 const room = new Roomcraft();
 room.position.set(0, 0, -2);
@@ -55,9 +58,34 @@ room.addEventListener('change', ({layout}) => {
 });
 ```
 
-Updates retain the same manipulation owner. Transform-only changes do not rebuild geometry. A model or color change prepares replacement content before swapping it in; unrelated objects are untouched. Hand movement during a color-only request is preserved. A conflicting transform change during planning, or movement during asynchronous asset loading, rejects the edit instead of overwriting the user's work.
+Updates retain the same manipulation owner. Transform-only changes do not rebuild geometry. Model, color, and procedural design changes prepare replacement content before swapping it in; unrelated objects are untouched. Hand movement during a color-only or part-only request is preserved. A conflicting change during planning, or movement during asynchronous asset loading, rejects the edit instead of overwriting the user's work.
 
 `room.getObject(id)` returns the stable Three.js owner when application code needs to change its transform. Do not reparent it, replace its children, or dispose its resources yourself.
+
+## Generate and refine a new object
+
+Start with an empty workshop, ask for a design, and select the returned object before using "this" or "it". The demo selects a newly added object automatically when a request adds exactly one.
+
+```js
+await room.applyLayout({title: 'Object workshop', objects: []});
+const layout = await room.request(
+  'Create a little robot with an antenna, two arms, and blue boots.'
+);
+const robot = layout.objects.find((object) => object.parts);
+if (!robot) throw new Error('The planner did not return a procedural object.');
+room.select(robot.id);
+
+await room.request(
+  'Give this longer arms and a backpack. Keep its position and overall scale.'
+);
+await room.placeOnSurface();
+```
+
+Every part is a `box`, `sphere`, `cylinder`, `cone`, `capsule`, or `torus` with a stable ID. Part positions specify centers in parent-local meters, rotations are XYZ Euler angles in radians, and sizes are physical width, height, and depth. A `parent` of `null` attaches the part to the object's origin; a part ID attaches it to that part's center and orientation. Parent size does not scale its children. Cylinder, cone, and capsule axes are Y; a torus lies in XY with its hole along Z.
+
+All parts belong to one scene object, so pinching any part moves or scales the whole design. Refinement retains that outer owner and its hand-edited pose. The geometry is not automatically recentered, grounded, or rescaled when a limb grows or a backpack is added; the authored origin stays fixed. Place support parts with their bottoms at local Y=0, and update attached part positions when changing dimensions. Surface placement uses the full design bounds, including offset and rotated parts.
+
+Use an object color of `#ffffff` to preserve individual part colors. Other object colors multiply every part's color; use targeted part edits when recoloring only a body, arm, or accessory.
 
 ## Layouts and edit plans
 
@@ -95,15 +123,90 @@ const json = JSON.stringify(room.layout, null, 2);
 
 Every plan has a `title` and an `edits` array. An edit is `{op: 'add', object}`, `{op: 'update', id, changes}`, or `{op: 'remove', id}`. Updates include only changed fields, and a plan may edit each ID once. Unknown IDs, unknown fields, arbitrary URLs, invalid numbers, and unsupported asset names are rejected.
 
-Positions specify object bases in local meters: X right, Y up, and positive Z toward the viewer. Rotation is an upright Y-axis angle in radians. Scale is a multiplier of the asset's catalog dimensions, not its size in meters. Colors use six-digit hexadecimal notation.
+A scene object has exactly one content source: `asset` for a catalog entry, or `parts` for a new procedural design. Omit `asset` entirely when supplying `parts`. This small hand-authored recipe illustrates the format; a planner can create different parts and arrangements using the same protocol.
+
+```js
+await room.applyLayout({
+  title: 'Part workshop',
+  objects: [
+    {
+      id: 'robot',
+      name: 'Robot body',
+      position: [0, 0, 0],
+      rotation: 0,
+      scale: [1, 1, 1],
+      color: '#ffffff',
+      parts: [
+        {
+          id: 'body',
+          name: 'Body',
+          shape: 'box',
+          parent: null,
+          position: [0, 0.45, 0],
+          rotation: [0, 0, 0],
+          size: [0.4, 0.6, 0.25],
+          color: '#88bb99',
+        },
+        {
+          id: 'arm',
+          name: 'Arm',
+          shape: 'capsule',
+          parent: 'body',
+          position: [0.28, 0, 0],
+          rotation: [0, 0, 0],
+          size: [0.08, 0.4, 0.08],
+          color: '#cc7733',
+        },
+      ],
+    },
+  ],
+});
+
+await room.applyPlan({
+  title: 'Part workshop',
+  edits: [
+    {
+      op: 'update',
+      id: 'robot',
+      changes: {},
+      partEdits: [
+        {op: 'update', id: 'arm', changes: {size: [0.08, 0.6, 0.08]}},
+        {
+          op: 'add',
+          part: {
+            id: 'backpack',
+            name: 'Backpack',
+            shape: 'box',
+            parent: 'body',
+            position: [0, 0, -0.25],
+            rotation: [0, 0, 0],
+            size: [0.3, 0.3, 0.2],
+            color: '#4455aa',
+          },
+        },
+      ],
+    },
+  ],
+});
+```
+
+An object update can include `partEdits`, using `{op: 'add', part}`, `{op: 'update', id, changes}`, or `{op: 'remove', id}`. Use `changes: {}` for a part-only refinement. Part IDs are scoped to their scene object, and a batch may edit each part once. Parents can be added after their children in the same batch, but the final graph must contain every referenced parent and have no cycles. Removing a parent does not silently delete its children; remove or reparent them explicitly.
+
+Use `changes.parts` to replace an entire design, or `changes.asset` to switch to a catalog asset while keeping the same outer owner. A source replacement cannot be combined with `partEdits`. Ordinary refinements should use part edits rather than replacing the whole recipe.
+
+Object positions specify origins in scene-local meters: X right, Y up, and positive Z toward the viewer. Catalog assets are normalized to have their base at that origin; procedural designs retain their authored coordinates. Object rotation is an upright Y-axis angle in radians. Object scale multiplies the catalog dimensions or the authored part geometry. Colors use six-digit hexadecimal notation.
 
 Model-authored and imported layouts are bounded to 48 objects, positions within 10 meters of the scene origin with nonnegative Y, and per-axis scale multipliers from 0.05 to 5. Plans have at most 96 edits. Direct hand transforms are preserved even if they move outside those planner input limits.
 
-Undo retains the 20 most recent successful scene commands, including explicit replacements. It does not record each drag or surface-placement action. Exported layouts contain no API keys, conversation history, or physical anchor; they are portable compositions, not persistent room mappings.
+Each procedural object contains 1 to 48 parts with hierarchy depth at most 8; a scene contains at most 384 procedural parts. Individual sizes are 0.01 to 5 meters per axis, and parent-local centers are within +/-5 meters. A whole design must remain within +/-10 meters of its origin and be at most 10 meters across on each axis. There can be at most 96 part edits in one object update. Collection counts are enforced locally and described in the prompt rather than imposed on Gemini's nested response schema.
+
+Undo retains the 20 most recent successful scene commands, including part refinements and explicit replacements. It does not record each drag or surface-placement action. Exported layouts preserve part definitions, hierarchy, colors, and edited object transforms, but contain no API keys, conversation history, or physical anchor. They are portable compositions, not persistent room mappings.
 
 ## Trusted asset catalogs
 
 The default catalog is entirely procedural: `sofa`, `armchair`, `coffee-table`, `bookshelf`, `floor-lamp`, `plant`, `plinth`, `art-panel`, `arch`, `building`, `tree`, `box`, `sphere`, `cylinder`, and `cone`.
+
+Catalog factories are convenient predefined assets, not the limit of what can be designed. Pass `catalog: []` when an application should author only new part-based objects.
 
 Add a model from a URL controlled by the application, not returned by the model:
 
@@ -157,6 +260,6 @@ const room = new Roomcraft({
 
 The server can use the exported `buildScenePrompt(request)` and `SCENE_PLAN_SCHEMA` with its configured provider. Authenticate and authorize requests on that server; do not place a long-lived provider key in a shipped browser application.
 
-The add-on sends the instruction, generated-scene transforms and names, selection, and catalog descriptions to the configured planner. It does not capture camera images, room meshes, or microphone audio. The demo's optional speech input uses the browser's speech-recognition service, which may process audio remotely, before submitting a final transcript as an ordinary scene request.
+The add-on sends the instruction, generated-scene transforms and names, procedural part definitions, selection, and catalog descriptions to the configured planner. It does not capture camera images, room meshes, or microphone audio. The demo's optional speech input uses the browser's speech-recognition service, which may process audio remotely, before submitting a final transcript as an ordinary scene request.
 
 Remove event listeners owned by your application and call `room.dispose()` when destroying a standalone scene. Disposal releases owned GPU resources and prevents pending provider or loading results from reattaching content.
