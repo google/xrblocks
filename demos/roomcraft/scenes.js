@@ -401,18 +401,23 @@ export const MINIATURE_CITY = {
 
 /**
  * One handcrafted compound object, written by hand to show what a grouped
- * design looks like. Gemini did not produce it, and it is not a catalog asset:
- * the parts below are ordinary primitives that any live design also uses.
- * Part positions are centers in parent-local meters, sizes are physical
+ * moving design looks like. Gemini did not produce it, and it is not a catalog
+ * asset: the parts below are ordinary primitives that any live design also
+ * uses. Part positions are centers in parent-local meters, sizes are physical
  * meters, and a parent's size never scales its children. The feet rest at
  * y = 0 so the object stands on the scene floor.
+ *
+ * Four parts carry an authored motion. Positions and rotations stay the rest
+ * pose that is saved and exported; motion is local playback around a pivot in
+ * the part's own coordinates. The hands are parented to the arms and the eyes
+ * and antenna to the head, so they travel with the part that moves them.
  */
 export const ROBOT_EXAMPLE = {
-  title: 'Robot example',
+  title: 'Clockwork robot',
   objects: [
     {
       id: 'example-robot',
-      name: 'Handcrafted robot',
+      name: 'Handcrafted clockwork robot',
       position: [0, 0, -0.6],
       rotation: 0,
       scale: [1, 1, 1],
@@ -457,6 +462,13 @@ export const ROBOT_EXAMPLE = {
           rotation: [0, 0, 0],
           size: [0.22, 0.2, 0.2],
           color: '#c9c2b6',
+          motion: {
+            kind: 'swing',
+            axis: 'y',
+            pivot: [0, -0.1, 0],
+            amplitude: 0.35,
+            period: 6,
+          },
         },
         {
           id: 'eye-left',
@@ -507,6 +519,13 @@ export const ROBOT_EXAMPLE = {
           rotation: [0, 0, 0],
           size: [0.07, 0.26, 0.07],
           color: '#7f8f7a',
+          motion: {
+            kind: 'swing',
+            axis: 'x',
+            pivot: [0, 0.13, 0],
+            amplitude: 0.45,
+            period: 2.4,
+          },
         },
         {
           id: 'arm-right',
@@ -517,6 +536,14 @@ export const ROBOT_EXAMPLE = {
           rotation: [0, 0, 0],
           size: [0.07, 0.26, 0.07],
           color: '#7f8f7a',
+          motion: {
+            kind: 'swing',
+            axis: 'x',
+            pivot: [0, 0.13, 0],
+            amplitude: 0.45,
+            period: 2.4,
+            phase: 0.5,
+          },
         },
         {
           id: 'hand-left',
@@ -578,6 +605,22 @@ export const ROBOT_EXAMPLE = {
           size: [0.11, 0.06, 0.18],
           color: '#3f454d',
         },
+        {
+          id: 'wind-key',
+          name: 'Wind-up key',
+          shape: 'box',
+          parent: 'torso',
+          position: [0, 0.02, -0.12],
+          rotation: [0, 0, 0],
+          size: [0.13, 0.026, 0.06],
+          color: '#e0b872',
+          motion: {
+            kind: 'spin',
+            axis: 'z',
+            pivot: [0, 0, 0],
+            speed: 2.4,
+          },
+        },
       ],
     },
   ],
@@ -605,9 +648,9 @@ export const STARTER_SCENES = [
   },
   {
     id: 'robot-example',
-    label: 'Robot example',
+    label: 'Clockwork robot',
     summary:
-      'One handcrafted compound object made of 16 primitive parts, not AI output.',
+      'One handcrafted compound object of 17 primitive parts with authored swing and spin motion, not AI output.',
     layout: ROBOT_EXAMPLE,
   },
 ];
