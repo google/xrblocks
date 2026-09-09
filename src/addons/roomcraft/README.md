@@ -2,7 +2,7 @@
 
 Roomcraft turns a description into actual, manipulable 3D content, then applies follow-up instructions to the same scene. "Add a lamp", "make this blue", and "remove the bookshelf" produce validated scene edits rather than a text answer or generated JavaScript.
 
-The add-on can compose trusted catalog assets or generate new procedural designs from primitive parts. A robot, sculpture, or piece of furniture does not need a predefined catalog entry: the planner describes its parts, and Roomcraft builds them as one manipulable object. Parts can also swing or spin around authored joints. This is bounded procedural geometry and motion, not a photorealistic text-to-mesh service or execution of generated JavaScript. The [interactive demo](../../../demos/roomcraft/) includes no-key handcrafted scenes and a moving compound robot example.
+The add-on can compose trusted catalog assets, generate new procedural designs from primitive parts, or author a whole virtual environment from editable landscape recipes. A robot, garden pond, or grove does not need a predefined catalog entry: the planner describes its structure, and Roomcraft builds it locally. Parts can also swing or spin around authored joints. This is bounded procedural geometry and motion, not a photorealistic text-to-mesh service or execution of generated JavaScript. The [interactive demo](../../../demos/roomcraft/) includes no-key handcrafted scenes, a moving compound robot example, and an optional virtual-world mode.
 
 ## Run the demo
 
@@ -62,6 +62,77 @@ room.addEventListener('change', ({layout}) => {
 Updates retain the same manipulation owner. Transform-only changes do not rebuild geometry. Model, color, and procedural design changes prepare replacement content before swapping it in; unrelated objects are untouched. Hand movement during a color-only or part-only request is preserved. A conflicting change during planning, or movement during asynchronous asset loading, rejects the edit instead of overwriting the user's work.
 
 `room.getObject(id)` returns the stable Three.js owner when application code needs to change its transform. Do not reparent it, replace its children, or dispose its resources yourself.
+
+## Generate and refine a whole environment
+
+Open the demo with `?environment=1` for virtual-world authoring. It starts with an empty neutral setting and an empty simulator backdrop, not a prebuilt garden. Asking for a moonlit Japanese garden generates the layout and feature recipes through the configured planner.
+
+```js
+await room.applyLayout({
+  title: 'New environment',
+  environment: {
+    size: [14, 14],
+    groundColor: '#40513a',
+    timeOfDay: 'daylight',
+  },
+  objects: [],
+});
+await room.request(
+  'Create a moonlit Japanese garden with a pond and winding paths.'
+);
+const pond = room.layout.objects.find(
+  (object) => object.landscape?.kind === 'pond'
+);
+if (!pond) throw new Error('The planner did not return a pond.');
+room.select(pond.id);
+await room.request('Make this pond bigger.');
+await room.request('Change to sunrise.');
+```
+
+`environment` owns a ground surface, a bounded sky, and lighting. Its `size` is the ground width and depth in local meters, each from 4 to 20, centered at X/Z=0 with its top at Y=0. `groundColor` is a six-digit hexadecimal color. `timeOfDay` is `moonlight`, `sunrise`, `daylight`, or `sunset`. These are local visual presets; the planner chooses and edits them, but does not generate executable shaders or fetch a sky image.
+
+The environment is independent of scene objects. A plan patches only the supplied environment fields, so sunrise does not need to rebuild ponds, trees, bridges, or running articulated designs. Omit `environment` to preserve it, or supply `null` in a plan to remove it. Creating a setting requires all three fields. An imported full layout must contain complete environment data, and omitting it removes the previous setting.
+
+```js
+await room.applyPlan({
+  title: room.layout.title,
+  edits: [],
+  environment: {timeOfDay: 'sunrise'},
+});
+```
+
+Landscape objects have the same stable `id`, `name`, `position`, `rotation`, `scale`, and `color` as other objects, but contain `landscape` instead of `asset` or `parts`. A whole grove is one selectable and manipulable feature, not hundreds of independently serialized objects.
+
+| Recipe            | Definition                                                                         | Main color                                  |
+| ----------------- | ---------------------------------------------------------------------------------- | ------------------------------------------- |
+| Pond              | `{kind: 'pond', size: [3, 2], bankWidth: 0.25}`                                    | Water                                       |
+| Path              | `{kind: 'path', points: [[0, 0], [1, -1], [0, -3]], width: 0.8}`                   | Walkway surface                             |
+| Planting or rocks | `{kind: 'scatter', style: 'tree', size: [4, 3], count: 24, seed: 17, height: 2.5}` | Foliage, flowers, or stone, not tree trunks |
+
+Pond size describes an elliptical water surface, excluding its stone bank. Path points are local X/Z center-line coordinates. Scatter styles are `tree`, `shrub`, `rock`, `grass`, and `flower`; size describes the area of specimen centers, so foliage may overhang. Seeded instancing keeps placement deterministic. Increasing count retains the existing specimens' positions, and changing height retains their X/Z placement. Planting rectangles have no automatic exclusion masks for water, paths, or structures; arrange their footprints deliberately, using separate strips when a border needs to follow another feature.
+
+Refine a feature by replacing its complete compact recipe in `changes.landscape`. Its manipulation owner and transform remain stable; other features and their seeds are unchanged. Landscape features do not have `partEdits`. Use ordinary procedural parts for authored details such as a bridge, pavilion, lantern, or sculpture.
+
+```js
+await room.applyPlan({
+  title: room.layout.title,
+  edits: [
+    {
+      op: 'update',
+      id: pond.id,
+      changes: {
+        landscape: {kind: 'pond', size: [5, 3], bankWidth: 0.25},
+      },
+    },
+  ],
+});
+```
+
+Water and planting dimensions are 0.2 to 20 meters, bank width is 0.05 to 1 meter, and path width is 0.15 to 3 meters. Paths contain 2 to 12 points within +/-10 meters, with adjacent points at least 0.02 meters apart. Each scatter has 1 to 128 specimens, an integer seed from 0 to 2147483647, and maximum specimen height from 0.1 to 6 meters. The whole scene permits at most 1,024 scattered specimens, in addition to the existing object and part budgets.
+
+Environment and landscape changes share normal undo, redo, selection, loading rollback, and JSON export. Water is a visual surface above the ground with a surrounding bank, not an excavated basin or a water simulation. There is no generated collision mesh, terrain sculpting, weather simulation, or infinite world. The demo uses the SDK's existing desktop navigation, not a new movement system or a collision-free walking guarantee.
+
+Roomcraft does not switch the application's simulator backdrop, XR session mode, camera, or global lighting settings. Choose a suitable virtual-mode setup before initialization, as the demo does with its empty environment manifest. Its fallback lights are hidden while Roomcraft owns the setting. A virtual environment already supplies its own ground and cannot use detected-surface placement; standalone landscape features without `environment` can still be placed in a physical room.
 
 ## Generate and refine a new object
 
@@ -262,7 +333,7 @@ room.addEventListener('motionstatechange', ({paused}) => {
 const bounds = room.getWorldBounds('robot');
 ```
 
-`getWorldBounds(id?)` returns a detached world-space box for one authored object or the whole composition, with an empty box for an empty scene. Moving procedural objects reserve their full reachable envelope even when paused; static content uses its rendered bounds. Surface placement also includes the motion envelope, so playback does not invalidate a successful fit. Hand movement or an authored edit still requires a new fit.
+`getWorldBounds(id?)` returns a detached world-space box for one authored object or the whole composition, with an empty box for an empty scene without an environment. Moving procedural objects reserve their full reachable envelope even when paused; landscape recipes use conservative feature bounds. Other static content uses its rendered bounds. Whole-environment bounds include the ground but exclude the sky and celestial decoration. Surface placement also includes the motion envelope, so playback does not invalidate a successful fit. Hand movement or an authored edit still requires a new fit.
 
 These are local, rigid-part motions, not skinned-character animation, navigation, gaze tracking, autonomous behavior, or physics simulation. Catalog asset animation remains outside this part-motion contract.
 
@@ -270,7 +341,7 @@ These are local, rigid-part motions, not skinned-character animation, navigation
 
 The default catalog is entirely procedural: `sofa`, `armchair`, `coffee-table`, `bookshelf`, `floor-lamp`, `plant`, `plinth`, `art-panel`, `arch`, `building`, `tree`, `box`, `sphere`, `cylinder`, and `cone`.
 
-Catalog factories are convenient predefined assets, not the limit of what can be designed. Pass `catalog: []` when an application should author only new part-based objects.
+Catalog factories are convenient predefined assets, not the limit of what can be designed. Pass `catalog: []` when an application should author only new part-based objects and landscape recipes.
 
 Add a model from a URL controlled by the application, not returned by the model:
 
@@ -324,6 +395,6 @@ const room = new Roomcraft({
 
 The server can use the exported `buildScenePrompt(request)` and `SCENE_PLAN_SCHEMA` with its configured provider. Authenticate and authorize requests on that server; do not place a long-lived provider key in a shipped browser application.
 
-The add-on sends the instruction, generated-scene transforms and names, procedural part definitions, selection, and catalog descriptions to the configured planner. It does not capture camera images, room meshes, or microphone audio. The demo's optional speech input uses the browser's speech-recognition service, which may process audio remotely, before submitting a final transcript as an ordinary scene request.
+The add-on sends the instruction, environment settings, generated-scene transforms and names, procedural part and landscape definitions, selection, and catalog descriptions to the configured planner. It does not capture camera images, room meshes, or microphone audio. The demo's optional speech input uses the browser's speech-recognition service, which may process audio remotely, before submitting a final transcript as an ordinary scene request.
 
 Remove event listeners owned by your application and call `room.dispose()` when destroying a standalone scene. Disposal releases owned GPU resources and prevents pending provider or loading results from reattaching content.
