@@ -11,6 +11,7 @@ export {
   MAX_SCENE_PARTS,
   MAX_PART_DEPTH,
   SCENE_PART_SHAPES,
+  SCENE_MOTION_AXES,
 } from './SceneTypes';
 export type {
   RoomcraftEventMap,
@@ -21,15 +22,19 @@ export type {
   SceneCatalogObject,
   SceneEdit,
   SceneLayout,
+  SceneMotionAxis,
   SceneObject,
   SceneObjectChanges,
   ScenePart,
   ScenePartChanges,
   ScenePartEdit,
+  ScenePartMotion,
   ScenePartShape,
   ScenePlan,
   ScenePlanner,
   SceneProceduralObject,
   SceneRequest,
+  SceneSpinMotion,
+  SceneSwingMotion,
   SceneVector3,
 } from './SceneTypes';
