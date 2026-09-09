@@ -30,13 +30,17 @@ Click or pinch a scene object to select it, then say or type "make this blue" so
 
 Drag or pinch any object to move or scale it, including a compound design, which moves as one object rather than as loose parts. Those hand transforms survive later edits, because the add-on sends explicit per-object updates rather than rewriting the whole scene.
 
+Use Undo and Redo to move through the last 20 scene commands. Redo replays the saved result without asking Gemini again. A new edit clears the redo branch, and moving an object after Undo prevents Redo from overwriting that new pose.
+
+On desktop, Focus selected frames one object and Frame scene shows the whole composition. Both keep your viewing direction and move only the existing camera, not the objects. They account for the camera's field of view, aspect ratio, zoom, and clipping range. These controls never move the camera during an immersive XR session.
+
 Press Place on surface to move the composition onto a detected horizontal plane. Until that succeeds the scene is labelled a preview. Moving or editing it invalidates that fit, so use Place again to confirm the new footprint. When no scanned surface fits, the console says so and the current scene pose is kept.
 
 Press Export JSON to download the current layout. The file contains titles, asset IDs, part definitions with their hierarchy, transforms, and colors only. It contains no API key and no prompt text, and the SDK's `applyLayout` accepts the same data back.
 
 ## Gemini
 
-Starter scenes including the handcrafted robot, direct manipulation, New design, the downloaded exhibit, undo, and export all work without a key. Creating and refining new designs from your own words needs a configured provider.
+Starter scenes including the handcrafted robot, direct manipulation, New design, the downloaded exhibit, undo/redo, desktop framing, and export all work without a key. Creating and refining new designs from your own words needs a configured provider.
 
 Press Connect Gemini to opt in before entering XR. The demo sets the Gemini response schema to `SCENE_PLAN_SCHEMA` and then calls the SDK's public `AI.initializeModel` with `AIOptions.promptForApiKey`, so the browser dialog asks for a key that stays in the current page's memory. Canceling or leaving the key empty does not report a connection. A configured key is not proof of authentication or quota; those are checked by the provider on the first scene request. Nothing is written to storage by the demo, and no key is committed here. Loading the page with `?key=YOUR_KEY` configures it without the dialog, as in the other AI samples.
 
@@ -68,10 +72,10 @@ Only one operation runs at a time. Invalid plans, provider failures, and asset l
 
 Surface placement uses the SDK's detected planes in WebXR and in the simulator, and it needs a scanned horizontal plane whose area fits the whole composition's footprint. It is session local and is not a persistent anchor, a fitting footprint does not guarantee clearance from real furniture, and there is no hidden fallback: when nothing fits, the preview arrangement is kept so you can scan more of the room and retry.
 
-The XR panel offers the starter scenes, Talk, New, Place, and Undo, because there is no immersive text field. It shows the selected object's name and part count, displays the same errors and busy states as the desktop console, and is hidden during desktop use so it does not cover the composition. Typing longer instructions and reading the full part list are desktop tasks.
+The XR panel offers the starter scenes, Talk, New, Place, Undo, and Redo, because there is no immersive text field. It shows the selected object's name and part count, displays the same errors and busy states as the desktop console, and is hidden during desktop use so it does not cover the composition. Typing longer instructions and reading the full part list are desktop tasks.
 
 Headset behavior beyond the standard XR Blocks input and plane detection paths is not claimed here. The desktop simulator is what this demo has been exercised in.
 
 ## SDK ownership
 
-Rendering, the frame loop, input, selection, manipulation, plane detection, speech recognition, and the AI facade all belong to XR Blocks. This demo adds no renderer, camera controls, raycaster, or bundled copy of three.js, and it adds no dependencies beyond the SDK's existing import map entries.
+Rendering, the frame loop, input, selection, manipulation, plane detection, speech recognition, and the AI facade all belong to XR Blocks. The framing buttons reposition the existing desktop camera; the demo adds no renderer, navigation system, raycaster, or bundled copy of three.js, and it adds no dependencies beyond the SDK's existing import map entries.
