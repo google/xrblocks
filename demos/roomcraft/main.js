@@ -388,7 +388,9 @@ export class RoomcraftConsole extends xb.Script {
     this.listen(this.dom.generate, 'click', () => void this.generate());
     this.listen(this.dom.newDesign, 'click', () => void this.newDesign());
     this.listen(this.dom.prompt, 'keydown', (event) => {
-      if (event.key === 'Enter') void this.generate();
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      if (!event.repeat) void this.generate();
     });
     this.listen(this.dom.prompt, 'input', () =>
       this.setPrompt(this.dom.prompt.value)
