@@ -832,6 +832,52 @@ describe('Roomcraft demo integration', () => {
   });
 
   describe('spatial authoring', () => {
+    it.each([
+      {x: 0.55, z: 1, side: -1},
+      {x: -0.55, z: 1, side: 1},
+      {x: 0.55, z: 3, side: 1},
+      {x: 0.55, z: -2, side: 1},
+    ])(
+      'recenters on the clearer desktop side for an object at $x, $z',
+      async ({x, z, side}) => {
+        camera.position.set(0, 1, 2);
+        camera.rotation.set(0, 0, 0);
+        camera.fov = 60;
+        camera.aspect = 1.5;
+        camera.updateProjectionMatrix();
+        await room.applyLayout({
+          title: 'Close-up',
+          objects: [{...littleRobot('nearby'), position: [x, 0.7, z]}],
+        });
+        camera.updateWorldMatrix(true, false);
+        const before = room.layout;
+        const cameraPose = camera.matrix.clone();
+        const cardScale = consoleScript.card.scale.clone();
+        const keyboardScale = consoleScript.keyboardCard.scale.clone();
+        consoleScript.positionSpatialStudio();
+        const point = consoleScript.card
+          .getWorldPosition(new THREE.Vector3())
+          .project(camera);
+        expect(point.x * side).toBeGreaterThan(0);
+        expect(room.layout).toEqual(before);
+        expect(camera.matrix.equals(cameraPose)).toBe(true);
+        expect(consoleScript.card.scale.equals(cardScale)).toBe(true);
+        expect(consoleScript.keyboardCard.scale.equals(keyboardScale)).toBe(
+          true
+        );
+      }
+    );
+
+    it('keeps XR recentering centered rather than choosing a desktop side', async () => {
+      renderer.xr.isPresenting = true;
+      await consoleScript.applyStarter(robotStarter);
+      consoleScript.positionSpatialStudio();
+      const point = consoleScript.card
+        .getWorldPosition(new THREE.Vector3())
+        .project(camera);
+      expect(point.x).toBeCloseTo(0, 8);
+    });
+
     it('opens the spatial studio from the collapsed desktop header without moving the scene', () => {
       consoleScript.toggleConsole(false);
       const before = room.layout;
