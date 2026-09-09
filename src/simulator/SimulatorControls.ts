@@ -24,6 +24,14 @@ function preventDefault(event: Event) {
   event.preventDefault();
 }
 
+function isTextEntry(event: Event): boolean {
+  return [...event.composedPath(), document.activeElement].some(
+    (target) =>
+      target instanceof HTMLElement &&
+      (target.matches('input, textarea, select') || target.isContentEditable)
+  );
+}
+
 export class SimulatorControls {
   pointerDown = false;
   downKeys = new Set<Keycodes>();
@@ -164,6 +172,7 @@ export class SimulatorControls {
     if (!domElement) throw new Error('SimulatorControls is not initialized.');
     document.addEventListener('keyup', this.onKeyUp);
     document.addEventListener('keydown', this.onKeyDown);
+    document.addEventListener('focusin', this.onFocusIn);
     domElement.addEventListener('pointermove', this.onPointerMove);
     domElement.addEventListener('pointerdown', this.onPointerDown);
     domElement.addEventListener('pointerup', this.onPointerUp);
@@ -188,6 +197,7 @@ export class SimulatorControls {
     }
     document.removeEventListener('keyup', this.onKeyUp);
     document.removeEventListener('keydown', this.onKeyDown);
+    document.removeEventListener('focusin', this.onFocusIn);
     domElement.removeEventListener('pointermove', this.onPointerMove);
     domElement.removeEventListener('pointerdown', this.onPointerDown);
     domElement.removeEventListener('pointerup', this.onPointerUp);
@@ -249,6 +259,10 @@ export class SimulatorControls {
 
   onKeyDown = (event: KeyboardEvent) => {
     if (!this.enabled) return;
+    if (event.isComposing || isTextEntry(event)) {
+      this.downKeys.clear();
+      return;
+    }
     // On macOS, keyup events are not fired for keys held when Command (Meta)
     // is pressed. Clear all keys to prevent stuck movement.
     if (
@@ -279,6 +293,10 @@ export class SimulatorControls {
   onBlur = () => {
     this.downKeys.clear();
     this.cancelPointerInteraction();
+  };
+
+  private onFocusIn = (event: FocusEvent) => {
+    if (isTextEntry(event)) this.downKeys.clear();
   };
 
   setSimulatorMode(mode: SimulatorMode) {
