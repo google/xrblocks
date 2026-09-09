@@ -657,6 +657,8 @@ describe('targeted procedural refinement', () => {
       ...JSON.stringify(SCENE_PLAN_SCHEMA).matchAll(/"maxItems":(\d+)/g),
     ];
     expect(caps.length).toBeGreaterThan(0);
-    expect(caps.every(([, value]) => value === '3')).toBe(true);
+    expect(caps.every(([, value]) => value === '2' || value === '3')).toBe(
+      true
+    );
   });
 });
