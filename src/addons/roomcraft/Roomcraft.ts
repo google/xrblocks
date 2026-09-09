@@ -456,6 +456,9 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         }
         entity.owner.scale.fromArray(object.scale);
         entity.description = object;
+        // Restored objects retain their layout order, not their reinsertion order.
+        this.entities.delete(object.id);
+        this.entities.set(object.id, entity);
       }
       this.title = layout.title;
       const after = JSON.stringify(this.layout);
