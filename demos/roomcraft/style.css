@@ -284,6 +284,14 @@
   color: var(--rc-ink-faint);
 }
 
+.rc-prompt {
+  flex: none;
+  width: 100%;
+  min-height: 168px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 .rc-select {
   flex: 1 1 auto;
   min-width: 0;
