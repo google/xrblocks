@@ -87,16 +87,17 @@
 
         <section class="rc-section" aria-labelledby="promptHeading">
           <h2 id="promptHeading" class="rc-heading">Describe an edit</h2>
+          <label class="rc-visually-hidden" for="prompt">Scene edit</label>
+          <textarea
+            id="prompt"
+            class="rc-input rc-prompt"
+            rows="8"
+            autocomplete="off"
+            maxlength="4000"
+            aria-describedby="promptHelp"
+            placeholder="Create a little robot standing on the floor"
+          ></textarea>
           <div class="rc-row">
-            <label class="rc-visually-hidden" for="prompt">Scene edit</label>
-            <input
-              id="prompt"
-              class="rc-input"
-              type="text"
-              autocomplete="off"
-              maxlength="4000"
-              placeholder="Create a little robot standing on the floor"
-            />
             <button
               id="mic"
               class="rc-button rc-button-icon"
@@ -114,6 +115,9 @@
               Generate
             </button>
           </div>
+          <p id="promptHelp" class="rc-note">
+            Enter to generate. Shift+Enter for a new line.
+          </p>
           <div id="suggestions" class="rc-row rc-row-wrap rc-chips"></div>
         </section>
 
