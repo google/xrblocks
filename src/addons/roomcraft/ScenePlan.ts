@@ -718,7 +718,17 @@ function parseJson(value: unknown): unknown {
   const json = value
     .trim()
     .replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
-  return JSON.parse(json);
+  try {
+    return JSON.parse(json);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(
+        'The scene data is incomplete or invalid JSON. Retry with a smaller edit or import a complete layout.',
+        {cause: error}
+      );
+    }
+    throw error;
+  }
 }
 
 function assertScenePartBudget(objects: readonly SceneObject[]) {
