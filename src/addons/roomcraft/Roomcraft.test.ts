@@ -5,9 +5,11 @@ import {AI, World, disposeObjectTree, type InteractionSource} from 'xrblocks';
 import {Roomcraft} from './Roomcraft';
 import type {
   SceneAsset,
+  SceneCatalogObject,
   SceneLayout,
   SceneObject,
   ScenePlanner,
+  SceneProceduralObject,
 } from './SceneTypes';
 import type {ControllerEventMap} from '../../input/Controller';
 import {DetectedPlane} from '../../world/planes/DetectedPlane';
@@ -22,7 +24,9 @@ vi.mock('xrblocks', async () => ({
   ...(await import('../../utils/ModelLoader')),
 }));
 
-function object(overrides: Partial<SceneObject> = {}): SceneObject {
+function object(
+  overrides: Partial<SceneCatalogObject> = {}
+): SceneCatalogObject {
   return {
     id: 'one',
     asset: 'box',
@@ -33,6 +37,58 @@ function object(overrides: Partial<SceneObject> = {}): SceneObject {
     color: '#aa7755',
     ...overrides,
   };
+}
+
+function design(
+  overrides: Partial<SceneProceduralObject> = {}
+): SceneProceduralObject {
+  return {
+    id: 'robot',
+    name: 'Little robot',
+    position: [0, 0, 0],
+    rotation: 0,
+    scale: [1, 1, 1],
+    color: '#ffffff',
+    parts: [
+      {
+        id: 'body',
+        name: 'Body',
+        shape: 'box',
+        parent: null,
+        position: [0.1, 0.5, -0.05],
+        rotation: [0, 0, 0],
+        size: [0.4, 0.5, 0.3],
+        color: '#88bb99',
+      },
+      {
+        id: 'arm',
+        name: 'Arm',
+        shape: 'capsule',
+        parent: 'body',
+        position: [0.35, 0, 0],
+        rotation: [0, 0, 0],
+        size: [0.1, 0.4, 0.1],
+        color: '#cc7733',
+      },
+      {
+        id: 'hand',
+        name: 'Hand',
+        shape: 'sphere',
+        parent: 'arm',
+        position: [0, -0.25, 0],
+        rotation: [0, 0, 0],
+        size: [0.1, 0.1, 0.1],
+        color: '#cc7733',
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function partMesh(owner: THREE.Object3D, id: string) {
+  const mesh = owner.getObjectByName(id)?.children[0];
+  if (!(mesh instanceof THREE.Mesh)) throw new Error(`Missing part "${id}".`);
+  return mesh;
 }
 
 function layout(...objects: SceneObject[]): SceneLayout {
@@ -258,7 +314,9 @@ describe('Roomcraft objects and ownership', () => {
   });
 
   it('rejects invalid catalogs before creating objects', () => {
-    expect(() => new Roomcraft({catalog: []})).toThrow('catalog');
+    expect(
+      () => new Roomcraft({catalog: Array.from({length: 129}, () => asset())})
+    ).toThrow('catalog');
     expect(() => new Roomcraft({catalog: [asset(), asset()]})).toThrow(
       'Duplicate'
     );
@@ -268,6 +326,268 @@ describe('Roomcraft objects and ownership', () => {
     expect(() => new Roomcraft({catalog: [asset({id: '../file'})]})).toThrow(
       'Scene IDs'
     );
+  });
+});
+
+describe('Roomcraft procedural objects', () => {
+  it('creates an entire new design as one manipulation owner without a catalog', async () => {
+    const room = createRoom([]);
+    await room.applyLayout(layout(design()));
+    expect(room.catalog).toEqual([]);
+    expect(room.children).toHaveLength(1);
+    const owner = room.getObject('robot')!;
+    expect(owner.name).toBe('Little robot');
+    expect(owner.xb?.manipulation?.actions?.translate).toBe(true);
+    expect(
+      partMesh(owner, 'hand')
+        .getWorldPosition(new THREE.Vector3())
+        .distanceTo(new THREE.Vector3(0.45, 0.25, -0.05))
+    ).toBeLessThan(1e-9);
+    expect(room.layout.objects[0]).not.toHaveProperty('asset');
+    expect(room.layout.objects[0].parts).toEqual(design().parts);
+  });
+
+  it('refines parts without recentering the design or replacing its hand-moved owner', async () => {
+    const room = createRoom();
+    await room.applyLayout(layout(design(), object({id: 'other'})));
+    room.select('robot');
+    const owner = room.getObject('robot')!;
+    owner.position.set(2, 0.3, -1);
+    owner.rotation.y = Math.PI / 4;
+    owner.scale.set(1.5, 1, 0.8);
+    owner.updateWorldMatrix(true, true);
+    const pose = owner.matrixWorld.clone();
+    const bodyBefore = partMesh(owner, 'body').getWorldPosition(
+      new THREE.Vector3()
+    );
+    const other = room.getObject('other');
+    const otherContent = other!.children[0];
+    const snapshot = room.layout;
+    const oldArm = partMesh(owner, 'arm');
+    const disposed = vi.spyOn(oldArm.geometry, 'dispose');
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [
+            {op: 'update', id: 'arm', changes: {size: [0.1, 0.8, 0.1]}},
+            {op: 'update', id: 'hand', changes: {position: [0, -0.45, 0]}},
+            {
+              op: 'add',
+              part: {
+                id: 'backpack',
+                name: 'Backpack',
+                shape: 'box',
+                parent: 'body',
+                position: [0, 0, -0.3],
+                rotation: [0, 0, 0],
+                size: [0.3, 0.3, 0.2],
+                color: '#4455aa',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(room.getObject('robot')).toBe(owner);
+    owner.updateWorldMatrix(true, true);
+    expect(owner.matrixWorld.equals(pose)).toBe(true);
+    expect(
+      partMesh(owner, 'body')
+        .getWorldPosition(new THREE.Vector3())
+        .distanceTo(bodyBefore)
+    ).toBeLessThan(1e-9);
+    expect(room.getObject('other')).toBe(other);
+    expect(other!.children[0]).toBe(otherContent);
+    expect(room.selectedId).toBe('robot');
+    expect(room.layout.objects[0].parts).toHaveLength(4);
+    expect(disposed).toHaveBeenCalledOnce();
+    const after = room.layout;
+    const imported = createRoom();
+    await imported.applyLayout(JSON.stringify(after));
+    expect(imported.layout).toEqual(after);
+    await room.undo();
+    expect(room.getObject('robot')).toBe(owner);
+    expect(room.layout).toEqual(snapshot);
+  });
+
+  it('keeps nested recipes detached from callers, snapshots, and planner context', async () => {
+    const pending = deferred<unknown>();
+    const room = createRoom([], (request) => {
+      request.scene.objects[0].parts![0].size[0] = 4;
+      request.scene.objects[0].parts![1].position[0] = 4;
+      return pending.promise;
+    });
+    const original = layout(design());
+    await room.applyLayout(original);
+    const snapshot = room.layout;
+    original.objects[0].parts![0].color = '#000000';
+    snapshot.objects[0].parts![1].rotation[0] = 1;
+    expect(room.layout.objects[0].parts).toEqual(design().parts);
+    const request = room.request('Make its arm blue');
+    pending.resolve({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [{op: 'update', id: 'arm', changes: {color: '#2244aa'}}],
+        },
+      ],
+    });
+    await request;
+    const result = room.layout.objects[0].parts!;
+    expect(result[0].size).toEqual(design().parts[0].size);
+    expect(result[1].position).toEqual(design().parts[1].position);
+    expect(result[1].color).toBe('#2244aa');
+  });
+
+  it('preserves movement during planning when the request only edits parts', async () => {
+    const pending = deferred<unknown>();
+    const room = createRoom([], () => pending.promise);
+    await room.applyLayout(layout(design()));
+    room.select('robot');
+    const owner = room.getObject('robot')!;
+    const request = room.request('Give this longer arms');
+    owner.position.set(12, 0.4, -2);
+    owner.scale.setScalar(2);
+    pending.resolve({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [
+            {op: 'update', id: 'arm', changes: {size: [0.1, 0.8, 0.1]}},
+          ],
+        },
+      ],
+    });
+    await request;
+    expect(room.getObject('robot')).toBe(owner);
+    expect(room.layout.objects[0].position).toEqual([12, 0.4, -2]);
+    expect(room.layout.objects[0].scale).toEqual([2, 2, 2]);
+    expect(room.layout.objects[0].parts![1].size).toEqual([0.1, 0.8, 0.1]);
+  });
+
+  it('keeps the live design on invalid graphs and downstream loading failure', async () => {
+    const failing = asset({
+      id: 'failed',
+      create: () => Promise.reject(new Error('Model failed')),
+    });
+    const room = createRoom([failing]);
+    await room.applyLayout(layout(design()));
+    const owner = room.getObject('robot')!;
+    const before = room.layout;
+    const content = owner.children[0];
+    const originalGeometry = partMesh(owner, 'body').geometry;
+    const originalDisposed = vi.spyOn(originalGeometry, 'dispose');
+    await expect(
+      room.applyPlan({
+        title: 'Studio',
+        edits: [
+          {
+            op: 'update',
+            id: 'robot',
+            changes: {},
+            partEdits: [{op: 'update', id: 'body', changes: {parent: 'hand'}}],
+          },
+        ],
+      })
+    ).rejects.toThrow();
+    const stagedDisposal = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+    await expect(
+      room.applyPlan({
+        title: 'Studio',
+        edits: [
+          {
+            op: 'update',
+            id: 'robot',
+            changes: {},
+            partEdits: [
+              {op: 'update', id: 'arm', changes: {size: [0.1, 0.8, 0.1]}},
+            ],
+          },
+          {op: 'add', object: object({asset: 'failed'})},
+        ],
+      })
+    ).rejects.toThrow('Model failed');
+    expect(room.layout).toEqual(before);
+    expect(owner.children[0]).toBe(content);
+    expect(originalDisposed).not.toHaveBeenCalled();
+    expect(stagedDisposal).toHaveBeenCalled();
+    expect(room.getObject('one')).toBeUndefined();
+    expect(room.busy).toBe(false);
+  });
+
+  it('rejects movement while a mixed procedural/model transaction is loading', async () => {
+    const pending = deferred<THREE.Object3D>();
+    const slow = asset({id: 'slow', create: () => pending.promise});
+    const room = createRoom([slow]);
+    await room.applyLayout(layout(design()));
+    const owner = room.getObject('robot')!;
+    const oldArm = partMesh(owner, 'arm');
+    const loading = room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [
+            {op: 'update', id: 'arm', changes: {size: [0.1, 0.8, 0.1]}},
+          ],
+        },
+        {op: 'add', object: object({asset: 'slow'})},
+      ],
+    });
+    owner.position.x = 2;
+    pending.resolve(
+      new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial())
+    );
+    await expect(loading).rejects.toThrow('moved while assets were loading');
+    expect(room.getObject('robot')).toBe(owner);
+    expect(partMesh(owner, 'arm')).toBe(oldArm);
+    expect(room.layout.objects[0].position[0]).toBe(2);
+    expect(room.getObject('one')).toBeUndefined();
+  });
+
+  it('supports content-source swaps and no-op refinements without losing undo semantics', async () => {
+    const room = createRoom();
+    await room.applyLayout(layout(design()));
+    const owner = room.getObject('robot')!;
+    const body = partMesh(owner, 'body');
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [
+            {op: 'update', id: 'arm', changes: {size: [0.1, 0.4, 0.1]}},
+          ],
+        },
+      ],
+    });
+    expect(partMesh(owner, 'body')).toBe(body);
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'update', id: 'robot', changes: {asset: 'box'}}],
+    });
+    expect(room.getObject('robot')).toBe(owner);
+    expect(room.layout.objects[0]).not.toHaveProperty('parts');
+    await room.undo();
+    expect(room.getObject('robot')).toBe(owner);
+    expect(room.layout.objects[0].parts).toEqual(design().parts);
+    await room.undo();
+    expect(room.layout.objects).toHaveLength(0);
+    expect(room.canUndo).toBe(false);
   });
 });
 
