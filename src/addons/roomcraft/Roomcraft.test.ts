@@ -6,6 +6,7 @@ import {Roomcraft} from './Roomcraft';
 import type {
   SceneAsset,
   SceneCatalogObject,
+  SceneLandscapeObject,
   SceneLayout,
   SceneObject,
   ScenePlanner,
@@ -121,6 +122,30 @@ function layout(...objects: SceneObject[]): SceneLayout {
   return {title: 'Studio', objects};
 }
 
+function garden(...objects: SceneObject[]): SceneLayout {
+  return {
+    title: 'Japanese garden',
+    environment: {
+      size: [14, 12],
+      groundColor: '#40513a',
+      timeOfDay: 'moonlight',
+    },
+    objects,
+  };
+}
+
+function pond(): SceneLandscapeObject {
+  return {
+    id: 'pond',
+    name: 'Garden pond',
+    position: [-1, 0, -1],
+    rotation: 0,
+    scale: [1, 1, 1],
+    color: '#397a80',
+    landscape: {kind: 'pond', size: [3, 2], bankWidth: 0.25},
+  };
+}
+
 function asset(overrides: Partial<SceneAsset> = {}): SceneAsset {
   return {
     id: 'box',
@@ -159,6 +184,332 @@ function createRoom(catalog = [asset()], planner?: ScenePlanner) {
 afterEach(() => {
   rooms.splice(0).forEach((room) => room.dispose());
   vi.restoreAllMocks();
+});
+
+describe('Roomcraft virtual environments', () => {
+  it('builds an owned environment and landscape without loading catalog assets', async () => {
+    const box = asset();
+    const room = createRoom([box]);
+    const expected = garden(pond());
+    await room.applyLayout(expected);
+    expect(room.layout).toEqual(expected);
+    expect(room.children).toHaveLength(2);
+    expect(room.getObject('pond')?.children).toHaveLength(1);
+    expect(box.create).not.toHaveBeenCalled();
+    const snapshot = room.layout;
+    snapshot.environment!.size[0] = 20;
+    const water = snapshot.objects[0].landscape;
+    if (water?.kind !== 'pond') throw new Error('Expected a pond.');
+    water.size[0] = 9;
+    expect(room.layout).toEqual(expected);
+  });
+
+  it('changes moonlight to sunrise without touching hand poses, selection, geometry, or motion', async () => {
+    const room = createRoom();
+    motionClock(room);
+    await room.applyLayout(garden(pond(), movingDesign()));
+    const water = room.getObject('pond')!;
+    const robot = room.getObject('robot')!;
+    const waterContent = water.children[0];
+    const robotContent = robot.children[0];
+    const setting = room.children.find(
+      (child) => child !== water && child !== robot
+    )!;
+    water.position.set(25, -2, 0);
+    water.rotation.y = 0.731;
+    room.select('pond');
+    room.update();
+    const arm = robot.getObjectByName('arm')!;
+    const cycle = arm.quaternion.clone();
+    const before = room.layout;
+    const events = vi.fn();
+    room.addEventListener('change', events);
+    await room.applyPlan({
+      title: before.title,
+      edits: [],
+      environment: {timeOfDay: 'sunrise'},
+    });
+    expect(room.layout.environment).toEqual({
+      ...before.environment,
+      timeOfDay: 'sunrise',
+    });
+    expect(room.layout.objects).toEqual(before.objects);
+    expect(room.getObject('pond')).toBe(water);
+    expect(water.children[0]).toBe(waterContent);
+    expect(robot.children[0]).toBe(robotContent);
+    expect(arm.quaternion.equals(cycle)).toBe(true);
+    expect(room.selectedId).toBe('pond');
+    expect(setting.parent).toBeNull();
+    expect(events).toHaveBeenCalledOnce();
+    await room.undo();
+    expect(room.layout).toEqual(before);
+    expect(robot.children[0]).toBe(robotContent);
+    await room.redo();
+    expect(room.layout.environment?.timeOfDay).toBe('sunrise');
+    expect(water.children[0]).toBe(waterContent);
+    room.update();
+    expect(arm.quaternion.equals(cycle)).toBe(false);
+  });
+
+  it('enlarges only the selected pond and replays the same recipes through history', async () => {
+    const planting: SceneLandscapeObject = {
+      ...pond(),
+      id: 'trees',
+      landscape: {
+        kind: 'scatter',
+        style: 'tree',
+        size: [4, 3],
+        count: 24,
+        seed: 17,
+        height: 2.5,
+      },
+    };
+    const room = createRoom();
+    await room.applyLayout(garden(pond(), planting));
+    const water = room.getObject('pond')!;
+    const trees = room.getObject('trees')!;
+    const waterContent = water.children[0];
+    const treeContent = trees.children[0];
+    const setting = room.children.find(
+      (child) => child !== water && child !== trees
+    );
+    water.position.set(1.5, 0.1, -2);
+    room.select('pond');
+    const before = room.layout;
+    await room.applyPlan({
+      title: before.title,
+      edits: [
+        {
+          op: 'update',
+          id: 'pond',
+          changes: {landscape: {kind: 'pond', size: [4, 3], bankWidth: 0.25}},
+        },
+      ],
+    });
+    const after = room.layout;
+    expect(water.children[0]).not.toBe(waterContent);
+    expect(trees.children[0]).toBe(treeContent);
+    expect(after.objects[1]).toEqual(before.objects[1]);
+    expect(after.objects[0].position).toEqual(before.objects[0].position);
+    expect(room.children).toContain(setting);
+    expect(room.getObject('pond')).toBe(water);
+    await room.undo();
+    expect(room.layout).toEqual(before);
+    await room.redo();
+    expect(room.layout).toEqual(after);
+    expect(trees.children[0]).toBe(treeContent);
+    expect(room.selectedId).toBe('pond');
+  });
+
+  it('keeps the old environment while staging and releases a failed replacement', async () => {
+    const download = deferred<THREE.Object3D>();
+    const room = createRoom([
+      asset({id: 'late', create: () => download.promise}),
+    ]);
+    await room.applyLayout(garden(pond()));
+    const before = room.layout;
+    const children = [...room.children];
+    const oldDisposal = vi.fn();
+    room.traverse((child) => {
+      if (child instanceof THREE.Mesh)
+        child.geometry.addEventListener('dispose', oldDisposal);
+    });
+    const dispose = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+    const pending = room.applyPlan({
+      title: before.title,
+      environment: {timeOfDay: 'sunrise'},
+      edits: [{op: 'add', object: object({asset: 'late'})}],
+    });
+    expect(room.layout).toEqual(before);
+    expect(room.children).toEqual(children);
+    download.reject(new Error('Download failed'));
+    await expect(pending).rejects.toThrow('Download failed');
+    expect(room.layout).toEqual(before);
+    expect(room.children).toEqual(children);
+    expect(oldDisposal).not.toHaveBeenCalled();
+    expect(dispose).toHaveBeenCalled();
+    expect(room.status).toBe('ready');
+  });
+
+  it('removes and restores the setting without removing authored objects', async () => {
+    const room = createRoom();
+    await room.applyLayout(garden(pond()));
+    const water = room.getObject('pond')!;
+    const content = water.children[0];
+    await room.applyPlan({
+      title: 'Japanese garden',
+      environment: null,
+      edits: [],
+    });
+    expect(room.layout).toEqual({title: 'Japanese garden', objects: [pond()]});
+    expect(room.children).toEqual([water]);
+    expect(water.children[0]).toBe(content);
+    await room.undo();
+    expect(room.layout).toEqual(garden(pond()));
+    expect(water.children[0]).toBe(content);
+    await room.applyLayout(layout(pond()));
+    expect(room.layout).not.toHaveProperty('environment');
+  });
+
+  it('switches among procedural motion, landscape, and catalog content on one owner', async () => {
+    const room = createRoom();
+    motionClock(room);
+    await room.applyLayout(garden(movingDesign()));
+    const owner = room.getObject('robot')!;
+    expect(room.hasMotion).toBe(true);
+    await room.applyPlan({
+      title: 'Japanese garden',
+      edits: [
+        {op: 'update', id: 'robot', changes: {landscape: pond().landscape}},
+      ],
+    });
+    expect(room.hasMotion).toBe(false);
+    expect(room.layout.objects[0]).not.toHaveProperty('parts');
+    expect(room.layout.objects[0]).not.toHaveProperty('asset');
+    expect(room.getObject('robot')).toBe(owner);
+    room.update();
+    await room.applyPlan({
+      title: 'Japanese garden',
+      edits: [{op: 'update', id: 'robot', changes: {asset: 'box'}}],
+    });
+    expect(room.layout.objects[0]).not.toHaveProperty('landscape');
+    expect(room.getObject('robot')).toBe(owner);
+    await room.undo();
+    await room.undo();
+    expect(room.hasMotion).toBe(true);
+    expect(room.getObject('robot')).toBe(owner);
+  });
+
+  it('does not attach a staged environment after disposal during an asset load', async () => {
+    const download = deferred<THREE.Object3D>();
+    const room = createRoom([asset({create: () => download.promise})]);
+    const pending = room.applyLayout(garden(object()));
+    expect(room.children).toHaveLength(0);
+    const dispose = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+    room.dispose();
+    download.resolve(
+      new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial())
+    );
+    await expect(pending).rejects.toThrow('disposed');
+    expect(dispose).toHaveBeenCalled();
+    expect(room.children).toHaveLength(0);
+    expect(room.layout).not.toHaveProperty('environment');
+  });
+
+  it('does not rebuild an unchanged environment or discard redo for a no-op patch', async () => {
+    const room = createRoom();
+    await room.applyLayout(garden());
+    await room.applyPlan({
+      title: 'Japanese garden',
+      edits: [],
+      environment: {timeOfDay: 'sunrise'},
+    });
+    await room.undo();
+    const setting = room.children[0];
+    await room.applyPlan({
+      title: 'Japanese garden',
+      edits: [],
+      environment: {timeOfDay: 'moonlight'},
+    });
+    expect(room.children[0]).toBe(setting);
+    expect(room.canRedo).toBe(true);
+    await room.redo();
+    expect(room.layout.environment?.timeOfDay).toBe('sunrise');
+  });
+
+  it('frames the transformed ground, not the sky, and keeps object-only bounds separate', async () => {
+    const room = createRoom();
+    await room.applyLayout(garden());
+    room.position.set(2, 3, -1);
+    room.rotation.y = Math.PI / 3;
+    room.scale.set(2, 1, 1.5);
+    room.updateWorldMatrix(true, false);
+    const ground = new THREE.Box3(
+      new THREE.Vector3(-7, 0, -6),
+      new THREE.Vector3(7, 0, 6)
+    ).applyMatrix4(room.matrixWorld);
+    const bounds = room.getWorldBounds();
+    expect(bounds.min.x).toBeCloseTo(ground.min.x);
+    expect(bounds.max.x).toBeCloseTo(ground.max.x);
+    expect(bounds.min.z).toBeCloseTo(ground.min.z);
+    expect(bounds.max.z).toBeCloseTo(ground.max.z);
+    expect(bounds.max.y).toBeCloseTo(3);
+    expect(bounds.min.y).toBeGreaterThan(2);
+    await room.applyLayout(garden(pond()));
+    expect(
+      room.getWorldBounds('pond').getSize(new THREE.Vector3()).x
+    ).toBeLessThan(room.getWorldBounds().getSize(new THREE.Vector3()).x);
+  });
+
+  it('includes environment metadata in provider context without exposing live references', async () => {
+    const planner: ScenePlanner = vi.fn((request) => {
+      expect(request.scene.environment).toEqual(garden().environment);
+      request.scene.environment!.size[0] = 20;
+      return {
+        title: request.scene.title,
+        edits: [],
+        environment: {timeOfDay: 'sunrise'},
+      };
+    });
+    const room = createRoom([], planner);
+    await room.applyLayout(garden());
+    await room.request('Change to sunrise');
+    expect(room.layout.environment).toEqual({
+      ...garden().environment,
+      timeOfDay: 'sunrise',
+    });
+  });
+
+  it('rejects detected-surface fitting for a fully virtual setting', async () => {
+    const room = createRoom();
+    await room.applyLayout(garden(pond()));
+    await expect(room.placeOnSurface()).rejects.toThrow('virtual environment');
+    expect(room.status).toBe('ready');
+    expect(room.layout).toEqual(garden(pond()));
+  });
+
+  it('disposes landscape instance buffers, atmosphere resources, and shadow maps', async () => {
+    const room = createRoom();
+    const trees: SceneLandscapeObject = {
+      ...pond(),
+      landscape: {
+        kind: 'scatter',
+        style: 'tree',
+        size: [4, 3],
+        count: 4,
+        seed: 1,
+        height: 2,
+      },
+    };
+    await room.applyLayout(garden(trees));
+    const geometryDisposals = new Set<ReturnType<typeof vi.spyOn>>();
+    const instanceDisposals: ReturnType<typeof vi.spyOn>[] = [];
+    const shadowDisposals: ReturnType<typeof vi.spyOn>[] = [];
+    room.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        geometryDisposals.add(vi.spyOn(child.geometry, 'dispose'));
+      }
+      if (child instanceof THREE.InstancedMesh) {
+        instanceDisposals.push(vi.spyOn(child, 'dispose'));
+      }
+      if (child instanceof THREE.DirectionalLight) {
+        shadowDisposals.push(vi.spyOn(child.shadow, 'dispose'));
+      }
+    });
+    expect(geometryDisposals.size).toBeGreaterThan(0);
+    expect(instanceDisposals.length).toBeGreaterThan(0);
+    expect(shadowDisposals.length).toBeGreaterThan(0);
+    room.dispose();
+    for (const dispose of [
+      ...geometryDisposals,
+      ...instanceDisposals,
+      ...shadowDisposals,
+    ]) {
+      expect(dispose).toHaveBeenCalled();
+    }
+    expect(room.children).toHaveLength(0);
+    expect(room.layout).not.toHaveProperty('environment');
+  });
 });
 
 describe('Roomcraft part motion', () => {
