@@ -599,9 +599,57 @@ export class RoomcraftConsole extends xb.Script {
       (verticalExtent + 0.12) / tangent,
       (halfWidth + 0.12) / (tangent * camera.aspect)
     );
-    const x = this.isInXR()
+    let x = this.isInXR()
       ? 0
       : Math.max(0, distance * tangent * camera.aspect - halfWidth - 0.12);
+    if (x > 0) {
+      camera.updateWorldMatrix(true, false);
+      const nearby = [];
+      for (const object of this.room.layout.objects) {
+        const box = this.room
+          .getWorldBounds(object.id)
+          .applyMatrix4(camera.matrixWorldInverse);
+        if (
+          box.isEmpty() ||
+          box.min.z >= -camera.near ||
+          box.max.z <= -distance
+        ) {
+          continue;
+        }
+        const screen = new THREE.Box2();
+        if (box.max.z >= -camera.near) {
+          screen.set(new THREE.Vector2(-1, -1), new THREE.Vector2(1, 1));
+        } else {
+          for (const bx of [box.min.x, box.max.x]) {
+            for (const by of [box.min.y, box.max.y]) {
+              for (const bz of [box.min.z, box.max.z]) {
+                const point = new THREE.Vector3(bx, by, bz).applyMatrix4(
+                  camera.projectionMatrix
+                );
+                screen.expandByPoint(new THREE.Vector2(point.x, point.y));
+              }
+            }
+          }
+        }
+        nearby.push(screen);
+      }
+      const overlap = (side) => {
+        const width = distance * tangent * camera.aspect;
+        const height = verticalExtent / (distance * tangent);
+        const studio = new THREE.Box2(
+          new THREE.Vector2((side * x - halfWidth) / width, -height),
+          new THREE.Vector2((side * x + halfWidth) / width, height)
+        );
+        return nearby.reduce((area, box) => {
+          const intersection = studio.clone().intersect(box);
+          if (intersection.isEmpty()) return area;
+          const size = intersection.getSize(new THREE.Vector2());
+          return area + size.x * size.y;
+        }, 0);
+      };
+      // Both cards reserve the clearer side, including each object's motion.
+      if (overlap(-1) < overlap(1)) x = -x;
+    }
     const target = new THREE.Vector3(x, 0.25, -distance)
       .applyQuaternion(rotation)
       .add(position);
