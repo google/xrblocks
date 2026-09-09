@@ -993,6 +993,38 @@ describe('Roomcraft redo', () => {
     await expect(room.redo()).rejects.toThrow('no scene edit to redo');
   });
 
+  it.each(['one', 'two', 'three'])(
+    'restores scene order when undoing removal of %s',
+    async (id) => {
+      const room = createRoom();
+      await room.applyLayout({
+        title: 'Studio',
+        objects: ['one', 'two', 'three'].map((id) => object({id})),
+      });
+      const before = room.layout;
+      await room.applyPlan({title: 'Studio', edits: [{op: 'remove', id}]});
+      const removed = room.layout;
+      await expect(room.undo()).resolves.toEqual(before);
+      await expect(room.redo()).resolves.toEqual(removed);
+      await expect(room.undo()).resolves.toEqual(before);
+    }
+  );
+
+  it('restores an explicitly reordered layout without replacing its owners', async () => {
+    const room = createRoom();
+    await room.applyLayout({
+      title: 'Studio',
+      objects: [object({id: 'one'}), object({id: 'two'})],
+    });
+    const before = room.layout;
+    const owner = room.getObject('one');
+    const reversed = {...before, objects: [...before.objects].reverse()};
+    await expect(room.applyLayout(reversed)).resolves.toEqual(reversed);
+    expect(room.getObject('one')).toBe(owner);
+    await expect(room.undo()).resolves.toEqual(before);
+    await expect(room.redo()).resolves.toEqual(reversed);
+  });
+
   it.each([0.3, 0.4, 1.15, -0.7])(
     'preserves redo through a no-op on an object rotated by %s radians',
     async (rotation) => {
