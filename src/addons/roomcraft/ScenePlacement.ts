@@ -5,6 +5,7 @@ import {
 } from 'xrblocks';
 
 import type {SceneAssetDescription, SceneLayout} from './SceneTypes';
+import {getProceduralBounds} from './ProceduralGeometry';
 
 const EPSILON = 1e-6;
 
@@ -68,30 +69,23 @@ function containsFootprint(bounds: THREE.Box3, polygon: THREE.Vector2[]) {
 
 function sceneBounds(
   layout: SceneLayout,
-  catalog: ReadonlyMap<string, SceneAssetDescription>,
+  objectBounds: ReadonlyMap<string, THREE.Box3>,
   sceneMatrix: THREE.Matrix4
 ) {
   const bounds = new THREE.Box3();
   for (const object of layout.objects) {
-    const asset = catalog.get(object.asset);
-    if (!asset) throw new Error(`Unknown placement asset "${object.asset}".`);
+    const local = objectBounds.get(object.id);
+    if (!local) throw new Error(`Missing placement bounds for "${object.id}".`);
     const transform = new THREE.Matrix4().compose(
       new THREE.Vector3().fromArray(object.position),
       new THREE.Quaternion().setFromAxisAngle(
         new THREE.Vector3(0, 1, 0),
         object.rotation
       ),
-      new THREE.Vector3()
-        .fromArray(object.scale)
-        .multiply(new THREE.Vector3().fromArray(asset.size))
+      new THREE.Vector3().fromArray(object.scale)
     );
     transform.premultiply(sceneMatrix);
-    bounds.union(
-      new THREE.Box3(
-        new THREE.Vector3(-0.5, 0, -0.5),
-        new THREE.Vector3(0.5, 1, 0.5)
-      ).applyMatrix4(transform)
-    );
+    bounds.union(local.clone().applyMatrix4(transform));
   }
   return bounds;
 }
@@ -122,6 +116,24 @@ export function placeSceneOnSurface(
     );
   }
   const catalog = new Map(assets.map((asset) => [asset.id, asset]));
+  const objectBounds = new Map<string, THREE.Box3>();
+  for (const object of layout.objects) {
+    if (object.parts !== undefined) {
+      objectBounds.set(object.id, getProceduralBounds(object.parts));
+    } else {
+      const asset = catalog.get(object.asset);
+      if (!asset) {
+        throw new Error(`Unknown placement asset "${object.asset}".`);
+      }
+      objectBounds.set(
+        object.id,
+        new THREE.Box3(
+          new THREE.Vector3(-asset.size[0] / 2, 0, -asset.size[2] / 2),
+          new THREE.Vector3(asset.size[0] / 2, asset.size[1], asset.size[2] / 2)
+        )
+      );
+    }
+  }
   const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
   const cameraForward = camera.getWorldDirection(new THREE.Vector3());
   let best: {score: number; matrix: THREE.Matrix4} | undefined;
@@ -202,7 +214,7 @@ export function placeSceneOnSurface(
       pose.updateMatrixWorld(true);
       const bounds = sceneBounds(
         layout,
-        catalog,
+        objectBounds,
         inversePlane.clone().multiply(pose.matrixWorld)
       );
       const center = bounds.getCenter(new THREE.Vector3());
