@@ -10,6 +10,8 @@ import type {
   SceneObject,
   ScenePlanner,
   SceneProceduralObject,
+  SceneRequest,
+  SceneSwingMotion,
 } from './SceneTypes';
 import type {ControllerEventMap} from '../../input/Controller';
 import {DetectedPlane} from '../../world/planes/DetectedPlane';
@@ -91,6 +93,30 @@ function partMesh(owner: THREE.Object3D, id: string) {
   return mesh;
 }
 
+function movingDesign(): SceneProceduralObject {
+  const object = design();
+  object.parts[1].motion = {
+    kind: 'swing',
+    axis: 'z',
+    pivot: [0, 0.2, 0],
+    amplitude: 0.6,
+    period: 2,
+  };
+  return object;
+}
+
+function motionClock(room: Roomcraft, deltaSeconds = 0.25) {
+  const timer = new THREE.Timer();
+  const delta = vi.spyOn(timer, 'getDelta').mockReturnValue(deltaSeconds);
+  room.init({
+    ai: new AI(),
+    world: new World(),
+    camera: new THREE.PerspectiveCamera(),
+    timer,
+  });
+  return delta;
+}
+
 function layout(...objects: SceneObject[]): SceneLayout {
   return {title: 'Studio', objects};
 }
@@ -133,6 +159,305 @@ function createRoom(catalog = [asset()], planner?: ScenePlanner) {
 afterEach(() => {
   rooms.splice(0).forEach((room) => room.dispose());
   vi.restoreAllMocks();
+});
+
+describe('Roomcraft part motion', () => {
+  it('uses the SDK timer to move parts and their children without editing the saved scene', async () => {
+    const room = createRoom();
+    motionClock(room);
+    expect(Roomcraft.dependencies.timer).toBe(THREE.Timer);
+    await room.applyLayout(layout(movingDesign()));
+    room.select('robot');
+    const owner = room.getObject('robot')!;
+    owner.position.set(2, 0.3, -1);
+    owner.rotation.y = 0.4;
+    owner.scale.set(1.2, 0.8, 1.5);
+    const before = room.layout;
+    const pose = owner.quaternion.clone();
+    const arm = owner.getObjectByName('arm')!;
+    const hand = owner.getObjectByName('hand')!;
+    const handPosition = hand.getWorldPosition(new THREE.Vector3());
+    const change = vi.fn();
+    room.addEventListener('change', change);
+    expect(room.hasMotion).toBe(true);
+    room.update();
+    const angle = 0.6 * Math.sin(Math.PI / 4);
+    const rotation = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 0, 1),
+      angle
+    );
+    expect(arm.quaternion.angleTo(rotation)).toBeLessThan(1e-7);
+    expect(
+      hand.getWorldPosition(new THREE.Vector3()).distanceTo(handPosition)
+    ).toBeGreaterThan(0.1);
+    expect(owner.quaternion.equals(pose)).toBe(true);
+    expect(room.layout).toEqual(before);
+    expect(room.selectedId).toBe('robot');
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  it('preserves a moving joint and cycle phase while extending a limb', async () => {
+    const room = createRoom();
+    motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    room.select('robot');
+    const owner = room.getObject('robot')!;
+    owner.position.set(1, 0.2, -2);
+    room.update();
+    const arm = owner.getObjectByName('arm')!;
+    const rotation = arm.quaternion.clone();
+    const hinge = arm.localToWorld(new THREE.Vector3(0, 0.2, 0));
+    const motion: SceneSwingMotion = {
+      kind: 'swing',
+      axis: 'z',
+      pivot: [0, 0.3, 0],
+      amplitude: 0.6,
+      period: 2,
+    };
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [
+            {
+              op: 'update',
+              id: 'arm',
+              changes: {
+                position: [0.35, -0.1, 0],
+                size: [0.1, 0.6, 0.1],
+                motion,
+              },
+            },
+            {op: 'update', id: 'hand', changes: {position: [0, -0.35, 0]}},
+          ],
+        },
+      ],
+    });
+    const updated = owner.getObjectByName('arm')!;
+    expect(room.getObject('robot')).toBe(owner);
+    expect(updated).not.toBe(arm);
+    expect(updated.quaternion.angleTo(rotation)).toBeLessThan(1e-7);
+    expect(
+      updated.localToWorld(new THREE.Vector3(0, 0.3, 0)).distanceTo(hinge)
+    ).toBeLessThan(1e-8);
+    expect(owner.position.toArray()).toEqual([1, 0.2, -2]);
+    expect(room.selectedId).toBe('robot');
+    room.update();
+    expect(updated.rotation.z).toBeCloseTo(0.6);
+  });
+
+  it('copies the current cycle at commit time, not before asynchronous asset loading', async () => {
+    const download = deferred<THREE.Object3D>();
+    const room = createRoom([
+      asset(),
+      asset({id: 'slow', create: () => download.promise}),
+    ]);
+    motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    room.update();
+    const owner = room.getObject('robot')!;
+    const pending = room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [{op: 'update', id: 'body', changes: {color: '#3366aa'}}],
+        },
+        {op: 'add', object: object({id: 'slow-object', asset: 'slow'})},
+      ],
+    });
+    expect(room.busy).toBe(true);
+    room.update();
+    const rotation = owner.getObjectByName('arm')!.quaternion.clone();
+    download.resolve(
+      new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())
+    );
+    await pending;
+    expect(
+      owner.getObjectByName('arm')!.quaternion.angleTo(rotation)
+    ).toBeLessThan(1e-7);
+    expect(owner.getObjectByName('arm')!.rotation.z).toBeCloseTo(0.6);
+  });
+
+  it('keeps the live motion and content when another staged asset fails', async () => {
+    const download = deferred<THREE.Object3D>();
+    const room = createRoom([
+      asset(),
+      asset({id: 'slow', create: () => download.promise}),
+    ]);
+    motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    const before = room.layout;
+    const arm = room.getObject('robot')!.getObjectByName('arm')!;
+    const pending = room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {op: 'update', id: 'robot', changes: {color: '#2244aa'}},
+        {op: 'add', object: object({id: 'slow-object', asset: 'slow'})},
+      ],
+    });
+    room.update();
+    const rotation = arm.quaternion.clone();
+    download.reject(new Error('Model download failed'));
+    await expect(pending).rejects.toThrow('Model download failed');
+    expect(room.layout).toEqual(before);
+    expect(room.getObject('robot')!.getObjectByName('arm')).toBe(arm);
+    room.update();
+    expect(arm.quaternion.angleTo(rotation)).toBeGreaterThan(0.1);
+  });
+
+  it('plans against detached rest data while playback continues', async () => {
+    const pending = deferred<unknown>();
+    const requests: SceneRequest[] = [];
+    const room = createRoom([asset()], async (request) => {
+      requests.push(request);
+      return pending.promise;
+    });
+    motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    const before = room.layout;
+    const request = room.request('Make its arm orange.');
+    room.update();
+    expect(requests[0].scene).toEqual(before);
+    requests[0].scene.objects[0].parts![1].motion!.pivot[0] = 4;
+    expect(room.layout).toEqual(before);
+    pending.resolve({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [{op: 'update', id: 'arm', changes: {color: '#ff9900'}}],
+        },
+      ],
+    });
+    await request;
+    expect(room.layout.objects[0].parts![1].motion!.pivot).toEqual([0, 0.2, 0]);
+    expect(
+      room.getObject('robot')!.getObjectByName('arm')!.rotation.z
+    ).toBeCloseTo(0.6 * Math.sin(Math.PI / 4));
+  });
+
+  it('pauses inspection without touching layout, placement, selection, or redo', async () => {
+    const room = createRoom();
+    motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'update', id: 'robot', changes: {color: '#2244aa'}}],
+    });
+    await room.undo();
+    room.select('robot');
+    room.position.set(1, 0.5, -2);
+    const before = room.layout;
+    const events = vi.fn();
+    room.addEventListener('motionstatechange', events);
+    room.update();
+    const arm = room.getObject('robot')!.getObjectByName('arm')!;
+    const rotation = arm.quaternion.clone();
+    room.setMotionPaused(true);
+    room.setMotionPaused(true);
+    room.update();
+    expect(room.motionPaused).toBe(true);
+    expect(arm.quaternion.equals(rotation)).toBe(true);
+    expect(events).toHaveBeenCalledOnce();
+    expect(room.layout).toEqual(before);
+    expect(room.position.toArray()).toEqual([1, 0.5, -2]);
+    expect(room.selectedId).toBe('robot');
+    expect(room.canRedo).toBe(true);
+    room.setMotionPaused(false);
+    room.update();
+    expect(arm.quaternion.angleTo(rotation)).toBeGreaterThan(0.1);
+    expect(events).toHaveBeenCalledTimes(2);
+    expect(room.canRedo).toBe(true);
+  });
+
+  it('records motion definitions in history and exports, not current playback phase', async () => {
+    const room = createRoom();
+    motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    const saved = room.layout;
+    room.update();
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [{op: 'update', id: 'arm', changes: {motion: null}}],
+        },
+      ],
+    });
+    expect(room.hasMotion).toBe(false);
+    expect(room.getObject('robot')!.getObjectByName('arm')!.rotation.z).toBe(0);
+    await room.undo();
+    expect(room.hasMotion).toBe(true);
+    expect(room.layout).toEqual(saved);
+    room.update();
+    expect(room.canRedo).toBe(true);
+    const restored = createRoom();
+    motionClock(restored);
+    await restored.applyLayout(JSON.stringify(room.layout));
+    expect(restored.layout).toEqual(saved);
+    expect(
+      restored.getObject('robot')!.getObjectByName('arm')!.rotation.z
+    ).toBeCloseTo(0, 12);
+    await room.redo();
+    expect(room.hasMotion).toBe(false);
+  });
+
+  it('returns detached world-space envelopes covering all phases and transformed parents', async () => {
+    const room = createRoom();
+    const delta = motionClock(room);
+    await room.applyLayout(layout(movingDesign()));
+    const parent = new THREE.Group();
+    parent.position.set(1, 2, -1);
+    parent.rotation.set(0.2, 0.4, -0.1);
+    parent.scale.set(1.3, 0.8, 1.7);
+    parent.add(room);
+    room.rotation.y = 0.5;
+    const owner = room.getObject('robot')!;
+    owner.scale.set(1.2, 0.9, 0.7);
+    const bounds = room.getWorldBounds('robot');
+    const padded = bounds.clone().expandByScalar(1e-6);
+    delta.mockReturnValue(2 / 80);
+    for (let index = 0; index < 80; index++) {
+      room.update();
+      expect(padded.containsBox(new THREE.Box3().setFromObject(owner))).toBe(
+        true
+      );
+      expect(room.getWorldBounds('robot').equals(bounds)).toBe(true);
+    }
+    expect(room.getWorldBounds().equals(bounds)).toBe(true);
+    bounds.min.setScalar(-999);
+    expect(room.getWorldBounds().min.x).toBeGreaterThan(-999);
+    expect(() => room.getWorldBounds('missing')).toThrow();
+    expect(() => room.getWorldBounds('Invalid Id')).toThrow();
+  });
+
+  it('keeps static behavior inert and fails clearly if moving content has no frame timer', async () => {
+    const room = createRoom();
+    expect(room.getWorldBounds().isEmpty()).toBe(true);
+    expect(room.hasMotion).toBe(false);
+    expect(() => room.update()).not.toThrow();
+    await room.applyLayout(layout(object()));
+    expect(
+      room.getWorldBounds().equals(new THREE.Box3().setFromObject(room))
+    ).toBe(true);
+    await room.applyLayout(layout(movingDesign()));
+    expect(() => room.update()).toThrow('frame timer');
+    room.dispose();
+    expect(room.hasMotion).toBe(false);
+    expect(() => room.update()).not.toThrow();
+    expect(() => room.setMotionPaused(true)).toThrow('disposed');
+  });
 });
 
 describe('Roomcraft objects and ownership', () => {
