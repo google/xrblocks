@@ -73,8 +73,8 @@ function element(id: string) {
 
 function input() {
   const node = element('prompt');
-  if (!(node instanceof HTMLInputElement))
-    throw new Error('Expected a prompt input.');
+  if (!(node instanceof HTMLTextAreaElement))
+    throw new Error('Expected a multiline prompt.');
   return node;
 }
 
@@ -252,6 +252,70 @@ describe('Roomcraft demo integration', () => {
     expect(speech.start).not.toHaveBeenCalled();
     expect(element('error').textContent).toContain('Configure Gemini');
     expect(consoleScript.xrStatusText.text).toBe(element('error').textContent);
+  });
+
+  it('gives the prompt eight lines with its action buttons in a separate row', () => {
+    const field = input();
+    expect(field.rows).toBe(8);
+    expect(field.maxLength).toBe(4000);
+    expect(field.parentElement).toBe(field.closest('section'));
+    expect(button('generate').parentElement).not.toBe(field.parentElement);
+    expect(field.getAttribute('aria-describedby')).toBe('promptHelp');
+    expect(element('promptHelp').textContent).toContain('Shift+Enter');
+  });
+
+  it('submits Enter once while leaving line breaks and IME confirmation to the textarea', () => {
+    const generate = vi
+      .spyOn(consoleScript, 'generate')
+      .mockResolvedValue(undefined);
+    const field = input();
+    const composing = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      isComposing: true,
+      cancelable: true,
+    });
+    field.dispatchEvent(composing);
+    expect(generate).not.toHaveBeenCalled();
+    expect(composing.defaultPrevented).toBe(false);
+    const newline = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      cancelable: true,
+    });
+    field.dispatchEvent(newline);
+    expect(generate).not.toHaveBeenCalled();
+    expect(newline.defaultPrevented).toBe(false);
+    const submit = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      cancelable: true,
+    });
+    field.dispatchEvent(submit);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(submit.defaultPrevented).toBe(true);
+    const repeat = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      repeat: true,
+      cancelable: true,
+    });
+    field.dispatchEvent(repeat);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(repeat.defaultPrevented).toBe(true);
+  });
+
+  it('keeps multiline drafts intact through the shared keyboard and request path', async () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
+    const draft = 'Create a moonlit garden.\nKeep the path clear.';
+    input().value = draft;
+    input().dispatchEvent(new Event('input'));
+    expect(consoleScript.xrKeyboard.value).toBe(draft);
+
+    input().dispatchEvent(
+      new KeyboardEvent('keydown', {key: 'Enter', cancelable: true})
+    );
+
+    await vi.waitFor(() => expect(request).toHaveBeenCalledWith(draft));
+    expect(request).toHaveBeenCalledOnce();
   });
 
   it('submits only a final transcript and stops the native recognizer', async () => {
