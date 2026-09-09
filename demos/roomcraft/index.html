@@ -43,7 +43,7 @@
       <header class="rc-header">
         <p class="rc-eyebrow">XR Blocks</p>
         <h1 class="rc-title">Roomcraft</h1>
-        <p class="rc-tagline">Speak a scene into your room.</p>
+        <p class="rc-tagline" id="tagline">Speak a scene into your room.</p>
         <button
           id="toggleConsole"
           class="rc-button rc-console-toggle"
@@ -72,7 +72,7 @@
 
         <section class="rc-section" aria-labelledby="startersHeading">
           <h2 id="startersHeading" class="rc-heading">Starter scenes</h2>
-          <p class="rc-note">
+          <p id="startersNote" class="rc-note">
             Handcrafted examples that need no API key. Each one replaces the
             current scene, and undo brings the previous one back. New design
             clears the scene so you can describe one object at a time.
@@ -115,6 +115,30 @@
             </button>
           </div>
           <div id="suggestions" class="rc-row rc-row-wrap rc-chips"></div>
+        </section>
+
+        <section
+          id="environmentSection"
+          class="rc-section"
+          aria-labelledby="environmentHeading"
+          hidden
+        >
+          <h2 id="environmentHeading" class="rc-heading">Environment</h2>
+          <p id="environmentSummary" class="rc-note">No virtual environment.</p>
+          <div class="rc-row rc-row-wrap">
+            <button id="moonlight" class="rc-button" type="button">
+              Moonlight
+            </button>
+            <button id="sunrise" class="rc-button" type="button">
+              Sunrise
+            </button>
+            <button id="enterWorld" class="rc-button" type="button">
+              Enter world
+            </button>
+          </div>
+          <p id="environmentNote" class="rc-note">
+            Moonlight and Sunrise are direct atmosphere edits, not AI requests.
+          </p>
         </section>
 
         <section class="rc-section" aria-labelledby="sceneHeading">
