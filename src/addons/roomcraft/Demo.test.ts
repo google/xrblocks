@@ -741,4 +741,200 @@ describe('Roomcraft demo integration', () => {
     expect(speech.stop).toHaveBeenCalledOnce();
     expect(consoleScript.cleanups).toHaveLength(0);
   });
+
+  describe('spatial authoring', () => {
+    it('opens the spatial studio from the collapsed desktop header without moving the scene', () => {
+      consoleScript.toggleConsole(false);
+      const before = room.layout;
+      const position = camera.position.clone();
+      button('spatialStudio').click();
+      expect(consoleScript.card.visible).toBe(true);
+      expect(button('spatialStudio').getAttribute('aria-pressed')).toBe('true');
+      expect(consoleScript.keyboardCard.visible).toBe(false);
+      camera.updateWorldMatrix(true, false);
+      const center = consoleScript.card
+        .getWorldPosition(new THREE.Vector3())
+        .project(camera);
+      expect(Math.abs(center.x)).toBeLessThan(1);
+      expect(Math.abs(center.y)).toBeLessThan(1);
+      expect(camera.position.equals(position)).toBe(true);
+      expect(room.layout).toEqual(before);
+      consoleScript.toggleKeyboard();
+      expect(consoleScript.keyboardCard.visible).toBe(true);
+      button('spatialStudio').click();
+      expect(consoleScript.card.visible).toBe(false);
+      expect(consoleScript.keyboardCard.visible).toBe(false);
+    });
+
+    it('synchronizes DOM input and the real spatial keyboard within the request limit', () => {
+      input().value = 'Create a robot';
+      input().dispatchEvent(new Event('input'));
+      expect(consoleScript.xrKeyboard.value).toBe('Create a robot');
+      expect(consoleScript.xrPromptText.text).toContain('Create a robot');
+      consoleScript.xrKeyboard.pressKey('x');
+      expect(input().value).toBe('Create a robotx');
+      consoleScript.xrKeyboard.pressKey('Backspace');
+      expect(input().value).toBe('Create a robot');
+      expect(consoleScript.xrGenerate.disabled).toBe(false);
+      input().value = 'a'.repeat(4001);
+      input().dispatchEvent(new Event('input'));
+      consoleScript.xrKeyboard.pressKey('b');
+      expect(input().value).toHaveLength(4000);
+      expect(consoleScript.xrKeyboard.value).toHaveLength(4000);
+      expect(element('error').textContent).toContain('4000 characters');
+    });
+
+    it.each([
+      {fov: 90, aspect: 1.5, studioScale: 1, keyboardScale: 1},
+      {fov: 50, aspect: 0.6, studioScale: 0.8, keyboardScale: 1.2},
+    ])(
+      'keeps both scaled cards in view at $fov degrees and aspect $aspect',
+      (view) => {
+        camera.fov = view.fov;
+        camera.aspect = view.aspect;
+        camera.updateProjectionMatrix();
+        consoleScript.card.scale.setScalar(view.studioScale);
+        consoleScript.keyboardCard.scale.setScalar(view.keyboardScale);
+        consoleScript.toggleSpatialStudio();
+        consoleScript.toggleKeyboard();
+        for (const [card, width, height] of [
+          [consoleScript.card, 1.05, 1.02],
+          [consoleScript.keyboardCard, 1.05, 0.49],
+        ] as const) {
+          card.updateWorldMatrix(true, false);
+          for (const x of [-width / 2, width / 2]) {
+            for (const y of [-height / 2, height / 2]) {
+              const point = new THREE.Vector3(x, y, 0)
+                .applyMatrix4(card.matrixWorld)
+                .project(camera);
+              expect(Math.abs(point.x)).toBeLessThan(1);
+              expect(Math.abs(point.y)).toBeLessThan(1);
+            }
+          }
+        }
+      }
+    );
+
+    it('submits a spatial keyboard instruction through the same generation path', async () => {
+      options.gemini.apiKey = 'local-test-fixture';
+      const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
+      consoleScript.xrKeyboard.setValue('Create a mushroom cottage');
+      consoleScript.xrKeyboard.pressKey('Enter');
+      await vi.waitFor(() =>
+        expect(request).toHaveBeenCalledWith('Create a mushroom cottage')
+      );
+      await vi.waitFor(() => expect(input().value).toBe(''));
+      expect(consoleScript.xrKeyboard.value).toBe('');
+      expect(consoleScript.xrPromptText.text).toContain('Describe');
+      expect(consoleScript.xrGenerate.disabled).toBe(true);
+    });
+
+    it('keeps a new draft entered while the previous request is running', async () => {
+      consoleScript.dispose();
+      room.dispose();
+      let finish!: (value: unknown) => void;
+      const result = new Promise<unknown>((resolve) => {
+        finish = resolve;
+      });
+      room = new Roomcraft({planner: () => result});
+      consoleScript = new RoomcraftConsole(room);
+      consoleScript.init();
+      await consoleScript.start();
+      options.gemini.apiKey = 'local-test-fixture';
+      consoleScript.setPrompt('Make the lamp blue');
+      const pending = consoleScript.generate();
+      expect(room.busy).toBe(true);
+      expect(consoleScript.xrGenerate.disabled).toBe(true);
+      consoleScript.setPrompt('Now add a backpack');
+      finish({title: room.layout.title, edits: []});
+      await pending;
+      expect(input().value).toBe('Now add a backpack');
+      expect(consoleScript.xrKeyboard.value).toBe('Now add a backpack');
+      expect(consoleScript.xrPromptText.text).toContain('Now add a backpack');
+    });
+
+    it.each(['first', 'second'])(
+      'selects and removes %s without Gemini and allows undoing the removal',
+      async (id) => {
+        const request = vi.spyOn(room, 'request');
+        await room.applyLayout({
+          title: 'Two robots',
+          objects: [littleRobot('first'), littleRobot('second')],
+        });
+        const before = room.layout;
+        consoleScript.cycleSelection(1);
+        expect(room.selectedId).toBe('first');
+        consoleScript.cycleSelection(1);
+        expect(room.selectedId).toBe('second');
+        consoleScript.cycleSelection(1);
+        expect(room.selectedId).toBe('first');
+        consoleScript.cycleSelection(-1);
+        expect(room.selectedId).toBe('second');
+        room.select(id);
+        expect(consoleScript.xrRemove.disabled).toBe(false);
+        button('removeSelected').click();
+        await vi.waitFor(() =>
+          expect(element('status').textContent).toContain(
+            'Removed the selected'
+          )
+        );
+        expect(room.layout.objects).toHaveLength(1);
+        expect(room.layout.objects[0].id).toBe(
+          id === 'first' ? 'second' : 'first'
+        );
+        expect(room.selectedId).toBeNull();
+        expect(consoleScript.xrRemove.disabled).toBe(true);
+        await consoleScript.undo();
+        expect(room.layout).toEqual(before);
+        expect(request).not.toHaveBeenCalled();
+      }
+    );
+
+    it('separates authoring from handcrafted examples without changing the scene', () => {
+      const before = room.layout;
+      consoleScript.toggleSpatialStudio();
+      consoleScript.toggleKeyboard();
+      consoleScript.setSpatialTab('examples');
+      expect(consoleScript.xrAuthorPanel.style.display).toBe('none');
+      expect(consoleScript.xrExamplesPanel.style.display).toBe('flex');
+      expect(consoleScript.keyboardCard.visible).toBe(false);
+      consoleScript.setSpatialTab('author');
+      expect(consoleScript.xrAuthorPanel.style.display).toBe('flex');
+      expect(consoleScript.xrExamplesPanel.style.display).toBe('none');
+      expect(consoleScript.keyboardCard.visible).toBe(true);
+      expect(room.layout).toEqual(before);
+    });
+
+    it('keeps the studio available in XR and restores the desktop visibility choice', () => {
+      expect(consoleScript.card.visible).toBe(false);
+      consoleScript.onXRSessionStarted();
+      consoleScript.update();
+      consoleScript.toggleKeyboard();
+      expect(consoleScript.card.visible).toBe(true);
+      expect(consoleScript.keyboardCard.visible).toBe(true);
+      expect(element('console').classList.contains('rc-hidden')).toBe(true);
+      consoleScript.onXRSessionEnded();
+      expect(consoleScript.card.visible).toBe(false);
+      expect(consoleScript.keyboardCard.visible).toBe(false);
+      consoleScript.toggleSpatialStudio();
+      consoleScript.onXRSessionStarted();
+      consoleScript.onXRSessionEnded();
+      expect(consoleScript.card.visible).toBe(true);
+      expect(consoleScript.keyboardCard.visible).toBe(true);
+    });
+
+    it('releases keyboard submission callbacks and both spatial roots', () => {
+      options.gemini.apiKey = 'local-test-fixture';
+      const request = vi.spyOn(room, 'request');
+      const keyboard = consoleScript.xrKeyboard;
+      consoleScript.dispose();
+      keyboard.setValue('Create a robot');
+      keyboard.pressKey('Enter');
+      expect(request).not.toHaveBeenCalled();
+      expect(consoleScript.card.parent).toBeNull();
+      expect(consoleScript.keyboardCard.parent).toBeNull();
+      expect(keyboard.onSubmit).toBeUndefined();
+      expect(keyboard.onValueChange).toBeUndefined();
+    });
+  });
 });
