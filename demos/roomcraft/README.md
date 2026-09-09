@@ -4,11 +4,55 @@ Speak a scene into your room.
 
 This demo composes real 3D objects with the [Roomcraft add-on](../../src/addons/roomcraft/). It arranges preauthored procedural assets, builds new compound objects out of primitive parts that can swing or spin around authored pivots, and loads one optional downloaded glTF model, then applies follow-up instructions to the same scene. New designs use bounded part and motion recipes, not free-form mesh, texture, or animation generation.
 
+An optional [virtual world mode](#virtual-world-mode) authors a whole place, with its own ground, sky, light, ponds, paths, and plantings, instead of decorating your room.
+
 ## Run it
 
 From the repository root, run `npm run build:sdk`, then `npm run serve`, and open `http://127.0.0.1:8080/demos/roomcraft/`.
 
 The page opens on a handcrafted reading nook without an API key. The starter catalog uses procedural geometry, while browser dependencies and the SDK's default simulator environment still load from CDNs.
+
+Open `http://127.0.0.1:8080/demos/roomcraft/?environment=1` instead for the optional fully virtual mode described below. The default page is unchanged by that option.
+
+To open a saved scene on another device, serve its exported JSON alongside the demo and append `&scene=./garden.json` to the virtual-mode URL. The file is imported through `applyLayout`, without making an AI request. Saved-scene downloads use the same HTTP(S) origin, send no credentials, and reject redirects. A failed or invalid import shows an error instead of substituting an example, and edits made while the file downloads are kept rather than overwritten.
+
+A standalone headset needs an HTTPS URL it can reach on your LAN, with a certificate its browser trusts. The headset's `127.0.0.1` is not the development computer. Open the LAN URL with `?environment=1`, without the desktop-forcing `formFactor=desktop` or `xrAutomation=1` flags, and use the SDK's XR entry button.
+
+## Virtual world mode
+
+`?environment=1` authors a whole virtual place rather than decorating the room around you. The mode is chosen once at startup, so the two pages keep separate scenes, separate histories, and separate camera behavior.
+
+This page requests an immersive VR session and uses the empty simulator environment declared in [`virtual-environment.json`](./virtual-environment.json), which names no scene, no planes, no navigation mesh, and no objects. No prebuilt living room or background asset is downloaded, so everything in view is either the environment the add-on builds or the objects you author. XR entry stays available on supported headsets. When immersive VR is unavailable, the SDK starts the simulator automatically with your eye near the front edge of the ground.
+
+Without a saved-scene URL, the page opens on an honestly empty authoring canvas: a neutral 14 by 14 meter daylight ground with nothing on it. It is not a generated place, nothing is preselected for you, and no AI request is sent on load. Describe a place, for example "create a moonlit Japanese garden", and press Generate.
+
+Follow-ups such as "make the pond bigger" and "change the garden to sunrise" go through the same request path as the default page, so the model plans them. The demo does not match your words against hard-coded phrases and never substitutes a stock garden for a real answer.
+
+Press New environment to clear everything back to that empty ground. Undo restores the previous environment.
+
+### Landscape features
+
+Ponds, paths, and plantings are compact recipes rather than long lists of objects, which keeps a whole garden inside one small plan. A pond declares a water size and a bank width, a path declares 2 to 12 points and a width, and a planting declares a style, a planting area, a specimen count, a height, and a seed. The seed keeps a planting stable, so the same scene arranges its specimens the same way every time it is loaded.
+
+Each feature is one ordinary scene object with a name and an ID. Select it by clicking it, from the selection list, or with Previous and Next, then drag or scale it like any other object. The console names the feature and reports its editable numbers, for example a pond's water surface and bank width or a planting's style, count, height, and seed. An edit replaces a feature's whole recipe rather than individual parts, because a landscape feature has no editable part list.
+
+Moonlit garden under Starter scenes is handcrafted data in [`scenes.js`](./scenes.js), clearly labelled as an example rather than AI output. It combines a pond, a winding path, six seeded plantings, and three part-based structures, and it exists to show what these recipes look like at the scale a single request has to produce.
+
+### Atmosphere and the view
+
+The Environment section reports the active ground size, time of day, and ground color, and the spatial studio repeats the same summary.
+
+Moonlight and Sunrise are direct atmosphere edits, not AI requests. Each changes only the time of day, leaves every object and color untouched, and is covered by Undo and Redo like any other scene command. Natural language still works for the same change if you would rather ask for it.
+
+Enter world moves the desktop camera to a standing eye pose near the front of the ground, looking across it. No object and no environment value is changed, and the simulator's own navigation controls continue from the new pose. The button is disabled during an immersive XR session, where the headset owns the view.
+
+Frame scene accounts for the ground extent, so an empty environment can still be framed without any object in it.
+
+### Placement and export in this mode
+
+Place on surface is unavailable while a virtual environment is active, because the environment supplies its own ground. The button is disabled and the console explains why rather than failing silently.
+
+Export JSON keeps the environment's size, ground color, and time of day alongside the objects, including for an environment that holds no objects yet, and `applyLayout` accepts the same file back.
 
 ## What you can do
 
@@ -40,7 +84,7 @@ On desktop, Focus selected frames one object and Frame scene shows the whole com
 
 Press Place on surface to move the composition onto a detected horizontal plane. Until that succeeds the scene is labelled a preview. Moving or editing it invalidates that fit, so use Place again to confirm the new footprint. When no scanned surface fits, the console says so and the current scene pose is kept.
 
-Press Export JSON to download the current layout. The file contains titles, asset IDs, part definitions with their hierarchy, part motion definitions, transforms, and colors only. Parts are written in their authored rest transforms, so the current playback phase and the paused state are not saved. It contains no API key and no prompt text, and the SDK's `applyLayout` accepts the same data back.
+Press Export JSON to download the current layout. The file contains the title, environment settings, asset IDs, landscape recipes, part definitions with their hierarchy and motion, transforms, and colors. Parts are written in their authored rest transforms, so the current playback phase and the paused state are not saved. It contains no API key and no prompt text. The SDK's `applyLayout` imports this format subject to the documented authoring limits.
 
 ## Spatial studio
 
@@ -50,17 +94,19 @@ The keyboard reuses the existing [virtualkeyboard add-on](../../src/addons/virtu
 
 Previous and Next cycle through scene objects, including objects that are difficult to point at. Remove deletes the selected object without asking Gemini; Undo restores it. Pause and Resume control part playback from the same row and stay usable while a request is running. New, Place, Undo, and Redo are available below both tabs. Examples contains the clearly labelled handcrafted starter scenes, not generated content.
 
+In virtual world mode the studio adds the environment summary and a Moonlight, Sunrise, and Enter world row, so atmosphere and viewpoint are reachable without the DOM console. The default page builds none of those extra controls.
+
 The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. On desktop, opening or recentering the studio chooses the side with less overlap from nearby authored objects, including their full motion envelopes. This is not room collision avoidance: drag the cards elsewhere if both sides are crowded. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the desktop controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
 
 ## Gemini
 
-Starter scenes including the handcrafted clockwork robot, direct manipulation, motion playback and its pause control, New design, the downloaded exhibit, undo/redo, desktop framing, and export all work without a key. Creating and refining new designs from your own words needs a configured provider.
+Starter scenes including the handcrafted clockwork robot and the handcrafted moonlit garden, direct manipulation, motion playback and its pause control, New design, the Moonlight and Sunrise atmosphere shortcuts, Enter world, the downloaded exhibit, undo/redo, desktop framing, and export all work without a key. Creating and refining new designs and environments from your own words needs a configured provider.
 
 Press Connect Gemini to opt in before entering XR. The demo sets the Gemini response schema to `SCENE_PLAN_SCHEMA` and then calls the SDK's public `AI.initializeModel` with `AIOptions.promptForApiKey`, so the browser dialog asks for a key that stays in the current page's memory. Canceling or leaving the key empty does not report a connection. A configured key is not proof of authentication or quota; those are checked by the provider on the first scene request. Nothing is written to storage by the demo, and no key is committed here. Loading the page with `?key=YOUR_KEY` configures it without the dialog, as in the other AI samples.
 
 A browser API key is for local prototyping only. In production, pass the add-on a `planner` callback that calls your own server proxy and keep the provider key there.
 
-Your instruction, the current scene's object names and transforms, the part definitions of any compound designs, the selected ID, and the catalog descriptions are sent to the configured provider. Speech input uses the browser's speech recognition service, which may process audio remotely. The add-on sends no camera imagery, and this demo does not request physical camera capture.
+Your instruction, the environment settings, the current scene's object names and transforms, landscape recipes, the part definitions of any compound designs, the selected ID, and the catalog descriptions are sent to the configured provider. Speech input uses the browser's speech recognition service, which may process audio remotely. The add-on sends no camera imagery, and this demo does not request physical camera capture.
 
 ## Optional downloaded model
 
@@ -84,6 +130,14 @@ A design holds at most 48 parts, a scene holds at most 384 parts across all desi
 
 A scene holds at most 48 objects, positions stay within 10 meters of the scene origin, and scale multipliers run from 0.05 to 5.
 
+A virtual environment is locally generated bounded visual geometry. Its ground, sky, water, banks, paths, and planting are constructed from application-authored geometry recipes. The model chooses layouts and parameters; it does not generate arbitrary mesh topology, textures, or executable shaders. There is no terrain heightmap, water or fluid simulation, weather, automatic day and night cycle, or physics. Planting areas have no automatic exclusion masks for ponds or paths, so overlapping features may need a follow-up edit.
+
+Walking inside a virtual environment uses the SDK's existing simulator navigation controls. There is no collision, no navigation mesh, and no gravity, so you can pass through a pond or a tree and walk off the edge of the ground. Enter world only sets a sensible starting eye pose.
+
+A ground measures 4 to 20 meters per side. A planting holds 1 to 128 specimens and a scene holds at most 1024 specimens across all plantings, a path holds 2 to 12 points and is 0.15 to 3 meters wide, and a pond's water surface measures 0.2 to 20 meters per side with a 0.05 to 1 meter bank. Specimens stand 0.1 to 6 meters tall.
+
+The environment's own sky, ground, and lights replace the demo's fallback lighting while an environment is active, and the fallback returns when there is none.
+
 Quality depends on the model and the prompt. A request can return an awkward design, and there is no built-in robot fallback: a failed or rejected plan leaves your scene exactly as it was. Incomplete or invalid JSON is rejected as a whole, with a suggestion to retry a smaller edit rather than applying a partial design.
 
 Only one operation runs at a time. Invalid plans, provider failures, and asset load errors leave the current scene intact and surface a message in the console.
@@ -97,3 +151,5 @@ Headset behavior beyond the standard XR Blocks input and plane detection paths i
 ## SDK ownership
 
 Rendering, the frame loop, input, selection, manipulation, plane detection, speech recognition, and the AI facade all belong to XR Blocks. Part playback uses the SDK's injected frame timer, and the framing buttons reposition the existing desktop camera; the demo adds no renderer, animation loop, navigation system, raycaster, or bundled copy of three.js, and it adds no dependencies beyond the SDK's existing import map entries.
+
+The virtual world mode is ordinary SDK configuration. It sets the session mode to VR, points `options.simulator.environments` at this directory's empty manifest, keeps the SDK's normal headset entry and unsupported-browser simulator fallback, chooses the opening simulator camera position through `options.simulator.initialCameraPosition`, and enables renderer shadow maps for that mode only. Moving through the world uses the simulator's own control modes, and Enter world writes one camera pose rather than adding a movement loop or a collision solver.
