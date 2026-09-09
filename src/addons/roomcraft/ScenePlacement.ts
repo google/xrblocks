@@ -6,6 +6,7 @@ import {
 
 import type {SceneAssetDescription, SceneLayout} from './SceneTypes';
 import {getProceduralBounds} from './ProceduralGeometry';
+import {getLandscapeBounds} from './LandscapeGeometry';
 
 const EPSILON = 1e-6;
 
@@ -120,6 +121,8 @@ export function placeSceneOnSurface(
   for (const object of layout.objects) {
     if (object.parts !== undefined) {
       objectBounds.set(object.id, getProceduralBounds(object.parts));
+    } else if (object.landscape !== undefined) {
+      objectBounds.set(object.id, getLandscapeBounds(object.landscape));
     } else {
       const asset = catalog.get(object.asset);
       if (!asset) {
