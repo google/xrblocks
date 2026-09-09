@@ -5,6 +5,7 @@ import {
   applyScenePlan,
   assertPlanFresh,
   buildScenePrompt,
+  cloneSceneObject,
   readSceneLayout,
   readScenePlan,
 } from './ScenePlan';
@@ -18,8 +19,10 @@ import {
   type SceneObjectChanges,
   type ScenePart,
   type ScenePartEdit,
+  type ScenePartMotion,
   type ScenePlan,
   type SceneProceduralObject,
+  type SceneSwingMotion,
 } from './SceneTypes';
 
 const catalog: SceneAssetDescription[] = [
@@ -79,6 +82,23 @@ function refine(
   };
 }
 
+function swing(overrides: Partial<SceneSwingMotion> = {}): SceneSwingMotion {
+  return {
+    kind: 'swing',
+    axis: 'z',
+    pivot: [0, 0.2, 0],
+    amplitude: 0.6,
+    period: 2,
+    ...overrides,
+  };
+}
+
+function movingDesign(motion: ScenePartMotion = swing()) {
+  const object = design();
+  object.parts[1].motion = motion;
+  return object;
+}
+
 describe('procedural scene definitions', () => {
   it('accepts a new design without a catalog entry and detaches all nested data', () => {
     const source = scene(design());
@@ -91,6 +111,207 @@ describe('procedural scene definitions', () => {
     parts[0].rotation[1] = 1;
     parts[1].color = '#000000';
     expect(source.objects[0].parts).toEqual(design().parts);
+  });
+
+  describe('procedural motion protocol', () => {
+    it('accepts swing and signed spin definitions without changing authored poses', () => {
+      for (const motion of [
+        swing(),
+        {
+          kind: 'spin',
+          axis: 'y',
+          pivot: [-0.1, 0, 0],
+          speed: -2,
+          phase: 0.25,
+        },
+      ] satisfies ScenePartMotion[]) {
+        const source = scene(movingDesign(motion));
+        expect(readSceneLayout(JSON.stringify(source), [])).toEqual(source);
+      }
+      expect(readSceneLayout(scene(design()), [])).toEqual(scene(design()));
+      const withNull = {
+        title: 'Workshop',
+        objects: [{...design(), parts: [{...part(), motion: null}]}],
+      };
+      expect(
+        readSceneLayout(withNull, []).objects[0].parts![0]
+      ).not.toHaveProperty('motion');
+    });
+
+    it('detaches motion definitions and pivots in parsed and cloned snapshots', () => {
+      const source = scene(movingDesign());
+      const parsed = readSceneLayout(source, []);
+      const clone = cloneSceneObject(parsed.objects[0]);
+      parsed.objects[0].parts![1].motion!.pivot[0] = 4;
+      expect(source.objects[0].parts![1].motion!.pivot).toEqual([0, 0.2, 0]);
+      expect(clone.parts![1].motion!.pivot).toEqual([0, 0.2, 0]);
+      clone.parts![1].motion!.phase = 0.5;
+      expect(source.objects[0].parts![1].motion).not.toHaveProperty('phase');
+      expect(parsed.objects[0].parts![1].motion).not.toHaveProperty('phase');
+    });
+
+    it.each([
+      {kind: 'execute'},
+      {axis: 'world-up'},
+      {pivot: [0, 0]},
+      {pivot: [0, -5.01, 0]},
+      {pivot: [0, NaN, 0]},
+      {amplitude: 0},
+      {amplitude: -0.1},
+      {amplitude: Math.PI + 0.01},
+      {amplitude: Infinity},
+      {amplitude: '0.5'},
+      {period: 0},
+      {period: 0.24},
+      {period: 60.01},
+      {period: NaN},
+      {phase: -0.01},
+      {phase: 1.01},
+      {phase: null},
+      {speed: 1},
+      {code: 'return 1'},
+    ])('rejects invalid swing data: %j', (changes) => {
+      expect(() =>
+        readSceneLayout(
+          {
+            title: 'Workshop',
+            objects: [
+              {
+                ...design(),
+                parts: [{...part(), motion: {...swing(), ...changes}}],
+              },
+            ],
+          },
+          []
+        )
+      ).toThrow();
+    });
+
+    it.each([
+      {speed: 0},
+      {speed: Math.PI * 4 + 0.01},
+      {speed: -Math.PI * 4 - 0.01},
+      {speed: Infinity},
+      {speed: '1'},
+      {period: 2},
+      {amplitude: 0.5},
+    ])('rejects invalid spin data: %j', (changes) => {
+      expect(() =>
+        readSceneLayout(
+          {
+            title: 'Workshop',
+            objects: [
+              {
+                ...design(),
+                parts: [
+                  {
+                    ...part(),
+                    motion: {
+                      kind: 'spin',
+                      axis: 'x',
+                      pivot: [0, 0, 0],
+                      speed: 1,
+                      ...changes,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          []
+        )
+      ).toThrow();
+    });
+
+    it.each(['kind', 'axis', 'pivot', 'amplitude', 'period'])(
+      'requires the %s field in a swing definition',
+      (field) => {
+        const incomplete = Object.fromEntries(
+          Object.entries(swing()).filter(([key]) => key !== field)
+        );
+        expect(() =>
+          readSceneLayout(
+            {
+              title: 'Workshop',
+              objects: [
+                {...design(), parts: [{...part(), motion: incomplete}]},
+              ],
+            },
+            []
+          )
+        ).toThrow();
+      }
+    );
+
+    it('preserves motion in geometry edits, replaces it explicitly, and removes it with null', () => {
+      const before = scene(movingDesign());
+      const resized = applyScenePlan(
+        refine([{op: 'update', id: 'arm', changes: {size: [0.1, 0.7, 0.1]}}]),
+        before,
+        []
+      );
+      expect(resized.objects[0].parts![1].motion).toEqual(swing());
+      expect(resized.objects[0].position).toEqual(before.objects[0].position);
+      const faster = applyScenePlan(
+        refine([
+          {op: 'update', id: 'arm', changes: {motion: swing({period: 1})}},
+        ]),
+        resized,
+        []
+      );
+      expect(faster.objects[0].parts![1].motion).toEqual(swing({period: 1}));
+      const stopped = applyScenePlan(
+        refine([{op: 'update', id: 'arm', changes: {motion: null}}]),
+        faster,
+        []
+      );
+      expect(stopped.objects[0].parts![1]).not.toHaveProperty('motion');
+      expect(before.objects[0].parts![1].motion).toEqual(swing());
+    });
+
+    it('rejects overlapping motion edits but preserves a concurrent retune during a size edit', () => {
+      const before = scene(movingDesign());
+      const now = readSceneLayout(before, []);
+      now.objects[0].parts![1].motion = swing({period: 1});
+      const motionEdit = refine([
+        {op: 'update', id: 'arm', changes: {motion: swing({amplitude: 1})}},
+      ]);
+      expect(() => assertPlanFresh(motionEdit, before, now)).toThrow(
+        'changed while planning'
+      );
+      const resize = refine([
+        {op: 'update', id: 'arm', changes: {size: [0.1, 0.7, 0.1]}},
+      ]);
+      expect(() => assertPlanFresh(resize, before, now)).not.toThrow();
+      expect(
+        applyScenePlan(resize, now, []).objects[0].parts![1].motion
+      ).toEqual(swing({period: 1}));
+    });
+
+    it('applies the whole-design size budget to motion, not only the rest pose', () => {
+      const orbiting = part({
+        position: [5, 0, 0],
+        motion: {kind: 'spin', axis: 'z', pivot: [5, 0, 0], speed: 1},
+      });
+      expect(() =>
+        readSceneLayout(scene(design({parts: [orbiting]})), [])
+      ).toThrow('10');
+    });
+
+    it('teaches rest poses, attached moving children, bounded behaviors, and explicit stopping', () => {
+      const prompt = buildScenePrompt({
+        prompt: 'Make this wave, then give it longer arms.',
+        selectedId: 'robot',
+        scene: scene(movingDesign()),
+        catalog: [],
+      });
+      expect(prompt).toContain('authored rest pose');
+      expect(prompt).toContain('pivot');
+      expect(prompt).toContain('motion:null');
+      expect(prompt).toContain('parent moving hands');
+      expect(prompt).toContain('radians per second');
+      expect(prompt).toContain('never output animation code');
+    });
   });
 
   it('requires exactly one content source', () => {
