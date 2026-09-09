@@ -15,6 +15,7 @@ import {
   applyScenePlan,
   assertPlanFresh,
   buildScenePrompt,
+  cloneSceneEnvironment,
   cloneSceneObject,
   readSceneId,
   readSceneLayout,
@@ -25,6 +26,11 @@ import {
   getProceduralBounds,
 } from './ProceduralGeometry';
 import {ProceduralMotionPlayer} from './ProceduralMotion';
+import {createLandscapeContent, getLandscapeBounds} from './LandscapeGeometry';
+import {
+  createEnvironmentContent,
+  getEnvironmentBounds,
+} from './EnvironmentGeometry';
 import {placeSceneOnSurface} from './ScenePlacement';
 import type {
   RoomcraftEventMap,
@@ -32,6 +38,7 @@ import type {
   RoomcraftStatus,
   SceneAsset,
   SceneAssetDescription,
+  SceneEnvironment,
   SceneLayout,
   SceneObject,
   ScenePlanner,
@@ -110,7 +117,7 @@ async function createContent(asset: SceneAsset, color: string) {
 }
 
 /**
- * Composes trusted assets and procedural designs using incremental AI edits.
+ * Composes trusted assets, procedural designs, and environments using AI edits.
  * Add it to XR Blocks before initialization, then call `request` or load a
  * hand-authored layout with `applyLayout`. No AI call is made on initialization.
  */
@@ -134,6 +141,8 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private camera?: THREE.Camera;
   private timer?: THREE.Timer;
   private motionIsPaused = false;
+  private environment?: SceneEnvironment;
+  private environmentContent?: THREE.Group;
   private title = 'Untitled scene';
   private currentStatus: RoomcraftStatus = 'ready';
   private selection: string | null = null;
@@ -233,7 +242,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     for (const entity of this.entities.values()) entity.motion?.update(delta);
   }
 
-  /** A portable snapshot: live object transforms and authored part rest poses/motions. */
+  /** A detached snapshot of the setting, live transforms, and authored recipes. */
   get layout(): SceneLayout {
     return {
       title: this.title,
@@ -245,6 +254,9 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
           .y,
         scale: owner.scale.toArray(),
       })),
+      ...(this.environment
+        ? {environment: cloneSceneEnvironment(this.environment)}
+        : {}),
     };
   }
 
@@ -278,7 +290,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
 
   /**
    * Bounds of the authored objects in world space, including full motion envelopes.
-   * Static content uses its rendered bounds. An empty scene returns an empty box.
+   * Includes virtual ground, but not sky. An empty scene has an empty box.
    *
    * @param id - One object ID, or omit it to include the whole composition.
    */
@@ -290,12 +302,24 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
       if (!selected) throw new Error(`Object "${id}" does not exist.`);
     }
     const bounds = new THREE.Box3();
+    if (!selected && this.environment) {
+      this.updateWorldMatrix(true, false);
+      bounds.union(
+        getEnvironmentBounds(this.environment).applyMatrix4(this.matrixWorld)
+      );
+    }
     for (const entity of selected ? [selected] : this.entities.values()) {
       entity.owner.updateWorldMatrix(true, false);
       const parts = entity.description.parts;
       if (entity.motion && parts !== undefined) {
         bounds.union(
           getProceduralBounds(parts).applyMatrix4(entity.owner.matrixWorld)
+        );
+      } else if (entity.description.landscape !== undefined) {
+        bounds.union(
+          getLandscapeBounds(entity.description.landscape).applyMatrix4(
+            entity.owner.matrixWorld
+          )
         );
       } else {
         bounds.union(new THREE.Box3().setFromObject(entity.owner));
@@ -399,10 +423,16 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   /**
    * Place the whole composition on a detected horizontal surface that fits it.
    * Returns false without moving the scene if no suitable surface is available.
+   * Virtual environments already own a ground plane and cannot use this placement.
    * This is session-local placement, not a persistent spatial anchor.
    */
   async placeOnSurface(): Promise<boolean> {
     return this.run('placing', async () => {
+      if (this.environment) {
+        throw new Error(
+          'A virtual environment cannot be placed on a detected surface.'
+        );
+      }
       if (!this.world || !this.camera) {
         throw new Error(
           'Initialize XR Blocks before placing a Roomcraft scene.'
@@ -445,6 +475,12 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
       disposeContent(entity.owner);
     }
     this.entities.clear();
+    if (this.environmentContent) {
+      this.environmentContent.removeFromParent();
+      disposeContent(this.environmentContent);
+      this.environmentContent = undefined;
+    }
+    this.environment = undefined;
     this.history.length = 0;
     this.future.length = 0;
     this.redoBase = undefined;
@@ -461,8 +497,14 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     const before = this.layout;
     const fingerprint = JSON.stringify(before);
     const staged = new Map<string, THREE.Group>();
+    const environmentChanged =
+      JSON.stringify(this.environment) !== JSON.stringify(layout.environment);
+    let stagedEnvironment: THREE.Group | undefined;
     let committed = false;
     try {
+      if (environmentChanged && layout.environment) {
+        stagedEnvironment = createEnvironmentContent(layout.environment);
+      }
       for (const object of layout.objects) {
         const existing = this.entities.get(object.id);
         if (
@@ -470,11 +512,15 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
           existing.description.asset !== object.asset ||
           existing.description.color !== object.color ||
           JSON.stringify(existing.description.parts) !==
-            JSON.stringify(object.parts)
+            JSON.stringify(object.parts) ||
+          JSON.stringify(existing.description.landscape) !==
+            JSON.stringify(object.landscape)
         ) {
           let content: THREE.Group;
           if (object.parts !== undefined) {
             content = createProceduralContent(object.parts, object.color);
+          } else if (object.landscape !== undefined) {
+            content = createLandscapeContent(object.landscape, object.color);
           } else {
             const asset = this.assets.get(object.asset);
             if (!asset) {
@@ -510,6 +556,17 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
       }
 
       const retired: THREE.Object3D[] = [];
+      if (environmentChanged) {
+        if (this.environmentContent) {
+          this.environmentContent.removeFromParent();
+          retired.push(this.environmentContent);
+        }
+        this.environment = layout.environment
+          ? cloneSceneEnvironment(layout.environment)
+          : undefined;
+        this.environmentContent = stagedEnvironment;
+        if (stagedEnvironment) this.add(stagedEnvironment);
+      }
       const ids = new Set(layout.objects.map((object) => object.id));
       for (const [id, entity] of this.entities) {
         if (!ids.has(id)) {
@@ -586,7 +643,10 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
       this.dispatchEvent({type: 'change', layout: this.layout});
       return this.layout;
     } finally {
-      if (!committed) staged.forEach(disposeContent);
+      if (!committed) {
+        staged.forEach(disposeContent);
+        if (stagedEnvironment) disposeContent(stagedEnvironment);
+      }
     }
   }
 
