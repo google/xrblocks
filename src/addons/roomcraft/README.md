@@ -2,7 +2,7 @@
 
 Roomcraft turns a description into actual, manipulable 3D content, then applies follow-up instructions to the same scene. "Add a lamp", "make this blue", and "remove the bookshelf" produce validated scene edits rather than a text answer or generated JavaScript.
 
-The add-on can compose trusted catalog assets or generate new procedural designs from primitive parts. A robot, sculpture, or piece of furniture does not need a predefined catalog entry: the planner describes its parts, and Roomcraft builds them as one manipulable object. This is bounded procedural geometry, not a photorealistic text-to-mesh service or execution of generated JavaScript. The [interactive demo](../../../demos/roomcraft/) includes no-key handcrafted scenes and a compound robot example.
+The add-on can compose trusted catalog assets or generate new procedural designs from primitive parts. A robot, sculpture, or piece of furniture does not need a predefined catalog entry: the planner describes its parts, and Roomcraft builds them as one manipulable object. Parts can also swing or spin around authored joints. This is bounded procedural geometry and motion, not a photorealistic text-to-mesh service or execution of generated JavaScript. The [interactive demo](../../../demos/roomcraft/) includes no-key handcrafted scenes and a moving compound robot example.
 
 ## Run the demo
 
@@ -82,7 +82,7 @@ await room.request(
 await room.placeOnSurface();
 ```
 
-Every part is a `box`, `sphere`, `cylinder`, `cone`, `capsule`, or `torus` with a stable ID. Part positions specify centers in parent-local meters, rotations are XYZ Euler angles in radians, and sizes are physical width, height, and depth. A `parent` of `null` attaches the part to the object's origin; a part ID attaches it to that part's center and orientation. Parent size does not scale its children. Cylinder, cone, and capsule axes are Y; a torus lies in XY with its hole along Z.
+Every part is a `box`, `sphere`, `cylinder`, `cone`, `capsule`, or `torus` with a stable ID. Part positions specify authored rest-pose centers in parent-local meters, rotations are XYZ Euler angles in radians, and sizes are physical width, height, and depth. A `parent` of `null` attaches the part to the object's origin; a part ID attaches it to that part's center and orientation. Parent size does not scale its children. Cylinder, cone, and capsule axes are Y; a torus lies in XY with its hole along Z.
 
 All parts belong to one scene object, so pinching any part moves or scales the whole design. Refinement retains that outer owner and its hand-edited pose. The geometry is not automatically recentered, grounded, or rescaled when a limb grows or a backpack is added; the authored origin stays fixed. Place support parts with their bottoms at local Y=0, and update attached part positions when changing dimensions. Surface placement uses the full design bounds, including offset and rotated parts.
 
@@ -199,13 +199,72 @@ Object positions specify origins in scene-local meters: X right, Y up, and posit
 
 Model-authored and imported layouts are bounded to 48 objects, positions within 10 meters of the scene origin with nonnegative Y, and per-axis scale multipliers from 0.05 to 5. Plans have at most 96 edits. Direct hand transforms are preserved even if they move outside those planner input limits.
 
-Each procedural object contains 1 to 48 parts with hierarchy depth at most 8; a scene contains at most 384 procedural parts. Individual sizes are 0.01 to 5 meters per axis, and parent-local centers are within +/-5 meters. A whole design must remain within +/-10 meters of its origin and be at most 10 meters across on each axis. There can be at most 96 part edits in one object update. Collection counts are enforced locally and described in the prompt rather than imposed on Gemini's nested response schema.
+Each procedural object contains 1 to 48 parts with hierarchy depth at most 8; a scene contains at most 384 procedural parts. Individual sizes are 0.01 to 5 meters per axis, and parent-local centers are within +/-5 meters. A whole design, including its full motion envelope, must remain within +/-10 meters of its origin and be at most 10 meters across on each axis. There can be at most 96 part edits in one object update. Collection counts are enforced locally and described in the prompt rather than imposed on Gemini's nested response schema.
 
 Undo and redo retain up to 20 successful scene commands, including part refinements and explicit replacements. `canUndo` and `canRedo` expose availability. Redo reuses the saved layout without another planner request, although catalog models may need to load again. Failed or no-op commands preserve the redo branch; a new successful edit clears it.
 
-Redo requires the scene-local layout to still match the state restored by undo, so it refuses to overwrite later hand edits. Undoing after such a change starts a fresh redo branch. History does not record each drag or surface-placement action. Camera movement, selection changes, and placement of the whole composition do not by themselves invalidate redo.
+Redo requires the scene-local layout to still match the state restored by undo, so it refuses to overwrite later hand edits. Undoing after such a change starts a fresh redo branch. History does not record each drag or surface-placement action. Camera movement, selection changes, motion playback, pause/resume, and placement of the whole composition do not by themselves invalidate redo.
 
-Exported layouts preserve part definitions, hierarchy, colors, and edited object transforms, but contain no API keys, conversation history, or physical anchor. They are portable compositions, not persistent room mappings.
+Exported layouts preserve part definitions, motion definitions, hierarchy, colors, and edited object transforms, but contain no API keys, conversation history, or physical anchor. They are portable compositions, not persistent room mappings. Part transforms remain their authored rest poses; current playback phase and pause state are not serialized.
+
+## Articulated parts and playback
+
+An optional `motion` on a procedural part rotates that part and all its descendants. `axis` is `x`, `y`, or `z` in the part's authored local frame, after its rest rotation. `pivot` is a hinge or axle in part-local meters relative to its center, not a point in the parent or room. A shoulder at the top of the preceding 0.6-meter arm is therefore `[0, 0.3, 0]`.
+
+```js
+await room.applyPlan({
+  title: room.layout.title,
+  edits: [
+    {
+      op: 'update',
+      id: 'robot',
+      changes: {},
+      partEdits: [
+        {
+          op: 'update',
+          id: 'arm',
+          changes: {
+            motion: {
+              kind: 'swing',
+              axis: 'z',
+              pivot: [0, 0.3, 0],
+              amplitude: 0.6,
+              period: 2,
+            },
+          },
+        },
+      ],
+    },
+  ],
+});
+```
+
+| Kind    | Parameters                                                                      | Behavior                                                                       |
+| ------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `swing` | Positive `amplitude` up to `Math.PI` radians; `period` from 0.25 to 60 seconds  | Smoothly oscillates on either side of the authored orientation.                |
+| `spin`  | Nonzero signed `speed`, with magnitude at most `4 * Math.PI` radians per second | Continuously rotates around the local axis. Negative speed reverses direction. |
+
+Both kinds require `axis` and `pivot`. Each pivot component must be within +/-5 meters. Optional `phase` is a starting fraction of a full cycle from 0 to 1, defaulting to 0. Opposing wings can use phases 0 and 0.5. A centered spinner can use `{kind: 'spin', axis: 'z', pivot: [0, 0, 0], speed: -2}`. No generated code, arbitrary keyframes, or external animation service is involved.
+
+Parent hands, fingers, feathers, and held accessories beneath the limb they should follow. Size still does not scale descendants: when a limb grows, adjust its authored center, pivot, and attached child positions as needed to keep the joint connected. The runtime does not infer anatomical constraints or solve physical joints.
+
+Playback uses the SDK's injected frame timer, so add Roomcraft before `xb.init()` and do not start a separate animation loop. Unchanged part IDs and motion kinds keep their cycle position across geometry, color, hierarchy, speed, and period edits, unless the declared starting phase changes. New or reintroduced motions start at their declared phase. Motion updates do not rewrite `room.layout` or interfere with planning, hand manipulation, or history.
+
+Replace the complete `changes.motion` definition to retune a part. Use `changes: {motion: null}` to remove its motion and return it to its authored pose. Undo and redo restore definitions, not a recording of elapsed animation time.
+
+```js
+room.setMotionPaused(true); // Inspect the current pose without editing the design.
+room.setMotionPaused(false);
+console.log(room.hasMotion, room.motionPaused);
+room.addEventListener('motionstatechange', ({paused}) => {
+  console.log('Part motion paused:', paused);
+});
+const bounds = room.getWorldBounds('robot');
+```
+
+`getWorldBounds(id?)` returns a detached world-space box for one authored object or the whole composition, with an empty box for an empty scene. Moving procedural objects reserve their full reachable envelope even when paused; static content uses its rendered bounds. Surface placement also includes the motion envelope, so playback does not invalidate a successful fit. Hand movement or an authored edit still requires a new fit.
+
+These are local, rigid-part motions, not skinned-character animation, navigation, gaze tracking, autonomous behavior, or physics simulation. Catalog asset animation remains outside this part-motion contract.
 
 ## Trusted asset catalogs
 
