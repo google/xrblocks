@@ -49,6 +49,7 @@ await room.request('Add a floor lamp beside the chair.');
 await room.request('Make this blue.'); // Uses the currently selected object.
 await room.request('Remove the bookshelf.');
 await room.undo();
+await room.redo();
 
 room.addEventListener('selectionchange', ({id}) => {
   console.log('Selected:', id);
@@ -200,7 +201,11 @@ Model-authored and imported layouts are bounded to 48 objects, positions within 
 
 Each procedural object contains 1 to 48 parts with hierarchy depth at most 8; a scene contains at most 384 procedural parts. Individual sizes are 0.01 to 5 meters per axis, and parent-local centers are within +/-5 meters. A whole design must remain within +/-10 meters of its origin and be at most 10 meters across on each axis. There can be at most 96 part edits in one object update. Collection counts are enforced locally and described in the prompt rather than imposed on Gemini's nested response schema.
 
-Undo retains the 20 most recent successful scene commands, including part refinements and explicit replacements. It does not record each drag or surface-placement action. Exported layouts preserve part definitions, hierarchy, colors, and edited object transforms, but contain no API keys, conversation history, or physical anchor. They are portable compositions, not persistent room mappings.
+Undo and redo retain up to 20 successful scene commands, including part refinements and explicit replacements. `canUndo` and `canRedo` expose availability. Redo reuses the saved layout without another planner request, although catalog models may need to load again. Failed or no-op commands preserve the redo branch; a new successful edit clears it.
+
+Redo requires the scene-local layout to still match the state restored by undo, so it refuses to overwrite later hand edits. Undoing after such a change starts a fresh redo branch. History does not record each drag or surface-placement action. Camera movement, selection changes, and placement of the whole composition do not by themselves invalidate redo.
+
+Exported layouts preserve part definitions, hierarchy, colors, and edited object transforms, but contain no API keys, conversation history, or physical anchor. They are portable compositions, not persistent room mappings.
 
 ## Trusted asset catalogs
 
