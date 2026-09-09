@@ -20,9 +20,11 @@ const EXHIBIT_MODEL_URL =
 const SUGGESTIONS = [
   'Create a little robot standing on the floor',
   'Give it longer arms and a backpack',
+  'Make it wave its right arm',
+  'Make its arm swing faster',
+  'Stop its motion',
   'Make the selected object deep blue',
   'Add a floor lamp beside the left chair',
-  'Remove the bookshelf and add a tall plant',
 ];
 
 /** How many part names the console lists before summarizing the remainder. */
@@ -67,6 +69,15 @@ function round(value) {
   return Math.round(value * 1e4) / 1e4;
 }
 
+/** A short, honest phrase for one authored part motion, or an empty string. */
+function describeMotion(motion) {
+  if (!motion) return '';
+  if (motion.kind === 'swing') {
+    return `swings ${Math.round(THREE.MathUtils.radToDeg(motion.amplitude))} degrees about ${motion.axis} every ${round(motion.period)}s`;
+  }
+  return `spins about ${motion.axis} at ${round(motion.speed)} rad/s`;
+}
+
 /**
  * The demo console: HTML controls on the desktop and a spatial panel in XR,
  * both driving the same Roomcraft add-on instance.
@@ -107,6 +118,7 @@ export class RoomcraftConsole extends xb.Script {
     });
     this.listen(this.room, 'selectionchange', () => this.refresh());
     this.listen(this.room, 'statuschange', () => this.refresh());
+    this.listen(this.room, 'motionstatechange', () => this.refresh());
     const narrowScreen = window.matchMedia('(max-width: 980px)');
     this.listen(narrowScreen, 'change', (event) =>
       this.toggleConsole(!event.matches)
@@ -143,6 +155,8 @@ export class RoomcraftConsole extends xb.Script {
       selection: id('selection'),
       design: id('design'),
       parts: id('parts'),
+      motion: id('motion'),
+      motionNote: id('motionNote'),
       place: id('place'),
       undo: id('undo'),
       redo: id('redo'),
@@ -210,6 +224,7 @@ export class RoomcraftConsole extends xb.Script {
       () => void this.removeSelected()
     );
     this.listen(this.dom.exhibit, 'click', () => void this.addExhibit());
+    this.listen(this.dom.motion, 'click', () => this.toggleMotion());
     this.listen(this.dom.export, 'click', () => this.exportLayout());
     this.listen(this.dom.connect, 'click', () => void this.connectGemini());
     this.listen(this.dom.selection, 'change', (event) => {
@@ -378,6 +393,11 @@ export class RoomcraftConsole extends xb.Script {
       onClick: () => void this.removeSelected(),
       style: buttonStyle('#30292d'),
     });
+    this.xrMotion = new xb.UIButton({
+      label: 'Pause',
+      onClick: () => this.toggleMotion(),
+      style: buttonStyle('#30292d'),
+    });
     this.xrAuthorTab = new xb.UIButton({
       label: 'Create / edit',
       onClick: () => this.setSpatialTab('author'),
@@ -464,7 +484,7 @@ export class RoomcraftConsole extends xb.Script {
         this.xrProviderText,
         this.xrStatusText,
         this.xrSelectionText,
-        row([this.xrPrevious, this.xrNext, this.xrRemove], 64),
+        row([this.xrPrevious, this.xrNext, this.xrRemove, this.xrMotion], 64),
         row([this.xrAuthorTab, this.xrExamplesTab], 64),
         this.xrAuthorPanel,
         this.xrExamplesPanel,
@@ -771,6 +791,27 @@ export class RoomcraftConsole extends xb.Script {
     });
   }
 
+  /**
+   * Pauses or resumes part playback. This is inspection state: it never edits
+   * the scene, so it stays available while a request is running.
+   */
+  toggleMotion() {
+    if (!this.room.hasMotion) {
+      this.setError(
+        'Nothing in this scene moves yet. Ask for motion, for example "make it wave".'
+      );
+      return;
+    }
+    const paused = !this.room.motionPaused;
+    this.room.setMotionPaused(paused);
+    this.setError('');
+    this.setStatus(
+      paused
+        ? 'Motion paused for inspection. The authored motion, history, and placement are unchanged.'
+        : 'Motion resumed from where each part paused.'
+    );
+  }
+
   /** Reframes the desktop camera without changing any scene transforms. */
   async frame(selectedOnly = false) {
     await this.run('Framing your view.', () => {
@@ -784,14 +825,14 @@ export class RoomcraftConsole extends xb.Script {
         throw new Error('Framing needs a perspective camera.');
       }
       const selectedId = this.room.selectedId;
-      const target = selectedOnly
-        ? selectedId
-          ? this.room.getObject(selectedId)
-          : undefined
-        : this.room;
-      if (!target) throw new Error('Select an object to focus first.');
-      target.updateWorldMatrix(true, false);
-      const bounds = new THREE.Box3().setFromObject(target);
+      if (selectedOnly && !selectedId) {
+        throw new Error('Select an object to focus first.');
+      }
+      // Reserve the full motion envelope, not the pose of this single frame,
+      // so a moving design does not swing out of view after it is framed.
+      const bounds = this.room.getWorldBounds(
+        selectedOnly ? selectedId : undefined
+      );
       if (bounds.isEmpty()) throw new Error('There is nothing to frame yet.');
       camera.updateWorldMatrix(true, false);
       if (camera.matrixWorld.determinant() === 0) {
@@ -842,8 +883,8 @@ export class RoomcraftConsole extends xb.Script {
       camera.updateMatrixWorld();
       this.setStatus(
         selectedOnly
-          ? 'Framed the selected object. Its placement was not changed.'
-          : 'Framed the scene. Object placements were not changed.'
+          ? 'Framed the selected object with room for its full motion. Its placement was not changed.'
+          : 'Framed the scene with room for any authored motion. Object placements were not changed.'
       );
     });
   }
@@ -1127,17 +1168,26 @@ export class RoomcraftConsole extends xb.Script {
       : 'Nothing selected';
     const selected = layout.objects.find((object) => object.id === selectedId);
     const parts = selected?.parts ?? [];
+    const movingParts = parts.filter((part) => part.motion);
+    const motionSentence = movingParts.length
+      ? ` ${movingParts.length} part${movingParts.length === 1 ? '' : 's'} move: ${movingParts
+          .map((part) => `${part.name} ${describeMotion(part.motion)}`)
+          .join('; ')}. Pausing motion does not change the design.`
+      : ' No part of it moves yet.';
     dom.design.textContent = !selected
       ? 'Nothing selected.'
       : parts.length > 0
         ? `${selected.name} is one compound design made of ${parts.length} part${
             parts.length === 1 ? '' : 's'
-          }. It moves, rotates, and scales as a single object, and an edit can change individual parts.`
+          }. It moves, rotates, and scales as a single object, and an edit can change individual parts.${motionSentence}`
         : `${selected.name} is a catalog object, so it has no editable parts.`;
     dom.parts.replaceChildren();
     for (const part of parts.slice(0, MAX_LISTED_PARTS)) {
       const item = document.createElement('li');
-      item.textContent = `${part.name} (${part.shape})`;
+      item.textContent = part.motion
+        ? `${part.name} (${part.shape}, ${part.motion.kind}s)`
+        : `${part.name} (${part.shape})`;
+      if (part.motion) item.className = 'rc-moving';
       dom.parts.appendChild(item);
     }
     if (parts.length > MAX_LISTED_PARTS) {
@@ -1149,10 +1199,26 @@ export class RoomcraftConsole extends xb.Script {
     if (this.xrSelectionText) {
       this.xrSelectionText.text = selectedId
         ? parts.length > 0
-          ? `Selected: ${selectedName} - ${parts.length} parts`
+          ? `Selected: ${selectedName} - ${parts.length} parts${
+              movingParts.length ? `, ${movingParts.length} moving` : ''
+            }`
           : `Selected: ${selectedName} (${selectedId})`
         : 'Nothing selected';
     }
+
+    // Playback control is inspection state, so it ignores the busy flag.
+    const hasMotion = this.room.hasMotion;
+    const motionPaused = this.room.motionPaused;
+    dom.motion.disabled = !hasMotion;
+    dom.motion.textContent = motionPaused ? 'Resume motion' : 'Pause motion';
+    dom.motion.setAttribute('aria-pressed', String(motionPaused));
+    dom.motionNote.textContent = !hasMotion
+      ? 'Nothing in this scene moves. Authored motion is optional.'
+      : motionPaused
+        ? 'Motion paused. Parts hold their current pose for inspection; the layout, history, and placement are untouched.'
+        : 'Motion playing. Exported parts always keep their authored rest transforms.';
+    this.xrMotion.disabled = dom.motion.disabled;
+    this.xrMotion.label = motionPaused ? 'Resume' : 'Pause';
 
     const aiReady = this.isGeminiReady();
     this.xrProviderText.text = aiReady
