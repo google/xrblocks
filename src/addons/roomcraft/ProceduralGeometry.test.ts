@@ -6,6 +6,7 @@ import {
   createProceduralContent,
   getProceduralBounds,
 } from './ProceduralGeometry';
+import {ProceduralMotionPlayer} from './ProceduralMotion';
 import {MAX_PART_DEPTH, SCENE_PART_SHAPES, type ScenePart} from './SceneTypes';
 
 const resources: THREE.Object3D[] = [];
@@ -246,6 +247,117 @@ describe('createProceduralContent', () => {
 });
 
 describe('getProceduralBounds', () => {
+  it('reserves an off-center spin without expanding along its axle', () => {
+    const bounds = getProceduralBounds([
+      part({
+        position: [0.5, 0.1, 0],
+        size: [0.2, 0.2, 0.2],
+        motion: {
+          kind: 'spin',
+          axis: 'y',
+          pivot: [-0.5, 0, 0],
+          speed: -2,
+        },
+      }),
+    ]);
+    const radius = Math.hypot(0.6, 0.1);
+    expect(bounds.min.x).toBeCloseTo(-radius, 9);
+    expect(bounds.max.x).toBeCloseTo(radius, 9);
+    expect(bounds.min.z).toBeCloseTo(-radius, 9);
+    expect(bounds.max.z).toBeCloseTo(radius, 9);
+    expect(bounds.min.y).toBeCloseTo(0, 9);
+    expect(bounds.max.y).toBeCloseTo(0.2, 9);
+  });
+
+  it('bounds only a swing interval, including extrema between its endpoints', () => {
+    const bounds = getProceduralBounds([
+      part({
+        size: [0.2, 1, 0.2],
+        motion: {
+          kind: 'swing',
+          axis: 'z',
+          pivot: [0, 0.5, 0],
+          amplitude: 0.3,
+          period: 2,
+        },
+      }),
+    ]);
+    const extent = 0.1 * Math.cos(0.3) + Math.sin(0.3);
+    expect(bounds.min.x).toBeCloseTo(-extent, 9);
+    expect(bounds.max.x).toBeCloseTo(extent, 9);
+    expect(bounds.min.y).toBeCloseTo(1 - Math.hypot(1, 0.1), 9);
+    expect(bounds.max.y).toBeCloseTo(1 + 0.1 * Math.sin(0.3), 9);
+    expect(bounds.getSize(new THREE.Vector3()).x).toBeLessThan(0.8);
+  });
+
+  it.each(['x', 'y', 'z'] as const)(
+    'contains swing and spin poses around a rotated local %s axis',
+    (axis) => {
+      for (const kind of ['swing', 'spin'] as const) {
+        const parts = robot();
+        parts[0].rotation = [0.3, -0.7, 0.4];
+        parts[1].rotation = [-0.5, 0.1, 0.6];
+        const base = {axis, pivot: [0.3, 0.2, -0.1] as ScenePart['position']};
+        parts[1].motion =
+          kind === 'swing'
+            ? {...base, kind, amplitude: 2.7, period: 3}
+            : {...base, kind, speed: (-Math.PI * 2) / 3};
+        parts.reverse();
+        const bounds = getProceduralBounds(parts).expandByScalar(1e-6);
+        const content = build(parts);
+        const player = new ProceduralMotionPlayer(content, parts);
+        for (let index = 0; index < 160; index++) {
+          player.update(3 / 160);
+          expect(bounds.containsBox(boundsOf(content))).toBe(true);
+        }
+      }
+    }
+  );
+
+  it('composes nested moving envelopes with static descendants and other roots', () => {
+    const parts = robot();
+    parts[0].motion = {
+      kind: 'spin',
+      axis: 'y',
+      pivot: [0.2, -0.1, 0],
+      speed: 1.2,
+    };
+    parts[1].rotation = [0.2, -0.4, 0.5];
+    parts[1].motion = {
+      kind: 'swing',
+      axis: 'x',
+      pivot: [0, 0.2, 0],
+      amplitude: 0.7,
+      period: 2.3,
+    };
+    parts.push(part({id: 'stand', position: [0.8, 0.1, 0.2]}));
+    const before = structuredClone(parts);
+    const bounds = getProceduralBounds(parts).expandByScalar(1e-6);
+    const content = build(parts);
+    const player = new ProceduralMotionPlayer(content, parts);
+    for (let index = 0; index < 300; index++) {
+      player.update(0.07);
+      expect(bounds.containsBox(boundsOf(content))).toBe(true);
+    }
+    expect(parts).toEqual(before);
+  });
+
+  it('rejects invalid motion before returning apparently valid bounds', () => {
+    expect(() =>
+      getProceduralBounds([
+        part({
+          motion: {
+            kind: 'swing',
+            axis: 'x',
+            pivot: [0, 0, 0],
+            amplitude: 0,
+            period: 2,
+          },
+        }),
+      ])
+    ).toThrow('amplitude');
+  });
+
   it('bounds the whole hierarchy in authored coordinates without recentering', () => {
     const bounds = getProceduralBounds(robot());
     expect(bounds.min.y).toBeCloseTo(0.19, 5);
