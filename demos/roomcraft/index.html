@@ -65,9 +65,15 @@
           <h2 id="startersHeading" class="rc-heading">Starter scenes</h2>
           <p class="rc-note">
             Handcrafted examples that need no API key. Each one replaces the
-            current scene, and undo brings the previous one back.
+            current scene, and undo brings the previous one back. New design
+            clears the scene so you can describe one object at a time.
           </p>
           <div id="starters" class="rc-row rc-row-wrap"></div>
+          <div class="rc-row rc-row-wrap">
+            <button id="newDesign" class="rc-button" type="button">
+              New design
+            </button>
+          </div>
         </section>
 
         <section class="rc-section" aria-labelledby="promptHeading">
@@ -80,7 +86,7 @@
               type="text"
               autocomplete="off"
               maxlength="4000"
-              placeholder="Add a floor lamp beside the left chair"
+              placeholder="Create a little robot standing on the floor"
             />
             <button
               id="mic"
@@ -114,6 +120,8 @@
               <option value="">Nothing selected</option>
             </select>
           </div>
+          <p id="design" class="rc-note">Nothing selected.</p>
+          <ul id="parts" class="rc-parts" hidden></ul>
           <div class="rc-row rc-row-wrap">
             <button id="place" class="rc-button" type="button">
               Place on surface
