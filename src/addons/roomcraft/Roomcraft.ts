@@ -117,6 +117,8 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private readonly ownerIds = new WeakMap<THREE.Object3D, string>();
   private readonly planner?: ScenePlanner;
   private readonly history: SceneLayout[] = [];
+  private readonly future: SceneLayout[] = [];
+  private redoBase?: string;
   private ai?: AI;
   private world?: World;
   private camera?: THREE.Camera;
@@ -208,6 +210,13 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     return this.history.length > 0;
   }
 
+  /** Redo never overwrites changes made since the last history operation. */
+  get canRedo() {
+    return (
+      this.future.length > 0 && this.redoBase === JSON.stringify(this.layout)
+    );
+  }
+
   get selectedId() {
     return this.selection;
   }
@@ -231,7 +240,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   async applyLayout(value: unknown): Promise<SceneLayout> {
     return this.run('loading', async () => {
       const layout = readSceneLayout(value, this.catalog);
-      return this.commitLayout(layout, true);
+      return this.commitLayout(layout);
     });
   }
 
@@ -240,7 +249,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     return this.run('loading', async () => {
       const plan = readScenePlan(value, this.catalog);
       const layout = applyScenePlan(plan, this.layout, this.catalog);
-      return this.commitLayout(layout, true);
+      return this.commitLayout(layout);
     });
   }
 
@@ -282,7 +291,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
       assertPlanFresh(plan, before, current);
       const layout = applyScenePlan(plan, current, this.catalog);
       this.setStatus('loading');
-      return this.commitLayout(layout, true);
+      return this.commitLayout(layout);
     });
   }
 
@@ -291,7 +300,21 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     return this.run('loading', async () => {
       const previous = this.history.at(-1);
       if (!previous) throw new Error('There is no scene edit to undo.');
-      return this.commitLayout(previous, false);
+      return this.commitLayout(previous, 'undo');
+    });
+  }
+
+  /** Reapply an undone scene edit without asking the planner again. */
+  async redo(): Promise<SceneLayout> {
+    return this.run('loading', async () => {
+      const next = this.future.at(-1);
+      if (!next) throw new Error('There is no scene edit to redo.');
+      if (!this.canRedo) {
+        throw new Error(
+          'The scene changed since undo. Redo was not applied; your scene was kept.'
+        );
+      }
+      return this.commitLayout(next, 'redo');
     });
   }
 
@@ -345,11 +368,16 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     }
     this.entities.clear();
     this.history.length = 0;
+    this.future.length = 0;
+    this.redoBase = undefined;
     this.selection = null;
     this.currentStatus = 'ready';
   }
 
-  private async commitLayout(layout: SceneLayout, remember: boolean) {
+  private async commitLayout(
+    layout: SceneLayout,
+    historyAction: 'record' | 'undo' | 'redo' = 'record'
+  ) {
     const before = this.layout;
     const fingerprint = JSON.stringify(before);
     const staged = new Map<string, THREE.Group>();
@@ -421,17 +449,31 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         }
         entity.owner.name = object.name;
         entity.owner.position.fromArray(object.position);
-        entity.owner.rotation.set(0, object.rotation, 0);
+        const previous = before.objects.find(({id}) => id === object.id);
+        // Avoid quaternion/Euler round-trip drift on unchanged rotations.
+        if (object.rotation !== previous?.rotation) {
+          entity.owner.rotation.set(0, object.rotation, 0);
+        }
         entity.owner.scale.fromArray(object.scale);
         entity.description = object;
       }
       this.title = layout.title;
-      if (remember && JSON.stringify(this.layout) !== fingerprint) {
-        this.history.push(before);
-        if (this.history.length > 20) this.history.shift();
-      } else if (!remember) {
+      const after = JSON.stringify(this.layout);
+      if (historyAction === 'undo') {
+        if (this.redoBase !== fingerprint) this.future.length = 0;
         this.history.pop();
+        this.future.push(before);
+        this.redoBase = after;
+      } else if (historyAction === 'redo') {
+        this.future.pop();
+        this.history.push(before);
+        this.redoBase = this.future.length > 0 ? after : undefined;
+      } else if (after !== fingerprint) {
+        this.history.push(before);
+        this.future.length = 0;
+        this.redoBase = undefined;
       }
+      if (this.history.length > 20) this.history.shift();
       committed = true;
       retired.forEach(disposeContent);
       if (this.selection && !this.entities.has(this.selection))
