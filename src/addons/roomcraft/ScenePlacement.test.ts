@@ -6,9 +6,12 @@ import {disposeObjectTree} from '../../utils/ThreeDisposal';
 import {placeSceneOnSurface} from './ScenePlacement';
 import {createProceduralContent} from './ProceduralGeometry';
 import {ProceduralMotionPlayer} from './ProceduralMotion';
+import {createLandscapeContent} from './LandscapeGeometry';
 import type {
   SceneAssetDescription,
   SceneLayout,
+  SceneLandscape,
+  SceneLandscapeObject,
   SceneProceduralObject,
 } from './SceneTypes';
 
@@ -107,6 +110,83 @@ afterEach(() => {
 });
 
 describe('Roomcraft detected-surface placement', () => {
+  it.each<SceneLandscape>([
+    {kind: 'pond', size: [2, 1.5], bankWidth: 0.25},
+    {
+      kind: 'path',
+      points: [
+        [-1, 0],
+        [0, -1],
+        [1, -1],
+      ],
+      width: 0.5,
+    },
+    {
+      kind: 'scatter',
+      style: 'tree',
+      size: [1, 1],
+      count: 3,
+      seed: 17,
+      height: 1.2,
+    },
+  ])('places a standalone $kind using its landscape footprint', (landscape) => {
+    const root = new THREE.Group();
+    const feature: SceneLandscapeObject = {
+      id: 'feature',
+      name: 'Landscape feature',
+      landscape,
+      position: [0, 0, 0],
+      rotation: 0,
+      scale: [1, 1, 1],
+      color: '#557766',
+    };
+    root.add(createLandscapeContent(landscape, feature.color));
+    resources.push(root);
+    const floor = plane(8, 8);
+    expect(
+      placeSceneOnSurface(
+        root,
+        {title: 'Landscape', objects: [feature]},
+        [],
+        [floor],
+        camera()
+      )
+    ).toBe(true);
+    const bounds = new THREE.Box3().setFromObject(root);
+    expect(bounds.min.y).toBeGreaterThanOrEqual(-1e-6);
+    expect(bounds.min.x).toBeGreaterThanOrEqual(-4 - 1e-6);
+    expect(bounds.max.x).toBeLessThanOrEqual(4 + 1e-6);
+    expect(bounds.min.z).toBeGreaterThanOrEqual(-6 - 1e-6);
+    expect(bounds.max.z).toBeLessThanOrEqual(2 + 1e-6);
+  });
+
+  it('does not fit a pond by ignoring its wider stone bank', () => {
+    const root = new THREE.Group();
+    root.position.set(1, 2, 3);
+    const feature: SceneLandscapeObject = {
+      id: 'pond',
+      name: 'Pond',
+      position: [0, 0, 0],
+      rotation: 0,
+      scale: [1, 1, 1],
+      color: '#557766',
+      landscape: {kind: 'pond', size: [1, 1], bankWidth: 0.5},
+    };
+    root.add(createLandscapeContent(feature.landscape, feature.color));
+    resources.push(root);
+    const before = root.position.clone();
+    expect(
+      placeSceneOnSurface(
+        root,
+        {title: 'Pond', objects: [feature]},
+        [],
+        [plane(1.1, 1.1, new THREE.Vector3(0, 0.75, -1), 'table')],
+        camera()
+      )
+    ).toBe(false);
+    expect(root.position.equals(before)).toBe(true);
+  });
+
   it('rejects a table that fits a rest pose but not the full motion footprint', () => {
     const object = orbitingBlock();
     const root = new THREE.Group();
