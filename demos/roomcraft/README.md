@@ -38,6 +38,16 @@ Press Place on surface to move the composition onto a detected horizontal plane.
 
 Press Export JSON to download the current layout. The file contains titles, asset IDs, part definitions with their hierarchy, transforms, and colors only. It contains no API key and no prompt text, and the SDK's `applyLayout` accepts the same data back.
 
+## Spatial studio
+
+Press Spatial studio in the page header to use the in-scene controls in the desktop simulator, even with the DOM console collapsed. The same studio opens automatically in XR. Its Create / edit tab offers Talk, a prompt preview, and Generate. Keyboard opens a separate movable card for typing and submitting instructions without an immersive DOM text field.
+
+The keyboard reuses the existing [virtualkeyboard add-on](../../src/addons/virtualkeyboard/), following the card-and-keyboard pattern in [Math3D](../math3d/). It adds no npm dependency. Spatial keys, desktop input, and final speech transcripts share one draft. Enter or Generate submits it, and a new draft entered while a request is running is kept when that request finishes.
+
+Previous and Next cycle through scene objects, including objects that are difficult to point at. Remove deletes the selected object without asking Gemini; Undo restores it. New, Place, Undo, and Redo are available below both tabs. Examples contains the clearly labelled handcrafted starter scenes, not generated content.
+
+The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the desktop controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
+
 ## Gemini
 
 Starter scenes including the handcrafted robot, direct manipulation, New design, the downloaded exhibit, undo/redo, desktop framing, and export all work without a key. Creating and refining new designs from your own words needs a configured provider.
@@ -62,6 +72,8 @@ Scene composition uses the add-on's catalog of preauthored assets, which covers 
 
 New objects outside that catalog are built from box, sphere, cylinder, cone, capsule, and torus parts. The result is a readable blocky design, not a photorealistic mesh, and there is no arbitrary geometry, no texture generation, and no generated code.
 
+Generated designs are static. They do not yet include articulated joints, animations, or autonomous behaviors.
+
 A design holds at most 48 parts, a scene holds at most 384 parts across all designs, and parts nest at most 8 levels deep. Each part measures 0.01 to 5 meters per axis and its center stays within +/-5 meters per axis of its parent. A whole design must stay within +/-10 meters of its own origin and measure no more than 10 meters across on any axis.
 
 A scene holds at most 48 objects, positions stay within 10 meters of the scene origin, and scale multipliers run from 0.05 to 5.
@@ -72,7 +84,7 @@ Only one operation runs at a time. Invalid plans, provider failures, and asset l
 
 Surface placement uses the SDK's detected planes in WebXR and in the simulator, and it needs a scanned horizontal plane whose area fits the whole composition's footprint. It is session local and is not a persistent anchor, a fitting footprint does not guarantee clearance from real furniture, and there is no hidden fallback: when nothing fits, the preview arrangement is kept so you can scan more of the room and retry.
 
-The XR panel offers the starter scenes, Talk, New, Place, Undo, and Redo, because there is no immersive text field. It shows the selected object's name and part count, displays the same errors and busy states as the desktop console, and is hidden during desktop use so it does not cover the composition. Typing longer instructions and reading the full part list are desktop tasks.
+The XR studio shows the selected object's name and part count and shares errors and operation state with the desktop console. Typing uses the spatial keyboard rather than a native immersive text field. The full read-only part list, JSON download, and Gemini key configuration remain in the desktop console.
 
 Headset behavior beyond the standard XR Blocks input and plane detection paths is not claimed here. The desktop simulator is what this demo has been exercised in.
 
