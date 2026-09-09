@@ -1,0 +1,783 @@
+import * as THREE from 'three';
+import * as xb from 'xrblocks';
+import {
+  createDefaultCatalog,
+  createModelAsset,
+  Roomcraft,
+  SCENE_PLAN_SCHEMA,
+} from 'xrblocks/addons/roomcraft/index.js';
+
+import {STARTER_SCENES} from './scenes.js';
+
+// One optional downloaded model, kept separate from the offline catalog.
+// Boom Box by Microsoft, released under CC0 1.0 through the Khronos glTF
+// sample models. See README.md for the attribution.
+const EXHIBIT_ASSET_ID = 'boom-box';
+const EXHIBIT_MODEL_URL =
+  'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/BoomBox/glTF-Binary/BoomBox.glb';
+
+const SUGGESTIONS = [
+  'Add a floor lamp beside the left chair',
+  'Add two more gallery pieces on new plinths',
+  'Make the selected object deep blue',
+  'Remove the bookshelf and add a tall plant',
+];
+
+const SPEECH_MESSAGES = {
+  'not-allowed':
+    'Microphone permission was denied. Allow the microphone in your browser, or type the edit instead.',
+  'service-not-allowed':
+    'The browser blocked speech recognition. Type the edit instead.',
+  'audio-capture':
+    'No microphone was found. Connect one, or type the edit instead.',
+  network: 'The speech service could not be reached. Type the edit instead.',
+  'no-speech': 'No speech was detected. Press Talk again, or type the edit.',
+  aborted: 'Listening stopped.',
+};
+
+const PREVIEW_MESSAGE =
+  'Preview only. Use Place on surface to fit the current scene to a scanned floor or table.';
+const PLACED_MESSAGE =
+  'The current footprint fits a detected horizontal surface. Moving or editing it needs a new fit.';
+const NO_SURFACE_MESSAGE =
+  'No detected surface fits this scene yet. Scan a floor or table and try again, or keep the preview arrangement.';
+
+/** A stable signature of a layout, used to detect edits that changed nothing. */
+function describeLayout(layout) {
+  const objects = [...layout.objects]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((object) => ({
+      ...object,
+      position: object.position.map(round),
+      rotation: round(object.rotation),
+      scale: object.scale.map(round),
+    }));
+  return JSON.stringify({title: layout.title, objects});
+}
+
+function round(value) {
+  return Math.round(value * 1e4) / 1e4;
+}
+
+/**
+ * The demo console: HTML controls on the desktop and a spatial panel in XR,
+ * both driving the same Roomcraft add-on instance.
+ */
+export class RoomcraftConsole extends xb.Script {
+  constructor(room) {
+    super();
+    this.name = 'RoomcraftConsole';
+    this.room = room;
+    this.dom = {};
+    this.starterButtons = [];
+    this.spatialStarters = [];
+    this.cleanups = [];
+    this.listening = false;
+    this.connecting = false;
+    this.disposed = false;
+    this.placed = false;
+    this.exhibitCount = 0;
+    this.statusMessage = '';
+    this.errorMessage = '';
+  }
+
+  init() {
+    this.collectDom();
+    this.buildStarterButtons();
+    this.buildSuggestionChips();
+    this.bindDomActions();
+    this.buildSpatialPanel();
+
+    this.listen(this.room, 'change', () => {
+      this.placed = false;
+      this.refresh();
+    });
+    this.listen(this.room, 'selectionchange', () => this.refresh());
+    this.listen(this.room, 'statuschange', () => this.refresh());
+    const narrowScreen = window.matchMedia('(max-width: 980px)');
+    this.listen(narrowScreen, 'change', (event) =>
+      this.toggleConsole(!event.matches)
+    );
+    this.toggleConsole(!narrowScreen.matches);
+    this.refresh();
+  }
+
+  /** Loads the first handcrafted scene once XR Blocks has finished starting. */
+  async start() {
+    this.bindSpeech();
+    await this.applyStarter(STARTER_SCENES[0]);
+    if (xb.getUrlParameter('key') || xb.getUrlParameter('geminiKey')) {
+      await this.connectGemini(false);
+    }
+  }
+
+  collectDom() {
+    const id = (name) => document.getElementById(name);
+    this.dom = {
+      console: id('console'),
+      toggle: id('toggleConsole'),
+      status: id('status'),
+      error: id('error'),
+      starters: id('starters'),
+      suggestions: id('suggestions'),
+      prompt: id('prompt'),
+      generate: id('generate'),
+      mic: id('mic'),
+      sceneSummary: id('sceneSummary'),
+      placement: id('placement'),
+      selection: id('selection'),
+      place: id('place'),
+      undo: id('undo'),
+      exhibit: id('exhibit'),
+      export: id('export'),
+      connect: id('connect'),
+      aiStatus: id('aiStatus'),
+    };
+  }
+
+  buildStarterButtons() {
+    for (const starter of STARTER_SCENES) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'rc-button';
+      button.textContent = starter.label;
+      button.title = starter.summary;
+      this.listen(button, 'click', () => void this.applyStarter(starter));
+      this.dom.starters.appendChild(button);
+      this.starterButtons.push(button);
+    }
+  }
+
+  buildSuggestionChips() {
+    for (const suggestion of SUGGESTIONS) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'rc-button';
+      chip.textContent = suggestion;
+      this.listen(chip, 'click', () => {
+        this.dom.prompt.value = suggestion;
+        this.dom.prompt.focus();
+      });
+      this.dom.suggestions.appendChild(chip);
+    }
+  }
+
+  bindDomActions() {
+    this.listen(this.dom.toggle, 'click', () =>
+      this.toggleConsole(this.dom.console.classList.contains('rc-collapsed'))
+    );
+    this.listen(this.dom.generate, 'click', () => void this.generate());
+    this.listen(this.dom.prompt, 'keydown', (event) => {
+      if (event.key === 'Enter') void this.generate();
+    });
+    this.listen(this.dom.mic, 'click', () => this.toggleListening());
+    this.listen(this.dom.place, 'click', () => void this.placeOnSurface());
+    this.listen(this.dom.undo, 'click', () => void this.undo());
+    this.listen(this.dom.exhibit, 'click', () => void this.addExhibit());
+    this.listen(this.dom.export, 'click', () => this.exportLayout());
+    this.listen(this.dom.connect, 'click', () => void this.connectGemini());
+    this.listen(this.dom.selection, 'change', (event) => {
+      const value = event.target.value;
+      try {
+        this.room.select(value || null);
+      } catch (error) {
+        this.showError(error);
+      }
+    });
+  }
+
+  bindSpeech() {
+    const recognizer = xb.core.sound?.speechRecognizer;
+    if (!recognizer) {
+      this.dom.mic.disabled = true;
+      this.dom.mic.title =
+        'Speech recognition is not available in this browser.';
+      return;
+    }
+    if (this.boundSpeechRecognizer === recognizer) return;
+    this.boundSpeechRecognizer = recognizer;
+    this.listen(recognizer, 'result', (event) => {
+      if (!this.listening) return;
+      if (!event.isFinal) {
+        this.setStatus(`Listening: ${event.transcript}`);
+        return;
+      }
+      this.stopListening();
+      const transcript = event.transcript.trim();
+      if (!transcript) {
+        this.setStatus('No speech was recognized.');
+        return;
+      }
+      this.dom.prompt.value = transcript;
+      void this.generate();
+    });
+    this.listen(recognizer, 'error', (event) => {
+      this.stopListening();
+      this.setError(
+        SPEECH_MESSAGES[event.error] ??
+          `Speech recognition failed: ${event.error}.`
+      );
+    });
+    this.listen(recognizer, 'end', () => this.stopListening());
+  }
+
+  update() {
+    if (this.disposed) return;
+    if (!this.boundSpeechRecognizer) this.bindSpeech();
+    const available = !!xb.core.sound?.speechRecognizer?.recognition;
+    if (available !== this.speechAvailable) {
+      this.speechAvailable = available;
+      this.refresh();
+    }
+  }
+
+  // Spatial controls, so the demo keeps working after the HTML overlay is gone.
+  buildSpatialPanel() {
+    this.xrStatusText = new xb.UIText({
+      text: 'Loading the starter scene.',
+      style: {
+        width: '100%',
+        fontSize: 26,
+        lineHeight: 1.3,
+        color: '#c2b6a8',
+        textAlign: 'center',
+      },
+    });
+
+    this.xrSelectionText = new xb.UIText({
+      text: 'Nothing selected',
+      style: {
+        width: '100%',
+        fontSize: 22,
+        color: '#9db8a6',
+        textAlign: 'center',
+      },
+    });
+
+    const buttonStyle = (background) => ({
+      flexGrow: 1,
+      height: '100%',
+      fontSize: 26,
+      borderRadius: 18,
+      backgroundColor: background,
+      color: '#f6ece0',
+    });
+
+    this.spatialStarters = STARTER_SCENES.map(
+      (starter) =>
+        new xb.UIButton({
+          label: starter.label,
+          onClick: () => void this.applyStarter(starter),
+          style: buttonStyle('#30292d'),
+        })
+    );
+    this.xrTalk = new xb.UIButton({
+      label: 'Talk',
+      onClick: () => this.toggleListening(),
+      style: buttonStyle('#4a5f52'),
+    });
+    this.xrPlace = new xb.UIButton({
+      label: 'Place',
+      onClick: () => void this.placeOnSurface(),
+      style: buttonStyle('#8a4a33'),
+    });
+    this.xrUndo = new xb.UIButton({
+      label: 'Undo',
+      onClick: () => void this.undo(),
+      style: buttonStyle('#30292d'),
+    });
+
+    const card = new xb.UICard({
+      size: {width: 1.1, height: 0.74},
+      manipulation: true,
+      style: {
+        flexDirection: 'column',
+        gap: 18,
+        padding: 32,
+        backgroundColor: '#181418',
+        borderRadius: 28,
+      },
+      children: [
+        new xb.UIText({
+          text: 'Roomcraft',
+          style: {
+            fontSize: 44,
+            fontWeight: 'bold',
+            color: '#e8714a',
+            textAlign: 'center',
+          },
+        }),
+        this.xrStatusText,
+        this.xrSelectionText,
+        new xb.UIPanel({
+          style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
+          children: this.spatialStarters,
+        }),
+        new xb.UIPanel({
+          style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
+          children: [this.xrTalk, this.xrPlace, this.xrUndo],
+        }),
+      ],
+    });
+    card.name = 'RoomcraftControlCard';
+    // Off to the side, so the composition itself stays unobstructed.
+    card.position.set(1.05, xb.user.height - 0.15, -1.1);
+    card.rotation.y = -0.5;
+    card.visible = false;
+    this.add(card);
+    this.card = card;
+  }
+
+  onXRSessionStarted() {
+    this.dom.console?.classList.add('rc-hidden');
+    this.card.visible = true;
+    if (!this.isGeminiReady()) {
+      this.setStatus(
+        'Example mode. Configure Gemini in the desktop panel before entering XR to use voice authoring.'
+      );
+    }
+  }
+
+  onXRSessionEnded() {
+    this.dom.console?.classList.remove('rc-hidden');
+    this.card.visible = false;
+  }
+
+  // ---- actions ----
+
+  async applyStarter(starter) {
+    await this.run(
+      `Composing the ${starter.label.toLowerCase()}.`,
+      async () => {
+        await this.room.applyLayout(starter.layout);
+        this.setStatus(
+          `${starter.label} loaded. This is a handcrafted example, not AI output.`
+        );
+      }
+    );
+  }
+
+  async generate() {
+    const prompt = this.dom.prompt.value.trim();
+    if (!prompt) {
+      this.setError('Type an instruction, for example "add a floor lamp".');
+      return;
+    }
+    if (!this.isGeminiReady()) {
+      this.setError(
+        'Gemini is not configured. Use Connect Gemini in the desktop panel first.'
+      );
+      return;
+    }
+    await this.run('Planning your edit.', async () => {
+      const before = describeLayout(this.room.layout);
+      const layout = await this.room.request(prompt);
+      if (this.disposed) return;
+      this.dom.prompt.value = '';
+      if (describeLayout(layout) === before) {
+        // An accepted plan can still be a no-op; do not call that new content.
+        this.setStatus(
+          'No scene changes. The plan left every object exactly as it was, so try a more specific instruction.'
+        );
+        return;
+      }
+      this.setStatus(
+        `Applied the edit. "${layout.title}" now has ${layout.objects.length} object${
+          layout.objects.length === 1 ? '' : 's'
+        }.`
+      );
+    });
+  }
+
+  async placeOnSurface() {
+    await this.run('Looking for a surface.', async () => {
+      const placed = await this.room.placeOnSurface();
+      if (placed) {
+        this.placed = true;
+        this.setStatus('Scene placed on a detected surface.');
+      } else {
+        this.setStatus(
+          this.placed
+            ? 'The scene stayed where it was last placed.'
+            : 'Still showing the preview arrangement.'
+        );
+        this.setError(NO_SURFACE_MESSAGE);
+      }
+    });
+  }
+
+  async undo() {
+    await this.run('Undoing the last change.', async () => {
+      const layout = await this.room.undo();
+      this.setStatus(`Restored "${layout.title}".`);
+    });
+  }
+
+  async addExhibit() {
+    const layout = this.room.layout;
+    const used = new Set(layout.objects.map((object) => object.id));
+    let index = this.exhibitCount + 1;
+    while (
+      used.has(`exhibit-plinth-${index}`) ||
+      used.has(`exhibit-${index}`)
+    ) {
+      index++;
+    }
+    const x = -1.5 + ((index - 1) % 3) * 1.5;
+    const z = 0.9 + Math.floor((index - 1) / 3) * 0.8;
+    await this.run('Downloading the exhibit model.', async () => {
+      await this.room.applyPlan({
+        title: layout.title,
+        edits: [
+          {
+            op: 'add',
+            object: {
+              id: `exhibit-plinth-${index}`,
+              asset: 'plinth',
+              name: `Exhibit plinth ${index}`,
+              position: [x, 0, z],
+              rotation: 0,
+              scale: [1, 1, 1],
+              color: '#efe6d8',
+            },
+          },
+          {
+            op: 'add',
+            object: {
+              id: `exhibit-${index}`,
+              asset: EXHIBIT_ASSET_ID,
+              name: `Boom box exhibit ${index}`,
+              position: [x, 0.85, z],
+              rotation: 0.6,
+              scale: [1, 1, 1],
+              color: '#ffffff',
+            },
+          },
+        ],
+      });
+      this.exhibitCount = index;
+      this.setStatus('Downloaded exhibit added to the scene.');
+    });
+  }
+
+  exportLayout() {
+    const layout = this.room.layout;
+    if (layout.objects.length === 0) {
+      this.setError('There is nothing to export yet.');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(layout, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'roomcraft-scene.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    this.setStatus(
+      'Exported the scene layout. It contains no keys and no prompts.'
+    );
+  }
+
+  async connectGemini(prompt = true) {
+    if (this.room.busy || this.connecting) {
+      this.setError(
+        'Wait for the current operation before configuring Gemini.'
+      );
+      return;
+    }
+    const ai = xb.core.ai;
+    if (!ai?.options) {
+      this.setError('The AI subsystem is unavailable in this session.');
+      return;
+    }
+    this.stopListening();
+    this.connecting = true;
+    this.setError('');
+    this.dom.aiStatus.textContent = 'Configuring Gemini.';
+    this.refresh();
+    try {
+      ai.options.promptForApiKey = prompt;
+      ai.options.gemini.enabled = true;
+      ai.options.gemini.config = {
+        responseMimeType: 'application/json',
+        responseJsonSchema: SCENE_PLAN_SCHEMA,
+      };
+      await ai.initializeModel(xb.Gemini, ai.options.gemini);
+      if (this.disposed) return;
+      if (ai.options.gemini.apiKey.trim() && ai.isAvailable()) {
+        this.dom.aiStatus.textContent =
+          'Key configured for this page. Authentication and quota are checked when you request an edit.';
+        this.setStatus('Gemini is configured. Describe an edit to your scene.');
+      } else {
+        this.dom.aiStatus.textContent =
+          'Not connected. No usable API key was provided.';
+        this.setError(
+          'Gemini could not be initialized. Provide a valid API key and try again.'
+        );
+      }
+    } catch (error) {
+      this.dom.aiStatus.textContent = 'Not connected.';
+      this.showError(error);
+    } finally {
+      this.connecting = false;
+      this.refresh();
+    }
+  }
+
+  // ---- speech ----
+
+  toggleListening() {
+    const recognizer = xb.core.sound?.speechRecognizer;
+    if (!recognizer?.recognition) {
+      this.setError(
+        'Speech recognition is not available in this browser. Type the edit instead.'
+      );
+      return;
+    }
+    if (this.listening) {
+      this.stopListening();
+      this.setStatus('Listening stopped.');
+      return;
+    }
+    if (this.room.busy || this.connecting) {
+      this.setError('Roomcraft is still working. Wait for it to finish.');
+      return;
+    }
+    if (!this.isGeminiReady()) {
+      this.setError(
+        'Configure Gemini in the desktop panel before using voice. The starter scenes do not need a key.'
+      );
+      return;
+    }
+    this.setError('');
+    this.listening = true;
+    this.dom.mic.setAttribute('aria-pressed', 'true');
+    this.setStatus('Listening. Speak one instruction.');
+    recognizer.start();
+    this.refresh();
+  }
+
+  stopListening() {
+    if (!this.listening) return;
+    this.listening = false;
+    this.dom.mic.setAttribute('aria-pressed', 'false');
+    xb.core.sound?.speechRecognizer?.stop();
+    this.refresh();
+  }
+
+  // ---- shared plumbing ----
+
+  async run(pendingMessage, action) {
+    if (this.room.busy || this.connecting) {
+      this.setError('Roomcraft is still working. Wait for it to finish.');
+      return;
+    }
+    this.setError('');
+    this.setStatus(pendingMessage);
+    this.refresh();
+    try {
+      await action();
+    } catch (error) {
+      this.showError(error);
+      this.setStatus('Your scene was kept unchanged.');
+    } finally {
+      this.refresh();
+    }
+  }
+
+  showError(error) {
+    console.error('[roomcraft]', error);
+    this.setError(error?.message ?? String(error));
+  }
+
+  setError(message) {
+    if (this.disposed) return;
+    this.errorMessage = message ?? '';
+    const element = this.dom.error;
+    if (!element) return;
+    element.textContent = this.errorMessage;
+    element.hidden = !message;
+    if (message) this.toggleConsole(true);
+    this.updateSpatialStatus();
+  }
+
+  setStatus(message) {
+    if (this.disposed) return;
+    this.statusMessage = message;
+    if (this.dom.status) this.dom.status.textContent = message;
+    this.updateSpatialStatus();
+  }
+
+  updateSpatialStatus() {
+    if (this.xrStatusText) {
+      this.xrStatusText.text = (this.errorMessage || this.statusMessage)
+        .replace(/[…]/g, '...')
+        .replace(/[·]/g, '-');
+    }
+  }
+
+  isGeminiReady() {
+    const ai = xb.core.ai;
+    return !!(
+      !this.connecting &&
+      ai?.options?.gemini.apiKey.trim() &&
+      ai.isAvailable()
+    );
+  }
+
+  toggleConsole(expanded) {
+    this.dom.console.classList.toggle('rc-collapsed', !expanded);
+    this.dom.toggle.setAttribute('aria-expanded', String(expanded));
+    this.dom.toggle.textContent = expanded ? 'Hide controls' : 'Open studio';
+  }
+
+  listen(target, type, listener) {
+    target.addEventListener(type, listener);
+    this.cleanups.push(() => target.removeEventListener(type, listener));
+  }
+
+  refresh() {
+    if (this.disposed) return;
+    const layout = this.room.layout;
+    const busy = this.room.busy || this.connecting;
+    const selectedId = this.room.selectedId;
+    const dom = this.dom;
+    if (!dom.console) return;
+
+    dom.console.classList.toggle('rc-busy', busy);
+    dom.sceneSummary.textContent =
+      layout.objects.length === 0
+        ? 'The room is empty. Pick a starter scene or describe one.'
+        : `"${layout.title}" with ${layout.objects.length} object${
+            layout.objects.length === 1 ? '' : 's'
+          }. Drag or pinch an object to move it.`;
+    dom.placement.textContent = this.placed ? PLACED_MESSAGE : PREVIEW_MESSAGE;
+
+    const selectedName =
+      layout.objects.find((object) => object.id === selectedId)?.name ?? '';
+    dom.selection.replaceChildren();
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = 'Nothing selected';
+    dom.selection.appendChild(empty);
+    for (const object of layout.objects) {
+      const option = document.createElement('option');
+      option.value = object.id;
+      option.textContent = `${object.name} (${object.id})`;
+      dom.selection.appendChild(option);
+    }
+    dom.selection.value = selectedId ?? '';
+    dom.selection.title = selectedId
+      ? `Selected ${selectedName} (${selectedId})`
+      : 'Nothing selected';
+    if (this.xrSelectionText) {
+      this.xrSelectionText.text = selectedId
+        ? `Selected: ${selectedName} (${selectedId})`
+        : 'Nothing selected';
+    }
+
+    const aiReady = this.isGeminiReady();
+    dom.generate.disabled = busy;
+    dom.mic.disabled = busy || !xb.core.sound?.speechRecognizer?.recognition;
+    dom.place.disabled = busy || layout.objects.length === 0;
+    dom.undo.disabled = busy || !this.room.canUndo;
+    dom.exhibit.disabled = busy;
+    dom.export.disabled = layout.objects.length === 0;
+    dom.connect.disabled = busy;
+    dom.connect.textContent = aiReady ? 'Reconnect Gemini' : 'Connect Gemini';
+    dom.mic.textContent = this.listening
+      ? 'Stop'
+      : xb.core.sound?.speechRecognizer?.recognition
+        ? 'Talk'
+        : 'No voice';
+    this.xrTalk.disabled = dom.mic.disabled;
+    this.xrTalk.label = dom.mic.textContent;
+    this.xrPlace.disabled = dom.place.disabled;
+    this.xrUndo.disabled = dom.undo.disabled;
+    for (const button of this.starterButtons) {
+      button.disabled = busy;
+    }
+    for (const button of this.spatialStarters) {
+      button.disabled = busy;
+    }
+  }
+
+  dispose() {
+    this.stopListening();
+    this.disposed = true;
+    this.cleanups.splice(0).forEach((cleanup) => cleanup());
+    this.card?.dispose();
+    this.card?.removeFromParent();
+    this.dom.starters?.replaceChildren();
+    this.dom.suggestions?.replaceChildren();
+  }
+}
+
+function createLighting() {
+  const lights = new THREE.Group();
+  lights.name = 'RoomcraftLighting';
+  lights.add(new THREE.HemisphereLight(0xfff3e4, 0x39323a, 2.4));
+  const key = new THREE.DirectionalLight(0xffe9d2, 1.6);
+  key.position.set(2.5, 4, 2);
+  lights.add(key);
+  const fill = new THREE.DirectionalLight(0x9db8a6, 0.6);
+  fill.position.set(-3, 2.5, -1.5);
+  lights.add(fill);
+  return lights;
+}
+
+async function start() {
+  const options = new xb.Options();
+  options.enableAI();
+  // No model request happens on load; the demo connects Gemini on demand.
+  options.ai.gemini.enabled = false;
+  options.ai.gemini.config = {
+    responseMimeType: 'application/json',
+    responseJsonSchema: SCENE_PLAN_SCHEMA,
+  };
+  options.enablePlaneDetection();
+  options.enableHands();
+  options.reticles.enabled = true;
+  options.sound.speechRecognizer.enabled = true;
+  options.sound.speechRecognizer.continuous = false;
+  options.sound.speechRecognizer.interimResults = true;
+  options.setAppTitle('Roomcraft');
+  options.setAppDescription('Speak a scene into your room.');
+  options.xrButton.showEnterSimulatorButton = true;
+
+  const room = new Roomcraft({
+    catalog: [
+      ...createDefaultCatalog(),
+      createModelAsset({
+        id: EXHIBIT_ASSET_ID,
+        description: 'A downloaded boom box model shown as a gallery exhibit',
+        size: [0.42, 0.24, 0.16],
+        url: EXHIBIT_MODEL_URL,
+      }),
+    ],
+  });
+  room.position.set(0, 0, -2.4);
+
+  const consoleScript = new RoomcraftConsole(room);
+  xb.add(room, consoleScript, createLighting());
+  await xb.init(options);
+  await consoleScript.start();
+}
+
+document.addEventListener(
+  'DOMContentLoaded',
+  () => {
+    void start().catch((error) => {
+      console.error('[roomcraft] Startup failed', error);
+      document.getElementById('status').textContent =
+        'Roomcraft could not start.';
+      const message = document.getElementById('error');
+      message.textContent =
+        error instanceof Error ? error.message : String(error);
+      message.hidden = false;
+    });
+  },
+  {once: true}
+);
