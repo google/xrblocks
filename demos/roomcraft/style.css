@@ -76,6 +76,10 @@
   top: 4px;
 }
 
+.rc-spatial-toggle {
+  margin-top: 10px;
+}
+
 .rc-console.rc-collapsed {
   padding-top: 12px;
   padding-bottom: 12px;
