@@ -6,6 +6,7 @@ import {
   Roomcraft,
   SCENE_PLAN_SCHEMA,
 } from 'xrblocks/addons/roomcraft/index.js';
+import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
 
 import {STARTER_SCENES} from './scenes.js';
 
@@ -26,6 +27,9 @@ const SUGGESTIONS = [
 
 /** How many part names the console lists before summarizing the remainder. */
 const MAX_LISTED_PARTS = 24;
+const STUDIO_SIZE = {width: 1.05, height: 1.02};
+const KEYBOARD_SIZE = {width: 1.05, height: 0.49};
+const KEYBOARD_GAP = 0.045;
 
 const SPEECH_MESSAGES = {
   'not-allowed':
@@ -79,6 +83,10 @@ export class RoomcraftConsole extends xb.Script {
     this.listening = false;
     this.connecting = false;
     this.xrActive = false;
+    this.spatialPreview = false;
+    this.keyboardOpen = false;
+    this.spatialTab = 'author';
+    this.needsSpatialPlacement = false;
     this.disposed = false;
     this.placed = false;
     this.exhibitCount = 0;
@@ -121,6 +129,7 @@ export class RoomcraftConsole extends xb.Script {
     this.dom = {
       console: id('console'),
       toggle: id('toggleConsole'),
+      spatialStudio: id('spatialStudio'),
       status: id('status'),
       error: id('error'),
       starters: id('starters'),
@@ -139,6 +148,7 @@ export class RoomcraftConsole extends xb.Script {
       redo: id('redo'),
       focusSelected: id('focusSelected'),
       frameScene: id('frameScene'),
+      removeSelected: id('removeSelected'),
       exhibit: id('exhibit'),
       export: id('export'),
       connect: id('connect'),
@@ -166,7 +176,7 @@ export class RoomcraftConsole extends xb.Script {
       chip.className = 'rc-button';
       chip.textContent = suggestion;
       this.listen(chip, 'click', () => {
-        this.dom.prompt.value = suggestion;
+        this.setPrompt(suggestion);
         this.dom.prompt.focus();
       });
       this.dom.suggestions.appendChild(chip);
@@ -177,17 +187,28 @@ export class RoomcraftConsole extends xb.Script {
     this.listen(this.dom.toggle, 'click', () =>
       this.toggleConsole(this.dom.console.classList.contains('rc-collapsed'))
     );
+    this.listen(this.dom.spatialStudio, 'click', () =>
+      this.toggleSpatialStudio()
+    );
     this.listen(this.dom.generate, 'click', () => void this.generate());
     this.listen(this.dom.newDesign, 'click', () => void this.newDesign());
     this.listen(this.dom.prompt, 'keydown', (event) => {
       if (event.key === 'Enter') void this.generate();
     });
+    this.listen(this.dom.prompt, 'input', () =>
+      this.setPrompt(this.dom.prompt.value)
+    );
     this.listen(this.dom.mic, 'click', () => this.toggleListening());
     this.listen(this.dom.place, 'click', () => void this.placeOnSurface());
     this.listen(this.dom.undo, 'click', () => void this.undo());
     this.listen(this.dom.redo, 'click', () => void this.redo());
     this.listen(this.dom.focusSelected, 'click', () => void this.frame(true));
     this.listen(this.dom.frameScene, 'click', () => void this.frame());
+    this.listen(
+      this.dom.removeSelected,
+      'click',
+      () => void this.removeSelected()
+    );
     this.listen(this.dom.exhibit, 'click', () => void this.addExhibit());
     this.listen(this.dom.export, 'click', () => this.exportLayout());
     this.listen(this.dom.connect, 'click', () => void this.connectGemini());
@@ -223,7 +244,7 @@ export class RoomcraftConsole extends xb.Script {
         this.setStatus('No speech was recognized.');
         return;
       }
-      this.dom.prompt.value = transcript;
+      this.setPrompt(transcript);
       void this.generate();
     });
     this.listen(recognizer, 'error', (event) => {
@@ -238,6 +259,10 @@ export class RoomcraftConsole extends xb.Script {
 
   update() {
     if (this.disposed) return;
+    if (this.needsSpatialPlacement) {
+      this.positionSpatialStudio();
+      this.needsSpatialPlacement = false;
+    }
     if (!this.boundSpeechRecognizer) this.bindSpeech();
     const available = !!xb.core.sound?.speechRecognizer?.recognition;
     if (available !== this.speechAvailable) {
@@ -248,11 +273,17 @@ export class RoomcraftConsole extends xb.Script {
 
   // Spatial controls, so the demo keeps working after the HTML overlay is gone.
   buildSpatialPanel() {
+    this.xrProviderText = new xb.UIText({
+      text: 'Connect Gemini in desktop controls to generate.',
+      style: {width: '100%', fontSize: 26, color: '#c2b6a8'},
+    });
     this.xrStatusText = new xb.UIText({
       text: 'Loading the starter scene.',
       style: {
         width: '100%',
-        fontSize: 26,
+        fontSize: 32,
+        maxHeight: 130,
+        textOverflow: 'ellipsis',
         lineHeight: 1.3,
         color: '#c2b6a8',
         textAlign: 'center',
@@ -263,7 +294,7 @@ export class RoomcraftConsole extends xb.Script {
       text: 'Nothing selected',
       style: {
         width: '100%',
-        fontSize: 22,
+        fontSize: 30,
         color: '#9db8a6',
         textAlign: 'center',
       },
@@ -272,11 +303,22 @@ export class RoomcraftConsole extends xb.Script {
     const buttonStyle = (background) => ({
       flexGrow: 1,
       height: '100%',
-      fontSize: 26,
+      fontSize: 36,
       borderRadius: 18,
       backgroundColor: background,
       color: '#f6ece0',
     });
+    const row = (children, height = 70) =>
+      new xb.UIPanel({
+        style: {
+          width: '100%',
+          height,
+          flexShrink: 0,
+          flexDirection: 'row',
+          gap: 12,
+        },
+        children,
+      });
 
     this.spatialStarters = STARTER_SCENES.map(
       (starter) =>
@@ -311,50 +353,122 @@ export class RoomcraftConsole extends xb.Script {
       onClick: () => void this.redo(),
       style: buttonStyle('#30292d'),
     });
+    this.xrType = new xb.UIButton({
+      label: 'Keyboard',
+      onClick: () => this.toggleKeyboard(),
+      style: buttonStyle('#30292d'),
+    });
+    this.xrGenerate = new xb.UIButton({
+      label: 'Generate',
+      onClick: () => void this.generate(),
+      style: buttonStyle('#8a4a33'),
+    });
+    this.xrPrevious = new xb.UIButton({
+      label: 'Previous',
+      onClick: () => this.cycleSelection(-1),
+      style: buttonStyle('#30292d'),
+    });
+    this.xrNext = new xb.UIButton({
+      label: 'Next',
+      onClick: () => this.cycleSelection(1),
+      style: buttonStyle('#30292d'),
+    });
+    this.xrRemove = new xb.UIButton({
+      label: 'Remove',
+      onClick: () => void this.removeSelected(),
+      style: buttonStyle('#30292d'),
+    });
+    this.xrAuthorTab = new xb.UIButton({
+      label: 'Create / edit',
+      onClick: () => this.setSpatialTab('author'),
+      style: buttonStyle('#8a4a33'),
+    });
+    this.xrExamplesTab = new xb.UIButton({
+      label: 'Examples',
+      onClick: () => this.setSpatialTab('examples'),
+      style: buttonStyle('#30292d'),
+    });
+    this.xrPromptText = new xb.UIText({
+      text: 'Describe a new object or an edit. Use Keyboard or Talk.',
+      style: {
+        width: '100%',
+        minHeight: 80,
+        maxHeight: 120,
+        padding: 14,
+        fontSize: 32,
+        lineHeight: 1.25,
+        color: '#f6ece0',
+        backgroundColor: '#30292d',
+        borderRadius: 14,
+        textOverflow: 'ellipsis',
+      },
+    });
+    this.xrAuthorPanel = new xb.UIPanel({
+      style: {width: '100%', flexGrow: 1, flexDirection: 'column', gap: 12},
+      children: [
+        this.xrPromptText,
+        row([this.xrTalk, this.xrType, this.xrGenerate]),
+      ],
+    });
 
-    const starterRows = [];
+    const starterRows = [
+      new xb.UIText({
+        text: 'Handcrafted examples. Each replaces the current scene; Undo restores it.',
+        style: {width: '100%', fontSize: 30, color: '#c2b6a8'},
+      }),
+    ];
     for (let index = 0; index < this.spatialStarters.length; index += 2) {
-      starterRows.push(
-        new xb.UIPanel({
-          style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
-          children: this.spatialStarters.slice(index, index + 2),
-        })
-      );
+      starterRows.push(row(this.spatialStarters.slice(index, index + 2)));
     }
+    this.xrExamplesPanel = new xb.UIPanel({
+      style: {width: '100%', flexGrow: 1, flexDirection: 'column', gap: 12},
+      children: starterRows,
+    });
 
     const card = new xb.UICard({
-      size: {width: 1.1, height: 0.86},
+      size: STUDIO_SIZE,
       manipulation: true,
+      edge: true,
       style: {
         flexDirection: 'column',
-        gap: 18,
-        padding: 32,
+        gap: 14,
+        padding: 26,
         backgroundColor: '#181418',
         borderRadius: 28,
       },
       children: [
-        new xb.UIText({
-          text: 'Roomcraft',
-          style: {
-            fontSize: 44,
-            fontWeight: 'bold',
-            color: '#e8714a',
-            textAlign: 'center',
-          },
-        }),
+        row(
+          [
+            new xb.UIText({
+              text: 'Roomcraft',
+              style: {
+                flexGrow: 1,
+                fontSize: 44,
+                fontWeight: 'bold',
+                color: '#e8714a',
+              },
+            }),
+            new xb.UIButton({
+              label: 'Recenter',
+              onClick: () => this.positionSpatialStudio(),
+              style: {
+                ...buttonStyle('#30292d'),
+                flexGrow: 0,
+                padding: 12,
+                fontSize: 28,
+              },
+            }),
+          ],
+          56
+        ),
+        this.xrProviderText,
         this.xrStatusText,
         this.xrSelectionText,
-        ...starterRows,
-        new xb.UIPanel({
-          style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
-          children: [
-            this.xrTalk,
-            this.xrNew,
-            this.xrPlace,
-            this.xrUndo,
-            this.xrRedo,
-          ],
-        }),
+        row([this.xrPrevious, this.xrNext, this.xrRemove], 64),
+        row([this.xrAuthorTab, this.xrExamplesTab], 64),
+        this.xrAuthorPanel,
+        this.xrExamplesPanel,
+        row([this.xrNew, this.xrPlace, this.xrUndo, this.xrRedo]),
       ],
     });
     card.name = 'RoomcraftControlCard';
@@ -364,10 +478,52 @@ export class RoomcraftConsole extends xb.Script {
     card.visible = false;
     this.add(card);
     this.card = card;
+
+    this.xrKeyboard = new Keyboard({
+      value: this.dom.prompt.value,
+      onValueChange: (value) => this.setPrompt(value),
+      onSubmit: (value) => {
+        this.setPrompt(value);
+        void this.generate();
+      },
+    });
+    this.keyboardCard = new xb.UICard({
+      size: KEYBOARD_SIZE,
+      manipulation: true,
+      edge: true,
+      style: {
+        flexDirection: 'column',
+        gap: 12,
+        padding: 20,
+        backgroundColor: '#181418',
+        borderRadius: 24,
+      },
+      children: [
+        row(
+          [
+            new xb.UIText({
+              text: 'Type an instruction; Enter generates.',
+              style: {flexGrow: 1, fontSize: 28, color: '#c2b6a8'},
+            }),
+            new xb.UIButton({
+              label: 'Close',
+              onClick: () => this.toggleKeyboard(),
+              style: {...buttonStyle('#30292d'), flexGrow: 0, padding: 12},
+            }),
+          ],
+          48
+        ),
+        this.xrKeyboard,
+      ],
+    });
+    this.keyboardCard.name = 'RoomcraftKeyboardCard';
+    this.keyboardCard.visible = false;
+    this.add(this.keyboardCard);
   }
 
   onXRSessionStarted() {
     this.xrActive = true;
+    this.needsSpatialPlacement = true;
     this.dom.console?.classList.add('rc-hidden');
     this.card.visible = true;
     if (!this.isGeminiReady()) {
@@ -380,6 +536,7 @@ export class RoomcraftConsole extends xb.Script {
 
   onXRSessionEnded() {
     this.xrActive = false;
+    this.needsSpatialPlacement = this.spatialPreview;
     this.dom.console?.classList.remove('rc-hidden');
     this.card.visible = false;
     this.refresh();
@@ -387,6 +544,95 @@ export class RoomcraftConsole extends xb.Script {
 
   isInXR() {
     return this.xrActive || !!xb.core.renderer?.xr.isPresenting;
+  }
+
+  toggleSpatialStudio() {
+    this.spatialPreview = !this.spatialPreview;
+    if (this.spatialPreview) {
+      this.positionSpatialStudio();
+      this.toggleConsole(false);
+    }
+    this.refresh();
+  }
+
+  positionSpatialStudio() {
+    const camera = xb.core.camera;
+    const position = camera.getWorldPosition(new THREE.Vector3());
+    const rotation = camera.getWorldQuaternion(new THREE.Quaternion());
+    const halfWidth =
+      Math.max(
+        STUDIO_SIZE.width * this.card.scale.x,
+        KEYBOARD_SIZE.width * this.keyboardCard.scale.x
+      ) / 2;
+    const verticalExtent = Math.max(
+      0.25 + (STUDIO_SIZE.height * this.card.scale.y) / 2,
+      (STUDIO_SIZE.height * this.card.scale.y) / 2 +
+        KEYBOARD_SIZE.height * this.keyboardCard.scale.y +
+        KEYBOARD_GAP -
+        0.25
+    );
+    const tangent = Math.tan(
+      THREE.MathUtils.degToRad(camera.getEffectiveFOV()) / 2
+    );
+    const distance = Math.max(
+      1.1,
+      (verticalExtent + 0.12) / tangent,
+      (halfWidth + 0.12) / (tangent * camera.aspect)
+    );
+    const x = this.isInXR()
+      ? 0
+      : Math.max(0, distance * tangent * camera.aspect - halfWidth - 0.12);
+    const target = new THREE.Vector3(x, 0.25, -distance)
+      .applyQuaternion(rotation)
+      .add(position);
+    this.worldToLocal(target);
+    this.card.position.copy(target);
+    this.card.quaternion.copy(
+      this.getWorldQuaternion(new THREE.Quaternion())
+        .invert()
+        .multiply(rotation)
+    );
+    this.positionKeyboard();
+  }
+
+  positionKeyboard() {
+    const y = -(
+      (STUDIO_SIZE.height * this.card.scale.y) / 2 +
+      (KEYBOARD_SIZE.height * this.keyboardCard.scale.y) / 2 +
+      KEYBOARD_GAP
+    );
+    const offset = new THREE.Vector3(0, y, 0).applyQuaternion(
+      this.card.quaternion
+    );
+    this.keyboardCard.position.copy(this.card.position).add(offset);
+    this.keyboardCard.quaternion.copy(this.card.quaternion);
+  }
+
+  toggleKeyboard() {
+    this.keyboardOpen = !this.keyboardOpen;
+    if (this.keyboardOpen) this.positionKeyboard();
+    this.refresh();
+  }
+
+  setSpatialTab(tab) {
+    this.spatialTab = tab;
+    this.refresh();
+  }
+
+  setPrompt(value) {
+    const limit = this.dom.prompt.maxLength;
+    if (value.length > limit) {
+      this.setError(`Instructions are limited to ${limit} characters.`);
+    }
+    const draft = value.slice(0, limit);
+    this.dom.prompt.value = draft;
+    this.xrKeyboard.setValue(draft);
+    this.xrPromptText.text = draft
+      ? draft.length > 160
+        ? `...${draft.slice(-160)}`
+        : draft
+      : 'Describe a new object or an edit. Use Keyboard or Talk.';
+    this.refresh();
   }
 
   // ---- actions ----
@@ -432,7 +678,7 @@ export class RoomcraftConsole extends xb.Script {
       const before = describeLayout(this.room.layout);
       const layout = await this.room.request(prompt);
       if (this.disposed) return;
-      this.dom.prompt.value = '';
+      if (this.dom.prompt.value.trim() === prompt) this.setPrompt('');
       if (describeLayout(layout) === before) {
         // An accepted plan can still be a no-op; do not call that new content.
         this.setStatus(
@@ -488,6 +734,40 @@ export class RoomcraftConsole extends xb.Script {
     await this.run('Redoing the last undone change.', async () => {
       const layout = await this.room.redo();
       this.setStatus(`Reapplied "${layout.title}" without another AI request.`);
+    });
+  }
+
+  cycleSelection(direction) {
+    if (this.room.busy || this.connecting) {
+      this.setError('Roomcraft is still working. Wait for it to finish.');
+      return;
+    }
+    const objects = this.room.layout.objects;
+    if (!objects.length) {
+      this.setError('There are no objects to select yet.');
+      return;
+    }
+    const current = objects.findIndex(
+      (object) => object.id === this.room.selectedId
+    );
+    const next =
+      current < 0
+        ? direction > 0
+          ? 0
+          : objects.length - 1
+        : (current + direction + objects.length) % objects.length;
+    this.room.select(objects[next].id);
+  }
+
+  async removeSelected() {
+    await this.run('Removing the selected object.', async () => {
+      const id = this.room.selectedId;
+      if (!id) throw new Error('Select an object to remove first.');
+      await this.room.applyPlan({
+        title: this.room.layout.title,
+        edits: [{op: 'remove', id}],
+      });
+      this.setStatus('Removed the selected object. Undo brings it back.');
     });
   }
 
@@ -754,7 +1034,7 @@ export class RoomcraftConsole extends xb.Script {
     if (!element) return;
     element.textContent = this.errorMessage;
     element.hidden = !message;
-    if (message) this.toggleConsole(true);
+    if (message && !this.card?.visible) this.toggleConsole(true);
     this.updateSpatialStatus();
   }
 
@@ -802,6 +1082,24 @@ export class RoomcraftConsole extends xb.Script {
     if (!dom.console) return;
 
     dom.console.classList.toggle('rc-busy', busy);
+    const spatialVisible = this.isInXR() || this.spatialPreview;
+    this.card.visible = spatialVisible;
+    this.keyboardCard.visible =
+      spatialVisible && this.keyboardOpen && this.spatialTab === 'author';
+    dom.spatialStudio.disabled = this.isInXR();
+    dom.spatialStudio.setAttribute('aria-pressed', String(this.spatialPreview));
+    dom.spatialStudio.textContent = this.spatialPreview
+      ? 'Hide spatial studio'
+      : 'Spatial studio';
+    this.xrType.label = this.keyboardOpen ? 'Hide keyboard' : 'Keyboard';
+    this.xrAuthorPanel.style.display =
+      this.spatialTab === 'author' ? 'flex' : 'none';
+    this.xrExamplesPanel.style.display =
+      this.spatialTab === 'examples' ? 'flex' : 'none';
+    this.xrAuthorTab.style.backgroundColor =
+      this.spatialTab === 'author' ? '#8a4a33' : '#30292d';
+    this.xrExamplesTab.style.backgroundColor =
+      this.spatialTab === 'examples' ? '#8a4a33' : '#30292d';
     dom.sceneSummary.textContent =
       layout.objects.length === 0
         ? 'The room is empty. Pick a starter scene or describe one.'
@@ -857,7 +1155,10 @@ export class RoomcraftConsole extends xb.Script {
     }
 
     const aiReady = this.isGeminiReady();
-    dom.generate.disabled = busy;
+    this.xrProviderText.text = aiReady
+      ? 'Gemini configured for this page.'
+      : 'Offline tools available. Connect Gemini in desktop controls to generate.';
+    dom.generate.disabled = busy || !dom.prompt.value.trim();
     dom.newDesign.disabled = busy || layout.objects.length === 0;
     dom.mic.disabled = busy || !xb.core.sound?.speechRecognizer?.recognition;
     dom.place.disabled = busy || layout.objects.length === 0;
@@ -866,6 +1167,7 @@ export class RoomcraftConsole extends xb.Script {
     dom.focusSelected.disabled = busy || this.isInXR() || !selectedId;
     dom.frameScene.disabled =
       busy || this.isInXR() || layout.objects.length === 0;
+    dom.removeSelected.disabled = busy || !selectedId;
     dom.exhibit.disabled = busy;
     dom.export.disabled = layout.objects.length === 0;
     dom.connect.disabled = busy;
@@ -881,6 +1183,10 @@ export class RoomcraftConsole extends xb.Script {
     this.xrPlace.disabled = dom.place.disabled;
     this.xrUndo.disabled = dom.undo.disabled;
     this.xrRedo.disabled = dom.redo.disabled;
+    this.xrGenerate.disabled = dom.generate.disabled;
+    this.xrRemove.disabled = dom.removeSelected.disabled;
+    this.xrPrevious.disabled = busy || layout.objects.length === 0;
+    this.xrNext.disabled = this.xrPrevious.disabled;
     for (const button of this.starterButtons) {
       button.disabled = busy;
     }
@@ -895,6 +1201,12 @@ export class RoomcraftConsole extends xb.Script {
     this.cleanups.splice(0).forEach((cleanup) => cleanup());
     this.card?.dispose();
     this.card?.removeFromParent();
+    if (this.xrKeyboard) {
+      this.xrKeyboard.onValueChange = undefined;
+      this.xrKeyboard.onSubmit = undefined;
+    }
+    this.keyboardCard?.dispose();
+    this.keyboardCard?.removeFromParent();
     this.dom.starters?.replaceChildren();
     this.dom.suggestions?.replaceChildren();
     this.dom.parts?.replaceChildren();
