@@ -66,6 +66,8 @@ Press New design to empty the scene and work on one object at a time. The room s
 
 Type an instruction such as "create a little robot" and press Generate, or press Talk and say one instruction. A new object is assembled from primitive parts, and the console then reports its part count so you can see it is one compound design rather than a catalog item.
 
+The full-width prompt shows eight lines and can be resized vertically. Typing does not activate simulator keyboard navigation. Enter submits once, Shift+Enter adds a new line, and held-key repeats or IME composition confirmation do not submit extra requests.
+
 Refine the design with a follow-up instruction such as "give it longer arms and a backpack". Targeted part edits keep unchanged part definitions and the object's hand-edited pose instead of replacing the whole object. A plan can also explicitly change its transform, for example when you ask to move it. Nothing is recentered after a refinement.
 
 Ask for movement with an instruction such as "make it wave", tune it with "make its arm swing faster", and end it with "stop its motion". A motion is a bounded swing or spin around an authored pivot on one part, and every child of that part travels with it. Editing a part that keeps its motion kind and declared starting phase keeps its place in the cycle, so a refinement does not restart the animation.
