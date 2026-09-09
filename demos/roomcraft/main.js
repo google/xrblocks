@@ -17,11 +17,15 @@ const EXHIBIT_MODEL_URL =
   'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Models@master/2.0/BoomBox/glTF-Binary/BoomBox.glb';
 
 const SUGGESTIONS = [
-  'Add a floor lamp beside the left chair',
-  'Add two more gallery pieces on new plinths',
+  'Create a little robot standing on the floor',
+  'Give it longer arms and a backpack',
   'Make the selected object deep blue',
+  'Add a floor lamp beside the left chair',
   'Remove the bookshelf and add a tall plant',
 ];
+
+/** How many part names the console lists before summarizing the remainder. */
+const MAX_LISTED_PARTS = 24;
 
 const SPEECH_MESSAGES = {
   'not-allowed':
@@ -119,6 +123,7 @@ export class RoomcraftConsole extends xb.Script {
       status: id('status'),
       error: id('error'),
       starters: id('starters'),
+      newDesign: id('newDesign'),
       suggestions: id('suggestions'),
       prompt: id('prompt'),
       generate: id('generate'),
@@ -126,6 +131,8 @@ export class RoomcraftConsole extends xb.Script {
       sceneSummary: id('sceneSummary'),
       placement: id('placement'),
       selection: id('selection'),
+      design: id('design'),
+      parts: id('parts'),
       place: id('place'),
       undo: id('undo'),
       exhibit: id('exhibit'),
@@ -167,6 +174,7 @@ export class RoomcraftConsole extends xb.Script {
       this.toggleConsole(this.dom.console.classList.contains('rc-collapsed'))
     );
     this.listen(this.dom.generate, 'click', () => void this.generate());
+    this.listen(this.dom.newDesign, 'click', () => void this.newDesign());
     this.listen(this.dom.prompt, 'keydown', (event) => {
       if (event.key === 'Enter') void this.generate();
     });
@@ -276,6 +284,11 @@ export class RoomcraftConsole extends xb.Script {
       onClick: () => this.toggleListening(),
       style: buttonStyle('#4a5f52'),
     });
+    this.xrNew = new xb.UIButton({
+      label: 'New',
+      onClick: () => void this.newDesign(),
+      style: buttonStyle('#30292d'),
+    });
     this.xrPlace = new xb.UIButton({
       label: 'Place',
       onClick: () => void this.placeOnSurface(),
@@ -287,8 +300,18 @@ export class RoomcraftConsole extends xb.Script {
       style: buttonStyle('#30292d'),
     });
 
+    const starterRows = [];
+    for (let index = 0; index < this.spatialStarters.length; index += 2) {
+      starterRows.push(
+        new xb.UIPanel({
+          style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
+          children: this.spatialStarters.slice(index, index + 2),
+        })
+      );
+    }
+
     const card = new xb.UICard({
-      size: {width: 1.1, height: 0.74},
+      size: {width: 1.1, height: 0.86},
       manipulation: true,
       style: {
         flexDirection: 'column',
@@ -309,13 +332,10 @@ export class RoomcraftConsole extends xb.Script {
         }),
         this.xrStatusText,
         this.xrSelectionText,
+        ...starterRows,
         new xb.UIPanel({
           style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
-          children: this.spatialStarters,
-        }),
-        new xb.UIPanel({
-          style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
-          children: [this.xrTalk, this.xrPlace, this.xrUndo],
+          children: [this.xrTalk, this.xrNew, this.xrPlace, this.xrUndo],
         }),
       ],
     });
@@ -357,6 +377,16 @@ export class RoomcraftConsole extends xb.Script {
     );
   }
 
+  /** Clears the scene so a new design can be described from nothing. */
+  async newDesign() {
+    await this.run('Clearing the scene.', async () => {
+      await this.room.applyLayout({title: 'Object workshop', objects: []});
+      this.setStatus(
+        'Empty workshop. Describe one object, for example "create a little robot", then refine it. Undo restores the previous scene.'
+      );
+    });
+  }
+
   async generate() {
     const prompt = this.dom.prompt.value.trim();
     if (!prompt) {
@@ -370,6 +400,9 @@ export class RoomcraftConsole extends xb.Script {
       return;
     }
     await this.run('Planning your edit.', async () => {
+      const existing = new Set(
+        this.room.layout.objects.map((object) => object.id)
+      );
       const before = describeLayout(this.room.layout);
       const layout = await this.room.request(prompt);
       if (this.disposed) return;
@@ -381,10 +414,22 @@ export class RoomcraftConsole extends xb.Script {
         );
         return;
       }
+      const added = layout.objects.filter((object) => !existing.has(object.id));
+      // Only an unambiguous single addition becomes the target of "this".
+      let followUp = '';
+      if (added.length === 1) {
+        this.room.select(added[0].id);
+        const parts = added[0].parts?.length ?? 0;
+        followUp = parts
+          ? ` Selected ${added[0].name}, a design made of ${parts} part${
+              parts === 1 ? '' : 's'
+            }, so you can refine it next.`
+          : ` Selected ${added[0].name}, so you can refine it next.`;
+      }
       this.setStatus(
         `Applied the edit. "${layout.title}" now has ${layout.objects.length} object${
           layout.objects.length === 1 ? '' : 's'
-        }.`
+        }.${followUp}`
       );
     });
   }
@@ -672,14 +717,38 @@ export class RoomcraftConsole extends xb.Script {
     dom.selection.title = selectedId
       ? `Selected ${selectedName} (${selectedId})`
       : 'Nothing selected';
+    const selected = layout.objects.find((object) => object.id === selectedId);
+    const parts = selected?.parts ?? [];
+    dom.design.textContent = !selected
+      ? 'Nothing selected.'
+      : parts.length > 0
+        ? `${selected.name} is one compound design made of ${parts.length} part${
+            parts.length === 1 ? '' : 's'
+          }. It moves, rotates, and scales as a single object, and an edit can change individual parts.`
+        : `${selected.name} is a catalog object, so it has no editable parts.`;
+    dom.parts.replaceChildren();
+    for (const part of parts.slice(0, MAX_LISTED_PARTS)) {
+      const item = document.createElement('li');
+      item.textContent = `${part.name} (${part.shape})`;
+      dom.parts.appendChild(item);
+    }
+    if (parts.length > MAX_LISTED_PARTS) {
+      const item = document.createElement('li');
+      item.textContent = `and ${parts.length - MAX_LISTED_PARTS} more`;
+      dom.parts.appendChild(item);
+    }
+    dom.parts.hidden = parts.length === 0;
     if (this.xrSelectionText) {
       this.xrSelectionText.text = selectedId
-        ? `Selected: ${selectedName} (${selectedId})`
+        ? parts.length > 0
+          ? `Selected: ${selectedName} - ${parts.length} parts`
+          : `Selected: ${selectedName} (${selectedId})`
         : 'Nothing selected';
     }
 
     const aiReady = this.isGeminiReady();
     dom.generate.disabled = busy;
+    dom.newDesign.disabled = busy || layout.objects.length === 0;
     dom.mic.disabled = busy || !xb.core.sound?.speechRecognizer?.recognition;
     dom.place.disabled = busy || layout.objects.length === 0;
     dom.undo.disabled = busy || !this.room.canUndo;
@@ -694,6 +763,7 @@ export class RoomcraftConsole extends xb.Script {
         : 'No voice';
     this.xrTalk.disabled = dom.mic.disabled;
     this.xrTalk.label = dom.mic.textContent;
+    this.xrNew.disabled = dom.newDesign.disabled;
     this.xrPlace.disabled = dom.place.disabled;
     this.xrUndo.disabled = dom.undo.disabled;
     for (const button of this.starterButtons) {
@@ -712,6 +782,7 @@ export class RoomcraftConsole extends xb.Script {
     this.card?.removeFromParent();
     this.dom.starters?.replaceChildren();
     this.dom.suggestions?.replaceChildren();
+    this.dom.parts?.replaceChildren();
   }
 }
 
