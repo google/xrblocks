@@ -10,6 +10,10 @@ export const MAX_PART_DEPTH = 8;
 export const MAX_PART_DISTANCE = 5;
 export const MIN_PART_SIZE = 0.01;
 export const MAX_PART_SIZE = 5;
+export const MIN_MOTION_PERIOD = 0.25;
+export const MAX_MOTION_PERIOD = 60;
+export const MAX_MOTION_AMPLITUDE = Math.PI;
+export const MAX_MOTION_SPEED = Math.PI * 4;
 
 export const SCENE_PART_SHAPES = [
   'box',
@@ -22,6 +26,33 @@ export const SCENE_PART_SHAPES = [
 
 export type SceneVector3 = [number, number, number];
 export type ScenePartShape = (typeof SCENE_PART_SHAPES)[number];
+export const SCENE_MOTION_AXES = ['x', 'y', 'z'] as const;
+export type SceneMotionAxis = (typeof SCENE_MOTION_AXES)[number];
+
+interface SceneMotionBase {
+  /** Axis in the part's authored local coordinates. */
+  axis: SceneMotionAxis;
+  /** Hinge or axle in part-local meters, relative to its authored center. */
+  pivot: SceneVector3;
+  /** Starting fraction of a full cycle, from 0 to 1. Defaults to 0. */
+  phase?: number;
+}
+
+export interface SceneSwingMotion extends SceneMotionBase {
+  kind: 'swing';
+  /** Angular travel on either side of the authored pose, in radians. */
+  amplitude: number;
+  /** Seconds per complete back-and-forth cycle. */
+  period: number;
+}
+
+export interface SceneSpinMotion extends SceneMotionBase {
+  kind: 'spin';
+  /** Signed angular velocity in radians per second. */
+  speed: number;
+}
+
+export type ScenePartMotion = SceneSwingMotion | SceneSpinMotion;
 
 export interface ScenePart {
   /** Stable within this object, including across design refinements. */
@@ -30,17 +61,22 @@ export interface ScenePart {
   shape: ScenePartShape;
   /** Parent part ID, or null for a part relative to the object's origin. */
   parent: string | null;
-  /** Center in parent-local meters. Parent size does not scale its children. */
+  /** Authored center in parent-local meters. Parent size does not scale children. */
   position: SceneVector3;
-  /** Euler angles in radians, applied in XYZ order. */
+  /** Authored rest-pose Euler angles in radians, applied in XYZ order. */
   rotation: SceneVector3;
   /** Physical width, height, and depth, not scale multipliers. */
   size: SceneVector3;
   /** A six-digit hexadecimal material color, multiplied by the object tint. */
   color: string;
+  /** Optional local motion. Descendants move with this part; no code is executed. */
+  motion?: ScenePartMotion;
 }
 
-export type ScenePartChanges = Partial<Omit<ScenePart, 'id'>>;
+export type ScenePartChanges = Partial<Omit<ScenePart, 'id' | 'motion'>> & {
+  /** Replace the motion definition, or use null to return to the authored pose. */
+  motion?: ScenePartMotion | null;
+};
 
 export type ScenePartEdit =
   | {op: 'add'; part: ScenePart}
@@ -139,4 +175,5 @@ export interface RoomcraftEventMap extends THREE.Object3DEventMap {
   change: {layout: SceneLayout};
   selectionchange: {id: string | null};
   statuschange: {status: RoomcraftStatus};
+  motionstatechange: {paused: boolean};
 }
