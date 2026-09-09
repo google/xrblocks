@@ -483,7 +483,7 @@ export class RoomcraftConsole extends xb.Script {
   // Spatial controls, so the demo keeps working after the HTML overlay is gone.
   buildSpatialPanel() {
     this.xrProviderText = new xb.UIText({
-      text: 'Connect Gemini in desktop controls to generate.',
+      text: 'Connect Gemini in the browser panel to generate.',
       style: {width: '100%', fontSize: 26, color: '#c2b6a8'},
     });
     this.xrStatusText = new xb.UIText({
@@ -779,7 +779,7 @@ export class RoomcraftConsole extends xb.Script {
     this.card.visible = true;
     if (!this.isGeminiReady()) {
       this.setStatus(
-        'Example mode. Configure Gemini in the desktop panel before entering XR to use voice authoring.'
+        'Example mode. To enable AI editing, exit XR and choose Connect Gemini in the browser panel.'
       );
     }
     this.refresh();
@@ -1069,7 +1069,7 @@ export class RoomcraftConsole extends xb.Script {
     }
     if (!this.isGeminiReady()) {
       this.setError(
-        'Gemini is not configured. Use Connect Gemini in the desktop panel first.'
+        'Gemini is not configured. Use Connect Gemini in the browser panel before entering XR.'
       );
       return;
     }
@@ -1383,6 +1383,12 @@ export class RoomcraftConsole extends xb.Script {
         this.dom.aiStatus.textContent =
           'Key configured for this page. Authentication and quota are checked when you request an edit.';
         this.setStatus('Gemini is configured. Describe an edit to your scene.');
+      } else if (prompt && !ai.options.gemini.apiKey.trim()) {
+        this.dom.aiStatus.textContent =
+          'Not connected. Offline scene tools remain available.';
+        this.setStatus(
+          'Continuing without AI. You can connect Gemini in the browser panel later.'
+        );
       } else {
         this.dom.aiStatus.textContent =
           'Not connected. No usable API key was provided.';
@@ -1420,7 +1426,7 @@ export class RoomcraftConsole extends xb.Script {
     }
     if (!this.isGeminiReady()) {
       this.setError(
-        'Configure Gemini in the desktop panel before using voice. The starter scenes do not need a key.'
+        'Configure Gemini in the browser panel before using voice. The starter scenes do not need a key.'
       );
       return;
     }
@@ -1633,7 +1639,9 @@ export class RoomcraftConsole extends xb.Script {
     const aiReady = this.isGeminiReady();
     this.xrProviderText.text = aiReady
       ? 'Gemini configured for this page.'
-      : 'Offline tools available. Connect Gemini in desktop controls to generate.';
+      : this.isInXR()
+        ? 'Offline tools available. Exit XR to configure Gemini in the browser panel.'
+        : 'Offline tools available. Connect Gemini in the browser panel to generate.';
     dom.generate.disabled = busy || !dom.prompt.value.trim();
     dom.newDesign.disabled =
       busy ||

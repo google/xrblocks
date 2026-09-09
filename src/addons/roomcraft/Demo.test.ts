@@ -226,13 +226,21 @@ describe('Roomcraft demo integration', () => {
     expect(dimensions.y).toBeLessThan(0.8);
   });
 
-  it('does not claim a connected provider when the key prompt was cancelled', async () => {
+  it('continues offline without an error when the key prompt was cancelled', async () => {
     await consoleScript.connectGemini();
     expect(mockCore.ai.initializeModel).toHaveBeenCalledOnce();
     expect(element('aiStatus').textContent).toContain('Not connected');
     expect(element('connect').textContent).toBe('Connect Gemini');
-    expect(consoleScript.xrStatusText.text).toContain('valid API key');
+    expect(consoleScript.xrStatusText.text).toContain('without AI');
+    expect(element('error').hidden).toBe(true);
     expect(consoleScript.isGeminiReady()).toBe(false);
+  });
+
+  it('does not treat missing credentials during automatic setup as a cancelled dialog', async () => {
+    await consoleScript.connectGemini(false);
+    expect(consoleScript.isGeminiReady()).toBe(false);
+    expect(element('error').hidden).toBe(false);
+    expect(consoleScript.xrStatusText.text).toContain('valid API key');
   });
 
   it('distinguishes local key configuration from verified authentication', async () => {

@@ -18,6 +18,8 @@ To open a saved scene on another device, serve its exported JSON alongside the d
 
 A standalone headset needs an HTTPS URL it can reach on your LAN, with a certificate its browser trusts. The headset's `127.0.0.1` is not the development computer. Open the LAN URL with `?environment=1`, without the desktop-forcing `formFactor=desktop` or `xrAutomation=1` flags, and use the SDK's XR entry button.
 
+Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialog. On Quest, open the browser controls, choose Connect Gemini near the top, enter your key in the password field, and choose Use for this session before entering XR. Hide controls if they cover the XR entry button. A key configured on another device does not transfer to the headset. The spatial keyboard is for scene instructions, not API keys; exit XR to change the key.
+
 ## Virtual world mode
 
 `?environment=1` authors a whole virtual place rather than decorating the room around you. The mode is chosen once at startup, so the two pages keep separate scenes, separate histories, and separate camera behavior.
@@ -98,13 +100,13 @@ Previous and Next cycle through scene objects, including objects that are diffic
 
 In virtual world mode the studio adds the environment summary and a Moonlight, Sunrise, and Enter world row, so atmosphere and viewpoint are reachable without the DOM console. The default page builds none of those extra controls.
 
-The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. On desktop, opening or recentering the studio chooses the side with less overlap from nearby authored objects, including their full motion envelopes. This is not room collision avoidance: drag the cards elsewhere if both sides are crowded. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the desktop controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
+The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. On desktop, opening or recentering the studio chooses the side with less overlap from nearby authored objects, including their full motion envelopes. This is not room collision avoidance: drag the cards elsewhere if both sides are crowded. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the browser controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
 
 ## Gemini
 
 Starter scenes including the handcrafted clockwork robot and the handcrafted moonlit garden, direct manipulation, motion playback and its pause control, New design, the Moonlight and Sunrise atmosphere shortcuts, Enter world, the downloaded exhibit, undo/redo, desktop framing, and export all work without a key. Creating and refining new designs and environments from your own words needs a configured provider.
 
-Press Connect Gemini to opt in before entering XR. The demo sets the Gemini response schema to `SCENE_PLAN_SCHEMA` and then calls the SDK's public `AI.initializeModel` with `AIOptions.promptForApiKey`, so the browser dialog asks for a key that stays in the current page's memory. Canceling or leaving the key empty does not report a connection. A configured key is not proof of authentication or quota; those are checked by the provider on the first scene request. Nothing is written to storage by the demo, and no key is committed here. Loading the page with `?key=YOUR_KEY` configures it without the dialog, as in the other AI samples.
+Press Connect Gemini to opt in before entering XR. The demo sets the Gemini response schema to `SCENE_PLAN_SCHEMA` and then calls the SDK's public `AI.initializeModel` with `AIOptions.promptForApiKey`, so the browser dialog asks for a key that stays in the current page's memory. Canceling or leaving the key empty does not report a connection. A configured key is not proof of authentication or quota; those are checked by the provider on the first scene request. Nothing is written to storage by the demo, and no key is committed here. Loading the page with `?key=YOUR_KEY` or `?geminiKey=YOUR_KEY` configures it without the dialog, as in the other AI samples. Append `&key=YOUR_KEY` when the URL already contains `?environment=1`. URL keys can appear in browser history, access logs, and copied links, so prefer the dialog and never publish a key-bearing URL.
 
 A browser API key is for local prototyping only. In production, pass the add-on a `planner` callback that calls your own server proxy and keep the provider key there.
 

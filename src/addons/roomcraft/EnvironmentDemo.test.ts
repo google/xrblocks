@@ -187,6 +187,40 @@ describe('Roomcraft virtual environment mode', () => {
     expect(SAVED_SCENE_PARAMETER).toBe('scene');
   });
 
+  it('puts browser key setup before the authoring controls and names Quest Browser', async () => {
+    await mount();
+    expect(
+      element('aiHeading').compareDocumentPosition(element('promptHeading')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(element('connectionHelp').textContent).toContain('Meta Quest');
+    expect(consoleScript.xrProviderText.text).toContain('browser panel');
+    consoleScript.onXRSessionStarted();
+    expect(consoleScript.xrProviderText.text).toContain('Exit XR');
+  });
+
+  it.each(['key', 'geminiKey'])(
+    'configures a URL-provided %s without opening a key dialog or generating a scene',
+    async (parameter) => {
+      mockUrlParameter.mockImplementation((name) =>
+        name === parameter ? 'local-url-fixture' : null
+      );
+      mockCore.ai.initializeModel.mockImplementation(async () => {
+        aiOptions.gemini.apiKey = 'local-url-fixture';
+      });
+      const planner = vi.fn(async () => ({title: 'Unused', edits: []}));
+
+      await mount({planner});
+
+      expect(mockCore.ai.initializeModel).toHaveBeenCalledOnce();
+      expect(aiOptions.promptForApiKey).toBe(false);
+      expect(aiOptions.gemini.enabled).toBe(true);
+      expect(consoleScript.isGeminiReady()).toBe(true);
+      expect(room.layout.objects).toEqual([]);
+      expect(planner).not.toHaveBeenCalled();
+    }
+  );
+
   it('loads a same-server saved garden at startup without making an AI request', async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(MOONLIT_GARDEN), {
