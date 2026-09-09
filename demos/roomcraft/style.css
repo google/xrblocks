@@ -192,6 +192,11 @@
   border-radius: 999px;
 }
 
+.rc-parts li.rc-moving {
+  border-color: var(--rc-sage);
+  color: var(--rc-sage);
+}
+
 .rc-row {
   display: flex;
   align-items: center;
