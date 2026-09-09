@@ -112,6 +112,15 @@ if (dataUrl?.startsWith('data:image/')) image.src = dataUrl;
 A successful Gemini result is a data URL. It is not an object with a `url`
 field. Validate the result before loading it as a texture or UI image.
 
+## Scene authoring
+
+The optional Roomcraft add-on turns descriptions into manipulable 3D compositions from a trusted catalog of procedural objects and preauthored models. Follow-up requests add, update, or remove specific objects while preserving native hand-edited transforms. It validates scene plans instead of executing generated code, and it does not provide text-to-mesh generation.
+
+Import `Roomcraft` from `xrblocks/addons/roomcraft/index.js`. Its `request()` method uses the configured AI facade, or an application-supplied planner callback for a server-side provider proxy. Curated layouts work without AI through `applyLayout()`. Detected-surface placement, undo, model-loading ownership, privacy, and limits are documented with the add-on.
+
+- <CodeSearchLink path="src/addons/roomcraft/README.md" />
+- <CodeSearchLink path="demos/roomcraft" />
+
 ## Gemini Live
 
 Register callbacks before connecting and use `onopen` as the ready transition:
