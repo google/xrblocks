@@ -76,6 +76,59 @@ function input() {
   return node;
 }
 
+function button(id: string) {
+  const node = element(id);
+  if (!(node instanceof HTMLButtonElement))
+    throw new Error(`Expected "${id}" to be a button.`);
+  return node;
+}
+
+const robotStarter = STARTER_SCENES.find(
+  (starter: {id: string}) => starter.id === 'robot-example'
+);
+
+/** A minimal compound design, standing in for one live generation result. */
+function littleRobot(id: string) {
+  return {
+    id,
+    name: 'Little robot',
+    position: [0, 0, -0.5],
+    rotation: 0,
+    scale: [1, 1, 1],
+    color: '#ffffff',
+    parts: [
+      {
+        id: 'body',
+        name: 'Body',
+        shape: 'box',
+        parent: null,
+        position: [0, 0.3, 0],
+        rotation: [0, 0, 0],
+        size: [0.3, 0.4, 0.2],
+        color: '#8fa3b0',
+      },
+      {
+        id: 'head',
+        name: 'Head',
+        shape: 'sphere',
+        parent: 'body',
+        position: [0, 0.32, 0],
+        rotation: [0, 0, 0],
+        size: [0.2, 0.2, 0.2],
+        color: '#c9c2b6',
+      },
+    ],
+  };
+}
+
+function countMeshes(object: THREE.Object3D) {
+  let meshes = 0;
+  object.traverse((child) => {
+    if (child instanceof THREE.Mesh) meshes++;
+  });
+  return meshes;
+}
+
 beforeEach(async () => {
   document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)![1];
   const media = Object.assign(new EventTarget(), {matches: false});
@@ -262,6 +315,198 @@ describe('Roomcraft demo integration', () => {
     ).toBe(true);
     other.dispose();
     pending.dispose();
+  });
+
+  it('builds the handcrafted example as one compound object under a single owner', async () => {
+    await consoleScript.applyStarter(robotStarter);
+    expect(room.layout.objects).toHaveLength(1);
+    expect(room.children).toHaveLength(1);
+    const [object] = room.layout.objects;
+    expect(object.asset).toBeUndefined();
+    expect(object.parts).toHaveLength(16);
+    const owner = room.getObject('example-robot')!;
+    expect(owner.xb?.manipulation).toBeDefined();
+    expect(countMeshes(owner)).toBe(16);
+    expect(owner.getObjectByName('antenna-tip')?.parent?.name).toBe('antenna');
+    const bounds = new THREE.Box3().setFromObject(owner);
+    expect(bounds.min.y).toBeCloseTo(0, 2);
+    expect(bounds.max.y).toBeGreaterThan(0.8);
+    expect(element('status').textContent).toContain('handcrafted');
+  });
+
+  it('describes the selected design and lists its parts as plain text', async () => {
+    await consoleScript.applyStarter(robotStarter);
+    room.select('example-robot');
+    expect(element('design').textContent).toContain('16 parts');
+    const parts = element('parts');
+    expect((parts as HTMLElement).hidden).toBe(false);
+    expect(parts.children).toHaveLength(16);
+    expect(parts.children[0].textContent).toBe('Torso (box)');
+    expect(parts.querySelector('script')).toBeNull();
+    expect(consoleScript.xrSelectionText.text).toBe(
+      'Selected: Handcrafted robot - 16 parts'
+    );
+    room.select(null);
+    expect(element('design').textContent).toBe('Nothing selected.');
+    expect((parts as HTMLElement).hidden).toBe(true);
+    await consoleScript.applyStarter(STARTER_SCENES[0]);
+    room.select('nook-sofa');
+    expect(element('design').textContent).toContain('catalog object');
+    expect((element('parts') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('clears the scene for a new design and restores it with undo', async () => {
+    await consoleScript.newDesign();
+    expect(room.layout).toEqual({title: 'Object workshop', objects: []});
+    expect(room.children).toHaveLength(0);
+    expect(element('sceneSummary').textContent).toContain('empty');
+    expect(element('status').textContent).toContain('Describe one object');
+    expect(button('newDesign').disabled).toBe(true);
+    expect(button('undo').disabled).toBe(false);
+    await consoleScript.undo();
+    expect(room.layout.title).toBe('Reading nook');
+    expect(room.layout.objects).toHaveLength(11);
+    expect(room.children).toHaveLength(11);
+    expect(button('newDesign').disabled).toBe(false);
+  });
+
+  it('hides the part list when selection is cleared, including its flex styling', async () => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync('demos/roomcraft/style.css', 'utf8');
+    document.head.appendChild(style);
+    try {
+      await consoleScript.applyStarter(robotStarter);
+      room.select('example-robot');
+      expect(getComputedStyle(element('parts')).display).toBe('flex');
+      room.select(null);
+      expect(getComputedStyle(element('parts')).display).toBe('none');
+    } finally {
+      style.remove();
+    }
+  });
+
+  it('selects a single newly created object so the next instruction has context', async () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    await consoleScript.newDesign();
+    vi.spyOn(room, 'request').mockImplementation(() =>
+      room.applyPlan({
+        title: 'Object workshop',
+        edits: [{op: 'add', object: littleRobot('little-robot')}],
+      })
+    );
+    input().value = 'create a little robot';
+    await consoleScript.generate();
+    expect(room.selectedId).toBe('little-robot');
+    expect(element('status').textContent).toContain('2 parts');
+    expect(element('design').textContent).toContain('compound design');
+    expect(element('parts').children).toHaveLength(2);
+    expect(countMeshes(room.getObject('little-robot')!)).toBe(2);
+  });
+
+  it('keeps the current selection when an edit is not one new object', async () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    room.select('nook-lamp');
+    const request = vi.spyOn(room, 'request').mockImplementation(() =>
+      room.applyPlan({
+        title: room.layout.title,
+        edits: [
+          {op: 'add', object: littleRobot('robot-one')},
+          {
+            op: 'add',
+            object: {...littleRobot('robot-two'), position: [1, 0, 0]},
+          },
+        ],
+      })
+    );
+    input().value = 'add two robots';
+    await consoleScript.generate();
+    expect(room.layout.objects).toHaveLength(13);
+    expect(room.selectedId).toBe('nook-lamp');
+
+    request.mockImplementation(() =>
+      room.applyPlan({
+        title: room.layout.title,
+        edits: [
+          {op: 'update', id: 'nook-sofa', changes: {color: '#3355aa'}},
+          {op: 'remove', id: 'robot-two'},
+        ],
+      })
+    );
+    input().value = 'make the sofa blue and remove one robot';
+    await consoleScript.generate();
+    expect(room.selectedId).toBe('nook-lamp');
+  });
+
+  it('exports a refined design with its parts, hierarchy, and edited pose', async () => {
+    await consoleScript.applyStarter(robotStarter);
+    const owner = room.getObject('example-robot')!;
+    owner.position.set(0.4, 0, -1.2);
+    owner.scale.setScalar(1.5);
+    await room.applyPlan({
+      title: 'Robot example',
+      edits: [
+        {
+          op: 'update',
+          id: 'example-robot',
+          changes: {},
+          partEdits: [
+            {op: 'update', id: 'arm-left', changes: {size: [0.07, 0.4, 0.07]}},
+            {
+              op: 'add',
+              part: {
+                id: 'backpack',
+                name: 'Backpack',
+                shape: 'box',
+                parent: 'torso',
+                position: [0, 0, -0.13],
+                rotation: [0, 0, 0],
+                size: [0.22, 0.24, 0.08],
+                color: '#5f6672',
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(
+      room.getObject('example-robot')!.getObjectByName('backpack')?.parent?.name
+    ).toBe('torso');
+
+    const blobs: Blob[] = [];
+    vi.stubGlobal('URL', {
+      createObjectURL: (blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:roomcraft-test';
+      },
+      revokeObjectURL: () => {},
+    });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    consoleScript.exportLayout();
+    expect(click).toHaveBeenCalledOnce();
+    const exported = JSON.parse(
+      await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blobs[0]);
+      })
+    ) as SceneLayout;
+    const design = exported.objects[0];
+    expect(design.position).toEqual([0.4, 0, -1.2]);
+    expect(design.scale).toEqual([1.5, 1.5, 1.5]);
+    expect(design.asset).toBeUndefined();
+    expect(design.parts).toHaveLength(17);
+    const parts = design.parts!;
+    expect(parts.find((part) => part.id === 'arm-left')!.size).toEqual([
+      0.07, 0.4, 0.07,
+    ]);
+    expect(parts.find((part) => part.id === 'backpack')!.parent).toBe('torso');
+    expect(parts.find((part) => part.id === 'antenna-tip')!.parent).toBe(
+      'antenna'
+    );
+    expect(JSON.stringify(exported)).not.toContain('local-test-fixture');
   });
 
   it('releases room, DOM, and speech listeners when the console is disposed', () => {
