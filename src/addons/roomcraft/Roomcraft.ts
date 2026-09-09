@@ -15,10 +15,12 @@ import {
   applyScenePlan,
   assertPlanFresh,
   buildScenePrompt,
+  cloneSceneObject,
   readSceneId,
   readSceneLayout,
   readScenePlan,
 } from './ScenePlan';
+import {createProceduralContent} from './ProceduralGeometry';
 import {placeSceneOnSurface} from './ScenePlacement';
 import type {
   RoomcraftEventMap,
@@ -103,7 +105,7 @@ async function createContent(asset: SceneAsset, color: string) {
 }
 
 /**
- * Composes trusted 3D assets using validated, incremental AI scene edits.
+ * Composes trusted assets and procedural designs using incremental AI edits.
  * Add it to XR Blocks before initialization, then call `request` or load a
  * hand-authored layout with `applyLayout`. No AI call is made on initialization.
  */
@@ -128,12 +130,10 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     this.name = 'Roomcraft';
     this.planner = options.planner;
     const catalog = options.catalog ?? createDefaultCatalog();
-    if (
-      !Array.isArray(catalog) ||
-      catalog.length === 0 ||
-      catalog.length > 128
-    ) {
-      throw new Error('Roomcraft needs a catalog containing 1 to 128 assets.');
+    if (!Array.isArray(catalog) || catalog.length > 128) {
+      throw new Error(
+        'Roomcraft needs a catalog containing at most 128 assets.'
+      );
     }
     for (const asset of catalog) {
       readSceneId(asset.id);
@@ -186,7 +186,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     return {
       title: this.title,
       objects: [...this.entities.values()].map(({owner, description}) => ({
-        ...description,
+        ...cloneSceneObject(description),
         name: owner.name,
         position: owner.position.toArray(),
         rotation: new THREE.Euler().setFromQuaternion(owner.quaternion, 'YXZ')
@@ -360,12 +360,20 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         if (
           !existing ||
           existing.description.asset !== object.asset ||
-          existing.description.color !== object.color
+          existing.description.color !== object.color ||
+          JSON.stringify(existing.description.parts) !==
+            JSON.stringify(object.parts)
         ) {
-          const asset = this.assets.get(object.asset);
-          if (!asset)
-            throw new Error(`Unknown catalog asset "${object.asset}".`);
-          const content = await createContent(asset, object.color);
+          let content: THREE.Group;
+          if (object.parts !== undefined) {
+            content = createProceduralContent(object.parts, object.color);
+          } else {
+            const asset = this.assets.get(object.asset);
+            if (!asset) {
+              throw new Error(`Unknown catalog asset "${object.asset}".`);
+            }
+            content = await createContent(asset, object.color);
+          }
           staged.set(object.id, content);
           this.assertAlive();
         }
