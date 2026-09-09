@@ -151,6 +151,11 @@
   color: var(--rc-ink-faint);
 }
 
+/* The section default is flex, so hidden sections need an explicit override. */
+.rc-section[hidden] {
+  display: none;
+}
+
 .rc-note {
   margin: 0;
   font-size: 12px;
