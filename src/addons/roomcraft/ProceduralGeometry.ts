@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 
-import {MAX_PART_DEPTH, type ScenePart} from './SceneTypes';
+import {
+  motionAngleRange,
+  readPartMotion,
+  type PartMotion,
+} from './ProceduralMotion';
+import {
+  MAX_PART_DEPTH,
+  type SceneMotionAxis,
+  type ScenePart,
+} from './SceneTypes';
 
 /** Fixed, modest tessellation; a design never chooses its own segment counts. */
 const RADIAL_SEGMENTS = 20;
@@ -18,6 +27,13 @@ const METALNESS = 0;
 const MAX_TORUS_TUBE = 0.4;
 
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
+
+/** The component pair that turns right-handed about each motion axis. */
+const PERPENDICULAR: Record<SceneMotionAxis, [number, number]> = {
+  x: [1, 2],
+  y: [2, 0],
+  z: [0, 1],
+};
 
 const CORNERS: Array<[number, number, number]> = [];
 for (const x of [-0.5, 0.5]) {
@@ -101,11 +117,74 @@ function resolveTransforms(parts: readonly ScenePart[]) {
   return transforms;
 }
 
+/** Sweep an entire subtree about a part-local hinge or axle. */
+function sweepBounds(box: THREE.Box3, motion: PartMotion) {
+  const bounds = new THREE.Box3();
+  const point = new THREE.Vector3();
+  const [uAxis, vAxis] = PERPENDICULAR[motion.axis];
+  const pivotU = motion.pivot.getComponent(uAxis);
+  const pivotV = motion.pivot.getComponent(vAxis);
+  const [start, end] = motionAngleRange(motion);
+  const quarter = Math.PI / 2;
+  for (const [x, y, z] of CORNERS) {
+    point.set(
+      x < 0 ? box.min.x : box.max.x,
+      y < 0 ? box.min.y : box.max.y,
+      z < 0 ? box.min.z : box.max.z
+    );
+    const u = point.getComponent(uAxis) - pivotU;
+    const v = point.getComponent(vAxis) - pivotV;
+    const include = (angle: number) => {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      point.setComponent(uAxis, pivotU + u * cos - v * sin);
+      point.setComponent(vAxis, pivotV + u * sin + v * cos);
+      bounds.expandByPoint(point);
+    };
+    include(start);
+    include(end);
+    // Each coordinate reaches its extrema at quarter turns of this corner.
+    const offset = Math.atan2(v, u);
+    const first = Math.ceil((start + offset) / quarter);
+    const last = Math.floor((end + offset) / quarter);
+    for (let index = first; index <= last; index++) {
+      include(index * quarter - offset);
+    }
+  }
+  return bounds;
+}
+
+function getMotionBounds(
+  parts: readonly ScenePart[],
+  motions: ReadonlyMap<string, PartMotion | undefined>
+) {
+  const children = new Map<string | null, ScenePart[]>();
+  for (const part of parts) {
+    const siblings = children.get(part.parent) ?? [];
+    siblings.push(part);
+    children.set(part.parent, siblings);
+  }
+  const envelope = (part: ScenePart): THREE.Box3 => {
+    const half = new THREE.Vector3().fromArray(part.size).multiplyScalar(0.5);
+    const box = new THREE.Box3(half.clone().negate(), half);
+    for (const child of children.get(part.id) ?? []) {
+      box.union(envelope(child));
+    }
+    const motion = motions.get(part.id);
+    return (motion ? sweepBounds(box, motion) : box).applyMatrix4(
+      localMatrix(part)
+    );
+  };
+  const bounds = new THREE.Box3();
+  for (const root of children.get(null) ?? []) bounds.union(envelope(root));
+  return bounds;
+}
+
 /**
  * Computes a conservative object-local bounding box from the physical size of
- * every part, transformed through the part hierarchy. It allocates no
- * renderable geometry or materials, so callers can size and place a design
- * without building it.
+ * every part and its full motion envelope, transformed through the part
+ * hierarchy. It allocates no renderable geometry or materials, so callers can
+ * size and place a design without building it.
  *
  * @param parts - The design's parts, in any order.
  * @returns A finite box in the object's authored coordinates. The design is
@@ -113,17 +192,22 @@ function resolveTransforms(parts: readonly ScenePart[]) {
  */
 export function getProceduralBounds(parts: readonly ScenePart[]): THREE.Box3 {
   const transforms = resolveTransforms(parts);
+  const motions = new Map(parts.map((part) => [part.id, readPartMotion(part)]));
   const bounds = new THREE.Box3();
-  const corner = new THREE.Vector3();
-  for (const part of parts) {
-    const matrix = transforms.get(part.id);
-    if (!matrix) throw new Error(`Missing transform for part "${part.id}".`);
-    for (const [x, y, z] of CORNERS) {
-      bounds.expandByPoint(
-        corner
-          .set(x * part.size[0], y * part.size[1], z * part.size[2])
-          .applyMatrix4(matrix)
-      );
+  if ([...motions.values()].some((motion) => motion !== undefined)) {
+    bounds.copy(getMotionBounds(parts, motions));
+  } else {
+    const corner = new THREE.Vector3();
+    for (const part of parts) {
+      const matrix = transforms.get(part.id);
+      if (!matrix) throw new Error(`Missing transform for part "${part.id}".`);
+      for (const [x, y, z] of CORNERS) {
+        bounds.expandByPoint(
+          corner
+            .set(x * part.size[0], y * part.size[1], z * part.size[2])
+            .applyMatrix4(matrix)
+        );
+      }
     }
   }
   if (
