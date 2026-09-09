@@ -62,6 +62,8 @@ let room: Roomcraft;
 let consoleScript: InstanceType<typeof RoomcraftConsole>;
 let speech: TestSpeech;
 let options: AIOptions;
+let camera: THREE.PerspectiveCamera;
+let renderer: {xr: {isPresenting: boolean}};
 
 function element(id: string) {
   const node = document.getElementById(id);
@@ -129,12 +131,37 @@ function countMeshes(object: THREE.Object3D) {
   return meshes;
 }
 
+function expectFramed(object: THREE.Object3D) {
+  object.updateWorldMatrix(true, false);
+  camera.updateWorldMatrix(true, false);
+  const bounds = new THREE.Box3().setFromObject(object);
+  const center = bounds.getCenter(new THREE.Vector3()).project(camera);
+  expect(center.x).toBeCloseTo(0, 8);
+  expect(center.y).toBeCloseTo(0, 8);
+  for (const x of [bounds.min.x, bounds.max.x]) {
+    for (const y of [bounds.min.y, bounds.max.y]) {
+      for (const z of [bounds.min.z, bounds.max.z]) {
+        const projected = new THREE.Vector3(x, y, z).project(camera);
+        expect(Math.abs(projected.x)).toBeLessThan(1);
+        expect(Math.abs(projected.y)).toBeLessThan(1);
+        expect(projected.z).toBeGreaterThan(-1);
+        expect(projected.z).toBeLessThan(1);
+      }
+    }
+  }
+}
+
 beforeEach(async () => {
   document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)![1];
   const media = Object.assign(new EventTarget(), {matches: false});
   vi.stubGlobal('matchMedia', () => media);
   options = new AIOptions();
   speech = new TestSpeech();
+  camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.01, 100);
+  camera.position.set(0, 1.5, 2);
+  camera.lookAt(0, 0.5, -1);
+  renderer = {xr: {isPresenting: false}};
+  Object.assign(mockCore, {camera, renderer});
   Object.assign(mockCore.ai, {options});
   Object.assign(mockCore.sound, {speechRecognizer: speech});
   mockCore.ai.isAvailable.mockReturnValue(true);
@@ -301,6 +328,9 @@ describe('Roomcraft demo integration', () => {
     expect(other.xrTalk.disabled).toBe(true);
     expect(other.xrPlace.disabled).toBe(true);
     expect(other.xrUndo.disabled).toBe(true);
+    expect(other.xrRedo.disabled).toBe(true);
+    expect(button('frameScene').disabled).toBe(true);
+    expect(button('focusSelected').disabled).toBe(true);
     expect(
       other.spatialStarters.every(
         (button: {disabled: boolean}) => button.disabled
@@ -315,6 +345,189 @@ describe('Roomcraft demo integration', () => {
     ).toBe(true);
     other.dispose();
     pending.dispose();
+  });
+
+  describe('Roomcraft demo history and framing', () => {
+    it('wires desktop redo and mirrors its availability in XR without an AI call', async () => {
+      const request = vi.spyOn(room, 'request');
+      expect(button('redo').disabled).toBe(true);
+      expect(consoleScript.xrRedo.disabled).toBe(true);
+      await consoleScript.newDesign();
+      await consoleScript.undo();
+      expect(button('redo').disabled).toBe(false);
+      expect(consoleScript.xrRedo.disabled).toBe(false);
+      button('redo').click();
+      await vi.waitFor(() => expect(room.layout.title).toBe('Object workshop'));
+      expect(room.layout.objects).toHaveLength(0);
+      expect(button('redo').disabled).toBe(true);
+      expect(consoleScript.xrRedo.disabled).toBe(true);
+      expect(request).not.toHaveBeenCalled();
+      expect(mockCore.ai.initializeModel).not.toHaveBeenCalled();
+    });
+
+    it('disables stale redo on both interfaces when a manipulation finishes', async () => {
+      await room.applyPlan({
+        title: room.layout.title,
+        edits: [{op: 'update', id: 'nook-lamp', changes: {color: '#2244aa'}}],
+      });
+      await consoleScript.undo();
+      expect(button('redo').disabled).toBe(false);
+      room.getObject('nook-lamp')!.position.x += 0.5;
+      room.dispatchEvent({type: 'change', layout: room.layout});
+      expect(button('redo').disabled).toBe(true);
+      expect(consoleScript.xrRedo.disabled).toBe(true);
+    });
+
+    it('frames a selection and the whole scene from their respective buttons', async () => {
+      expect(button('focusSelected').disabled).toBe(true);
+      expect(button('frameScene').disabled).toBe(false);
+      room.select('nook-lamp');
+      const direction = camera.quaternion.clone();
+      button('focusSelected').click();
+      await vi.waitFor(() =>
+        expect(element('status').textContent).toContain('Framed the selected')
+      );
+      expectFramed(room.getObject('nook-lamp')!);
+      const selectedView = camera.position.clone();
+      button('frameScene').click();
+      await vi.waitFor(() =>
+        expect(element('status').textContent).toContain('Framed the scene')
+      );
+      expectFramed(room);
+      expect(camera.position.equals(selectedView)).toBe(false);
+      expect(camera.quaternion.equals(direction)).toBe(true);
+    });
+
+    it.each([
+      {aspect: 0.5, zoom: 1},
+      {aspect: 2.4, zoom: 1},
+      {aspect: 1.6, zoom: 2.5},
+    ])('fits the viewport with aspect $aspect and zoom $zoom', async (view) => {
+      camera.aspect = view.aspect;
+      camera.zoom = view.zoom;
+      camera.updateProjectionMatrix();
+      await consoleScript.frame();
+      expectFramed(room);
+    });
+
+    it.each([true, false])(
+      'handles transformed scene and camera parents (selection only: %s)',
+      async (selectedOnly) => {
+        const sceneParent = new THREE.Group();
+        sceneParent.position.set(3, 0.8, -4);
+        sceneParent.rotation.set(0.1, 0.6, -0.2);
+        sceneParent.scale.set(1.2, 0.8, 1.5);
+        sceneParent.add(room);
+        room.position.set(0.5, 0.4, -1);
+        const cameraParent = new THREE.Group();
+        cameraParent.position.set(-2, 1, 3);
+        cameraParent.rotation.set(0.2, -0.3, 0.1);
+        cameraParent.scale.set(1.5, 0.75, 1.1);
+        cameraParent.add(camera);
+        room.select('nook-lamp');
+        const direction = camera.quaternion.clone();
+        await consoleScript.frame(selectedOnly);
+        expectFramed(selectedOnly ? room.getObject('nook-lamp')! : room);
+        expect(camera.quaternion.equals(direction)).toBe(true);
+      }
+    );
+
+    it('leaves the scene, selected owner, placement fit, and redo branch intact', async () => {
+      room.position.set(1, 0.3, -2);
+      room.rotation.y = 0.6;
+      await room.applyPlan({
+        title: room.layout.title,
+        edits: [{op: 'update', id: 'nook-lamp', changes: {color: '#2244aa'}}],
+      });
+      await consoleScript.undo();
+      room.select('nook-lamp');
+      consoleScript.placed = true;
+      const before = room.layout;
+      const owner = room.getObject('nook-lamp');
+      const position = room.position.clone();
+      const rotation = room.quaternion.clone();
+      const history = [room.canUndo, room.canRedo];
+      await consoleScript.frame(true);
+      await consoleScript.frame();
+      expect(room.layout).toEqual(before);
+      expect(room.getObject('nook-lamp')).toBe(owner);
+      expect(room.position.equals(position)).toBe(true);
+      expect(room.quaternion.equals(rotation)).toBe(true);
+      expect(room.selectedId).toBe('nook-lamp');
+      expect([room.canUndo, room.canRedo]).toEqual(history);
+      expect(room.canRedo).toBe(true);
+      expect(consoleScript.placed).toBe(true);
+    });
+
+    it('keeps the target beyond the near plane', async () => {
+      camera.near = 8;
+      camera.updateProjectionMatrix();
+      await consoleScript.frame();
+      expectFramed(room);
+    });
+
+    it('reports an empty scene or missing selection without moving the camera', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const before = camera.position.clone();
+      await consoleScript.frame(true);
+      expect(element('error').textContent).toContain('Select an object');
+      expect(camera.position.equals(before)).toBe(true);
+      await consoleScript.newDesign();
+      expect(button('frameScene').disabled).toBe(true);
+      expect(button('focusSelected').disabled).toBe(true);
+      await consoleScript.frame();
+      expect(element('error').textContent).toContain('nothing to frame');
+      expect(camera.position.equals(before)).toBe(true);
+    });
+
+    it('does not move the camera if the target cannot fit its clipping range', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const before = camera.position.clone();
+      camera.far = 1;
+      camera.updateProjectionMatrix();
+      await consoleScript.frame();
+      expect(element('error').textContent).toContain('clipping range');
+      expect(camera.position.equals(before)).toBe(true);
+    });
+
+    it.each(['callback', 'renderer'])(
+      'blocks camera framing during XR through the %s state',
+      async (source) => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        room.select('nook-lamp');
+        const before = camera.position.clone();
+        if (source === 'callback') consoleScript.onXRSessionStarted();
+        else renderer.xr.isPresenting = true;
+        consoleScript.refresh();
+        expect(button('frameScene').disabled).toBe(true);
+        expect(button('focusSelected').disabled).toBe(true);
+        await consoleScript.frame();
+        await consoleScript.frame(true);
+        expect(element('error').textContent).toContain('desktop only');
+        expect(camera.position.equals(before)).toBe(true);
+        if (source === 'callback') consoleScript.onXRSessionEnded();
+        else renderer.xr.isPresenting = false;
+        consoleScript.refresh();
+        expect(button('frameScene').disabled).toBe(false);
+        expect(button('focusSelected').disabled).toBe(false);
+      }
+    );
+
+    it.each(['connecting', 'planning'])(
+      'blocks framing while %s',
+      async (phase) => {
+        room.select('nook-lamp');
+        const before = camera.position.clone();
+        if (phase === 'connecting') consoleScript.connecting = true;
+        else vi.spyOn(room, 'busy', 'get').mockReturnValue(true);
+        consoleScript.refresh();
+        expect(button('frameScene').disabled).toBe(true);
+        expect(button('focusSelected').disabled).toBe(true);
+        await consoleScript.frame();
+        expect(element('error').textContent).toContain('still working');
+        expect(camera.position.equals(before)).toBe(true);
+      }
+    );
   });
 
   it('builds the handcrafted example as one compound object under a single owner', async () => {
