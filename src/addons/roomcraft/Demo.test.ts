@@ -194,6 +194,22 @@ describe('Roomcraft demo integration', () => {
     expect(consoleScript.card.visible).toBe(false);
   });
 
+  it('keeps the default page free of virtual environment behavior', () => {
+    expect(consoleScript.virtual).toBe(false);
+    expect(room.layout.environment).toBeUndefined();
+    expect(JSON.stringify(room.layout)).not.toContain('environment');
+    expect(element('environmentSection').hidden).toBe(true);
+    expect(element('tagline').textContent).toContain('Speak a scene');
+    expect(button('newDesign').textContent!.trim()).toBe('New design');
+    expect(button('place').disabled).toBe(false);
+    expect(element('placement').textContent).not.toContain('own ground');
+    // No virtual-only spatial widget is built for this page.
+    expect(consoleScript.xrEnvironmentText).toBeUndefined();
+    expect(consoleScript.xrMoonlight).toBeUndefined();
+    expect(consoleScript.xrSunrise).toBeUndefined();
+    expect(consoleScript.xrEnterWorld).toBeUndefined();
+  });
+
   it('loads all documented starters through the real scene runtime', async () => {
     for (const starter of STARTER_SCENES) {
       await consoleScript.applyStarter(starter);
