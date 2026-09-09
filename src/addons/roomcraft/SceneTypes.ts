@@ -14,6 +14,12 @@ export const MIN_MOTION_PERIOD = 0.25;
 export const MAX_MOTION_PERIOD = 60;
 export const MAX_MOTION_AMPLITUDE = Math.PI;
 export const MAX_MOTION_SPEED = Math.PI * 4;
+export const MIN_ENVIRONMENT_SIZE = 4;
+export const MAX_ENVIRONMENT_SIZE = 20;
+export const MAX_LANDSCAPE_SIZE = 20;
+export const MAX_PATH_POINTS = 12;
+export const MAX_SCATTER_COUNT = 128;
+export const MAX_SCENE_SCATTER_COUNT = 1024;
 
 export const SCENE_PART_SHAPES = [
   'box',
@@ -24,6 +30,7 @@ export const SCENE_PART_SHAPES = [
   'torus',
 ] as const;
 
+export type SceneVector2 = [number, number];
 export type SceneVector3 = [number, number, number];
 export type ScenePartShape = (typeof SCENE_PART_SHAPES)[number];
 export const SCENE_MOTION_AXES = ['x', 'y', 'z'] as const;
@@ -53,6 +60,60 @@ export interface SceneSpinMotion extends SceneMotionBase {
 }
 
 export type ScenePartMotion = SceneSwingMotion | SceneSpinMotion;
+
+export const SCENE_TIMES_OF_DAY = [
+  'moonlight',
+  'sunrise',
+  'daylight',
+  'sunset',
+] as const;
+export type SceneTimeOfDay = (typeof SCENE_TIMES_OF_DAY)[number];
+
+/** A bounded virtual setting, independent of its editable objects. */
+export interface SceneEnvironment {
+  /** Width and depth of the ground in scene-local meters, centered at the origin. */
+  size: SceneVector2;
+  groundColor: string;
+  /** Controls the owned sky and lighting, not the saved colors of scene objects. */
+  timeOfDay: SceneTimeOfDay;
+}
+
+export interface ScenePond {
+  kind: 'pond';
+  /** Width and depth of the elliptical water surface, in local meters. */
+  size: SceneVector2;
+  bankWidth: number;
+}
+
+export interface ScenePath {
+  kind: 'path';
+  /** Ordered local X/Z center-line coordinates. */
+  points: SceneVector2[];
+  width: number;
+}
+
+export const SCENE_SCATTER_STYLES = [
+  'tree',
+  'shrub',
+  'rock',
+  'grass',
+  'flower',
+] as const;
+export type SceneScatterStyle = (typeof SCENE_SCATTER_STYLES)[number];
+
+export interface SceneScatter {
+  kind: 'scatter';
+  style: SceneScatterStyle;
+  /** Width and depth of the planting area; foliage may overhang its edges. */
+  size: SceneVector2;
+  count: number;
+  /** A deterministic seed. Keep it unchanged when refining an existing planting. */
+  seed: number;
+  /** Maximum specimen height in meters. */
+  height: number;
+}
+
+export type SceneLandscape = ScenePond | ScenePath | SceneScatter;
 
 export interface ScenePart {
   /** Stable within this object, including across design refinements. */
@@ -106,32 +167,49 @@ interface SceneObjectBase {
   position: SceneVector3;
   /** Upright rotation about Y, in radians. */
   rotation: number;
-  /** Multipliers of the asset size or the authored procedural geometry. */
+  /** Multipliers of the asset size, procedural geometry, or landscape recipe. */
   scale: SceneVector3;
-  /** Hexadecimal color; white preserves individual procedural part colors. */
+  /** Hex color; part tint or a landscape's primary foliage, water, or stone color. */
   color: string;
 }
 
 export interface SceneCatalogObject extends SceneObjectBase {
   asset: string;
   parts?: never;
+  landscape?: never;
 }
 
 /** A new design made from parts, with no catalog entry or generated code. */
 export interface SceneProceduralObject extends SceneObjectBase {
   asset?: never;
   parts: ScenePart[];
+  landscape?: never;
 }
 
-export type SceneObject = SceneCatalogObject | SceneProceduralObject;
+/** A compact recipe for an editable landscape feature, not a catalog preset. */
+export interface SceneLandscapeObject extends SceneObjectBase {
+  asset?: never;
+  parts?: never;
+  landscape: SceneLandscape;
+}
+
+export type SceneObject =
+  | SceneCatalogObject
+  | SceneProceduralObject
+  | SceneLandscapeObject;
 
 export interface SceneLayout {
   title: string;
   objects: SceneObject[];
+  environment?: SceneEnvironment;
 }
 
 export type SceneObjectChanges = Partial<Omit<SceneObjectBase, 'id'>> &
-  ({asset?: string; parts?: never} | {asset?: never; parts?: ScenePart[]});
+  (
+    | {asset?: string; parts?: never; landscape?: never}
+    | {asset?: never; parts?: ScenePart[]; landscape?: never}
+    | {asset?: never; parts?: never; landscape?: SceneLandscape}
+  );
 
 export type SceneEdit =
   | {op: 'add'; object: SceneObject}
@@ -147,6 +225,8 @@ export type SceneEdit =
 export interface ScenePlan {
   title: string;
   edits: SceneEdit[];
+  /** Patch scene-level settings, or remove the virtual environment with null. */
+  environment?: Partial<SceneEnvironment> | null;
 }
 
 export interface SceneRequest {
