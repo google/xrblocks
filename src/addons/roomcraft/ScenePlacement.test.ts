@@ -4,7 +4,12 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import {DetectedPlane} from '../../world/planes/DetectedPlane';
 import {disposeObjectTree} from '../../utils/ThreeDisposal';
 import {placeSceneOnSurface} from './ScenePlacement';
-import type {SceneAssetDescription, SceneLayout} from './SceneTypes';
+import {createProceduralContent} from './ProceduralGeometry';
+import type {
+  SceneAssetDescription,
+  SceneLayout,
+  SceneProceduralObject,
+} from './SceneTypes';
 
 vi.mock('xrblocks', async () => await import('../../utils/ObjectPlacement'));
 
@@ -236,5 +241,110 @@ describe('Roomcraft detected-surface placement', () => {
     expect(() =>
       placeSceneOnSurface(root, layout, catalog, [plane()], camera())
     ).toThrow('transform');
+  });
+
+  it('fits a scaled, off-center procedural design onto a table without a catalog', () => {
+    const object: SceneProceduralObject = {
+      id: 'sculpture',
+      name: 'Sculpture',
+      position: [0.2, 0, 0],
+      rotation: 0.2,
+      scale: [1.2, 1.4, 0.8],
+      color: '#ffffff',
+      parts: [
+        {
+          id: 'body',
+          name: 'Body',
+          shape: 'box',
+          parent: null,
+          position: [0.1, 0, 0],
+          rotation: [0, 0, 0],
+          size: [0.3, 0.6, 0.2],
+          color: '#88bb99',
+        },
+        {
+          id: 'branch',
+          name: 'Branch',
+          shape: 'cylinder',
+          parent: 'body',
+          position: [0.3, 0, 0],
+          rotation: [0, 0, Math.PI / 2],
+          size: [0.1, 0.5, 0.1],
+          color: '#cc7733',
+        },
+      ],
+    };
+    const root = new THREE.Group();
+    const content = createProceduralContent(object.parts, object.color);
+    content.position.fromArray(object.position);
+    content.rotation.y = object.rotation;
+    content.scale.fromArray(object.scale);
+    root.add(content);
+    resources.push(root);
+    const tabletop = plane(2, 2, new THREE.Vector3(0, 0.75, -1), 'table');
+    expect(
+      placeSceneOnSurface(
+        root,
+        {title: 'Sculpture', objects: [object]},
+        [],
+        [tabletop],
+        camera()
+      )
+    ).toBe(true);
+    const bounds = new THREE.Box3().setFromObject(root);
+    expect(bounds.min.y).toBeCloseTo(0.75);
+    expect(bounds.getSize(new THREE.Vector3()).y).toBeCloseTo(0.84, 5);
+    expect(bounds.min.x).toBeGreaterThanOrEqual(-1 - 1e-6);
+    expect(bounds.max.x).toBeLessThanOrEqual(1 + 1e-6);
+    expect(bounds.min.z).toBeGreaterThanOrEqual(-2 - 1e-6);
+    expect(bounds.max.z).toBeLessThanOrEqual(0 + 1e-6);
+  });
+
+  it('refuses a surface that fits the body but not an extended procedural arm', () => {
+    const object: SceneProceduralObject = {
+      id: 'robot',
+      name: 'Robot',
+      position: [0, 0, 0],
+      rotation: 0,
+      scale: [1, 1, 1],
+      color: '#ffffff',
+      parts: [
+        {
+          id: 'body',
+          name: 'Body',
+          shape: 'box',
+          parent: null,
+          position: [0, 0.3, 0],
+          rotation: [0, 0, 0],
+          size: [0.3, 0.6, 0.2],
+          color: '#88bb99',
+        },
+        {
+          id: 'arm',
+          name: 'Arm',
+          shape: 'capsule',
+          parent: 'body',
+          position: [0.5, 0, 0],
+          rotation: [0, 0, Math.PI / 2],
+          size: [0.1, 2, 0.1],
+          color: '#cc7733',
+        },
+      ],
+    };
+    const root = new THREE.Group();
+    root.add(createProceduralContent(object.parts, object.color));
+    root.position.set(1, 2, 3);
+    resources.push(root);
+    const before = root.position.clone();
+    expect(
+      placeSceneOnSurface(
+        root,
+        {title: 'Robot', objects: [object]},
+        [],
+        [plane(1, 1)],
+        camera()
+      )
+    ).toBe(false);
+    expect(root.position.equals(before)).toBe(true);
   });
 });
