@@ -78,6 +78,7 @@ export class RoomcraftConsole extends xb.Script {
     this.cleanups = [];
     this.listening = false;
     this.connecting = false;
+    this.xrActive = false;
     this.disposed = false;
     this.placed = false;
     this.exhibitCount = 0;
@@ -135,6 +136,9 @@ export class RoomcraftConsole extends xb.Script {
       parts: id('parts'),
       place: id('place'),
       undo: id('undo'),
+      redo: id('redo'),
+      focusSelected: id('focusSelected'),
+      frameScene: id('frameScene'),
       exhibit: id('exhibit'),
       export: id('export'),
       connect: id('connect'),
@@ -181,6 +185,9 @@ export class RoomcraftConsole extends xb.Script {
     this.listen(this.dom.mic, 'click', () => this.toggleListening());
     this.listen(this.dom.place, 'click', () => void this.placeOnSurface());
     this.listen(this.dom.undo, 'click', () => void this.undo());
+    this.listen(this.dom.redo, 'click', () => void this.redo());
+    this.listen(this.dom.focusSelected, 'click', () => void this.frame(true));
+    this.listen(this.dom.frameScene, 'click', () => void this.frame());
     this.listen(this.dom.exhibit, 'click', () => void this.addExhibit());
     this.listen(this.dom.export, 'click', () => this.exportLayout());
     this.listen(this.dom.connect, 'click', () => void this.connectGemini());
@@ -299,6 +306,11 @@ export class RoomcraftConsole extends xb.Script {
       onClick: () => void this.undo(),
       style: buttonStyle('#30292d'),
     });
+    this.xrRedo = new xb.UIButton({
+      label: 'Redo',
+      onClick: () => void this.redo(),
+      style: buttonStyle('#30292d'),
+    });
 
     const starterRows = [];
     for (let index = 0; index < this.spatialStarters.length; index += 2) {
@@ -335,7 +347,13 @@ export class RoomcraftConsole extends xb.Script {
         ...starterRows,
         new xb.UIPanel({
           style: {width: '100%', height: 90, flexDirection: 'row', gap: 16},
-          children: [this.xrTalk, this.xrNew, this.xrPlace, this.xrUndo],
+          children: [
+            this.xrTalk,
+            this.xrNew,
+            this.xrPlace,
+            this.xrUndo,
+            this.xrRedo,
+          ],
         }),
       ],
     });
@@ -349,6 +367,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   onXRSessionStarted() {
+    this.xrActive = true;
     this.dom.console?.classList.add('rc-hidden');
     this.card.visible = true;
     if (!this.isGeminiReady()) {
@@ -356,11 +375,18 @@ export class RoomcraftConsole extends xb.Script {
         'Example mode. Configure Gemini in the desktop panel before entering XR to use voice authoring.'
       );
     }
+    this.refresh();
   }
 
   onXRSessionEnded() {
+    this.xrActive = false;
     this.dom.console?.classList.remove('rc-hidden');
     this.card.visible = false;
+    this.refresh();
+  }
+
+  isInXR() {
+    return this.xrActive || !!xb.core.renderer?.xr.isPresenting;
   }
 
   // ---- actions ----
@@ -455,6 +481,90 @@ export class RoomcraftConsole extends xb.Script {
     await this.run('Undoing the last change.', async () => {
       const layout = await this.room.undo();
       this.setStatus(`Restored "${layout.title}".`);
+    });
+  }
+
+  async redo() {
+    await this.run('Redoing the last undone change.', async () => {
+      const layout = await this.room.redo();
+      this.setStatus(`Reapplied "${layout.title}" without another AI request.`);
+    });
+  }
+
+  /** Reframes the desktop camera without changing any scene transforms. */
+  async frame(selectedOnly = false) {
+    await this.run('Framing your view.', () => {
+      if (this.isInXR()) {
+        throw new Error(
+          'Camera framing is desktop only; your XR view was kept.'
+        );
+      }
+      const camera = xb.core.camera;
+      if (!(camera instanceof THREE.PerspectiveCamera)) {
+        throw new Error('Framing needs a perspective camera.');
+      }
+      const selectedId = this.room.selectedId;
+      const target = selectedOnly
+        ? selectedId
+          ? this.room.getObject(selectedId)
+          : undefined
+        : this.room;
+      if (!target) throw new Error('Select an object to focus first.');
+      target.updateWorldMatrix(true, false);
+      const bounds = new THREE.Box3().setFromObject(target);
+      if (bounds.isEmpty()) throw new Error('There is nothing to frame yet.');
+      camera.updateWorldMatrix(true, false);
+      if (camera.matrixWorld.determinant() === 0) {
+        throw new Error('Framing needs an invertible camera transform.');
+      }
+
+      // Use the actual view matrix: three.js excludes camera scale from it.
+      const cameraToWorld = camera.matrixWorldInverse.clone().invert();
+      const sphere = bounds
+        .applyMatrix4(camera.matrixWorldInverse)
+        .getBoundingSphere(new THREE.Sphere());
+      const vertical = THREE.MathUtils.degToRad(camera.getEffectiveFOV()) / 2;
+      const horizontal = Math.atan(Math.tan(vertical) * camera.aspect);
+      const halfFov = Math.min(vertical, horizontal);
+      const radius = sphere.radius * 1.15;
+      if (
+        !(halfFov > 0 && halfFov < Math.PI / 2) ||
+        !Number.isFinite(camera.aspect) ||
+        !(radius > 0 && Number.isFinite(radius)) ||
+        camera.view?.enabled ||
+        camera.filmOffset !== 0
+      ) {
+        throw new Error(
+          'Framing needs visible bounds and an unshifted perspective view.'
+        );
+      }
+      const distance = Math.max(
+        radius / Math.sin(halfFov),
+        camera.near + radius
+      );
+      if (
+        !(camera.near > 0 && Number.isFinite(camera.far)) ||
+        !Number.isFinite(distance) ||
+        distance + radius >= camera.far
+      ) {
+        throw new Error(
+          'The scene needs more room within the camera clipping range.'
+        );
+      }
+      const position = sphere.center.clone();
+      position.z += distance;
+      position.applyMatrix4(cameraToWorld);
+      camera.parent?.worldToLocal(position);
+      if (!position.toArray().every(Number.isFinite)) {
+        throw new Error('The camera transform cannot frame this scene.');
+      }
+      camera.position.copy(position);
+      camera.updateMatrixWorld();
+      this.setStatus(
+        selectedOnly
+          ? 'Framed the selected object. Its placement was not changed.'
+          : 'Framed the scene. Object placements were not changed.'
+      );
     });
   }
 
@@ -752,6 +862,10 @@ export class RoomcraftConsole extends xb.Script {
     dom.mic.disabled = busy || !xb.core.sound?.speechRecognizer?.recognition;
     dom.place.disabled = busy || layout.objects.length === 0;
     dom.undo.disabled = busy || !this.room.canUndo;
+    dom.redo.disabled = busy || !this.room.canRedo;
+    dom.focusSelected.disabled = busy || this.isInXR() || !selectedId;
+    dom.frameScene.disabled =
+      busy || this.isInXR() || layout.objects.length === 0;
     dom.exhibit.disabled = busy;
     dom.export.disabled = layout.objects.length === 0;
     dom.connect.disabled = busy;
@@ -766,6 +880,7 @@ export class RoomcraftConsole extends xb.Script {
     this.xrNew.disabled = dom.newDesign.disabled;
     this.xrPlace.disabled = dom.place.disabled;
     this.xrUndo.disabled = dom.undo.disabled;
+    this.xrRedo.disabled = dom.redo.disabled;
     for (const button of this.starterButtons) {
       button.disabled = busy;
     }
