@@ -131,10 +131,8 @@ function countMeshes(object: THREE.Object3D) {
   return meshes;
 }
 
-function expectFramed(object: THREE.Object3D) {
-  object.updateWorldMatrix(true, false);
+function expectFramedBox(bounds: THREE.Box3) {
   camera.updateWorldMatrix(true, false);
-  const bounds = new THREE.Box3().setFromObject(object);
   const center = bounds.getCenter(new THREE.Vector3()).project(camera);
   expect(center.x).toBeCloseTo(0, 8);
   expect(center.y).toBeCloseTo(0, 8);
@@ -149,6 +147,11 @@ function expectFramed(object: THREE.Object3D) {
       }
     }
   }
+}
+
+function expectFramed(object: THREE.Object3D) {
+  object.updateWorldMatrix(true, false);
+  expectFramedBox(new THREE.Box3().setFromObject(object));
 }
 
 beforeEach(async () => {
@@ -528,6 +531,29 @@ describe('Roomcraft demo integration', () => {
         expect(camera.position.equals(before)).toBe(true);
       }
     );
+
+    it.each([true, false])(
+      'frames the full motion envelope rather than one pose (selection only: %s)',
+      async (selectedOnly) => {
+        await consoleScript.applyStarter(robotStarter);
+        room.select('example-robot');
+        const owner = room.getObject('example-robot')!;
+        owner.updateWorldMatrix(true, false);
+        const envelope = room.getWorldBounds(
+          selectedOnly ? 'example-robot' : undefined
+        );
+        const pose = new THREE.Box3().setFromObject(owner);
+        expect(envelope.clone().expandByScalar(1e-6).containsBox(pose)).toBe(
+          true
+        );
+        expect(envelope.equals(pose)).toBe(false);
+        await consoleScript.frame(selectedOnly);
+        expect(element('error').hidden).toBe(true);
+        expectFramedBox(
+          room.getWorldBounds(selectedOnly ? 'example-robot' : undefined)
+        );
+      }
+    );
   });
 
   it('builds the handcrafted example as one compound object under a single owner', async () => {
@@ -536,10 +562,10 @@ describe('Roomcraft demo integration', () => {
     expect(room.children).toHaveLength(1);
     const [object] = room.layout.objects;
     expect(object.asset).toBeUndefined();
-    expect(object.parts).toHaveLength(16);
+    expect(object.parts).toHaveLength(17);
     const owner = room.getObject('example-robot')!;
     expect(owner.xb?.manipulation).toBeDefined();
-    expect(countMeshes(owner)).toBe(16);
+    expect(countMeshes(owner)).toBe(17);
     expect(owner.getObjectByName('antenna-tip')?.parent?.name).toBe('antenna');
     const bounds = new THREE.Box3().setFromObject(owner);
     expect(bounds.min.y).toBeCloseTo(0, 2);
@@ -550,14 +576,14 @@ describe('Roomcraft demo integration', () => {
   it('describes the selected design and lists its parts as plain text', async () => {
     await consoleScript.applyStarter(robotStarter);
     room.select('example-robot');
-    expect(element('design').textContent).toContain('16 parts');
+    expect(element('design').textContent).toContain('17 parts');
     const parts = element('parts');
     expect((parts as HTMLElement).hidden).toBe(false);
-    expect(parts.children).toHaveLength(16);
+    expect(parts.children).toHaveLength(17);
     expect(parts.children[0].textContent).toBe('Torso (box)');
     expect(parts.querySelector('script')).toBeNull();
     expect(consoleScript.xrSelectionText.text).toBe(
-      'Selected: Handcrafted robot - 16 parts'
+      'Selected: Handcrafted clockwork robot - 17 parts, 4 moving'
     );
     room.select(null);
     expect(element('design').textContent).toBe('Nothing selected.');
@@ -581,6 +607,69 @@ describe('Roomcraft demo integration', () => {
     expect(room.layout.objects).toHaveLength(11);
     expect(room.children).toHaveLength(11);
     expect(button('newDesign').disabled).toBe(false);
+  });
+
+  it('synchronizes desktop and spatial playback controls without scene edits', async () => {
+    expect(button('motion').disabled).toBe(true);
+    expect(consoleScript.xrMotion.disabled).toBe(true);
+    await consoleScript.applyStarter(robotStarter);
+    room.select('example-robot');
+    await room.applyPlan({
+      title: room.layout.title,
+      edits: [{op: 'update', id: 'example-robot', changes: {color: '#2244aa'}}],
+    });
+    await room.undo();
+    consoleScript.placed = true;
+    const before = room.layout;
+    const request = vi.spyOn(room, 'request');
+    expect(button('motion').disabled).toBe(false);
+    expect(consoleScript.xrMotion.disabled).toBe(false);
+    expect(element('design').textContent).toContain('4 parts move');
+    expect(element('parts').querySelectorAll('.rc-moving')).toHaveLength(4);
+    button('motion').click();
+    expect(room.motionPaused).toBe(true);
+    expect(button('motion').getAttribute('aria-pressed')).toBe('true');
+    expect(consoleScript.xrMotion.label).toBe('Resume');
+    expect(element('motionNote').textContent).toContain('current pose');
+    consoleScript.xrMotion.onClick();
+    expect(room.motionPaused).toBe(false);
+    expect(button('motion').textContent).toBe('Pause motion');
+    expect(consoleScript.xrMotion.label).toBe('Pause');
+    expect(room.layout).toEqual(before);
+    expect(room.selectedId).toBe('example-robot');
+    expect(room.canRedo).toBe(true);
+    expect(consoleScript.placed).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+    expect(speech.start).not.toHaveBeenCalled();
+    await consoleScript.newDesign();
+    expect(button('motion').disabled).toBe(true);
+    expect(consoleScript.xrMotion.disabled).toBe(true);
+  });
+
+  it('keeps playback controls available during a pending generation', async () => {
+    consoleScript.dispose();
+    room.dispose();
+    let finish!: (value: unknown) => void;
+    const result = new Promise<unknown>((resolve) => {
+      finish = resolve;
+    });
+    room = new Roomcraft({planner: () => result});
+    consoleScript = new RoomcraftConsole(room);
+    consoleScript.init();
+    await consoleScript.applyStarter(robotStarter);
+    options.gemini.apiKey = 'local-test-fixture';
+    consoleScript.setPrompt('Make its arms blue');
+    const pending = consoleScript.generate();
+    expect(room.busy).toBe(true);
+    expect(consoleScript.xrGenerate.disabled).toBe(true);
+    expect(button('motion').disabled).toBe(false);
+    expect(consoleScript.xrMotion.disabled).toBe(false);
+    button('motion').click();
+    expect(room.motionPaused).toBe(true);
+    finish({title: room.layout.title, edits: []});
+    await pending;
+    expect(room.motionPaused).toBe(true);
+    expect(consoleScript.xrMotion.label).toBe('Resume');
   });
 
   it('hides the part list when selection is cleared, including its flex styling', async () => {
@@ -710,7 +799,7 @@ describe('Roomcraft demo integration', () => {
     expect(design.position).toEqual([0.4, 0, -1.2]);
     expect(design.scale).toEqual([1.5, 1.5, 1.5]);
     expect(design.asset).toBeUndefined();
-    expect(design.parts).toHaveLength(17);
+    expect(design.parts).toHaveLength(18);
     const parts = design.parts!;
     expect(parts.find((part) => part.id === 'arm-left')!.size).toEqual([
       0.07, 0.4, 0.07,
