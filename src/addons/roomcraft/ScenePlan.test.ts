@@ -11,6 +11,7 @@ import {
 } from './ScenePlan';
 import type {
   SceneAssetDescription,
+  SceneCatalogObject,
   SceneLayout,
   SceneObject,
   ScenePlan,
@@ -21,7 +22,9 @@ const catalog: SceneAssetDescription[] = [
   {id: 'lamp', description: 'A standing lamp', size: [0.5, 1.5, 0.5]},
 ];
 
-function object(overrides: Partial<SceneObject> = {}): SceneObject {
+function object(
+  overrides: Partial<SceneCatalogObject> = {}
+): SceneCatalogObject {
   return {
     id: 'first',
     asset: 'box',
