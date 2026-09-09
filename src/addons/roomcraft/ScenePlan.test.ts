@@ -58,6 +58,22 @@ describe('Roomcraft scene protocol', () => {
     expect(SCENE_PLAN_SCHEMA.properties.edits.items.anyOf).toHaveLength(3);
   });
 
+  it('explains malformed or truncated JSON without accepting partial data', () => {
+    for (const input of [
+      '{"title":"Studio","edits":[',
+      '{"title":"Studio","objects":[}',
+      '```json\n{"title":"Studio",\n```',
+      'Here is your scene.',
+    ]) {
+      expect(() => readScenePlan(input, catalog)).toThrow(
+        'incomplete or invalid JSON'
+      );
+      expect(() => readSceneLayout(input, catalog)).toThrow(
+        'incomplete or invalid JSON'
+      );
+    }
+  });
+
   it('normalizes names and colors without mutating the input', () => {
     const input = scene(object({name: '  First box  ', color: '#AABBCC'}));
     const result = readSceneLayout(input, catalog);
