@@ -1,10 +1,13 @@
 // Handcrafted starter layouts for the Roomcraft demo.
 //
 // These are plain data, not AI output. Each layout matches the SceneLayout
-// shape validated by the Roomcraft add-on: positions are object bases in
+// shape validated by the Roomcraft add-on: positions are object origins in
 // scene-local meters, X is right, Y is up, and positive Z faces the viewer.
 // Rotation is an upright Y-axis angle in radians and scale multiplies the
-// catalog asset's physical size.
+// catalog asset's physical size or the authored part geometry.
+//
+// A catalog object names an asset, while a compound object lists parts
+// instead and is built from primitives at load time.
 
 /** A warm seating group that reads well from the default preview viewpoint. */
 export const READING_NOOK = {
@@ -396,6 +399,190 @@ export const MINIATURE_CITY = {
   ],
 };
 
+/**
+ * One handcrafted compound object, written by hand to show what a grouped
+ * design looks like. Gemini did not produce it, and it is not a catalog asset:
+ * the parts below are ordinary primitives that any live design also uses.
+ * Part positions are centers in parent-local meters, sizes are physical
+ * meters, and a parent's size never scales its children. The feet rest at
+ * y = 0 so the object stands on the scene floor.
+ */
+export const ROBOT_EXAMPLE = {
+  title: 'Robot example',
+  objects: [
+    {
+      id: 'example-robot',
+      name: 'Handcrafted robot',
+      position: [0, 0, -0.6],
+      rotation: 0,
+      scale: [1, 1, 1],
+      color: '#ffffff',
+      parts: [
+        {
+          id: 'torso',
+          name: 'Torso',
+          shape: 'box',
+          parent: null,
+          position: [0, 0.4, 0],
+          rotation: [0, 0, 0],
+          size: [0.3, 0.32, 0.2],
+          color: '#8fa3b0',
+        },
+        {
+          id: 'chest-panel',
+          name: 'Chest panel',
+          shape: 'box',
+          parent: 'torso',
+          position: [0, 0.02, 0.105],
+          rotation: [0, 0, 0],
+          size: [0.14, 0.12, 0.02],
+          color: '#e8714a',
+        },
+        {
+          id: 'neck',
+          name: 'Neck',
+          shape: 'cylinder',
+          parent: 'torso',
+          position: [0, 0.185, 0],
+          rotation: [0, 0, 0],
+          size: [0.07, 0.05, 0.07],
+          color: '#5f6672',
+        },
+        {
+          id: 'head',
+          name: 'Head',
+          shape: 'box',
+          parent: 'torso',
+          position: [0, 0.31, 0],
+          rotation: [0, 0, 0],
+          size: [0.22, 0.2, 0.2],
+          color: '#c9c2b6',
+        },
+        {
+          id: 'eye-left',
+          name: 'Left eye',
+          shape: 'sphere',
+          parent: 'head',
+          position: [-0.055, 0.02, 0.1],
+          rotation: [0, 0, 0],
+          size: [0.05, 0.05, 0.03],
+          color: '#2b2f36',
+        },
+        {
+          id: 'eye-right',
+          name: 'Right eye',
+          shape: 'sphere',
+          parent: 'head',
+          position: [0.055, 0.02, 0.1],
+          rotation: [0, 0, 0],
+          size: [0.05, 0.05, 0.03],
+          color: '#2b2f36',
+        },
+        {
+          id: 'antenna',
+          name: 'Antenna',
+          shape: 'cylinder',
+          parent: 'head',
+          position: [0, 0.145, 0],
+          rotation: [0, 0, 0],
+          size: [0.015, 0.09, 0.015],
+          color: '#5f6672',
+        },
+        {
+          id: 'antenna-tip',
+          name: 'Antenna tip',
+          shape: 'sphere',
+          parent: 'antenna',
+          position: [0, 0.06, 0],
+          rotation: [0, 0, 0],
+          size: [0.04, 0.04, 0.04],
+          color: '#e8714a',
+        },
+        {
+          id: 'arm-left',
+          name: 'Left arm',
+          shape: 'capsule',
+          parent: 'torso',
+          position: [-0.195, 0.02, 0],
+          rotation: [0, 0, 0],
+          size: [0.07, 0.26, 0.07],
+          color: '#7f8f7a',
+        },
+        {
+          id: 'arm-right',
+          name: 'Right arm',
+          shape: 'capsule',
+          parent: 'torso',
+          position: [0.195, 0.02, 0],
+          rotation: [0, 0, 0],
+          size: [0.07, 0.26, 0.07],
+          color: '#7f8f7a',
+        },
+        {
+          id: 'hand-left',
+          name: 'Left hand',
+          shape: 'sphere',
+          parent: 'arm-left',
+          position: [0, -0.15, 0],
+          rotation: [0, 0, 0],
+          size: [0.075, 0.075, 0.075],
+          color: '#e0b872',
+        },
+        {
+          id: 'hand-right',
+          name: 'Right hand',
+          shape: 'sphere',
+          parent: 'arm-right',
+          position: [0, -0.15, 0],
+          rotation: [0, 0, 0],
+          size: [0.075, 0.075, 0.075],
+          color: '#e0b872',
+        },
+        {
+          id: 'leg-left',
+          name: 'Left leg',
+          shape: 'cylinder',
+          parent: 'torso',
+          position: [-0.085, -0.25, 0],
+          rotation: [0, 0, 0],
+          size: [0.09, 0.18, 0.09],
+          color: '#5f6672',
+        },
+        {
+          id: 'leg-right',
+          name: 'Right leg',
+          shape: 'cylinder',
+          parent: 'torso',
+          position: [0.085, -0.25, 0],
+          rotation: [0, 0, 0],
+          size: [0.09, 0.18, 0.09],
+          color: '#5f6672',
+        },
+        {
+          id: 'foot-left',
+          name: 'Left foot',
+          shape: 'box',
+          parent: 'leg-left',
+          position: [0, -0.12, 0.03],
+          rotation: [0, 0, 0],
+          size: [0.11, 0.06, 0.18],
+          color: '#3f454d',
+        },
+        {
+          id: 'foot-right',
+          name: 'Right foot',
+          shape: 'box',
+          parent: 'leg-right',
+          position: [0, -0.12, 0.03],
+          rotation: [0, 0, 0],
+          size: [0.11, 0.06, 0.18],
+          color: '#3f454d',
+        },
+      ],
+    },
+  ],
+};
+
 /** The starter scenes offered in the demo, in the order they are shown. */
 export const STARTER_SCENES = [
   {
@@ -415,5 +602,12 @@ export const STARTER_SCENES = [
     label: 'Miniature city',
     summary: 'A block of towers, trees, and a gate.',
     layout: MINIATURE_CITY,
+  },
+  {
+    id: 'robot-example',
+    label: 'Robot example',
+    summary:
+      'One handcrafted compound object made of 16 primitive parts, not AI output.',
+    layout: ROBOT_EXAMPLE,
   },
 ];
