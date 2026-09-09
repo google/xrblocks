@@ -8,7 +8,7 @@ import {
 } from 'xrblocks/addons/roomcraft/index.js';
 import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
 
-import {STARTER_SCENES} from './scenes.js';
+import {ENVIRONMENT_STARTER_SCENES, STARTER_SCENES} from './scenes.js';
 
 // One optional downloaded model, kept separate from the offline catalog.
 // Boom Box by Microsoft, released under CC0 1.0 through the Khronos glTF
@@ -26,6 +26,43 @@ const SUGGESTIONS = [
   'Make the selected object deep blue',
   'Add a floor lamp beside the left chair',
 ];
+
+const ENVIRONMENT_SUGGESTIONS = [
+  'Create a moonlit Japanese garden',
+  'Make the pond bigger',
+  'Change the garden to sunrise',
+  'Add a small pavilion beside the pond',
+];
+
+/** The URL parameter that opens the optional fully virtual authoring page. */
+export const ENVIRONMENT_MODE_PARAMETER = 'environment';
+
+/** The URL parameter for opening an exported layout from the same server. */
+export const SAVED_SCENE_PARAMETER = 'scene';
+
+/**
+ * An empty simulator backdrop, so the virtual page has no living room behind
+ * the environment Roomcraft owns. The manifest declares no scene, video,
+ * planes, navigation mesh, or objects.
+ */
+export const VIRTUAL_ENVIRONMENT = {
+  name: 'Roomcraft virtual world',
+  manifestPath: './virtual-environment.json',
+};
+
+/** Eye position for the empty canvas, near the front edge of a 14 m ground. */
+const VIRTUAL_EYE = {x: 0, y: 1.6, z: 6.2};
+
+/**
+ * The neutral setting the virtual page opens with. It is an empty authoring
+ * canvas: bounded daylight ground with no objects, not a generated garden.
+ */
+const EMPTY_ENVIRONMENT = {
+  size: [14, 14],
+  groundColor: '#8b8f80',
+  timeOfDay: 'daylight',
+};
+const EMPTY_ENVIRONMENT_TITLE = 'New environment';
 
 /** How many part names the console lists before summarizing the remainder. */
 const MAX_LISTED_PARTS = 24;
@@ -51,6 +88,24 @@ const PLACED_MESSAGE =
   'The current footprint fits a detected horizontal surface. Moving or editing it needs a new fit.';
 const NO_SURFACE_MESSAGE =
   'No detected surface fits this scene yet. Scan a floor or table and try again, or keep the preview arrangement.';
+const VIRTUAL_PLACEMENT_MESSAGE =
+  'A virtual environment supplies its own ground, so detected-surface placement is unavailable here.';
+
+/**
+ * Deterministic JSON for change detection, so a different key order or an
+ * absent versus undefined optional field never reads as a scene change.
+ */
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
 
 /** A stable signature of a layout, used to detect edits that changed nothing. */
 function describeLayout(layout) {
@@ -62,7 +117,13 @@ function describeLayout(layout) {
       rotation: round(object.rotation),
       scale: object.scale.map(round),
     }));
-  return JSON.stringify({title: layout.title, objects});
+  // The environment is part of the scene, so an atmosphere-only plan is a
+  // real change rather than an empty result.
+  return stableJson({
+    title: layout.title,
+    environment: layout.environment ?? null,
+    objects,
+  });
 }
 
 function round(value) {
@@ -78,15 +139,59 @@ function describeMotion(motion) {
   return `spins about ${motion.axis} at ${round(motion.speed)} rad/s`;
 }
 
+/** A short phrase naming one landscape recipe and its editable numbers. */
+function describeLandscape(landscape) {
+  if (!landscape) return '';
+  if (landscape.kind === 'pond') {
+    return `a pond with a ${round(landscape.size[0])} by ${round(
+      landscape.size[1]
+    )} m water surface and a ${round(landscape.bankWidth)} m bank`;
+  }
+  if (landscape.kind === 'path') {
+    return `a path of ${landscape.points.length} points, ${round(
+      landscape.width
+    )} m wide`;
+  }
+  return `a ${landscape.style} planting of ${landscape.count} specimen${
+    landscape.count === 1 ? '' : 's'
+  } up to ${round(landscape.height)} m tall, over ${round(
+    landscape.size[0]
+  )} by ${round(landscape.size[1])} m, seed ${landscape.seed}`;
+}
+
+/** A short phrase naming the active setting, or an empty-scene explanation. */
+function describeEnvironment(environment) {
+  if (!environment) return 'No virtual environment. Objects sit in your room.';
+  return `Virtual environment: ${round(environment.size[0])} by ${round(
+    environment.size[1]
+  )} m ground, ${environment.timeOfDay}, ground color ${
+    environment.groundColor
+  }.`;
+}
+
 /**
  * The demo console: HTML controls on the desktop and a spatial panel in XR,
  * both driving the same Roomcraft add-on instance.
+ *
+ * @param room - The Roomcraft add-on instance this console drives.
+ * @param options - `virtual` opens the fully virtual authoring mode, and
+ *   `lighting` is the demo's fallback light group, hidden while Roomcraft owns
+ *   a virtual environment.
  */
 export class RoomcraftConsole extends xb.Script {
-  constructor(room) {
+  constructor(room, {virtual = false, lighting = null} = {}) {
     super();
     this.name = 'RoomcraftConsole';
     this.room = room;
+    this.virtual = virtual === true;
+    this.lighting = lighting;
+    this.starters = this.virtual ? ENVIRONMENT_STARTER_SCENES : STARTER_SCENES;
+    this.suggestions = this.virtual ? ENVIRONMENT_SUGGESTIONS : SUGGESTIONS;
+    // The virtual studio carries one extra row of atmosphere controls.
+    this.studioSize = {
+      width: STUDIO_SIZE.width,
+      height: this.virtual ? STUDIO_SIZE.height + 0.12 : STUDIO_SIZE.height,
+    };
     this.dom = {};
     this.starterButtons = [];
     this.spatialStarters = [];
@@ -107,6 +212,7 @@ export class RoomcraftConsole extends xb.Script {
 
   init() {
     this.collectDom();
+    this.applyModeCopy();
     this.buildStarterButtons();
     this.buildSuggestionChips();
     this.bindDomActions();
@@ -127,12 +233,79 @@ export class RoomcraftConsole extends xb.Script {
     this.refresh();
   }
 
-  /** Loads the first handcrafted scene once XR Blocks has finished starting. */
+  /** Loads the opening scene once XR Blocks has finished starting. */
   async start() {
     this.bindSpeech();
-    await this.applyStarter(STARTER_SCENES[0]);
+    if (this.virtual) {
+      await this.newEnvironment(true);
+    } else {
+      await this.applyStarter(this.starters[0]);
+    }
+    const savedScene = xb.getUrlParameter(SAVED_SCENE_PARAMETER);
+    if (savedScene) {
+      await this.loadSavedScene(savedScene);
+      // Keep an import failure visible instead of replacing it with key setup.
+      if (this.errorMessage) return;
+    }
     if (xb.getUrlParameter('key') || xb.getUrlParameter('geminiKey')) {
       await this.connectGemini(false);
+    }
+  }
+
+  /** Imports saved data without a provider request or an implicit scene fallback. */
+  async loadSavedScene(path) {
+    await this.run('Loading saved scene.', async () => {
+      const url = new URL(path, window.location.href);
+      if (
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.origin !== window.location.origin ||
+        url.username ||
+        url.password
+      ) {
+        throw new Error(
+          'Load saved-scene JSON from this same server, without URL credentials.'
+        );
+      }
+      const before = stableJson(this.room.layout);
+      const response = await fetch(url.href, {
+        mode: 'same-origin',
+        credentials: 'omit',
+        redirect: 'error',
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Saved scene could not be loaded (HTTP ${response.status}).`
+        );
+      }
+      const data = await response.text();
+      if (this.disposed) return;
+      if (stableJson(this.room.layout) !== before) {
+        throw new Error(
+          'The scene changed while the saved file was downloading. Your edits were kept.'
+        );
+      }
+      const layout = await this.room.applyLayout(data);
+      this.setStatus(
+        `Loaded saved scene "${layout.title}". No AI request was made.`
+      );
+    });
+  }
+
+  /** Retitles the shared markup for whichever mode this page was opened in. */
+  applyModeCopy() {
+    if (!this.virtual) return;
+    const dom = this.dom;
+    if (dom.environmentSection) dom.environmentSection.hidden = false;
+    if (dom.tagline) {
+      dom.tagline.textContent = 'Author a whole virtual place.';
+    }
+    if (dom.startersNote) {
+      dom.startersNote.textContent =
+        'Handcrafted examples that need no API key. Each one replaces the current scene, and undo brings the previous one back. New environment clears everything back to an empty ground.';
+    }
+    if (dom.newDesign) dom.newDesign.textContent = 'New environment';
+    if (dom.prompt) {
+      dom.prompt.placeholder = 'Create a moonlit Japanese garden';
     }
   }
 
@@ -141,15 +314,23 @@ export class RoomcraftConsole extends xb.Script {
     this.dom = {
       console: id('console'),
       toggle: id('toggleConsole'),
+      tagline: id('tagline'),
       spatialStudio: id('spatialStudio'),
       status: id('status'),
       error: id('error'),
       starters: id('starters'),
+      startersNote: id('startersNote'),
       newDesign: id('newDesign'),
       suggestions: id('suggestions'),
       prompt: id('prompt'),
       generate: id('generate'),
       mic: id('mic'),
+      environmentSection: id('environmentSection'),
+      environmentSummary: id('environmentSummary'),
+      environmentNote: id('environmentNote'),
+      moonlight: id('moonlight'),
+      sunrise: id('sunrise'),
+      enterWorld: id('enterWorld'),
       sceneSummary: id('sceneSummary'),
       placement: id('placement'),
       selection: id('selection'),
@@ -171,7 +352,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   buildStarterButtons() {
-    for (const starter of STARTER_SCENES) {
+    for (const starter of this.starters) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'rc-button';
@@ -184,7 +365,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   buildSuggestionChips() {
-    for (const suggestion of SUGGESTIONS) {
+    for (const suggestion of this.suggestions) {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'rc-button';
@@ -214,6 +395,17 @@ export class RoomcraftConsole extends xb.Script {
     );
     this.listen(this.dom.mic, 'click', () => this.toggleListening());
     this.listen(this.dom.place, 'click', () => void this.placeOnSurface());
+    this.listen(
+      this.dom.moonlight,
+      'click',
+      () => void this.setTimeOfDay('moonlight')
+    );
+    this.listen(
+      this.dom.sunrise,
+      'click',
+      () => void this.setTimeOfDay('sunrise')
+    );
+    this.listen(this.dom.enterWorld, 'click', () => void this.enterWorld());
     this.listen(this.dom.undo, 'click', () => void this.undo());
     this.listen(this.dom.redo, 'click', () => void this.redo());
     this.listen(this.dom.focusSelected, 'click', () => void this.frame(true));
@@ -315,6 +507,18 @@ export class RoomcraftConsole extends xb.Script {
       },
     });
 
+    if (this.virtual) {
+      this.xrEnvironmentText = new xb.UIText({
+        text: describeEnvironment(undefined),
+        style: {
+          width: '100%',
+          fontSize: 28,
+          color: '#c2b6a8',
+          textAlign: 'center',
+        },
+      });
+    }
+
     const buttonStyle = (background) => ({
       flexGrow: 1,
       height: '100%',
@@ -335,7 +539,7 @@ export class RoomcraftConsole extends xb.Script {
         children,
       });
 
-    this.spatialStarters = STARTER_SCENES.map(
+    this.spatialStarters = this.starters.map(
       (starter) =>
         new xb.UIButton({
           label: starter.label,
@@ -398,6 +602,25 @@ export class RoomcraftConsole extends xb.Script {
       onClick: () => this.toggleMotion(),
       style: buttonStyle('#30292d'),
     });
+    // Atmosphere controls belong to the virtual page, so the default page
+    // builds no extra spatial widgets to lay out or dispose.
+    if (this.virtual) {
+      this.xrMoonlight = new xb.UIButton({
+        label: 'Moonlight',
+        onClick: () => void this.setTimeOfDay('moonlight'),
+        style: buttonStyle('#3a4356'),
+      });
+      this.xrSunrise = new xb.UIButton({
+        label: 'Sunrise',
+        onClick: () => void this.setTimeOfDay('sunrise'),
+        style: buttonStyle('#7a5236'),
+      });
+      this.xrEnterWorld = new xb.UIButton({
+        label: 'Enter world',
+        onClick: () => void this.enterWorld(),
+        style: buttonStyle('#30292d'),
+      });
+    }
     this.xrAuthorTab = new xb.UIButton({
       label: 'Create / edit',
       onClick: () => this.setSpatialTab('author'),
@@ -446,7 +669,7 @@ export class RoomcraftConsole extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: STUDIO_SIZE,
+      size: this.studioSize,
       manipulation: true,
       edge: true,
       style: {
@@ -485,6 +708,12 @@ export class RoomcraftConsole extends xb.Script {
         this.xrStatusText,
         this.xrSelectionText,
         row([this.xrPrevious, this.xrNext, this.xrRemove, this.xrMotion], 64),
+        ...(this.virtual
+          ? [
+              this.xrEnvironmentText,
+              row([this.xrMoonlight, this.xrSunrise, this.xrEnterWorld], 64),
+            ]
+          : []),
         row([this.xrAuthorTab, this.xrExamplesTab], 64),
         this.xrAuthorPanel,
         this.xrExamplesPanel,
@@ -581,12 +810,12 @@ export class RoomcraftConsole extends xb.Script {
     const rotation = camera.getWorldQuaternion(new THREE.Quaternion());
     const halfWidth =
       Math.max(
-        STUDIO_SIZE.width * this.card.scale.x,
+        this.studioSize.width * this.card.scale.x,
         KEYBOARD_SIZE.width * this.keyboardCard.scale.x
       ) / 2;
     const verticalExtent = Math.max(
-      0.25 + (STUDIO_SIZE.height * this.card.scale.y) / 2,
-      (STUDIO_SIZE.height * this.card.scale.y) / 2 +
+      0.25 + (this.studioSize.height * this.card.scale.y) / 2,
+      (this.studioSize.height * this.card.scale.y) / 2 +
         KEYBOARD_SIZE.height * this.keyboardCard.scale.y +
         KEYBOARD_GAP -
         0.25
@@ -665,7 +894,7 @@ export class RoomcraftConsole extends xb.Script {
 
   positionKeyboard() {
     const y = -(
-      (STUDIO_SIZE.height * this.card.scale.y) / 2 +
+      (this.studioSize.height * this.card.scale.y) / 2 +
       (KEYBOARD_SIZE.height * this.keyboardCard.scale.y) / 2 +
       KEYBOARD_GAP
     );
@@ -719,10 +948,113 @@ export class RoomcraftConsole extends xb.Script {
 
   /** Clears the scene so a new design can be described from nothing. */
   async newDesign() {
+    if (this.virtual) {
+      await this.newEnvironment();
+      return;
+    }
     await this.run('Clearing the scene.', async () => {
       await this.room.applyLayout({title: 'Object workshop', objects: []});
       this.setStatus(
         'Empty workshop. Describe one object, for example "create a little robot", then refine it. Undo restores the previous scene.'
+      );
+    });
+  }
+
+  /**
+   * Resets the virtual page to an empty authoring canvas: a bounded neutral
+   * ground with no objects. Nothing here is generated, and no request is made.
+   *
+   * @param opening - Whether this is the page's first load, which has no
+   *   previous scene to restore.
+   */
+  async newEnvironment(opening = false) {
+    await this.run('Preparing an empty environment.', async () => {
+      await this.room.applyLayout({
+        title: EMPTY_ENVIRONMENT_TITLE,
+        environment: {...EMPTY_ENVIRONMENT, size: [...EMPTY_ENVIRONMENT.size]},
+        objects: [],
+      });
+      const ground = `${EMPTY_ENVIRONMENT.size[0]} by ${EMPTY_ENVIRONMENT.size[1]} m`;
+      this.setStatus(
+        opening
+          ? `Empty ${ground} ground in ${EMPTY_ENVIRONMENT.timeOfDay}, with nothing in it yet. Describe a place, for example "create a moonlit Japanese garden".`
+          : `Cleared back to an empty ${ground} ground in ${EMPTY_ENVIRONMENT.timeOfDay}. Undo restores the previous environment.`
+      );
+    });
+  }
+
+  /**
+   * Changes only the atmosphere, through an explicit plan rather than a
+   * request. It is an ordinary scene edit, so undo and redo cover it.
+   *
+   * @param timeOfDay - One of the add-on's times of day.
+   */
+  async setTimeOfDay(timeOfDay) {
+    await this.run(`Changing the light to ${timeOfDay}.`, async () => {
+      const layout = this.room.layout;
+      if (!layout.environment) {
+        throw new Error(
+          'There is no virtual environment to relight. Create one first.'
+        );
+      }
+      if (layout.environment.timeOfDay === timeOfDay) {
+        this.setStatus(`The environment is already set to ${timeOfDay}.`);
+        return;
+      }
+      await this.room.applyPlan({
+        title: layout.title,
+        edits: [],
+        environment: {timeOfDay},
+      });
+      this.setStatus(
+        `Set the environment to ${timeOfDay} directly, without an AI request. Objects and their colors were not changed, and Undo restores the previous light.`
+      );
+    });
+  }
+
+  /**
+   * Moves the desktop camera to a standing eye pose near the front of the
+   * ground, looking across it. Scene objects and the environment are not
+   * changed, and the SDK's simulator controls continue from the new pose.
+   */
+  async enterWorld() {
+    await this.run('Placing you in the environment.', () => {
+      if (this.isInXR()) {
+        throw new Error(
+          'Entering the world moves the desktop camera only; your XR view was kept.'
+        );
+      }
+      const environment = this.room.layout.environment;
+      if (!environment) {
+        throw new Error('There is no virtual environment to enter yet.');
+      }
+      const camera = xb.core.camera;
+      const depth = environment.size[1];
+      this.room.updateWorldMatrix(true, false);
+      const eye = this.room.localToWorld(
+        new THREE.Vector3(0, xb.user.height, depth / 2 - 1.2)
+      );
+      const target = this.room.localToWorld(
+        new THREE.Vector3(0, xb.user.height * 0.65, 0)
+      );
+      if (
+        !eye.toArray().every(Number.isFinite) ||
+        !target.toArray().every(Number.isFinite) ||
+        eye.distanceToSquared(target) === 0
+      ) {
+        throw new Error('The camera transform cannot enter this environment.');
+      }
+      camera.parent?.updateWorldMatrix(true, false);
+      const local = eye.clone();
+      camera.parent?.worldToLocal(local);
+      if (!local.toArray().every(Number.isFinite)) {
+        throw new Error('The camera transform cannot enter this environment.');
+      }
+      camera.position.copy(local);
+      camera.lookAt(target);
+      camera.updateMatrixWorld();
+      this.setStatus(
+        'Standing at the near edge of the ground. Use the simulator navigation controls to walk; nothing in the scene was moved. There is no collision here, so you can pass through features.'
       );
     });
   }
@@ -740,17 +1072,16 @@ export class RoomcraftConsole extends xb.Script {
       return;
     }
     await this.run('Planning your edit.', async () => {
-      const existing = new Set(
-        this.room.layout.objects.map((object) => object.id)
-      );
-      const before = describeLayout(this.room.layout);
+      const previous = this.room.layout;
+      const existing = new Set(previous.objects.map((object) => object.id));
+      const before = describeLayout(previous);
       const layout = await this.room.request(prompt);
       if (this.disposed) return;
       if (this.dom.prompt.value.trim() === prompt) this.setPrompt('');
       if (describeLayout(layout) === before) {
         // An accepted plan can still be a no-op; do not call that new content.
         this.setStatus(
-          'No scene changes. The plan left every object exactly as it was, so try a more specific instruction.'
+          'No scene changes. The plan left the environment and every object exactly as they were, so try a more specific instruction.'
         );
         return;
       }
@@ -760,21 +1091,33 @@ export class RoomcraftConsole extends xb.Script {
       if (added.length === 1) {
         this.room.select(added[0].id);
         const parts = added[0].parts?.length ?? 0;
-        followUp = parts
-          ? ` Selected ${added[0].name}, a design made of ${parts} part${
-              parts === 1 ? '' : 's'
-            }, so you can refine it next.`
-          : ` Selected ${added[0].name}, so you can refine it next.`;
+        const landscape = added[0].landscape;
+        followUp = landscape
+          ? ` Selected ${added[0].name}, ${describeLandscape(landscape)}, so you can refine it next.`
+          : parts
+            ? ` Selected ${added[0].name}, a design made of ${parts} part${
+                parts === 1 ? '' : 's'
+              }, so you can refine it next.`
+            : ` Selected ${added[0].name}, so you can refine it next.`;
       }
+      const atmosphere =
+        stableJson(layout.environment ?? null) !==
+        stableJson(previous.environment ?? null)
+          ? ` ${describeEnvironment(layout.environment)}`
+          : '';
       this.setStatus(
         `Applied the edit. "${layout.title}" now has ${layout.objects.length} object${
           layout.objects.length === 1 ? '' : 's'
-        }.${followUp}`
+        }.${atmosphere}${followUp}`
       );
     });
   }
 
   async placeOnSurface() {
+    if (this.room.layout.environment) {
+      this.setError(VIRTUAL_PLACEMENT_MESSAGE);
+      return;
+    }
     await this.run('Looking for a surface.', async () => {
       const placed = await this.room.placeOnSurface();
       if (placed) {
@@ -932,7 +1275,9 @@ export class RoomcraftConsole extends xb.Script {
       this.setStatus(
         selectedOnly
           ? 'Framed the selected object with room for its full motion. Its placement was not changed.'
-          : 'Framed the scene with room for any authored motion. Object placements were not changed.'
+          : this.room.layout.environment
+            ? 'Framed the whole environment, including its ground extent. Object placements were not changed.'
+            : 'Framed the scene with room for any authored motion. Object placements were not changed.'
       );
     });
   }
@@ -986,7 +1331,7 @@ export class RoomcraftConsole extends xb.Script {
 
   exportLayout() {
     const layout = this.room.layout;
-    if (layout.objects.length === 0) {
+    if (layout.objects.length === 0 && !layout.environment) {
       this.setError('There is nothing to export yet.');
       return;
     }
@@ -1000,7 +1345,9 @@ export class RoomcraftConsole extends xb.Script {
     link.click();
     URL.revokeObjectURL(url);
     this.setStatus(
-      'Exported the scene layout. It contains no keys and no prompts.'
+      layout.environment
+        ? 'Exported the scene layout, including its environment size, ground color, and time of day. It contains no keys and no prompts.'
+        : 'Exported the scene layout. It contains no keys and no prompts.'
     );
   }
 
@@ -1191,11 +1538,18 @@ export class RoomcraftConsole extends xb.Script {
       this.spatialTab === 'examples' ? '#8a4a33' : '#30292d';
     dom.sceneSummary.textContent =
       layout.objects.length === 0
-        ? 'The room is empty. Pick a starter scene or describe one.'
+        ? layout.environment
+          ? `"${layout.title}" is an empty environment. Describe a place, or pick a handcrafted example.`
+          : 'The room is empty. Pick a starter scene or describe one.'
         : `"${layout.title}" with ${layout.objects.length} object${
             layout.objects.length === 1 ? '' : 's'
           }. Drag or pinch an object to move it.`;
-    dom.placement.textContent = this.placed ? PLACED_MESSAGE : PREVIEW_MESSAGE;
+    dom.placement.textContent = layout.environment
+      ? VIRTUAL_PLACEMENT_MESSAGE
+      : this.placed
+        ? PLACED_MESSAGE
+        : PREVIEW_MESSAGE;
+    this.syncEnvironment(layout);
 
     const selectedName =
       layout.objects.find((object) => object.id === selectedId)?.name ?? '';
@@ -1224,11 +1578,15 @@ export class RoomcraftConsole extends xb.Script {
       : ' No part of it moves yet.';
     dom.design.textContent = !selected
       ? 'Nothing selected.'
-      : parts.length > 0
-        ? `${selected.name} is one compound design made of ${parts.length} part${
-            parts.length === 1 ? '' : 's'
-          }. It moves, rotates, and scales as a single object, and an edit can change individual parts.${motionSentence}`
-        : `${selected.name} is a catalog object, so it has no editable parts.`;
+      : selected.landscape
+        ? `${selected.name} is one landscape feature: ${describeLandscape(
+            selected.landscape
+          )}. It is selected, moved, and scaled as a single object, and an edit replaces its whole recipe rather than individual parts.`
+        : parts.length > 0
+          ? `${selected.name} is one compound design made of ${parts.length} part${
+              parts.length === 1 ? '' : 's'
+            }. It moves, rotates, and scales as a single object, and an edit can change individual parts.${motionSentence}`
+          : `${selected.name} is a catalog object, so it has no editable parts.`;
     dom.parts.replaceChildren();
     for (const part of parts.slice(0, MAX_LISTED_PARTS)) {
       const item = document.createElement('li');
@@ -1246,11 +1604,13 @@ export class RoomcraftConsole extends xb.Script {
     dom.parts.hidden = parts.length === 0;
     if (this.xrSelectionText) {
       this.xrSelectionText.text = selectedId
-        ? parts.length > 0
-          ? `Selected: ${selectedName} - ${parts.length} parts${
-              movingParts.length ? `, ${movingParts.length} moving` : ''
-            }`
-          : `Selected: ${selectedName} (${selectedId})`
+        ? selected?.landscape
+          ? `Selected: ${selectedName} - ${describeLandscape(selected.landscape)}`
+          : parts.length > 0
+            ? `Selected: ${selectedName} - ${parts.length} parts${
+                movingParts.length ? `, ${movingParts.length} moving` : ''
+              }`
+            : `Selected: ${selectedName} (${selectedId})`
         : 'Nothing selected';
     }
 
@@ -1273,17 +1633,24 @@ export class RoomcraftConsole extends xb.Script {
       ? 'Gemini configured for this page.'
       : 'Offline tools available. Connect Gemini in desktop controls to generate.';
     dom.generate.disabled = busy || !dom.prompt.value.trim();
-    dom.newDesign.disabled = busy || layout.objects.length === 0;
+    dom.newDesign.disabled =
+      busy ||
+      (layout.objects.length === 0 &&
+        (!this.virtual || layout.title === EMPTY_ENVIRONMENT_TITLE));
     dom.mic.disabled = busy || !xb.core.sound?.speechRecognizer?.recognition;
-    dom.place.disabled = busy || layout.objects.length === 0;
+    dom.place.disabled =
+      busy || !!layout.environment || layout.objects.length === 0;
+    dom.place.title = layout.environment ? VIRTUAL_PLACEMENT_MESSAGE : '';
     dom.undo.disabled = busy || !this.room.canUndo;
     dom.redo.disabled = busy || !this.room.canRedo;
     dom.focusSelected.disabled = busy || this.isInXR() || !selectedId;
     dom.frameScene.disabled =
-      busy || this.isInXR() || layout.objects.length === 0;
+      busy ||
+      this.isInXR() ||
+      (layout.objects.length === 0 && !layout.environment);
     dom.removeSelected.disabled = busy || !selectedId;
     dom.exhibit.disabled = busy;
-    dom.export.disabled = layout.objects.length === 0;
+    dom.export.disabled = layout.objects.length === 0 && !layout.environment;
     dom.connect.disabled = busy;
     dom.connect.textContent = aiReady ? 'Reconnect Gemini' : 'Connect Gemini';
     dom.mic.textContent = this.listening
@@ -1294,6 +1661,7 @@ export class RoomcraftConsole extends xb.Script {
     this.xrTalk.disabled = dom.mic.disabled;
     this.xrTalk.label = dom.mic.textContent;
     this.xrNew.disabled = dom.newDesign.disabled;
+    this.xrNew.label = this.virtual ? 'New world' : 'New';
     this.xrPlace.disabled = dom.place.disabled;
     this.xrUndo.disabled = dom.undo.disabled;
     this.xrRedo.disabled = dom.redo.disabled;
@@ -1309,6 +1677,51 @@ export class RoomcraftConsole extends xb.Script {
     }
   }
 
+  /**
+   * Mirrors the active setting into both interfaces, and hides the demo's own
+   * fallback lights while Roomcraft owns the sky and lighting. Nothing else in
+   * the scene graph is touched.
+   *
+   * @param layout - The current Roomcraft layout.
+   */
+  syncEnvironment(layout) {
+    const environment = layout.environment;
+    const dom = this.dom;
+    const summary = describeEnvironment(environment);
+    if (dom.environmentSummary) dom.environmentSummary.textContent = summary;
+    if (this.xrEnvironmentText) this.xrEnvironmentText.text = summary;
+    if (this.lighting) this.lighting.visible = !environment;
+    const busy = this.room.busy || this.connecting;
+    const moonlit = environment?.timeOfDay === 'moonlight';
+    const sunlit = environment?.timeOfDay === 'sunrise';
+    if (dom.moonlight) {
+      dom.moonlight.disabled = busy || !environment || moonlit;
+      dom.moonlight.setAttribute('aria-pressed', String(moonlit));
+    }
+    if (dom.sunrise) {
+      dom.sunrise.disabled = busy || !environment || sunlit;
+      dom.sunrise.setAttribute('aria-pressed', String(sunlit));
+    }
+    if (dom.enterWorld) {
+      dom.enterWorld.disabled = busy || this.isInXR() || !environment;
+      dom.enterWorld.title = this.isInXR()
+        ? 'Entering the world moves the desktop camera only.'
+        : '';
+    }
+    if (dom.environmentNote) {
+      dom.environmentNote.textContent = environment
+        ? 'Moonlight and Sunrise are direct atmosphere edits, not AI requests. Both are undoable, and neither recolors your objects.'
+        : 'Describe a place to create a virtual environment, or load the handcrafted example.';
+    }
+    if (this.xrMoonlight) {
+      this.xrMoonlight.disabled = !!dom.moonlight?.disabled;
+    }
+    if (this.xrSunrise) this.xrSunrise.disabled = !!dom.sunrise?.disabled;
+    if (this.xrEnterWorld) {
+      this.xrEnterWorld.disabled = !!dom.enterWorld?.disabled;
+    }
+  }
+
   dispose() {
     this.stopListening();
     this.disposed = true;
@@ -1321,6 +1734,9 @@ export class RoomcraftConsole extends xb.Script {
     }
     this.keyboardCard?.dispose();
     this.keyboardCard?.removeFromParent();
+    // The lights belong to the page, so leave them usable and stop tracking.
+    if (this.lighting) this.lighting.visible = true;
+    this.lighting = null;
     this.dom.starters?.replaceChildren();
     this.dom.suggestions?.replaceChildren();
     this.dom.parts?.replaceChildren();
@@ -1340,7 +1756,15 @@ function createLighting() {
   return lights;
 }
 
-async function start() {
+/**
+ * Builds the SDK options for one page mode. The default page is unchanged; the
+ * virtual page additionally uses the SDK's VR session mode, an empty simulator
+ * backdrop, and an eye position near the front of the authored ground.
+ *
+ * @param virtual - Whether this page opened in fully virtual mode.
+ * @returns The configured XR Blocks options.
+ */
+export function createRoomcraftOptions(virtual = false) {
   const options = new xb.Options();
   options.enableAI();
   // No model request happens on load; the demo connects Gemini on demand.
@@ -1358,6 +1782,20 @@ async function start() {
   options.setAppTitle('Roomcraft');
   options.setAppDescription('Speak a scene into your room.');
   options.xrButton.showEnterSimulatorButton = true;
+  if (!virtual) return options;
+
+  // A fully virtual page: no passthrough, no prebuilt room behind the scene.
+  options.enableVR();
+  options.setAppDescription('Author a whole virtual place.');
+  options.simulator.environments = [{...VIRTUAL_ENVIRONMENT}];
+  options.simulator.activeEnvironmentIndex = 0;
+  options.simulator.initialCameraPosition = {...VIRTUAL_EYE};
+  return options;
+}
+
+async function start() {
+  const virtual = !!xb.getUrlParameter(ENVIRONMENT_MODE_PARAMETER);
+  const options = createRoomcraftOptions(virtual);
 
   const room = new Roomcraft({
     catalog: [
@@ -1370,11 +1808,19 @@ async function start() {
       }),
     ],
   });
-  room.position.set(0, 0, -2.4);
+  // A virtual environment is centered on its own origin, so keep it at the
+  // world origin instead of the room-scale preview offset.
+  room.position.set(0, 0, virtual ? 0 : -2.4);
 
-  const consoleScript = new RoomcraftConsole(room);
-  xb.add(room, consoleScript, createLighting());
+  const lighting = createLighting();
+  const consoleScript = new RoomcraftConsole(room, {virtual, lighting});
+  xb.add(room, consoleScript, lighting);
   await xb.init(options);
+  if (virtual) {
+    const renderer = xb.core.renderer;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
   await consoleScript.start();
 }
 
