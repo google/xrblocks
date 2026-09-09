@@ -20,7 +20,11 @@ import {
   readSceneLayout,
   readScenePlan,
 } from './ScenePlan';
-import {createProceduralContent} from './ProceduralGeometry';
+import {
+  createProceduralContent,
+  getProceduralBounds,
+} from './ProceduralGeometry';
+import {ProceduralMotionPlayer} from './ProceduralMotion';
 import {placeSceneOnSurface} from './ScenePlacement';
 import type {
   RoomcraftEventMap,
@@ -37,6 +41,7 @@ interface SceneEntity {
   owner: THREE.Group;
   content: THREE.Group;
   description: SceneObject;
+  motion?: ProceduralMotionPlayer;
 }
 
 function disposeContent(content: THREE.Object3D) {
@@ -110,7 +115,12 @@ async function createContent(asset: SceneAsset, color: string) {
  * hand-authored layout with `applyLayout`. No AI call is made on initialization.
  */
 export class Roomcraft extends Script<RoomcraftEventMap> {
-  static dependencies = {ai: AI, world: World, camera: THREE.Camera};
+  static dependencies = {
+    ai: AI,
+    world: World,
+    camera: THREE.Camera,
+    timer: THREE.Timer,
+  };
 
   private readonly assets = new Map<string, SceneAsset>();
   private readonly entities = new Map<string, SceneEntity>();
@@ -122,6 +132,8 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private ai?: AI;
   private world?: World;
   private camera?: THREE.Camera;
+  private timer?: THREE.Timer;
+  private motionIsPaused = false;
   private title = 'Untitled scene';
   private currentStatus: RoomcraftStatus = 'ready';
   private selection: string | null = null;
@@ -163,15 +175,18 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     ai,
     world,
     camera,
+    timer,
   }: {
     ai: AI;
     world: World;
     camera: THREE.Camera;
+    timer?: THREE.Timer;
   }) {
     this.assertAlive();
     this.ai = ai;
     this.world = world;
     this.camera = camera;
+    this.timer = timer;
   }
 
   /** Detached metadata only; factories and model URLs never reach the planner. */
@@ -183,7 +198,42 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     }));
   }
 
-  /** A portable scene-local snapshot, including current hand-edited transforms. */
+  /** Whether any authored part has a motion definition, including when paused. */
+  get hasMotion() {
+    for (const entity of this.entities.values()) {
+      if (entity.motion && entity.motion.count > 0) return true;
+    }
+    return false;
+  }
+
+  /** Playback inspection state; not part of the saved layout or undo history. */
+  get motionPaused() {
+    return this.motionIsPaused;
+  }
+
+  /** Pause or resume local part motion without changing its authored definition. */
+  setMotionPaused(paused: boolean) {
+    this.assertAlive();
+    if (typeof paused !== 'boolean') {
+      throw new Error('Motion pause state must be a boolean.');
+    }
+    if (paused === this.motionIsPaused) return;
+    this.motionIsPaused = paused;
+    this.dispatchEvent({type: 'motionstatechange', paused});
+  }
+
+  override update() {
+    if (this.disposed || this.motionIsPaused || !this.hasMotion) return;
+    if (!this.timer) {
+      throw new Error(
+        'Roomcraft motion needs the SDK frame timer. Add Roomcraft before xb.init().'
+      );
+    }
+    const delta = this.timer.getDelta();
+    for (const entity of this.entities.values()) entity.motion?.update(delta);
+  }
+
+  /** A portable snapshot: live object transforms and authored part rest poses/motions. */
   get layout(): SceneLayout {
     return {
       title: this.title,
@@ -224,6 +274,34 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   /** The stable manipulation owner. Change its transform, not its hierarchy. */
   getObject(id: string): THREE.Object3D | undefined {
     return this.entities.get(id)?.owner;
+  }
+
+  /**
+   * Bounds of the authored objects in world space, including full motion envelopes.
+   * Static content uses its rendered bounds. An empty scene returns an empty box.
+   *
+   * @param id - One object ID, or omit it to include the whole composition.
+   */
+  getWorldBounds(id?: string): THREE.Box3 {
+    this.assertAlive();
+    let selected: SceneEntity | undefined;
+    if (id !== undefined) {
+      selected = this.entities.get(readSceneId(id));
+      if (!selected) throw new Error(`Object "${id}" does not exist.`);
+    }
+    const bounds = new THREE.Box3();
+    for (const entity of selected ? [selected] : this.entities.values()) {
+      entity.owner.updateWorldMatrix(true, false);
+      const parts = entity.description.parts;
+      if (entity.motion && parts !== undefined) {
+        bounds.union(
+          getProceduralBounds(parts).applyMatrix4(entity.owner.matrixWorld)
+        );
+      } else {
+        bounds.union(new THREE.Box3().setFromObject(entity.owner));
+      }
+    }
+    return bounds;
   }
 
   select(id: string | null) {
@@ -372,6 +450,8 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     this.redoBase = undefined;
     this.selection = null;
     this.currentStatus = 'ready';
+    this.timer = undefined;
+    this.motionIsPaused = false;
   }
 
   private async commitLayout(
@@ -413,6 +493,22 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         );
       }
 
+      // Read live cycle phases only after asynchronous asset staging is complete.
+      const stagedMotions = new Map<string, ProceduralMotionPlayer>();
+      for (const object of layout.objects) {
+        const content = staged.get(object.id);
+        if (content && object.parts?.some((part) => part.motion)) {
+          stagedMotions.set(
+            object.id,
+            new ProceduralMotionPlayer(
+              content,
+              object.parts,
+              this.entities.get(object.id)?.motion
+            )
+          );
+        }
+      }
+
       const retired: THREE.Object3D[] = [];
       const ids = new Set(layout.objects.map((object) => object.id));
       for (const [id, entity] of this.entities) {
@@ -437,7 +533,12 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
             },
           };
           owner.add(content);
-          entity = {owner, content, description: object};
+          entity = {
+            owner,
+            content,
+            description: object,
+            motion: stagedMotions.get(object.id),
+          };
           this.entities.set(object.id, entity);
           this.ownerIds.set(owner, object.id);
           this.add(owner);
@@ -446,6 +547,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
           retired.push(entity.content);
           entity.owner.add(content);
           entity.content = content;
+          entity.motion = stagedMotions.get(object.id);
         }
         entity.owner.name = object.name;
         entity.owner.position.fromArray(object.position);
