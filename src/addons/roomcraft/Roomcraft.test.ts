@@ -867,6 +867,223 @@ describe('Roomcraft planning and undo', () => {
     for (let index = 0; index < 20; index++) await room.undo();
     expect(room.layout.title).toBe('Scene 1');
     expect(room.canUndo).toBe(false);
+    for (let index = 0; index < 20; index++) await room.redo();
+    expect(room.layout.title).toBe('Scene 21');
+    expect(room.canRedo).toBe(false);
+  });
+});
+
+describe('Roomcraft redo', () => {
+  async function prepareColorRedo(room: Roomcraft) {
+    await room.applyLayout(layout(object()));
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'update', id: 'one', changes: {color: '#2244aa'}}],
+    });
+    await room.undo();
+  }
+
+  it('reports empty history explicitly and releases redo state on disposal', async () => {
+    const room = createRoom();
+    expect(room.canRedo).toBe(false);
+    await expect(room.redo()).rejects.toThrow('no scene edit to redo');
+    expect(room.busy).toBe(false);
+    await prepareColorRedo(room);
+    expect(room.canRedo).toBe(true);
+    room.dispose();
+    expect(room.canRedo).toBe(false);
+    await expect(room.redo()).rejects.toThrow('disposed');
+  });
+
+  it('replays procedural edits with the same owner and saved hand pose, without AI', async () => {
+    const planner = vi.fn<ScenePlanner>();
+    const room = createRoom([], planner);
+    await room.applyLayout(layout(design()));
+    const owner = room.getObject('robot')!;
+    owner.position.set(2, 0.3, -1);
+    owner.scale.setScalar(1.5);
+    owner.rotation.y = 0.4;
+    const rotation = owner.quaternion.clone();
+    room.select('robot');
+    const before = room.layout;
+    const result = await room.applyPlan({
+      title: 'Studio',
+      edits: [
+        {
+          op: 'update',
+          id: 'robot',
+          changes: {},
+          partEdits: [
+            {op: 'update', id: 'arm', changes: {size: [0.1, 0.8, 0.1]}},
+            {op: 'update', id: 'hand', changes: {position: [0, -0.45, 0]}},
+          ],
+        },
+      ],
+    });
+    const states: boolean[] = [];
+    room.addEventListener('change', () => states.push(room.canRedo));
+    await room.undo();
+    expect(room.layout).toEqual(before);
+    expect(room.canRedo).toBe(true);
+    result.objects[0].parts![0].color = '#000000';
+    await room.redo();
+    expect(room.layout.objects[0].parts![0]).toEqual(design().parts[0]);
+    expect(room.layout.objects[0].parts![1].size).toEqual([0.1, 0.8, 0.1]);
+    expect(owner.position.toArray()).toEqual([2, 0.3, -1]);
+    expect(owner.scale.toArray()).toEqual([1.5, 1.5, 1.5]);
+    expect(owner.quaternion.equals(rotation)).toBe(true);
+    expect(room.getObject('robot')).toBe(owner);
+    expect(room.selectedId).toBe('robot');
+    expect(states).toEqual([true, false]);
+    expect(planner).not.toHaveBeenCalled();
+  });
+
+  it('restores the complete pose captured immediately before undo', async () => {
+    const room = createRoom();
+    await room.applyLayout(layout(object()));
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'update', id: 'one', changes: {color: '#2244aa'}}],
+    });
+    room.getObject('one')!.position.set(3, 0.5, -2);
+    const beforeUndo = room.layout;
+    await room.undo();
+    await room.redo();
+    expect(room.layout).toEqual(beforeUndo);
+  });
+
+  it('replays removal and explicit replacement without retaining disposed objects', async () => {
+    const room = createRoom();
+    await room.applyLayout(layout(object()));
+    await room.applyLayout(layout(design()));
+    await room.undo();
+    const restored = room.getObject('one')!;
+    const geometry = new THREE.Box3().setFromObject(restored);
+    expect(geometry.isEmpty()).toBe(false);
+    await room.redo();
+    expect(room.getObject('one')).toBeUndefined();
+    expect(restored.parent).toBeNull();
+    expect(room.layout).toEqual(layout(design()));
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'remove', id: 'robot'}],
+    });
+    await room.undo();
+    await room.redo();
+    expect(room.children).toHaveLength(0);
+  });
+
+  it('keeps redo after failed or no-op commands, but clears it on a new edit', async () => {
+    const room = createRoom();
+    await prepareColorRedo(room);
+    await expect(
+      room.applyPlan({
+        title: 'Studio',
+        edits: [{op: 'remove', id: 'missing'}],
+      })
+    ).rejects.toThrow('does not exist');
+    expect(room.canRedo).toBe(true);
+    await room.applyPlan({title: 'Studio', edits: []});
+    expect(room.canRedo).toBe(true);
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'update', id: 'one', changes: {color: '#44aa22'}}],
+    });
+    expect(room.canRedo).toBe(false);
+    await expect(room.redo()).rejects.toThrow('no scene edit to redo');
+  });
+
+  it.each([0.3, 0.4, 1.15, -0.7])(
+    'preserves redo through a no-op on an object rotated by %s radians',
+    async (rotation) => {
+      const room = createRoom();
+      await room.applyLayout(layout(object({rotation})));
+      await room.applyPlan({
+        title: 'Studio',
+        edits: [{op: 'update', id: 'one', changes: {color: '#2244aa'}}],
+      });
+      await room.undo();
+      const before = room.layout;
+      await room.applyPlan({title: 'Studio', edits: []});
+      expect(room.layout).toEqual(before);
+      expect(room.canRedo).toBe(true);
+      await room.redo();
+      expect(room.layout.objects[0].color).toBe('#2244aa');
+    }
+  );
+
+  it('does not overwrite post-undo movement or retain an abandoned redo branch', async () => {
+    const room = createRoom();
+    await prepareColorRedo(room);
+    room.select('one');
+    room.position.set(0, 1, -2);
+    expect(room.canRedo).toBe(true);
+    room.getObject('one')!.position.x = 3;
+    const moved = room.layout;
+    expect(room.canRedo).toBe(false);
+    await expect(room.redo()).rejects.toThrow('changed since undo');
+    expect(room.layout).toEqual(moved);
+    await room.undo();
+    expect(room.layout.objects).toHaveLength(0);
+    await room.redo();
+    expect(room.layout).toEqual(moved);
+    expect(room.canRedo).toBe(false);
+  });
+
+  it('keeps the current content and both histories when rebuilding for redo fails', async () => {
+    const create = vi.fn<SceneAsset['create']>(asset().create);
+    const room = createRoom([asset({create})]);
+    await prepareColorRedo(room);
+    const before = room.layout;
+    const owner = room.getObject('one')!;
+    const content = owner.children[0];
+    create.mockRejectedValueOnce(new Error('Model could not reload'));
+    await expect(room.redo()).rejects.toThrow('Model could not reload');
+    expect(room.layout).toEqual(before);
+    expect(owner.children[0]).toBe(content);
+    expect(room.canUndo).toBe(true);
+    expect(room.canRedo).toBe(true);
+    expect(room.busy).toBe(false);
+    await room.redo();
+    expect(room.layout.objects[0].color).toBe('#2244aa');
+    expect(room.getObject('one')).toBe(owner);
+  });
+
+  it('rejects movement during asynchronous redo without applying the stored edit', async () => {
+    const create = vi.fn<SceneAsset['create']>(asset().create);
+    const room = createRoom([asset({create})]);
+    await prepareColorRedo(room);
+    const owner = room.getObject('one')!;
+    const content = owner.children[0];
+    const pending = deferred<THREE.Object3D>();
+    create.mockReturnValueOnce(pending.promise);
+    const redo = room.redo();
+    owner.position.x = 2;
+    pending.resolve(await asset().create('#2244aa'));
+    await expect(redo).rejects.toThrow('moved while assets were loading');
+    expect(room.getObject('one')).toBe(owner);
+    expect(owner.children[0]).toBe(content);
+    expect(room.layout.objects[0]).toEqual(object({position: [2, 0, 0]}));
+    expect(room.canRedo).toBe(false);
+    expect(room.canUndo).toBe(true);
+  });
+
+  it('consumes undo and redo steps even when the pose already matches their snapshot', async () => {
+    const room = createRoom();
+    await room.applyLayout(layout(object()));
+    await room.applyPlan({
+      title: 'Studio',
+      edits: [{op: 'update', id: 'one', changes: {position: [1, 0, 0]}}],
+    });
+    room.getObject('one')!.position.x = 0;
+    await room.undo();
+    expect(room.canRedo).toBe(true);
+    await room.redo();
+    expect(room.canRedo).toBe(false);
+    await room.undo();
+    await room.undo();
+    expect(room.layout.objects).toHaveLength(0);
+    expect(room.canUndo).toBe(false);
   });
 });
 
