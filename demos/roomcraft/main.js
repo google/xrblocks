@@ -211,6 +211,7 @@ export class RoomcraftConsole extends xb.Script {
     this.errorMessage = '';
     this.promptValue = '';
     this.voiceDraft = '';
+    this.voiceReplacementDraft = null;
     this.voiceSelection = null;
     this.voiceSubmissionPending = false;
     this.voiceSession = null;
@@ -455,7 +456,10 @@ export class RoomcraftConsole extends xb.Script {
       this.stopListening('Voice input cancelled because the page was left.')
     );
     this.listen(document, 'keydown', (event) => {
-      if (event.key === 'Escape' && this.voice.state !== 'idle') {
+      if (
+        event.key === 'Escape' &&
+        (this.voice.state !== 'idle' || this.voiceReplacementDraft !== null)
+      ) {
         event.preventDefault();
         this.stopListening();
       }
@@ -1068,7 +1072,10 @@ export class RoomcraftConsole extends xb.Script {
       this.setError(`Instructions are limited to ${limit} characters.`);
     }
     const draft = value.slice(0, limit);
-    if (draft !== this.promptValue && this.voice.state !== 'idle') {
+    if (
+      draft !== this.promptValue &&
+      (this.voice.state !== 'idle' || this.voiceReplacementDraft !== null)
+    ) {
       this.stopListening(
         'Voice input cancelled because the draft changed. Your text was kept.'
       );
@@ -1586,16 +1593,35 @@ export class RoomcraftConsole extends xb.Script {
       return;
     }
     this.setError('');
-    this.voiceDraft = this.dom.prompt.value;
+    const draft = this.dom.prompt.value;
+    if (draft.trim() && this.voiceReplacementDraft !== draft) {
+      this.voiceReplacementDraft = draft;
+      this.setStatus(
+        'Voice replaces the current draft. Choose Replace draft to record, or Keep draft to cancel. Nothing is recording yet.'
+      );
+      this.refresh();
+      return;
+    }
+    this.voiceReplacementDraft = null;
+    this.voiceDraft = draft;
     this.voiceSubmissionPending = false;
     void this.voice.start();
   }
 
-  stopListening(
-    message = 'Voice input cancelled. No spoken edit was submitted.'
-  ) {
+  stopListening(message) {
+    const confirmingReplacement = this.voiceReplacementDraft !== null;
+    this.voiceReplacementDraft = null;
     this.voiceSubmissionPending = false;
-    if (this.voice.cancel()) this.setStatus(message);
+    const cancelled = this.voice.cancel();
+    if (confirmingReplacement) this.refresh();
+    if (cancelled || confirmingReplacement) {
+      this.setStatus(
+        message ??
+          (confirmingReplacement
+            ? 'Your draft was kept. No recording started.'
+            : 'Voice input cancelled. No spoken edit was submitted.')
+      );
+    }
   }
 
   updateVoiceState(state) {
@@ -1669,6 +1695,7 @@ export class RoomcraftConsole extends xb.Script {
       this.setError('Roomcraft is still working. Wait for it to finish.');
       return;
     }
+    this.voiceReplacementDraft = null;
     this.running = true;
     this.setError('');
     this.setStatus(pendingMessage);
@@ -1914,6 +1941,7 @@ export class RoomcraftConsole extends xb.Script {
 
     const voiceAvailable = !!getVoiceFormat();
     const voiceState = this.voice.state;
+    const confirmingReplacement = this.voiceReplacementDraft !== null;
     const aiReady = this.isGeminiReady();
     this.xrProviderText.text = aiReady
       ? 'Gemini configured. Talk sends microphone audio only to Gemini.'
@@ -1943,11 +1971,22 @@ export class RoomcraftConsole extends xb.Script {
       ? 'This browser cannot record microphone audio. Use Keyboard or type the edit.'
       : !aiReady
         ? 'Connect Gemini before using voice.'
-        : 'Talk records one instruction. Finish sends it to Gemini and applies the spoken edit.';
+        : confirmingReplacement
+          ? 'Record a new instruction that replaces the current draft after successful transcription.'
+          : 'Talk records one instruction. Finish sends it to Gemini and applies the spoken edit.';
     dom.mic.setAttribute('aria-pressed', String(voiceState === 'recording'));
-    dom.cancelVoice.hidden = voiceState === 'idle';
+    dom.cancelVoice.hidden = voiceState === 'idle' && !confirmingReplacement;
+    dom.cancelVoice.textContent = confirmingReplacement
+      ? 'Keep draft'
+      : 'Cancel';
+    const cancelLabel = confirmingReplacement
+      ? 'Keep existing draft'
+      : 'Cancel voice input';
+    dom.cancelVoice.setAttribute('aria-label', cancelLabel);
+    this.xrCancelVoice.label = dom.cancelVoice.textContent;
+    this.xrCancelVoice.ariaLabel = cancelLabel;
     dom.console.classList.toggle('rc-recording', voiceState === 'recording');
-    this.xrCancelVoice.style.display = voiceState === 'idle' ? 'none' : 'flex';
+    this.xrCancelVoice.style.display = dom.cancelVoice.hidden ? 'none' : 'flex';
     dom.place.disabled =
       busy || !!layout.environment || layout.objects.length === 0;
     dom.place.title = layout.environment ? VIRTUAL_PLACEMENT_MESSAGE : '';
@@ -1968,9 +2007,11 @@ export class RoomcraftConsole extends xb.Script {
         ? 'Finish'
         : voiceState === 'starting'
           ? 'Mic...'
-          : voiceAvailable
-            ? 'Talk'
-            : 'No mic';
+          : confirmingReplacement
+            ? 'Replace draft'
+            : voiceAvailable
+              ? 'Talk'
+              : 'No mic';
     this.xrTalk.disabled = dom.mic.disabled;
     this.xrTalk.label = dom.mic.textContent;
     this.xrTalk.style.backgroundColor =
@@ -2043,6 +2084,7 @@ export class RoomcraftConsole extends xb.Script {
 
   dispose() {
     this.disposed = true;
+    this.voiceReplacementDraft = null;
     this.voiceSubmissionPending = false;
     this.voice.dispose();
     this.clearVoiceSession();

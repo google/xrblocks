@@ -597,12 +597,118 @@ describe('Roomcraft demo integration', () => {
     expect(consoleScript.isBusy()).toBe(false);
   });
 
+  it.each(['desktop', 'spatial', 'Escape'])(
+    'offers a draft replacement warning before capture and keeps the draft through %s cancellation',
+    (surface) => {
+      options.gemini.apiKey = 'local-test-fixture';
+      consoleScript.setPrompt('Add a floor lamp.');
+      consoleScript.toggleListening();
+      expect(consoleScript.voice.start).not.toHaveBeenCalled();
+      expect(button('mic').textContent).toBe('Replace draft');
+      expect(consoleScript.xrTalk.label).toBe('Replace draft');
+      expect(button('cancelVoice').textContent).toBe('Keep draft');
+      expect(consoleScript.xrCancelVoice.label).toBe('Keep draft');
+      expect(consoleScript.xrCancelVoice.ariaLabel).toBe('Keep existing draft');
+      expect(consoleScript.xrStatusText.text).toContain('Nothing is recording');
+      if (surface === 'desktop') button('cancelVoice').click();
+      else if (surface === 'spatial') consoleScript.xrCancelVoice.onClick();
+      else
+        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+      expect(consoleScript.voice.start).not.toHaveBeenCalled();
+      expect(input().value).toBe('Add a floor lamp.');
+      expect(button('mic').textContent).toBe('Talk');
+      expect(element('cancelVoice').hidden).toBe(true);
+      expect(consoleScript.xrCancelVoice.style.display).toBe('none');
+    }
+  );
+
+  it.each([false, true])(
+    'replaces an existing draft only after confirmation and successful transcription (review=%s)',
+    async (requiresReview) => {
+      options.gemini.apiKey = 'local-test-fixture';
+      consoleScript.setPrompt('Add a floor lamp.');
+      const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
+      consoleScript.toggleListening();
+      consoleScript.xrTalk.onClick();
+      expect(consoleScript.voice.start).toHaveBeenCalledTimes(1);
+      expect(input().value).toBe('Add a floor lamp.');
+      consoleScript.toggleListening();
+      consoleScript.voice.complete('Make the selected chair brass.', {
+        requiresReview,
+      });
+      if (requiresReview) {
+        expect(input().value).toBe('Make the selected chair brass.');
+        expect(request).not.toHaveBeenCalled();
+      } else {
+        await vi.waitFor(() =>
+          expect(request).toHaveBeenCalledExactlyOnceWith(
+            'Make the selected chair brass.'
+          )
+        );
+      }
+    }
+  );
+
+  it('requires a new replacement decision if the draft changes before recording', () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    consoleScript.setPrompt('First draft');
+    consoleScript.toggleListening();
+    consoleScript.setPrompt('New draft');
+    expect(button('mic').textContent).toBe('Talk');
+    consoleScript.toggleListening();
+    expect(button('mic').textContent).toBe('Replace draft');
+    expect(consoleScript.voice.start).not.toHaveBeenCalled();
+    expect(input().value).toBe('New draft');
+  });
+
+  it('dismisses a replacement decision on XR entry without starting the microphone', () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    consoleScript.setPrompt('Keep this draft during XR entry.');
+    consoleScript.toggleListening();
+    consoleScript.onXRSessionStarted();
+    expect(consoleScript.voice.start).not.toHaveBeenCalled();
+    expect(input().value).toBe('Keep this draft during XR entry.');
+    expect(consoleScript.xrTalk.label).toBe('Talk');
+    expect(consoleScript.xrCancelVoice.style.display).toBe('none');
+  });
+
+  it.each(['cancel', 'error'])(
+    'keeps the confirmed replacement draft if recording ends with %s',
+    (outcome) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      options.gemini.apiKey = 'local-test-fixture';
+      consoleScript.setPrompt('Keep this typed instruction.');
+      consoleScript.toggleListening();
+      consoleScript.toggleListening();
+      if (outcome === 'cancel') consoleScript.stopListening();
+      else consoleScript.voice.fail(new Error('Microphone permission denied.'));
+      expect(input().value).toBe('Keep this typed instruction.');
+      expect(button('mic').textContent).toBe('Talk');
+      expect(element('cancelVoice').hidden).toBe(true);
+    }
+  );
+
+  it('dismisses the voice decision when the existing draft is generated instead', async () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    consoleScript.setPrompt('Generate this typed instruction.');
+    const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
+    consoleScript.toggleListening();
+    await consoleScript.generate();
+    expect(request).toHaveBeenCalledExactlyOnceWith(
+      'Generate this typed instruction.'
+    );
+    expect(consoleScript.voice.start).not.toHaveBeenCalled();
+    expect(button('mic').textContent).toBe('Talk');
+    expect(element('cancelVoice').hidden).toBe(true);
+  });
+
   it.each(['desktop', 'spatial'])(
     'cancels voice when the %s draft changes and ignores a late transcript',
     (surface) => {
       options.gemini.apiKey = 'local-test-fixture';
       consoleScript.setPrompt('Existing draft');
       const request = vi.spyOn(room, 'request');
+      consoleScript.toggleListening();
       consoleScript.toggleListening();
       consoleScript.toggleListening();
       if (surface === 'desktop') {
