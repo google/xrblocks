@@ -52,6 +52,10 @@ Moonlight and Sunrise are direct atmosphere edits, not AI requests. Each changes
 
 Enter world moves the desktop camera to a clear standing spot, preferring the front of the ground and looking across it. The bounded search reserves body and head clearance against individual object bounds, ignores flat paths and shallow water, and reports when it finds no clear candidate instead of placing you inside an object. No object or environment value changes, and the simulator's navigation controls continue from the new pose. The button is hidden during an immersive XR session.
 
+Virtual XR entry uses that same search after the opening scene has loaded and headset tracking is available. A per-session WebXR reference-space offset places the viewer at a clear spot facing across the ground, preserving real eye height and keeping headset and controller tracking in the same space. The world and studio appear after a frame in the new space, so the old origin is not shown through a bridge or another object. Authored transforms, selection, and undo history are unchanged.
+
+If entry cannot be placed, the world stays hidden and the studio explains why. New, object selection, Remove, and the other authoring controls remain available; a scene edit retries placement. Exiting XR restores the world's previous visibility. The search is conservative: an object's full bounds, including its motion envelope, may cover gaps that would be walkable in a mesh-level collision system.
+
 Frame scene accounts for the ground extent, so an empty environment can still be framed without any object in it.
 
 ### Placement and export in this mode
@@ -112,6 +116,8 @@ In virtual world mode the studio adds the environment summary and Moonlight and 
 
 The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. On desktop, opening or recentering the studio chooses the side with less overlap from nearby authored objects, including their full motion envelopes. This is not room collision avoidance: drag the cards elsewhere if both sides are crowded. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the browser controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
 
+In XR, the studio waits for a tracked view and opens upright at head height, even when entry begins while looking down or tilting your head. Later head movement does not continually recenter it or undo manual dragging.
+
 ## Gemini
 
 Starter scenes including the handcrafted clockwork robot and the handcrafted moonlit garden, direct manipulation, motion playback and its pause control, New design, the Moonlight and Sunrise atmosphere shortcuts, Enter world, the downloaded exhibit, undo/redo, desktop framing, and export all work without a key. Creating and refining new designs and environments from your own words needs a configured provider.
@@ -148,6 +154,8 @@ A virtual environment is locally generated bounded visual geometry. Its ground, 
 
 Walking inside a virtual environment uses the SDK's existing simulator navigation controls. There is no ongoing collision, navigation mesh, or gravity, so you can still pass through a pond or a tree and walk off the edge of the ground. Clear standing-space selection happens only when choosing an entry pose, not continuously while walking or generating content.
 
+Clear entry requires a level, nonsheared virtual ground. Translation, yaw rotation, and nonuniform scaling are supported, with standing clearance measured in world metres rather than scaled scene units. Physical-room mode does not offset the headset reference space.
+
 A ground measures 4 to 20 meters per side. A planting holds 1 to 128 specimens and a scene holds at most 1024 specimens across all plantings, a path holds 2 to 12 points and is 0.15 to 3 meters wide, and a pond's water surface measures 0.2 to 20 meters per side with a 0.05 to 1 meter bank. Specimens stand 0.1 to 6 meters tall.
 
 The environment's own sky, ground, and lights replace the demo's fallback lighting while an environment is active, and the fallback returns when there is none.
@@ -160,10 +168,10 @@ Surface placement uses the SDK's detected planes in WebXR and in the simulator, 
 
 The XR studio shows the selected object's name, part count, and how many of its parts move, offers the same Pause and Resume control, and shares errors and operation state with the desktop console. Typing uses the spatial keyboard rather than a native immersive text field. The full read-only part list with per-part motion, the JSON download, and Gemini key configuration remain in the desktop console.
 
-Headset behavior beyond the standard XR Blocks input and plane detection paths is not claimed here. The desktop simulator is what this demo has been exercised in.
+Immersive entry and Gemini scene generation have been used on Meta Quest. The newer clear-entry placement and studio refinements still need a follow-up headset run. Galaxy XR and XREAL Aura have not been tested; no cross-headset compatibility claim is made here.
 
 ## SDK ownership
 
 Rendering, the frame loop, input, selection, manipulation, plane detection, speech recognition, and the AI facade all belong to XR Blocks. Part playback uses the SDK's injected frame timer, and the framing buttons reposition the existing desktop camera; the demo adds no renderer, animation loop, navigation system, raycaster, or bundled copy of three.js, and it adds no dependencies beyond the SDK's existing import map entries.
 
-The virtual world mode is ordinary SDK configuration. It sets the session mode to VR, points `options.simulator.environments` at this directory's empty manifest, keeps the SDK's normal headset entry and unsupported-browser simulator fallback, chooses the opening simulator camera position through `options.simulator.initialCameraPosition`, and enables renderer shadow maps for that mode only. Moving through the world uses the simulator's own control modes, and Enter world writes one camera pose rather than adding a movement loop or a collision solver.
+The virtual world mode is ordinary SDK configuration. It sets the session mode to VR, points `options.simulator.environments` at this directory's empty manifest, keeps the SDK's normal headset entry and unsupported-browser simulator fallback, chooses the opening simulator camera position through `options.simulator.initialCameraPosition`, and enables renderer shadow maps for that mode only. Desktop Enter world writes one camera pose, while initial XR placement uses three.js's shared WebXR reference space. Neither adds a movement loop or a collision solver.
