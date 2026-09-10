@@ -6,6 +6,7 @@ export enum WebXRSessionEventType {
   READY = 'ready',
   SESSION_START = 'sessionstart',
   SESSION_END = 'sessionend',
+  SESSION_ERROR = 'sessionerror',
 }
 
 export type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
@@ -13,6 +14,7 @@ export type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
   [WebXRSessionEventType.READY]: {sessionOptions: XRSessionInit};
   [WebXRSessionEventType.SESSION_START]: {session: XRSession};
   [WebXRSessionEventType.SESSION_END]: object;
+  [WebXRSessionEventType.SESSION_ERROR]: {error: unknown};
 };
 
 /**
@@ -91,7 +93,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   }
 
   /**
-   * Ends the WebXR session.
+   * Requests and initializes a WebXR session.
    */
   public startSession() {
     if (this.disposed) {
@@ -108,10 +110,10 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     this.waitingForXRSession = true;
     navigator
       .xr!.requestSession(this.mode, this.sessionOptions)
+      .then(this.onSessionStartedInternal)
       .finally(() => {
         this.waitingForXRSession = false;
       })
-      .then(this.onSessionStartedInternal)
       .catch((err) => {
         console.error(
           'Error requesting session',
@@ -121,6 +123,12 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
           'sesionOptions:',
           this.sessionOptions
         );
+        if (!this.disposed) {
+          this.dispatchEvent({
+            type: WebXRSessionEventType.SESSION_ERROR,
+            error: err,
+          });
+        }
       });
   }
 
@@ -163,6 +171,14 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       await this.renderer.xr.setSession(session);
     } catch (error) {
       session.removeEventListener('end', this.onSessionEndedInternal);
+      try {
+        await session.end();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'XR renderer setup failed and the session could not be closed.'
+        );
+      }
       throw error;
     }
     if (this.disposed) {
