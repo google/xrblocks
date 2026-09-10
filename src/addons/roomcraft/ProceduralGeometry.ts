@@ -159,7 +159,29 @@ function sweepBounds(box: THREE.Box3, motion: PartMotion) {
   return bounds;
 }
 
-function getMotionBounds(
+/** The eight corners of a box, in the same order as `CORNERS`. */
+function boxCorners(box: THREE.Box3) {
+  return CORNERS.map(
+    ([x, y, z]) =>
+      new THREE.Vector3(
+        x < 0 ? box.min.x : box.max.x,
+        y < 0 ? box.min.y : box.max.y,
+        z < 0 ? box.min.z : box.max.z
+      )
+  );
+}
+
+/**
+ * Computes hierarchy bounds from conservative corner sets expressed in the
+ * frame of the nearest moving ancestor or of the whole object.
+ *
+ * A static level keeps one composed transform, so its corners stay exact
+ * however deeply it nests. Only a part that actually moves collapses its own
+ * subtree to an axis-aligned box, and only that box is swept. A design is
+ * therefore measured the same way whether or not some unrelated part moves,
+ * and a design with no motion at all is measured exactly as before.
+ */
+function getHierarchyBounds(
   parts: readonly ScenePart[],
   motions: ReadonlyMap<string, PartMotion | undefined>
 ) {
@@ -169,52 +191,83 @@ function getMotionBounds(
     siblings.push(part);
     children.set(part.parent, siblings);
   }
-  const envelope = (part: ScenePart): THREE.Box3 => {
-    const half = new THREE.Vector3().fromArray(part.size).multiplyScalar(0.5);
-    const box = new THREE.Box3(half.clone().negate(), half);
-    for (const child of children.get(part.id) ?? []) {
-      box.union(envelope(child));
-    }
+  let measured = 0;
+
+  /** @param toAnchor - Maps the part's own local frame into the anchor frame. */
+  const appendPart = (
+    part: ScenePart,
+    toAnchor: THREE.Matrix4,
+    into: THREE.Vector3[]
+  ) => {
+    measured++;
     const motion = motions.get(part.id);
-    return (motion ? sweepBounds(box, motion) : box).applyMatrix4(
-      localMatrix(part)
-    );
+    if (!motion) {
+      appendSubtree(part, toAnchor, into);
+      return;
+    }
+    // A moving part carries its descendants, so the subtree collapses to one
+    // axis-aligned box in this part's own frame and only that box is swept.
+    const local: THREE.Vector3[] = [];
+    appendSubtree(part, new THREE.Matrix4(), local);
+    const swept = sweepBounds(new THREE.Box3().setFromPoints(local), motion);
+    for (const corner of boxCorners(swept)) {
+      into.push(corner.applyMatrix4(toAnchor));
+    }
   };
+
+  const appendSubtree = (
+    part: ScenePart,
+    toAnchor: THREE.Matrix4,
+    into: THREE.Vector3[]
+  ) => {
+    for (const [x, y, z] of CORNERS) {
+      into.push(
+        new THREE.Vector3(
+          x * part.size[0],
+          y * part.size[1],
+          z * part.size[2]
+        ).applyMatrix4(toAnchor)
+      );
+    }
+    for (const child of children.get(part.id) ?? []) {
+      appendPart(
+        child,
+        new THREE.Matrix4().multiplyMatrices(toAnchor, localMatrix(child)),
+        into
+      );
+    }
+  };
+
+  const points: THREE.Vector3[] = [];
+  for (const root of children.get(null) ?? []) {
+    appendPart(root, localMatrix(root), points);
+  }
+  if (measured !== parts.length) {
+    throw new Error('A procedural design left a part unmeasured.');
+  }
   const bounds = new THREE.Box3();
-  for (const root of children.get(null) ?? []) bounds.union(envelope(root));
+  for (const point of points) bounds.expandByPoint(point);
   return bounds;
 }
 
 /**
  * Computes a conservative object-local bounding box from the physical size of
  * every part and its full motion envelope, transformed through the part
- * hierarchy. It allocates no renderable geometry or materials, so callers can
- * size and place a design without building it.
+ * hierarchy. Static levels keep their exact composed corners, so a design is
+ * measured the same way whether or not some other part moves. It allocates no
+ * renderable geometry or materials, so callers can size and place a design
+ * without building it.
  *
  * @param parts - The design's parts, in any order.
  * @returns A finite box in the object's authored coordinates. The design is
  *     never recentered, grounded, or rescaled.
  */
 export function getProceduralBounds(parts: readonly ScenePart[]): THREE.Box3 {
-  const transforms = resolveTransforms(parts);
+  // Reject duplicate IDs, missing parents, cycles, and over-deep nesting, so
+  // every part below is reached exactly once from a root.
+  resolveTransforms(parts);
   const motions = new Map(parts.map((part) => [part.id, readPartMotion(part)]));
-  const bounds = new THREE.Box3();
-  if ([...motions.values()].some((motion) => motion !== undefined)) {
-    bounds.copy(getMotionBounds(parts, motions));
-  } else {
-    const corner = new THREE.Vector3();
-    for (const part of parts) {
-      const matrix = transforms.get(part.id);
-      if (!matrix) throw new Error(`Missing transform for part "${part.id}".`);
-      for (const [x, y, z] of CORNERS) {
-        bounds.expandByPoint(
-          corner
-            .set(x * part.size[0], y * part.size[1], z * part.size[2])
-            .applyMatrix4(matrix)
-        );
-      }
-    }
-  }
+  const bounds = getHierarchyBounds(parts, motions);
   if (
     bounds.isEmpty() ||
     [...bounds.min.toArray(), ...bounds.max.toArray()].some(

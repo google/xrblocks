@@ -298,6 +298,30 @@ describe('procedural scene definitions', () => {
       ).toThrow('10');
     });
 
+    it('charges the size budget for motion only where a part actually moves', () => {
+      // Alternating 45-degree yaws cancel, so the leaf is 5 meters along X.
+      const folded = Array.from({length: 4}, (_, index) =>
+        part({
+          id: `fold-${index}`,
+          name: `Fold ${index}`,
+          parent: index === 0 ? null : `fold-${index - 1}`,
+          position: [0, 0, 0],
+          rotation: [0, (index % 2 === 0 ? 1 : -1) * (Math.PI / 4), 0],
+          size: index === 3 ? [5, 0.2, 0.2] : [0.1, 0.1, 0.1],
+        })
+      );
+      const marker = part({
+        id: 'marker',
+        name: 'Marker',
+        parent: null,
+        position: [0, 0, 0],
+        size: [0.1, 0.1, 0.1],
+        motion: {kind: 'spin', axis: 'y', pivot: [0, 0, 0], speed: 1},
+      });
+      const source = scene(design({parts: [...folded, marker]}));
+      expect(readSceneLayout(source, [])).toEqual(source);
+    });
+
     it('teaches rest poses, attached moving children, bounded behaviors, and explicit stopping', () => {
       const prompt = buildScenePrompt({
         prompt: 'Make this wave, then give it longer arms.',

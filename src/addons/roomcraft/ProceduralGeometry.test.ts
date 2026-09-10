@@ -48,6 +48,23 @@ function robot(): ScenePart[] {
   ];
 }
 
+/**
+ * A deep chain of alternating 45-degree yaws that cancel exactly, so the
+ * long leaf ends up axis-aligned even though every level is rotated.
+ */
+function foldedArm(): ScenePart[] {
+  return Array.from({length: 4}, (_, index) =>
+    part({
+      id: `fold-${index}`,
+      name: `Fold ${index}`,
+      parent: index === 0 ? null : `fold-${index - 1}`,
+      position: [0, 0, 0],
+      rotation: [0, (index % 2 === 0 ? 1 : -1) * (Math.PI / 4), 0],
+      size: index === 3 ? [5, 0.2, 0.2] : [0.1, 0.1, 0.1],
+    })
+  );
+}
+
 function build(parts: readonly ScenePart[], tint = '#ffffff') {
   const content = createProceduralContent(parts, tint);
   resources.push(content);
@@ -340,6 +357,51 @@ describe('getProceduralBounds', () => {
       expect(bounds.containsBox(boundsOf(content))).toBe(true);
     }
     expect(parts).toEqual(before);
+  });
+
+  it('measures a static hierarchy exactly while an unrelated part moves', () => {
+    const staticSize = getProceduralBounds(foldedArm()).getSize(
+      new THREE.Vector3()
+    );
+    expect(staticSize.x).toBeCloseTo(5, 5);
+    expect(staticSize.y).toBeCloseTo(0.2, 5);
+    expect(staticSize.z).toBeCloseTo(0.2, 5);
+
+    const marker = part({
+      id: 'marker',
+      name: 'Marker',
+      parent: null,
+      position: [0, 0, 0],
+      size: [0.1, 0.1, 0.1],
+      motion: {kind: 'spin', axis: 'y', pivot: [0, 0, 0], speed: 1},
+    });
+    const moving = getProceduralBounds([...foldedArm(), marker]).getSize(
+      new THREE.Vector3()
+    );
+    expect(moving.x).toBeCloseTo(5, 5);
+    expect(moving.y).toBeCloseTo(0.2, 5);
+    expect(moving.z).toBeCloseTo(0.2, 5);
+  });
+
+  it('sweeps a folded static chain carried by a moving ancestor', () => {
+    const parts = foldedArm();
+    parts[0].motion = {
+      kind: 'spin',
+      axis: 'y',
+      pivot: [0.3, 0, 0.2],
+      speed: 1.5,
+    };
+    const bounds = getProceduralBounds(parts);
+    // The subtree only reaches its own folded extent about the axle.
+    expect(bounds.getSize(new THREE.Vector3()).x).toBeLessThan(9);
+    const reserved = bounds.clone().expandByScalar(1e-6);
+    const content = build(parts);
+    const player = new ProceduralMotionPlayer(content, parts);
+    const turn = (Math.PI * 2) / 1.5;
+    for (let index = 0; index < 240; index++) {
+      player.update(turn / 240);
+      expect(reserved.containsBox(boundsOf(content))).toBe(true);
+    }
   });
 
   it('rejects invalid motion before returning apparently valid bounds', () => {
