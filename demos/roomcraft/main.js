@@ -207,6 +207,11 @@ export class RoomcraftConsole extends xb.Script {
     this.keyboardOpen = false;
     this.spatialTab = 'author';
     this.needsSpatialPlacement = false;
+    this.needsXRSpawn = false;
+    this.sceneReady = false;
+    this.entryBlocked = false;
+    this.entryVisibility = undefined;
+    this.xrEntryError = '';
     this.disposed = false;
     this.placed = false;
     this.exhibitCount = 0;
@@ -225,6 +230,11 @@ export class RoomcraftConsole extends xb.Script {
 
     this.listen(this.room, 'change', () => {
       this.placed = false;
+      if (this.entryBlocked && this.isInXR()) {
+        this.entryBlocked = false;
+        this.needsXRSpawn = true;
+        this.needsSpatialPlacement = true;
+      }
       this.refresh();
     });
     this.listen(this.room, 'selectionchange', () => this.refresh());
@@ -246,16 +256,20 @@ export class RoomcraftConsole extends xb.Script {
   /** Loads the opening scene once XR Blocks has finished starting. */
   async start() {
     this.bindSpeech();
-    if (this.virtual) {
-      await this.newEnvironment(true);
-    } else {
-      await this.applyStarter(this.starters[0]);
-    }
-    const savedScene = xb.getUrlParameter(SAVED_SCENE_PARAMETER);
-    if (savedScene) {
-      await this.loadSavedScene(savedScene);
-      // Keep an import failure visible instead of replacing it with key setup.
-      if (this.errorMessage) return;
+    try {
+      if (this.virtual) {
+        await this.newEnvironment(true);
+      } else {
+        await this.applyStarter(this.starters[0]);
+      }
+      const savedScene = xb.getUrlParameter(SAVED_SCENE_PARAMETER);
+      if (savedScene) {
+        await this.loadSavedScene(savedScene);
+        // Keep an import failure visible instead of replacing it with key setup.
+        if (this.errorMessage) return;
+      }
+    } finally {
+      this.sceneReady = true;
     }
     if (xb.getUrlParameter('key') || xb.getUrlParameter('geminiKey')) {
       await this.connectGemini(false);
@@ -487,9 +501,36 @@ export class RoomcraftConsole extends xb.Script {
       const referenceSpace = inXR
         ? xb.core.renderer.xr.getReferenceSpace()
         : null;
-      if (!inXR || (referenceSpace && frame?.getViewerPose(referenceSpace))) {
+      const pose = referenceSpace && frame?.getViewerPose(referenceSpace);
+      if (!inXR || pose) {
+        if (inXR && this.needsXRSpawn) {
+          if (!this.sceneReady) return;
+          this.needsXRSpawn = false;
+          const environment = this.room.layout.environment;
+          try {
+            if (environment) this.placeXRSpawn(pose, referenceSpace);
+            if (this.xrEntryError && this.errorMessage === this.xrEntryError) {
+              this.setError('');
+            }
+            this.xrEntryError = '';
+          } catch (error) {
+            this.entryBlocked = true;
+            this.needsSpatialPlacement = false;
+            this.xrEntryError = `XR entry blocked; scene hidden in XR. ${error?.message ?? String(error)}`;
+            this.showError(new Error(this.xrEntryError, {cause: error}));
+            this.setStatus(
+              'Your scene is hidden while entry is blocked. Use New or remove an object to leave a standing space.'
+            );
+            this.positionSpatialStudio();
+            this.refresh();
+            return;
+          }
+          // Cameras and controllers adopt the new reference space next frame.
+          if (environment) return;
+        }
         this.positionSpatialStudio();
         this.needsSpatialPlacement = false;
+        this.restoreEntryVisibility();
         this.refresh();
       }
     }
@@ -804,6 +845,12 @@ export class RoomcraftConsole extends xb.Script {
     this.xrActive = true;
     this.lastXRState = true;
     this.needsSpatialPlacement = true;
+    this.needsXRSpawn = this.virtual;
+    this.entryBlocked = false;
+    if (this.virtual) {
+      this.entryVisibility = this.room.visible;
+      this.room.visible = false;
+    }
     this.dom.console?.classList.add('rc-hidden');
     this.card.visible = false;
     if (!this.isGeminiReady()) {
@@ -816,6 +863,9 @@ export class RoomcraftConsole extends xb.Script {
 
   onXRSessionEnded() {
     this.xrActive = false;
+    this.needsXRSpawn = false;
+    this.entryBlocked = false;
+    this.restoreEntryVisibility();
     this.needsSpatialPlacement = this.spatialPreview;
     this.dom.console?.classList.remove('rc-hidden');
     this.card.visible = false;
@@ -824,6 +874,31 @@ export class RoomcraftConsole extends xb.Script {
 
   isInXR() {
     return this.xrActive || !!xb.core.renderer?.xr.isPresenting;
+  }
+
+  placeXRSpawn(pose, referenceSpace) {
+    const position = new THREE.Vector3().copy(pose.transform.position);
+    const orientation = new THREE.Quaternion().copy(pose.transform.orientation);
+    const spawn = getWorldSpawn(this.room, position.y);
+    const heading = new THREE.Euler().setFromQuaternion(orientation, 'YXZ').y;
+    const rotation = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      heading - spawn.heading
+    );
+    const eye = spawn.position.clone();
+    eye.y += position.y;
+    // An offset maps new reference coordinates into the previous reference.
+    const translation = position.sub(eye.applyQuaternion(rotation));
+    const offset = new XRRigidTransform(translation, rotation);
+    xb.core.renderer.xr.setReferenceSpace(
+      referenceSpace.getOffsetReferenceSpace(offset)
+    );
+  }
+
+  restoreEntryVisibility() {
+    if (this.entryVisibility === undefined) return;
+    this.room.visible = this.entryVisibility;
+    this.entryVisibility = undefined;
   }
 
   toggleSpatialStudio() {
@@ -1839,6 +1914,8 @@ export class RoomcraftConsole extends xb.Script {
 
   dispose() {
     this.stopListening();
+    this.needsXRSpawn = false;
+    this.restoreEntryVisibility();
     this.disposed = true;
     this.cleanups.splice(0).forEach((cleanup) => cleanup());
     this.card?.dispose();

@@ -69,6 +69,38 @@ class TestSpeech extends THREE.EventDispatcher {
   stop = vi.fn();
 }
 
+class TestRigidTransform {
+  readonly matrix: Float32Array;
+
+  constructor(
+    position: {x: number; y: number; z: number},
+    orientation: {x: number; y: number; z: number; w: number}
+  ) {
+    this.matrix = new Float32Array(
+      new THREE.Matrix4().compose(
+        new THREE.Vector3(position.x, position.y, position.z),
+        new THREE.Quaternion(
+          orientation.x,
+          orientation.y,
+          orientation.z,
+          orientation.w
+        ),
+        new THREE.Vector3(1, 1, 1)
+      ).elements
+    );
+  }
+}
+
+class TestReferenceSpace {
+  constructor(readonly toBase = new THREE.Matrix4()) {}
+
+  getOffsetReferenceSpace(offset: TestRigidTransform) {
+    return new TestReferenceSpace(
+      this.toBase.clone().multiply(new THREE.Matrix4().fromArray(offset.matrix))
+    );
+  }
+}
+
 const html = readFileSync('demos/roomcraft/index.html', 'utf8');
 const manifestPath = 'demos/roomcraft/virtual-environment.json';
 
@@ -77,7 +109,54 @@ let consoleScript: InstanceType<typeof RoomcraftConsole>;
 let lighting: THREE.Group;
 let aiOptions: AIOptions;
 let camera: THREE.PerspectiveCamera;
-let renderer: {xr: {isPresenting: boolean}};
+let referenceSpace: TestReferenceSpace;
+let trackedViewer: THREE.Matrix4 | null;
+let renderer: {
+  xr: {
+    isPresenting: boolean;
+    getReferenceSpace: () => TestReferenceSpace | null;
+    setReferenceSpace: (space: TestReferenceSpace) => void;
+  };
+};
+
+function viewerPose(space: TestReferenceSpace) {
+  if (!trackedViewer) return null;
+  const position = new THREE.Vector3();
+  const orientation = new THREE.Quaternion();
+  space.toBase
+    .clone()
+    .invert()
+    .multiply(trackedViewer)
+    .decompose(position, orientation, new THREE.Vector3());
+  return {transform: {position, orientation}};
+}
+
+function beginXR(
+  viewer = new THREE.Matrix4().compose(
+    new THREE.Vector3(0.3, 1.7, -0.4),
+    new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(-0.12, 0.7, 0.08, 'YXZ')
+    ),
+    new THREE.Vector3(1, 1, 1)
+  )
+) {
+  referenceSpace = new TestReferenceSpace();
+  trackedViewer = viewer.clone();
+  renderer.xr.isPresenting = true;
+  consoleScript.onXRSessionStarted();
+}
+
+function tickXR() {
+  const space = renderer.xr.getReferenceSpace();
+  const pose = space && viewerPose(space);
+  if (pose) {
+    // Match Core's camera synchronization before Script updates.
+    camera.position.copy(pose.transform.position);
+    camera.quaternion.copy(pose.transform.orientation);
+    camera.updateMatrixWorld();
+  }
+  consoleScript.update(0, {getViewerPose: viewerPose});
+}
 
 function element(id: string) {
   const node = document.getElementById(id);
@@ -146,7 +225,18 @@ beforeEach(() => {
   camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.01, 100);
   camera.position.set(0, 1.5, 2);
   camera.lookAt(0, 0.5, -1);
-  renderer = {xr: {isPresenting: false}};
+  referenceSpace = new TestReferenceSpace();
+  trackedViewer = null;
+  vi.stubGlobal('XRRigidTransform', TestRigidTransform);
+  renderer = {
+    xr: {
+      isPresenting: false,
+      getReferenceSpace: () => referenceSpace,
+      setReferenceSpace: vi.fn((space: TestReferenceSpace) => {
+        referenceSpace = space;
+      }),
+    },
+  };
   Object.assign(mockCore, {camera, renderer});
   Object.assign(mockCore.ai, {options: aiOptions});
   Object.assign(mockCore.sound, {speechRecognizer: new TestSpeech()});
@@ -817,6 +907,261 @@ describe('Roomcraft virtual environment mode', () => {
     expect(camera.quaternion.equals(rotation)).toBe(true);
     expect(room.layout).toEqual(layout);
   });
+
+  it('places the XR viewer through an offset space before revealing the world and studio', async () => {
+    await mount();
+    const layout = room.layout;
+    const history = [room.canUndo, room.canRedo, room.selectedId];
+    beginXR();
+    expect(room.visible).toBe(false);
+    expect(consoleScript.card.visible).toBe(false);
+    tickXR();
+    expect(renderer.xr.setReferenceSpace).toHaveBeenCalledTimes(1);
+    // The script does not overwrite the camera that Core just synchronized.
+    expect(camera.position.toArray()).toEqual([0.3, 1.7, -0.4]);
+    expect(room.visible).toBe(false);
+    expect(consoleScript.card.visible).toBe(false);
+    const pose = viewerPose(referenceSpace)!;
+    expect(pose.transform.position.x).toBeCloseTo(0, 5);
+    expect(pose.transform.position.y).toBeCloseTo(1.7, 5);
+    expect(pose.transform.position.z).toBeCloseTo(5.8, 5);
+    const expectedOrientation = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(-0.12, 0, 0.08, 'YXZ')
+    );
+    expect(
+      pose.transform.orientation.angleTo(expectedOrientation)
+    ).toBeLessThan(1e-4);
+    const physicalHand = new THREE.Vector3(0.6, 1.2, -0.8);
+    const handInWorld = physicalHand
+      .clone()
+      .applyMatrix4(referenceSpace.toBase.clone().invert());
+    expect(handInWorld.distanceTo(pose.transform.position)).toBeCloseTo(
+      physicalHand.distanceTo(new THREE.Vector3(0.3, 1.7, -0.4)),
+      5
+    );
+    tickXR();
+    expect(room.visible).toBe(true);
+    expect(consoleScript.card.visible).toBe(true);
+    expect(consoleScript.card.position.y).toBeCloseTo(1.95, 5);
+    expect(room.layout).toEqual(layout);
+    expect([room.canUndo, room.canRedo, room.selectedId]).toEqual(history);
+  });
+
+  it('waits for a frame, reference space and tracked pose before choosing an XR entry', async () => {
+    await mount();
+    beginXR();
+    consoleScript.update();
+    expect(renderer.xr.setReferenceSpace).not.toHaveBeenCalled();
+    const sensor = trackedViewer;
+    trackedViewer = null;
+    tickXR();
+    expect(renderer.xr.setReferenceSpace).not.toHaveBeenCalled();
+    trackedViewer = sensor;
+    const unavailable = vi
+      .spyOn(renderer.xr, 'getReferenceSpace')
+      .mockReturnValue(null);
+    tickXR();
+    expect(renderer.xr.setReferenceSpace).not.toHaveBeenCalled();
+    expect(room.visible).toBe(false);
+    expect(consoleScript.card.visible).toBe(false);
+    unavailable.mockRestore();
+    tickXR();
+    tickXR();
+    expect(room.visible).toBe(true);
+    expect(consoleScript.card.visible).toBe(true);
+  });
+
+  it('chooses XR entry from the loaded scene rather than the temporary opening ground', async () => {
+    const pending = Promise.withResolvers<Response>();
+    const fetchScene = vi.fn(() => pending.promise);
+    vi.stubGlobal('fetch', fetchScene);
+    mockUrlParameter.mockImplementation((name) =>
+      name === SAVED_SCENE_PARAMETER ? './saved-world.json' : null
+    );
+    const starting = mount();
+    await vi.waitFor(() => expect(fetchScene).toHaveBeenCalledTimes(1));
+    beginXR();
+    tickXR();
+    expect(renderer.xr.setReferenceSpace).not.toHaveBeenCalled();
+    expect(room.visible).toBe(false);
+    pending.resolve(
+      new Response(
+        JSON.stringify({
+          title: 'Loaded world',
+          environment: {...room.layout.environment, size: [10, 10]},
+          objects: [],
+        })
+      )
+    );
+    await starting;
+    tickXR();
+    tickXR();
+    expect(camera.position.z).toBeCloseTo(3.8, 5);
+    expect(room.visible).toBe(true);
+  });
+
+  it('preserves physical eye height when entering a moved, rotated and scaled world', async () => {
+    await mount();
+    room.position.set(3, 2, -4);
+    room.rotation.y = Math.PI / 2;
+    room.scale.set(2, 3, 0.5);
+    beginXR();
+    tickXR();
+    tickXR();
+    expect(camera.position.x).toBeCloseTo(5.3, 5);
+    expect(camera.position.y).toBeCloseTo(3.7, 5);
+    expect(camera.position.z).toBeCloseTo(-4, 5);
+    expect(
+      new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ').y
+    ).toBeCloseTo(Math.PI / 2, 5);
+    expect(room.position.toArray()).toEqual([3, 2, -4]);
+    expect(room.scale.toArray()).toEqual([2, 3, 0.5]);
+  });
+
+  it('avoids objects at both the tracked origin and preferred XR entry without rebuilding them', async () => {
+    await mount();
+    await room.applyLayout({
+      ...room.layout,
+      objects: [{...entryBlock([0, 0, 0]), id: 'origin-block'}, entryBlock()],
+    });
+    const owner = room.getObject('entry-block');
+    const layout = room.layout;
+    beginXR();
+    tickXR();
+    tickXR();
+    for (const object of layout.objects) {
+      expect(
+        room
+          .getWorldBounds(object.id)
+          .expandByScalar(0.35)
+          .containsPoint(camera.position)
+      ).toBe(false);
+    }
+    expect(room.getObject('entry-block')).toBe(owner);
+    expect(room.layout).toEqual(layout);
+  });
+
+  it('preserves later head movement and manual studio placement, and starts fresh on re-entry', async () => {
+    await mount();
+    const sensor = new THREE.Matrix4().makeTranslation(0.3, 1.7, -0.4);
+    beginXR(sensor);
+    tickXR();
+    tickXR();
+    consoleScript.card.position.x += 0.6;
+    const dragged = consoleScript.card.position.clone();
+    trackedViewer = new THREE.Matrix4()
+      .makeTranslation(0.25, -0.1, 0.3)
+      .multiply(sensor);
+    tickXR();
+    expect(camera.position.x).toBeCloseTo(0.25, 5);
+    expect(camera.position.y).toBeCloseTo(1.6, 5);
+    expect(camera.position.z).toBeCloseTo(6.1, 5);
+    expect(consoleScript.card.position.equals(dragged)).toBe(true);
+    expect(renderer.xr.setReferenceSpace).toHaveBeenCalledTimes(1);
+    consoleScript.onXRSessionEnded();
+    renderer.xr.isPresenting = false;
+    consoleScript.update();
+    beginXR(sensor);
+    tickXR();
+    tickXR();
+    expect(renderer.xr.setReferenceSpace).toHaveBeenCalledTimes(2);
+    expect(camera.position.z).toBeCloseTo(5.8, 5);
+    expect(consoleScript.card.position.equals(dragged)).toBe(false);
+  });
+
+  it.each([
+    {visible: true, finish: 'end'},
+    {visible: false, finish: 'end'},
+    {visible: true, finish: 'dispose'},
+    {visible: false, finish: 'dispose'},
+  ])(
+    'restores world visibility $visible on $finish before tracking arrives',
+    async ({visible, finish}) => {
+      await mount();
+      room.visible = visible;
+      beginXR();
+      if (finish === 'end') consoleScript.onXRSessionEnded();
+      else consoleScript.dispose();
+      expect(room.visible).toBe(visible);
+      expect(consoleScript.needsXRSpawn).toBe(false);
+      expect(renderer.xr.setReferenceSpace).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps a blocked world hidden with usable controls and retries after an edit', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await mount();
+    await room.applyLayout({
+      ...room.layout,
+      environment: {...room.layout.environment, size: [4, 4]},
+      objects: [entryBlock([0, 0, 0], [4, 2, 4])],
+    });
+    const layout = room.layout;
+    beginXR();
+    tickXR();
+    expect(room.visible).toBe(false);
+    expect(consoleScript.card.visible).toBe(true);
+    expect(consoleScript.xrNew.disabled).toBe(false);
+    expect(consoleScript.xrStatusText.text).toContain(
+      'No clear entry position'
+    );
+    expect(consoleScript.xrStatusText.text).toContain('hidden');
+    expect(room.layout).toEqual(layout);
+    expect(renderer.xr.setReferenceSpace).not.toHaveBeenCalled();
+    tickXR();
+    expect(console.error).toHaveBeenCalledTimes(1);
+    await consoleScript.newEnvironment();
+    tickXR();
+    tickXR();
+    expect(room.visible).toBe(true);
+    expect(consoleScript.card.visible).toBe(true);
+    expect(element('error').hidden).toBe(true);
+    expect(room.canUndo).toBe(true);
+  });
+
+  it('reports native offset failures once rather than throwing out of the frame loop', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await mount();
+    beginXR();
+    const offset = vi
+      .spyOn(referenceSpace, 'getOffsetReferenceSpace')
+      .mockImplementation(() => {
+        throw new Error('Reference offset rejected.');
+      });
+    expect(() => tickXR()).not.toThrow();
+    tickXR();
+    expect(offset).toHaveBeenCalledTimes(1);
+    expect(element('error').textContent).toContain('Reference offset rejected');
+    expect(room.visible).toBe(false);
+    expect(consoleScript.card.visible).toBe(true);
+    consoleScript.onXRSessionEnded();
+    expect(room.visible).toBe(true);
+  });
+
+  it('does not clear an unrelated setup error after successful XR placement', async () => {
+    await mount();
+    consoleScript.setError('Gemini setup needs attention.');
+    beginXR();
+    tickXR();
+    tickXR();
+    expect(element('error').textContent).toBe('Gemini setup needs attention.');
+  });
+
+  it.each([false, true])(
+    'leaves room mode and layouts without virtual ground in their tracked space (virtual=%s)',
+    async (virtual) => {
+      await mount({virtual});
+      if (virtual) {
+        await room.applyLayout({title: 'No virtual ground', objects: []});
+      }
+      beginXR();
+      tickXR();
+      expect(renderer.xr.setReferenceSpace).not.toHaveBeenCalled();
+      expect(camera.position.toArray()).toEqual([0.3, 1.7, -0.4]);
+      expect(room.visible).toBe(true);
+      expect(consoleScript.card.visible).toBe(true);
+    }
+  );
 
   it('frames from the add-on bounds, which hold the ground but not the sky', async () => {
     await mount();
