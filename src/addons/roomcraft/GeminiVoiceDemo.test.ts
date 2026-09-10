@@ -293,7 +293,9 @@ describe('Bounded microphone lifecycle', () => {
     expect(stream.track.stop).toHaveBeenCalledTimes(1);
     expect(voice.state).toBe('transcribing');
     await vi.waitFor(() =>
-      expect(onTranscript).toHaveBeenCalledWith('Add a floor lamp.')
+      expect(onTranscript).toHaveBeenCalledWith('Add a floor lamp.', {
+        requiresReview: false,
+      })
     );
     expect(
       ai.model.ai.models.generateContent.mock.calls[0][0].contents[0].parts[0]
@@ -391,7 +393,9 @@ describe('Bounded microphone lifecycle', () => {
     failed();
     pending.resolve({text: '{"transcript":"Add a lamp."}'});
     await vi.waitFor(() =>
-      expect(onTranscript).toHaveBeenCalledWith('Add a lamp.')
+      expect(onTranscript).toHaveBeenCalledWith('Add a lamp.', {
+        requiresReview: false,
+      })
     );
     expect(ai.model.ai.models.generateContent).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
@@ -474,12 +478,19 @@ describe('Bounded microphone lifecycle', () => {
     expect(ai.model.ai.models.generateContent).not.toHaveBeenCalled();
   });
 
-  it('finishes at the recording time limit and clears its timers', async () => {
+  it('requires transcript review at the recording time limit and clears its timers', async () => {
     vi.useFakeTimers();
+    const response = Promise.withResolvers<{text: string}>();
+    ai.model.ai.models.generateContent.mockReturnValue(response.promise);
     await voice.start();
     TestRecorder.instances[0].data();
     await vi.advanceTimersByTimeAsync(VOICE_MAX_DURATION_MS);
+    voice.finish();
+    response.resolve({text: '{"transcript":"Add a floor lamp."}'});
     await vi.waitFor(() => expect(onTranscript).toHaveBeenCalledTimes(1));
+    expect(onTranscript).toHaveBeenCalledWith('Add a floor lamp.', {
+      requiresReview: true,
+    });
     expect(stream.track.stop).toHaveBeenCalledTimes(1);
     expect(voice.state).toBe('idle');
     expect(vi.getTimerCount()).toBe(0);

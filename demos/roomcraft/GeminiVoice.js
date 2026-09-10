@@ -291,7 +291,7 @@ export class GeminiVoiceInput {
         return;
       }
       operation.timer = setTimeout(() => {
-        if (this.operation === operation) this.finish();
+        if (this.operation === operation) this.finish({requiresReview: true});
       }, VOICE_MAX_DURATION_MS);
     } catch (error) {
       this.fail(operation, microphoneError(error));
@@ -300,9 +300,10 @@ export class GeminiVoiceInput {
     this.setState('recording');
   }
 
-  finish() {
+  finish({requiresReview = false} = {}) {
     const operation = this.operation;
     if (!operation || this.state !== 'recording') return;
+    operation.requiresReview = requiresReview;
     clearTimeout(operation.timer);
     this.setState('transcribing');
     operation.timer = setTimeout(
@@ -362,7 +363,7 @@ export class GeminiVoiceInput {
     this.operation = null;
     clearTimeout(operation.timer);
     this.setState('idle');
-    this.onTranscript(transcript);
+    this.onTranscript(transcript, {requiresReview: operation.requiresReview});
   }
 
   stopTracks(operation) {

@@ -218,7 +218,8 @@ export class RoomcraftConsole extends xb.Script {
     this.voice = new GeminiVoiceInput({
       getAI: () => xb.core.ai,
       onStateChange: (state) => this.updateVoiceState(state),
-      onTranscript: (transcript) => this.applyVoiceTranscript(transcript),
+      onTranscript: (transcript, options) =>
+        this.applyVoiceTranscript(transcript, options),
       onError: (error) => {
         if (this.disposed) return;
         this.voiceSubmissionPending = false;
@@ -1611,13 +1612,13 @@ export class RoomcraftConsole extends xb.Script {
       this.voiceSelection = this.room.selectedId;
       this.voiceSubmissionPending = true;
       this.setStatus(
-        'Transcribing with Gemini. Cancel is available before the spoken edit is submitted.'
+        'Transcribing with Gemini. Cancel discards the transcript.'
       );
     }
     this.refresh();
   }
 
-  applyVoiceTranscript(transcript) {
+  applyVoiceTranscript(transcript, {requiresReview = false} = {}) {
     if (
       this.disposed ||
       this.voice.state !== 'idle' ||
@@ -1637,6 +1638,12 @@ export class RoomcraftConsole extends xb.Script {
       return;
     }
     this.setPrompt(transcript);
+    if (requiresReview) {
+      this.setStatus(
+        `Recording reached the ${VOICE_MAX_DURATION_MS / 1000}-second limit. Review the transcript, then press Generate to apply it.`
+      );
+      return;
+    }
     void this.generate();
   }
 

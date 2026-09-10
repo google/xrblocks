@@ -37,7 +37,10 @@ vi.mock('../../../demos/roomcraft/GeminiVoice.js', () => {
     constructor(
       readonly callbacks: {
         onStateChange: (state: string) => void;
-        onTranscript: (transcript: string) => void;
+        onTranscript: (
+          transcript: string,
+          options: {requiresReview: boolean}
+        ) => void;
         onError: (error: Error) => void;
       }
     ) {}
@@ -53,9 +56,9 @@ vi.mock('../../../demos/roomcraft/GeminiVoice.js', () => {
       return true;
     });
     dispose = vi.fn(() => this.cancel());
-    complete(transcript: string) {
+    complete(transcript: string, options = {requiresReview: false}) {
       this.setState('idle');
-      this.callbacks.onTranscript(transcript);
+      this.callbacks.onTranscript(transcript, options);
     }
     fail(error: Error) {
       this.setState('idle');
@@ -541,6 +544,25 @@ describe('Roomcraft demo integration', () => {
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
     expect(speech.start).not.toHaveBeenCalled();
     expect(speech.stop).not.toHaveBeenCalled();
+  });
+
+  it('keeps time-limit transcripts for review until Generate is explicitly pressed', async () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
+    consoleScript.toggleListening();
+    consoleScript.voice.setState('transcribing');
+    consoleScript.voice.complete('Add a floor lamp.', {requiresReview: true});
+    expect(input().value).toBe('Add a floor lamp.');
+    expect(consoleScript.xrPromptText.text).toBe('Add a floor lamp.');
+    expect(consoleScript.xrStatusText.text).toContain('press Generate');
+    expect(request).not.toHaveBeenCalled();
+    expect(button('generate').disabled).toBe(false);
+    expect(consoleScript.voiceSubmissionPending).toBe(false);
+
+    button('generate').click();
+    await vi.waitFor(() =>
+      expect(request).toHaveBeenCalledExactlyOnceWith('Add a floor lamp.')
+    );
   });
 
   it('shows speech denial and provider failures on both desktop and XR surfaces', async () => {
