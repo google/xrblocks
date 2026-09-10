@@ -74,7 +74,7 @@ The miniature city fits on a 1.2-meter-wide model base rather than using room-si
 
 Press New design to empty the scene and work on one object at a time. The room stays empty until you ask for something, your camera is not moved, and Undo brings the previous scene back.
 
-Type an instruction such as "create a little robot" and press Generate, or press Talk and say one instruction. A new object is assembled from primitive parts, and the console then reports its part count so you can see it is one compound design rather than a catalog item.
+Type an instruction such as "create a little robot" and press Generate, or press Talk, say one instruction, and press Finish. A new object is assembled from primitive parts, and the console then reports its part count so you can see it is one compound design rather than a catalog item.
 
 The full-width prompt shows eight lines and can be resized vertically. Typing does not activate simulator keyboard navigation. Enter submits once, Shift+Enter adds a new line, and held-key repeats or IME composition confirmation do not submit extra requests.
 
@@ -84,9 +84,19 @@ Ask for movement with an instruction such as "make it wave", tune it with "make 
 
 Press Pause motion to freeze playback while you inspect or edit a design, and Resume motion to continue from where each part paused. Pausing is a viewing state rather than a scene edit: it changes no layout, history, selection, or placement, and it stays available while a request is running. The control is disabled only when nothing in the scene moves.
 
-Type an instruction such as "add a floor lamp beside the left chair" and press Generate to edit a room scene the same way. Speech submits only a final transcript, and the text field always stays usable. There is no automatic microphone and no request on load.
+Type an instruction such as "add a floor lamp beside the left chair" and press Generate to edit a room scene the same way. Voice submits only a completed Gemini transcript, and the text field always stays usable. There is no automatic microphone and no request on load.
 
-No voice means the browser does not expose speech recognition. Gemini scene generation still works with typed instructions; granting microphone permission does not add a missing browser API. The studio names this limitation and keeps Keyboard available.
+### Gemini-only voice
+
+Voice uses the same configured Gemini client and key as scene editing. No additional account or cloud provider is used, and Roomcraft does not start the browser's separate speech-recognition service, even when that API is available.
+
+Press Talk to request microphone permission and start one recording. Press Finish to stop the microphone, send the audio to Gemini for transcription, and submit the resulting instruction through the normal scene-editing flow. The same controls are available in the spatial studio. Each spoken edit uses a transcription request followed by the normal scene-generation request, so both count toward Gemini usage and quota.
+
+Recordings finish automatically after 30 seconds. The demo rejects recordings larger than 4 MiB and gives transcription a 60-second deadline. Cancel stops recording or aborts transcription and prevents a late result from applying an edit. Changing the draft cancels voice; changing the selected target or scene during transcription cancels it too. Leaving or hiding the page, ending or hiding XR, hiding the voice controls, and disposing the console also stop voice input. A partly obscured XR permission prompt does not by itself cancel microphone setup.
+
+Audio stays in page memory until it is sent or discarded. It is not saved to a file, browser storage, scene JSON, or application logs. Cancellation cannot recall audio already sent to Gemini. An empty or invalid transcript produces an error rather than an invented scene edit. Once the scene request has begun, use the normal Undo flow after it finishes.
+
+Microphone recording requires a supported browser on HTTPS or localhost and site microphone permission. The demo uses native MediaRecorder formats supported by Gemini, including WebM/Opus, Ogg, and audio-only MP4/M4A. It does not depend on `SpeechRecognition`, so absence of that API alone does not block Quest voice input. If capture is unavailable or permission is denied, the error is shown and Keyboard remains available.
 
 Pending operations show Working or Generating on the action button, with a gentle pulse in both interfaces and a spinner in the browser status. Reduced-motion preferences disable the animation without hiding the busy label. These indicate activity, not estimated completion percentages, and clear on either success or failure.
 
@@ -126,7 +136,7 @@ Press Connect Gemini to opt in before entering XR. The demo sets the Gemini resp
 
 A browser API key is for local prototyping only. In production, pass the add-on a `planner` callback that calls your own server proxy and keep the provider key there.
 
-Your instruction, the environment settings, the current scene's object names and transforms, landscape recipes, the part definitions of any compound designs, the selected ID, and the catalog descriptions are sent to the configured provider. Speech input uses the browser's speech recognition service, which may process audio remotely. The add-on sends no camera imagery, and this demo does not request physical camera capture.
+Your instruction, the environment settings, the current scene's object names and transforms, landscape recipes, the part definitions of any compound designs, the selected ID, and the catalog descriptions are sent to Gemini. Voice additionally sends the recorded audio to Gemini for transcription, using a separate response schema that does not change the scene planner's settings. The add-on sends no camera imagery, and microphone capture explicitly requests audio without video.
 
 ## Optional downloaded model
 
@@ -168,10 +178,10 @@ Surface placement uses the SDK's detected planes in WebXR and in the simulator, 
 
 The XR studio shows the selected object's name, part count, and how many of its parts move, offers the same Pause and Resume control, and shares errors and operation state with the desktop console. Typing uses the spatial keyboard rather than a native immersive text field. The full read-only part list with per-part motion, the JSON download, and Gemini key configuration remain in the desktop console.
 
-Immersive entry and Gemini scene generation have been used on Meta Quest. The newer clear-entry placement and studio refinements still need a follow-up headset run. Galaxy XR and XREAL Aura have not been tested; no cross-headset compatibility claim is made here.
+Immersive entry and Gemini scene generation have been used on Meta Quest. The newer clear-entry placement, studio refinements, and Gemini microphone flow still need a follow-up headset run. Galaxy XR and XREAL Aura have not been tested; no cross-headset compatibility claim is made here.
 
 ## SDK ownership
 
-Rendering, the frame loop, input, selection, manipulation, plane detection, speech recognition, and the AI facade all belong to XR Blocks. Part playback uses the SDK's injected frame timer, and the framing buttons reposition the existing desktop camera; the demo adds no renderer, animation loop, navigation system, raycaster, or bundled copy of three.js, and it adds no dependencies beyond the SDK's existing import map entries.
+Rendering, the frame loop, input, selection, manipulation, plane detection, and the AI facade all belong to XR Blocks. The demo's one-shot voice recorder uses native MediaRecorder and the SDK's configured Gemini client without taking over its live-audio capture subsystem. Part playback uses the SDK's injected frame timer, and the framing buttons reposition the existing desktop camera; the demo adds no renderer, animation loop, navigation system, raycaster, or bundled copy of three.js, and it adds no dependencies beyond the SDK's existing import map entries.
 
 The virtual world mode is ordinary SDK configuration. It sets the session mode to VR, points `options.simulator.environments` at this directory's empty manifest, keeps the SDK's normal headset entry and unsupported-browser simulator fallback, chooses the opening simulator camera position through `options.simulator.initialCameraPosition`, and enables renderer shadow maps for that mode only. Desktop Enter world writes one camera pose, while initial XR placement uses three.js's shared WebXR reference space. Neither adds a movement loop or a collision solver.
