@@ -63,7 +63,9 @@ let consoleScript: InstanceType<typeof RoomcraftConsole>;
 let speech: TestSpeech;
 let options: AIOptions;
 let camera: THREE.PerspectiveCamera;
-let renderer: {xr: {isPresenting: boolean}};
+let renderer: {
+  xr: {isPresenting: boolean; getReferenceSpace: () => object | null};
+};
 
 function element(id: string) {
   const node = document.getElementById(id);
@@ -163,7 +165,12 @@ beforeEach(async () => {
   camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.01, 100);
   camera.position.set(0, 1.5, 2);
   camera.lookAt(0, 0.5, -1);
-  renderer = {xr: {isPresenting: false}};
+  renderer = {
+    xr: {
+      isPresenting: false,
+      getReferenceSpace: vi.fn<() => object | null>(() => ({})),
+    },
+  };
   Object.assign(mockCore, {camera, renderer});
   Object.assign(mockCore.ai, {options});
   Object.assign(mockCore.sound, {speechRecognizer: speech});
@@ -920,6 +927,57 @@ describe('Roomcraft demo integration', () => {
   });
 
   describe('spatial authoring', () => {
+    it('waits for a tracked headset frame before placing or showing the studio', () => {
+      camera.position.set(0, 0, 0);
+      camera.rotation.set(0, 0, 0);
+      const before = room.layout;
+      const frame = {getViewerPose: vi.fn().mockReturnValue(null)};
+      consoleScript.onXRSessionStarted();
+      consoleScript.toggleKeyboard();
+      consoleScript.update();
+      consoleScript.update(0, frame);
+      expect(consoleScript.needsSpatialPlacement).toBe(true);
+      expect(consoleScript.card.visible).toBe(false);
+      expect(consoleScript.keyboardCard.visible).toBe(false);
+
+      camera.position.set(0.4, 1.65, -0.2);
+      frame.getViewerPose.mockReturnValue({});
+      consoleScript.update(16, frame);
+      expect(consoleScript.needsSpatialPlacement).toBe(false);
+      expect(consoleScript.card.visible).toBe(true);
+      expect(consoleScript.keyboardCard.visible).toBe(true);
+      expect(consoleScript.card.position.y).toBeCloseTo(1.9);
+      expect(room.layout).toEqual(before);
+    });
+
+    it('preserves a dragged studio until the next XR session', () => {
+      const frame = {getViewerPose: () => ({})};
+      consoleScript.onXRSessionStarted();
+      consoleScript.update(0, frame);
+      consoleScript.card.position.set(2, 1.4, -2);
+      camera.position.set(0, 1.8, 1);
+      camera.rotation.set(0, 0, 0);
+      consoleScript.update(16, frame);
+      expect(consoleScript.card.position.toArray()).toEqual([2, 1.4, -2]);
+
+      consoleScript.onXRSessionEnded();
+      consoleScript.onXRSessionStarted();
+      expect(consoleScript.card.visible).toBe(false);
+      consoleScript.update(32, frame);
+      expect(consoleScript.card.position.y).toBeCloseTo(2.05);
+      expect(consoleScript.card.visible).toBe(true);
+    });
+
+    it('cancels pending XR placement when the session ends before tracking starts', () => {
+      const place = vi.spyOn(consoleScript, 'positionSpatialStudio');
+      consoleScript.onXRSessionStarted();
+      consoleScript.onXRSessionEnded();
+      consoleScript.update(0, {getViewerPose: () => ({})});
+      expect(place).not.toHaveBeenCalled();
+      expect(consoleScript.card.visible).toBe(false);
+      expect(consoleScript.needsSpatialPlacement).toBe(false);
+    });
+
     it.each([
       {x: 0.55, z: 1, side: -1},
       {x: -0.55, z: 1, side: 1},
@@ -1131,7 +1189,7 @@ describe('Roomcraft demo integration', () => {
     it('keeps the studio available in XR and restores the desktop visibility choice', () => {
       expect(consoleScript.card.visible).toBe(false);
       consoleScript.onXRSessionStarted();
-      consoleScript.update();
+      consoleScript.update(0, {getViewerPose: () => ({})});
       consoleScript.toggleKeyboard();
       expect(consoleScript.card.visible).toBe(true);
       expect(consoleScript.keyboardCard.visible).toBe(true);

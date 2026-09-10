@@ -466,11 +466,18 @@ export class RoomcraftConsole extends xb.Script {
     this.listen(recognizer, 'end', () => this.stopListening());
   }
 
-  update() {
+  update(_time, frame) {
     if (this.disposed) return;
     if (this.needsSpatialPlacement) {
-      this.positionSpatialStudio();
-      this.needsSpatialPlacement = false;
+      const inXR = this.isInXR();
+      const referenceSpace = inXR
+        ? xb.core.renderer.xr.getReferenceSpace()
+        : null;
+      if (!inXR || (referenceSpace && frame?.getViewerPose(referenceSpace))) {
+        this.positionSpatialStudio();
+        this.needsSpatialPlacement = false;
+        this.refresh();
+      }
     }
     if (!this.boundSpeechRecognizer) this.bindSpeech();
     const available = !!xb.core.sound?.speechRecognizer?.recognition;
@@ -776,7 +783,7 @@ export class RoomcraftConsole extends xb.Script {
     this.xrActive = true;
     this.needsSpatialPlacement = true;
     this.dom.console?.classList.add('rc-hidden');
-    this.card.visible = true;
+    this.card.visible = false;
     if (!this.isGeminiReady()) {
       this.setStatus(
         'Example mode. To enable AI editing, exit XR and choose Connect Gemini in the browser panel.'
@@ -1526,7 +1533,9 @@ export class RoomcraftConsole extends xb.Script {
     if (!dom.console) return;
 
     dom.console.classList.toggle('rc-busy', busy);
-    const spatialVisible = this.isInXR() || this.spatialPreview;
+    const spatialVisible = this.isInXR()
+      ? !this.needsSpatialPlacement
+      : this.spatialPreview;
     this.card.visible = spatialVisible;
     this.keyboardCard.visible =
       spatialVisible && this.keyboardOpen && this.spatialTab === 'author';
