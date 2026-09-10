@@ -1656,18 +1656,26 @@ export class RoomcraftConsole extends xb.Script {
     this.xrMotion.disabled = dom.motion.disabled;
     this.xrMotion.label = motionPaused ? 'Resume' : 'Pause';
 
+    const voiceAvailable = !!xb.core.sound?.speechRecognizer?.recognition;
     const aiReady = this.isGeminiReady();
     this.xrProviderText.text = aiReady
       ? 'Gemini configured for this page.'
       : this.isInXR()
         ? 'Offline tools available. Exit XR to configure Gemini in the browser panel.'
         : 'Offline tools available. Connect Gemini in the browser panel to generate.';
+    if (!voiceAvailable) {
+      this.xrProviderText.text +=
+        ' Voice unavailable in this browser; use Keyboard.';
+    }
     dom.generate.disabled = busy || !dom.prompt.value.trim();
     dom.newDesign.disabled =
       busy ||
       (layout.objects.length === 0 &&
         (!this.virtual || layout.title === EMPTY_ENVIRONMENT_TITLE));
-    dom.mic.disabled = busy || !xb.core.sound?.speechRecognizer?.recognition;
+    dom.mic.disabled = busy || !voiceAvailable;
+    dom.mic.title = voiceAvailable
+      ? ''
+      : 'This browser does not provide speech recognition. Use Keyboard or type in the edit box.';
     dom.place.disabled =
       busy || !!layout.environment || layout.objects.length === 0;
     dom.place.title = layout.environment ? VIRTUAL_PLACEMENT_MESSAGE : '';
@@ -1685,7 +1693,7 @@ export class RoomcraftConsole extends xb.Script {
     dom.connect.textContent = aiReady ? 'Reconnect Gemini' : 'Connect Gemini';
     dom.mic.textContent = this.listening
       ? 'Stop'
-      : xb.core.sound?.speechRecognizer?.recognition
+      : voiceAvailable
         ? 'Talk'
         : 'No voice';
     this.xrTalk.disabled = dom.mic.disabled;

@@ -369,10 +369,21 @@ describe('Roomcraft demo integration', () => {
     consoleScript.bindSpeech();
     consoleScript.update();
     expect(element('mic').textContent).toBe('No voice');
+    expect(button('mic').title).toContain(
+      'does not provide speech recognition'
+    );
+    expect(consoleScript.xrProviderText.text).toContain(
+      'Voice unavailable in this browser; use Keyboard.'
+    );
+    expect(consoleScript.xrType.disabled).toBe(false);
     speech.recognition = {};
     consoleScript.update();
     consoleScript.bindSpeech();
     expect(element('mic').textContent).toBe('Talk');
+    expect(button('mic').title).toBe('');
+    expect(consoleScript.xrProviderText.text).not.toContain(
+      'Voice unavailable'
+    );
     options.gemini.apiKey = 'local-test-fixture';
     const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
     consoleScript.toggleListening();

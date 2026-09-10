@@ -82,6 +82,8 @@ Press Pause motion to freeze playback while you inspect or edit a design, and Re
 
 Type an instruction such as "add a floor lamp beside the left chair" and press Generate to edit a room scene the same way. Speech submits only a final transcript, and the text field always stays usable. There is no automatic microphone and no request on load.
 
+No voice means the browser does not expose speech recognition. Gemini scene generation still works with typed instructions; granting microphone permission does not add a missing browser API. The studio names this limitation and keeps Keyboard available.
+
 Click or pinch a scene object to select it, then say or type "make this blue" so the instruction has spatial context. Selected objects are shown by name and ID in the console, a compound design also shows its part count, which parts move and how, and a read-only list of part names and shapes, and any object can be chosen from the selection list. When one request adds exactly one object, that object is selected for you so the next "this" is unambiguous.
 
 Drag or pinch any object to move or scale it, including a compound design, which moves as one object rather than as loose parts. Those hand transforms survive later edits, because the add-on sends explicit per-object updates rather than rewriting the whole scene.
