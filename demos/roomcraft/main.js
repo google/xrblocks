@@ -262,7 +262,14 @@ export class RoomcraftConsole extends xb.Script {
       }
       this.refresh();
     });
-    this.listen(this.room, 'statuschange', () => this.refresh());
+    this.listen(this.room, 'statuschange', ({status}) => {
+      if (status === 'repairing') {
+        this.setStatus(
+          'The generated plan did not pass validation. Gemini is trying one correction; your current scene is unchanged.'
+        );
+      }
+      this.refresh();
+    });
     this.listen(this.room, 'motionstatechange', () => this.refresh());
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reducedMotion = reducedMotion.matches;
@@ -1956,11 +1963,13 @@ export class RoomcraftConsole extends xb.Script {
     dom.generate.textContent =
       voiceState === 'transcribing'
         ? 'Transcribing...'
-        : this.room.status === 'planning'
-          ? 'Generating...'
-          : busy
-            ? 'Working...'
-            : 'Generate';
+        : this.room.status === 'repairing'
+          ? 'Correcting...'
+          : this.room.status === 'planning'
+            ? 'Generating...'
+            : busy
+              ? 'Working...'
+              : 'Generate';
     dom.newDesign.disabled =
       busy ||
       (layout.objects.length === 0 &&
@@ -2166,6 +2175,7 @@ async function start() {
   const options = createRoomcraftOptions(virtual);
 
   const room = new Roomcraft({
+    repairInvalidPlans: true,
     catalog: [
       ...createDefaultCatalog(),
       createModelAsset({

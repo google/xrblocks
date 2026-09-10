@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import {SceneValidationError} from './SceneValidationError';
 import {
   motionAngleRange,
   readPartMotion,
@@ -63,12 +64,14 @@ function localMatrix(part: ScenePart) {
  */
 function resolveTransforms(parts: readonly ScenePart[]) {
   if (parts.length === 0) {
-    throw new Error('A procedural design needs at least one part.');
+    throw new SceneValidationError(
+      'A procedural design needs at least one part.'
+    );
   }
   const byId = new Map<string, ScenePart>();
   for (const part of parts) {
     if (byId.has(part.id)) {
-      throw new Error(`Duplicate procedural part "${part.id}".`);
+      throw new SceneValidationError(`Duplicate procedural part "${part.id}".`);
     }
     if (
       [...part.position, ...part.rotation, ...part.size].some(
@@ -76,7 +79,7 @@ function resolveTransforms(parts: readonly ScenePart[]) {
       ) ||
       part.size.some((value) => value <= 0)
     ) {
-      throw new Error(
+      throw new SceneValidationError(
         `Procedural part "${part.id}" needs a finite pose and positive size.`
       );
     }
@@ -90,19 +93,21 @@ function resolveTransforms(parts: readonly ScenePart[]) {
     let current = part;
     for (;;) {
       if (visited.has(current.id)) {
-        throw new Error(`Procedural part "${part.id}" is inside a part cycle.`);
+        throw new SceneValidationError(
+          `Procedural part "${part.id}" is inside a part cycle.`
+        );
       }
       visited.add(current.id);
       chain.push(current);
       if (chain.length > MAX_PART_DEPTH) {
-        throw new Error(
+        throw new SceneValidationError(
           `Procedural parts can nest at most ${MAX_PART_DEPTH} deep.`
         );
       }
       if (current.parent === null) break;
       const parent = byId.get(current.parent);
       if (!parent) {
-        throw new Error(
+        throw new SceneValidationError(
           `Procedural part "${current.id}" has a missing parent "${current.parent}".`
         );
       }

@@ -3,12 +3,15 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import {AI, World, disposeObjectTree, type InteractionSource} from 'xrblocks';
 
 import {Roomcraft} from './Roomcraft';
+import * as SceneProtocol from './ScenePlan';
+import {SceneValidationError} from './SceneValidationError';
 import type {
   SceneAsset,
   SceneCatalogObject,
   SceneLandscapeObject,
   SceneLayout,
   SceneObject,
+  ScenePlan,
   ScenePlanner,
   SceneProceduralObject,
   SceneRequest,
@@ -175,8 +178,12 @@ function deferred<T>() {
 
 const rooms: Roomcraft[] = [];
 
-function createRoom(catalog = [asset()], planner?: ScenePlanner) {
-  const room = new Roomcraft({catalog, planner});
+function createRoom(
+  catalog = [asset()],
+  planner?: ScenePlanner,
+  repairInvalidPlans = false
+) {
+  const room = new Roomcraft({catalog, planner, repairInvalidPlans});
   rooms.push(room);
   return room;
 }
@@ -184,6 +191,354 @@ function createRoom(catalog = [asset()], planner?: ScenePlanner) {
 afterEach(() => {
   rooms.splice(0).forEach((room) => room.dispose());
   vi.restoreAllMocks();
+});
+
+describe('Roomcraft plan correction', () => {
+  const malformed = '{"title":"Market","edits":[';
+  const oversized = {
+    title: 'Market',
+    edits: [
+      {
+        op: 'add',
+        object: design({
+          parts: [
+            {
+              ...design().parts[0],
+              id: 'west',
+              position: [-5, 0.5, 0],
+              size: [4, 1, 1],
+            },
+            {
+              ...design().parts[0],
+              id: 'east',
+              position: [5, 0.5, 0],
+              size: [4, 1, 1],
+            },
+          ],
+        }),
+      },
+    ],
+  };
+  const corrected: ScenePlan = {
+    title: 'Market',
+    environment: {
+      size: [20, 20],
+      groundColor: '#40513a',
+      timeOfDay: 'daylight',
+    },
+    edits: [
+      {op: 'remove', id: 'one'},
+      {op: 'add', object: design({id: 'west', position: [-5, 0, 0]})},
+      {op: 'add', object: design({id: 'east', position: [5, 0, 0]})},
+    ],
+  };
+
+  it.each([
+    {reason: 'incomplete or invalid JSON', invalid: malformed},
+    {reason: 'at most 10 meters across', invalid: oversized},
+    {
+      reason: 'Unknown catalog asset',
+      invalid: {
+        title: 'Market',
+        edits: [
+          {op: 'add', object: object({id: 'unknown', asset: 'invented'})},
+        ],
+      },
+    },
+  ])(
+    'corrects $reason before committing a whole world once',
+    async ({reason, invalid}) => {
+      const correction = deferred<unknown>();
+      const planner = vi
+        .fn<ScenePlanner>()
+        .mockResolvedValueOnce(invalid)
+        .mockReturnValueOnce(correction.promise);
+      const room = createRoom([asset()], planner, true);
+      const before = layout(object());
+      await room.applyLayout(before);
+      room.select('one');
+      const owner = room.getObject('one');
+      const changed = vi.fn();
+      room.addEventListener('change', changed);
+
+      const pending = room.request('Create a whole 20 meter market.');
+      await vi.waitFor(() => expect(planner).toHaveBeenCalledTimes(2));
+      expect(room.status).toBe('repairing');
+      expect(room.busy).toBe(true);
+      expect(room.layout).toEqual(before);
+      expect(room.getObject('one')).toBe(owner);
+      expect(room.selectedId).toBe('one');
+      expect(changed).not.toHaveBeenCalled();
+      expect(planner.mock.calls[0][0]).not.toHaveProperty('repair');
+      expect(planner.mock.calls[1][0]).toEqual({
+        ...planner.mock.calls[0][0],
+        repair: {reason: expect.stringContaining(reason)},
+      });
+
+      correction.resolve(corrected);
+      await pending;
+      expect(room.layout.environment?.size).toEqual([20, 20]);
+      expect(room.layout.objects.map((object) => object.id)).toEqual([
+        'west',
+        'east',
+      ]);
+      expect(changed).toHaveBeenCalledTimes(1);
+      await room.undo();
+      expect(room.layout).toEqual(before);
+      expect(room.status).toBe('ready');
+      expect(planner).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it('corrects an invalid combined part edit, not just invalid add objects', async () => {
+    const planner = vi
+      .fn<ScenePlanner>()
+      .mockResolvedValueOnce({
+        title: 'Studio',
+        edits: [
+          {
+            op: 'update',
+            id: 'robot',
+            changes: {},
+            partEdits: [
+              {op: 'update', id: 'body', changes: {position: [5, 0.5, 0]}},
+              {op: 'update', id: 'arm', changes: {position: [5, 0, 0]}},
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        title: 'Studio',
+        edits: [
+          {
+            op: 'update',
+            id: 'robot',
+            changes: {},
+            partEdits: [
+              {op: 'update', id: 'arm', changes: {position: [0.5, 0, 0]}},
+            ],
+          },
+        ],
+      });
+    const room = createRoom([], planner, true);
+    await room.applyLayout(layout(design()));
+    await room.request('Extend the arm.');
+    expect(planner).toHaveBeenCalledTimes(2);
+    expect(planner.mock.calls[1][0].repair?.reason).toContain(
+      'Procedural geometry'
+    );
+    expect(room.layout.objects[0].parts![1].position).toEqual([0.5, 0, 0]);
+  });
+
+  it.each([false, true])(
+    'bounds correction attempts and preserves a moving design and redo (enabled=%s)',
+    async (enabled) => {
+      const planner = vi.fn<ScenePlanner>().mockResolvedValue(malformed);
+      const room = createRoom([], planner, enabled);
+      motionClock(room);
+      await room.applyLayout(layout(movingDesign()));
+      await room.applyPlan({
+        title: 'Studio',
+        edits: [{op: 'update', id: 'robot', changes: {color: '#2244aa'}}],
+      });
+      await room.undo();
+      room.select('robot');
+      const before = room.layout;
+      const owner = room.getObject('robot')!;
+      const arm = owner.getObjectByName('arm')!;
+      const rotation = arm.quaternion.clone();
+      await expect(room.request('Add a market')).rejects.toThrow(
+        'invalid JSON'
+      );
+      expect(planner).toHaveBeenCalledTimes(enabled ? 2 : 1);
+      expect(room.layout).toEqual(before);
+      expect(room.getObject('robot')).toBe(owner);
+      expect(room.selectedId).toBe('robot');
+      expect(room.canRedo).toBe(true);
+      expect(room.busy).toBe(false);
+      room.update();
+      expect(arm.quaternion.angleTo(rotation)).toBeGreaterThan(0.1);
+    }
+  );
+
+  it('keeps correction context detached from mutations made by a custom planner', async () => {
+    const planner = vi
+      .fn<ScenePlanner>()
+      .mockImplementationOnce(async (request) => {
+        request.scene.objects[0].position[0] = 9;
+        request.prompt = 'Changed by the planner';
+        request.catalog[0].description = 'Changed catalog';
+        return malformed;
+      })
+      .mockResolvedValueOnce({title: 'Studio', edits: []});
+    const room = createRoom([asset()], planner, true);
+    const before = layout(object());
+    await room.applyLayout(before);
+    await room.request('Keep the scene.');
+    expect(planner.mock.calls[1][0].scene).toEqual(before);
+    expect(planner.mock.calls[1][0].prompt).toBe('Keep the scene.');
+    expect(planner.mock.calls[1][0].catalog[0].description).toBe('Test box');
+  });
+
+  it.each([false, true])(
+    'does not retry provider errors (during correction=%s)',
+    async (repairing) => {
+      const planner = vi.fn<ScenePlanner>();
+      if (repairing) planner.mockResolvedValueOnce(malformed);
+      planner.mockRejectedValueOnce(new Error('Quota exceeded'));
+      const room = createRoom([asset()], planner, true);
+      await expect(room.request('Build a market')).rejects.toThrow(
+        'Quota exceeded'
+      );
+      expect(planner).toHaveBeenCalledTimes(repairing ? 2 : 1);
+      expect(room.layout.objects).toEqual([]);
+      expect(room.busy).toBe(false);
+    }
+  );
+
+  it('does not retry explicit imports or asset-loading failures', async () => {
+    const planner = vi.fn<ScenePlanner>().mockResolvedValue({
+      title: 'Studio',
+      edits: [{op: 'add', object: object()}],
+    });
+    const broken = asset({
+      create: () => {
+        throw new Error('Download failed');
+      },
+    });
+    const room = createRoom([broken], planner, true);
+    await expect(room.applyLayout(malformed)).rejects.toThrow('invalid JSON');
+    await expect(room.applyPlan(oversized)).rejects.toThrow(
+      'Procedural geometry'
+    );
+    expect(planner).not.toHaveBeenCalled();
+    await expect(room.request('Add a box')).rejects.toThrow('Download failed');
+    expect(planner).toHaveBeenCalledTimes(1);
+    expect(room.layout.objects).toEqual([]);
+  });
+
+  it.each([false, true])(
+    'does not correct stale plans or overwrite hand edits (during correction=%s)',
+    async (repairing) => {
+      const response = deferred<unknown>();
+      const planner = vi.fn<ScenePlanner>();
+      if (repairing) planner.mockResolvedValueOnce(malformed);
+      planner.mockReturnValue(response.promise);
+      const room = createRoom([asset()], planner, true);
+      await room.applyLayout(layout(object()));
+      const pending = room.request('Move it right.');
+      await vi.waitFor(() =>
+        expect(planner).toHaveBeenCalledTimes(repairing ? 2 : 1)
+      );
+      room.getObject('one')!.position.x = 1;
+      response.resolve({
+        title: 'Studio',
+        edits: [{op: 'update', id: 'one', changes: {position: [2, 0, 0]}}],
+      });
+      await expect(pending).rejects.toThrow('changed while planning');
+      expect(planner).toHaveBeenCalledTimes(repairing ? 2 : 1);
+      expect(room.getObject('one')!.position.x).toBe(1);
+      expect(room.busy).toBe(false);
+    }
+  );
+
+  it.each([false, true])(
+    'ignores responses after disposal (during correction=%s)',
+    async (repairing) => {
+      const response = deferred<unknown>();
+      const planner = vi.fn<ScenePlanner>();
+      if (repairing) planner.mockResolvedValueOnce(malformed);
+      planner.mockReturnValue(response.promise);
+      const room = createRoom([asset()], planner, true);
+      const pending = room.request('Build a market.');
+      await vi.waitFor(() =>
+        expect(planner).toHaveBeenCalledTimes(repairing ? 2 : 1)
+      );
+      room.dispose();
+      response.resolve(malformed);
+      await expect(pending).rejects.toThrow('disposed');
+      expect(planner).toHaveBeenCalledTimes(repairing ? 2 : 1);
+      expect(room.children).toHaveLength(0);
+    }
+  );
+
+  it('sends correction feedback through the existing AI facade', async () => {
+    const room = createRoom([asset()], undefined, true);
+    const ai = new AI();
+    const query = vi
+      .spyOn(ai, 'query')
+      .mockResolvedValueOnce({text: malformed})
+      .mockResolvedValueOnce({text: '{"title":"Studio","edits":[]}'});
+    room.init({ai, world: new World(), camera: new THREE.PerspectiveCamera()});
+    await room.request('Build a market.');
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1][0]).toEqual({
+      prompt: expect.stringContaining('"repair":{"reason":'),
+    });
+    expect(query.mock.calls[1][0]).toEqual({
+      prompt: expect.stringContaining('incomplete or invalid JSON'),
+    });
+  });
+
+  it('does not relax geometry bounds when the correction is still oversized', async () => {
+    const planner = vi.fn<ScenePlanner>().mockResolvedValue(oversized);
+    const room = createRoom([], planner, true);
+    await expect(room.request('Create a large market.')).rejects.toThrow(
+      'The corrected scene plan is still invalid. Procedural geometry'
+    );
+    expect(planner).toHaveBeenCalledTimes(2);
+    expect(room.layout.objects).toEqual([]);
+    expect(room.canUndo).toBe(false);
+  });
+
+  it('does not retry unexpected validator exceptions or planner-thrown validation errors', async () => {
+    const planner = vi
+      .fn<ScenePlanner>()
+      .mockRejectedValueOnce(
+        new SceneValidationError('Remote validation failed')
+      )
+      .mockResolvedValueOnce({title: 'Studio', edits: []});
+    const room = createRoom([], planner, true);
+    await expect(room.request('Create a market')).rejects.toThrow(
+      'Remote validation'
+    );
+    expect(planner).toHaveBeenCalledTimes(1);
+    vi.spyOn(SceneProtocol, 'readScenePlan').mockImplementation(() => {
+      throw new TypeError('Unexpected validator failure');
+    });
+    await expect(room.request('Create a market')).rejects.toThrow(TypeError);
+    expect(planner).toHaveBeenCalledTimes(2);
+    expect(room.busy).toBe(false);
+  });
+
+  it('does not start a correction if a status observer disposes the room', async () => {
+    const planner = vi.fn<ScenePlanner>().mockResolvedValue(malformed);
+    const room = createRoom([], planner, true);
+    room.addEventListener('statuschange', ({status}) => {
+      if (status === 'repairing') room.dispose();
+    });
+    await expect(room.request('Create a market')).rejects.toThrow('disposed');
+    expect(planner).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds validation feedback without including the rejected response', async () => {
+    const planner = vi
+      .fn<ScenePlanner>()
+      .mockResolvedValueOnce({['x'.repeat(3000)]: 'Rejected response contents'})
+      .mockResolvedValueOnce({title: 'Studio', edits: []});
+    const room = createRoom([], planner, true);
+    await room.request('Create a market');
+    const retry = planner.mock.calls[1][0];
+    expect(retry.repair?.reason).toHaveLength(1000);
+    expect(JSON.stringify(retry)).not.toContain('Rejected response contents');
+  });
+
+  it('rejects non-boolean correction settings rather than enabling extra requests', () => {
+    // @ts-expect-error Exercise invalid JavaScript configuration.
+    expect(() => new Roomcraft({repairInvalidPlans: 'true'})).toThrow(
+      'boolean'
+    );
+  });
 });
 
 describe('Roomcraft virtual environments', () => {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import {SceneValidationError} from './SceneValidationError';
 import {
   MAX_MOTION_AMPLITUDE,
   MAX_MOTION_PERIOD,
@@ -54,7 +55,7 @@ interface MotionTrack {
 }
 
 function fail(id: string, reason: string): never {
-  throw new Error(`Procedural part "${id}" has ${reason}.`);
+  throw new SceneValidationError(`Procedural part "${id}" has ${reason}.`);
 }
 
 function bounded(value: unknown, low: number, high: number) {

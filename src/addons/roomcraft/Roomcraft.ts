@@ -26,6 +26,7 @@ import {
   getProceduralBounds,
 } from './ProceduralGeometry';
 import {ProceduralMotionPlayer} from './ProceduralMotion';
+import {SceneValidationError} from './SceneValidationError';
 import {createLandscapeContent, getLandscapeBounds} from './LandscapeGeometry';
 import {
   createEnvironmentContent,
@@ -42,6 +43,7 @@ import type {
   SceneLayout,
   SceneObject,
   ScenePlanner,
+  SceneRequest,
 } from './SceneTypes';
 
 interface SceneEntity {
@@ -133,6 +135,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private readonly entities = new Map<string, SceneEntity>();
   private readonly ownerIds = new WeakMap<THREE.Object3D, string>();
   private readonly planner?: ScenePlanner;
+  private readonly repairInvalidPlans: boolean;
   private readonly history: SceneLayout[] = [];
   private readonly future: SceneLayout[] = [];
   private redoBase?: string;
@@ -152,6 +155,13 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     super();
     this.name = 'Roomcraft';
     this.planner = options.planner;
+    if (
+      options.repairInvalidPlans !== undefined &&
+      typeof options.repairInvalidPlans !== 'boolean'
+    ) {
+      throw new Error('repairInvalidPlans must be a boolean.');
+    }
+    this.repairInvalidPlans = options.repairInvalidPlans ?? false;
     const catalog = options.catalog ?? createDefaultCatalog();
     if (!Array.isArray(catalog) || catalog.length > 128) {
       throw new Error(
@@ -366,35 +376,67 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         throw new Error('Describe the scene edit using 1 to 4000 characters.');
       }
       const before = this.layout;
-      const request = {
+      const request: SceneRequest = {
         prompt: prompt.trim(),
         scene: this.layout,
         selectedId: this.selection,
         catalog: this.catalog,
       };
-      let response: unknown;
-      if (this.planner) {
-        response = await this.planner(request);
-      } else {
-        if (!this.ai) {
-          throw new Error(
-            'Initialize XR Blocks with AI, or provide a Roomcraft planner.'
-          );
+      const response = await this.requestPlan(request);
+      this.assertAlive();
+      const validate = (value: unknown) => {
+        const plan = readScenePlan(value, request.catalog);
+        const current = this.layout;
+        assertPlanFresh(plan, before, current);
+        return applyScenePlan(plan, current, request.catalog);
+      };
+      let layout: SceneLayout;
+      try {
+        layout = validate(response);
+      } catch (error) {
+        if (
+          !this.repairInvalidPlans ||
+          !(error instanceof SceneValidationError)
+        ) {
+          throw error;
         }
-        const result = await this.ai.query({prompt: buildScenePrompt(request)});
-        response = typeof result === 'string' ? result : result?.text;
-        if (typeof response !== 'string' || !response.trim()) {
-          throw new Error('AI returned no scene plan. Your scene was kept.');
+        this.setStatus('repairing');
+        const corrected = await this.requestPlan({
+          ...request,
+          repair: {reason: error.message.slice(0, 1000)},
+        });
+        this.assertAlive();
+        try {
+          layout = validate(corrected);
+        } catch (error) {
+          if (error instanceof SceneValidationError) {
+            throw new SceneValidationError(
+              `The corrected scene plan is still invalid. ${error.message}`,
+              {cause: error}
+            );
+          }
+          throw error;
         }
       }
-      this.assertAlive();
-      const plan = readScenePlan(response, this.catalog);
-      const current = this.layout;
-      assertPlanFresh(plan, before, current);
-      const layout = applyScenePlan(plan, current, this.catalog);
       this.setStatus('loading');
       return this.commitLayout(layout);
     });
+  }
+
+  private async requestPlan(request: SceneRequest): Promise<unknown> {
+    this.assertAlive();
+    if (this.planner) return this.planner(structuredClone(request));
+    if (!this.ai) {
+      throw new Error(
+        'Initialize XR Blocks with AI, or provide a Roomcraft planner.'
+      );
+    }
+    const result = await this.ai.query({prompt: buildScenePrompt(request)});
+    const response = typeof result === 'string' ? result : result?.text;
+    if (typeof response !== 'string' || !response.trim()) {
+      throw new Error('AI returned no scene plan. Your scene was kept.');
+    }
+    return response;
   }
 
   /** Undo the last successful scene edit, including explicit scene replacements. */

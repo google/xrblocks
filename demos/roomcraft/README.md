@@ -90,7 +90,7 @@ Type an instruction such as "add a floor lamp beside the left chair" and press G
 
 Voice uses the same configured Gemini client and key as scene editing. No additional account or cloud provider is used, and Roomcraft does not start the browser's separate speech-recognition service, even when that API is available.
 
-Press Talk to request microphone permission and start one recording. Press Finish to stop the microphone, send the audio to Gemini for transcription, and submit the resulting instruction through the normal scene-editing flow. The same controls are available in the spatial studio. Each spoken edit uses a transcription request followed by the normal scene-generation request, so both count toward Gemini usage and quota.
+Press Talk to request microphone permission and start one recording. Press Finish to stop the microphone, send the audio to Gemini for transcription, and submit the resulting instruction through the normal scene-editing flow. The same controls are available in the spatial studio. Each spoken edit uses a transcription request followed by the normal scene-generation request, so both count toward Gemini usage and quota. An invalid scene plan can add one correction request.
 
 If the text field already has a draft, Talk first asks you to choose Replace draft or Keep draft. No microphone starts until you choose Replace draft. The old text is kept until transcription succeeds; cancellation or an error leaves it unchanged. Changing the text before confirming requires a new replacement decision. This applies to both the browser panel and spatial studio, including a transcript left for review after the recording limit.
 
@@ -158,7 +158,7 @@ Parts can swing or spin around authored pivots, which is bounded rigid-part moti
 
 Pausing playback is inspection only and is never recorded in the layout, history, or an export. Undo and redo restore motion definitions rather than a recording of elapsed time. See [Articulated parts and playback](../../src/addons/roomcraft/README.md#articulated-parts-and-playback) in the add-on README for the exact motion contract.
 
-A design holds at most 48 parts, a scene holds at most 384 parts across all designs, and parts nest at most 8 levels deep. Each part measures 0.01 to 5 meters per axis and its center stays within +/-5 meters per axis of its parent. A whole design must stay within +/-10 meters of its own origin and measure no more than 10 meters across on any axis, including everywhere its moving parts can reach.
+A design holds at most 48 parts, a scene holds at most 384 parts across all designs, and parts nest at most 8 levels deep. Each part measures 0.01 to 5 meters per axis and its center stays within +/-5 meters per axis of its parent. A whole design must stay within +/-10 meters of its own origin and measure no more than 10 meters across on any axis, including everywhere its moving parts can reach. This is a per-object limit, not the world size: a larger setting uses separate compact objects positioned across its ground, along with landscape recipes. Reducing an object's scale does not relax its authored part bounds.
 
 A scene holds at most 48 objects, positions stay within 10 meters of the scene origin, and scale multipliers run from 0.05 to 5.
 
@@ -172,7 +172,7 @@ A ground measures 4 to 20 meters per side. A planting holds 1 to 128 specimens a
 
 The environment's own sky, ground, and lights replace the demo's fallback lighting while an environment is active, and the fallback returns when there is none.
 
-Quality depends on the model and the prompt. A request can return an awkward design, and there is no built-in robot fallback: a failed or rejected plan leaves your scene exactly as it was. Incomplete or invalid JSON is rejected as a whole, with a suggestion to retry a smaller edit rather than applying a partial design.
+Quality depends on the model and the prompt. If a generated plan fails local validation, the demo shows Correcting and asks Gemini once more using the original request and bounded validation feedback. This handles malformed JSON and out-of-bounds designs without relaxing the limits, substituting a canned scene, or applying a partial result. The current world remains in place until a whole valid plan is ready, and success creates one undoable change. The correction adds at most one scene-planning request; if it also fails, the error is shown and your scene and draft are kept. Network, quota, loading, and concurrent-edit failures are not automatically retried. Multi-batch world generation is not implemented.
 
 Only one operation runs at a time. Invalid plans, provider failures, and asset load errors leave the current scene intact and surface a message in the console.
 

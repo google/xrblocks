@@ -3,6 +3,8 @@ import {readFileSync} from 'node:fs';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {Roomcraft} from './Roomcraft';
+import {AI} from '../../ai/AI';
+import {World} from '../../world/World';
 import {AIOptions} from '../../ai/AIOptions';
 import {Gemini} from '../../ai/Gemini';
 import type {SceneLayout} from './SceneTypes';
@@ -229,7 +231,7 @@ beforeEach(async () => {
   mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
   mockCore.ai.isAvailable.mockReturnValue(true);
   mockCore.ai.initializeModel.mockResolvedValue(undefined);
-  room = new Roomcraft();
+  room = new Roomcraft({repairInvalidPlans: true});
   consoleScript = new RoomcraftConsole(room);
   consoleScript.init();
   await consoleScript.start();
@@ -244,6 +246,47 @@ afterEach(() => {
 });
 
 describe('Roomcraft demo integration', () => {
+  it.each([false, true])(
+    'shows one correction on both surfaces without replacing the current world (fails=%s)',
+    async (fails) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      options.gemini.apiKey = 'local-test-fixture';
+      const correction = Promise.withResolvers<{text: string}>();
+      const ai = new AI();
+      const query = vi
+        .spyOn(ai, 'query')
+        .mockResolvedValueOnce({text: '{"title":"Market","edits":['})
+        .mockReturnValueOnce(correction.promise);
+      room.init({ai, world: new World(), camera});
+      const before = room.layout;
+      consoleScript.setPrompt('Create a market.');
+      const pending = consoleScript.generate();
+      await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(2));
+      expect(button('generate').textContent).toBe('Correcting...');
+      expect(button('generate').disabled).toBe(true);
+      expect(consoleScript.xrGenerate.label).toBe('Correcting...');
+      expect(consoleScript.xrStatusText.text).toContain(
+        'trying one correction'
+      );
+      expect(room.layout).toEqual(before);
+      correction.resolve({
+        text: fails ? '{"title":' : '{"title":"Market","edits":[]}',
+      });
+      await pending;
+      expect(button('generate').textContent).toBe('Generate');
+      expect(consoleScript.isBusy()).toBe(false);
+      if (fails) {
+        expect(input().value).toBe('Create a market.');
+        expect(room.layout).toEqual(before);
+        expect(consoleScript.xrStatusText.text).toContain(
+          'corrected scene plan is still invalid'
+        );
+      } else {
+        expect(room.layout.title).toBe('Market');
+      }
+    }
+  );
+
   it('plays one quiet click for desktop and spatial buttons, including keyboard keys', () => {
     const play = mockCore.sound.soundSynthesizer.playTone;
     expect(play).not.toHaveBeenCalled();

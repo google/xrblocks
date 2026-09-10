@@ -298,5 +298,24 @@ describe('incremental scene edits', () => {
     expect(prompt).toContain('Never recreate or repeat untouched objects');
     expect(prompt).toContain('at most 48 objects');
     expect(prompt).toContain('not a room scan');
+    expect(prompt).toContain("EACH OBJECT'S local geometry");
+    expect(prompt).toContain('not the whole world');
+    expect(prompt).toContain('reducing object.scale does not relax');
+    expect(prompt).not.toContain('single correction attempt');
+  });
+
+  it('teaches one complete correction without shrinking the requested world', () => {
+    const request = {
+      prompt: 'Build a 20 meter market',
+      scene: scene(),
+      selectedId: null,
+      catalog,
+      repair: {reason: 'Procedural geometry exceeds its allowed bounds.'},
+    };
+    const prompt = buildScenePrompt(request);
+    expect(prompt).toContain(JSON.stringify(request));
+    expect(prompt).toContain('single correction attempt');
+    expect(prompt).toContain('Return a complete compact JSON plan');
+    expect(prompt).toContain('Preserve the requested world size and theme');
   });
 });

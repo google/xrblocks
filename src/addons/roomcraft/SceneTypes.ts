@@ -234,6 +234,8 @@ export interface SceneRequest {
   scene: SceneLayout;
   selectedId: string | null;
   catalog: SceneAssetDescription[];
+  /** Local validation feedback, present only on the single correction attempt. */
+  repair?: {reason: string};
 }
 
 /**
@@ -247,9 +249,19 @@ export interface RoomcraftOptions {
   catalog?: SceneAsset[];
   /** Defaults to the AI subsystem configured in XR Blocks. */
   planner?: ScenePlanner;
+  /**
+   * Ask the planner once more when its plan fails local data validation.
+   * Defaults to false. Provider, conflict, and asset-loading failures are not retried.
+   */
+  repairInvalidPlans?: boolean;
 }
 
-export type RoomcraftStatus = 'ready' | 'planning' | 'loading' | 'placing';
+export type RoomcraftStatus =
+  | 'ready'
+  | 'planning'
+  | 'repairing'
+  | 'loading'
+  | 'placing';
 
 export interface RoomcraftEventMap extends THREE.Object3DEventMap {
   change: {layout: SceneLayout};

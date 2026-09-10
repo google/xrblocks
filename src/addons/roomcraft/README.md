@@ -38,7 +38,13 @@ console.log(placed ? 'Placed on a detected surface.' : 'Still in preview.');
 
 Initialization makes no model requests. The default planner uses the configured `xb.AI` facade. `SCENE_PLAN_SCHEMA` is an optional Gemini response schema; all plans are validated locally regardless of provider settings.
 
-Catch rejected operations in the application's UI and show their errors. Failed validation, provider requests, or asset loads leave the previous scene intact. Only one operation can run at a time; `room.busy` and `statuschange` expose planning, loading, and placement state.
+Catch rejected operations in the application's UI and show their errors. Failed validation, provider requests, or asset loads leave the previous scene intact. Only one operation can run at a time; `room.busy` and `statuschange` expose planning, optional correction, loading, and placement state.
+
+### Invalid-plan correction
+
+Set `new Roomcraft({repairInvalidPlans: true})` to allow one additional planner request when generated data fails local validation, including malformed JSON, object bounds, invalid references, or part edits that would create an invalid design. This is disabled by default and enabled in the interactive demo. During the correction, `status` is `repairing` and `busy` stays true. The planner receives the original detached scene request plus `repair: {reason}`, with the validation feedback bounded to 1000 characters. The rejected response is not included, and the configured AI facade remains the default provider path.
+
+Nothing is partially applied or silently resized. A valid corrected plan is committed as one undoable change; if correction also fails, the current scene and history are kept. There is at most one additional billable planner request. Provider failures, empty responses, stale edits, disposal, and asset-loading failures do not trigger correction. Explicit `applyPlan` and `applyLayout` calls are never sent to AI for repair. This is whole-plan correction, not multi-batch generation of an unlimited world.
 
 ## Live editing and selection
 
@@ -395,6 +401,6 @@ const room = new Roomcraft({
 
 The server can use the exported `buildScenePrompt(request)` and `SCENE_PLAN_SCHEMA` with its configured provider. Authenticate and authorize requests on that server; do not place a long-lived provider key in a shipped browser application.
 
-The add-on sends the instruction, environment settings, generated-scene transforms and names, procedural part and landscape definitions, selection, and catalog descriptions to the configured planner. It does not capture camera images, room meshes, or microphone audio. The demo's optional speech input uses the browser's speech-recognition service, which may process audio remotely, before submitting a final transcript as an ordinary scene request.
+The add-on sends the instruction, environment settings, generated-scene transforms and names, procedural part and landscape definitions, selection, and catalog descriptions to the configured planner. With correction enabled, a second request may also contain the local validation feedback. It does not capture camera images, room meshes, or microphone audio. The demo's optional voice input sends a bounded recording to its configured Gemini client for transcription, then submits the transcript as an ordinary scene request; it does not use a separate browser-managed speech-recognition provider.
 
 Remove event listeners owned by your application and call `room.dispose()` when destroying a standalone scene. Disposal releases owned GPU resources and prevents pending provider or loading results from reattaching content.
