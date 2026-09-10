@@ -124,6 +124,45 @@
   border-left-color: var(--rc-coral-strong);
 }
 
+.rc-console.rc-busy .rc-status::before {
+  content: '';
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 8px;
+  border: 2px solid var(--rc-ink-faint);
+  border-top-color: var(--rc-coral-strong);
+  border-radius: 50%;
+  animation: rc-working-spin 1s linear infinite;
+}
+
+.rc-console.rc-busy #generate {
+  animation: rc-working-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes rc-working-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rc-working-pulse {
+  0%,
+  100% {
+    opacity: 0.65;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-console.rc-busy .rc-status::before,
+  .rc-console.rc-busy #generate {
+    animation: none;
+  }
+}
+
 .rc-error {
   margin: 0;
   padding: 10px 14px;

@@ -191,6 +191,56 @@ afterEach(() => {
 });
 
 describe('Roomcraft demo integration', () => {
+  it('shows pending operations immediately in both interfaces and clears them on completion', async () => {
+    const pending = Promise.withResolvers<void>();
+    const operation = consoleScript.run(
+      'Loading a scene.',
+      () => pending.promise
+    );
+    expect(element('console').getAttribute('aria-busy')).toBe('true');
+    expect(button('generate').textContent).toBe('Working...');
+    expect(consoleScript.xrGenerate.label).toBe('Working...');
+    expect(consoleScript.xrGenerate.disabled).toBe(true);
+    consoleScript.update(0);
+    const firstOpacity = consoleScript.xrGenerate.style.opacity;
+    consoleScript.update(400);
+    expect(consoleScript.xrGenerate.style.opacity).not.toBe(firstOpacity);
+
+    const duplicate = vi.fn();
+    await consoleScript.run('Duplicate.', duplicate);
+    expect(duplicate).not.toHaveBeenCalled();
+    pending.resolve();
+    await operation;
+    expect(element('console').getAttribute('aria-busy')).toBe('false');
+    expect(consoleScript.xrGenerate.label).toBe('Generate');
+    expect(consoleScript.xrGenerate.style.opacity).toBe(1);
+  });
+
+  it('keeps an explicit busy label without pulsing when reduced motion is requested', async () => {
+    const pending = Promise.withResolvers<void>();
+    const operation = consoleScript.run(
+      'Loading a scene.',
+      () => pending.promise
+    );
+    consoleScript.reducedMotion = true;
+    consoleScript.update(400);
+    expect(consoleScript.xrGenerate.style.opacity).toBe(1);
+    expect(consoleScript.xrGenerate.label).toBe('Working...');
+    pending.resolve();
+    await operation;
+  });
+
+  it('clears the loading indicator after a failed operation', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await consoleScript.run('Loading a scene.', async () => {
+      throw new Error('Scene loading failed.');
+    });
+    expect(element('console').getAttribute('aria-busy')).toBe('false');
+    expect(consoleScript.xrGenerate.label).toBe('Generate');
+    expect(consoleScript.isBusy()).toBe(false);
+    expect(element('error').textContent).toContain('Scene loading failed.');
+  });
+
   it('starts with real geometry, no provider call, and no microphone activation', () => {
     expect(room.layout.title).toBe('Reading nook');
     expect(room.layout.objects).toHaveLength(11);

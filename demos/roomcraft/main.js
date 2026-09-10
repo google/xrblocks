@@ -198,6 +198,8 @@ export class RoomcraftConsole extends xb.Script {
     this.cleanups = [];
     this.listening = false;
     this.connecting = false;
+    this.running = false;
+    this.reducedMotion = false;
     this.xrActive = false;
     this.lastXRState = false;
     this.spatialPreview = false;
@@ -226,6 +228,11 @@ export class RoomcraftConsole extends xb.Script {
     this.listen(this.room, 'selectionchange', () => this.refresh());
     this.listen(this.room, 'statuschange', () => this.refresh());
     this.listen(this.room, 'motionstatechange', () => this.refresh());
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    this.reducedMotion = reducedMotion.matches;
+    this.listen(reducedMotion, 'change', (event) => {
+      this.reducedMotion = event.matches;
+    });
     const narrowScreen = window.matchMedia('(max-width: 980px)');
     this.listen(narrowScreen, 'change', (event) =>
       this.toggleConsole(!event.matches)
@@ -467,7 +474,7 @@ export class RoomcraftConsole extends xb.Script {
     this.listen(recognizer, 'end', () => this.stopListening());
   }
 
-  update(_time, frame) {
+  update(time = 0, frame) {
     if (this.disposed) return;
     const inXR = this.isInXR();
     if (inXR !== this.lastXRState) {
@@ -489,6 +496,13 @@ export class RoomcraftConsole extends xb.Script {
     if (available !== this.speechAvailable) {
       this.speechAvailable = available;
       this.refresh();
+    }
+    const opacity =
+      this.isBusy() && !this.reducedMotion
+        ? 0.65 + 0.35 * ((Math.sin(time / 400) + 1) / 2)
+        : 1;
+    if (this.xrGenerate.style.opacity !== opacity) {
+      this.xrGenerate.style.opacity = opacity;
     }
   }
 
@@ -1169,7 +1183,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   cycleSelection(direction) {
-    if (this.room.busy || this.connecting) {
+    if (this.isBusy()) {
       this.setError('Roomcraft is still working. Wait for it to finish.');
       return;
     }
@@ -1372,7 +1386,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   async connectGemini(prompt = true) {
-    if (this.room.busy || this.connecting) {
+    if (this.isBusy()) {
       this.setError(
         'Wait for the current operation before configuring Gemini.'
       );
@@ -1438,7 +1452,7 @@ export class RoomcraftConsole extends xb.Script {
       this.setStatus('Listening stopped.');
       return;
     }
-    if (this.room.busy || this.connecting) {
+    if (this.isBusy()) {
       this.setError('Roomcraft is still working. Wait for it to finish.');
       return;
     }
@@ -1466,11 +1480,16 @@ export class RoomcraftConsole extends xb.Script {
 
   // ---- shared plumbing ----
 
+  isBusy() {
+    return this.running || this.room.busy || this.connecting;
+  }
+
   async run(pendingMessage, action) {
-    if (this.room.busy || this.connecting) {
+    if (this.isBusy()) {
       this.setError('Roomcraft is still working. Wait for it to finish.');
       return;
     }
+    this.running = true;
     this.setError('');
     this.setStatus(pendingMessage);
     this.refresh();
@@ -1480,6 +1499,7 @@ export class RoomcraftConsole extends xb.Script {
       this.showError(error);
       this.setStatus('Your scene was kept unchanged.');
     } finally {
+      this.running = false;
       this.refresh();
     }
   }
@@ -1538,12 +1558,13 @@ export class RoomcraftConsole extends xb.Script {
   refresh() {
     if (this.disposed) return;
     const layout = this.room.layout;
-    const busy = this.room.busy || this.connecting;
+    const busy = this.isBusy();
     const selectedId = this.room.selectedId;
     const dom = this.dom;
     if (!dom.console) return;
 
     dom.console.classList.toggle('rc-busy', busy);
+    dom.console.setAttribute('aria-busy', String(busy));
     const spatialVisible = this.isInXR()
       ? !this.needsSpatialPlacement
       : this.spatialPreview;
@@ -1668,6 +1689,12 @@ export class RoomcraftConsole extends xb.Script {
         ' Voice unavailable in this browser; use Keyboard.';
     }
     dom.generate.disabled = busy || !dom.prompt.value.trim();
+    dom.generate.textContent =
+      this.room.status === 'planning'
+        ? 'Generating...'
+        : busy
+          ? 'Working...'
+          : 'Generate';
     dom.newDesign.disabled =
       busy ||
       (layout.objects.length === 0 &&
@@ -1704,6 +1731,8 @@ export class RoomcraftConsole extends xb.Script {
     this.xrUndo.disabled = dom.undo.disabled;
     this.xrRedo.disabled = dom.redo.disabled;
     this.xrGenerate.disabled = dom.generate.disabled;
+    this.xrGenerate.label = dom.generate.textContent;
+    if (!busy) this.xrGenerate.style.opacity = 1;
     this.xrRemove.disabled = dom.removeSelected.disabled;
     this.xrPrevious.disabled = busy || layout.objects.length === 0;
     this.xrNext.disabled = this.xrPrevious.disabled;
@@ -1729,7 +1758,7 @@ export class RoomcraftConsole extends xb.Script {
     if (dom.environmentSummary) dom.environmentSummary.textContent = summary;
     if (this.xrEnvironmentText) this.xrEnvironmentText.text = summary;
     if (this.lighting) this.lighting.visible = !environment;
-    const busy = this.room.busy || this.connecting;
+    const busy = this.isBusy();
     const moonlit = environment?.timeOfDay === 'moonlight';
     const sunlit = environment?.timeOfDay === 'sunrise';
     if (dom.moonlight) {
