@@ -170,6 +170,36 @@ describe('Core frame and simulator lifecycle', () => {
     expect(core.renderer.render).toHaveBeenCalledWith(core.scene, core.camera);
   });
 
+  it.each([false, true])(
+    'updates the headset camera before scripts (postprocessing: %s)',
+    async (postprocessing) => {
+      if (postprocessing) {
+        core.effects = {
+          render: vi.fn(),
+          dispose: vi.fn(),
+        } as unknown as Core['effects'];
+      }
+      const observedPosition = new THREE.Vector3();
+      const script = new Script();
+      vi.spyOn(script, 'update').mockImplementation(() => {
+        observedPosition.copy(core.camera.position);
+      });
+      await scripts(core).initScript(script);
+      core.renderer.xr.isPresenting = true;
+      core.renderer.xr.updateCamera = vi.fn((camera: THREE.Camera) => {
+        camera.position.set(0.4, 1.65, -0.2);
+        camera.updateMatrixWorld();
+      });
+
+      (
+        core as unknown as {update: (time: number, frame: XRFrame) => void}
+      ).update(1000, {} as XRFrame);
+
+      expect(core.renderer.xr.updateCamera).toHaveBeenCalledWith(core.camera);
+      expect(observedPosition.toArray()).toEqual([0.4, 1.65, -0.2]);
+    }
+  );
+
   it('shares one in-flight simulator start and ignores later starts once running', async () => {
     vi.spyOn(
       core as unknown as {initialize(options: Options): Promise<void>},
