@@ -54,15 +54,29 @@ function containsFootprint(bounds: THREE.Box3, polygon: THREE.Vector2[]) {
     ) {
       return false;
     }
+    const crossings = [0, 1];
     for (let j = 0; j < polygon.length; j++) {
       const c = polygon[j];
       const d = polygon[(j + 1) % polygon.length];
+      const startSide = cross(a, b, c);
+      const denominator = cross(a, b, d) - startSide;
+      if (denominator === 0) continue;
+      const polygonFraction = -startSide / denominator;
+      const edgeFraction = cross(c, d, a) / denominator;
       if (
-        cross(a, b, c) * cross(a, b, d) < -EPSILON &&
-        cross(c, d, a) * cross(c, d, b) < -EPSILON
+        edgeFraction > 0 &&
+        edgeFraction < 1 &&
+        polygonFraction >= -EPSILON &&
+        polygonFraction <= 1 + EPSILON
       ) {
-        return false;
+        crossings.push(edgeFraction);
       }
+    }
+    // Vertex contacts can delimit an outside interval without a strict crossing.
+    crossings.sort((a, b) => a - b);
+    for (let j = 1; j < crossings.length; j++) {
+      const midpoint = (crossings[j - 1] + crossings[j]) / 2;
+      if (!containsPoint(a.clone().lerp(b, midpoint), polygon)) return false;
     }
   }
   return true;

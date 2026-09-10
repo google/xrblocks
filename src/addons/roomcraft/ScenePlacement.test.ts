@@ -359,6 +359,75 @@ describe('Roomcraft detected-surface placement', () => {
     );
   });
 
+  it('avoids a notch whose sides meet the footprint edge at polygon vertices', () => {
+    const root = scene();
+    root.children[0].scale.set(2, 1, 2);
+    const wide: SceneLayout = {
+      ...layout,
+      objects: [{...layout.objects[0], scale: [2, 1, 2]}],
+    };
+    const table = plane(4, 4, new THREE.Vector3(), 'table');
+    table.simulatorPlane!.polygon = [
+      [-2, -2],
+      [2, -2],
+      [2, 2],
+      [0.75, 2],
+      [0.75, 1],
+      [0.75, 0.5],
+      [0.5, 0.5],
+      [0.5, 1],
+      [0.5, 2],
+      [-2, 2],
+    ].map(([x, z]) => new THREE.Vector2(x, z));
+    const view = camera();
+    view.lookAt(0, 1.6, 0);
+
+    expect(placeSceneOnSurface(root, wide, catalog, [table], view)).toBe(true);
+    const notchInterior = new THREE.Box3(
+      new THREE.Vector3(0.5 + 1e-6, 0, 0.5 + 1e-6),
+      new THREE.Vector3(0.75 - 1e-6, 1, 2)
+    );
+    expect(
+      new THREE.Box3().setFromObject(root).intersectsBox(notchInterior)
+    ).toBe(false);
+  });
+
+  it('allows a polygon vertex to touch the footprint without cutting into it', () => {
+    const root = scene();
+    root.children[0].scale.set(2, 1, 2);
+    const wide: SceneLayout = {
+      ...layout,
+      objects: [{...layout.objects[0], scale: [2, 1, 2]}],
+    };
+    const table = plane(4, 4, new THREE.Vector3(), 'table');
+    table.simulatorPlane!.polygon = [
+      [-2, -2],
+      [2, -2],
+      [2, 2],
+      [0.75, 2],
+      [0.75, 1],
+      [0.5, 2],
+      [-2, 2],
+    ].map(([x, z]) => new THREE.Vector2(x, z));
+    const view = camera();
+    view.lookAt(0, 1.6, 0);
+
+    expect(placeSceneOnSurface(root, wide, catalog, [table], view)).toBe(true);
+    expect(root.position.toArray()).toEqual([0, 0, 0]);
+  });
+
+  it('allows the footprint edges to coincide with the surface boundary', () => {
+    const root = scene();
+    const table = plane(1, 1, new THREE.Vector3(0, 0, -1), 'table');
+
+    expect(placeSceneOnSurface(root, layout, catalog, [table], camera())).toBe(
+      true
+    );
+    const bounds = new THREE.Box3().setFromObject(root);
+    expect(bounds.min.toArray()).toEqual([-0.5, 0, -1.5]);
+    expect(bounds.max.toArray()).toEqual([0.5, 1, -0.5]);
+  });
+
   it('rejects walls, ceilings, downward surfaces, and planes behind the user', () => {
     const root = scene();
     const downward = new THREE.Quaternion().setFromAxisAngle(
