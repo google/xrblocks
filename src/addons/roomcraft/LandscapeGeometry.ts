@@ -259,9 +259,9 @@ function assertLandscape(definition: SceneLandscape) {
 
 function clampColor(color: THREE.Color) {
   return color.setRGB(
-    Math.min(1, Math.max(0, color.r)),
-    Math.min(1, Math.max(0, color.g)),
-    Math.min(1, Math.max(0, color.b))
+    THREE.MathUtils.clamp(color.r, 0, 1),
+    THREE.MathUtils.clamp(color.g, 0, 1),
+    THREE.MathUtils.clamp(color.b, 0, 1)
   );
 }
 
@@ -358,9 +358,10 @@ function bankProfile(bankWidth: number, overlap: number) {
 function rimStoneCount(radiusX: number, radiusZ: number) {
   const perimeter =
     Math.PI * 2 * Math.sqrt((radiusX * radiusX + radiusZ * radiusZ) / 2);
-  return Math.min(
-    MAX_RIM_STONES,
-    Math.max(MIN_RIM_STONES, Math.round(perimeter * RIM_STONE_DENSITY))
+  return THREE.MathUtils.clamp(
+    Math.round(perimeter * RIM_STONE_DENSITY),
+    MIN_RIM_STONES,
+    MAX_RIM_STONES
   );
 }
 
@@ -634,7 +635,7 @@ interface PathStrip {
 }
 
 function pathShoulderWidth(width: number) {
-  return Math.min(Math.max(width * 0.18, 0.05), 0.25);
+  return THREE.MathUtils.clamp(width * 0.18, 0.05, 0.25);
 }
 
 /**

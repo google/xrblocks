@@ -6,7 +6,7 @@ const FLOOR_CLEARANCE = 0.1;
 const HEAD_CLEARANCE = 0.2;
 
 function samples(center, limit) {
-  const steps = Math.min(40, Math.max(1, Math.ceil((limit * 2) / 0.5)));
+  const steps = THREE.MathUtils.clamp(Math.ceil((limit * 2) / 0.5), 1, 40);
   const values = [center];
   for (let index = 0; index <= steps; index++) {
     values.push(-limit + ((limit * 2) / steps) * index);
