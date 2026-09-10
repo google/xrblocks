@@ -176,6 +176,35 @@ describe('ProceduralMotionPlayer', () => {
     expectVector(worldOf(backward.content, 'block'), [0, 0.1, -0.5]);
   });
 
+  it.each([1e-17, 1 - Number.EPSILON / 2])(
+    'preserves the precision of an in-range starting phase %s',
+    (phase) => {
+      const {content} = play(orbiting(spin({phase})));
+      const expected = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        Math.PI * 2 * phase
+      );
+      expect(group(content, 'block').quaternion.toArray()).toEqual(
+        expected.toArray()
+      );
+    }
+  );
+
+  it('accumulates positive phase advances smaller than the spacing around one', () => {
+    const {content, player} = play(orbiting());
+    for (let step = 0; step < 10; step++) player.update(1e-17);
+    expect(group(content, 'block').quaternion.y).toBeCloseTo(
+      Math.PI * 1e-16,
+      28
+    );
+  });
+
+  it('wraps a tiny negative phase advance to zero rather than a cycle of one', () => {
+    const {content, player} = play(orbiting(spin({speed: -Math.PI * 2})));
+    player.update(1e-17);
+    expect(group(content, 'block').quaternion.toArray()).toEqual([0, 0, 0, 1]);
+  });
+
   it('rotates about every part-local axis around its pivot', () => {
     const cases = [
       {axis: 'x', pivot: [0, -0.5, 0], expected: [0.5, -0.4, 0.5]},

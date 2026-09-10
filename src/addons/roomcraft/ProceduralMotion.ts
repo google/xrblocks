@@ -143,8 +143,9 @@ export function motionAngleRange(motion: PartMotion): [number, number] {
 
 /** Cycle fractions stay bounded, so long sessions cannot lose precision. */
 function wrapCycle(cycle: number) {
-  const wrapped = cycle % 1;
-  return wrapped < 0 ? wrapped + 1 : wrapped;
+  // Avoid euclideanModulo's addition rounding away tiny in-range advances.
+  if (cycle >= 0 && cycle < 1) return cycle;
+  return THREE.MathUtils.euclideanModulo(cycle, 1);
 }
 
 /** Part groups only; a mesh display name may collide with a part ID. */
