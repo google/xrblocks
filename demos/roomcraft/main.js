@@ -817,6 +817,11 @@ export class RoomcraftConsole extends xb.Script {
     const camera = xb.core.camera;
     const position = camera.getWorldPosition(new THREE.Vector3());
     const rotation = camera.getWorldQuaternion(new THREE.Quaternion());
+    if (this.isInXR()) {
+      // Keep the studio at head height when entry begins looking down or tilted.
+      const heading = new THREE.Euler().setFromQuaternion(rotation, 'YXZ').y;
+      rotation.setFromEuler(new THREE.Euler(0, heading, 0));
+    }
     const halfWidth =
       Math.max(
         this.studioSize.width * this.card.scale.x,

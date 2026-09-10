@@ -1024,6 +1024,35 @@ describe('Roomcraft demo integration', () => {
       expect(point.x).toBeCloseTo(0, 8);
     });
 
+    it.each([-Math.PI / 3, Math.PI / 3])(
+      'keeps the XR studio upright and above the floor at head pitch %s',
+      (pitch) => {
+        renderer.xr.isPresenting = true;
+        camera.position.set(0.4, 1.6, 0.2);
+        camera.rotation.set(pitch, 0.7, 0.3, 'YXZ');
+        const cameraRotation = camera.quaternion.clone();
+        const before = room.layout;
+
+        consoleScript.positionSpatialStudio();
+
+        const position = consoleScript.card.getWorldPosition(
+          new THREE.Vector3()
+        );
+        const rotation = consoleScript.card.getWorldQuaternion(
+          new THREE.Quaternion()
+        );
+        expect(position.y).toBeCloseTo(1.85);
+        expect(
+          new THREE.Vector3(0, 1, 0)
+            .applyQuaternion(rotation)
+            .distanceTo(new THREE.Vector3(0, 1, 0))
+        ).toBeLessThan(1e-8);
+        expect(consoleScript.keyboardCard.position.y).toBeGreaterThan(0.5);
+        expect(camera.quaternion.equals(cameraRotation)).toBe(true);
+        expect(room.layout).toEqual(before);
+      }
+    );
+
     it('opens the spatial studio from the collapsed desktop header without moving the scene', () => {
       consoleScript.toggleConsole(false);
       const before = room.layout;
