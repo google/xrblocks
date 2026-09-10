@@ -1359,6 +1359,46 @@ describe('Roomcraft objects and ownership', () => {
     );
   });
 
+  it('preserves prototype-backed catalog metadata and the factory receiver', async () => {
+    class BoxAsset implements SceneAsset {
+      readonly size: [number, number, number] = [1, 2, 3];
+      #calls = 0;
+
+      get id() {
+        return 'box';
+      }
+
+      get description() {
+        return 'A class-backed box';
+      }
+
+      get calls() {
+        return this.#calls;
+      }
+
+      create(color: string) {
+        this.#calls++;
+        return new THREE.Mesh(
+          new THREE.BoxGeometry(),
+          new THREE.MeshStandardMaterial({color})
+        );
+      }
+    }
+
+    const box = new BoxAsset();
+    const room = createRoom([box]);
+    expect(room.catalog).toEqual([
+      {id: 'box', description: 'A class-backed box', size: [1, 2, 3]},
+    ]);
+    box.size[0] = 99;
+    await room.applyLayout(layout(object()));
+    expect(box.calls).toBe(1);
+    expect(room.catalog[0].size).toEqual([1, 2, 3]);
+    expect(
+      room.getWorldBounds().getSize(new THREE.Vector3()).toArray()
+    ).toEqual([1, 2, 3]);
+  });
+
   it('does not expose catalog factories or mutate caller-owned metadata', () => {
     const box = asset();
     const room = createRoom([box]);

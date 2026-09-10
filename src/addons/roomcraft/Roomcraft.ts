@@ -186,7 +186,12 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
       ) {
         throw new Error(`Invalid catalog asset "${asset.id}".`);
       }
-      this.assets.set(asset.id, {...asset, size: [...asset.size]});
+      this.assets.set(asset.id, {
+        id: asset.id,
+        description: asset.description,
+        size: [...asset.size],
+        create: asset.create.bind(asset),
+      });
     }
   }
 
