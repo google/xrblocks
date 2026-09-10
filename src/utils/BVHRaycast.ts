@@ -3,8 +3,7 @@ import type * as BVH from 'three-mesh-bvh';
 
 // --- Dynamic Import of three-mesh-bvh ---
 //
-// Loaded the same way troika-three-text is in TextView: type-only
-// import for the SDK build, dynamic runtime import with try / catch +
+// Type-only import for the SDK build, dynamic runtime import with try / catch +
 // status tracking so apps without three-mesh-bvh installed (or without
 // it in their importmap) don't break, they just don't get the
 // accelerated raycast.
@@ -68,10 +67,9 @@ export function isBVHReady(): boolean {
  * `computeBoundsTree` / `disposeBoundsTree` helpers to
  * `THREE.BufferGeometry`.
  *
- * Async because the BVH module is loaded on demand (same pattern as
- * troika-three-text). Resolves to `true` if the module loaded and
- * patches were applied, `false` if the module isn't available — in
- * which case meshes continue to use the stock raycaster.
+ * Async because the BVH module is loaded on demand. Resolves to `true`
+ * if the module loaded and patches were applied, `false` if the module
+ * isn't available — in which case meshes continue to use the stock raycaster.
  *
  * Safe to call multiple times. The first call kicks off the import,
  * subsequent calls share the same promise.

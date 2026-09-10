@@ -8,22 +8,19 @@ vi.mock('xrblocks', async () => {
   class FakeFace extends T.Object3D {
     dispose = vi.fn();
   }
+  class FakeUIElement extends T.Object3D {
+    dispose = vi.fn();
+  }
   return {
     core: undefined,
     StylizedFace: FakeFace,
-  };
-});
-
-// troika-three-text is lazy-loaded by the avatar for the name label.
-// Stub it to a no-op constructor so the dynamic import resolves
-// synchronously without touching webgl-sdf-generator.
-vi.mock('troika-three-text', async () => {
-  const T = await import('three');
-  return {
-    Text: class extends T.Object3D {
+    UICard: FakeUIElement,
+    UIText: class extends FakeUIElement {
       text = '';
-      sync() {}
-      dispose() {}
+      constructor(opts?: {text?: string}) {
+        super();
+        this.text = opts?.text ?? '';
+      }
     },
   };
 });

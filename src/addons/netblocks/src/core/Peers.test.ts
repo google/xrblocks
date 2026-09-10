@@ -3,6 +3,9 @@ import * as THREE from 'three';
 
 vi.mock('xrblocks', async () => {
   const T = await import('three');
+  class FakeUIElement extends T.Object3D {
+    dispose() {}
+  }
   return {
     core: undefined,
     // RemoteUserAvatar constructs `new xb.StylizedFace()` in its
@@ -11,16 +14,13 @@ vi.mock('xrblocks', async () => {
     StylizedFace: class extends T.Object3D {
       dispose() {}
     },
-  };
-});
-
-vi.mock('troika-three-text', async () => {
-  const T = await import('three');
-  return {
-    Text: class extends T.Object3D {
+    UICard: FakeUIElement,
+    UIText: class extends FakeUIElement {
       text = '';
-      sync() {}
-      dispose() {}
+      constructor(opts?: {text?: string}) {
+        super();
+        this.text = opts?.text ?? '';
+      }
     },
   };
 });

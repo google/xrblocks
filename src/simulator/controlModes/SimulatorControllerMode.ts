@@ -5,12 +5,30 @@ import {Keycodes} from '../../utils/Keycodes';
 import {SimulatorControlMode} from './SimulatorControlMode';
 
 const vector3 = new THREE.Vector3();
-const {A_CODE, D_CODE, E_CODE, Q_CODE, S_CODE, SPACE_CODE, T_CODE, W_CODE} =
-  Keycodes;
+const {
+  A_CODE,
+  D_CODE,
+  E_CODE,
+  LEFT_SHIFT_CODE,
+  Q_CODE,
+  S_CODE,
+  SPACE_CODE,
+  T_CODE,
+  W_CODE,
+} = Keycodes;
 
 export class SimulatorControllerMode extends SimulatorControlMode {
-  onPointerMove(event: MouseEvent) {
-    if (event.buttons) {
+  private isLeftShiftMovementActive(): boolean {
+    const modeToggle = this.simulatorOptions?.modeToggle;
+    const hasConflict =
+      Boolean(modeToggle?.enabled) && modeToggle?.toggleKey === LEFT_SHIFT_CODE;
+    return !hasConflict && this.downKeys.has(LEFT_SHIFT_CODE);
+  }
+
+  override onPointerMove(event: MouseEvent) {
+    if (event.buttons & 2) {
+      this.rotateOnPointerMove(event, this.camera.quaternion);
+    } else if (event.buttons & 1) {
       const controllerOrientation =
         this.simulatorControllerState.localControllerOrientations[
           this.simulatorControllerState.currentControllerIndex
@@ -21,28 +39,47 @@ export class SimulatorControllerMode extends SimulatorControlMode {
 
   override update() {
     this.updateGamepad();
+    this.updateCameraPosition();
     this.updateControllerPositions();
+  }
+
+  override updateCameraPosition() {
+    if (!this.isLeftShiftMovementActive()) return;
+
+    const deltaTime = this.timer.getDelta();
+    const downKeys = this.downKeys;
+    this.applyYawRelativeMovement(
+      Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
+      this.navMesh.constrained
+        ? 0
+        : Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)),
+      Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE)),
+      deltaTime
+    );
   }
 
   onModeActivated() {
     this.enableSimulatorHands();
   }
 
-  updateControllerPositions() {
+  override updateControllerPositions() {
     const deltaTime = this.timer.getDelta();
     const downKeys = this.downKeys;
     const idx = this.simulatorControllerState.currentControllerIndex;
     const localPos =
       this.simulatorControllerState.localControllerPositions[idx];
-    vector3
-      .set(
-        Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
-        Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)),
-        Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE))
-      )
-      .multiplyScalar(deltaTime);
-    this.limitMovementAtReachEdge(idx, localPos, vector3);
-    localPos.add(vector3);
+
+    if (!this.isLeftShiftMovementActive()) {
+      vector3
+        .set(
+          Number(downKeys.has(D_CODE)) - Number(downKeys.has(A_CODE)),
+          Number(downKeys.has(Q_CODE)) - Number(downKeys.has(E_CODE)),
+          Number(downKeys.has(S_CODE)) - Number(downKeys.has(W_CODE))
+        )
+        .multiplyScalar(deltaTime);
+      this.limitMovementAtReachEdge(idx, localPos, vector3);
+      localPos.add(vector3);
+    }
 
     // Gamepad: left stick moves hand on XZ; configurable buttons on Y.
     // Skip when the tab isn't focused so background tabs don't react to

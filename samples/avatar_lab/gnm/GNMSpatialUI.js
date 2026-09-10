@@ -311,14 +311,25 @@ export class GNMSpatialUI {
 
     const scene = this.scene;
     const modeRow = this.row(card, {gap: 8});
-    for (const [mode, label] of [
+    const modes = [
       ['studio', 'Studio'],
       ['clay', 'Clay'],
       ['normals', 'Normals'],
       ['regions', 'Regions'],
-    ]) {
+    ];
+    modes.push(['texture', 'Mona Lisa']);
+    for (const [mode, label] of modes) {
       const button = this.button(modeRow, label, {
-        onClick: () => {
+        onClick: async () => {
+          if (mode === 'texture' && !scene.canShowTexture()) {
+            button.setLabel('Loading…');
+            const loaded = await scene.loadTexture(
+              scene.skinTextureUrls,
+              'Mona Lisa'
+            );
+            button.setLabel(label);
+            if (!loaded) return;
+          }
           scene.setMaterialMode(mode);
           this.update();
         },

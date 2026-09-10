@@ -6,7 +6,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2509.25504-b31b1b.svg)](https://arxiv.org/abs/2509.25504)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.24591-b31b1b.svg)](https://arxiv.org/abs/2603.24591)
 
-#### JavaScript library for rapid AI + XR prototyping
+#### AI-native library for rapid AI + XR prototyping & innovation
 
 [Site](https://xrblocks.github.io/) &mdash;
 [Manual](https://xrblocks.github.io/docs/) &mdash;
@@ -91,7 +91,6 @@ code below:
         "imports": {
           "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
           "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-          "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
           "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
           "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/"
         }
@@ -293,6 +292,10 @@ as:
   url={https://arxiv.org/abs/2603.24591},
 }
 ```
+
+### Awards
+
+- **[Auggie Award at AWE USA 2026 - Best Use Of AI](https://www.awexr.com/blog/auggie-Award-Winners-at-AWE-USA-2026)**
 
 ### Terms of Service
 

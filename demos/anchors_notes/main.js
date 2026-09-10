@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import {Text} from 'troika-three-text';
 import * as xb from 'xrblocks';
 
 // Anchored notes demo: type a note, pin it in space where you are looking, and
@@ -325,37 +324,41 @@ class AnchorNotesDemo extends xb.Script {
    * @param at - Optional initial position, before the first pose read.
    */
   addNoteCard(tracked, color, restored, at) {
-    const group = new THREE.Group();
+    const text = new xb.UIText({
+      text: tracked.label,
+      style: {
+        fontSize: 32,
+        lineHeight: 1.3,
+        color: '#ffffff',
+        textAlign: 'center',
+        verticalAlign: 'middle',
+      },
+    });
 
-    const card = new THREE.Mesh(
-      new THREE.PlaneGeometry(CARD_WIDTH, CARD_HEIGHT),
-      new THREE.MeshStandardMaterial({
-        color,
-        emissive: color,
-        emissiveIntensity: 0.25,
-        roughness: 0.6,
-        side: THREE.DoubleSide,
-      })
-    );
-    group.add(card);
+    const hexColor =
+      typeof color === 'number'
+        ? `#${color.toString(16).padStart(6, '0')}`
+        : color;
 
-    const label = new Text();
-    label.text = tracked.label;
-    label.fontSize = 0.028;
-    label.maxWidth = CARD_WIDTH * 0.86;
-    label.lineHeight = 1.3;
-    label.color = 0xffffff;
-    label.anchorX = 'center';
-    label.anchorY = 'middle';
-    label.textAlign = 'center';
-    // Lift the text just off the card so it never z-fights with the panel.
-    label.position.set(0, 0, 0.002);
-    label.sync();
-    group.add(label);
+    const card = new xb.UICard({
+      size: {width: CARD_WIDTH, height: CARD_HEIGHT},
+      pixelSize: 0.001,
+      appearance: 'surface',
+      style: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: hexColor,
+        padding: 24,
+        borderRadius: 16,
+      },
+      children: [text],
+    });
 
-    if (at) group.position.copy(at);
-    xb.core.scene.add(group);
-    this.notes.set(tracked.id, {group, text: label, restored});
+    if (at) card.position.copy(at);
+    xb.core.scene.add(card);
+    this.notes.set(tracked.id, {group: card, text, restored});
     this.refreshList();
   }
 
@@ -375,8 +378,7 @@ class AnchorNotesDemo extends xb.Script {
       const entry = this.notes.get(id);
       if (entry) {
         xb.core.scene.remove(entry.group);
-        entry.text.dispose?.();
-        entry.group.traverse(xb.disposeRenderableResources);
+        entry.group.dispose?.();
       }
       this.notes.delete(id);
     }
@@ -400,10 +402,7 @@ class AnchorNotesDemo extends xb.Script {
     if (!entry) return;
     anchors?.delete(id);
     xb.core.scene.remove(entry.group);
-    // troika Text holds GPU resources, so release them rather than leaking on
-    // every delete. The card behind it holds its own geometry and material.
-    entry.text.dispose?.();
-    entry.group.traverse(xb.disposeRenderableResources);
+    entry.group.dispose?.();
     this.notes.delete(id);
     this.refreshList();
     this.setStatus('Deleted a note');
@@ -418,8 +417,7 @@ class AnchorNotesDemo extends xb.Script {
       const entry = this.notes.get(id);
       if (entry) {
         xb.core.scene.remove(entry.group);
-        entry.text.dispose?.();
-        entry.group.traverse(xb.disposeRenderableResources);
+        entry.group.dispose?.();
       }
       this.notes.delete(id);
     }

@@ -477,8 +477,11 @@ export class Input {
     this.directTouchInputs.length = 0;
     for (let handIndex = 0; handIndex < NUM_HANDS; handIndex++) {
       const controller = this.controllers[handIndex];
-      const indexTip = this.hands[handIndex]?.joints?.['index-finger-tip'];
-      if (!controller || !indexTip) continue;
+      const hand = this.hands[handIndex];
+      const indexTip = hand?.joints?.['index-finger-tip'];
+      // Three.js retains joint poses after tracking is lost. A stale touch
+      // would keep suppressing the controller's ray and reticle.
+      if (!controller || !hand?.visible || !indexTip?.visible) continue;
       let input = this.directTouchSlots[handIndex];
       if (!input) {
         input = {
@@ -491,7 +494,7 @@ export class Input {
         this.directTouchSlots[handIndex] = input;
       }
       input.controller = controller;
-      input.hand = this.hands[handIndex]?.joints?.wrist;
+      input.hand = hand.joints?.wrist;
       indexTip.getWorldPosition(input.point);
       controller.getWorldQuaternion(input.orientation!);
       input.selected = controller.userData.selected === true;

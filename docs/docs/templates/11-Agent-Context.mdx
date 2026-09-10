@@ -2,8 +2,21 @@
 title: Agent Context
 ---
 
-Generate an agent-facing semantic tree, visible-object state, and Set-of-Mark
-snapshot from a small scene. Click or pinch to write the result to the console.
+Generate agent-facing multimodal scene context—including semantic scene graphs, visible-object states, and Set-of-Mark (SoM) visual snapshots—and query Gemini to inspect and describe objects in the spatial environment.
+
+> [!NOTE]
+> For local prototyping, the pre-launch dialog accepts a Gemini API key stored locally in your browser. Production applications must proxy AI requests through a secure server.
+
+### Desktop Controls (User Mode)
+
+- **Capture & Query Context:** Left-click to capture scene context and ask Gemini to describe the scene. Open the browser developer console (<kbd>F12</kbd>) to inspect the captured context structure.
+- **Move Camera:** Use <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd>, <kbd>D</kbd> to move forward, left, backward, and right.
+- **Elevate Camera:** Use <kbd>Q</kbd> and <kbd>E</kbd> to move down and up.
+- **Rotate:** Right-click and drag the mouse to look around.
+
+### XR Controls
+
+- **Capture & Query Context:** Ray-pinch with hands or pull the controller trigger to capture spatial context and query the AI agent.
 
 import {DocsIFrame} from '../DocsIFrame.jsx';
 import {DocsSource} from '../DocsSource.jsx';

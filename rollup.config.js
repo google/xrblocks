@@ -51,11 +51,6 @@ ${apache2License}
  * 1. Include the following importmap for maximum compatibility:
     "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-    "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
-    "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
-    "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
-    "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
-    "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
     "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
     "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
     "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
@@ -77,7 +72,6 @@ ${apache2License}
 const externalPackages = [
   'three',
   /three\/addons\//,
-  'troika-three-text',
   '@google/genai',
   '@mediapipe/tasks-audio',
   '@mediapipe/tasks-vision',

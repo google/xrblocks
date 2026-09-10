@@ -1,5 +1,6 @@
 import {css, html, LitElement} from 'lit';
 import {customElement} from 'lit/decorators/custom-element.js';
+import {property} from 'lit/decorators/property.js';
 
 import {
   SimulatorInstructionsCloseEvent,
@@ -8,6 +9,8 @@ import {
 
 @customElement('xrblocks-simulator-instructions-card')
 export class SimulatorInstructionsCard extends LitElement {
+  @property({type: String}) continueButtonText = 'Continue';
+
   static styles = css`
     :host {
       position: relative;
@@ -106,7 +109,7 @@ export class SimulatorInstructionsCard extends LitElement {
       <div class="image-div">${this.getImageContents()}</div>
       <div class="description-div">${this.getDescriptionContents()}</div>
       <button type="button" @click=${this.continueButtonClicked}>
-        Continue
+        ${this.continueButtonText}
       </button>
     `;
   }

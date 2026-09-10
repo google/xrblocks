@@ -80,6 +80,8 @@ options.simulator.modeToggle.enabled = true;
 When mode toggling is enabled, the configured toggle key cycles through
 `options.simulator.modeToggle.toggleOrder`.
 
+Keyboard navigation and simulator shortcuts are suspended while an input, textarea, select, or editable region has focus, including text controls inside open shadow roots. Focusing a text control clears held movement keys; leaving it does not resume movement until another navigation key is pressed. Text editing and its normal key events are not blocked, and IME composition does not trigger simulator shortcuts.
+
 ## Automation preset
 
 Use the shared preset for automated or external browser runs:

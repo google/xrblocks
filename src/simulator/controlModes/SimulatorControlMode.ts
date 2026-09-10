@@ -164,7 +164,7 @@ export class SimulatorControlMode {
     }
   }
 
-  private applyYawRelativeMovement(
+  protected applyYawRelativeMovement(
     localX: number,
     localY: number,
     localZ: number,

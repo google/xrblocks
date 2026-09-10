@@ -1,13 +1,29 @@
 import * as THREE from 'three';
+import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
 import {describe, expect, it, vi} from 'vitest';
 
 import {Options} from '../core/Options';
+import {ScriptsManager} from '../core/components/ScriptsManager';
 import {XRSystems} from '../core/components/XRSystems';
+import {Interaction} from '../interaction/Interaction';
+import {Reticle} from '../interaction/reticle/Reticle';
+import {UIButton} from '../ui/components/UIButton';
 import {Input} from './Input';
 import {Controller} from './Controller';
 
 function updateInput(input: Input) {
   input.sampleSources();
+}
+
+function trackedHand() {
+  const hand = new WebXRController().getHandSpace();
+  const indexTip = Object.assign(new THREE.Group(), {jointRadius: 0.01});
+  const wrist = Object.assign(new THREE.Group(), {jointRadius: 0.01});
+  hand.joints['index-finger-tip'] = indexTip;
+  hand.joints.wrist = wrist;
+  hand.add(indexTip, wrist);
+  hand.visible = true;
+  return {hand, indexTip, wrist};
 }
 
 describe('Input head gestures', () => {
@@ -34,14 +50,9 @@ describe('Input direct touch', () => {
     const input = new Input();
     const controller = new THREE.Object3D() as Controller;
     controller.userData.selected = true;
-    const indexTip = new THREE.Object3D();
-    const wrist = new THREE.Object3D();
+    const {hand, wrist} = trackedHand();
     input.controllers = [controller];
-    input.hands = [
-      {
-        joints: {'index-finger-tip': indexTip, wrist},
-      } as unknown as THREE.XRHandSpace,
-    ];
+    input.hands = [hand];
     input.controllersEnabled = false;
 
     updateInput(input);
@@ -57,7 +68,94 @@ describe('Input direct touch', () => {
     });
     expect(frame.directTouches[0].point.toArray()).toEqual([0, 0, 0]);
     expect(frame.directTouches[0]).not.toHaveProperty('intersections');
+    input.dispose();
   });
+
+  it.each(['hand', 'index tip'])(
+    'ignores retained poses when the %s is untracked and resumes when it returns',
+    (lost) => {
+      const input = new Input();
+      const controller = new THREE.Object3D() as Controller;
+      const {hand, indexTip} = trackedHand();
+      input.controllers = [controller];
+      input.hands = [hand];
+      const lostSpace = lost === 'hand' ? hand : indexTip;
+      updateInput(input);
+      expect(input.getFrame().directTouches).toHaveLength(1);
+      lostSpace.visible = false;
+      updateInput(input);
+      expect(input.getFrame().directTouches).toHaveLength(0);
+      lostSpace.visible = true;
+      updateInput(input);
+      expect(input.getFrame().directTouches).toHaveLength(1);
+      input.dispose();
+    }
+  );
+
+  it.each(['hand', 'index tip'])(
+    'restores controller targeting after %s tracking is lost over a touchable button',
+    async (lost) => {
+      const input = new Input();
+      const controller = new THREE.Object3D() as Controller;
+      controller.userData = {id: 0, connected: true, selected: false};
+      controller.inputSource = {targetRayMode: 'tracked-pointer'};
+      const reticle = new Reticle();
+      controller.reticle = reticle;
+      const {hand, indexTip} = trackedHand();
+      indexTip.position.set(2, 0, -1);
+      input.controllers = [controller];
+      input.hands = [hand];
+      const callbacks = new ScriptsManager(async () => {});
+      const interaction = new Interaction({
+        callbacks,
+        scene: new THREE.Scene(),
+      });
+      const clicked = vi.fn();
+      const button = new UIButton({label: 'Keyboard', onClick: clicked});
+      const surface = new THREE.Mesh(
+        new THREE.BoxGeometry(0.4, 0.4, 0.1),
+        new THREE.MeshBasicMaterial()
+      );
+      surface.position.z = -1;
+      await callbacks.initScript(button);
+      const unregister = interaction.registerHitSurface(surface, button);
+      const sample = () => {
+        input.sampleSources();
+        interaction.update(input.getFrame());
+      };
+      try {
+        sample();
+        expect(interaction.getResolvedRay(controller)?.target).toBe(button);
+        expect(reticle.visible).toBe(true);
+        indexTip.position.x = 0;
+        sample();
+        expect(interaction.getResolvedRay(controller)).toBeUndefined();
+        expect(reticle.visible).toBe(false);
+        const lostSpace = lost === 'hand' ? hand : indexTip;
+        lostSpace.visible = false;
+        sample();
+        expect(controller.userData.connected).toBe(true);
+        expect(controller.visible).toBe(true);
+        expect(interaction.getResolvedRay(controller)?.target).toBe(button);
+        expect(reticle.visible).toBe(true);
+        expect(clicked).not.toHaveBeenCalled();
+
+        controller.userData.selected = true;
+        sample();
+        controller.userData.selected = false;
+        sample();
+        expect(clicked).toHaveBeenCalledTimes(1);
+      } finally {
+        interaction.clear();
+        unregister();
+        button.dispose();
+        surface.geometry.dispose();
+        surface.material.dispose();
+        reticle.dispose();
+        input.dispose();
+      }
+    }
+  );
 });
 
 describe('Input events', () => {

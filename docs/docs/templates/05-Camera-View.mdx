@@ -2,7 +2,21 @@
 title: Camera View
 ---
 
-Display a live device-camera texture in a spatial card.
+Display a live device camera stream inside a spatial `UICard` and cycle through available video inputs.
+
+- **Desktop Simulator:** By default, a virtual simulator camera feed is displayed. You can toggle between real connected webcams and the simulator camera using the UI navigation buttons.
+- **Android XR:** Toggles between the external video see-through camera (environment-facing) and user-facing camera feeds (e.g., [Likeness avatar camera](https://play.google.com/store/apps/details?id=com.google.android.apps.vr.doppel&hl=en_US)).
+
+### Desktop Controls (User Mode)
+
+- **Switch Camera:** Left-click the **Previous** or **Next** buttons on the card to cycle through camera devices.
+- **Move / Resize Card:** Left-click and drag the card border to reposition, or scroll with the mouse wheel to scale.
+- **Rotate:** Right-click and drag the mouse to look around.
+
+### XR Controls
+
+- **Switch Camera:** Ray-pinch or tap the **Previous** / **Next** buttons on the spatial card.
+- **Reposition Card:** Pinch the card and drag to place it anywhere in your space.
 
 import {DocsIFrame} from '../DocsIFrame.jsx';
 import {DocsSource} from '../DocsSource.jsx';
