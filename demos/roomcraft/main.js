@@ -846,6 +846,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   onXRSessionStarted() {
+    this.stopListening('Voice input cancelled because XR started.');
     this.clearVoiceSession();
     this.voiceSession = xb.core.renderer?.xr.getSession?.() ?? null;
     if (this.voiceSession) {

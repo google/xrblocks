@@ -661,6 +661,29 @@ describe('Roomcraft demo integration', () => {
     expect(consoleScript.voice.state).toBe('starting');
   });
 
+  it.each(['starting', 'recording', 'transcribing'])(
+    'cancels %s voice before XR entry hides the desktop controls',
+    (state) => {
+      options.gemini.apiKey = 'local-test-fixture';
+      consoleScript.setSpatialTab('examples');
+      consoleScript.toggleListening();
+      consoleScript.voice.setState(state);
+      consoleScript.voice.cancel.mockClear();
+      const request = vi.spyOn(room, 'request');
+
+      consoleScript.onXRSessionStarted();
+
+      expect(consoleScript.voice.cancel).toHaveBeenCalledTimes(1);
+      expect(consoleScript.voice.state).toBe('idle');
+      expect(consoleScript.voiceSubmissionPending).toBe(false);
+      expect(consoleScript.card.visible).toBe(false);
+      expect(element('console').classList.contains('rc-hidden')).toBe(true);
+      expect(element('status').textContent).toContain('XR started');
+      consoleScript.voice.complete('Late instruction after entering XR');
+      expect(request).not.toHaveBeenCalled();
+    }
+  );
+
   it.each(['desktop controls', 'spatial controls', 'author tab'])(
     'cancels a recording when hiding its %s',
     (surface) => {
