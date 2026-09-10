@@ -20,6 +20,8 @@ A standalone headset needs an HTTPS URL it can reach on your LAN, with a certifi
 
 Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialog. On Quest, open the browser controls, choose Connect Gemini near the top, enter your key in the password field, and choose Use for this session before entering XR. Hide controls if they cover the XR entry button. A key configured on another device does not transfer to the headset. The spatial keyboard is for scene instructions, not API keys; exit XR to change the key.
 
+The XR entry button shows `ENTERING XR...` while the browser responds. If entry fails, the browser error appears below the buttons and Enter XR becomes available to retry.
+
 ## Virtual world mode
 
 `?environment=1` authors a whole virtual place rather than decorating the room around you. The mode is chosen once at startup, so the two pages keep separate scenes, separate histories, and separate camera behavior.
