@@ -328,13 +328,17 @@ describe('Roomcraft virtual environment mode', () => {
     expect(options.world.planes.enabled).toBe(true);
   });
 
-  it('puts browser key setup before the authoring controls and names Quest Browser', async () => {
+  it('puts platform-neutral browser key setup before the authoring controls', async () => {
     await mount();
     expect(
       element('aiHeading').compareDocumentPosition(element('promptHeading')) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
-    expect(element('connectionHelp').textContent).toContain('Meta Quest');
+    expect(
+      element('connectionHelp').textContent?.replace(/\s+/g, ' ').trim()
+    ).toBe(
+      'Configure Gemini here before entering XR. No key is needed to view saved scenes.'
+    );
     expect(consoleScript.xrProviderText.text).toContain('browser panel');
     consoleScript.onXRSessionStarted();
     expect(consoleScript.xrProviderText.text).toContain('Exit XR');
