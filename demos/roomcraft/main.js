@@ -9,6 +9,7 @@ import {
 import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
 
 import {ENVIRONMENT_STARTER_SCENES, STARTER_SCENES} from './scenes.js';
+import {getWorldSpawn} from './Spawn.js';
 
 // One optional downloaded model, kept separate from the offline catalog.
 // Boom Box by Microsoft, released under CC0 1.0 through the Khronos glTF
@@ -1048,7 +1049,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   /**
-   * Moves the desktop camera to a standing eye pose near the front of the
+   * Moves the desktop camera to a clear standing pose near the front of the
    * ground, looking across it. Scene objects and the environment are not
    * changed, and the SDK's simulator controls continue from the new pose.
    */
@@ -1064,14 +1065,10 @@ export class RoomcraftConsole extends xb.Script {
         throw new Error('There is no virtual environment to enter yet.');
       }
       const camera = xb.core.camera;
-      const depth = environment.size[1];
-      this.room.updateWorldMatrix(true, false);
-      const eye = this.room.localToWorld(
-        new THREE.Vector3(0, xb.user.height, depth / 2 - 1.2)
-      );
-      const target = this.room.localToWorld(
-        new THREE.Vector3(0, xb.user.height * 0.65, 0)
-      );
+      const eye = getWorldSpawn(this.room, xb.user.height).position;
+      eye.y += xb.user.height;
+      const target = this.room.localToWorld(new THREE.Vector3());
+      target.y += xb.user.height * 0.65;
       if (
         !eye.toArray().every(Number.isFinite) ||
         !target.toArray().every(Number.isFinite) ||
@@ -1089,7 +1086,7 @@ export class RoomcraftConsole extends xb.Script {
       camera.lookAt(target);
       camera.updateMatrixWorld();
       this.setStatus(
-        'Standing at the near edge of the ground. Use the simulator navigation controls to walk; nothing in the scene was moved. There is no collision here, so you can pass through features.'
+        'Standing in a clear entry spot. Use the simulator navigation controls to walk; nothing in the scene was moved. There is no collision while walking, so you can still pass through features.'
       );
     });
   }

@@ -97,6 +97,29 @@ function chipLabels() {
   return [...element('suggestions').children].map((chip) => chip.textContent);
 }
 
+function entryBlock(position = [0, 0, 5.8], size = [2, 2, 2]) {
+  return {
+    id: 'entry-block',
+    name: 'Entry block',
+    position,
+    rotation: 0,
+    scale: [1, 1, 1],
+    color: '#ffffff',
+    parts: [
+      {
+        id: 'solid',
+        name: 'Solid block',
+        shape: 'box',
+        parent: null,
+        position: [0, size[1] / 2, 0],
+        rotation: [0, 0, 0],
+        size,
+        color: '#ffffff',
+      },
+    ],
+  };
+}
+
 /** Mounts one console over fresh markup, in the requested page mode. */
 async function mount({
   virtual = true,
@@ -715,8 +738,23 @@ describe('Roomcraft virtual environment mode', () => {
     await consoleScript.enterWorld();
     expect(camera.position.x).toBeCloseTo(0, 8);
     expect(camera.position.y).toBeCloseTo(1.5, 8);
-    // Standing inside the ground, near its front edge.
-    expect(camera.position.z).toBeCloseTo(5.8, 8);
+    // The garden's preferred point can be occupied, but the entry stays inside.
+    expect(camera.position.z).toBeGreaterThan(0);
+    expect(camera.position.z + 0.35).toBeLessThan(7);
+    const standing = new THREE.Box3(
+      new THREE.Vector3(
+        camera.position.x - 0.35,
+        0.1,
+        camera.position.z - 0.35
+      ),
+      new THREE.Vector3(camera.position.x + 0.35, 1.7, camera.position.z + 0.35)
+    );
+    for (const object of layoutBefore.objects) {
+      const bounds = room.getWorldBounds(object.id);
+      if (bounds.max.y > 0.1 && bounds.min.y < 1.7) {
+        expect(bounds.intersectsBox(standing)).toBe(false);
+      }
+    }
     camera.updateMatrixWorld();
     const center = new THREE.Vector3(0, 0.975, 0).project(camera);
     expect(center.x).toBeCloseTo(0, 6);
@@ -748,6 +786,36 @@ describe('Roomcraft virtual environment mode', () => {
     expect(element('enterWorld').hidden).toBe(false);
     expect(consoleScript.xrEnterWorld.style.display).toBe('flex');
     expect(button('enterWorld').disabled).toBe(false);
+  });
+
+  it('chooses a different desktop entry when the preferred spot is occupied', async () => {
+    await mount();
+    await room.applyLayout({...room.layout, objects: [entryBlock()]});
+    const layout = room.layout;
+    const occupied = room.getWorldBounds('entry-block').expandByScalar(0.35);
+    await consoleScript.enterWorld();
+    expect(occupied.containsPoint(camera.position)).toBe(false);
+    expect(camera.position.y).toBe(1.5);
+    expect(Math.abs(camera.position.x) + 0.35).toBeLessThan(7);
+    expect(Math.abs(camera.position.z) + 0.35).toBeLessThan(7);
+    expect(room.layout).toEqual(layout);
+  });
+
+  it('leaves the desktop camera and scene unchanged if no entry position is clear', async () => {
+    await mount();
+    await room.applyLayout({
+      ...room.layout,
+      environment: {...room.layout.environment, size: [4, 4]},
+      objects: [entryBlock([0, 0, 0], [4, 2, 4])],
+    });
+    const layout = room.layout;
+    const position = camera.position.clone();
+    const rotation = camera.quaternion.clone();
+    await consoleScript.enterWorld();
+    expect(element('error').textContent).toContain('No clear entry position');
+    expect(camera.position.equals(position)).toBe(true);
+    expect(camera.quaternion.equals(rotation)).toBe(true);
+    expect(room.layout).toEqual(layout);
   });
 
   it('frames from the add-on bounds, which hold the ground but not the sky', async () => {

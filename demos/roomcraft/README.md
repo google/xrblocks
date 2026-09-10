@@ -50,7 +50,7 @@ The Environment section reports the active ground size, time of day, and ground 
 
 Moonlight and Sunrise are direct atmosphere edits, not AI requests. Each changes only the time of day, leaves every object and color untouched, and is covered by Undo and Redo like any other scene command. Natural language still works for the same change if you would rather ask for it.
 
-Enter world moves the desktop camera to a standing eye pose near the front of the ground, looking across it. No object and no environment value is changed, and the simulator's own navigation controls continue from the new pose. The button is disabled during an immersive XR session, where the headset owns the view.
+Enter world moves the desktop camera to a clear standing spot, preferring the front of the ground and looking across it. The bounded search reserves body and head clearance against individual object bounds, ignores flat paths and shallow water, and reports when it finds no clear candidate instead of placing you inside an object. No object or environment value changes, and the simulator's navigation controls continue from the new pose. The button is hidden during an immersive XR session.
 
 Frame scene accounts for the ground extent, so an empty environment can still be framed without any object in it.
 
@@ -146,7 +146,7 @@ A scene holds at most 48 objects, positions stay within 10 meters of the scene o
 
 A virtual environment is locally generated bounded visual geometry. Its ground, sky, water, banks, paths, and planting are constructed from application-authored geometry recipes. The model chooses layouts and parameters; it does not generate arbitrary mesh topology, textures, or executable shaders. There is no terrain heightmap, water or fluid simulation, weather, automatic day and night cycle, or physics. Planting areas have no automatic exclusion masks for ponds or paths, so overlapping features may need a follow-up edit.
 
-Walking inside a virtual environment uses the SDK's existing simulator navigation controls. There is no collision, no navigation mesh, and no gravity, so you can pass through a pond or a tree and walk off the edge of the ground. Enter world only sets a sensible starting eye pose.
+Walking inside a virtual environment uses the SDK's existing simulator navigation controls. There is no ongoing collision, navigation mesh, or gravity, so you can still pass through a pond or a tree and walk off the edge of the ground. Clear standing-space selection happens only when choosing an entry pose, not continuously while walking or generating content.
 
 A ground measures 4 to 20 meters per side. A planting holds 1 to 128 specimens and a scene holds at most 1024 specimens across all plantings, a path holds 2 to 12 points and is 0.15 to 3 meters wide, and a pond's water surface measures 0.2 to 20 meters per side with a 0.05 to 1 meter bank. Specimens stand 0.1 to 6 meters tall.
 
