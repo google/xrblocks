@@ -180,7 +180,7 @@ Surface placement uses the SDK's detected planes in WebXR and in the simulator, 
 
 The XR studio shows the selected object's name, part count, and how many of its parts move, offers the same Pause and Resume control, and shares errors and operation state with the desktop console. Typing uses the spatial keyboard rather than a native immersive text field. The full read-only part list with per-part motion, the JSON download, and Gemini key configuration remain in the desktop console.
 
-Immersive entry and Gemini scene generation have been used on Meta Quest. The newer clear-entry placement, studio refinements, and Gemini microphone flow still need a follow-up headset run. Galaxy XR and XREAL Aura have not been tested; no cross-headset compatibility claim is made here.
+Immersive entry and Gemini scene generation have been used on Meta Quest. A user-run check on September 10, 2026 also confirmed that Talk, microphone recording, Finish, Gemini transcription, and a spoken scene edit worked inside immersive VR. State-only diagnostics showed the document remained visible during successful recordings and transcription. This does not establish that every permission, cancellation, timeout, draft-replacement, or studio-placement case has passed on hardware. Galaxy XR and XREAL Aura have not been tested; no cross-headset compatibility claim is made here.
 
 ## SDK ownership
 
