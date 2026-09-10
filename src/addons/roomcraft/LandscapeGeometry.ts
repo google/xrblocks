@@ -1,10 +1,16 @@
 import * as THREE from 'three';
 
 import {
+  MAX_BANK_WIDTH,
   MAX_LANDSCAPE_SIZE,
   MAX_PATH_POINTS,
+  MAX_PATH_WIDTH,
   MAX_SCATTER_COUNT,
+  MAX_SCATTER_HEIGHT,
+  MAX_SCATTER_SEED,
   MAX_SCENE_DISTANCE,
+  MIN_PATH_POINTS,
+  MIN_PATH_SEGMENT,
   SCENE_SCATTER_STYLES,
   type SceneLandscape,
   type ScenePath,
@@ -25,19 +31,12 @@ const PATH_SAMPLES_PER_SEGMENT = 8;
 /** Only collapses numerically coincident samples, never authored corners. */
 const MIN_SAMPLE_SPACING = 1e-4;
 
-/** Bounds a recipe must satisfy before anything is measured or allocated. */
-const MIN_PATH_POINTS = 2;
-const MIN_PATH_SEGMENT = 0.02;
 /**
  * An exactly authored gap such as -10 to -9.98 measures a few ULPs short of
- * 0.02, so the spacing guard matches the parser's round-off tolerance instead
- * of rejecting a recipe the parser accepted.
+ * 0.02. This guard is deliberately looser than the parser's round-off
+ * tolerance so it never rejects a recipe the parser accepted.
  */
 const SEGMENT_EPSILON = 1e-9;
-const MAX_PATH_WIDTH = 3;
-const MAX_BANK_WIDTH = 1;
-const MAX_SCATTER_HEIGHT = 6;
-const MAX_SCATTER_SEED = 2147483647;
 
 /** Everything rests on the flat ground at Y=0; nothing is excavated. */
 const POND_BED_Y = 0.004;

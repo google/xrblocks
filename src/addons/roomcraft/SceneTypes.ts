@@ -1,5 +1,7 @@
 import type * as THREE from 'three';
 
+/** Maximum instruction length, in UTF-16 code units like HTML maxlength. */
+export const MAX_SCENE_REQUEST_CHARACTERS = 4000;
 export const MAX_SCENE_OBJECTS = 48;
 export const MAX_SCENE_DISTANCE = 10;
 export const MIN_SCENE_SCALE = 0.05;
@@ -16,10 +18,20 @@ export const MAX_MOTION_AMPLITUDE = Math.PI;
 export const MAX_MOTION_SPEED = Math.PI * 4;
 export const MIN_ENVIRONMENT_SIZE = 4;
 export const MAX_ENVIRONMENT_SIZE = 20;
+export const MIN_LANDSCAPE_SIZE = 0.2;
 export const MAX_LANDSCAPE_SIZE = 20;
+export const MIN_BANK_WIDTH = 0.05;
+export const MAX_BANK_WIDTH = 1;
+export const MIN_PATH_POINTS = 2;
 export const MAX_PATH_POINTS = 12;
+export const MIN_PATH_SEGMENT = 0.02;
+export const MIN_PATH_WIDTH = 0.15;
+export const MAX_PATH_WIDTH = 3;
 export const MAX_SCATTER_COUNT = 128;
 export const MAX_SCENE_SCATTER_COUNT = 1024;
+export const MIN_SCATTER_HEIGHT = 0.1;
+export const MAX_SCATTER_HEIGHT = 6;
+export const MAX_SCATTER_SEED = 2147483647;
 
 export const SCENE_PART_SHAPES = [
   'box',

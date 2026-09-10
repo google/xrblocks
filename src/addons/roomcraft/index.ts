@@ -3,6 +3,7 @@ export {createDefaultCatalog, createModelAsset} from './Catalog';
 export type {ModelAssetOptions} from './Catalog';
 export {SCENE_PLAN_SCHEMA, buildScenePrompt} from './ScenePlan';
 export {
+  MAX_SCENE_REQUEST_CHARACTERS,
   MAX_SCENE_DISTANCE,
   MAX_SCENE_OBJECTS,
   MAX_SCENE_SCALE,

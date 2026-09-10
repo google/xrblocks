@@ -1,10 +1,12 @@
 import {Blob as NodeBlob} from 'node:buffer';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {MAX_SCENE_REQUEST_CHARACTERS} from './SceneTypes';
 
 // @ts-expect-error The executable browser demo is a JavaScript consumer.
 import {
   GeminiVoiceInput,
   VOICE_MAX_BYTES,
+  VOICE_MAX_CHARACTERS,
   VOICE_MAX_DURATION_MS,
   VOICE_TRANSCRIPTION_TIMEOUT_MS,
   getVoiceFormat,
@@ -18,6 +20,10 @@ const {TestGemini} = vi.hoisted(() => {
   return {TestGemini};
 });
 vi.mock('xrblocks', () => ({Gemini: TestGemini}));
+vi.mock(
+  'xrblocks/addons/roomcraft/index.js',
+  async () => import('./SceneTypes')
+);
 
 class TestTrack extends EventTarget {
   stop = vi.fn();
@@ -125,6 +131,17 @@ afterEach(() => {
 });
 
 describe('Gemini-only transcription', () => {
+  it('accepts transcripts up to the shared scene instruction limit', async () => {
+    expect(VOICE_MAX_CHARACTERS).toBe(MAX_SCENE_REQUEST_CHARACTERS);
+    const transcript = 'a'.repeat(MAX_SCENE_REQUEST_CHARACTERS);
+    ai.model.ai.models.generateContent.mockResolvedValue({
+      text: JSON.stringify({transcript}),
+    });
+    await expect(
+      transcribeGeminiAudio(ai, audio(), new AbortController().signal)
+    ).resolves.toBe(transcript);
+  });
+
   it('reuses the configured client and model without changing the scene-plan schema', async () => {
     const sceneConfig = structuredClone(ai.options.gemini.config);
     const signal = new AbortController().signal;

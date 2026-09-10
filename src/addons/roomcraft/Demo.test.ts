@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {Roomcraft} from './Roomcraft';
+import {MAX_SCENE_REQUEST_CHARACTERS} from './index';
 import {AI} from '../../ai/AI';
 import {World} from '../../world/World';
 import {AIOptions} from '../../ai/AIOptions';
@@ -466,6 +467,7 @@ describe('Roomcraft demo integration', () => {
     const field = input();
     expect(field.rows).toBe(8);
     expect(field.maxLength).toBe(4000);
+    expect(field.maxLength).toBe(MAX_SCENE_REQUEST_CHARACTERS);
     expect(field.parentElement).toBe(field.closest('section'));
     expect(button('generate').parentElement).not.toBe(field.parentElement);
     expect(field.getAttribute('aria-describedby')).toBe('promptHelp');

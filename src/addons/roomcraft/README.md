@@ -38,6 +38,8 @@ console.log(placed ? 'Placed on a detected surface.' : 'Still in preview.');
 
 Initialization makes no model requests. The default planner uses the configured `xb.AI` facade. `SCENE_PLAN_SCHEMA` is an optional Gemini response schema; all plans are validated locally regardless of provider settings.
 
+Scene instructions are limited to `MAX_SCENE_REQUEST_CHARACTERS` (4,000 UTF-16 code units, matching HTML `maxlength`). Import this constant from the add-on entry when setting text or voice input limits.
+
 Catch rejected operations in the application's UI and show their errors. Failed validation, provider requests, or asset loads leave the previous scene intact. Only one operation can run at a time; `room.busy` and `statuschange` expose planning, optional correction, loading, and placement state.
 
 ### Invalid-plan correction

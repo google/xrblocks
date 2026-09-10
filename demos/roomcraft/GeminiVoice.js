@@ -1,8 +1,9 @@
 import {Gemini} from 'xrblocks';
+import {MAX_SCENE_REQUEST_CHARACTERS} from 'xrblocks/addons/roomcraft/index.js';
 
 export const VOICE_MAX_DURATION_MS = 30_000;
 export const VOICE_MAX_BYTES = 4 * 1024 * 1024;
-export const VOICE_MAX_CHARACTERS = 4000;
+export const VOICE_MAX_CHARACTERS = MAX_SCENE_REQUEST_CHARACTERS;
 export const VOICE_TRANSCRIPTION_TIMEOUT_MS = 60_000;
 
 const FORMATS = [

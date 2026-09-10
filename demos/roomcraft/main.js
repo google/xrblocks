@@ -3,6 +3,7 @@ import * as xb from 'xrblocks';
 import {
   createDefaultCatalog,
   createModelAsset,
+  MAX_SCENE_REQUEST_CHARACTERS,
   Roomcraft,
   SCENE_PLAN_SCHEMA,
 } from 'xrblocks/addons/roomcraft/index.js';
@@ -404,6 +405,7 @@ export class RoomcraftConsole extends xb.Script {
       connect: id('connect'),
       aiStatus: id('aiStatus'),
     };
+    this.dom.prompt.maxLength = MAX_SCENE_REQUEST_CHARACTERS;
   }
 
   buildStarterButtons() {

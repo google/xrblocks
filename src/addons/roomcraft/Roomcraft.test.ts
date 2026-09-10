@@ -3,6 +3,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import {AI, World, disposeObjectTree, type InteractionSource} from 'xrblocks';
 
 import {Roomcraft} from './Roomcraft';
+import {MAX_SCENE_REQUEST_CHARACTERS} from './index';
 import * as SceneProtocol from './ScenePlan';
 import {SceneValidationError} from './SceneValidationError';
 import type {
@@ -1928,6 +1929,20 @@ describe('Roomcraft planning and undo', () => {
       await expect(custom.request(prompt)).rejects.toThrow('4000');
     }
     expect(planner).not.toHaveBeenCalled();
+  });
+
+  it('exports the existing instruction limit and counts UTF-16 code units', async () => {
+    expect(MAX_SCENE_REQUEST_CHARACTERS).toBe(4000);
+    const planner = vi.fn<ScenePlanner>().mockResolvedValue({
+      title: 'Studio',
+      edits: [],
+    });
+    const room = createRoom([asset()], planner);
+    const prompt = '\u{1f33f}'.repeat(MAX_SCENE_REQUEST_CHARACTERS / 2);
+    await room.request(prompt);
+    expect(planner).toHaveBeenCalledWith(expect.objectContaining({prompt}));
+    await expect(room.request(`${prompt}x`)).rejects.toThrow('4000');
+    expect(planner).toHaveBeenCalledOnce();
   });
 
   it('restores hand-edited snapshots and exposes correct undo state to observers', async () => {

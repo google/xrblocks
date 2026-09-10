@@ -33,17 +33,18 @@ import {
   getEnvironmentBounds,
 } from './EnvironmentGeometry';
 import {placeSceneOnSurface} from './ScenePlacement';
-import type {
-  RoomcraftEventMap,
-  RoomcraftOptions,
-  RoomcraftStatus,
-  SceneAsset,
-  SceneAssetDescription,
-  SceneEnvironment,
-  SceneLayout,
-  SceneObject,
-  ScenePlanner,
-  SceneRequest,
+import {
+  MAX_SCENE_REQUEST_CHARACTERS,
+  type RoomcraftEventMap,
+  type RoomcraftOptions,
+  type RoomcraftStatus,
+  type SceneAsset,
+  type SceneAssetDescription,
+  type SceneEnvironment,
+  type SceneLayout,
+  type SceneObject,
+  type ScenePlanner,
+  type SceneRequest,
 } from './SceneTypes';
 
 interface SceneEntity {
@@ -376,9 +377,11 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
       if (
         typeof prompt !== 'string' ||
         !prompt.trim() ||
-        prompt.length > 4000
+        prompt.length > MAX_SCENE_REQUEST_CHARACTERS
       ) {
-        throw new Error('Describe the scene edit using 1 to 4000 characters.');
+        throw new Error(
+          `Describe the scene edit using 1 to ${MAX_SCENE_REQUEST_CHARACTERS} characters.`
+        );
       }
       const before = this.layout;
       const request: SceneRequest = {

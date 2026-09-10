@@ -15,10 +15,20 @@ import {
   MAX_MOTION_SPEED,
   MIN_ENVIRONMENT_SIZE,
   MAX_ENVIRONMENT_SIZE,
+  MIN_LANDSCAPE_SIZE,
   MAX_LANDSCAPE_SIZE,
+  MIN_BANK_WIDTH,
+  MAX_BANK_WIDTH,
+  MIN_PATH_POINTS,
   MAX_PATH_POINTS,
+  MIN_PATH_SEGMENT,
+  MIN_PATH_WIDTH,
+  MAX_PATH_WIDTH,
   MAX_SCATTER_COUNT,
   MAX_SCENE_SCATTER_COUNT,
+  MIN_SCATTER_HEIGHT,
+  MAX_SCATTER_HEIGHT,
+  MAX_SCATTER_SEED,
   SCENE_PART_SHAPES,
   SCENE_MOTION_AXES,
   SCENE_TIMES_OF_DAY,
@@ -82,7 +92,11 @@ const colorSchema = {type: 'string', pattern: '^#[0-9a-fA-F]{6}$'};
 const vector2Schema = {...vectorSchema, minItems: 2, maxItems: 2};
 const landscapeSizeSchema = {
   ...vector2Schema,
-  items: {type: 'number', minimum: 0.2, maximum: MAX_LANDSCAPE_SIZE},
+  items: {
+    type: 'number',
+    minimum: MIN_LANDSCAPE_SIZE,
+    maximum: MAX_LANDSCAPE_SIZE,
+  },
 };
 const environmentProperties = {
   size: {
@@ -107,7 +121,11 @@ const landscapeSchema = {
       properties: {
         kind: {type: 'string', enum: ['pond']},
         size: landscapeSizeSchema,
-        bankWidth: {type: 'number', minimum: 0.05, maximum: 1},
+        bankWidth: {
+          type: 'number',
+          minimum: MIN_BANK_WIDTH,
+          maximum: MAX_BANK_WIDTH,
+        },
       },
     },
     {
@@ -127,7 +145,11 @@ const landscapeSchema = {
             },
           },
         },
-        width: {type: 'number', minimum: 0.15, maximum: 3},
+        width: {
+          type: 'number',
+          minimum: MIN_PATH_WIDTH,
+          maximum: MAX_PATH_WIDTH,
+        },
       },
     },
     {
@@ -139,8 +161,12 @@ const landscapeSchema = {
         style: {type: 'string', enum: [...SCENE_SCATTER_STYLES]},
         size: landscapeSizeSchema,
         count: {type: 'integer', minimum: 1, maximum: MAX_SCATTER_COUNT},
-        seed: {type: 'integer', minimum: 0, maximum: 2147483647},
-        height: {type: 'number', minimum: 0.1, maximum: 6},
+        seed: {type: 'integer', minimum: 0, maximum: MAX_SCATTER_SEED},
+        height: {
+          type: 'number',
+          minimum: MIN_SCATTER_HEIGHT,
+          maximum: MAX_SCATTER_HEIGHT,
+        },
       },
     },
   ],
@@ -566,18 +592,28 @@ function readLandscape(value: unknown): SceneLandscape {
       keys(feature, ['kind', 'size', 'bankWidth']);
       return {
         kind: 'pond',
-        size: vector2(feature.size, 'Pond size', 0.2, MAX_LANDSCAPE_SIZE),
-        bankWidth: number(feature.bankWidth, 'Pond bank width', 0.05, 1),
+        size: vector2(
+          feature.size,
+          'Pond size',
+          MIN_LANDSCAPE_SIZE,
+          MAX_LANDSCAPE_SIZE
+        ),
+        bankWidth: number(
+          feature.bankWidth,
+          'Pond bank width',
+          MIN_BANK_WIDTH,
+          MAX_BANK_WIDTH
+        ),
       };
     case 'path': {
       keys(feature, ['kind', 'points', 'width']);
       if (
         !Array.isArray(feature.points) ||
-        feature.points.length < 2 ||
+        feature.points.length < MIN_PATH_POINTS ||
         feature.points.length > MAX_PATH_POINTS
       ) {
         throw new SceneValidationError(
-          `A path needs 2 to ${MAX_PATH_POINTS} center-line points.`
+          `A path needs ${MIN_PATH_POINTS} to ${MAX_PATH_POINTS} center-line points.`
         );
       }
       const points = feature.points.map((point) =>
@@ -591,17 +627,22 @@ function readLandscape(value: unknown): SceneLandscape {
             points[i][0] - points[i - 1][0],
             points[i][1] - points[i - 1][1]
           ) <
-          0.02 - roundoff
+          MIN_PATH_SEGMENT - roundoff
         ) {
           throw new SceneValidationError(
-            'Adjacent path points must be at least 0.02 meters apart.'
+            `Adjacent path points must be at least ${MIN_PATH_SEGMENT} meters apart.`
           );
         }
       }
       return {
         kind: 'path',
         points,
-        width: number(feature.width, 'Path width', 0.15, 3),
+        width: number(
+          feature.width,
+          'Path width',
+          MIN_PATH_WIDTH,
+          MAX_PATH_WIDTH
+        ),
       };
     }
     case 'scatter': {
@@ -617,10 +658,20 @@ function readLandscape(value: unknown): SceneLandscape {
       return {
         kind: 'scatter',
         style,
-        size: vector2(feature.size, 'Planting area', 0.2, MAX_LANDSCAPE_SIZE),
+        size: vector2(
+          feature.size,
+          'Planting area',
+          MIN_LANDSCAPE_SIZE,
+          MAX_LANDSCAPE_SIZE
+        ),
         count: integer(feature.count, 'Scatter count', 1, MAX_SCATTER_COUNT),
-        seed: integer(feature.seed, 'Scatter seed', 0, 2147483647),
-        height: number(feature.height, 'Specimen height', 0.1, 6),
+        seed: integer(feature.seed, 'Scatter seed', 0, MAX_SCATTER_SEED),
+        height: number(
+          feature.height,
+          'Specimen height',
+          MIN_SCATTER_HEIGHT,
+          MAX_SCATTER_HEIGHT
+        ),
       };
     }
     default:
@@ -1337,7 +1388,7 @@ export function buildScenePrompt(request: SceneRequest): string {
     'Scatter areas are centered rectangles, not borders that follow another feature. They have no automatic exclusion masks. Account for position, rotation, scale, and foliage overhang, and keep their footprints out of ponds, paths, and structures. Use separate narrow planting strips rather than a broad rectangle across water or a walkway.',
     'Prefer a few compact planting areas over listing every tree or flower as a separate object. Keep a scatter seed unchanged when modifying height, count, or color so its arrangement stays recognizable. A garden will usually need only 6 to 16 scene objects plus a compact part-based bridge or pavilion.',
     'Refine a landscape feature with changes.landscape containing its complete recipe. For a bigger pond, keep its ID, bankWidth, color, and current transform and change its size. Preserve untouched planting seeds and objects; adjust a neighboring path or bridge only if the requested change needs it. Landscape features have no partEdits.',
-    `Landscape limits: water and planting sizes each 0.2 to ${MAX_LANDSCAPE_SIZE} meters; bankWidth 0.05 to 1; path width 0.15 to 3 with 2 to ${MAX_PATH_POINTS} points inside +/-${MAX_SCENE_DISTANCE} and consecutive points at least 0.02 meters apart. Each scatter has 1 to ${MAX_SCATTER_COUNT} specimens, height 0.1 to 6 meters, and an integer seed 0 to 2147483647. The whole scene has at most ${MAX_SCENE_SCATTER_COUNT} scattered specimens.`,
+    `Landscape limits: water and planting sizes each ${MIN_LANDSCAPE_SIZE} to ${MAX_LANDSCAPE_SIZE} meters; bankWidth ${MIN_BANK_WIDTH} to ${MAX_BANK_WIDTH}; path width ${MIN_PATH_WIDTH} to ${MAX_PATH_WIDTH} with ${MIN_PATH_POINTS} to ${MAX_PATH_POINTS} points inside +/-${MAX_SCENE_DISTANCE} and consecutive points at least ${MIN_PATH_SEGMENT} meters apart. Each scatter has 1 to ${MAX_SCATTER_COUNT} specimens, height ${MIN_SCATTER_HEIGHT} to ${MAX_SCATTER_HEIGHT} meters, and an integer seed 0 to ${MAX_SCATTER_SEED}. The whole scene has at most ${MAX_SCENE_SCATTER_COUNT} scattered specimens.`,
     'Landscape geometry is bounded and visual: do not promise terrain excavation, water physics, collision-free navigation, or an infinite generated world.',
     'Positions are object bases in scene-local METERS: X right, Y up, +Z toward the viewer. Rotation is upright Y-axis RADIANS.',
     'Catalog sizes are physical dimensions at scale [1,1,1]. Scale is a dimensionless multiplier, not a size in meters.',
