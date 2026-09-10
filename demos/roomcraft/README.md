@@ -102,7 +102,7 @@ The keyboard reuses the existing [virtualkeyboard add-on](../../src/addons/virtu
 
 Previous and Next cycle through scene objects, including objects that are difficult to point at. Remove deletes the selected object without asking Gemini; Undo restores it. Pause and Resume control part playback from the same row and stay usable while a request is running. New, Place, Undo, and Redo are available below both tabs. Examples contains the clearly labelled handcrafted starter scenes, not generated content.
 
-In virtual world mode the studio adds the environment summary and a Moonlight, Sunrise, and Enter world row, so atmosphere and viewpoint are reachable without the DOM console. The default page builds none of those extra controls.
+In virtual world mode the studio adds the environment summary and Moonlight and Sunrise controls. Its desktop preview also shows Enter world; that desktop-only action is hidden during XR. The default page builds none of those extra controls.
 
 The studio and keyboard have draggable edges. Recenter brings them back near your current view without moving the camera or scene, and closing the keyboard keeps its draft. On desktop, opening or recentering the studio chooses the side with less overlap from nearby authored objects, including their full motion envelopes. This is not room collision avoidance: drag the cards elsewhere if both sides are crowded. The desktop Spatial studio button hides both cards when you want an unobstructed composition. Configure Gemini in the browser controls before entering XR; the spatial keyboard is for scene instructions, not API keys.
 

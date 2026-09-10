@@ -727,6 +727,25 @@ describe('Roomcraft virtual environment mode', () => {
     expect(element('status').textContent).toContain('no collision');
   });
 
+  it('hides Enter world in XR and restores it after the renderer finishes exiting', async () => {
+    await mount();
+    expect(element('enterWorld').hidden).toBe(false);
+    expect(consoleScript.xrEnterWorld.style.display).toBe('flex');
+
+    renderer.xr.isPresenting = true;
+    consoleScript.onXRSessionStarted();
+    expect(element('enterWorld').hidden).toBe(true);
+    expect(consoleScript.xrEnterWorld.style.display).toBe('none');
+
+    // Native session-end listeners can run before three.js clears this flag.
+    consoleScript.onXRSessionEnded();
+    renderer.xr.isPresenting = false;
+    consoleScript.update();
+    expect(element('enterWorld').hidden).toBe(false);
+    expect(consoleScript.xrEnterWorld.style.display).toBe('flex');
+    expect(button('enterWorld').disabled).toBe(false);
+  });
+
   it('frames from the add-on bounds, which hold the ground but not the sky', async () => {
     await mount();
     const bounds = room.getWorldBounds();

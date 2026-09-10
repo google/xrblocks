@@ -199,6 +199,7 @@ export class RoomcraftConsole extends xb.Script {
     this.listening = false;
     this.connecting = false;
     this.xrActive = false;
+    this.lastXRState = false;
     this.spatialPreview = false;
     this.keyboardOpen = false;
     this.spatialTab = 'author';
@@ -468,8 +469,12 @@ export class RoomcraftConsole extends xb.Script {
 
   update(_time, frame) {
     if (this.disposed) return;
+    const inXR = this.isInXR();
+    if (inXR !== this.lastXRState) {
+      this.lastXRState = inXR;
+      this.refresh();
+    }
     if (this.needsSpatialPlacement) {
-      const inXR = this.isInXR();
       const referenceSpace = inXR
         ? xb.core.renderer.xr.getReferenceSpace()
         : null;
@@ -781,6 +786,7 @@ export class RoomcraftConsole extends xb.Script {
 
   onXRSessionStarted() {
     this.xrActive = true;
+    this.lastXRState = true;
     this.needsSpatialPlacement = true;
     this.dom.console?.classList.add('rc-hidden');
     this.card.visible = false;
@@ -1727,6 +1733,7 @@ export class RoomcraftConsole extends xb.Script {
       dom.sunrise.setAttribute('aria-pressed', String(sunlit));
     }
     if (dom.enterWorld) {
+      dom.enterWorld.hidden = this.isInXR();
       dom.enterWorld.disabled = busy || this.isInXR() || !environment;
       dom.enterWorld.title = this.isInXR()
         ? 'Entering the world moves the desktop camera only.'
@@ -1742,6 +1749,7 @@ export class RoomcraftConsole extends xb.Script {
     }
     if (this.xrSunrise) this.xrSunrise.disabled = !!dom.sunrise?.disabled;
     if (this.xrEnterWorld) {
+      this.xrEnterWorld.style.display = this.isInXR() ? 'none' : 'flex';
       this.xrEnterWorld.disabled = !!dom.enterWorld?.disabled;
     }
   }
