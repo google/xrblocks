@@ -167,6 +167,8 @@ Releasing a pinch can end grab and manipulation while touch and selection
 continue. Call `event.preventDefault()` in touch start when contact must not
 start the default selection.
 
+Direct touch requires a tracked hand and index-tip pose. When either loses tracking, its last position is ignored and any active contact ends as `source-lost`, without completing a click. This releases touch suppression so a tracked controller ray can target again. Touch resumes when valid hand poses return.
+
 ## Automatic manipulation
 
 Configure manipulation on the owner object. Do not create a manager:
