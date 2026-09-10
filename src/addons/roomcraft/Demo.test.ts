@@ -23,6 +23,8 @@ const {mockCore} = vi.hoisted(() => ({
     },
     sound: {
       speechRecognizer: undefined,
+      soundSynthesizer: {playTone: vi.fn(), audioContext: undefined},
+      categoryVolumes: {getEffectiveVolume: vi.fn()},
     },
   },
 }));
@@ -32,6 +34,7 @@ vi.mock('xrblocks', async () => ({
   ...(await import('../../ai/AI')),
   ...(await import('../../ai/Gemini')),
   ...(await import('../../world/World')),
+  ...(await import('../../sound/SoundSynthesizer')),
   ...(await import('../../utils/ThreeDisposal')),
   ...(await import('../../utils/ObjectPlacement')),
   ...(await import('../../utils/ModelLoader')),
@@ -174,6 +177,9 @@ beforeEach(async () => {
   Object.assign(mockCore, {camera, renderer});
   Object.assign(mockCore.ai, {options});
   Object.assign(mockCore.sound, {speechRecognizer: speech});
+  Object.assign(mockCore.sound.soundSynthesizer, {audioContext: undefined});
+  mockCore.sound.soundSynthesizer.playTone.mockReset();
+  mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
   mockCore.ai.isAvailable.mockReturnValue(true);
   mockCore.ai.initializeModel.mockResolvedValue(undefined);
   room = new Roomcraft();
@@ -191,6 +197,53 @@ afterEach(() => {
 });
 
 describe('Roomcraft demo integration', () => {
+  it('plays one quiet click for desktop and spatial buttons, including keyboard keys', () => {
+    const play = mockCore.sound.soundSynthesizer.playTone;
+    expect(play).not.toHaveBeenCalled();
+    button('toggleConsole').click();
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenLastCalledWith(1500, 0.02, 0.035, 'triangle');
+    consoleScript.xrType.onClick();
+    expect(play).toHaveBeenCalledTimes(2);
+    consoleScript.xrKeyboard.getObjectByName('KeyboardKey:a').onClick();
+    expect(play).toHaveBeenCalledTimes(3);
+    expect(input().value).toBe('a');
+  });
+
+  it('respects the SDK UI mute and does not sound for disabled buttons or disposed controls', () => {
+    const play = mockCore.sound.soundSynthesizer.playTone;
+    mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0);
+    button('toggleConsole').click();
+    expect(play).not.toHaveBeenCalled();
+    mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
+    consoleScript.xrGenerate.disabled = true;
+    consoleScript.xrGenerate.onClick();
+    expect(play).not.toHaveBeenCalled();
+    consoleScript.dispose();
+    button('toggleConsole').click();
+    consoleScript.playButtonSound();
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it('resumes suspended audio during activation and leaves button actions working if it fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const resume = vi.fn().mockRejectedValue(new Error('Audio blocked.'));
+    Object.assign(mockCore.sound.soundSynthesizer, {
+      audioContext: {state: 'suspended', resume},
+    });
+    consoleScript.xrType.onClick();
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(consoleScript.keyboardOpen).toBe(true);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    mockCore.sound.soundSynthesizer.playTone.mockImplementation(() => {
+      throw new Error('Audio device unavailable.');
+    });
+    consoleScript.xrType.onClick();
+    expect(consoleScript.keyboardOpen).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(element('error').hidden).toBe(true);
+  });
+
   it('shows pending operations immediately in both interfaces and clears them on completion', async () => {
     const pending = Promise.withResolvers<void>();
     const operation = consoleScript.run(

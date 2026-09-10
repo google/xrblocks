@@ -220,6 +220,7 @@ export class RoomcraftConsole extends xb.Script {
     this.buildSuggestionChips();
     this.bindDomActions();
     this.buildSpatialPanel();
+    this.bindButtonFeedback();
 
     this.listen(this.room, 'change', () => {
       this.placed = false;
@@ -1550,9 +1551,57 @@ export class RoomcraftConsole extends xb.Script {
     this.dom.toggle.textContent = expanded ? 'Hide controls' : 'Open studio';
   }
 
-  listen(target, type, listener) {
-    target.addEventListener(type, listener);
-    this.cleanups.push(() => target.removeEventListener(type, listener));
+  bindButtonFeedback() {
+    this.listen(
+      this.dom.console,
+      'click',
+      (event) => {
+        const button =
+          event.target instanceof Element
+            ? event.target.closest('button')
+            : null;
+        if (button && !button.disabled) this.playButtonSound();
+      },
+      true
+    );
+    this.traverse((button) => {
+      if (!(button instanceof xb.UIButton) || !button.onClick) return;
+      const onClick = button.onClick;
+      button.onClick = () => {
+        if (!button.disabled) this.playButtonSound();
+        return onClick.call(button);
+      };
+      this.cleanups.push(() => {
+        button.onClick = onClick;
+      });
+    });
+  }
+
+  playButtonSound() {
+    if (this.disposed) return;
+    const report = (error) =>
+      console.warn('[roomcraft] Button audio unavailable.', error);
+    try {
+      const sound = xb.core.sound;
+      const volume = sound.categoryVolumes.getEffectiveVolume('ui', 0.035);
+      if (volume === 0) return;
+      const tone = xb.SOUND_PRESETS.CLICK[0];
+      const synth = sound.soundSynthesizer;
+      // Keep initialization and resume inside the activation, not a preset timer.
+      synth.playTone(tone.frequency, tone.duration, volume, tone.waveformType);
+      if (synth.audioContext?.state === 'suspended') {
+        void synth.audioContext.resume().catch(report);
+      }
+    } catch (error) {
+      report(error);
+    }
+  }
+
+  listen(target, type, listener, capture = false) {
+    target.addEventListener(type, listener, capture);
+    this.cleanups.push(() =>
+      target.removeEventListener(type, listener, capture)
+    );
   }
 
   refresh() {

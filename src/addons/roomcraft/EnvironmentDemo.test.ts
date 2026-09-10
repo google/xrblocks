@@ -38,6 +38,8 @@ const {mockCore, mockUrlParameter} = vi.hoisted(() => ({
     },
     sound: {
       speechRecognizer: undefined,
+      soundSynthesizer: {playTone: vi.fn()},
+      categoryVolumes: {getEffectiveVolume: vi.fn()},
     },
   },
 }));
@@ -48,6 +50,7 @@ vi.mock('xrblocks', async () => ({
   ...(await import('../../ai/AI')),
   ...(await import('../../ai/Gemini')),
   ...(await import('../../world/World')),
+  ...(await import('../../sound/SoundSynthesizer')),
   ...(await import('../../utils/ThreeDisposal')),
   ...(await import('../../utils/ObjectPlacement')),
   ...(await import('../../utils/ModelLoader')),
@@ -124,6 +127,7 @@ beforeEach(() => {
   Object.assign(mockCore, {camera, renderer});
   Object.assign(mockCore.ai, {options: aiOptions});
   Object.assign(mockCore.sound, {speechRecognizer: new TestSpeech()});
+  mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
   mockCore.ai.isAvailable.mockReturnValue(true);
   mockCore.ai.initializeModel.mockResolvedValue(undefined);
 });

@@ -86,6 +86,8 @@ No voice means the browser does not expose speech recognition. Gemini scene gene
 
 Pending operations show Working or Generating on the action button, with a gentle pulse in both interfaces and a spinner in the browser status. Reduced-motion preferences disable the animation without hiding the busy label. These indicate activity, not estimated completion percentages, and clear on either success or failure.
 
+Studio buttons and spatial keyboard keys play a quiet click through the SDK's shared sound synthesizer, respecting its UI and master volume and mute settings. Audio starts on interaction, not page load. If the browser blocks playback, the console reports an audio warning and the button action still works.
+
 Click or pinch a scene object to select it, then say or type "make this blue" so the instruction has spatial context. Selected objects are shown by name and ID in the console, a compound design also shows its part count, which parts move and how, and a read-only list of part names and shapes, and any object can be chosen from the selection list. When one request adds exactly one object, that object is selected for you so the next "this" is unambiguous.
 
 Drag or pinch any object to move or scale it, including a compound design, which moves as one object rather than as loose parts. Those hand transforms survive later edits, because the add-on sends explicit per-object updates rather than rewriting the whole scene.
