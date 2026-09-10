@@ -10,6 +10,11 @@ import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
 
 import {ENVIRONMENT_STARTER_SCENES, STARTER_SCENES} from './scenes.js';
 import {getWorldSpawn} from './Spawn.js';
+import {
+  GeminiVoiceInput,
+  VOICE_MAX_DURATION_MS,
+  getVoiceFormat,
+} from './GeminiVoice.js';
 
 // One optional downloaded model, kept separate from the offline catalog.
 // Boom Box by Microsoft, released under CC0 1.0 through the Khronos glTF
@@ -70,18 +75,6 @@ const MAX_LISTED_PARTS = 24;
 const STUDIO_SIZE = {width: 1.05, height: 1.02};
 const KEYBOARD_SIZE = {width: 1.05, height: 0.49};
 const KEYBOARD_GAP = 0.045;
-
-const SPEECH_MESSAGES = {
-  'not-allowed':
-    'Microphone permission was denied. Allow the microphone in your browser, or type the edit instead.',
-  'service-not-allowed':
-    'The browser blocked speech recognition. Type the edit instead.',
-  'audio-capture':
-    'No microphone was found. Connect one, or type the edit instead.',
-  network: 'The speech service could not be reached. Type the edit instead.',
-  'no-speech': 'No speech was detected. Press Talk again, or type the edit.',
-  aborted: 'Listening stopped.',
-};
 
 const PREVIEW_MESSAGE =
   'Preview only. Use Place on surface to fit the current scene to a scanned floor or table.';
@@ -197,7 +190,6 @@ export class RoomcraftConsole extends xb.Script {
     this.starterButtons = [];
     this.spatialStarters = [];
     this.cleanups = [];
-    this.listening = false;
     this.connecting = false;
     this.running = false;
     this.reducedMotion = false;
@@ -217,10 +209,28 @@ export class RoomcraftConsole extends xb.Script {
     this.exhibitCount = 0;
     this.statusMessage = '';
     this.errorMessage = '';
+    this.promptValue = '';
+    this.voiceDraft = '';
+    this.voiceSelection = null;
+    this.voiceSubmissionPending = false;
+    this.voiceSession = null;
+    this.voiceSessionCleanup = null;
+    this.voice = new GeminiVoiceInput({
+      getAI: () => xb.core.ai,
+      onStateChange: (state) => this.updateVoiceState(state),
+      onTranscript: (transcript) => this.applyVoiceTranscript(transcript),
+      onError: (error) => {
+        if (this.disposed) return;
+        this.voiceSubmissionPending = false;
+        this.showError(error);
+        this.setStatus('Voice input stopped. Your scene was kept.');
+      },
+    });
   }
 
   init() {
     this.collectDom();
+    this.promptValue = this.dom.prompt.value;
     this.applyModeCopy();
     this.buildStarterButtons();
     this.buildSuggestionChips();
@@ -229,6 +239,11 @@ export class RoomcraftConsole extends xb.Script {
     this.bindButtonFeedback();
 
     this.listen(this.room, 'change', () => {
+      if (this.voice.state === 'transcribing') {
+        this.stopListening(
+          'Voice input cancelled because the scene changed. Your edits were kept.'
+        );
+      }
       this.placed = false;
       if (this.entryBlocked && this.isInXR()) {
         this.entryBlocked = false;
@@ -237,7 +252,14 @@ export class RoomcraftConsole extends xb.Script {
       }
       this.refresh();
     });
-    this.listen(this.room, 'selectionchange', () => this.refresh());
+    this.listen(this.room, 'selectionchange', () => {
+      if (this.voice.state === 'transcribing') {
+        this.stopListening(
+          'Voice input cancelled because the selection changed. Your selection was kept.'
+        );
+      }
+      this.refresh();
+    });
     this.listen(this.room, 'statuschange', () => this.refresh());
     this.listen(this.room, 'motionstatechange', () => this.refresh());
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -255,7 +277,6 @@ export class RoomcraftConsole extends xb.Script {
 
   /** Loads the opening scene once XR Blocks has finished starting. */
   async start() {
-    this.bindSpeech();
     try {
       if (this.virtual) {
         await this.newEnvironment(true);
@@ -349,6 +370,7 @@ export class RoomcraftConsole extends xb.Script {
       prompt: id('prompt'),
       generate: id('generate'),
       mic: id('mic'),
+      cancelVoice: id('cancelVoice'),
       environmentSection: id('environmentSection'),
       environmentSummary: id('environmentSummary'),
       environmentNote: id('environmentNote'),
@@ -420,6 +442,23 @@ export class RoomcraftConsole extends xb.Script {
       this.setPrompt(this.dom.prompt.value)
     );
     this.listen(this.dom.mic, 'click', () => this.toggleListening());
+    this.listen(this.dom.cancelVoice, 'click', () => this.stopListening());
+    this.listen(document, 'visibilitychange', () => {
+      if (document.hidden) {
+        this.stopListening(
+          'Voice input cancelled because the page was hidden.'
+        );
+      }
+    });
+    this.listen(window, 'pagehide', () =>
+      this.stopListening('Voice input cancelled because the page was left.')
+    );
+    this.listen(document, 'keydown', (event) => {
+      if (event.key === 'Escape' && this.voice.state !== 'idle') {
+        event.preventDefault();
+        this.stopListening();
+      }
+    });
     this.listen(this.dom.place, 'click', () => void this.placeOnSurface());
     this.listen(
       this.dom.moonlight,
@@ -453,41 +492,6 @@ export class RoomcraftConsole extends xb.Script {
         this.showError(error);
       }
     });
-  }
-
-  bindSpeech() {
-    const recognizer = xb.core.sound?.speechRecognizer;
-    if (!recognizer) {
-      this.dom.mic.disabled = true;
-      this.dom.mic.title =
-        'Speech recognition is not available in this browser.';
-      return;
-    }
-    if (this.boundSpeechRecognizer === recognizer) return;
-    this.boundSpeechRecognizer = recognizer;
-    this.listen(recognizer, 'result', (event) => {
-      if (!this.listening) return;
-      if (!event.isFinal) {
-        this.setStatus(`Listening: ${event.transcript}`);
-        return;
-      }
-      this.stopListening();
-      const transcript = event.transcript.trim();
-      if (!transcript) {
-        this.setStatus('No speech was recognized.');
-        return;
-      }
-      this.setPrompt(transcript);
-      void this.generate();
-    });
-    this.listen(recognizer, 'error', (event) => {
-      this.stopListening();
-      this.setError(
-        SPEECH_MESSAGES[event.error] ??
-          `Speech recognition failed: ${event.error}.`
-      );
-    });
-    this.listen(recognizer, 'end', () => this.stopListening());
   }
 
   update(time = 0, frame) {
@@ -533,12 +537,6 @@ export class RoomcraftConsole extends xb.Script {
         this.restoreEntryVisibility();
         this.refresh();
       }
-    }
-    if (!this.boundSpeechRecognizer) this.bindSpeech();
-    const available = !!xb.core.sound?.speechRecognizer?.recognition;
-    if (available !== this.speechAvailable) {
-      this.speechAvailable = available;
-      this.refresh();
     }
     const opacity =
       this.isBusy() && !this.reducedMotion
@@ -622,6 +620,12 @@ export class RoomcraftConsole extends xb.Script {
       label: 'Talk',
       onClick: () => this.toggleListening(),
       style: buttonStyle('#4a5f52'),
+    });
+    this.xrCancelVoice = new xb.UIButton({
+      label: 'Cancel',
+      ariaLabel: 'Cancel voice input',
+      onClick: () => this.stopListening(),
+      style: {...buttonStyle('#30292d'), display: 'none'},
     });
     this.xrNew = new xb.UIButton({
       label: 'New',
@@ -721,7 +725,7 @@ export class RoomcraftConsole extends xb.Script {
       style: {width: '100%', flexGrow: 1, flexDirection: 'column', gap: 12},
       children: [
         this.xrPromptText,
-        row([this.xrTalk, this.xrType, this.xrGenerate]),
+        row([this.xrTalk, this.xrCancelVoice, this.xrType, this.xrGenerate]),
       ],
     });
 
@@ -842,6 +846,20 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   onXRSessionStarted() {
+    this.clearVoiceSession();
+    this.voiceSession = xb.core.renderer?.xr.getSession?.() ?? null;
+    if (this.voiceSession) {
+      const session = this.voiceSession;
+      const visibility = () => {
+        if (session.visibilityState === 'hidden') {
+          this.stopListening('Voice input cancelled because XR was hidden.');
+        }
+      };
+      session.addEventListener('visibilitychange', visibility);
+      this.voiceSessionCleanup = () =>
+        session.removeEventListener('visibilitychange', visibility);
+      visibility();
+    }
     this.xrActive = true;
     this.lastXRState = true;
     this.needsSpatialPlacement = true;
@@ -862,6 +880,8 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   onXRSessionEnded() {
+    this.stopListening('Voice input cancelled because XR ended.');
+    this.clearVoiceSession();
     this.xrActive = false;
     this.needsXRSpawn = false;
     this.entryBlocked = false;
@@ -906,6 +926,14 @@ export class RoomcraftConsole extends xb.Script {
     if (this.spatialPreview) {
       this.positionSpatialStudio();
       this.toggleConsole(false);
+    }
+    if (
+      !this.spatialPreview &&
+      this.dom.console.classList.contains('rc-collapsed')
+    ) {
+      this.stopListening(
+        'Voice input cancelled because its controls were hidden.'
+      );
     }
     this.refresh();
   }
@@ -1023,6 +1051,11 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   setSpatialTab(tab) {
+    if (tab !== 'author') {
+      this.stopListening(
+        'Voice input cancelled because its controls were hidden.'
+      );
+    }
     this.spatialTab = tab;
     this.refresh();
   }
@@ -1033,6 +1066,12 @@ export class RoomcraftConsole extends xb.Script {
       this.setError(`Instructions are limited to ${limit} characters.`);
     }
     const draft = value.slice(0, limit);
+    if (draft !== this.promptValue && this.voice.state !== 'idle') {
+      this.stopListening(
+        'Voice input cancelled because the draft changed. Your text was kept.'
+      );
+    }
+    this.promptValue = draft;
     this.dom.prompt.value = draft;
     this.xrKeyboard.setValue(draft);
     this.xrPromptText.text = draft
@@ -1477,6 +1516,7 @@ export class RoomcraftConsole extends xb.Script {
     this.refresh();
     try {
       ai.options.promptForApiKey = prompt;
+      ai.options.model = 'gemini';
       ai.options.gemini.enabled = true;
       ai.options.gemini.config = {
         responseMimeType: 'application/json',
@@ -1510,19 +1550,15 @@ export class RoomcraftConsole extends xb.Script {
     }
   }
 
-  // ---- speech ----
+  // ---- Gemini voice ----
 
   toggleListening() {
-    const recognizer = xb.core.sound?.speechRecognizer;
-    if (!recognizer?.recognition) {
-      this.setError(
-        'Speech recognition is not available in this browser. Type the edit instead.'
-      );
+    if (this.voice.state === 'recording') {
+      this.voice.finish();
       return;
     }
-    if (this.listening) {
-      this.stopListening();
-      this.setStatus('Listening stopped.');
+    if (this.voice.state !== 'idle') {
+      this.setStatus('Voice input is already active. Use Cancel to stop it.');
       return;
     }
     if (this.isBusy()) {
@@ -1535,26 +1571,89 @@ export class RoomcraftConsole extends xb.Script {
       );
       return;
     }
+    if (!getVoiceFormat()) {
+      this.setError(
+        'This browser cannot record microphone audio for Gemini. Use a supported HTTPS browser or Keyboard.'
+      );
+      return;
+    }
+    if (document.hidden || this.voiceSession?.visibilityState === 'hidden') {
+      this.setError(
+        'Return to Roomcraft before starting a microphone recording.'
+      );
+      return;
+    }
     this.setError('');
-    this.listening = true;
-    this.dom.mic.setAttribute('aria-pressed', 'true');
-    this.setStatus('Listening. Speak one instruction.');
-    recognizer.start();
+    this.voiceDraft = this.dom.prompt.value;
+    this.voiceSubmissionPending = false;
+    void this.voice.start();
+  }
+
+  stopListening(
+    message = 'Voice input cancelled. No spoken edit was submitted.'
+  ) {
+    this.voiceSubmissionPending = false;
+    if (this.voice.cancel()) this.setStatus(message);
+  }
+
+  updateVoiceState(state) {
+    if (this.disposed) return;
+    if (state === 'starting') {
+      this.setStatus(
+        'Requesting microphone permission. Voice uses Gemini only.'
+      );
+    } else if (state === 'recording') {
+      this.setStatus(
+        `Recording. Speak one instruction, then Finish to send it to Gemini (${VOICE_MAX_DURATION_MS / 1000}s maximum).`
+      );
+    } else if (state === 'transcribing') {
+      this.voiceSelection = this.room.selectedId;
+      this.voiceSubmissionPending = true;
+      this.setStatus(
+        'Transcribing with Gemini. Cancel is available before the spoken edit is submitted.'
+      );
+    }
     this.refresh();
   }
 
-  stopListening() {
-    if (!this.listening) return;
-    this.listening = false;
-    this.dom.mic.setAttribute('aria-pressed', 'false');
-    xb.core.sound?.speechRecognizer?.stop();
-    this.refresh();
+  applyVoiceTranscript(transcript) {
+    if (
+      this.disposed ||
+      this.voice.state !== 'idle' ||
+      !this.voiceSubmissionPending
+    )
+      return;
+    this.voiceSubmissionPending = false;
+    if (
+      document.hidden ||
+      this.voiceSession?.visibilityState === 'hidden' ||
+      this.dom.prompt.value !== this.voiceDraft ||
+      this.room.selectedId !== this.voiceSelection
+    ) {
+      this.setStatus(
+        'Voice result discarded because the page, draft, or selection changed. Your current edit was kept.'
+      );
+      return;
+    }
+    this.setPrompt(transcript);
+    void this.generate();
+  }
+
+  clearVoiceSession() {
+    this.voiceSessionCleanup?.();
+    this.voiceSessionCleanup = null;
+    this.voiceSession = null;
   }
 
   // ---- shared plumbing ----
 
   isBusy() {
-    return this.running || this.room.busy || this.connecting;
+    return (
+      this.running ||
+      this.room.busy ||
+      this.connecting ||
+      this.voice.state !== 'idle'
+    );
   }
 
   async run(pendingMessage, action) {
@@ -1612,12 +1711,19 @@ export class RoomcraftConsole extends xb.Script {
     const ai = xb.core.ai;
     return !!(
       !this.connecting &&
+      ai?.model instanceof xb.Gemini &&
+      ai.options?.model === 'gemini' &&
       ai?.options?.gemini.apiKey.trim() &&
       ai.isAvailable()
     );
   }
 
   toggleConsole(expanded) {
+    if (!expanded && !this.spatialPreview && !this.isInXR()) {
+      this.stopListening(
+        'Voice input cancelled because its controls were hidden.'
+      );
+    }
     this.dom.console.classList.toggle('rc-collapsed', !expanded);
     this.dom.toggle.setAttribute('aria-expanded', String(expanded));
     this.dom.toggle.textContent = expanded ? 'Hide controls' : 'Open studio';
@@ -1798,32 +1904,42 @@ export class RoomcraftConsole extends xb.Script {
     this.xrMotion.disabled = dom.motion.disabled;
     this.xrMotion.label = motionPaused ? 'Resume' : 'Pause';
 
-    const voiceAvailable = !!xb.core.sound?.speechRecognizer?.recognition;
+    const voiceAvailable = !!getVoiceFormat();
+    const voiceState = this.voice.state;
     const aiReady = this.isGeminiReady();
     this.xrProviderText.text = aiReady
-      ? 'Gemini configured for this page.'
+      ? 'Gemini configured. Talk sends microphone audio only to Gemini.'
       : this.isInXR()
         ? 'Offline tools available. Exit XR to configure Gemini in the browser panel.'
-        : 'Offline tools available. Connect Gemini in the browser panel to generate.';
+        : 'Offline tools available. Connect Gemini in the browser panel to generate or use voice.';
     if (!voiceAvailable) {
       this.xrProviderText.text +=
-        ' Voice unavailable in this browser; use Keyboard.';
+        ' Microphone recording is unavailable here; use Keyboard.';
     }
     dom.generate.disabled = busy || !dom.prompt.value.trim();
     dom.generate.textContent =
-      this.room.status === 'planning'
-        ? 'Generating...'
-        : busy
-          ? 'Working...'
-          : 'Generate';
+      voiceState === 'transcribing'
+        ? 'Transcribing...'
+        : this.room.status === 'planning'
+          ? 'Generating...'
+          : busy
+            ? 'Working...'
+            : 'Generate';
     dom.newDesign.disabled =
       busy ||
       (layout.objects.length === 0 &&
         (!this.virtual || layout.title === EMPTY_ENVIRONMENT_TITLE));
-    dom.mic.disabled = busy || !voiceAvailable;
-    dom.mic.title = voiceAvailable
-      ? ''
-      : 'This browser does not provide speech recognition. Use Keyboard or type in the edit box.';
+    dom.mic.disabled =
+      voiceState === 'recording' ? false : busy || !voiceAvailable || !aiReady;
+    dom.mic.title = !voiceAvailable
+      ? 'This browser cannot record microphone audio. Use Keyboard or type the edit.'
+      : !aiReady
+        ? 'Connect Gemini before using voice.'
+        : 'Talk records one instruction. Finish sends it to Gemini and applies the spoken edit.';
+    dom.mic.setAttribute('aria-pressed', String(voiceState === 'recording'));
+    dom.cancelVoice.hidden = voiceState === 'idle';
+    dom.console.classList.toggle('rc-recording', voiceState === 'recording');
+    this.xrCancelVoice.style.display = voiceState === 'idle' ? 'none' : 'flex';
     dom.place.disabled =
       busy || !!layout.environment || layout.objects.length === 0;
     dom.place.title = layout.environment ? VIRTUAL_PLACEMENT_MESSAGE : '';
@@ -1839,13 +1955,18 @@ export class RoomcraftConsole extends xb.Script {
     dom.export.disabled = layout.objects.length === 0 && !layout.environment;
     dom.connect.disabled = busy;
     dom.connect.textContent = aiReady ? 'Reconnect Gemini' : 'Connect Gemini';
-    dom.mic.textContent = this.listening
-      ? 'Stop'
-      : voiceAvailable
-        ? 'Talk'
-        : 'No voice';
+    dom.mic.textContent =
+      voiceState === 'recording'
+        ? 'Finish'
+        : voiceState === 'starting'
+          ? 'Mic...'
+          : voiceAvailable
+            ? 'Talk'
+            : 'No mic';
     this.xrTalk.disabled = dom.mic.disabled;
     this.xrTalk.label = dom.mic.textContent;
+    this.xrTalk.style.backgroundColor =
+      voiceState === 'recording' ? '#8d352c' : '#4a5f52';
     this.xrNew.disabled = dom.newDesign.disabled;
     this.xrNew.label = this.virtual ? 'New world' : 'New';
     this.xrPlace.disabled = dom.place.disabled;
@@ -1913,10 +2034,12 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   dispose() {
-    this.stopListening();
+    this.disposed = true;
+    this.voiceSubmissionPending = false;
+    this.voice.dispose();
+    this.clearVoiceSession();
     this.needsXRSpawn = false;
     this.restoreEntryVisibility();
-    this.disposed = true;
     this.cleanups.splice(0).forEach((cleanup) => cleanup());
     this.card?.dispose();
     this.card?.removeFromParent();
@@ -1968,9 +2091,8 @@ export function createRoomcraftOptions(virtual = false) {
   options.enablePlaneDetection();
   options.enableHands();
   options.reticles.enabled = true;
-  options.sound.speechRecognizer.enabled = true;
-  options.sound.speechRecognizer.continuous = false;
-  options.sound.speechRecognizer.interimResults = true;
+  // Voice stays on Gemini rather than a browser-managed speech service.
+  options.sound.speechRecognizer.enabled = false;
   options.setAppTitle('Roomcraft');
   options.setAppDescription('Speak a scene into your room.');
   options.xrButton.showEnterSimulatorButton = true;

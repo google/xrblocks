@@ -4,6 +4,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {Roomcraft} from './Roomcraft';
 import {AIOptions} from '../../ai/AIOptions';
+import {Gemini} from '../../ai/Gemini';
 import type {SceneLayout} from './SceneTypes';
 
 // @ts-expect-error The executable browser demo is a JavaScript consumer.
@@ -14,7 +15,8 @@ import {
   MINIATURE_CITY,
 } from '../../../demos/roomcraft/scenes.js';
 
-const {mockCore} = vi.hoisted(() => ({
+const {mockCore, mockVoiceFormat} = vi.hoisted(() => ({
+  mockVoiceFormat: vi.fn(),
   mockCore: {
     ai: {
       options: undefined,
@@ -28,6 +30,44 @@ const {mockCore} = vi.hoisted(() => ({
     },
   },
 }));
+
+vi.mock('../../../demos/roomcraft/GeminiVoice.js', () => {
+  class VoiceInput {
+    state = 'idle';
+    constructor(
+      readonly callbacks: {
+        onStateChange: (state: string) => void;
+        onTranscript: (transcript: string) => void;
+        onError: (error: Error) => void;
+      }
+    ) {}
+    setState(state: string) {
+      this.state = state;
+      this.callbacks.onStateChange(state);
+    }
+    start = vi.fn(async () => this.setState('recording'));
+    finish = vi.fn(() => this.setState('transcribing'));
+    cancel = vi.fn(() => {
+      if (this.state === 'idle') return false;
+      this.setState('idle');
+      return true;
+    });
+    dispose = vi.fn(() => this.cancel());
+    complete(transcript: string) {
+      this.setState('idle');
+      this.callbacks.onTranscript(transcript);
+    }
+    fail(error: Error) {
+      this.setState('idle');
+      this.callbacks.onError(error);
+    }
+  }
+  return {
+    GeminiVoiceInput: VoiceInput,
+    VOICE_MAX_DURATION_MS: 30_000,
+    getVoiceFormat: mockVoiceFormat,
+  };
+});
 
 vi.mock('xrblocks', async () => ({
   ...(await import('../../core/Script')),
@@ -164,6 +204,10 @@ beforeEach(async () => {
   const media = Object.assign(new EventTarget(), {matches: false});
   vi.stubGlobal('matchMedia', () => media);
   options = new AIOptions();
+  mockVoiceFormat.mockReturnValue({
+    record: 'audio/webm;codecs=opus',
+    upload: 'audio/webm',
+  });
   speech = new TestSpeech();
   camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.01, 100);
   camera.position.set(0, 1.5, 2);
@@ -175,7 +219,7 @@ beforeEach(async () => {
     },
   };
   Object.assign(mockCore, {camera, renderer});
-  Object.assign(mockCore.ai, {options});
+  Object.assign(mockCore.ai, {options, model: new Gemini(options.gemini)});
   Object.assign(mockCore.sound, {speechRecognizer: speech});
   Object.assign(mockCore.sound.soundSynthesizer, {audioContext: undefined});
   mockCore.sound.soundSynthesizer.playTone.mockReset();
@@ -436,84 +480,201 @@ describe('Roomcraft demo integration', () => {
     expect(request).toHaveBeenCalledOnce();
   });
 
-  it('submits only a final transcript and stops the native recognizer', async () => {
+  it('submits one completed Gemini transcript and never starts browser recognition', async () => {
     options.gemini.apiKey = 'local-test-fixture';
     const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
     consoleScript.toggleListening();
-    expect(speech.start).toHaveBeenCalledOnce();
+    expect(consoleScript.voice.start).toHaveBeenCalledOnce();
+    expect(speech.start).not.toHaveBeenCalled();
     expect(element('mic').getAttribute('aria-pressed')).toBe('true');
+    expect(button('mic').textContent).toBe('Finish');
+    expect(button('mic').disabled).toBe(false);
+    expect(element('cancelVoice').hidden).toBe(false);
+    expect(consoleScript.xrCancelVoice.style.display).toBe('flex');
     speech.dispatchEvent({
       type: 'result',
       isFinal: false,
       transcript: 'make this',
     });
     expect(request).not.toHaveBeenCalled();
-    speech.dispatchEvent({
-      type: 'result',
-      isFinal: true,
-      transcript: ' make this blue ',
-    });
+    consoleScript.toggleListening();
+    expect(consoleScript.voice.finish).toHaveBeenCalledOnce();
+    expect(button('mic').disabled).toBe(true);
+    expect(consoleScript.xrGenerate.label).toBe('Transcribing...');
+    consoleScript.voice.complete('make this blue');
+    consoleScript.voice.complete('duplicate transcript');
     await vi.waitFor(() =>
       expect(request).toHaveBeenCalledWith('make this blue')
     );
     expect(request).toHaveBeenCalledOnce();
-    expect(speech.stop).toHaveBeenCalledOnce();
+    expect(speech.stop).not.toHaveBeenCalled();
     expect(element('mic').getAttribute('aria-pressed')).toBe('false');
+    expect(element('cancelVoice').hidden).toBe(true);
     await vi.waitFor(() =>
       expect(element('status').textContent).toContain('No scene changes')
     );
   });
 
-  it('binds speech once even when the SDK initializes recognition on a later frame', async () => {
-    consoleScript.dispose();
+  it('uses Gemini voice without SpeechRecognition and keeps Keyboard available without recording support', async () => {
     speech.recognition = undefined;
-    consoleScript = new RoomcraftConsole(room);
-    consoleScript.init();
-    consoleScript.bindSpeech();
-    consoleScript.update();
-    expect(element('mic').textContent).toBe('No voice');
-    expect(button('mic').title).toContain(
-      'does not provide speech recognition'
-    );
+    mockVoiceFormat.mockReturnValue(null);
+    consoleScript.refresh();
+    expect(element('mic').textContent).toBe('No mic');
+    expect(button('mic').title).toContain('cannot record microphone audio');
     expect(consoleScript.xrProviderText.text).toContain(
-      'Voice unavailable in this browser; use Keyboard.'
+      'Microphone recording is unavailable here; use Keyboard.'
     );
     expect(consoleScript.xrType.disabled).toBe(false);
-    speech.recognition = {};
-    consoleScript.update();
-    consoleScript.bindSpeech();
-    expect(element('mic').textContent).toBe('Talk');
-    expect(button('mic').title).toBe('');
-    expect(consoleScript.xrProviderText.text).not.toContain(
-      'Voice unavailable'
-    );
+    mockVoiceFormat.mockReturnValue({
+      record: 'audio/webm',
+      upload: 'audio/webm',
+    });
     options.gemini.apiKey = 'local-test-fixture';
+    consoleScript.refresh();
+    expect(element('mic').textContent).toBe('Talk');
+    expect(button('mic').disabled).toBe(false);
+    expect(button('mic').title).toContain('sends it to Gemini');
     const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
     consoleScript.toggleListening();
-    speech.dispatchEvent({
-      type: 'result',
-      isFinal: true,
-      transcript: 'Add a lamp',
-    });
+    consoleScript.toggleListening();
+    consoleScript.voice.complete('Add a lamp');
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
-    expect(speech.stop).toHaveBeenCalledOnce();
+    expect(speech.start).not.toHaveBeenCalled();
+    expect(speech.stop).not.toHaveBeenCalled();
   });
 
   it('shows speech denial and provider failures on both desktop and XR surfaces', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     options.gemini.apiKey = 'local-test-fixture';
     consoleScript.toggleListening();
-    speech.dispatchEvent({type: 'error', error: 'not-allowed'});
+    consoleScript.voice.fail(new Error('Microphone permission was denied.'));
     expect(consoleScript.xrStatusText.text).toContain('permission was denied');
-    expect(speech.stop).toHaveBeenCalledOnce();
+    expect(consoleScript.voice.state).toBe('idle');
+    expect(element('mic').getAttribute('aria-pressed')).toBe('false');
     const before = room.layout;
     vi.spyOn(room, 'request').mockRejectedValue(new Error('Quota exceeded'));
-    vi.spyOn(console, 'error').mockImplementation(() => {});
     input().value = 'Add a lamp';
     await consoleScript.generate();
     expect(room.layout).toEqual(before);
     expect(element('error').textContent).toBe('Quota exceeded');
     expect(consoleScript.xrStatusText.text).toBe('Quota exceeded');
   });
+
+  it('keeps Cancel available while microphone permission is pending', () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    consoleScript.voice.start.mockImplementation(async () =>
+      consoleScript.voice.setState('starting')
+    );
+    consoleScript.toggleListening();
+    expect(button('mic').disabled).toBe(true);
+    expect(element('cancelVoice').hidden).toBe(false);
+    expect(consoleScript.xrCancelVoice.style.display).toBe('flex');
+    button('cancelVoice').click();
+    expect(consoleScript.voice.state).toBe('idle');
+    expect(element('cancelVoice').hidden).toBe(true);
+    expect(consoleScript.isBusy()).toBe(false);
+  });
+
+  it.each(['desktop', 'spatial'])(
+    'cancels voice when the %s draft changes and ignores a late transcript',
+    (surface) => {
+      options.gemini.apiKey = 'local-test-fixture';
+      consoleScript.setPrompt('Existing draft');
+      const request = vi.spyOn(room, 'request');
+      consoleScript.toggleListening();
+      consoleScript.toggleListening();
+      if (surface === 'desktop') {
+        input().value = 'New typed draft';
+        input().dispatchEvent(new Event('input'));
+      } else {
+        consoleScript.xrKeyboard.pressKey('a');
+      }
+      const draft = input().value;
+      expect(consoleScript.voice.state).toBe('idle');
+      consoleScript.voice.complete('Stale voice instruction');
+      expect(input().value).toBe(draft);
+      expect(request).not.toHaveBeenCalled();
+    }
+  );
+
+  it('cancels transcription if its selected target or scene changes', async () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    const request = vi.spyOn(room, 'request');
+    consoleScript.toggleListening();
+    consoleScript.toggleListening();
+    room.select(room.layout.objects[0].id);
+    expect(consoleScript.voice.state).toBe('idle');
+    consoleScript.voice.complete('Stale selected edit');
+    expect(request).not.toHaveBeenCalled();
+    consoleScript.toggleListening();
+    consoleScript.toggleListening();
+    await room.applyLayout(STARTER_SCENES[1].layout);
+    expect(consoleScript.voice.state).toBe('idle');
+    consoleScript.voice.complete('Stale scene edit');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it.each(['page hidden', 'page left', 'XR ended', 'XR hidden', 'Escape'])(
+    'cancels voice when %s without submitting a late result',
+    (reason) => {
+      options.gemini.apiKey = 'local-test-fixture';
+      const session = Object.assign(new EventTarget(), {
+        visibilityState: 'visible',
+      });
+      Object.assign(renderer.xr, {getSession: () => session});
+      consoleScript.onXRSessionStarted();
+      const request = vi.spyOn(room, 'request');
+      consoleScript.toggleListening();
+      consoleScript.toggleListening();
+      if (reason === 'page hidden') {
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+      } else if (reason === 'page left') {
+        window.dispatchEvent(new Event('pagehide'));
+      } else if (reason === 'XR ended') {
+        consoleScript.onXRSessionEnded();
+      } else if (reason === 'XR hidden') {
+        session.visibilityState = 'hidden';
+        session.dispatchEvent(new Event('visibilitychange'));
+      } else {
+        document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}));
+      }
+      expect(consoleScript.voice.state).toBe('idle');
+      consoleScript.voice.complete('Late hidden-page instruction');
+      expect(request).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not cancel the microphone permission flow when XR is only visible-blurred', () => {
+    options.gemini.apiKey = 'local-test-fixture';
+    const session = Object.assign(new EventTarget(), {
+      visibilityState: 'visible',
+    });
+    Object.assign(renderer.xr, {getSession: () => session});
+    consoleScript.onXRSessionStarted();
+    consoleScript.voice.start.mockImplementation(async () =>
+      consoleScript.voice.setState('starting')
+    );
+    consoleScript.toggleListening();
+    session.visibilityState = 'visible-blurred';
+    session.dispatchEvent(new Event('visibilitychange'));
+    expect(consoleScript.voice.state).toBe('starting');
+  });
+
+  it.each(['desktop controls', 'spatial controls', 'author tab'])(
+    'cancels a recording when hiding its %s',
+    (surface) => {
+      options.gemini.apiKey = 'local-test-fixture';
+      if (surface !== 'desktop controls') consoleScript.toggleSpatialStudio();
+      consoleScript.toggleListening();
+      if (surface === 'desktop controls') consoleScript.toggleConsole(false);
+      else if (surface === 'spatial controls')
+        consoleScript.toggleSpatialStudio();
+      else consoleScript.setSpatialTab('examples');
+      expect(consoleScript.voice.state).toBe('idle');
+      expect(speech.start).not.toHaveBeenCalled();
+    }
+  );
 
   it('invalidates a placement fit after editing instead of claiming a stale fit', async () => {
     vi.spyOn(room, 'placeOnSurface').mockResolvedValue(true);
@@ -1020,11 +1181,12 @@ describe('Roomcraft demo integration', () => {
     expect(JSON.stringify(exported)).not.toContain('local-test-fixture');
   });
 
-  it('releases room, DOM, and speech listeners when the console is disposed', () => {
+  it('releases voice input, room and DOM listeners when the console is disposed', () => {
     options.gemini.apiKey = 'local-test-fixture';
     consoleScript.toggleListening();
     const request = vi.spyOn(room, 'request');
     consoleScript.dispose();
+    consoleScript.voice.complete('Late voice result');
     speech.dispatchEvent({
       type: 'result',
       isFinal: true,
@@ -1036,7 +1198,8 @@ describe('Roomcraft demo integration', () => {
       layout: {title: 'Ignored', objects: []} satisfies SceneLayout,
     });
     expect(request).not.toHaveBeenCalled();
-    expect(speech.stop).toHaveBeenCalledOnce();
+    expect(consoleScript.voice.dispose).toHaveBeenCalledOnce();
+    expect(speech.start).not.toHaveBeenCalled();
     expect(consoleScript.cleanups).toHaveLength(0);
   });
 

@@ -83,10 +83,9 @@
             Connect Gemini
           </button>
           <p class="rc-fineprint">
-            A browser API key is for local prototyping only. Speech uses the
-            browser's recognition service, and your instruction plus the scene
-            layout are sent to the configured provider. No camera imagery is
-            sent.
+            A browser API key is for local prototyping only. Voice audio is sent
+            only to Gemini for transcription, followed by the instruction and
+            scene layout for the edit. No camera imagery is sent.
           </p>
         </section>
 
@@ -117,15 +116,25 @@
             aria-describedby="promptHelp"
             placeholder="Create a little robot standing on the floor"
           ></textarea>
-          <div class="rc-row">
+          <div class="rc-row rc-row-wrap">
             <button
               id="mic"
               class="rc-button rc-button-icon"
               type="button"
               aria-pressed="false"
-              title="Speak one instruction"
+              aria-describedby="voiceHelp"
+              title="Record one instruction for Gemini"
             >
               Talk
+            </button>
+            <button
+              id="cancelVoice"
+              class="rc-button"
+              type="button"
+              aria-label="Cancel voice input"
+              hidden
+            >
+              Cancel
             </button>
             <button
               id="generate"
@@ -137,6 +146,11 @@
           </div>
           <p id="promptHelp" class="rc-note">
             Enter to generate. Shift+Enter for a new line.
+          </p>
+          <p id="voiceHelp" class="rc-fineprint">
+            Talk records up to 30 seconds. Finish sends the audio to Gemini and
+            applies the spoken edit. Cancel stops recording or transcription.
+            Nothing records automatically.
           </p>
           <div id="suggestions" class="rc-row rc-row-wrap rc-chips"></div>
         </section>

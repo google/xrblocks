@@ -124,6 +124,15 @@
   border-left-color: var(--rc-coral-strong);
 }
 
+.rc-console.rc-recording #mic {
+  background: #8d352c;
+  color: var(--rc-ink);
+}
+
+#cancelVoice[hidden] {
+  display: none;
+}
+
 .rc-console.rc-busy .rc-status::before {
   content: '';
   display: inline-block;

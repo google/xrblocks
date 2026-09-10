@@ -4,6 +4,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {Roomcraft} from './Roomcraft';
 import {AIOptions} from '../../ai/AIOptions';
+import {Gemini} from '../../ai/Gemini';
 import {Options} from '../../core/Options';
 import {parseSimulatorSceneManifest} from '../../simulator/scene/SimulatorEnvironmentManifest';
 import type {
@@ -238,7 +239,10 @@ beforeEach(() => {
     },
   };
   Object.assign(mockCore, {camera, renderer});
-  Object.assign(mockCore.ai, {options: aiOptions});
+  Object.assign(mockCore.ai, {
+    options: aiOptions,
+    model: new Gemini(aiOptions.gemini),
+  });
   Object.assign(mockCore.sound, {speechRecognizer: new TestSpeech()});
   mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
   mockCore.ai.isAvailable.mockReturnValue(true);
@@ -254,6 +258,15 @@ afterEach(() => {
 });
 
 describe('Roomcraft virtual environment mode', () => {
+  it.each([false, true])(
+    'keeps browser-managed speech recognition disabled (virtual=%s)',
+    (virtual) => {
+      expect(
+        createRoomcraftOptions(virtual).sound.speechRecognizer.enabled
+      ).toBe(false);
+    }
+  );
+
   it('opens an honestly empty authoring canvas, not a generated place', async () => {
     await mount();
     const layout = room.layout as SceneLayout;
