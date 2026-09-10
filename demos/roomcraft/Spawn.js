@@ -4,9 +4,16 @@ const STANDING_RADIUS = 0.35;
 const EDGE_MARGIN = STANDING_RADIUS + 0.1;
 const FLOOR_CLEARANCE = 0.1;
 const HEAD_CLEARANCE = 0.2;
+const SPAWN_SAMPLE_SPACING_METERS = 0.5;
+const MAX_SPAWN_GRID_STEPS = 40;
+const PREFERRED_ENTRY_INSET_METERS = 1.2;
 
 function samples(center, limit) {
-  const steps = THREE.MathUtils.clamp(Math.ceil((limit * 2) / 0.5), 1, 40);
+  const steps = THREE.MathUtils.clamp(
+    Math.ceil((limit * 2) / SPAWN_SAMPLE_SPACING_METERS),
+    1,
+    MAX_SPAWN_GRID_STEPS
+  );
   const values = [center];
   for (let index = 0; index <= steps; index++) {
     values.push(-limit + ((limit * 2) / steps) * index);
@@ -55,7 +62,11 @@ export function findClearSpawn(size, obstacles, eyeHeight) {
   const xLimit = size[0] / 2 - EDGE_MARGIN;
   const zLimit = size[1] / 2 - EDGE_MARGIN;
   if (xLimit < 0 || zLimit < 0) return null;
-  const preferredZ = THREE.MathUtils.clamp(size[1] / 2 - 1.2, -zLimit, zLimit);
+  const preferredZ = THREE.MathUtils.clamp(
+    size[1] / 2 - PREFERRED_ENTRY_INSET_METERS,
+    -zLimit,
+    zLimit
+  );
   const clear = (x, z) =>
     !occupied.some(
       (box) =>

@@ -76,6 +76,9 @@ const MAX_LISTED_PARTS = 24;
 const STUDIO_SIZE = {width: 1.05, height: 1.02};
 const KEYBOARD_SIZE = {width: 1.05, height: 0.49};
 const KEYBOARD_GAP = 0.045;
+const STUDIO_SCREEN_MARGIN_METERS = 0.12;
+const STUDIO_EYE_OFFSET_METERS = 0.25;
+const MIN_STUDIO_DISTANCE_METERS = 1.1;
 
 const PREVIEW_MESSAGE =
   'Preview only. Use Place on surface to fit the current scene to a scanned floor or table.';
@@ -968,23 +971,29 @@ export class RoomcraftConsole extends xb.Script {
         KEYBOARD_SIZE.width * this.keyboardCard.scale.x
       ) / 2;
     const verticalExtent = Math.max(
-      0.25 + (this.studioSize.height * this.card.scale.y) / 2,
+      STUDIO_EYE_OFFSET_METERS +
+        (this.studioSize.height * this.card.scale.y) / 2,
       (this.studioSize.height * this.card.scale.y) / 2 +
         KEYBOARD_SIZE.height * this.keyboardCard.scale.y +
         KEYBOARD_GAP -
-        0.25
+        STUDIO_EYE_OFFSET_METERS
     );
     const tangent = Math.tan(
       THREE.MathUtils.degToRad(camera.getEffectiveFOV()) / 2
     );
     const distance = Math.max(
-      1.1,
-      (verticalExtent + 0.12) / tangent,
-      (halfWidth + 0.12) / (tangent * camera.aspect)
+      MIN_STUDIO_DISTANCE_METERS,
+      (verticalExtent + STUDIO_SCREEN_MARGIN_METERS) / tangent,
+      (halfWidth + STUDIO_SCREEN_MARGIN_METERS) / (tangent * camera.aspect)
     );
     let x = this.isInXR()
       ? 0
-      : Math.max(0, distance * tangent * camera.aspect - halfWidth - 0.12);
+      : Math.max(
+          0,
+          distance * tangent * camera.aspect -
+            halfWidth -
+            STUDIO_SCREEN_MARGIN_METERS
+        );
     if (x > 0) {
       camera.updateWorldMatrix(true, false);
       const nearby = [];
@@ -1033,7 +1042,7 @@ export class RoomcraftConsole extends xb.Script {
       // Both cards reserve the clearer side, including each object's motion.
       if (overlap(-1) < overlap(1)) x = -x;
     }
-    const target = new THREE.Vector3(x, 0.25, -distance)
+    const target = new THREE.Vector3(x, STUDIO_EYE_OFFSET_METERS, -distance)
       .applyQuaternion(rotation)
       .add(position);
     this.worldToLocal(target);

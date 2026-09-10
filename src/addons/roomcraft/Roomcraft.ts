@@ -47,6 +47,8 @@ import {
   type SceneRequest,
 } from './SceneTypes';
 
+const MAX_HISTORY_ENTRIES = 20;
+
 interface SceneEntity {
   owner: THREE.Group;
   content: THREE.Group;
@@ -685,7 +687,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         this.future.length = 0;
         this.redoBase = undefined;
       }
-      if (this.history.length > 20) this.history.shift();
+      if (this.history.length > MAX_HISTORY_ENTRIES) this.history.shift();
       committed = true;
       retired.forEach(disposeContent);
       if (this.selection && !this.entities.has(this.selection))

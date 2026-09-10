@@ -9,6 +9,13 @@ import {getProceduralBounds} from './ProceduralGeometry';
 import {getLandscapeBounds} from './LandscapeGeometry';
 
 const EPSILON = 1e-6;
+const MIN_HORIZONTAL_NORMAL_Y = 0.99;
+const MIN_PLACEMENT_DISTANCE_METERS = 0.4;
+const MAX_PLACEMENT_DISTANCE_METERS = 6;
+const PREFERRED_PLACEMENT_DISTANCE_METERS = 2;
+const PLACEMENT_ALIGNMENT_WEIGHT = 4;
+const TABLE_PREFERENCE_BONUS = 0.25;
+const PLACEMENT_GRID_FRACTIONS = [0.2, 0.35, 0.5, 0.65, 0.8] as const;
 
 function cross(a: THREE.Vector2, b: THREE.Vector2, p: THREE.Vector2) {
   return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
@@ -168,7 +175,10 @@ export function placeSceneOnSurface(
     const normal = new THREE.Vector3(0, 1, 0).transformDirection(
       plane.matrixWorld
     );
-    if (normal.y < 0.99 || Math.abs(plane.matrixWorld.determinant()) < EPSILON)
+    if (
+      normal.y < MIN_HORIZONTAL_NORMAL_Y ||
+      Math.abs(plane.matrixWorld.determinant()) < EPSILON
+    )
       continue;
     const polygon =
       plane.simulatorPlane?.polygon ??
@@ -188,14 +198,14 @@ export function placeSceneOnSurface(
     const inversePlane = plane.matrixWorld.clone().invert();
     const ahead = cameraPosition
       .clone()
-      .addScaledVector(cameraForward, 2)
+      .addScaledVector(cameraForward, PREFERRED_PLACEMENT_DISTANCE_METERS)
       .applyMatrix4(inversePlane);
     const candidates = [
       new THREE.Vector2(ahead.x, ahead.z),
       planeBounds.getCenter(new THREE.Vector2()),
     ];
-    for (const x of [0.2, 0.35, 0.5, 0.65, 0.8]) {
-      for (const z of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+    for (const x of PLACEMENT_GRID_FRACTIONS) {
+      for (const z of PLACEMENT_GRID_FRACTIONS) {
         candidates.push(
           new THREE.Vector2(
             THREE.MathUtils.lerp(planeBounds.min.x, planeBounds.max.x, x),
@@ -214,8 +224,8 @@ export function placeSceneOnSurface(
       const distance = toPoint.length();
       const alignment = toPoint.clone().normalize().dot(cameraForward);
       if (
-        distance < 0.4 ||
-        distance > 6 ||
+        distance < MIN_PLACEMENT_DISTANCE_METERS ||
+        distance > MAX_PLACEMENT_DISTANCE_METERS ||
         alignment <= 0 ||
         toPoint.clone().projectOnPlane(normal).lengthSq() < EPSILON
       ) {
@@ -249,9 +259,11 @@ export function placeSceneOnSurface(
       pose.position.add(worldOffset);
       pose.updateMatrixWorld(true);
       const score =
-        alignment * 4 -
-        Math.abs(distance - 2) +
-        (['table', 'desk', 'counter'].includes(label) ? 0.25 : 0);
+        alignment * PLACEMENT_ALIGNMENT_WEIGHT -
+        Math.abs(distance - PREFERRED_PLACEMENT_DISTANCE_METERS) +
+        (['table', 'desk', 'counter'].includes(label)
+          ? TABLE_PREFERENCE_BONUS
+          : 0);
       if (!best || score > best.score)
         best = {score, matrix: pose.matrixWorld.clone()};
     }
