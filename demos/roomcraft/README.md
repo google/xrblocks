@@ -28,6 +28,8 @@ The XR entry button shows `ENTERING XR...` while the browser responds. If entry 
 
 This page requests an immersive VR session and uses the empty simulator environment declared in [`virtual-environment.json`](./virtual-environment.json), which names no scene, no planes, no navigation mesh, and no objects. No prebuilt living room or background asset is downloaded, so everything in view is either the environment the add-on builds or the objects you author. XR entry stays available on supported headsets. When immersive VR is unavailable, the SDK starts the simulator automatically with your eye near the front edge of the ground.
 
+Virtual mode omits the unused `unbounded` reference-space request because Quest can reject the entire VR session with `NotSupportedError` even when that feature is optional. Floor-relative tracking, bounded-floor support, and hand tracking remain enabled. The default room mode and SDK-wide reference-space settings are unchanged.
+
 Without a saved-scene URL, the page opens on an honestly empty authoring canvas: a neutral 14 by 14 meter daylight ground with nothing on it. It is not a generated place, nothing is preselected for you, and no AI request is sent on load. Describe a place, for example "create a moonlit Japanese garden", and press Generate.
 
 Follow-ups such as "make the pond bigger" and "change the garden to sunrise" go through the same request path as the default page, so the model plans them. The demo does not match your words against hard-coded phrases and never substitutes a stock garden for a real answer.

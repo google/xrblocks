@@ -187,6 +187,17 @@ describe('Roomcraft virtual environment mode', () => {
     expect(SAVED_SCENE_PARAMETER).toBe('scene');
   });
 
+  it('omits unbounded tracking from VR entry without disabling floor spaces or hands', () => {
+    const options = createRoomcraftOptions(true);
+    expect(options.webxrOptionalFeatures).toEqual([
+      'local-floor',
+      'bounded-floor',
+    ]);
+    expect(options.referenceSpaceType).toBe('local-floor');
+    expect(options.hands.enabled).toBe(true);
+    expect(options.world.planes.enabled).toBe(true);
+  });
+
   it('puts browser key setup before the authoring controls and names Quest Browser', async () => {
     await mount();
     expect(
@@ -362,6 +373,9 @@ describe('Roomcraft virtual environment mode', () => {
   it('leaves the default page mode, options, and suggestions unchanged', async () => {
     const defaults = createRoomcraftOptions();
     expect(defaults.xrSessionMode).toBe('immersive-ar');
+    expect(defaults.webxrOptionalFeatures).toEqual(
+      new Options().webxrOptionalFeatures
+    );
     expect(defaults.xrButton.alwaysAutostartSimulator).toBe(false);
     expect(defaults.simulator.environments).toEqual(
       new Options().simulator.environments

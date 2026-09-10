@@ -1796,6 +1796,10 @@ export function createRoomcraftOptions(virtual = false) {
 
   // A fully virtual page: no passthrough, no prebuilt room behind the scene.
   options.enableVR();
+  // Quest can reject VR entry for this unused space even when it is optional.
+  options.webxrOptionalFeatures = options.webxrOptionalFeatures.filter(
+    (feature) => feature !== 'unbounded'
+  );
   options.setAppDescription('Author a whole virtual place.');
   options.simulator.environments = [{...VIRTUAL_ENVIRONMENT}];
   options.simulator.activeEnvironmentIndex = 0;
