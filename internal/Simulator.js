@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 64b146f
- * @builddate 2026-09-10T20:32:55.041Z
+ * @commitid 5426c57
+ * @builddate 2026-09-10T20:38:20.945Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -780,6 +780,10 @@ class SimulatorPointerLockMode extends SimulatorControlMode {
 function preventDefault(event) {
     event.preventDefault();
 }
+function isTextEntry(event) {
+    return [...event.composedPath(), document.activeElement].some((target) => target instanceof HTMLElement &&
+        (target.matches('input, textarea, select') || target.isContentEditable));
+}
 class SimulatorControls {
     #enabled;
     get enabled() {
@@ -846,6 +850,10 @@ class SimulatorControls {
         this.onKeyDown = (event) => {
             if (!this.enabled)
                 return;
+            if (event.isComposing || isTextEntry(event)) {
+                this.downKeys.clear();
+                return;
+            }
             // On macOS, keyup events are not fired for keys held when Command (Meta)
             // is pressed. Clear all keys to prevent stuck movement.
             if (event.metaKey ||
@@ -869,6 +877,10 @@ class SimulatorControls {
         this.onBlur = () => {
             this.downKeys.clear();
             this.cancelPointerInteraction();
+        };
+        this.onFocusIn = (event) => {
+            if (isTextEntry(event))
+                this.downKeys.clear();
         };
         this.onSetSimulatorMode = (event) => {
             if (event instanceof SetSimulatorModeEvent) {
@@ -922,6 +934,7 @@ class SimulatorControls {
             throw new Error('SimulatorControls is not initialized.');
         document.addEventListener('keyup', this.onKeyUp);
         document.addEventListener('keydown', this.onKeyDown);
+        document.addEventListener('focusin', this.onFocusIn);
         domElement.addEventListener('pointermove', this.onPointerMove);
         domElement.addEventListener('pointerdown', this.onPointerDown);
         domElement.addEventListener('pointerup', this.onPointerUp);
@@ -943,6 +956,7 @@ class SimulatorControls {
         }
         document.removeEventListener('keyup', this.onKeyUp);
         document.removeEventListener('keydown', this.onKeyDown);
+        document.removeEventListener('focusin', this.onFocusIn);
         domElement.removeEventListener('pointermove', this.onPointerMove);
         domElement.removeEventListener('pointerdown', this.onPointerDown);
         domElement.removeEventListener('pointerup', this.onPointerUp);
