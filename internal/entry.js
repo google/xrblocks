@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid b367f36
- * @builddate 2026-09-10T19:33:29.766Z
+ * @commitid 84b1b6a
+ * @builddate 2026-09-10T19:36:30.371Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -11793,6 +11793,7 @@ var WebXRSessionEventType;
     WebXRSessionEventType["READY"] = "ready";
     WebXRSessionEventType["SESSION_START"] = "sessionstart";
     WebXRSessionEventType["SESSION_END"] = "sessionend";
+    WebXRSessionEventType["SESSION_ERROR"] = "sessionerror";
 })(WebXRSessionEventType || (WebXRSessionEventType = {}));
 /**
  * Manages the WebXR session lifecycle by extending THREE.EventDispatcher
@@ -11818,6 +11819,12 @@ class WebXRSessionManager extends THREE.EventDispatcher {
             }
             catch (error) {
                 session.removeEventListener('end', this.onSessionEndedInternal);
+                try {
+                    await session.end();
+                }
+                catch (cleanupError) {
+                    throw new AggregateError([error, cleanupError], 'XR renderer setup failed and the session could not be closed.');
+                }
                 throw error;
             }
             if (this.disposed) {
@@ -11896,7 +11903,7 @@ class WebXRSessionManager extends THREE.EventDispatcher {
         }
     }
     /**
-     * Ends the WebXR session.
+     * Requests and initializes a WebXR session.
      */
     startSession() {
         if (this.disposed) {
@@ -11917,12 +11924,18 @@ class WebXRSessionManager extends THREE.EventDispatcher {
         this.waitingForXRSession = true;
         navigator
             .xr.requestSession(this.mode, this.sessionOptions)
+            .then(this.onSessionStartedInternal)
             .finally(() => {
             this.waitingForXRSession = false;
         })
-            .then(this.onSessionStartedInternal)
             .catch((err) => {
             console.error('Error requesting session', err, 'mode:', this.mode, 'sesionOptions:', this.sessionOptions);
+            if (!this.disposed) {
+                this.dispatchEvent({
+                    type: WebXRSessionEventType.SESSION_ERROR,
+                    error: err,
+                });
+            }
         });
     }
     /**
@@ -11984,11 +11997,13 @@ class XRButton {
         this.domElement = document.createElement('div');
         this.simulatorButtonElement = document.createElement('button');
         this.xrButtonElement = document.createElement('button');
+        this.errorElement = document.createElement('p');
         this.disposed = false;
         this.onUnsupported = () => this.showXRNotSupported();
         this.onReady = () => this.onSessionReady();
         this.onSessionStart = () => this.onSessionStarted();
         this.onSessionEnd = () => this.onSessionEnded();
+        this.onSessionError = (event) => this.showError(event.error);
         this.domElement.id = XRBUTTON_WRAPPER_ID;
         this.createXRAppTitle();
         this.createXRAppDescription();
@@ -11996,10 +12011,32 @@ class XRButton {
         if (showEnterSimulatorButton) {
             this.createSimulatorButton();
         }
+        this.createErrorElement();
         this.sessionManager.addEventListener(WebXRSessionEventType.UNSUPPORTED, this.onUnsupported);
         this.sessionManager.addEventListener(WebXRSessionEventType.READY, this.onReady);
         this.sessionManager.addEventListener(WebXRSessionEventType.SESSION_START, this.onSessionStart);
         this.sessionManager.addEventListener(WebXRSessionEventType.SESSION_END, this.onSessionEnd);
+        this.sessionManager.addEventListener(WebXRSessionEventType.SESSION_ERROR, this.onSessionError);
+    }
+    createErrorElement() {
+        this.errorElement.className = 'XRButtonError';
+        this.errorElement.setAttribute('role', 'alert');
+        this.errorElement.style.maxWidth = 'min(90vw, 40rem)';
+        this.errorElement.hidden = true;
+        this.domElement.appendChild(this.errorElement);
+    }
+    showError(error) {
+        if (this.disposed)
+            return;
+        const detail = error instanceof Error
+            ? `${error.name}: ${error.message}`
+            : String(error);
+        this.errorElement.textContent = `XR could not start. ${detail}`;
+        this.errorElement.hidden = false;
+        this.xrButtonElement.textContent = this.sessionManager.currentSession
+            ? this.endText
+            : this.startText;
+        this.xrButtonElement.disabled = false;
     }
     createSimulatorButton() {
         this.simulatorButtonElement.classList.add(XRBUTTON_CLASS);
@@ -12033,6 +12070,8 @@ class XRButton {
         this.domElement.appendChild(this.xrButtonElement);
     }
     onSessionReady() {
+        this.errorElement.textContent = '';
+        this.errorElement.hidden = true;
         const button = this.xrButtonElement;
         button.style.display = '';
         button.innerHTML = this.startText;
@@ -12041,6 +12080,10 @@ class XRButton {
             .getSessionOptions()
             ?.optionalFeatures?.includes('camera-access');
         button.onclick = () => {
+            this.errorElement.textContent = '';
+            this.errorElement.hidden = true;
+            button.textContent = 'ENTERING XR...';
+            button.disabled = true;
             this.permissionsManager
                 .checkAndRequestPermissions(this.permissions, {
                 allowVideoFallback: allowsVideoFallback,
@@ -12052,10 +12095,10 @@ class XRButton {
                     this.sessionManager.startSession();
                 }
                 else {
-                    this.xrButtonElement.textContent =
-                        'Error:' + result.error + '\nPlease try again.';
+                    this.showError(new Error(result.error || 'Browser permission was not granted.'));
                 }
-            });
+            })
+                .catch((error) => this.showError(error));
         };
     }
     showXRNotSupported() {
@@ -12063,7 +12106,10 @@ class XRButton {
         this.xrButtonElement.disabled = true;
     }
     async onSessionStarted() {
+        this.errorElement.textContent = '';
+        this.errorElement.hidden = true;
         this.xrButtonElement.innerHTML = this.endText;
+        this.xrButtonElement.disabled = false;
         this.xrButtonElement.onclick = () => {
             void this.sessionManager.endSession();
         };
@@ -12079,6 +12125,7 @@ class XRButton {
         this.sessionManager.removeEventListener(WebXRSessionEventType.READY, this.onReady);
         this.sessionManager.removeEventListener(WebXRSessionEventType.SESSION_START, this.onSessionStart);
         this.sessionManager.removeEventListener(WebXRSessionEventType.SESSION_END, this.onSessionEnd);
+        this.sessionManager.removeEventListener(WebXRSessionEventType.SESSION_ERROR, this.onSessionError);
         this.simulatorButtonElement.onclick = null;
         this.xrButtonElement.onclick = null;
         this.domElement.remove();

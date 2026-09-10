@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid b367f36
- * @builddate 2026-09-10T19:33:29.766Z
+ * @commitid 84b1b6a
+ * @builddate 2026-09-10T19:36:30.371Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5685,7 +5685,8 @@ declare enum WebXRSessionEventType {
     UNSUPPORTED = "unsupported",
     READY = "ready",
     SESSION_START = "sessionstart",
-    SESSION_END = "sessionend"
+    SESSION_END = "sessionend",
+    SESSION_ERROR = "sessionerror"
 }
 type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
     [WebXRSessionEventType.UNSUPPORTED]: object;
@@ -5696,6 +5697,9 @@ type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
         session: XRSession;
     };
     [WebXRSessionEventType.SESSION_END]: object;
+    [WebXRSessionEventType.SESSION_ERROR]: {
+        error: unknown;
+    };
 };
 /**
  * Manages the WebXR session lifecycle by extending THREE.EventDispatcher
@@ -5719,7 +5723,7 @@ declare class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionMana
      */
     initialize(): Promise<void>;
     /**
-     * Ends the WebXR session.
+     * Requests and initializes a WebXR session.
      */
     startSession(): void;
     /**
@@ -5753,6 +5757,7 @@ declare class XRButton {
     domElement: HTMLDivElement;
     simulatorButtonElement: HTMLButtonElement;
     xrButtonElement: HTMLButtonElement;
+    private errorElement;
     private disposed;
     constructor(sessionManager: WebXRSessionManager, permissionsManager: PermissionsManager, appTitle?: string, appDescription?: string, startText?: string, endText?: string, invalidText?: string, startSimulatorText?: string, showEnterSimulatorButton?: boolean, startSimulator?: () => void, permissions?: {
         geolocation: boolean;
@@ -5763,6 +5768,9 @@ declare class XRButton {
     private onReady;
     private onSessionStart;
     private onSessionEnd;
+    private onSessionError;
+    private createErrorElement;
+    private showError;
     private createSimulatorButton;
     private createXRAppTitle;
     private createXRAppDescription;
