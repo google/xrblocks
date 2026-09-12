@@ -1693,13 +1693,7 @@
         }
       }
 
-      // Reentrancy guard. detect() runs for tens of seconds while monkey-
-      // patching xb.core.deviceCamera.getSnapshot; a concurrent press
-      // would capture our wrapper as its "original" and leave it
-      // installed when it restored, plus other SDK consumers calling
-      // getSnapshot during the overlap would receive the wrong cached
-      // frame. We disable the button in the UI but also gate here so
-      // programmatic callers (e.g. tests, playwright) can't trigger it.
+      // Prevent overlapping fitting/fusion runs, including programmatic calls.
       let _detectInFlight = false;
 
       async function detect() {
@@ -1804,13 +1798,9 @@
           if (detectBtn) detectBtn.disabled = false;
           return;
         }
-        const _origGetSnapshot = xb.core.deviceCamera.getSnapshot.bind(
-          xb.core.deviceCamera
-        );
-        xb.core.deviceCamera.getSnapshot = async (opts) => {
-          if (opts?.outputFormat === 'base64') return snapBase64;
-          if (opts?.outputFormat === 'imageData') return snapImageData;
-          return _origGetSnapshot(opts);
+        const detectionSnapshot = {
+          base64: snapBase64,
+          imageData: snapImageData,
         };
         // Start SAM init + encode in parallel with detection. Both
         // network (gemini) and GPU (SAM encoder) work happens concurrently
@@ -1828,35 +1818,30 @@
           })();
           samPrep.catch(() => {});
         }
-        // Everything from here runs inside try/finally so the
-        // getSnapshot monkey-patch, the depth-mesh snapshot, the BVH
-        // bounds tree, the reentrancy flag, and the button-disabled
-        // state always come back even on detection / SAM / fitting
-        // failures. Without this, repeated failed presses leak memory
-        // and the cached-snapshot getter stays installed for other
-        // consumers.
+        // Release the frozen depth mesh and reset the UI even if detection,
+        // segmentation, or fitting fails.
         try {
           let detected = [];
           try {
             if (DETECT_BACKEND === 'both') {
-              // Run both detectors and union with IoU dedupe. Two
-              // separate runDetection calls because the SDK only exposes
-              // one activeBackend at a time. Run mediapipe first so its
-              // deterministic COCO results anchor the dedupe, then add
-              // gemini's open-vocab finds that don't overlap.
-              const cfg = xb.core.world.objects.options.objects.backendConfig;
-              const prev = cfg.activeBackend;
-              try {
-                cfg.activeBackend = 'mediapipe';
-                const mp = await xb.core.world.objects.runDetection();
-                cfg.activeBackend = 'gemini';
-                const gm = await xb.core.world.objects.runDetection();
-                detected = unionDetections(mp, gm);
-              } finally {
-                cfg.activeBackend = prev;
-              }
+              // Submit together to retain the same frame pose. The detector
+              // queues the runs; MediaPipe results anchor the IoU dedupe.
+              const [mp, gm] = await Promise.all([
+                xb.core.world.objects.runDetection({
+                  backend: 'mediapipe',
+                  snapshot: detectionSnapshot,
+                }),
+                xb.core.world.objects.runDetection({
+                  backend: 'gemini',
+                  snapshot: detectionSnapshot,
+                }),
+              ]);
+              detected = unionDetections(mp, gm);
             } else {
-              detected = await xb.core.world.objects.runDetection();
+              detected = await xb.core.world.objects.runDetection({
+                backend: DETECT_BACKEND,
+                snapshot: detectionSnapshot,
+              });
             }
           } catch (e) {
             console.warn('[objects_3d] detection threw', e);
@@ -1904,11 +1889,6 @@
           // runDetection so SAM masks line up exactly with the bboxes the
           // detectors returned.
           const snapshot = snapImageData;
-          // Restore the original snapshot getter; everything downstream
-          // (fitting, raycasting) uses the cached pixel data and the
-          // frozen camera, so there's no need to keep the monkey-patch
-          // active. The outer finally restores it too as a safety net.
-          xb.core.deviceCamera.getSnapshot = _origGetSnapshot;
           setStatus('fitting boxes…');
           const floorY = estimateFloorY();
           // Pipeline the per-object work: mask decode (serial on GPU via
@@ -2104,13 +2084,6 @@
             `fit ${kept} / ${detected.length} oriented boxes (press again from a new angle to refine)`
           );
         } finally {
-          // Centralized cleanup: every exit path from the inner try
-          // (success, "nothing detected", thrown detection, sam encoder
-          // fail) lands here. Restore the snapshot getter even if the
-          // inner happy-path already did it (idempotent), release the
-          // BVH index and geometry, free the material, and clear the
-          // reentrancy gate so the next press can run.
-          xb.core.deviceCamera.getSnapshot = _origGetSnapshot;
           if (frozenDepthMesh.geometry) {
             if (frozenDepthMesh.geometry.disposeBoundsTree) {
               frozenDepthMesh.geometry.disposeBoundsTree();

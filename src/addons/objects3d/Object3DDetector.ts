@@ -241,20 +241,9 @@ export class Object3DDetector extends Script {
         return this._results;
       }
 
-      // Monkey-patch getSnapshot so the SDK detector backends read our cached
-      // frame instead of the live video (which may have drifted by the time
-      // they call it).
-      type SnapFn = typeof deviceCamera.getSnapshot;
-      const origGetSnapshot = deviceCamera.getSnapshot.bind(
-        deviceCamera
-      ) as SnapFn;
-      const mutableCamera = deviceCamera as unknown as {
-        getSnapshot: (opts?: {outputFormat?: string}) => unknown;
-      };
-      mutableCamera.getSnapshot = (opts?: {outputFormat?: string}) => {
-        if (opts?.outputFormat === 'base64') return Promise.resolve(snapBase64);
-        if (opts?.outputFormat === 'imageData') return snapImageData;
-        return (origGetSnapshot as (opts?: unknown) => unknown)(opts);
+      const detectionSnapshot = {
+        base64: snapBase64,
+        imageData: snapImageData,
       };
 
       // Start SAM init + encode in parallel with 2-D detection.
@@ -274,26 +263,23 @@ export class Object3DDetector extends Script {
         let detected: Awaited<ReturnType<typeof worldObjects.runDetection>>;
         try {
           if (this._opts.detectBackend === 'both') {
-            const cfg = core.world!.options.objects.backendConfig;
-            const prev = cfg.activeBackend;
-            try {
-              cfg.activeBackend = 'mediapipe';
-              const mp = await worldObjects.runDetection();
-              cfg.activeBackend = 'gemini';
-              const gm = await worldObjects.runDetection();
-              detected = unionDetections(mp, gm) as typeof mp;
-            } finally {
-              cfg.activeBackend = prev;
-            }
+            // Submit both now so their queued runs retain the same frame pose.
+            const [mp, gm] = await Promise.all([
+              worldObjects.runDetection({
+                backend: 'mediapipe',
+                snapshot: detectionSnapshot,
+              }),
+              worldObjects.runDetection({
+                backend: 'gemini',
+                snapshot: detectionSnapshot,
+              }),
+            ]);
+            detected = unionDetections(mp, gm);
           } else {
-            const cfg = core.world!.options.objects.backendConfig;
-            const prev = cfg.activeBackend;
-            cfg.activeBackend = this._opts.detectBackend;
-            try {
-              detected = await worldObjects.runDetection();
-            } finally {
-              cfg.activeBackend = prev;
-            }
+            detected = await worldObjects.runDetection({
+              backend: this._opts.detectBackend,
+              snapshot: detectionSnapshot,
+            });
           }
         } catch (e) {
           console.warn('[Object3DDetector] runDetection threw', e);
@@ -316,10 +302,6 @@ export class Object3DDetector extends Script {
             return this._results;
           }
         }
-
-        // Restore the snapshot getter; fitting uses the frozen camera / mesh.
-        (deviceCamera as unknown as {getSnapshot: SnapFn}).getSnapshot =
-          origGetSnapshot;
 
         const floorY = this._estimateFloorY();
 
@@ -505,9 +487,6 @@ export class Object3DDetector extends Script {
 
         return this._results;
       } finally {
-        // Always restore the snapshot getter and clean up the frozen mesh.
-        (deviceCamera as unknown as {getSnapshot: SnapFn}).getSnapshot =
-          origGetSnapshot;
         if (frozenDepthMesh.geometry) {
           const geom = frozenDepthMesh.geometry as THREE.BufferGeometry & {
             disposeBoundsTree?: () => void;

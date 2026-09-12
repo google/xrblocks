@@ -50,13 +50,14 @@ export abstract class BaseDetectorBackend<T> {
 
   async run(
     depthMeshSnapshot: THREE.Mesh,
-    cameraParametersSnapshot: CameraParametersSnapshot
+    cameraParametersSnapshot: CameraParametersSnapshot,
+    snapshotOverride?: CameraSnapshot
   ): Promise<DetectedObject<T>[]> {
     if (!(await this.isAvailable())) {
       return [];
     }
 
-    const snapshot = await this.getSnapshot();
+    const snapshot = snapshotOverride ?? (await this.getSnapshot());
     if (!snapshot) return [];
 
     let normalizedDetections: NormalizedDetectedObject<T>[] = [];
