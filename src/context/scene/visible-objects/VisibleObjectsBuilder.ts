@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {getUIPresentationBounds} from '../../../ui/UIElement';
 
 import {roundContextNumber} from '../../shared/ContextNumberUtils';
 import {SemanticTreeInternal} from '../semantic-tree/SemanticTreeBuilder';
@@ -77,6 +78,9 @@ function createSemanticViewData({
   occlusionOpacityThreshold: number;
 }): SemanticViewData {
   if (!node.visible || !isObjectVisible(object)) {
+    return createNotRenderedViewData();
+  }
+  if (getUIPresentationBounds(object, tempBoundsBox) === null) {
     return createNotRenderedViewData();
   }
 

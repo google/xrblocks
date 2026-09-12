@@ -24,8 +24,17 @@ export {UIPanel} from './components/UIPanel';
 export type {UIPanelOptions} from './components/UIPanel';
 export {UIText} from './components/UIText';
 export type {UITextOptions} from './components/UIText';
+export {UITextInput} from './components/UITextInput';
+export type {
+  UITextInputKeyModifiers,
+  UITextInputOptions,
+  UITextInputSelection,
+  UITextInputSelectionDirection,
+} from './components/UITextInput';
 export {UISlider} from './components/UISlider';
 export type {UISliderOptions} from './components/UISlider';
+export {UIScrollView} from './components/UIScrollView';
+export type {UIScrollViewOptions} from './components/UIScrollView';
 export {ModelViewer} from './model/ModelViewer';
 export type {
   ModelSource,

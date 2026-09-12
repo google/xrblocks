@@ -68,6 +68,7 @@ export type {
   XBObjectOptions,
 } from './interaction/InteractionTypes';
 export {Interaction} from './interaction/Interaction';
+export type {HitSurfaceOptions} from './interaction/HitRegistry';
 export * from './interaction/manipulation/ManipulationTypes';
 export * from './lighting/Lighting';
 export * from './lighting/LightingOptions';

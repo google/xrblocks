@@ -184,6 +184,73 @@ function showTrackingState(state) {
 This keeps status readable, layout-aware, themeable, and available to the same
 interaction and scene-context systems as application UI.
 
+## Scrolling and editable text
+
+`UIScrollView` is a nested vertical viewport, not a new scene root. Its children are ordinary retained UI elements. Use a finite viewport height and keep long rows from shrinking:
+
+```js
+const history = new xb.UIScrollView({
+  ariaLabel: 'History',
+  style: {height: 240, gap: 12},
+  children: [
+    new xb.UIText({
+      text: 'A longer entry...',
+      style: {fontSize: 24, flexShrink: 0},
+    }),
+  ],
+});
+card.add(history);
+```
+
+`scrollTop`, `clientHeight`, `scrollHeight`, and `maxScrollTop` use UI layout units, not world meters. `scrollTo(offset)` clamps a requested offset; `scrollBy(delta)` returns whether a measured viewport moved. `reveal(child)` minimally reveals a descendant and requires a mounted layout. Read `ready` before operations that require measured layout.
+
+Wheel input, ray dragging, and direct-hand dragging share the normal interaction pipeline. Dragging ordinary content past the movement threshold cancels its pending click. A slider or text selection keeps its own capture. Nested scrolling tries the nearest eligible field or viewport first; reaching the outer boundary does not turn the gesture into card scaling. Content outside the viewport is excluded from new pointer hits and visible-object context.
+
+`UITextInput` supports single-line and multiline plain text:
+
+```js
+const message = new xb.UITextInput({
+  ariaLabel: 'Message',
+  multiline: true,
+  placeholder: 'Write a message',
+  style: {height: 120, fontSize: 24},
+  onInput: (value) => showDraftLength(value.length),
+  onSubmit: (value) => addLocalMessage(value),
+});
+card.add(message);
+```
+
+Multiline mode is chosen at construction. Enter submits a single-line field and inserts a newline in a multiline field; Ctrl/Meta+Enter submits multiline text. IME composition must complete before Enter can submit. Submitting does not clear the field or call an AI provider automatically.
+
+Native input/textarea editing owns the value, selection, clipboard, and composition behavior. `onInput` reports live user edits, `onChange` reports a changed editing session when focus ends, and `onSubmit` is a separate action. Programmatic `value` changes do not emit a user-input callback. Escape blurs without reverting entered text. A read-only field permits focus/selection/copying; a disabled field does not accept focus or edits.
+
+Use `focus()` only when the field is `ready`. Removing, hiding, or disabling a field releases its editing ownership. Keyboard editing must not move the simulator camera. Operating-system keyboards and clipboard permissions remain browser-dependent, especially inside immersive sessions.
+
+Editable text loads a private SDK chunk containing Troika and its text dependencies. No additional peer dependency or import-map entry is needed, and ordinary UI does not download this chunk. Deploy the complete `build/` directory so the private chunk remains available.
+
+The renderer downloads static font assets as needed and provides Unicode-aware layout, caret, and selection geometry. Font downloads and worker creation must be permitted by the application's network and CSP policies. Read `field.error` for a reported loading or layout failure. Font or module loading is not proof of native keyboard availability.
+
+The existing keyboard addon can bind to a field:
+
+```js
+import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
+
+const keyboard = new Keyboard({input: message});
+card.add(keyboard);
+```
+
+Bound keys edit the field's caret/selection and preserve its focus. Reassign `keyboard.input` from another field's `onFocus` callback to share one keyboard. Use `keyboard.open` to show or hide the panel and update native-keyboard ownership immediately. While the keyboard is connected and visible, it requests that the bound field's browser software keyboard remain hidden; closing or detaching it restores normal behavior. The keyboard's unbound value/submit mode remains available. Other application-owned accessory controls can set `object.xb.preserveTextFocus = true` when interacting with them should not blur a field.
+
+Custom keyboard integrations can use `field.suppressNativeKeyboard()`, which returns a release function. The request is scoped and reference-counted rather than a permanent field setting. It leaves native editing enabled and uses browser software-keyboard hints; it is not a guarantee that every headset runtime honors those hints.
+
+**Known Meta Quest limitation:** the system keyboard may reopen or close while the in-panel keyboard is used. Prefer the native Quest keyboard and leave the panel keyboard closed when they conflict. The demo retains its keyboard controls for explicit testing; there is no automatic cross-browser detection of native-keyboard availability.
+
+Text fields expose their accessible label and editing state to scene context, but not their draft value by default. An application can explicitly provide `field.userData.semantic.text` when it intends to disclose a value. This is not screenshot redaction: rendered text can still appear in captured images.
+
+See <CodeSearchLink path="samples/spatial_forms"/> for scrolling history, both field modes, keyboard binding, and card/overlay composition without an AI backend. Rich text, general horizontal scroll views, and list virtualization are not included.
+
+The larger <CodeSearchLink path="demos/spatial_ui_lab"/> gallery includes a local conversation, a searchable pattern library, multilingual notes, and editable/read-only/disabled field examples. Its navigation uses ordinary buttons; it does not introduce dropdown or toggle components.
+
 ## Retained updates
 
 Update public properties directly:

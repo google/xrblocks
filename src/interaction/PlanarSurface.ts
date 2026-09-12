@@ -47,6 +47,29 @@ export function createPlanarSurfaceProjector(
   };
 }
 
+/** Supplies the same UV contract for a tracked contact as for a captured ray. */
+export function projectPointOnSurface(
+  surface: THREE.Object3D,
+  point: THREE.Vector3
+): SurfaceProjection | undefined {
+  if (!(surface instanceof THREE.Mesh)) return undefined;
+  surface.geometry.computeBoundingBox();
+  const bounds = surface.geometry.boundingBox;
+  if (!bounds || !hasFinitePlanarBounds(bounds)) return undefined;
+  surface.updateWorldMatrix(true, false);
+  if (Math.abs(surface.matrixWorld.determinant()) < Number.EPSILON)
+    return undefined;
+  const local = surface.worldToLocal(point.clone());
+  local.z = (bounds.min.z + bounds.max.z) / 2;
+  return {
+    point: local.clone().applyMatrix4(surface.matrixWorld),
+    uv: new THREE.Vector2(
+      (local.x - bounds.min.x) / (bounds.max.x - bounds.min.x),
+      (local.y - bounds.min.y) / (bounds.max.y - bounds.min.y)
+    ),
+  };
+}
+
 function hasFinitePlanarBounds(bounds: THREE.Box3): boolean {
   return (
     Number.isFinite(bounds.min.x) &&

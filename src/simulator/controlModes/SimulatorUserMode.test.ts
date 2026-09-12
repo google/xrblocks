@@ -9,26 +9,27 @@ import {SimulatorHands} from '../SimulatorHands';
 import {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
 import {SimulatorUserMode} from './SimulatorUserMode';
 
-describe('SimulatorUserMode wheel scaling', () => {
+describe('SimulatorUserMode wheel routing', () => {
   let canvas: HTMLCanvasElement;
   let input: Input;
   let interaction: Interaction;
   let mode: SimulatorUserMode;
   let mouseController: MouseController;
-  let queueScaleIntent: ReturnType<typeof vi.fn>;
+  let queueWheelIntent: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     canvas = document.createElement('canvas');
     mouseController = {
       updateMousePositionFromEvent: vi.fn(),
+      callSelectStart: vi.fn(),
       userData: {connected: true},
     } as unknown as MouseController;
     input = {
       gamepadController: {init: vi.fn()},
       mouseController,
     } as unknown as Input;
-    queueScaleIntent = vi.fn().mockReturnValue(true);
-    interaction = {queueScaleIntent} as unknown as Interaction;
+    queueWheelIntent = vi.fn().mockReturnValue(true);
+    interaction = {queueWheelIntent} as unknown as Interaction;
     mode = new SimulatorUserMode(
       {} as SimulatorControllerState,
       new Set(),
@@ -46,21 +47,35 @@ describe('SimulatorUserMode wheel scaling', () => {
     });
   });
 
-  it('routes wheel scaling through Interaction', () => {
+  it('routes normalized wheel input through Interaction before deciding scroll or scale', () => {
     const event = new WheelEvent('wheel', {deltaY: -100});
 
     expect(mode.onWheel(event)).toBe(true);
 
-    expect(queueScaleIntent).toHaveBeenCalledWith(
-      mouseController,
-      expect.any(Number)
-    );
-    expect(queueScaleIntent.mock.calls[0][1]).toBeGreaterThan(1);
+    expect(queueWheelIntent).toHaveBeenCalledWith(mouseController, -100);
   });
 
   it('returns false when Interaction rejects the intent', () => {
-    queueScaleIntent.mockReturnValue(false);
+    queueWheelIntent.mockReturnValue(false);
 
     expect(mode.onWheel(new WheelEvent('wheel', {deltaY: 100}))).toBe(false);
+  });
+
+  it('refreshes the pointer before a press that has no preceding move event', () => {
+    const event = new MouseEvent('pointerdown', {
+      buttons: 1,
+      clientX: 120,
+      clientY: 240,
+    });
+    mode.onPointerDown(event);
+    expect(mouseController.updateMousePositionFromEvent).toHaveBeenCalledWith(
+      event
+    );
+    expect(
+      vi.mocked(mouseController.updateMousePositionFromEvent).mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      vi.mocked(mouseController.callSelectStart).mock.invocationCallOrder[0]
+    );
   });
 });

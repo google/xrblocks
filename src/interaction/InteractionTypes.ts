@@ -23,6 +23,8 @@ export interface XBObjectOptions {
   pointerEvents?: PointerEvents;
   interactionEnabled?: boolean;
   reticleMode?: ReticleMode;
+  /** Keeps an active text field focused while interacting with an accessory. */
+  preserveTextFocus?: boolean;
   manipulation?: boolean | ManipulationOptions;
   manipulationHandle?: ManipulationHandleOptions | 'none';
 }

@@ -230,12 +230,14 @@ describe('Core frame and simulator lifecycle', () => {
     const firstStart = startSimulator();
     const secondStart = startSimulator();
 
+    expect(simulatorLoader).toHaveBeenCalledOnce();
+    // Cold runtime imports can outlast waitFor's default polling budget.
+    await simulatorLoader.mock.results[0].value;
     await vi.waitFor(() =>
       expect(scripts(core).initScript).toHaveBeenCalledOnce()
     );
     const initializingSimulator = vi.mocked(scripts(core).initScript).mock
       .calls[0][0];
-    expect(simulatorLoader).toHaveBeenCalledOnce();
     expect(core.simulatorRunning).toBe(false);
     expect(initializingSimulator.parent).toBe(core.xrSystemsGroup);
 
