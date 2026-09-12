@@ -178,6 +178,7 @@ class Session extends EventTarget {
       );
     }),
     enable: vi.fn(async () => this.setVoice(true)),
+    cancelPendingEnable: vi.fn(),
     disable: vi.fn(() => this.setVoice(false)),
   };
   setVoice(on: boolean) {
@@ -1047,6 +1048,80 @@ describe('opt-in peer voice', () => {
     }
   );
 
+  it.each(['cancel', 'deny'])(
+    'preserves an established listening connection when a mic request is %s',
+    async (outcome) => {
+      const {VoiceChat} = await import('../netblocks/src/core/voice/VoiceChat');
+      const peers: ListeningPeer[] = [];
+      class ListeningPeer extends EventTarget {
+        close = vi.fn();
+        addTransceiver = vi.fn();
+        getSenders = () => [];
+        setRemoteDescription = vi.fn(async () => {});
+        createAnswer = vi.fn(async () => ({type: 'answer', sdp: 'answer'}));
+        setLocalDescription = vi.fn(async () => {});
+        constructor() {
+          super();
+          peers.push(this);
+        }
+      }
+      vi.stubGlobal('RTCPeerConnection', ListeningPeer);
+      const sent = vi.fn();
+      const removed = vi.fn();
+      const voice = new VoiceChat(sent);
+      voice.setLocalPeerId('listener');
+      voice.onTrackRemoved(removed);
+      Object.assign(session, {voice});
+      await voice.handleSignal('speaker', {
+        type: 'voice',
+        signal: {kind: 'offer', sdp: 'offer'},
+      });
+      sent.mockClear();
+      const pending = deferred();
+      const stopped = vi.fn();
+      vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementationOnce(
+        async () => {
+          if (outcome === 'deny') throw new Error('Permission denied');
+          await pending.promise;
+          return {getTracks: () => [{stop: stopped}]} as unknown as MediaStream;
+        }
+      );
+      const enabling = consoleScript.collaboration.toggleVoice();
+      await Promise.resolve();
+      if (outcome === 'cancel') {
+        await consoleScript.collaboration.toggleVoice();
+        pending.resolve();
+      }
+      await enabling;
+      expect(peers[0].close).not.toHaveBeenCalled();
+      expect(removed).not.toHaveBeenCalled();
+      expect(
+        sent.mock.calls.some(([message]) => message.signal.kind === 'bye')
+      ).toBe(false);
+      expect(voice.isEnabled()).toBe(false);
+      if (outcome === 'cancel') expect(stopped).toHaveBeenCalledOnce();
+      else
+        expect(
+          consoleScript.collaboration.getState().microphone.error
+        ).toContain('Permission denied');
+    }
+  );
+
+  it('does not leave mic acquisition pending on a separate playback resume', async () => {
+    const pending = deferred();
+    mocks.resumePlayback.mockReturnValueOnce(pending.promise);
+    await consoleScript.collaboration.toggleVoice();
+    expect(session.voice.enable).toHaveBeenCalledOnce();
+    expect(consoleScript.collaboration.getState().microphone.pending).toBe(
+      false
+    );
+    await consoleScript.collaboration.toggleVoice();
+    expect(session.voice.isMuted()).toBe(true);
+    expect(session.voice.cancelPendingEnable).not.toHaveBeenCalled();
+    pending.resolve();
+    expect(session.voice.disable).not.toHaveBeenCalled();
+  });
+
   it('can cancel a pending permission request and ignores its late rejection', async () => {
     const pending = deferred();
     session.voice.enable.mockImplementationOnce(async () => {
@@ -1054,10 +1129,12 @@ describe('opt-in peer voice', () => {
       throw new Error('Late denial');
     });
     const enabling = consoleScript.collaboration.toggleVoice();
+    await Promise.resolve();
     expect(element('collabVoice').textContent).toBe('Cancel mic request');
     expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
     await consoleScript.collaboration.toggleVoice();
-    expect(session.voice.disable).toHaveBeenCalledOnce();
+    expect(session.voice.cancelPendingEnable).toHaveBeenCalledOnce();
+    expect(session.voice.disable).not.toHaveBeenCalled();
     expect(element('collabVoice').textContent).toBe('Unmute my mic');
     pending.resolve();
     await enabling;
@@ -1081,6 +1158,7 @@ describe('opt-in peer voice', () => {
       }
     );
     const enabling = consoleScript.collaboration.toggleVoice();
+    await Promise.resolve();
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
     session = new Session();
     await consoleScript.collaboration.reconnect();

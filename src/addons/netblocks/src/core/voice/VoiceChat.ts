@@ -55,7 +55,7 @@ export class VoiceChat {
   private _enabled = false;
   private _muted = false;
   private _localId = '';
-  // Incremented on every disable(). enable() captures the current
+  // Incremented on disable() or capture cancellation. enable() captures the current
   // value at the start of its async getUserMedia await; if the value
   // has advanced by the time the await resolves, a disable arrived
   // mid-request and the mic stream we just acquired is stale — stop
@@ -112,6 +112,14 @@ export class VoiceChat {
     return !this._enabled || this._muted;
   }
 
+  /**
+   * Cancel pending microphone requests and stop any late-granted tracks.
+   * Leaves established capture and incoming peer connections untouched.
+   */
+  cancelPendingEnable(): void {
+    this._generation++;
+  }
+
   /** Request mic + start negotiating with all currently-connected peers. */
   async enable(currentPeers: ReadonlySet<string>): Promise<void> {
     if (this._enabled) return;
@@ -121,7 +129,7 @@ export class VoiceChat {
     ) {
       throw new Error('VoiceChat: getUserMedia is not available.');
     }
-    // Snapshot the generation BEFORE the await. If disable() runs
+    // Snapshot the generation BEFORE the await. If cancellation runs
     // while getUserMedia is pending, it bumps _generation. We then
     // throw away the freshly-acquired stream so we never leak a live
     // mic and never flip `_enabled` true behind the disabler's back.
@@ -182,7 +190,7 @@ export class VoiceChat {
     // Cancel any in-flight enable(): if its getUserMedia is still
     // pending, this bumped generation makes it discard the resulting
     // stream instead of flipping `_enabled` true after we left.
-    this._generation++;
+    this.cancelPendingEnable();
     // Tell each peer to drop their PC to us. Without this, the remote
     // keeps an orphaned PC alive (RTCPeerConnection.close() does not
     // signal anything to the remote) and on a subsequent enable() our

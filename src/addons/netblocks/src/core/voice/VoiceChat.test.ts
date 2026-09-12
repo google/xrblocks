@@ -188,6 +188,17 @@ describe('VoiceChat onLocalStateChange', () => {
       return {voice, track, gum, send, state, mute, error};
     }
 
+    it('pending-request cancellation leaves already enabled capture and peer connections untouched', async () => {
+      const {voice, track} = setup();
+      await voice.enable(new Set(['b']));
+      voice.cancelPendingEnable();
+      expect(voice.isEnabled()).toBe(true);
+      expect(voice.isMuted()).toBe(false);
+      expect(track.stop).not.toHaveBeenCalled();
+      expect(peers[0].close).not.toHaveBeenCalled();
+      voice.disable();
+    });
+
     it('keeps incoming connections while muted and preserves mute on peer arrival and enable calls', async () => {
       const {voice, track, gum, send, state, mute} = setup();
       await voice.enable(new Set(['b']));

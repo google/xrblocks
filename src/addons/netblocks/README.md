@@ -177,6 +177,8 @@ connection, parented to each peer's `headPivot` via
 
 `voice.setMuted(true)` silences outgoing microphone tracks while keeping incoming audio connected. `isMuted()` reports transmission state; `isEnabled()` reports whether microphone capture is acquired. Muting is retained when peers join or renegotiate, and unmuting does not request another stream. `disable()` is full teardown: it releases capture and audio connections and cancels a pending microphone grant. Listening-only peers can receive audio without enabling their microphone, independent of peer ID ordering.
 
+Use `voice.cancelPendingEnable()` to invalidate outstanding microphone permission requests without closing incoming connections or changing an already enabled microphone. Late-granted tracks from those requests are stopped. This is distinct from `disable()`, which intentionally closes the whole voice session.
+
 Incoming playback is separately controlled on `NetSession`:
 
 ```ts

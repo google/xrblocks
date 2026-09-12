@@ -401,7 +401,7 @@ class Collaboration {
     this.voiceFailure = '';
     if (this.voicePending) {
       this.voicePending = false;
-      session.voice.disable();
+      session.voice.cancelPendingEnable();
       this.renderVoice();
       return;
     }
@@ -419,18 +419,15 @@ class Collaboration {
     this.voicePending = true;
     this.renderVoice();
     try {
-      const resumed = xb.core?.sound?.listener?.context?.resume();
-      await Promise.all([
-        session.voice.enable(session.transport.remotePeerIds),
-        resumed,
-      ]);
+      this.resumePlayback();
+      await session.voice.enable(session.transport.remotePeerIds);
     } catch (error) {
       if (
         this.session === session &&
         this.voiceRequest === request &&
         !this.disposed
       ) {
-        session.voice.disable();
+        session.voice.cancelPendingEnable();
         this.voiceFailure = `Peer voice: ${error?.message ?? String(error)}`;
       }
     } finally {
