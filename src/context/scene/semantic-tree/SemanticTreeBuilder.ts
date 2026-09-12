@@ -296,7 +296,8 @@ function createSemanticNode(
   semantic: NonNullable<ReturnType<typeof describeSemanticObject>>,
   parentId: string | undefined
 ): SemanticNode {
-  object.updateMatrixWorld(true);
+  // buildSemanticTree refreshes the whole scene before traversal, so this only
+  // needs the ancestor walk that getWorldPosition already does.
   object.getWorldPosition(tempPosition);
 
   const node: SemanticNode = {
