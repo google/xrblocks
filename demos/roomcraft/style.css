@@ -265,6 +265,17 @@
   color: var(--rc-ink-soft);
 }
 
+.rc-peer-mute {
+  align-self: flex-start;
+  margin-top: 5px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.rc-peer-mute[hidden] {
+  display: none;
+}
+
 .rc-collab-link {
   display: inline-block;
   text-decoration: none;

@@ -77,7 +77,7 @@
           hidden
         >
           <h2 id="collabHeading" class="rc-heading">Collaboration</h2>
-          <form id="collabConnection" class="rc-collab-fields">
+          <form id="collabConnection" class="rc-collab-fields" novalidate>
             <label for="collabTransport">Connection</label>
             <select id="collabTransport" aria-describedby="collabTransportHelp">
               <option value="broadcast">BroadcastChannel · same browser</option>
@@ -145,7 +145,7 @@
             Edits can overwrite concurrent changes; local undo writes a whole
             scene. Shared coordinates do not align physical rooms.
           </p>
-          <h3 class="rc-heading">Peer spatial voice</h3>
+          <h3 class="rc-heading">Live conversation · my microphone</h3>
           <button
             id="collabVoice"
             class="rc-button"
@@ -153,10 +153,26 @@
             aria-pressed="false"
             aria-describedby="collabVoiceStatus"
           >
-            Unmute peer mic
+            Unmute my mic
           </button>
           <p
             id="collabVoiceStatus"
+            class="rc-note"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <h3 class="rc-heading">Listening · only for me</h3>
+          <button
+            id="collabPlayback"
+            class="rc-button"
+            type="button"
+            aria-pressed="false"
+            aria-describedby="collabPlaybackStatus"
+          >
+            Mute everyone for me
+          </button>
+          <p
+            id="collabPlaybackStatus"
             class="rc-note"
             role="status"
             aria-live="polite"

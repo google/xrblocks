@@ -38,6 +38,10 @@ The panel shows connection state, pending synchronization, your announced identi
 
 Connection failures appear in the panel and existing console. Leave stops collaboration while keeping local editing available. Leaving the page or disposing its console also releases the bridge and its session.
 
+Collaboration is also available inside Spatial studio, in its **People** tab, in both the default and virtual modes. **People / audio** contains participants and voice/listening controls; **Connection settings** edits the applied connection's draft. The spatial and DOM interfaces subscribe to one controller and invoke the same actions; they do not create separate sessions or audio graphs. Applied room, connection and identity are shown separately from editable draft settings. Participant controls are paginated to fit the card.
+
+Editing a connection name or relay in the spatial keyboard updates only that settings draft, including its DOM counterpart. Enter finishes the field; Apply & reconnect applies the connection. It does not overwrite the authoring prompt, change scene selection, or invoke Generate/Gemini. Returning to authoring restores the authoring keyboard context and cancels held settings-key captures before changing routes. Controls and participant rows are kept stable on unchanged state rather than rebuilt on each update.
+
 Room IDs are prefixed with `roomcraft:room:` or `roomcraft:virtual:` so different page modes cannot accidentally meet. The `room` parameter accepts 1 to 48 ASCII letters, digits, underscores, or hyphens, starting with a letter or digit; an omitted or empty value uses `roomcraft-demo`, while an invalid ID shows an error without joining a different room.
 
 ### Names and share links
@@ -48,7 +52,9 @@ The peer link is built from an allowlist: collaboration, room, transport, the va
 
 ### Opt-in peer spatial voice
 
-**Unmute peer mic** first acquires the microphone through `session.voice.enable(session.transport.remotePeerIds)`. It never runs automatically. **Mute peer mic** uses `setMuted(true)` to silence outgoing audio without closing incoming peer audio or requesting another microphone stream. Unmute reuses that stream with `setMuted(false)`. A muted track stays muted when peers join or renegotiate. **Disconnect** is different: it releases capture and closes the session's audio connections. Switching transports also releases capture; reconnecting never silently unmutes or starts a new microphone request.
+**Unmute my mic** first acquires the microphone through `session.voice.enable(session.transport.remotePeerIds)`. It never runs automatically. **Mute my mic** uses `setMuted(true)` to silence outgoing audio without closing incoming peer audio or requesting another microphone stream. Unmute reuses that stream with `setMuted(false)`. A muted track stays muted when peers join or renegotiate. **Disconnect** is different: it releases capture and closes the session's audio connections. Switching transports also releases capture; reconnecting never silently unmutes or starts a new microphone request.
+
+**Mute everyone for me** controls all incoming peer playback locally. Each remote participant also has **Mute/Unmute for me**. These controls do not change anyone's microphone, announced mic indicator, peer connection, or unrelated scene audio. Turning the master listening control off and on preserves individual choices. Choices apply to new or replaced streams; individual entries clear when that peer leaves or the session is replaced, since a display name is not a persistent identity. The master listening preference survives reconnects and is applied before incoming streams are attached.
 
 While permission is pending, **Cancel mic request** invalidates it; a late grant is stopped by netblocks. The UI follows `voice.isEnabled()`, `voice.isMuted()`, and `local-voice-state`, not an optimistic toggle. The roster shows peers' announced mic transmission state. Permission, capture-ended, and peer audio-connection errors appear in the peer-voice status without failing scene synchronization.
 

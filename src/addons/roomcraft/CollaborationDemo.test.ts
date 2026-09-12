@@ -18,6 +18,29 @@ const mocks = vi.hoisted(() => ({
   enableNet: vi.fn(),
   netModuleLoaded: vi.fn(),
   bridgeInit: vi.fn(async () => {}),
+  resumePlayback: vi.fn(async () => {}),
+  spatialStates: [] as unknown[],
+  spatialControllers: [] as object[],
+}));
+
+vi.mock('../../../demos/roomcraft/CollaborationSpatial.js', () => ({
+  CollaborationSpatialView: class {
+    private readonly unsubscribe: () => void;
+    constructor(
+      _host: object,
+      controller: {
+        subscribe: (listener: (state: unknown) => void) => () => void;
+      }
+    ) {
+      mocks.spatialControllers.push(controller);
+      this.unsubscribe = controller.subscribe((state) =>
+        mocks.spatialStates.push(state)
+      );
+    }
+    dispose() {
+      this.unsubscribe();
+    }
+  },
 }));
 
 vi.mock('xrblocks', async () => {
@@ -49,7 +72,10 @@ vi.mock('xrblocks', async () => {
     add: mocks.add,
     init: mocks.init,
     initScript: mocks.initScript,
-    core: {renderer: {shadowMap: {}}},
+    core: {
+      renderer: {shadowMap: {}},
+      sound: {listener: {context: {resume: mocks.resumePlayback}}},
+    },
     getUrlParameter: (name: string) =>
       new URL(window.location.href).searchParams.get(name),
   };
@@ -127,6 +153,21 @@ class Session extends EventTarget {
   transport!: EventTarget & {remotePeerIds: Set<string>};
   voiceOn = false;
   voiceMuted = false;
+  playbackMuted = false;
+  peerPlaybackMuted = new Set<string>();
+  setPlaybackMuted = vi.fn((muted: boolean) => {
+    if (this.playbackMuted === muted) return;
+    this.playbackMuted = muted;
+    this.dispatchEvent(new CustomEvent('playback-state', {detail: {muted}}));
+  });
+  setPeerPlaybackMuted = vi.fn((id: string, muted: boolean) => {
+    if (muted) this.peerPlaybackMuted.add(id);
+    else this.peerPlaybackMuted.delete(id);
+    this.dispatchEvent(
+      new CustomEvent('playback-state', {detail: {peerId: id, muted}})
+    );
+  });
+  isPeerPlaybackMuted = (id: string) => this.peerPlaybackMuted.has(id);
   voice = {
     isEnabled: () => this.voiceOn,
     isMuted: () => !this.voiceOn || this.voiceMuted,
@@ -173,6 +214,9 @@ function retryButton() {
 
 function setField(id: string, value: string) {
   (element(id) as HTMLInputElement).value = value;
+  element(id).dispatchEvent(
+    new Event(id === 'collabTransport' ? 'change' : 'input', {bubbles: true})
+  );
 }
 
 function bridge() {
@@ -198,6 +242,8 @@ function deferred() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.spatialStates.length = 0;
+  mocks.spatialControllers.length = 0;
   window.history.replaceState({}, '', '/demos/roomcraft/');
   document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)![1];
   vi.stubGlobal('isSecureContext', true);
@@ -222,6 +268,7 @@ beforeEach(() => {
   mocks.enableNet.mockReturnValue(net);
   mocks.init.mockResolvedValue(undefined);
   mocks.bridgeInit.mockResolvedValue(undefined);
+  mocks.resumePlayback.mockResolvedValue(undefined);
   vi.spyOn(RoomcraftConsole.prototype, 'start').mockResolvedValue(undefined);
   vi.spyOn(RoomcraftConsole.prototype, 'refresh').mockImplementation(() => {});
   vi.spyOn(
@@ -525,6 +572,154 @@ describe('collaboration panel', () => {
     consoleScript = await startRoomcraftDemo();
   });
 
+  it('shares draft state and actions with the spatial subscriber without touching authoring', () => {
+    const controller = consoleScript.collaboration;
+    const prompt = element('prompt') as HTMLTextAreaElement;
+    prompt.value = 'keep my authoring draft';
+    prompt.setSelectionRange(5, 11, 'backward');
+    consoleScript.promptValue = prompt.value;
+    consoleScript.room.selectedId = 'chair';
+    const generate = vi.spyOn(consoleScript, 'generate');
+    expect(mocks.spatialControllers).toContain(controller);
+    setField('collabName', 'Bob');
+    expect(controller.getState()).toMatchObject({
+      draft: {name: 'Bob'},
+      applied: {name: 'Alice'},
+    });
+    expect(mocks.spatialStates.at(-1)).toMatchObject({draft: {name: 'Bob'}});
+    controller.setDraft('transport', 'websocket');
+    controller.setDraft('relay', 'ws://relay.example/room');
+    expect((element('collabTransport') as HTMLSelectElement).value).toBe(
+      'websocket'
+    );
+    expect((element('collabRelay') as HTMLInputElement).value).toBe(
+      'ws://relay.example/room'
+    );
+    expect(prompt.value).toBe('keep my authoring draft');
+    expect([
+      prompt.selectionStart,
+      prompt.selectionEnd,
+      prompt.selectionDirection,
+    ]).toEqual([5, 11, 'backward']);
+    expect(consoleScript.room.selectedId).toBe('chair');
+    expect(generate).not.toHaveBeenCalled();
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+  });
+
+  it('does not mutate the DOM, replace rows, lose focus or notify spatial views on no-op renders', () => {
+    session.users.set('bob', {peerId: 'bob', displayName: 'Bob'});
+    session.dispatchEvent(new Event('user-join'));
+    const list = element('collabPeers');
+    const rows = [...list.children];
+    const button = list.querySelector(
+      '[data-peer-id="bob"] button'
+    ) as HTMLButtonElement;
+    button.focus();
+    const states = mocks.spatialStates.length;
+    const refreshes = vi.mocked(consoleScript.refresh).mock.calls.length;
+    const observer = new MutationObserver(() => {});
+    observer.observe(element('collaboration'), {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    for (let i = 0; i < 10; i++) consoleScript.collaboration.render();
+    expect(observer.takeRecords()).toHaveLength(0);
+    observer.disconnect();
+    expect([...list.children]).toEqual(rows);
+    expect(document.activeElement).toBe(button);
+    expect(mocks.spatialStates).toHaveLength(states);
+    expect(vi.mocked(consoleScript.refresh)).toHaveBeenCalledTimes(refreshes);
+  });
+
+  it('surfaces blocked incoming playback without acquiring or changing my microphone', async () => {
+    mocks.resumePlayback.mockRejectedValueOnce(new Error('Playback blocked'));
+    const controller = consoleScript.collaboration;
+    controller.togglePlayback();
+    controller.togglePlayback();
+    await Promise.resolve();
+    expect(controller.getState().error).toContain('Playback blocked');
+    expect(mocks.spatialStates.at(-1)).toMatchObject({
+      error: expect.stringContaining('Playback blocked'),
+    });
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(session.voice.setMuted).not.toHaveBeenCalled();
+    expect(session.voice.disable).not.toHaveBeenCalled();
+  });
+
+  it('keeps incoming master and individual choices separate from my mic and remote announcements', async () => {
+    session.users.set('bob', {
+      peerId: 'bob',
+      displayName: 'Bob',
+      avatar: {voiceActive: true},
+    });
+
+    session.users.set('charlie', {
+      peerId: 'charlie',
+      displayName: 'Charlie',
+      avatar: {voiceActive: true},
+    });
+    session.dispatchEvent(new Event('user-join'));
+    const controller = consoleScript.collaboration;
+    await controller.toggleVoice();
+    controller.togglePeerPlayback('bob');
+    controller.togglePlayback();
+    expect(session.playbackMuted).toBe(true);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(true);
+    controller.togglePlayback();
+    expect(session.playbackMuted).toBe(false);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(true);
+    expect(session.isPeerPlaybackMuted('charlie')).toBe(false);
+    expect(session.voice.isMuted()).toBe(false);
+    expect(session.voice.enable).toHaveBeenCalledOnce();
+    expect(session.voice.setMuted).not.toHaveBeenCalled();
+    expect(session.voice.disable).not.toHaveBeenCalled();
+    expect(mocks.spatialStates.at(-1)).toMatchObject({
+      listening: {muted: false},
+      participants: expect.arrayContaining([
+        expect.objectContaining({id: 'bob', micOn: true, mutedForMe: true}),
+        expect.objectContaining({
+          id: 'charlie',
+          micOn: true,
+          mutedForMe: false,
+        }),
+      ]),
+    });
+    controller.togglePlayback();
+    session = new Session();
+    await controller.reconnect();
+    expect(session.setPlaybackMuted).toHaveBeenCalledWith(true);
+    expect(session.voice.enable).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'applies a listening change during a pending connection (initial mute=%s)',
+    async (initial) => {
+      const controller = consoleScript.collaboration;
+      if (initial) controller.togglePlayback();
+      session = new Session();
+      session.isOpen = false;
+      const gate = deferred();
+      net.joinRoom.mockImplementationOnce(async (_room, options) => {
+        net.session = session;
+        session.transport = options.transport;
+        await gate.promise;
+        session.isOpen = true;
+        return session;
+      });
+      const connecting = controller.reconnect();
+      expect(controller.joining).toBe(true);
+      controller.togglePlayback();
+      expect(session.playbackMuted).toBe(!initial);
+      gate.resolve();
+      await connecting;
+      expect(controller.getState().listening.muted).toBe(!initial);
+      expect(session.playbackMuted).toBe(!initial);
+      expect(session.voice.enable).not.toHaveBeenCalled();
+    }
+  );
+
   it('shows identity, colored roster, peer selections and departures safely', () => {
     expect(element('collaboration').hidden).toBe(false);
     expect(element('collabIdentity').textContent).toBe(
@@ -617,7 +812,7 @@ describe('collaboration panel', () => {
     });
     expect(room.layout).toBe(layout);
     expect(session.voice.enable).not.toHaveBeenCalled();
-    expect(element('collabVoice').textContent).toBe('Unmute peer mic');
+    expect(element('collabVoice').textContent).toBe('Unmute my mic');
   });
 
   it('validates before disconnecting and keeps configuration editable', async () => {
@@ -772,11 +967,11 @@ describe('opt-in peer voice', () => {
     expect(session.voice.enable).toHaveBeenCalledWith(
       session.transport.remotePeerIds
     );
-    expect(element('collabVoice').textContent).toBe('Mute peer mic');
+    expect(element('collabVoice').textContent).toBe('Mute my mic');
     expect(element('collabVoice').getAttribute('aria-pressed')).toBe('true');
     expect(element('collabVoiceStatus').textContent).toContain('not Gemini');
     session.setVoice(false);
-    expect(element('collabVoice').textContent).toBe('Unmute peer mic');
+    expect(element('collabVoice').textContent).toBe('Unmute my mic');
     await consoleScript.collaboration.toggleVoice();
     await consoleScript.collaboration.toggleVoice();
     expect(session.voice.isEnabled()).toBe(true);
@@ -863,7 +1058,7 @@ describe('opt-in peer voice', () => {
     expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
     await consoleScript.collaboration.toggleVoice();
     expect(session.voice.disable).toHaveBeenCalledOnce();
-    expect(element('collabVoice').textContent).toBe('Unmute peer mic');
+    expect(element('collabVoice').textContent).toBe('Unmute my mic');
     pending.resolve();
     await enabling;
     expect(element('collabVoiceStatus').textContent).not.toContain('denial');
