@@ -7,6 +7,7 @@ import {
 import {ContextOptions} from '../context/ContextOptions';
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
 import {HandsOptions} from '../input/HandsOptions.js';
+import {LayersOptions} from '../layers/LayersOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
 import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRecognitionOptions.js';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
@@ -151,6 +152,7 @@ export class Options {
   world = new WorldOptions();
   context = new ContextOptions();
   physics = new PhysicsOptions();
+  layers = new LayersOptions();
   transition = new XRTransitionOptions();
   camera = {
     near: 0.01,
@@ -306,6 +308,24 @@ export class Options {
    */
   enableDepth() {
     this.depth = new DepthOptions(xrDepthMeshOptions);
+    return this;
+  }
+
+  /**
+   * Enables WebXR composition layers.
+   *
+   * Content presented as a layer is composited once at its own resolution
+   * rather than being drawn into the eye buffer and resampled again, so video
+   * and text come out sharper, and the compositor keeps reprojecting it to the
+   * latest head pose even when the app's own frame rate dips.
+   *
+   * Requested optionally, and each layer falls back to ordinary in-scene
+   * rendering where the platform cannot present one.
+   *
+   * @returns The instance for chaining.
+   */
+  enableLayers() {
+    this.layers.enabled = true;
     return this;
   }
 
