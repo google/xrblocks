@@ -30,6 +30,10 @@ export default defineConfig(
       languageOptions: {globals: {...globals.browser}},
     },
     {
-      files: ['rollup.config.js', 'docs/docusaurus.config.js', 'src/addons/**/server/**/*.js'],
+      files: ['rollup.config.js', 'docs/docusaurus.config.js', 'src/addons/**/server/**/*.js', 'tools/**/*.js', 'tools/**/*.ts'],
       languageOptions: {globals: {...globals.node}}
+    },
+    {
+      files: ['tools/profile.js'],
+      languageOptions: {globals: {...globals.browser, ...globals.node}}
     });
