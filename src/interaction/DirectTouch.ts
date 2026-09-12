@@ -22,6 +22,7 @@ interface ActiveContact {
   handIndex: number;
   hand?: THREE.Object3D;
   point: THREE.Vector3;
+  captureRegion?: THREE.Object3D;
 }
 
 /**
@@ -46,14 +47,28 @@ export class DirectTouch {
     for (const input of inputs) {
       this.present.add(input.controller);
       const previous = this.active.get(input.controller);
-      const resolved = this.resolver.resolve(
-        this.registry.intersectionsAt(
-          input.point,
-          previous ? DirectTouch.EXIT_PADDING : 0,
-          previous?.resolved.hitObject
-        ),
-        'direct-touch'
-      );
+      const resolved = previous?.captureRegion
+        ? this.registry.containsPoint(
+            previous.captureRegion,
+            input.point,
+            DirectTouch.EXIT_PADDING
+          )
+          ? {
+              ...previous.resolved,
+              intersection: {
+                ...previous.resolved.intersection,
+                point: input.point.clone(),
+              },
+            }
+          : undefined
+        : this.resolver.resolve(
+            this.registry.intersectionsAt(
+              input.point,
+              previous ? DirectTouch.EXIT_PADDING : 0,
+              previous?.resolved.hitObject
+            ),
+            'direct-touch'
+          );
 
       if (this.awaitingExit.has(input.controller)) {
         if (!resolved) this.awaitingExit.delete(input.controller);
@@ -131,6 +146,12 @@ export class DirectTouch {
 
   has(controller: Controller): boolean {
     return this.active.has(controller);
+  }
+
+  /** A scroll candidate keeps contact with its viewport as children move. */
+  setCaptureRegion(controller: Controller, region?: THREE.Object3D): void {
+    const contact = this.active.get(controller);
+    if (contact) contact.captureRegion = region;
   }
 
   clear(): void {

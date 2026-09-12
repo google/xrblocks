@@ -9,6 +9,7 @@ import type {
 import {HitRegistry} from './HitRegistry.js';
 import type {ManipulationManager} from './manipulation/ManipulationManager.js';
 import {
+  getSemanticControl,
   isSemanticControl,
   isSemanticControlDisabled,
 } from './SemanticControl.js';
@@ -40,6 +41,7 @@ export class HitResolver {
     for (const rawIntersection of intersections) {
       const registered = this.registry.resolve(rawIntersection.object);
       if (registered.physical.xb?.pointerEvents === 'none') continue;
+      if (registered.containsPoint?.(rawIntersection.point) === false) continue;
       if (
         registered.logical === rawIntersection.object &&
         hasPrivateAncestor(rawIntersection.object)
@@ -55,7 +57,16 @@ export class HitResolver {
       const disabledSemantic =
         semanticCandidate !== undefined &&
         isSemanticControlDisabled(semanticCandidate);
-      const semanticControl = disabledSemantic ? undefined : semanticCandidate;
+      const scrollFallback = disabledSemantic
+        ? eligiblePath.find(
+            (object) =>
+              getSemanticControl(object)?.kind === 'scroll' &&
+              !isSemanticControlDisabled(object)
+          )
+        : undefined;
+      const semanticControl = disabledSemantic
+        ? scrollFallback
+        : semanticCandidate;
       const physicalHandle =
         registered.physical !== eligiblePath[0] &&
         registered.physical.xb?.manipulationHandle !== undefined
@@ -69,14 +80,15 @@ export class HitResolver {
       const callbackTarget = eligiblePath.find((object) =>
         this.callbacks.hasTargetHandler(object, sourceType)
       );
-      const target = disabledSemantic
-        ? undefined
-        : (semanticControl ??
-          this.nearestTarget(
-            eligiblePath,
-            callbackTarget,
-            manipulation?.owner
-          ));
+      const target =
+        disabledSemantic && !scrollFallback
+          ? undefined
+          : (semanticControl ??
+            this.nearestTarget(
+              eligiblePath,
+              callbackTarget,
+              manipulation?.owner
+            ));
       const scriptPath = target
         ? (eligiblePath.filter((object) =>
             this.callbacks.isScript(object)

@@ -2,6 +2,15 @@ import {effect} from '@preact/signals-core';
 import {Image, type ImageProperties} from '@pmndrs/uikit';
 import * as THREE from 'three';
 
+import {
+  cssColor,
+  fontShorthand,
+  graphemes,
+  resolveLineHeight,
+  resolveRasterScale,
+} from './CanvasTextStyle';
+import {DEFAULT_TEXT_FONT_SIZE} from './UIContentDefaults';
+
 type TextAlign = 'left' | 'center' | 'right';
 type WhiteSpace = 'normal' | 'nowrap' | 'pre-line';
 
@@ -29,15 +38,8 @@ interface TextLayout {
   height: number;
 }
 
-const MAX_CANVAS_DIMENSION = 4096;
-const CANVAS_SUPERSAMPLING = 2;
 const MEASURE_MODE_UNDEFINED = 0;
 const MEASURE_MODE_EXACTLY = 1;
-const SYSTEM_FONT =
-  'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const graphemeSegmenter = new Intl.Segmenter(undefined, {
-  granularity: 'grapheme',
-});
 
 /** Canvas-backed text used when UIkit's fixed glyph atlas cannot render text. */
 export class UnicodeText extends Image {
@@ -117,14 +119,7 @@ export class UnicodeText extends Image {
 
   private draw(width: number, height: number): void {
     if (!(width > 0) || !(height > 0)) return;
-    const scale = Math.max(
-      Number.EPSILON,
-      Math.min(
-        (window.devicePixelRatio || 1) * CANVAS_SUPERSAMPLING,
-        MAX_CANVAS_DIMENSION / width,
-        MAX_CANVAS_DIMENSION / height
-      )
-    );
+    const scale = resolveRasterScale(width, height);
     const pixelWidth = Math.max(1, Math.ceil(width * scale));
     const pixelHeight = Math.max(1, Math.ceil(height * scale));
     if (
@@ -187,10 +182,10 @@ function imageProperties(
 }
 
 function metricsStyle(properties: UnicodeTextProperties): TextMetricsStyle {
-  const fontSize = properties.fontSize ?? 16;
+  const fontSize = properties.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
   return {
     color: cssColor(properties.color ?? '#ffffff'),
-    font: `${fontWeight(properties.fontWeight)} ${fontSize}px ${SYSTEM_FONT}`,
+    font: fontShorthand(fontSize, properties.fontWeight),
     lineHeight: resolveLineHeight(properties.lineHeight, fontSize),
     textAlign: properties.textAlign ?? 'left',
     whiteSpace: properties.whiteSpace ?? 'normal',
@@ -202,32 +197,6 @@ function applyFont(
   style: TextMetricsStyle
 ): void {
   context.font = style.font;
-}
-
-function fontWeight(value: UnicodeTextProperties['fontWeight']): number {
-  if (typeof value === 'number') return value;
-  if (value === 'bold') return 700;
-  if (value === 'medium') return 500;
-  return 400;
-}
-
-function resolveLineHeight(
-  value: UnicodeTextProperties['lineHeight'],
-  fontSize: number
-): number {
-  if (typeof value === 'number') return value * fontSize;
-  if (typeof value === 'string' && value.endsWith('px')) {
-    return Number.parseFloat(value);
-  }
-  if (typeof value === 'string' && value.endsWith('%')) {
-    return (Number.parseFloat(value) / 100) * fontSize;
-  }
-  return fontSize * 1.2;
-}
-
-function cssColor(color: THREE.ColorRepresentation): string {
-  if (typeof color === 'string') return color;
-  return `#${new THREE.Color(color).getHexString()}`;
 }
 
 function layoutText(
@@ -307,8 +276,4 @@ function widestCharacter(
     }
   }
   return widest || ' ';
-}
-
-function graphemes(text: string): string[] {
-  return Array.from(graphemeSegmenter.segment(text), ({segment}) => segment);
 }

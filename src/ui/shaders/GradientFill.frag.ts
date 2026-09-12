@@ -24,6 +24,7 @@ uniform vec4 u_fill_gradientColors[MAX_GRADIENT_STOPS];
 uniform int u_fill_numStops;
 
 void main() {
+    float clippingAlpha = panelClipAlpha();
     // 1. Setup Coordinates.
     vec2 pos = vUv * u_resolution;
     vec2 size = u_resolution;
@@ -70,6 +71,7 @@ void main() {
     finalColor.a *= alphaMask * u_opacity;
 
     gl_FragColor = finalColor;
+    gl_FragColor.a *= clippingAlpha;
 
     #include <dithering_fragment>
 }

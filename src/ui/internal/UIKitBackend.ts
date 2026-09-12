@@ -20,7 +20,9 @@ import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
 import {UISlider} from '../components/UISlider';
+import {UIScrollView} from '../components/UIScrollView';
 import {UIText} from '../components/UIText';
+import {UITextInput} from '../components/UITextInput';
 import {DEFAULT_GRADIENT_PANEL_PROPS} from '../constants/GradientPanelConstants';
 import {
   getUIElementKind,
@@ -36,6 +38,10 @@ import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {UICardEdge} from './UICardEdge';
 import {AdaptiveText, type AdaptiveTextProperties} from './AdaptiveText';
+import {ScrollViewPresentation} from './ScrollViewPresentation';
+import {UIHitRegion} from './UIHitRegion';
+import {TextFieldPresentation} from './TextFieldPresentation';
+import {TextInputEditor} from './TextInputEditor';
 import type {
   UIBackend,
   UIHitMapping,
@@ -71,12 +77,19 @@ class UIKitMount implements UIMount {
     this.isOverlay = getUIElementKind(root) === 'overlay';
   }
 
+  prepareCommit(): void {
+    if (this.structureRevision !== getUIStructureRevision(this.root)) {
+      this.binding?.removeDetachedChildren();
+    }
+  }
+
   commit(
     theme: UITheme,
     viewport: {width: number; height: number},
     rootOrder: number
   ): readonly UIHitMapping[] | undefined {
     if (this.disposed) return undefined;
+    this.prepareCommit();
     for (const work of this.readyWork.splice(0)) work();
 
     const rootStack = this.isOverlay
@@ -106,9 +119,10 @@ class UIKitMount implements UIMount {
       this.hitMappingsChanged = true;
     }
 
-    if (this.structureRevision !== getUIStructureRevision(this.root)) {
-      this.structureRevision = getUIStructureRevision(this.root);
+    const structureRevision = getUIStructureRevision(this.root);
+    if (this.structureRevision !== structureRevision) {
       this.binding.reconcileTree(context);
+      this.structureRevision = structureRevision;
       this.hitMappingsChanged = true;
     }
     if (this.isOverlay) this.updateViewport(viewport);
@@ -125,6 +139,7 @@ class UIKitMount implements UIMount {
 
   update(deltaSeconds: number): void {
     this.rendered?.update(deltaSeconds * 1000);
+    this.binding?.afterLayout(deltaSeconds);
     if (!(this.root instanceof UICard) || !this.binding) return;
     const size = this.binding.node.size.peek();
     if (!validPair(size)) return;
@@ -151,7 +166,11 @@ class UIKitMount implements UIMount {
         });
         continue;
       }
-      if (element instanceof UIText && node.isClipped.peek()) {
+      if (
+        element instanceof UIText &&
+        node.isClipped.peek() &&
+        !hasScrollAncestor(element)
+      ) {
         issues.push({
           code: 'text-clipped',
           severity: 'error',
@@ -190,9 +209,14 @@ class UIKitMount implements UIMount {
       rendered.removeFromParent();
       rendered.dispose();
     }
+
     this.binding = undefined;
     this.rendered = undefined;
     this.object.clear();
+  }
+
+  setActive(active: boolean): void {
+    this.binding?.setActive(active);
   }
 
   private enqueue = (work: () => void): void => {
@@ -222,11 +246,13 @@ class UIKitBackend implements UIBackend {
   private readonly icons = new IconCache();
   private renderer?: THREE.WebGLRenderer;
   private previousLocalClippingEnabled = false;
+  private releaseFocusGuard?: () => void;
 
   configureRenderer(renderer: THREE.WebGLRenderer): void {
     if (this.renderer === renderer) return;
     this.restoreRenderer();
     this.renderer = renderer;
+    this.releaseFocusGuard = TextInputEditor.guardCanvas(renderer.domElement);
     this.previousLocalClippingEnabled = renderer.localClippingEnabled;
     renderer.localClippingEnabled = true;
     renderer.setTransparentSort(reversePainterSortStable);
@@ -236,12 +262,18 @@ class UIKitBackend implements UIBackend {
     return new UIKitMount(root, this.icons);
   }
 
+  handlePointerTarget(target?: THREE.Object3D): void {
+    TextInputEditor.handlePointerTarget(target);
+  }
+
   dispose(): void {
     this.restoreRenderer();
     this.icons.dispose();
   }
 
   private restoreRenderer(): void {
+    this.releaseFocusGuard?.();
+    this.releaseFocusGuard = undefined;
     if (!this.renderer) return;
     this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
     this.renderer = undefined;
@@ -268,6 +300,7 @@ type UIKitNode =
 /** A retained physical node and the small private subtree it owns. */
 class UIKitNodeBinding {
   readonly node: UIKitNode;
+  private readonly hitRegion: UIHitRegion;
   private readonly unregisterPresentationObject: () => void;
   private readonly children = new Map<UIElement, UIKitNodeBinding>();
   private readonly childOrder: UIElement[] = [];
@@ -282,6 +315,9 @@ class UIKitNodeBinding {
   private buttonIcon?: Svg;
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
+  private scrollView?: ScrollViewPresentation;
+  private textInput?: TextFieldPresentation;
+  private contentProperties: UIStyle = {};
   private imageTexture?: THREE.Texture;
   private ownsImageTexture = false;
   private imageSource?: string | THREE.Texture;
@@ -323,9 +359,21 @@ class UIKitNodeBinding {
     } else {
       this.node = new GradientPanel(properties);
     }
+    if (element instanceof UIScrollView && this.node instanceof Container) {
+      this.scrollView = new ScrollViewPresentation(element, this.node);
+    }
+    if (element instanceof UITextInput && this.node instanceof Container) {
+      this.textInput = new TextFieldPresentation(
+        element,
+        this.node,
+        this.notifyResource
+      );
+    }
+    this.hitRegion = new UIHitRegion(this.node);
     this.unregisterPresentationObject = registerUIPresentationObject(
       this.element,
-      this.node
+      this.node,
+      this.hitRegion.bounds
     );
     this.baseProperties = properties;
     this.presentedProperties = properties;
@@ -334,8 +382,21 @@ class UIKitNodeBinding {
     this.commit(context);
   }
 
+  removeDetachedChildren(): void {
+    for (const [element, binding] of this.children) {
+      if (element.parent !== this.element) {
+        this.children.delete(element);
+        this.childOrder.splice(this.childOrder.indexOf(element), 1);
+        binding.dispose();
+      } else {
+        binding.removeDetachedChildren();
+      }
+    }
+  }
+
   reconcileTree(context: CommitContext): void {
     if (!isContainerNode(this.node)) return;
+    const content = this.scrollView?.content ?? this.node;
     const nextOrder = this.element.children.filter(isUIElement);
     const next = new Map<UIElement, UIKitNodeBinding>();
     for (const child of nextOrder) {
@@ -353,10 +414,12 @@ class UIKitNodeBinding {
       const binding = next.get(child)!;
       this.children.set(child, binding);
       this.childOrder.push(child);
-      this.node.add(binding.node);
+      content.add(binding.node);
       binding.reconcileTree(context);
     }
     this.ensurePrivateNodes(context.theme);
+    this.scrollView?.commit(this.contentProperties);
+    this.textInput?.commit(context.theme);
     if (this.edge) {
       this.edge.removeFromParent();
       this.node.add(this.edge);
@@ -397,6 +460,8 @@ class UIKitNodeBinding {
       this.theme = context.theme;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
+      this.scrollView?.commit(this.contentProperties);
+      this.textInput?.commit(context.theme);
       hitMappingsChanged = this.syncEdge(properties);
     }
     this.node.visible = this.element.visible;
@@ -410,10 +475,10 @@ class UIKitNodeBinding {
 
   present(stateFor: UIPresentationStateFor): void {
     if (this.disposed) return;
-    const state = stateFor(
-      this.element,
-      this.edge ? this.cursorPoints : undefined
-    );
+    const state = {
+      ...stateFor(this.element, this.edge ? this.cursorPoints : undefined),
+      focused: this.element instanceof UITextInput && this.element.focused,
+    };
     const key = stateKey(state);
     if (key !== this.presentationKey) {
       const context: CommitContext = {
@@ -426,6 +491,8 @@ class UIKitNodeBinding {
       this.presentedProperties = properties;
       this.presentationKey = key;
       this.ensurePrivateNodes(this.theme!);
+      this.scrollView?.commit(this.contentProperties);
+      this.textInput?.commit(this.theme!);
     }
     this.edge?.setCursorPoints(
       state.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
@@ -437,7 +504,11 @@ class UIKitNodeBinding {
 
   hitMappings(): UIHitMapping[] {
     const mappings: UIHitMapping[] = [
-      {physical: this.node, logical: this.element},
+      {
+        physical: this.node,
+        logical: this.element,
+        options: {containsPoint: this.hitRegion.containsPoint},
+      },
     ];
     if (this.edge) mappings.push({physical: this.edge, logical: this.element});
     for (const child of this.childOrder) {
@@ -450,6 +521,19 @@ class UIKitNodeBinding {
     yield [this.element, this.node];
     for (const child of this.childOrder)
       yield* this.children.get(child)!.elementNodes();
+  }
+
+  afterLayout(deltaSeconds: number): void {
+    this.scrollView?.afterLayout();
+    this.textInput?.update(deltaSeconds);
+    for (const child of this.childOrder)
+      this.children.get(child)!.afterLayout(deltaSeconds);
+  }
+
+  setActive(active: boolean): void {
+    this.textInput?.setActive(active);
+    for (const child of this.childOrder)
+      this.children.get(child)!.setActive(active);
   }
 
   dispose(): void {
@@ -466,6 +550,8 @@ class UIKitNodeBinding {
     this.buttonLabel?.removeFromParent();
     this.buttonLabel?.dispose();
     this.sliderContent?.dispose();
+    this.scrollView?.dispose();
+    this.textInput?.dispose();
     if (this.ownsImageTexture) this.imageTexture?.dispose();
     this.imageTexture = undefined;
     this.node.removeFromParent();
@@ -477,9 +563,8 @@ class UIKitNodeBinding {
     state: UIPresentationState,
     renderOrder: number | undefined
   ): Record<string, unknown> {
-    const style = toUIKitStyle(
-      resolveStyle(this.element, state, context.theme)
-    );
+    const resolvedStyle = resolveStyle(this.element, state, context.theme);
+    const style = toUIKitStyle(resolvedStyle);
     if (renderOrder !== undefined) {
       style.depthTest = false;
       style.depthWrite = false;
@@ -517,6 +602,20 @@ class UIKitNodeBinding {
         ...style,
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
+    }
+    if (kind === 'scroll' || kind === 'input') {
+      this.contentProperties = {
+        ...resolvedStyle,
+        color: resolvedStyle.color ?? context.theme.colors.outline,
+      };
+      return panelDefaults(this.element, context.theme, {
+        ...style,
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        justifyContent: 'flex-start',
+        gapRow: 0,
+        gapColumn: 0,
+      });
     }
     return panelDefaults(this.element, context.theme, style);
   }
@@ -671,6 +770,8 @@ class UIKitNodeBinding {
     const blocksHits =
       kind === 'button' ||
       kind === 'slider' ||
+      kind === 'scroll' ||
+      kind === 'input' ||
       !isTransparent(properties.fillColor);
     const pointerEvents = this.element.xb?.pointerEvents;
     const enabled = blocksHits && pointerEvents !== 'none';
@@ -686,11 +787,21 @@ function isContainerNode(node: UIKitNode): node is Container | GradientPanel {
   return node instanceof Container || node instanceof GradientPanel;
 }
 
+function hasScrollAncestor(element: UIElement): boolean {
+  let parent = element.parent;
+  while (parent) {
+    if (parent instanceof UIScrollView) return true;
+    parent = parent.parent;
+  }
+  return false;
+}
+
 function baseState(element: UIElement): UIPresentationState {
   return {
     hovered: false,
     active: false,
     disabled: getSemanticControl(element)?.isDisabled() ?? false,
+    focused: element instanceof UITextInput && element.focused,
     cursorPointCount: 0,
   };
 }
@@ -741,6 +852,18 @@ function resolveStyle(
     kind === 'card' || kind === 'overlay' ? {} : (theme.styles?.[kind] ?? {});
   const style = element.style;
   return {
+    ...(kind === 'input'
+      ? {
+          backgroundColor: theme.colors.raisedSurface,
+          borderColor: state.focused
+            ? theme.colors.primary
+            : theme.colors.outline,
+          borderWidth: 1,
+          borderRadius: 8,
+          fontSize: 24,
+          padding: 8,
+        }
+      : {}),
     ...surfaceStyle,
     ...themeStyle,
     ...style,
@@ -753,6 +876,8 @@ function resolveStyle(
     ...(state.disabled ? surfaceStyle?.[':disabled'] : undefined),
     ...(state.disabled ? themeStyle[':disabled'] : undefined),
     ...(state.disabled ? style[':disabled'] : undefined),
+    ...(state.focused ? themeStyle[':focus'] : undefined),
+    ...(state.focused ? style[':focus'] : undefined),
   };
 }
 
@@ -760,7 +885,8 @@ function stateKey(state: UIPresentationState): number {
   return (
     Number(state.hovered) |
     (Number(state.active) << 1) |
-    (Number(state.disabled) << 2)
+    (Number(state.disabled) << 2) |
+    (Number(state.focused) << 3)
   );
 }
 

@@ -11,6 +11,13 @@ export interface SemanticBounds {
   size: Vec3Tuple;
 }
 
+export interface SemanticScrollInfo {
+  offset: number;
+  viewportHeight: number;
+  maximum?: number;
+  contentHeight?: number;
+}
+
 export interface SemanticViewData {
   rendered: boolean;
   inFrame: boolean;
@@ -47,6 +54,10 @@ export interface SemanticNode {
   disabled?: boolean;
   selected?: boolean;
   hovered?: boolean;
+  focused?: boolean;
+  readOnly?: boolean;
+  multiline?: boolean;
+  scroll?: SemanticScrollInfo;
   value?: number;
   min?: number;
   max?: number;
