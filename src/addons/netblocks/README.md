@@ -175,6 +175,10 @@ connection, parented to each peer's `headPivot` via
 `THREE.PositionalAudio` so it spatializes naturally. Enable via
 `{voice: true}` in `joinRoom()` or `session.voice.enable(...)` later.
 
+`voice.setMuted(true)` silences outgoing microphone tracks while keeping incoming audio connected. `isMuted()` reports transmission state; `isEnabled()` reports whether microphone capture is acquired. Muting is retained when peers join or renegotiate, and unmuting does not request another stream. `disable()` is full teardown: it releases capture and audio connections and cancels a pending microphone grant. Listening-only peers can receive audio without enabling their microphone, independent of peer ID ordering.
+
+`VoiceChatOptions.onLocalStateChange` retains its enable/disable semantics. The optional `onLocalMuteChange` reports mute changes separately, and `onError` reports capture or peer-connection failures. `NetSession` combines mic state into `local-voice-state`, exposes received mic intent through `peer-voice-state`, and forwards errors through `voice-error`. Mic intent is not proof that another person can hear audio. Applications can separately subscribe to `user-update` to refresh metadata that arrives after a peer's initial join.
+
 ---
 
 ## Transports in detail

@@ -1,4 +1,5 @@
 import type {SceneLayout} from './SceneTypes';
+import type {MotionClockSnapshot} from './RoomcraftClock';
 
 export interface RoomcraftRevision {
   counter: number;
@@ -12,11 +13,12 @@ export interface RoomcraftObjectState {
 }
 
 export interface RoomcraftSnapshot {
-  version: 1;
+  version: 2;
   revision: RoomcraftRevision;
   layout: SceneLayout;
   root: number[];
   objects: RoomcraftObjectState[];
+  motion: MotionClockSnapshot;
 }
 
 export function record(value: unknown): Record<string, unknown> {

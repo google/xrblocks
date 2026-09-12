@@ -37,6 +37,10 @@ export interface VoiceChatOptions {
    * depend on browser-specific WebRTC track events.
    */
   onLocalStateChange?: (enabled: boolean) => void;
+  /** Mic transmission changed without closing incoming peer audio. */
+  onLocalMuteChange?: (muted: boolean) => void;
+  /** Capture or peer-connection errors, in addition to console diagnostics. */
+  onError?: (error: Error, peerId?: string) => void;
 }
 
 export type VoiceSendFn = (msg: VoiceSignalMessage) => void;
@@ -49,6 +53,7 @@ export class VoiceChat {
   private _localStream?: MediaStream;
   private _peers = new Map<string, VoicePeer>();
   private _enabled = false;
+  private _muted = false;
   private _localId = '';
   // Incremented on every disable(). enable() captures the current
   // value at the start of its async getUserMedia await; if the value
@@ -66,6 +71,8 @@ export class VoiceChat {
         noiseSuppression: true,
       },
       onLocalStateChange: opts.onLocalStateChange ?? (() => {}),
+      onLocalMuteChange: opts.onLocalMuteChange ?? (() => {}),
+      onError: opts.onError ?? (() => {}),
     };
   }
 
@@ -100,6 +107,11 @@ export class VoiceChat {
     return this._enabled;
   }
 
+  /** Whether this peer is not currently transmitting microphone audio. */
+  isMuted(): boolean {
+    return !this._enabled || this._muted;
+  }
+
   /** Request mic + start negotiating with all currently-connected peers. */
   async enable(currentPeers: ReadonlySet<string>): Promise<void> {
     if (this._enabled) return;
@@ -123,6 +135,22 @@ export class VoiceChat {
     }
     this._localStream = stream;
     this._enabled = true;
+    this._muted = false;
+    for (const track of stream.getTracks()) {
+      track.addEventListener(
+        'ended',
+        () => {
+          if (this._localStream !== stream) return;
+          this.disable();
+          this._reportError(
+            new Error(
+              'Microphone capture ended. Unmute to reconnect the microphone.'
+            )
+          );
+        },
+        {once: true}
+      );
+    }
     this._opts.onLocalStateChange(true);
     // Back-fill local tracks onto any peer connections that were created
     // earlier as answerers (remote enabled voice before us). Without this
@@ -139,15 +167,7 @@ export class VoiceChat {
     }
     for (const pid of currentPeers) {
       if (this._peers.has(pid)) continue;
-      const asOfferer = this._localId < pid;
-      this._connectTo(pid, asOfferer);
-      if (!asOfferer) {
-        // We're the higher-id side, so we don't initiate. Nudge the
-        // offerer in case they had torn down their PC to us (e.g. via a
-        // previous bye); without this they'd sit idle and audio would
-        // never re-establish after a non-offerer re-enable.
-        this._send({type: 'voice', to: pid, signal: {kind: 'hello'}});
-      }
+      this.notifyPeerJoined(pid);
     }
   }
 
@@ -158,6 +178,7 @@ export class VoiceChat {
     // inbound MediaStream + ICE).
     const wasEnabled = this._enabled;
     this._enabled = false;
+    this._muted = false;
     // Cancel any in-flight enable(): if its getUserMedia is still
     // pending, this bumped generation makes it discard the resulting
     // stream instead of flipping `_enabled` true after we left.
@@ -179,13 +200,21 @@ export class VoiceChat {
 
   /** Mute/unmute the local mic without tearing connections down. */
   setMuted(muted: boolean): void {
+    if (!this._enabled || this._muted === muted) return;
     this._localStream?.getAudioTracks().forEach((t) => (t.enabled = !muted));
+    this._muted = muted;
+    this._opts.onLocalMuteChange(muted);
   }
 
   /** NetSession invokes this on peer-join so we can negotiate. */
   notifyPeerJoined(peerId: string): void {
-    if (!this._enabled) return;
-    this._connectTo(peerId, this._localId < peerId);
+    if (!this._enabled || this._peers.has(peerId)) return;
+    const asOfferer = this._localId < peerId;
+    this._connectTo(peerId, asOfferer);
+    if (!asOfferer) {
+      // Listening-only peers also need a nudge when they are the offerer.
+      this._send({type: 'voice', to: peerId, signal: {kind: 'hello'}});
+    }
   }
 
   notifyPeerLeft(peerId: string): void {
@@ -204,9 +233,9 @@ export class VoiceChat {
     }
     if (sig.kind === 'hello') {
       // Remote enabled voice and is the non-offerer side, asking us to
-      // (re)initiate. Only act if we're enabled, we're the natural
-      // offerer for them, and we don't already have a live PC.
-      if (this._enabled && this._localId < from && !this._peers.has(from)) {
+      // (re)initiate. A listening-only peer can offer recvonly audio
+      // without acquiring a microphone, regardless of peer ID ordering.
+      if (this._localId < from && !this._peers.has(from)) {
         this._connectTo(from, true);
       }
       return;
@@ -232,7 +261,7 @@ export class VoiceChat {
         await peer.pc.addIceCandidate(sig.candidate).catch(() => undefined);
       }
     } catch (err) {
-      console.error('[netblocks/voice] signal error:', err);
+      this._reportError(err, from);
     }
   }
 
@@ -246,6 +275,8 @@ export class VoiceChat {
     if (this._localStream) {
       for (const t of this._localStream.getTracks())
         pc.addTrack(t, this._localStream);
+    } else {
+      pc.addTransceiver('audio', {direction: 'recvonly'});
     }
 
     pc.addEventListener('icecandidate', (ev) => {
@@ -281,6 +312,14 @@ export class VoiceChat {
     });
     pc.addEventListener('connectionstatechange', () => {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        if (pc.connectionState === 'failed') {
+          this._reportError(
+            new Error(
+              'Peer audio connection failed. Network or NAT restrictions may require TURN.'
+            ),
+            peerId
+          );
+        }
         this._teardown(peerId);
       }
     });
@@ -301,8 +340,14 @@ export class VoiceChat {
         signal: {kind: 'offer', sdp: offer.sdp ?? ''},
       });
     } catch (err) {
-      console.error('[netblocks/voice] offer failed:', err);
+      this._reportError(err, peerId);
     }
+  }
+
+  private _reportError(cause: unknown, peerId?: string): void {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    console.error('[netblocks/voice]', error);
+    this._opts.onError(error, peerId);
   }
 
   private _teardown(peerId: string): void {

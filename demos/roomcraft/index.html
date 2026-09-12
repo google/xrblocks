@@ -76,14 +76,45 @@
           aria-labelledby="collabHeading"
           hidden
         >
-          <h2 id="collabHeading" class="rc-heading">Local collaboration</h2>
+          <h2 id="collabHeading" class="rc-heading">Collaboration</h2>
+          <form id="collabConnection" class="rc-collab-fields">
+            <label for="collabTransport">Connection</label>
+            <select id="collabTransport" aria-describedby="collabTransportHelp">
+              <option value="broadcast">BroadcastChannel · same browser</option>
+              <option value="webrtc">WebRTC · cross-device / off-LAN</option>
+              <option value="websocket">WebSocket · existing relay</option>
+            </select>
+            <p id="collabTransportHelp" class="rc-fineprint"></p>
+            <div id="collabRelayField" class="rc-collab-fields" hidden>
+              <label for="collabRelay"
+                >Relay URL (no keys or credentials)</label
+              >
+              <input
+                id="collabRelay"
+                type="url"
+                placeholder="wss://relay.example/roomcraft"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
+            <label for="collabName">Your display name</label>
+            <input id="collabName" maxlength="40" autocomplete="off" required />
+            <button id="collabConnect" class="rc-button" type="submit">
+              Apply &amp; reconnect
+            </button>
+          </form>
+          <p class="rc-fineprint">
+            Reconnect applies the name and transport without reloading your
+            local scene, and turns off your peer mic. Peers must use the same
+            room, mode and transport.
+          </p>
           <p
             id="collabStatus"
             class="rc-collab-status"
             role="status"
             aria-live="polite"
           >
-            Joining the local room…
+            Joining collaboration…
           </p>
           <p id="collabIdentity" class="rc-note rc-collab-identity"></p>
           <ul
@@ -95,20 +126,47 @@
             <button id="collabRetry" class="rc-button" type="button">
               Retry sync
             </button>
+            <button id="collabLeave" class="rc-button" type="button">
+              Disconnect
+            </button>
             <a
               id="collabLink"
               class="rc-button rc-collab-link"
               target="_blank"
               rel="noopener noreferrer"
               referrerpolicy="no-referrer"
-              >Open second tab</a
+              >Open peer link</a
             >
           </div>
           <p class="rc-fineprint">
-            Same browser profile and origin only, not another device. The link
-            contains no API key; each tab connects Gemini separately. Edits can
-            overwrite concurrent changes, and local undo writes a whole scene.
-            Shared coordinates do not align physical rooms or motion playback.
+            Share the peer link for the applied connection. It contains no API
+            key or display name: the recipient starts as Maker #### and can
+            choose their own name above. Each peer configures Gemini separately.
+            Edits can overwrite concurrent changes; local undo writes a whole
+            scene. Shared coordinates do not align physical rooms.
+          </p>
+          <h3 class="rc-heading">Peer spatial voice</h3>
+          <button
+            id="collabVoice"
+            class="rc-button"
+            type="button"
+            aria-pressed="false"
+            aria-describedby="collabVoiceStatus"
+          >
+            Unmute peer mic
+          </button>
+          <p
+            id="collabVoiceStatus"
+            class="rc-note"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <p class="rc-fineprint">
+            Optional live conversation with peers, completely separate from
+            Gemini Talk transcription. Audio uses WebRTC with STUN on every
+            transport; restrictive NAT/firewalls may require TURN (not
+            configured). A mic-on indicator is not proof peers can hear you. Use
+            headphones.
           </p>
         </section>
 
@@ -125,9 +183,10 @@
             Connect Gemini
           </button>
           <p class="rc-fineprint">
-            A browser API key is for local prototyping only. Voice audio is sent
-            only to Gemini for transcription, followed by the instruction and
-            scene layout for the edit. No camera imagery is sent.
+            A browser API key is for local prototyping only. Talk recordings are
+            sent only to Gemini for transcription, followed by the instruction
+            and scene layout for the edit. Peer voice is a separate control. No
+            camera imagery is sent.
           </p>
         </section>
 

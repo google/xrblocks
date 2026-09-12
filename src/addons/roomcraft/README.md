@@ -8,11 +8,11 @@ The add-on can compose trusted catalog assets, generate new procedural designs f
 
 From the repository root, run `npm run build:sdk`, then `npm run serve`, and open `http://127.0.0.1:8080/demos/roomcraft/`. See the [demo instructions](../../../demos/roomcraft/README.md) for controls and the optional downloaded model.
 
-### Optional same-browser collaboration
+### Optional collaboration
 
-The demo's exact `?collab=1` opt-in loads its collaboration UI after local scene initialization and key setup. It composes the public `RoomcraftNet` bridge with netblocks' `enableNet` and `BroadcastChannelTransport`; the normal page does not start networking. Open second tab creates a key-free, no-referrer link for the same room and mode. Tabs need the same browser profile and origin; this transport does not connect separate devices. See the [collaboration instructions](../../../demos/roomcraft/README.md#same-browser-collaboration) for room naming, controls, and limits.
+The demo's exact `?collab=1` opt-in loads its collaboration UI after local scene initialization and key setup. It composes the public `RoomcraftNet` bridge with netblocks' existing transports; the normal page does not start networking. BroadcastChannel is for tabs in the same browser profile and origin. WebRTC uses the existing public PeerJS broker and STUN configuration for connections between devices, subject to broker availability and NAT restrictions; some networks need a separately configured TURN service. WebSocket uses an explicit application-provided relay URL, with WSS required by an HTTPS page. Share links omit provider keys. See the [demo instructions](../../../demos/roomcraft/README.md) for transport, identity, and peer-voice controls.
 
-`RoomcraftNet` shares validated `SceneLayout` data, root placement, object transforms, and selection indicators without running a planner on receiving peers. Existing input and authoring controls still drive the same `Roomcraft` instance. Whole-scene edits use simple last-writer-wins overwrite semantics, and local Undo or Redo publishes a whole-scene write; concurrent work can be overwritten. The authored bounds and existing 60 KB message cap produce explicit sync errors rather than clamping or truncating. Numerical placement is shared, not physical anchor alignment. Motion definitions are shared, but playback phase and pause state are not synchronized.
+`RoomcraftNet` shares validated `SceneLayout` data, root placement, object transforms, selection indicators, and an authored-motion timeline without running a planner on receiving peers. Existing input and authoring controls still drive the same `Roomcraft` instance. Whole-scene edits use last-writer-wins overwrite semantics, and local Undo or Redo publishes a whole-scene write; concurrent work can be overwritten. The authored bounds and existing 60 KB message cap produce explicit sync errors rather than clamping or truncating. Numerical placement is shared, not physical alignment, calibration, or spatial anchoring.
 
 After initializing your Roomcraft instance and XR Blocks, join a session and add the bridge:
 
@@ -36,6 +36,18 @@ await xb.initScript(collaboration);
 Use one bridge per session with matching catalogs and scene coordinates. Logical counters and peer-ID tie-breaks give simultaneous layout writes the same winner. `status`, `pendingCount`, `statuschange`, and `error` expose synchronization state; present errors in your application's UI and call `resync()` to request fresh peer state. `remoteSelections` returns a detached map and `getPeerColor(peerId)` matches each outline to a roster color.
 
 The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
+
+#### Shared authored-motion time
+
+The accepted scene snapshot carries a motion epoch and clock authority. Peers estimate their offset through monotonic request/reply timestamps and periodically refresh low-delay samples. This does not assume identical device wall clocks. Swing and spin poses are sampled from absolute shared elapsed time, so asynchronous construction and a background tab's missing frames do not permanently shift their playback phase. Replacing content samples the same current timeline rather than starting a separate local timer.
+
+`collaboration.motionClockState` reports the authority, whether timing has been synchronized, and the measured half-round-trip delay when available. That delay is an estimate, not a guarantee of phase accuracy: asymmetric routes, jitter, clock drift, and rendering at different instants still matter. A missing clock response produces an explicit error instead of claiming synchronized timing. A remaining peer takes over the timeline when its authority leaves.
+
+Pause is local inspection only. A paused peer keeps its displayed pose while the shared clock continues; Resume rejoins the current timeline. In shared mode, period, speed, and starting-phase edits are evaluated against that absolute timeline and may change the current pose immediately. Single-player playback keeps its original delta-based phase-preservation behavior. Destroying the bridge removes only the time source it installed, and recreating it for the same Roomcraft instance retains local elapsed time and authored revision continuity.
+
+The bridge uses the public `room.setMotionTimeSource(source)` seam, where `source` returns finite, non-negative absolute seconds. `room.motionTimeSource` exposes the current source for ownership-aware cleanup. Passing `undefined` returns to ordinary delta playback from the displayed phase. Apps using Roomcraft without networking do not need this API.
+
+All collaborating peers must load the same protocol build. Scene protocol version 2 includes shared-clock metadata; older peers fail with a reload instruction rather than silently claiming aligned playback. Peer voice is a separate opt-in netblocks audio path, not the demo's Gemini transcription Talk control. No spatial alignment or anchor exchange is implied by either feature.
 
 ## Add it to an application
 

@@ -68,6 +68,150 @@ function decodeSent(sent: Array<{payload: Uint8Array; to?: string}>) {
 }
 
 describe('NetSession hello handler', () => {
+  it('announces muted transmission to new peers and exposes remote mic state', async () => {
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({
+          getTracks: () => [],
+          getAudioTracks: () => [],
+        })),
+      },
+    });
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    try {
+      await session.open('room');
+      const local = vi.fn();
+      const remote = vi.fn();
+      session.addEventListener('local-voice-state', local);
+      session.addEventListener('peer-voice-state', remote);
+      await session.voice.enable(new Set());
+      session.voice.setMuted(true);
+      expect(local).toHaveBeenLastCalledWith(
+        expect.objectContaining({detail: {on: false}})
+      );
+      expect(session.voice.isEnabled()).toBe(true);
+      transport.sent.length = 0;
+      transport.receive('new-peer', {
+        type: 'hello',
+        protocol: NET_PROTOCOL_VERSION,
+        capabilities: {pose: true, voice: true, netobject: true},
+        displayName: 'Bob',
+      });
+      expect(decodeSent(transport.sent)).toContainEqual(
+        expect.objectContaining({
+          to: 'new-peer',
+          msg: expect.objectContaining({
+            type: 'rpc',
+            topic: 'netblocks/voice-state',
+            payload: false,
+          }),
+        })
+      );
+      transport.receive('new-peer', {
+        type: 'rpc',
+        topic: 'netblocks/voice-state',
+        payload: true,
+      });
+      expect(remote).toHaveBeenLastCalledWith(
+        expect.objectContaining({detail: {peerId: 'new-peer', on: true}})
+      );
+      expect(session.users.get('new-peer')!.avatar.voiceActive).toBe(true);
+      expect(session.voice.isMuted()).toBe(true);
+    } finally {
+      session.close();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('notifies metadata changes after the deferred join grace window without joining twice', async () => {
+    vi.useFakeTimers();
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    const joined = vi.fn();
+    const updated = vi.fn();
+    session.addEventListener('user-join', joined);
+    session.addEventListener('user-update', updated);
+    try {
+      await session.open('room');
+      transport.receive('bob', {type: 'rpc', topic: 'probe', payload: null});
+      vi.advanceTimersByTime(1500);
+      expect(joined).toHaveBeenCalledOnce();
+      expect(session.users.get('bob')?.displayName).toBeUndefined();
+      transport.receive('bob', {
+        type: 'hello',
+        protocol: NET_PROTOCOL_VERSION,
+        capabilities: {pose: true, voice: true, netobject: true},
+        displayName: 'Bob',
+      });
+      expect(session.users.get('bob')?.displayName).toBe('Bob');
+      expect(joined).toHaveBeenCalledOnce();
+      expect(updated).toHaveBeenCalledOnce();
+      expect(updated.mock.calls[0][0].detail.user.displayName).toBe('Bob');
+    } finally {
+      session.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('announces a timely named hello once and refreshes existing welcome metadata', async () => {
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    const joined = vi.fn();
+    const updated = vi.fn();
+    session.addEventListener('user-join', joined);
+    session.addEventListener('user-update', updated);
+    try {
+      await session.open('room');
+      const capabilities = {pose: true, voice: true, netobject: true};
+      transport.receive('bob', {
+        type: 'hello',
+        protocol: NET_PROTOCOL_VERSION,
+        capabilities,
+        displayName: 'Bob',
+      });
+      expect(joined).toHaveBeenCalledOnce();
+      expect(joined.mock.calls[0][0].detail.user.displayName).toBe('Bob');
+      expect(updated).not.toHaveBeenCalled();
+      transport.receive('bob', {
+        type: 'welcome',
+        peers: [{id: 'bob', displayName: 'Robert', role: 'user', capabilities}],
+      });
+      expect(joined).toHaveBeenCalledOnce();
+      expect(updated).toHaveBeenCalledOnce();
+      expect(updated.mock.calls[0][0].detail.user.displayName).toBe('Robert');
+    } finally {
+      session.close();
+    }
+  });
+
+  it('flushes a pending join with its real name without a duplicate update', async () => {
+    vi.useFakeTimers();
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    const joined = vi.fn();
+    const updated = vi.fn();
+    session.addEventListener('user-join', joined);
+    session.addEventListener('user-update', updated);
+    try {
+      await session.open('room');
+      transport.receive('bob', {type: 'rpc', topic: 'probe', payload: null});
+      transport.receive('bob', {
+        type: 'hello',
+        protocol: NET_PROTOCOL_VERSION,
+        capabilities: {pose: true, voice: true, netobject: true},
+        displayName: 'Bob',
+      });
+      vi.advanceTimersByTime(1500);
+      expect(joined).toHaveBeenCalledOnce();
+      expect(joined.mock.calls[0][0].detail.user.displayName).toBe('Bob');
+      expect(updated).not.toHaveBeenCalled();
+    } finally {
+      session.close();
+      vi.useRealTimers();
+    }
+  });
+
   it('replies with a netobject.snapshot of dirty NetObjects, targeted at the joiner', async () => {
     const transport = new FakeTransport();
     const session = new NetSession(transport, new THREE.Group());

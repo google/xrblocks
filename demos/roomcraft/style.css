@@ -259,7 +259,8 @@
   font-size: 13px;
 }
 
-.rc-peer-selection {
+.rc-peer-selection,
+.rc-peer-voice {
   font-size: 11px;
   color: var(--rc-ink-soft);
 }
@@ -267,6 +268,39 @@
 .rc-collab-link {
   display: inline-block;
   text-decoration: none;
+}
+
+.rc-collab-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.rc-collab-fields[hidden] {
+  display: none;
+}
+
+.rc-collab-fields input,
+.rc-collab-fields select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: 8px;
+  background: var(--rc-surface-raised);
+  color: var(--rc-ink);
+  font: inherit;
+}
+
+#collabVoice[aria-pressed='true'] {
+  border-color: var(--rc-sage);
+}
+
+#collabVoiceStatus[data-state='error'] {
+  color: var(--rc-danger);
 }
 
 .rc-scene-summary {

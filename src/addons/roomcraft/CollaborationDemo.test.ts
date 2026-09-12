@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {readFileSync} from 'node:fs';
+import {BroadcastChannel as NodeBroadcastChannel} from 'node:worker_threads';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 // @ts-expect-error The executable browser demo is a JavaScript consumer.
@@ -21,8 +22,16 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('xrblocks', async () => {
   const {Object3D} = await import('three');
+  class FakeUIElement extends Object3D {
+    dispose() {}
+  }
   return {
     Script: Object3D,
+    StylizedFace: FakeUIElement,
+    UICard: FakeUIElement,
+    UIText: class extends FakeUIElement {
+      text = '';
+    },
     Options: class {
       ai = {gemini: {enabled: true}};
       reticles = {enabled: false};
@@ -72,11 +81,18 @@ vi.mock('xrblocks/addons/roomcraft/index.js', async () => {
 
 vi.mock('xrblocks/addons/netblocks/src/index.js', () => {
   mocks.netModuleLoaded();
+  class MockTransport extends EventTarget {
+    close = vi.fn();
+    remotePeerIds = new Set<string>();
+    constructor(readonly options?: object) {
+      super();
+    }
+  }
   return {
     enableNet: mocks.enableNet,
-    BroadcastChannelTransport: class extends EventTarget {
-      close = vi.fn();
-    },
+    BroadcastChannelTransport: class extends MockTransport {},
+    WebRTCTransport: class extends MockTransport {},
+    WebSocketTransport: class extends MockTransport {},
   };
 });
 
@@ -104,10 +120,34 @@ interface Bridge extends THREE.Object3D {
 class Session extends EventTarget {
   isOpen = true;
   localPeerId = 'local-maker';
-  users = new Map<string, {peerId: string; displayName: string}>();
+  users = new Map<
+    string,
+    {peerId: string; displayName: string; avatar?: {voiceActive: boolean}}
+  >();
+  transport!: EventTarget & {remotePeerIds: Set<string>};
+  voiceOn = false;
+  voiceMuted = false;
+  voice = {
+    isEnabled: () => this.voiceOn,
+    isMuted: () => !this.voiceOn || this.voiceMuted,
+    setMuted: vi.fn((muted: boolean) => {
+      this.voiceMuted = muted;
+      this.dispatchEvent(
+        new CustomEvent('local-voice-state', {detail: {on: !muted}})
+      );
+    }),
+    enable: vi.fn(async () => this.setVoice(true)),
+    disable: vi.fn(() => this.setVoice(false)),
+  };
+  setVoice(on: boolean) {
+    this.voiceOn = on;
+    this.voiceMuted = false;
+    this.dispatchEvent(new CustomEvent('local-voice-state', {detail: {on}}));
+  }
   close = vi.fn(() => {
     if (!this.isOpen) return;
     this.isOpen = false;
+    this.voice.disable();
     this.dispatchEvent(new Event('close'));
   });
 }
@@ -129,6 +169,10 @@ function element(id: string) {
 
 function retryButton() {
   return element('collabRetry') as HTMLButtonElement;
+}
+
+function setField(id: string, value: string) {
+  (element(id) as HTMLInputElement).value = value;
 }
 
 function bridge() {
@@ -156,11 +200,18 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.history.replaceState({}, '', '/demos/roomcraft/');
   document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)![1];
+  vi.stubGlobal('isSecureContext', true);
+  vi.stubGlobal('RTCPeerConnection', class {});
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: {getUserMedia: vi.fn()},
+  });
   session = new Session();
   net = {
     session: undefined,
-    joinRoom: vi.fn(async () => {
+    joinRoom: vi.fn(async (_roomId, options) => {
       net.session = session;
+      session.transport = options.transport;
       return session;
     }),
     leaveRoom: vi.fn(() => {
@@ -188,6 +239,7 @@ afterEach(() => {
   consoleScript?.dispose();
   consoleScript = undefined;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('optional collaboration startup', () => {
@@ -266,6 +318,149 @@ describe('optional collaboration startup', () => {
 });
 
 describe('collaboration URL configuration', () => {
+  it('reproduces named Bob versus unnamed peer links over real BroadcastChannel sessions', async () => {
+    // @ts-expect-error The executable browser demo is a JavaScript consumer.
+    const {collaborationOptions, collaborationPeerUrl} = await import(
+      '../../../demos/roomcraft/Collaboration.js'
+    );
+    const {NetSession} = await import('../netblocks/src/core/NetSession');
+    const {BroadcastChannelTransport} = await import(
+      '../netblocks/src/core/transport/BroadcastChannelTransport'
+    );
+    vi.stubGlobal('BroadcastChannel', NodeBroadcastChannel);
+    const aliceUrl =
+      'https://example.test/?collab=1&room=roster-regression&name=Alice';
+    const aliceOptions = collaborationOptions(aliceUrl);
+    const peerUrl = collaborationPeerUrl(aliceUrl, aliceOptions);
+    const generated = collaborationOptions(peerUrl);
+    const named = collaborationOptions(`${peerUrl}&name=Bob`);
+    const alice = new NetSession(
+      new BroadcastChannelTransport(),
+      new THREE.Group(),
+      aliceOptions
+    );
+    const bob = new NetSession(
+      new BroadcastChannelTransport(),
+      new THREE.Group(),
+      named
+    );
+    const maker = new NetSession(
+      new BroadcastChannelTransport(),
+      new THREE.Group(),
+      generated
+    );
+    try {
+      await alice.open(aliceOptions.roomId);
+      await bob.open(named.roomId);
+      await vi.waitFor(() =>
+        expect(alice.users.get(bob.localPeerId)?.displayName).toBe('Bob')
+      );
+      await maker.open(generated.roomId);
+      await vi.waitFor(() =>
+        expect(alice.users.get(maker.localPeerId)?.displayName).toBe(
+          generated.displayName
+        )
+      );
+      expect(generated.displayName).toMatch(/^Maker [\da-f]{4}$/);
+      expect(alice.users.get(bob.localPeerId)?.displayName).toBe('Bob');
+    } finally {
+      alice.close();
+      bob.close();
+      maker.close();
+    }
+  });
+
+  it('retains the legacy default and shares only allowlisted transport settings', async () => {
+    // @ts-expect-error The executable browser demo is a JavaScript consumer.
+    const {collaborationOptions, collaborationPeerUrl} = await import(
+      '../../../demos/roomcraft/Collaboration.js'
+    );
+    const source =
+      'https://example.test/demo?collab=1&transport=webrtc&key=private&relay=wss://ignored.test/?key=private&signalingUrl=private#private';
+    expect(
+      collaborationOptions('https://example.test/?collab=1').transport
+    ).toBe('broadcast');
+    const peer = new URL(
+      collaborationPeerUrl(source, collaborationOptions(source))
+    );
+    expect(Object.fromEntries(peer.searchParams)).toEqual({
+      collab: '1',
+      room: 'roomcraft-demo',
+      transport: 'webrtc',
+    });
+    const relaySource =
+      'https://example.test/?collab=1&transport=websocket&relay=wss%3A%2F%2Frelay.example%2Froomcraft&key=private';
+    const relayPeer = new URL(
+      collaborationPeerUrl(relaySource, collaborationOptions(relaySource))
+    );
+    expect(relayPeer.searchParams.get('relay')).toBe(
+      'wss://relay.example/roomcraft'
+    );
+    expect(relayPeer.href).not.toContain('private');
+    expect(() =>
+      collaborationOptions('https://example.test/?collab=1&transport=invalid')
+    ).toThrow('Choose');
+  });
+
+  it.each([
+    ['https://example.test/', 'ws://relay.example', 'wss://'],
+    ['https://example.test/', 'https://relay.example', 'ws://'],
+    ['https://example.test/', '/relay', 'explicit'],
+    ['https://example.test/', '', 'explicit'],
+    [
+      'https://example.test/',
+      'wss://user:password@relay.example',
+      'credentials',
+    ],
+    ['https://example.test/', 'wss://relay.example?key=private', 'credentials'],
+    [
+      'https://example.test/',
+      'wss://relay.example?target=https://other/?key=private',
+      'credentials',
+    ],
+    ['https://example.test/', 'wss://relay.example#private', 'credentials'],
+  ])(
+    'rejects unsafe relay configuration on %s',
+    async (page, relay, message) => {
+      // @ts-expect-error The executable browser demo is a JavaScript consumer.
+      const {collaborationRelayUrl} = await import(
+        '../../../demos/roomcraft/Collaboration.js'
+      );
+      expect(() => collaborationRelayUrl(relay, page)).toThrow(message);
+    }
+  );
+
+  it('accepts an explicit secure relay and permits WS only on HTTP pages', async () => {
+    // @ts-expect-error The executable browser demo is a JavaScript consumer.
+    const {collaborationRelayUrl} = await import(
+      '../../../demos/roomcraft/Collaboration.js'
+    );
+    expect(
+      collaborationRelayUrl('wss://relay.example/rooms', 'https://example.test')
+    ).toBe('wss://relay.example/rooms');
+    expect(
+      collaborationRelayUrl('ws://localhost:8081', 'http://localhost')
+    ).toBe('ws://localhost:8081/');
+  });
+
+  it('announces Bob only on a named URL; a generated peer link gets its own Maker name', async () => {
+    // @ts-expect-error The executable browser demo is a JavaScript consumer.
+    const {collaborationOptions, collaborationPeerUrl} = await import(
+      '../../../demos/roomcraft/Collaboration.js'
+    );
+    const alice = 'https://example.test/?collab=1&room=studio&name=Alice';
+    const peer = collaborationPeerUrl(alice, collaborationOptions(alice));
+    const generated = collaborationOptions(peer);
+    expect(generated.displayName).toMatch(/^Maker [\da-f]{4}$/);
+    const bob = new URL(peer);
+    bob.searchParams.set('name', 'Bob');
+    expect(collaborationOptions(bob.href).displayName).toBe('Bob');
+    window.history.replaceState({}, '', bob.pathname + bob.search);
+    consoleScript = await startRoomcraftDemo();
+    expect(net.joinRoom.mock.calls[0][1].displayName).toBe('Bob');
+    expect(element('collabPeers').textContent).toContain('Bob (you)');
+  });
+
   it('uses exact opt-in and bounded names and room IDs', async () => {
     // @ts-expect-error The executable browser demo is a JavaScript consumer.
     const {collaborationOptions} = await import(
@@ -360,6 +555,135 @@ describe('collaboration panel', () => {
     expect(new URL(link.href).searchParams.has('name')).toBe(false);
   });
 
+  it('refreshes late metadata without inventing a name for an actual Maker peer', () => {
+    session.users.set('unknown', {peerId: 'unknown', displayName: ''});
+    session.users.set('maker', {peerId: 'maker', displayName: 'Maker 1234'});
+    session.dispatchEvent(new Event('user-join'));
+    expect(element('collabPeers').textContent).toContain('Maker 1234');
+    expect(element('collabPeers').textContent).not.toContain('Bob');
+    session.users.get('unknown')!.displayName = 'Bob';
+    session.dispatchEvent(new Event('user-update'));
+    expect(element('collabPeers').textContent).toContain('Bob');
+    expect(element('collabPeers').textContent).toContain('Maker 1234');
+  });
+
+  it('switches transports and announced name without replacing the authored scene', async () => {
+    const room = consoleScript.room;
+    room.position.set(1, 2, 3);
+    room.selectedId = 'chair';
+    const layout = room.layout;
+    const oldBridge = bridge();
+    const oldSession = session;
+    const geminiVoice = consoleScript.voice;
+    const originalUrl = window.location.href;
+    setField('collabTransport', 'webrtc');
+    setField('collabName', ' Bob ');
+    session = new Session();
+    await consoleScript.collaboration.reconnect();
+    // @ts-expect-error The executable browser demo uses this public addon entry.
+    const {WebRTCTransport, WebSocketTransport} = await import(
+      'xrblocks/addons/netblocks/src/index.js'
+    );
+    expect(net.joinRoom.mock.calls[1][1]).toMatchObject({
+      displayName: 'Bob',
+      transport: expect.any(WebRTCTransport),
+    });
+    expect(oldSession.close).toHaveBeenCalledOnce();
+    expect(oldSession.voice.disable).toHaveBeenCalled();
+    expect(oldBridge.dispose).toHaveBeenCalledOnce();
+    expect(consoleScript.room).toBe(room);
+    expect(room.layout).toBe(layout);
+    expect(room.position.toArray()).toEqual([1, 2, 3]);
+    expect(room.selectedId).toBe('chair');
+    expect(window.location.href).toBe(originalUrl);
+    expect(consoleScript.voice).toBe(geminiVoice);
+    expect(element('collabPeers').textContent).toContain('Bob (you)');
+    expect(element('collabStatus').textContent).toContain('WebRTC');
+    expect(
+      new URL(
+        (element('collabLink') as HTMLAnchorElement).href
+      ).searchParams.get('transport')
+    ).toBe('webrtc');
+    setField('collabTransport', 'websocket');
+    setField('collabRelay', 'wss://relay.example/roomcraft');
+    session = new Session();
+    await consoleScript.collaboration.reconnect();
+    expect(net.joinRoom.mock.calls[2][1].transport).toBeInstanceOf(
+      WebSocketTransport
+    );
+    expect(net.joinRoom.mock.calls[2][1].transport.options).toEqual({
+      url: 'wss://relay.example/roomcraft',
+      reconnectAttempts: 0,
+    });
+    expect(room.layout).toBe(layout);
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(element('collabVoice').textContent).toBe('Unmute peer mic');
+  });
+
+  it('validates before disconnecting and keeps configuration editable', async () => {
+    const old = session;
+    setField('collabTransport', 'websocket');
+    setField('collabRelay', 'wss://relay.example?key=private');
+    element('collabTransport').dispatchEvent(new Event('change'));
+    expect(element('collabRelayField').hidden).toBe(false);
+    await consoleScript.collaboration.reconnect();
+    expect(old.close).not.toHaveBeenCalled();
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+    expect(element('collabStatus').textContent).toContain(
+      'without credentials'
+    );
+    expect(element('collabStatus').textContent).not.toContain('private');
+    setField('collabTransport', 'broadcast');
+    setField('collabName', '\u0000  ');
+    await consoleScript.collaboration.reconnect();
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+    expect(element('collabStatus').textContent).toContain('display name');
+  });
+
+  it('applies editable display names through the in-app connection form', async () => {
+    setField('collabName', 'Bob');
+    session = new Session();
+    const submit = new Event('submit', {cancelable: true});
+    element('collabConnection').dispatchEvent(submit);
+    expect(submit.defaultPrevented).toBe(true);
+    await vi.waitFor(() =>
+      expect(element('collabPeers').textContent).toContain('Bob (you)')
+    );
+    expect(net.joinRoom.mock.calls[1][1].displayName).toBe('Bob');
+  });
+
+  it('does not let a hidden invalid relay field block another transport', () => {
+    setField('collabTransport', 'websocket');
+    element('collabTransport').dispatchEvent(new Event('change'));
+    setField('collabRelay', 'not a URL');
+    expect(
+      (element('collabConnection') as HTMLFormElement).checkValidity()
+    ).toBe(false);
+    setField('collabTransport', 'webrtc');
+    element('collabTransport').dispatchEvent(new Event('change'));
+    expect(
+      (element('collabConnection') as HTMLFormElement).checkValidity()
+    ).toBe(true);
+    expect((element('collabRelay') as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('surfaces transport errors and explicit leave does not dispose local content', () => {
+    const room = consoleScript.room;
+    const old = session;
+    session.transport.dispatchEvent(
+      new CustomEvent('error', {
+        detail: {error: new Error('Broker unavailable')},
+      })
+    );
+    expect(element('collabStatus').textContent).toContain('Broker unavailable');
+    (element('collabLeave') as HTMLButtonElement).click();
+    expect(old.close).toHaveBeenCalledOnce();
+    expect(consoleScript.room).toBe(room);
+    expect(element('collabStatus').textContent).toContain('local scene');
+    expect(element('collabPeers').textContent).toBe('');
+    expect((element('collabVoice') as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('reflects bridge queues without marking Roomcraft busy or deadlocking bootstrap', () => {
     const sync = bridge();
     sync.status = 'syncing';
@@ -425,6 +749,7 @@ describe('collaboration panel', () => {
       operation: 'sync',
     });
     session.dispatchEvent(new Event('user-join'));
+    session.dispatchEvent(new Event('user-update'));
     dispatch(consoleScript.room, {type: 'statuschange', status: 'loading'});
     expect(refresh.mock.calls.length).toBe(afterCleanup);
     consoleScript.dispose();
@@ -433,7 +758,260 @@ describe('collaboration panel', () => {
   });
 });
 
+describe('opt-in peer voice', () => {
+  beforeEach(async () => {
+    window.history.replaceState({}, '', '?collab=1');
+    consoleScript = await startRoomcraftDemo();
+  });
+
+  it('never requests a microphone on join and follows authoritative local voice state', async () => {
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    session.transport.remotePeerIds.add('bob');
+    await consoleScript.collaboration.toggleVoice();
+    expect(session.voice.enable).toHaveBeenCalledWith(
+      session.transport.remotePeerIds
+    );
+    expect(element('collabVoice').textContent).toBe('Mute peer mic');
+    expect(element('collabVoice').getAttribute('aria-pressed')).toBe('true');
+    expect(element('collabVoiceStatus').textContent).toContain('not Gemini');
+    session.setVoice(false);
+    expect(element('collabVoice').textContent).toBe('Unmute peer mic');
+    await consoleScript.collaboration.toggleVoice();
+    await consoleScript.collaboration.toggleVoice();
+    expect(session.voice.isEnabled()).toBe(true);
+    expect(session.voice.isMuted()).toBe(true);
+    expect(session.voice.setMuted).toHaveBeenCalledWith(true);
+    expect(session.voice.disable).not.toHaveBeenCalled();
+    expect(element('collabVoiceStatus').textContent).toContain(
+      'incoming audio stays connected'
+    );
+    const captures = session.voice.enable.mock.calls.length;
+    await consoleScript.collaboration.toggleVoice();
+    expect(session.voice.isMuted()).toBe(false);
+    expect(session.voice.enable).toHaveBeenCalledTimes(captures);
+    expect(consoleScript.voice.state).toBe('idle');
+  });
+
+  it('does not optimistically report enabled after a canceled or unsuccessful enable', async () => {
+    session.voice.enable.mockResolvedValueOnce(undefined);
+    await consoleScript.collaboration.toggleVoice();
+    expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
+    session.voice.enable.mockRejectedValueOnce(new Error('Permission denied'));
+    await consoleScript.collaboration.toggleVoice();
+    expect(element('collabVoiceStatus').textContent).toContain(
+      'Permission denied'
+    );
+    expect(element('collabVoiceStatus').dataset.state).toBe('error');
+    expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
+    expect(consoleScript.errorMessage).toBe('');
+    expect(element('collabStatus').dataset.state).toBe('ready');
+    await consoleScript.collaboration.toggleVoice();
+    expect(element('collabVoice').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('updates remote mic indicators and keeps capture off after a muted reconnect', async () => {
+    session.users.set('bob', {
+      peerId: 'bob',
+      displayName: 'Bob',
+      avatar: {voiceActive: true},
+    });
+    session.dispatchEvent(
+      new CustomEvent('peer-voice-state', {detail: {peerId: 'bob', on: true}})
+    );
+    expect(element('collabPeers').textContent).toContain('Mic on');
+    await consoleScript.collaboration.toggleVoice();
+    await consoleScript.collaboration.toggleVoice();
+    expect(session.voice.isMuted()).toBe(true);
+    const old = session;
+    session = new Session();
+    await consoleScript.collaboration.reconnect();
+    expect(old.voice.disable).toHaveBeenCalled();
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(session.voice.isEnabled()).toBe(false);
+    session.users.set('charlie', {peerId: 'charlie', displayName: 'Charlie'});
+    session.dispatchEvent(new Event('user-join'));
+    expect(session.voice.enable).not.toHaveBeenCalled();
+  });
+
+  it.each(['insecure', 'unsupported'])(
+    'explains %s capture without requesting permission',
+    async (reason) => {
+      if (reason === 'insecure') vi.stubGlobal('isSecureContext', false);
+      else
+        Object.defineProperty(navigator, 'mediaDevices', {
+          configurable: true,
+          value: undefined,
+        });
+      await consoleScript.collaboration.toggleVoice();
+      expect(session.voice.enable).not.toHaveBeenCalled();
+      expect((element('collabVoice') as HTMLButtonElement).disabled).toBe(true);
+      expect(element('collabVoiceStatus').textContent).toContain(
+        reason === 'insecure' ? 'HTTPS' : 'unavailable'
+      );
+    }
+  );
+
+  it('can cancel a pending permission request and ignores its late rejection', async () => {
+    const pending = deferred();
+    session.voice.enable.mockImplementationOnce(async () => {
+      await pending.promise;
+      throw new Error('Late denial');
+    });
+    const enabling = consoleScript.collaboration.toggleVoice();
+    expect(element('collabVoice').textContent).toBe('Cancel mic request');
+    expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
+    await consoleScript.collaboration.toggleVoice();
+    expect(session.voice.disable).toHaveBeenCalledOnce();
+    expect(element('collabVoice').textContent).toBe('Unmute peer mic');
+    pending.resolve();
+    await enabling;
+    expect(element('collabVoiceStatus').textContent).not.toContain('denial');
+  });
+
+  it('stops a late real VoiceChat microphone grant after reconnect', async () => {
+    const {VoiceChat} = await import('../netblocks/src/core/voice/VoiceChat');
+    const old = session;
+    const voice = new VoiceChat(() => {}, {
+      onLocalStateChange: (on) =>
+        old.dispatchEvent(new CustomEvent('local-voice-state', {detail: {on}})),
+    });
+    Object.assign(old, {voice});
+    const pending = deferred();
+    const track = {stop: vi.fn()};
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementationOnce(
+      async () => {
+        await pending.promise;
+        return {getTracks: () => [track]} as unknown as MediaStream;
+      }
+    );
+    const enabling = consoleScript.collaboration.toggleVoice();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce();
+    session = new Session();
+    await consoleScript.collaboration.reconnect();
+    pending.resolve();
+    await enabling;
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(voice.isEnabled()).toBe(false);
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it.each(['reconnect', 'leave', 'dispose'])(
+    'invalidates pending capture on %s without mutating the next session',
+    async (action) => {
+      const old = session;
+      const pending = deferred();
+      old.voice.enable.mockImplementationOnce(async () => {
+        await pending.promise;
+        throw new Error('Stale capture failure');
+      });
+      const enabling = consoleScript.collaboration.toggleVoice();
+      session = new Session();
+      await consoleScript.collaboration[action]();
+      expect(old.voice.disable).toHaveBeenCalled();
+      pending.resolve();
+      await enabling;
+      expect(session.voice.enable).not.toHaveBeenCalled();
+      expect(session.voice.disable).not.toHaveBeenCalled();
+      expect(element('collabVoiceStatus').textContent).not.toContain('Stale');
+      expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
+      old.setVoice(true);
+      expect(element('collabVoice').getAttribute('aria-pressed')).toBe('false');
+    }
+  );
+});
+
 describe('collaboration startup failures', () => {
+  it('shows an editable picker for a bad transport link without opening a session', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '?collab=1&transport=websocket&relay=https://relay.example'
+    );
+    consoleScript = await startRoomcraftDemo();
+    expect(net.joinRoom).not.toHaveBeenCalled();
+    expect(element('collaboration').hidden).toBe(false);
+    expect(element('collabStatus').textContent).toContain('ws://');
+    expect(element('collabRelayField').hidden).toBe(false);
+    expect(element('collabLink').hasAttribute('href')).toBe(false);
+    await consoleScript.collaboration.retry();
+    expect(net.joinRoom).not.toHaveBeenCalled();
+    setField('collabRelay', 'wss://relay.example/roomcraft');
+    await consoleScript.collaboration.reconnect();
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+    expect(element('collabStatus').dataset.state).toBe('ready');
+  });
+
+  it('switches during an in-flight join and closes only the captured stale session', async () => {
+    const joined = deferred();
+    const old = session;
+    net.joinRoom.mockImplementationOnce(async (_roomId, options) => {
+      net.session = old;
+      old.transport = options.transport;
+      await joined.promise;
+      old.isOpen = true;
+      // The real NetCore returns its mutable current session after await.
+      return net.session;
+    });
+    window.history.replaceState({}, '', '?collab=1');
+    const starting = startRoomcraftDemo();
+    await vi.waitFor(() => expect(net.joinRoom).toHaveBeenCalledOnce());
+    consoleScript = mocks.add.mock.calls
+      .flat()
+      .find((object) => object instanceof RoomcraftConsole);
+    const room = consoleScript.room;
+    const layout = room.layout;
+    old.transport.dispatchEvent(
+      new CustomEvent('error', {
+        detail: {error: new Error('Connection still pending')},
+      })
+    );
+    expect(element('collabStatus').textContent).toContain(
+      'Connection still pending'
+    );
+    session = new Session();
+    setField('collabTransport', 'webrtc');
+    await consoleScript.collaboration.reconnect();
+    expect(element('collabStatus').dataset.state).toBe('ready');
+    const currentBridge = bridge();
+    joined.resolve();
+    await starting;
+    expect(old.isOpen).toBe(false);
+    expect(session.close).not.toHaveBeenCalled();
+    expect(currentBridge.dispose).not.toHaveBeenCalled();
+    expect(consoleScript.room).toBe(room);
+    expect(room.layout).toBe(layout);
+    expect(consoleScript.collaboration.session).toBe(session);
+    expect(element('collabStatus').textContent).toContain('WebRTC');
+  });
+
+  it('ignores a superseded bridge initialization and stale connection errors', async () => {
+    const initialized = deferred();
+    mocks.bridgeInit.mockReturnValueOnce(initialized.promise);
+    window.history.replaceState({}, '', '?collab=1');
+    const starting = startRoomcraftDemo();
+    await vi.waitFor(() => expect(mocks.initScript).toHaveBeenCalledOnce());
+    consoleScript = mocks.add.mock.calls
+      .flat()
+      .find((object) => object instanceof RoomcraftConsole);
+    const oldBridge = bridge();
+    const oldTransport = session.transport;
+    const layout = consoleScript.room.layout;
+    session = new Session();
+    await consoleScript.collaboration.reconnect();
+    oldTransport.dispatchEvent(
+      new CustomEvent('error', {detail: {error: new Error('Stale connection')}})
+    );
+    initialized.resolve();
+    await starting;
+    expect(oldBridge.dispose).toHaveBeenCalledOnce();
+    expect(session.close).not.toHaveBeenCalled();
+    expect(consoleScript.room.layout).toBe(layout);
+    expect(element('collabStatus').dataset.state).toBe('ready');
+    expect(consoleScript.errorMessage).not.toContain('Stale');
+  });
+
   it('waits for bridge initialization before reading peer colors', async () => {
     const initialized = deferred();
     mocks.bridgeInit.mockReturnValueOnce(initialized.promise);

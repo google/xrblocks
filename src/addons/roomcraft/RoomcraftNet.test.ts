@@ -171,6 +171,155 @@ afterEach(() => {
 });
 
 describe('RoomcraftNet', () => {
+  it('keeps the existing clock authority when replacing a lower-ID follower bridge', async () => {
+    const bus = new Bus();
+    const leader = await peer(bus, 'z');
+    await leader.room.applyPlan({title: 'Established scene', edits: []});
+    const follower = await peer(bus, 'a');
+    await bus.settle();
+    expect(follower.collaboration.motionClockState?.authority).toBe('z');
+    follower.collaboration.dispose();
+    const replacement = new RoomcraftNet(follower.room, follower.session);
+    bridges.push(replacement);
+    await replacement.init({interaction: follower.interaction});
+    await bus.settle();
+    expect(replacement.motionClockState?.authority).toBe('z');
+    expect(leader.collaboration.motionClockState?.authority).toBe('z');
+    expect(replacement.motionClockState?.synchronized).toBe(true);
+  });
+
+  it('preserves authored revision lineage and offline edits when switching sessions', async () => {
+    const original = await peer(new Bus(), 'original');
+    await original.room.applyPlan({title: 'Authored scene', edits: []});
+    original.collaboration.dispose();
+    original.session.close();
+    await original.room.applyPlan({
+      title: 'Edited while disconnected',
+      edits: [{op: 'add', object: chair('offline-chair')}],
+    });
+    const bus = new Bus();
+    const other = await peer(bus, 'other');
+    await vi.waitFor(() => expect(other.collaboration.status).toBe('ready'));
+    const session = new NetSession(
+      new TestTransport(bus, 'reconnected'),
+      new THREE.Group()
+    );
+    sessions.push(session);
+    await session.open('room');
+    const bridge = new RoomcraftNet(original.room, session);
+    bridges.push(bridge);
+    await bridge.init({interaction: original.interaction});
+    await bus.settle();
+    expect(original.room.layout.title).toBe('Edited while disconnected');
+    expect(other.room.layout).toEqual(original.room.layout);
+    expect(other.room.getObject('offline-chair')).toBeDefined();
+  });
+
+  it('shares absolute motion through late joining, replacement, local pause, and reconnect cleanup', async () => {
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const bus = new Bus();
+    const moving: SceneLayout = {
+      title: 'Pendulum',
+      objects: [
+        {
+          id: 'pendulum',
+          name: 'Pendulum',
+          position: [0, 0, 0],
+          rotation: 0,
+          scale: [1, 1, 1],
+          color: '#ffffff',
+          parts: [
+            {
+              id: 'ball',
+              name: 'Ball',
+              shape: 'sphere',
+              parent: null,
+              position: [0, 1, 0],
+              rotation: [0, 0, 0],
+              size: [0.2, 0.2, 0.2],
+              color: '#336699',
+              motion: {
+                kind: 'swing',
+                axis: 'z',
+                pivot: [0, 1, 0],
+                amplitude: 0.8,
+                period: 4,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const a = await peer(bus, 'a', moving);
+    await a.room.applyPlan({title: 'Shared pendulum', edits: []});
+    now = 3250;
+    a.room.update();
+    const b = await peer(bus, 'b', {title: 'Joining', objects: []});
+    await bus.settle();
+    const rotation = (room: Roomcraft) =>
+      room.getObject('pendulum')!.getObjectByName('ball')!.quaternion;
+    b.room.update();
+    expect(rotation(b.room).angleTo(rotation(a.room))).toBeLessThan(1e-7);
+    expect(b.collaboration.motionClockState?.synchronized).toBe(true);
+    now = 4750;
+    await a.room.applyPlan({
+      title: 'Shared pendulum',
+      edits: [{op: 'update', id: 'pendulum', changes: {color: '#ccaa88'}}],
+    });
+    await bus.settle();
+    a.room.update();
+    b.room.update();
+    expect(rotation(b.room).angleTo(rotation(a.room))).toBeLessThan(1e-7);
+    a.room.setMotionPaused(true);
+    const frozen = rotation(a.room).clone();
+    now += 1500;
+    a.room.update();
+    b.room.update();
+    expect(rotation(a.room).angleTo(frozen)).toBeLessThan(1e-7);
+    expect(b.room.motionPaused).toBe(false);
+    expect(rotation(b.room).angleTo(frozen)).toBeGreaterThan(0.1);
+    a.room.setMotionPaused(false);
+    expect(rotation(a.room).angleTo(rotation(b.room))).toBeLessThan(1e-7);
+    const elapsed = b.room.motionTimeSource!();
+    b.collaboration.dispose();
+    expect(b.room.motionTimeSource).toBeUndefined();
+    now += 2000;
+    const replacement = new RoomcraftNet(b.room, b.session);
+    bridges.push(replacement);
+    await replacement.init({interaction: b.interaction});
+    expect(b.room.motionTimeSource!()).toBeCloseTo(elapsed + 2, 8);
+    await bus.settle();
+    a.room.update();
+    b.room.update();
+    expect(rotation(b.room).angleTo(rotation(a.room))).toBeLessThan(1e-7);
+  });
+
+  it('times out a missing transform reply rather than waiting forever', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
+    try {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const emit = a.session.events.emitTo.bind(a.session.events);
+      vi.spyOn(a.session.events, 'emitTo').mockImplementation(
+        (to, topic, payload) => {
+          if (topic !== 'roomcraft:objects-state') emit(to, topic, payload);
+        }
+      );
+      await a.room.applyPlan({title: 'Awaiting transforms', edits: []});
+      await bus.settle();
+      expect(b.collaboration.pendingCount).toBeGreaterThan(0);
+      await vi.advanceTimersByTimeAsync(8001);
+      expect(b.collaboration.status).toBe('error');
+      expect(b.collaboration.pendingCount).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not let a late joiner replace an established preloaded scene with its defaults', async () => {
     const bus = new Bus();
     const a = await peer(bus, 'a', {

@@ -22,19 +22,41 @@ Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialo
 
 The XR entry button shows `ENTERING XR...` while the browser responds. If entry fails, the browser error appears below the buttons and Enter XR becomes available to retry.
 
-## Same-browser collaboration
+## Collaboration and connectivity
 
-Open `http://127.0.0.1:8080/demos/roomcraft/?collab=1&room=roomcraft-demo&name=Alice`, then choose Open second tab in Local collaboration. For virtual worlds, add `&environment=1` to the first URL; the second-tab link preserves that mode. Collaboration is strictly opt-in: only the exact `collab=1` value loads the optional module, after the local starter or saved scene and key setup finish. Ordinary single-player startup does not enable networking.
+Open `http://127.0.0.1:8080/demos/roomcraft/?collab=1&room=roomcraft-demo&name=Alice`, then choose Open peer link in Collaboration. For virtual worlds, add `&environment=1` to the first URL; the peer link preserves that mode. Collaboration is strictly opt-in: only the exact `collab=1` value loads the optional module, after the local starter or saved scene and key setup finish. Ordinary single-player startup does not enable networking.
 
-Tabs must use the same browser profile and origin, including scheme, hostname, and port. This uses netblocks' `BroadcastChannelTransport`, with no signaling server or cross-device connection. A headset and a desktop do not join each other this way. Room IDs are prefixed with `roomcraft:room:` or `roomcraft:virtual:` so different page modes cannot accidentally meet. The `room` parameter accepts 1 to 48 ASCII letters, digits, underscores, or hyphens, starting with a letter or digit; an omitted or empty value uses `roomcraft-demo`, while an invalid ID shows an error without joining a different room. Display names are bounded to 40 characters and default to a readable per-tab Maker name.
+Choose a connection in the panel, then **Apply & reconnect**. All options use existing public netblocks transports:
 
-The panel shows connection state, pending synchronization, your identity, and a colored participant roster with selected-object names. Retry sync asks the bridge to synchronize again, or rejoins after disconnection. Errors appear in both the collaboration status and the existing console. Leaving the page or disposing its console releases the bridge and its session.
+- **BroadcastChannel · same browser** is the default for old `?collab=1` links (or `&transport=broadcast`). Tabs must use the same browser profile and exact origin, including scheme, hostname, and port. No signaling service is used. A headset and desktop cannot join each other this way.
+- **WebRTC · cross-device / off-LAN** (`&transport=webrtc`) uses `WebRTCTransport` with its existing default public PeerJS signaling broker and STUN servers, with no new hosting project. Each device needs internet access and a reachable copy of this page; the broker does not host or expose your LAN demo. Use the same room, page mode and transport on both devices. The public broker is best-effort, rate-limited, and supports a maximum of 12 peers per room. STUN is not TURN: restrictive NAT, firewalls, or broker outages can prevent a connection. No TURN credentials or broker overrides are configured here; this is not a guaranteed off-LAN service.
+- **WebSocket · existing relay** (`&transport=websocket&relay=wss%3A%2F%2Frelay.example%2Froomcraft`) needs an explicit existing netblocks-compatible relay URL reachable by every peer. The demo does not start or host a relay. HTTPS pages require `wss://` and a certificate trusted by each browser; HTTP pages may also use `ws://`. Credentials, query parameters, and fragments in relay URLs are rejected so they cannot leak through peer links. Use a non-secret relay endpoint; never put a provider key or token in its path. Relay scene traffic is visible to that relay.
 
-The second-tab link is built from an allowlist: collaboration, room, virtual mode, and supported desktop/debug flags. It never copies API keys, the current display name, saved-scene URLs, arbitrary parameters, or fragments. It also sends no referrer. Each tab configures Gemini independently; a remote scene is applied as validated layout data, never as a new AI request. Text and voice editing, selection, dragging, spatial controls, placement, export, and starter scenes keep their existing paths.
+The panel shows connection state, pending synchronization, your announced identity, and a colored participant roster with selected-object names. Retry sync asks the bridge to synchronize again, or rejoins after disconnection. Apply & reconnect creates a fresh session without reloading or resetting the locally authored scene, its selection, or the Gemini configuration. Normal shared-scene conflict rules still apply when a peer's scene arrives. Switching or leaving stops peer voice, including a pending microphone request; rejoining never automatically unmutes. The previous bridge/session is released and late async completions cannot replace the new connection. Underlying broker connection attempts may take time to settle; superseded sessions are closed again when they finish.
+
+Connection failures appear in the panel and existing console. Leave stops collaboration while keeping local editing available. Leaving the page or disposing its console also releases the bridge and its session.
+
+Room IDs are prefixed with `roomcraft:room:` or `roomcraft:virtual:` so different page modes cannot accidentally meet. The `room` parameter accepts 1 to 48 ASCII letters, digits, underscores, or hyphens, starting with a letter or digit; an omitted or empty value uses `roomcraft-demo`, while an invalid ID shows an error without joining a different room.
+
+### Names and share links
+
+The generated peer link deliberately omits the current display name. Its recipient gets a new **Maker ####** name, not Bob or a copy of Alice. Set **Your display name** and Apply & reconnect to announce a chosen name, or explicitly open `?collab=1&room=roomcraft-demo&name=Bob`. Names are bounded to 40 characters and rendered as text, not HTML. Plain **Maker** is only a display fallback for missing remote metadata; **Maker ####** is an actual announced default name. The roster listens for metadata refreshes as well as joins/departures, including a hello arriving after netblocks' 1.5-second initial-metadata grace window.
+
+The peer link is built from an allowlist: collaboration, room, transport, the validated relay URL when needed, virtual mode, and supported desktop/debug flags. It never copies API keys, the current display name, saved-scene URLs, arbitrary parameters, or fragments. It also sends no referrer. The current page URL is not rewritten; share the panel's applied peer link rather than a stale address-bar URL. Each tab configures Gemini independently; a remote scene is applied as validated layout data, never as a new AI request. Text and Gemini Talk editing, selection, dragging, spatial controls, placement, export, and starter scenes keep their existing paths.
+
+### Opt-in peer spatial voice
+
+**Unmute peer mic** first acquires the microphone through `session.voice.enable(session.transport.remotePeerIds)`. It never runs automatically. **Mute peer mic** uses `setMuted(true)` to silence outgoing audio without closing incoming peer audio or requesting another microphone stream. Unmute reuses that stream with `setMuted(false)`. A muted track stays muted when peers join or renegotiate. **Disconnect** is different: it releases capture and closes the session's audio connections. Switching transports also releases capture; reconnecting never silently unmutes or starts a new microphone request.
+
+While permission is pending, **Cancel mic request** invalidates it; a late grant is stopped by netblocks. The UI follows `voice.isEnabled()`, `voice.isMuted()`, and `local-voice-state`, not an optimistic toggle. The roster shows peers' announced mic transmission state. Permission, capture-ended, and peer audio-connection errors appear in the peer-voice status without failing scene synchronization.
+
+Peer voice is completely separate from **Gemini Talk** transcription: it does not need a Gemini key, send audio to Gemini, or generate scene edits. Netblocks spatializes remote audio at peer avatar heads using the SDK's listener. Incoming peer audio can be received while your own mic is off. Capture requires a supported secure context (HTTPS or localhost) and site permission. Use headphones to avoid feedback; mute peer conversation separately when recording a Gemini Talk instruction if you do not want peers to hear it.
+
+Audio always uses direct WebRTC with STUN, including when scene messages use BroadcastChannel or a WebSocket relay. A scene relay does not act as an audio TURN server. A mic-on state confirms local transmission is enabled, not successful remote audibility. Real audible voice, cross-device/off-LAN traversal, and headset microphone routing require device testing; synthetic-track browser tests are not evidence of those outcomes. A LAN/VPN-hosted page must still be reachable by each device: using a public signaling broker does not publish the page to the internet.
 
 This is a cooperative prototype, not authenticated access control or conflict-free editing. Whole-scene edits use simple last-writer-wins overwrite semantics; concurrent edits can replace one another, and local Undo or Redo writes a whole scene to everyone. Authored bounds and the existing 60 KB network-message cap still apply: synchronization reports an explicit error rather than clamping content or silently truncating it. A locally valid scene can still exceed the network cap; simplify it before retrying.
 
-The bridge shares numerical root placement and object transforms in the same coordinate convention. It does not align physical anchors or scanned rooms. Authored motion definitions are shared, but playback phase and pause state remain local. This is not synchronized animation or shared physical-room alignment.
+The bridge shares numerical root placement, object transforms, and authored motion definitions in the same coordinate convention. It does not align physical anchors or scanned rooms.
 
 For a desktop mouse test, use `&formFactor=desktop` and the simulator's User mode. The automation flag `xrAutomation=1` instead starts in Navigation mode; browser probes can switch with `xb.core.simulator.controls.setSimulatorMode(xb.SimulatorMode.USER)` after initialization.
 
@@ -102,7 +124,7 @@ Press Pause motion to freeze playback while you inspect or edit a design, and Re
 
 Type an instruction such as "add a floor lamp beside the left chair" and press Generate to edit a room scene the same way. Voice submits only a completed Gemini transcript, and the text field always stays usable. There is no automatic microphone and no request on load.
 
-### Gemini-only voice
+### Gemini Talk transcription
 
 Voice uses the same configured Gemini client and key as scene editing. No additional account or cloud provider is used, and Roomcraft does not start the browser's separate speech-recognition service, even when that API is available.
 

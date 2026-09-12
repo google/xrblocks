@@ -13,7 +13,8 @@
  *   - Per-frame `update()` drives presence broadcasting, smooth interpolation
  *     of remote avatars and net objects, and broadcasting transforms for
  *     locally-owned net objects.
- *   - Emits high-level events (`user-join`, `user-leave`) for the host app.
+ *   - Emits high-level events (`user-join`, `user-update`, `user-leave`) for
+ *     the host app. `user-update` refreshes already-announced peer metadata.
  *
  * The root xrblocks `Script` passed in is used purely as a scene-graph
  * mount point for remote avatars; netblocks never manipulates the host
@@ -84,9 +85,12 @@ export type NetSessionEventName =
   | 'open'
   | 'close'
   | 'user-join'
+  | 'user-update'
   | 'user-leave'
   | 'voice-state'
-  | 'local-voice-state';
+  | 'local-voice-state'
+  | 'peer-voice-state'
+  | 'voice-error';
 
 export interface UserEventDetail {
   user: NetUser;
@@ -158,17 +162,22 @@ export class NetSession extends EventTarget {
       this._opts.presenceHz
     );
     this.events = new NetEvents((msg) => this._sendNet(msg));
+    const publishVoiceState = (on: boolean) => {
+      // Broadcast our intent so other peers can show a reliable "in
+      // voice chat" affordance that doesn't depend on per-browser
+      // WebRTC track event timing.
+      this.events.emit('netblocks/voice-state', on);
+      // Also surface the change as a local CustomEvent so UI state
+      // (mic button label, status text) tracks the authoritative
+      // VoiceChat state rather than an optimistic flag in the app.
+      this.dispatchEvent(new CustomEvent('local-voice-state', {detail: {on}}));
+    };
     this.voice = new VoiceChat((msg) => this._sendNet(msg), {
-      onLocalStateChange: (on) => {
-        // Broadcast our intent so other peers can show a reliable "in
-        // voice chat" affordance that doesn't depend on per-browser
-        // WebRTC track event timing.
-        this.events.emit('netblocks/voice-state', on);
-        // Also surface the change as a local CustomEvent so UI state
-        // (mic button label, status text) tracks the authoritative
-        // VoiceChat state rather than an optimistic flag in the app.
+      onLocalStateChange: publishVoiceState,
+      onLocalMuteChange: (muted) => publishVoiceState(!muted),
+      onError: (error, peerId) => {
         this.dispatchEvent(
-          new CustomEvent('local-voice-state', {detail: {on}})
+          new CustomEvent('voice-error', {detail: {error, peerId}})
         );
       },
     });
@@ -183,7 +192,14 @@ export class NetSession extends EventTarget {
       'netblocks/voice-state',
       (on: unknown, fromPeerId: string) => {
         const user = this._users.get(fromPeerId);
-        if (user) user.avatar.voiceActive = !!on;
+        if (user) {
+          user.avatar.voiceActive = !!on;
+          this.dispatchEvent(
+            new CustomEvent('peer-voice-state', {
+              detail: {peerId: fromPeerId, on: !!on},
+            })
+          );
+        }
       }
     );
     // When a new peer joins after we're already in voice, send them a
@@ -191,7 +207,11 @@ export class NetSession extends EventTarget {
     this.addEventListener('user-join', (e) => {
       if (!this.voice.isEnabled()) return;
       const peerId = (e as CustomEvent<UserEventDetail>).detail.user.peerId;
-      this.events.emitTo(peerId, 'netblocks/voice-state', true);
+      this.events.emitTo(
+        peerId,
+        'netblocks/voice-state',
+        !this.voice.isMuted()
+      );
     });
 
     this.transport.addEventListener(
@@ -482,6 +502,7 @@ export class NetSession extends EventTarget {
     msg.from = detail.peerId;
     if (msg.from === this.localPeerId) return; // ignore loopback
     let user = this._users.get(msg.from);
+    const existingUser = !!user;
     if (!user) {
       const initialDisplayName =
         msg.type === 'hello' ? msg.displayName : undefined;
@@ -535,6 +556,10 @@ export class NetSession extends EventTarget {
           this._pendingJoinTimers.delete(msg.from);
           this.dispatchEvent(
             new CustomEvent<UserEventDetail>('user-join', {detail: {user}})
+          );
+        } else if (existingUser) {
+          this.dispatchEvent(
+            new CustomEvent<UserEventDetail>('user-update', {detail: {user}})
           );
         }
         // Reply with a welcome containing the rooms's known peer list.
@@ -593,6 +618,13 @@ export class NetSession extends EventTarget {
             if (p.role) other.role = p.role;
             other.capabilities = p.capabilities;
             other.avatar.displayName = other.displayName;
+            if (!this._pendingJoinTimers.has(p.id)) {
+              this.dispatchEvent(
+                new CustomEvent<UserEventDetail>('user-update', {
+                  detail: {user: other},
+                })
+              );
+            }
           }
         }
         break;
