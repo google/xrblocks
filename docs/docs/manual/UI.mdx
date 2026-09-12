@@ -226,9 +226,9 @@ Native input/textarea editing owns the value, selection, clipboard, and composit
 
 Use `focus()` only when the field is `ready`. Removing, hiding, or disabling a field releases its editing ownership. Keyboard editing must not move the simulator camera. Operating-system keyboards and clipboard permissions remain browser-dependent, especially inside immersive sessions.
 
-Editable text loads a private SDK chunk containing Troika and its text dependencies. No additional peer dependency or import-map entry is needed, and ordinary UI does not download this chunk. Deploy the complete `build/` directory so the private chunk remains available.
+Editable text loads a private canvas-based presentation on demand and uses system fonts, following the existing Unicode UI rendering approach. It adds no dependency, font download, worker, or import-map entry. Ordinary UI does not download this chunk. Deploy the complete `build/` directory so the private chunk remains available.
 
-The renderer downloads static font assets as needed and provides Unicode-aware layout, caret, and selection geometry. Font downloads and worker creation must be permitted by the application's network and CSP policies. Read `field.error` for a reported loading or layout failure. Font or module loading is not proof of native keyboard availability.
+Canvas 2D and browser text layout provide the glyphs, caret, and selection geometry. Glyph availability and appearance depend on the device's system fonts. Read `field.error` for a reported module or rendering failure. A ready text field is not proof of native keyboard availability.
 
 The existing keyboard addon can bind to a field:
 

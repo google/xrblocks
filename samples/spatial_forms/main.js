@@ -9,7 +9,7 @@ const HISTORY_BOTTOM_TOLERANCE = 8;
 class SpatialForms extends xb.Script {
   init() {
     this.status = new xb.UIText({
-      text: 'Select a field to type. Editable fonts load on demand.',
+      text: 'Select a field to type. Editable text uses system fonts.',
       style: {fontSize: 18},
     });
     this.title = new xb.UITextInput({

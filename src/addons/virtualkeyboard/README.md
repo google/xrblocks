@@ -51,7 +51,7 @@ Suppression uses `inputmode="none"`, the manual virtual-keyboard policy where su
 
 Reassign `keyboard.input` from a field's `onFocus` callback to share one keyboard across fields. Set it to `undefined` to return to standalone mode. `keyboard.value` reads the bound field, and `setValue()` updates it without emitting a user-input callback. In bound mode, use the field's `onInput` and `onSubmit` callbacks instead of the keyboard's standalone callbacks.
 
-Text fields load the SDK's bundled, private Unicode renderer on demand. The standalone keyboard does not load it, and no extra peer dependency is required. See the [spatial forms sample](../../../samples/spatial_forms/) for the complete import map and a two-field workflow.
+Text fields load a private canvas-based presentation on demand and use system fonts. The standalone keyboard does not load it, and no additional dependency, font download, or worker is required. See the [spatial forms sample](../../../samples/spatial_forms/) for the complete import map and a two-field workflow.
 
 - `value` returns the current text.
 - `setValue(value)` updates the text without calling `onValueChange`.

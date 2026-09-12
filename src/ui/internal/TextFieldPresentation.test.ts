@@ -85,6 +85,15 @@ afterEach(() => {
 });
 
 describe('Text field presentation integration', () => {
+  it('uses matching system-font and tab settings for native editing', async () => {
+    const {element} = await mount(true);
+    expect(element.style.fontFamily).toContain('system-ui');
+    expect(element.style.fontWeight).toBe('400');
+    expect(element.style.fontKerning).toBe('normal');
+    expect(element.style.tabSize).toBe('4');
+    expect(element.dir).toBe('auto');
+  });
+
   it('leaves pending-layout navigation to the native editor and consumes actual moves', async () => {
     const {field, presentation, element} = await mount(true);
     field.focus();

@@ -13,13 +13,14 @@ import type {
 } from './EditableText';
 import {scrollbarHit} from './ScrollViewPresentation';
 import {TextInputEditor} from './TextInputEditor';
+import {fontShorthand} from './CanvasTextStyle';
 import {
   DEFAULT_SCROLLBAR_WIDTH,
   DEFAULT_TEXT_LINE_HEIGHT,
+  DEFAULT_TEXT_TAB_SIZE,
 } from './UIContentDefaults';
 
 const CARET_BLINK_INTERVAL_SECONDS = 0.5;
-const MEDIUM_FONT_WEIGHT = 500;
 const TEXT_DEPTH_OFFSET = -1;
 
 /** The native editor stays light; glyph rendering loads only for editable fields. */
@@ -144,10 +145,6 @@ export class TextFieldPresentation {
         : Number.parseFloat(properties.fontSize);
     const size = this.viewport.size.peek()!;
     const lineHeight = lineHeightRatio(properties.lineHeight, fontSize);
-    this.editor.element.style.width = `${size[0]}px`;
-    this.editor.element.style.height = `${size[1]}px`;
-    this.editor.element.style.fontSize = `${fontSize}px`;
-    this.editor.element.style.lineHeight = String(lineHeight);
     const fontWeight = properties.fontWeight;
     const color = properties.color;
     const state: EditableTextState = {
@@ -163,11 +160,11 @@ export class TextFieldPresentation {
       fontSize,
       lineHeight,
       fontWeight:
-        fontWeight === 'medium'
-          ? MEDIUM_FONT_WEIGHT
-          : typeof fontWeight === 'number' || fontWeight === 'bold'
-            ? fontWeight
-            : 'normal',
+        typeof fontWeight === 'number' ||
+        fontWeight === 'medium' ||
+        fontWeight === 'bold'
+          ? fontWeight
+          : 'normal',
       textAlign:
         properties.textAlign === 'center' || properties.textAlign === 'right'
           ? properties.textAlign
@@ -191,6 +188,16 @@ export class TextFieldPresentation {
       depthOffset: TEXT_DEPTH_OFFSET,
       renderOrder: this.shell.renderOrder,
     };
+    const nativeStyle = this.editor.element.style;
+    nativeStyle.width = `${size[0]}px`;
+    nativeStyle.height = `${size[1]}px`;
+    nativeStyle.font = fontShorthand(fontSize, state.fontWeight);
+    nativeStyle.lineHeight = String(lineHeight);
+    nativeStyle.fontKerning = 'normal';
+    nativeStyle.fontVariantLigatures = 'normal';
+    nativeStyle.tabSize = String(DEFAULT_TEXT_TAB_SIZE);
+    nativeStyle.textAlign = state.textAlign ?? 'left';
+    this.editor.element.dir = state.direction ?? 'auto';
     editable.afterLayout();
     editable.update(state);
     this.editor.sync(this.available);

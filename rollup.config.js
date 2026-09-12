@@ -1,5 +1,4 @@
 import terser from '@rollup/plugin-terser';
-import {nodeResolve} from '@rollup/plugin-node-resolve';
 import typescript from '@rollup/plugin-typescript';
 import {execSync} from 'child_process';
 import fs from 'fs';
@@ -90,31 +89,6 @@ const externalPackages = [
 
 const xrblocksPackages = ['xrblocks', 'netblocks', /xrblocks\/addons\//];
 
-// Keep editable text lazy without leaving optional bare imports for consumer bundlers.
-const bundledTextPackages = [
-  'troika-three-text',
-  'troika-three-utils',
-  'troika-worker-utils',
-  'webgl-sdf-generator',
-  'bidi-js',
-];
-const textNotices = bundledTextPackages
-  .map((name) => {
-    const license =
-      name === 'webgl-sdf-generator' || name === 'bidi-js'
-        ? 'LICENSE.txt'
-        : 'LICENSE';
-    return `${name}\n${fs.readFileSync(path.join('node_modules', name, license), 'utf8')}`;
-  })
-  .join('\n\n');
-
-function textLicenseBanner(chunk) {
-  const containsTextDependency = Object.keys(chunk.modules).some((id) =>
-    bundledTextPackages.some((name) => id.includes(`/node_modules/${name}/`))
-  );
-  return containsTextDependency ? `/*!\n${textNotices}\n*/` : '';
-}
-
 const sdkBuilds = [
   {
     input: 'src/entry.ts',
@@ -124,11 +98,10 @@ const sdkBuilds = [
       entryFileNames: 'xrblocks.js',
       chunkFileNames: 'internal/[name].js',
       format: 'esm',
-      banner: (chunk) => `${bannerText}\n${textLicenseBanner(chunk)}`,
+      banner: bannerText,
       sourcemap: true,
     },
     plugins: [
-      nodeResolve({resolveOnly: bundledTextPackages}),
       typescript({
         compilerOptions: {
           composite: false,
@@ -156,10 +129,8 @@ const sdkBuilds = [
       chunkFileNames: 'internal/[name].min.js',
       format: 'esm',
       sourcemap: true,
-      banner: textLicenseBanner,
     },
     plugins: [
-      nodeResolve({resolveOnly: bundledTextPackages}),
       typescript({
         compilerOptions: {
           composite: false,

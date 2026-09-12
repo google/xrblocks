@@ -193,7 +193,7 @@ export class UITextInput<
     return this.binding?.isReady() ?? false;
   }
 
-  /** A module, font, or text-layout failure reported by the mounted renderer. */
+  /** A module or text-rendering failure reported by the mounted backend. */
   get error(): Error | undefined {
     return this.binding?.getError?.();
   }

@@ -12,6 +12,6 @@ Scroll with the mouse wheel, drag ordinary history content, or use its scrollbar
 
 Select either field to edit it. The optional keyboard follows the field that received focus. Enter inserts a newline in the multiline composer; Ctrl/Command+Enter or Send appends the note to the local history. Native clipboard and IME behavior depend on the browser. An operating-system keyboard is not guaranteed to open in immersive WebXR.
 
-Editable text loads a private SDK chunk containing Troika, followed by static font assets as needed. No additional peer dependency or import-map entry is required. The renderer uses the same Three.js instance as XR Blocks. Unicode rendering depends on the available fallback fonts, and SDF emoji may look different from the platform-colored emoji used by display-only text.
+Editable text loads a private canvas-based presentation and uses system fonts, like the existing Unicode UI fallback. No additional dependency, font download, worker, or import-map entry is required. The renderer uses the same Three.js instance as XR Blocks. Unicode glyph availability and appearance depend on the device's fonts.
 
 Try resizing the card, switching focus between the fields, scrolling while the composer is focused, entering multiple wrapped lines, and reopening the virtual keyboard. The ordinary history remains a finite retained UI tree; this sample is not a virtualized list implementation.

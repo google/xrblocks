@@ -1,200 +1,147 @@
 import {Container} from '@pmndrs/uikit';
 import * as THREE from 'three';
-import {Text} from 'troika-three-text';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
+import {graphemeSegments} from './CanvasTextStyle';
 import {EditableText, type EditableTextState} from './EditableText';
-
-/**
- * Replaces only the asynchronous Troika boundary. `getCaretAtPoint` and
- * `getSelectionRects` stay real, so the selection math under test is the
- * shipping implementation running on a deterministic monospace layout instead
- * of a WebGL/SDF font worker, which jsdom cannot provide. Anything visual still
- * needs the browser sample the parent owns.
- */
-vi.mock('troika-three-text', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('troika-three-text')>();
-  const pending: Array<() => void> = [];
-
-  interface Glyph {
-    index: number;
-    units: number;
-    char: string;
-    width: number;
-    x: number;
-  }
-
-  interface TroikaInternals {
-    _needsSync?: boolean;
-  }
-
-  /**
-   * Real Troika `Text`, so the property dirty tracking, the geometry, and the
-   * material derivation stay authentic; only the asynchronous typesetting step
-   * is replaced with a deterministic monospace layout that jsdom can run.
-   */
-  class FakeText extends actual.Text {
-    syncs = 0;
-    private syncing = false;
-    private queued: Array<(() => void) | undefined> = [];
-    private info: ReturnType<typeof typeset> | null = null;
-
-    override get textRenderInfo() {
-      return this.info as unknown as null;
-    }
-
-    override sync(callback?: () => void): void {
-      const internals = this as unknown as TroikaInternals;
-      if (internals._needsSync !== true) return;
-      internals._needsSync = false;
-      if (this.syncing) {
-        this.queued.push(callback);
-        return;
-      }
-      this.syncing = true;
-      this.syncs++;
-      pending.push(() => {
-        this.syncing = false;
-        this.info = typeset(this as unknown as Record<string, unknown>);
-        if (this.queued.length > 0) {
-          const queued = this.queued;
-          this.queued = [];
-          internals._needsSync = true;
-          this.sync(() => queued.forEach((fn) => fn?.()));
-        }
-        callback?.();
-      });
-    }
-
-    static flush(): void {
-      const queue = pending.splice(0, pending.length);
-      for (const resolve of queue) resolve();
-    }
-
-    static pending(): number {
-      return pending.length;
-    }
-  }
-
-  /** Monospace typesetter mirroring Troika's caret conventions. */
-  function typeset(text: Record<string, unknown>) {
-    const source = String(text.text ?? '');
-    const fontSize = Number(text.fontSize ?? 16);
-    const lineHeight =
-      typeof text.lineHeight === 'number'
-        ? text.lineHeight * fontSize
-        : 1.2 * fontSize;
-    const maxWidth = Number(text.maxWidth ?? Number.POSITIVE_INFINITY);
-    const wraps = text.whiteSpace !== 'nowrap' && Number.isFinite(maxWidth);
-
-    const glyphs: Glyph[] = [];
-    let index = 0;
-    for (const char of source) {
-      const units = char.length;
-      glyphs.push({
-        index,
-        units,
-        char,
-        // Astral characters are twice as wide, like a typical emoji cell.
-        width: char === '\n' ? 0 : units === 2 ? fontSize : fontSize / 2,
-        x: 0,
-      });
-      index += units;
-    }
-
-    const lines: Glyph[][] = [[]];
-    let pen = 0;
-    for (const glyph of glyphs) {
-      const line = lines[lines.length - 1];
-      if (wraps && line.length > 0 && pen + glyph.width > maxWidth) {
-        let breakAt = -1;
-        for (let i = line.length - 1; i >= 0; i--) {
-          if (/\s/.test(line[i].char)) {
-            breakAt = i;
-            break;
-          }
-        }
-        const moved = breakAt >= 0 ? line.splice(breakAt + 1) : [];
-        const next: Glyph[] = moved;
-        lines.push(next);
-        pen = 0;
-        for (const carried of next) {
-          carried.x = pen;
-          pen += carried.width;
-        }
-      }
-      const current = lines[lines.length - 1];
-      glyph.x = pen;
-      current.push(glyph);
-      pen += glyph.width;
-      if (glyph.char === '\n') {
-        lines.push([]);
-        pen = 0;
-      }
-    }
-
-    const caretPositions = new Float32Array(source.length * 4);
-    let maxLineWidth = 0;
-    lines.forEach((line, lineIndex) => {
-      const top = -lineIndex * lineHeight;
-      const bottom = top - lineHeight;
-      for (const glyph of line) {
-        const slot = glyph.index * 4;
-        if (glyph.units === 2) {
-          const middle = glyph.x + glyph.width / 2;
-          caretPositions[slot] = glyph.x;
-          caretPositions[slot + 1] = middle;
-          caretPositions[slot + 2] = bottom;
-          caretPositions[slot + 3] = top;
-          caretPositions[slot + 4] = middle;
-          caretPositions[slot + 5] = glyph.x + glyph.width;
-          caretPositions[slot + 6] = bottom;
-          caretPositions[slot + 7] = top;
-        } else {
-          caretPositions[slot] = glyph.x;
-          caretPositions[slot + 1] = glyph.x + glyph.width;
-          caretPositions[slot + 2] = bottom;
-          caretPositions[slot + 3] = top;
-        }
-        maxLineWidth = Math.max(maxLineWidth, glyph.x + glyph.width);
-      }
-    });
-
-    const height = lines.length * lineHeight;
-    return Object.freeze({
-      sdfTexture: {},
-      caretPositions,
-      blockBounds: [0, -height, maxLineWidth, 0],
-      visibleBounds: [0, -height, maxLineWidth, 0],
-      lineHeight,
-      topBaseline: -lineHeight * 0.8,
-      ascender: fontSize * 0.8,
-      descender: -fontSize * 0.2,
-    });
-  }
-
-  return {...actual, Text: FakeText};
-});
-
-const troika = Text as unknown as {
-  flush(): void;
-  pending(): number;
-};
+import type {
+  EditableTextMeasurer,
+  EditableTextStyle,
+  MeasuredGrapheme,
+  TextMeasurement,
+} from './EditableTextLayout';
 
 const FONT_SIZE = 16;
+const LINE_HEIGHT_RATIO = 1.25;
+/** Advance of an ordinary character in the deterministic test face. */
 const CELL = FONT_SIZE / 2;
-const LINE = FONT_SIZE * 1.25;
+const LINE = FONT_SIZE * LINE_HEIGHT_RATIO;
+const CARET_WIDTH = 2;
+/** Ascent and descent the stubbed canvas reports for the test face. */
+const ASCENT = 12;
+const DESCENT = 3;
+const VERTICES_PER_QUAD = 6;
+
+interface PaintCall {
+  text: string;
+  x: number;
+  y: number;
+  direction: string;
+  fillStyle: string;
+}
+
+const painted: PaintCall[] = [];
+let contextAvailable = true;
+let paintFails = false;
+
+/**
+ * Minimal 2D context. jsdom ships no canvas implementation, so the drawing
+ * calls are recorded instead of rasterized; only a browser can prove what the
+ * pixels look like.
+ */
+function createStubContext(canvas: HTMLCanvasElement) {
+  const context = {
+    canvas,
+    font: '',
+    textAlign: 'start',
+    textBaseline: 'alphabetic',
+    direction: 'inherit',
+    fillStyle: '#000000',
+    clears: 0,
+    setTransform() {},
+    translate() {},
+    clearRect() {
+      context.clears++;
+    },
+    measureText() {
+      return {
+        width: 0,
+        fontBoundingBoxAscent: ASCENT,
+        fontBoundingBoxDescent: DESCENT,
+      };
+    },
+    fillText(text: string, x: number, y: number) {
+      if (paintFails) throw new Error('Canvas paint failed.');
+      painted.push({
+        text,
+        x,
+        y,
+        direction: context.direction,
+        fillStyle: context.fillStyle,
+      });
+    },
+  };
+  return context;
+}
+
+function advance(grapheme: string): number {
+  if (grapheme === '\t') return CELL * 4;
+  const wide = [...grapheme].some(
+    (character) => (character.codePointAt(0) ?? 0) > 0xffff
+  );
+  return wide ? FONT_SIZE : CELL;
+}
+
+/**
+ * Left-to-right monospace stand-in for the platform text engine: spaces are
+ * never collapsed, trailing spaces hang past a wrap, and a word wider than the
+ * line breaks between graphemes.
+ */
+function monospaceMeasurer(): EditableTextMeasurer & {calls: number} {
+  return {
+    calls: 0,
+    measure(text: string, style: EditableTextStyle): TextMeasurement {
+      this.calls++;
+      const graphemes: MeasuredGrapheme[] = [];
+      let row = 0;
+      let offset = 0;
+      for (const paragraph of text.split('\n')) {
+        let x = 0;
+        let empty = true;
+        let pendingSpace = false;
+        for (const {segment, index} of graphemeSegments(paragraph)) {
+          const width = advance(segment);
+          const space = segment === ' ' || segment === '\t';
+          if (
+            style.multiline &&
+            !space &&
+            !empty &&
+            x + width > style.width &&
+            (pendingSpace || x + width > style.width)
+          ) {
+            row++;
+            x = 0;
+            empty = true;
+          }
+          graphemes.push({
+            start: offset + index,
+            end: offset + index + segment.length,
+            left: x,
+            right: x + width,
+            top: row * style.lineHeight,
+            bottom: (row + 1) * style.lineHeight,
+          });
+          x += width;
+          empty = false;
+          pendingSpace = space;
+        }
+        offset += paragraph.length + 1;
+        row++;
+      }
+      return {graphemes, direction: style.direction === 'rtl' ? 'rtl' : 'ltr'};
+    },
+    dispose: vi.fn(),
+  };
+}
 
 interface Harness {
   readonly scene: THREE.Scene;
   readonly carrier: THREE.Group;
   readonly root: Container;
-  readonly viewport: Container;
   readonly editable: EditableText;
+  readonly measurer: EditableTextMeasurer & {calls: number};
   readonly errors: Array<{kind: string; message: string}>;
   layouts: number;
-  flush(): void;
-  step(): void;
   layout(): Promise<void>;
   dispose(): void;
 }
@@ -216,32 +163,26 @@ async function harness(
   });
   carrier.add(root);
   const errors: Array<{kind: string; message: string}> = [];
-  const state = {layouts: 0};
+  const counters = {layouts: 0};
+  const measurer = monospaceMeasurer();
   const editable = new EditableText(root, {
+    measurer,
     onError: (failure) => errors.push(failure),
-    onLayout: () => state.layouts++,
+    onLayout: () => counters.layouts++,
   });
-  const instance: Harness = {
+  return {
     scene,
     carrier,
     root,
-    viewport: root,
     editable,
+    measurer,
     errors,
     get layouts() {
-      return state.layouts;
+      return counters.layouts;
     },
     set layouts(value: number) {
-      state.layouts = value;
+      counters.layouts = value;
     },
-    flush: () => {
-      // Drains the queue until it settles: a value change while a layout is in
-      // flight makes Troika re-sync once the first one resolves.
-      for (let round = 0; round < 10 && troika.pending() > 0; round++) {
-        troika.flush();
-      }
-    },
-    step: () => troika.flush(),
     layout: async () => {
       await vi.waitFor(() => {
         root.update(16);
@@ -255,7 +196,6 @@ async function harness(
       root.dispose();
     },
   };
-  return instance;
 }
 
 function state(overrides: Partial<EditableTextState> = {}): EditableTextState {
@@ -263,8 +203,8 @@ function state(overrides: Partial<EditableTextState> = {}): EditableTextState {
     text: '',
     focused: true,
     fontSize: FONT_SIZE,
-    lineHeight: 1.25,
-    caretWidth: 2,
+    lineHeight: LINE_HEIGHT_RATIO,
+    caretWidth: CARET_WIDTH,
     ...overrides,
   };
 }
@@ -287,7 +227,7 @@ function drawnQuads(mesh: THREE.Object3D | undefined): number {
   const target = mesh as THREE.Mesh | undefined;
   const count = target?.geometry.drawRange.count;
   if (count == null || !Number.isFinite(count)) return 0;
-  return count / 6;
+  return count / VERTICES_PER_QUAD;
 }
 
 function meshNamed(editable: EditableText, name: string): THREE.Mesh {
@@ -299,20 +239,34 @@ function meshNamed(editable: EditableText, name: string): THREE.Mesh {
   return found;
 }
 
+beforeEach(() => {
+  painted.length = 0;
+  contextAvailable = true;
+  paintFails = false;
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+    function (this: HTMLCanvasElement, kind: string) {
+      if (kind !== '2d' || !contextAvailable) return null;
+      return createStubContext(this) as unknown as CanvasRenderingContext2D;
+    } as HTMLCanvasElement['getContext']
+  );
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('EditableText presentation', () => {
   let current: Harness | undefined;
 
   afterEach(() => {
     current?.dispose();
     current = undefined;
-    vi.useRealTimers();
   });
 
-  it('mounts one retained Content and reuses it across updates', async () => {
+  it('mounts one retained Content and reuses its meshes', async () => {
     const h = (current = await harness());
     h.editable.update(state({text: 'hello'}));
     await h.layout();
-    h.flush();
 
     expect(h.editable.content.parent).toBe(h.root);
     expect(h.editable.isReady).toBe(true);
@@ -324,65 +278,51 @@ describe('EditableText presentation', () => {
     );
     expect(meshNamed(h.editable, 'EditableTextGlyphs')).toBe(glyphs);
     expect(meshNamed(h.editable, 'EditableTextCaret')).toBe(caret);
+    expect(h.errors).toEqual([]);
   });
 
-  it('does not restart the glyph layout for selection-only changes', async () => {
+  it('measures once per change and never for selection or color alone', async () => {
     const h = (current = await harness());
     h.editable.update(state({text: 'hello world'}));
     await h.layout();
-    h.flush();
-    const glyphs = meshNamed(h.editable, 'EditableTextGlyphs') as unknown as {
-      syncs: number;
-    };
-    const syncs = glyphs.syncs;
+    const measurements = h.measurer.calls;
+    const paints = painted.length;
+    expect(measurements).toBeGreaterThan(0);
 
     h.editable.update(
       state({text: 'hello world', selectionStart: 2, selectionEnd: 6})
     );
-    expect(glyphs.syncs).toBe(syncs);
-    expect(troika.pending()).toBe(0);
-    expect(h.editable.isReady).toBe(true);
+    expect(h.measurer.calls).toBe(measurements);
+    expect(painted).toHaveLength(paints);
     expect(drawnQuads(meshNamed(h.editable, 'EditableTextSelection'))).toBe(1);
 
-    h.editable.update(state({text: 'hello world!', selectionStart: 12}));
-    expect(glyphs.syncs).toBe(syncs + 1);
-  });
-
-  it('refuses pointer indices until the pending layout matches the value', async () => {
-    const h = (current = await harness());
-    h.editable.update(state({text: 'abcdef'}));
-    await h.layout();
-    h.flush();
-    expect(
-      h.editable.caretAtPoint(worldPoint(h, CELL * 2 + 1, -LINE / 2))
-    ).toBe(2);
-
-    h.editable.update(state({text: 'abcdefghij'}));
-    expect(h.editable.isReady).toBe(false);
-    expect(
-      h.editable.caretAtPoint(worldPoint(h, CELL * 8, -LINE / 2))
-    ).toBeUndefined();
-    expect(h.editable.navigate('End')).toBeUndefined();
-
-    h.flush();
-    expect(h.editable.isReady).toBe(true);
-    expect(h.editable.caretAtPoint(worldPoint(h, CELL * 8, -LINE / 2))).toBe(8);
-  });
-
-  it('discards a superseded layout callback and keeps the newest one', async () => {
-    const h = (current = await harness());
-    h.editable.update(state({text: 'first'}));
-    await h.layout();
-    h.editable.update(state({text: 'second value'}));
-    // Resolves the in-flight layout for "first"; Troika then re-syncs and only
-    // the newer result may become the active snapshot.
-    h.step();
-    expect(h.editable.isReady).toBe(false);
-    h.step();
-    expect(h.editable.isReady).toBe(true);
-    expect(h.editable.caretAtPoint(worldPoint(h, CELL * 12, -LINE / 2))).toBe(
-      12
+    // Repeating the identical state repaints nothing either.
+    h.editable.update(
+      state({text: 'hello world', selectionStart: 2, selectionEnd: 6})
     );
+    expect(painted).toHaveLength(paints);
+
+    h.editable.update(state({text: 'hello world!', selectionStart: 12}));
+    expect(h.measurer.calls).toBe(measurements + 1);
+    expect(painted.length).toBeGreaterThan(paints);
+  });
+
+  it('paints every piece of the rows that the viewport shows', async () => {
+    const h = (current = await harness({width: 200, height: 2 * LINE}));
+    h.editable.update(state({text: 'ab\tcd\nefg\nhij\nklm', multiline: true}));
+    await h.layout();
+
+    // Tabs advance without being drawn, and the tail rows stay off the canvas.
+    expect(painted.map((call) => call.text)).toEqual(['ab', 'cd', 'efg']);
+    expect(painted[1].x).toBeCloseTo(CELL * 2 + CELL * 4, 5);
+    const halfLeading = (LINE - (ASCENT + DESCENT)) / 2;
+    expect(painted[0].y).toBeCloseTo(halfLeading + ASCENT, 5);
+    expect(painted[2].y).toBeCloseTo(LINE + halfLeading + ASCENT, 5);
+    for (const call of painted) expect(call.direction).toBe('ltr');
+
+    painted.length = 0;
+    expect(h.editable.scrollBy(2 * LINE)).toBe(true);
+    expect(painted.map((call) => call.text)).toEqual(['hij', 'klm']);
   });
 
   it('maps world points through moved, scaled, and rotated cards', async () => {
@@ -392,19 +332,17 @@ describe('EditableText presentation', () => {
     h.carrier.scale.setScalar(2.5);
     h.editable.update(state({text: 'abcdef'}));
     await h.layout();
-    h.flush();
 
     expect(h.editable.caretAtPoint(worldPoint(h, 0, -LINE / 2))).toBe(0);
     expect(h.editable.caretAtPoint(worldPoint(h, CELL * 3, -LINE / 2))).toBe(3);
     expect(h.editable.caretAtPoint(worldPoint(h, CELL * 6, -LINE / 2))).toBe(6);
   });
 
-  it('keeps UTF-16 indices on code point boundaries', async () => {
+  it('keeps UTF-16 indices on grapheme boundaries', async () => {
     const h = (current = await harness());
     const text = 'a😀b';
     h.editable.update(state({text}));
     await h.layout();
-    h.flush();
 
     // The emoji occupies one double-width cell starting at CELL.
     expect(h.editable.caretAtPoint(worldPoint(h, CELL * 1.2, -LINE / 2))).toBe(
@@ -415,34 +353,61 @@ describe('EditableText presentation', () => {
     );
     expect(h.editable.caretAtPoint(worldPoint(h, CELL * 4, -LINE / 2))).toBe(4);
 
+    // A selection the native element reports inside the pair still shows one
+    // caret, snapped to the boundary before it.
     h.editable.update(state({text, selectionStart: 2, selectionEnd: 2}));
-    expect(drawnQuads(meshNamed(h.editable, 'EditableTextCaret'))).toBe(1);
-    const collapsed = h.editable.navigate('End');
-    expect(collapsed).toEqual({start: 4, end: 4, direction: 'none'});
+    const caret = meshNamed(h.editable, 'EditableTextCaret');
+    expect(drawnQuads(caret)).toBe(1);
+    expect(caret.geometry.getAttribute('position').getX(0)).toBeCloseTo(
+      CELL - CARET_WIDTH / 2,
+      5
+    );
+    expect(h.editable.navigate('End')).toEqual({
+      start: 4,
+      end: 4,
+      direction: 'none',
+    });
   });
 
-  it('renders selection rectangles per rendered row', async () => {
+  it('refuses indices while the value has no matching layout', async () => {
+    const h = (current = await harness());
+    h.editable.update(state({text: 'abcdef'}));
+    await h.layout();
+    expect(
+      h.editable.caretAtPoint(worldPoint(h, CELL * 2 + 1, -LINE / 2))
+    ).toBe(2);
+
+    const failing = vi.spyOn(h.measurer, 'measure').mockImplementation(() => {
+      throw new Error('mirror detached');
+    });
+    h.editable.update(state({text: 'abcdefghij'}));
+    expect(h.editable.isReady).toBe(false);
+    expect(h.editable.error?.kind).toBe('layout-failed');
+    expect(h.errors[0].kind).toBe('layout-failed');
+    expect(
+      h.editable.caretAtPoint(worldPoint(h, CELL * 8, -LINE / 2))
+    ).toBeUndefined();
+    expect(h.editable.navigate('End')).toBeUndefined();
+
+    failing.mockRestore();
+    h.editable.update(state({text: 'abcdefghij'}));
+    expect(h.editable.isReady).toBe(true);
+    expect(h.editable.error).toBeUndefined();
+    expect(h.editable.caretAtPoint(worldPoint(h, CELL * 8, -LINE / 2))).toBe(8);
+  });
+
+  it('renders one selection rectangle per rendered row', async () => {
     const h = (current = await harness({width: 200, height: 120}));
+    const text = 'alpha beta gamma delta epsilon zeta';
     h.editable.update(
-      state({
-        text: 'alpha beta gamma delta epsilon zeta',
-        multiline: true,
-        selectionStart: 0,
-        selectionEnd: 34,
-      })
+      state({text, multiline: true, selectionStart: 0, selectionEnd: 34})
     );
     await h.layout();
-    h.flush();
     const selection = meshNamed(h.editable, 'EditableTextSelection');
     expect(drawnQuads(selection)).toBeGreaterThan(1);
 
     h.editable.update(
-      state({
-        text: 'alpha beta gamma delta epsilon zeta',
-        multiline: true,
-        selectionStart: 1,
-        selectionEnd: 4,
-      })
+      state({text, multiline: true, selectionStart: 1, selectionEnd: 4})
     );
     expect(drawnQuads(selection)).toBe(1);
     const position = selection.geometry.getAttribute('position');
@@ -450,15 +415,13 @@ describe('EditableText presentation', () => {
     expect(position.getX(1)).toBeCloseTo(CELL * 4, 5);
   });
 
-  it('navigates wrapped lines by geometry instead of newlines', async () => {
+  it('navigates wrapped rows by geometry instead of newlines', async () => {
     const h = (current = await harness({width: 200, height: 120}));
-    // One logical line long enough to soft wrap several times.
     const text = 'aaaa bbbb cccc dddd eeee ffff';
     h.editable.update(
       state({text, multiline: true, selectionStart: 2, selectionEnd: 2})
     );
     await h.layout();
-    h.flush();
     expect(text.includes('\n')).toBe(false);
 
     const down = h.editable.navigate('ArrowDown');
@@ -472,20 +435,22 @@ describe('EditableText presentation', () => {
         selectionEnd: down!.end,
       })
     );
-    const back = h.editable.navigate('ArrowUp');
-    expect(back).toEqual({start: 2, end: 2, direction: 'none'});
+    expect(h.editable.navigate('ArrowUp')).toEqual({
+      start: 2,
+      end: 2,
+      direction: 'none',
+    });
   });
 
-  it('extends a selection and keeps the goal column across a short line', async () => {
+  it('extends a selection and keeps the goal column across a short row', async () => {
     const h = (current = await harness({width: 200, height: 120}));
-    // The middle line is shorter than the goal column, which a caret walk must
-    // remember instead of collapsing to the short line's end.
+    // The middle row is shorter than the goal column, which a caret walk must
+    // remember instead of collapsing to the short row's end.
     const text = 'aaaaaaaa\nbb\ncccccccc';
     h.editable.update(
       state({text, multiline: true, selectionStart: 6, selectionEnd: 6})
     );
     await h.layout();
-    h.flush();
 
     const first = h.editable.navigate('ArrowDown', {extend: true})!;
     expect(first).toEqual({start: 6, end: 11, direction: 'forward'});
@@ -498,14 +463,20 @@ describe('EditableText presentation', () => {
         selectionDirection: first.direction,
       })
     );
-    const second = h.editable.navigate('ArrowDown', {extend: true})!;
-    expect(second).toEqual({start: 6, end: 18, direction: 'forward'});
+    expect(h.editable.navigate('ArrowDown', {extend: true})).toEqual({
+      start: 6,
+      end: 18,
+      direction: 'forward',
+    });
 
     h.editable.update(
       state({text, multiline: true, selectionStart: 18, selectionEnd: 18})
     );
-    const home = h.editable.navigate('Home', {extend: true})!;
-    expect(home).toEqual({start: 12, end: 18, direction: 'backward'});
+    expect(h.editable.navigate('Home', {extend: true})).toEqual({
+      start: 12,
+      end: 18,
+      direction: 'backward',
+    });
   });
 
   it('places Home and End on the rendered row', async () => {
@@ -515,7 +486,6 @@ describe('EditableText presentation', () => {
       state({text, multiline: true, selectionStart: 9, selectionEnd: 9})
     );
     await h.layout();
-    h.flush();
 
     expect(h.editable.navigate('Home')).toEqual({
       start: 8,
@@ -538,24 +508,26 @@ describe('EditableText presentation', () => {
     });
   });
 
-  it('reaches the empty line created by a trailing newline', async () => {
+  it('reaches the empty row created by a trailing newline', async () => {
     const h = (current = await harness({width: 200, height: 120}));
     const text = 'one\n';
     h.editable.update(
       state({text, multiline: true, selectionStart: 1, selectionEnd: 1})
     );
     await h.layout();
-    h.flush();
 
-    const down = h.editable.navigate('ArrowDown');
-    expect(down).toEqual({start: 4, end: 4, direction: 'none'});
+    expect(h.editable.navigate('ArrowDown')).toEqual({
+      start: 4,
+      end: 4,
+      direction: 'none',
+    });
     h.editable.update(
       state({text, multiline: true, selectionStart: 4, selectionEnd: 4})
     );
     const caret = meshNamed(h.editable, 'EditableTextCaret');
     expect(drawnQuads(caret)).toBe(1);
-    const position = caret.geometry.getAttribute('position');
-    expect(position.getY(0)).toBeLessThan(-LINE);
+    expect(caret.geometry.getAttribute('position').getY(0)).toBeLessThan(-LINE);
+    expect(h.editable.scrollHeight).toBeCloseTo(2 * LINE, 5);
   });
 
   it('clamps vertical scrolling and reveals the caret', async () => {
@@ -565,7 +537,6 @@ describe('EditableText presentation', () => {
       state({text, multiline: true, selectionStart: 0, selectionEnd: 0})
     );
     await h.layout();
-    h.flush();
 
     expect(h.editable.scroll.getViewportHeight()).toBeCloseTo(2 * LINE, 5);
     expect(h.editable.scroll.getOffset()).toBe(0);
@@ -615,7 +586,6 @@ describe('EditableText presentation', () => {
     const text = 'abcdefghijklmnopqrstuvwxyz';
     h.editable.update(state({text, selectionStart: 0, selectionEnd: 0}));
     await h.layout();
-    h.flush();
     expect(h.editable.offsetX).toBe(0);
     expect(h.editable.scroll.getOffset()).toBe(0);
 
@@ -623,12 +593,17 @@ describe('EditableText presentation', () => {
       state({text, selectionStart: text.length, selectionEnd: text.length})
     );
     expect(h.editable.offsetX).toBeGreaterThan(0);
-    expect(h.editable.offsetX).toBeCloseTo(text.length * CELL + 2 - 80, 5);
+    expect(h.editable.offsetX).toBeCloseTo(
+      text.length * CELL + CARET_WIDTH - 80,
+      5
+    );
     expect(h.editable.scroll.getOffset()).toBe(0);
 
     // The caret stays inside the clipped viewport after scrolling.
-    const caret = meshNamed(h.editable, 'EditableTextCaret');
-    const position = caret.geometry.getAttribute('position');
+    const position = meshNamed(
+      h.editable,
+      'EditableTextCaret'
+    ).geometry.getAttribute('position');
     expect(position.getX(0)).toBeGreaterThanOrEqual(h.editable.offsetX - 0.001);
     expect(position.getX(1)).toBeLessThanOrEqual(h.editable.offsetX + 80.001);
   });
@@ -637,7 +612,6 @@ describe('EditableText presentation', () => {
     const h = (current = await harness({width: 200, height: 60}));
     h.editable.update(state({text: 'abc'}));
     await h.layout();
-    h.flush();
     const projected = h.editable.scroll.projectPoint(
       worldPoint(h, CELL * 2, -LINE / 2)
     );
@@ -645,14 +619,16 @@ describe('EditableText presentation', () => {
     expect(projected?.y).toBeCloseTo(LINE / 2, 4);
   });
 
-  it('shows the placeholder and keeps the caret at index zero', async () => {
+  it('draws the placeholder and keeps the caret at index zero', async () => {
     const h = (current = await harness());
     h.editable.update(
       state({text: '', placeholder: 'Search', placeholderColor: '#999999'})
     );
     await h.layout();
-    h.flush();
+
     expect(h.editable.isReady).toBe(true);
+    expect(painted.map((call) => call.text)).toEqual(['Search']);
+    expect(painted[0].fillStyle).toBe('#999999');
     expect(drawnQuads(meshNamed(h.editable, 'EditableTextCaret'))).toBe(1);
     expect(drawnQuads(meshNamed(h.editable, 'EditableTextSelection'))).toBe(0);
     expect(h.editable.caretAtPoint(worldPoint(h, CELL * 4, -LINE / 2))).toBe(0);
@@ -661,45 +637,47 @@ describe('EditableText presentation', () => {
       end: 0,
       direction: 'none',
     });
+
+    // The value takes over as soon as there is one.
+    painted.length = 0;
+    h.editable.update(state({text: 'ab', placeholder: 'Search'}));
+    expect(painted.map((call) => call.text)).toEqual(['ab']);
   });
 
-  it('reports a stalled layout instead of swallowing it', async () => {
-    vi.useFakeTimers();
+  it('invalidates failed paint and retries the same value without stale geometry', async () => {
     const h = (current = await harness());
-    h.editable.update(state({text: 'never resolves'}));
+    h.editable.update(state({text: 'before'}));
+    await h.layout();
+    paintFails = true;
+    h.editable.update(state({text: 'after'}));
     expect(h.editable.isReady).toBe(false);
-    vi.advanceTimersByTime(10000);
-    expect(h.errors).toHaveLength(1);
-    expect(h.errors[0].kind).toBe('layout-timeout');
-    expect(h.editable.error?.kind).toBe('layout-timeout');
-    expect(h.editable.isReady).toBe(false);
-
-    // A late completion for the current value recovers the readiness state.
-    h.flush();
-    expect(h.editable.error).toBeUndefined();
+    expect(h.editable.error?.kind).toBe('layout-failed');
+    expect(h.editable.caretAtPoint(new THREE.Vector3())).toBeUndefined();
+    expect(meshNamed(h.editable, 'EditableTextGlyphs').visible).toBe(false);
+    expect(meshNamed(h.editable, 'EditableTextCaret').visible).toBe(false);
+    paintFails = false;
+    h.editable.update(state({text: 'after'}));
     expect(h.editable.isReady).toBe(true);
+    expect(h.editable.error).toBeUndefined();
+    expect(meshNamed(h.editable, 'EditableTextGlyphs').visible).toBe(true);
+    expect(painted.at(-1)?.text).toBe('after');
   });
 
-  it('surfaces a synchronous layout failure', async () => {
+  it('reports a document that refuses a 2D canvas', async () => {
+    contextAvailable = false;
     const h = (current = await harness());
-    const glyphs = meshNamed(h.editable, 'EditableTextGlyphs') as unknown as {
-      sync: (callback?: () => void) => void;
-    };
-    const original = glyphs.sync.bind(glyphs);
-    glyphs.sync = () => {
-      throw new Error('font worker unavailable');
-    };
-    h.editable.update(state({text: 'boom'}));
-    expect(h.errors[0]?.kind).toBe('layout-failed');
+    expect(h.errors[0]?.kind).toBe('context-unavailable');
+    expect(h.editable.error?.kind).toBe('context-unavailable');
+    h.editable.update(state({text: 'invisible'}));
+    await h.layout();
     expect(h.editable.isReady).toBe(false);
-    glyphs.sync = original;
+    expect(painted).toEqual([]);
   });
 
-  it('releases what it owns and ignores late completions', async () => {
+  it('releases everything it owns and stays inert afterwards', async () => {
     const h = (current = await harness());
     h.editable.update(state({text: 'disposable'}));
     await h.layout();
-    h.flush();
     const glyphs = meshNamed(h.editable, 'EditableTextGlyphs');
     const caret = meshNamed(h.editable, 'EditableTextCaret');
     const selection = meshNamed(h.editable, 'EditableTextSelection');
@@ -707,21 +685,29 @@ describe('EditableText presentation', () => {
       vi.spyOn(mesh.geometry, 'dispose')
     );
     const material = vi.spyOn(caret.material as THREE.Material, 'dispose');
+    const texture = vi.spyOn(
+      (glyphs.material as THREE.MeshBasicMaterial).map!,
+      'dispose'
+    );
     const content = h.editable.content;
 
-    h.editable.update(state({text: 'disposable text'}));
     h.editable.dispose();
     expect(content.parent).toBeNull();
     for (const disposal of disposals) expect(disposal).toHaveBeenCalled();
     expect(material).toHaveBeenCalled();
+    expect(texture).toHaveBeenCalled();
+    expect(h.measurer.dispose).toHaveBeenCalledTimes(1);
 
     const layouts = h.layouts;
-    h.flush();
+    const paints = painted.length;
+    h.editable.update(state({text: 'ignored'}));
     expect(h.layouts).toBe(layouts);
+    expect(painted).toHaveLength(paints);
     expect(h.editable.isReady).toBe(false);
     expect(h.editable.caretAtPoint(new THREE.Vector3())).toBeUndefined();
     // Disposing twice must stay a no-op.
     h.editable.dispose();
+    expect(h.measurer.dispose).toHaveBeenCalledTimes(1);
     current = undefined;
     h.root.dispose();
   });
@@ -736,10 +722,10 @@ describe('EditableText presentation', () => {
         opacity: 0.5,
         renderOrder: 7,
         depthTest: false,
+        depthOffset: -1,
       })
     );
     await h.layout();
-    h.flush();
 
     const names = [
       'EditableTextGlyphs',
@@ -754,33 +740,30 @@ describe('EditableText presentation', () => {
       expect(material.opacity).toBe(0.5);
       expect(material.depthTest).toBe(false);
       expect(material.depthWrite).toBe(false);
+      expect(material.polygonOffset).toBe(true);
+      expect(material.polygonOffsetFactor).toBe(-1);
       expect(mesh.renderOrder).toBe(7);
     }
-    // Troika clips its own glyphs to the scrolled viewport rectangle too.
-    const glyphs = meshNamed(h.editable, 'EditableTextGlyphs') as unknown as {
-      clipRect: number[];
-    };
+    // The glyph plane covers exactly the scrolled viewport, so the canvas
+    // itself clips whatever falls outside it.
     const size = h.editable.content.size.peek()!;
-    expect(glyphs.clipRect[0]).toBeCloseTo(0, 6);
-    expect(glyphs.clipRect[1]).toBeCloseTo(-size[1], 6);
-    expect(glyphs.clipRect[2]).toBeCloseTo(size[0], 6);
-    expect(glyphs.clipRect[3]).toBeCloseTo(0, 6);
+    const glyphs = meshNamed(h.editable, 'EditableTextGlyphs');
+    expect(glyphs.scale.x).toBeCloseTo(size[0], 6);
+    expect(glyphs.scale.y).toBeCloseTo(size[1], 6);
     // The quad colors carry the selection tint, since Content forces white.
-    const selection = meshNamed(h.editable, 'EditableTextSelection');
-    const colors = selection.geometry.getAttribute('color');
+    const colors = meshNamed(
+      h.editable,
+      'EditableTextSelection'
+    ).geometry.getAttribute('color');
     const expected = new THREE.Color('#3b82f6');
     expect(colors.getX(0)).toBeCloseTo(expected.r, 5);
     expect(colors.getW(0)).toBeCloseTo(0.4, 5);
-    expect(
-      (selection.material as THREE.MeshBasicMaterial).color.getHexString()
-    ).toBe('ffffff');
   });
 
   it('honors a non default pixel size without changing layout units', async () => {
     const h = (current = await harness({width: 200, height: 60}, 0.01));
     h.editable.update(state({text: 'abcdef'}));
     await h.layout();
-    h.flush();
     expect(h.editable.caretAtPoint(worldPoint(h, CELL * 4, -LINE / 2))).toBe(4);
     const content = h.editable.content;
     const size = content.size.peek()!;
@@ -793,10 +776,6 @@ describe('EditableText presentation', () => {
 describe('EditableText layout bookkeeping', () => {
   let current: Harness | undefined;
 
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
   afterEach(() => {
     current?.dispose();
     current = undefined;
@@ -807,8 +786,8 @@ describe('EditableText layout bookkeeping', () => {
     const text = 'aaaa bbbb cccc dddd eeee ffff';
     h.editable.update(state({text, multiline: true}));
     await h.layout();
-    h.flush();
     const before = h.editable.navigate('End')!.end;
+    const measurements = h.measurer.calls;
 
     h.root.setProperties({width: 90});
     await vi.waitFor(() => {
@@ -816,10 +795,8 @@ describe('EditableText layout bookkeeping', () => {
       expect(h.editable.content.size.peek()?.[0]).toBeCloseTo(90, 3);
     });
     h.editable.afterLayout();
-    expect(h.editable.isReady).toBe(false);
-    h.flush();
+    expect(h.measurer.calls).toBe(measurements + 1);
     expect(h.editable.isReady).toBe(true);
-    const after = h.editable.navigate('End')!.end;
-    expect(after).toBeLessThan(before);
+    expect(h.editable.navigate('End')!.end).toBeLessThan(before);
   });
 });

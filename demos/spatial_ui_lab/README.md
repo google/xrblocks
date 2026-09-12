@@ -29,7 +29,7 @@ The Library is deliberately a finite retained list, not a virtualization impleme
 
 ## Runtime limits
 
-Editable text loads the SDK's bundled text-renderer chunk and static font assets on demand. Network and CSP policies must allow those assets and worker creation. Native keyboard invocation, clipboard access, and IME behavior depend on the browser and XR runtime. SDF emoji can look different from system-colored emoji.
+Editable text loads a private canvas-based presentation and uses system fonts, without additional dependencies, font downloads, or workers. Glyph availability and appearance depend on the device. Native keyboard invocation, clipboard access, and IME behavior depend on the browser and XR runtime.
 
 ### Meta Quest keyboard limitation
 

@@ -1,14 +1,31 @@
 import {Container, Content, type BoundingBox} from '@pmndrs/uikit';
 import {effect, signal} from '@preact/signals-core';
 import * as THREE from 'three';
-import {
-  getSelectionRects,
-  Text,
-  type TroikaTextRenderInfo,
-} from 'troika-three-text';
 
 import type {SemanticScrollState} from '../../interaction/SemanticControl';
-import {DEFAULT_TEXT_LINE_HEIGHT} from './UIContentDefaults';
+import {
+  cssColor,
+  fontShorthand,
+  resolveRasterScale,
+  type CanvasFontWeight,
+} from './CanvasTextStyle';
+import {
+  buildEditableTextLayout,
+  caretGeometry,
+  caretIndexAtPoint,
+  DomTextMeasurer,
+  measureFontMetrics,
+  selectionRects,
+  type EditableTextLayout,
+  type EditableTextMeasurer,
+  type EditableTextStyle,
+  type TextAlign,
+  type TextRect,
+} from './EditableTextLayout';
+import {
+  DEFAULT_TEXT_FONT_SIZE,
+  DEFAULT_TEXT_LINE_HEIGHT,
+} from './UIContentDefaults';
 
 /** Direction of a selection, matching `HTMLInputElement.selectionDirection`. */
 export type EditableTextSelectionDirection = 'forward' | 'backward' | 'none';
@@ -27,15 +44,14 @@ export interface EditableTextSelection {
   readonly direction: EditableTextSelectionDirection;
 }
 
-/** Failure surfaced while the asynchronous Troika layout was running. */
+/** Failure surfaced while preparing or rendering the text. */
 export interface EditableTextFailure {
   /**
-   * `layout-timeout` means no layout completed within the configured budget,
-   * which is how a missing typeface, a blocked font download, or a worker
-   * failure reaches us: `troika-three-text` logs those to the console and never
-   * invokes its callback. `layout-failed` means `sync()` threw synchronously.
+   * `context-unavailable` means the document refused a 2D canvas or a
+   * measurement mirror, so no text can be drawn at all. `layout-failed` means
+   * a measurement or paint pass threw.
    */
-  readonly kind: 'layout-timeout' | 'layout-failed';
+  readonly kind: 'context-unavailable' | 'layout-failed';
   readonly message: string;
   readonly cause?: unknown;
 }
@@ -49,7 +65,7 @@ export interface EditableTextState {
   /** Wraps and scrolls vertically when true, scrolls horizontally otherwise. */
   readonly multiline?: boolean;
   readonly focused?: boolean;
-  /** Lets the owner blink the caret without rebuilding glyphs. */
+  /** Lets the owner blink the caret without relaying out glyphs. */
   readonly caretVisible?: boolean;
   readonly selectionStart?: number;
   readonly selectionEnd?: number;
@@ -58,8 +74,8 @@ export interface EditableTextState {
   readonly fontSize?: number;
   /** Line height as a multiple of `fontSize`. */
   readonly lineHeight?: number;
-  readonly fontWeight?: number | 'normal' | 'bold';
-  readonly textAlign?: 'left' | 'center' | 'right';
+  readonly fontWeight?: CanvasFontWeight;
+  readonly textAlign?: TextAlign;
   readonly direction?: 'auto' | 'ltr' | 'rtl';
   readonly color?: THREE.ColorRepresentation;
   readonly placeholderColor?: THREE.ColorRepresentation;
@@ -70,23 +86,21 @@ export interface EditableTextState {
   readonly caretWidth?: number;
   readonly opacity?: number;
   readonly depthTest?: boolean;
-  /** Polygon offset applied to the glyphs to avoid z-fighting with the shell. */
+  /** Polygon offset applied to the text meshes to avoid z-fighting with the shell. */
   readonly depthOffset?: number;
   readonly renderOrder?: number;
-  /** URL of a `.ttf`, `.otf`, or `.woff` face; defaults to Troika's Noto Sans. */
-  readonly font?: string;
 }
 
 /** Construction options for {@link EditableText}. */
 export interface EditableTextOptions {
-  /** Receives typeface, worker, and layout failures instead of swallowing them. */
+  /** Receives canvas, measurement, and paint failures instead of swallowing them. */
   readonly onError?: (failure: EditableTextFailure) => void;
-  /** Runs after every layout that becomes the active snapshot. */
+  /** Runs after every layout that becomes the active one. */
   readonly onLayout?: () => void;
-  /** Budget before a stalled layout is reported as a failure. Defaults to 10s. */
-  readonly syncTimeoutMs?: number;
   /** Inner padding in UIkit layout units. */
   readonly padding?: number;
+  /** Replaces the DOM measurement mirror; only tests should supply this. */
+  readonly measurer?: EditableTextMeasurer;
 }
 
 interface ResolvedState {
@@ -100,8 +114,8 @@ interface ResolvedState {
   selectionDirection: EditableTextSelectionDirection;
   fontSize: number;
   lineHeight: number;
-  fontWeight: number | 'normal' | 'bold';
-  textAlign: 'left' | 'center' | 'right';
+  fontWeight: CanvasFontWeight;
+  textAlign: TextAlign;
   direction: 'auto' | 'ltr' | 'rtl';
   color: THREE.ColorRepresentation;
   placeholderColor: THREE.ColorRepresentation;
@@ -113,36 +127,6 @@ interface ResolvedState {
   depthTest: boolean;
   depthOffset: number;
   renderOrder: number;
-  font?: string;
-}
-
-interface CaretEntry {
-  /** Index in the source value, before the character it points at. */
-  readonly index: number;
-  readonly x: number;
-  readonly bottom: number;
-  readonly top: number;
-}
-
-interface CaretRow {
-  top: number;
-  bottom: number;
-  readonly carets: CaretEntry[];
-}
-
-interface LayoutSnapshot {
-  readonly revision: number;
-  /** Source value this layout describes. */
-  readonly value: string;
-  /** String handed to Troika, which is the placeholder when the value is empty. */
-  readonly rendered: string;
-  readonly placeholderVisible: boolean;
-  readonly info: TroikaTextRenderInfo;
-  readonly carets: Float32Array;
-  readonly blockBounds: readonly number[];
-  readonly lineHeight: number;
-  readonly rows: CaretRow[];
-  readonly caretByIndex: Map<number, CaretEntry>;
 }
 
 interface Quad {
@@ -152,31 +136,16 @@ interface Quad {
   top: number;
 }
 
-/** Troika properties that restart the asynchronous layout when assigned. */
-type SyncableKey =
-  | 'text'
-  | 'font'
-  | 'fontSize'
-  | 'fontWeight'
-  | 'lineHeight'
-  | 'letterSpacing'
-  | 'maxWidth'
-  | 'overflowWrap'
-  | 'whiteSpace'
-  | 'textAlign'
-  | 'direction';
-
-const DEFAULT_FONT_SIZE = 16;
 const DEFAULT_CARET_WIDTH = 2;
-const DEFAULT_SYNC_TIMEOUT_MS = 10000;
 const DEFAULT_SELECTION_OPACITY = 0.4;
+const DEFAULT_TEXT_COLOR = '#ffffff';
+const DEFAULT_PLACEHOLDER_COLOR = '#888888';
+const DEFAULT_SELECTION_COLOR = '#3b82f6';
 const VERTICES_PER_QUAD = 6;
 const POSITION_COMPONENTS = 3;
 const COLOR_COMPONENTS = 4;
 const INITIAL_QUAD_CAPACITY = 4;
 const QUAD_CAPACITY_GROWTH_FACTOR = 2;
-/** Troika stores [startX, endX, bottomY, topY] per UTF-16 code unit. */
-const CARET_POSITION_STRIDE = 4;
 /** Keeps the selection behind and the caret in front of the glyph plane. */
 const SELECTION_Z = -0.0002;
 const CARET_Z = 0.0002;
@@ -191,13 +160,19 @@ const CORNERS: readonly (readonly [number, number])[] = [
 ];
 
 /**
- * Retained Troika presentation for one editable text field.
+ * Canvas presentation for one editable text field.
  *
  * The class owns a private UIkit `Content` mounted inside a caller-provided
- * viewport `Container`, plus one `troika-three-text` mesh and two dynamic
+ * viewport `Container`, one textured plane carrying the glyphs, and two dynamic
  * meshes for the selection and the caret. It never mutates the value: the
  * native DOM input remains authoritative and pushes immutable state through
  * {@link update}.
+ *
+ * Glyphs are drawn with the platform's own text stack, so every script, emoji,
+ * and font fallback the device supports renders without downloading a typeface
+ * or running a worker. Line breaking, shaping, and bidi reordering come from a
+ * hidden measurement mirror, and the paint walks exactly the pieces that mirror
+ * reported, so the caret, the selection, and the glyphs always agree.
  *
  * Coordinates: the `Content` bounding box is published in UIkit layout units,
  * so every child of it is authored in layout units and scaled to meters by the
@@ -212,25 +187,25 @@ export class EditableText {
   readonly scroll: SemanticScrollState;
 
   private readonly group = new THREE.Group();
-  private readonly text = new Text();
-  private readonly baseMaterial = new THREE.MeshBasicMaterial({
-    transparent: true,
-    side: THREE.DoubleSide,
-  });
+  private readonly canvas?: HTMLCanvasElement;
+  private readonly context?: CanvasRenderingContext2D;
+  private readonly texture?: THREE.CanvasTexture;
+  private readonly glyphs: THREE.Mesh;
   private readonly selection = createQuadMesh('EditableTextSelection');
   private readonly caret = createQuadMesh('EditableTextCaret');
+  private readonly measurer?: EditableTextMeasurer;
   private readonly boundingBox = signal<BoundingBox | undefined>({
     size: new THREE.Vector3(1, 1, 1),
     center: new THREE.Vector3(),
   });
   private readonly stopLayoutEffect: () => void;
-  private readonly syncTimeoutMs: number;
 
   private state?: ResolvedState;
-  private snapshot?: LayoutSnapshot;
-  private revision = 0;
+  /** Layout of the value, used for carets, hit testing, and navigation. */
+  private layout?: EditableTextLayout;
+  /** Layout that is painted, which is the placeholder while the value is empty. */
+  private painted?: EditableTextLayout;
   private failure?: EditableTextFailure;
-  private watchdog?: ReturnType<typeof setTimeout>;
   private disposed = false;
 
   private width = 0;
@@ -242,6 +217,8 @@ export class EditableText {
   private scrollY = 0;
   private goalX?: number;
   private navigated?: EditableTextSelection;
+  private layoutKey = '';
+  private paintKey = '';
   private revealKey = '';
   private appearanceKey = '';
 
@@ -249,7 +226,6 @@ export class EditableText {
     viewport: Container,
     private readonly options: EditableTextOptions = {}
   ) {
-    this.syncTimeoutMs = options.syncTimeoutMs ?? DEFAULT_SYNC_TIMEOUT_MS;
     this.content = new Content(
       {
         width: '100%',
@@ -261,20 +237,20 @@ export class EditableText {
         padding: options.padding ?? 0,
         keepAspectRatio: false,
         depthAlign: 'center',
-        // Forces the per-mesh tint applied by Content to white so the caret and
-        // selection colors survive in their vertex colors.
+        // Forces the per-mesh tint applied by Content to white so the caret,
+        // selection, and glyph colors survive untinted.
         color: '#ffffff',
         depthWrite: false,
       },
       undefined,
       {boundingBox: this.boundingBox}
     );
-    this.text.name = 'EditableTextGlyphs';
-    this.text.anchorX = 'left';
-    this.text.anchorY = 'top';
-    this.text.material = this.baseMaterial;
-    this.text.frustumCulled = false;
-    this.group.add(this.selection.mesh, this.text, this.caret.mesh);
+    const surface = createGlyphSurface();
+    this.glyphs = surface.mesh;
+    this.canvas = surface.canvas;
+    this.context = surface.context;
+    this.texture = surface.texture;
+    this.group.add(this.selection.mesh, this.glyphs, this.caret.mesh);
     this.content.add(this.group);
     // Applies the Content child matrices and its own material pass without
     // waiting for the debounced `childadded` notification.
@@ -300,14 +276,36 @@ export class EditableText {
       projectPoint: (point) => this.projectPoint(point),
       scrollBy: (delta) => this.scrollBy(delta),
     };
+    if (surface.context == null) {
+      this.fail({
+        kind: 'context-unavailable',
+        message:
+          'A 2D canvas is required to draw editable text; this document refused one.',
+      });
+      return;
+    }
+    try {
+      this.measurer = options.measurer ?? new DomTextMeasurer();
+    } catch (cause) {
+      this.fail({
+        kind: 'context-unavailable',
+        message: 'Editable text could not create its measurement element.',
+        cause,
+      });
+    }
   }
 
   /**
-   * True when the active layout describes the current value, so indices from
+   * True when an active layout describes the current value, so indices from
    * pointer hits and keyboard navigation are safe to use.
    */
   get isReady(): boolean {
-    return !this.disposed && this.snapshot?.revision === this.revision;
+    return (
+      !this.disposed &&
+      this.layout != null &&
+      this.state != null &&
+      this.layout.text === this.state.text
+    );
   }
 
   /** Alias of {@link isReady} for call sites that read like a signal. */
@@ -332,7 +330,7 @@ export class EditableText {
 
   /** Height of the laid out text in layout units. */
   get scrollHeight(): number {
-    return this.contentHeight();
+    return this.painted?.height ?? 0;
   }
 
   /** Largest vertical offset {@link scrollBy} can reach. */
@@ -342,8 +340,8 @@ export class EditableText {
 
   /**
    * Pushes the authoritative state. Object identity is preserved across calls,
-   * and updates that only change selection, focus, or colors never restart the
-   * glyph layout.
+   * and updates that only change selection, focus, or colors never repeat the
+   * text measurement.
    */
   update(state: EditableTextState): void {
     if (this.disposed) return;
@@ -358,14 +356,15 @@ export class EditableText {
       if (!matchesSelection(this.navigated, resolved)) this.goalX = undefined;
     }
     this.navigated = undefined;
-    this.applyTextProperties(resolved);
     this.applyAppearance(resolved);
+    this.relayout();
     this.refresh();
   }
 
   /**
    * Recomputes the presentation against the latest UIkit layout. Safe to call
-   * every frame; the signal subscription already covers the common case.
+   * every frame; measurement and painting are keyed, so an unchanged field does
+   * no work beyond comparing those keys.
    */
   afterLayout(): void {
     if (this.disposed) return;
@@ -380,35 +379,23 @@ export class EditableText {
 
   /**
    * Maps a world point to the nearest caret index, honoring wrapped lines and
-   * UTF-16 code point boundaries. Returns `undefined` while a newer value is
-   * still being laid out, so stale geometry can never produce an index for it.
+   * grapheme boundaries. Returns `undefined` when no current layout describes
+   * the value, so stale geometry can never produce an index for it.
    */
   caretAtPoint(worldPoint: THREE.Vector3): number | undefined {
-    const snapshot = this.activeSnapshot();
-    if (snapshot == null) return undefined;
-    if (snapshot.value.length === 0) return 0;
+    const layout = this.activeLayout();
+    if (layout == null) return undefined;
+    if (layout.text.length === 0) return 0;
     const local = this.toTextCoords(worldPoint);
     if (local == null) return undefined;
-    const row = nearestRow(snapshot.rows, local.y);
-    if (row == null) return undefined;
-    let closest: CaretEntry | undefined;
-    for (const caret of row.carets) {
-      if (
-        closest == null ||
-        Math.abs(local.x - caret.x) < Math.abs(local.x - closest.x)
-      ) {
-        closest = caret;
-      }
-    }
-    if (closest == null) return undefined;
-    return this.snapIndex(snapshot, closest.index, local.x);
+    return caretIndexAtPoint(layout, local.x, local.y);
   }
 
   /**
    * Resolves a geometry-driven caret move. Wrapped lines are walked through the
    * rendered rows rather than by counting newlines, so soft wraps behave like a
-   * native textarea. Returns `undefined` when the layout is not current, which
-   * lets the owner fall back to the browser's own handling.
+   * native textarea. Returns `undefined` when no layout is current, which lets
+   * the owner fall back to the browser's own handling.
    *
    * The result is advisory: apply it to the native element and push the new
    * state back through {@link update}. Doing that also preserves the goal
@@ -418,10 +405,10 @@ export class EditableText {
     key: EditableTextNavigationKey,
     options: {extend?: boolean} = {}
   ): EditableTextSelection | undefined {
-    const snapshot = this.activeSnapshot();
+    const layout = this.activeLayout();
     const state = this.state;
-    if (snapshot == null || state == null) return undefined;
-    if (snapshot.value.length === 0) {
+    if (layout == null || state == null) return undefined;
+    if (layout.text.length === 0) {
       const collapsed = {start: 0, end: 0, direction: 'none'} as const;
       this.navigated = collapsed;
       return collapsed;
@@ -432,37 +419,34 @@ export class EditableText {
       focus === state.selectionStart
         ? state.selectionEnd
         : state.selectionStart;
-    const entry = snapshot.caretByIndex.get(focus);
-    const rowIndex = entry == null ? -1 : rowIndexOf(snapshot.rows, focus);
-    if (entry == null || rowIndex < 0) return undefined;
+    const geometry = caretGeometry(layout, clampIndex(layout.text, focus));
+    if (geometry == null) return undefined;
 
     let target: number;
     if (key === 'Home' || key === 'End') {
       this.goalX = undefined;
-      const row = snapshot.rows[rowIndex];
-      const caret =
-        key === 'Home' ? row.carets[0] : row.carets[row.carets.length - 1];
-      target = caret.index;
+      const line = layout.lines[geometry.line];
+      target = key === 'Home' ? line.start : line.end;
     } else {
-      const goalX = this.goalX ?? entry.x;
+      const goalX = this.goalX ?? geometry.x;
       this.goalX = goalX;
-      const nextIndex = rowIndex + (key === 'ArrowUp' ? -1 : 1);
-      if (nextIndex < 0) {
+      const next = geometry.line + (key === 'ArrowUp' ? -1 : 1);
+      if (next < 0) {
         target = 0;
-      } else if (nextIndex >= snapshot.rows.length) {
-        target = snapshot.value.length;
+      } else if (next >= layout.lines.length) {
+        target = layout.text.length;
       } else {
-        const row = snapshot.rows[nextIndex];
-        let closest = row.carets[0];
-        for (const caret of row.carets) {
+        const carets = layout.lines[next].carets;
+        let closest = carets[0];
+        for (const caret of carets) {
           if (Math.abs(goalX - caret.x) < Math.abs(goalX - closest.x)) {
             closest = caret;
           }
         }
-        target = this.snapIndex(snapshot, closest.index, goalX);
+        target = closest.index;
       }
     }
-    target = clampIndex(snapshot.value, target);
+    target = clampIndex(layout.text, target);
     const result: EditableTextSelection = extend
       ? {
           start: Math.min(anchor, target),
@@ -499,25 +483,26 @@ export class EditableText {
     return true;
   }
 
-  /** Releases everything this instance owns; shared font resources are kept. */
+  /** Releases everything this instance owns, including the hidden mirror. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.clearWatchdog();
     this.stopLayoutEffect();
+    this.measurer?.dispose();
     this.group.clear();
     this.group.removeFromParent();
-    this.text.dispose();
-    // Troika disposes the material it derived from ours when ours is disposed.
-    this.baseMaterial.dispose();
+    this.glyphs.removeFromParent();
+    this.glyphs.geometry.dispose();
+    (this.glyphs.material as THREE.Material).dispose();
+    this.texture?.dispose();
     this.selection.dispose();
     this.caret.dispose();
     this.content.removeFromParent();
     this.content.dispose();
   }
 
-  private activeSnapshot(): LayoutSnapshot | undefined {
-    return this.isReady ? this.snapshot : undefined;
+  private activeLayout(): EditableTextLayout | undefined {
+    return this.isReady ? this.layout : undefined;
   }
 
   private applySize(
@@ -557,70 +542,83 @@ export class EditableText {
       center: new THREE.Vector3(),
     };
     if (this.state == null) return;
-    this.applyWrapping(this.state);
     this.revealKey = '';
+    this.relayout();
     this.refresh();
   }
 
-  private applyTextProperties(state: ResolvedState): void {
-    const rendered = renderedText(state);
-    let changed = false;
-    changed = this.setText('text', rendered) || changed;
-    changed = this.setText('fontSize', state.fontSize) || changed;
-    changed = this.setText('fontWeight', state.fontWeight) || changed;
-    changed =
-      this.setText(
-        'lineHeight',
-        state.lineHeight > 0 ? state.lineHeight : 'normal'
-      ) || changed;
-    changed = this.setText('textAlign', state.textAlign) || changed;
-    changed = this.setText('direction', state.direction) || changed;
-    changed = this.setText('font', state.font ?? null) || changed;
-    changed = this.applyWrapping(state, true) || changed;
-    if (changed) this.scheduleSync();
-  }
-
-  private applyWrapping(state: ResolvedState, defer = false): boolean {
-    let changed = this.setText(
-      'whiteSpace',
-      state.multiline ? 'normal' : 'nowrap'
-    );
-    changed =
-      this.setText('overflowWrap', state.multiline ? 'break-word' : 'normal') ||
-      changed;
-    changed =
-      this.setText(
-        'maxWidth',
-        state.multiline && this.innerWidth > 0
-          ? this.innerWidth
-          : Number.POSITIVE_INFINITY
-      ) || changed;
-    if (changed && !defer) this.scheduleSync();
-    return changed;
-  }
-
-  /**
-   * Assigns a syncable Troika property only when it actually changes, which
-   * mirrors Troika's own dirty tracking. A `sync()` callback never runs when
-   * nothing changed, so the caller must not schedule one in that case.
-   */
-  private setText<K extends SyncableKey>(key: K, value: Text[K]): boolean {
-    if (this.text[key] === value) return false;
-    this.text[key] = value;
-    return true;
+  /** Re-measures the text when anything that moves a character has changed. */
+  private relayout(): void {
+    const state = this.state;
+    const measurer = this.measurer;
+    const context = this.context;
+    if (state == null || measurer == null || context == null) return;
+    if (!(this.innerWidth > 0) || !(this.innerHeight > 0)) return;
+    const style = layoutStyle(state, this.innerWidth);
+    const placeholder = placeholderVisible(state);
+    const key = [
+      state.text,
+      placeholder ? state.placeholder : '',
+      style.fontSize,
+      style.fontWeight,
+      style.lineHeight,
+      style.textAlign,
+      style.direction,
+      style.multiline,
+      style.width,
+    ].join('\u0000');
+    if (key === this.layoutKey) return;
+    let layout: EditableTextLayout;
+    let painted: EditableTextLayout;
+    try {
+      context.font = fontShorthand(style.fontSize, style.fontWeight);
+      context.fontKerning = 'normal';
+      const metrics = measureFontMetrics(context, style.fontSize);
+      layout = buildEditableTextLayout(
+        state.text,
+        style,
+        measurer.measure(state.text, style),
+        metrics
+      );
+      painted = placeholder
+        ? buildEditableTextLayout(
+            state.placeholder,
+            style,
+            measurer.measure(state.placeholder, style),
+            metrics
+          )
+        : layout;
+    } catch (cause) {
+      // A partial layout would let stale geometry answer for the new value, so
+      // everything is dropped and the field reports itself as not ready.
+      this.fail({
+        kind: 'layout-failed',
+        message: 'Editable text could not measure its value.',
+        cause,
+      });
+      return;
+    }
+    this.layout = layout;
+    this.painted = painted;
+    this.layoutKey = key;
+    this.paintKey = '';
+    this.revealKey = '';
+    this.failure = undefined;
+    this.options.onLayout?.();
   }
 
   private applyAppearance(state: ResolvedState): void {
-    const placeholderVisible =
-      state.text.length === 0 && state.placeholder !== '';
-    this.text.color = placeholderVisible ? state.placeholderColor : state.color;
-    this.text.depthOffset = state.depthOffset;
     for (const material of this.materials()) {
       material.opacity = state.opacity;
       material.depthTest = state.depthTest;
       material.depthWrite = false;
+      // Applied to all three meshes together, so the selection stays behind the
+      // glyphs and the caret stays in front of them.
+      material.polygonOffset = state.depthOffset !== 0;
+      material.polygonOffsetFactor = state.depthOffset;
+      material.polygonOffsetUnits = state.depthOffset;
     }
-    for (const mesh of [this.selection.mesh, this.text, this.caret.mesh]) {
+    for (const mesh of [this.selection.mesh, this.glyphs, this.caret.mesh]) {
       mesh.renderOrder = state.renderOrder;
     }
     const key = `${state.opacity}|${state.depthTest}|${state.renderOrder}`;
@@ -633,124 +631,66 @@ export class EditableText {
     });
   }
 
-  /** Materials owned by this presentation, including Troika's derived one. */
+  /** Materials owned by this presentation. */
   private materials(): THREE.Material[] {
-    const glyphs = this.text.material;
     return [
-      ...(Array.isArray(glyphs) ? glyphs : [glyphs]),
+      this.glyphs.material as THREE.Material,
       this.selection.mesh.material as THREE.Material,
       this.caret.mesh.material as THREE.Material,
     ];
   }
 
-  private scheduleSync(): void {
-    const revision = ++this.revision;
-    this.clearWatchdog();
-    try {
-      this.text.sync(() => this.completeSync(revision));
-    } catch (cause) {
-      this.fail({
-        kind: 'layout-failed',
-        message: 'Troika text layout could not be started.',
-        cause,
-      });
-      return;
-    }
-    this.watchdog = setTimeout(() => {
-      this.watchdog = undefined;
-      this.fail({
-        kind: 'layout-timeout',
-        message:
-          `Troika text layout did not complete within ${this.syncTimeoutMs}ms; ` +
-          'the typeface, font worker, or SDF generator most likely failed.',
-      });
-    }, this.syncTimeoutMs);
-    // A layout that already resolved inside `sync()` needs no watchdog.
-    if (this.snapshot?.revision === revision) this.clearWatchdog();
-  }
-
-  private completeSync(revision: number): void {
-    // A disposed presentation must never reattach resources, and a callback for
-    // a superseded value must never become the active snapshot: Troika resolves
-    // queued callbacks with whichever layout finished, not with the one they
-    // were registered for.
-    if (this.disposed || revision !== this.revision) return;
-    const info = this.text.textRenderInfo;
-    const state = this.state;
-    if (info == null || state == null) return;
-    this.clearWatchdog();
-    this.failure = undefined;
-    this.snapshot = buildSnapshot(revision, state, info);
-    this.revealKey = '';
-    this.refresh();
-    this.options.onLayout?.();
-  }
-
-  private fail(failure: EditableTextFailure): void {
-    if (this.disposed) return;
-    this.clearWatchdog();
-    this.failure = failure;
-    this.options.onError?.(failure);
-  }
-
-  private clearWatchdog(): void {
-    if (this.watchdog == null) return;
-    clearTimeout(this.watchdog);
-    this.watchdog = undefined;
-  }
-
   /**
-   * Repositions the text and rebuilds the caret and selection quads from the
-   * active snapshot. While a newer layout is pending, the previously rendered
-   * glyphs, caret, and selection are kept untouched so they always come from
-   * one consistent layout.
+   * Repositions the scrolled geometry and rebuilds the caret and selection
+   * quads from the active layout.
    */
   private refresh(): void {
     const state = this.state;
     if (state == null) return;
-    const snapshot = this.activeSnapshot();
+    const currentLayout = this.activeLayout();
     this.scrollX = clamp(this.scrollX, 0, this.maxScrollX());
     this.scrollY = clamp(this.scrollY, 0, this.maxScrollY());
-    if (snapshot != null) this.reveal(state, snapshot);
-    const originX = -this.innerWidth / 2 - this.scrollX;
-    const originY = this.innerHeight / 2 + this.scrollY;
-    this.group.position.set(originX, originY, 0);
+    if (currentLayout != null) this.reveal(state, currentLayout);
+    this.group.position.set(
+      -this.innerWidth / 2 - this.scrollX,
+      this.innerHeight / 2 + this.scrollY,
+      0
+    );
     this.group.updateMatrix();
+    // The glyph plane covers the viewport itself, so it cancels the scroll the
+    // group applies and the canvas carries the offset instead.
+    this.glyphs.position.set(
+      this.scrollX + this.innerWidth / 2,
+      -this.scrollY - this.innerHeight / 2,
+      0
+    );
+    this.glyphs.scale.set(
+      Math.max(this.innerWidth, Number.EPSILON),
+      Math.max(this.innerHeight, Number.EPSILON),
+      1
+    );
+    this.glyphs.updateMatrix();
+    this.paint();
     const clip = this.clipRect();
-    this.text.clipRect = [clip.left, clip.bottom, clip.right, clip.top];
-    if (snapshot == null) {
-      // A newer value is still being laid out: the caret and the selection stay
-      // frozen on the geometry Troika is still showing.
+    const layout = this.activeLayout();
+    if (layout == null) {
       this.content.root.peek().requestRender?.();
       return;
     }
 
-    const selectionQuads: Quad[] = [];
-    if (
-      snapshot.value.length > 0 &&
-      state.selectionEnd > state.selectionStart
-    ) {
-      const rects =
-        getSelectionRects(
-          snapshot.info,
-          state.selectionStart,
-          state.selectionEnd
-        ) ?? [];
-      for (const rect of rects) {
-        const quad = clipQuad(
-          {
-            left: rect.left,
-            right: rect.right,
-            bottom: rect.bottom,
-            top: rect.top,
-          },
-          clip
-        );
-        if (quad != null) selectionQuads.push(quad);
+    const quads: Quad[] = [];
+    if (layout.text.length > 0 && state.selectionEnd > state.selectionStart) {
+      for (const rect of selectionRects(
+        layout,
+        state.selectionStart,
+        state.selectionEnd
+      )) {
+        const quad = clipQuad(rect, clip);
+        if (quad != null) quads.push(quad);
       }
     }
     this.selection.write(
-      selectionQuads,
+      quads,
       new THREE.Color(state.selectionColor),
       state.selectionOpacity,
       SELECTION_Z
@@ -758,27 +698,112 @@ export class EditableText {
 
     const caretQuads: Quad[] = [];
     if (state.focused && state.caretVisible) {
-      const caret = this.caretQuad(state, snapshot, clip);
+      const caret = this.caretQuad(state, layout, clip);
       if (caret != null) caretQuads.push(caret);
     }
     this.caret.write(caretQuads, new THREE.Color(state.caretColor), 1, CARET_Z);
     this.content.root.peek().requestRender?.();
   }
 
+  /**
+   * Draws the visible rows onto the viewport-sized canvas. Only the pieces the
+   * measurement reported are painted, each at its measured position, so tabs
+   * keep their advance without a glyph and every bidi run keeps its own
+   * direction.
+   */
+  private paint(): void {
+    const state = this.state;
+    const layout = this.painted;
+    const context = this.context;
+    const canvas = this.canvas;
+    const texture = this.texture;
+    if (
+      state == null ||
+      layout == null ||
+      context == null ||
+      canvas == null ||
+      texture == null
+    ) {
+      return;
+    }
+    const width = this.innerWidth;
+    const height = this.innerHeight;
+    if (!(width > 0) || !(height > 0)) return;
+    const scale = resolveRasterScale(width, height);
+    const color = cssColor(
+      placeholderVisible(state) ? state.placeholderColor : state.color
+    );
+    const key = [
+      this.layoutKey,
+      this.scrollX,
+      this.scrollY,
+      width,
+      height,
+      scale,
+      color,
+    ].join('\u0000');
+    if (key === this.paintKey) return;
+    const pixelWidth = Math.max(1, Math.ceil(width * scale));
+    const pixelHeight = Math.max(1, Math.ceil(height * scale));
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      // Forces Three.js to allocate matching GPU storage before the next upload.
+      texture.dispose();
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+    try {
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, pixelWidth, pixelHeight);
+      context.setTransform(scale, 0, 0, scale, 0, 0);
+      context.translate(-this.scrollX, -this.scrollY);
+      context.font = fontShorthand(state.fontSize, state.fontWeight);
+      context.fontKerning = 'normal';
+      context.textAlign = 'left';
+      context.textBaseline = 'alphabetic';
+      context.fillStyle = color;
+      for (const line of layout.lines) {
+        // Text coordinates grow upwards; the canvas grows downwards.
+        if (
+          -line.bottom <= this.scrollY ||
+          -line.top >= this.scrollY + height
+        ) {
+          continue;
+        }
+        for (const segment of line.segments) {
+          context.direction = segment.rtl ? 'rtl' : 'ltr';
+          context.fillText(
+            layout.text.slice(segment.start, segment.end),
+            segment.left,
+            -line.baseline
+          );
+        }
+      }
+    } catch (cause) {
+      this.fail({
+        kind: 'layout-failed',
+        message: 'Editable text could not draw its glyphs.',
+        cause,
+      });
+      return;
+    }
+    texture.needsUpdate = true;
+    this.paintKey = key;
+    this.glyphs.visible = true;
+  }
+
   private caretQuad(
     state: ResolvedState,
-    snapshot: LayoutSnapshot,
+    layout: EditableTextLayout,
     clip: Quad
   ): Quad | undefined {
     const index =
       state.selectionDirection === 'backward'
         ? state.selectionStart
         : state.selectionEnd;
-    const entry = snapshot.caretByIndex.get(
-      snapshot.value.length === 0 ? 0 : clampIndex(snapshot.value, index)
-    );
-    if (entry == null) return undefined;
-    let left = entry.x - state.caretWidth / 2;
+    const geometry = caretGeometry(layout, clampIndex(layout.text, index));
+    if (geometry == null) return undefined;
+    const line = layout.lines[geometry.line];
+    let left = geometry.x - state.caretWidth / 2;
     let right = left + state.caretWidth;
     if (left < clip.left) {
       left = clip.left;
@@ -787,33 +812,32 @@ export class EditableText {
       right = clip.right;
       left = right - state.caretWidth;
     }
-    return clipQuad({left, right, bottom: entry.bottom, top: entry.top}, clip);
+    return clipQuad({left, right, bottom: line.bottom, top: line.top}, clip);
   }
 
-  private reveal(state: ResolvedState, snapshot: LayoutSnapshot): void {
+  private reveal(state: ResolvedState, layout: EditableTextLayout): void {
     if (!state.focused || this.innerWidth <= 0 || this.innerHeight <= 0) return;
     const index =
       state.selectionDirection === 'backward'
         ? state.selectionStart
         : state.selectionEnd;
-    const key = `${snapshot.revision}:${index}:${this.innerWidth}x${this.innerHeight}`;
+    const key = `${this.layoutKey}\u0000${index}\u0000${this.innerWidth}x${this.innerHeight}`;
     if (key === this.revealKey) return;
     this.revealKey = key;
-    const entry = snapshot.caretByIndex.get(
-      snapshot.value.length === 0 ? 0 : clampIndex(snapshot.value, index)
-    );
-    if (entry == null) return;
+    const geometry = caretGeometry(layout, clampIndex(layout.text, index));
+    if (geometry == null) return;
+    const line = layout.lines[geometry.line];
     const pad = state.caretWidth;
-    if (entry.x - pad < this.scrollX) {
-      this.scrollX = entry.x - pad;
-    } else if (entry.x + pad > this.scrollX + this.innerWidth) {
-      this.scrollX = entry.x + pad - this.innerWidth;
+    if (geometry.x - pad < this.scrollX) {
+      this.scrollX = geometry.x - pad;
+    } else if (geometry.x + pad > this.scrollX + this.innerWidth) {
+      this.scrollX = geometry.x + pad - this.innerWidth;
     }
     this.scrollX = clamp(this.scrollX, 0, this.maxScrollX());
-    if (entry.top > -this.scrollY) {
-      this.scrollY = -entry.top;
-    } else if (entry.bottom < -this.innerHeight - this.scrollY) {
-      this.scrollY = -this.innerHeight - entry.bottom;
+    if (line.top > -this.scrollY) {
+      this.scrollY = -line.top;
+    } else if (line.bottom < -this.innerHeight - this.scrollY) {
+      this.scrollY = -this.innerHeight - line.bottom;
     }
     this.scrollY = clamp(this.scrollY, 0, this.maxScrollY());
   }
@@ -827,33 +851,16 @@ export class EditableText {
     };
   }
 
-  private contentWidth(): number {
-    const snapshot = this.snapshot;
-    if (snapshot == null) return 0;
-    return Math.max(0, snapshot.blockBounds[2] - snapshot.blockBounds[0]);
-  }
-
-  private contentHeight(): number {
-    const snapshot = this.snapshot;
-    if (snapshot == null) return 0;
-    const block = Math.max(
-      0,
-      snapshot.blockBounds[3] - snapshot.blockBounds[1]
-    );
-    // Troika's block stops at the last glyph, so a trailing newline needs the
-    // empty line it creates to be scrollable too.
-    return snapshot.value.endsWith('\n') ? block + snapshot.lineHeight : block;
-  }
-
   private maxScrollX(): number {
     if (this.state?.multiline !== false) return 0;
     const caretWidth = this.state?.caretWidth ?? DEFAULT_CARET_WIDTH;
-    return Math.max(0, this.contentWidth() + caretWidth - this.innerWidth);
+    const width = this.painted?.width ?? 0;
+    return Math.max(0, width + caretWidth - this.innerWidth);
   }
 
   private maxScrollY(): number {
     if (this.state?.multiline !== true) return 0;
-    return Math.max(0, this.contentHeight() - this.innerHeight);
+    return Math.max(0, this.scrollHeight - this.innerHeight);
   }
 
   /** Maps a world point to pixels measured from the inner box's top-left. */
@@ -870,34 +877,64 @@ export class EditableText {
     );
   }
 
-  /** Maps a world point to Troika's text-local coordinates. */
+  /** Maps a world point to text coordinates, where y grows upwards from zero. */
   private toTextCoords(point: THREE.Vector3): THREE.Vector2 | undefined {
     const inner = this.toInnerPoint(point);
     if (inner == null) return undefined;
     return new THREE.Vector2(inner.x + this.scrollX, -inner.y - this.scrollY);
   }
 
-  /**
-   * Keeps indices on UTF-16 code point boundaries. Troika splits the advance of
-   * an astral character across both of its code units, so a hit inside an emoji
-   * resolves to whichever of its edges is nearer, exactly like a native input.
-   */
-  private snapIndex(
-    snapshot: LayoutSnapshot,
-    index: number,
-    x: number
-  ): number {
-    const value = snapshot.value;
-    if (index <= 0 || index >= value.length) return clampIndex(value, index);
-    if (!isInsideSurrogatePair(value, index)) return index;
-    const before = snapshot.caretByIndex.get(index - 1);
-    const after = snapshot.caretByIndex.get(index + 1);
-    if (before == null) return index + 1;
-    if (after == null) return index - 1;
-    return Math.abs(x - before.x) <= Math.abs(x - after.x)
-      ? index - 1
-      : index + 1;
+  private fail(failure: EditableTextFailure): void {
+    if (this.disposed) return;
+    this.failure = failure;
+    this.layout = undefined;
+    this.painted = undefined;
+    this.layoutKey = '';
+    this.paintKey = '';
+    this.revealKey = '';
+    this.glyphs.visible = false;
+    this.selection.mesh.visible = false;
+    this.caret.mesh.visible = false;
+    this.options.onError?.(failure);
   }
+}
+
+interface GlyphSurface {
+  readonly mesh: THREE.Mesh;
+  readonly canvas?: HTMLCanvasElement;
+  readonly context?: CanvasRenderingContext2D;
+  readonly texture?: THREE.CanvasTexture;
+}
+
+/**
+ * Builds the textured plane the glyphs are painted onto. A document that cannot
+ * provide a 2D context still yields a mesh, so the caller can report the
+ * failure instead of leaving a half-constructed object behind.
+ */
+function createGlyphSurface(): GlyphSurface {
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext('2d') ?? undefined;
+  const texture = context == null ? undefined : new THREE.CanvasTexture(canvas);
+  if (texture != null) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+  }
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'EditableTextGlyphs';
+  mesh.frustumCulled = false;
+  mesh.userData.color = new THREE.Color(0xffffff);
+  return {mesh, canvas, context, texture};
 }
 
 interface QuadMesh {
@@ -982,197 +1019,55 @@ function createQuadMesh(name: string): QuadMesh {
 }
 
 function resolveState(state: EditableTextState): ResolvedState {
-  // Browsers normalize `\r\n` in input values, and Troika normalizes it again
-  // during typesetting; doing it here keeps our indices aligned with both.
+  // Browsers already normalize `\r\n` in input values; repeating it keeps our
+  // indices aligned even when a caller assembles the value itself.
   const text = state.text.replace(/\r\n?/g, '\n');
   const rawStart = clampIndex(text, state.selectionStart ?? 0);
   const rawEnd = clampIndex(text, state.selectionEnd ?? rawStart);
-  const start = alignIndex(text, Math.min(rawStart, rawEnd));
-  const end = alignIndex(text, Math.max(rawStart, rawEnd));
   return {
     text,
     placeholder: state.placeholder ?? '',
     multiline: state.multiline ?? false,
     focused: state.focused ?? false,
     caretVisible: state.caretVisible ?? true,
-    selectionStart: start,
-    selectionEnd: end,
+    selectionStart: Math.min(rawStart, rawEnd),
+    selectionEnd: Math.max(rawStart, rawEnd),
     selectionDirection: state.selectionDirection ?? 'none',
-    fontSize: state.fontSize ?? DEFAULT_FONT_SIZE,
+    fontSize: state.fontSize ?? DEFAULT_TEXT_FONT_SIZE,
     lineHeight: state.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
     fontWeight: state.fontWeight ?? 'normal',
     textAlign: state.textAlign ?? 'left',
     direction: state.direction ?? 'auto',
-    color: state.color ?? '#ffffff',
-    placeholderColor: state.placeholderColor ?? '#888888',
-    caretColor: state.caretColor ?? state.color ?? '#ffffff',
-    selectionColor: state.selectionColor ?? '#3b82f6',
+    color: state.color ?? DEFAULT_TEXT_COLOR,
+    placeholderColor: state.placeholderColor ?? DEFAULT_PLACEHOLDER_COLOR,
+    caretColor: state.caretColor ?? state.color ?? DEFAULT_TEXT_COLOR,
+    selectionColor: state.selectionColor ?? DEFAULT_SELECTION_COLOR,
     selectionOpacity: state.selectionOpacity ?? DEFAULT_SELECTION_OPACITY,
     caretWidth: state.caretWidth ?? DEFAULT_CARET_WIDTH,
     opacity: state.opacity ?? 1,
     depthTest: state.depthTest ?? true,
     depthOffset: state.depthOffset ?? 0,
     renderOrder: state.renderOrder ?? 0,
-    font: state.font,
   };
 }
 
-/**
- * Troika needs at least one character to produce font metrics, so an empty
- * value renders the placeholder, or a space when there is none.
- */
-function renderedText(state: ResolvedState): string {
-  if (state.text.length > 0) return state.text;
-  return state.placeholder.length > 0 ? state.placeholder : ' ';
-}
-
-function buildSnapshot(
-  revision: number,
-  state: ResolvedState,
-  info: TroikaTextRenderInfo
-): LayoutSnapshot {
-  const rendered = renderedText(state);
-  const carets = info.caretPositions ?? new Float32Array(0);
-  const blockBounds = info.blockBounds ?? [0, 0, 0, 0];
-  const lineHeight = info.lineHeight || state.fontSize * state.lineHeight;
-  const rows =
-    state.text.length === 0
-      ? placeholderRows(carets)
-      : buildRows(state.text, carets, lineHeight, blockBounds, state.textAlign);
-  const caretByIndex = new Map<number, CaretEntry>();
-  for (const row of rows) {
-    for (const caret of row.carets) {
-      if (!caretByIndex.has(caret.index)) caretByIndex.set(caret.index, caret);
-    }
-  }
+function layoutStyle(state: ResolvedState, width: number): EditableTextStyle {
   return {
-    revision,
-    value: state.text,
-    rendered,
-    placeholderVisible: state.text.length === 0 && state.placeholder.length > 0,
-    info,
-    carets,
-    blockBounds,
-    lineHeight,
-    rows,
-    caretByIndex,
+    fontSize: state.fontSize,
+    fontWeight: state.fontWeight,
+    lineHeight:
+      state.lineHeight > 0
+        ? state.fontSize * state.lineHeight
+        : state.fontSize * DEFAULT_TEXT_LINE_HEIGHT,
+    textAlign: state.textAlign,
+    direction: state.direction,
+    multiline: state.multiline,
+    width,
   };
 }
 
-/** Single caret at the start of the rendered placeholder or space. */
-function placeholderRows(carets: Float32Array): CaretRow[] {
-  if (carets.length < CARET_POSITION_STRIDE) return [];
-  const entry: CaretEntry = {
-    index: 0,
-    x: carets[0],
-    bottom: carets[2],
-    top: carets[3],
-  };
-  return [{top: entry.top, bottom: entry.bottom, carets: [entry]}];
-}
-
-/**
- * Groups caret positions into rendered rows using Troika's own "overlapping by
- * at least half" rule, then completes each row with the caret that sits after
- * its last character. Soft-wrapped rows therefore expose the index that a
- * native `End` key would produce without any newline counting.
- */
-function buildRows(
-  value: string,
-  carets: Float32Array,
-  lineHeight: number,
-  blockBounds: readonly number[],
-  textAlign: 'left' | 'center' | 'right'
-): CaretRow[] {
-  const rows: CaretRow[] = [];
-  let row: CaretRow | undefined;
-  const count = Math.min(
-    value.length,
-    Math.floor(carets.length / CARET_POSITION_STRIDE)
-  );
-  for (let index = 0; index < count; index++) {
-    const offset = index * CARET_POSITION_STRIDE;
-    const x = carets[offset];
-    const bottom = carets[offset + 2];
-    const top = carets[offset + 3];
-    if (row == null || top < (row.top + row.bottom) / 2) {
-      row = {top, bottom, carets: []};
-      rows.push(row);
-    }
-    if (top > row.top) row.top = top;
-    if (bottom < row.bottom) row.bottom = bottom;
-    row.carets.push({index, x, bottom, top});
-  }
-  if (rows.length === 0) return rows;
-  for (const current of rows) {
-    const last = current.carets[current.carets.length - 1];
-    if (value[last.index] === '\n') continue;
-    current.carets.push({
-      index: last.index + 1,
-      x: carets[last.index * CARET_POSITION_STRIDE + 1],
-      bottom: last.bottom,
-      top: last.top,
-    });
-  }
-  if (value.endsWith('\n')) {
-    const last = rows[rows.length - 1];
-    rows.push({
-      top: last.top - lineHeight,
-      bottom: last.bottom - lineHeight,
-      carets: [
-        {
-          index: value.length,
-          x: lineStartX(blockBounds, textAlign),
-          bottom: last.bottom - lineHeight,
-          top: last.top - lineHeight,
-        },
-      ],
-    });
-  }
-  return rows;
-}
-
-function lineStartX(
-  blockBounds: readonly number[],
-  textAlign: 'left' | 'center' | 'right'
-): number {
-  if (textAlign === 'center') return (blockBounds[0] + blockBounds[2]) / 2;
-  if (textAlign === 'right') return blockBounds[2];
-  return blockBounds[0];
-}
-
-function nearestRow(
-  rows: readonly CaretRow[],
-  y: number
-): CaretRow | undefined {
-  let closest: CaretRow | undefined;
-  for (const row of rows) {
-    if (
-      closest == null ||
-      Math.abs(y - (row.top + row.bottom) / 2) <
-        Math.abs(y - (closest.top + closest.bottom) / 2)
-    ) {
-      closest = row;
-    }
-  }
-  return closest;
-}
-
-/**
- * Finds the row an index belongs to, preferring the row where it is a real
- * caret over the row where it only closes a soft wrap.
- */
-function rowIndexOf(rows: readonly CaretRow[], index: number): number {
-  let fallback = -1;
-  for (let row = 0; row < rows.length; row++) {
-    const carets = rows[row].carets;
-    for (let i = 0; i < carets.length; i++) {
-      if (carets[i].index !== index) continue;
-      if (i < carets.length - 1 || row === rows.length - 1) return row;
-      if (fallback < 0) fallback = row;
-    }
-  }
-  return fallback;
+function placeholderVisible(state: ResolvedState): boolean {
+  return state.text.length === 0 && state.placeholder.length > 0;
 }
 
 function focusIndex(
@@ -1202,7 +1097,7 @@ function matchesSelection(
   );
 }
 
-function clipQuad(quad: Quad, clip: Quad): Quad | undefined {
+function clipQuad(quad: TextRect, clip: Quad): Quad | undefined {
   const left = Math.max(quad.left, clip.left);
   const right = Math.min(quad.right, clip.right);
   const bottom = Math.max(quad.bottom, clip.bottom);
@@ -1218,21 +1113,4 @@ function clamp(value: number, minimum: number, maximum: number): number {
 function clampIndex(value: string, index: number): number {
   if (!Number.isFinite(index)) return 0;
   return clamp(Math.round(index), 0, value.length);
-}
-
-function isInsideSurrogatePair(value: string, index: number): boolean {
-  const previous = value.charCodeAt(index - 1);
-  const current = value.charCodeAt(index);
-  return (
-    previous >= 0xd800 &&
-    previous <= 0xdbff &&
-    current >= 0xdc00 &&
-    current <= 0xdfff
-  );
-}
-
-function alignIndex(value: string, index: number): number {
-  const clamped = clampIndex(value, index);
-  if (clamped <= 0 || clamped >= value.length) return clamped;
-  return isInsideSurrogatePair(value, clamped) ? clamped - 1 : clamped;
 }
