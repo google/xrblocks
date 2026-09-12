@@ -337,6 +337,12 @@
       </div>
     </main>
 
-    <script type="module" src="./main.js"></script>
+    <script
+      type="module"
+      onerror="document.getElementById('status').textContent = 'Roomcraft startup could not load. Check the connection and reload this page.'"
+    >
+      import {startRoomcraftPage} from './Startup.js';
+      void startRoomcraftPage();
+    </script>
   </body>
 </html>

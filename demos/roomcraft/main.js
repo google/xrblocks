@@ -2185,7 +2185,8 @@ export function createRoomcraftOptions(virtual = false) {
   return options;
 }
 
-export async function startRoomcraftDemo() {
+export async function startRoomcraftDemo(onProgress = () => {}) {
+  onProgress('initializing-sdk', 'Starting XR Blocks...');
   const virtual = !!xb.getUrlParameter(ENVIRONMENT_MODE_PARAMETER);
   const options = createRoomcraftOptions(virtual);
 
@@ -2214,12 +2215,14 @@ export async function startRoomcraftDemo() {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   }
+  onProgress('loading-scene', 'Loading the starter scene...');
   await consoleScript.start();
   if (
     xb.getUrlParameter('collab') === '1' &&
     !consoleScript.disposed &&
     !consoleScript.pageLeft
   ) {
+    onProgress('joining-room');
     try {
       const {startCollaboration} = await import('./Collaboration.js');
       if (!consoleScript.disposed && !consoleScript.pageLeft) {
@@ -2234,19 +2237,3 @@ export async function startRoomcraftDemo() {
   }
   return consoleScript;
 }
-
-document.addEventListener(
-  'DOMContentLoaded',
-  () => {
-    void startRoomcraftDemo().catch((error) => {
-      console.error('[roomcraft] Startup failed', error);
-      document.getElementById('status').textContent =
-        'Roomcraft could not start.';
-      const message = document.getElementById('error');
-      message.textContent =
-        error instanceof Error ? error.message : String(error);
-      message.hidden = false;
-    });
-  },
-  {once: true}
-);

@@ -12,6 +12,8 @@ From the repository root, run `npm run build:sdk`, then `npm run serve`, and ope
 
 The page opens on a handcrafted reading nook without an API key. The starter catalog uses procedural geometry, while browser dependencies and the SDK's default simulator environment still load from CDNs.
 
+A dependency-independent launcher reports module loading and SDK initialization before the scene starts. Late module evaluation still starts the page even if DOM readiness has already fired. Import or initialization failures appear in the page's error area rather than leaving the initial loading message indefinitely; a slow import remains marked as loading rather than being reported as a successful or failed scene.
+
 Open `http://127.0.0.1:8080/demos/roomcraft/?environment=1` instead for the optional fully virtual mode described below. The default page is unchanged by that option.
 
 To open a saved scene on another device, serve its exported JSON alongside the demo and append `&scene=./garden.json` to the virtual-mode URL. The file is imported through `applyLayout`, without making an AI request. Saved-scene downloads use the same HTTP(S) origin, send no credentials, and reject redirects. A failed or invalid import shows an error instead of substituting an example, and edits made while the file downloads are kept rather than overwritten.
