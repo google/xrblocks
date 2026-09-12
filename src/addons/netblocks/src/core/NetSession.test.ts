@@ -1,18 +1,22 @@
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
 
 // NetSession imports `xrblocks` only to read `xb.core.sound.listener` inside
 // open(). The real module instantiates a Core (and AudioContext) at import
-// time, which jsdom can't satisfy — and we never call open() here anyway.
+// time, which jsdom can't satisfy.
 // `RemoteUserAvatar` also reaches into `xb.StylizedFace` in its
 // constructor, so stub that with a bare Object3D.
+const mockCore = vi.hoisted(() => ({
+  sound: {listener: undefined as unknown},
+}));
+
 vi.mock('xrblocks', async () => {
   const T = await import('three');
   class FakeUIElement extends T.Object3D {
     dispose() {}
   }
   return {
-    core: undefined,
+    core: mockCore,
     StylizedFace: class extends T.Object3D {
       dispose() {}
     },
@@ -36,9 +40,10 @@ import {
   NetObjectSnapshotMessage,
 } from './codec/MessageCodec';
 import {NET_PROTOCOL_VERSION} from './constants/NetConstants';
-import {NetSession} from './NetSession';
+import {NetSession, PlaybackStateEventDetail} from './NetSession';
 import {NetObject} from './objects/NetObject';
 import {Transport} from './transport/Transport';
+import {SpatialVoice} from './voice/SpatialVoice';
 
 class FakeTransport extends Transport {
   readonly name = 'fake';
@@ -66,6 +71,288 @@ class FakeTransport extends Transport {
 function decodeSent(sent: Array<{payload: Uint8Array; to?: string}>) {
   return sent.map((s) => ({to: s.to, msg: decodeMessage(s.payload)}));
 }
+
+describe('NetSession incoming playback preferences', () => {
+  const sessions: NetSession[] = [];
+
+  afterEach(() => {
+    for (const session of sessions) session.close();
+    sessions.length = 0;
+    mockCore.sound.listener = undefined;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function setup() {
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    sessions.push(session);
+    const changes: PlaybackStateEventDetail[] = [];
+    session.addEventListener('playback-state', (event) => {
+      changes.push((event as CustomEvent<PlaybackStateEventDetail>).detail);
+    });
+    const attach = vi
+      .spyOn(SpatialVoice.prototype, 'attach')
+      .mockImplementation(() => {});
+    const playback = vi.spyOn(SpatialVoice.prototype, 'setPlaybackMuted');
+    const detach = vi.spyOn(SpatialVoice.prototype, 'detach');
+    const dispose = vi.spyOn(SpatialVoice.prototype, 'dispose');
+    return {transport, session, changes, attach, playback, detach, dispose};
+  }
+
+  function join(transport: FakeTransport, peerId: string) {
+    transport.receive(peerId, {
+      type: 'hello',
+      protocol: NET_PROTOCOL_VERSION,
+      capabilities: {pose: true, voice: true, netobject: true},
+    });
+  }
+
+  // Exercise VoiceChat's existing subscribers without creating WebRTC.
+  function track(session: NetSession, peerId: string, stream: MediaStream) {
+    const voice = session.voice as unknown as {
+      _onTrack: Set<(peerId: string, stream: MediaStream) => void>;
+    };
+    for (const callback of voice._onTrack) callback(peerId, stream);
+  }
+
+  function removeTrack(session: NetSession, peerId: string) {
+    const voice = session.voice as unknown as {
+      _onTrackRemoved: Set<(peerId: string) => void>;
+    };
+    for (const callback of voice._onTrackRemoved) callback(peerId);
+  }
+
+  it('keeps master and individual choices independent, emitting only real changes', async () => {
+    const {session, transport, changes, playback} = setup();
+    mockCore.sound.listener = {};
+    await session.open('room');
+    join(transport, 'bob');
+    join(transport, 'alice');
+    expect(session.playbackMuted).toBe(false);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(false);
+    session.setPlaybackMuted(false);
+    session.setPeerPlaybackMuted('bob', false);
+    expect(changes).toEqual([]);
+
+    session.setPeerPlaybackMuted('bob', true);
+    session.setPeerPlaybackMuted('bob', true);
+    session.setPlaybackMuted(true);
+    session.setPlaybackMuted(true);
+    expect(session.playbackMuted).toBe(true);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(true);
+    expect(session.isPeerPlaybackMuted('alice')).toBe(false);
+    session.setPlaybackMuted(false);
+    expect(playback.mock.calls.slice(-2)).toEqual([
+      ['bob', true],
+      ['alice', false],
+    ]);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(true);
+    session.setPlaybackMuted(true);
+    session.setPeerPlaybackMuted('bob', false);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(false);
+    expect(playback).toHaveBeenLastCalledWith('bob', true);
+    session.setPlaybackMuted(false);
+    expect(playback.mock.calls.slice(-2)).toEqual([
+      ['bob', false],
+      ['alice', false],
+    ]);
+    expect(changes).toEqual([
+      {peerId: 'bob', muted: true},
+      {muted: true},
+      {muted: false},
+      {muted: true},
+      {peerId: 'bob', muted: false},
+      {muted: false},
+    ]);
+  });
+
+  it('applies pre-open master and lazy per-peer choices to every new/replaced stream', async () => {
+    const {session, transport, attach} = setup();
+    const first = {} as MediaStream;
+    const replacement = {} as MediaStream;
+    session.setPlaybackMuted(true);
+    await session.open('room');
+    join(transport, 'bob');
+    join(transport, 'alice');
+    session.setPeerPlaybackMuted('bob', true);
+    track(session, 'bob', first);
+    expect(attach).not.toHaveBeenCalled();
+
+    mockCore.sound.listener = {};
+    track(session, 'alice', first);
+    expect(attach).toHaveBeenLastCalledWith(
+      'alice',
+      session.users.get('alice')!.avatar.headPivot,
+      first,
+      true
+    );
+    session.setPlaybackMuted(false);
+    track(session, 'bob', first);
+    track(session, 'bob', replacement);
+    expect(attach).toHaveBeenLastCalledWith(
+      'bob',
+      session.users.get('bob')!.avatar.headPivot,
+      replacement,
+      true
+    );
+    track(session, 'alice', replacement);
+    expect(attach).toHaveBeenLastCalledWith(
+      'alice',
+      session.users.get('alice')!.avatar.headPivot,
+      replacement,
+      false
+    );
+    expect(new Set(attach.mock.contexts).size).toBe(1);
+  });
+
+  it.each(['bye', 'peer-leave'] as const)(
+    'retains choices on track removal but clears only the departing ID on %s',
+    async (leave) => {
+      const {session, transport, attach, detach, changes} = setup();
+      mockCore.sound.listener = {};
+      await session.open('room');
+      join(transport, 'bob');
+      join(transport, 'alice');
+      session.setPeerPlaybackMuted('bob', true);
+      session.setPeerPlaybackMuted('alice', true);
+      const stream = {} as MediaStream;
+      track(session, 'bob', stream);
+      removeTrack(session, 'bob');
+      expect(detach).toHaveBeenLastCalledWith('bob');
+      expect(session.isPeerPlaybackMuted('bob')).toBe(true);
+      track(session, 'bob', stream);
+      expect(attach).toHaveBeenLastCalledWith(
+        'bob',
+        session.users.get('bob')!.avatar.headPivot,
+        stream,
+        true
+      );
+      if (leave === 'bye') transport.receive('bob', {type: 'bye'});
+      else
+        transport.dispatchEvent(
+          new CustomEvent('peer-leave', {detail: {peerId: 'bob'}})
+        );
+      expect(session.isPeerPlaybackMuted('bob')).toBe(false);
+      expect(session.isPeerPlaybackMuted('alice')).toBe(true);
+      join(transport, 'bob');
+      track(session, 'bob', stream);
+      expect(attach).toHaveBeenLastCalledWith(
+        'bob',
+        session.users.get('bob')!.avatar.headPivot,
+        stream,
+        false
+      );
+      expect(changes).toEqual([
+        {peerId: 'bob', muted: true},
+        {peerId: 'alice', muted: true},
+      ]);
+    }
+  );
+
+  it('does not capture/toggle the mic, close connections, or announce voice changes', async () => {
+    const {session, transport} = setup();
+    const mic = Object.assign(new EventTarget(), {
+      enabled: true,
+      stop: vi.fn(),
+    });
+    const gum = vi.fn(async () => ({
+      getTracks: () => [mic],
+      getAudioTracks: () => [mic],
+    }));
+    vi.stubGlobal('navigator', {mediaDevices: {getUserMedia: gum}});
+    await session.open('room');
+    join(transport, 'bob');
+    session.setPlaybackMuted(true);
+    expect(gum).not.toHaveBeenCalled();
+    expect(session.voice.isEnabled()).toBe(false);
+    await session.voice.enable(new Set());
+    const close = vi.fn();
+    const inner = session.voice as unknown as {
+      _peers: Map<string, {pc: {close: () => void}}>;
+    };
+    inner._peers.set('bob', {pc: {close}});
+    const setMuted = vi.spyOn(session.voice, 'setMuted');
+    const voiceChange = vi.fn();
+    for (const name of [
+      'voice-state',
+      'local-voice-state',
+      'peer-voice-state',
+    ]) {
+      session.addEventListener(name, voiceChange);
+    }
+    transport.sent.length = 0;
+    session.setPeerPlaybackMuted('bob', true);
+    session.setPlaybackMuted(false);
+    session.setPlaybackMuted(true);
+    session.setPeerPlaybackMuted('bob', false);
+    expect(mic.enabled).toBe(true);
+    expect(mic.stop).not.toHaveBeenCalled();
+    expect(gum).toHaveBeenCalledOnce();
+    expect(setMuted).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(session.voice.isEnabled()).toBe(true);
+    expect(session.voice.isMuted()).toBe(false);
+    expect(voiceChange).not.toHaveBeenCalled();
+    expect(transport.sent).toEqual([]);
+  });
+
+  it('disposes its graph and preferences, ignoring late tracks after close', async () => {
+    const {session, transport, attach, dispose} = setup();
+    mockCore.sound.listener = {};
+    await session.open('room');
+    join(transport, 'bob');
+    session.setPlaybackMuted(true);
+    session.setPeerPlaybackMuted('bob', true);
+    track(session, 'bob', {} as MediaStream);
+    session.close();
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(session.playbackMuted).toBe(false);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(false);
+    track(session, 'bob', {} as MediaStream);
+    expect(attach).toHaveBeenCalledOnce();
+    session.close();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it('clears a stored master preference when closed before open', () => {
+    const {session} = setup();
+    session.setPlaybackMuted(true);
+    session.close();
+    expect(session.playbackMuted).toBe(false);
+  });
+
+  it('rejects invalid values explicitly without changing state or emitting events', async () => {
+    const {session, transport, changes} = setup();
+    await session.open('room');
+    join(transport, 'bob');
+    for (const muted of [undefined, null, 0, 1, 'true', {}]) {
+      expect(() => session.setPlaybackMuted(muted as boolean)).toThrow(
+        TypeError
+      );
+      expect(() =>
+        session.setPeerPlaybackMuted('bob', muted as boolean)
+      ).toThrow(TypeError);
+    }
+    for (const peerId of [undefined, null, '', '  ', 123]) {
+      expect(() =>
+        session.setPeerPlaybackMuted(peerId as string, true)
+      ).toThrow(TypeError);
+      expect(() => session.isPeerPlaybackMuted(peerId as string)).toThrow(
+        TypeError
+      );
+    }
+    for (const peerId of ['unknown', session.localPeerId]) {
+      expect(() => session.setPeerPlaybackMuted(peerId, true)).toThrow(
+        RangeError
+      );
+      expect(session.isPeerPlaybackMuted(peerId)).toBe(false);
+    }
+    expect(session.playbackMuted).toBe(false);
+    expect(session.isPeerPlaybackMuted('bob')).toBe(false);
+    expect(changes).toEqual([]);
+  });
+});
 
 describe('NetSession hello handler', () => {
   it('announces muted transmission to new peers and exposes remote mic state', async () => {

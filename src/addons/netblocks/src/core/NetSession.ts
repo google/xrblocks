@@ -90,7 +90,15 @@ export type NetSessionEventName =
   | 'voice-state'
   | 'local-voice-state'
   | 'peer-voice-state'
+  | 'playback-state'
   | 'voice-error';
+
+/** A local playback preference change, independent of microphone intent. */
+export interface PlaybackStateEventDetail {
+  /** Absent for the master toggle; otherwise the peer's individual choice. */
+  peerId?: string;
+  muted: boolean;
+}
 
 export interface UserEventDetail {
   user: NetUser;
@@ -125,6 +133,8 @@ export class NetSession extends EventTarget {
   > &
     NetSessionOptions;
   private _spatialVoice?: SpatialVoice;
+  private _playbackMuted = false;
+  private _mutedPlaybackPeers = new Set<string>();
   private _isOpen = false;
   private _lastUpdateMs = 0;
   private _capabilities = {...DEFAULT_CAPABILITIES};
@@ -257,6 +267,74 @@ export class NetSession extends EventTarget {
     return this._users;
   }
 
+  /** Whether all incoming voice is muted for this local listener. */
+  get playbackMuted(): boolean {
+    return this._playbackMuted;
+  }
+
+  /**
+   * Mute incoming voice only, retaining each peer's individual choice.
+   * May be set before open(); never changes the microphone or scene sounds.
+   * Emits `playback-state` only when this preference changes.
+   */
+  setPlaybackMuted(muted: boolean): void {
+    if (typeof muted !== 'boolean') {
+      throw new TypeError('muted must be a boolean');
+    }
+    if (this._playbackMuted === muted) return;
+    this._playbackMuted = muted;
+    for (const peerId of this._users.keys()) {
+      this._spatialVoice?.setPlaybackMuted(
+        peerId,
+        muted || this._mutedPlaybackPeers.has(peerId)
+      );
+    }
+    this.dispatchEvent(
+      new CustomEvent<PlaybackStateEventDetail>('playback-state', {
+        detail: {muted},
+      })
+    );
+  }
+
+  /**
+   * Mute a current peer's incoming voice for this listener only.
+   * Retained across stream replacement/removal, cleared on peer leave/close.
+   * Emits `playback-state` only when this individual preference changes.
+   *
+   * @throws TypeError for a non-boolean mute or an empty/non-string peer ID.
+   * @throws RangeError if the peer is not in `users`.
+   */
+  setPeerPlaybackMuted(peerId: string, muted: boolean): void {
+    this._validatePlaybackPeerId(peerId);
+    if (typeof muted !== 'boolean') {
+      throw new TypeError('muted must be a boolean');
+    }
+    if (!this._users.has(peerId)) {
+      throw new RangeError(`Unknown playback peer: ${peerId}`);
+    }
+    if (this._mutedPlaybackPeers.has(peerId) === muted) return;
+    if (muted) this._mutedPlaybackPeers.add(peerId);
+    else this._mutedPlaybackPeers.delete(peerId);
+    this._spatialVoice?.setPlaybackMuted(peerId, this._playbackMuted || muted);
+    this.dispatchEvent(
+      new CustomEvent<PlaybackStateEventDetail>('playback-state', {
+        detail: {peerId, muted},
+      })
+    );
+  }
+
+  /** Individual choice, unaffected by master mute; false for departed peers. */
+  isPeerPlaybackMuted(peerId: string): boolean {
+    this._validatePlaybackPeerId(peerId);
+    return this._mutedPlaybackPeers.has(peerId);
+  }
+
+  private _validatePlaybackPeerId(peerId: string): void {
+    if (typeof peerId !== 'string' || !peerId.trim()) {
+      throw new TypeError('peerId must be a non-empty string');
+    }
+  }
+
   /** Connect the underlying transport and announce ourselves. */
   async open(roomId: string): Promise<void> {
     await this.transport.connect({roomId});
@@ -300,6 +378,10 @@ export class NetSession extends EventTarget {
   }
 
   close(): void {
+    this._spatialVoice?.dispose();
+    this._spatialVoice = undefined;
+    this._playbackMuted = false;
+    this._mutedPlaybackPeers.clear();
     if (!this._isOpen) return;
     this._isOpen = false;
     if (typeof window !== 'undefined') {
@@ -469,11 +551,12 @@ export class NetSession extends EventTarget {
       clearTimeout(pending);
       this._pendingJoinTimers.delete(peerId);
     }
+    this._mutedPlaybackPeers.delete(peerId);
+    this._spatialVoice?.detach(peerId);
     const user = this._users.get(peerId);
     if (!user) return;
     this.netObjects.releaseOwnedBy(peerId);
     this.voice.notifyPeerLeft(peerId);
-    this._spatialVoice?.detach(peerId);
     user.dispose();
     this._users.delete(peerId);
     this.dispatchEvent(
@@ -729,13 +812,19 @@ export class NetSession extends EventTarget {
   }
 
   private _onVoiceTrack(peerId: string, stream: MediaStream): void {
+    if (!this._isOpen) return;
     if (!this._spatialVoice) {
       const listener = xb.core?.sound?.listener;
       if (listener) this._spatialVoice = new SpatialVoice(listener);
     }
     const user = this._users.get(peerId);
     if (!this._spatialVoice || !user) return;
-    this._spatialVoice.attach(peerId, user.avatar.headPivot, stream);
+    this._spatialVoice.attach(
+      peerId,
+      user.avatar.headPivot,
+      stream,
+      this._playbackMuted || this._mutedPlaybackPeers.has(peerId)
+    );
     this.dispatchEvent(
       new CustomEvent('voice-state', {detail: {peerId, on: true}})
     );

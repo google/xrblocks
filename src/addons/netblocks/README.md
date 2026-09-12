@@ -177,6 +177,32 @@ connection, parented to each peer's `headPivot` via
 
 `voice.setMuted(true)` silences outgoing microphone tracks while keeping incoming audio connected. `isMuted()` reports transmission state; `isEnabled()` reports whether microphone capture is acquired. Muting is retained when peers join or renegotiate, and unmuting does not request another stream. `disable()` is full teardown: it releases capture and audio connections and cancels a pending microphone grant. Listening-only peers can receive audio without enabling their microphone, independent of peer ID ordering.
 
+Incoming playback is separately controlled on `NetSession`:
+
+```ts
+session.setPlaybackMuted(true); // All incoming voice, for this listener only.
+session.playbackMuted; // Readonly master preference.
+session.setPeerPlaybackMuted(peerId, true); // A current session.users peer.
+session.isPeerPlaybackMuted(peerId); // Individual choice, ignoring master.
+```
+
+Both preferences default to false. A peer is silent when **master OR individual**
+mute is true, so turning master mute off preserves individual choices. Muting
+affects only the peer's existing spatial audio gain, never microphone capture,
+voice announcements, connections, the shared listener, or other scene sounds.
+New/replacement streams are gated before connecting, including when the listener
+initializes after preferences were set. Stream removal retains the choice; peer
+leave removes it. `close()` disposes the incoming graph and clears all playback
+preferences without disposing the shared listener. Applications can retain and
+reapply the master preference across sessions; display names are not peer identity.
+
+The setters emit a local `playback-state` `CustomEvent<PlaybackStateEventDetail>`
+only on preference changes: `{muted}` for master, `{peerId, muted}` for individual
+(not effective) mute. Observe `user-leave` / `close` for lifecycle resets.
+Mute arguments must be booleans and peer IDs non-empty strings (`TypeError`
+otherwise); setting a peer not in `session.users` throws `RangeError`.
+Reading an unknown/departed peer's individual choice returns false.
+
 `VoiceChatOptions.onLocalStateChange` retains its enable/disable semantics. The optional `onLocalMuteChange` reports mute changes separately, and `onError` reports capture or peer-connection failures. `NetSession` combines mic state into `local-voice-state`, exposes received mic intent through `peer-voice-state`, and forwards errors through `voice-error`. Mic intent is not proof that another person can hear audio. Applications can separately subscribe to `user-update` to refresh metadata that arrives after a peer's initial join.
 
 ---
