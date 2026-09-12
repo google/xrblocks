@@ -289,6 +289,27 @@
   font-size: 12px;
 }
 
+.rc-collab-settings {
+  border: 1px solid var(--rc-line);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+.rc-collab-settings > summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.rc-collab-settings > summary:focus-visible {
+  outline: 2px solid var(--rc-coral);
+  outline-offset: 3px;
+}
+
+.rc-collab-settings > .rc-collab-fields,
+.rc-collab-settings > .rc-fineprint {
+  margin-top: 12px;
+}
+
 .rc-collab-fields[hidden] {
   display: none;
 }

@@ -165,6 +165,7 @@ class Collaboration {
         'collabRetry',
         'collabLink',
         'collabConnection',
+        'collabSettings',
         'collabTransport',
         'collabTransportHelp',
         'collabRelayField',
@@ -488,7 +489,10 @@ class Collaboration {
 
   reportError(error, operation = 'sync') {
     if (this.disposed) return;
-    if (operation === 'configuration') this.invalidConfiguration = true;
+    if (operation === 'configuration') {
+      this.invalidConfiguration = true;
+      setProperty(this.dom.collabSettings, 'open', true);
+    }
     this.failure = `Collaboration ${operation}: ${error?.message ?? String(error)}`;
     this.consoleScript.showError(new Error(this.failure));
     this.consoleScript.setStatus(

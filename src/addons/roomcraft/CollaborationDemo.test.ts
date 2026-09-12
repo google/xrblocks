@@ -573,6 +573,29 @@ describe('collaboration panel', () => {
     consoleScript = await startRoomcraftDemo();
   });
 
+  it('keeps common audio controls before the roster and preserves the settings disclosure', () => {
+    const settings = element('collabSettings') as HTMLDetailsElement;
+    expect(settings.open).toBe(false);
+    expect(
+      element('collabVoice').compareDocumentPosition(element('collabPeers')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0);
+    expect(
+      element('collabPlayback').compareDocumentPosition(
+        element('collabPeers')
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0);
+    settings.open = true;
+    consoleScript.collaboration.render();
+    expect(settings.open).toBe(true);
+    settings.open = false;
+    consoleScript.collaboration.reportError(
+      new Error('Invalid relay'),
+      'configuration'
+    );
+    expect(settings.open).toBe(true);
+  });
+
   it('shares draft state and actions with the spatial subscriber without touching authoring', () => {
     const controller = consoleScript.collaboration;
     const prompt = element('prompt') as HTMLTextAreaElement;

@@ -77,37 +77,6 @@
           hidden
         >
           <h2 id="collabHeading" class="rc-heading">Collaboration</h2>
-          <form id="collabConnection" class="rc-collab-fields" novalidate>
-            <label for="collabTransport">Connection</label>
-            <select id="collabTransport" aria-describedby="collabTransportHelp">
-              <option value="broadcast">BroadcastChannel · same browser</option>
-              <option value="webrtc">WebRTC · cross-device / off-LAN</option>
-              <option value="websocket">WebSocket · existing relay</option>
-            </select>
-            <p id="collabTransportHelp" class="rc-fineprint"></p>
-            <div id="collabRelayField" class="rc-collab-fields" hidden>
-              <label for="collabRelay"
-                >Relay URL (no keys or credentials)</label
-              >
-              <input
-                id="collabRelay"
-                type="url"
-                placeholder="wss://relay.example/roomcraft"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </div>
-            <label for="collabName">Your display name</label>
-            <input id="collabName" maxlength="40" autocomplete="off" required />
-            <button id="collabConnect" class="rc-button" type="submit">
-              Apply &amp; reconnect
-            </button>
-          </form>
-          <p class="rc-fineprint">
-            Reconnect applies the name and transport without reloading your
-            local scene, and turns off your peer mic. Peers must use the same
-            room, mode and transport.
-          </p>
           <p
             id="collabStatus"
             class="rc-collab-status"
@@ -117,11 +86,58 @@
             Joining collaboration…
           </p>
           <p id="collabIdentity" class="rc-note rc-collab-identity"></p>
-          <ul
-            id="collabPeers"
-            class="rc-peers"
-            aria-label="Room participants"
-          ></ul>
+          <details id="collabSettings" class="rc-collab-settings">
+            <summary>Connection settings</summary>
+            <form id="collabConnection" class="rc-collab-fields" novalidate>
+              <label for="collabTransport">Connection</label>
+              <select
+                id="collabTransport"
+                aria-describedby="collabTransportHelp"
+              >
+                <option value="broadcast">
+                  BroadcastChannel · same browser
+                </option>
+                <option value="webrtc">WebRTC · cross-device / off-LAN</option>
+                <option value="websocket">WebSocket · existing relay</option>
+              </select>
+              <p id="collabTransportHelp" class="rc-fineprint"></p>
+              <div id="collabRelayField" class="rc-collab-fields" hidden>
+                <label for="collabRelay"
+                  >Relay URL (no keys or credentials)</label
+                >
+                <input
+                  id="collabRelay"
+                  type="url"
+                  placeholder="wss://relay.example/roomcraft"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </div>
+              <label for="collabName">Your display name</label>
+              <input
+                id="collabName"
+                maxlength="40"
+                autocomplete="off"
+                required
+              />
+              <button id="collabConnect" class="rc-button" type="submit">
+                Apply &amp; reconnect
+              </button>
+            </form>
+            <p class="rc-fineprint">
+              Reconnect applies the name and transport without reloading your
+              local scene, and turns off your peer mic. Peers must use the same
+              room, mode and transport.
+            </p>
+            <p class="rc-fineprint">
+              Share the peer link for the applied connection. It contains no API
+              key or display name: the recipient starts as Maker #### and can
+              choose their own name here. Each peer configures Gemini
+              separately. Edits can overwrite concurrent changes; local undo
+              writes a whole scene. Shared coordinates do not align physical
+              rooms.
+            </p>
+          </details>
           <div class="rc-row rc-row-wrap">
             <button id="collabRetry" class="rc-button" type="button">
               Retry sync
@@ -138,13 +154,6 @@
               >Open peer link</a
             >
           </div>
-          <p class="rc-fineprint">
-            Share the peer link for the applied connection. It contains no API
-            key or display name: the recipient starts as Maker #### and can
-            choose their own name above. Each peer configures Gemini separately.
-            Edits can overwrite concurrent changes; local undo writes a whole
-            scene. Shared coordinates do not align physical rooms.
-          </p>
           <h3 class="rc-heading">Live conversation · my microphone</h3>
           <button
             id="collabVoice"
@@ -177,6 +186,12 @@
             role="status"
             aria-live="polite"
           ></p>
+          <h3 class="rc-heading">People</h3>
+          <ul
+            id="collabPeers"
+            class="rc-peers"
+            aria-label="Room participants"
+          ></ul>
           <p class="rc-fineprint">
             Optional live conversation with peers, completely separate from
             Gemini Talk transcription. Audio uses WebRTC with STUN on every
