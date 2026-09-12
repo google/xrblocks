@@ -1,6 +1,6 @@
 import * as xb from 'xrblocks';
 
-const PAGE_SIZE = 3;
+const PAGE_SIZE = 2;
 const TRANSPORTS = [
   ['broadcast', 'Same browser'],
   ['webrtc', 'WebRTC'],
@@ -11,15 +11,15 @@ function setChanged(target, key, value) {
   if (target[key] !== value) target[key] = value;
 }
 
-function text(value, height = 28, style = {}) {
+function text(value, height = 32, style = {}) {
   return new xb.UIText({
     text: value,
     style: {
       width: '100%',
       height,
       flexShrink: 0,
-      fontSize: 24,
-      lineHeight: 1.15,
+      fontSize: 28,
+      lineHeight: 1.1,
       color: '#c2b6a8',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
@@ -60,15 +60,15 @@ export class CollaborationSpatialView {
     this.roomText = text('');
     this.transportText = text('');
     this.nameText = text('');
-    this.statusText = text('', 56);
-    this.errorText = text('', 64, {color: '#ffae98'});
+    this.statusText = text('', 36);
+    this.errorText = text('', 96, {color: '#ffae98'});
     this.appliedPanel = new xb.UIPanel({
       style: {
         width: '100%',
         height: 96,
         flexShrink: 0,
         flexDirection: 'column',
-        gap: 6,
+        gap: 0,
       },
       children: [this.roomText, this.transportText, this.nameText],
     });
@@ -89,40 +89,46 @@ export class CollaborationSpatialView {
       52
     );
 
-    this.microphoneStatus = text('', 48, {fontSize: 22, lineHeight: 1.08});
+    this.microphoneStatus = text('', 64, {fontSize: 26});
     this.roster = new xb.UIPanel({
       style: {
         width: '100%',
-        height: 214,
+        height: 180,
         flexShrink: 0,
         flexDirection: 'column',
-        gap: 8,
+        gap: 12,
       },
     });
-    this.emptyText = text('No participants connected.', 66);
+    this.emptyText = text(
+      'No other people connected. Share the peer link to invite someone.',
+      84
+    );
     this.roster.add(this.emptyText);
-    this.pageText = text('', 48, {
-      width: 200,
+    this.pageText = text('', 52, {
+      width: 240,
       textAlign: 'center',
       verticalAlign: 'middle',
     });
     this.peoplePanel = new xb.UIPanel({
       style: {
         width: '100%',
-        height: 434,
+        height: 424,
         flexShrink: 0,
         flexDirection: 'column',
         gap: 8,
       },
       children: [
-        row([
-          this.button('microphone', 'Unmute my mic', () =>
-            controller.toggleVoice()
-          ),
-          this.button('listening', 'Mute everyone for me', () =>
-            controller.togglePlayback()
-          ),
-        ]),
+        row(
+          [
+            this.button('microphone', 'Unmute my mic', () =>
+              controller.toggleVoice()
+            ),
+            this.button('listening', 'Mute everyone for me', () =>
+              controller.togglePlayback()
+            ),
+          ],
+          64
+        ),
         this.microphoneStatus,
         this.roster,
         row(
@@ -131,18 +137,18 @@ export class CollaborationSpatialView {
             this.pageText,
             this.button('next', 'Next', () => this.changePage(1)),
           ],
-          48
+          52
         ),
-        text('Room audio only. Gemini Talk is separate on Create / edit.', 36),
+        text('Local listening only. Gemini Talk is in Create / edit.', 32),
       ],
     });
 
-    this.transportHelp = text('', 96);
-    this.relayText = text('', 56);
+    this.transportHelp = text('', 88, {fontSize: 26, lineHeight: 1.08});
+    this.relayText = text('', 64);
     this.settingsPanel = new xb.UIPanel({
       style: {
         width: '100%',
-        height: 436,
+        height: 416,
         flexShrink: 0,
         flexDirection: 'column',
         gap: 8,
@@ -151,7 +157,7 @@ export class CollaborationSpatialView {
         this.transportHelp,
         row(
           [this.button('name', 'Edit name', () => this.editField('name'))],
-          64
+          60
         ),
         row(
           TRANSPORTS.map(([value, label]) =>
@@ -167,12 +173,13 @@ export class CollaborationSpatialView {
               this.editField('relay')
             ),
           ],
-          64
+          60
         ),
         this.relayText,
         text(
-          'Draft settings apply only with Reconnect. Enter saves the field; it never generates or reconnects.',
-          64
+          'Enter finishes the field. Apply & reconnect changes the connection; it never generates.',
+          52,
+          {fontSize: 24, lineHeight: 1.05}
         ),
       ],
     });
@@ -208,7 +215,9 @@ export class CollaborationSpatialView {
         flexBasis: 0,
         minWidth: 0,
         height: '100%',
-        fontSize: 26,
+        fontSize: 30,
+        lineHeight: 1.1,
+        padding: 8,
         borderRadius: 14,
         backgroundColor: '#30292d',
         color: '#f6ece0',
@@ -249,13 +258,13 @@ export class CollaborationSpatialView {
   }
 
   createParticipant(participant) {
-    const title = text('', 28, {fontSize: 24});
-    const detail = text('', 28, {fontSize: 22});
+    const title = text('', 38, {fontSize: 32, fontWeight: 'bold'});
+    const detail = text('', 30, {fontSize: 26});
     const toggle = this.button(`peer:${participant.id}`, 'Mute', () =>
       this.controller.togglePeerPlayback(participant.id)
     );
     toggle.style.flexGrow = 0;
-    toggle.style.flexBasis = 230;
+    toggle.style.flexBasis = 260;
     const panel = row(
       [
         new xb.UIPanel({
@@ -264,13 +273,13 @@ export class CollaborationSpatialView {
             flexBasis: 0,
             minWidth: 0,
             flexDirection: 'column',
-            gap: 2,
+            gap: 4,
           },
           children: [title, detail],
         }),
         toggle,
       ],
-      66
+      84
     );
     panel.name = `RoomcraftParticipant:${participant.id}`;
     this.roster.add(panel);
@@ -292,15 +301,19 @@ export class CollaborationSpatialView {
       `Applied transport: ${state.transportLabel}`
     );
     setChanged(this.nameText, 'text', `Applied name: ${state.applied.name}`);
-    setChanged(this.statusText, 'text', state.statusText);
+    setChanged(
+      this.statusText,
+      'text',
+      state.error ? 'Connection needs attention' : state.statusText
+    );
     setChanged(
       this.statusText.style,
       'color',
       state.status === 'ready' ? '#9db8a6' : '#c2b6a8'
     );
-    const errors = [state.error, state.microphone.error]
-      .filter(Boolean)
-      .join(' | ');
+    const errors = [
+      ...new Set([state.error, state.microphone.error].filter(Boolean)),
+    ].join(' | ');
     setChanged(this.errorText, 'text', errors);
     setChanged(this.errorText.style, 'display', errors ? 'flex' : 'none');
     setChanged(this.controls.get('connect'), 'label', 'Apply & reconnect');
@@ -320,7 +333,13 @@ export class CollaborationSpatialView {
       'backgroundColor',
       state.microphone.transmitting ? '#8d352c' : '#30292d'
     );
-    setChanged(this.microphoneStatus, 'text', state.microphone.statusText);
+    setChanged(
+      this.microphoneStatus,
+      'text',
+      state.microphone.error
+        ? `My microphone is ${state.microphone.transmitting ? 'on' : state.microphone.enabled ? 'muted' : 'off'}. Incoming audio is separate.`
+        : state.microphone.statusText
+    );
     setChanged(
       this.controls.get('listening'),
       'label',
@@ -385,9 +404,10 @@ export class CollaborationSpatialView {
       );
     }
 
-    const ids = new Set(
-      state.participants.map((participant) => participant.id)
+    const participants = state.participants.filter(
+      (participant) => !participant.local
     );
+    const ids = new Set(participants.map((participant) => participant.id));
     for (const [id, entry] of this.participantRows) {
       if (ids.has(id)) continue;
       entry.toggle.onClick = undefined;
@@ -396,9 +416,9 @@ export class CollaborationSpatialView {
       this.participantRows.delete(id);
       this.controls.delete(`peer:${id}`);
     }
-    const pages = Math.max(1, Math.ceil(state.participants.length / PAGE_SIZE));
+    const pages = Math.max(1, Math.ceil(participants.length / PAGE_SIZE));
     this.page = Math.max(0, Math.min(this.page, pages - 1));
-    state.participants.forEach((participant, index) => {
+    participants.forEach((participant, index) => {
       const entry =
         this.participantRows.get(participant.id) ??
         this.createParticipant(participant);
@@ -407,48 +427,36 @@ export class CollaborationSpatialView {
         'display',
         Math.floor(index / PAGE_SIZE) === this.page ? 'flex' : 'none'
       );
-      setChanged(
-        entry.title,
-        'text',
-        `mic ${participant.micOn ? 'on' : 'off'} - ${participant.name}${participant.local ? ' (you)' : ''}`
-      );
+      setChanged(entry.title, 'text', participant.name);
       setChanged(entry.title.style, 'color', participant.color);
       setChanged(
         entry.detail,
         'text',
-        participant.selection || 'Nothing selected'
+        `Mic ${participant.micOn ? 'on' : 'off'} - ${participant.selection || 'Nothing selected'}`
       );
       setChanged(
         entry.toggle,
         'label',
-        participant.local
-          ? 'Your microphone'
-          : participant.mutedForMe
-            ? 'Unmute for me'
-            : 'Mute for me'
+        participant.mutedForMe ? 'Unmute for me' : 'Mute for me'
       );
-      setChanged(
-        entry.toggle,
-        'disabled',
-        participant.local || !state.connected
-      );
+      setChanged(entry.toggle, 'disabled', !state.connected);
       setChanged(
         entry.toggle,
         'ariaLabel',
-        participant.local
-          ? 'Your microphone is controlled above'
-          : `${participant.mutedForMe ? 'Unmute' : 'Mute'} ${participant.name} for me`
+        `${participant.mutedForMe ? 'Unmute' : 'Mute'} ${participant.name} for me`
       );
     });
     setChanged(
       this.emptyText.style,
       'display',
-      state.participants.length ? 'none' : 'flex'
+      participants.length ? 'none' : 'flex'
     );
     setChanged(
       this.pageText,
       'text',
-      `${this.page + 1} / ${pages} (${state.participants.length})`
+      participants.length
+        ? `${this.page + 1}/${pages} (${participants.length} peer${participants.length === 1 ? '' : 's'})`
+        : 'Just you'
     );
     setChanged(this.controls.get('previous'), 'disabled', this.page === 0);
     setChanged(this.controls.get('next'), 'disabled', this.page === pages - 1);

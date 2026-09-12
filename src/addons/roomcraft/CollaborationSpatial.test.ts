@@ -276,7 +276,7 @@ describe('Roomcraft collaboration spatial view', () => {
     expect(controller.toggleVoice).toHaveBeenCalledTimes(1);
     expect(controller.togglePlayback).toHaveBeenCalledTimes(1);
     expect(controller.togglePeerPlayback).toHaveBeenCalledWith('peer-1');
-    activate('peer:peer-0');
+    expect(view.controls.has('peer:peer-0')).toBe(false);
     expect(controller.togglePeerPlayback).toHaveBeenCalledTimes(1);
     activate('settings');
     activate('transport:webrtc');
@@ -369,7 +369,7 @@ describe('Roomcraft collaboration spatial view', () => {
     controller.emit();
     expect(control('microphone').label).toBe('Mute my mic');
     expect(control('peer:peer-1').label).toBe('Unmute for me');
-    expect(view.participantRows.get('peer-1').title.text).toContain('mic on');
+    expect(view.participantRows.get('peer-1').detail.text).toContain('Mic on');
   });
 
   it('keeps settings editable during a pending connection when the shared model permits it', () => {
@@ -391,15 +391,16 @@ describe('Roomcraft collaboration spatial view', () => {
     const allRows = [...view.participantRows.values()];
     const visibleRows = () =>
       allRows.filter((entry) => entry.panel.style.display === 'flex');
-    expect(visibleRows()).toHaveLength(3);
-    expect(view.pageText.text).toBe('1 / 4 (11)');
+    expect(visibleRows()).toHaveLength(2);
+    expect(view.pageText.text).toBe('1/5 (10 peers)');
     activate('next');
-    expect(view.pageText.text).toBe('2 / 4 (11)');
+    expect(view.pageText.text).toBe('2/5 (10 peers)');
     expect(first.panel.style.display).toBe('none');
-    expect(visibleRows()).toHaveLength(3);
+    expect(visibleRows()).toHaveLength(2);
     activate('previous');
     expect(view.participantRows.get('peer-1')).toBe(first);
     expect(first.panel.style.display).toBe('flex');
+    activate('next');
     activate('next');
     activate('next');
     activate('next');
@@ -407,10 +408,25 @@ describe('Roomcraft collaboration spatial view', () => {
     expect(control('next').disabled).toBe(true);
     controller.state.participants = controller.state.participants.slice(0, 2);
     controller.emit();
-    expect(view.pageText.text).toBe('1 / 1 (2)');
+    expect(view.pageText.text).toBe('1/1 (1 peer)');
     expect(view.participantRows.get('peer-1')).toBe(first);
     expect(allRows[2].panel.parent).toBeNull();
     expect(allRows[2].toggle.onClick).toBeUndefined();
+  });
+
+  it('keeps my microphone separate from the remote roster and shows errors once', () => {
+    controller.state.participants = [participant(0, true)];
+    controller.state.error = 'Relay refused';
+    controller.state.microphone.error = 'Relay refused';
+    attach();
+    expect(view.participantRows.size).toBe(0);
+    expect(view.emptyText.style.display).toBe('flex');
+    expect(view.pageText.text).toBe('Just you');
+    expect(control('microphone').label).toBe(controller.state.microphone.label);
+    expect(view.statusText.text).toBe('Connection needs attention');
+    expect(view.errorText.text).toBe('Relay refused');
+    expect(view.microphoneStatus.text).not.toContain('Relay refused');
+    expect(control('microphone').style.fontSize).toBe(30);
   });
 
   it.each([false, true])(
