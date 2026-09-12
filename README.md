@@ -208,7 +208,7 @@ then set Prettier as your default formatter.
 
 #### Devtools
 
-For local before/after Chrome measurements, see the [standalone profiler](tools/README.md). It records interleaved samples and raw traces and generates a static HTML report, with optional WebGL depth-call counters.
+For local before/after Chrome measurements, see the [standalone profiler](https://github.com/google/xrblocks/blob/main/tools/README.md). It records interleaved samples and raw traces and generates a static HTML report, with optional WebGL depth-call counters.
 
 For additional agent-first development tools including UI visualizers, 3d model visualizers, CLI based embodied XR Blocks runners, and automatic agent controls, see [XR Blocks Devtools](https://github.com/xrblocks/xrblocks-devtools).
 
