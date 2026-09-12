@@ -514,6 +514,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     const id = this.findOwner(event.owner);
     if (!id) return;
     if (event.phase === 'start') this.select(id);
+    this.dispatchEvent({type: 'manipulationchange', id, event});
     if (event.phase === 'end' || event.phase === 'cancel') {
       this.dispatchEvent({type: 'change', layout: this.layout});
     }

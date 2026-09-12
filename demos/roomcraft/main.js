@@ -209,6 +209,7 @@ export class RoomcraftConsole extends xb.Script {
     this.entryVisibility = undefined;
     this.xrEntryError = '';
     this.disposed = false;
+    this.pageLeft = false;
     this.placed = false;
     this.exhibitCount = 0;
     this.statusMessage = '';
@@ -464,9 +465,10 @@ export class RoomcraftConsole extends xb.Script {
         );
       }
     });
-    this.listen(window, 'pagehide', () =>
-      this.stopListening('Voice input cancelled because the page was left.')
-    );
+    this.listen(window, 'pagehide', () => {
+      this.pageLeft = true;
+      this.stopListening('Voice input cancelled because the page was left.');
+    });
     this.listen(document, 'keydown', (event) => {
       if (
         event.key === 'Escape' &&
@@ -1703,6 +1705,7 @@ export class RoomcraftConsole extends xb.Script {
     return (
       this.running ||
       this.room.busy ||
+      this.collaboration?.busy ||
       this.connecting ||
       this.voice.state !== 'idle'
     );
@@ -2104,6 +2107,7 @@ export class RoomcraftConsole extends xb.Script {
 
   dispose() {
     this.disposed = true;
+    this.collaboration?.dispose();
     this.voiceReplacementDraft = null;
     this.voiceSubmissionPending = false;
     this.voice.dispose();
@@ -2181,7 +2185,7 @@ export function createRoomcraftOptions(virtual = false) {
   return options;
 }
 
-async function start() {
+export async function startRoomcraftDemo() {
   const virtual = !!xb.getUrlParameter(ENVIRONMENT_MODE_PARAMETER);
   const options = createRoomcraftOptions(virtual);
 
@@ -2211,12 +2215,30 @@ async function start() {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   }
   await consoleScript.start();
+  if (
+    xb.getUrlParameter('collab') === '1' &&
+    !consoleScript.disposed &&
+    !consoleScript.pageLeft
+  ) {
+    try {
+      const {startCollaboration} = await import('./Collaboration.js');
+      if (!consoleScript.disposed && !consoleScript.pageLeft) {
+        await startCollaboration(room, consoleScript, {virtual});
+      }
+    } catch (error) {
+      consoleScript.showError(error);
+      consoleScript.setStatus(
+        'Collaboration could not start. Your local scene is still available.'
+      );
+    }
+  }
+  return consoleScript;
 }
 
 document.addEventListener(
   'DOMContentLoaded',
   () => {
-    void start().catch((error) => {
+    void startRoomcraftDemo().catch((error) => {
       console.error('[roomcraft] Startup failed', error);
       document.getElementById('status').textContent =
         'Roomcraft could not start.';

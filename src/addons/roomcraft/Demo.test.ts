@@ -77,6 +77,7 @@ vi.mock('../../../demos/roomcraft/GeminiVoice.js', () => {
 
 vi.mock('xrblocks', async () => ({
   ...(await import('../../core/Script')),
+  ...(await import('../../interaction/Interaction')),
   ...(await import('../../ai/AI')),
   ...(await import('../../ai/Gemini')),
   ...(await import('../../world/World')),

@@ -22,6 +22,22 @@ Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialo
 
 The XR entry button shows `ENTERING XR...` while the browser responds. If entry fails, the browser error appears below the buttons and Enter XR becomes available to retry.
 
+## Same-browser collaboration
+
+Open `http://127.0.0.1:8080/demos/roomcraft/?collab=1&room=roomcraft-demo&name=Alice`, then choose Open second tab in Local collaboration. For virtual worlds, add `&environment=1` to the first URL; the second-tab link preserves that mode. Collaboration is strictly opt-in: only the exact `collab=1` value loads the optional module, after the local starter or saved scene and key setup finish. Ordinary single-player startup does not enable networking.
+
+Tabs must use the same browser profile and origin, including scheme, hostname, and port. This uses netblocks' `BroadcastChannelTransport`, with no signaling server or cross-device connection. A headset and a desktop do not join each other this way. Room IDs are prefixed with `roomcraft:room:` or `roomcraft:virtual:` so different page modes cannot accidentally meet. The `room` parameter accepts 1 to 48 ASCII letters, digits, underscores, or hyphens, starting with a letter or digit; an omitted or empty value uses `roomcraft-demo`, while an invalid ID shows an error without joining a different room. Display names are bounded to 40 characters and default to a readable per-tab Maker name.
+
+The panel shows connection state, pending synchronization, your identity, and a colored participant roster with selected-object names. Retry sync asks the bridge to synchronize again, or rejoins after disconnection. Errors appear in both the collaboration status and the existing console. Leaving the page or disposing its console releases the bridge and its session.
+
+The second-tab link is built from an allowlist: collaboration, room, virtual mode, and supported desktop/debug flags. It never copies API keys, the current display name, saved-scene URLs, arbitrary parameters, or fragments. It also sends no referrer. Each tab configures Gemini independently; a remote scene is applied as validated layout data, never as a new AI request. Text and voice editing, selection, dragging, spatial controls, placement, export, and starter scenes keep their existing paths.
+
+This is a cooperative prototype, not authenticated access control or conflict-free editing. Whole-scene edits use simple last-writer-wins overwrite semantics; concurrent edits can replace one another, and local Undo or Redo writes a whole scene to everyone. Authored bounds and the existing 60 KB network-message cap still apply: synchronization reports an explicit error rather than clamping content or silently truncating it. A locally valid scene can still exceed the network cap; simplify it before retrying.
+
+The bridge shares numerical root placement and object transforms in the same coordinate convention. It does not align physical anchors or scanned rooms. Authored motion definitions are shared, but playback phase and pause state remain local. This is not synchronized animation or shared physical-room alignment.
+
+For a desktop mouse test, use `&formFactor=desktop` and the simulator's User mode. The automation flag `xrAutomation=1` instead starts in Navigation mode; browser probes can switch with `xb.core.simulator.controls.setSimulatorMode(xb.SimulatorMode.USER)` after initialization.
+
 ## Virtual world mode
 
 `?environment=1` authors a whole virtual place rather than decorating the room around you. The mode is chosen once at startup, so the two pages keep separate scenes, separate histories, and separate camera behavior.

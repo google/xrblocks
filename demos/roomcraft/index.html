@@ -70,6 +70,48 @@
         </p>
         <p id="error" class="rc-error" role="alert" hidden></p>
 
+        <section
+          id="collaboration"
+          class="rc-section"
+          aria-labelledby="collabHeading"
+          hidden
+        >
+          <h2 id="collabHeading" class="rc-heading">Local collaboration</h2>
+          <p
+            id="collabStatus"
+            class="rc-collab-status"
+            role="status"
+            aria-live="polite"
+          >
+            Joining the local room…
+          </p>
+          <p id="collabIdentity" class="rc-note rc-collab-identity"></p>
+          <ul
+            id="collabPeers"
+            class="rc-peers"
+            aria-label="Room participants"
+          ></ul>
+          <div class="rc-row rc-row-wrap">
+            <button id="collabRetry" class="rc-button" type="button">
+              Retry sync
+            </button>
+            <a
+              id="collabLink"
+              class="rc-button rc-collab-link"
+              target="_blank"
+              rel="noopener noreferrer"
+              referrerpolicy="no-referrer"
+              >Open second tab</a
+            >
+          </div>
+          <p class="rc-fineprint">
+            Same browser profile and origin only, not another device. The link
+            contains no API key; each tab connects Gemini separately. Edits can
+            overwrite concurrent changes, and local undo writes a whole scene.
+            Shared coordinates do not align physical rooms or motion playback.
+          </p>
+        </section>
+
         <section class="rc-section" aria-labelledby="aiHeading">
           <h2 id="aiHeading" class="rc-heading">Gemini</h2>
           <p id="connectionHelp" class="rc-note">

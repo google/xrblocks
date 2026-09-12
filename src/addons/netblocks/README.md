@@ -150,6 +150,14 @@ ignored after a claim, releases include a final canonical xform so all
 peers converge on the same resting position, and the sample shows how a
 grabber that loses ownership mid-drag should drop its local override.
 
+To replicate an existing object's local transform without wrapping it, use
+`new NetObject({id: 'shared-object', object: existingObject})`. The readonly
+`netObject.object` is the supplied target, or the NetObject itself when omitted.
+Serialization, snapshot snaps, and interpolation operate directly on that
+target's position, quaternion, and scale: no reparenting, resource disposal, or
+per-frame transform-copy loop is needed. Keep the target under the equivalent
+parent coordinate system on every peer.
+
 ### NetEvents
 
 A typed pub/sub bus over the wire. `events.on(topic, handler)`,

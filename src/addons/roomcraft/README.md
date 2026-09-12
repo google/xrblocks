@@ -8,6 +8,35 @@ The add-on can compose trusted catalog assets, generate new procedural designs f
 
 From the repository root, run `npm run build:sdk`, then `npm run serve`, and open `http://127.0.0.1:8080/demos/roomcraft/`. See the [demo instructions](../../../demos/roomcraft/README.md) for controls and the optional downloaded model.
 
+### Optional same-browser collaboration
+
+The demo's exact `?collab=1` opt-in loads its collaboration UI after local scene initialization and key setup. It composes the public `RoomcraftNet` bridge with netblocks' `enableNet` and `BroadcastChannelTransport`; the normal page does not start networking. Open second tab creates a key-free, no-referrer link for the same room and mode. Tabs need the same browser profile and origin; this transport does not connect separate devices. See the [collaboration instructions](../../../demos/roomcraft/README.md#same-browser-collaboration) for room naming, controls, and limits.
+
+`RoomcraftNet` shares validated `SceneLayout` data, root placement, object transforms, and selection indicators without running a planner on receiving peers. Existing input and authoring controls still drive the same `Roomcraft` instance. Whole-scene edits use simple last-writer-wins overwrite semantics, and local Undo or Redo publishes a whole-scene write; concurrent work can be overwritten. The authored bounds and existing 60 KB message cap produce explicit sync errors rather than clamping or truncating. Numerical placement is shared, not physical anchor alignment. Motion definitions are shared, but playback phase and pause state are not synchronized.
+
+After initializing your Roomcraft instance and XR Blocks, join a session and add the bridge:
+
+```js
+import * as xb from 'xrblocks';
+import {RoomcraftNet} from 'xrblocks/addons/roomcraft/index.js';
+import {
+  BroadcastChannelTransport,
+  enableNet,
+} from 'xrblocks/addons/netblocks/src/index.js';
+
+const session = await enableNet().joinRoom('reading-room', {
+  transport: new BroadcastChannelTransport(),
+  displayName: 'Alice',
+});
+const collaboration = new RoomcraftNet(room, session);
+xb.add(collaboration);
+await xb.initScript(collaboration);
+```
+
+Use one bridge per session with matching catalogs and scene coordinates. Logical counters and peer-ID tie-breaks give simultaneous layout writes the same winner. `status`, `pendingCount`, `statuschange`, and `error` expose synchronization state; present errors in your application's UI and call `resync()` to request fresh peer state. `remoteSelections` returns a detached map and `getPeerColor(peerId)` matches each outline to a roster color.
+
+The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
+
 ## Add it to an application
 
 Use the demo's import map, including one shared copy of Three.js and the complete SDK `build/` directory.

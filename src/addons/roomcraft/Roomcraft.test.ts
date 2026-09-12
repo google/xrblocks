@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {AI, World, disposeObjectTree, type InteractionSource} from 'xrblocks';
+import {
+  AI,
+  World,
+  disposeObjectTree,
+  type InteractionSource,
+  type ManipulationEvent,
+} from 'xrblocks';
 
 import {Roomcraft} from './Roomcraft';
 import {MAX_SCENE_REQUEST_CHARACTERS} from './index';
@@ -26,6 +32,7 @@ vi.mock('xrblocks', async () => ({
   ...(await import('../../core/Script')),
   ...(await import('../../ai/AI')),
   ...(await import('../../world/World')),
+  ...(await import('../../interaction/Interaction')),
   ...(await import('../../utils/ThreeDisposal')),
   ...(await import('../../utils/ObjectPlacement')),
   ...(await import('../../utils/ModelLoader')),
@@ -175,6 +182,40 @@ function deferred<T>() {
     reject = decline;
   });
   return {promise, resolve, reject};
+}
+
+function manipulationEvent(
+  room: Roomcraft,
+  owner: THREE.Object3D,
+  phase: ManipulationEvent['phase']
+): ManipulationEvent {
+  const source: InteractionSource = {
+    type: 'mouse',
+    handedness: 'none',
+    controller: new THREE.Object3D<ControllerEventMap>(),
+  };
+  let defaultPrevented = false;
+  return {
+    phase,
+    action: 'translate',
+    source,
+    sources: [source],
+    target: owner,
+    surface: owner,
+    owner,
+    currentTarget: room,
+    get defaultPrevented() {
+      return defaultPrevented;
+    },
+    preventDefault: vi.fn(() => {
+      defaultPrevented = true;
+    }),
+    stopPropagation: vi.fn(),
+    point: new THREE.Vector3(),
+    delta: new THREE.Vector3(),
+    position: owner.position.clone(),
+    worldPosition: owner.position.clone(),
+  };
 }
 
 const rooms: Roomcraft[] = [];
@@ -1359,6 +1400,68 @@ describe('Roomcraft objects and ownership', () => {
       expect.objectContaining({layout: layout(object({position: [2, 0, 0]}))})
     );
   });
+
+  it.each(['start', 'update', 'end', 'cancel'] as const)(
+    'dispatches the live %s manipulation synchronously before its final change',
+    async (phase) => {
+      const room = createRoom();
+      await room.applyLayout(layout(object()));
+      const owner = room.getObject('one')!;
+      const original = manipulationEvent(room, owner, phase);
+      const order: string[] = [];
+      const changed = vi.fn(() => order.push('change'));
+      room.addEventListener('selectionchange', () => order.push('selection'));
+      room.addEventListener('change', changed);
+      const manipulated = vi.fn(({id, event}) => {
+        order.push('manipulation');
+        expect(id).toBe('one');
+        expect(event).toBe(original);
+        expect(room.selectedId).toBe(phase === 'start' ? 'one' : null);
+        expect(changed).not.toHaveBeenCalled();
+        event.preventDefault();
+        owner.position.x = 2;
+      });
+      room.addEventListener('manipulationchange', manipulated);
+
+      room.onObjectManipulate(original);
+
+      expect(manipulated).toHaveBeenCalledTimes(1);
+      expect(original.preventDefault).toHaveBeenCalledTimes(1);
+      expect(original.defaultPrevented).toBe(true);
+      if (phase === 'end' || phase === 'cancel') {
+        expect(order).toEqual(['manipulation', 'change']);
+        expect(changed).toHaveBeenCalledTimes(1);
+        expect(changed).toHaveBeenCalledWith(
+          expect.objectContaining({
+            layout: layout(object({position: [2, 0, 0]})),
+          })
+        );
+      } else {
+        expect(order).toEqual(
+          phase === 'start' ? ['selection', 'manipulation'] : ['manipulation']
+        );
+        expect(changed).not.toHaveBeenCalled();
+      }
+    }
+  );
+
+  it.each(['start', 'update', 'end', 'cancel'] as const)(
+    'ignores %s manipulation from an unknown owner',
+    async (phase) => {
+      const room = createRoom();
+      await room.applyLayout(layout(object()));
+      const manipulated = vi.fn();
+      const changed = vi.fn();
+      room.addEventListener('manipulationchange', manipulated);
+      room.addEventListener('change', changed);
+      room.onObjectManipulate(
+        manipulationEvent(room, new THREE.Object3D(), phase)
+      );
+      expect(manipulated).not.toHaveBeenCalled();
+      expect(changed).not.toHaveBeenCalled();
+      expect(room.selectedId).toBeNull();
+    }
+  );
 
   it('preserves prototype-backed catalog metadata and the factory receiver', async () => {
     class BoxAsset implements SceneAsset {

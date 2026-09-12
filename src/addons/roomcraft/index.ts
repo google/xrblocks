@@ -1,4 +1,6 @@
 export {Roomcraft} from './Roomcraft';
+export {RoomcraftNet} from './RoomcraftNet';
+export type {RoomcraftNetEventMap, RoomcraftNetStatus} from './RoomcraftNet';
 export {createDefaultCatalog, createModelAsset} from './Catalog';
 export type {ModelAssetOptions} from './Catalog';
 export {SCENE_PLAN_SCHEMA, buildScenePrompt} from './ScenePlan';
