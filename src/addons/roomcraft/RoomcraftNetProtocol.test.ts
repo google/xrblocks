@@ -49,4 +49,22 @@ describe('Roomcraft network protocol', () => {
       objectStates([{...state, ownerId: null}], ['chair'])
     ).toThrow();
   });
+
+  it('preserves released claim metadata and rejects mismatched or invalid claims', () => {
+    const state = {
+      id: 'chair',
+      ownerId: '',
+      xform: pose,
+      claim: {counter: 3, peerId: 'a'},
+    };
+    const parsed = objectStates([state], ['chair']);
+    expect(parsed).toEqual([state]);
+    expect(parsed[0].claim).not.toBe(state.claim);
+    expect(() => objectStates([{...state, ownerId: 'b'}], ['chair'])).toThrow(
+      'claim'
+    );
+    expect(() =>
+      objectStates([{...state, claim: {counter: 0, peerId: 'a'}}], ['chair'])
+    ).toThrow('claim');
+  });
 });

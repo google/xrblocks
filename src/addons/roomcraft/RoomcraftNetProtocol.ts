@@ -10,6 +10,7 @@ export interface RoomcraftObjectState {
   id: string;
   ownerId: string;
   xform: number[];
+  claim?: RoomcraftRevision;
 }
 
 export interface RoomcraftSnapshot {
@@ -94,10 +95,16 @@ export function objectStates(
     if (typeof data.id !== 'string' || !remaining.delete(data.id)) {
       throw new Error('Invalid or duplicate Roomcraft snapshot object ID.');
     }
+    const ownerId = peerId(data.ownerId, true);
+    const claim = data.claim === undefined ? undefined : revision(data.claim);
+    if (claim && (claim.counter < 1 || (ownerId && ownerId !== claim.peerId))) {
+      throw new Error('Invalid Roomcraft object claim revision.');
+    }
     return {
       id: data.id,
-      ownerId: peerId(data.ownerId, true),
+      ownerId,
       xform: transform(data.xform),
+      ...(claim ? {claim} : {}),
     };
   });
 }

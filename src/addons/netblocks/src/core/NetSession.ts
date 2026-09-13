@@ -439,14 +439,18 @@ export class NetSession extends EventTarget {
 
   /** Claim ownership of an object (e.g., on grab). */
   claim(obj: NetObject): void {
-    if (this.netObjects.applyClaim(obj.netId, this.localPeerId)) {
-      this._sendNet({type: 'netobject.claim', id: obj.netId});
+    const claimCounter = (obj.claim?.counter ?? 0) + 1;
+    if (this.netObjects.applyClaim(obj.netId, this.localPeerId, claimCounter)) {
+      this._sendNet({type: 'netobject.claim', id: obj.netId, claimCounter});
     }
   }
 
   /** Release ownership of an object (e.g., on release). */
   release(obj: NetObject): void {
-    if (this.netObjects.applyRelease(obj.netId, this.localPeerId)) {
+    const claimCounter = obj.claim?.counter;
+    if (
+      this.netObjects.applyRelease(obj.netId, this.localPeerId, claimCounter)
+    ) {
       // Embed a final canonical xform inside the release so receivers can
       // snap on release in a single message. Sending xform separately first
       // wasn't enough — the receiver only lerps ~20% per frame, so by the
@@ -454,6 +458,7 @@ export class NetSession extends EventTarget {
       this._sendNet({
         type: 'netobject.release',
         id: obj.netId,
+        claimCounter,
         xform: obj.toXform(),
         state: Object.keys(obj.state).length ? obj.state : undefined,
       });
@@ -494,6 +499,7 @@ export class NetSession extends EventTarget {
           this._sendNet({
             type: 'netobject',
             id: obj.netId,
+            claimCounter: obj.claim?.counter,
             xform: obj.toXform(),
             state: Object.keys(obj.state).length ? obj.state : undefined,
           });
@@ -671,6 +677,7 @@ export class NetSession extends EventTarget {
             id: obj.netId,
             xform: obj.toXform(),
             ownerId: obj.ownerId,
+            claim: obj.claim,
             state: Object.keys(obj.state).length ? obj.state : undefined,
           });
         }
@@ -730,9 +737,14 @@ export class NetSession extends EventTarget {
       case 'netobject': {
         const obj = this.netObjects.get(msg.id);
         if (!obj) break;
+        if (
+          msg.claimCounter !== undefined &&
+          !this.netObjects.applyClaim(msg.id, msg.from, msg.claimCounter)
+        )
+          break;
         // If we both think we own it (e.g., both peers auto-owned the same
         // deterministic id at create-time), the lex-smaller peer id wins —
-        // matches the explicit-claim tiebreak in NetObjectRegistry. But
+        // matches equal-counter explicit claims in NetObjectRegistry. But
         // never yield a copy we've actually been moving (`_dirty`) to a
         // silent peer broadcasting defaults: that's the late-join race
         // where a fresh joiner's first ticks would otherwise clobber the
@@ -761,10 +773,10 @@ export class NetSession extends EventTarget {
         break;
       }
       case 'netobject.claim':
-        this.netObjects.applyClaim(msg.id, msg.from);
+        this.netObjects.applyClaim(msg.id, msg.from, msg.claimCounter);
         break;
       case 'netobject.release': {
-        if (this.netObjects.applyRelease(msg.id, msg.from)) {
+        if (this.netObjects.applyRelease(msg.id, msg.from, msg.claimCounter)) {
           const obj = this.netObjects.get(msg.id);
           if (obj && msg.xform) {
             // Don't snap. We render ~100ms behind the owner's real-time
@@ -790,8 +802,15 @@ export class NetSession extends EventTarget {
           const obj = this.netObjects.get(entry.id);
           if (!obj) continue;
           if (obj.ownerId === this.localPeerId && obj._dirty) continue;
+          if (
+            !this.netObjects.applyOwnershipSnapshot(
+              entry.id,
+              entry.ownerId,
+              entry.claim
+            )
+          )
+            continue;
           obj.snapToXform(entry.xform);
-          obj.ownerId = entry.ownerId;
           if (entry.state) {
             Object.assign(obj.state, entry.state as Record<string, unknown>);
           }

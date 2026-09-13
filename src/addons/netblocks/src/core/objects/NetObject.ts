@@ -5,11 +5,9 @@
  * calling `claim()`. The current owner is the only peer that broadcasts
  * authoritative transform updates; non-owners interpolate.
  *
- * Ownership is cooperative — there is no central arbiter. Explicit claims
- * always preempt the previous owner so users can hand off / steal objects;
- * the only deterministic tiebreak left is for the rare case where two peers
- * implicitly auto-own the same id at create-time (see NetSession's
- * `netobject` handler), where the lex-smaller peer id wins.
+ * Ownership is cooperative: there is no central arbiter. A later observed
+ * explicit claim preempts its predecessor. Crossed claims at the same logical
+ * counter select the lex-smaller peer ID, independent of arrival order.
  *
  * NetObjects are normal three.js Object3Ds; you can `.add()` any meshes to
  * them. Each frame, NetSession applies remote updates to the local
@@ -20,6 +18,11 @@
 import * as THREE from 'three';
 
 import {makeId} from '../utils/IdUtils';
+
+export interface NetObjectClaim {
+  counter: number;
+  peerId: string;
+}
 
 export interface NetObjectOptions {
   /** Stable id for this object across peers. Defaults to a fresh random id. */
@@ -33,6 +36,8 @@ export interface NetObjectOptions {
 export class NetObject extends THREE.Group {
   readonly netId: string;
   ownerId: string;
+  /** Last explicit claim, retained after release for causal handoff and catch-up. */
+  claim?: NetObjectClaim;
   /** The replicated local-transform target; this NetObject unless supplied in options. */
   readonly object: THREE.Object3D;
 

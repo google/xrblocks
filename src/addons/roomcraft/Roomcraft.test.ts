@@ -2130,6 +2130,62 @@ describe('Roomcraft procedural objects', () => {
     expect(room.getObject('one')).toBeUndefined();
   });
 
+  it('aborts a layout import promptly and disposes only its unused staging', async () => {
+    const pending = deferred<THREE.Object3D>();
+    const room = createRoom([
+      asset({id: 'slow', create: () => pending.promise}),
+    ]);
+    await room.applyLayout(layout(design()));
+    const before = room.layout;
+    const owner = room.getObject('robot')!;
+    const content = owner.children[0];
+    const currentDisposed = vi.spyOn(
+      partMesh(owner, 'arm').geometry,
+      'dispose'
+    );
+    const stagedDisposal = vi.spyOn(THREE.BufferGeometry.prototype, 'dispose');
+    const controller = new AbortController();
+    const importing = room.applyLayout(
+      garden(design({color: '#ffffff'}), object({asset: 'slow'})),
+      {signal: controller.signal}
+    );
+    controller.abort();
+    await expect(importing).rejects.toMatchObject({name: 'AbortError'});
+    expect(room.busy).toBe(false);
+    expect(room.status).toBe('ready');
+    expect(room.layout).toEqual(before);
+    expect(owner.children[0]).toBe(content);
+    expect(currentDisposed).not.toHaveBeenCalled();
+    expect(stagedDisposal).toHaveBeenCalled();
+    stagedDisposal.mockRestore();
+    await room.applyPlan({title: 'Local work can continue', edits: []});
+    const late = new THREE.Mesh(
+      new THREE.BoxGeometry(),
+      new THREE.MeshStandardMaterial()
+    );
+    const lateGeometry = vi.spyOn(late.geometry, 'dispose');
+    const lateMaterial = vi.spyOn(late.material, 'dispose');
+    pending.resolve(late);
+    await vi.waitFor(() => expect(lateGeometry).toHaveBeenCalledOnce());
+    expect(lateMaterial).toHaveBeenCalledOnce();
+    expect(room.layout.title).toBe('Local work can continue');
+    expect(room.getObject('robot')).toBe(owner);
+    expect(currentDisposed).not.toHaveBeenCalled();
+  });
+
+  it('rejects an already aborted layout without staging or changing history', async () => {
+    const source = asset();
+    const room = createRoom([source]);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      room.applyLayout(layout(object()), {signal: controller.signal})
+    ).rejects.toMatchObject({name: 'AbortError'});
+    expect(source.create).not.toHaveBeenCalled();
+    expect(room.canUndo).toBe(false);
+    expect(room.busy).toBe(false);
+  });
+
   it('supports content-source swaps and no-op refinements without losing undo semantics', async () => {
     const room = createRoom();
     await room.applyLayout(layout(design()));

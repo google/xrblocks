@@ -39,11 +39,15 @@ Use one bridge per session with matching catalogs and scene coordinates. Logical
 
 The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
 
+Crossed grabs use per-object logical claim counters, with the lexicographically smaller peer ID winning equal counters. A grab made after observing the previous claim still takes over normally. The losing interaction is cancelled without erasing the winner's buffered pose. Claim generations survive release, content replacement and late-join catch-up; ownership remains cooperative rather than server-authoritative.
+
 #### Shared authored-motion time
 
 The accepted scene snapshot carries a motion epoch and clock authority. Peers estimate their offset through monotonic request/reply timestamps and periodically refresh low-delay samples. This does not assume identical device wall clocks. Swing and spin poses are sampled from absolute shared elapsed time, so asynchronous construction and a background tab's missing frames do not permanently shift their playback phase. Replacing content samples the same current timeline rather than starting a separate local timer.
 
 `collaboration.motionClockState` reports the authority, whether timing has been synchronized, and the measured half-round-trip delay when available. That delay is an estimate, not a guarantee of phase accuracy: asymmetric routes, jitter, clock drift, and rendering at different instants still matter. A missing clock response produces an explicit error instead of claiming synchronized timing. A remaining peer takes over the timeline when its authority leaves.
+
+Within the same motion epoch, newer authority terms are reconciled even when their accompanying scene revision is older. A returning peer can therefore publish its offline edits while following the surviving peer's clock. Switching to a different epoch still requires accepting that scene revision.
 
 Pause is local inspection only. A paused peer keeps its displayed pose while the shared clock continues; Resume rejoins the current timeline. In shared mode, period, speed, and starting-phase edits are evaluated against that absolute timeline and may change the current pose immediately. Single-player playback keeps its original delta-based phase-preservation behavior. Destroying the bridge removes only the time source it installed, and recreating it for the same Roomcraft instance retains local elapsed time and authored revision continuity.
 
@@ -213,6 +217,8 @@ Use an object color of `#ffffff` to preserve individual part colors. Other objec
 ## Layouts and edit plans
 
 `room.layout` is a detached, scene-local snapshot. `applyLayout()` explicitly replaces the scene with a saved or hand-authored layout, while `applyPlan()` performs incremental edits without calling AI.
+
+`applyLayout(layout, {signal})` accepts an optional `AbortSignal`. Cancellation rejects the import and restores the ready state without changing the current scene or history. Already-running asset factories may finish later; their unused staged content is disposed rather than attached. `RoomcraftNet` cancels its own pending import when disconnected or disposed, so a late asset cannot overwrite a disconnected scene or become a false offline edit on reconnect.
 
 ```js
 await room.applyLayout({

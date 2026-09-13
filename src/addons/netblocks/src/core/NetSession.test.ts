@@ -550,6 +550,156 @@ describe('NetSession hello handler', () => {
 });
 
 describe('NetSession late-join state-reset regression', () => {
+  it('does not let a delayed pre-claim snapshot erase a newer ownership generation', async () => {
+    const peers = ['a', 'b', 'c'].map((id) => {
+      const transport = new FakeTransport();
+      transport.localPeerId = id;
+      const session = new NetSession(transport, new THREE.Group());
+      const object = new NetObject({id: 'cube'});
+      session.netObjects.add(object);
+      return {transport, session, object};
+    });
+    const [a, b, c] = peers;
+    try {
+      for (const p of peers) await p.session.open('room');
+      c.object.snapToXform(c.object.toXform());
+      c.transport.receive('b', {
+        type: 'hello',
+        protocol: NET_PROTOCOL_VERSION,
+        capabilities: {pose: true, voice: false, netobject: true},
+      });
+      const delayed = decodeSent(c.transport.sent).find(
+        ({msg}) => msg.type === 'netobject.snapshot'
+      )!.msg;
+      expect(delayed).toMatchObject({objects: [{id: 'cube', ownerId: ''}]});
+      a.session.claim(a.object);
+      const claim = decodeSent(a.transport.sent).at(-1)!.msg;
+      b.transport.receive('a', claim);
+      c.transport.receive('a', claim);
+      // The old C-to-B snapshot and A-to-B claim cross in flight.
+      b.transport.receive('c', delayed);
+      expect(b.object.claim).toEqual({counter: 1, peerId: 'a'});
+      expect(b.object.ownerId).toBe('a');
+      a.session.release(a.object);
+      const release = decodeSent(a.transport.sent).at(-1)!.msg;
+      b.transport.receive('a', release);
+      c.transport.receive('a', release);
+      b.session.claim(b.object);
+      const takeover = decodeSent(b.transport.sent).at(-1)!.msg;
+      a.transport.receive('b', takeover);
+      c.transport.receive('b', takeover);
+      for (const p of peers) {
+        expect(p.object.ownerId).toBe('b');
+        expect(p.object.claim).toEqual({counter: 2, peerId: 'b'});
+      }
+    } finally {
+      for (const p of peers) p.session.close();
+    }
+  });
+
+  it('increments a caught-up claim generation when a late joiner takes over', async () => {
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    await session.open('room');
+    try {
+      const object = new NetObject({id: 'cube'});
+      session.netObjects.add(object);
+      transport.receive('a', {
+        type: 'netobject.snapshot',
+        objects: [
+          {
+            id: 'cube',
+            ownerId: '',
+            claim: {counter: 7, peerId: 'a'},
+            xform: [2, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+          },
+        ],
+      });
+      expect(object.claim).toEqual({counter: 7, peerId: 'a'});
+      session.claim(object);
+      expect(object.ownerId).toBe('local-peer');
+      expect(decodeSent(transport.sent).at(-1)?.msg).toMatchObject({
+        type: 'netobject.claim',
+        claimCounter: 8,
+      });
+      session.release(object);
+      expect(decodeSent(transport.sent).at(-1)?.msg).toMatchObject({
+        type: 'netobject.release',
+        claimCounter: 8,
+      });
+      transport.receive('joiner', {
+        type: 'hello',
+        protocol: NET_PROTOCOL_VERSION,
+        capabilities: {pose: true, voice: false, netobject: true},
+      });
+      const snapshot = decodeSent(transport.sent)
+        .filter(({msg}) => msg.type === 'netobject.snapshot')
+        .at(-1);
+      expect(snapshot?.msg).toMatchObject({
+        objects: [
+          {id: 'cube', ownerId: '', claim: {counter: 8, peerId: 'local-peer'}},
+        ],
+      });
+    } finally {
+      session.close();
+    }
+  });
+
+  it('rejects old poses/releases from the same peer after a newer grab', async () => {
+    const transport = new FakeTransport();
+    const session = new NetSession(transport, new THREE.Group());
+    await session.open('room');
+    try {
+      const object = new NetObject({id: 'cube'});
+      session.netObjects.add(object);
+      for (const claimCounter of [1, 2]) {
+        transport.receive('a', {
+          type: 'netobject.claim',
+          id: 'cube',
+          claimCounter,
+        });
+      }
+      const pose = (x: number) => [x, 0, 0, 0, 0, 0, 1, 1, 1, 1];
+      transport.receive('a', {
+        type: 'netobject',
+        id: 'cube',
+        claimCounter: 2,
+        xform: pose(2),
+      });
+      transport.receive('a', {
+        type: 'netobject',
+        id: 'cube',
+        claimCounter: 1,
+        xform: pose(99),
+      });
+      transport.receive('a', {
+        type: 'netobject.release',
+        id: 'cube',
+        claimCounter: 1,
+        xform: pose(99),
+      });
+      expect(object.ownerId).toBe('a');
+      expect(object._targetPosition.x).toBe(2);
+      transport.receive('a', {
+        type: 'netobject.release',
+        id: 'cube',
+        claimCounter: 2,
+        xform: pose(3),
+      });
+      transport.receive('a', {
+        type: 'netobject',
+        id: 'cube',
+        claimCounter: 2,
+        xform: pose(99),
+      });
+      expect(object.ownerId).toBe('');
+      expect(object._targetPosition.x).toBe(3);
+      expect(object._pendingFinal).toBe(true);
+    } finally {
+      session.close();
+    }
+  });
+
   it('joiner adopts a snapshot for an auto-owned NetObject it has never moved', async () => {
     // Joiner side. We're "local-peer", we just constructed a NetObject which
     // is auto-owned (ownerId === localPeerId) and pristine. An existing peer

@@ -78,6 +78,21 @@ afterEach(() => {
 });
 
 describe('shared Roomcraft motion clock', () => {
+  it('reconciles newer election terms without allowing unrelated scene epochs', () => {
+    const network = harness();
+    const a = network.add('a', 90_000);
+    const b = network.add('b', 9_000_000);
+    const before = a.clock.snapshot();
+    a.clock.reconcile({...b.clock.snapshot(), term: 20}, a.now());
+    expect(a.clock.snapshot()).toEqual(before);
+    b.clock.adopt({...before, authority: 'b', term: 1}, b.now());
+    a.clock.reconcile(b.clock.snapshot(), a.now());
+    network.flush();
+    expect(a.clock.state).toMatchObject({authority: 'b', synchronized: true});
+    expect(a.clock.snapshot().term).toBe(1);
+    expect(a.clock.read()).toBeCloseTo(b.clock.read(), 8);
+  });
+
   it('catches up elections missed while a joining peer stages its scene', () => {
     const network = harness();
     const a = network.add('a', 0);

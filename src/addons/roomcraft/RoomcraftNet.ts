@@ -85,6 +85,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   private readonly outlines = new Map<string, THREE.Box3Helper>();
   private readonly cleanups: Array<() => void> = [];
   private readonly queue: PendingLayout[] = [];
+  private readonly lifetime = new AbortController();
   private currentRevision: RoomcraftRevision;
   private clock = 0;
   private selectionSequence = 0;
@@ -407,6 +408,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   override dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.lifetime.abort();
     if (this.registered) activeSessions.delete(this.session);
     clearTimeout(this.syncTimer);
     clearTimeout(this.bootstrapTimer);
@@ -453,9 +455,9 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   }
 
   private onChange(): void {
-    if (this.disposed) return;
+    if (this.disposed || this.suppressChanges) return;
     this.reconcile();
-    if (this.applying || this.suppressChanges) return;
+    if (this.applying) return;
     const next = {
       counter: sequence(Math.max(this.clock, 1) + 1),
       peerId: this.session.localPeerId,
@@ -525,6 +527,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     return [...this.bindings].map(([id, binding]) => ({
       id,
       ownerId: binding.ownerId,
+      ...(binding.claim ? {claim: {...binding.claim}} : {}),
       xform: binding.toXform(),
     }));
   }
@@ -557,6 +560,8 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         'Unsupported Roomcraft network version. Reload all peers to the same build.'
       );
     const stamp = revision(data.revision);
+    const motion = readMotionClock(data.motion);
+    this.motionClock?.reconcile(motion, performance.now());
     const order = compareRevision(stamp, this.currentRevision);
     if (order < 0 || (order === 0 && !allowEqual)) return;
     const layout = readSceneLayout(data.layout, this.room.catalog);
@@ -569,7 +574,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         data.objects,
         layout.objects.map(({id}) => id)
       ),
-      motion: readMotionClock(data.motion),
+      motion,
     };
     for (const state of snapshot.objects) {
       const object = layout.objects.find(({id}) => id === state.id)!;
@@ -634,11 +639,14 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
                 binding,
                 version: binding.version,
                 ownerId: binding.ownerId,
+                claim: JSON.stringify(binding.claim),
                 xform: binding.toXform(),
               },
             ])
           );
-          await this.room.applyLayout(snapshot.layout);
+          await this.room.applyLayout(snapshot.layout, {
+            signal: this.lifetime.signal,
+          });
           if (this.disposed) return;
           this.rootBinding!.snapToXform(snapshot.root);
           for (const state of snapshot.objects) {
@@ -647,7 +655,8 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
             if (
               previous?.binding === binding &&
               (binding.version !== previous.version ||
-                binding.ownerId !== previous.ownerId)
+                binding.ownerId !== previous.ownerId ||
+                JSON.stringify(binding.claim) !== previous.claim)
             ) {
               binding.snapToXform(
                 binding.version !== previous.version && binding.lastXform
@@ -655,11 +664,21 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
                   : previous.xform
               );
             } else {
-              binding.snapToXform(state.xform);
-              binding.ownerId =
+              const ownerId =
                 state.ownerId && this.session.users.has(state.ownerId)
                   ? state.ownerId
                   : '';
+              if (
+                this.session.netObjects.applyOwnershipSnapshot(
+                  binding.netId,
+                  ownerId,
+                  state.claim
+                )
+              ) {
+                binding.snapToXform(state.xform);
+              } else if (previous) {
+                binding.snapToXform(previous.xform);
+              }
             }
           }
           this.currentRevision = snapshot.revision;
@@ -705,7 +724,12 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       baseline: new Map(
         [...this.bindings].map(([key, binding]) => [
           key,
-          JSON.stringify([binding.ownerId, binding.toXform(), binding.version]),
+          JSON.stringify([
+            binding.ownerId,
+            binding.claim,
+            binding.toXform(),
+            binding.version,
+          ]),
         ])
       ),
     };
@@ -744,11 +768,24 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       if (
         this.held.has(state.id) ||
         pending.baseline.get(state.id) !==
-          JSON.stringify([binding.ownerId, binding.toXform(), binding.version])
+          JSON.stringify([
+            binding.ownerId,
+            binding.claim,
+            binding.toXform(),
+            binding.version,
+          ])
       )
         continue;
-      binding.snapToXform(state.xform);
-      binding.ownerId = state.ownerId;
+      if (
+        this.session.netObjects.applyOwnershipSnapshot(
+          binding.netId,
+          state.ownerId && this.session.users.has(state.ownerId)
+            ? state.ownerId
+            : '',
+          state.claim
+        )
+      )
+        binding.snapToXform(state.xform);
     }
     this.catchup = undefined;
     clearTimeout(this.catchupTimer);

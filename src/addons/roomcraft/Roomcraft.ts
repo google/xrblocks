@@ -82,6 +82,32 @@ function disposeContent(content: THREE.Object3D) {
   disposeObjectTree(content);
 }
 
+function stageContent(
+  asset: SceneAsset,
+  color: string,
+  signal?: AbortSignal
+): Promise<THREE.Group> {
+  signal?.throwIfAborted();
+  const loading = createContent(asset, color);
+  if (!signal) return loading;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, {once: true});
+    void loading.then(
+      (content) => {
+        signal.removeEventListener('abort', abort);
+        if (signal.aborted) disposeContent(content);
+        else resolve(content);
+      },
+      (error) => {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      }
+    );
+    if (signal.aborted) abort();
+  });
+}
+
 async function createContent(asset: SceneAsset, color: string) {
   const object = await asset.create(color);
   if (!(object instanceof THREE.Object3D) || object.parent) {
@@ -420,11 +446,19 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     this.dispatchEvent({type: 'selectionchange', id});
   }
 
-  /** Replace the scene explicitly, for curated examples or saved layouts. */
-  async applyLayout(value: unknown): Promise<SceneLayout> {
+  /**
+   * Replace the scene explicitly, for curated examples or saved layouts.
+   * Aborting rejects the import without changing the current scene. A factory
+   * already loading may finish later; its unused content is then disposed.
+   */
+  async applyLayout(
+    value: unknown,
+    {signal}: {signal?: AbortSignal} = {}
+  ): Promise<SceneLayout> {
     return this.run('loading', async () => {
+      signal?.throwIfAborted();
       const layout = readSceneLayout(value, this.catalog);
-      return this.commitLayout(layout);
+      return this.commitLayout(layout, 'record', signal);
     });
   }
 
@@ -611,7 +645,8 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
 
   private async commitLayout(
     layout: SceneLayout,
-    historyAction: 'record' | 'undo' | 'redo' = 'record'
+    historyAction: 'record' | 'undo' | 'redo' = 'record',
+    signal?: AbortSignal
   ) {
     const before = this.layout;
     const fingerprint = JSON.stringify(before);
@@ -625,6 +660,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         stagedEnvironment = createEnvironmentContent(layout.environment);
       }
       for (const object of layout.objects) {
+        signal?.throwIfAborted();
         const existing = this.entities.get(object.id);
         if (
           !existing ||
@@ -645,13 +681,15 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
             if (!asset) {
               throw new Error(`Unknown catalog asset "${object.asset}".`);
             }
-            content = await createContent(asset, object.color);
+            content = await stageContent(asset, object.color, signal);
           }
           staged.set(object.id, content);
+          signal?.throwIfAborted();
           this.assertAlive();
         }
       }
       this.assertAlive();
+      signal?.throwIfAborted();
       if (JSON.stringify(this.layout) !== fingerprint) {
         throw new Error(
           'The scene moved while assets were loading. Your scene was kept; retry the edit.'
@@ -680,6 +718,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         }
       }
 
+      signal?.throwIfAborted();
       const retired: THREE.Object3D[] = [];
       if (environmentChanged) {
         if (this.environmentContent) {

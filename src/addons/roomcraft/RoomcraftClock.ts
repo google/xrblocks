@@ -208,7 +208,12 @@ export class RoomcraftClock {
     );
   }
 
-  /** Adopt only with an accepted scene revision; include time spent in its queue. */
+  /** Reconcile elections independently of scene edits, but never switch epochs. */
+  reconcile(snapshot: MotionClockSnapshot, receivedAt: number): void {
+    if (snapshot.epoch === this.epoch) this.adopt(snapshot, receivedAt);
+  }
+
+  /** Switch epochs only with an accepted scene revision; include queue time. */
   adopt(
     snapshot: MotionClockSnapshot,
     receivedAt: number,

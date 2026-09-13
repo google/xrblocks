@@ -150,6 +150,8 @@ ignored after a claim, releases include a final canonical xform so all
 peers converge on the same resting position, and the sample shows how a
 grabber that loses ownership mid-drag should drop its local override.
 
+Explicit grabs carry a per-object logical claim counter. A grab after observing the previous claim uses a higher counter and takes over; crossed claims at the same counter select the lexicographically smaller peer ID on every peer. `obj.claim` records the last claim, including after release. Transform/release messages carry that generation, and catch-up snapshots preserve it so late joiners can take over normally. A snapshot without a claim cannot erase an observed generation. Legacy unstamped claims retain their previous arrival-order behavior; deterministic crossed-grab convergence requires every peer to run the updated build.
+
 To replicate an existing object's local transform without wrapping it, use
 `new NetObject({id: 'shared-object', object: existingObject})`. The readonly
 `netObject.object` is the supplied target, or the NetObject itself when omitted.
