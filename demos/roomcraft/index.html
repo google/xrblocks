@@ -86,35 +86,97 @@
             Joining collaboration…
           </p>
           <p id="collabIdentity" class="rc-note rc-collab-identity"></p>
-          <p id="collabRoomCode" class="rc-note" role="status">
-            No room joined
-          </p>
           <div class="rc-row rc-row-wrap">
-            <button id="collabStartRoom" class="rc-button" type="button">
-              Start new room
-            </button>
+            <p id="collabRoomCode" class="rc-note" role="status">
+              No room joined
+            </p>
             <button id="collabCopyCode" class="rc-button" type="button">
               Copy code
             </button>
           </div>
-          <form id="collabJoinForm" class="rc-collab-fields" novalidate>
-            <label for="collabJoinCode">Join a room code</label>
-            <div class="rc-row">
-              <input
-                id="collabJoinCode"
-                type="text"
-                maxlength="4"
-                placeholder="CODE"
-                autocomplete="off"
-                spellcheck="false"
-                aria-describedby="collabRoomNotice"
-              />
-              <button id="collabJoinRoom" class="rc-button" type="submit">
-                Join
+          <details id="collabRooms" class="rc-collab-settings" open>
+            <summary id="collabRoomsSummary">Start or join a room</summary>
+            <div class="rc-collab-fields">
+              <label for="collabLobbyName">Name to use when joining</label>
+              <input id="collabLobbyName" maxlength="40" autocomplete="off" />
+              <button
+                id="collabStartRoom"
+                class="rc-button rc-button-primary"
+                type="button"
+              >
+                Start new room
               </button>
+              <form id="collabJoinForm" class="rc-collab-fields" novalidate>
+                <label for="collabJoinCode"
+                  >Or enter a four-letter room code</label
+                >
+                <div class="rc-row">
+                  <input
+                    id="collabJoinCode"
+                    type="text"
+                    maxlength="4"
+                    placeholder="CODE"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-describedby="collabRoomNotice"
+                  />
+                  <button id="collabJoinRoom" class="rc-button" type="submit">
+                    Join
+                  </button>
+                </div>
+              </form>
             </div>
-          </form>
+          </details>
           <p id="collabRoomNotice" class="rc-fineprint" role="status"></p>
+          <div id="collabActions" class="rc-row rc-row-wrap">
+            <button id="collabRetry" class="rc-button" type="button">
+              Retry sync
+            </button>
+            <button id="collabLeave" class="rc-button" type="button">
+              Disconnect
+            </button>
+            <a
+              id="collabLink"
+              class="rc-button rc-collab-link"
+              target="_blank"
+              rel="noopener noreferrer"
+              referrerpolicy="no-referrer"
+              >Open peer link</a
+            >
+          </div>
+          <h3 class="rc-heading">Peer audio</h3>
+          <div class="rc-audio-actions">
+            <button
+              id="collabVoice"
+              class="rc-button"
+              type="button"
+              aria-pressed="false"
+              aria-describedby="collabVoiceStatus"
+            >
+              Unmute my mic
+            </button>
+            <button
+              id="collabPlayback"
+              class="rc-button"
+              type="button"
+              aria-pressed="false"
+              aria-describedby="collabPlaybackStatus"
+            >
+              Mute everyone for me
+            </button>
+          </div>
+          <p
+            id="collabVoiceStatus"
+            class="rc-note"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <p
+            id="collabPlaybackStatus"
+            class="rc-note"
+            role="status"
+            aria-live="polite"
+          ></p>
           <details id="collabSettings" class="rc-collab-settings">
             <summary>
               Connection settings
@@ -183,54 +245,6 @@
               rooms.
             </p>
           </details>
-          <div class="rc-row rc-row-wrap">
-            <button id="collabRetry" class="rc-button" type="button">
-              Retry sync
-            </button>
-            <button id="collabLeave" class="rc-button" type="button">
-              Disconnect
-            </button>
-            <a
-              id="collabLink"
-              class="rc-button rc-collab-link"
-              target="_blank"
-              rel="noopener noreferrer"
-              referrerpolicy="no-referrer"
-              >Open peer link</a
-            >
-          </div>
-          <h3 class="rc-heading">Live conversation · my microphone</h3>
-          <button
-            id="collabVoice"
-            class="rc-button"
-            type="button"
-            aria-pressed="false"
-            aria-describedby="collabVoiceStatus"
-          >
-            Unmute my mic
-          </button>
-          <p
-            id="collabVoiceStatus"
-            class="rc-note"
-            role="status"
-            aria-live="polite"
-          ></p>
-          <h3 class="rc-heading">Listening · only for me</h3>
-          <button
-            id="collabPlayback"
-            class="rc-button"
-            type="button"
-            aria-pressed="false"
-            aria-describedby="collabPlaybackStatus"
-          >
-            Mute everyone for me
-          </button>
-          <p
-            id="collabPlaybackStatus"
-            class="rc-note"
-            role="status"
-            aria-live="polite"
-          ></p>
           <h3 class="rc-heading">People</h3>
           <ul
             id="collabPeers"

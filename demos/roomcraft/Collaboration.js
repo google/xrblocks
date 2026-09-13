@@ -163,6 +163,9 @@ class Collaboration {
     this.playbackMuted = false;
     this.joinCode = '';
     this.roomNotice = '';
+    this.hasConnected = false;
+    this.roomActionHadFocus = false;
+    this.retryHadFocus = false;
     this.draft = {
       name: options.displayName,
       transport: options.transport,
@@ -203,6 +206,10 @@ class Collaboration {
         'collabJoinCode',
         'collabJoinRoom',
         'collabCopyCode',
+        'collabRooms',
+        'collabRoomsSummary',
+        'collabLobbyName',
+        'collabActions',
       ].map((id) => [id, document.getElementById(id)])
     );
     this.dom.collaboration.hidden = false;
@@ -234,6 +241,9 @@ class Collaboration {
       void this.joinRoom();
     });
     this.listen(this.dom.collabCopyCode, 'click', () => void this.copyCode());
+    this.listen(this.dom.collabLobbyName, 'input', () =>
+      this.setDraft('name', this.dom.collabLobbyName.value)
+    );
     this.listen(window, 'pagehide', () => this.dispose());
     this.listen(room, 'change', () => this.renderRoster());
     this.listen(room, 'selectionchange', () => this.renderRoster());
@@ -287,6 +297,16 @@ class Collaboration {
     return this.joinRoom(generateRoomCode());
   }
 
+  isCurrentRoom(code, name) {
+    return (
+      !!this.connection?.ready &&
+      !!this.session?.isOpen &&
+      this.options.transport === 'webrtc' &&
+      this.options.room === code &&
+      this.options.displayName === readableName(name)
+    );
+  }
+
   async joinRoom(value = this.joinCode) {
     if (this.disposed || this.room.busy || this.joining) return;
     try {
@@ -294,7 +314,8 @@ class Collaboration {
       if (!code) throw new Error('Enter the four-letter room code.');
       const displayName = readableName(this.draft.name);
       if (!displayName)
-        throw new Error('Enter your display name in Connection settings.');
+        throw new Error('Enter the name you want to use when joining.');
+      if (this.isCurrentRoom(code, displayName)) return;
       this.releaseSession();
       this.clearFailure();
       this.options = {
@@ -647,6 +668,10 @@ class Collaboration {
       /^[A-Z]{4}$/.test(this.options.room)
         ? this.options.room
         : null;
+    const joined = this.isCurrentRoom(
+      normalizeRoomCode(this.joinCode),
+      this.draft.name
+    );
     const draftDirty =
       this.draft.name !== this.options.displayName ||
       this.draft.transport !== this.options.transport ||
@@ -728,10 +753,18 @@ class Collaboration {
             : ''),
         mode: this.options.virtual ? 'Virtual world' : 'Physical room',
         startDisabled: this.disposed || this.room.busy || this.joining,
+        joinLabel: joined
+          ? 'Joined'
+          : roomCode &&
+              normalizeRoomCode(this.joinCode) === roomCode &&
+              this.session?.isOpen
+            ? 'Rejoin'
+            : 'Join',
         joinDisabled:
           this.disposed ||
           this.room.busy ||
           this.joining ||
+          joined ||
           !normalizeRoomCode(this.joinCode),
         copyDisabled: this.disposed || !this.session?.isOpen || !roomCode,
       },
@@ -825,6 +858,41 @@ class Collaboration {
 
   renderDOM(state) {
     const dom = this.dom;
+    const roomActions = [
+      dom.collabStartRoom,
+      dom.collabJoinRoom,
+      dom.collabJoinCode,
+    ];
+    const active = document.activeElement;
+    if (active === dom.collabRetry && state.controls.retryDisabled)
+      this.retryHadFocus = true;
+    if (state.joining && roomActions.includes(active))
+      this.roomActionHadFocus = true;
+    if (state.connected && !this.hasConnected) {
+      this.hasConnected = true;
+      const focusedAction = roomActions.includes(active);
+      if (!dom.collabRooms.contains(active) || focusedAction) {
+        if (
+          focusedAction ||
+          (active === document.body && this.roomActionHadFocus)
+        )
+          dom.collabRoomsSummary.focus();
+        setProperty(dom.collabRooms, 'open', false);
+      }
+      this.roomActionHadFocus = false;
+    }
+    setProperty(
+      dom.collabRoomsSummary,
+      'textContent',
+      state.applied.room ? 'Room options' : 'Start or join a room'
+    );
+    setProperty(dom.collabActions, 'hidden', !state.applied.room);
+    setProperty(dom.collabLobbyName, 'value', state.draft.name);
+    setProperty(
+      dom.collabLobbyName,
+      'disabled',
+      state.controls.settingsDisabled
+    );
     setProperty(dom.collabStatus.dataset, 'state', state.status);
     setProperty(dom.collabStatus, 'textContent', state.statusText);
     setProperty(
@@ -846,11 +914,12 @@ class Collaboration {
     setProperty(dom.collabJoinCode, 'disabled', state.rooms.startDisabled);
     setProperty(dom.collabStartRoom, 'disabled', state.rooms.startDisabled);
     setProperty(dom.collabJoinRoom, 'disabled', state.rooms.joinDisabled);
+    setProperty(dom.collabJoinRoom, 'textContent', state.rooms.joinLabel);
     setProperty(dom.collabCopyCode, 'disabled', state.rooms.copyDisabled);
     setProperty(
       dom.collabIdentity,
       'textContent',
-      `${state.applied.name}${state.applied.roomId ? ` · ${state.applied.roomId}` : ''}`
+      `${state.applied.name} · ${state.rooms.mode}`
     );
     setProperty(dom.collabTransport, 'value', state.draft.transport);
     setProperty(
@@ -881,6 +950,15 @@ class Collaboration {
     );
     setProperty(dom.collabTransportHelp, 'textContent', state.transportHelp);
     setProperty(dom.collabRetry, 'disabled', state.controls.retryDisabled);
+    if (this.retryHadFocus && !state.controls.retryDisabled) {
+      this.retryHadFocus = false;
+      if (
+        document.activeElement === document.body &&
+        !this.consoleScript.keyboardCard?.visible &&
+        !dom.collabRetry.closest('[hidden], .rc-collapsed, .rc-hidden')
+      )
+        dom.collabRetry.focus();
+    }
     setProperty(dom.collabConnect, 'disabled', state.controls.connectDisabled);
     setProperty(dom.collabLeave, 'disabled', state.controls.disconnectDisabled);
     if (state.shareUrl) {

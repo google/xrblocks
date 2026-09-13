@@ -601,6 +601,115 @@ describe('collaboration room-code lobby', () => {
     ).toBe('legacy-room');
   });
 
+  it('does not reconnect an unchanged joined room, but offers Rejoin for a new name', async () => {
+    const controller = consoleScript.collaboration;
+    await controller.joinRoom('BCDF');
+    await controller.toggleVoice();
+    expect(controller.getState().rooms).toMatchObject({
+      joinLabel: 'Joined',
+      joinDisabled: true,
+    });
+    await controller.joinRoom('bcdf');
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+    expect(session.voice.disable).not.toHaveBeenCalled();
+    controller.setDraft('name', 'Bob');
+    expect(controller.getState().rooms).toMatchObject({
+      joinLabel: 'Rejoin',
+      joinDisabled: false,
+    });
+    session = new Session();
+    await controller.joinRoom();
+    expect(net.joinRoom).toHaveBeenCalledTimes(2);
+    expect(controller.getState().applied.name).toBe('Bob');
+    expect(session.voice.enable).not.toHaveBeenCalled();
+  });
+
+  it('exposes one shared name draft and compacts room options only on the first connection', async () => {
+    const controller = consoleScript.collaboration;
+    const rooms = element('collabRooms') as HTMLDetailsElement;
+    expect(rooms.open).toBe(true);
+    setField('collabLobbyName', 'Bob');
+    expect((element('collabName') as HTMLInputElement).value).toBe('Bob');
+    await controller.joinRoom('BCDF');
+    expect(rooms.open).toBe(false);
+    expect(controller.getState().applied.name).toBe('Bob');
+    rooms.open = true;
+    const input = element('collabLobbyName') as HTMLInputElement;
+    input.focus();
+    input.setSelectionRange(1, 2);
+    controller.render();
+    session.dispatchEvent(new Event('user-update'));
+    expect(rooms.open).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([1, 2]);
+    controller.resetDraft();
+    expect(input.value).toBe('Bob');
+  });
+
+  it('does not collapse room options or overwrite a name being edited when joining completes', async () => {
+    const controller = consoleScript.collaboration;
+    const gate = deferred();
+    net.joinRoom.mockImplementationOnce(async (_id, options) => {
+      net.session = session;
+      session.transport = options.transport;
+      await gate.promise;
+      return session;
+    });
+    const joining = controller.joinRoom('BCDF');
+    const name = element('collabLobbyName') as HTMLInputElement;
+    name.focus();
+    setField('collabLobbyName', 'Still editing');
+    gate.resolve();
+    await joining;
+    expect((element('collabRooms') as HTMLDetailsElement).open).toBe(true);
+    expect(document.activeElement).toBe(name);
+    expect(name.value).toBe('Still editing');
+    expect(controller.getState()).toMatchObject({
+      applied: {name: 'Alice'},
+      draft: {name: 'Still editing'},
+    });
+  });
+
+  it('restores Retry focus after its temporary disabled state without stealing active edits', async () => {
+    const dropFocus = () => {
+      document.body.tabIndex = -1;
+      document.body.focus();
+      document.body.removeAttribute('tabindex');
+    };
+    const controller = consoleScript.collaboration;
+    await controller.joinRoom('BCDF');
+    const sync = bridge();
+    const retry = retryButton();
+    retry.focus();
+    sync.status = 'syncing';
+    dispatch(sync, {type: 'statuschange'});
+    expect(retry.disabled).toBe(true);
+    dropFocus();
+    sync.status = 'ready';
+    dispatch(sync, {type: 'statuschange'});
+    expect(document.activeElement).toBe(retry);
+    sync.status = 'syncing';
+    dispatch(sync, {type: 'statuschange'});
+    (element('collabRooms') as HTMLDetailsElement).open = true;
+    const name = element('collabLobbyName');
+    name.focus();
+    sync.status = 'ready';
+    dispatch(sync, {type: 'statuschange'});
+    expect(document.activeElement).toBe(name);
+    retry.focus();
+    sync.status = 'syncing';
+    dispatch(sync, {type: 'statuschange'});
+    dropFocus();
+    const {UICard} = await import('xrblocks');
+    consoleScript.keyboardCard = new UICard();
+    consoleScript.keyboardCard.visible = true;
+    expect(document.activeElement?.id).toBe('');
+    expect(controller.consoleScript.keyboardCard.visible).toBe(true);
+    sync.status = 'ready';
+    dispatch(sync, {type: 'statuschange'});
+    expect(document.activeElement?.id).toBe('');
+  });
+
   it('starts a code room with the existing scene and shares only the code', async () => {
     const controller = consoleScript.collaboration;
     const before = consoleScript.room.layout;
@@ -971,9 +1080,8 @@ describe('collaboration panel', () => {
 
   it('shows identity, colored roster, peer selections and departures safely', () => {
     expect(element('collaboration').hidden).toBe(false);
-    expect(element('collabIdentity').textContent).toBe(
-      'Alice · roomcraft:room:studio'
-    );
+    expect(element('collabIdentity').textContent).toBe('Alice · Physical room');
+    expect(element('collabRoomCode').textContent).toBe('Named room: studio');
     expect(element('collabStatus').dataset.state).toBe('ready');
     expect(element('collabPeers').textContent).toContain('Alice (you)');
     session.users.set('bob', {peerId: 'bob', displayName: '<img src=x>Bob'});

@@ -145,17 +145,25 @@ export class CollaborationSpatialView {
     });
 
     this.codeText = text('', 56, {fontSize: 36, fontWeight: 'bold'});
-    this.codeHint = text('', 100);
+    this.codeHint = text('', 80);
     this.roomsPanel = new xb.UIPanel({
       style: {
         width: '100%',
-        height: 384,
+        height: 400,
         flexShrink: 0,
         flexDirection: 'column',
         gap: 12,
       },
       children: [
         this.codeText,
+        row(
+          [
+            this.button('lobby-name', 'Name to use', () =>
+              this.editField('name')
+            ),
+          ],
+          52
+        ),
         row(
           [
             this.button('start-room', 'Start new room', () =>
@@ -173,7 +181,7 @@ export class CollaborationSpatialView {
           60
         ),
         this.codeHint,
-        text('Joining uses WebRTC. Microphone stays opt-in.', 52),
+        text('Room changes stop your mic; unmute stays opt-in.', 32),
       ],
     });
 
@@ -244,6 +252,7 @@ export class CollaborationSpatialView {
     });
     this.panel.name = 'RoomcraftCollaborationPanel';
     this.controls.get('name').style.flexGrow = 2;
+    this.controls.get('start-room').style.backgroundColor = '#8a4a33';
     this.host.attachCollaborationPanel(this.tab, this.panel);
     this.unsubscribe = controller.subscribe((state) => this.render(state));
   }
@@ -349,7 +358,7 @@ export class CollaborationSpatialView {
     setChanged(
       this.roomText,
       'text',
-      `Room: ${state.applied.roomId || 'not joined'}`
+      `Room: ${state.applied.room || 'not joined'}`
     );
     setChanged(
       this.codeText,
@@ -386,6 +395,17 @@ export class CollaborationSpatialView {
       'disabled',
       state.rooms.joinDisabled
     );
+    setChanged(this.controls.get('join-room'), 'label', state.rooms.joinLabel);
+    setChanged(
+      this.controls.get('lobby-name'),
+      'label',
+      `Name to use: ${state.draft.name || '(enter)'}`
+    );
+    setChanged(
+      this.controls.get('lobby-name'),
+      'disabled',
+      state.controls.settingsDisabled
+    );
     setChanged(
       this.controls.get('copy-code'),
       'disabled',
@@ -400,7 +420,16 @@ export class CollaborationSpatialView {
     setChanged(
       this.statusText,
       'text',
-      state.error ? 'Connection needs attention' : state.statusText
+      state.error
+        ? 'Connection needs attention'
+        : !state.applied.room
+          ? 'Your scene is local. Start or join a room.'
+          : state.statusText
+    );
+    setChanged(
+      this.connectionRow.style,
+      'display',
+      state.applied.room ? 'flex' : 'none'
     );
     setChanged(
       this.statusText.style,

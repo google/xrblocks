@@ -82,6 +82,7 @@ function initialState() {
       mode: 'Physical room',
       startDisabled: false,
       joinDisabled: false,
+      joinLabel: 'Join',
       copyDisabled: false,
     },
     transportLabel: 'Same-browser tabs',
@@ -382,6 +383,31 @@ describe('Roomcraft collaboration spatial view', () => {
     activate('copy-code');
     expect(controller.copyCode).toHaveBeenCalledOnce();
     expect(controller.toggleVoice).not.toHaveBeenCalled();
+  });
+
+  it('exposes shared name editing in the lobby and omits irrelevant connection actions', () => {
+    controller.state.applied.room = '';
+    controller.state.applied.roomId = '';
+    controller.state.connected = false;
+    attach();
+    expect(view.section).toBe('rooms');
+    expect(view.connectionRow.style.display).toBe('none');
+    expect(view.statusText.text).toBe(
+      'Your scene is local. Start or join a room.'
+    );
+    host.setPrompt('preserve author draft');
+    activate('lobby-name');
+    host.xrKeyboard.pressKey('x');
+    expect(controller.setDraft).toHaveBeenCalledWith('name', 'Draft namex');
+    expect(control('name').label).toContain('Draft namex');
+    expect(control('lobby-name').label).toContain('Draft namex');
+    expect(host.promptValue).toBe('preserve author draft');
+    expect(controller.joinRoom).not.toHaveBeenCalled();
+    controller.state.rooms.joinLabel = 'Joined';
+    controller.state.rooms.joinDisabled = true;
+    controller.emit();
+    expect(control('join-room').label).toBe('Joined');
+    expect(control('join-room').disabled).toBe(true);
   });
 
   it('renders pending, errors, microphone and separate incoming listening state', () => {

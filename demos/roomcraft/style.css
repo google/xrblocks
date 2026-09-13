@@ -323,7 +323,36 @@
 }
 
 #collabRoomCode {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
   font-weight: 700;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+#collabCopyCode {
+  flex-shrink: 0;
+}
+
+#collabRoomNotice {
+  min-height: 2.8em;
+}
+
+#collabActions[hidden] {
+  display: none;
+}
+
+.rc-audio-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rc-audio-actions .rc-button {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 12px;
 }
 
 .rc-collab-settings > .rc-collab-fields,
