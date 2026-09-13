@@ -1188,7 +1188,7 @@ export class RoomcraftConsole extends xb.Script {
     setChanged(
       this.xrKeyboardTitle,
       'text',
-      `${label}; Enter saves, not generates.`
+      `${label}; Enter finishes editing.`
     );
     this.positionKeyboard();
     this.refresh();

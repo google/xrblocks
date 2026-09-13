@@ -255,7 +255,7 @@ class Collaboration {
     if (this.failureOperation === 'configuration') {
       this.clearFailure();
       this.consoleScript.setStatus(
-        'Connection draft restored. No reconnect or scene edit was made.'
+        'Unapplied connection changes discarded. Connection, scene, prompt and audio are unchanged.'
       );
     }
     this.render();

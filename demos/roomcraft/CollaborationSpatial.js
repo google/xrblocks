@@ -158,7 +158,9 @@ export class CollaborationSpatialView {
         row(
           [
             this.button('name', 'Edit name', () => this.editField('name')),
-            this.button('reset', 'Reset draft', () => controller.resetDraft()),
+            this.button('reset', 'Discard changes', () =>
+              controller.resetDraft()
+            ),
           ],
           60
         ),
@@ -180,7 +182,7 @@ export class CollaborationSpatialView {
         ),
         this.relayText,
         text(
-          'Enter finishes the field. Apply & reconnect changes the connection; it never generates.',
+          'Enter finishes editing. Discard changes restores applied settings without reconnecting or changing the scene, prompt or audio.',
           52,
           {fontSize: 24, lineHeight: 1.05}
         ),

@@ -327,12 +327,14 @@ describe('Roomcraft collaboration spatial view', () => {
     expect(routes.at(-1)).toBe('name');
   });
 
-  it('resets the shared draft and active settings keyboard without touching authoring', () => {
+  it('discards shared edits and updates the settings keyboard without touching authoring', () => {
     attach();
     host.setPrompt('authoring stays here');
     activate('name');
     expect(host.settingsKeyboard.field).toBe('name');
     expect(control('settings').label).toContain('unapplied');
+    expect(control('reset').label).toBe('Discard changes');
+    expect(control('reset').ariaLabel).toBe('Discard changes');
     activate('reset');
     expect(controller.resetDraft).toHaveBeenCalledOnce();
     expect(host.xrKeyboard.value).toBe(controller.state.applied.name);
@@ -601,7 +603,9 @@ describe('Roomcraft settings keyboard routing', () => {
       expect(host.xrKeyboard.value).toBe(
         controller.state.draft[field as keyof State['draft']]
       );
-      expect(host.xrKeyboardTitle.text).toContain('Enter saves');
+      expect(host.xrKeyboardTitle.text).toBe(
+        `${field === 'name' ? 'Room display name' : 'Relay URL'}; Enter finishes editing.`
+      );
       host.xrKeyboard.pressKey('x');
       expect(controller.state.draft[field as keyof State['draft']]).toMatch(
         /x$/

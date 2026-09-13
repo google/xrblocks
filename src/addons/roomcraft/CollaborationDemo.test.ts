@@ -573,7 +573,7 @@ describe('collaboration panel', () => {
     consoleScript = await startRoomcraftDemo();
   });
 
-  it('marks unapplied settings and resets them without reconnecting or changing audio/authoring', async () => {
+  it('discards unapplied settings without reconnecting or changing audio/authoring', async () => {
     const controller = consoleScript.collaboration;
     const prompt = element('prompt') as HTMLTextAreaElement;
     prompt.value = 'keep this authoring draft';
@@ -587,8 +587,12 @@ describe('collaboration panel', () => {
     controller.setDraft('relay', 'wss://relay.example/');
     expect(controller.getState().draftDirty).toBe(true);
     expect(element('collabDraftIndicator').hidden).toBe(false);
+    expect(element('collabReset').textContent?.trim()).toBe('Discard changes');
+    expect(element('collabReset').title).toContain(
+      'Discard unapplied name, transport and relay edits.'
+    );
     controller.reportError(new Error('Bad relay draft'), 'configuration');
-    controller.resetDraft();
+    element('collabReset').click();
     expect(controller.getState()).toMatchObject({
       draft: {name: 'Alice', transport: 'broadcast', relay: ''},
       draftDirty: false,
@@ -606,6 +610,9 @@ describe('collaboration panel', () => {
     expect(prompt.value).toBe('keep this authoring draft');
     expect([prompt.selectionStart, prompt.selectionEnd]).toEqual([3, 8]);
     expect(consoleScript.room.selectedId).toBe('chair');
+    expect(consoleScript.statusMessage).toBe(
+      'Unapplied connection changes discarded. Connection, scene, prompt and audio are unchanged.'
+    );
   });
 
   it('does not clear an unrelated connection/playback error when resetting a draft', () => {
