@@ -305,6 +305,16 @@
   outline-offset: 3px;
 }
 
+.rc-draft-indicator {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--rc-coral-strong);
+}
+
+.rc-draft-indicator[hidden] {
+  display: none;
+}
+
 .rc-collab-settings > .rc-collab-fields,
 .rc-collab-settings > .rc-fineprint {
   margin-top: 12px;

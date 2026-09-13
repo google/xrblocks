@@ -42,6 +42,8 @@ Collaboration is also available inside Spatial studio, in its **People** tab, in
 
 Editing a connection name or relay in the spatial keyboard updates only that settings draft, including its DOM counterpart. Enter finishes the field; Apply & reconnect applies the connection. It does not overwrite the authoring prompt, change scene selection, or invoke Generate/Gemini. Returning to authoring restores the authoring keyboard context and cancels held settings-key captures before changing routes. Controls and participant rows are kept stable on unchanged state rather than rebuilt on each update.
 
+Unapplied connection changes are marked in both views. **Reset draft** restores the current connection's settings without reconnecting, stopping audio, or editing the scene or authoring prompt. It also updates an open settings keyboard and clears configuration errors, but preserves unrelated connection or playback errors. Stored relay text does not mark a BroadcastChannel/WebRTC draft as changed while that relay is unused.
+
 Room IDs are prefixed with `roomcraft:room:` or `roomcraft:virtual:` so different page modes cannot accidentally meet. The `room` parameter accepts 1 to 48 ASCII letters, digits, underscores, or hyphens, starting with a letter or digit; an omitted or empty value uses `roomcraft-demo`, while an invalid ID shows an error without joining a different room.
 
 ### Names and share links

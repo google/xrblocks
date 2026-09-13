@@ -143,6 +143,7 @@ class Collaboration {
     this.cleanups = [];
     this.disposed = false;
     this.failure = '';
+    this.failureOperation = '';
     this.voiceFailure = '';
     this.voiceRequest = 0;
     this.voicePending = false;
@@ -166,6 +167,9 @@ class Collaboration {
         'collabLink',
         'collabConnection',
         'collabSettings',
+        'collabDraftIndicator',
+        'collabDraftStatus',
+        'collabReset',
         'collabTransport',
         'collabTransportHelp',
         'collabRelayField',
@@ -195,6 +199,7 @@ class Collaboration {
       event.preventDefault();
       void this.reconnect();
     });
+    this.listen(this.dom.collabReset, 'click', () => this.resetDraft());
     this.listen(this.dom.collabLeave, 'click', () => this.leave());
     this.listen(this.dom.collabVoice, 'click', () => void this.toggleVoice());
     this.listen(this.dom.collabPlayback, 'click', () => this.togglePlayback());
@@ -237,6 +242,22 @@ class Collaboration {
     }
     if (this.draft[field] === value) return;
     this.draft[field] = value;
+    this.render();
+  }
+
+  resetDraft() {
+    if (this.disposed) return;
+    this.draft = {
+      name: this.options.displayName,
+      transport: this.options.transport,
+      relay: this.options.relay,
+    };
+    if (this.failureOperation === 'configuration') {
+      this.clearFailure();
+      this.consoleScript.setStatus(
+        'Connection draft restored. No reconnect or scene edit was made.'
+      );
+    }
     this.render();
   }
 
@@ -380,6 +401,7 @@ class Collaboration {
       this.consoleScript.setError('');
     }
     this.failure = '';
+    this.failureOperation = '';
     this.invalidConfiguration = false;
   }
 
@@ -489,10 +511,11 @@ class Collaboration {
 
   reportError(error, operation = 'sync') {
     if (this.disposed) return;
-    if (operation === 'configuration') {
-      this.invalidConfiguration = true;
+    this.invalidConfiguration = operation === 'configuration';
+    if (this.invalidConfiguration) {
       setProperty(this.dom.collabSettings, 'open', true);
     }
+    this.failureOperation = operation;
     this.failure = `Collaboration ${operation}: ${error?.message ?? String(error)}`;
     this.consoleScript.showError(new Error(this.failure));
     this.consoleScript.setStatus(
@@ -527,6 +550,11 @@ class Collaboration {
   }
 
   getState() {
+    const draftDirty =
+      this.draft.name !== this.options.displayName ||
+      this.draft.transport !== this.options.transport ||
+      (this.draft.transport === 'websocket' &&
+        this.draft.relay !== this.options.relay);
     const status = this.disposed
       ? 'closed'
       : this.failure
@@ -591,6 +619,10 @@ class Collaboration {
         name: this.options.displayName,
       },
       draft: {...this.draft},
+      draftDirty,
+      draftStatus: draftDirty
+        ? 'Changes are not applied yet.'
+        : 'Settings match the current connection.',
       transportLabel: TRANSPORTS[this.options.transport].label,
       transportHelp: TRANSPORTS[this.draft.transport].help,
       status,
@@ -601,6 +633,9 @@ class Collaboration {
       connected: !!this.session?.isOpen && !!this.connection?.ready,
       roomBusy: this.room.busy,
       controls: {
+        resetDisabled:
+          this.disposed ||
+          (!draftDirty && this.failureOperation !== 'configuration'),
         settingsDisabled: this.disposed,
         retryDisabled:
           this.disposed ||
@@ -689,6 +724,9 @@ class Collaboration {
     setProperty(dom.collabName, 'value', state.draft.name);
     setProperty(dom.collabName, 'disabled', state.controls.settingsDisabled);
     setProperty(dom.collabRelay, 'value', state.draft.relay);
+    setProperty(dom.collabDraftIndicator, 'hidden', !state.draftDirty);
+    setProperty(dom.collabDraftStatus, 'textContent', state.draftStatus);
+    setProperty(dom.collabReset, 'disabled', state.controls.resetDisabled);
     setProperty(
       dom.collabRelayField,
       'hidden',

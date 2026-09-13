@@ -74,6 +74,7 @@ function initialState() {
       transport: 'websocket',
       relay: 'ws://localhost:3000',
     },
+    draftDirty: true,
     transportLabel: 'Same-browser tabs',
     transportHelp: 'Use a relay for a shared WebSocket room.',
     status: 'ready',
@@ -84,6 +85,7 @@ function initialState() {
     connected: true,
     roomBusy: false,
     controls: {
+      resetDisabled: false,
       settingsDisabled: false,
       connectDisabled: false,
       retryDisabled: false,
@@ -120,6 +122,16 @@ class Controller {
     this.emit();
   });
   reconnect = vi.fn();
+  resetDraft = vi.fn(() => {
+    this.state.draft = {
+      name: this.state.applied.name,
+      transport: this.state.applied.transport,
+      relay: this.state.applied.relay,
+    };
+    this.state.draftDirty = false;
+    this.state.controls.resetDisabled = true;
+    this.emit();
+  });
   retry = vi.fn();
   leave = vi.fn();
   toggleVoice = vi.fn();
@@ -313,6 +325,22 @@ describe('Roomcraft collaboration spatial view', () => {
     expect(routes.at(-1)).toBeUndefined();
     host.closeSettingsKeyboard();
     expect(routes.at(-1)).toBe('name');
+  });
+
+  it('resets the shared draft and active settings keyboard without touching authoring', () => {
+    attach();
+    host.setPrompt('authoring stays here');
+    activate('name');
+    expect(host.settingsKeyboard.field).toBe('name');
+    expect(control('settings').label).toContain('unapplied');
+    activate('reset');
+    expect(controller.resetDraft).toHaveBeenCalledOnce();
+    expect(host.xrKeyboard.value).toBe(controller.state.applied.name);
+    expect(host.promptValue).toBe('authoring stays here');
+    expect(control('reset').disabled).toBe(true);
+    expect(control('settings').label).toBe('Connection settings');
+    expect(controller.reconnect).not.toHaveBeenCalled();
+    expect(controller.toggleVoice).not.toHaveBeenCalled();
   });
 
   it('renders pending, errors, microphone and separate incoming listening state', () => {

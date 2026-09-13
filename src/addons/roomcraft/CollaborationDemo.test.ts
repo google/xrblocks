@@ -573,6 +573,65 @@ describe('collaboration panel', () => {
     consoleScript = await startRoomcraftDemo();
   });
 
+  it('marks unapplied settings and resets them without reconnecting or changing audio/authoring', async () => {
+    const controller = consoleScript.collaboration;
+    const prompt = element('prompt') as HTMLTextAreaElement;
+    prompt.value = 'keep this authoring draft';
+    prompt.setSelectionRange(3, 8);
+    consoleScript.promptValue = prompt.value;
+    consoleScript.room.selectedId = 'chair';
+    await controller.toggleVoice();
+    controller.togglePlayback();
+    controller.setDraft('name', 'Unapplied name');
+    controller.setDraft('transport', 'websocket');
+    controller.setDraft('relay', 'wss://relay.example/');
+    expect(controller.getState().draftDirty).toBe(true);
+    expect(element('collabDraftIndicator').hidden).toBe(false);
+    controller.reportError(new Error('Bad relay draft'), 'configuration');
+    controller.resetDraft();
+    expect(controller.getState()).toMatchObject({
+      draft: {name: 'Alice', transport: 'broadcast', relay: ''},
+      draftDirty: false,
+      error: '',
+      listening: {muted: true},
+      microphone: {transmitting: true},
+    });
+    expect(mocks.spatialStates.at(-1)).toMatchObject({draftDirty: false});
+    expect(element('collabDraftIndicator').hidden).toBe(true);
+    expect((element('collabReset') as HTMLButtonElement).disabled).toBe(true);
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+    expect(session.voice.enable).toHaveBeenCalledOnce();
+    expect(session.voice.disable).not.toHaveBeenCalled();
+    expect(session.voice.setMuted).not.toHaveBeenCalled();
+    expect(prompt.value).toBe('keep this authoring draft');
+    expect([prompt.selectionStart, prompt.selectionEnd]).toEqual([3, 8]);
+    expect(consoleScript.room.selectedId).toBe('chair');
+  });
+
+  it('does not clear an unrelated connection/playback error when resetting a draft', () => {
+    const controller = consoleScript.collaboration;
+    controller.setDraft('name', 'Unapplied');
+    controller.reportError(new Error('Draft failed'), 'configuration');
+    controller.reportError(new Error('Playback blocked'), 'playback');
+    controller.resetDraft();
+    expect(controller.getState().draftDirty).toBe(false);
+    expect(controller.getState().error).toContain('Playback blocked');
+  });
+
+  it('marks relay edits only when the selected transport uses a relay', () => {
+    const controller = consoleScript.collaboration;
+    controller.setDraft('relay', 'wss://relay.example/');
+    expect(controller.getState().draftDirty).toBe(false);
+    controller.setDraft('transport', 'websocket');
+    expect(controller.getState().draftDirty).toBe(true);
+    controller.setDraft('transport', 'broadcast');
+    expect(controller.getState().draftDirty).toBe(false);
+    controller.setDraft('name', 'Unapplied');
+    controller.setDraft('name', 'Alice');
+    expect(controller.getState().draftDirty).toBe(false);
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+  });
+
   it('keeps common audio controls before the roster and preserves the settings disclosure', () => {
     const settings = element('collabSettings') as HTMLDetailsElement;
     expect(settings.open).toBe(false);

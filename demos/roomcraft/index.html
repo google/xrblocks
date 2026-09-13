@@ -87,7 +87,12 @@
           </p>
           <p id="collabIdentity" class="rc-note rc-collab-identity"></p>
           <details id="collabSettings" class="rc-collab-settings">
-            <summary>Connection settings</summary>
+            <summary>
+              Connection settings
+              <span id="collabDraftIndicator" class="rc-draft-indicator" hidden
+                >Unapplied</span
+              >
+            </summary>
             <form id="collabConnection" class="rc-collab-fields" novalidate>
               <label for="collabTransport">Connection</label>
               <select
@@ -120,9 +125,15 @@
                 autocomplete="off"
                 required
               />
-              <button id="collabConnect" class="rc-button" type="submit">
-                Apply &amp; reconnect
-              </button>
+              <p id="collabDraftStatus" class="rc-note" role="status"></p>
+              <div class="rc-row rc-row-wrap">
+                <button id="collabConnect" class="rc-button" type="submit">
+                  Apply &amp; reconnect
+                </button>
+                <button id="collabReset" class="rc-button" type="button">
+                  Reset draft
+                </button>
+              </div>
             </form>
             <p class="rc-fineprint">
               Reconnect applies the name and transport without reloading your

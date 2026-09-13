@@ -156,7 +156,10 @@ export class CollaborationSpatialView {
       children: [
         this.transportHelp,
         row(
-          [this.button('name', 'Edit name', () => this.editField('name'))],
+          [
+            this.button('name', 'Edit name', () => this.editField('name')),
+            this.button('reset', 'Reset draft', () => controller.resetDraft()),
+          ],
           60
         ),
         row(
@@ -203,6 +206,7 @@ export class CollaborationSpatialView {
       ],
     });
     this.panel.name = 'RoomcraftCollaborationPanel';
+    this.controls.get('name').style.flexGrow = 2;
     this.host.attachCollaborationPanel(this.tab, this.panel);
     this.unsubscribe = controller.subscribe((state) => this.render(state));
   }
@@ -372,7 +376,17 @@ export class CollaborationSpatialView {
     setChanged(
       this.controls.get('name'),
       'label',
-      `Edit name: ${state.draft.name || '(empty)'}`
+      `Name: ${state.draft.name || '(empty)'}`
+    );
+    setChanged(
+      this.controls.get('reset'),
+      'disabled',
+      !!state.controls.resetDisabled
+    );
+    setChanged(
+      this.controls.get('settings'),
+      'label',
+      state.draftDirty ? 'Settings - unapplied' : 'Connection settings'
     );
     setChanged(
       this.controls.get('relay'),
