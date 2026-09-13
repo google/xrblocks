@@ -1,5 +1,3 @@
-# Pull Request Template
-
 ## Description
 
 <!-- Brief summary of changes. For new demos/samples, include the directory path (e.g., `demos/my_demo/`). -->
