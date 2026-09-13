@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid c2d80e4
- * @builddate 2026-09-12T03:42:07.007Z
+ * @commitid ac875cb
+ * @builddate 2026-09-13T08:29:59.070Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -20356,6 +20356,13 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
         let placed = false;
         const origPosition = objectToPlace.position.clone();
         const origQuaternion = objectToPlace.quaternion.clone();
+        // Scratch box reused while evaluating the first candidate. Obstacle bounds
+        // only get cached once a candidate has been rejected, so the common
+        // first-candidate success never pays for the cache. The cache lives inside
+        // the frame loop so it is rebuilt after yielding, picking up obstacles that
+        // moved in the meantime.
+        const obstacleBox = new THREE.Box3();
+        let obstacleBounds;
         for (const cand of candidates) {
             // Verify timeout inside the validation loop to abort quickly if running slow
             if (timer.getElapsed() - startElapsed >= timeoutSeconds) {
@@ -20391,14 +20398,22 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
             // Shrink and shift collision box slightly to avoid grounding collisions with the table mesh
             const collisionBox = objectBox.clone();
             let collision = false;
-            const obstacleBox = new THREE.Box3();
             for (const obstacle of collidableObjects) {
                 if (obstacle === cand.plane) {
                     continue;
                 }
-                obstacle.updateMatrixWorld(true);
-                obstacleBox.setFromObject(obstacle);
-                if (collisionBox.intersectsBox(obstacleBox)) {
+                let bounds = obstacleBounds?.get(obstacle);
+                if (!bounds) {
+                    obstacle.updateMatrixWorld(true);
+                    bounds = obstacleBox.setFromObject(obstacle);
+                    // Ancestor bounds include the moving object, so they change from one
+                    // candidate to the next and must not be cached.
+                    if (obstacleBounds && !isDescendantOf(objectToPlace, obstacle)) {
+                        bounds = bounds.clone();
+                        obstacleBounds.set(obstacle, bounds);
+                    }
+                }
+                if (collisionBox.intersectsBox(bounds)) {
                     collision = true;
                     break;
                 }
@@ -20407,6 +20422,9 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
                 placed = true;
                 break; // Successful placement!
             }
+            // Start caching only once a candidate has been rejected, since more
+            // candidates will now be tested against the same obstacles.
+            obstacleBounds ??= new Map();
         }
         if (placed) {
             return true;
