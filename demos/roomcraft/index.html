@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Roomcraft | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <link rel="stylesheet" href="../../samples/main.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script>
+      window.litDisableBundleWarning = true;
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+          "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.10/build/index.module.js",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/",
+          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai@2.7.0/+esm"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <main id="console" class="rc-console">
+      <header class="rc-header">
+        <p class="rc-eyebrow">XR Blocks</p>
+        <h1 class="rc-title">Roomcraft</h1>
+        <p class="rc-tagline" id="tagline">Speak a scene into your room.</p>
+        <button
+          id="toggleConsole"
+          class="rc-button rc-console-toggle"
+          type="button"
+          aria-expanded="true"
+          aria-controls="consoleContent"
+        >
+          Hide controls
+        </button>
+        <button
+          id="spatialStudio"
+          class="rc-button rc-spatial-toggle"
+          type="button"
+          aria-pressed="false"
+          title="Open the in-scene authoring panel and spatial keyboard"
+        >
+          Spatial studio
+        </button>
+      </header>
+
+      <div id="consoleContent" class="rc-content">
+        <p id="status" class="rc-status" role="status" aria-live="polite">
+          Loading the starter scene.
+        </p>
+        <p id="error" class="rc-error" role="alert" hidden></p>
+
+        <section class="rc-section" aria-labelledby="aiHeading">
+          <h2 id="aiHeading" class="rc-heading">Gemini</h2>
+          <p id="connectionHelp" class="rc-note">
+            Configure Gemini here before entering XR. No key is needed to view
+            saved scenes.
+          </p>
+          <p id="aiStatus" class="rc-note">
+            Not connected. Starter scenes and direct editing work without a key.
+          </p>
+          <button id="connect" class="rc-button" type="button">
+            Connect Gemini
+          </button>
+          <p class="rc-fineprint">
+            A browser API key is for local prototyping only. Voice audio is sent
+            only to Gemini for transcription, followed by the instruction and
+            scene layout for the edit. No camera imagery is sent.
+          </p>
+        </section>
+
+        <section class="rc-section" aria-labelledby="startersHeading">
+          <h2 id="startersHeading" class="rc-heading">Starter scenes</h2>
+          <p id="startersNote" class="rc-note">
+            Handcrafted examples that need no API key. Each one replaces the
+            current scene, and undo brings the previous one back. New design
+            clears the scene so you can describe one object at a time.
+          </p>
+          <div id="starters" class="rc-row rc-row-wrap"></div>
+          <div class="rc-row rc-row-wrap">
+            <button id="newDesign" class="rc-button" type="button">
+              New design
+            </button>
+          </div>
+        </section>
+
+        <section class="rc-section" aria-labelledby="promptHeading">
+          <h2 id="promptHeading" class="rc-heading">Describe an edit</h2>
+          <label class="rc-visually-hidden" for="prompt">Scene edit</label>
+          <textarea
+            id="prompt"
+            class="rc-input rc-prompt"
+            rows="8"
+            autocomplete="off"
+            aria-describedby="promptHelp"
+            placeholder="Create a little robot standing on the floor"
+          ></textarea>
+          <div class="rc-row rc-row-wrap">
+            <button
+              id="mic"
+              class="rc-button rc-button-icon"
+              type="button"
+              aria-pressed="false"
+              aria-describedby="voiceHelp"
+              title="Record one instruction for Gemini"
+            >
+              Talk
+            </button>
+            <button
+              id="cancelVoice"
+              class="rc-button"
+              type="button"
+              aria-label="Cancel voice input"
+              hidden
+            >
+              Cancel
+            </button>
+            <button
+              id="generate"
+              class="rc-button rc-button-primary"
+              type="button"
+            >
+              Generate
+            </button>
+          </div>
+          <p id="promptHelp" class="rc-note">
+            Enter to generate. Shift+Enter for a new line.
+          </p>
+          <p id="voiceHelp" class="rc-fineprint">
+            Talk records up to 30 seconds. Finish sends the audio to Gemini and
+            applies the spoken edit. Cancel stops recording or transcription. At
+            the time limit, the transcript is kept for review; press Generate to
+            apply it. An existing draft requires Replace draft before recording;
+            Keep draft cancels without changing it. Nothing records
+            automatically.
+          </p>
+          <div id="suggestions" class="rc-row rc-row-wrap rc-chips"></div>
+        </section>
+
+        <section
+          id="environmentSection"
+          class="rc-section"
+          aria-labelledby="environmentHeading"
+          hidden
+        >
+          <h2 id="environmentHeading" class="rc-heading">Environment</h2>
+          <p id="environmentSummary" class="rc-note">No virtual environment.</p>
+          <div class="rc-row rc-row-wrap">
+            <button id="moonlight" class="rc-button" type="button">
+              Moonlight
+            </button>
+            <button id="sunrise" class="rc-button" type="button">
+              Sunrise
+            </button>
+            <button id="enterWorld" class="rc-button" type="button">
+              Enter world
+            </button>
+          </div>
+          <p id="environmentNote" class="rc-note">
+            Moonlight and Sunrise are direct atmosphere edits, not AI requests.
+          </p>
+        </section>
+
+        <section class="rc-section" aria-labelledby="sceneHeading">
+          <h2 id="sceneHeading" class="rc-heading">Scene</h2>
+          <p id="sceneSummary" class="rc-scene-summary">No scene yet.</p>
+          <p id="placement" class="rc-note">
+            Preview arrangement in front of you.
+          </p>
+          <div class="rc-row">
+            <label class="rc-label" for="selection">Selected object</label>
+            <select id="selection" class="rc-select">
+              <option value="">Nothing selected</option>
+            </select>
+          </div>
+          <p id="design" class="rc-note">Nothing selected.</p>
+          <ul id="parts" class="rc-parts" hidden></ul>
+          <div class="rc-row rc-row-wrap">
+            <button
+              id="motion"
+              class="rc-button"
+              type="button"
+              aria-pressed="false"
+            >
+              Pause motion
+            </button>
+          </div>
+          <p id="motionNote" class="rc-note">
+            Nothing in this scene moves. Authored motion is optional.
+          </p>
+          <div class="rc-row rc-row-wrap">
+            <button id="focusSelected" class="rc-button" type="button">
+              Focus selected
+            </button>
+            <button id="frameScene" class="rc-button" type="button">
+              Frame scene
+            </button>
+            <button id="removeSelected" class="rc-button" type="button">
+              Remove selected
+            </button>
+          </div>
+          <div class="rc-row rc-row-wrap">
+            <button id="place" class="rc-button" type="button">
+              Place on surface
+            </button>
+            <button id="undo" class="rc-button" type="button">Undo</button>
+            <button id="redo" class="rc-button" type="button">Redo</button>
+            <button id="exhibit" class="rc-button" type="button">
+              Add downloaded exhibit
+            </button>
+            <button id="export" class="rc-button" type="button">
+              Export JSON
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

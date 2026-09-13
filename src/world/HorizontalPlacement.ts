@@ -244,6 +244,14 @@ export async function placeOnHorizontalSurface(
     const origPosition = objectToPlace.position.clone();
     const origQuaternion = objectToPlace.quaternion.clone();
 
+    // Scratch box reused while evaluating the first candidate. Obstacle bounds
+    // only get cached once a candidate has been rejected, so the common
+    // first-candidate success never pays for the cache. The cache lives inside
+    // the frame loop so it is rebuilt after yielding, picking up obstacles that
+    // moved in the meantime.
+    const obstacleBox = new THREE.Box3();
+    let obstacleBounds: Map<THREE.Object3D, THREE.Box3> | undefined;
+
     for (const cand of candidates) {
       // Verify timeout inside the validation loop to abort quickly if running slow
       if (timer.getElapsed() - startElapsed >= timeoutSeconds) {
@@ -289,14 +297,22 @@ export async function placeOnHorizontalSurface(
       const collisionBox = objectBox.clone();
 
       let collision = false;
-      const obstacleBox = new THREE.Box3();
       for (const obstacle of collidableObjects) {
         if (obstacle === cand.plane) {
           continue;
         }
-        obstacle.updateMatrixWorld(true);
-        obstacleBox.setFromObject(obstacle);
-        if (collisionBox.intersectsBox(obstacleBox)) {
+        let bounds = obstacleBounds?.get(obstacle);
+        if (!bounds) {
+          obstacle.updateMatrixWorld(true);
+          bounds = obstacleBox.setFromObject(obstacle);
+          // Ancestor bounds include the moving object, so they change from one
+          // candidate to the next and must not be cached.
+          if (obstacleBounds && !isDescendantOf(objectToPlace, obstacle)) {
+            bounds = bounds.clone();
+            obstacleBounds.set(obstacle, bounds);
+          }
+        }
+        if (collisionBox.intersectsBox(bounds)) {
           collision = true;
           break;
         }
@@ -306,6 +322,10 @@ export async function placeOnHorizontalSurface(
         placed = true;
         break; // Successful placement!
       }
+
+      // Start caching only once a candidate has been rejected, since more
+      // candidates will now be tested against the same obstacles.
+      obstacleBounds ??= new Map();
     }
 
     if (placed) {
