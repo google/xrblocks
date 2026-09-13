@@ -640,6 +640,7 @@ export class RoomcraftConsole extends xb.Script {
       flexGrow: 1,
       height: '100%',
       fontSize: 36,
+      whiteSpace: 'nowrap',
       borderRadius: 18,
       backgroundColor: background,
       color: '#f6ece0',
