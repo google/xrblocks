@@ -98,6 +98,7 @@ const sidebars: SidebarsConfig = {
         'samples/Gemini-XRObject',
         'samples/Language-Detector',
         'samples/Gemini-Icebreakers',
+        'samples/Collaborative-Roomcraft',
       ],
     },
     {

@@ -4,6 +4,8 @@ import {
   WebRTCTransport,
   WebSocketTransport,
   enableNet,
+  generateRoomCode,
+  normalizeRoomCode,
 } from 'xrblocks/addons/netblocks/src/index.js';
 import {RoomcraftNet} from 'xrblocks/addons/roomcraft/index.js';
 import {CollaborationSpatialView} from './CollaborationSpatial.js';
@@ -66,7 +68,9 @@ export function collaborationRelayUrl(value, pageUrl) {
 }
 
 function connectionOptions(source) {
-  const transport = source.searchParams.get('transport') || 'broadcast';
+  const transport =
+    source.searchParams.get('transport') ||
+    (source.searchParams.get('lobby') === '1' ? 'webrtc' : 'broadcast');
   if (!Object.hasOwn(TRANSPORTS, transport)) {
     throw new Error('Choose BroadcastChannel, WebRTC or WebSocket.');
   }
@@ -92,13 +96,22 @@ export function collaborationOptions(url, virtual = false) {
       'Room IDs need 1 to 48 letters, digits, underscores, or hyphens, starting with a letter or digit.'
     );
   }
-  const room = requestedRoom || DEFAULT_ROOM;
+  const lobby = source.searchParams.get('lobby') === '1';
+  if (lobby && requestedRoom && !normalizeRoomCode(requestedRoom))
+    throw new Error('Enter the four-letter room code.');
+  const room = requestedRoom
+    ? lobby
+      ? normalizeRoomCode(requestedRoom)
+      : requestedRoom
+    : lobby
+      ? ''
+      : DEFAULT_ROOM;
   const displayName =
     readableName(source.searchParams.get('name')) ||
     `Maker ${crypto.getRandomValues(new Uint16Array(1))[0].toString(16).padStart(4, '0')}`;
   return {
     room,
-    roomId: `roomcraft:${virtual ? 'virtual' : 'room'}:${room}`,
+    roomId: room ? `roomcraft:${virtual ? 'virtual' : 'room'}:${room}` : '',
     displayName,
     virtual,
     ...connectionOptions(source),
@@ -148,6 +161,8 @@ class Collaboration {
     this.voiceRequest = 0;
     this.voicePending = false;
     this.playbackMuted = false;
+    this.joinCode = '';
+    this.roomNotice = '';
     this.draft = {
       name: options.displayName,
       transport: options.transport,
@@ -181,6 +196,13 @@ class Collaboration {
         'collabVoiceStatus',
         'collabPlayback',
         'collabPlaybackStatus',
+        'collabRoomCode',
+        'collabRoomNotice',
+        'collabStartRoom',
+        'collabJoinForm',
+        'collabJoinCode',
+        'collabJoinRoom',
+        'collabCopyCode',
       ].map((id) => [id, document.getElementById(id)])
     );
     this.dom.collaboration.hidden = false;
@@ -203,6 +225,15 @@ class Collaboration {
     this.listen(this.dom.collabLeave, 'click', () => this.leave());
     this.listen(this.dom.collabVoice, 'click', () => void this.toggleVoice());
     this.listen(this.dom.collabPlayback, 'click', () => this.togglePlayback());
+    this.listen(this.dom.collabStartRoom, 'click', () => void this.startRoom());
+    this.listen(this.dom.collabJoinCode, 'input', () =>
+      this.setJoinCode(this.dom.collabJoinCode.value)
+    );
+    this.listen(this.dom.collabJoinForm, 'submit', (event) => {
+      event.preventDefault();
+      void this.joinRoom();
+    });
+    this.listen(this.dom.collabCopyCode, 'click', () => void this.copyCode());
     this.listen(window, 'pagehide', () => this.dispose());
     this.listen(room, 'change', () => this.renderRoster());
     this.listen(room, 'selectionchange', () => this.renderRoster());
@@ -245,6 +276,63 @@ class Collaboration {
     this.render();
   }
 
+  setJoinCode(value) {
+    if (typeof value !== 'string') throw new Error('Enter a room code.');
+    this.joinCode = value.toUpperCase().replace(/[^A-Z]/g, '');
+    this.roomNotice = '';
+    this.render();
+  }
+
+  startRoom() {
+    return this.joinRoom(generateRoomCode());
+  }
+
+  async joinRoom(value = this.joinCode) {
+    if (this.disposed || this.room.busy || this.joining) return;
+    try {
+      const code = normalizeRoomCode(value);
+      if (!code) throw new Error('Enter the four-letter room code.');
+      const displayName = readableName(this.draft.name);
+      if (!displayName)
+        throw new Error('Enter your display name in Connection settings.');
+      this.releaseSession();
+      this.clearFailure();
+      this.options = {
+        ...this.options,
+        room: code,
+        roomId: `roomcraft:${this.options.virtual ? 'virtual' : 'room'}:${code}`,
+        displayName,
+        transport: 'webrtc',
+        relay: '',
+      };
+      this.draft = {name: displayName, transport: 'webrtc', relay: ''};
+      this.joinCode = code;
+      this.roomNotice = '';
+      await this.start();
+    } catch (error) {
+      this.reportError(error, 'room');
+    }
+  }
+
+  async copyCode() {
+    const code = this.getState().rooms.code;
+    if (this.disposed || !code) return;
+    try {
+      if (!navigator.clipboard?.writeText)
+        throw new Error(
+          'Copy is unavailable in this browser. Share the displayed room code instead.'
+        );
+      await navigator.clipboard.writeText(code);
+      if (!this.disposed && this.options.room === code) {
+        this.roomNotice = `Copied ${code}. Share it with someone opening the same room mode.`;
+        this.render();
+      }
+    } catch (error) {
+      if (!this.disposed && this.options.room === code)
+        this.reportError(error, 'copy room code');
+    }
+  }
+
   resetDraft() {
     if (this.disposed) return;
     this.draft = {
@@ -280,7 +368,7 @@ class Collaboration {
   }
 
   async start() {
-    if (this.disposed || this.joining) return;
+    if (this.disposed || this.joining || !this.options.room) return;
     const connection = {joining: true, cleanups: [], ready: false};
     this.connection = connection;
     const current = () => !this.disposed && this.connection === connection;
@@ -314,7 +402,9 @@ class Collaboration {
       await joined;
       if (!current()) return;
       const session = connection.session;
-      connection.bridge = new RoomcraftNet(this.room, session);
+      connection.bridge = new RoomcraftNet(this.room, session, {
+        roomId: this.options.roomId,
+      });
       listen(session, 'user-join', () => this.renderRoster());
       listen(session, 'user-update', () => this.renderRoster());
       listen(session, 'user-leave', () => this.renderRoster());
@@ -368,7 +458,7 @@ class Collaboration {
   }
 
   async reconnect() {
-    if (this.disposed || this.room.busy) return;
+    if (this.disposed || this.room.busy || !this.options.room) return;
     try {
       const source = new URL(this.url);
       source.searchParams.set('transport', this.draft.transport);
@@ -380,6 +470,7 @@ class Collaboration {
       this.releaseSession();
       this.clearFailure();
       this.options = next;
+      this.roomNotice = '';
       this.draft.name = displayName;
       if (next.transport === 'websocket') this.draft.relay = next.relay;
       this.updateIdentity();
@@ -525,7 +616,8 @@ class Collaboration {
   }
 
   async retry() {
-    if (this.disposed || this.joining || this.room.busy) return;
+    if (this.disposed || this.joining || this.room.busy || !this.options.room)
+      return;
     if (!this.connection && this.invalidConfiguration) {
       await this.reconnect();
       return;
@@ -550,6 +642,11 @@ class Collaboration {
   }
 
   getState() {
+    const roomCode =
+      this.options.transport === 'webrtc' &&
+      /^[A-Z]{4}$/.test(this.options.room)
+        ? this.options.room
+        : null;
     const draftDirty =
       this.draft.name !== this.options.displayName ||
       this.draft.transport !== this.options.transport ||
@@ -572,7 +669,9 @@ class Collaboration {
             ? `Connected · ${TRANSPORTS[this.options.transport].label}`
             : status === 'syncing'
               ? `Syncing${pending ? ` · ${pending} pending` : ''}…`
-              : 'Disconnected · your local scene is still available';
+              : this.options.room
+                ? 'Disconnected · your local scene is still available'
+                : 'Start a new room or join a code. Your scene is local until you join.';
     const enabled = this.session?.voice.isEnabled() ?? false;
     const transmitting = enabled && !this.session.voice.isMuted();
     const unavailable = this.voiceUnavailable();
@@ -619,6 +718,23 @@ class Collaboration {
         name: this.options.displayName,
       },
       draft: {...this.draft},
+      rooms: {
+        code: roomCode,
+        input: this.joinCode,
+        notice:
+          this.roomNotice ||
+          (!roomCode && this.options.room
+            ? 'Use Open peer link for this connection. Start or Join switches to a WebRTC code room.'
+            : ''),
+        mode: this.options.virtual ? 'Virtual world' : 'Physical room',
+        startDisabled: this.disposed || this.room.busy || this.joining,
+        joinDisabled:
+          this.disposed ||
+          this.room.busy ||
+          this.joining ||
+          !normalizeRoomCode(this.joinCode),
+        copyDisabled: this.disposed || !this.session?.isOpen || !roomCode,
+      },
       draftDirty,
       draftStatus: draftDirty
         ? 'Changes are not applied yet.'
@@ -639,10 +755,11 @@ class Collaboration {
         settingsDisabled: this.disposed,
         retryDisabled:
           this.disposed ||
+          !this.options.room ||
           this.joining ||
           this.room.busy ||
           this.bridge?.status === 'syncing',
-        connectDisabled: this.disposed || this.room.busy,
+        connectDisabled: this.disposed || this.room.busy || !this.options.room,
         disconnectDisabled: this.disposed || !this.connection,
       },
       microphone: {
@@ -674,7 +791,7 @@ class Collaboration {
       listening: {muted: this.playbackMuted, disabled: this.disposed},
       participants,
       shareUrl:
-        this.invalidConfiguration && !this.connection
+        !this.options.room || (this.invalidConfiguration && !this.connection)
           ? null
           : collaborationPeerUrl(this.url, this.options),
     };
@@ -711,9 +828,29 @@ class Collaboration {
     setProperty(dom.collabStatus.dataset, 'state', state.status);
     setProperty(dom.collabStatus, 'textContent', state.statusText);
     setProperty(
+      dom.collabRoomCode,
+      'textContent',
+      state.rooms.code
+        ? `Room code: ${state.rooms.code}`
+        : state.applied.room
+          ? `Named room: ${state.applied.room}`
+          : 'No room joined'
+    );
+    setProperty(
+      dom.collabRoomNotice,
+      'textContent',
+      state.rooms.notice ||
+        `${state.rooms.mode} mode. Codes are meeting identifiers, not passwords.`
+    );
+    setProperty(dom.collabJoinCode, 'value', state.rooms.input);
+    setProperty(dom.collabJoinCode, 'disabled', state.rooms.startDisabled);
+    setProperty(dom.collabStartRoom, 'disabled', state.rooms.startDisabled);
+    setProperty(dom.collabJoinRoom, 'disabled', state.rooms.joinDisabled);
+    setProperty(dom.collabCopyCode, 'disabled', state.rooms.copyDisabled);
+    setProperty(
       dom.collabIdentity,
       'textContent',
-      `${state.applied.name} · ${state.applied.roomId}`
+      `${state.applied.name}${state.applied.roomId ? ` · ${state.applied.roomId}` : ''}`
     );
     setProperty(dom.collabTransport, 'value', state.draft.transport);
     setProperty(

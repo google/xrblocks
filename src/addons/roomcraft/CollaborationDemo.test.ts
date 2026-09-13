@@ -105,7 +105,7 @@ vi.mock('xrblocks/addons/roomcraft/index.js', async () => {
   };
 });
 
-vi.mock('xrblocks/addons/netblocks/src/index.js', () => {
+vi.mock('xrblocks/addons/netblocks/src/index.js', async () => {
   mocks.netModuleLoaded();
   class MockTransport extends EventTarget {
     close = vi.fn();
@@ -115,6 +115,7 @@ vi.mock('xrblocks/addons/netblocks/src/index.js', () => {
     }
   }
   return {
+    ...(await import('../netblocks/src/core/utils/RoomCode')),
     enableNet: mocks.enableNet,
     BroadcastChannelTransport: class extends MockTransport {},
     WebRTCTransport: class extends MockTransport {},
@@ -565,6 +566,164 @@ describe('collaboration URL configuration', () => {
       xrAutomation: '1',
     });
   });
+});
+
+describe('collaboration room-code lobby', () => {
+  beforeEach(async () => {
+    window.history.replaceState({}, '', '?collab=1&lobby=1&name=Alice');
+    consoleScript = await startRoomcraftDemo();
+  });
+
+  it('stays local without opening a transport or requesting a microphone', () => {
+    expect(net.joinRoom).not.toHaveBeenCalled();
+    expect(mocks.enableNet).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(consoleScript.collaboration.getState()).toMatchObject({
+      applied: {room: '', transport: 'webrtc'},
+      connected: false,
+      shareUrl: null,
+      controls: {retryDisabled: true, connectDisabled: true},
+    });
+    expect(element('collabStatus').textContent).toContain('Start a new room');
+  });
+
+  it('normalizes a code link while retaining legacy named-room links', async () => {
+    const {collaborationOptions} = await import(
+      '../../../demos/roomcraft/Collaboration.js'
+    );
+    expect(
+      collaborationOptions('https://example.test/?collab=1&lobby=1&room=bcdf')
+        .room
+    ).toBe('BCDF');
+    expect(
+      collaborationOptions('https://example.test/?collab=1&room=legacy-room')
+        .room
+    ).toBe('legacy-room');
+  });
+
+  it('starts a code room with the existing scene and shares only the code', async () => {
+    const controller = consoleScript.collaboration;
+    const before = consoleScript.room.layout;
+    consoleScript.promptValue = 'keep my prompt';
+    consoleScript.room.selectedId = 'chair';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {writeText},
+    });
+    element('collabStartRoom').click();
+    await vi.waitFor(() => expect(controller.getState().connected).toBe(true));
+    const code = controller.getState().rooms.code;
+    expect(code).toMatch(/^[BCDFGHJKLMNPQRSTVWXYZ]{4}$/);
+    expect(net.joinRoom).toHaveBeenCalledWith(
+      `roomcraft:room:${code}`,
+      expect.objectContaining({
+        displayName: 'Alice',
+      })
+    );
+    expect(controller.getState().applied.transport).toBe('webrtc');
+    expect(consoleScript.room.layout).toBe(before);
+    expect(consoleScript.promptValue).toBe('keep my prompt');
+    expect(consoleScript.room.selectedId).toBe('chair');
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    await controller.copyCode();
+    expect(writeText).toHaveBeenCalledWith(code);
+    expect(element('collabRoomNotice').textContent).toContain(`Copied ${code}`);
+    expect(
+      new URL(controller.getState().shareUrl).searchParams.get('room')
+    ).toBe(code);
+  });
+
+  it('joins a normalized code without generating and rejects incomplete codes', async () => {
+    const controller = consoleScript.collaboration;
+    const generate = vi.spyOn(consoleScript, 'generate');
+    setField('collabJoinCode', 'bc');
+    expect((element('collabJoinRoom') as HTMLButtonElement).disabled).toBe(
+      true
+    );
+    await controller.joinRoom();
+    expect(net.joinRoom).not.toHaveBeenCalled();
+    expect(controller.getState().error).toContain('four-letter');
+    setField('collabJoinCode', 'bcdf');
+    expect((element('collabJoinCode') as HTMLInputElement).value).toBe('BCDF');
+    element('collabJoinForm').dispatchEvent(
+      new Event('submit', {cancelable: true})
+    );
+    await vi.waitFor(() => expect(controller.getState().connected).toBe(true));
+    expect(net.joinRoom.mock.calls[0][0]).toBe('roomcraft:room:BCDF');
+    expect(generate).not.toHaveBeenCalled();
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    controller.leave();
+    expect(controller.getState().connected).toBe(false);
+    expect(consoleScript.room.layout.objects).toHaveLength(1);
+  });
+
+  it('preserves the current connection when a room code is invalid and surfaces clipboard failures', async () => {
+    const controller = consoleScript.collaboration;
+    await controller.joinRoom('BCDF');
+    await controller.joinRoom('X');
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+    expect(session.close).not.toHaveBeenCalled();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error('Clipboard denied')),
+      },
+    });
+    await controller.copyCode();
+    expect(controller.getState().error).toContain('Clipboard denied');
+  });
+
+  it('releases old capture on a room switch without restarting it or losing local state', async () => {
+    const controller = consoleScript.collaboration;
+    await controller.joinRoom('BCDF');
+    await controller.toggleVoice();
+    controller.togglePlayback();
+    const previousSession = session;
+    const scene = consoleScript.room.layout;
+    consoleScript.promptValue = 'keep this draft';
+    session = new Session();
+    await controller.joinRoom('WXYZ');
+    expect(previousSession.close).toHaveBeenCalled();
+    expect(previousSession.voice.disable).toHaveBeenCalled();
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(session.playbackMuted).toBe(true);
+    expect(consoleScript.room.layout).toBe(scene);
+    expect(consoleScript.promptValue).toBe('keep this draft');
+    expect(controller.getState().applied.room).toBe('WXYZ');
+  });
+
+  it.each(['broadcast', 'websocket'])(
+    'uses the transport-aware peer link rather than a code invitation for %s',
+    async (transport) => {
+      const controller = consoleScript.collaboration;
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {writeText},
+      });
+      await controller.joinRoom('BCDF');
+      await controller.copyCode();
+      expect(writeText).toHaveBeenCalledOnce();
+      controller.setDraft('transport', transport);
+      if (transport === 'websocket')
+        controller.setDraft('relay', 'wss://relay.example/');
+      session = new Session();
+      await controller.reconnect();
+      expect(controller.getState().rooms).toMatchObject({
+        code: null,
+        copyDisabled: true,
+      });
+      expect(element('collabRoomNotice').textContent).toContain(
+        'Open peer link'
+      );
+      await controller.copyCode();
+      expect(writeText).toHaveBeenCalledOnce();
+      const link = new URL(controller.getState().shareUrl);
+      expect(link.searchParams.get('transport') ?? 'broadcast').toBe(transport);
+      expect(link.searchParams.get('room')).toBe('BCDF');
+    }
+  );
 });
 
 describe('collaboration panel', () => {

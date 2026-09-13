@@ -38,6 +38,7 @@ const continuation = new WeakMap<
     revision: RoomcraftRevision;
     clock: number;
     fingerprint: string;
+    roomId?: string;
   }
 >();
 
@@ -114,7 +115,8 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
 
   constructor(
     readonly room: Roomcraft,
-    readonly session: NetSession
+    readonly session: NetSession,
+    private readonly options: {roomId?: string} = {}
   ) {
     super();
     this.name = 'RoomcraftNet';
@@ -201,7 +203,8 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     this.createBinding = (id, object) => new Binding({id, object});
     try {
       this.reconcile();
-      const carried = continuation.get(this.room);
+      const saved = continuation.get(this.room);
+      const carried = saved?.roomId === this.options.roomId ? saved : undefined;
       if (carried) {
         this.clock = carried.clock;
         this.currentRevision = {...carried.revision};
@@ -426,6 +429,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
           revision: {...this.currentRevision},
           clock: this.clock,
           fingerprint: this.fingerprint(),
+          roomId: this.options.roomId,
         });
       }
       this.motionClock.dispose();

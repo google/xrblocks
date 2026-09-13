@@ -86,6 +86,35 @@
             Joining collaboration…
           </p>
           <p id="collabIdentity" class="rc-note rc-collab-identity"></p>
+          <p id="collabRoomCode" class="rc-note" role="status">
+            No room joined
+          </p>
+          <div class="rc-row rc-row-wrap">
+            <button id="collabStartRoom" class="rc-button" type="button">
+              Start new room
+            </button>
+            <button id="collabCopyCode" class="rc-button" type="button">
+              Copy code
+            </button>
+          </div>
+          <form id="collabJoinForm" class="rc-collab-fields" novalidate>
+            <label for="collabJoinCode">Join a room code</label>
+            <div class="rc-row">
+              <input
+                id="collabJoinCode"
+                type="text"
+                maxlength="4"
+                placeholder="CODE"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="collabRoomNotice"
+              />
+              <button id="collabJoinRoom" class="rc-button" type="submit">
+                Join
+              </button>
+            </div>
+          </form>
+          <p id="collabRoomNotice" class="rc-fineprint" role="status"></p>
           <details id="collabSettings" class="rc-collab-settings">
             <summary>
               Connection settings

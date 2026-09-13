@@ -75,6 +75,15 @@ function initialState() {
       relay: 'ws://localhost:3000',
     },
     draftDirty: true,
+    rooms: {
+      code: '',
+      input: 'BCDF',
+      notice: '',
+      mode: 'Physical room',
+      startDisabled: false,
+      joinDisabled: false,
+      copyDisabled: false,
+    },
     transportLabel: 'Same-browser tabs',
     transportHelp: 'Use a relay for a shared WebSocket room.',
     status: 'ready',
@@ -122,6 +131,13 @@ class Controller {
     this.emit();
   });
   reconnect = vi.fn();
+  startRoom = vi.fn();
+  joinRoom = vi.fn();
+  copyCode = vi.fn();
+  setJoinCode = vi.fn((value: string) => {
+    this.state.rooms.input = value.toUpperCase().replace(/[^A-Z]/g, '');
+    this.emit();
+  });
   resetDraft = vi.fn(() => {
     this.state.draft = {
       name: this.state.applied.name,
@@ -305,6 +321,7 @@ describe('Roomcraft collaboration spatial view', () => {
       view.roster,
       view.peoplePanel,
       view.settingsPanel,
+      view.roomsPanel,
     ]) {
       expect(panel.style.flexDirection).toBe('column');
     }
@@ -332,7 +349,7 @@ describe('Roomcraft collaboration spatial view', () => {
     host.setPrompt('authoring stays here');
     activate('name');
     expect(host.settingsKeyboard.field).toBe('name');
-    expect(control('settings').label).toContain('unapplied');
+    expect(control('settings').label).toContain('edited');
     expect(control('reset').label).toBe('Discard changes');
     expect(control('reset').ariaLabel).toBe('Discard changes');
     activate('reset');
@@ -340,8 +357,30 @@ describe('Roomcraft collaboration spatial view', () => {
     expect(host.xrKeyboard.value).toBe(controller.state.applied.name);
     expect(host.promptValue).toBe('authoring stays here');
     expect(control('reset').disabled).toBe(true);
-    expect(control('settings').label).toBe('Connection settings');
+    expect(control('settings').label).toBe('Settings');
     expect(controller.reconnect).not.toHaveBeenCalled();
+    expect(controller.toggleVoice).not.toHaveBeenCalled();
+  });
+
+  it('routes code entry independently and requires the explicit Join action', () => {
+    attach();
+    host.setPrompt('keep this author draft');
+    activate('rooms');
+    activate('room-code');
+    expect(host.settingsKeyboard.field).toBe('room-code');
+    host.xrKeyboard.pressKey('x');
+    expect(controller.state.rooms.input).toBe('BCDFX');
+    controller.setJoinCode('wxyz');
+    expect(host.xrKeyboard.value).toBe('WXYZ');
+    host.xrKeyboard.pressKey('Enter');
+    expect(controller.joinRoom).not.toHaveBeenCalled();
+    expect(host.promptValue).toBe('keep this author draft');
+    activate('join-room');
+    expect(controller.joinRoom).toHaveBeenCalledOnce();
+    activate('start-room');
+    expect(controller.startRoom).toHaveBeenCalledOnce();
+    activate('copy-code');
+    expect(controller.copyCode).toHaveBeenCalledOnce();
     expect(controller.toggleVoice).not.toHaveBeenCalled();
   });
 
@@ -474,7 +513,7 @@ describe('Roomcraft collaboration spatial view', () => {
       }));
       attach();
       activate('tab');
-      for (const section of ['people', 'settings']) {
+      for (const section of ['people', 'settings', 'rooms']) {
         activate(section);
         const used = fixedHeight(view.panel);
         expect(used).toBeLessThanOrEqual(800);
@@ -483,6 +522,11 @@ describe('Roomcraft collaboration spatial view', () => {
         expect(52 + 56 + 64 + 28 + used).toBeLessThanOrEqual(cardSpace);
         expect(view.panel.style.overflow).toBe('hidden');
       }
+      const roomRows = view.roomsPanel.children;
+      expect(
+        roomRows.reduce((height, child) => height + fixedHeight(child), 0) +
+          (roomRows.length - 1) * view.roomsPanel.style.gap
+      ).toBeLessThanOrEqual(view.roomsPanel.style.height);
     }
   );
 

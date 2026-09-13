@@ -26,6 +26,12 @@ The XR entry button shows `ENTERING XR...` while the browser responds. If entry 
 
 ## Collaboration and connectivity
 
+Open `/demos/roomcraft-collab/` for the room-code entry. This small launch alias opens the shared Roomcraft editor in its collaboration lobby; it does not copy or fork the editor. The website also lists **Collaborative Roomcraft** as its own sample. The lobby stays local until you choose **Start new room** or enter a four-letter code and press **Join**. Both actions use WebRTC, announce the display name from Connection settings and keep the current scene and authoring draft without reloading the page. Joining an existing room then imports its established shared scene. **Copy code** copies only the code, which is a meeting identifier rather than a password or a guaranteed-unique private room.
+
+The same controls are available inside Spatial studio under **People > Room codes**. The existing spatial keyboard edits the code without touching the authoring prompt; Enter finishes editing, and the separate Join button connects. Room codes require the same room mode on every device: default physical-room mode and `environment=1` virtual-world mode stay separate. Starting or joining another room releases the previous session and peer microphone; capture never restarts automatically. No Gemini key is needed to start or join.
+
+Code-only invitations are for WebRTC. For BroadcastChannel, WebSocket or rooms without a four-letter code, Copy code is unavailable; use **Open peer link** to include the applied room, transport and relay settings instead. Starting or joining a code always selects WebRTC.
+
 Open `http://127.0.0.1:8080/demos/roomcraft/?collab=1&room=roomcraft-demo&name=Alice`, then choose Open peer link in Collaboration. For virtual worlds, add `&environment=1` to the first URL; the peer link preserves that mode. Collaboration is strictly opt-in: only the exact `collab=1` value loads the optional module, after the local starter or saved scene and key setup finish. Ordinary single-player startup does not enable networking.
 
 Open **Connection settings**, choose a connection, then **Apply & reconnect**. The disclosure starts collapsed so the common microphone and listening controls stay near the top, before a growing participant roster. Configuration errors open it automatically; ordinary state updates preserve your disclosure choice. All options use existing public netblocks transports:

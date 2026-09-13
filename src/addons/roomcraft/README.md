@@ -37,6 +37,8 @@ await xb.initScript(collaboration);
 
 Use one bridge per session with matching catalogs and scene coordinates. Logical counters and peer-ID tie-breaks give simultaneous layout writes the same winner. `status`, `pendingCount`, `statuschange`, and `error` expose synchronization state; present errors in your application's UI and call `resync()` to request fresh peer state. `remoteSelections` returns a detached map and `getPeerColor(peerId)` matches each outline to a roster color.
 
+Applications that switch between different rooms should pass `new RoomcraftNet(room, session, {roomId})`, using the same stable ID passed to `joinRoom`. Reconnection retains revision and motion continuity only within that room; entering a different room starts discovery instead of publishing the previous room's edit history as a newer revision.
+
 The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
 
 Crossed grabs use per-object logical claim counters, with the lexicographically smaller peer ID winning equal counters. A grab made after observing the previous claim still takes over normally. The losing interaction is cancelled without erasing the winner's buffered pose. Claim generations survive release, content replacement and late-join catch-up; ownership remains cooperative rather than server-authoritative.

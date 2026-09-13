@@ -246,6 +246,53 @@ describe('RoomcraftNet', () => {
     expect(other.room.getObject('offline-chair')).toBeDefined();
   });
 
+  it('scopes continuation to the room being joined, while retaining same-room offline edits', async () => {
+    const original = await peer(new Bus(), 'a');
+    original.collaboration.dispose();
+    const first = new RoomcraftNet(original.room, original.session, {
+      roomId: 'first',
+    });
+    bridges.push(first);
+    await first.init({interaction: original.interaction});
+    for (let i = 0; i < 4; i++)
+      await original.room.applyPlan({title: `First room edit ${i}`, edits: []});
+    first.dispose();
+    original.session.close();
+    const bus = new Bus();
+    const existing = await peer(bus, 'b');
+    await existing.room.applyPlan({
+      title: 'Established second room',
+      edits: [],
+    });
+    const rejoin = async (id: string) => {
+      const session = new NetSession(
+        new TestTransport(bus, id),
+        new THREE.Group()
+      );
+      sessions.push(session);
+      await session.open('second');
+      const bridge = new RoomcraftNet(original.room, session, {
+        roomId: 'second',
+      });
+      bridges.push(bridge);
+      await bridge.init({interaction: original.interaction});
+      await bus.settle();
+      return {session, bridge};
+    };
+    const second = await rejoin('a2');
+    expect(original.room.layout.title).toBe('Established second room');
+    expect(existing.room.layout.title).toBe('Established second room');
+    second.bridge.dispose();
+    second.session.close();
+    await original.room.applyPlan({
+      title: 'Second room offline edit',
+      edits: [],
+    });
+    await rejoin('a3');
+    expect(original.room.layout.title).toBe('Second room offline edit');
+    expect(existing.room.layout).toEqual(original.room.layout);
+  });
+
   it('keeps the surviving clock after an offline-edited authority returns with a newer scene', async () => {
     let elapsedMs = 10_000;
     let active = 'a';

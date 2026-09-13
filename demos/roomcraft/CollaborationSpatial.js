@@ -48,7 +48,7 @@ export class CollaborationSpatialView {
     this.controller = controller;
     this.disposed = false;
     this.page = 0;
-    this.section = 'people';
+    this.section = controller.getState().applied.room ? 'people' : 'rooms';
     this.controls = new Map();
     this.participantRows = new Map();
     this.state = controller.getState();
@@ -85,6 +85,7 @@ export class CollaborationSpatialView {
         this.button('settings', 'Connection settings', () =>
           this.setSection('settings')
         ),
+        this.button('rooms', 'Room codes', () => this.setSection('rooms')),
       ],
       52
     );
@@ -140,6 +141,39 @@ export class CollaborationSpatialView {
           52
         ),
         text('Local listening only. Gemini Talk is in Create / edit.', 32),
+      ],
+    });
+
+    this.codeText = text('', 56, {fontSize: 36, fontWeight: 'bold'});
+    this.codeHint = text('', 100);
+    this.roomsPanel = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: 384,
+        flexShrink: 0,
+        flexDirection: 'column',
+        gap: 12,
+      },
+      children: [
+        this.codeText,
+        row(
+          [
+            this.button('start-room', 'Start new room', () =>
+              controller.startRoom()
+            ),
+            this.button('copy-code', 'Copy code', () => controller.copyCode()),
+          ],
+          60
+        ),
+        row(
+          [
+            this.button('room-code', 'Enter code', () => this.editRoomCode()),
+            this.button('join-room', 'Join', () => controller.joinRoom()),
+          ],
+          60
+        ),
+        this.codeHint,
+        text('Joining uses WebRTC. Microphone stays opt-in.', 52),
       ],
     });
 
@@ -205,6 +239,7 @@ export class CollaborationSpatialView {
         this.sectionRow,
         this.peoplePanel,
         this.settingsPanel,
+        this.roomsPanel,
       ],
     });
     this.panel.name = 'RoomcraftCollaborationPanel';
@@ -263,6 +298,16 @@ export class CollaborationSpatialView {
     });
   }
 
+  editRoomCode() {
+    this.host.openSettingsKeyboard({
+      field: 'room-code',
+      label: 'Room code; press Join after editing',
+      value: this.state.rooms.input,
+      onChange: (value) => this.controller.setJoinCode(value),
+      onSubmit: (value) => this.controller.setJoinCode(value),
+    });
+  }
+
   createParticipant(participant) {
     const title = text('', 38, {fontSize: 32, fontWeight: 'bold'});
     const detail = text('', 30, {fontSize: 26});
@@ -300,7 +345,52 @@ export class CollaborationSpatialView {
     for (const field of ['name', 'relay']) {
       this.host.syncSettingsKeyboard(field, state.draft[field]);
     }
-    setChanged(this.roomText, 'text', `Room: ${state.applied.roomId}`);
+    this.host.syncSettingsKeyboard('room-code', state.rooms.input);
+    setChanged(
+      this.roomText,
+      'text',
+      `Room: ${state.applied.roomId || 'not joined'}`
+    );
+    setChanged(
+      this.codeText,
+      'text',
+      state.rooms.code
+        ? `Room code: ${state.rooms.code}`
+        : state.applied.room
+          ? `Named room: ${state.applied.room}`
+          : 'Start a room or enter a code'
+    );
+    setChanged(
+      this.codeHint,
+      'text',
+      state.rooms.notice ||
+        `${state.rooms.mode} mode. Everyone needs the same mode and code. Codes are not passwords.`
+    );
+    setChanged(
+      this.controls.get('room-code'),
+      'label',
+      `Code: ${state.rooms.input || '(enter)'}`
+    );
+    setChanged(
+      this.controls.get('room-code'),
+      'disabled',
+      state.rooms.startDisabled
+    );
+    setChanged(
+      this.controls.get('start-room'),
+      'disabled',
+      state.rooms.startDisabled
+    );
+    setChanged(
+      this.controls.get('join-room'),
+      'disabled',
+      state.rooms.joinDisabled
+    );
+    setChanged(
+      this.controls.get('copy-code'),
+      'disabled',
+      state.rooms.copyDisabled
+    );
     setChanged(
       this.transportText,
       'text',
@@ -367,7 +457,12 @@ export class CollaborationSpatialView {
       'display',
       this.section === 'settings' ? 'flex' : 'none'
     );
-    for (const section of ['people', 'settings']) {
+    setChanged(
+      this.roomsPanel.style,
+      'display',
+      this.section === 'rooms' ? 'flex' : 'none'
+    );
+    for (const section of ['people', 'settings', 'rooms']) {
       setChanged(
         this.controls.get(section).style,
         'backgroundColor',
@@ -388,7 +483,7 @@ export class CollaborationSpatialView {
     setChanged(
       this.controls.get('settings'),
       'label',
-      state.draftDirty ? 'Settings - unapplied' : 'Connection settings'
+      state.draftDirty ? 'Settings (edited)' : 'Settings'
     );
     setChanged(
       this.controls.get('relay'),

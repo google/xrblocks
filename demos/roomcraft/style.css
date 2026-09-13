@@ -315,6 +315,17 @@
   display: none;
 }
 
+#collabJoinCode {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+#collabRoomCode {
+  font-weight: 700;
+}
+
 .rc-collab-settings > .rc-collab-fields,
 .rc-collab-settings > .rc-fineprint {
   margin-top: 12px;

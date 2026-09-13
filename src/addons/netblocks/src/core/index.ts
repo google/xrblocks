@@ -18,5 +18,6 @@ export * from './transport/Transport';
 export * from './transport/WebRTCTransport';
 export * from './transport/WebSocketTransport';
 export * from './utils/IdUtils';
+export * from './utils/RoomCode';
 export * from './voice/SpatialVoice';
 export * from './voice/VoiceChat';
