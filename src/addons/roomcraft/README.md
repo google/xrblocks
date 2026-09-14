@@ -2,6 +2,8 @@
 
 Roomcraft turns a description into actual, manipulable 3D content, then applies follow-up instructions to the same scene. "Add a lamp", "make this blue", and "remove the bookshelf" produce validated scene edits rather than a text answer or generated JavaScript.
 
+Roomcraft uses XR Blocks' cross-platform runtime for Android XR and Meta Quest headsets, mobile devices and laptops. Browser capabilities determine which immersive, input and audio features are available; the scene-authoring and collaboration APIs are not headset-specific.
+
 The add-on can compose trusted catalog assets, generate new procedural designs from primitive parts, or author a whole virtual environment from editable landscape recipes. A robot, garden pond, or grove does not need a predefined catalog entry: the planner describes its structure, and Roomcraft builds it locally. Parts can also swing or spin around authored joints. This is bounded procedural geometry and motion, not a photorealistic text-to-mesh service or execution of generated JavaScript. The [interactive demo](../../../demos/roomcraft/) includes no-key handcrafted scenes, a moving compound robot example, and an optional virtual-world mode.
 
 ## Run the demo
@@ -37,9 +39,13 @@ await xb.initScript(collaboration);
 
 Use one bridge per session with matching catalogs and scene coordinates. Logical counters and peer-ID tie-breaks give simultaneous layout writes the same winner. `status`, `pendingCount`, `statuschange`, and `error` expose synchronization state; present errors in your application's UI and call `resync()` to request fresh peer state. `remoteSelections` returns a detached map and `getPeerColor(peerId)` matches each outline to a roster color.
 
+`collaboration.diagnostics` returns detached local metadata: the current revision, queued/applying/unpublished layout state, snapshot/catch-up waits, discovery, held objects and message counts. `diagnosticschange` notifies observers of bridge message activity; use it with the existing status events. No payloads, scene recipes or prompts are included, and reading diagnostics does not send data. Send counts are local transport submissions, not acknowledgements of remote application.
+
 Missing snapshot replies are retried once per second within the eight-second request window. A peer that cannot publish a snapshot returns a bounded, request-correlated reason; an invalid reply reports its validation error rather than later being replaced by a no-reply timeout. Rejected local edits retain their revision and remain pending across Retry and same-room reconnect, so older peer state cannot silently erase them. A positive `pendingCount` in the error state can describe a blocked edit rather than active work; corrective local editing remains available unless Roomcraft itself is busy. After correction, Retry republishes that state before fetching peer snapshots. Recovered synchronization and clock errors clear when the bridge confirms readiness; unrelated configuration or playback errors remain visible.
 
 Applications that switch between different rooms should pass `new RoomcraftNet(room, session, {roomId})`, using the same stable ID passed to `joinRoom`. Reconnection retains revision and motion continuity only within that room; entering a different room starts discovery instead of publishing the previous room's edit history as a newer revision.
+
+For a Join flow, also pass `{seedLocalScene: false}`. A fresh joiner then waits for a seeded room snapshot instead of promoting or offering its own starter state, including when only other joiners are reachable. Pass `true` for an explicit Start flow to establish the initial scene immediately; omitting the option retains legacy discovery behavior. An unanswered Join reports a timeout rather than silently becoming the creator; same-room continuation and explicit local edits retain their revision behavior.
 
 The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
 

@@ -4,6 +4,8 @@ Speak a scene into your room.
 
 This demo composes real 3D objects with the [Roomcraft add-on](../../src/addons/roomcraft/). It arranges preauthored procedural assets, builds new compound objects out of primitive parts that can swing or spin around authored pivots, and loads one optional downloaded glTF model, then applies follow-up instructions to the same scene. New designs use bounded part and motion recipes, not free-form mesh, texture, or animation generation.
 
+The same application is designed for Android XR and Meta Quest headsets, mobile devices and laptops. Use a browser that meets XR Blocks' requirements; immersive XR, hand tracking and microphone availability depend on the device and browser. Non-immersive use follows the SDK's simulator and browser controls rather than requiring a headset.
+
 An optional [virtual world mode](#virtual-world-mode) authors a whole place, with its own ground, sky, light, ponds, paths, and plantings, instead of decorating your room.
 
 ## Run it
@@ -20,7 +22,7 @@ To open a saved scene on another device, serve its exported JSON alongside the d
 
 A standalone headset needs an HTTPS URL it can reach on your LAN, with a certificate its browser trusts. The headset's `127.0.0.1` is not the development computer. Open the LAN URL with `?environment=1`, without the desktop-forcing `formFactor=desktop` or `xrAutomation=1` flags, and use the SDK's XR entry button.
 
-Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialog. On Quest, open the browser controls, choose Connect Gemini near the top, enter your key in the password field, and choose Use for this session before entering XR. Hide controls if they cover the XR entry button. A key configured on another device does not transfer to the headset. The spatial keyboard is for scene instructions, not API keys; exit XR to change the key.
+Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialog. On a headset, open the browser controls, choose Connect Gemini near the top, enter your key in the password field, and choose Use for this session before entering XR. Hide controls if they cover the XR entry button. A key configured on another device does not transfer to the headset. The spatial keyboard is for scene instructions, not API keys; exit XR to change the key.
 
 The XR entry button shows `ENTERING XR...` while the browser responds. If entry fails, the browser error appears below the buttons and Enter XR becomes available to retry.
 
@@ -29,6 +31,8 @@ The XR entry button shows `ENTERING XR...` while the browser responds. If entry 
 Open `/demos/roomcraft-collab/` for the room-code entry. This small launch alias opens the shared Roomcraft editor in its collaboration lobby; it does not copy or fork the editor. The website also lists **Collaborative Roomcraft** as its own sample. The lobby stays local until you choose **Start new room** or enter a four-letter code and press **Join**. Both actions use WebRTC, announce the display name from Connection settings and keep the current scene and authoring draft without reloading the page. Joining an existing room then imports its established shared scene. **Copy code** copies only the code, which is a meeting identifier rather than a password or a guaranteed-unique private room.
 
 The same controls are available inside Spatial studio under **People > Room codes**. The existing spatial keyboard edits the code without touching the authoring prompt; Enter finishes editing, and the separate Join button connects. Room codes require the same room mode on every device: default physical-room mode and `environment=1` virtual-world mode stay separate. Starting or joining another room releases the previous session and peer microphone; capture never restarts automatically. No Gemini key is needed to start or join.
+
+**Start new room** supplies the initial scene. **Join** and code invitations wait for an existing peer snapshot rather than offering the joiner's default scene, even if WebRTC discovery takes longer than expected. A missing host produces a snapshot timeout; it does not silently create a competing scene. This also protects an imported recovery scene from an empty joiner replacing it.
 
 Choose your name directly in the lobby or spatial Room codes panel; it shares the same draft as Connection settings. When the entered code and name already match your connection, Join reads **Joined** and does not reconnect or interrupt audio. Changing the name offers **Rejoin**. After the first connection, the DOM room options compact to keep the code and separate microphone/listening buttons easy to reach, without closing a name field being edited. Manually reopened options and text selection remain stable through participant updates.
 
@@ -43,6 +47,12 @@ Open **Connection settings**, choose a connection, then **Apply & reconnect**. T
 - **WebSocket · existing relay** (`&transport=websocket&relay=wss%3A%2F%2Frelay.example%2Froomcraft`) needs an explicit existing netblocks-compatible relay URL reachable by every peer. The demo does not start or host a relay. HTTPS pages require `wss://` and a certificate trusted by each browser; HTTP pages may also use `ws://`. Credentials, query parameters, and fragments in relay URLs are rejected so they cannot leak through peer links. Use a non-secret relay endpoint; never put a provider key or token in its path. Relay scene traffic is visible to that relay.
 
 The panel shows connection state, pending synchronization, your announced identity, and a colored participant roster with selected-object names. Retry sync asks the bridge to synchronize again, or rejoins after disconnection. Apply & reconnect creates a fresh session without reloading or resetting the locally authored scene, its selection, or the Gemini configuration. Normal shared-scene conflict rules still apply when a peer's scene arrives. Switching or leaving stops peer voice, including a pending microphone request; rejoining never automatically unmutes. The previous bridge/session is released and late async completions cannot replace the new connection. Underlying broker connection attempts may take time to settle; superseded sessions are closed again when they finish.
+
+An open room with no remote participants says **Waiting for peers**, not Connected. Check the mode as well as the code and transport: `roomcraft:room:BCDF` and `roomcraft:virtual:BCDF` are deliberately different rooms. A bare collaboration URL opens physical-room mode; a virtual-world invite includes `environment=1`.
+
+Use **Diagnostics / local log** in the browser controls or **People > Diagnostics** in the spatial studio to compare devices without a remote debugger. The report includes the full room ID, mode, transport, local and remote peer IDs, channel membership, object IDs/counts, scene revision, pending work, message counts and recent state changes. **Refresh report** only reads local state; **Copy diagnostics** works in both views, and **Download diagnostics** saves a JSON report from the browser controls if copying is unavailable on the headset.
+
+Diagnostics stay in page memory and retain the last 64 distinct states until reload. Times are elapsed within that page, not synchronized timestamps across devices. They exclude display names, prompts, keys, page/relay URLs, audio, full scene recipes and raw error text. No report is uploaded automatically. Reports do include room, peer and object identifiers; review them before sharing. Send counts describe local submissions, not delivery acknowledgements, and peer presence alone is not proof that scene content or physical alignment matches. Refresh or copy after the problem occurs, then provide reports from both devices. Remote browser debugging is optional if these reports do not explain the failure.
 
 Connection failures appear in the panel and existing console. Leave stops collaboration while keeping local editing available. Leaving the page or disposing its console also releases the bridge and its session.
 
@@ -238,7 +248,7 @@ Surface placement uses the SDK's detected planes in WebXR and in the simulator, 
 
 The XR studio shows the selected object's name, part count, and how many of its parts move, offers the same Pause and Resume control, and shares errors and operation state with the desktop console. Typing uses the spatial keyboard rather than a native immersive text field. The full read-only part list with per-part motion, the JSON download, and Gemini key configuration remain in the desktop console.
 
-Immersive entry and Gemini scene generation have been used on Meta Quest. A user-run check on September 10, 2026 also confirmed that Talk, microphone recording, Finish, Gemini transcription, and a spoken scene edit worked inside immersive VR. State-only diagnostics showed the document remained visible during successful recordings and transcription. This does not establish that every permission, cancellation, timeout, draft-replacement, or studio-placement case has passed on hardware. Galaxy XR and XREAL Aura have not been tested; no cross-headset compatibility claim is made here.
+Recorded hardware checks include Meta Quest immersive entry, scene generation and speech input, plus collaboration with a laptop. Automated browser checks cover additional scene, input, synchronization and error paths. These results are not exhaustive hardware validation for Android XR, mobile devices or every browser. Permission, audio routing, interruption and spatial-placement behavior still need checking on the target device.
 
 ## SDK ownership
 
