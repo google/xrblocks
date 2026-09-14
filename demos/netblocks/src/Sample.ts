@@ -1,5 +1,10 @@
 import * as xb from 'xrblocks';
-import {enableNet, JoinRoomOptions, NetCore, WebRTCTransport} from 'xrblocks/addons/netblocks/src/index.js';
+import {
+  enableNet,
+  JoinRoomOptions,
+  NetCore,
+  WebRTCTransport,
+} from 'xrblocks/addons/netblocks/src/index.js';
 
 import {buildRoomCodeHud, getRoomCodeFromUrl} from './roomCode.js';
 

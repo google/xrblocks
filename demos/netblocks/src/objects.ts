@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import {BroadcastChannelTransport, NetObject} from 'xrblocks/addons/netblocks/src/index.js';
+import {
+  BroadcastChannelTransport,
+  NetObject,
+} from 'xrblocks/addons/netblocks/src/index.js';
 import {NetSample} from './Sample.js';
 
 /**
