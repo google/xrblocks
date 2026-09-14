@@ -11,8 +11,8 @@
  * tear a live session down in-place.
  */
 
-import {generateRoomCode, normalizeRoomCode} from '../src/core/utils/RoomCode';
-export {generateRoomCode} from '../src/core/utils/RoomCode';
+import {generateRoomCode, normalizeRoomCode} from 'xrblocks/addons/netblocks/src/core/utils/RoomCode.js';
+export {generateRoomCode} from 'xrblocks/addons/netblocks/src/core/utils/RoomCode.js';
 
 const CODE_LEN = 4;
 

@@ -81,9 +81,9 @@ Instances are one-shot. After dispose, construct a new `LipsyncMouth`. Do not re
 
 ## Samples
 
-`samples/puppet/` is a single-user puppet head you can talk to. Opens in seconds, no server.
+`samples/avatar_lab/lipsync_puppet/` is a single-user puppet head you can talk to. Opens in seconds, no server.
 
-`samples/netblocks/` is the multiplayer demo. Open it in two browser tabs or two devices in the same room to see each peer's voice drive their own avatar's mouth.
+`demos/netblocks/lipsync/` is the multiplayer demo. Open it in two browser tabs or two devices in the same room to see each peer's voice drive their own avatar's mouth.
 
 ## How the mouth is computed
 

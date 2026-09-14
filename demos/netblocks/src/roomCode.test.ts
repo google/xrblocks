@@ -4,7 +4,7 @@ import {
   buildRoomCodeHud,
   generateRoomCode,
   getRoomCodeFromUrl,
-} from './roomCode';
+} from './roomCode.js';
 
 describe('roomCode helpers', () => {
   const originalSearch = window.location.search;

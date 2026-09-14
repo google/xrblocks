@@ -6,8 +6,8 @@ import {
   NetObject,
   AVATAR_PALETTE,
   hashStringToIndex,
-} from 'netblocks';
-import {NetSample} from '../Sample';
+} from 'xrblocks/addons/netblocks/src/index.js';
+import {NetSample} from './Sample.js';
 
 /**
  * IntegrationSample.
@@ -71,11 +71,11 @@ class IntegrationSample extends NetSample {
   private _spatialVoiceBtn?: xb.UIButton;
   private _spatialDraft?: xb.UIText;
   private _keyboard?: Keyboard;
-  // Last canvas-relative pointer position (NDC space), used to bypass
-  // the platform mouse raycaster (which has been returning intersections
-  // mirrored around the origin in this sample) and pick cubes ourselves
-  // off the camera + cursor directly. -2 is a sentinel meaning "no event
-  // received yet" so we don't fire phantom hits at frame 0.
+  // Last canvas-relative pointer position (NDC space). We pick cubes
+  // ourselves off the camera + cursor instead of going through the
+  // platform hit pipeline, so the drag math below stays self-contained.
+  // -2 is a sentinel meaning "no event received yet" so we don't fire
+  // phantom hits at frame 0.
   private _ndc = new THREE.Vector2(-2, -2);
   private _mouseDown = false;
   private _mouseRaycaster = new THREE.Raycaster();
@@ -109,10 +109,8 @@ class IntegrationSample extends NetSample {
   }
 
   // Track the canvas-relative cursor in NDC and our own mousedown
-  // boolean. We intentionally don't rely on MouseController.userData
-  // .selected for the mouse path because the platform's
-  // setRaycasterFromController has been returning mirrored intersection
-  // points for the simulator mouse in this sample.
+  // boolean, so the mouse drag path matches the controller drag path
+  // below without depending on platform hit state.
   private _wireMouse() {
     const canvas = xb.core?.renderer?.domElement;
     if (!canvas) return;
@@ -170,6 +168,7 @@ class IntegrationSample extends NetSample {
           opacity: 0.5,
         })
       );
+      edges.xb = {pointerEvents: 'none'};
       mesh.add(edges);
       cube.add(mesh);
       this._cubes.push(cube);

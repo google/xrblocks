@@ -6,7 +6,7 @@ import {
   Transport,
   WebRTCTransport,
   WebSocketTransport,
-} from 'netblocks';
+} from 'xrblocks/addons/netblocks/src/index.js';
 
 /**
  * TransportsSample.

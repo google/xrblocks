@@ -1,5 +1,5 @@
-import {BroadcastChannelTransport} from 'netblocks';
-import {NetSample} from '../../Sample';
+import {BroadcastChannelTransport} from 'xrblocks/addons/netblocks/src/index.js';
+import {NetSample} from './Sample.js';
 
 /**
  * PresenceSample.

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import {BroadcastChannelTransport, NetObject} from 'netblocks';
-import {NetSample} from '../../Sample';
+import {BroadcastChannelTransport, NetObject} from 'xrblocks/addons/netblocks/src/index.js';
+import {NetSample} from './Sample.js';
 
 /**
  * ObjectsSample.
@@ -63,7 +63,7 @@ class ObjectsSample extends NetSample {
           opacity: 0.5,
         })
       );
-      edges.pointerEvents = 'none';
+      edges.xb = {pointerEvents: 'none'};
       mesh.add(edges);
       cube.add(mesh);
       this._cubes.push(cube);

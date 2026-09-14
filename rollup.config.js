@@ -187,6 +187,7 @@ const demoBuilds = globSync('demos/**/*.ts', {
   ignore: [
     'demos/**/node_modules/**',
     'demos/**/build/**',
+    'demos/**/*.test.ts',
     // Projects with a custom build system.
   ],
 }).map((file) => ({

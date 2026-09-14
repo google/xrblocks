@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import type {UserEventDetail} from 'netblocks';
-import {BroadcastChannelTransport} from 'netblocks';
+import type {UserEventDetail} from 'xrblocks/addons/netblocks/src/index.js';
+import {BroadcastChannelTransport} from 'xrblocks/addons/netblocks/src/index.js';
 
-import {LipsyncMouth} from 'lipsync';
+import {LipsyncMouth} from 'xrblocks/addons/lipsync/index.js';
 
-import {NetSample} from '../../../netblocks/samples/Sample';
+import {NetSample} from './Sample.js';
 
 /**
  * NetblocksLipsyncSample.

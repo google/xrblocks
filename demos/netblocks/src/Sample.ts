@@ -1,7 +1,7 @@
 import * as xb from 'xrblocks';
-import {enableNet, JoinRoomOptions, NetCore, WebRTCTransport} from 'netblocks';
+import {enableNet, JoinRoomOptions, NetCore, WebRTCTransport} from 'xrblocks/addons/netblocks/src/index.js';
 
-import {buildRoomCodeHud, getRoomCodeFromUrl} from './roomCode';
+import {buildRoomCodeHud, getRoomCodeFromUrl} from './roomCode.js';
 
 /**
  * Base class for netblocks samples. Wires up an xrblocks app and joins a
@@ -31,7 +31,6 @@ export abstract class NetSample extends xb.Script {
   protected onSession(_session: NonNullable<NetCore['session']>): void {}
 
   async init() {
-    xb.core.input.raycaster.params.Line.threshold = 0.0001;
     this.net = enableNet();
     const code = getRoomCodeFromUrl();
     let {roomId, options} = this.getJoinOptions();
