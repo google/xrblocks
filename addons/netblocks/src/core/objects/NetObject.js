@@ -46,9 +46,14 @@ class NetObject extends THREE.Group {
          * by an immediate snap (`snapToXform`).
          */
         this._pendingFinal = false;
+        if (opts.automaticSnapshots !== undefined &&
+            typeof opts.automaticSnapshots !== 'boolean') {
+            throw new TypeError('automaticSnapshots must be a boolean.');
+        }
         this.netId = opts.id ?? `obj_${makeId(10)}`;
         this.ownerId = opts.ownerId ?? '';
         this.object = opts.object ?? this;
+        this.automaticSnapshots = opts.automaticSnapshots ?? true;
         this.name = `NetObject(${this.netId})`;
     }
     /** True if the local peer currently owns this object. */

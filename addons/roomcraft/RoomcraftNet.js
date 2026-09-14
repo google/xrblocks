@@ -43,6 +43,7 @@ class RoomcraftNet extends Script {
         this.syncId = '';
         this.syncResponders = new Set();
         this.readySyncPeers = new Set();
+        this.pendingSyncReplies = new Map();
         this.bootstrapping = true;
         this.bootstrapResponse = false;
         this.awaitingSync = false;
@@ -150,12 +151,17 @@ class RoomcraftNet extends Script {
                 this.lastXform = [...xform];
             }
         }
-        this.createBinding = (id, object) => new Binding({ id, object });
+        this.createBinding = (id, object) => new Binding({ id, object, automaticSnapshots: false });
         try {
             this.reconcile();
             const saved = continuation.get(this.room);
             const carried = saved?.roomId === this.options.roomId ? saved : undefined;
             if (carried) {
+                for (const [id, claim] of carried.claims) {
+                    const binding = this.bindings.get(id);
+                    if (binding)
+                        binding.claim = { ...claim };
+                }
                 this.clock = carried.clock;
                 this.currentRevision = { ...carried.revision };
                 this.unpublished = carried.unpublished;
@@ -214,29 +220,15 @@ class RoomcraftNet extends Script {
                 if (this.options.seedLocalScene === false &&
                     this.currentRevision.counter === 0)
                     return;
-                try {
-                    this.send('sync-state', {
-                        id,
-                        snapshot: this.snapshot(),
-                        selection: {
-                            id: this.room.selectedId,
-                            sequence: this.selectionSequence,
-                        },
-                    }, from);
+                if (this.applying || this.queue.length) {
+                    if (!this.pendingSyncReplies.has(from) &&
+                        this.pendingSyncReplies.size >= MAX_PENDING_LAYOUTS) {
+                        throw new Error('Too many pending scene snapshot requests. Wait for the scene, then retry.');
+                    }
+                    this.pendingSyncReplies.set(from, id);
+                    return;
                 }
-                catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    this.send('sync-error', {
-                        id,
-                        reason: (message.trim() || 'Scene snapshot failed.').slice(0, MAX_SYNC_ERROR_LENGTH),
-                    }, from);
-                    throw error;
-                }
-                // A transport hello can precede the remote bridge's subscriptions.
-                if (this.awaitingSync && !this.readySyncPeers.has(from)) {
-                    this.readySyncPeers.add(from);
-                    this.send('sync-request', { id: this.syncId }, from);
-                }
+                this.replySnapshot(id, from);
             });
             this.on('sync-state', (value, from) => {
                 const data = record(value);
@@ -298,6 +290,7 @@ class RoomcraftNet extends Script {
             const join = () => this.resync();
             const leave = (event) => {
                 const id = event.detail.user.peerId;
+                this.pendingSyncReplies.delete(id);
                 this.selections.delete(id);
                 this.selectionSequences.delete(id);
                 this.removeOutline(id);
@@ -376,6 +369,31 @@ class RoomcraftNet extends Script {
         clearTimeout(this.syncTimer);
         clearTimeout(this.syncRetryTimer);
     }
+    replySnapshot(id, from) {
+        try {
+            this.send('sync-state', {
+                id,
+                snapshot: this.snapshot(),
+                selection: {
+                    id: this.room.selectedId,
+                    sequence: this.selectionSequence,
+                },
+            }, from);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this.send('sync-error', {
+                id,
+                reason: (message.trim() || 'Scene snapshot failed.').slice(0, MAX_SYNC_ERROR_LENGTH),
+            }, from);
+            throw error;
+        }
+        // A transport hello can precede the remote bridge's subscriptions.
+        if (this.awaitingSync && !this.readySyncPeers.has(from)) {
+            this.readySyncPeers.add(from);
+            this.send('sync-request', { id: this.syncId }, from);
+        }
+    }
     sendSnapshotRequest() {
         const id = this.syncId;
         try {
@@ -427,6 +445,11 @@ class RoomcraftNet extends Script {
         if (this.motionClock) {
             if (this.initialized) {
                 const motion = this.motionClock.snapshot();
+                const claims = new Map();
+                for (const [id, binding] of this.bindings) {
+                    if (binding.claim)
+                        claims.set(id, { ...binding.claim });
+                }
                 continuation.set(this.room, {
                     elapsed: motion.elapsed,
                     at: performance.now(),
@@ -439,6 +462,7 @@ class RoomcraftNet extends Script {
                     fingerprint: this.fingerprint(),
                     roomId: this.options.roomId,
                     unpublished: this.unpublished,
+                    claims,
                 });
             }
             this.motionClock.dispose();
@@ -459,6 +483,7 @@ class RoomcraftNet extends Script {
         this.bindings.clear();
         this.held.clear();
         this.queue.length = 0;
+        this.pendingSyncReplies.clear();
         this.catchup = undefined;
         this.awaitingSync = false;
         this.selections.clear();
@@ -657,7 +682,8 @@ class RoomcraftNet extends Script {
                         if (previous?.binding === binding &&
                             (binding.version !== previous.version ||
                                 binding.ownerId !== previous.ownerId ||
-                                JSON.stringify(binding.claim) !== previous.claim)) {
+                                (binding.ownerId !== '' &&
+                                    JSON.stringify(binding.claim) !== previous.claim))) {
                             binding.snapToXform(binding.version !== previous.version && binding.lastXform
                                 ? binding.lastXform
                                 : previous.xform);
@@ -666,7 +692,9 @@ class RoomcraftNet extends Script {
                             const ownerId = state.ownerId && this.session.users.has(state.ownerId)
                                 ? state.ownerId
                                 : '';
-                            if (this.session.netObjects.applyOwnershipSnapshot(binding.netId, ownerId, state.claim)) {
+                            const ownershipAccepted = this.session.netObjects.applyOwnershipSnapshot(binding.netId, ownerId, state.claim);
+                            // A released claim can stay newer while the scene's LWW placement advances.
+                            if (ownershipAccepted || (order > 0 && !binding.ownerId)) {
                                 binding.snapToXform(state.xform);
                             }
                             else if (previous) {
@@ -695,6 +723,12 @@ class RoomcraftNet extends Script {
                 const peer = catchupFrom;
                 if (peer) {
                     this.guard('catch up transforms', () => this.requestObjects(peer));
+                }
+                if (!this.queue.length) {
+                    for (const [from, id] of this.pendingSyncReplies) {
+                        this.pendingSyncReplies.delete(from);
+                        this.guard('receive sync-request', () => this.replySnapshot(id, from), from);
+                    }
                 }
                 this.refreshStatus();
             }

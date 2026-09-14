@@ -92,7 +92,14 @@ class VoiceChat {
             track.addEventListener('ended', () => {
                 if (this._localStream !== stream)
                     return;
-                this.disable();
+                // Capture failure stops transmission, not incoming peer audio.
+                this.cancelPendingEnable();
+                this._localStream = undefined;
+                this._enabled = false;
+                this._muted = false;
+                for (const t of stream.getTracks())
+                    t.stop();
+                this._opts.onLocalStateChange(false);
                 this._reportError(new Error('Microphone capture ended. Unmute to reconnect the microphone.'));
             }, { once: true });
         }
@@ -100,21 +107,37 @@ class VoiceChat {
         // Back-fill local tracks onto any peer connections that were created
         // earlier as answerers (remote enabled voice before us). Without this
         // those PCs would carry only the inbound audio, never our outbound.
+        const replacements = [];
         for (const [pid, entry] of this._peers) {
-            if (entry.pc.getSenders().some((s) => s.track?.kind === 'audio')) {
+            const senders = entry.pc.getSenders();
+            if (senders.some((s) => s.track?.kind === 'audio' && s.track.readyState === 'live')) {
                 continue;
             }
-            for (const t of this._localStream.getTracks()) {
-                entry.pc.addTrack(t, this._localStream);
+            const endedSenders = senders.filter((s) => s.track?.readyState === 'ended');
+            let addedTrack = false;
+            for (const t of stream.getTracks()) {
+                const index = endedSenders.findIndex((s) => s.track?.kind === t.kind);
+                if (index !== -1) {
+                    // Keep negotiated senders when capture ends; replace their stopped
+                    // tracks only on explicit enable, without adding audio transceivers.
+                    const [sender] = endedSenders.splice(index, 1);
+                    replacements.push(sender.replaceTrack(t).catch((err) => this._reportError(err, pid)));
+                }
+                else {
+                    entry.pc.addTrack(t, stream);
+                    addedTrack = true;
+                }
             }
             // Re-offer so the remote learns about our newly added track.
-            void this._makeOffer(pid, entry);
+            if (addedTrack)
+                void this._makeOffer(pid, entry);
         }
         for (const pid of currentPeers) {
             if (this._peers.has(pid))
                 continue;
             this.notifyPeerJoined(pid);
         }
+        await Promise.all(replacements);
     }
     disable() {
         // Tear down unconditionally — answerer-side PCs can be created from

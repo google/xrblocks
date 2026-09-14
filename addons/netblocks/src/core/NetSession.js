@@ -484,7 +484,7 @@ class NetSession extends EventTarget {
                 // peer's) authoritative state with defaults.
                 const snapObjects = [];
                 for (const obj of this.netObjects.values()) {
-                    if (!obj._dirty)
+                    if (obj.automaticSnapshots === false || !obj._dirty)
                         continue;
                     snapObjects.push({
                         id: obj.netId,
@@ -612,7 +612,7 @@ class NetSession extends EventTarget {
                 // existing peer's state and stay at constructor defaults.
                 for (const entry of msg.objects) {
                     const obj = this.netObjects.get(entry.id);
-                    if (!obj)
+                    if (!obj || obj.automaticSnapshots === false)
                         continue;
                     if (obj.ownerId === this.localPeerId && obj._dirty)
                         continue;

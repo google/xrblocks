@@ -82,6 +82,7 @@ export declare class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     private syncId;
     private readonly syncResponders;
     private readonly readySyncPeers;
+    private readonly pendingSyncReplies;
     private syncTimer?;
     private syncRetryTimer?;
     private bootstrapTimer?;
@@ -121,6 +122,7 @@ export declare class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     /** Request current content and ownership without asking any peer to run AI. */
     resync(): void;
     private stopWaitingForSnapshot;
+    private replySnapshot;
     private sendSnapshotRequest;
     update(): void;
     dispose(): void;

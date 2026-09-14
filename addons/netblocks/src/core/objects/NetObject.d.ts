@@ -27,6 +27,8 @@ export interface NetObjectOptions {
     ownerId?: string;
     /** Existing local-transform target. Not reparented or disposed; defaults to the NetObject itself. */
     object?: THREE.Object3D;
+    /** Participate in generic session catch-up. Disable when a higher-level protocol owns snapshots. */
+    automaticSnapshots?: boolean;
 }
 export declare class NetObject extends THREE.Group {
     readonly netId: string;
@@ -35,6 +37,7 @@ export declare class NetObject extends THREE.Group {
     claim?: NetObjectClaim;
     /** The replicated local-transform target; this NetObject unless supplied in options. */
     readonly object: THREE.Object3D;
+    readonly automaticSnapshots: boolean;
     /** Local-only state object that consumers can populate; sent alongside transforms. */
     state: Record<string, unknown>;
     /** Last-applied remote transform (used by NetSession for interpolation). */
