@@ -17,7 +17,7 @@
     "build": "echo \"Building xrblocks.js...\" && rollup -c --failAfterWarnings",
     "build:sdk": "rollup -c --failAfterWarnings --forceExit --environment XRBLOCKS_BUILD:sdk",
     "prepare": "npm run build",
-    "lint": "eslint src",
+    "lint": "eslint src tools",
     "format": "npm run format:fix",
     "format:check": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --check",
     "format:fix": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --write",

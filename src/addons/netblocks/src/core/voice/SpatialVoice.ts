@@ -45,10 +45,18 @@ export class SpatialVoice {
   /**
    * Attach a MediaStream to a peer; (re-)creates the PositionalAudio node and
    * parents it to `parent` (typically the remote user's headPivot).
+   * `muted` is applied before connecting the source, including replacements.
    */
-  attach(peerId: string, parent: THREE.Object3D, stream: MediaStream): void {
+  attach(
+    peerId: string,
+    parent: THREE.Object3D,
+    stream: MediaStream,
+    muted = false
+  ): void {
+    this._validatePlayback(peerId, muted);
     this.detach(peerId);
     const audio = new THREE.PositionalAudio(this.listener);
+    this._setMuted(audio, muted);
     audio.setRefDistance(this._opts.refDistance);
     audio.setRolloffFactor(this._opts.rolloffFactor);
     audio.setMaxDistance(this._opts.maxDistance);
@@ -61,19 +69,14 @@ export class SpatialVoice {
     // three.js doesn't have a first-class "use a MediaStream" path that works
     // across all browsers; the safest cross-browser route is to build a
     // MediaStreamAudioSourceNode and assign it via setNodeSource.
-    // three.js's typings for setNodeSource want an AudioScheduledSourceNode,
-    // but at runtime any AudioNode works for our purposes. Cast through any
-    // to avoid pulling in a different code path on every browser.
-    const ctx = THREE.AudioContext.getContext() as AudioContext;
+    const ctx = audio.context;
     // Browsers create the shared AudioContext suspended until a user gesture.
     // If a remote voice arrives before any local interaction, the
     // PositionalAudio graph stays silent forever. resume() is a no-op when
     // the context is already running.
     void ctx.resume?.().catch(() => undefined);
     const src = ctx.createMediaStreamSource(stream);
-    (audio as unknown as {setNodeSource: (n: AudioNode) => void}).setNodeSource(
-      src
-    );
+    audio.setNodeSource(src);
 
     // Chromium quirk: a MediaStreamAudioSourceNode built from a remote WebRTC
     // stream stays silent unless the stream is also attached to an
@@ -96,11 +99,39 @@ export class SpatialVoice {
     this._byPeer.set(peerId, audio);
   }
 
+  /**
+   * Apply an effective mute to an attached peer's own gain only.
+   * Preferences for future streams are owned by NetSession, not this graph.
+   */
+  setPlaybackMuted(peerId: string, muted: boolean): void {
+    this._validatePlayback(peerId, muted);
+    const audio = this._byPeer.get(peerId);
+    if (audio) this._setMuted(audio, muted);
+  }
+
+  private _validatePlayback(peerId: string, muted: boolean): void {
+    if (typeof peerId !== 'string' || !peerId.trim()) {
+      throw new TypeError('peerId must be a non-empty string');
+    }
+    if (typeof muted !== 'boolean') {
+      throw new TypeError('muted must be a boolean');
+    }
+  }
+
+  private _setMuted(audio: THREE.PositionalAudio, muted: boolean): void {
+    // Audio.setVolume() ramps toward its target, briefly leaving a newly
+    // connected muted stream audible. Set our own gain immediately instead.
+    const now = audio.context.currentTime;
+    audio.gain.gain.cancelScheduledValues(now);
+    audio.gain.gain.setValueAtTime(muted ? 0 : 1, now);
+  }
+
   detach(peerId: string): void {
     const audio = this._byPeer.get(peerId);
     if (audio) {
       audio.parent?.remove(audio);
       audio.disconnect();
+      audio.gain.disconnect();
       this._byPeer.delete(peerId);
     }
     const primer = this._primersByPeer.get(peerId);

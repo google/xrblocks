@@ -82,6 +82,32 @@ function disposeContent(content: THREE.Object3D) {
   disposeObjectTree(content);
 }
 
+function stageContent(
+  asset: SceneAsset,
+  color: string,
+  signal?: AbortSignal
+): Promise<THREE.Group> {
+  signal?.throwIfAborted();
+  const loading = createContent(asset, color);
+  if (!signal) return loading;
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, {once: true});
+    void loading.then(
+      (content) => {
+        signal.removeEventListener('abort', abort);
+        if (signal.aborted) disposeContent(content);
+        else resolve(content);
+      },
+      (error) => {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      }
+    );
+    if (signal.aborted) abort();
+  });
+}
+
 async function createContent(asset: SceneAsset, color: string) {
   const object = await asset.create(color);
   if (!(object instanceof THREE.Object3D) || object.parent) {
@@ -147,6 +173,8 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private camera?: THREE.Camera;
   private timer?: THREE.Timer;
   private motionIsPaused = false;
+  private motionSource?: () => number;
+  private motionTime?: number;
   private environment?: SceneEnvironment;
   private environmentContent?: THREE.Group;
   private title = 'Untitled scene';
@@ -238,19 +266,66 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     return this.motionIsPaused;
   }
 
-  /** Pause or resume local part motion without changing its authored definition. */
+  /** The installed absolute clock, exposed so a bridge can detach only its own. */
+  get motionTimeSource(): (() => number) | undefined {
+    return this.motionSource;
+  }
+
+  /**
+   * Use absolute playback seconds instead of the SDK frame delta. The source
+   * must return finite, non-negative seconds and is sampled once per frame or
+   * content commit. Retuned speeds and periods use the whole absolute time,
+   * rather than carrying the previous definition's cycle.
+   *
+   * Installing a clock aligns playback immediately unless locally paused.
+   * Removing it retains the sampled cycles for subsequent delta playback.
+   *
+   * @param source - The shared playback clock, or undefined to use frame deltas.
+   */
+  setMotionTimeSource(source: (() => number) | undefined): void {
+    this.assertAlive();
+    if (source !== undefined && typeof source !== 'function') {
+      throw new Error('Roomcraft motion time source must be a function.');
+    }
+    if (source === this.motionSource) return;
+    if (source === undefined) {
+      this.motionSource = undefined;
+      this.motionTime = undefined;
+      return;
+    }
+    const time = this.readMotionTime(source);
+    if (this.motionIsPaused) {
+      // A paused delta player has no shared sample yet; keep its carried cycles.
+      if (!this.hasMotion) this.motionTime ??= time;
+    } else {
+      this.seekMotions(time);
+    }
+    this.motionSource = source;
+  }
+
+  /**
+   * Freeze the current local sample without changing authored motion.
+   * Resuming an absolute clock immediately realigns to its current time.
+   */
   setMotionPaused(paused: boolean) {
     this.assertAlive();
     if (typeof paused !== 'boolean') {
       throw new Error('Motion pause state must be a boolean.');
     }
     if (paused === this.motionIsPaused) return;
+    if (!paused && this.motionSource) {
+      this.seekMotions(this.readMotionTime(this.motionSource));
+    }
     this.motionIsPaused = paused;
     this.dispatchEvent({type: 'motionstatechange', paused});
   }
 
   override update() {
     if (this.disposed || this.motionIsPaused || !this.hasMotion) return;
+    if (this.motionSource) {
+      this.seekMotions(this.readMotionTime(this.motionSource));
+      return;
+    }
     if (!this.timer) {
       throw new Error(
         'Roomcraft motion needs the SDK frame timer. Add Roomcraft before xb.init().'
@@ -258,6 +333,21 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     }
     const delta = this.timer.getDelta();
     for (const entity of this.entities.values()) entity.motion?.update(delta);
+  }
+
+  private readMotionTime(source: () => number): number {
+    const time = source();
+    if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
+      throw new Error(
+        'Roomcraft motion time source must return finite, non-negative elapsed seconds.'
+      );
+    }
+    return time;
+  }
+
+  private seekMotions(time: number) {
+    for (const entity of this.entities.values()) entity.motion?.seek(time);
+    this.motionTime = time;
   }
 
   /** A detached snapshot of the setting, live transforms, and authored recipes. */
@@ -356,11 +446,19 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     this.dispatchEvent({type: 'selectionchange', id});
   }
 
-  /** Replace the scene explicitly, for curated examples or saved layouts. */
-  async applyLayout(value: unknown): Promise<SceneLayout> {
+  /**
+   * Replace the scene explicitly, for curated examples or saved layouts.
+   * Aborting rejects the import without changing the current scene. A factory
+   * already loading may finish later; its unused content is then disposed.
+   */
+  async applyLayout(
+    value: unknown,
+    {signal}: {signal?: AbortSignal} = {}
+  ): Promise<SceneLayout> {
     return this.run('loading', async () => {
+      signal?.throwIfAborted();
       const layout = readSceneLayout(value, this.catalog);
-      return this.commitLayout(layout);
+      return this.commitLayout(layout, 'record', signal);
     });
   }
 
@@ -514,6 +612,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     const id = this.findOwner(event.owner);
     if (!id) return;
     if (event.phase === 'start') this.select(id);
+    this.dispatchEvent({type: 'manipulationchange', id, event});
     if (event.phase === 'end' || event.phase === 'cancel') {
       this.dispatchEvent({type: 'change', layout: this.layout});
     }
@@ -540,11 +639,14 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     this.currentStatus = 'ready';
     this.timer = undefined;
     this.motionIsPaused = false;
+    this.motionSource = undefined;
+    this.motionTime = undefined;
   }
 
   private async commitLayout(
     layout: SceneLayout,
-    historyAction: 'record' | 'undo' | 'redo' = 'record'
+    historyAction: 'record' | 'undo' | 'redo' = 'record',
+    signal?: AbortSignal
   ) {
     const before = this.layout;
     const fingerprint = JSON.stringify(before);
@@ -558,6 +660,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         stagedEnvironment = createEnvironmentContent(layout.environment);
       }
       for (const object of layout.objects) {
+        signal?.throwIfAborted();
         const existing = this.entities.get(object.id);
         if (
           !existing ||
@@ -578,19 +681,27 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
             if (!asset) {
               throw new Error(`Unknown catalog asset "${object.asset}".`);
             }
-            content = await createContent(asset, object.color);
+            content = await stageContent(asset, object.color, signal);
           }
           staged.set(object.id, content);
+          signal?.throwIfAborted();
           this.assertAlive();
         }
       }
       this.assertAlive();
+      signal?.throwIfAborted();
       if (JSON.stringify(this.layout) !== fingerprint) {
         throw new Error(
           'The scene moved while assets were loading. Your scene was kept; retry the edit.'
         );
       }
 
+      // Sample only after staging; paused replacements reuse the frozen time.
+      const motionTime = this.motionSource
+        ? this.motionIsPaused
+          ? this.motionTime
+          : this.readMotionTime(this.motionSource)
+        : undefined;
       // Read live cycle phases only after asynchronous asset staging is complete.
       const stagedMotions = new Map<string, ProceduralMotionPlayer>();
       for (const object of layout.objects) {
@@ -607,6 +718,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         }
       }
 
+      signal?.throwIfAborted();
       const retired: THREE.Object3D[] = [];
       if (environmentChanged) {
         if (this.environmentContent) {
@@ -671,6 +783,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
         this.entities.delete(object.id);
         this.entities.set(object.id, entity);
       }
+      if (motionTime !== undefined) this.seekMotions(motionTime);
       this.title = layout.title;
       const after = JSON.stringify(this.layout);
       if (historyAction === 'undo') {
