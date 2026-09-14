@@ -3,6 +3,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest';
 import type {Interaction, ManipulationEvent} from 'xrblocks';
 import {
   decodeMessage,
+  encodeMessage,
   NetObject,
   NetSession,
   Transport,
@@ -203,6 +204,316 @@ afterEach(() => {
 });
 
 describe('RoomcraftNet', () => {
+  it('isolates only delegated bindings from generic catch-up, not other NetObjects', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    await a.room.applyPlan({title: 'Dirty bindings', edits: []});
+    const unrelated = new NetObject({id: 'unrelated'});
+    unrelated.snapToXform([2, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
+    a.session.netObjects.add(unrelated);
+    const session = new NetSession(
+      new TestTransport(bus, 'b'),
+      new THREE.Group()
+    );
+    sessions.push(session);
+    const delegated = new NetObject({
+      id: 'roomcraft:object:chair',
+      automaticSnapshots: false,
+    });
+    const ordinary = new NetObject({id: 'unrelated'});
+    session.netObjects.add(delegated);
+    session.netObjects.add(ordinary);
+    await session.open('room');
+    await bus.settle();
+    const snapshots = bus.sent.flatMap(({from, message}) =>
+      from === 'a' && message.type === 'netobject.snapshot'
+        ? [message.objects]
+        : []
+    );
+    expect(snapshots.flat().map((object) => object.id)).toEqual(['unrelated']);
+    expect(ordinary.position.x).toBe(2);
+    a.session.transport.send(
+      encodeMessage({
+        type: 'netobject.snapshot',
+        objects: [
+          {
+            id: delegated.netId,
+            ownerId: '',
+            xform: [9, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+          },
+          {
+            id: ordinary.netId,
+            ownerId: '',
+            xform: [4, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+          },
+        ],
+      }),
+      'b'
+    );
+    await bus.settle();
+    expect(delegated.position.x).toBe(0);
+    expect(ordinary.position.x).toBe(4);
+  });
+
+  it('keeps a newer offline placement when generic backend catch-up arrives after the bridge', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    await a.room.applyPlan({title: 'Established', edits: []});
+    await bus.settle();
+    await b.room.applyPlan({title: 'Survivor edit', edits: []});
+    await bus.settle();
+    a.collaboration.dispose();
+    a.session.close();
+    await bus.settle();
+    a.room.getObject('chair')!.position.x = 3;
+    const session = new NetSession(
+      new TestTransport(bus, 'a2'),
+      new THREE.Group()
+    );
+    sessions.push(session);
+    await session.open('room');
+    const bridge = new RoomcraftNet(a.room, session);
+    bridges.push(bridge);
+    await bridge.init({interaction: a.interaction});
+    await bus.settle();
+    expect(a.room.getObject('chair')!.position.x).toBe(3);
+    expect(b.room.getObject('chair')!.position.x).toBe(3);
+    expect(b.room.layout).toEqual(a.room.layout);
+    expect(bridge.status).toBe('ready');
+    expect(b.collaboration.status).toBe('ready');
+  });
+
+  it('carries released claim generations before publishing offline placements on reconnect', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    manipulate(a.room, 'start');
+    await bus.settle();
+    manipulate(a.room, 'end');
+    await bus.settle();
+    const claim = {...binding(a).claim!};
+    a.collaboration.dispose();
+    a.session.close();
+    await bus.settle();
+    a.room.getObject('chair')!.position.x = 3;
+    const session = new NetSession(
+      new TestTransport(bus, 'a2'),
+      new THREE.Group()
+    );
+    sessions.push(session);
+    await session.open('room');
+    // Consume hello catch-up before bindings exist, isolating ownership history.
+    await bus.settle();
+    const bridge = new RoomcraftNet(a.room, session);
+    bridges.push(bridge);
+    await bridge.init({interaction: a.interaction});
+    expect(session.netObjects.get('roomcraft:object:chair')!.claim).toEqual(
+      claim
+    );
+    expect(session.netObjects.get('roomcraft:object:chair')!.ownerId).toBe('');
+    await bus.settle();
+    expect(a.room.getObject('chair')!.position.x).toBe(3);
+    expect(b.room.getObject('chair')!.position.x).toBe(3);
+    expect(b.collaboration.diagnostics.revision).toEqual(
+      bridge.diagnostics.revision
+    );
+    expect(b.collaboration.status).toBe('ready');
+    expect(bridge.status).toBe('ready');
+  });
+
+  it.each([false, true])(
+    'accepts newer scene placement without downgrading the surviving released claim generation (busy=%s)',
+    async (busy) => {
+      const bus = new Bus();
+      const returning = await peer(bus, 'z');
+      let delayed = false;
+      let failLoad!: (error: Error) => void;
+      const gate = new Promise<void>((_, reject) => {
+        failLoad = reject;
+      });
+      const catalog = createDefaultCatalog().map((asset) => ({
+        ...asset,
+        create: async (color: string) => {
+          if (delayed && asset.id === 'box') await gate;
+          return asset.create(color);
+        },
+      }));
+      const survivor = await peer(bus, 'a', undefined, undefined, {catalog});
+      await bus.settle();
+      manipulate(returning.room, 'start');
+      await bus.settle();
+      manipulate(returning.room, 'end');
+      await bus.settle();
+      returning.collaboration.dispose();
+      returning.session.close();
+      await bus.settle();
+      manipulate(survivor.room, 'start');
+      survivor.room.getObject('chair')!.position.x = 1;
+      manipulate(survivor.room, 'end');
+      await bus.settle();
+      expect(binding(survivor).claim?.counter).toBe(2);
+      let failedLoad: Promise<void> | undefined;
+      if (busy) {
+        delayed = true;
+        failedLoad = expect(
+          survivor.room.applyPlan({
+            title: 'Pending local change',
+            edits: [{op: 'update', id: 'chair', changes: {color: '#ffffff'}}],
+          })
+        ).rejects.toThrow('Local load failed');
+        expect(survivor.room.busy).toBe(true);
+      }
+      returning.room.getObject('chair')!.position.x = 3;
+      const session = new NetSession(
+        new TestTransport(bus, 'z2'),
+        new THREE.Group()
+      );
+      sessions.push(session);
+      await session.open('room');
+      const bridge = new RoomcraftNet(returning.room, session);
+      bridges.push(bridge);
+      await bridge.init({interaction: returning.interaction});
+      await bus.settle();
+      if (busy) {
+        expect(
+          survivor.collaboration.diagnostics.queuedLayouts
+        ).toBeGreaterThan(0);
+        delayed = false;
+        failLoad(new Error('Local load failed'));
+        await failedLoad;
+        await bus.settle();
+      }
+      expect(returning.room.getObject('chair')!.position.x).toBe(3);
+      expect(survivor.room.getObject('chair')!.position.x).toBe(3);
+      expect(binding(survivor).claim).toEqual({counter: 2, peerId: 'a'});
+      const returningBinding = session.netObjects.get(
+        'roomcraft:object:chair'
+      )!;
+      expect(returningBinding.claim).toEqual({counter: 2, peerId: 'a'});
+      expect(bridge.diagnostics.revision).toEqual(
+        survivor.collaboration.diagnostics.revision
+      );
+      expect(bridge.status).toBe('ready');
+      expect(survivor.collaboration.status).toBe('ready');
+
+      manipulate(returning.room, 'start');
+      await bus.settle();
+      expect(returningBinding.claim?.counter).toBe(3);
+      expect(binding(survivor).ownerId).toBe('z2');
+      returning.room.getObject('chair')!.position.x = 4;
+      session.update(1);
+      await bus.settle();
+      binding(survivor).stepInterpolation(1);
+      expect(survivor.room.getObject('chair')!.position.x).toBe(4);
+      manipulate(returning.room, 'end');
+    }
+  );
+
+  it.each([false, true])(
+    'retains an authoritative final release when catch-up crosses delayed owner traffic (delay claim=%s)',
+    async (delayClaim) => {
+      const bus = new Bus();
+      const a = await peer(bus, 'a');
+      const b = await peer(bus, 'b');
+      const c = await peer(bus, 'c');
+      await bus.settle();
+      await a.room.applyPlan({title: 'Shared', edits: []});
+      await bus.settle();
+      const delayed: Array<() => void> = [];
+      let hold = delayClaim;
+      bus.receive = (id, deliver) => {
+        if (hold && id === 'b') delayed.push(deliver);
+        else deliver();
+      };
+      manipulate(a.room, 'start');
+      await bus.settle();
+      hold = true;
+      a.room.getObject('chair')!.position.x = 3;
+      a.collaboration.dispose();
+      await bus.settle();
+      binding(c).stepInterpolation(1);
+      expect(c.room.getObject('chair')!.position.x).toBe(3);
+      hold = false;
+      c.collaboration.resync();
+      await bus.settle();
+      expect(c.room.getObject('chair')!.position.x).toBe(3);
+      for (const deliver of delayed) deliver();
+      await bus.settle();
+      binding(b).stepInterpolation(1);
+      binding(c).stepInterpolation(1);
+      expect(b.room.getObject('chair')!.position.x).toBe(3);
+      expect(c.room.getObject('chair')!.position.x).toBe(3);
+      expect(b.collaboration.diagnostics.revision).toEqual(
+        c.collaboration.diagnostics.revision
+      );
+    }
+  );
+
+  it('answers only the latest snapshot request after staged content and revision commit together', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    let delayed = false;
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const catalog = createDefaultCatalog().map((asset) => ({
+      ...asset,
+      create: async (color: string) => {
+        if (delayed && asset.id === 'box') await gate;
+        return asset.create(color);
+      },
+    }));
+    const b = await peer(bus, 'b', undefined, undefined, {catalog});
+    await bus.settle();
+    manipulate(a.room, 'start');
+    await bus.settle();
+    manipulate(a.room, 'end');
+    await bus.settle();
+    delayed = true;
+    await a.room.applyPlan({
+      title: 'New placement',
+      edits: [
+        {
+          op: 'update',
+          id: 'chair',
+          changes: {position: [3, 0, 0], color: '#ffffff'},
+        },
+      ],
+    });
+    await bus.settle();
+    expect(b.room.busy).toBe(true);
+    bus.sent.length = 0;
+    a.session.events.emitTo('b', 'roomcraft:sync-request', {id: 'first'});
+    a.session.events.emitTo('b', 'roomcraft:sync-request', {id: 'latest'});
+    await bus.settle();
+    const replies = () =>
+      bus.sent.flatMap(({from, message}) =>
+        from === 'b' &&
+        message.type === 'rpc' &&
+        message.topic === 'roomcraft:sync-state'
+          ? [record(message.payload)]
+          : []
+      );
+    expect(replies()).toHaveLength(0);
+    finish();
+    await bus.settle();
+    expect(b.room.getObject('chair')!.position.x).toBe(3);
+    expect(a.room.layout).toEqual(b.room.layout);
+    expect(b.collaboration.status).toBe('ready');
+    expect(replies()).toHaveLength(1);
+    expect(replies()[0]).toMatchObject({
+      id: 'latest',
+      snapshot: {
+        revision: b.collaboration.diagnostics.revision,
+        layout: b.room.layout,
+      },
+    });
+  });
+
   it('does not publish a joiner default scene while transport discovery is delayed', async () => {
     const bus = new Bus();
     const host = await peer(bus, 'a', {

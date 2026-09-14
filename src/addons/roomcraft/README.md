@@ -51,6 +51,8 @@ For a Join flow, also pass `{seedLocalScene: false}`. A fresh joiner then waits 
 
 The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
 
+Roomcraft bindings opt out of netblocks' generic snapshots: only the bridge's validated, revision-aware catch-up can restore scene state. Same-room continuation retains per-object claim generations without reviving ownership. Snapshot replies wait for queued or applying remote imports to finish, then return content, revision and ownership history from the same committed state. Newer offline placements and surviving released claims can then converge without one undoing the other.
+
 Crossed grabs use per-object logical claim counters, with the lexicographically smaller peer ID winning equal counters. A grab made after observing the previous claim still takes over normally. The losing interaction is cancelled without erasing the winner's buffered pose. Claim generations survive release, content replacement and late-join catch-up; ownership remains cooperative rather than server-authoritative.
 
 #### Shared authored-motion time

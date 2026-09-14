@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {Interaction, Script, type ManipulationEvent} from 'xrblocks';
 import type {
   NetObject,
+  NetObjectClaim,
   NetSession,
   UserEventDetail,
 } from '../netblocks/src/index';
@@ -42,6 +43,7 @@ const continuation = new WeakMap<
     fingerprint: string;
     roomId?: string;
     unpublished: boolean;
+    claims: Map<string, NetObjectClaim>;
   }
 >();
 
@@ -117,6 +119,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   private syncId = '';
   private readonly syncResponders = new Set<string>();
   private readonly readySyncPeers = new Set<string>();
+  private readonly pendingSyncReplies = new Map<string, string>();
   private syncTimer?: ReturnType<typeof setTimeout>;
   private syncRetryTimer?: ReturnType<typeof setTimeout>;
   private bootstrapTimer?: ReturnType<typeof setTimeout>;
@@ -259,12 +262,17 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         this.lastXform = [...xform];
       }
     }
-    this.createBinding = (id, object) => new Binding({id, object});
+    this.createBinding = (id, object) =>
+      new Binding({id, object, automaticSnapshots: false});
     try {
       this.reconcile();
       const saved = continuation.get(this.room);
       const carried = saved?.roomId === this.options.roomId ? saved : undefined;
       if (carried) {
+        for (const [id, claim] of carried.claims) {
+          const binding = this.bindings.get(id);
+          if (binding) binding.claim = {...claim};
+        }
         this.clock = carried.clock;
         this.currentRevision = {...carried.revision};
         this.unpublished = carried.unpublished;
@@ -337,40 +345,19 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
           this.currentRevision.counter === 0
         )
           return;
-        try {
-          this.send(
-            'sync-state',
-            {
-              id,
-              snapshot: this.snapshot(),
-              selection: {
-                id: this.room.selectedId,
-                sequence: this.selectionSequence,
-              },
-            },
-            from
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          this.send(
-            'sync-error',
-            {
-              id,
-              reason: (message.trim() || 'Scene snapshot failed.').slice(
-                0,
-                MAX_SYNC_ERROR_LENGTH
-              ),
-            },
-            from
-          );
-          throw error;
+        if (this.applying || this.queue.length) {
+          if (
+            !this.pendingSyncReplies.has(from) &&
+            this.pendingSyncReplies.size >= MAX_PENDING_LAYOUTS
+          ) {
+            throw new Error(
+              'Too many pending scene snapshot requests. Wait for the scene, then retry.'
+            );
+          }
+          this.pendingSyncReplies.set(from, id);
+          return;
         }
-        // A transport hello can precede the remote bridge's subscriptions.
-        if (this.awaitingSync && !this.readySyncPeers.has(from)) {
-          this.readySyncPeers.add(from);
-          this.send('sync-request', {id: this.syncId}, from);
-        }
+        this.replySnapshot(id, from);
       });
       this.on('sync-state', (value, from) => {
         const data = record(value);
@@ -444,6 +431,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       const join = () => this.resync();
       const leave = (event: Event) => {
         const id = (event as CustomEvent<UserEventDetail>).detail.user.peerId;
+        this.pendingSyncReplies.delete(id);
         this.selections.delete(id);
         this.selectionSequences.delete(id);
         this.removeOutline(id);
@@ -532,6 +520,42 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     clearTimeout(this.syncRetryTimer);
   }
 
+  private replySnapshot(id: string, from: string): void {
+    try {
+      this.send(
+        'sync-state',
+        {
+          id,
+          snapshot: this.snapshot(),
+          selection: {
+            id: this.room.selectedId,
+            sequence: this.selectionSequence,
+          },
+        },
+        from
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.send(
+        'sync-error',
+        {
+          id,
+          reason: (message.trim() || 'Scene snapshot failed.').slice(
+            0,
+            MAX_SYNC_ERROR_LENGTH
+          ),
+        },
+        from
+      );
+      throw error;
+    }
+    // A transport hello can precede the remote bridge's subscriptions.
+    if (this.awaitingSync && !this.readySyncPeers.has(from)) {
+      this.readySyncPeers.add(from);
+      this.send('sync-request', {id: this.syncId}, from);
+    }
+  }
+
   private sendSnapshotRequest(): void {
     const id = this.syncId;
     try {
@@ -578,6 +602,10 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     if (this.motionClock) {
       if (this.initialized) {
         const motion = this.motionClock.snapshot();
+        const claims = new Map<string, NetObjectClaim>();
+        for (const [id, binding] of this.bindings) {
+          if (binding.claim) claims.set(id, {...binding.claim});
+        }
         continuation.set(this.room, {
           elapsed: motion.elapsed,
           at: performance.now(),
@@ -590,6 +618,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
           fingerprint: this.fingerprint(),
           roomId: this.options.roomId,
           unpublished: this.unpublished,
+          claims,
         });
       }
       this.motionClock.dispose();
@@ -610,6 +639,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     this.bindings.clear();
     this.held.clear();
     this.queue.length = 0;
+    this.pendingSyncReplies.clear();
     this.catchup = undefined;
     this.awaitingSync = false;
     this.selections.clear();
@@ -826,7 +856,8 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
               previous?.binding === binding &&
               (binding.version !== previous.version ||
                 binding.ownerId !== previous.ownerId ||
-                JSON.stringify(binding.claim) !== previous.claim)
+                (binding.ownerId !== '' &&
+                  JSON.stringify(binding.claim) !== previous.claim))
             ) {
               binding.snapToXform(
                 binding.version !== previous.version && binding.lastXform
@@ -838,13 +869,14 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
                 state.ownerId && this.session.users.has(state.ownerId)
                   ? state.ownerId
                   : '';
-              if (
+              const ownershipAccepted =
                 this.session.netObjects.applyOwnershipSnapshot(
                   binding.netId,
                   ownerId,
                   state.claim
-                )
-              ) {
+                );
+              // A released claim can stay newer while the scene's LWW placement advances.
+              if (ownershipAccepted || (order > 0 && !binding.ownerId)) {
                 binding.snapToXform(state.xform);
               } else if (previous) {
                 binding.snapToXform(previous.xform);
@@ -869,6 +901,16 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         const peer = catchupFrom;
         if (peer) {
           this.guard('catch up transforms', () => this.requestObjects(peer));
+        }
+        if (!this.queue.length) {
+          for (const [from, id] of this.pendingSyncReplies) {
+            this.pendingSyncReplies.delete(from);
+            this.guard(
+              'receive sync-request',
+              () => this.replySnapshot(id, from),
+              from
+            );
+          }
         }
         this.refreshStatus();
       }
