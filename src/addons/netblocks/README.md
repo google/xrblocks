@@ -142,6 +142,8 @@ by extending the `Transport` base class.
 
 ### NetObject
 
+Set `automaticSnapshots: false` when a higher-level protocol owns initial state and catch-up. The session then excludes that object from generic snapshot sends and receives; claims, releases and continuous transform updates are unchanged. The default is `true`. Roomcraft uses this opt-out so unversioned backend snapshots cannot bypass its scene revision.
+
 A `THREE.Group` whose transform is replicated on a fixed cadence (default
 20 Hz). Owners broadcast; non-owners interpolate. Ownership is cooperative
 — call `session.claim(obj)` on grab and `session.release(obj)` on drop.
@@ -178,6 +180,8 @@ connection, parented to each peer's `headPivot` via
 `{voice: true}` in `joinRoom()` or `session.voice.enable(...)` later.
 
 `voice.setMuted(true)` silences outgoing microphone tracks while keeping incoming audio connected. `isMuted()` reports transmission state; `isEnabled()` reports whether microphone capture is acquired. Muting is retained when peers join or renegotiate, and unmuting does not request another stream. `disable()` is full teardown: it releases capture and audio connections and cancels a pending microphone grant. Listening-only peers can receive audio without enabling their microphone, independent of peer ID ordering.
+
+If microphone capture ends unexpectedly, incoming audio stays connected and the capture failure is reported. Call `enable()` explicitly to acquire a new microphone stream; stopped audio senders are reused without interrupting listening. Capture is never reacquired automatically.
 
 Use `voice.cancelPendingEnable()` to invalidate outstanding microphone permission requests without closing incoming connections or changing an already enabled microphone. Late-granted tracks from those requests are stopped. This is distinct from `disable()`, which intentionally closes the whole voice session.
 

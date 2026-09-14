@@ -147,12 +147,28 @@ describe('VoiceChat onLocalStateChange', () => {
         this.readyState = 'ended';
       });
     }
+    class Sender {
+      track: Track | null;
+      replaceTrack = vi.fn(async (track: Track | null) => {
+        this.track = track;
+      });
+      constructor(track: Track) {
+        this.track = track;
+      }
+    }
     class Peer extends EventTarget {
       connectionState = 'connected';
-      addTrack = vi.fn();
+      senders: Sender[] = [];
+      addTrack = vi.fn((track: Track) => {
+        const sender = new Sender(track);
+        this.senders.push(sender);
+        return sender;
+      });
       addTransceiver = vi.fn();
-      getSenders = () => [];
+      getSenders = () => this.senders;
       createOffer = vi.fn(async () => ({type: 'offer', sdp: 'test-offer'}));
+      createAnswer = vi.fn(async () => ({type: 'answer', sdp: 'test-answer'}));
+      setRemoteDescription = vi.fn(async () => {});
       setLocalDescription = vi.fn(async () => {});
       close = vi.fn(() => {
         this.connectionState = 'closed';
@@ -169,9 +185,8 @@ describe('VoiceChat onLocalStateChange', () => {
       vi.restoreAllMocks();
     });
 
-    function setup() {
-      const track = new Track();
-      const stream = {getTracks: () => [track], getAudioTracks: () => [track]};
+    function setup(tracks = [new Track()]) {
+      const stream = {getTracks: () => tracks, getAudioTracks: () => tracks};
       const gum = vi.fn(async () => stream);
       vi.stubGlobal('navigator', {mediaDevices: {getUserMedia: gum}});
       vi.stubGlobal('RTCPeerConnection', Peer);
@@ -185,7 +200,7 @@ describe('VoiceChat onLocalStateChange', () => {
         onError: error,
       });
       voice.setLocalPeerId('a');
-      return {voice, track, gum, send, state, mute, error};
+      return {voice, track: tracks[0], gum, send, state, mute, error};
     }
 
     it('pending-request cancellation leaves already enabled capture and peer connections untouched', async () => {
@@ -265,21 +280,266 @@ describe('VoiceChat onLocalStateChange', () => {
       voice.disable();
     });
 
-    it('reports a capture ending and clears actual microphone state', async () => {
-      const {voice, track, state, error} = setup();
+    it('keeps receiving peer audio when capture ends and announces the microphone failure', async () => {
+      const {voice, track, gum, send, state, error} = setup();
       vi.spyOn(console, 'error').mockImplementation(() => {});
-      await voice.enable(new Set());
+      const received = vi.fn();
+      const removed = vi.fn();
+      voice.onTrack(received);
+      voice.onTrackRemoved(removed);
+      await voice.enable(new Set(['b']));
+      const peer = peers[0];
+      const remoteTrack = new Track();
+      const inbound = {getTracks: () => [remoteTrack]};
+      peer.dispatchEvent(
+        Object.assign(new Event('track'), {
+          track: remoteTrack,
+          streams: [inbound],
+        })
+      );
+      expect(received).toHaveBeenCalledWith('b', inbound);
+      send.mockClear();
+
       track.readyState = 'ended';
       track.dispatchEvent(new Event('ended'));
+
+      expect(peer.close).not.toHaveBeenCalled();
+      expect(removed).not.toHaveBeenCalled();
+      expect(remoteTrack.stop).not.toHaveBeenCalled();
+      expect(
+        send.mock.calls.some(([message]) => message.signal.kind === 'bye')
+      ).toBe(false);
+      expect(gum).toHaveBeenCalledOnce();
       expect(voice.isEnabled()).toBe(false);
       expect(voice.isMuted()).toBe(true);
-      expect(state).toHaveBeenLastCalledWith(false);
+      expect(state.mock.calls).toEqual([[true], [false]]);
       expect(error).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining('Microphone capture ended'),
         }),
         undefined
       );
+      expect(error).toHaveBeenCalledOnce();
+
+      voice.disable();
+      expect(peer.close).toHaveBeenCalledOnce();
+      expect(removed).toHaveBeenCalledWith('b');
+      expect(send).toHaveBeenCalledWith({
+        type: 'voice',
+        to: 'b',
+        signal: {kind: 'bye'},
+      });
+      expect(state.mock.calls).toEqual([[true], [false]]);
+    });
+
+    it.each(['a', 'z'])(
+      'reuses the audio sender on explicit microphone recovery for local peer %s',
+      async (localId) => {
+        const {voice, track, gum, send, state, error} = setup();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        voice.setLocalPeerId(localId);
+        await voice.enable(new Set(['m']));
+        const peer = peers[0];
+        if (localId === 'z') {
+          expect(send).toHaveBeenCalledWith({
+            type: 'voice',
+            to: 'm',
+            signal: {kind: 'hello'},
+          });
+          await voice.handleSignal('m', {
+            type: 'voice',
+            signal: {kind: 'offer', sdp: 'remote-offer'},
+          });
+          expect(peer.createOffer).not.toHaveBeenCalled();
+        }
+        await vi.waitFor(() =>
+          expect(send).toHaveBeenCalledWith({
+            type: 'voice',
+            to: 'm',
+            signal:
+              localId === 'a'
+                ? {kind: 'offer', sdp: 'test-offer'}
+                : {kind: 'answer', sdp: 'test-answer'},
+          })
+        );
+        const received = vi.fn();
+        const removed = vi.fn();
+        voice.onTrack(received);
+        voice.onTrackRemoved(removed);
+        const remoteTrack = new Track();
+        const inbound = {getTracks: () => [remoteTrack]};
+        peer.dispatchEvent(
+          Object.assign(new Event('track'), {
+            track: remoteTrack,
+            streams: [inbound],
+          })
+        );
+        voice.setMuted(true);
+        send.mockClear();
+
+        track.readyState = 'ended';
+        track.dispatchEvent(new Event('ended'));
+        expect(gum).toHaveBeenCalledOnce();
+        expect(voice.isMuted()).toBe(true);
+
+        const recoveredTrack = new Track();
+        const recoveredStream = {
+          getTracks: () => [recoveredTrack],
+          getAudioTracks: () => [recoveredTrack],
+        };
+        gum.mockResolvedValueOnce(recoveredStream);
+        await voice.enable(new Set(['m']));
+
+        expect(voice.isEnabled()).toBe(true);
+        expect(voice.isMuted()).toBe(false);
+        expect(recoveredTrack.enabled).toBe(true);
+        expect(gum).toHaveBeenCalledTimes(2);
+        expect(peers).toHaveLength(1);
+        expect(peer.close).not.toHaveBeenCalled();
+        expect(peer.addTrack).toHaveBeenCalledOnce();
+        expect(peer.getSenders()).toHaveLength(1);
+        expect(peer.getSenders()[0].track).toBe(recoveredTrack);
+        expect(peer.getSenders()[0].replaceTrack).toHaveBeenCalledWith(
+          recoveredTrack
+        );
+        expect(send).not.toHaveBeenCalled();
+        expect(received).toHaveBeenCalledExactlyOnceWith('m', inbound);
+        expect(removed).not.toHaveBeenCalled();
+        expect(state.mock.calls).toEqual([[true], [false], [true]]);
+        expect(error).toHaveBeenCalledOnce();
+
+        voice.setMuted(true);
+        await voice.enable(new Set(['m']));
+        expect(voice.isMuted()).toBe(true);
+        expect(recoveredTrack.enabled).toBe(false);
+        expect(gum).toHaveBeenCalledTimes(2);
+        voice.disable();
+        expect(recoveredTrack.stop).toHaveBeenCalledOnce();
+        expect(peer.close).toHaveBeenCalledOnce();
+        expect(removed).toHaveBeenCalledExactlyOnceWith('m');
+      }
+    );
+
+    it('stops every local track and ignores stale ended callbacks after microphone recovery', async () => {
+      const tracks = [new Track(), new Track()];
+      const {voice, gum, state, error} = setup(tracks);
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await voice.enable(new Set(['b']));
+      const peer = peers[0];
+
+      tracks[0].readyState = 'ended';
+      tracks[0].dispatchEvent(new Event('ended'));
+      for (const track of tracks) {
+        expect(track.stop).toHaveBeenCalledOnce();
+        expect(track.readyState).toBe('ended');
+      }
+      expect(error).toHaveBeenCalledOnce();
+      expect(gum).toHaveBeenCalledOnce();
+
+      const recoveredTrack = new Track();
+      gum.mockResolvedValueOnce({
+        getTracks: () => [recoveredTrack],
+        getAudioTracks: () => [recoveredTrack],
+      });
+      await voice.enable(new Set(['b']));
+      tracks[1].dispatchEvent(new Event('ended'));
+      expect(voice.isEnabled()).toBe(true);
+      expect(recoveredTrack.stop).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledOnce();
+      expect(state.mock.calls).toEqual([[true], [false], [true]]);
+      expect(peer.getSenders().map((sender) => sender.track)).toEqual([
+        recoveredTrack,
+        tracks[1],
+      ]);
+
+      recoveredTrack.readyState = 'ended';
+      recoveredTrack.dispatchEvent(new Event('ended'));
+      const latestTracks = [new Track(), new Track()];
+      gum.mockResolvedValueOnce({
+        getTracks: () => latestTracks,
+        getAudioTracks: () => latestTracks,
+      });
+      await voice.enable(new Set(['b']));
+      expect(peer.getSenders().map((sender) => sender.track)).toEqual(
+        latestTracks
+      );
+      expect(peer.addTrack).toHaveBeenCalledTimes(2);
+      expect(peers).toHaveLength(1);
+      expect(peer.close).not.toHaveBeenCalled();
+      expect(gum).toHaveBeenCalledTimes(3);
+      expect(error).toHaveBeenCalledTimes(2);
+      voice.disable();
+    });
+
+    it('re-offers only when recovery adds a track beyond the existing senders', async () => {
+      const {voice, track, gum, send} = setup();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      voice.setLocalPeerId('z');
+      await voice.enable(new Set(['a']));
+      const peer = peers[0];
+      await voice.handleSignal('a', {
+        type: 'voice',
+        signal: {kind: 'offer', sdp: 'remote-offer'},
+      });
+      expect(peer.createOffer).not.toHaveBeenCalled();
+      send.mockClear();
+
+      track.readyState = 'ended';
+      track.dispatchEvent(new Event('ended'));
+      const recoveredTracks = [new Track(), new Track()];
+      gum.mockResolvedValueOnce({
+        getTracks: () => recoveredTracks,
+        getAudioTracks: () => recoveredTracks,
+      });
+      await voice.enable(new Set(['a']));
+
+      expect(peer.getSenders().map((sender) => sender.track)).toEqual(
+        recoveredTracks
+      );
+      expect(peer.addTrack).toHaveBeenCalledTimes(2);
+      expect(peer.createOffer).toHaveBeenCalledOnce();
+      await vi.waitFor(() =>
+        expect(send).toHaveBeenCalledExactlyOnceWith({
+          type: 'voice',
+          to: 'a',
+          signal: {kind: 'offer', sdp: 'test-offer'},
+        })
+      );
+      expect(peers).toHaveLength(1);
+      expect(peer.close).not.toHaveBeenCalled();
+      voice.disable();
+    });
+
+    it('reports a sender replacement failure without interrupting listening or recovery for other peers', async () => {
+      const {voice, track, gum, error} = setup();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const removed = vi.fn();
+      voice.onTrackRemoved(removed);
+      await voice.enable(new Set(['b', 'c']));
+      track.readyState = 'ended';
+      track.dispatchEvent(new Event('ended'));
+      error.mockClear();
+
+      const replacementError = new Error('Audio replacement failed');
+      peers[0]
+        .getSenders()[0]
+        .replaceTrack.mockRejectedValueOnce(replacementError);
+      const recoveredTrack = new Track();
+      gum.mockResolvedValueOnce({
+        getTracks: () => [recoveredTrack],
+        getAudioTracks: () => [recoveredTrack],
+      });
+      await voice.enable(new Set(['b', 'c']));
+
+      expect(error).toHaveBeenCalledExactlyOnceWith(replacementError, 'b');
+      expect(removed).not.toHaveBeenCalled();
+      for (const peer of peers) {
+        expect(peer.close).not.toHaveBeenCalled();
+        expect(peer.addTrack).toHaveBeenCalledOnce();
+      }
+      expect(peers[1].getSenders()[0].track).toBe(recoveredTrack);
+      expect(voice.isEnabled()).toBe(true);
+      voice.disable();
     });
 
     it('reports peer connection failures without claiming the microphone was disabled', async () => {

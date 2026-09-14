@@ -4,6 +4,19 @@ import {describe, it, expect, vi} from 'vitest';
 import {NetObject} from './NetObject';
 
 describe('NetObject', () => {
+  it('uses generic catch-up by default and allows an explicit snapshot owner', () => {
+    expect(new NetObject().automaticSnapshots).toBe(true);
+    const delegated = new NetObject({automaticSnapshots: false});
+    expect(delegated.automaticSnapshots).toBe(false);
+    const pose = [1, 2, 3, 0, 0, 0, 1, 1, 1, 1];
+    delegated.snapToXform(pose);
+    expect(delegated.toXform()).toEqual(pose);
+    // @ts-expect-error JavaScript consumers must not enable this with a string.
+    expect(() => new NetObject({automaticSnapshots: 'false'})).toThrow(
+      'boolean'
+    );
+  });
+
   it('uses an explicit id when provided', () => {
     const obj = new NetObject({id: 'cube-7'});
     expect(obj.netId).toBe('cube-7');

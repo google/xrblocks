@@ -31,6 +31,8 @@ export interface NetObjectOptions {
   ownerId?: string;
   /** Existing local-transform target. Not reparented or disposed; defaults to the NetObject itself. */
   object?: THREE.Object3D;
+  /** Participate in generic session catch-up. Disable when a higher-level protocol owns snapshots. */
+  automaticSnapshots?: boolean;
 }
 
 export class NetObject extends THREE.Group {
@@ -40,6 +42,7 @@ export class NetObject extends THREE.Group {
   claim?: NetObjectClaim;
   /** The replicated local-transform target; this NetObject unless supplied in options. */
   readonly object: THREE.Object3D;
+  readonly automaticSnapshots: boolean;
 
   /** Local-only state object that consumers can populate; sent alongside transforms. */
   state: Record<string, unknown> = {};
@@ -72,9 +75,16 @@ export class NetObject extends THREE.Group {
 
   constructor(opts: NetObjectOptions = {}) {
     super();
+    if (
+      opts.automaticSnapshots !== undefined &&
+      typeof opts.automaticSnapshots !== 'boolean'
+    ) {
+      throw new TypeError('automaticSnapshots must be a boolean.');
+    }
     this.netId = opts.id ?? `obj_${makeId(10)}`;
     this.ownerId = opts.ownerId ?? '';
     this.object = opts.object ?? this;
+    this.automaticSnapshots = opts.automaticSnapshots ?? true;
     this.name = `NetObject(${this.netId})`;
   }
 
