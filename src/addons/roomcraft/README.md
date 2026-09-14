@@ -16,7 +16,7 @@ The demo's exact `?collab=1` opt-in loads its collaboration UI after local scene
 
 The DOM panel and the existing spatial studio share one collaboration controller, including connection drafts, errors, participant state and actions. Connection keyboard edits are separate from authoring. Local microphone transmission, all incoming playback, and per-participant playback have distinct controls; listening mutes never invoke Gemini, acquire a microphone, change a remote mic announcement, or mute scene sounds. The demo uses netblocks' public playback hooks rather than accessing private audio nodes.
 
-The demo's room codes identify shared scenes independently of each participant's physical or virtual viewing setup. Both use `roomcraft:shared:<room>`; entering a code never requires matching the creator's `environment` URL parameter and does not change the recipient's local XR session mode. All peers must reload from earlier mode-separated builds before joining the common namespace. Shared scene coordinates still do not align real-world rooms.
+The demo's room codes identify shared scenes independently of each participant's physical or virtual viewing setup. Both use `roomcraft:shared:<room>`; entering a code never requires matching the creator's `environment` URL parameter and does not change the recipient's local XR session mode. Shared scene coordinates still do not align real-world rooms.
 
 `RoomcraftNet` shares validated `SceneLayout` data, root placement, object transforms, selection indicators, and an authored-motion timeline without running a planner on receiving peers. Existing input and authoring controls still drive the same `Roomcraft` instance. Whole-scene edits use last-writer-wins overwrite semantics, and local Undo or Redo publishes a whole-scene write; concurrent work can be overwritten. The authored bounds and existing 60 KB message cap produce explicit sync errors rather than clamping or truncating. Numerical placement is shared, not physical alignment, calibration, or spatial anchoring.
 
@@ -47,7 +47,7 @@ Missing snapshot replies are retried once per second within the eight-second req
 
 Applications that switch between different rooms should pass `new RoomcraftNet(room, session, {roomId})`, using the same stable ID passed to `joinRoom`. Reconnection retains revision and motion continuity only within that room; entering a different room starts discovery instead of publishing the previous room's edit history as a newer revision.
 
-For a Join flow, also pass `{seedLocalScene: false}`. A fresh joiner then waits for a seeded room snapshot instead of promoting or offering its own starter state, including when only other joiners are reachable. Pass `true` for an explicit Start flow to establish the initial scene immediately; omitting the option retains legacy discovery behavior. An unanswered Join reports a timeout rather than silently becoming the creator; same-room continuation and explicit local edits retain their revision behavior.
+For a Join flow, also pass `{seedLocalScene: false}`. A fresh joiner then waits for a seeded room snapshot instead of promoting or offering its own starter state, including when only other joiners are reachable. Pass `true` for an explicit Start flow to establish the initial scene immediately; omitting the option uses automatic discovery. An unanswered Join reports a timeout rather than silently becoming the creator; same-room continuation and explicit local edits retain their revision behavior.
 
 The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
 
@@ -65,7 +65,7 @@ Pause is local inspection only. A paused peer keeps its displayed pose while the
 
 The bridge uses the public `room.setMotionTimeSource(source)` seam, where `source` returns finite, non-negative absolute seconds. `room.motionTimeSource` exposes the current source for ownership-aware cleanup. Passing `undefined` returns to ordinary delta playback from the displayed phase. Apps using Roomcraft without networking do not need this API.
 
-All collaborating peers must load the same protocol build. Scene protocol version 2 includes shared-clock metadata; older peers fail with a reload instruction rather than silently claiming aligned playback. Peer voice is a separate opt-in netblocks audio path, not the demo's Gemini transcription Talk control. No spatial alignment or anchor exchange is implied by either feature.
+All collaborating peers must use a compatible scene protocol, including its shared-clock metadata. Incompatible messages produce an explicit error rather than silently claiming aligned playback. Peer voice is a separate opt-in netblocks audio path, not the demo's Gemini transcription Talk control. No spatial alignment or anchor exchange is implied by either feature.
 
 ## Add it to an application
 

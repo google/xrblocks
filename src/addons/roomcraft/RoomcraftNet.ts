@@ -146,7 +146,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     readonly session: NetSession,
     private readonly options: {
       roomId?: string;
-      /** True for Start, false for Join; omission retains legacy discovery behavior. */
+      /** True for Start, false for Join; omission uses automatic discovery. */
       seedLocalScene?: boolean;
     } = {}
   ) {
