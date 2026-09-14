@@ -41,4 +41,4 @@ action.
 
 ## Picker
 
-Open `index.html` in this folder for a hub linking to all samples.
+Open [`basic/index.html`](./basic/index.html) for a hub linking to all samples.
