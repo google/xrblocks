@@ -13,7 +13,8 @@
  *   - Per-frame `update()` drives presence broadcasting, smooth interpolation
  *     of remote avatars and net objects, and broadcasting transforms for
  *     locally-owned net objects.
- *   - Emits high-level events (`user-join`, `user-leave`) for the host app.
+ *   - Emits high-level events (`user-join`, `user-update`, `user-leave`) for
+ *     the host app. `user-update` refreshes already-announced peer metadata.
  *
  * The root xrblocks `Script` passed in is used purely as a scene-graph
  * mount point for remote avatars; netblocks never manipulates the host
@@ -52,7 +53,13 @@ export interface NetSessionOptions {
     /** Whether to enable voice chat at session start. Defaults to false. */
     voice?: boolean;
 }
-export type NetSessionEventName = 'open' | 'close' | 'user-join' | 'user-leave' | 'voice-state' | 'local-voice-state';
+export type NetSessionEventName = 'open' | 'close' | 'user-join' | 'user-update' | 'user-leave' | 'voice-state' | 'local-voice-state' | 'peer-voice-state' | 'playback-state' | 'voice-error';
+/** A local playback preference change, independent of microphone intent. */
+export interface PlaybackStateEventDetail {
+    /** Absent for the master toggle; otherwise the peer's individual choice. */
+    peerId?: string;
+    muted: boolean;
+}
 export interface UserEventDetail {
     user: NetUser;
 }
@@ -72,6 +79,8 @@ export declare class NetSession extends EventTarget {
     private _pendingJoinTimers;
     private _opts;
     private _spatialVoice?;
+    private _playbackMuted;
+    private _mutedPlaybackPeers;
     private _isOpen;
     private _lastUpdateMs;
     private _capabilities;
@@ -87,6 +96,26 @@ export declare class NetSession extends EventTarget {
     /** Local self-reported role. Defaults to `'user'`. */
     get role(): PeerRole;
     get users(): ReadonlyMap<string, NetUser>;
+    /** Whether all incoming voice is muted for this local listener. */
+    get playbackMuted(): boolean;
+    /**
+     * Mute incoming voice only, retaining each peer's individual choice.
+     * May be set before open(); never changes the microphone or scene sounds.
+     * Emits `playback-state` only when this preference changes.
+     */
+    setPlaybackMuted(muted: boolean): void;
+    /**
+     * Mute a current peer's incoming voice for this listener only.
+     * Retained across stream replacement/removal, cleared on peer leave/close.
+     * Emits `playback-state` only when this individual preference changes.
+     *
+     * @throws TypeError for a non-boolean mute or an empty/non-string peer ID.
+     * @throws RangeError if the peer is not in `users`.
+     */
+    setPeerPlaybackMuted(peerId: string, muted: boolean): void;
+    /** Individual choice, unaffected by master mute; false for departed peers. */
+    isPeerPlaybackMuted(peerId: string): boolean;
+    private _validatePlaybackPeerId;
     /** Connect the underlying transport and announce ourselves. */
     open(roomId: string): Promise<void>;
     close(): void;

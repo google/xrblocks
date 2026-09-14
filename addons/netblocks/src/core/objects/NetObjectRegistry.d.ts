@@ -10,7 +10,7 @@
  * the transport layer. netblocks is demo-grade — for adversarial
  * environments, layer a server-authoritative arbiter on top.
  */
-import { NetObject } from './NetObject';
+import { NetObject, type NetObjectClaim } from './NetObject';
 export declare class NetObjectRegistry {
     private _byId;
     add(obj: NetObject): void;
@@ -19,14 +19,14 @@ export declare class NetObjectRegistry {
     has(id: string): boolean;
     values(): IterableIterator<NetObject>;
     /**
-     * Apply a "claim" message: peer wants ownership. Always grants the
-     * claim — explicit grabs are intentional and should preempt the
-     * previous owner so users can pass objects between each other. (The
-     * older lex-tiebreak only made sense for racing implicit claims.)
+     * Apply a causal explicit claim. A later counter preempts; equal counters
+     * choose the lex-smaller peer ID. Legacy unstamped claims still preempt.
      */
-    applyClaim(id: string, peerId: string): boolean;
+    applyClaim(id: string, peerId: string, counter?: number): boolean;
     /** Apply a "release" — only the current owner may release. */
-    applyRelease(id: string, peerId: string): boolean;
+    applyRelease(id: string, peerId: string, counter?: number): boolean;
+    /** Adopt catch-up ownership without overwriting a newer claim or reviving a release. */
+    applyOwnershipSnapshot(id: string, ownerId: string, revision?: NetObjectClaim): boolean;
     /** When a peer leaves, drop their ownership claims so others can take over. */
     releaseOwnedBy(peerId: string): void;
 }

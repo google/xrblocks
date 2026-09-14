@@ -36,6 +36,28 @@ function disposeContent(content) {
     skeletons.forEach((skeleton) => skeleton.dispose());
     disposeObjectTree(content);
 }
+function stageContent(asset, color, signal) {
+    signal?.throwIfAborted();
+    const loading = createContent(asset, color);
+    if (!signal)
+        return loading;
+    return new Promise((resolve, reject) => {
+        const abort = () => reject(signal.reason);
+        signal.addEventListener('abort', abort, { once: true });
+        void loading.then((content) => {
+            signal.removeEventListener('abort', abort);
+            if (signal.aborted)
+                disposeContent(content);
+            else
+                resolve(content);
+        }, (error) => {
+            signal.removeEventListener('abort', abort);
+            reject(error);
+        });
+        if (signal.aborted)
+            abort();
+    });
+}
 async function createContent(asset, color) {
     const object = await asset.create(color);
     if (!(object instanceof THREE.Object3D) || object.parent) {
@@ -148,7 +170,48 @@ class Roomcraft extends Script {
     get motionPaused() {
         return this.motionIsPaused;
     }
-    /** Pause or resume local part motion without changing its authored definition. */
+    /** The installed absolute clock, exposed so a bridge can detach only its own. */
+    get motionTimeSource() {
+        return this.motionSource;
+    }
+    /**
+     * Use absolute playback seconds instead of the SDK frame delta. The source
+     * must return finite, non-negative seconds and is sampled once per frame or
+     * content commit. Retuned speeds and periods use the whole absolute time,
+     * rather than carrying the previous definition's cycle.
+     *
+     * Installing a clock aligns playback immediately unless locally paused.
+     * Removing it retains the sampled cycles for subsequent delta playback.
+     *
+     * @param source - The shared playback clock, or undefined to use frame deltas.
+     */
+    setMotionTimeSource(source) {
+        this.assertAlive();
+        if (source !== undefined && typeof source !== 'function') {
+            throw new Error('Roomcraft motion time source must be a function.');
+        }
+        if (source === this.motionSource)
+            return;
+        if (source === undefined) {
+            this.motionSource = undefined;
+            this.motionTime = undefined;
+            return;
+        }
+        const time = this.readMotionTime(source);
+        if (this.motionIsPaused) {
+            // A paused delta player has no shared sample yet; keep its carried cycles.
+            if (!this.hasMotion)
+                this.motionTime ??= time;
+        }
+        else {
+            this.seekMotions(time);
+        }
+        this.motionSource = source;
+    }
+    /**
+     * Freeze the current local sample without changing authored motion.
+     * Resuming an absolute clock immediately realigns to its current time.
+     */
     setMotionPaused(paused) {
         this.assertAlive();
         if (typeof paused !== 'boolean') {
@@ -156,18 +219,37 @@ class Roomcraft extends Script {
         }
         if (paused === this.motionIsPaused)
             return;
+        if (!paused && this.motionSource) {
+            this.seekMotions(this.readMotionTime(this.motionSource));
+        }
         this.motionIsPaused = paused;
         this.dispatchEvent({ type: 'motionstatechange', paused });
     }
     update() {
         if (this.disposed || this.motionIsPaused || !this.hasMotion)
             return;
+        if (this.motionSource) {
+            this.seekMotions(this.readMotionTime(this.motionSource));
+            return;
+        }
         if (!this.timer) {
             throw new Error('Roomcraft motion needs the SDK frame timer. Add Roomcraft before xb.init().');
         }
         const delta = this.timer.getDelta();
         for (const entity of this.entities.values())
             entity.motion?.update(delta);
+    }
+    readMotionTime(source) {
+        const time = source();
+        if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) {
+            throw new Error('Roomcraft motion time source must return finite, non-negative elapsed seconds.');
+        }
+        return time;
+    }
+    seekMotions(time) {
+        for (const entity of this.entities.values())
+            entity.motion?.seek(time);
+        this.motionTime = time;
     }
     /** A detached snapshot of the setting, live transforms, and authored recipes. */
     get layout() {
@@ -250,11 +332,16 @@ class Roomcraft extends Script {
         this.selection = id;
         this.dispatchEvent({ type: 'selectionchange', id });
     }
-    /** Replace the scene explicitly, for curated examples or saved layouts. */
-    async applyLayout(value) {
+    /**
+     * Replace the scene explicitly, for curated examples or saved layouts.
+     * Aborting rejects the import without changing the current scene. A factory
+     * already loading may finish later; its unused content is then disposed.
+     */
+    async applyLayout(value, { signal } = {}) {
         return this.run('loading', async () => {
+            signal?.throwIfAborted();
             const layout = readSceneLayout(value, this.catalog);
-            return this.commitLayout(layout);
+            return this.commitLayout(layout, 'record', signal);
         });
     }
     /** Apply explicit add/update/remove operations without invoking AI. */
@@ -386,6 +473,7 @@ class Roomcraft extends Script {
             return;
         if (event.phase === 'start')
             this.select(id);
+        this.dispatchEvent({ type: 'manipulationchange', id, event });
         if (event.phase === 'end' || event.phase === 'cancel') {
             this.dispatchEvent({ type: 'change', layout: this.layout });
         }
@@ -412,8 +500,10 @@ class Roomcraft extends Script {
         this.currentStatus = 'ready';
         this.timer = undefined;
         this.motionIsPaused = false;
+        this.motionSource = undefined;
+        this.motionTime = undefined;
     }
-    async commitLayout(layout, historyAction = 'record') {
+    async commitLayout(layout, historyAction = 'record', signal) {
         const before = this.layout;
         const fingerprint = JSON.stringify(before);
         const staged = new Map();
@@ -425,6 +515,7 @@ class Roomcraft extends Script {
                 stagedEnvironment = createEnvironmentContent(layout.environment);
             }
             for (const object of layout.objects) {
+                signal?.throwIfAborted();
                 const existing = this.entities.get(object.id);
                 if (!existing ||
                     existing.description.asset !== object.asset ||
@@ -445,16 +536,24 @@ class Roomcraft extends Script {
                         if (!asset) {
                             throw new Error(`Unknown catalog asset "${object.asset}".`);
                         }
-                        content = await createContent(asset, object.color);
+                        content = await stageContent(asset, object.color, signal);
                     }
                     staged.set(object.id, content);
+                    signal?.throwIfAborted();
                     this.assertAlive();
                 }
             }
             this.assertAlive();
+            signal?.throwIfAborted();
             if (JSON.stringify(this.layout) !== fingerprint) {
                 throw new Error('The scene moved while assets were loading. Your scene was kept; retry the edit.');
             }
+            // Sample only after staging; paused replacements reuse the frozen time.
+            const motionTime = this.motionSource
+                ? this.motionIsPaused
+                    ? this.motionTime
+                    : this.readMotionTime(this.motionSource)
+                : undefined;
             // Read live cycle phases only after asynchronous asset staging is complete.
             const stagedMotions = new Map();
             for (const object of layout.objects) {
@@ -463,6 +562,7 @@ class Roomcraft extends Script {
                     stagedMotions.set(object.id, new ProceduralMotionPlayer(content, object.parts, this.entities.get(object.id)?.motion));
                 }
             }
+            signal?.throwIfAborted();
             const retired = [];
             if (environmentChanged) {
                 if (this.environmentContent) {
@@ -530,6 +630,8 @@ class Roomcraft extends Script {
                 this.entities.delete(object.id);
                 this.entities.set(object.id, entity);
             }
+            if (motionTime !== undefined)
+                this.seekMotions(motionTime);
             this.title = layout.title;
             const after = JSON.stringify(this.layout);
             if (historyAction === 'undo') {

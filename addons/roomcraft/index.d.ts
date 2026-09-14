@@ -1,4 +1,7 @@
 export { Roomcraft } from './Roomcraft';
+export { RoomcraftNet } from './RoomcraftNet';
+export type { RoomcraftNetDiagnostics, RoomcraftNetEventMap, RoomcraftNetStatus, } from './RoomcraftNet';
+export type { RoomcraftMotionClockState } from './RoomcraftClock';
 export { createDefaultCatalog, createModelAsset } from './Catalog';
 export type { ModelAssetOptions } from './Catalog';
 export { SCENE_PLAN_SCHEMA, buildScenePrompt } from './ScenePlan';

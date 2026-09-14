@@ -5,26 +5,36 @@
  * calling `claim()`. The current owner is the only peer that broadcasts
  * authoritative transform updates; non-owners interpolate.
  *
- * Ownership is cooperative — there is no central arbiter. Explicit claims
- * always preempt the previous owner so users can hand off / steal objects;
- * the only deterministic tiebreak left is for the rare case where two peers
- * implicitly auto-own the same id at create-time (see NetSession's
- * `netobject` handler), where the lex-smaller peer id wins.
+ * Ownership is cooperative: there is no central arbiter. A later observed
+ * explicit claim preempts its predecessor. Crossed claims at the same logical
+ * counter select the lex-smaller peer ID, independent of arrival order.
  *
  * NetObjects are normal three.js Object3Ds; you can `.add()` any meshes to
  * them. Each frame, NetSession applies remote updates to the local
- * transform if we don't currently own the object.
+ * transform if we don't currently own the object. Pass `object` to bind an
+ * existing Object3D's local transform instead, without changing its hierarchy
+ * or taking ownership of its resources.
  */
 import * as THREE from 'three';
+export interface NetObjectClaim {
+    counter: number;
+    peerId: string;
+}
 export interface NetObjectOptions {
     /** Stable id for this object across peers. Defaults to a fresh random id. */
     id?: string;
     /** Initial owner peer id. NetSession sets this to the local peer id when the object is created locally. */
     ownerId?: string;
+    /** Existing local-transform target. Not reparented or disposed; defaults to the NetObject itself. */
+    object?: THREE.Object3D;
 }
 export declare class NetObject extends THREE.Group {
     readonly netId: string;
     ownerId: string;
+    /** Last explicit claim, retained after release for causal handoff and catch-up. */
+    claim?: NetObjectClaim;
+    /** The replicated local-transform target; this NetObject unless supplied in options. */
+    readonly object: THREE.Object3D;
     /** Local-only state object that consumers can populate; sent alongside transforms. */
     state: Record<string, unknown>;
     /** Last-applied remote transform (used by NetSession for interpolation). */
@@ -54,9 +64,9 @@ export declare class NetObject extends THREE.Group {
     /** True if the local peer currently owns this object. */
     isOwnedBy(peerId: string): boolean;
     /**
-     * Snapshot the current local transform to a 10-element array suitable
-     * for inclusion in a NetObjectMessage. Symmetric with `setTargetXform`,
-     * which writes back into local position/quaternion/scale.
+     * Snapshot the object's current local transform to a 10-element array
+     * suitable for inclusion in a NetObjectMessage. Symmetric with
+     * `snapToXform`, which writes back into local position/quaternion/scale.
      */
     toXform(): number[];
     /** Replace the target transform from a wire xform array. */

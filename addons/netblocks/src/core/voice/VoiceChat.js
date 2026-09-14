@@ -6,8 +6,9 @@ class VoiceChat {
         this._onTrackRemoved = new Set();
         this._peers = new Map();
         this._enabled = false;
+        this._muted = false;
         this._localId = '';
-        // Incremented on every disable(). enable() captures the current
+        // Incremented on disable() or capture cancellation. enable() captures the current
         // value at the start of its async getUserMedia await; if the value
         // has advanced by the time the await resolves, a disable arrived
         // mid-request and the mic stream we just acquired is stale — stop
@@ -21,6 +22,8 @@ class VoiceChat {
                 noiseSuppression: true,
             },
             onLocalStateChange: opts.onLocalStateChange ?? (() => { }),
+            onLocalMuteChange: opts.onLocalMuteChange ?? (() => { }),
+            onError: opts.onError ?? (() => { }),
         };
     }
     setLocalPeerId(id) {
@@ -50,6 +53,17 @@ class VoiceChat {
     isEnabled() {
         return this._enabled;
     }
+    /** Whether this peer is not currently transmitting microphone audio. */
+    isMuted() {
+        return !this._enabled || this._muted;
+    }
+    /**
+     * Cancel pending microphone requests and stop any late-granted tracks.
+     * Leaves established capture and incoming peer connections untouched.
+     */
+    cancelPendingEnable() {
+        this._generation++;
+    }
     /** Request mic + start negotiating with all currently-connected peers. */
     async enable(currentPeers) {
         if (this._enabled)
@@ -58,7 +72,7 @@ class VoiceChat {
             !navigator.mediaDevices?.getUserMedia) {
             throw new Error('VoiceChat: getUserMedia is not available.');
         }
-        // Snapshot the generation BEFORE the await. If disable() runs
+        // Snapshot the generation BEFORE the await. If cancellation runs
         // while getUserMedia is pending, it bumps _generation. We then
         // throw away the freshly-acquired stream so we never leak a live
         // mic and never flip `_enabled` true behind the disabler's back.
@@ -73,6 +87,15 @@ class VoiceChat {
         }
         this._localStream = stream;
         this._enabled = true;
+        this._muted = false;
+        for (const track of stream.getTracks()) {
+            track.addEventListener('ended', () => {
+                if (this._localStream !== stream)
+                    return;
+                this.disable();
+                this._reportError(new Error('Microphone capture ended. Unmute to reconnect the microphone.'));
+            }, { once: true });
+        }
         this._opts.onLocalStateChange(true);
         // Back-fill local tracks onto any peer connections that were created
         // earlier as answerers (remote enabled voice before us). Without this
@@ -90,15 +113,7 @@ class VoiceChat {
         for (const pid of currentPeers) {
             if (this._peers.has(pid))
                 continue;
-            const asOfferer = this._localId < pid;
-            this._connectTo(pid, asOfferer);
-            if (!asOfferer) {
-                // We're the higher-id side, so we don't initiate. Nudge the
-                // offerer in case they had torn down their PC to us (e.g. via a
-                // previous bye); without this they'd sit idle and audio would
-                // never re-establish after a non-offerer re-enable.
-                this._send({ type: 'voice', to: pid, signal: { kind: 'hello' } });
-            }
+            this.notifyPeerJoined(pid);
         }
     }
     disable() {
@@ -108,10 +123,11 @@ class VoiceChat {
         // inbound MediaStream + ICE).
         const wasEnabled = this._enabled;
         this._enabled = false;
+        this._muted = false;
         // Cancel any in-flight enable(): if its getUserMedia is still
         // pending, this bumped generation makes it discard the resulting
         // stream instead of flipping `_enabled` true after we left.
-        this._generation++;
+        this.cancelPendingEnable();
         // Tell each peer to drop their PC to us. Without this, the remote
         // keeps an orphaned PC alive (RTCPeerConnection.close() does not
         // signal anything to the remote) and on a subsequent enable() our
@@ -130,13 +146,22 @@ class VoiceChat {
     }
     /** Mute/unmute the local mic without tearing connections down. */
     setMuted(muted) {
+        if (!this._enabled || this._muted === muted)
+            return;
         this._localStream?.getAudioTracks().forEach((t) => (t.enabled = !muted));
+        this._muted = muted;
+        this._opts.onLocalMuteChange(muted);
     }
     /** NetSession invokes this on peer-join so we can negotiate. */
     notifyPeerJoined(peerId) {
-        if (!this._enabled)
+        if (!this._enabled || this._peers.has(peerId))
             return;
-        this._connectTo(peerId, this._localId < peerId);
+        const asOfferer = this._localId < peerId;
+        this._connectTo(peerId, asOfferer);
+        if (!asOfferer) {
+            // Listening-only peers also need a nudge when they are the offerer.
+            this._send({ type: 'voice', to: peerId, signal: { kind: 'hello' } });
+        }
     }
     notifyPeerLeft(peerId) {
         this._teardown(peerId);
@@ -153,9 +178,9 @@ class VoiceChat {
         }
         if (sig.kind === 'hello') {
             // Remote enabled voice and is the non-offerer side, asking us to
-            // (re)initiate. Only act if we're enabled, we're the natural
-            // offerer for them, and we don't already have a live PC.
-            if (this._enabled && this._localId < from && !this._peers.has(from)) {
+            // (re)initiate. A listening-only peer can offer recvonly audio
+            // without acquiring a microphone, regardless of peer ID ordering.
+            if (this._localId < from && !this._peers.has(from)) {
                 this._connectTo(from, true);
             }
             return;
@@ -184,7 +209,7 @@ class VoiceChat {
             }
         }
         catch (err) {
-            console.error('[netblocks/voice] signal error:', err);
+            this._reportError(err, from);
         }
     }
     _connectTo(peerId, asOfferer) {
@@ -197,6 +222,9 @@ class VoiceChat {
         if (this._localStream) {
             for (const t of this._localStream.getTracks())
                 pc.addTrack(t, this._localStream);
+        }
+        else {
+            pc.addTransceiver('audio', { direction: 'recvonly' });
         }
         pc.addEventListener('icecandidate', (ev) => {
             if (ev.candidate) {
@@ -235,6 +263,9 @@ class VoiceChat {
         });
         pc.addEventListener('connectionstatechange', () => {
             if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                if (pc.connectionState === 'failed') {
+                    this._reportError(new Error('Peer audio connection failed. Network or NAT restrictions may require TURN.'), peerId);
+                }
                 this._teardown(peerId);
             }
         });
@@ -254,8 +285,13 @@ class VoiceChat {
             });
         }
         catch (err) {
-            console.error('[netblocks/voice] offer failed:', err);
+            this._reportError(err, peerId);
         }
+    }
+    _reportError(cause, peerId) {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        console.error('[netblocks/voice]', error);
+        this._opts.onError(error, peerId);
     }
     _teardown(peerId) {
         const entry = this._peers.get(peerId);

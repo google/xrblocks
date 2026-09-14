@@ -49,6 +49,8 @@ export interface PoseMessage extends BaseMessage {
 export interface NetObjectMessage extends BaseMessage {
     type: 'netobject';
     id: string;
+    /** Explicit ownership generation; omitted by legacy senders. */
+    claimCounter?: number;
     /** Compact transform: [px, py, pz, qx, qy, qz, qw, sx, sy, sz]. */
     xform: number[];
     /** Optional small JSON state payload, capped by MAX_MESSAGE_BYTES. */
@@ -57,10 +59,13 @@ export interface NetObjectMessage extends BaseMessage {
 export interface NetObjectClaimMessage extends BaseMessage {
     type: 'netobject.claim';
     id: string;
+    /** Per-object logical counter. Equal counters choose the lex-smaller sender. */
+    claimCounter?: number;
 }
 export interface NetObjectReleaseMessage extends BaseMessage {
     type: 'netobject.release';
     id: string;
+    claimCounter?: number;
     /**
      * Optional final canonical transform. When present, receivers snap the
      * object to this xform on release so peers whose interpolation hadn't
@@ -84,6 +89,10 @@ export interface NetObjectSnapshotMessage extends BaseMessage {
         id: string;
         xform: number[];
         ownerId: string;
+        claim?: {
+            counter: number;
+            peerId: string;
+        };
         state?: unknown;
     }>;
 }

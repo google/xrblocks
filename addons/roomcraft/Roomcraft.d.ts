@@ -26,6 +26,8 @@ export declare class Roomcraft extends Script<RoomcraftEventMap> {
     private camera?;
     private timer?;
     private motionIsPaused;
+    private motionSource?;
+    private motionTime?;
     private environment?;
     private environmentContent?;
     private title;
@@ -45,9 +47,28 @@ export declare class Roomcraft extends Script<RoomcraftEventMap> {
     get hasMotion(): boolean;
     /** Playback inspection state; not part of the saved layout or undo history. */
     get motionPaused(): boolean;
-    /** Pause or resume local part motion without changing its authored definition. */
+    /** The installed absolute clock, exposed so a bridge can detach only its own. */
+    get motionTimeSource(): (() => number) | undefined;
+    /**
+     * Use absolute playback seconds instead of the SDK frame delta. The source
+     * must return finite, non-negative seconds and is sampled once per frame or
+     * content commit. Retuned speeds and periods use the whole absolute time,
+     * rather than carrying the previous definition's cycle.
+     *
+     * Installing a clock aligns playback immediately unless locally paused.
+     * Removing it retains the sampled cycles for subsequent delta playback.
+     *
+     * @param source - The shared playback clock, or undefined to use frame deltas.
+     */
+    setMotionTimeSource(source: (() => number) | undefined): void;
+    /**
+     * Freeze the current local sample without changing authored motion.
+     * Resuming an absolute clock immediately realigns to its current time.
+     */
     setMotionPaused(paused: boolean): void;
     update(): void;
+    private readMotionTime;
+    private seekMotions;
     /** A detached snapshot of the setting, live transforms, and authored recipes. */
     get layout(): SceneLayout;
     get status(): RoomcraftStatus;
@@ -66,8 +87,14 @@ export declare class Roomcraft extends Script<RoomcraftEventMap> {
      */
     getWorldBounds(id?: string): THREE.Box3;
     select(id: string | null): void;
-    /** Replace the scene explicitly, for curated examples or saved layouts. */
-    applyLayout(value: unknown): Promise<SceneLayout>;
+    /**
+     * Replace the scene explicitly, for curated examples or saved layouts.
+     * Aborting rejects the import without changing the current scene. A factory
+     * already loading may finish later; its unused content is then disposed.
+     */
+    applyLayout(value: unknown, { signal }?: {
+        signal?: AbortSignal;
+    }): Promise<SceneLayout>;
     /** Apply explicit add/update/remove operations without invoking AI. */
     applyPlan(value: unknown): Promise<SceneLayout>;
     /** Refine the current scene; selection and actual transforms are sent as context. */

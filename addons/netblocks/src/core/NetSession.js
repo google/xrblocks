@@ -30,6 +30,8 @@ class NetSession extends EventTarget {
          * populated displayName) or a small grace window elapses.
          */
         this._pendingJoinTimers = new Map();
+        this._playbackMuted = false;
+        this._mutedPlaybackPeers = new Set();
         this._isOpen = false;
         this._lastUpdateMs = 0;
         this._capabilities = { ...DEFAULT_CAPABILITIES };
@@ -54,16 +56,21 @@ class NetSession extends EventTarget {
         };
         this.presence = new PresenceBroadcaster((msg) => this._sendNet(msg), this._opts.presenceHz);
         this.events = new NetEvents((msg) => this._sendNet(msg));
+        const publishVoiceState = (on) => {
+            // Broadcast our intent so other peers can show a reliable "in
+            // voice chat" affordance that doesn't depend on per-browser
+            // WebRTC track event timing.
+            this.events.emit('netblocks/voice-state', on);
+            // Also surface the change as a local CustomEvent so UI state
+            // (mic button label, status text) tracks the authoritative
+            // VoiceChat state rather than an optimistic flag in the app.
+            this.dispatchEvent(new CustomEvent('local-voice-state', { detail: { on } }));
+        };
         this.voice = new VoiceChat((msg) => this._sendNet(msg), {
-            onLocalStateChange: (on) => {
-                // Broadcast our intent so other peers can show a reliable "in
-                // voice chat" affordance that doesn't depend on per-browser
-                // WebRTC track event timing.
-                this.events.emit('netblocks/voice-state', on);
-                // Also surface the change as a local CustomEvent so UI state
-                // (mic button label, status text) tracks the authoritative
-                // VoiceChat state rather than an optimistic flag in the app.
-                this.dispatchEvent(new CustomEvent('local-voice-state', { detail: { on } }));
+            onLocalStateChange: publishVoiceState,
+            onLocalMuteChange: (muted) => publishVoiceState(!muted),
+            onError: (error, peerId) => {
+                this.dispatchEvent(new CustomEvent('voice-error', { detail: { error, peerId } }));
             },
         });
         this.voice.onTrack((peerId, stream) => this._onVoiceTrack(peerId, stream));
@@ -74,8 +81,12 @@ class NetSession extends EventTarget {
         // currently in voice chat".
         this.events.on('netblocks/voice-state', (on, fromPeerId) => {
             const user = this._users.get(fromPeerId);
-            if (user)
+            if (user) {
                 user.avatar.voiceActive = !!on;
+                this.dispatchEvent(new CustomEvent('peer-voice-state', {
+                    detail: { peerId: fromPeerId, on: !!on },
+                }));
+            }
         });
         // When a new peer joins after we're already in voice, send them a
         // snapshot so they don't display us as muted.
@@ -83,7 +94,7 @@ class NetSession extends EventTarget {
             if (!this.voice.isEnabled())
                 return;
             const peerId = e.detail.user.peerId;
-            this.events.emitTo(peerId, 'netblocks/voice-state', true);
+            this.events.emitTo(peerId, 'netblocks/voice-state', !this.voice.isMuted());
         });
         this.transport.addEventListener('peer-join', (this._onTransportPeerJoin = (e) => this._onPeerJoin(e.detail.peerId)));
         this.transport.addEventListener('peer-leave', (this._onTransportPeerLeave = (e) => this._onPeerLeave(e.detail.peerId)));
@@ -105,6 +116,66 @@ class NetSession extends EventTarget {
     }
     get users() {
         return this._users;
+    }
+    /** Whether all incoming voice is muted for this local listener. */
+    get playbackMuted() {
+        return this._playbackMuted;
+    }
+    /**
+     * Mute incoming voice only, retaining each peer's individual choice.
+     * May be set before open(); never changes the microphone or scene sounds.
+     * Emits `playback-state` only when this preference changes.
+     */
+    setPlaybackMuted(muted) {
+        if (typeof muted !== 'boolean') {
+            throw new TypeError('muted must be a boolean');
+        }
+        if (this._playbackMuted === muted)
+            return;
+        this._playbackMuted = muted;
+        for (const peerId of this._users.keys()) {
+            this._spatialVoice?.setPlaybackMuted(peerId, muted || this._mutedPlaybackPeers.has(peerId));
+        }
+        this.dispatchEvent(new CustomEvent('playback-state', {
+            detail: { muted },
+        }));
+    }
+    /**
+     * Mute a current peer's incoming voice for this listener only.
+     * Retained across stream replacement/removal, cleared on peer leave/close.
+     * Emits `playback-state` only when this individual preference changes.
+     *
+     * @throws TypeError for a non-boolean mute or an empty/non-string peer ID.
+     * @throws RangeError if the peer is not in `users`.
+     */
+    setPeerPlaybackMuted(peerId, muted) {
+        this._validatePlaybackPeerId(peerId);
+        if (typeof muted !== 'boolean') {
+            throw new TypeError('muted must be a boolean');
+        }
+        if (!this._users.has(peerId)) {
+            throw new RangeError(`Unknown playback peer: ${peerId}`);
+        }
+        if (this._mutedPlaybackPeers.has(peerId) === muted)
+            return;
+        if (muted)
+            this._mutedPlaybackPeers.add(peerId);
+        else
+            this._mutedPlaybackPeers.delete(peerId);
+        this._spatialVoice?.setPlaybackMuted(peerId, this._playbackMuted || muted);
+        this.dispatchEvent(new CustomEvent('playback-state', {
+            detail: { peerId, muted },
+        }));
+    }
+    /** Individual choice, unaffected by master mute; false for departed peers. */
+    isPeerPlaybackMuted(peerId) {
+        this._validatePlaybackPeerId(peerId);
+        return this._mutedPlaybackPeers.has(peerId);
+    }
+    _validatePlaybackPeerId(peerId) {
+        if (typeof peerId !== 'string' || !peerId.trim()) {
+            throw new TypeError('peerId must be a non-empty string');
+        }
     }
     /** Connect the underlying transport and announce ourselves. */
     async open(roomId) {
@@ -145,6 +216,10 @@ class NetSession extends EventTarget {
         this.dispatchEvent(new Event('open'));
     }
     close() {
+        this._spatialVoice?.dispose();
+        this._spatialVoice = undefined;
+        this._playbackMuted = false;
+        this._mutedPlaybackPeers.clear();
         if (!this._isOpen)
             return;
         this._isOpen = false;
@@ -196,13 +271,15 @@ class NetSession extends EventTarget {
     }
     /** Claim ownership of an object (e.g., on grab). */
     claim(obj) {
-        if (this.netObjects.applyClaim(obj.netId, this.localPeerId)) {
-            this._sendNet({ type: 'netobject.claim', id: obj.netId });
+        const claimCounter = (obj.claim?.counter ?? 0) + 1;
+        if (this.netObjects.applyClaim(obj.netId, this.localPeerId, claimCounter)) {
+            this._sendNet({ type: 'netobject.claim', id: obj.netId, claimCounter });
         }
     }
     /** Release ownership of an object (e.g., on release). */
     release(obj) {
-        if (this.netObjects.applyRelease(obj.netId, this.localPeerId)) {
+        const claimCounter = obj.claim?.counter;
+        if (this.netObjects.applyRelease(obj.netId, this.localPeerId, claimCounter)) {
             // Embed a final canonical xform inside the release so receivers can
             // snap on release in a single message. Sending xform separately first
             // wasn't enough — the receiver only lerps ~20% per frame, so by the
@@ -210,6 +287,7 @@ class NetSession extends EventTarget {
             this._sendNet({
                 type: 'netobject.release',
                 id: obj.netId,
+                claimCounter,
                 xform: obj.toXform(),
                 state: Object.keys(obj.state).length ? obj.state : undefined,
             });
@@ -247,6 +325,7 @@ class NetSession extends EventTarget {
                     this._sendNet({
                         type: 'netobject',
                         id: obj.netId,
+                        claimCounter: obj.claim?.counter,
                         xform: obj.toXform(),
                         state: Object.keys(obj.state).length ? obj.state : undefined,
                     });
@@ -303,12 +382,13 @@ class NetSession extends EventTarget {
             clearTimeout(pending);
             this._pendingJoinTimers.delete(peerId);
         }
+        this._mutedPlaybackPeers.delete(peerId);
+        this._spatialVoice?.detach(peerId);
         const user = this._users.get(peerId);
         if (!user)
             return;
         this.netObjects.releaseOwnedBy(peerId);
         this.voice.notifyPeerLeft(peerId);
-        this._spatialVoice?.detach(peerId);
         user.dispose();
         this._users.delete(peerId);
         this.dispatchEvent(new CustomEvent('user-leave', { detail: { user } }));
@@ -337,6 +417,7 @@ class NetSession extends EventTarget {
         if (msg.from === this.localPeerId)
             return; // ignore loopback
         let user = this._users.get(msg.from);
+        const existingUser = !!user;
         if (!user) {
             const initialDisplayName = msg.type === 'hello' ? msg.displayName : undefined;
             const initialRole = msg.type === 'hello' ? msg.role : undefined;
@@ -379,6 +460,9 @@ class NetSession extends EventTarget {
                     this._pendingJoinTimers.delete(msg.from);
                     this.dispatchEvent(new CustomEvent('user-join', { detail: { user } }));
                 }
+                else if (existingUser) {
+                    this.dispatchEvent(new CustomEvent('user-update', { detail: { user } }));
+                }
                 // Reply with a welcome containing the rooms's known peer list.
                 this._sendNet({
                     type: 'welcome',
@@ -406,6 +490,7 @@ class NetSession extends EventTarget {
                         id: obj.netId,
                         xform: obj.toXform(),
                         ownerId: obj.ownerId,
+                        claim: obj.claim,
                         state: Object.keys(obj.state).length ? obj.state : undefined,
                     });
                 }
@@ -437,6 +522,11 @@ class NetSession extends EventTarget {
                             other.role = p.role;
                         other.capabilities = p.capabilities;
                         other.avatar.displayName = other.displayName;
+                        if (!this._pendingJoinTimers.has(p.id)) {
+                            this.dispatchEvent(new CustomEvent('user-update', {
+                                detail: { user: other },
+                            }));
+                        }
                     }
                 }
                 break;
@@ -461,9 +551,12 @@ class NetSession extends EventTarget {
                 const obj = this.netObjects.get(msg.id);
                 if (!obj)
                     break;
+                if (msg.claimCounter !== undefined &&
+                    !this.netObjects.applyClaim(msg.id, msg.from, msg.claimCounter))
+                    break;
                 // If we both think we own it (e.g., both peers auto-owned the same
                 // deterministic id at create-time), the lex-smaller peer id wins —
-                // matches the explicit-claim tiebreak in NetObjectRegistry. But
+                // matches equal-counter explicit claims in NetObjectRegistry. But
                 // never yield a copy we've actually been moving (`_dirty`) to a
                 // silent peer broadcasting defaults: that's the late-join race
                 // where a fresh joiner's first ticks would otherwise clobber the
@@ -491,10 +584,10 @@ class NetSession extends EventTarget {
                 break;
             }
             case 'netobject.claim':
-                this.netObjects.applyClaim(msg.id, msg.from);
+                this.netObjects.applyClaim(msg.id, msg.from, msg.claimCounter);
                 break;
             case 'netobject.release': {
-                if (this.netObjects.applyRelease(msg.id, msg.from)) {
+                if (this.netObjects.applyRelease(msg.id, msg.from, msg.claimCounter)) {
                     const obj = this.netObjects.get(msg.id);
                     if (obj && msg.xform) {
                         // Don't snap. We render ~100ms behind the owner's real-time
@@ -523,8 +616,9 @@ class NetSession extends EventTarget {
                         continue;
                     if (obj.ownerId === this.localPeerId && obj._dirty)
                         continue;
+                    if (!this.netObjects.applyOwnershipSnapshot(entry.id, entry.ownerId, entry.claim))
+                        continue;
                     obj.snapToXform(entry.xform);
-                    obj.ownerId = entry.ownerId;
                     if (entry.state) {
                         Object.assign(obj.state, entry.state);
                     }
@@ -540,6 +634,8 @@ class NetSession extends EventTarget {
         }
     }
     _onVoiceTrack(peerId, stream) {
+        if (!this._isOpen)
+            return;
         if (!this._spatialVoice) {
             const listener = xb.core?.sound?.listener;
             if (listener)
@@ -548,7 +644,7 @@ class NetSession extends EventTarget {
         const user = this._users.get(peerId);
         if (!this._spatialVoice || !user)
             return;
-        this._spatialVoice.attach(peerId, user.avatar.headPivot, stream);
+        this._spatialVoice.attach(peerId, user.avatar.headPivot, stream, this._playbackMuted || this._mutedPlaybackPeers.has(peerId));
         this.dispatchEvent(new CustomEvent('voice-state', { detail: { peerId, on: true } }));
     }
     _onVoiceTrackRemoved(peerId) {

@@ -27,6 +27,10 @@ export interface VoiceChatOptions {
      * depend on browser-specific WebRTC track events.
      */
     onLocalStateChange?: (enabled: boolean) => void;
+    /** Mic transmission changed without closing incoming peer audio. */
+    onLocalMuteChange?: (muted: boolean) => void;
+    /** Capture or peer-connection errors, in addition to console diagnostics. */
+    onError?: (error: Error, peerId?: string) => void;
 }
 export type VoiceSendFn = (msg: VoiceSignalMessage) => void;
 export declare class VoiceChat {
@@ -37,6 +41,7 @@ export declare class VoiceChat {
     private _localStream?;
     private _peers;
     private _enabled;
+    private _muted;
     private _localId;
     private _generation;
     constructor(send: VoiceSendFn, opts?: VoiceChatOptions);
@@ -53,6 +58,13 @@ export declare class VoiceChat {
      */
     onTrackRemoved(handler: VoiceTrackRemovedHandler): () => void;
     isEnabled(): boolean;
+    /** Whether this peer is not currently transmitting microphone audio. */
+    isMuted(): boolean;
+    /**
+     * Cancel pending microphone requests and stop any late-granted tracks.
+     * Leaves established capture and incoming peer connections untouched.
+     */
+    cancelPendingEnable(): void;
     /** Request mic + start negotiating with all currently-connected peers. */
     enable(currentPeers: ReadonlySet<string>): Promise<void>;
     disable(): void;
@@ -65,5 +77,6 @@ export declare class VoiceChat {
     handleSignal(from: string, msg: VoiceSignalMessage): Promise<void>;
     private _connectTo;
     private _makeOffer;
+    private _reportError;
     private _teardown;
 }

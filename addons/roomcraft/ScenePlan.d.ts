@@ -1138,6 +1138,7 @@ export declare const SCENE_PLAN_SCHEMA: {
 export declare function readSceneId(value: unknown): string;
 export declare function cloneSceneEnvironment(environment: SceneEnvironment): SceneEnvironment;
 export declare function cloneSceneObject(object: SceneObject): SceneObject;
+/** Saved and shared layouts contain live placements, including below the scene origin. */
 export declare function readSceneLayout(value: unknown, catalog: readonly SceneAssetDescription[]): SceneLayout;
 export declare function readScenePlan(value: unknown, catalog: readonly SceneAssetDescription[]): ScenePlan;
 export declare function applyScenePlan(plan: ScenePlan, current: SceneLayout, catalog: readonly SceneAssetDescription[]): SceneLayout;

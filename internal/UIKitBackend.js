@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid ac875cb
- * @builddate 2026-09-13T08:29:59.070Z
+ * @commitid 794676e
+ * @builddate 2026-09-14T16:49:08.059Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2018,7 +2018,7 @@ function canRenderEmojiText(value) {
 function emojiContainerProperties(properties) {
     return {
         flexDirection: 'row',
-        flexWrap: properties.whiteSpace === 'nowrap' ? 'nowrap' : 'wrap',
+        flexWrap: properties.whiteSpace === 'nowrap' ? 'no-wrap' : 'wrap',
         alignItems: 'center',
         justifyContent: properties.textAlign === 'center'
             ? 'center'
@@ -2364,8 +2364,13 @@ function nativeTextProperties(properties) {
     const shared = glyphProperties(properties);
     return {
         ...shared,
-        whiteSpace: properties.whiteSpace === 'nowrap' ? 'normal' : properties.whiteSpace,
-        wordBreak: properties.whiteSpace === 'nowrap' ? 'keep-all' : 'break-word',
+        ...nativeTextWrapping(properties.whiteSpace),
+    };
+}
+function nativeTextWrapping(whiteSpace) {
+    return {
+        whiteSpace: whiteSpace === 'nowrap' ? 'normal' : whiteSpace,
+        wordBreak: whiteSpace === 'nowrap' ? 'keep-all' : 'break-word',
     };
 }
 function unicodeTextProperties(properties) {
@@ -2839,6 +2844,8 @@ class UIKitNodeBinding {
             const properties = {
                 text: button.label,
                 color,
+                ...nativeTextWrapping(this.presentedProperties
+                    .whiteSpace),
                 pointerEvents: 'none',
             };
             if (!this.buttonLabel) {

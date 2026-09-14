@@ -62,6 +62,14 @@ export declare class ProceduralMotionPlayer {
      * @param deltaSeconds - Elapsed frame time; zero re-applies the current pose.
      */
     update(deltaSeconds: number): void;
+    /**
+     * Samples absolute playback time from the authored phase, never the last cycle.
+     * Unlike delta playback's phase carry, retuned periods or speeds are applied
+     * to the entire elapsed time. Later delta updates continue from this sample.
+     *
+     * @param elapsedSeconds - Finite, non-negative seconds since playback began.
+     */
+    seek(elapsedSeconds: number): void;
     /** Rebuilds each animated pose from its rest data, never from the last frame. */
     private apply;
 }

@@ -32,10 +32,13 @@ class SpatialVoice {
     /**
      * Attach a MediaStream to a peer; (re-)creates the PositionalAudio node and
      * parents it to `parent` (typically the remote user's headPivot).
+     * `muted` is applied before connecting the source, including replacements.
      */
-    attach(peerId, parent, stream) {
+    attach(peerId, parent, stream, muted = false) {
+        this._validatePlayback(peerId, muted);
         this.detach(peerId);
         const audio = new THREE.PositionalAudio(this.listener);
+        this._setMuted(audio, muted);
         audio.setRefDistance(this._opts.refDistance);
         audio.setRolloffFactor(this._opts.rolloffFactor);
         audio.setMaxDistance(this._opts.maxDistance);
@@ -47,10 +50,7 @@ class SpatialVoice {
         // three.js doesn't have a first-class "use a MediaStream" path that works
         // across all browsers; the safest cross-browser route is to build a
         // MediaStreamAudioSourceNode and assign it via setNodeSource.
-        // three.js's typings for setNodeSource want an AudioScheduledSourceNode,
-        // but at runtime any AudioNode works for our purposes. Cast through any
-        // to avoid pulling in a different code path on every browser.
-        const ctx = THREE.AudioContext.getContext();
+        const ctx = audio.context;
         // Browsers create the shared AudioContext suspended until a user gesture.
         // If a remote voice arrives before any local interaction, the
         // PositionalAudio graph stays silent forever. resume() is a no-op when
@@ -77,11 +77,37 @@ class SpatialVoice {
         parent.add(audio);
         this._byPeer.set(peerId, audio);
     }
+    /**
+     * Apply an effective mute to an attached peer's own gain only.
+     * Preferences for future streams are owned by NetSession, not this graph.
+     */
+    setPlaybackMuted(peerId, muted) {
+        this._validatePlayback(peerId, muted);
+        const audio = this._byPeer.get(peerId);
+        if (audio)
+            this._setMuted(audio, muted);
+    }
+    _validatePlayback(peerId, muted) {
+        if (typeof peerId !== 'string' || !peerId.trim()) {
+            throw new TypeError('peerId must be a non-empty string');
+        }
+        if (typeof muted !== 'boolean') {
+            throw new TypeError('muted must be a boolean');
+        }
+    }
+    _setMuted(audio, muted) {
+        // Audio.setVolume() ramps toward its target, briefly leaving a newly
+        // connected muted stream audible. Set our own gain immediately instead.
+        const now = audio.context.currentTime;
+        audio.gain.gain.cancelScheduledValues(now);
+        audio.gain.gain.setValueAtTime(muted ? 0 : 1, now);
+    }
     detach(peerId) {
         const audio = this._byPeer.get(peerId);
         if (audio) {
             audio.parent?.remove(audio);
             audio.disconnect();
+            audio.gain.disconnect();
             this._byPeer.delete(peerId);
         }
         const primer = this._primersByPeer.get(peerId);

@@ -8,15 +8,15 @@ import { makeId } from '../utils/IdUtils.js';
  * calling `claim()`. The current owner is the only peer that broadcasts
  * authoritative transform updates; non-owners interpolate.
  *
- * Ownership is cooperative — there is no central arbiter. Explicit claims
- * always preempt the previous owner so users can hand off / steal objects;
- * the only deterministic tiebreak left is for the rare case where two peers
- * implicitly auto-own the same id at create-time (see NetSession's
- * `netobject` handler), where the lex-smaller peer id wins.
+ * Ownership is cooperative: there is no central arbiter. A later observed
+ * explicit claim preempts its predecessor. Crossed claims at the same logical
+ * counter select the lex-smaller peer ID, independent of arrival order.
  *
  * NetObjects are normal three.js Object3Ds; you can `.add()` any meshes to
  * them. Each frame, NetSession applies remote updates to the local
- * transform if we don't currently own the object.
+ * transform if we don't currently own the object. Pass `object` to bind an
+ * existing Object3D's local transform instead, without changing its hierarchy
+ * or taking ownership of its resources.
  */
 class NetObject extends THREE.Group {
     constructor(opts = {}) {
@@ -48,6 +48,7 @@ class NetObject extends THREE.Group {
         this._pendingFinal = false;
         this.netId = opts.id ?? `obj_${makeId(10)}`;
         this.ownerId = opts.ownerId ?? '';
+        this.object = opts.object ?? this;
         this.name = `NetObject(${this.netId})`;
     }
     /** True if the local peer currently owns this object. */
@@ -55,14 +56,14 @@ class NetObject extends THREE.Group {
         return this.ownerId === peerId;
     }
     /**
-     * Snapshot the current local transform to a 10-element array suitable
-     * for inclusion in a NetObjectMessage. Symmetric with `setTargetXform`,
-     * which writes back into local position/quaternion/scale.
+     * Snapshot the object's current local transform to a 10-element array
+     * suitable for inclusion in a NetObjectMessage. Symmetric with
+     * `snapToXform`, which writes back into local position/quaternion/scale.
      */
     toXform() {
-        const p = this.position;
-        const q = this.quaternion;
-        const s = this.scale;
+        const p = this.object.position;
+        const q = this.object.quaternion;
+        const s = this.object.scale;
         return [p.x, p.y, p.z, q.x, q.y, q.z, q.w, s.x, s.y, s.z];
     }
     /** Replace the target transform from a wire xform array. */
@@ -80,9 +81,9 @@ class NetObject extends THREE.Group {
      * from defaults.
      */
     snapToXform(x) {
-        this.position.set(x[0], x[1], x[2]);
-        this.quaternion.set(x[3], x[4], x[5], x[6]);
-        this.scale.set(x[7], x[8], x[9]);
+        this.object.position.set(x[0], x[1], x[2]);
+        this.object.quaternion.set(x[3], x[4], x[5], x[6]);
+        this.object.scale.set(x[7], x[8], x[9]);
         this._hasTarget = false;
         this._pendingFinal = false;
         this._dirty = true;
@@ -99,14 +100,14 @@ class NetObject extends THREE.Group {
         if (!this._hasTarget)
             return;
         const k = Math.min(1, t);
-        this.position.lerp(this._targetPosition, k);
-        this.quaternion.slerp(this._targetQuaternion, k);
-        this.scale.lerp(this._targetScale, k);
+        this.object.position.lerp(this._targetPosition, k);
+        this.object.quaternion.slerp(this._targetQuaternion, k);
+        this.object.scale.lerp(this._targetScale, k);
         if (this._pendingFinal &&
-            this.position.distanceToSquared(this._targetPosition) < 1e-6) {
-            this.position.copy(this._targetPosition);
-            this.quaternion.copy(this._targetQuaternion);
-            this.scale.copy(this._targetScale);
+            this.object.position.distanceToSquared(this._targetPosition) < 1e-6) {
+            this.object.position.copy(this._targetPosition);
+            this.object.quaternion.copy(this._targetQuaternion);
+            this.object.scale.copy(this._targetScale);
             this._pendingFinal = false;
             this._hasTarget = false;
         }

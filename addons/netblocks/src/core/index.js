@@ -18,6 +18,7 @@ export { Transport } from './transport/Transport.js';
 export { WebRTCTransport } from './transport/WebRTCTransport.js';
 export { WebSocketTransport } from './transport/WebSocketTransport.js';
 export { hashStringToHue, hashStringToIndex, makeId } from './utils/IdUtils.js';
+export { generateRoomCode, normalizeRoomCode } from './utils/RoomCode.js';
 export { SpatialVoice } from './voice/SpatialVoice.js';
 export { VoiceChat } from './voice/VoiceChat.js';
 import 'xrblocks';

@@ -402,14 +402,14 @@ function number(value, name, min, max) {
     }
     return value;
 }
-function vector(value, name, min, max) {
+function vector(value, name, min, max, minY = min) {
     if (!Array.isArray(value) || value.length !== 3) {
         throw new SceneValidationError(`${name} must contain exactly three numbers.`);
     }
     return [
-        number(value[0], name, min, max),
-        number(value[1], name, name === 'position' ? 0 : min, max),
-        number(value[2], name, min, max),
+        number(value[0], `${name}.x`, min, max),
+        number(value[1], `${name}.y`, minY, max),
+        number(value[2], `${name}.z`, min, max),
     ];
 }
 function vector2(value, name, min, max) {
@@ -729,16 +729,17 @@ function cloneSceneObject(object) {
     }
     return { ...object, position: [...object.position], scale: [...object.scale] };
 }
-function readObject(value, catalog) {
+function readObject(value, catalog, minimumY = 0) {
     const object = record(value, 'Scene object');
     keys(object, ['id', ...objectFields], ['id', ...transformFields]);
     if (sourceFields.filter((field) => Object.hasOwn(object, field)).length !== 1) {
         throw new SceneValidationError('Scene objects need exactly one of asset, parts, or landscape.');
     }
+    const id = readSceneId(object.id);
     const base = {
-        id: readSceneId(object.id),
+        id,
         name: text(object.name, 'Object name', 80),
-        position: vector(object.position, 'position', -MAX_SCENE_DISTANCE, MAX_SCENE_DISTANCE),
+        position: vector(object.position, `Object "${id}" position`, -MAX_SCENE_DISTANCE, MAX_SCENE_DISTANCE, minimumY),
         rotation: number(object.rotation, 'rotation', -Math.PI * 2, Math.PI * 2),
         scale: vector(object.scale, 'scale', MIN_SCENE_SCALE, MAX_SCENE_SCALE),
         color: color(object.color),
@@ -763,7 +764,7 @@ function readChanges(value, catalog, allowEmpty = false) {
     if ('name' in object)
         changes.name = text(object.name, 'Object name', 80);
     if ('position' in object) {
-        changes.position = vector(object.position, 'position', -MAX_SCENE_DISTANCE, MAX_SCENE_DISTANCE);
+        changes.position = vector(object.position, 'position', -MAX_SCENE_DISTANCE, MAX_SCENE_DISTANCE, 0);
     }
     if ('rotation' in object) {
         changes.rotation = number(object.rotation, 'rotation', -Math.PI * 2, Math.PI * 2);
@@ -813,6 +814,7 @@ function assertSceneBudget(objects) {
         throw new SceneValidationError(`A scene can contain at most ${MAX_SCENE_SCATTER_COUNT} scattered specimens.`);
     }
 }
+/** Saved and shared layouts contain live placements, including below the scene origin. */
 function readSceneLayout(value, catalog) {
     const layout = record(parseJson(value), 'Scene layout');
     keys(layout, ['title', 'objects', 'environment'], ['title', 'objects']);
@@ -820,7 +822,7 @@ function readSceneLayout(value, catalog) {
         layout.objects.length > MAX_SCENE_OBJECTS) {
         throw new SceneValidationError(`A scene can contain at most ${MAX_SCENE_OBJECTS} objects.`);
     }
-    const objects = layout.objects.map((object) => readObject(object, catalog));
+    const objects = layout.objects.map((object) => readObject(object, catalog, -MAX_SCENE_DISTANCE));
     assertSceneBudget(objects);
     const ids = new Set();
     for (const object of objects) {
@@ -1062,6 +1064,7 @@ function buildScenePrompt(request) {
         "When changing a limb size, update attached part positions when needed to keep the design connected. Object color is a multiplicative tint; use #ffffff to preserve each part's own color. Use part edits for selective recoloring.",
         'Ground objects at Y=0 unless intentionally placing one on another. Leave walking space and avoid unintended intersections.',
         `Use at most ${MAX_SCENE_OBJECTS} objects and at most ${MAX_SCENE_OBJECTS * 2} edits, one edit per ID. Positions: X/Z within +/-${MAX_SCENE_DISTANCE}, Y from 0 to ${MAX_SCENE_DISTANCE}; scales ${MIN_SCENE_SCALE} to ${MAX_SCENE_SCALE}.`,
+        'Existing objects may have negative Y after direct manipulation. Preserve those live placements by omitting position from unrelated updates; newly authored positions must still follow the placement limits above.',
         `Use 1 to ${MAX_OBJECT_PARTS} parts per design and at most ${MAX_SCENE_PARTS} procedural parts in the scene, one edit per part ID and at most ${MAX_OBJECT_PARTS * 2} part edits per object. Hierarchy depth must not exceed ${MAX_PART_DEPTH}. Part centers: +/-${MAX_PART_DISTANCE}; physical size components: ${MIN_PART_SIZE} to ${MAX_PART_SIZE} meters. Whole designs must stay within +/-${MAX_SCENE_DISTANCE} of their origin and be at most ${MAX_SCENE_DISTANCE} meters across.`,
         'The available area is not a room scan. Do not claim collision-free placement, infinite content, or photorealistic text-to-mesh generation.',
         ...(request.repair

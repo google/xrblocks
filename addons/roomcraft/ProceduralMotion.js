@@ -87,6 +87,13 @@ function wrapCycle(cycle) {
         return cycle;
     return THREE.MathUtils.euclideanModulo(cycle, 1);
 }
+function elapsedCycles(motion, seconds) {
+    // Reduce time before multiplication so even finite extreme times cannot overflow.
+    return motion.kind === 'swing'
+        ? (seconds % motion.period) / motion.period
+        : ((seconds % (FULL_TURN / Math.abs(motion.speed))) * motion.speed) /
+            FULL_TURN;
+}
 /** Part groups only; a mesh display name may collide with a part ID. */
 function collectPartGroups(content) {
     const groups = new Map();
@@ -169,14 +176,26 @@ class ProceduralMotionPlayer {
             throw new Error('Procedural motion needs a finite, non-negative time step.');
         }
         for (const track of this.tracks) {
-            const motion = track.motion;
-            // Reduce elapsed time before multiplication so finite deltas cannot overflow.
-            const cycles = motion.kind === 'swing'
-                ? (deltaSeconds % motion.period) / motion.period
-                : ((deltaSeconds % (FULL_TURN / Math.abs(motion.speed))) *
-                    motion.speed) /
-                    FULL_TURN;
-            track.cycle = wrapCycle(track.cycle + cycles);
+            track.cycle = wrapCycle(track.cycle + elapsedCycles(track.motion, deltaSeconds));
+        }
+        this.apply();
+    }
+    /**
+     * Samples absolute playback time from the authored phase, never the last cycle.
+     * Unlike delta playback's phase carry, retuned periods or speeds are applied
+     * to the entire elapsed time. Later delta updates continue from this sample.
+     *
+     * @param elapsedSeconds - Finite, non-negative seconds since playback began.
+     */
+    seek(elapsedSeconds) {
+        if (typeof elapsedSeconds !== 'number' ||
+            !Number.isFinite(elapsedSeconds) ||
+            elapsedSeconds < 0) {
+            throw new Error('Procedural motion needs a finite, non-negative elapsed time.');
+        }
+        for (const track of this.tracks) {
+            track.cycle = wrapCycle(wrapCycle(track.motion.phase) +
+                elapsedCycles(track.motion, elapsedSeconds));
         }
         this.apply();
     }

@@ -34,8 +34,16 @@ export declare class SpatialVoice {
     /**
      * Attach a MediaStream to a peer; (re-)creates the PositionalAudio node and
      * parents it to `parent` (typically the remote user's headPivot).
+     * `muted` is applied before connecting the source, including replacements.
      */
-    attach(peerId: string, parent: THREE.Object3D, stream: MediaStream): void;
+    attach(peerId: string, parent: THREE.Object3D, stream: MediaStream, muted?: boolean): void;
+    /**
+     * Apply an effective mute to an attached peer's own gain only.
+     * Preferences for future streams are owned by NetSession, not this graph.
+     */
+    setPlaybackMuted(peerId: string, muted: boolean): void;
+    private _validatePlayback;
+    private _setMuted;
     detach(peerId: string): void;
     dispose(): void;
 }
