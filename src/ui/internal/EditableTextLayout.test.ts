@@ -385,6 +385,29 @@ describe('editable text paint segments', () => {
 });
 
 describe('editable text carets', () => {
+  it('retains both horizontal bounds of an overflowing RTL row', () => {
+    const text = 'אבג';
+    const layout = buildEditableTextLayout(
+      text,
+      style({width: CELL * 2, multiline: false, direction: 'rtl'}),
+      fixture(
+        text,
+        [
+          [0, 1, CELL, CELL * 2],
+          [1, 2, 0, CELL],
+          [2, 3, -CELL, 0],
+        ],
+        'rtl'
+      ),
+      METRICS
+    );
+    expect(layout).toMatchObject({left: -CELL, right: CELL * 2});
+    expect(caretGeometry(layout, text.length)?.x).toBe(-CELL);
+    expect(selectionRects(layout, 2, 3)).toEqual([
+      {left: -CELL, right: 0, top: 0, bottom: -LINE_HEIGHT},
+    ]);
+  });
+
   it('uses the logical edge of every grapheme in a right-to-left row', () => {
     // "בג" alone, laid out right to left inside a 4-cell box.
     const text = 'בג';

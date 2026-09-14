@@ -318,7 +318,7 @@ export class EditableText {
     return this.failure;
   }
 
-  /** Horizontal scroll offset in layout units. */
+  /** Horizontal scroll offset in layout units; RTL overflow can make it negative. */
   get offsetX(): number {
     return this.scrollX;
   }
@@ -476,7 +476,11 @@ export class EditableText {
 
   /** Scrolls horizontally by `delta` layout units; returns true when it moved. */
   scrollHorizontallyBy(delta: number): boolean {
-    const next = clamp(this.scrollX + delta, 0, this.maxScrollX());
+    const next = clamp(
+      this.scrollX + delta,
+      this.minScrollX(),
+      this.maxScrollX()
+    );
     if (next === this.scrollX) return false;
     this.scrollX = next;
     this.refresh();
@@ -648,7 +652,7 @@ export class EditableText {
     const state = this.state;
     if (state == null) return;
     const currentLayout = this.activeLayout();
-    this.scrollX = clamp(this.scrollX, 0, this.maxScrollX());
+    this.scrollX = clamp(this.scrollX, this.minScrollX(), this.maxScrollX());
     this.scrollY = clamp(this.scrollY, 0, this.maxScrollY());
     if (currentLayout != null) this.reveal(state, currentLayout);
     this.group.position.set(
@@ -833,7 +837,7 @@ export class EditableText {
     } else if (geometry.x + pad > this.scrollX + this.innerWidth) {
       this.scrollX = geometry.x + pad - this.innerWidth;
     }
-    this.scrollX = clamp(this.scrollX, 0, this.maxScrollX());
+    this.scrollX = clamp(this.scrollX, this.minScrollX(), this.maxScrollX());
     if (line.top > -this.scrollY) {
       this.scrollY = -line.top;
     } else if (line.bottom < -this.innerHeight - this.scrollY) {
@@ -851,11 +855,16 @@ export class EditableText {
     };
   }
 
+  private minScrollX(): number {
+    if (this.state?.multiline !== false) return 0;
+    return Math.min(0, this.painted?.left ?? 0);
+  }
+
   private maxScrollX(): number {
     if (this.state?.multiline !== false) return 0;
     const caretWidth = this.state?.caretWidth ?? DEFAULT_CARET_WIDTH;
-    const width = this.painted?.width ?? 0;
-    return Math.max(0, width + caretWidth - this.innerWidth);
+    const right = this.painted?.right ?? 0;
+    return Math.max(0, right + caretWidth - this.innerWidth);
   }
 
   private maxScrollY(): number {

@@ -109,8 +109,9 @@ export interface EditableTextLayout {
   readonly text: string;
   readonly lines: readonly EditableTextLine[];
   readonly lineHeight: number;
-  /** Widest row, in layout units. */
-  readonly width: number;
+  /** Horizontal content bounds in layout units, including the viewport origin. */
+  readonly left: number;
+  readonly right: number;
   /** Total height of every row, in layout units. */
   readonly height: number;
   readonly direction: TextDirection;
@@ -162,7 +163,8 @@ export function buildEditableTextLayout(
   const emptyRowX = emptyRowStart(style);
   const lines: EditableTextLine[] = [];
   const halfLeading = (lineHeight - (metrics.ascent + metrics.descent)) / 2;
-  let width = 0;
+  let left = 0;
+  let right = 0;
 
   rows.forEach((row, index) => {
     // Written as a subtraction so the first row's top is +0 rather than -0.
@@ -180,7 +182,8 @@ export function buildEditableTextLayout(
     };
     lines.push(line);
     for (const grapheme of row.graphemes) {
-      width = Math.max(width, grapheme.right);
+      left = Math.min(left, grapheme.left);
+      right = Math.max(right, grapheme.right);
     }
   });
   const {carets, caretLines} = indexCarets(lines);
@@ -189,7 +192,8 @@ export function buildEditableTextLayout(
     text,
     lines,
     lineHeight,
-    width,
+    left,
+    right,
     height: lines.length * lineHeight,
     direction: measurement.direction,
     carets,

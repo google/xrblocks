@@ -26,6 +26,7 @@ interface PaintCall {
   text: string;
   x: number;
   y: number;
+  translateX: number;
   direction: string;
   fillStyle: string;
 }
@@ -48,8 +49,13 @@ function createStubContext(canvas: HTMLCanvasElement) {
     direction: 'inherit',
     fillStyle: '#000000',
     clears: 0,
-    setTransform() {},
-    translate() {},
+    translateX: 0,
+    setTransform() {
+      context.translateX = 0;
+    },
+    translate(x: number) {
+      context.translateX += x;
+    },
     clearRect() {
       context.clears++;
     },
@@ -66,6 +72,7 @@ function createStubContext(canvas: HTMLCanvasElement) {
         text,
         x,
         y,
+        translateX: context.translateX,
         direction: context.direction,
         fillStyle: context.fillStyle,
       });
@@ -83,9 +90,8 @@ function advance(grapheme: string): number {
 }
 
 /**
- * Left-to-right monospace stand-in for the platform text engine: spaces are
- * never collapsed, trailing spaces hang past a wrap, and a word wider than the
- * line breaks between graphemes.
+ * Monospace stand-in for the platform text engine. RTL rows are mirrored around
+ * the right edge, including negative coordinates when a single line overflows.
  */
 function monospaceMeasurer(): EditableTextMeasurer & {calls: number} {
   return {
@@ -128,7 +134,17 @@ function monospaceMeasurer(): EditableTextMeasurer & {calls: number} {
         offset += paragraph.length + 1;
         row++;
       }
-      return {graphemes, direction: style.direction === 'rtl' ? 'rtl' : 'ltr'};
+      if (style.direction === 'rtl') {
+        return {
+          direction: 'rtl',
+          graphemes: graphemes.map((grapheme) => ({
+            ...grapheme,
+            left: style.width - grapheme.right,
+            right: style.width - grapheme.left,
+          })),
+        };
+      }
+      return {graphemes, direction: 'ltr'};
     },
     dispose: vi.fn(),
   };
@@ -606,6 +622,82 @@ describe('EditableText presentation', () => {
     ).geometry.getAttribute('position');
     expect(position.getX(0)).toBeGreaterThanOrEqual(h.editable.offsetX - 0.001);
     expect(position.getX(1)).toBeLessThanOrEqual(h.editable.offsetX + 80.001);
+  });
+
+  it('reveals and selects the negative-x end of an overflowing RTL line', async () => {
+    const width = 80;
+    const h = (current = await harness({width, height: 30}));
+    h.carrier.position.set(0.2, 0.4, -1);
+    h.carrier.rotation.y = 0.4;
+    h.carrier.scale.setScalar(0.7);
+    const text = 'אבגדהוזחטיכלמנסעפצקרשת';
+    const left = width - text.length * CELL;
+    const value = state({
+      text,
+      direction: 'rtl',
+      textAlign: 'right',
+      selectionStart: text.length,
+      selectionEnd: text.length,
+    });
+    h.editable.update(value);
+    await h.layout();
+
+    expect(h.editable.offsetX).toBeCloseTo(left, 5);
+    expect(h.editable.offsetY).toBe(0);
+    expect(h.editable.caretAtPoint(worldPoint(h, left, -LINE / 2))).toBe(
+      text.length
+    );
+    const paint = painted.at(-1)!;
+    expect(paint.x + paint.translateX).toBeCloseTo(0, 5);
+    const caret = meshNamed(
+      h.editable,
+      'EditableTextCaret'
+    ).geometry.getAttribute('position');
+    expect(caret.getX(0)).toBeCloseTo(left, 5);
+    expect(caret.getX(1)).toBeCloseTo(left + CARET_WIDTH, 5);
+
+    h.editable.update({...value, selectionStart: text.length - 2});
+    const selection = meshNamed(h.editable, 'EditableTextSelection');
+    expect(drawnQuads(selection)).toBe(1);
+    expect(selection.geometry.getAttribute('position').getX(0)).toBeCloseTo(
+      left,
+      5
+    );
+
+    h.editable.update({...value, selectionStart: 0, selectionEnd: 0});
+    expect(h.editable.offsetX).toBeCloseTo(CARET_WIDTH, 5);
+    expect(h.editable.caretAtPoint(worldPoint(h, width, -LINE / 2))).toBe(0);
+  });
+
+  it('clamps signed scroll bounds and resets them after RTL text or viewport changes', async () => {
+    const width = 80;
+    const h = (current = await harness({width, height: 30}));
+    const text = 'אבגדהוזחטיכלמנסעפצקרשת';
+    const left = width - text.length * CELL;
+    const value = state({
+      text,
+      direction: 'rtl',
+      textAlign: 'right',
+      focused: false,
+    });
+    h.editable.update(value);
+    await h.layout();
+
+    expect(h.editable.scrollHorizontallyBy(-1000)).toBe(true);
+    expect(h.editable.offsetX).toBeCloseTo(left, 5);
+    expect(h.editable.scrollHorizontallyBy(-1)).toBe(false);
+    expect(h.editable.scrollHorizontallyBy(1000)).toBe(true);
+    expect(h.editable.offsetX).toBeCloseTo(CARET_WIDTH, 5);
+    expect(h.editable.scrollHorizontallyBy(1)).toBe(false);
+
+    h.editable.scrollHorizontallyBy(-1000);
+    h.editable.update({...value, text: 'אב'});
+    expect(h.editable.offsetX).toBe(0);
+    h.editable.update(value);
+    h.editable.scrollHorizontallyBy(-1000);
+    h.root.setProperties({width: text.length * CELL * 2});
+    await h.layout();
+    expect(h.editable.offsetX).toBe(0);
   });
 
   it('projects world points into viewport pixels', async () => {
