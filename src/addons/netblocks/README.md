@@ -97,7 +97,7 @@ Concretely, taking the standard xb starter:
 
 That's it — open the page in two tabs and dragging the cube in one tab moves
 it in the other. Add `events.on('chat', cb)` for typed RPC, or
-`net.session?.voice.enable()` for spatial voice. See `samples/integration/`
+`net.session?.voice.enable()` for spatial voice. See `demos/netblocks/`
 for a fully wired example.
 
 ---
@@ -295,16 +295,16 @@ envelope. See `src/core/codec/PoseCodec.ts` for the byte layout.
 
 ## Samples
 
-See [`samples/SAMPLES.md`](./samples/SAMPLES.md). Highlights:
+See [`demos/netblocks/SAMPLES.md`](../../../demos/netblocks/SAMPLES.md). Highlights:
 
-- `samples/basic/presence` — see remote heads (and hands in XR with hand
+- `demos/netblocks/basic/presence` — see remote heads (and hands in XR with hand
   tracking).
-- `samples/basic/objects` — drag a shared cube; ownership transfers on grab.
-- `samples/basic/events` — broadcast emoji bursts via the RPC bus.
-- `samples/basic/voice` — push-to-talk spatial voice chat. WASD/mouse
+- `demos/netblocks/basic/objects` — drag a shared cube; ownership transfers on grab.
+- `demos/netblocks/basic/events` — broadcast emoji bursts via the RPC bus.
+- `demos/netblocks/basic/voice` — push-to-talk spatial voice chat. WASD/mouse
   (or gamepad sticks) to walk around in 2D; the headset's pose drives
   it in XR.
-- `samples/basic/transports` — switch transports at runtime.
+- `demos/netblocks/basic/transports` — switch transports at runtime.
 - `demos/netblocks/` — assembled "shared room" demo combining
   presence + objects + chat + emoji-burst RPC + voice. (Top-level
   headline demo.)
