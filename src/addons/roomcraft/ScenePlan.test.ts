@@ -84,6 +84,47 @@ describe('Roomcraft scene protocol', () => {
     expect(input.objects[0].name).toBe('  First box  ');
   });
 
+  it('round-trips bounded live positions below the origin without relaxing authored placement', () => {
+    const moved = object({position: [0.637, -0.007683446861092402, -2.556]});
+    expect(readSceneLayout(scene(moved), catalog).objects[0].position).toEqual(
+      moved.position
+    );
+    expect(() => readScenePlan(addPlan(moved), catalog)).toThrow();
+    expect(() =>
+      readScenePlan(
+        {
+          title: 'Studio',
+          edits: [
+            {op: 'update', id: moved.id, changes: {position: moved.position}},
+          ],
+        },
+        catalog
+      )
+    ).toThrow();
+    const added = applyScenePlan(
+      {
+        title: 'Added cat',
+        edits: [
+          {op: 'add', object: object({id: 'cat', position: [0, 0.85, 0]})},
+        ],
+      },
+      scene(moved),
+      catalog
+    );
+    expect(readSceneLayout(added, catalog).objects[0].position).toEqual(
+      moved.position
+    );
+    for (const y of [-10, 10])
+      expect(
+        readSceneLayout(scene(object({position: [0, y, 0]})), catalog)
+          .objects[0].position[1]
+      ).toBe(y);
+    for (const y of [-10.001, 10.001, NaN, Infinity])
+      expect(() =>
+        readSceneLayout(scene(object({position: [0, y, 0]})), catalog)
+      ).toThrow();
+  });
+
   it.each([
     {id: '__proto__'},
     {id: 'MixedCase'},

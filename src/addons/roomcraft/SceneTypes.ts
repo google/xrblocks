@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type {ManipulationEvent} from 'xrblocks';
 
 /** Maximum instruction length, in UTF-16 code units like HTML maxlength. */
 export const MAX_SCENE_REQUEST_CHARACTERS = 4000;
@@ -278,6 +279,8 @@ export type RoomcraftStatus =
 export interface RoomcraftEventMap extends THREE.Object3DEventMap {
   change: {layout: SceneLayout};
   selectionchange: {id: string | null};
+  /** Synchronous live event, dispatched before the final end/cancel change. */
+  manipulationchange: {id: string; event: ManipulationEvent};
   statuschange: {status: RoomcraftStatus};
   motionstatechange: {paused: boolean};
 }
