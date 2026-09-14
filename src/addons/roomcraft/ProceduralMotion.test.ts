@@ -256,6 +256,118 @@ describe('ProceduralMotionPlayer', () => {
     );
   });
 
+  it.each([
+    swing({phase: 0.17}),
+    spin({phase: 0.17, speed: Math.PI}),
+    spin({phase: 0.17, speed: -Math.PI}),
+  ])('seeks to the same pose as many deltas for $kind ($speed)', (motion) => {
+    const parts = hinged(motion);
+    parts[1].rotation = [0.3, -0.7, 0.4];
+    const stepped = play(parts);
+    const late = play(parts);
+    const arm = group(late.content, 'arm');
+    const pivot = new THREE.Vector3().fromArray(motion.pivot);
+    late.content.updateMatrixWorld(true);
+    const anchor = arm.localToWorld(pivot.clone());
+    for (let step = 0; step < 125; step++) stepped.player.update(0.125);
+    late.player.seek(15.625);
+    expect(
+      arm.quaternion.angleTo(group(stepped.content, 'arm').quaternion)
+    ).toBeLessThan(1e-7);
+    expectVector(
+      worldOf(late.content, 'hand'),
+      worldOf(stepped.content, 'hand').toArray()
+    );
+    expect(arm.localToWorld(pivot.clone()).distanceTo(anchor)).toBeLessThan(
+      1e-9
+    );
+    const held = arm.quaternion.clone();
+    late.player.seek(15.625);
+    expect(arm.quaternion.equals(held)).toBe(true);
+    late.player.seek(0);
+    expect(
+      arm.quaternion.angleTo(group(play(parts).content, 'arm').quaternion)
+    ).toBeLessThan(1e-7);
+    late.player.seek(15.625);
+    late.player.update(0.125);
+    stepped.player.update(0.125);
+    expectVector(
+      worldOf(late.content, 'hand'),
+      worldOf(stepped.content, 'hand').toArray()
+    );
+  });
+
+  it('ignores carried cycles when seeking retuned motion definitions', () => {
+    const before = play(hinged());
+    before.player.update(1);
+    const parts = hinged(swing({period: 8}));
+    const carried = play(parts, before.player);
+    const fresh = play(parts);
+    expect(group(carried.content, 'arm').rotation.z).toBeCloseTo(Math.PI / 2);
+    carried.player.seek(1);
+    fresh.player.seek(1);
+    expect(group(carried.content, 'arm').quaternion.toArray()).toEqual(
+      group(fresh.content, 'arm').quaternion.toArray()
+    );
+    expect(group(carried.content, 'arm').rotation.z).toBeCloseTo(
+      (Math.PI / 2) * Math.sin(Math.PI / 4)
+    );
+  });
+
+  it('seeks extreme finite times without overflow or cumulative cycles', () => {
+    for (const motion of [
+      swing({period: 0.25}),
+      spin({speed: Math.PI * 4}),
+      spin({speed: -Math.PI * 4}),
+      spin({speed: Number.MIN_VALUE}),
+    ]) {
+      const {content, player} = play(orbiting(motion));
+      player.seek(Number.MAX_VALUE);
+      content.updateMatrixWorld(true);
+      const block = group(content, 'block');
+      expect(block.matrixWorld.elements.every(Number.isFinite)).toBe(true);
+      const pose = block.matrixWorld.clone();
+      player.seek(Number.MAX_VALUE);
+      content.updateMatrixWorld(true);
+      expect(block.matrixWorld.equals(pose)).toBe(true);
+    }
+  });
+
+  it('treats a phase of one as zero without rounding away tiny seek advances', () => {
+    const {content, player} = play(orbiting(spin({phase: 1})));
+    player.seek(1e-17);
+    expect(group(content, 'block').quaternion.y).toBeCloseTo(
+      Math.PI * 1e-17,
+      28
+    );
+  });
+
+  it.each([-0.1, NaN, Infinity, -Infinity, '1', undefined, null])(
+    'rejects invalid seek time %s before changing any pose or cycle',
+    (time) => {
+      const parts = hinged();
+      parts[0].motion = spin();
+      const actual = play(parts);
+      const expected = play(parts);
+      actual.player.seek(0.25);
+      expected.player.seek(0.25);
+      const arm = group(actual.content, 'arm');
+      const body = group(actual.content, 'body');
+      const held = [arm.quaternion.clone(), body.quaternion.clone()];
+      expect(() => actual.player.seek(time as number)).toThrow(
+        'finite, non-negative elapsed time'
+      );
+      expect(arm.quaternion.equals(held[0])).toBe(true);
+      expect(body.quaternion.equals(held[1])).toBe(true);
+      actual.player.update(0.25);
+      expected.player.update(0.25);
+      expectVector(
+        worldOf(actual.content, 'hand'),
+        worldOf(expected.content, 'hand').toArray()
+      );
+    }
+  );
+
   it('carries the live cycle across geometry, pivot, and timing edits', () => {
     const before = play(hinged());
     before.player.update(1);

@@ -128,6 +128,32 @@ function round(value) {
   return Math.round(value * 1e4) / 1e4;
 }
 
+// Avoid setter work, including UIButton labels that dirty even for equal values.
+function setChanged(target, key, value) {
+  if (target[key] !== value) target[key] = value;
+}
+
+function setAttributeChanged(target, key, value) {
+  if (target.getAttribute(key) !== value) target.setAttribute(key, value);
+}
+
+function toggleClassChanged(target, name, enabled) {
+  if (target.classList.contains(name) !== enabled) {
+    target.classList.toggle(name, enabled);
+  }
+}
+
+function reconcileChildren(parent, children) {
+  children.forEach((child, index) => {
+    if (parent.children[index] !== child) {
+      parent.insertBefore(child, parent.children[index] ?? null);
+    }
+  });
+  while (parent.children.length > children.length) {
+    parent.lastElementChild.remove();
+  }
+}
+
 /** A short, honest phrase for one authored part motion, or an empty string. */
 function describeMotion(motion) {
   if (!motion) return '';
@@ -201,6 +227,9 @@ export class RoomcraftConsole extends xb.Script {
     this.lastXRState = false;
     this.spatialPreview = false;
     this.keyboardOpen = false;
+    this.settingsKeyboard = null;
+    this.selectionOptions = new Map();
+    this.partItems = new Map();
     this.spatialTab = 'author';
     this.needsSpatialPlacement = false;
     this.needsXRSpawn = false;
@@ -209,6 +238,7 @@ export class RoomcraftConsole extends xb.Script {
     this.entryVisibility = undefined;
     this.xrEntryError = '';
     this.disposed = false;
+    this.pageLeft = false;
     this.placed = false;
     this.exhibitCount = 0;
     this.statusMessage = '';
@@ -464,9 +494,10 @@ export class RoomcraftConsole extends xb.Script {
         );
       }
     });
-    this.listen(window, 'pagehide', () =>
-      this.stopListening('Voice input cancelled because the page was left.')
-    );
+    this.listen(window, 'pagehide', () => {
+      this.pageLeft = true;
+      this.stopListening('Voice input cancelled because the page was left.');
+    });
     this.listen(document, 'keydown', (event) => {
       if (
         event.key === 'Escape' &&
@@ -609,6 +640,7 @@ export class RoomcraftConsole extends xb.Script {
       flexGrow: 1,
       height: '100%',
       fontSize: 36,
+      whiteSpace: 'nowrap',
       borderRadius: 18,
       backgroundColor: background,
       color: '#f6ece0',
@@ -760,6 +792,32 @@ export class RoomcraftConsole extends xb.Script {
       children: starterRows,
     });
 
+    this.xrAuthorContext = new xb.UIPanel({
+      style: {width: '100%', flexShrink: 0, flexDirection: 'column', gap: 14},
+      children: [
+        this.xrProviderText,
+        this.xrStatusText,
+        this.xrSelectionText,
+        row([this.xrPrevious, this.xrNext, this.xrRemove, this.xrMotion], 64),
+        ...(this.virtual
+          ? [
+              this.xrEnvironmentText,
+              row([this.xrMoonlight, this.xrSunrise, this.xrEnterWorld], 64),
+            ]
+          : []),
+      ],
+    });
+    this.xrTabs = row([this.xrAuthorTab, this.xrExamplesTab], 64);
+    this.xrBody = new xb.UIPanel({
+      style: {
+        width: '100%',
+        flexGrow: 1,
+        minHeight: 0,
+        flexDirection: 'column',
+      },
+      children: [this.xrAuthorPanel, this.xrExamplesPanel],
+    });
+    this.xrFooter = row([this.xrNew, this.xrPlace, this.xrUndo, this.xrRedo]);
     const card = new xb.UICard({
       size: this.studioSize,
       manipulation: true,
@@ -796,20 +854,10 @@ export class RoomcraftConsole extends xb.Script {
           ],
           56
         ),
-        this.xrProviderText,
-        this.xrStatusText,
-        this.xrSelectionText,
-        row([this.xrPrevious, this.xrNext, this.xrRemove, this.xrMotion], 64),
-        ...(this.virtual
-          ? [
-              this.xrEnvironmentText,
-              row([this.xrMoonlight, this.xrSunrise, this.xrEnterWorld], 64),
-            ]
-          : []),
-        row([this.xrAuthorTab, this.xrExamplesTab], 64),
-        this.xrAuthorPanel,
-        this.xrExamplesPanel,
-        row([this.xrNew, this.xrPlace, this.xrUndo, this.xrRedo]),
+        this.xrAuthorContext,
+        this.xrTabs,
+        this.xrBody,
+        this.xrFooter,
       ],
     });
     card.name = 'RoomcraftControlCard';
@@ -822,11 +870,24 @@ export class RoomcraftConsole extends xb.Script {
 
     this.xrKeyboard = new Keyboard({
       value: this.dom.prompt.value,
-      onValueChange: (value) => this.setPrompt(value),
+      onValueChange: (value) => {
+        if (this.settingsKeyboard) this.settingsKeyboard.onChange?.(value);
+        else this.setPrompt(value);
+      },
       onSubmit: (value) => {
+        if (this.settingsKeyboard) {
+          const route = this.settingsKeyboard;
+          route.onSubmit?.(value);
+          if (this.settingsKeyboard === route) this.closeSettingsKeyboard();
+          return;
+        }
         this.setPrompt(value);
         void this.generate();
       },
+    });
+    this.xrKeyboardTitle = new xb.UIText({
+      text: 'Type an instruction; Enter generates.',
+      style: {flexGrow: 1, fontSize: 28, color: '#c2b6a8'},
     });
     this.keyboardCard = new xb.UICard({
       size: KEYBOARD_SIZE,
@@ -842,10 +903,7 @@ export class RoomcraftConsole extends xb.Script {
       children: [
         row(
           [
-            new xb.UIText({
-              text: 'Type an instruction; Enter generates.',
-              style: {flexGrow: 1, fontSize: 28, color: '#c2b6a8'},
-            }),
+            this.xrKeyboardTitle,
             new xb.UIButton({
               label: 'Close',
               onClick: () => this.toggleKeyboard(),
@@ -1069,12 +1127,19 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   toggleKeyboard() {
+    if (this.settingsKeyboard) {
+      this.closeSettingsKeyboard();
+      return;
+    }
     this.keyboardOpen = !this.keyboardOpen;
     if (this.keyboardOpen) this.positionKeyboard();
     this.refresh();
   }
 
   setSpatialTab(tab) {
+    if (!['author', 'examples', 'collaboration'].includes(tab)) return;
+    if (tab === 'collaboration' && !this.xrCollaborationPanel) return;
+    if (tab !== this.spatialTab) this.closeSettingsKeyboard();
     if (tab !== 'author') {
       this.stopListening(
         'Voice input cancelled because its controls were hidden.'
@@ -1082,6 +1147,84 @@ export class RoomcraftConsole extends xb.Script {
     }
     this.spatialTab = tab;
     this.refresh();
+  }
+
+  /** Adds optional collaboration UI to the existing studio, not another card. */
+  attachCollaborationPanel(tab, panel) {
+    if (this.xrCollaborationPanel) {
+      throw new Error('The collaboration panel is already attached.');
+    }
+    this.xrCollaborationTab = tab;
+    this.xrCollaborationPanel = panel;
+    this.xrTabs.add(tab);
+    this.xrBody.add(panel);
+    this.refresh();
+  }
+
+  detachCollaborationPanel(panel) {
+    if (this.xrCollaborationPanel !== panel) return;
+    this.closeSettingsKeyboard();
+    this.xrCollaborationTab.removeFromParent();
+    panel.removeFromParent();
+    this.xrCollaborationTab = null;
+    this.xrCollaborationPanel = null;
+    if (this.spatialTab === 'collaboration') this.spatialTab = 'author';
+    this.refresh();
+  }
+
+  /** Routes the existing keyboard without changing the author draft or caret. */
+  openSettingsKeyboard({field, label, value, onChange, onSubmit, onClose}) {
+    if (this.disposed || !this.xrCollaborationPanel) return;
+    this.closeSettingsKeyboard();
+    this.cancelKeyboardCapture();
+    this.setSpatialTab('collaboration');
+    this.settingsKeyboard = {
+      field,
+      onChange,
+      onSubmit,
+      onClose,
+      authorValue: this.xrKeyboard.value,
+    };
+    this.xrKeyboard.setValue(value);
+    setChanged(
+      this.xrKeyboardTitle,
+      'text',
+      `${label}; Enter finishes editing.`
+    );
+    this.positionKeyboard();
+    this.refresh();
+  }
+
+  syncSettingsKeyboard(field, value) {
+    if (
+      !this.disposed &&
+      this.settingsKeyboard?.field === field &&
+      this.xrKeyboard.value !== value
+    ) {
+      this.xrKeyboard.setValue(value);
+    }
+  }
+
+  closeSettingsKeyboard() {
+    const route = this.settingsKeyboard;
+    if (!route) return;
+    this.cancelKeyboardCapture();
+    this.settingsKeyboard = null;
+    this.xrKeyboard.setValue(route.authorValue);
+    setChanged(
+      this.xrKeyboardTitle,
+      'text',
+      'Type an instruction; Enter generates.'
+    );
+    route.onClose?.();
+    this.refresh();
+  }
+
+  cancelKeyboardCapture() {
+    // A held key must not finish in a different route after another XR source switches tabs.
+    if (this.keyboardCard) {
+      xb.core.interaction?.cancelObject(this.keyboardCard, 'disabled');
+    }
   }
 
   setPrompt(value) {
@@ -1099,13 +1242,18 @@ export class RoomcraftConsole extends xb.Script {
       );
     }
     this.promptValue = draft;
-    this.dom.prompt.value = draft;
-    this.xrKeyboard.setValue(draft);
-    this.xrPromptText.text = draft
-      ? draft.length > 160
-        ? `...${draft.slice(-160)}`
-        : draft
-      : 'Describe a new object or an edit. Use Keyboard or Talk.';
+    setChanged(this.dom.prompt, 'value', draft);
+    if (this.settingsKeyboard) this.settingsKeyboard.authorValue = draft;
+    else if (this.xrKeyboard.value !== draft) this.xrKeyboard.setValue(draft);
+    setChanged(
+      this.xrPromptText,
+      'text',
+      draft
+        ? draft.length > 160
+          ? `...${draft.slice(-160)}`
+          : draft
+        : 'Describe a new object or an edit. Use Keyboard or Talk.'
+    );
     this.refresh();
   }
 
@@ -1703,6 +1851,7 @@ export class RoomcraftConsole extends xb.Script {
     return (
       this.running ||
       this.room.busy ||
+      this.collaboration?.busy ||
       this.connecting ||
       this.voice.state !== 'idle'
     );
@@ -1739,8 +1888,8 @@ export class RoomcraftConsole extends xb.Script {
     this.errorMessage = message ?? '';
     const element = this.dom.error;
     if (!element) return;
-    element.textContent = this.errorMessage;
-    element.hidden = !message;
+    setChanged(element, 'textContent', this.errorMessage);
+    setChanged(element, 'hidden', !message);
     if (message && !this.card?.visible) this.toggleConsole(true);
     this.updateSpatialStatus();
   }
@@ -1748,15 +1897,19 @@ export class RoomcraftConsole extends xb.Script {
   setStatus(message) {
     if (this.disposed) return;
     this.statusMessage = message;
-    if (this.dom.status) this.dom.status.textContent = message;
+    if (this.dom.status) setChanged(this.dom.status, 'textContent', message);
     this.updateSpatialStatus();
   }
 
   updateSpatialStatus() {
     if (this.xrStatusText) {
-      this.xrStatusText.text = (this.errorMessage || this.statusMessage)
-        .replace(/[…]/g, '...')
-        .replace(/[·]/g, '-');
+      setChanged(
+        this.xrStatusText,
+        'text',
+        (this.errorMessage || this.statusMessage)
+          .replace(/[…]/g, '...')
+          .replace(/[·]/g, '-')
+      );
     }
   }
 
@@ -1843,60 +1996,134 @@ export class RoomcraftConsole extends xb.Script {
     const dom = this.dom;
     if (!dom.console) return;
 
-    dom.console.classList.toggle('rc-busy', busy);
-    dom.console.setAttribute('aria-busy', String(busy));
+    toggleClassChanged(dom.console, 'rc-busy', busy);
+    setAttributeChanged(dom.console, 'aria-busy', String(busy));
     const spatialVisible = this.isInXR()
       ? !this.needsSpatialPlacement
       : this.spatialPreview;
-    this.card.visible = spatialVisible;
-    this.keyboardCard.visible =
-      spatialVisible && this.keyboardOpen && this.spatialTab === 'author';
-    dom.spatialStudio.disabled = this.isInXR();
-    dom.spatialStudio.setAttribute('aria-pressed', String(this.spatialPreview));
-    dom.spatialStudio.textContent = this.spatialPreview
-      ? 'Hide spatial studio'
-      : 'Spatial studio';
-    this.xrType.label = this.keyboardOpen ? 'Hide keyboard' : 'Keyboard';
-    this.xrAuthorPanel.style.display =
-      this.spatialTab === 'author' ? 'flex' : 'none';
-    this.xrExamplesPanel.style.display =
-      this.spatialTab === 'examples' ? 'flex' : 'none';
-    this.xrAuthorTab.style.backgroundColor =
-      this.spatialTab === 'author' ? '#8a4a33' : '#30292d';
-    this.xrExamplesTab.style.backgroundColor =
-      this.spatialTab === 'examples' ? '#8a4a33' : '#30292d';
-    dom.sceneSummary.textContent =
+    setChanged(this.card, 'visible', spatialVisible);
+    setChanged(
+      this.keyboardCard,
+      'visible',
+      spatialVisible &&
+        (!!this.settingsKeyboard ||
+          (this.keyboardOpen && this.spatialTab === 'author'))
+    );
+    setChanged(dom.spatialStudio, 'disabled', this.isInXR());
+    setAttributeChanged(
+      dom.spatialStudio,
+      'aria-pressed',
+      String(this.spatialPreview)
+    );
+    setChanged(
+      dom.spatialStudio,
+      'textContent',
+      this.spatialPreview ? 'Hide spatial studio' : 'Spatial studio'
+    );
+    setChanged(
+      this.xrType,
+      'label',
+      this.keyboardOpen ? 'Hide keyboard' : 'Keyboard'
+    );
+    setChanged(
+      this.xrAuthorPanel.style,
+      'display',
+      this.spatialTab === 'author' ? 'flex' : 'none'
+    );
+    setChanged(
+      this.xrExamplesPanel.style,
+      'display',
+      this.spatialTab === 'examples' ? 'flex' : 'none'
+    );
+    setChanged(
+      this.xrAuthorTab.style,
+      'backgroundColor',
+      this.spatialTab === 'author' ? '#8a4a33' : '#30292d'
+    );
+    setChanged(
+      this.xrExamplesTab.style,
+      'backgroundColor',
+      this.spatialTab === 'examples' ? '#8a4a33' : '#30292d'
+    );
+    const collaborationVisible = this.spatialTab === 'collaboration';
+    setChanged(
+      this.xrAuthorContext.style,
+      'display',
+      collaborationVisible ? 'none' : 'flex'
+    );
+    setChanged(
+      this.xrFooter.style,
+      'display',
+      collaborationVisible ? 'none' : 'flex'
+    );
+    if (this.xrCollaborationPanel) {
+      setChanged(
+        this.xrCollaborationPanel.style,
+        'display',
+        collaborationVisible ? 'flex' : 'none'
+      );
+      setChanged(
+        this.xrCollaborationTab.style,
+        'backgroundColor',
+        collaborationVisible ? '#8a4a33' : '#30292d'
+      );
+    }
+    setChanged(
+      dom.sceneSummary,
+      'textContent',
       layout.objects.length === 0
         ? layout.environment
           ? `"${layout.title}" is an empty environment. Describe a place, or pick a handcrafted example.`
           : 'The room is empty. Pick a starter scene or describe one.'
         : `"${layout.title}" with ${layout.objects.length} object${
             layout.objects.length === 1 ? '' : 's'
-          }. Drag or pinch an object to move it.`;
-    dom.placement.textContent = layout.environment
-      ? VIRTUAL_PLACEMENT_MESSAGE
-      : this.placed
-        ? PLACED_MESSAGE
-        : PREVIEW_MESSAGE;
+          }. Drag or pinch an object to move it.`
+    );
+    setChanged(
+      dom.placement,
+      'textContent',
+      layout.environment
+        ? VIRTUAL_PLACEMENT_MESSAGE
+        : this.placed
+          ? PLACED_MESSAGE
+          : PREVIEW_MESSAGE
+    );
     this.syncEnvironment(layout);
 
     const selectedName =
       layout.objects.find((object) => object.id === selectedId)?.name ?? '';
-    dom.selection.replaceChildren();
-    const empty = document.createElement('option');
-    empty.value = '';
-    empty.textContent = 'Nothing selected';
-    dom.selection.appendChild(empty);
-    for (const object of layout.objects) {
-      const option = document.createElement('option');
-      option.value = object.id;
-      option.textContent = `${object.name} (${object.id})`;
-      dom.selection.appendChild(option);
+    const optionIds = new Set([
+      '',
+      ...layout.objects.map((object) => object.id),
+    ]);
+    const options = [{id: '', name: 'Nothing selected'}, ...layout.objects].map(
+      (object) => {
+        let option = this.selectionOptions.get(object.id);
+        if (!option) {
+          option = document.createElement('option');
+          option.value = object.id;
+          this.selectionOptions.set(object.id, option);
+        }
+        setChanged(
+          option,
+          'textContent',
+          object.id ? `${object.name} (${object.id})` : object.name
+        );
+        return option;
+      }
+    );
+    reconcileChildren(dom.selection, options);
+    for (const id of this.selectionOptions.keys()) {
+      if (!optionIds.has(id)) this.selectionOptions.delete(id);
     }
-    dom.selection.value = selectedId ?? '';
-    dom.selection.title = selectedId
-      ? `Selected ${selectedName} (${selectedId})`
-      : 'Nothing selected';
+    setChanged(dom.selection, 'value', selectedId ?? '');
+    setChanged(
+      dom.selection,
+      'title',
+      selectedId
+        ? `Selected ${selectedName} (${selectedId})`
+        : 'Nothing selected'
+    );
     const selected = layout.objects.find((object) => object.id === selectedId);
     const parts = selected?.parts ?? [];
     const movingParts = parts.filter((part) => part.motion);
@@ -1905,73 +2132,109 @@ export class RoomcraftConsole extends xb.Script {
           .map((part) => `${part.name} ${describeMotion(part.motion)}`)
           .join('; ')}. Pausing motion does not change the design.`
       : ' No part of it moves yet.';
-    dom.design.textContent = !selected
-      ? 'Nothing selected.'
-      : selected.landscape
-        ? `${selected.name} is one landscape feature: ${describeLandscape(
-            selected.landscape
-          )}. It is selected, moved, and scaled as a single object, and an edit replaces its whole recipe rather than individual parts.`
-        : parts.length > 0
-          ? `${selected.name} is one compound design made of ${parts.length} part${
-              parts.length === 1 ? '' : 's'
-            }. It moves, rotates, and scales as a single object, and an edit can change individual parts.${motionSentence}`
-          : `${selected.name} is a catalog object, so it has no editable parts.`;
-    dom.parts.replaceChildren();
-    for (const part of parts.slice(0, MAX_LISTED_PARTS)) {
-      const item = document.createElement('li');
-      item.textContent = part.motion
-        ? `${part.name} (${part.shape}, ${part.motion.kind}s)`
-        : `${part.name} (${part.shape})`;
-      if (part.motion) item.className = 'rc-moving';
-      dom.parts.appendChild(item);
-    }
-    if (parts.length > MAX_LISTED_PARTS) {
-      const item = document.createElement('li');
-      item.textContent = `and ${parts.length - MAX_LISTED_PARTS} more`;
-      dom.parts.appendChild(item);
-    }
-    dom.parts.hidden = parts.length === 0;
-    if (this.xrSelectionText) {
-      this.xrSelectionText.text = selectedId
-        ? selected?.landscape
-          ? `Selected: ${selectedName} - ${describeLandscape(selected.landscape)}`
+    setChanged(
+      dom.design,
+      'textContent',
+      !selected
+        ? 'Nothing selected.'
+        : selected.landscape
+          ? `${selected.name} is one landscape feature: ${describeLandscape(
+              selected.landscape
+            )}. It is selected, moved, and scaled as a single object, and an edit replaces its whole recipe rather than individual parts.`
           : parts.length > 0
-            ? `Selected: ${selectedName} - ${parts.length} parts${
-                movingParts.length ? `, ${movingParts.length} moving` : ''
-              }`
-            : `Selected: ${selectedName} (${selectedId})`
-        : 'Nothing selected';
+            ? `${selected.name} is one compound design made of ${parts.length} part${
+                parts.length === 1 ? '' : 's'
+              }. It moves, rotates, and scales as a single object, and an edit can change individual parts.${motionSentence}`
+            : `${selected.name} is a catalog object, so it has no editable parts.`
+    );
+    const listedParts = parts.slice(0, MAX_LISTED_PARTS).map((part) => ({
+      id: JSON.stringify([selectedId, part.id]),
+      text: part.motion
+        ? `${part.name} (${part.shape}, ${part.motion.kind}s)`
+        : `${part.name} (${part.shape})`,
+      className: part.motion ? 'rc-moving' : '',
+    }));
+    if (parts.length > MAX_LISTED_PARTS) {
+      listedParts.push({
+        id: 'more',
+        text: `and ${parts.length - MAX_LISTED_PARTS} more`,
+        className: '',
+      });
+    }
+    const partIds = new Set(listedParts.map((part) => part.id));
+    reconcileChildren(
+      dom.parts,
+      listedParts.map((part) => {
+        let item = this.partItems.get(part.id);
+        if (!item) {
+          item = document.createElement('li');
+          this.partItems.set(part.id, item);
+        }
+        setChanged(item, 'textContent', part.text);
+        setChanged(item, 'className', part.className);
+        return item;
+      })
+    );
+    for (const id of this.partItems.keys()) {
+      if (!partIds.has(id)) this.partItems.delete(id);
+    }
+    setChanged(dom.parts, 'hidden', parts.length === 0);
+    if (this.xrSelectionText) {
+      setChanged(
+        this.xrSelectionText,
+        'text',
+        selectedId
+          ? selected?.landscape
+            ? `Selected: ${selectedName} - ${describeLandscape(selected.landscape)}`
+            : parts.length > 0
+              ? `Selected: ${selectedName} - ${parts.length} parts${
+                  movingParts.length ? `, ${movingParts.length} moving` : ''
+                }`
+              : `Selected: ${selectedName} (${selectedId})`
+          : 'Nothing selected'
+      );
     }
 
     // Playback control is inspection state, so it ignores the busy flag.
     const hasMotion = this.room.hasMotion;
     const motionPaused = this.room.motionPaused;
-    dom.motion.disabled = !hasMotion;
-    dom.motion.textContent = motionPaused ? 'Resume motion' : 'Pause motion';
-    dom.motion.setAttribute('aria-pressed', String(motionPaused));
-    dom.motionNote.textContent = !hasMotion
-      ? 'Nothing in this scene moves. Authored motion is optional.'
-      : motionPaused
-        ? 'Motion paused. Parts hold their current pose for inspection; the layout, history, and placement are untouched.'
-        : 'Motion playing. Exported parts always keep their authored rest transforms.';
-    this.xrMotion.disabled = dom.motion.disabled;
-    this.xrMotion.label = motionPaused ? 'Resume' : 'Pause';
+    setChanged(dom.motion, 'disabled', !hasMotion);
+    setChanged(
+      dom.motion,
+      'textContent',
+      motionPaused ? 'Resume motion' : 'Pause motion'
+    );
+    setAttributeChanged(dom.motion, 'aria-pressed', String(motionPaused));
+    setChanged(
+      dom.motionNote,
+      'textContent',
+      !hasMotion
+        ? 'Nothing in this scene moves. Authored motion is optional.'
+        : motionPaused
+          ? 'Motion paused. Parts hold their current pose for inspection; the layout, history, and placement are untouched.'
+          : 'Motion playing. Exported parts always keep their authored rest transforms.'
+    );
+    setChanged(this.xrMotion, 'disabled', dom.motion.disabled);
+    setChanged(this.xrMotion, 'label', motionPaused ? 'Resume' : 'Pause');
 
     const voiceAvailable = !!getVoiceFormat();
     const voiceState = this.voice.state;
     const confirmingReplacement = this.voiceReplacementDraft !== null;
     const aiReady = this.isGeminiReady();
-    this.xrProviderText.text = aiReady
+    let providerText = aiReady
       ? 'Gemini configured. Talk sends microphone audio only to Gemini.'
       : this.isInXR()
         ? 'Offline tools available. Exit XR to configure Gemini in the browser panel.'
         : 'Offline tools available. Connect Gemini in the browser panel to generate or use voice.';
     if (!voiceAvailable) {
-      this.xrProviderText.text +=
+      providerText +=
         ' Microphone recording is unavailable here; use Keyboard.';
     }
-    dom.generate.disabled = busy || !dom.prompt.value.trim();
-    dom.generate.textContent =
+    setChanged(this.xrProviderText, 'text', providerText);
+    setChanged(dom.generate, 'disabled', busy || !dom.prompt.value.trim());
+    setChanged(
+      dom.generate,
+      'textContent',
       voiceState === 'transcribing'
         ? 'Transcribing...'
         : this.room.status === 'repairing'
@@ -1980,49 +2243,98 @@ export class RoomcraftConsole extends xb.Script {
             ? 'Generating...'
             : busy
               ? 'Working...'
-              : 'Generate';
-    dom.newDesign.disabled =
+              : 'Generate'
+    );
+    setChanged(
+      dom.newDesign,
+      'disabled',
       busy ||
-      (layout.objects.length === 0 &&
-        (!this.virtual || layout.title === EMPTY_ENVIRONMENT_TITLE));
-    dom.mic.disabled =
-      voiceState === 'recording' ? false : busy || !voiceAvailable || !aiReady;
-    dom.mic.title = !voiceAvailable
-      ? 'This browser cannot record microphone audio. Use Keyboard or type the edit.'
-      : !aiReady
-        ? 'Connect Gemini before using voice.'
-        : confirmingReplacement
-          ? 'Record a new instruction that replaces the current draft after successful transcription.'
-          : 'Talk records one instruction. Finish sends it to Gemini and applies the spoken edit.';
-    dom.mic.setAttribute('aria-pressed', String(voiceState === 'recording'));
-    dom.cancelVoice.hidden = voiceState === 'idle' && !confirmingReplacement;
-    dom.cancelVoice.textContent = confirmingReplacement
-      ? 'Keep draft'
-      : 'Cancel';
+        (layout.objects.length === 0 &&
+          (!this.virtual || layout.title === EMPTY_ENVIRONMENT_TITLE))
+    );
+    setChanged(
+      dom.mic,
+      'disabled',
+      voiceState === 'recording' ? false : busy || !voiceAvailable || !aiReady
+    );
+    setChanged(
+      dom.mic,
+      'title',
+      !voiceAvailable
+        ? 'This browser cannot record microphone audio. Use Keyboard or type the edit.'
+        : !aiReady
+          ? 'Connect Gemini before using voice.'
+          : confirmingReplacement
+            ? 'Record a new instruction that replaces the current draft after successful transcription.'
+            : 'Talk records one instruction. Finish sends it to Gemini and applies the spoken edit.'
+    );
+    setAttributeChanged(
+      dom.mic,
+      'aria-pressed',
+      String(voiceState === 'recording')
+    );
+    setChanged(
+      dom.cancelVoice,
+      'hidden',
+      voiceState === 'idle' && !confirmingReplacement
+    );
+    setChanged(
+      dom.cancelVoice,
+      'textContent',
+      confirmingReplacement ? 'Keep draft' : 'Cancel'
+    );
     const cancelLabel = confirmingReplacement
       ? 'Keep existing draft'
       : 'Cancel voice input';
-    dom.cancelVoice.setAttribute('aria-label', cancelLabel);
-    this.xrCancelVoice.label = dom.cancelVoice.textContent;
-    this.xrCancelVoice.ariaLabel = cancelLabel;
-    dom.console.classList.toggle('rc-recording', voiceState === 'recording');
-    this.xrCancelVoice.style.display = dom.cancelVoice.hidden ? 'none' : 'flex';
-    dom.place.disabled =
-      busy || !!layout.environment || layout.objects.length === 0;
-    dom.place.title = layout.environment ? VIRTUAL_PLACEMENT_MESSAGE : '';
-    dom.undo.disabled = busy || !this.room.canUndo;
-    dom.redo.disabled = busy || !this.room.canRedo;
-    dom.focusSelected.disabled = busy || this.isInXR() || !selectedId;
-    dom.frameScene.disabled =
+    setAttributeChanged(dom.cancelVoice, 'aria-label', cancelLabel);
+    setChanged(this.xrCancelVoice, 'label', dom.cancelVoice.textContent);
+    setChanged(this.xrCancelVoice, 'ariaLabel', cancelLabel);
+    toggleClassChanged(dom.console, 'rc-recording', voiceState === 'recording');
+    setChanged(
+      this.xrCancelVoice.style,
+      'display',
+      dom.cancelVoice.hidden ? 'none' : 'flex'
+    );
+    setChanged(
+      dom.place,
+      'disabled',
+      busy || !!layout.environment || layout.objects.length === 0
+    );
+    setChanged(
+      dom.place,
+      'title',
+      layout.environment ? VIRTUAL_PLACEMENT_MESSAGE : ''
+    );
+    setChanged(dom.undo, 'disabled', busy || !this.room.canUndo);
+    setChanged(dom.redo, 'disabled', busy || !this.room.canRedo);
+    setChanged(
+      dom.focusSelected,
+      'disabled',
+      busy || this.isInXR() || !selectedId
+    );
+    setChanged(
+      dom.frameScene,
+      'disabled',
       busy ||
-      this.isInXR() ||
-      (layout.objects.length === 0 && !layout.environment);
-    dom.removeSelected.disabled = busy || !selectedId;
-    dom.exhibit.disabled = busy;
-    dom.export.disabled = layout.objects.length === 0 && !layout.environment;
-    dom.connect.disabled = busy;
-    dom.connect.textContent = aiReady ? 'Reconnect Gemini' : 'Connect Gemini';
-    dom.mic.textContent =
+        this.isInXR() ||
+        (layout.objects.length === 0 && !layout.environment)
+    );
+    setChanged(dom.removeSelected, 'disabled', busy || !selectedId);
+    setChanged(dom.exhibit, 'disabled', busy);
+    setChanged(
+      dom.export,
+      'disabled',
+      layout.objects.length === 0 && !layout.environment
+    );
+    setChanged(dom.connect, 'disabled', busy);
+    setChanged(
+      dom.connect,
+      'textContent',
+      aiReady ? 'Reconnect Gemini' : 'Connect Gemini'
+    );
+    setChanged(
+      dom.mic,
+      'textContent',
       voiceState === 'recording'
         ? 'Finish'
         : voiceState === 'starting'
@@ -2031,27 +2343,35 @@ export class RoomcraftConsole extends xb.Script {
             ? 'Replace draft'
             : voiceAvailable
               ? 'Talk'
-              : 'No mic';
-    this.xrTalk.disabled = dom.mic.disabled;
-    this.xrTalk.label = dom.mic.textContent;
-    this.xrTalk.style.backgroundColor =
-      voiceState === 'recording' ? '#8d352c' : '#4a5f52';
-    this.xrNew.disabled = dom.newDesign.disabled;
-    this.xrNew.label = this.virtual ? 'New world' : 'New';
-    this.xrPlace.disabled = dom.place.disabled;
-    this.xrUndo.disabled = dom.undo.disabled;
-    this.xrRedo.disabled = dom.redo.disabled;
-    this.xrGenerate.disabled = dom.generate.disabled;
-    this.xrGenerate.label = dom.generate.textContent;
-    if (!busy) this.xrGenerate.style.opacity = 1;
-    this.xrRemove.disabled = dom.removeSelected.disabled;
-    this.xrPrevious.disabled = busy || layout.objects.length === 0;
-    this.xrNext.disabled = this.xrPrevious.disabled;
+              : 'No mic'
+    );
+    setChanged(this.xrTalk, 'disabled', dom.mic.disabled);
+    setChanged(this.xrTalk, 'label', dom.mic.textContent);
+    setChanged(
+      this.xrTalk.style,
+      'backgroundColor',
+      voiceState === 'recording' ? '#8d352c' : '#4a5f52'
+    );
+    setChanged(this.xrNew, 'disabled', dom.newDesign.disabled);
+    setChanged(this.xrNew, 'label', this.virtual ? 'New world' : 'New');
+    setChanged(this.xrPlace, 'disabled', dom.place.disabled);
+    setChanged(this.xrUndo, 'disabled', dom.undo.disabled);
+    setChanged(this.xrRedo, 'disabled', dom.redo.disabled);
+    setChanged(this.xrGenerate, 'disabled', dom.generate.disabled);
+    setChanged(this.xrGenerate, 'label', dom.generate.textContent);
+    if (!busy) setChanged(this.xrGenerate.style, 'opacity', 1);
+    setChanged(this.xrRemove, 'disabled', dom.removeSelected.disabled);
+    setChanged(
+      this.xrPrevious,
+      'disabled',
+      busy || layout.objects.length === 0
+    );
+    setChanged(this.xrNext, 'disabled', this.xrPrevious.disabled);
     for (const button of this.starterButtons) {
-      button.disabled = busy;
+      setChanged(button, 'disabled', busy);
     }
     for (const button of this.spatialStarters) {
-      button.disabled = busy;
+      setChanged(button, 'disabled', busy);
     }
   }
 
@@ -2066,44 +2386,63 @@ export class RoomcraftConsole extends xb.Script {
     const environment = layout.environment;
     const dom = this.dom;
     const summary = describeEnvironment(environment);
-    if (dom.environmentSummary) dom.environmentSummary.textContent = summary;
-    if (this.xrEnvironmentText) this.xrEnvironmentText.text = summary;
-    if (this.lighting) this.lighting.visible = !environment;
+    if (dom.environmentSummary)
+      setChanged(dom.environmentSummary, 'textContent', summary);
+    if (this.xrEnvironmentText)
+      setChanged(this.xrEnvironmentText, 'text', summary);
+    if (this.lighting) setChanged(this.lighting, 'visible', !environment);
     const busy = this.isBusy();
     const moonlit = environment?.timeOfDay === 'moonlight';
     const sunlit = environment?.timeOfDay === 'sunrise';
     if (dom.moonlight) {
-      dom.moonlight.disabled = busy || !environment || moonlit;
-      dom.moonlight.setAttribute('aria-pressed', String(moonlit));
+      setChanged(dom.moonlight, 'disabled', busy || !environment || moonlit);
+      setAttributeChanged(dom.moonlight, 'aria-pressed', String(moonlit));
     }
     if (dom.sunrise) {
-      dom.sunrise.disabled = busy || !environment || sunlit;
-      dom.sunrise.setAttribute('aria-pressed', String(sunlit));
+      setChanged(dom.sunrise, 'disabled', busy || !environment || sunlit);
+      setAttributeChanged(dom.sunrise, 'aria-pressed', String(sunlit));
     }
     if (dom.enterWorld) {
-      dom.enterWorld.hidden = this.isInXR();
-      dom.enterWorld.disabled = busy || this.isInXR() || !environment;
-      dom.enterWorld.title = this.isInXR()
-        ? 'Entering the world moves the desktop camera only.'
-        : '';
+      setChanged(dom.enterWorld, 'hidden', this.isInXR());
+      setChanged(
+        dom.enterWorld,
+        'disabled',
+        busy || this.isInXR() || !environment
+      );
+      setChanged(
+        dom.enterWorld,
+        'title',
+        this.isInXR() ? 'Entering the world moves the desktop camera only.' : ''
+      );
     }
     if (dom.environmentNote) {
-      dom.environmentNote.textContent = environment
-        ? 'Moonlight and Sunrise are direct atmosphere edits, not AI requests. Both are undoable, and neither recolors your objects.'
-        : 'Describe a place to create a virtual environment, or load the handcrafted example.';
+      setChanged(
+        dom.environmentNote,
+        'textContent',
+        environment
+          ? 'Moonlight and Sunrise are direct atmosphere edits, not AI requests. Both are undoable, and neither recolors your objects.'
+          : 'Describe a place to create a virtual environment, or load the handcrafted example.'
+      );
     }
     if (this.xrMoonlight) {
-      this.xrMoonlight.disabled = !!dom.moonlight?.disabled;
+      setChanged(this.xrMoonlight, 'disabled', !!dom.moonlight?.disabled);
     }
-    if (this.xrSunrise) this.xrSunrise.disabled = !!dom.sunrise?.disabled;
+    if (this.xrSunrise)
+      setChanged(this.xrSunrise, 'disabled', !!dom.sunrise?.disabled);
     if (this.xrEnterWorld) {
-      this.xrEnterWorld.style.display = this.isInXR() ? 'none' : 'flex';
-      this.xrEnterWorld.disabled = !!dom.enterWorld?.disabled;
+      setChanged(
+        this.xrEnterWorld.style,
+        'display',
+        this.isInXR() ? 'none' : 'flex'
+      );
+      setChanged(this.xrEnterWorld, 'disabled', !!dom.enterWorld?.disabled);
     }
   }
 
   dispose() {
     this.disposed = true;
+    this.collaboration?.dispose();
+    this.closeSettingsKeyboard();
     this.voiceReplacementDraft = null;
     this.voiceSubmissionPending = false;
     this.voice.dispose();
@@ -2125,6 +2464,8 @@ export class RoomcraftConsole extends xb.Script {
     this.dom.starters?.replaceChildren();
     this.dom.suggestions?.replaceChildren();
     this.dom.parts?.replaceChildren();
+    this.selectionOptions.clear();
+    this.partItems.clear();
   }
 }
 
@@ -2181,7 +2522,8 @@ export function createRoomcraftOptions(virtual = false) {
   return options;
 }
 
-async function start() {
+export async function startRoomcraftDemo(onProgress = () => {}) {
+  onProgress('initializing-sdk', 'Starting XR Blocks...');
   const virtual = !!xb.getUrlParameter(ENVIRONMENT_MODE_PARAMETER);
   const options = createRoomcraftOptions(virtual);
 
@@ -2210,21 +2552,25 @@ async function start() {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   }
+  onProgress('loading-scene', 'Loading the starter scene...');
   await consoleScript.start();
+  if (
+    xb.getUrlParameter('collab') === '1' &&
+    !consoleScript.disposed &&
+    !consoleScript.pageLeft
+  ) {
+    onProgress('joining-room');
+    try {
+      const {startCollaboration} = await import('./Collaboration.js');
+      if (!consoleScript.disposed && !consoleScript.pageLeft) {
+        await startCollaboration(room, consoleScript, {virtual});
+      }
+    } catch (error) {
+      consoleScript.showError(error);
+      consoleScript.setStatus(
+        'Collaboration could not start. Your local scene is still available.'
+      );
+    }
+  }
+  return consoleScript;
 }
-
-document.addEventListener(
-  'DOMContentLoaded',
-  () => {
-    void start().catch((error) => {
-      console.error('[roomcraft] Startup failed', error);
-      document.getElementById('status').textContent =
-        'Roomcraft could not start.';
-      const message = document.getElementById('error');
-      message.textContent =
-        error instanceof Error ? error.message : String(error);
-      message.hidden = false;
-    });
-  },
-  {once: true}
-);

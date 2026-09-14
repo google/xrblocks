@@ -74,7 +74,7 @@ uses depth to ground them in world space. Choose the backend explicitly.
 
 ### Backends
 
-Under the hood, object detection uses pluggable backends selected via `options.world.objects.backend`:
+Under the hood, object detection uses pluggable backends selected via `options.world.objects.backendConfig.activeBackend`:
 
 - **`GeminiDetectorBackend`**: Queries Gemini models using visual camera frames (requires AI API keys, see the [Generative AI](AI.mdx) guide).
 - **`MediaPipeDetectorBackend`**: Runs local MediaPipe object detection model.
@@ -112,10 +112,24 @@ for (const object of objects) {
 }
 ```
 
-Concurrent calls share the active detection. A new run clears previous
+Concurrent calls without overrides share the active detection. A new run clears previous
 detected-object scene nodes before publishing current results. Treat `[]` as a
 normal warm-up, empty, unavailable, or failed result and update application
 state accordingly.
+
+To use a captured frame or a different backend for one call without changing the defaults:
+
+```js
+const imageData = xb.core.deviceCamera.getSnapshot({outputFormat: 'imageData'});
+const objects = await xb.world.objects.runDetection({
+  backend: 'mediapipe',
+  snapshot: {imageData},
+});
+```
+
+Both fields are optional. Gemini snapshots require a `base64` data URL; MediaPipe snapshots require `imageData`. Supply both representations of the same frame when sharing a snapshot between backends. A missing representation rejects the request rather than capturing a different image.
+
+Calls supplying either field queue separate runs, in submission order, after any ongoing detection. A failed run does not block later requests. Capture and submit a snapshot in the same frame: its camera pose and depth mesh are frozen at submission, including while queued. Do not modify the supplied pixels until the request completes. Without a supplied snapshot, the run captures from the live camera. Camera and depth prerequisites still apply.
 
 For continuous ownership, pair the same client object:
 
@@ -130,6 +144,8 @@ Use `options.world.objects.pollingIntervalMs` to control cadence. The desktop
 simulator can supply deterministic object ground truth when
 `options.world.objects.simulatorOverride = true` and its environment defines
 detectable objects.
+
+Simulator ground truth takes precedence over per-call inputs when enabled. Disable `simulatorOverride` to exercise the camera backends in the simulator.
 
 ## Human pose detection
 

@@ -37,7 +37,11 @@ import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {UICardEdge} from './UICardEdge';
-import {AdaptiveText, type AdaptiveTextProperties} from './AdaptiveText';
+import {
+  AdaptiveText,
+  nativeTextWrapping,
+  type AdaptiveTextProperties,
+} from './AdaptiveText';
 import {ScrollViewPresentation} from './ScrollViewPresentation';
 import {UIHitRegion} from './UIHitRegion';
 import {TextFieldPresentation} from './TextFieldPresentation';
@@ -678,6 +682,10 @@ class UIKitNodeBinding {
       const properties = {
         text: button.label,
         color,
+        ...nativeTextWrapping(
+          this.presentedProperties
+            .whiteSpace as AdaptiveTextProperties['whiteSpace']
+        ),
         pointerEvents: 'none' as const,
       };
       if (!this.buttonLabel) {

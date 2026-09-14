@@ -1,4 +1,4 @@
-import {Image} from '@pmndrs/uikit';
+import {Image, Text} from '@pmndrs/uikit';
 import * as THREE from 'three';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -9,6 +9,7 @@ import {UIText} from '../components/UIText';
 import {UITextInput} from '../components/UITextInput';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
+import {UIButton} from '../components/UIButton';
 import {createUIBackend} from './UIKitBackend';
 
 describe('UIKitMount retained updates', () => {
@@ -124,6 +125,36 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
     expect(view.ready).toBe(false);
+  });
+
+  it('honors single-line button labels and updates wrapping without replacing the text node', () => {
+    const button = new UIButton({
+      label: 'Miniature city',
+      style: {whiteSpace: 'nowrap', fontSize: 36},
+    });
+    const card = new UICard({
+      size: {width: 500, height: 70},
+      children: [button],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const physical = mappings.find(
+      (mapping) => mapping.logical === button
+    )!.physical;
+    const label = physical.children.find(
+      (child): child is Text => child instanceof Text
+    )!;
+    expect(label).toBeDefined();
+    expect(label.properties.peek().wordBreak).toBe('keep-all');
+    expect(label.properties.peek().whiteSpace).toBe('normal');
+    button.style.whiteSpace = 'normal';
+    mount.commit(ui.theme, viewport, 0);
+    expect(physical.children).toContain(label);
+    expect(label.properties.peek().wordBreak).toBe('break-word');
+    mount.dispose();
+    backend.dispose();
   });
 
   it('retains existing child nodes when a sibling is added', () => {
