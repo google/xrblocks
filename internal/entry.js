@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid d493422
- * @builddate 2026-09-14T19:45:10.857Z
+ * @commitid 5934707
+ * @builddate 2026-09-14T19:49:06.466Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -17600,11 +17600,11 @@ let BaseDetectorBackend$1 = class BaseDetectorBackend {
     constructor(context) {
         this.context = context;
     }
-    async run(depthMeshSnapshot, cameraParametersSnapshot) {
+    async run(depthMeshSnapshot, cameraParametersSnapshot, snapshotOverride) {
         if (!(await this.isAvailable())) {
             return [];
         }
-        const snapshot = await this.getSnapshot();
+        const snapshot = snapshotOverride ?? (await this.getSnapshot());
         if (!snapshot)
             return [];
         let normalizedDetections = [];
@@ -17946,6 +17946,7 @@ class ObjectDetector extends Script {
         this._detectorBackends = new Map();
         this.activeClients = new Set();
         this.currentDetectionPromise = null;
+        this.pendingDetectionPromise = null;
         this.lastContinuousDetectionStartedAtMs = -Infinity;
         this.disposed = false;
         /**
@@ -18021,7 +18022,9 @@ class ObjectDetector extends Script {
      * ensures the continuous object detection is running.
      */
     update() {
-        if (this.activeClients.size === 0 || this.currentDetectionPromise) {
+        if (this.activeClients.size === 0 ||
+            this.currentDetectionPromise ||
+            this.pendingDetectionPromise) {
             return;
         }
         const pollingIntervalMs = this.options.objects.pollingIntervalMs;
@@ -18033,7 +18036,7 @@ class ObjectDetector extends Script {
         this.runContinuousDetection();
     }
     runContinuousDetection() {
-        if (this.currentDetectionPromise) {
+        if (this.currentDetectionPromise || this.pendingDetectionPromise) {
             return;
         }
         this.lastContinuousDetectionStartedAtMs = performance.now();
@@ -18056,64 +18059,115 @@ class ObjectDetector extends Script {
      * - If continuous detection is not started, performs a one-off detection and
      *   returns the result. If a one-off detection is already in progress, returns
      *   the promise for that ongoing detection.
+     * - Supplying a snapshot or backend queues a separate one-off run after
+     *   pending detections, without changing the continuous detector's options.
+     *   Supplied snapshots retain the camera pose and depth at submission time.
+     *   Simulator ground truth, when installed, still takes precedence.
      *
+     * @param options - Optional inputs for this run only.
      * @returns A promise that resolves with an
      * array of detected `DetectedObject` instances.
+     * @throws If an explicit backend or snapshot is invalid, or the detector
+     * is disposed before a queued request starts.
      */
-    runDetection() {
+    runDetection(options = {}) {
+        if (this.disposed) {
+            return Promise.reject(new Error('ObjectDetector has been disposed.'));
+        }
+        if (options.backend !== undefined || options.snapshot !== undefined) {
+            return this.runDetectionWithOverrides(options);
+        }
         if (this.currentDetectionPromise) {
             return this.currentDetectionPromise;
+        }
+        if (this.pendingDetectionPromise) {
+            return this.pendingDetectionPromise;
         }
         if (this.activeClients.size > 0) {
             this.runContinuousDetection();
             return this.currentDetectionPromise;
         }
-        this.currentDetectionPromise = this.runDetectionInternal().finally(() => {
-            this.currentDetectionPromise = null;
+        return this.runOneOffDetection();
+    }
+    async runDetectionWithOverrides(options) {
+        const backend = options.backend ?? this.options.objects.backendConfig.activeBackend;
+        if (backend !== 'gemini' && backend !== 'mediapipe') {
+            throw new Error(`ObjectDetector backend '${backend}' is not supported.`);
+        }
+        const snapshot = options.snapshot === undefined ? undefined : { ...options.snapshot };
+        const requiredField = backend === 'gemini' ? 'base64' : 'imageData';
+        if (snapshot && !snapshot[requiredField]) {
+            throw new Error(`ObjectDetector snapshot for '${backend}' must include ${requiredField}.`);
+        }
+        const frame = snapshot && !this.simulatorSource
+            ? this.captureDetectionFrame()
+            : undefined;
+        const run = () => this.runOneOffDetection({ backend, snapshot }, frame);
+        const previous = this.pendingDetectionPromise ?? this.currentDetectionPromise;
+        // A failed request rejects its own caller, but must not block later runs.
+        const pending = (previous ? previous.then(run, run) : run()).finally(() => {
+            if (this.pendingDetectionPromise === pending) {
+                this.pendingDetectionPromise = null;
+            }
         });
-        return this.currentDetectionPromise;
+        this.pendingDetectionPromise = pending;
+        return pending;
+    }
+    runOneOffDetection(options = {}, frame) {
+        const current = this.runDetectionInternal(options, frame).finally(() => {
+            if (this.currentDetectionPromise === current) {
+                this.currentDetectionPromise = null;
+            }
+        });
+        this.currentDetectionPromise = current;
+        return current;
     }
     /** Installs or removes the desktop simulator's ground-truth detector. */
     setSimulatorSource(source) {
         this.simulatorSource = source;
         return this;
     }
-    async runDetectionInternal() {
-        this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
-        if (this.simulatorSource) {
-            const detectedObjects = this.simulatorSource.detect().map((input) => {
-                const object = new DetectedObject(input.label, null, input.boundingBox, input.data ?? {});
-                object.position.copy(input.position);
-                return object;
-            });
-            for (const object of detectedObjects) {
-                this._detectedObjects.set(object.uuid, object);
-                this.add(object);
+    async runDetectionInternal(options = {}, frame) {
+        let detectionFrame = frame;
+        try {
+            if (this.disposed) {
+                throw new Error('ObjectDetector has been disposed.');
             }
-            return detectedObjects;
-        }
-        const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
-        if (!cameraParametersSnapshot) {
-            // Device camera not ready yet (warming up); skip until it is available.
-            return [];
-        }
-        const context = this.getDetectorContext();
-        const activeBackend = this.options.objects.backendConfig.activeBackend;
-        const detectorBackendPromise = this.getOrCreateDetectorBackend(activeBackend, context);
-        let detectorBackend;
-        try {
-            detectorBackend = await detectorBackendPromise;
-        }
-        catch (error) {
-            console.warn(`Failed to load or initialize ObjectDetector backend '${activeBackend}':`, error);
-            return [];
-        }
-        if (this.disposed) {
-            return [];
-        }
-        const depthMeshSnapshot = this.getDepthMeshSnapshot();
-        try {
-            const detectedObjects = await detectorBackend.run(depthMeshSnapshot, cameraParametersSnapshot);
+            this.clearDetectedObjects(); // Clear previous scene results before starting a new detection.
+            if (this.simulatorSource) {
+                const detectedObjects = this.simulatorSource.detect().map((input) => {
+                    const object = new DetectedObject(input.label, null, input.boundingBox, input.data ?? {});
+                    object.position.copy(input.position);
+                    return object;
+                });
+                for (const object of detectedObjects) {
+                    this._detectedObjects.set(object.uuid, object);
+                    this.add(object);
+                }
+                return detectedObjects;
+            }
+            if (detectionFrame === undefined) {
+                detectionFrame = this.captureDetectionFrame();
+            }
+            if (!detectionFrame) {
+                // Device camera not ready yet (warming up); skip until it is available.
+                return [];
+            }
+            const context = this.getDetectorContext();
+            const activeBackend = options.backend ?? this.options.objects.backendConfig.activeBackend;
+            const detectorBackendPromise = this.getOrCreateDetectorBackend(activeBackend, context);
+            let detectorBackend;
+            try {
+                detectorBackend = await detectorBackendPromise;
+            }
+            catch (error) {
+                console.warn(`Failed to load or initialize ObjectDetector backend '${activeBackend}':`, error);
+                return [];
+            }
+            if (this.disposed) {
+                return [];
+            }
+            const detectedObjects = await detectorBackend.run(detectionFrame.depthMeshSnapshot, detectionFrame.cameraParametersSnapshot, options.snapshot);
             if (this.disposed) {
                 return [];
             }
@@ -18124,8 +18178,19 @@ class ObjectDetector extends Script {
             return detectedObjects;
         }
         finally {
-            this.disposeDepthMeshSnapshot(depthMeshSnapshot);
+            if (detectionFrame) {
+                this.disposeDepthMeshSnapshot(detectionFrame.depthMeshSnapshot);
+            }
         }
+    }
+    captureDetectionFrame() {
+        const cameraParametersSnapshot = getCameraParametersSnapshot(this.camera, this.renderer.xr.getCamera(), this.deviceCamera, this.targetDevice);
+        return cameraParametersSnapshot
+            ? {
+                cameraParametersSnapshot,
+                depthMeshSnapshot: this.getDepthMeshSnapshot(),
+            }
+            : null;
     }
     getDetectorContext() {
         return {

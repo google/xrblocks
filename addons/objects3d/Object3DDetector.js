@@ -175,14 +175,9 @@ class Object3DDetector extends Script {
                 console.warn('[Object3DDetector] no depth mesh available');
                 return this._results;
             }
-            const origGetSnapshot = deviceCamera.getSnapshot.bind(deviceCamera);
-            const mutableCamera = deviceCamera;
-            mutableCamera.getSnapshot = (opts) => {
-                if (opts?.outputFormat === 'base64')
-                    return Promise.resolve(snapBase64);
-                if (opts?.outputFormat === 'imageData')
-                    return snapImageData;
-                return origGetSnapshot(opts);
+            const detectionSnapshot = {
+                base64: snapBase64,
+                imageData: snapImageData,
             };
             // Start SAM init + encode in parallel with 2-D detection.
             let samPrep = null;
@@ -198,29 +193,24 @@ class Object3DDetector extends Script {
                 let detected;
                 try {
                     if (this._opts.detectBackend === 'both') {
-                        const cfg = core.world.options.objects.backendConfig;
-                        const prev = cfg.activeBackend;
-                        try {
-                            cfg.activeBackend = 'mediapipe';
-                            const mp = await worldObjects.runDetection();
-                            cfg.activeBackend = 'gemini';
-                            const gm = await worldObjects.runDetection();
-                            detected = unionDetections(mp, gm);
-                        }
-                        finally {
-                            cfg.activeBackend = prev;
-                        }
+                        // Submit both now so their queued runs retain the same frame pose.
+                        const [mp, gm] = await Promise.all([
+                            worldObjects.runDetection({
+                                backend: 'mediapipe',
+                                snapshot: detectionSnapshot,
+                            }),
+                            worldObjects.runDetection({
+                                backend: 'gemini',
+                                snapshot: detectionSnapshot,
+                            }),
+                        ]);
+                        detected = unionDetections(mp, gm);
                     }
                     else {
-                        const cfg = core.world.options.objects.backendConfig;
-                        const prev = cfg.activeBackend;
-                        cfg.activeBackend = this._opts.detectBackend;
-                        try {
-                            detected = await worldObjects.runDetection();
-                        }
-                        finally {
-                            cfg.activeBackend = prev;
-                        }
+                        detected = await worldObjects.runDetection({
+                            backend: this._opts.detectBackend,
+                            snapshot: detectionSnapshot,
+                        });
                     }
                 }
                 catch (e) {
@@ -242,9 +232,6 @@ class Object3DDetector extends Script {
                         return this._results;
                     }
                 }
-                // Restore the snapshot getter; fitting uses the frozen camera / mesh.
-                deviceCamera.getSnapshot =
-                    origGetSnapshot;
                 const floorY = this._estimateFloorY();
                 // Pipeline per-object work: mask decode (serial on GPU via samSerialize)
                 // overlaps with depth raycasts for the previous object.
@@ -387,9 +374,6 @@ class Object3DDetector extends Script {
                 return this._results;
             }
             finally {
-                // Always restore the snapshot getter and clean up the frozen mesh.
-                deviceCamera.getSnapshot =
-                    origGetSnapshot;
                 if (frozenDepthMesh.geometry) {
                     const geom = frozenDepthMesh.geometry;
                     geom.disposeBoundsTree?.();
