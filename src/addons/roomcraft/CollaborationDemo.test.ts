@@ -324,23 +324,46 @@ describe('optional collaboration startup', () => {
     local.resolve();
     consoleScript = await starting;
     expect(mocks.enableNet).toHaveBeenCalledOnce();
-    expect(net.joinRoom).toHaveBeenCalledWith('roomcraft:room:roomcraft-demo', {
-      transport: expect.any(EventTarget),
-      displayName: expect.stringMatching(/^Maker [\da-f]{4}$/),
-      role: 'user',
-    });
+    expect(net.joinRoom).toHaveBeenCalledWith(
+      'roomcraft:shared:roomcraft-demo',
+      {
+        transport: expect.any(EventTarget),
+        displayName: expect.stringMatching(/^Maker [\da-f]{4}$/),
+        role: 'user',
+      }
+    );
     expect(mocks.initScript).toHaveBeenCalledWith(bridge());
     expect(consoleScript.room.busy).toBe(false);
     expect(consoleScript.isBusy()).toBe(false);
   });
 
-  it('keeps virtual and nonvirtual tabs in distinct rooms', async () => {
-    window.history.replaceState({}, '', '?collab=1&room=garden&environment=1');
-    consoleScript = await startRoomcraftDemo();
-    expect(net.joinRoom.mock.calls[0][0]).toBe('roomcraft:virtual:garden');
-    expect(consoleScript.virtual).toBe(true);
-    expect(consoleScript.room.position.z).toBe(0);
-  });
+  it.each([false, true])(
+    'uses the same room for opposite viewing setups without changing local setup (first virtual=%s)',
+    async (firstVirtual) => {
+      const base = '?collab=1&room=BCDF&transport=webrtc';
+      window.history.replaceState(
+        {},
+        '',
+        base + (firstVirtual ? '&environment=1' : '')
+      );
+      consoleScript = await startRoomcraftDemo();
+      expect(consoleScript.virtual).toBe(firstVirtual);
+      const firstId = net.joinRoom.mock.calls.at(-1)[0];
+      consoleScript.dispose();
+      session = new Session();
+      window.history.replaceState(
+        {},
+        '',
+        base + (!firstVirtual ? '&environment=1' : '')
+      );
+      consoleScript = await startRoomcraftDemo();
+      expect(consoleScript.virtual).toBe(!firstVirtual);
+      expect(consoleScript.room.position.z).toBe(!firstVirtual ? 0 : -2.4);
+      expect(net.joinRoom.mock.calls.at(-1)[0]).toBe(firstId);
+      expect(firstId).toBe('roomcraft:shared:BCDF');
+      expect(consoleScript.collaboration.options.seedLocalScene).toBe(false);
+    }
+  );
 
   it('generates a name on HTTP LAN pages without secure-context randomUUID', async () => {
     vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
@@ -529,7 +552,7 @@ describe('collaboration URL configuration', () => {
     );
     expect(options).toMatchObject({
       room: 'roomcraft-demo',
-      roomId: 'roomcraft:room:roomcraft-demo',
+      roomId: 'roomcraft:shared:roomcraft-demo',
       displayName: 'Alice Maker',
     });
     expect(
@@ -538,7 +561,7 @@ describe('collaboration URL configuration', () => {
         true
       )
     ).toMatchObject({
-      roomId: 'roomcraft:virtual:Studio_4-A',
+      roomId: 'roomcraft:shared:Studio_4-A',
       displayName: 'n'.repeat(40),
     });
   });
@@ -573,6 +596,36 @@ describe('collaboration room-code lobby', () => {
   beforeEach(async () => {
     window.history.replaceState({}, '', '?collab=1&lobby=1&name=Alice');
     consoleScript = await startRoomcraftDemo();
+  });
+
+  it('starts in either view and joins the same code from the other without switching views', async () => {
+    const creator = consoleScript.collaboration;
+    await creator.startRoom();
+    const code = creator.getState().rooms.code;
+    const target = creator.options.roomId;
+    const {collaborationPeerUrl, collaborationOptions} = await import(
+      '../../../demos/roomcraft/Collaboration.js'
+    );
+    const invite = collaborationPeerUrl(window.location.href, creator.options);
+    expect(collaborationOptions(invite, true).roomId).toBe(target);
+    consoleScript.dispose();
+    session = new Session();
+    window.history.replaceState(
+      {},
+      '',
+      '?collab=1&lobby=1&environment=1&name=Other'
+    );
+    consoleScript = await startRoomcraftDemo();
+    const prompt = consoleScript.promptValue;
+    const joiner = consoleScript.collaboration;
+    await joiner.joinRoom(code);
+    expect(joiner.options.roomId).toBe(target);
+    expect(joiner.options.virtual).toBe(true);
+    expect(consoleScript.virtual).toBe(true);
+    expect(consoleScript.promptValue).toBe(prompt);
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(joiner.getState().peerHint).not.toContain('same mode');
+    expect(joiner.getState().peerHint).not.toContain('separate room');
   });
 
   it('stays local without opening a transport or requesting a microphone', () => {
@@ -735,7 +788,7 @@ describe('collaboration room-code lobby', () => {
     const code = controller.getState().rooms.code;
     expect(code).toMatch(/^[BCDFGHJKLMNPQRSTVWXYZ]{4}$/);
     expect(net.joinRoom).toHaveBeenCalledWith(
-      `roomcraft:room:${code}`,
+      `roomcraft:shared:${code}`,
       expect.objectContaining({
         displayName: 'Alice',
       })
@@ -770,7 +823,7 @@ describe('collaboration room-code lobby', () => {
       new Event('submit', {cancelable: true})
     );
     await vi.waitFor(() => expect(controller.getState().connected).toBe(true));
-    expect(net.joinRoom.mock.calls[0][0]).toBe('roomcraft:room:BCDF');
+    expect(net.joinRoom.mock.calls[0][0]).toBe('roomcraft:shared:BCDF');
     expect(controller.options.seedLocalScene).toBe(false);
     expect(generate).not.toHaveBeenCalled();
     expect(session.voice.enable).not.toHaveBeenCalled();
@@ -856,9 +909,11 @@ describe('collaboration panel', () => {
   it('distinguishes an open room from a connected peer and names the required mode', () => {
     const controller = consoleScript.collaboration;
     expect(controller.getState().statusText).toContain('Waiting for peers');
-    expect(element('collabRoomNotice').textContent).toContain('Physical room');
+    expect(controller.getState().peerHint).toContain(
+      'Physical and virtual views share'
+    );
     expect(element('collabDiagnosticsSummary').textContent).toContain(
-      'roomcraft:room:studio'
+      'roomcraft:shared:studio'
     );
     session.users.set('peer-b', {peerId: 'peer-b', displayName: 'Bob'});
     session.dispatchEvent(new Event('user-join'));
@@ -1246,7 +1301,9 @@ describe('collaboration panel', () => {
 
   it('shows identity, colored roster, peer selections and departures safely', () => {
     expect(element('collaboration').hidden).toBe(false);
-    expect(element('collabIdentity').textContent).toBe('Alice · Physical room');
+    expect(element('collabIdentity').textContent).toBe(
+      'Alice · Physical room view'
+    );
     expect(element('collabRoomCode').textContent).toBe('Named room: studio');
     expect(element('collabStatus').dataset.state).toBe('ready');
     expect(element('collabPeers').textContent).toContain('Alice (you)');

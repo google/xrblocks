@@ -5,7 +5,7 @@ import {CollaborationDiagnostics} from '../../../demos/roomcraft/CollaborationDi
 function context() {
   return {
     mode: 'Virtual world',
-    roomId: 'roomcraft:virtual:SLXS',
+    roomId: 'roomcraft:shared:BCDF',
     transport: 'webrtc',
     session: 1,
     localPeerId: 'peer-a',
@@ -58,7 +58,7 @@ describe('local collaboration diagnostics', () => {
     const report = log.report();
     expect(report.current).toMatchObject({
       mode: 'Virtual world',
-      roomId: 'roomcraft:virtual:SLXS',
+      roomId: 'roomcraft:shared:BCDF',
       scene: {objectIds: ['pet-cat'], objects: 1, parts: 17},
       bridge: {revision: {counter: 4, peerId: 'peer-a'}},
     });
@@ -95,6 +95,6 @@ describe('local collaboration diagnostics', () => {
     expect(events[63].state.pending).toBe(99);
     expect(events[63].elapsedMs).toBe(2000);
     expect(log.summary).toContain('Virtual world');
-    expect(log.summary).toContain('roomcraft:virtual:SLXS');
+    expect(log.summary).toContain('roomcraft:shared:BCDF');
   });
 });

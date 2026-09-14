@@ -113,10 +113,11 @@ function initialState() {
     listening: {muted: false, disabled: false},
     participants: [participant(0, true), participant(1)],
     peerCount: 1,
-    peerHint: 'Check the same mode, code and transport on both devices.',
+    peerHint:
+      'Check the code and transport on both devices; either view can join.',
     diagnostics: {
       summary:
-        'Physical room | broadcast\nRoom: roomcraft:room:studio\nOther peers: 1',
+        'View: Physical room | broadcast\nRoom: roomcraft:shared:studio\nOther peers: 1',
       recent: '',
       events: 3,
       notice: '',

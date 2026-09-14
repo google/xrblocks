@@ -30,7 +30,7 @@ const TRANSPORTS = {
   },
   webrtc: {
     label: 'WebRTC collaboration',
-    help: 'Cross-device / off-LAN via the existing public PeerJS broker and STUN. Best-effort, rate-limited, up to 12 peers. NAT/firewalls can block connections; no TURN is configured. Use the same room, mode and transport.',
+    help: 'Cross-device / off-LAN via the existing public PeerJS broker and STUN. Best-effort, rate-limited, up to 12 peers. NAT/firewalls can block connections; no TURN is configured. Use the same code and transport; either view can join.',
   },
   websocket: {
     label: 'WebSocket relay collaboration',
@@ -84,6 +84,10 @@ function connectionOptions(source) {
   };
 }
 
+function sharedRoomId(room) {
+  return room ? `roomcraft:shared:${room}` : '';
+}
+
 /** Bound the optional room and display name without changing page mode. */
 export function collaborationOptions(url, virtual = false) {
   const source = new URL(url);
@@ -113,7 +117,7 @@ export function collaborationOptions(url, virtual = false) {
   const connection = connectionOptions(source);
   return {
     room,
-    roomId: room ? `roomcraft:${virtual ? 'virtual' : 'room'}:${room}` : '',
+    roomId: sharedRoomId(room),
     displayName,
     virtual,
     seedLocalScene: !(
@@ -353,7 +357,7 @@ class Collaboration {
       this.options = {
         ...this.options,
         room: code,
-        roomId: `roomcraft:${this.options.virtual ? 'virtual' : 'room'}:${code}`,
+        roomId: sharedRoomId(code),
         displayName,
         transport: 'webrtc',
         relay: '',
@@ -378,7 +382,7 @@ class Collaboration {
         );
       await navigator.clipboard.writeText(code);
       if (!this.disposed && this.options.room === code) {
-        this.roomNotice = `Copied ${code}. Share it with someone opening the same room mode.`;
+        this.roomNotice = `Copied ${code}. Anyone can join this code from either view.`;
         this.render();
       }
     } catch (error) {
@@ -867,7 +871,7 @@ class Collaboration {
         notice:
           this.roomNotice ||
           (!roomCode && this.options.room
-            ? `${this.options.virtual ? 'Virtual world' : 'Physical room'} mode. Use Open peer link for this connection. Start or Join switches to a WebRTC code room.`
+            ? 'Use Open peer link for this connection. Start or Join switches to a WebRTC code room; either view can join.'
             : ''),
         mode: this.options.virtual ? 'Virtual world' : 'Physical room',
         startDisabled: this.disposed || this.room.busy || this.joining,
@@ -902,7 +906,7 @@ class Collaboration {
       peerCount,
       peerHint: peerCount
         ? 'Peer links are open. Diagnostics shows whether scene import or clock sync is still pending.'
-        : `No other peers connected. Everyone needs the same code, ${this.options.virtual ? 'Virtual world' : 'Physical room'} mode and transport. The other mode uses a separate room.`,
+        : 'No other peers connected. Check the code and transport on both devices. Physical and virtual views share the same room.',
       diagnostics: this.diagnosticsView(),
       controls: {
         resetDisabled:
@@ -993,7 +997,7 @@ class Collaboration {
       this.consoleScript.setStatus(
         state.peerCount
           ? 'Collaboration connected. Continue editing the shared scene.'
-          : 'Room opened, but no peers are connected. Check that both devices use the same mode, code and transport.'
+          : 'Room opened, but no peers are connected. Check the code and transport on both devices; either view can join.'
       );
     }
     const key = JSON.stringify(state);
@@ -1101,7 +1105,7 @@ class Collaboration {
       state.rooms.notice ||
         (state.connected && !state.peerCount
           ? state.peerHint
-          : `${state.rooms.mode} mode. Codes are meeting identifiers, not passwords.`)
+          : 'One code works in either view. Codes are meeting identifiers, not passwords.')
     );
     setProperty(dom.collabJoinCode, 'value', state.rooms.input);
     setProperty(dom.collabJoinCode, 'disabled', state.rooms.startDisabled);
@@ -1112,7 +1116,7 @@ class Collaboration {
     setProperty(
       dom.collabIdentity,
       'textContent',
-      `${state.applied.name} · ${state.rooms.mode}`
+      `${state.applied.name} · ${state.rooms.mode} view`
     );
     setProperty(dom.collabTransport, 'value', state.draft.transport);
     setProperty(

@@ -141,7 +141,7 @@ export class CollaborationDiagnostics {
         .filter(Boolean)
         .join(', ') || 'none';
     return [
-      `${state.mode} | ${state.transport}`,
+      `View: ${state.mode} | ${state.transport}`,
       `Room: ${brief(state.roomId) || 'not joined'}`,
       `This peer: ${brief(state.localPeerId) || 'not joined'}`,
       `Other peers: ${state.peers.length} | channels: ${state.channelPeers.length}`,

@@ -16,6 +16,8 @@ The demo's exact `?collab=1` opt-in loads its collaboration UI after local scene
 
 The DOM panel and the existing spatial studio share one collaboration controller, including connection drafts, errors, participant state and actions. Connection keyboard edits are separate from authoring. Local microphone transmission, all incoming playback, and per-participant playback have distinct controls; listening mutes never invoke Gemini, acquire a microphone, change a remote mic announcement, or mute scene sounds. The demo uses netblocks' public playback hooks rather than accessing private audio nodes.
 
+The demo's room codes identify shared scenes independently of each participant's physical or virtual viewing setup. Both use `roomcraft:shared:<room>`; entering a code never requires matching the creator's `environment` URL parameter and does not change the recipient's local XR session mode. All peers must reload from earlier mode-separated builds before joining the common namespace. Shared scene coordinates still do not align real-world rooms.
+
 `RoomcraftNet` shares validated `SceneLayout` data, root placement, object transforms, selection indicators, and an authored-motion timeline without running a planner on receiving peers. Existing input and authoring controls still drive the same `Roomcraft` instance. Whole-scene edits use last-writer-wins overwrite semantics, and local Undo or Redo publishes a whole-scene write; concurrent work can be overwritten. The authored bounds and existing 60 KB message cap produce explicit sync errors rather than clamping or truncating. Numerical placement is shared, not physical alignment, calibration, or spatial anchoring.
 
 After initializing your Roomcraft instance and XR Blocks, join a session and add the bridge:

@@ -393,7 +393,7 @@ export class CollaborationSpatialView {
     setChanged(
       this.roomText,
       'text',
-      `${state.rooms.mode} | Room: ${state.applied.room || 'not joined'}`
+      `${state.rooms.mode} view | Room: ${state.applied.room || 'not joined'}`
     );
     setChanged(
       this.codeText,
