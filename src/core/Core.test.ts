@@ -34,11 +34,13 @@ type SimulatorLoader = () => Promise<
 
 describe('Core frame and simulator lifecycle', () => {
   let core: Core;
+  const simulatorLoader = vi.fn<SimulatorLoader>();
 
   beforeEach(async () => {
     await Core.instance?.dispose();
     Core.instance = undefined;
-    core = new Core();
+    simulatorLoader.mockReset();
+    core = new Core(simulatorLoader);
     core.options = new Options();
 
     core.renderer = {
@@ -207,47 +209,54 @@ describe('Core frame and simulator lifecycle', () => {
     ).mockResolvedValue();
     await core.init(core.options);
 
-    let finishInit: (() => void) | undefined;
-    scripts(core).initScript = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finishInit = resolve;
-        })
-    );
+    const moduleLoaded =
+      Promise.withResolvers<Awaited<ReturnType<SimulatorLoader>>>();
+    const initStarted = Promise.withResolvers<Script>();
+    const initialization = Promise.withResolvers<void>();
+    simulatorLoader.mockReturnValue(moduleLoaded.promise);
+    scripts(core).initScript = vi.fn((script: Script) => {
+      initStarted.resolve(script);
+      return initialization.promise;
+    });
     scripts(core).onSimulatorStarted = vi.fn();
-    const simulatorLoader = vi.fn<SimulatorLoader>(
-      () => import('../simulator/Simulator.js')
-    );
-    (core as unknown as {simulatorLoader: SimulatorLoader}).simulatorLoader =
-      simulatorLoader;
     expect(simulatorLoader).not.toHaveBeenCalled();
     expect(core.simulator).toBeUndefined();
 
-    const startSimulator = (
-      core as unknown as {startSimulator: () => Promise<void>}
-    ).startSimulator;
-
-    const firstStart = startSimulator();
-    const secondStart = startSimulator();
+    const firstStart = core.startSimulator();
+    const secondStart = core.startSimulator();
 
     expect(simulatorLoader).toHaveBeenCalledOnce();
-    // Cold runtime imports can outlast waitFor's default polling budget.
-    await simulatorLoader.mock.results[0].value;
-    await vi.waitFor(() =>
-      expect(scripts(core).initScript).toHaveBeenCalledOnce()
-    );
-    const initializingSimulator = vi.mocked(scripts(core).initScript).mock
-      .calls[0][0];
+    expect(scripts(core).initScript).not.toHaveBeenCalled();
     expect(core.simulatorRunning).toBe(false);
+    expect(scripts(core).onSimulatorStarted).not.toHaveBeenCalled();
+
+    // Await the real runtime import without polling a cold module graph.
+    moduleLoaded.resolve(await import('../simulator/Simulator.js'));
+    const initializingSimulator = await initStarted.promise;
+    const thirdStart = core.startSimulator();
+
+    expect(scripts(core).initScript).toHaveBeenCalledOnce();
+    expect(simulatorLoader).toHaveBeenCalledOnce();
+    expect(core.simulator).toBeUndefined();
+    expect(core.simulatorRunning).toBe(false);
+    expect(scripts(core).onSimulatorStarted).not.toHaveBeenCalled();
     expect(initializingSimulator.parent).toBe(core.xrSystemsGroup);
 
-    finishInit?.();
-    await Promise.all([firstStart, secondStart]);
+    initialization.resolve();
+    const startedSimulators = await Promise.all([
+      firstStart,
+      secondStart,
+      thirdStart,
+    ]);
+    for (const simulator of startedSimulators) {
+      expect(simulator).toBe(initializingSimulator);
+    }
 
+    expect(core.simulator).toBe(initializingSimulator);
     expect(core.simulatorRunning).toBe(true);
     expect(scripts(core).onSimulatorStarted).toHaveBeenCalledOnce();
 
-    await startSimulator();
+    await expect(core.startSimulator()).resolves.toBe(initializingSimulator);
 
     expect(scripts(core).initScript).toHaveBeenCalledOnce();
     expect(simulatorLoader).toHaveBeenCalledOnce();
