@@ -150,6 +150,16 @@ ignored after a claim, releases include a final canonical xform so all
 peers converge on the same resting position, and the sample shows how a
 grabber that loses ownership mid-drag should drop its local override.
 
+Explicit grabs carry a per-object logical claim counter. A grab after observing the previous claim uses a higher counter and takes over; crossed claims at the same counter select the lexicographically smaller peer ID on every peer. `obj.claim` records the last claim, including after release. Transform/release messages carry that generation, and catch-up snapshots preserve it so late joiners can take over normally. A snapshot without a claim cannot erase an observed generation. Legacy unstamped claims retain their previous arrival-order behavior; deterministic crossed-grab convergence requires every peer to run the updated build.
+
+To replicate an existing object's local transform without wrapping it, use
+`new NetObject({id: 'shared-object', object: existingObject})`. The readonly
+`netObject.object` is the supplied target, or the NetObject itself when omitted.
+Serialization, snapshot snaps, and interpolation operate directly on that
+target's position, quaternion, and scale: no reparenting, resource disposal, or
+per-frame transform-copy loop is needed. Keep the target under the equivalent
+parent coordinate system on every peer.
+
 ### NetEvents
 
 A typed pub/sub bus over the wire. `events.on(topic, handler)`,
@@ -166,6 +176,38 @@ always flows directly between browsers over a dedicated WebRTC peer
 connection, parented to each peer's `headPivot` via
 `THREE.PositionalAudio` so it spatializes naturally. Enable via
 `{voice: true}` in `joinRoom()` or `session.voice.enable(...)` later.
+
+`voice.setMuted(true)` silences outgoing microphone tracks while keeping incoming audio connected. `isMuted()` reports transmission state; `isEnabled()` reports whether microphone capture is acquired. Muting is retained when peers join or renegotiate, and unmuting does not request another stream. `disable()` is full teardown: it releases capture and audio connections and cancels a pending microphone grant. Listening-only peers can receive audio without enabling their microphone, independent of peer ID ordering.
+
+Use `voice.cancelPendingEnable()` to invalidate outstanding microphone permission requests without closing incoming connections or changing an already enabled microphone. Late-granted tracks from those requests are stopped. This is distinct from `disable()`, which intentionally closes the whole voice session.
+
+Incoming playback is separately controlled on `NetSession`:
+
+```ts
+session.setPlaybackMuted(true); // All incoming voice, for this listener only.
+session.playbackMuted; // Readonly master preference.
+session.setPeerPlaybackMuted(peerId, true); // A current session.users peer.
+session.isPeerPlaybackMuted(peerId); // Individual choice, ignoring master.
+```
+
+Both preferences default to false. A peer is silent when **master OR individual**
+mute is true, so turning master mute off preserves individual choices. Muting
+affects only the peer's existing spatial audio gain, never microphone capture,
+voice announcements, connections, the shared listener, or other scene sounds.
+New/replacement streams are gated before connecting, including when the listener
+initializes after preferences were set. Stream removal retains the choice; peer
+leave removes it. `close()` disposes the incoming graph and clears all playback
+preferences without disposing the shared listener. Applications can retain and
+reapply the master preference across sessions; display names are not peer identity.
+
+The setters emit a local `playback-state` `CustomEvent<PlaybackStateEventDetail>`
+only on preference changes: `{muted}` for master, `{peerId, muted}` for individual
+(not effective) mute. Observe `user-leave` / `close` for lifecycle resets.
+Mute arguments must be booleans and peer IDs non-empty strings (`TypeError`
+otherwise); setting a peer not in `session.users` throws `RangeError`.
+Reading an unknown/departed peer's individual choice returns false.
+
+`VoiceChatOptions.onLocalStateChange` retains its enable/disable semantics. The optional `onLocalMuteChange` reports mute changes separately, and `onError` reports capture or peer-connection failures. `NetSession` combines mic state into `local-voice-state`, exposes received mic intent through `peer-voice-state`, and forwards errors through `voice-error`. Mic intent is not proof that another person can hear audio. Applications can separately subscribe to `user-update` to refresh metadata that arrives after a peer's initial join.
 
 ---
 

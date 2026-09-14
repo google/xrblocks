@@ -77,6 +77,7 @@ vi.mock('../../../demos/roomcraft/GeminiVoice.js', () => {
 
 vi.mock('xrblocks', async () => ({
   ...(await import('../../core/Script')),
+  ...(await import('../../interaction/Interaction')),
   ...(await import('../../ai/AI')),
   ...(await import('../../ai/Gemini')),
   ...(await import('../../world/World')),
@@ -1400,6 +1401,14 @@ describe('Roomcraft demo integration', () => {
   });
 
   describe('spatial authoring', () => {
+    it('keeps example labels on one line inside their fixed-height buttons', () => {
+      expect(consoleScript.spatialStarters.length).toBeGreaterThan(0);
+      for (const starter of consoleScript.spatialStarters) {
+        expect(starter.style.whiteSpace).toBe('nowrap');
+        expect(starter.style.height).toBe('100%');
+      }
+    });
+
     it('waits for a tracked headset frame before placing or showing the studio', () => {
       camera.position.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);

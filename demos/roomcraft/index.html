@@ -70,6 +70,239 @@
         </p>
         <p id="error" class="rc-error" role="alert" hidden></p>
 
+        <section
+          id="collaboration"
+          class="rc-section"
+          aria-labelledby="collabHeading"
+          hidden
+        >
+          <h2 id="collabHeading" class="rc-heading">Collaboration</h2>
+          <p
+            id="collabStatus"
+            class="rc-collab-status"
+            role="status"
+            aria-live="polite"
+          >
+            Joining collaboration…
+          </p>
+          <p id="collabIdentity" class="rc-note rc-collab-identity"></p>
+          <div class="rc-row rc-row-wrap">
+            <p id="collabRoomCode" class="rc-note" role="status">
+              No room joined
+            </p>
+            <button id="collabCopyCode" class="rc-button" type="button">
+              Copy code
+            </button>
+          </div>
+          <details id="collabRooms" class="rc-collab-settings" open>
+            <summary id="collabRoomsSummary">Start or join a room</summary>
+            <div class="rc-collab-fields">
+              <label for="collabLobbyName">Name to use when joining</label>
+              <input id="collabLobbyName" maxlength="40" autocomplete="off" />
+              <button
+                id="collabStartRoom"
+                class="rc-button rc-button-primary"
+                type="button"
+              >
+                Start new room
+              </button>
+              <form id="collabJoinForm" class="rc-collab-fields" novalidate>
+                <label for="collabJoinCode"
+                  >Or enter a four-letter room code</label
+                >
+                <div class="rc-row">
+                  <input
+                    id="collabJoinCode"
+                    type="text"
+                    maxlength="4"
+                    placeholder="CODE"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-describedby="collabRoomNotice"
+                  />
+                  <button id="collabJoinRoom" class="rc-button" type="submit">
+                    Join
+                  </button>
+                </div>
+              </form>
+            </div>
+          </details>
+          <p id="collabRoomNotice" class="rc-fineprint" role="status"></p>
+          <div id="collabActions" class="rc-row rc-row-wrap">
+            <button id="collabRetry" class="rc-button" type="button">
+              Retry sync
+            </button>
+            <button id="collabLeave" class="rc-button" type="button">
+              Disconnect
+            </button>
+            <a
+              id="collabLink"
+              class="rc-button rc-collab-link"
+              target="_blank"
+              rel="noopener noreferrer"
+              referrerpolicy="no-referrer"
+              >Open peer link</a
+            >
+          </div>
+          <h3 class="rc-heading">Peer audio</h3>
+          <div class="rc-audio-actions">
+            <button
+              id="collabVoice"
+              class="rc-button"
+              type="button"
+              aria-pressed="false"
+              aria-describedby="collabVoiceStatus"
+            >
+              Unmute my mic
+            </button>
+            <button
+              id="collabPlayback"
+              class="rc-button"
+              type="button"
+              aria-pressed="false"
+              aria-describedby="collabPlaybackStatus"
+            >
+              Mute everyone for me
+            </button>
+          </div>
+          <p
+            id="collabVoiceStatus"
+            class="rc-note"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <p
+            id="collabPlaybackStatus"
+            class="rc-note"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <details id="collabSettings" class="rc-collab-settings">
+            <summary>
+              Connection settings
+              <span id="collabDraftIndicator" class="rc-draft-indicator" hidden
+                >Unapplied</span
+              >
+            </summary>
+            <form id="collabConnection" class="rc-collab-fields" novalidate>
+              <label for="collabTransport">Connection</label>
+              <select
+                id="collabTransport"
+                aria-describedby="collabTransportHelp"
+              >
+                <option value="broadcast">
+                  BroadcastChannel · same browser
+                </option>
+                <option value="webrtc">WebRTC · cross-device / off-LAN</option>
+                <option value="websocket">WebSocket · existing relay</option>
+              </select>
+              <p id="collabTransportHelp" class="rc-fineprint"></p>
+              <div id="collabRelayField" class="rc-collab-fields" hidden>
+                <label for="collabRelay"
+                  >Relay URL (no keys or credentials)</label
+                >
+                <input
+                  id="collabRelay"
+                  type="url"
+                  placeholder="wss://relay.example/roomcraft"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </div>
+              <label for="collabName">Your display name</label>
+              <input
+                id="collabName"
+                maxlength="40"
+                autocomplete="off"
+                required
+              />
+              <p id="collabDraftStatus" class="rc-note" role="status"></p>
+              <div class="rc-row rc-row-wrap">
+                <button id="collabConnect" class="rc-button" type="submit">
+                  Apply &amp; reconnect
+                </button>
+                <button
+                  id="collabReset"
+                  class="rc-button"
+                  type="button"
+                  title="Discard unapplied name, transport and relay edits. Restore applied values without reconnecting or changing the scene, prompt or audio."
+                >
+                  Discard changes
+                </button>
+              </div>
+            </form>
+            <p class="rc-fineprint">
+              Reconnect applies the name and transport without reloading your
+              local scene, and turns off your peer mic. Peers must use the same
+              room code and transport; their viewing setups can differ.
+            </p>
+            <p class="rc-fineprint">
+              Share the peer link for the applied connection. It contains no API
+              key or display name: the recipient starts as Maker #### and can
+              choose their own name here. Each peer configures Gemini
+              separately. Edits can overwrite concurrent changes; local undo
+              writes a whole scene. Shared coordinates do not align physical
+              rooms.
+            </p>
+          </details>
+          <h3 class="rc-heading">People</h3>
+          <ul
+            id="collabPeers"
+            class="rc-peers"
+            aria-label="Room participants"
+          ></ul>
+          <details id="collabDiagnostics" class="rc-collab-settings">
+            <summary>Diagnostics / local log</summary>
+            <p class="rc-fineprint">
+              Compare reports from both devices. Includes room, peer and object
+              IDs plus recent state changes, not names, prompts, keys, URLs,
+              audio, scene recipes or raw error text. Nothing is uploaded.
+            </p>
+            <pre id="collabDiagnosticsSummary" class="rc-diagnostics"></pre>
+            <div class="rc-row rc-row-wrap">
+              <button
+                id="collabDiagnosticsCopy"
+                class="rc-button"
+                type="button"
+              >
+                Copy diagnostics
+              </button>
+              <button
+                id="collabDiagnosticsDownload"
+                class="rc-button"
+                type="button"
+              >
+                Download diagnostics
+              </button>
+              <button
+                id="collabDiagnosticsRefresh"
+                class="rc-button"
+                type="button"
+              >
+                Refresh report
+              </button>
+            </div>
+            <p id="collabDiagnosticsNotice" class="rc-note" role="status"></p>
+            <pre
+              id="collabDiagnosticsHistory"
+              class="rc-diagnostics"
+              aria-label="Recent diagnostic state changes"
+            ></pre>
+            <p class="rc-fineprint">
+              Refresh only reads local state; it does not reconnect. The report
+              retains the last 64 state changes and resets when the page
+              reloads. Send counts are attempts, not delivery acknowledgements.
+            </p>
+          </details>
+          <p class="rc-fineprint">
+            Optional live conversation with peers, completely separate from
+            Gemini Talk transcription. Audio uses WebRTC with STUN on every
+            transport; restrictive NAT/firewalls may require TURN (not
+            configured). A mic-on indicator is not proof peers can hear you. Use
+            headphones.
+          </p>
+        </section>
+
         <section class="rc-section" aria-labelledby="aiHeading">
           <h2 id="aiHeading" class="rc-heading">Gemini</h2>
           <p id="connectionHelp" class="rc-note">
@@ -83,9 +316,10 @@
             Connect Gemini
           </button>
           <p class="rc-fineprint">
-            A browser API key is for local prototyping only. Voice audio is sent
-            only to Gemini for transcription, followed by the instruction and
-            scene layout for the edit. No camera imagery is sent.
+            A browser API key is for local prototyping only. Talk recordings are
+            sent only to Gemini for transcription, followed by the instruction
+            and scene layout for the edit. Peer voice is a separate control. No
+            camera imagery is sent.
           </p>
         </section>
 
@@ -236,6 +470,12 @@
       </div>
     </main>
 
-    <script type="module" src="./main.js"></script>
+    <script
+      type="module"
+      onerror="document.getElementById('status').textContent = 'Roomcraft startup could not load. Check the connection and reload this page.'"
+    >
+      import {startRoomcraftPage} from './Startup.js';
+      void startRoomcraftPage();
+    </script>
   </body>
 </html>

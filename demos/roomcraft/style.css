@@ -216,6 +216,192 @@
   color: var(--rc-ink-faint);
 }
 
+.rc-collab-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--rc-sage);
+}
+
+.rc-collab-status[data-state='syncing'] {
+  color: var(--rc-coral-strong);
+}
+
+.rc-collab-status[data-state='error'] {
+  color: var(--rc-danger);
+}
+
+.rc-collab-status[data-state='closed'] {
+  color: var(--rc-ink-faint);
+}
+
+.rc-collab-identity,
+.rc-peer {
+  overflow-wrap: anywhere;
+}
+
+.rc-peers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rc-peer {
+  display: flex;
+  flex-direction: column;
+  padding-left: 10px;
+  border-left: 3px solid var(--rc-peer-color, var(--rc-sage));
+}
+
+.rc-peer-name {
+  font-size: 13px;
+}
+
+.rc-peer-selection,
+.rc-peer-voice {
+  font-size: 11px;
+  color: var(--rc-ink-soft);
+}
+
+.rc-peer-mute {
+  align-self: flex-start;
+  margin-top: 5px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.rc-peer-mute[hidden] {
+  display: none;
+}
+
+.rc-collab-link {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.rc-collab-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.rc-collab-settings {
+  border: 1px solid var(--rc-line);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+.rc-collab-settings > summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.rc-collab-settings > summary:focus-visible {
+  outline: 2px solid var(--rc-coral);
+  outline-offset: 3px;
+}
+
+.rc-draft-indicator {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--rc-coral-strong);
+}
+
+.rc-draft-indicator[hidden] {
+  display: none;
+}
+
+#collabJoinCode {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+#collabRoomCode {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+  font-weight: 700;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+#collabCopyCode {
+  flex-shrink: 0;
+}
+
+#collabRoomNotice {
+  min-height: 2.8em;
+}
+
+#collabActions[hidden] {
+  display: none;
+}
+
+.rc-audio-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rc-audio-actions .rc-button {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.rc-collab-settings > .rc-collab-fields,
+.rc-collab-settings > .rc-fineprint {
+  margin-top: 12px;
+}
+
+.rc-diagnostics {
+  margin: 12px 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    11px/1.5 ui-monospace,
+    monospace;
+  color: var(--rc-ink-soft);
+  user-select: text;
+}
+
+#collabDiagnosticsNotice:not(:empty) {
+  margin-top: 8px;
+}
+
+.rc-collab-fields[hidden] {
+  display: none;
+}
+
+.rc-collab-fields input,
+.rc-collab-fields select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: 8px;
+  background: var(--rc-surface-raised);
+  color: var(--rc-ink);
+  font: inherit;
+}
+
+#collabVoice[aria-pressed='true'] {
+  border-color: var(--rc-sage);
+}
+
+#collabVoiceStatus[data-state='error'] {
+  color: var(--rc-danger);
+}
+
 .rc-scene-summary {
   margin: 0;
   font-size: 14px;
