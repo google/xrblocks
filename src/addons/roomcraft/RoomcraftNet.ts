@@ -24,6 +24,8 @@ import {
 const PREFIX = 'roomcraft:';
 const MAX_PENDING_LAYOUTS = 64;
 const SYNC_TIMEOUT_MS = 8000;
+const SYNC_RETRY_MS = 1000;
+const MAX_SYNC_ERROR_LENGTH = 512;
 const DISCOVERY_MS = 300;
 const activeSessions = new WeakSet<NetSession>();
 const continuation = new WeakMap<
@@ -39,6 +41,7 @@ const continuation = new WeakMap<
     clock: number;
     fingerprint: string;
     roomId?: string;
+    unpublished: boolean;
   }
 >();
 
@@ -91,10 +94,12 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   private clock = 0;
   private selectionSequence = 0;
   private syncSequence = 0;
+  private requestPrefix = '';
   private syncId = '';
   private readonly syncResponders = new Set<string>();
   private readonly readySyncPeers = new Set<string>();
   private syncTimer?: ReturnType<typeof setTimeout>;
+  private syncRetryTimer?: ReturnType<typeof setTimeout>;
   private bootstrapTimer?: ReturnType<typeof setTimeout>;
   private catchupTimer?: ReturnType<typeof setTimeout>;
   private bootstrapping = true;
@@ -112,6 +117,8 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   private registered = false;
   private disposed = false;
   private currentStatus: RoomcraftNetStatus = 'ready';
+  private unpublished = false;
+  private failureOperation?: string;
 
   constructor(
     readonly room: Roomcraft,
@@ -133,6 +140,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       this.queue.length +
       Number(
         this.applying ||
+          this.unpublished ||
           this.awaitingSync ||
           this.bootstrapping ||
           !!this.catchup ||
@@ -184,6 +192,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     }
     activeSessions.add(this.session);
     this.registered = true;
+    this.requestPrefix = this.api.makeId(12);
     this.interaction = interaction;
     this.rootBinding = new this.api.NetObject({object: this.room});
     class Binding extends this.api.NetObject {
@@ -208,12 +217,14 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       if (carried) {
         this.clock = carried.clock;
         this.currentRevision = {...carried.revision};
+        this.unpublished = carried.unpublished;
         if (carried.fingerprint !== this.fingerprint()) {
           this.currentRevision = {
             counter: sequence(Math.max(this.clock, 1) + 1),
             peerId: this.session.localPeerId,
           };
           this.clock = this.currentRevision.counter;
+          this.unpublished = true;
         }
       }
       this.motionClock = new RoomcraftClock(this.session, {
@@ -227,7 +238,12 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         initialTime: carried
           ? carried.elapsed + (performance.now() - carried.at) / 1000
           : 0,
-        onChange: () => this.refreshStatus(),
+        onChange: () =>
+          this.refreshStatus(
+            !this.unpublished &&
+              this.failureOperation === 'motion clock' &&
+              this.motionClock?.state.synchronized === true
+          ),
         onError: (error) => this.fail(error, 'motion clock'),
       });
       this.previousMotionSource = this.room.motionTimeSource;
@@ -258,18 +274,35 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       this.on('selection', (value, from) => this.receiveSelection(value, from));
       this.on('sync-request', (value, from) => {
         const id = peerId(record(value).id);
-        this.send(
-          'sync-state',
-          {
-            id,
-            snapshot: this.snapshot(),
-            selection: {
-              id: this.room.selectedId,
-              sequence: this.selectionSequence,
+        try {
+          this.send(
+            'sync-state',
+            {
+              id,
+              snapshot: this.snapshot(),
+              selection: {
+                id: this.room.selectedId,
+                sequence: this.selectionSequence,
+              },
             },
-          },
-          from
-        );
+            from
+          );
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.send(
+            'sync-error',
+            {
+              id,
+              reason: (message.trim() || 'Scene snapshot failed.').slice(
+                0,
+                MAX_SYNC_ERROR_LENGTH
+              ),
+            },
+            from
+          );
+          throw error;
+        }
         // A transport hello can precede the remote bridge's subscriptions.
         if (this.awaitingSync && !this.readySyncPeers.has(from)) {
           this.readySyncPeers.add(from);
@@ -279,14 +312,40 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       this.on('sync-state', (value, from) => {
         const data = record(value);
         if (data.id !== this.syncId || this.syncResponders.has(from)) return;
-        this.receiveLayout(data.snapshot, from, true);
-        this.receiveSelection(data.selection, from);
+        try {
+          this.receiveSelection(data.selection, from);
+          this.receiveLayout(data.snapshot, from, true);
+        } catch (error) {
+          this.syncResponders.add(from);
+          this.stopWaitingForSnapshot();
+          this.bootstrapping = false;
+          clearTimeout(this.bootstrapTimer);
+          throw error;
+        }
         this.syncResponders.add(from);
         this.bootstrapResponse = true;
-        this.awaitingSync = false;
-        clearTimeout(this.syncTimer);
+        this.stopWaitingForSnapshot();
         if (!this.applying && !this.queue.length) this.finishBootstrap();
         this.refreshStatus();
+      });
+      this.on('sync-error', (value, from) => {
+        const data = record(value);
+        if (data.id !== this.syncId || this.syncResponders.has(from)) return;
+        if (
+          typeof data.reason !== 'string' ||
+          !data.reason.trim() ||
+          data.reason.length > MAX_SYNC_ERROR_LENGTH
+        )
+          throw new Error('Invalid scene snapshot error response.');
+        this.syncResponders.add(from);
+        this.stopWaitingForSnapshot();
+        this.bootstrapping = false;
+        clearTimeout(this.bootstrapTimer);
+        this.fail(
+          new Error(`Peer "${from}" could not send its scene: ${data.reason}`),
+          'request sync',
+          from
+        );
       });
       this.on('objects-request', (value, from) => {
         const data = record(value);
@@ -361,16 +420,17 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   resync(): void {
     this.guard('request sync', () => {
       this.assertReady();
-      clearTimeout(this.syncTimer);
+      this.stopWaitingForSnapshot();
       clearTimeout(this.catchupTimer);
       this.catchup = undefined;
-      this.syncId = `${this.session.localPeerId}:${++this.syncSequence}`;
+      this.syncId = `${this.requestPrefix}:${++this.syncSequence}`;
       this.syncResponders.clear();
       this.readySyncPeers.clear();
+      if (this.unpublished) this.publishLocal();
       this.awaitingSync = this.session.users.size > 0;
       if (this.awaitingSync) {
         this.syncTimer = setTimeout(() => {
-          this.awaitingSync = false;
+          this.stopWaitingForSnapshot();
           this.bootstrapping = false;
           clearTimeout(this.bootstrapTimer);
           this.fail(
@@ -381,11 +441,32 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
           );
         }, SYNC_TIMEOUT_MS);
       }
-      this.send('sync-request', {id: this.syncId});
+      this.sendSnapshotRequest();
       this.sendSelection(this.room.selectedId);
       this.motionClock?.resync();
       this.refreshStatus(true);
     });
+  }
+
+  private stopWaitingForSnapshot(): void {
+    this.awaitingSync = false;
+    clearTimeout(this.syncTimer);
+    clearTimeout(this.syncRetryTimer);
+  }
+
+  private sendSnapshotRequest(): void {
+    const id = this.syncId;
+    try {
+      this.send('sync-request', {id});
+    } catch (error) {
+      this.stopWaitingForSnapshot();
+      throw error;
+    }
+    if (!this.awaitingSync || id !== this.syncId) return;
+    this.syncRetryTimer = setTimeout(() => {
+      if (!this.disposed && this.awaitingSync && id === this.syncId)
+        this.guard('request sync', () => this.sendSnapshotRequest());
+    }, SYNC_RETRY_MS);
   }
 
   override update(): void {
@@ -413,7 +494,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     this.disposed = true;
     this.lifetime.abort();
     if (this.registered) activeSessions.delete(this.session);
-    clearTimeout(this.syncTimer);
+    this.stopWaitingForSnapshot();
     clearTimeout(this.bootstrapTimer);
     clearTimeout(this.catchupTimer);
     if (this.motionClock) {
@@ -430,6 +511,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
           clock: this.clock,
           fingerprint: this.fingerprint(),
           roomId: this.options.roomId,
+          unpublished: this.unpublished,
         });
       }
       this.motionClock.dispose();
@@ -466,13 +548,18 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       counter: sequence(Math.max(this.clock, 1) + 1),
       peerId: this.session.localPeerId,
     };
-    const snapshot = this.snapshot(next);
-    this.send('layout', snapshot);
     this.currentRevision = next;
     this.clock = next.counter;
+    this.unpublished = true;
+    this.publishLocal();
     this.finishBootstrap();
     this.catchup = undefined;
     this.refreshStatus(true);
+  }
+
+  private publishLocal(): void {
+    this.send('layout', this.snapshot());
+    this.unpublished = false;
   }
 
   private onManipulation(id: string, event: ManipulationEvent): void {
@@ -686,6 +773,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
             }
           }
           this.currentRevision = snapshot.revision;
+          this.unpublished = false;
           this.motionClock!.adopt(snapshot.motion, pending.receivedAt);
           catchupFrom = from;
           this.bootstrapResponse = true;
@@ -720,7 +808,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       }
       from = alternate;
     }
-    const id = `${this.session.localPeerId}:${++this.syncSequence}`;
+    const id = `${this.requestPrefix}:${++this.syncSequence}`;
     this.catchup = {
       id,
       from,
@@ -878,7 +966,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   }
 
   private send(topic: string, payload: unknown, to?: string): void {
-    if (!this.api || !this.session.isOpen)
+    if (!this.api || !this.session.isOpen || !this.session.transport.isOpen)
       throw new Error('Roomcraft network session is closed.');
     const name = PREFIX + topic;
     const bytes = this.api.encodeMessage({
@@ -914,6 +1002,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
 
   private fail(cause: unknown, operation: string, peer?: string): void {
     const error = cause instanceof Error ? cause : new Error(String(cause));
+    this.failureOperation = operation;
     console.error(`[roomcraft:net] ${operation}`, error);
     if (!this.disposed) this.setStatus('error');
     this.dispatchEvent({type: 'error', error, operation, peerId: peer});
@@ -927,6 +1016,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
 
   private setStatus(status: RoomcraftNetStatus): void {
     this.currentStatus = status;
+    if (status === 'ready') this.failureOperation = undefined;
     this.dispatchEvent({
       type: 'statuschange',
       status,

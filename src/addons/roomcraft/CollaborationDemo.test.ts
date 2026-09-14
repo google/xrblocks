@@ -841,6 +841,48 @@ describe('collaboration panel', () => {
     consoleScript = await startRoomcraftDemo();
   });
 
+  it('clears recovered bridge failures without clearing unrelated errors', () => {
+    const controller = consoleScript.collaboration;
+    const sync = bridge();
+    dispatch(sync, {
+      type: 'error',
+      error: new Error('Clock response missing'),
+      operation: 'motion clock',
+    });
+    expect(controller.getState().error).toContain('Clock response missing');
+    sync.status = 'ready';
+    dispatch(sync, {type: 'statuschange'});
+    expect(controller.getState().error).toBe('');
+    controller.reportError(new Error('Clipboard denied'), 'copy room code');
+    dispatch(sync, {type: 'statuschange'});
+    expect(controller.getState().error).toContain('Clipboard denied');
+  });
+
+  it('allows corrective edits for blocked publication while retaining active-operation guards', async () => {
+    const controller = consoleScript.collaboration;
+    const sync = bridge();
+    sync.status = 'error';
+    sync.pendingCount = 1;
+    dispatch(sync, {type: 'statuschange'});
+    expect(controller.getState().pending).toBe(1);
+    expect(controller.busy).toBe(false);
+    expect(consoleScript.isBusy()).toBe(false);
+    consoleScript.room.selectedId = 'chair';
+    consoleScript.room.applyPlan = vi.fn().mockResolvedValue(undefined);
+    await consoleScript.removeSelected();
+    expect(consoleScript.room.applyPlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        edits: [{op: 'remove', id: 'chair'}],
+      })
+    );
+    sync.status = 'syncing';
+    dispatch(sync, {type: 'statuschange'});
+    expect(controller.busy).toBe(true);
+    sync.status = 'error';
+    consoleScript.room.busy = true;
+    expect(consoleScript.isBusy()).toBe(true);
+  });
+
   it('discards unapplied settings without reconnecting or changing audio/authoring', async () => {
     const controller = consoleScript.collaboration;
     const prompt = element('prompt') as HTMLTextAreaElement;

@@ -11,6 +11,7 @@ import {
 import {Roomcraft} from './Roomcraft';
 import {createDefaultCatalog} from './Catalog';
 import {RoomcraftNet} from './RoomcraftNet';
+import {record} from './RoomcraftNetProtocol';
 import type {
   RoomcraftOptions,
   SceneCatalogObject,
@@ -802,6 +803,351 @@ describe('RoomcraftNet', () => {
     expect(a.collaboration.status).toBe('error');
     expect(layouts(bus)).toHaveLength(0);
     expect(a.room.getObject('chair')!.position.x).toBe(20);
+  });
+
+  it('shares a newly created object after another object moves slightly below the scene origin', async () => {
+    const bus = new Bus();
+    const quest = await peer(bus, 'quest');
+    const laptop = await peer(bus, 'laptop');
+    await bus.settle();
+    const errors = vi.fn();
+    quest.collaboration.addEventListener('error', errors);
+    laptop.collaboration.addEventListener('error', errors);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    manipulate(quest.room, 'start');
+    await bus.settle();
+    quest.room.getObject('chair')!.position.y = -0.007683446861092402;
+    quest.session.update();
+    await bus.settle();
+    binding(laptop).stepInterpolation(1);
+    manipulate(quest.room, 'end');
+    await bus.settle();
+    await quest.room.applyPlan({
+      title: 'Room with cat',
+      edits: [
+        {
+          op: 'add',
+          object: {...chair('cat'), name: 'Cat', position: [0, 0.85, 0]},
+        },
+      ],
+    });
+    quest.room.select('cat');
+    await bus.settle();
+    expect(laptop.collaboration.remoteSelections.get('quest')).toBe('cat');
+    expect(laptop.room.getObject('cat')).toBeDefined();
+    expect(laptop.room.layout).toEqual(quest.room.layout);
+    expect(laptop.room.getObject('chair')!.position.y).toBe(
+      -0.007683446861092402
+    );
+    laptop.collaboration.resync();
+    await bus.settle();
+    expect(laptop.room.layout).toEqual(quest.room.layout);
+    expect(errors).not.toHaveBeenCalled();
+    expect(quest.planner).not.toHaveBeenCalled();
+    expect(laptop.planner).not.toHaveBeenCalled();
+  });
+
+  it('reports a peer snapshot rejection immediately instead of replacing it with a timeout', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errors = vi.fn();
+    b.collaboration.addEventListener('error', errors);
+    a.room.getObject('chair')!.position.y = -11;
+    b.collaboration.resync();
+    await bus.settle();
+    expect(errors).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'request sync',
+        peerId: 'a',
+        error: expect.objectContaining({
+          message: expect.stringContaining('Object "chair" position.y'),
+        }),
+      })
+    );
+    expect(b.collaboration.pendingCount).toBe(0);
+    a.room.getObject('chair')!.position.y = -0.01;
+    b.collaboration.resync();
+    await bus.settle();
+    expect(b.room.getObject('chair')!.position.y).toBe(-0.01);
+    expect(b.collaboration.status).toBe('ready');
+  });
+
+  it('retries a missing snapshot reply using the same request and stops once it arrives', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
+    try {
+      const emit = a.session.events.emitTo.bind(a.session.events);
+      let drop = true;
+      vi.spyOn(a.session.events, 'emitTo').mockImplementation(
+        (to, topic, payload) => {
+          if (topic === 'roomcraft:sync-state' && drop) {
+            drop = false;
+            return;
+          }
+          emit(to, topic, payload);
+        }
+      );
+      bus.sent.length = 0;
+      b.collaboration.resync();
+      await bus.settle();
+      expect(b.collaboration.status).toBe('syncing');
+      await vi.advanceTimersByTimeAsync(1000);
+      await bus.settle();
+      expect(b.collaboration.status).toBe('ready');
+      const requests = () =>
+        bus.sent.flatMap(({from, message}) =>
+          from === 'b' &&
+          message.type === 'rpc' &&
+          message.topic === 'roomcraft:sync-request'
+            ? [message.payload]
+            : []
+        );
+      expect(requests()).toHaveLength(2);
+      expect(requests()[1]).toEqual(requests()[0]);
+      await vi.advanceTimersByTimeAsync(2000);
+      await bus.settle();
+      expect(requests()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a received snapshot validation error instead of later reporting that no reply arrived', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errors = vi.fn();
+    b.collaboration.addEventListener('error', errors);
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
+    try {
+      const emit = a.session.events.emitTo.bind(a.session.events);
+      vi.spyOn(a.session.events, 'emitTo').mockImplementation(
+        (to, topic, payload) => {
+          if (topic === 'roomcraft:sync-state') {
+            const data = record(payload);
+            emit(to, topic, {
+              ...data,
+              snapshot: {
+                ...record(data.snapshot),
+                layout: {
+                  title: 'Invalid',
+                  objects: [{...chair(), position: [11, 0, 0]}],
+                },
+              },
+            });
+          } else emit(to, topic, payload);
+        }
+      );
+      b.collaboration.resync();
+      await bus.settle();
+      expect(b.collaboration.pendingCount).toBe(0);
+      expect(errors).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: expect.stringContaining('Object "chair" position.x'),
+          }),
+        })
+      );
+      await vi.advanceTimersByTimeAsync(8001);
+      await bus.settle();
+      expect(
+        errors.mock.calls.some(([event]) =>
+          event.error.message.includes('No scene snapshot arrived')
+        )
+      ).toBe(false);
+      expect(b.room.layout.title).toBe('Room');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ignores snapshot errors from a disposed bridge request', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    const oldRequest = bus.sent
+      .flatMap(({from, message}) =>
+        from === 'b' &&
+        message.type === 'rpc' &&
+        message.topic === 'roomcraft:sync-request'
+          ? [record(message.payload).id]
+          : []
+      )
+      .at(-1);
+    expect(typeof oldRequest).toBe('string');
+    b.collaboration.dispose();
+    const replacement = new RoomcraftNet(b.room, b.session);
+    bridges.push(replacement);
+    await replacement.init({interaction: b.interaction});
+    const errors = vi.fn();
+    replacement.addEventListener('error', errors);
+    a.session.events.emitTo('b', 'roomcraft:sync-error', {
+      id: oldRequest,
+      reason: 'Stale failure',
+    });
+    await bus.settle();
+    expect(errors).not.toHaveBeenCalled();
+    expect(replacement.status).toBe('ready');
+    const latest = bus.sent
+      .flatMap(({from, message}) =>
+        from === 'b' &&
+        message.type === 'rpc' &&
+        message.topic === 'roomcraft:sync-request'
+          ? [record(message.payload).id]
+          : []
+      )
+      .at(-1);
+    expect(latest).not.toBe(oldRequest);
+  });
+
+  it.each([null, '', 'x'.repeat(513)])(
+    'rejects malformed snapshot error reasons',
+    async (reason) => {
+      const bus = new Bus();
+      const a = await peer(bus, 'a');
+      const b = await peer(bus, 'b');
+      await bus.settle();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const emit = a.session.events.emitTo.bind(a.session.events);
+      vi.spyOn(a.session.events, 'emitTo').mockImplementation(
+        (to, topic, payload) => {
+          if (topic !== 'roomcraft:sync-state') emit(to, topic, payload);
+        }
+      );
+      b.collaboration.resync();
+      await bus.settle();
+      const id = bus.sent
+        .flatMap(({from, message}) =>
+          from === 'b' &&
+          message.type === 'rpc' &&
+          message.topic === 'roomcraft:sync-request'
+            ? [record(message.payload).id]
+            : []
+        )
+        .at(-1);
+      const errors = vi.fn();
+      b.collaboration.addEventListener('error', errors);
+      a.session.events.emitTo('b', 'roomcraft:sync-error', {id, reason});
+      await bus.settle();
+      expect(errors).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: 'Invalid scene snapshot error response.',
+          }),
+        })
+      );
+    }
+  );
+
+  it('cancels pending snapshot retransmission when the bridge is disposed', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
+    try {
+      const emit = a.session.events.emitTo.bind(a.session.events);
+      vi.spyOn(a.session.events, 'emitTo').mockImplementation(
+        (to, topic, payload) => {
+          if (topic !== 'roomcraft:sync-state') emit(to, topic, payload);
+        }
+      );
+      b.collaboration.resync();
+      await bus.settle();
+      b.collaboration.dispose();
+      bus.sent.length = 0;
+      await vi.advanceTimersByTimeAsync(3000);
+      await bus.settle();
+      expect(
+        bus.sent.filter(
+          ({from, message}) =>
+            from === 'b' &&
+            message.type === 'rpc' &&
+            message.topic === 'roomcraft:sync-request'
+        )
+      ).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('returns to ready when a timed-out motion clock later recovers', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    await a.room.applyPlan({title: 'Established clock', edits: []});
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    expect(b.collaboration.motionClockState?.authority).toBe('a');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
+    try {
+      const emit = a.session.events.emitTo.bind(a.session.events);
+      const drop = vi
+        .spyOn(a.session.events, 'emitTo')
+        .mockImplementation((to, topic, payload) => {
+          if (topic !== 'roomcraft:clock-reply') emit(to, topic, payload);
+        });
+      b.collaboration.resync();
+      await bus.settle();
+      await vi.advanceTimersByTimeAsync(8001);
+      await bus.settle();
+      expect(b.collaboration.status).toBe('error');
+      drop.mockRestore();
+      await vi.advanceTimersByTimeAsync(5000);
+      await bus.settle();
+      expect(b.collaboration.motionClockState?.synchronized).toBe(true);
+      expect(b.collaboration.status).toBe('ready');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not overwrite an unsent local edit with older peer state during retry or reconnect', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    a.room.getObject('chair')!.position.x = 11;
+    await a.room.applyPlan({
+      title: 'Local cat not yet shared',
+      edits: [{op: 'add', object: chair('cat')}],
+    });
+    expect(a.collaboration.status).toBe('error');
+    a.collaboration.resync();
+    await bus.settle();
+    expect(a.room.getObject('cat')).toBeDefined();
+    expect(a.room.getObject('chair')!.position.x).toBe(11);
+    expect(a.collaboration.status).toBe('error');
+    a.collaboration.dispose();
+    a.session.close();
+    const session = new NetSession(
+      new TestTransport(bus, 'a2'),
+      new THREE.Group()
+    );
+    sessions.push(session);
+    await session.open('room');
+    const replacement = new RoomcraftNet(a.room, session);
+    bridges.push(replacement);
+    await replacement.init({interaction: a.interaction});
+    await bus.settle();
+    expect(a.room.getObject('cat')).toBeDefined();
+    expect(replacement.status).toBe('error');
+    a.room.getObject('chair')!.position.x = 1;
+    replacement.resync();
+    await bus.settle();
+    expect(b.room.getObject('cat')).toBeDefined();
+    expect(b.room.layout).toEqual(a.room.layout);
+    expect(replacement.status).toBe('ready');
   });
 
   it('reports a legal Unicode scene that exceeds the encoded transport byte limit', async () => {

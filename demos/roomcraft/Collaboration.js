@@ -157,6 +157,7 @@ class Collaboration {
     this.disposed = false;
     this.failure = '';
     this.failureOperation = '';
+    this.failureFromBridge = false;
     this.voiceFailure = '';
     this.voiceRequest = 0;
     this.voicePending = false;
@@ -379,7 +380,8 @@ class Collaboration {
       !this.disposed &&
       (this.joining ||
         this.bridge?.status === 'syncing' ||
-        (this.bridge?.pendingCount ?? 0) > 0)
+        (this.bridge?.status !== 'error' &&
+          (this.bridge?.pendingCount ?? 0) > 0))
     );
   }
 
@@ -454,9 +456,17 @@ class Collaboration {
         if (current()) this.leave();
       });
       listen(this.bridge, 'selectionchange', () => this.renderRoster());
-      listen(this.bridge, 'statuschange', () => this.render());
-      listen(this.bridge, 'error', ({error, operation}) =>
-        this.reportError(error, operation)
+      listen(this.bridge, 'statuschange', () => {
+        if (!current()) return;
+        if (this.bridge.status === 'ready' && this.failureFromBridge)
+          this.clearFailure();
+        this.render();
+      });
+      listen(
+        this.bridge,
+        'error',
+        ({error, operation}) =>
+          current() && this.reportError(error, operation, true)
       );
       xb.add(this.bridge);
       await xb.initScript(this.bridge);
@@ -514,6 +524,7 @@ class Collaboration {
     }
     this.failure = '';
     this.failureOperation = '';
+    this.failureFromBridge = false;
     this.invalidConfiguration = false;
   }
 
@@ -621,13 +632,14 @@ class Collaboration {
     this.render();
   }
 
-  reportError(error, operation = 'sync') {
+  reportError(error, operation = 'sync', fromBridge = false) {
     if (this.disposed) return;
     this.invalidConfiguration = operation === 'configuration';
     if (this.invalidConfiguration) {
       setProperty(this.dom.collabSettings, 'open', true);
     }
     this.failureOperation = operation;
+    this.failureFromBridge = fromBridge;
     this.failure = `Collaboration ${operation}: ${error?.message ?? String(error)}`;
     this.consoleScript.showError(new Error(this.failure));
     this.consoleScript.setStatus(
