@@ -112,6 +112,17 @@ function initialState() {
     },
     listening: {muted: false, disabled: false},
     participants: [participant(0, true), participant(1)],
+    peerCount: 1,
+    peerHint: 'Check the same mode, code and transport on both devices.',
+    diagnostics: {
+      summary:
+        'Physical room | broadcast\nRoom: roomcraft:room:studio\nOther peers: 1',
+      recent: '',
+      events: 3,
+      notice: '',
+      disabled: false,
+      copying: false,
+    },
   };
 }
 
@@ -135,6 +146,8 @@ class Controller {
   startRoom = vi.fn();
   joinRoom = vi.fn();
   copyCode = vi.fn();
+  copyDiagnostics = vi.fn();
+  refreshDiagnostics = vi.fn();
   setJoinCode = vi.fn((value: string) => {
     this.state.rooms.input = value.toUpperCase().replace(/[^A-Z]/g, '');
     this.emit();
@@ -539,7 +552,7 @@ describe('Roomcraft collaboration spatial view', () => {
       }));
       attach();
       activate('tab');
-      for (const section of ['people', 'settings', 'rooms']) {
+      for (const section of ['people', 'settings', 'rooms', 'diagnostics']) {
         activate(section);
         const used = fixedHeight(view.panel);
         expect(used).toBeLessThanOrEqual(800);
@@ -555,6 +568,30 @@ describe('Roomcraft collaboration spatial view', () => {
       ).toBeLessThanOrEqual(view.roomsPanel.style.height);
     }
   );
+
+  it('shows the shared local diagnostics without invoking connection or authoring actions', () => {
+    attach();
+    host.setPrompt('keep this draft');
+    activate('diagnostics');
+    expect(view.diagnosticText.text).toContain('Physical room');
+    expect(view.diagnosticText.style.whiteSpace).toBe('pre-line');
+    expect(view.diagnosticText.style.verticalAlign).toBe('top');
+    expect(view.diagnosticsPanel.style.display).toBe('flex');
+    activate('copy-diagnostics');
+    activate('refresh-diagnostics');
+    expect(controller.copyDiagnostics).toHaveBeenCalledOnce();
+    expect(controller.refreshDiagnostics).toHaveBeenCalledOnce();
+    expect(controller.reconnect).not.toHaveBeenCalled();
+    expect(controller.retry).not.toHaveBeenCalled();
+    expect(controller.toggleVoice).not.toHaveBeenCalled();
+    expect(host.promptValue).toBe('keep this draft');
+    controller.state.diagnostics.copying = true;
+    controller.state.diagnostics.notice =
+      'Copy unavailable. Download in browser controls.';
+    controller.emit();
+    expect(control('copy-diagnostics').disabled).toBe(true);
+    expect(view.diagnosticNotice.text).toContain('Copy unavailable');
+  });
 
   it('does no label, disabled, style or tree writes for unchanged view snapshots', () => {
     attach();

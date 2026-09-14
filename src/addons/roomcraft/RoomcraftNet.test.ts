@@ -203,6 +203,169 @@ afterEach(() => {
 });
 
 describe('RoomcraftNet', () => {
+  it('does not publish a joiner default scene while transport discovery is delayed', async () => {
+    const bus = new Bus();
+    const host = await peer(bus, 'a', {
+      title: 'Saved cat scene',
+      objects: [chair('cat')],
+    });
+    await vi.waitFor(() => expect(host.collaboration.status).toBe('ready'));
+    const joiner = new Roomcraft();
+    rooms.push(joiner);
+    await joiner.applyLayout({title: 'Empty joiner', objects: []});
+    const transport = new TestTransport(bus, 'z');
+    const session = new NetSession(transport, new THREE.Group());
+    sessions.push(session);
+    await session.open('room');
+    // WebRTC signaling can open before any data channels or peer hello messages arrive.
+    transport.remotePeerIds.clear();
+    const bridge = new RoomcraftNet(joiner, session, {seedLocalScene: false});
+    bridges.push(bridge);
+    await bridge.init({interaction: host.interaction});
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect.soft(bridge.diagnostics.revision.counter).toBe(0);
+    await bus.settle();
+    expect(host.room.layout.title).toBe('Saved cat scene');
+    expect(joiner.getObject('cat')).toBeDefined();
+    expect(joiner.layout).toEqual(host.room.layout);
+    expect(bridge.status).toBe('ready');
+  });
+
+  it('keeps an unanswered Join passive after its snapshot timeout', async () => {
+    const bus = new Bus();
+    const local = await peer(bus, 'a');
+    local.collaboration.dispose();
+    const blank = new Roomcraft();
+    rooms.push(blank);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
+    try {
+      const bridge = new RoomcraftNet(blank, local.session, {
+        seedLocalScene: false,
+      });
+      bridges.push(bridge);
+      await bridge.init({interaction: local.interaction});
+      await vi.advanceTimersByTimeAsync(8400);
+      expect(bridge.status).toBe('error');
+      expect(bridge.diagnostics.revision.counter).toBe(0);
+      expect(bridge.diagnostics.seedLocalScene).toBe(false);
+      bridge.resync();
+      expect(bridge.status).toBe('syncing');
+      expect(bridge.diagnostics.revision.counter).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let two passive joiners seed each other before the creator becomes reachable', async () => {
+    const bus = new Bus();
+    const host = await peer(bus, 'a', {
+      title: 'Saved cat scene',
+      objects: [chair('cat')],
+    });
+    await vi.waitFor(() => expect(host.collaboration.status).toBe('ready'));
+    const delayed: Array<() => void> = [];
+    let holdHost = true;
+    bus.receive = (id, deliver) => {
+      if (holdHost && id === 'a') delayed.push(deliver);
+      else deliver();
+    };
+    const joiners = [];
+    for (const id of ['y', 'z']) {
+      const room = new Roomcraft();
+      rooms.push(room);
+      const session = new NetSession(
+        new TestTransport(bus, id),
+        new THREE.Group()
+      );
+      sessions.push(session);
+      await session.open('room');
+      const bridge = new RoomcraftNet(room, session, {seedLocalScene: false});
+      bridges.push(bridge);
+      await bridge.init({interaction: host.interaction});
+      joiners.push({room, bridge});
+    }
+    await bus.settle();
+    for (const {bridge} of joiners)
+      expect.soft(bridge.diagnostics.revision.counter).toBe(0);
+    holdHost = false;
+    for (const deliver of delayed) deliver();
+    await bus.settle();
+    expect(host.room.layout.title).toBe('Saved cat scene');
+    for (const {room, bridge} of joiners) {
+      expect(room.getObject('cat')).toBeDefined();
+      expect(bridge.status).toBe('ready');
+    }
+  });
+
+  it('lets an explicit creator seed a scene when passive joiners already exist', async () => {
+    const bus = new Bus();
+    const waitingRoom = new Roomcraft();
+    rooms.push(waitingRoom);
+    const waitingSession = new NetSession(
+      new TestTransport(bus, 'z'),
+      new THREE.Group()
+    );
+    sessions.push(waitingSession);
+    await waitingSession.open('room');
+    const interaction = {cancelObject: vi.fn()};
+    const waiting = new RoomcraftNet(waitingRoom, waitingSession, {
+      seedLocalScene: false,
+    });
+    bridges.push(waiting);
+    await waiting.init({interaction});
+    const creatorRoom = new Roomcraft();
+    rooms.push(creatorRoom);
+    await creatorRoom.applyLayout({
+      title: 'Creator scene',
+      objects: [chair('cat')],
+    });
+    const creatorSession = new NetSession(
+      new TestTransport(bus, 'a'),
+      new THREE.Group()
+    );
+    sessions.push(creatorSession);
+    await creatorSession.open('room');
+    const creator = new RoomcraftNet(creatorRoom, creatorSession, {
+      seedLocalScene: true,
+    });
+    bridges.push(creator);
+    await creator.init({interaction});
+    await bus.settle();
+    expect(creatorRoom.getObject('cat')).toBeDefined();
+    expect(waitingRoom.layout).toEqual(creatorRoom.layout);
+    expect(waiting.status).toBe('ready');
+  });
+
+  it('exposes detached payload-free diagnostics for scene requests and revision changes', async () => {
+    const bus = new Bus();
+    const a = await peer(bus, 'a');
+    const b = await peer(bus, 'b');
+    await bus.settle();
+    const changed = vi.fn();
+    b.collaboration.addEventListener('diagnosticschange', changed);
+    await a.room.applyPlan({title: 'Private authored scene', edits: []});
+    await bus.settle();
+    const state = b.collaboration.diagnostics;
+    expect(state.status).toBe('ready');
+    expect(state.revision).toEqual(a.collaboration.diagnostics.revision);
+    expect(state.messages.received).toBeGreaterThan(0);
+    expect(state.waitingForSnapshot).toBe(false);
+    expect(state.applyingLayout).toBe(false);
+    expect(changed).toHaveBeenCalled();
+    expect(JSON.stringify(state)).not.toContain('Private authored scene');
+    state.revision.counter = 1000;
+    state.messages.received = 1000;
+    expect(b.collaboration.diagnostics.revision.counter).not.toBe(1000);
+    expect(b.collaboration.diagnostics.messages.received).not.toBe(1000);
+    b.collaboration.dispose();
+    expect(b.collaboration.diagnostics.status).toBe('closed');
+    const afterDispose = changed.mock.calls.length;
+    await a.room.applyPlan({title: 'Later scene', edits: []});
+    await bus.settle();
+    expect(changed).toHaveBeenCalledTimes(afterDispose);
+  });
+
   it('keeps the existing clock authority when replacing a lower-ID follower bridge', async () => {
     const bus = new Bus();
     const leader = await peer(bus, 'z');

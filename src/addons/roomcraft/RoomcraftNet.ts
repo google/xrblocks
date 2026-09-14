@@ -47,10 +47,29 @@ const continuation = new WeakMap<
 
 export type RoomcraftNetStatus = 'ready' | 'syncing' | 'error' | 'closed';
 
+/** Local inspection metadata only; no scene contents, prompts or message payloads. */
+export interface RoomcraftNetDiagnostics {
+  protocol: 2;
+  status: RoomcraftNetStatus;
+  revision: {counter: number; peerId: string};
+  queuedLayouts: number;
+  applyingLayout: boolean;
+  unpublishedLayout: boolean;
+  waitingForSnapshot: boolean;
+  waitingForObjects: boolean;
+  discovering: boolean;
+  seedLocalScene: boolean;
+  heldObjects: number;
+  /** Send counts describe local transport submissions, not delivery acknowledgements. */
+  messages: {sent: number; received: number};
+  lastMessage?: {direction: 'send' | 'receive'; topic: string};
+}
+
 export interface RoomcraftNetEventMap extends THREE.Object3DEventMap {
   statuschange: {status: RoomcraftNetStatus; pendingCount: number};
   error: {error: Error; operation: string; peerId?: string};
   selectionchange: {peerId: string; id: string | null};
+  diagnosticschange: {direction: 'send' | 'receive'; topic: string};
 }
 
 interface PendingLayout {
@@ -119,13 +138,25 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   private currentStatus: RoomcraftNetStatus = 'ready';
   private unpublished = false;
   private failureOperation?: string;
+  private readonly messageCounts = {sent: 0, received: 0};
+  private lastMessage?: RoomcraftNetDiagnostics['lastMessage'];
 
   constructor(
     readonly room: Roomcraft,
     readonly session: NetSession,
-    private readonly options: {roomId?: string} = {}
+    private readonly options: {
+      roomId?: string;
+      /** True for Start, false for Join; omission retains legacy discovery behavior. */
+      seedLocalScene?: boolean;
+    } = {}
   ) {
     super();
+    if (
+      options.seedLocalScene !== undefined &&
+      typeof options.seedLocalScene !== 'boolean'
+    ) {
+      throw new Error('seedLocalScene must be a boolean.');
+    }
     this.name = 'RoomcraftNet';
     this.currentRevision = {counter: 0, peerId: session.localPeerId};
   }
@@ -157,6 +188,25 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
   /** Estimated shared playback timing; uncertainty is based on network round trips. */
   get motionClockState() {
     return this.motionClock?.state;
+  }
+
+  /** A detached diagnostic snapshot. Reading it does not send data or change the scene. */
+  get diagnostics(): RoomcraftNetDiagnostics {
+    return {
+      protocol: 2,
+      status: this.status,
+      revision: {...this.currentRevision},
+      queuedLayouts: this.queue.length,
+      applyingLayout: this.applying,
+      unpublishedLayout: this.unpublished,
+      waitingForSnapshot: this.awaitingSync,
+      waitingForObjects: !!this.catchup,
+      discovering: this.bootstrapping,
+      seedLocalScene: this.options.seedLocalScene !== false,
+      heldObjects: this.held.size,
+      messages: {...this.messageCounts},
+      ...(this.lastMessage ? {lastMessage: {...this.lastMessage}} : {}),
+    };
   }
 
   /** Matching roster/outline colors, distinct for the first eight room peers. */
@@ -227,6 +277,13 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
           this.unpublished = true;
         }
       }
+      if (
+        this.options.seedLocalScene === true &&
+        this.currentRevision.counter === 0
+      ) {
+        this.currentRevision = {...this.currentRevision, counter: 1};
+        this.clock = Math.max(this.clock, 1);
+      }
       this.motionClock = new RoomcraftClock(this.session, {
         epoch: carried?.epoch ?? this.api.makeId(),
         authority: carried
@@ -274,6 +331,12 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       this.on('selection', (value, from) => this.receiveSelection(value, from));
       this.on('sync-request', (value, from) => {
         const id = peerId(record(value).id);
+        // An unseeded joiner has no authoritative scene to offer another joiner.
+        if (
+          this.options.seedLocalScene === false &&
+          this.currentRevision.counter === 0
+        )
+          return;
         try {
           this.send(
             'sync-state',
@@ -313,6 +376,11 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         const data = record(value);
         if (data.id !== this.syncId || this.syncResponders.has(from)) return;
         try {
+          if (
+            this.options.seedLocalScene === false &&
+            revision(record(data.snapshot).revision).counter === 0
+          )
+            return;
           this.receiveSelection(data.selection, from);
           this.receiveLayout(data.snapshot, from, true);
         } catch (error) {
@@ -351,6 +419,11 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         const data = record(value);
         const id = peerId(data.id);
         const requested = revision(data.revision);
+        if (
+          this.options.seedLocalScene === false &&
+          this.currentRevision.counter === 0
+        )
+          return;
         if (compareRevision(requested, this.currentRevision) !== 0) {
           this.send('layout', this.snapshot(), from);
           return;
@@ -402,7 +475,9 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         if (!this.bootstrapping || this.disposed) return;
         if (
           !this.session.users.size &&
-          !this.session.transport.remotePeerIds.size
+          !this.session.transport.remotePeerIds.size &&
+          (this.options.seedLocalScene !== false ||
+            this.currentRevision.counter > 0)
         ) {
           this.finishBootstrap();
         } else {
@@ -427,7 +502,10 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
       this.syncResponders.clear();
       this.readySyncPeers.clear();
       if (this.unpublished) this.publishLocal();
-      this.awaitingSync = this.session.users.size > 0;
+      this.awaitingSync =
+        this.session.users.size > 0 ||
+        (this.options.seedLocalScene === false &&
+          this.currentRevision.counter === 0);
       if (this.awaitingSync) {
         this.syncTimer = setTimeout(() => {
           this.stopWaitingForSnapshot();
@@ -651,6 +729,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
         'Unsupported Roomcraft network version. Reload all peers to the same build.'
       );
     const stamp = revision(data.revision);
+    if (this.options.seedLocalScene === false && stamp.counter === 0) return;
     const motion = readMotionClock(data.motion);
     this.motionClock?.reconcile(motion, performance.now());
     const order = compareRevision(stamp, this.currentRevision);
@@ -886,6 +965,11 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
 
   private finishBootstrap(): void {
     if (!this.bootstrapping) return;
+    if (
+      this.options.seedLocalScene === false &&
+      this.currentRevision.counter === 0
+    )
+      return;
     this.bootstrapping = false;
     clearTimeout(this.bootstrapTimer);
     if (this.currentRevision.counter === 0) {
@@ -960,6 +1044,7 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     this.cleanups.push(
       this.session.events.on(PREFIX + topic, (value, from) => {
         if (this.disposed || from === this.session.localPeerId) return;
+        this.recordMessage('receive', topic);
         this.guard(`receive ${topic}`, () => handler(value, from), from);
       })
     );
@@ -984,6 +1069,15 @@ export class RoomcraftNet extends Script<RoomcraftNetEventMap> {
     }
     if (to) this.session.events.emitTo(to, name, payload);
     else this.session.events.emit(name, payload);
+    this.recordMessage('send', topic);
+  }
+
+  private recordMessage(direction: 'send' | 'receive', topic: string): void {
+    if (direction === 'send') this.messageCounts.sent++;
+    else this.messageCounts.received++;
+    this.lastMessage = {direction, topic};
+    if (!this.disposed)
+      this.dispatchEvent({type: 'diagnosticschange', direction, topic});
   }
 
   private assertReady(): void {

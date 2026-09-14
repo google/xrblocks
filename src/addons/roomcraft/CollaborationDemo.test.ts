@@ -73,7 +73,7 @@ vi.mock('xrblocks', async () => {
     init: mocks.init,
     initScript: mocks.initScript,
     core: {
-      renderer: {shadowMap: {}},
+      renderer: {shadowMap: {}, xr: new EventTarget()},
       sound: {listener: {context: {resume: mocks.resumePlayback}}},
     },
     getUrlParameter: (name: string) =>
@@ -90,6 +90,7 @@ vi.mock('xrblocks/addons/roomcraft/index.js', async () => {
     MAX_SCENE_REQUEST_CHARACTERS: 4000,
     Roomcraft: class extends Object3D {
       busy = false;
+      status = 'ready';
       selectedId: string | null = null;
       layout = {objects: [{id: 'chair', name: 'Reading chair'}]};
     },
@@ -599,6 +600,15 @@ describe('collaboration room-code lobby', () => {
       collaborationOptions('https://example.test/?collab=1&room=legacy-room')
         .room
     ).toBe('legacy-room');
+    expect(
+      collaborationOptions(
+        'https://example.test/?collab=1&room=BCDF&transport=webrtc'
+      ).seedLocalScene
+    ).toBe(false);
+    expect(
+      collaborationOptions('https://example.test/?collab=1&room=legacy-room')
+        .seedLocalScene
+    ).toBe(true);
   });
 
   it('does not reconnect an unchanged joined room, but offers Rejoin for a new name', async () => {
@@ -731,6 +741,7 @@ describe('collaboration room-code lobby', () => {
       })
     );
     expect(controller.getState().applied.transport).toBe('webrtc');
+    expect(controller.options.seedLocalScene).toBe(true);
     expect(consoleScript.room.layout).toBe(before);
     expect(consoleScript.promptValue).toBe('keep my prompt');
     expect(consoleScript.room.selectedId).toBe('chair');
@@ -760,6 +771,7 @@ describe('collaboration room-code lobby', () => {
     );
     await vi.waitFor(() => expect(controller.getState().connected).toBe(true));
     expect(net.joinRoom.mock.calls[0][0]).toBe('roomcraft:room:BCDF');
+    expect(controller.options.seedLocalScene).toBe(false);
     expect(generate).not.toHaveBeenCalled();
     expect(session.voice.enable).not.toHaveBeenCalled();
     controller.leave();
@@ -839,6 +851,118 @@ describe('collaboration panel', () => {
   beforeEach(async () => {
     window.history.replaceState({}, '', '?collab=1&room=studio&name=Alice');
     consoleScript = await startRoomcraftDemo();
+  });
+
+  it('distinguishes an open room from a connected peer and names the required mode', () => {
+    const controller = consoleScript.collaboration;
+    expect(controller.getState().statusText).toContain('Waiting for peers');
+    expect(element('collabRoomNotice').textContent).toContain('Physical room');
+    expect(element('collabDiagnosticsSummary').textContent).toContain(
+      'roomcraft:room:studio'
+    );
+    session.users.set('peer-b', {peerId: 'peer-b', displayName: 'Bob'});
+    session.dispatchEvent(new Event('user-join'));
+    expect(controller.getState().statusText).toContain('Connected · 1 peer');
+    session.users.delete('peer-b');
+    session.dispatchEvent(new Event('user-leave'));
+    expect(controller.getState().statusText).toContain('Waiting for peers');
+  });
+
+  it('copies local diagnostic history without credentials, names, prompts or scene contents', async () => {
+    const controller = consoleScript.collaboration;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {writeText},
+    });
+    consoleScript.promptValue = 'private authoring draft';
+    controller.setDraft('name', 'Private Name');
+    controller.setDraft('relay', 'wss://private.example/?key=private-token');
+    controller.reportError(
+      new Error('private raw error with a private-token'),
+      'configuration'
+    );
+    element('collabDiagnosticsCopy').click();
+    await vi.waitFor(() =>
+      expect(controller.getState().diagnostics.copying).toBe(false)
+    );
+    const report = JSON.parse(writeText.mock.calls[0][0]);
+    expect(report.format).toBe('roomcraft-local-diagnostics');
+    expect(report.current.scene.objectIds).toEqual(['chair']);
+    expect(report.current.errorOperation).toBe('configuration');
+    for (const text of [
+      'private authoring draft',
+      'Private Name',
+      'private.example',
+      'private-token',
+      'Reading chair',
+      'private raw error',
+    ])
+      expect(writeText.mock.calls[0][0]).not.toContain(text);
+    expect(report.events.length).toBeGreaterThan(1);
+    expect(element('collabDiagnosticsNotice').textContent).toContain('copied');
+    expect(net.joinRoom).toHaveBeenCalledOnce();
+    expect(session.voice.enable).not.toHaveBeenCalled();
+    expect(controller.getState().error).toContain('private raw error');
+  });
+
+  it('retains diagnostic copy errors locally and releases download URLs', async () => {
+    const controller = consoleScript.collaboration;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error('Denied private URL')),
+      },
+    });
+    await controller.copyDiagnostics();
+    expect(controller.getState().diagnostics.notice).toContain(
+      'Copy unavailable'
+    );
+    expect(controller.getState().error).toBe('');
+    const create = vi.fn().mockReturnValue('blob:diagnostics');
+    const revoke = vi.fn();
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = create;
+        static revokeObjectURL = revoke;
+      }
+    );
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    element('collabDiagnosticsDownload').click();
+    expect(click).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledOnce();
+    expect(revoke).toHaveBeenCalledWith('blob:diagnostics');
+    expect(controller.getState().diagnostics.notice).toContain('downloaded');
+    expect(session.voice.enable).not.toHaveBeenCalled();
+  });
+
+  it('does not add diagnostic entries for no-op renders and removes callbacks on disposal', async () => {
+    const controller = consoleScript.collaboration;
+    const before = controller.diagnosticLog.report().events.length;
+    controller.render();
+    controller.render();
+    expect(controller.diagnosticLog.report().events).toHaveLength(before);
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(controller.diagnosticLog.report().current.activity.visible).toBe(
+      false
+    );
+    controller.dispose();
+    const disposedEntries = controller.diagnosticLog.report().events.length;
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(controller.diagnosticLog.report().events).toHaveLength(
+      disposedEntries
+    );
+    const writeText = vi.fn();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {writeText},
+    });
+    element('collabDiagnosticsCopy').click();
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it('clears recovered bridge failures without clearing unrelated errors', () => {

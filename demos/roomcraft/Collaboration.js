@@ -9,6 +9,7 @@ import {
 } from 'xrblocks/addons/netblocks/src/index.js';
 import {RoomcraftNet} from 'xrblocks/addons/roomcraft/index.js';
 import {CollaborationSpatialView} from './CollaborationSpatial.js';
+import {CollaborationDiagnostics} from './CollaborationDiagnostics.js';
 
 const DEFAULT_ROOM = 'roomcraft-demo';
 const RETRY_MESSAGE = 'Retrying collaboration sync.';
@@ -109,12 +110,17 @@ export function collaborationOptions(url, virtual = false) {
   const displayName =
     readableName(source.searchParams.get('name')) ||
     `Maker ${crypto.getRandomValues(new Uint16Array(1))[0].toString(16).padStart(4, '0')}`;
+  const connection = connectionOptions(source);
   return {
     room,
     roomId: room ? `roomcraft:${virtual ? 'virtual' : 'room'}:${room}` : '',
     displayName,
     virtual,
-    ...connectionOptions(source),
+    seedLocalScene: !(
+      room &&
+      (lobby || (connection.transport === 'webrtc' && /^[A-Z]{4}$/.test(room)))
+    ),
+    ...connection,
   };
 }
 
@@ -167,6 +173,10 @@ class Collaboration {
     this.hasConnected = false;
     this.roomActionHadFocus = false;
     this.retryHadFocus = false;
+    this.diagnosticLog = new CollaborationDiagnostics();
+    this.diagnosticNotice = '';
+    this.diagnosticCopying = false;
+    this.sessionNumber = 0;
     this.draft = {
       name: options.displayName,
       transport: options.transport,
@@ -211,6 +221,13 @@ class Collaboration {
         'collabRoomsSummary',
         'collabLobbyName',
         'collabActions',
+        'collabDiagnostics',
+        'collabDiagnosticsSummary',
+        'collabDiagnosticsHistory',
+        'collabDiagnosticsNotice',
+        'collabDiagnosticsCopy',
+        'collabDiagnosticsDownload',
+        'collabDiagnosticsRefresh',
       ].map((id) => [id, document.getElementById(id)])
     );
     this.dom.collaboration.hidden = false;
@@ -245,6 +262,20 @@ class Collaboration {
     this.listen(this.dom.collabLobbyName, 'input', () =>
       this.setDraft('name', this.dom.collabLobbyName.value)
     );
+    this.listen(
+      this.dom.collabDiagnosticsCopy,
+      'click',
+      () => void this.copyDiagnostics()
+    );
+    this.listen(this.dom.collabDiagnosticsDownload, 'click', () =>
+      this.downloadDiagnostics()
+    );
+    this.listen(this.dom.collabDiagnosticsRefresh, 'click', () =>
+      this.refreshDiagnostics()
+    );
+    this.listen(document, 'visibilitychange', () => this.render());
+    this.listen(xb.core.renderer.xr, 'sessionstart', () => this.render());
+    this.listen(xb.core.renderer.xr, 'sessionend', () => this.render());
     this.listen(window, 'pagehide', () => this.dispose());
     this.listen(room, 'change', () => this.renderRoster());
     this.listen(room, 'selectionchange', () => this.renderRoster());
@@ -295,7 +326,7 @@ class Collaboration {
   }
 
   startRoom() {
-    return this.joinRoom(generateRoomCode());
+    return this.joinRoom(generateRoomCode(), {seedLocalScene: true});
   }
 
   isCurrentRoom(code, name) {
@@ -308,7 +339,7 @@ class Collaboration {
     );
   }
 
-  async joinRoom(value = this.joinCode) {
+  async joinRoom(value = this.joinCode, {seedLocalScene = false} = {}) {
     if (this.disposed || this.room.busy || this.joining) return;
     try {
       const code = normalizeRoomCode(value);
@@ -326,6 +357,7 @@ class Collaboration {
         displayName,
         transport: 'webrtc',
         relay: '',
+        seedLocalScene,
       };
       this.draft = {name: displayName, transport: 'webrtc', relay: ''};
       this.joinCode = code;
@@ -371,6 +403,70 @@ class Collaboration {
     this.render();
   }
 
+  diagnosticsView() {
+    return {
+      summary: this.diagnosticLog.summary,
+      recent: this.diagnosticLog.recent,
+      events: this.diagnosticLog.events.length,
+      notice: this.diagnosticNotice,
+      copying: this.diagnosticCopying,
+      disabled: this.disposed,
+    };
+  }
+
+  refreshDiagnostics() {
+    if (!this.disposed) this.render();
+  }
+
+  async copyDiagnostics() {
+    if (this.disposed || this.diagnosticCopying) return;
+    this.diagnosticCopying = true;
+    this.diagnosticNotice = '';
+    this.render();
+    try {
+      if (!navigator.clipboard?.writeText)
+        throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(
+        JSON.stringify(this.diagnosticLog.report(), null, 2)
+      );
+      if (!this.disposed)
+        this.diagnosticNotice =
+          'Diagnostics copied. Share reports from both devices for comparison.';
+    } catch {
+      if (!this.disposed)
+        this.diagnosticNotice =
+          'Copy unavailable. Use Download diagnostics in the browser controls, or photograph this panel.';
+    } finally {
+      this.diagnosticCopying = false;
+      if (!this.disposed) this.render();
+    }
+  }
+
+  downloadDiagnostics() {
+    if (this.disposed) return;
+    this.render();
+    let url;
+    try {
+      url = URL.createObjectURL(
+        new Blob([JSON.stringify(this.diagnosticLog.report(), null, 2)], {
+          type: 'application/json',
+        })
+      );
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'roomcraft-diagnostics.json';
+      link.click();
+      this.diagnosticNotice =
+        'Diagnostics downloaded. The report stays local until you share it.';
+    } catch {
+      this.diagnosticNotice =
+        'Download unavailable. Copy diagnostics or photograph this panel instead.';
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+      this.render();
+    }
+  }
+
   updateIdentity() {
     this.render();
   }
@@ -393,6 +489,7 @@ class Collaboration {
   async start() {
     if (this.disposed || this.joining || !this.options.room) return;
     const connection = {joining: true, cleanups: [], ready: false};
+    this.sessionNumber++;
     this.connection = connection;
     const current = () => !this.disposed && this.connection === connection;
     this.render();
@@ -427,6 +524,7 @@ class Collaboration {
       const session = connection.session;
       connection.bridge = new RoomcraftNet(this.room, session, {
         roomId: this.options.roomId,
+        seedLocalScene: this.options.seedLocalScene,
       });
       listen(session, 'user-join', () => this.renderRoster());
       listen(session, 'user-update', () => this.renderRoster());
@@ -456,6 +554,9 @@ class Collaboration {
         if (current()) this.leave();
       });
       listen(this.bridge, 'selectionchange', () => this.renderRoster());
+      listen(this.bridge, 'diagnosticschange', () => {
+        if (current()) this.render();
+      });
       listen(this.bridge, 'statuschange', () => {
         if (!current()) return;
         if (this.bridge.status === 'ready' && this.failureFromBridge)
@@ -675,6 +776,7 @@ class Collaboration {
   }
 
   getState() {
+    const peerCount = this.session?.users.size ?? 0;
     const roomCode =
       this.options.transport === 'webrtc' &&
       /^[A-Z]{4}$/.test(this.options.room)
@@ -702,13 +804,17 @@ class Collaboration {
         ? this.failure || 'Sync failed. Check the error above and retry.'
         : !this.disposed && this.joining
           ? `Joining ${TRANSPORTS[this.options.transport].label}…`
-          : status === 'ready'
-            ? `Connected · ${TRANSPORTS[this.options.transport].label}`
-            : status === 'syncing'
-              ? `Syncing${pending ? ` · ${pending} pending` : ''}…`
-              : this.options.room
-                ? 'Disconnected · your local scene is still available'
-                : 'Start a new room or join a code. Your scene is local until you join.';
+          : this.session?.isOpen && !peerCount
+            ? `Waiting for peers${pending ? ` · ${pending} pending` : ''} · ${TRANSPORTS[this.options.transport].label}`
+            : status === 'ready'
+              ? peerCount
+                ? `Connected · ${peerCount} peer${peerCount === 1 ? '' : 's'} · ${TRANSPORTS[this.options.transport].label}`
+                : `Waiting for peers · ${TRANSPORTS[this.options.transport].label}`
+              : status === 'syncing'
+                ? `Syncing${pending ? ` · ${pending} pending` : ''}…`
+                : this.options.room
+                  ? 'Disconnected · your local scene is still available'
+                  : 'Start a new room or join a code. Your scene is local until you join.';
     const enabled = this.session?.voice.isEnabled() ?? false;
     const transmitting = enabled && !this.session.voice.isMuted();
     const unavailable = this.voiceUnavailable();
@@ -761,7 +867,7 @@ class Collaboration {
         notice:
           this.roomNotice ||
           (!roomCode && this.options.room
-            ? 'Use Open peer link for this connection. Start or Join switches to a WebRTC code room.'
+            ? `${this.options.virtual ? 'Virtual world' : 'Physical room'} mode. Use Open peer link for this connection. Start or Join switches to a WebRTC code room.`
             : ''),
         mode: this.options.virtual ? 'Virtual world' : 'Physical room',
         startDisabled: this.disposed || this.room.busy || this.joining,
@@ -793,6 +899,11 @@ class Collaboration {
       joining: this.joining,
       connected: !!this.session?.isOpen && !!this.connection?.ready,
       roomBusy: this.room.busy,
+      peerCount,
+      peerHint: peerCount
+        ? 'Peer links are open. Diagnostics shows whether scene import or clock sync is still pending.'
+        : `No other peers connected. Everyone needs the same code, ${this.options.virtual ? 'Virtual world' : 'Physical room'} mode and transport. The other mode uses a separate room.`,
+      diagnostics: this.diagnosticsView(),
       controls: {
         resetDisabled:
           this.disposed ||
@@ -844,12 +955,45 @@ class Collaboration {
 
   render() {
     const state = this.getState();
+    this.diagnosticLog.capture({
+      mode: state.rooms.mode,
+      roomId: state.applied.roomId,
+      transport: state.applied.transport,
+      session: this.sessionNumber,
+      localPeerId: this.session?.localPeerId ?? '',
+      peers: this.session?.users.keys() ?? [],
+      channelPeers: this.connection?.transport?.remotePeerIds ?? [],
+      transportOpen: this.connection?.transport?.isOpen === true,
+      status: state.status,
+      pending: state.pending,
+      roomStatus: this.room.status,
+      authoring: this.consoleScript.running === true,
+      configuring: this.consoleScript.connecting === true,
+      transcription: this.consoleScript.voice.state,
+      visible: !document.hidden,
+      inXR: xb.core.renderer.xr.isPresenting === true,
+      secureContext: window.isSecureContext === true,
+      objects: this.room.layout.objects,
+      selectedId: this.room.selectedId,
+      bridge: this.bridge?.diagnostics,
+      clock: this.bridge?.motionClockState,
+      microphone: {
+        enabled: state.microphone.enabled,
+        muted: !state.microphone.transmitting,
+      },
+      playbackMuted: this.playbackMuted,
+      errorOperation:
+        this.failureOperation || (this.voiceFailure ? 'voice' : ''),
+    });
+    state.diagnostics = this.diagnosticsView();
     if (
       state.status === 'ready' &&
       this.consoleScript.statusMessage === RETRY_MESSAGE
     ) {
       this.consoleScript.setStatus(
-        'Collaboration connected. Continue editing the shared scene.'
+        state.peerCount
+          ? 'Collaboration connected. Continue editing the shared scene.'
+          : 'Room opened, but no peers are connected. Check that both devices use the same mode, code and transport.'
       );
     }
     const key = JSON.stringify(state);
@@ -908,6 +1052,41 @@ class Collaboration {
     setProperty(dom.collabStatus.dataset, 'state', state.status);
     setProperty(dom.collabStatus, 'textContent', state.statusText);
     setProperty(
+      dom.collabDiagnosticsSummary,
+      'textContent',
+      state.diagnostics.summary
+    );
+    setProperty(
+      dom.collabDiagnosticsHistory,
+      'textContent',
+      state.diagnostics.recent
+    );
+    setProperty(
+      dom.collabDiagnosticsNotice,
+      'textContent',
+      state.diagnostics.notice
+    );
+    setProperty(
+      dom.collabDiagnosticsCopy,
+      'disabled',
+      state.diagnostics.disabled || state.diagnostics.copying
+    );
+    setProperty(
+      dom.collabDiagnosticsCopy,
+      'textContent',
+      state.diagnostics.copying ? 'Copying...' : 'Copy diagnostics'
+    );
+    setProperty(
+      dom.collabDiagnosticsDownload,
+      'disabled',
+      state.diagnostics.disabled
+    );
+    setProperty(
+      dom.collabDiagnosticsRefresh,
+      'disabled',
+      state.diagnostics.disabled
+    );
+    setProperty(
       dom.collabRoomCode,
       'textContent',
       state.rooms.code
@@ -920,7 +1099,9 @@ class Collaboration {
       dom.collabRoomNotice,
       'textContent',
       state.rooms.notice ||
-        `${state.rooms.mode} mode. Codes are meeting identifiers, not passwords.`
+        (state.connected && !state.peerCount
+          ? state.peerHint
+          : `${state.rooms.mode} mode. Codes are meeting identifiers, not passwords.`)
     );
     setProperty(dom.collabJoinCode, 'value', state.rooms.input);
     setProperty(dom.collabJoinCode, 'disabled', state.rooms.startDisabled);

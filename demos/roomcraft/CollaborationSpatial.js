@@ -86,6 +86,9 @@ export class CollaborationSpatialView {
           this.setSection('settings')
         ),
         this.button('rooms', 'Room codes', () => this.setSection('rooms')),
+        this.button('diagnostics', 'Diagnostics', () =>
+          this.setSection('diagnostics')
+        ),
       ],
       52
     );
@@ -230,6 +233,37 @@ export class CollaborationSpatialView {
         ),
       ],
     });
+    this.diagnosticText = text('', 292, {
+      fontSize: 26,
+      lineHeight: 1.1,
+      whiteSpace: 'pre-line',
+      verticalAlign: 'top',
+    });
+    this.diagnosticNotice = text('', 56, {fontSize: 24, lineHeight: 1.1});
+    this.diagnosticsPanel = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: 416,
+        flexShrink: 0,
+        flexDirection: 'column',
+        gap: 8,
+      },
+      children: [
+        this.diagnosticText,
+        row(
+          [
+            this.button('copy-diagnostics', 'Copy diagnostics', () =>
+              controller.copyDiagnostics()
+            ),
+            this.button('refresh-diagnostics', 'Refresh report', () =>
+              controller.refreshDiagnostics()
+            ),
+          ],
+          52
+        ),
+        this.diagnosticNotice,
+      ],
+    });
     this.panel = new xb.UIPanel({
       style: {
         width: '100%',
@@ -248,6 +282,7 @@ export class CollaborationSpatialView {
         this.peoplePanel,
         this.settingsPanel,
         this.roomsPanel,
+        this.diagnosticsPanel,
       ],
     });
     this.panel.name = 'RoomcraftCollaborationPanel';
@@ -358,7 +393,7 @@ export class CollaborationSpatialView {
     setChanged(
       this.roomText,
       'text',
-      `Room: ${state.applied.room || 'not joined'}`
+      `${state.rooms.mode} | Room: ${state.applied.room || 'not joined'}`
     );
     setChanged(
       this.codeText,
@@ -369,12 +404,7 @@ export class CollaborationSpatialView {
           ? `Named room: ${state.applied.room}`
           : 'Start a room or enter a code'
     );
-    setChanged(
-      this.codeHint,
-      'text',
-      state.rooms.notice ||
-        `${state.rooms.mode} mode. Everyone needs the same mode and code. Codes are not passwords.`
-    );
+    setChanged(this.codeHint, 'text', state.rooms.notice || state.peerHint);
     setChanged(
       this.controls.get('room-code'),
       'label',
@@ -491,7 +521,34 @@ export class CollaborationSpatialView {
       'display',
       this.section === 'rooms' ? 'flex' : 'none'
     );
-    for (const section of ['people', 'settings', 'rooms']) {
+    setChanged(
+      this.diagnosticsPanel.style,
+      'display',
+      this.section === 'diagnostics' ? 'flex' : 'none'
+    );
+    setChanged(this.diagnosticText, 'text', state.diagnostics.summary);
+    setChanged(
+      this.diagnosticNotice,
+      'text',
+      state.diagnostics.notice ||
+        'Local metadata only. Download the full log in browser controls; nothing uploads automatically.'
+    );
+    setChanged(
+      this.controls.get('copy-diagnostics'),
+      'disabled',
+      state.diagnostics.disabled || state.diagnostics.copying
+    );
+    setChanged(
+      this.controls.get('copy-diagnostics'),
+      'label',
+      state.diagnostics.copying ? 'Copying...' : 'Copy diagnostics'
+    );
+    setChanged(
+      this.controls.get('refresh-diagnostics'),
+      'disabled',
+      state.diagnostics.disabled
+    );
+    for (const section of ['people', 'settings', 'rooms', 'diagnostics']) {
       setChanged(
         this.controls.get(section).style,
         'backgroundColor',
@@ -591,6 +648,7 @@ export class CollaborationSpatialView {
       'display',
       participants.length ? 'none' : 'flex'
     );
+    setChanged(this.emptyText, 'text', state.peerHint);
     setChanged(
       this.pageText,
       'text',

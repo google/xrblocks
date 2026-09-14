@@ -251,6 +251,49 @@
             class="rc-peers"
             aria-label="Room participants"
           ></ul>
+          <details id="collabDiagnostics" class="rc-collab-settings">
+            <summary>Diagnostics / local log</summary>
+            <p class="rc-fineprint">
+              Compare reports from both devices. Includes room, peer and object
+              IDs plus recent state changes, not names, prompts, keys, URLs,
+              audio, scene recipes or raw error text. Nothing is uploaded.
+            </p>
+            <pre id="collabDiagnosticsSummary" class="rc-diagnostics"></pre>
+            <div class="rc-row rc-row-wrap">
+              <button
+                id="collabDiagnosticsCopy"
+                class="rc-button"
+                type="button"
+              >
+                Copy diagnostics
+              </button>
+              <button
+                id="collabDiagnosticsDownload"
+                class="rc-button"
+                type="button"
+              >
+                Download diagnostics
+              </button>
+              <button
+                id="collabDiagnosticsRefresh"
+                class="rc-button"
+                type="button"
+              >
+                Refresh report
+              </button>
+            </div>
+            <p id="collabDiagnosticsNotice" class="rc-note" role="status"></p>
+            <pre
+              id="collabDiagnosticsHistory"
+              class="rc-diagnostics"
+              aria-label="Recent diagnostic state changes"
+            ></pre>
+            <p class="rc-fineprint">
+              Refresh only reads local state; it does not reconnect. The report
+              retains the last 64 state changes and resets when the page
+              reloads. Send counts are attempts, not delivery acknowledgements.
+            </p>
+          </details>
           <p class="rc-fineprint">
             Optional live conversation with peers, completely separate from
             Gemini Talk transcription. Audio uses WebRTC with STUN on every
