@@ -124,6 +124,8 @@ describe('LocalStorageAnchorStore', () => {
   it('falls back to real storage when none is given', () => {
     // Omitting the argument must reach localStorage rather than silently
     // disabling persistence, which is the difference null now expresses.
+    expect(localStorage).toBeInstanceOf(Storage);
+    expect(localStorage).toBe(window.localStorage);
     const store = new LocalStorageAnchorStore('omitted.key', 128);
     store.save(record('a'));
     expect(store.load().map((r) => r.uuid)).toEqual(['a']);
