@@ -9,7 +9,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts', 'tools/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'tools/**/*.test.ts', 'demos/**/*.test.ts'],
     environment: 'jsdom',
     coverage: {
       provider: 'v8',
