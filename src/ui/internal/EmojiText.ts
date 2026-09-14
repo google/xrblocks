@@ -95,7 +95,7 @@ function emojiContainerProperties(
 ): ContainerProperties {
   return {
     flexDirection: 'row',
-    flexWrap: properties.whiteSpace === 'nowrap' ? 'nowrap' : 'wrap',
+    flexWrap: properties.whiteSpace === 'nowrap' ? 'no-wrap' : 'wrap',
     alignItems: 'center',
     justifyContent:
       properties.textAlign === 'center'

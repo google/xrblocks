@@ -119,10 +119,17 @@ function nativeTextProperties(
   const shared = glyphProperties(properties);
   return {
     ...shared,
-    whiteSpace:
-      properties.whiteSpace === 'nowrap' ? 'normal' : properties.whiteSpace,
-    wordBreak: properties.whiteSpace === 'nowrap' ? 'keep-all' : 'break-word',
+    ...nativeTextWrapping(properties.whiteSpace),
   } as TextProperties;
+}
+
+export function nativeTextWrapping(
+  whiteSpace: AdaptiveTextProperties['whiteSpace']
+): Pick<TextProperties, 'whiteSpace' | 'wordBreak'> {
+  return {
+    whiteSpace: whiteSpace === 'nowrap' ? 'normal' : whiteSpace,
+    wordBreak: whiteSpace === 'nowrap' ? 'keep-all' : 'break-word',
+  };
 }
 
 function unicodeTextProperties(

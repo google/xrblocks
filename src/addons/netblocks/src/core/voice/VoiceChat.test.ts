@@ -1,4 +1,4 @@
-import {describe, it, expect, vi} from 'vitest';
+import {afterEach, describe, it, expect, vi} from 'vitest';
 
 import {VoiceChat} from './VoiceChat';
 
@@ -122,11 +122,11 @@ describe('VoiceChat onLocalStateChange', () => {
         },
       },
     });
+
     try {
       const vc = new VoiceChat(() => {}, {onLocalStateChange});
       await vc.enable(new Set());
       expect(onLocalStateChange).toHaveBeenCalledWith(true);
-
       vc.disable();
       expect(onLocalStateChange).toHaveBeenCalledWith(false);
       expect(onLocalStateChange).toHaveBeenCalledTimes(2);
@@ -136,6 +136,167 @@ describe('VoiceChat onLocalStateChange', () => {
         value: origNav,
       });
     }
+  });
+
+  describe('VoiceChat microphone-only mute', () => {
+    class Track extends EventTarget {
+      kind = 'audio';
+      enabled = true;
+      readyState = 'live';
+      stop = vi.fn(() => {
+        this.readyState = 'ended';
+      });
+    }
+    class Peer extends EventTarget {
+      connectionState = 'connected';
+      addTrack = vi.fn();
+      addTransceiver = vi.fn();
+      getSenders = () => [];
+      createOffer = vi.fn(async () => ({type: 'offer', sdp: 'test-offer'}));
+      setLocalDescription = vi.fn(async () => {});
+      close = vi.fn(() => {
+        this.connectionState = 'closed';
+      });
+      constructor() {
+        super();
+        peers.push(this);
+      }
+    }
+    const peers: Peer[] = [];
+    afterEach(() => {
+      peers.length = 0;
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
+    function setup() {
+      const track = new Track();
+      const stream = {getTracks: () => [track], getAudioTracks: () => [track]};
+      const gum = vi.fn(async () => stream);
+      vi.stubGlobal('navigator', {mediaDevices: {getUserMedia: gum}});
+      vi.stubGlobal('RTCPeerConnection', Peer);
+      const send = vi.fn();
+      const state = vi.fn();
+      const mute = vi.fn();
+      const error = vi.fn();
+      const voice = new VoiceChat(send, {
+        onLocalStateChange: state,
+        onLocalMuteChange: mute,
+        onError: error,
+      });
+      voice.setLocalPeerId('a');
+      return {voice, track, gum, send, state, mute, error};
+    }
+
+    it('pending-request cancellation leaves already enabled capture and peer connections untouched', async () => {
+      const {voice, track} = setup();
+      await voice.enable(new Set(['b']));
+      voice.cancelPendingEnable();
+      expect(voice.isEnabled()).toBe(true);
+      expect(voice.isMuted()).toBe(false);
+      expect(track.stop).not.toHaveBeenCalled();
+      expect(peers[0].close).not.toHaveBeenCalled();
+      voice.disable();
+    });
+
+    it('keeps incoming connections while muted and preserves mute on peer arrival and enable calls', async () => {
+      const {voice, track, gum, send, state, mute} = setup();
+      await voice.enable(new Set(['b']));
+      const first = peers[0];
+      send.mockClear();
+      voice.setMuted(true);
+      expect(voice.isEnabled()).toBe(true);
+      expect(voice.isMuted()).toBe(true);
+      expect(track.enabled).toBe(false);
+      expect(track.stop).not.toHaveBeenCalled();
+      expect(first.close).not.toHaveBeenCalled();
+      expect(
+        send.mock.calls.some(([message]) => message.signal.kind === 'bye')
+      ).toBe(false);
+      expect(mute).toHaveBeenCalledWith(true);
+      expect(state).toHaveBeenCalledTimes(1);
+      voice.notifyPeerJoined('c');
+      await voice.enable(new Set(['c']));
+      expect(voice.isMuted()).toBe(true);
+      expect(peers[1].addTrack.mock.calls[0][0].enabled).toBe(false);
+      expect(gum).toHaveBeenCalledOnce();
+      voice.setMuted(false);
+      expect(track.enabled).toBe(true);
+      expect(gum).toHaveBeenCalledOnce();
+      voice.disable();
+      expect(track.stop).toHaveBeenCalledOnce();
+      expect(first.close).toHaveBeenCalledOnce();
+    });
+
+    it('nudges a newly arrived listener without changing an existing muted choice', async () => {
+      const {voice, track, gum, send} = setup();
+      voice.setLocalPeerId('z');
+      await voice.enable(new Set());
+      voice.setMuted(true);
+      voice.notifyPeerJoined('a');
+      expect(send).toHaveBeenCalledWith({
+        type: 'voice',
+        to: 'a',
+        signal: {kind: 'hello'},
+      });
+      expect(track.enabled).toBe(false);
+      expect(voice.isMuted()).toBe(true);
+      expect(gum).toHaveBeenCalledOnce();
+      voice.disable();
+    });
+
+    it('can listen to a higher-ID speaker without requesting a microphone', async () => {
+      const {voice, gum, send} = setup();
+      await voice.handleSignal('z', {type: 'voice', signal: {kind: 'hello'}});
+      expect(gum).not.toHaveBeenCalled();
+      expect(voice.isEnabled()).toBe(false);
+      expect(peers[0].addTransceiver).toHaveBeenCalledWith('audio', {
+        direction: 'recvonly',
+      });
+      await vi.waitFor(() =>
+        expect(send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'voice',
+            to: 'z',
+            signal: {kind: 'offer', sdp: 'test-offer'},
+          })
+        )
+      );
+      voice.disable();
+    });
+
+    it('reports a capture ending and clears actual microphone state', async () => {
+      const {voice, track, state, error} = setup();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await voice.enable(new Set());
+      track.readyState = 'ended';
+      track.dispatchEvent(new Event('ended'));
+      expect(voice.isEnabled()).toBe(false);
+      expect(voice.isMuted()).toBe(true);
+      expect(state).toHaveBeenLastCalledWith(false);
+      expect(error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Microphone capture ended'),
+        }),
+        undefined
+      );
+    });
+
+    it('reports peer connection failures without claiming the microphone was disabled', async () => {
+      const {voice, error} = setup();
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      await voice.enable(new Set(['b']));
+      peers[0].connectionState = 'failed';
+      peers[0].dispatchEvent(new Event('connectionstatechange'));
+      expect(error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Peer audio connection failed'),
+        }),
+        'b'
+      );
+      expect(voice.isEnabled()).toBe(true);
+      voice.disable();
+    });
   });
 
   it('disable() during a pending enable() cancels it: stream stopped, no false state flip', async () => {

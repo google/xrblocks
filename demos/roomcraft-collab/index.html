@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Collaborative Roomcraft | XR Blocks</title>
+  </head>
+  <body>
+    <p>Opening Collaborative Roomcraft...</p>
+    <a
+      id="openRoomcraft"
+      href="../roomcraft/?collab=1&amp;lobby=1&amp;transport=webrtc"
+    >
+      Open Collaborative Roomcraft
+    </a>
+    <script type="module">
+      import {openRoomcraftCollaboration} from './Entry.js';
+      openRoomcraftCollaboration();
+    </script>
+  </body>
+</html>

@@ -59,6 +59,7 @@ vi.mock('xrblocks', async () => ({
   ...(await import('../../ui/components/UIButton')),
   ...(await import('../../ui/components/UIText')),
   ...(await import('../../ui/components/UIPanel')),
+  Interaction: class {},
   core: mockCore,
   user: {height: 1.5},
   getUrlParameter: mockUrlParameter,

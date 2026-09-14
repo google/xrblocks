@@ -4,6 +4,8 @@ Speak a scene into your room.
 
 This demo composes real 3D objects with the [Roomcraft add-on](../../src/addons/roomcraft/). It arranges preauthored procedural assets, builds new compound objects out of primitive parts that can swing or spin around authored pivots, and loads one optional downloaded glTF model, then applies follow-up instructions to the same scene. New designs use bounded part and motion recipes, not free-form mesh, texture, or animation generation.
 
+The same application is designed for Android XR and Meta Quest headsets, mobile devices and laptops. Use a browser that meets XR Blocks' requirements; immersive XR, hand tracking and microphone availability depend on the device and browser. Non-immersive use follows the SDK's simulator and browser controls rather than requiring a headset.
+
 An optional [virtual world mode](#virtual-world-mode) authors a whole place, with its own ground, sky, light, ponds, paths, and plantings, instead of decorating your room.
 
 ## Run it
@@ -12,19 +14,85 @@ From the repository root, run `npm run build:sdk`, then `npm run serve`, and ope
 
 The page opens on a handcrafted reading nook without an API key. The starter catalog uses procedural geometry, while browser dependencies and the SDK's default simulator environment still load from CDNs.
 
+A dependency-independent launcher reports module loading and SDK initialization before the scene starts. Late module evaluation still starts the page even if DOM readiness has already fired. Import or initialization failures appear in the page's error area rather than leaving the initial loading message indefinitely; a slow import remains marked as loading rather than being reported as a successful or failed scene.
+
 Open `http://127.0.0.1:8080/demos/roomcraft/?environment=1` instead for the optional fully virtual mode described below. The default page is unchanged by that option.
 
 To open a saved scene on another device, serve its exported JSON alongside the demo and append `&scene=./garden.json` to the virtual-mode URL. The file is imported through `applyLayout`, without making an AI request. Saved-scene downloads use the same HTTP(S) origin, send no credentials, and reject redirects. A failed or invalid import shows an error instead of substituting an example, and edits made while the file downloads are kept rather than overwritten.
 
 A standalone headset needs an HTTPS URL it can reach on your LAN, with a certificate its browser trusts. The headset's `127.0.0.1` is not the development computer. Open the LAN URL with `?environment=1`, without the desktop-forcing `formFactor=desktop` or `xrAutomation=1` flags, and use the SDK's XR entry button.
 
-Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialog. On Quest, open the browser controls, choose Connect Gemini near the top, enter your key in the password field, and choose Use for this session before entering XR. Hide controls if they cover the XR entry button. A key configured on another device does not transfer to the headset. The spatial keyboard is for scene instructions, not API keys; exit XR to change the key.
+Roomcraft uses the standard SDK XR entry screen and shared browser API-key dialog. On a headset, open the browser controls, choose Connect Gemini near the top, enter your key in the password field, and choose Use for this session before entering XR. Hide controls if they cover the XR entry button. A key configured on another device does not transfer to the headset. The spatial keyboard is for scene instructions, not API keys; exit XR to change the key.
 
 The XR entry button shows `ENTERING XR...` while the browser responds. If entry fails, the browser error appears below the buttons and Enter XR becomes available to retry.
 
+## Collaboration and connectivity
+
+Open `/demos/roomcraft-collab/` for the room-code entry. This small launch alias opens the shared Roomcraft editor in its collaboration lobby; it does not copy or fork the editor. The website also lists **Collaborative Roomcraft** as its own sample. The lobby stays local until you choose **Start new room** or enter a four-letter code and press **Join**. Both actions use WebRTC, announce the display name from Connection settings and keep the current scene and authoring draft without reloading the page. Joining an existing room then imports its established shared scene. **Copy code** copies only the code, which is a meeting identifier rather than a password or a guaranteed-unique private room.
+
+The same controls are available inside Spatial studio under **People > Room codes**. The existing spatial keyboard edits the code without touching the authoring prompt; Enter finishes editing, and the separate Join button connects. **One code joins the same scene from either physical or virtual viewing setup, on any supported device.** Start a room on one device, then enter its code on another; nobody needs to match an `environment` URL flag. Starting or joining another room releases the previous session and peer microphone; capture never restarts automatically. No Gemini key is needed to start or join.
+
+**Start new room** supplies the initial scene. **Join** and code invitations wait for an existing peer snapshot rather than offering the joiner's default scene, even if WebRTC discovery takes longer than expected. A missing host produces a snapshot timeout; it does not silently create a competing scene. This also protects an imported recovery scene from an empty joiner replacing it.
+
+Choose your name directly in the lobby or spatial Room codes panel; it shares the same draft as Connection settings. When the entered code and name already match your connection, Join reads **Joined** and does not reconnect or interrupt audio. Changing the name offers **Rejoin**. After the first connection, the DOM room options compact to keep the code and separate microphone/listening buttons easy to reach, without closing a name field being edited. Manually reopened options and text selection remain stable through participant updates.
+
+Code-only invitations are for WebRTC. For BroadcastChannel, WebSocket or rooms without a four-letter code, Copy code is unavailable; use **Open peer link** to include the applied room, transport and relay settings instead. Starting or joining a code always selects WebRTC.
+
+Open `http://127.0.0.1:8080/demos/roomcraft/?collab=1&room=roomcraft-demo&name=Alice`, then choose Open peer link in Collaboration. Add `&environment=1` to choose virtual-world startup; a peer link preserves that viewing hint, but entering the code from the other view joins the same room. Collaboration is strictly opt-in: only the exact `collab=1` value loads the optional module, after the local starter or saved scene and key setup finish. Ordinary single-player startup does not enable networking.
+
+Open **Connection settings**, choose a connection, then **Apply & reconnect**. The disclosure starts collapsed so the common microphone and listening controls stay near the top, before a growing participant roster. Configuration errors open it automatically; ordinary state updates preserve your disclosure choice. All options use existing public netblocks transports:
+
+- **BroadcastChannel · same browser** is the default for direct `?collab=1` links (or `&transport=broadcast`). Tabs must use the same browser profile and exact origin, including scheme, hostname, and port. No signaling service is used. A headset and desktop cannot join each other this way.
+- **WebRTC · cross-device / off-LAN** (`&transport=webrtc`) uses `WebRTCTransport` with its existing default public PeerJS signaling broker and STUN servers, with no new hosting project. Each device needs internet access and a reachable copy of this page; the broker does not host or expose your LAN demo. Use the same room code and transport; physical and virtual viewing setups can differ. The public broker is best-effort, rate-limited, and supports a maximum of 12 peers per room. STUN is not TURN: restrictive NAT, firewalls, or broker outages can prevent a connection. No TURN credentials or broker overrides are configured here; this is not a guaranteed off-LAN service.
+- **WebSocket · existing relay** (`&transport=websocket&relay=wss%3A%2F%2Frelay.example%2Froomcraft`) needs an explicit existing netblocks-compatible relay URL reachable by every peer. The demo does not start or host a relay. HTTPS pages require `wss://` and a certificate trusted by each browser; HTTP pages may also use `ws://`. Credentials, query parameters, and fragments in relay URLs are rejected so they cannot leak through peer links. Use a non-secret relay endpoint; never put a provider key or token in its path. Relay scene traffic is visible to that relay.
+
+The panel shows connection state, pending synchronization, your announced identity, and a colored participant roster with selected-object names. Retry sync asks the bridge to synchronize again, or rejoins after disconnection. Apply & reconnect creates a fresh session without reloading or resetting the locally authored scene, its selection, or the Gemini configuration. Normal shared-scene conflict rules still apply when a peer's scene arrives. Switching or leaving stops peer voice, including a pending microphone request; rejoining never automatically unmutes. The previous bridge/session is released and late async completions cannot replace the new connection. Underlying broker connection attempts may take time to settle; superseded sessions are closed again when they finish.
+
+An open room with no remote participants says **Waiting for peers**, not Connected. Check that someone started the room and that both devices use the same code and transport. Every viewing setup uses the same network identity, for example `roomcraft:shared:BCDF`. The view shown in diagnostics is local configuration, not a separate multiplayer room. Shared objects and authored environment data arrive without changing the recipient's local XR session mode.
+
+Use **Diagnostics / local log** in the browser controls or **People > Diagnostics** in the spatial studio to compare devices without a remote debugger. The report includes the full room ID, mode, transport, local and remote peer IDs, channel membership, object IDs/counts, scene revision, pending work, message counts and recent state changes. **Refresh report** only reads local state; **Copy diagnostics** works in both views, and **Download diagnostics** saves a JSON report from the browser controls if copying is unavailable on the headset.
+
+Diagnostics stay in page memory and retain the last 64 distinct states until reload. Times are elapsed within that page, not synchronized timestamps across devices. They exclude display names, prompts, keys, page/relay URLs, audio, full scene recipes and raw error text. No report is uploaded automatically. Reports do include room, peer and object identifiers; review them before sharing. Send counts describe local submissions, not delivery acknowledgements, and peer presence alone is not proof that scene content or physical alignment matches. Refresh or copy after the problem occurs, then provide reports from both devices. Remote browser debugging is optional if these reports do not explain the failure.
+
+Connection failures appear in the panel and existing console. Leave stops collaboration while keeping local editing available. Leaving the page or disposing its console also releases the bridge and its session.
+
+Live positions slightly below the scene origin are valid shared state, so moving a sofa below that reference does not block a later cat or any other scene edit. Shared/imported positions remain bounded to -10 through 10 meters on each axis, and AI-authored placement rules remain unchanged. Snapshot requests retry missing replies within their timeout window and display the peer's actual validation/transfer reason when available. Rejected local edits remain pending rather than being overwritten by an older snapshot during Retry or reconnect; correction followed by Retry republishes them. Both views clear recovered bridge errors without hiding unrelated settings or audio errors.
+
+Collaboration is also available inside Spatial studio, in its **People** tab, in both the default and virtual modes. **People / audio** contains participants and voice/listening controls; **Connection settings** edits the applied connection's draft. The spatial and DOM interfaces subscribe to one controller and invoke the same actions; they do not create separate sessions or audio graphs. Applied room, connection and identity are shown separately from editable draft settings. The spatial roster shows two other people per page, with larger names and controls; your identity and microphone stay above the roster rather than occupying a disabled participant row. Connection errors are shown once, below a short status summary.
+
+Editing a connection name or relay in the spatial keyboard updates only that settings draft, including its DOM counterpart. Enter finishes the field; Apply & reconnect applies the connection. It does not overwrite the authoring prompt, change scene selection, or invoke Generate/Gemini. Returning to authoring restores the authoring keyboard context and cancels held settings-key captures before changing routes. Controls and participant rows are kept stable on unchanged state rather than rebuilt on each update.
+
+Unapplied connection changes are marked in both views. **Discard changes** discards unapplied name, transport and relay edits and restores the current connection's settings without reconnecting, changing audio, or editing the scene or authoring prompt. It also updates an open settings keyboard and clears configuration errors, but preserves unrelated connection or playback errors. Stored relay text does not mark a BroadcastChannel/WebRTC draft as changed while that relay is unused.
+
+Room IDs use the common `roomcraft:shared:` prefix, independent of viewing setup. The `room` parameter accepts 1 to 48 ASCII letters, digits, underscores, or hyphens, starting with a letter or digit; an omitted or empty value on a direct `?collab=1` link uses `roomcraft-demo`, while an invalid ID shows an error without joining a different room. The dedicated collaboration lobby waits for Start or Join instead of selecting a default room.
+
+### Names and share links
+
+The generated peer link deliberately omits the current display name. Its recipient gets a new **Maker ####** name, not Bob or a copy of Alice. Set **Your display name** and Apply & reconnect to announce a chosen name, or explicitly open `?collab=1&room=roomcraft-demo&name=Bob`. Names are bounded to 40 characters and rendered as text, not HTML. Plain **Maker** is only a display fallback for missing remote metadata; **Maker ####** is an actual announced default name. The roster listens for metadata refreshes as well as joins/departures, including a hello arriving after netblocks' 1.5-second initial-metadata grace window.
+
+The peer link is built from an allowlist: collaboration, room, transport, the validated relay URL when needed, virtual mode, and supported desktop/debug flags. It never copies API keys, the current display name, saved-scene URLs, arbitrary parameters, or fragments. It also sends no referrer. The current page URL is not rewritten; share the panel's applied peer link rather than a stale address-bar URL. Each tab configures Gemini independently; a remote scene is applied as validated layout data, never as a new AI request. Text and Gemini Talk editing, selection, dragging, spatial controls, placement, export, and starter scenes keep their existing paths.
+
+### Opt-in peer spatial voice
+
+**Unmute my mic** first acquires the microphone through `session.voice.enable(session.transport.remotePeerIds)`. It never runs automatically. **Mute my mic** uses `setMuted(true)` to silence outgoing audio without closing incoming peer audio or requesting another microphone stream. Unmute reuses that stream with `setMuted(false)`. A muted track stays muted when peers join or renegotiate. **Disconnect** is different: it releases capture and closes the session's audio connections. Switching transports also releases capture; reconnecting never silently unmutes or starts a new microphone request.
+
+**Mute everyone for me** controls all incoming peer playback locally. Each remote participant also has **Mute/Unmute for me**. These controls do not change anyone's microphone, announced mic indicator, peer connection, or unrelated scene audio. Turning the master listening control off and on preserves individual choices. Choices apply to new or replaced streams; individual entries clear when that peer leaves or the session is replaced, since a display name is not a persistent identity. The master listening preference survives reconnects and is applied before incoming streams are attached.
+
+While permission is pending, **Cancel mic request** invalidates only the capture request; a late grant is stopped by netblocks without disconnecting incoming audio. Denying microphone permission also leaves existing listening connections intact. The UI follows `voice.isEnabled()`, `voice.isMuted()`, and `local-voice-state`, not an optimistic toggle. The roster shows peers' announced mic transmission state. Permission, capture-ended, and peer audio-connection errors appear in the peer-voice status without failing scene synchronization.
+
+Peer voice is completely separate from **Gemini Talk** transcription: it does not need a Gemini key, send audio to Gemini, or generate scene edits. Netblocks spatializes remote audio at peer avatar heads using the SDK's listener. Incoming peer audio can be received while your own mic is off. Capture requires a supported secure context (HTTPS or localhost) and site permission. Use headphones to avoid feedback; mute peer conversation separately when recording a Gemini Talk instruction if you do not want peers to hear it.
+
+Audio always uses direct WebRTC with STUN, including when scene messages use BroadcastChannel or a WebSocket relay. A scene relay does not act as an audio TURN server. A mic-on state confirms local transmission is enabled, not successful remote audibility. Real audible voice, cross-device/off-LAN traversal, and headset microphone routing require device testing; synthetic-track browser tests are not evidence of those outcomes. A LAN/VPN-hosted page must still be reachable by each device: using a public signaling broker does not publish the page to the internet.
+
+This is a cooperative prototype, not authenticated access control or conflict-free editing. Whole-scene edits use simple last-writer-wins overwrite semantics; concurrent edits can replace one another, and local Undo or Redo writes a whole scene to everyone. Authored bounds and the existing 60 KB network-message cap still apply: synchronization reports an explicit error rather than clamping content or silently truncating it. A locally valid scene can still exceed the network cap; simplify it before retrying.
+
+The bridge shares numerical root placement, object transforms, and authored motion definitions in the same coordinate convention. It does not align physical anchors or scanned rooms.
+
+For a desktop mouse test, use `&formFactor=desktop` and the simulator's User mode. The automation flag `xrAutomation=1` instead starts in Navigation mode; browser probes can switch with `xb.core.simulator.controls.setSimulatorMode(xb.SimulatorMode.USER)` after initialization.
+
 ## Virtual world mode
 
-`?environment=1` authors a whole virtual place rather than decorating the room around you. The mode is chosen once at startup, so the two pages keep separate scenes, separate histories, and separate camera behavior.
+`?environment=1` chooses virtual-world startup rather than decorating the room around you. This is a per-device viewing and XR-entry setup, chosen when the page opens. Without collaboration, each page keeps its local scene and history. With collaboration, both viewing setups join the same code and receive the same authored scene; camera and XR-entry behavior remain local.
 
 This page requests an immersive VR session and uses the empty simulator environment declared in [`virtual-environment.json`](./virtual-environment.json), which names no scene, no planes, no navigation mesh, and no objects. No prebuilt living room or background asset is downloaded, so everything in view is either the environment the add-on builds or the objects you author. XR entry stays available on supported headsets. When immersive VR is unavailable, the SDK starts the simulator automatically with your eye near the front edge of the ground.
 
@@ -86,7 +154,7 @@ Press Pause motion to freeze playback while you inspect or edit a design, and Re
 
 Type an instruction such as "add a floor lamp beside the left chair" and press Generate to edit a room scene the same way. Voice submits only a completed Gemini transcript, and the text field always stays usable. There is no automatic microphone and no request on load.
 
-### Gemini-only voice
+### Gemini Talk transcription
 
 Voice uses the same configured Gemini client and key as scene editing. No additional account or cloud provider is used, and Roomcraft does not start the browser's separate speech-recognition service, even when that API is available.
 
@@ -180,7 +248,7 @@ Surface placement uses the SDK's detected planes in WebXR and in the simulator, 
 
 The XR studio shows the selected object's name, part count, and how many of its parts move, offers the same Pause and Resume control, and shares errors and operation state with the desktop console. Typing uses the spatial keyboard rather than a native immersive text field. The full read-only part list with per-part motion, the JSON download, and Gemini key configuration remain in the desktop console.
 
-Immersive entry and Gemini scene generation have been used on Meta Quest. A user-run check on September 10, 2026 also confirmed that Talk, microphone recording, Finish, Gemini transcription, and a spoken scene edit worked inside immersive VR. State-only diagnostics showed the document remained visible during successful recordings and transcription. This does not establish that every permission, cancellation, timeout, draft-replacement, or studio-placement case has passed on hardware. Galaxy XR and XREAL Aura have not been tested; no cross-headset compatibility claim is made here.
+Recorded hardware checks include Meta Quest immersive entry, scene generation and speech input, plus collaboration with a laptop. Automated browser checks cover additional scene, input, synchronization and error paths. These results are not exhaustive hardware validation for Android XR, mobile devices or every browser. Permission, audio routing, interruption and spatial-placement behavior still need checking on the target device.
 
 ## SDK ownership
 

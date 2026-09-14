@@ -11,22 +11,15 @@
  * tear a live session down in-place.
  */
 
-const ALPHABET = 'BCDFGHJKLMNPQRSTVWXYZ';
+import {generateRoomCode, normalizeRoomCode} from '../src/core/utils/RoomCode';
+export {generateRoomCode} from '../src/core/utils/RoomCode';
+
 const CODE_LEN = 4;
 
 export function getRoomCodeFromUrl(): string | null {
   const raw = new URLSearchParams(location.search).get('room');
   if (!raw) return null;
-  const cleaned = raw.toUpperCase().replace(/[^A-Z]/g, '');
-  return cleaned.length === CODE_LEN ? cleaned : null;
-}
-
-export function generateRoomCode(): string {
-  let s = '';
-  for (let i = 0; i < CODE_LEN; i++) {
-    s += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
-  }
-  return s;
+  return normalizeRoomCode(raw);
 }
 
 function gotoRoom(code: string) {

@@ -2,11 +2,70 @@
 
 Roomcraft turns a description into actual, manipulable 3D content, then applies follow-up instructions to the same scene. "Add a lamp", "make this blue", and "remove the bookshelf" produce validated scene edits rather than a text answer or generated JavaScript.
 
+Roomcraft uses XR Blocks' cross-platform runtime for Android XR and Meta Quest headsets, mobile devices and laptops. Browser capabilities determine which immersive, input and audio features are available; the scene-authoring and collaboration APIs are not headset-specific.
+
 The add-on can compose trusted catalog assets, generate new procedural designs from primitive parts, or author a whole virtual environment from editable landscape recipes. A robot, garden pond, or grove does not need a predefined catalog entry: the planner describes its structure, and Roomcraft builds it locally. Parts can also swing or spin around authored joints. This is bounded procedural geometry and motion, not a photorealistic text-to-mesh service or execution of generated JavaScript. The [interactive demo](../../../demos/roomcraft/) includes no-key handcrafted scenes, a moving compound robot example, and an optional virtual-world mode.
 
 ## Run the demo
 
 From the repository root, run `npm run build:sdk`, then `npm run serve`, and open `http://127.0.0.1:8080/demos/roomcraft/`. See the [demo instructions](../../../demos/roomcraft/README.md) for controls and the optional downloaded model.
+
+### Optional collaboration
+
+The demo's exact `?collab=1` opt-in loads its collaboration UI after local scene initialization and key setup. It composes the public `RoomcraftNet` bridge with netblocks' existing transports; the normal page does not start networking. BroadcastChannel is for tabs in the same browser profile and origin. WebRTC uses the existing public PeerJS broker and STUN configuration for connections between devices, subject to broker availability and NAT restrictions; some networks need a separately configured TURN service. WebSocket uses an explicit application-provided relay URL, with WSS required by an HTTPS page. Share links omit provider keys. See the [demo instructions](../../../demos/roomcraft/README.md) for transport, identity, and peer-voice controls.
+
+The DOM panel and the existing spatial studio share one collaboration controller, including connection drafts, errors, participant state and actions. Connection keyboard edits are separate from authoring. Local microphone transmission, all incoming playback, and per-participant playback have distinct controls; listening mutes never invoke Gemini, acquire a microphone, change a remote mic announcement, or mute scene sounds. The demo uses netblocks' public playback hooks rather than accessing private audio nodes.
+
+The demo's room codes identify shared scenes independently of each participant's physical or virtual viewing setup. Both use `roomcraft:shared:<room>`; entering a code never requires matching the creator's `environment` URL parameter and does not change the recipient's local XR session mode. Shared scene coordinates still do not align real-world rooms.
+
+`RoomcraftNet` shares validated `SceneLayout` data, root placement, object transforms, selection indicators, and an authored-motion timeline without running a planner on receiving peers. Existing input and authoring controls still drive the same `Roomcraft` instance. Whole-scene edits use last-writer-wins overwrite semantics, and local Undo or Redo publishes a whole-scene write; concurrent work can be overwritten. The authored bounds and existing 60 KB message cap produce explicit sync errors rather than clamping or truncating. Numerical placement is shared, not physical alignment, calibration, or spatial anchoring.
+
+After initializing your Roomcraft instance and XR Blocks, join a session and add the bridge:
+
+```js
+import * as xb from 'xrblocks';
+import {RoomcraftNet} from 'xrblocks/addons/roomcraft/index.js';
+import {
+  BroadcastChannelTransport,
+  enableNet,
+} from 'xrblocks/addons/netblocks/src/index.js';
+
+const session = await enableNet().joinRoom('reading-room', {
+  transport: new BroadcastChannelTransport(),
+  displayName: 'Alice',
+});
+const collaboration = new RoomcraftNet(room, session);
+xb.add(collaboration);
+await xb.initScript(collaboration);
+```
+
+Use one bridge per session with matching catalogs and scene coordinates. Logical counters and peer-ID tie-breaks give simultaneous layout writes the same winner. `status`, `pendingCount`, `statuschange`, and `error` expose synchronization state; present errors in your application's UI and call `resync()` to request fresh peer state. `remoteSelections` returns a detached map and `getPeerColor(peerId)` matches each outline to a roster color.
+
+`collaboration.diagnostics` returns detached local metadata: the current revision, queued/applying/unpublished layout state, snapshot/catch-up waits, discovery, held objects and message counts. `diagnosticschange` notifies observers of bridge message activity; use it with the existing status events. No payloads, scene recipes or prompts are included, and reading diagnostics does not send data. Send counts are local transport submissions, not acknowledgements of remote application.
+
+Missing snapshot replies are retried once per second within the eight-second request window. A peer that cannot publish a snapshot returns a bounded, request-correlated reason; an invalid reply reports its validation error rather than later being replaced by a no-reply timeout. Rejected local edits retain their revision and remain pending across Retry and same-room reconnect, so older peer state cannot silently erase them. A positive `pendingCount` in the error state can describe a blocked edit rather than active work; corrective local editing remains available unless Roomcraft itself is busy. After correction, Retry republishes that state before fetching peer snapshots. Recovered synchronization and clock errors clear when the bridge confirms readiness; unrelated configuration or playback errors remain visible.
+
+Applications that switch between different rooms should pass `new RoomcraftNet(room, session, {roomId})`, using the same stable ID passed to `joinRoom`. Reconnection retains revision and motion continuity only within that room; entering a different room starts discovery instead of publishing the previous room's edit history as a newer revision.
+
+For a Join flow, also pass `{seedLocalScene: false}`. A fresh joiner then waits for a seeded room snapshot instead of promoting or offering its own starter state, including when only other joiners are reachable. Pass `true` for an explicit Start flow to establish the initial scene immediately; omitting the option uses automatic discovery. An unanswered Join reports a timeout rather than silently becoming the creator; same-room continuation and explicit local edits retain their revision behavior.
+
+The bridge keeps NetObject bindings on stable owners across content swaps, claims during native manipulation, and releases on drop. Its `manipulationchange` subscription receives the original native event and object ID. Call `collaboration.dispose()` and remove it from the scene when finished; this removes its listeners, bindings, and helper resources without disposing the Roomcraft instance or closing a session owned by the application.
+
+Crossed grabs use per-object logical claim counters, with the lexicographically smaller peer ID winning equal counters. A grab made after observing the previous claim still takes over normally. The losing interaction is cancelled without erasing the winner's buffered pose. Claim generations survive release, content replacement and late-join catch-up; ownership remains cooperative rather than server-authoritative.
+
+#### Shared authored-motion time
+
+The accepted scene snapshot carries a motion epoch and clock authority. Peers estimate their offset through monotonic request/reply timestamps and periodically refresh low-delay samples. This does not assume identical device wall clocks. Swing and spin poses are sampled from absolute shared elapsed time, so asynchronous construction and a background tab's missing frames do not permanently shift their playback phase. Replacing content samples the same current timeline rather than starting a separate local timer.
+
+`collaboration.motionClockState` reports the authority, whether timing has been synchronized, and the measured half-round-trip delay when available. That delay is an estimate, not a guarantee of phase accuracy: asymmetric routes, jitter, clock drift, and rendering at different instants still matter. A missing clock response produces an explicit error instead of claiming synchronized timing. A remaining peer takes over the timeline when its authority leaves.
+
+Within the same motion epoch, newer authority terms are reconciled even when their accompanying scene revision is older. A returning peer can therefore publish its offline edits while following the surviving peer's clock. Switching to a different epoch still requires accepting that scene revision.
+
+Pause is local inspection only. A paused peer keeps its displayed pose while the shared clock continues; Resume rejoins the current timeline. In shared mode, period, speed, and starting-phase edits are evaluated against that absolute timeline and may change the current pose immediately. Single-player playback keeps its original delta-based phase-preservation behavior. Destroying the bridge removes only the time source it installed, and recreating it for the same Roomcraft instance retains local elapsed time and authored revision continuity.
+
+The bridge uses the public `room.setMotionTimeSource(source)` seam, where `source` returns finite, non-negative absolute seconds. `room.motionTimeSource` exposes the current source for ownership-aware cleanup. Passing `undefined` returns to ordinary delta playback from the displayed phase. Apps using Roomcraft without networking do not need this API.
+
+All collaborating peers must use a compatible scene protocol, including its shared-clock metadata. Incompatible messages produce an explicit error rather than silently claiming aligned playback. Peer voice is a separate opt-in netblocks audio path, not the demo's Gemini transcription Talk control. No spatial alignment or anchor exchange is implied by either feature.
 
 ## Add it to an application
 
@@ -171,6 +230,8 @@ Use an object color of `#ffffff` to preserve individual part colors. Other objec
 
 `room.layout` is a detached, scene-local snapshot. `applyLayout()` explicitly replaces the scene with a saved or hand-authored layout, while `applyPlan()` performs incremental edits without calling AI.
 
+`applyLayout(layout, {signal})` accepts an optional `AbortSignal`. Cancellation rejects the import and restores the ready state without changing the current scene or history. Already-running asset factories may finish later; their unused staged content is disposed rather than attached. `RoomcraftNet` cancels its own pending import when disconnected or disposed, so a late asset cannot overwrite a disconnected scene or become a false offline edit on reconnect.
+
 ```js
 await room.applyLayout({
   title: 'Reading corner',
@@ -276,7 +337,7 @@ Use `changes.parts` to replace an entire design, or `changes.asset` to switch to
 
 Object positions specify origins in scene-local meters: X right, Y up, and positive Z toward the viewer. Catalog assets are normalized to have their base at that origin; procedural designs retain their authored coordinates. Object rotation is an upright Y-axis angle in radians. Object scale multiplies the catalog dimensions or the authored part geometry. Colors use six-digit hexadecimal notation.
 
-Model-authored and imported layouts are bounded to 48 objects, positions within 10 meters of the scene origin with nonnegative Y, and per-axis scale multipliers from 0.05 to 5. Plans have at most 96 edits. Direct hand transforms are preserved even if they move outside those planner input limits.
+Scenes are bounded to 48 objects and per-axis scale multipliers from 0.05 to 5. AI-authored placements use X/Z from -10 to 10 meters and Y from 0 to 10. Saved, imported and shared layouts contain live placements and accept every position axis from -10 to 10, including objects moved below the scene-local origin. This origin is not necessarily the physical floor. No position is silently clamped or shifted. Direct hand transforms outside the importable bounds remain local and produce an explicit sharing error until corrected. Plans have at most 96 edits.
 
 Each procedural object contains 1 to 48 parts with hierarchy depth at most 8; a scene contains at most 384 procedural parts. Individual sizes are 0.01 to 5 meters per axis, and parent-local centers are within +/-5 meters. A whole design, including its full motion envelope, must remain within +/-10 meters of its origin and be at most 10 meters across on each axis. There can be at most 96 part edits in one object update. Collection counts are enforced locally and described in the prompt rather than imposed on Gemini's nested response schema.
 
