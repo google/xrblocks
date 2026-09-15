@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import {
   AI,
   Depth,
-  OcclusionUtils,
   poseInFrontOfCamera,
   quaternionFacingCamera,
   Script,
@@ -10,6 +9,7 @@ import {
 
 import {GenerativeObject} from './GenerativeObject.js';
 import {GenerativeOptions} from './GenerativeOptions.js';
+import {runCleanupSteps} from './cleanup.js';
 import {
   CanvasBackgroundTextureSource,
   DataUrlTextureSource,
@@ -22,15 +22,6 @@ const scratchDirection = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 /** Clearance in meters to float an object off a vertical surface. */
 const SURFACE_CLEARANCE = 0.08;
-
-// Saved original raycast of each depth mesh we no-op so it stays out of the
-// reticle AND the spatial-UI hover raycast; raycastSurface_ restores it for
-// placement. (ignoreReticleRaycast covers only the reticle, not UI hover.)
-type DepthMeshRaycast = (
-  raycaster: THREE.Raycaster,
-  intersects: THREE.Intersection[]
-) => boolean;
-const originalDepthRaycast = new WeakMap<THREE.Object3D, DepthMeshRaycast>();
 
 /** Per-call overrides for {@link GenerativeObjects.imagine}. */
 export interface ImagineOptions {
@@ -69,17 +60,15 @@ export class GenerativeObjects extends Script {
   /** All objects created this session, in creation order. */
   readonly objects: GenerativeObject[] = [];
 
-  private ai!: AI;
-  private camera!: THREE.Camera;
-  private scene!: THREE.Scene;
+  private ai?: AI;
+  private camera?: THREE.Camera;
+  private scene?: THREE.Scene;
   private depth?: Depth;
   private raycaster = new THREE.Raycaster();
-  // Per-object teardown that removes the object's occlusion shader from the
-  // engine-wide depth.occludableShaders set, so cleared objects don't leak.
-  private readonly shaderCleanups = new Map<GenerativeObject, () => void>();
   // Bumped whenever objects are cleared, so an in-flight imagine() that resolves
   // after a clear/teardown does not add a stale object to the scene.
   private generation = 0;
+  private disposed = true;
 
   init({
     ai,
@@ -96,6 +85,8 @@ export class GenerativeObjects extends Script {
     this.camera = camera;
     this.scene = scene;
     this.depth = depth;
+    this.generation++;
+    this.disposed = false;
     this.textureSource = this.options.removeBackground
       ? new CanvasBackgroundTextureSource({
           buildDisplacement: this.options.relief,
@@ -105,13 +96,17 @@ export class GenerativeObjects extends Script {
 
   /** Whether image generation can run in the current session. */
   get isSupported(): boolean {
-    return !!this.ai?.isAvailable?.();
+    return !this.disposed && !!this.ai?.isAvailable();
   }
 
   /** Billboards tracked objects toward the user each frame, when enabled. */
   override update() {
-    this.ensureDepthMeshNonInteractive_();
-    if (!this.options.billboard || this.objects.length === 0) {
+    if (
+      this.disposed ||
+      !this.camera ||
+      !this.options.billboard ||
+      this.objects.length === 0
+    ) {
       return;
     }
     const cameraPosition = this.camera.getWorldPosition(scratchCameraPosition);
@@ -122,19 +117,6 @@ export class GenerativeObjects extends Script {
         object.quaternion
       );
     }
-  }
-
-  // The depth mesh is in the scene for occlusion + placement, so both the
-  // reticle and the spatial-UI button hover (its own scene raycast) hit it;
-  // close to a wall it steals hover from the panel. No-op its raycast so every
-  // raycaster skips it; raycastSurface_ restores it briefly for placement.
-  private ensureDepthMeshNonInteractive_() {
-    const mesh = this.depth?.depthMesh;
-    if (!mesh || originalDepthRaycast.has(mesh)) {
-      return;
-    }
-    originalDepthRaycast.set(mesh, mesh.raycast);
-    mesh.raycast = () => false;
   }
 
   /**
@@ -149,16 +131,21 @@ export class GenerativeObjects extends Script {
     prompt: string,
     options: ImagineOptions = {}
   ): Promise<GenerativeObject | null> {
-    if (!this.isSupported) {
+    if (!this.ai || !this.isSupported) {
       return null;
     }
 
+    const generation = this.generation;
     const result = await this.ai.generate(
       prompt,
       'image',
       this.options.systemInstruction
     );
-    if (typeof result !== 'string' || result.length === 0) {
+    if (
+      generation !== this.generation ||
+      typeof result !== 'string' ||
+      result.length === 0
+    ) {
       return null;
     }
 
@@ -179,13 +166,16 @@ export class GenerativeObjects extends Script {
     prompt = '',
     options: ImagineOptions = {}
   ): Promise<GenerativeObject | null> {
+    if (this.disposed || !this.scene) return null;
     const generation = this.generation;
     const loaded = await this.textureSource.load(image);
     // Dropped/cleared while the texture was decoding: discard so we never add a
     // stale object after a clearObjects()/teardown.
     if (generation !== this.generation) {
-      loaded.texture.dispose();
-      loaded.displacementTexture?.dispose();
+      const textures = new Set([loaded.texture, loaded.displacementTexture]);
+      runCleanupSteps(
+        Array.from(textures, (texture) => () => texture?.dispose())
+      );
       return null;
     }
 
@@ -198,36 +188,12 @@ export class GenerativeObjects extends Script {
       reliefStrength: this.options.reliefStrength,
       reliefSegments: this.options.reliefSegments,
     });
-    this.setupOcclusion_(object);
+    if (this.depth) object.enableOcclusion(this.depth);
     this.placeObject_(object, distance);
 
     this.scene.add(object);
     this.objects.push(object);
     return object;
-  }
-
-  /**
-   * Makes the object's material occluded by the real-world depth mesh: enabling
-   * the occludable layer alone only builds the occlusion mask, so the material's
-   * shader must also sample it (mirrors `ModelViewer`). No-op when depth is not
-   * enabled, so the object stays plainly visible instead of sampling an empty
-   * occlusion map and rendering transparent.
-   */
-  private setupOcclusion_(object: GenerativeObject) {
-    const depth = this.depth;
-    if (!depth?.occludableShaders) {
-      return;
-    }
-    const material = object.mesh.material;
-    material.onBeforeCompile = (shader) => {
-      OcclusionUtils.addOcclusionToShader(shader);
-      depth.occludableShaders.add(shader);
-      // Remember how to remove this shader so clearObjects() doesn't leak it.
-      this.shaderCleanups.set(object, () =>
-        depth.occludableShaders.delete(shader)
-      );
-    };
-    material.needsUpdate = true;
   }
 
   /**
@@ -251,9 +217,9 @@ export class GenerativeObjects extends Script {
           .addScaledVector(hit.normal, SURFACE_CLEARANCE);
       }
     } else {
-      poseInFrontOfCamera(this.camera, distance, object.position);
+      poseInFrontOfCamera(this.camera!, distance, object.position);
     }
-    const cameraPosition = this.camera.getWorldPosition(scratchCameraPosition);
+    const cameraPosition = this.camera!.getWorldPosition(scratchCameraPosition);
     quaternionFacingCamera(object.position, cameraPosition, object.quaternion);
   }
 
@@ -267,23 +233,16 @@ export class GenerativeObjects extends Script {
     normal: THREE.Vector3;
   } | null {
     const depthMesh = this.depth?.depthMesh;
-    if (!depthMesh) {
+    if (!depthMesh || !this.camera || !this.depth?.options.enabled) {
       return null;
     }
     const origin = this.camera.getWorldPosition(scratchOrigin);
     const direction = this.camera.getWorldDirection(scratchDirection);
     this.raycaster.set(origin, direction);
-    // depthMesh.raycast is no-op'd so walls don't steal hover; restore it just
-    // for this placement query, in a finally so a throw can't leave it active.
-    const original = originalDepthRaycast.get(depthMesh);
-    const nooped = depthMesh.raycast;
-    if (original) depthMesh.raycast = original;
-    let intersections;
-    try {
-      intersections = this.raycaster.intersectObject(depthMesh, false);
-    } finally {
-      depthMesh.raycast = nooped;
-    }
+    // Direct placement queries still hit depth; pointerEvents only filters
+    // the engine's shared interaction raycast.
+    depthMesh.updateWorldMatrix(true, false);
+    const intersections = this.raycaster.intersectObject(depthMesh, false);
     if (intersections.length === 0) {
       return null;
     }
@@ -308,14 +267,22 @@ export class GenerativeObjects extends Script {
 
   /** Removes all generated objects from the scene and frees their resources. */
   clearObjects() {
-    // Invalidate any in-flight generateBillboard() so its result is discarded.
     this.generation++;
-    for (const object of this.objects) {
-      this.scene.remove(object);
-      this.shaderCleanups.get(object)?.();
-      this.shaderCleanups.delete(object);
-      object.dispose();
-    }
-    this.objects.length = 0;
+    const objects = this.objects.splice(0);
+    runCleanupSteps(
+      objects.flatMap((object) => [
+        () => object.removeFromParent(),
+        () => object.dispose(),
+      ])
+    );
+  }
+
+  override dispose() {
+    this.disposed = true;
+    this.ai = undefined;
+    this.camera = undefined;
+    this.scene = undefined;
+    this.depth = undefined;
+    this.clearObjects();
   }
 }

@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import {
   computeBillboardScale,
-  DragMode,
-  type Draggable,
-  type HasDraggingMode,
+  type Depth,
   OCCLUDABLE_ITEMS_LAYER,
+  OcclusionUtils,
   Script,
+  type Shader,
 } from 'xrblocks';
 
+import {runCleanupSteps} from './cleanup.js';
 import type {LoadedTexture} from './TextureSource.js';
 
 /** How to build a {@link GenerativeObject}'s mesh. */
@@ -28,14 +29,9 @@ export interface GenerativeObjectStyle {
  * {@link GenerativeObjectStyle.relief} is set. Opts into
  * `OCCLUDABLE_ITEMS_LAYER` so depth occlusion can hide it behind real geometry.
  */
-export class GenerativeObject
-  extends Script
-  implements Draggable, HasDraggingMode
-{
-  draggable = true;
-  // Lets the global DragManager pick the object up and move it; without a
-  // draggingMode the manager bails out of beginDragging.
-  draggingMode = DragMode.TRANSLATING;
+export class GenerativeObject extends Script {
+  private disposed = false;
+  private occlusion?: {depth: Depth; shaders: Set<Shader>};
 
   /** The prompt that produced this object. */
   readonly prompt: string;
@@ -55,6 +51,12 @@ export class GenerativeObject
   ) {
     super();
     this.prompt = prompt;
+    this.xb = {
+      manipulation: {
+        actions: {translate: true},
+        handle: {action: 'translate'},
+      },
+    };
 
     this.mesh = style.relief
       ? buildReliefMesh(loaded, style)
@@ -72,9 +74,27 @@ export class GenerativeObject
     this.mesh.layers.enable(OCCLUDABLE_ITEMS_LAYER);
   }
 
+  /** Registers every compiled program with the enabled depth occlusion pass. */
+  enableOcclusion(depth: Depth) {
+    if (!depth.options.enabled || !depth.options.occlusion.enabled) return;
+    const shaders = new Set<Shader>();
+    this.occlusion = {depth, shaders};
+    this.mesh.material.onBeforeCompile = (shader) => {
+      if (this.disposed) return;
+      OcclusionUtils.addOcclusionToShader(shader);
+      shaders.add(shader);
+      depth.occludableShaders.add(shader);
+    };
+    this.mesh.material.needsUpdate = true;
+  }
+
   /** Releases GPU resources held by this object. */
-  dispose() {
-    this.mesh.geometry.dispose();
+  override dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    const occlusion = this.occlusion;
+    this.occlusion = undefined;
+    this.mesh.material.onBeforeCompile = () => {};
     const material = this.mesh.material as THREE.Material & {
       map?: THREE.Texture | null;
       displacementMap?: THREE.Texture | null;
@@ -90,8 +110,14 @@ export class GenerativeObject
     ]) {
       if (tex) textures.add(tex);
     }
-    for (const tex of textures) tex.dispose();
-    material.dispose();
+    runCleanupSteps([
+      ...Array.from(occlusion?.shaders ?? [], (shader) => () => {
+        occlusion?.depth.occludableShaders.delete(shader);
+      }),
+      () => this.mesh.geometry.dispose(),
+      ...Array.from(textures, (texture) => () => texture.dispose()),
+      () => material.dispose(),
+    ]);
   }
 }
 

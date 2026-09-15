@@ -3,6 +3,21 @@
   <head>
     <title>Generative Object</title>
     <meta charset="utf-8" />
+    <meta name="referrer" content="no-referrer" />
+    <script>
+      // Consume legacy URL input before loading resources. Its initial HTTP
+      // request has already reached the server; prefer the password field.
+      (() => {
+        const url = new URL(window.location.href);
+        window.generativeObjectUrlKey =
+          url.searchParams.get('key') || url.searchParams.get('geminiKey');
+        if (url.searchParams.has('key') || url.searchParams.has('geminiKey')) {
+          url.searchParams.delete('key');
+          url.searchParams.delete('geminiKey');
+          window.history.replaceState(window.history.state, '', url);
+        }
+      })();
+    </script>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no"
@@ -71,24 +86,17 @@
     <script type="importmap">
       {
         "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
-          "three/": "https://cdn.jsdelivr.net/npm/three@0.184.0/",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-          "troika-three-text": "https://cdn.jsdelivr.net/gh/protectwise/troika@028b81cf308f0f22e5aa8e78196be56ec1997af5/packages/troika-three-text/src/index.js",
-          "troika-three-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-three-utils/src/index.js",
-          "troika-worker-utils": "https://cdn.jsdelivr.net/gh/protectwise/troika@v0.52.4/packages/troika-worker-utils/src/index.js",
-          "bidi-js": "https://esm.sh/bidi-js@%5E1.0.2?target=es2022",
-          "webgl-sdf-generator": "https://esm.sh/webgl-sdf-generator@1.1.1/es2022/webgl-sdf-generator.mjs",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.185.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/",
           "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
           "lit/": "https://esm.run/lit@3/",
           "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
           "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
           "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
-          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.12.1/dist/signals-core.mjs",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
           "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
-          "uiblocks": "../../build/addons/uiblocks/src/index.js",
           "xrblocks": "../../build/xrblocks.js",
-          "xrblocks/addons/": "../../build/addons/",
           "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm"
         }
       }
@@ -106,70 +114,19 @@
             target="_blank"
             rel="noopener"
             >aistudio.google.com</a
-          >. The key is saved in your browser's localStorage and only sent to
-          Google.
+          >. The key is saved in this browser's localStorage and passed directly
+          to the Gemini client, without reloading or adding it to the URL.
+        </p>
+        <p>
+          Local prototyping only. Production apps must proxy AI calls through a
+          server you control. Legacy <code>?key=</code> input is removed from
+          the address bar, but its initial request may already be in server
+          logs. Prefer entering your key here.
         </p>
         <input id="keyInput" type="password" placeholder="AIza..." />
-        <button id="keySave">save and reload</button>
+        <button id="keySave">save and start</button>
       </div>
     </div>
-
-    <script>
-      // Resolve gemini key: ?key= URL param > localStorage > ./keys.json > overlay.
-      (async function () {
-        const STORAGE_KEY = 'gemini-api-key';
-        const params = new URLSearchParams(window.location.search);
-        if (params.has('key')) {
-          window.localStorage.setItem(STORAGE_KEY, params.get('key'));
-          return;
-        }
-        const stored = window.localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          params.set('key', stored);
-          const newUrl =
-            window.location.pathname +
-            '?' +
-            params.toString() +
-            window.location.hash;
-          window.history.replaceState(null, '', newUrl);
-          return;
-        }
-        // Try the demo-local keys.json first, then the repo-root one (handy
-        // when debugging locally with a single keys.json at the served root).
-        for (const keysUrl of ['./keys.json', '../../keys.json']) {
-          try {
-            const res = await fetch(keysUrl, {cache: 'no-store'});
-            if (res.ok) {
-              const k = (await res.json()).key;
-              if (k) {
-                window.localStorage.setItem(STORAGE_KEY, k);
-                params.set('key', k);
-                window.location.search = '?' + params.toString();
-                return;
-              }
-            }
-          } catch (_) {
-            // no keys.json at this path, try the next / fall through to overlay
-          }
-        }
-        const overlay = document.getElementById('keyOverlay');
-        const input = document.getElementById('keyInput');
-        const save = document.getElementById('keySave');
-        overlay.style.display = 'flex';
-        const submit = () => {
-          const k = input.value.trim();
-          if (!k) return;
-          window.localStorage.setItem(STORAGE_KEY, k);
-          params.set('key', k);
-          window.location.search = '?' + params.toString();
-        };
-        save.addEventListener('click', submit);
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') submit();
-        });
-        input.focus();
-      })();
-    </script>
 
     <div
       id="status"
@@ -189,6 +146,14 @@
     >
       starting...
     </div>
-    <script type="module" src="src/build/main.js"></script>
+    <script type="module">
+      import {start} from './src/build/main.js';
+
+      start().catch((error) => {
+        console.error('[generative_object] startup failed', error);
+        document.getElementById('status').textContent =
+          'Could not start the demo. Check the console.';
+      });
+    </script>
   </body>
 </html>
