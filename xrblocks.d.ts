@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid b7cee84
- * @builddate 2026-09-15T21:02:53.828Z
+ * @commitid 76ad91c
+ * @builddate 2026-09-15T23:36:34.698Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5920,12 +5920,14 @@ declare class DepthTextures {
     private uint8Arrays;
     private dataTextures;
     private nativeTextures;
+    private renderer?;
     depthData: XRCPUDepthInformation[];
     constructor(options: DepthOptions);
     private createDataDepthTextures;
     updateData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
     updateNativeTexture(depthData: XRWebGLDepthInformation, renderer: THREE.WebGLRenderer, viewId: number): void;
     get(viewId: number): THREE.ExternalTexture | THREE.DataTexture;
+    dispose(): void;
 }
 
 declare class DepthMesh extends MeshScript {
@@ -5956,6 +5958,7 @@ declare class DepthMesh extends MeshScript {
     private blendedWorld?;
     private rigidBody?;
     private colliderId;
+    private disposed;
     constructor(depthOptions: DepthOptions, width: number, height: number, depthTextures?: DepthTextures | undefined);
     /**
      * Initialize the depth mesh.
@@ -5991,6 +5994,8 @@ declare class DepthMesh extends MeshScript {
      */
     raycast(raycaster: THREE.Raycaster, intersects: THREE.Intersection[]): boolean;
     getColliderFromHandle(handle: RAPIER_NS.ColliderHandle): RAPIER_NS.Collider | undefined;
+    /** Called by Depth at terminal teardown, not on Script disconnection. */
+    disposeResources(): void;
 }
 
 type DepthArray = Float32Array | Uint16Array;
@@ -5999,6 +6004,8 @@ declare class Depth {
     private camera;
     private renderer;
     private gpuDepthConverter?;
+    private registry?;
+    private disposed;
     enabled: boolean;
     view: XRView[];
     cpuDepthData: XRCPUDepthInformation[];
@@ -6081,6 +6088,8 @@ declare class Depth {
      * Manually updates the depth mesh geometry using the cached depth.
      */
     updateFullResolutionDepthMesh(): void;
+    /** Releases depth resources at terminal Core teardown, not on XR exit. */
+    dispose(): void;
 }
 
 declare class SimulatorMediaDeviceInfo {
@@ -8877,6 +8886,7 @@ declare class OcclusionPass extends Pass {
     private lastOcclusionMapSize;
     private lastKawaseBlurSize;
     private readonly renderDimensions;
+    private disposed;
     constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, useFloatDepth?: boolean, renderToScreen?: boolean, occludableItemsLayer?: number);
     private setupKawaseBlur;
     setDepthTexture(depthTexture: THREE.Texture, rawValueToMeters: number, viewId: number, depthNear?: number, depthViewMatrix?: THREE.Matrix4, depthProjectionMatrix?: THREE.Matrix4): void;

@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid b7cee84
- * @builddate 2026-09-15T21:02:53.828Z
+ * @commitid 76ad91c
+ * @builddate 2026-09-15T23:36:34.698Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -9980,6 +9980,47 @@ class XRSystems extends THREE.Group {
     }
 }
 
+function disposeMaterial(material, except = new Set()) {
+    if (!material) {
+        return;
+    }
+    const materials = Array.isArray(material) ? material : [material];
+    for (const item of materials) {
+        if (!except.has(item)) {
+            item.dispose();
+        }
+    }
+}
+function disposeMeshResources(mesh) {
+    disposeRenderableResources(mesh);
+}
+function disposeRenderableResources(object) {
+    const renderable = object;
+    renderable.geometry?.dispose?.();
+    disposeMaterial(renderable.material);
+}
+function hasRenderableResources(object) {
+    const renderable = object;
+    return !!(renderable.geometry || renderable.material);
+}
+function disposeObjectTree(object) {
+    for (const child of [...object.children]) {
+        disposeObjectTree(child);
+        object.remove(child);
+    }
+    if (hasRenderableResources(object)) {
+        disposeRenderableResources(object);
+    }
+    const disposable = object;
+    disposable.dispose?.();
+}
+function disposeObjectChildren(object) {
+    for (const child of [...object.children]) {
+        disposeObjectTree(child);
+        object.remove(child);
+    }
+}
+
 const DepthMeshTexturedShader = {
     vertexShader: /* glsl */ `
 varying vec3 vNormal;
@@ -10168,6 +10209,7 @@ class DepthMesh extends MeshScript {
         this.projectionMatrixInverse = new THREE.Matrix4();
         this.lastColliderUpdateTime = 0;
         this.colliderId = 0;
+        this.disposed = false;
         this.visible = true;
         this.xb = { pointerEvents: 'none', reticleMode: 'surface' };
         this.options = options;
@@ -10420,6 +10462,48 @@ class DepthMesh extends MeshScript {
             }
         }
         return undefined;
+    }
+    /** Called by Depth at terminal teardown, not on Script disconnection. */
+    disposeResources() {
+        if (this.disposed)
+            return;
+        this.disposed = true;
+        const world = this.blendedWorld;
+        const body = this.rigidBody;
+        this.blendedWorld = undefined;
+        this.rigidBody = undefined;
+        this.RAPIER = undefined;
+        this.collider = undefined;
+        this.colliders.length = 0;
+        let firstError;
+        const cleanups = [
+            () => {
+                // Removing the body also removes its single or dual colliders.
+                if (body)
+                    world.removeRigidBody(body);
+            },
+            () => this.geometry.dispose(),
+            () => this.downsampledGeometry?.dispose(),
+            () => disposeMaterial(this.material),
+        ];
+        for (const cleanup of cleanups) {
+            try {
+                cleanup();
+            }
+            catch (error) {
+                firstError ??= error;
+            }
+        }
+        this.downsampledMesh?.removeFromParent();
+        this.downsampledMesh = undefined;
+        this.downsampledGeometry = undefined;
+        if (this.depthTextureMaterialUniforms) {
+            this.depthTextureMaterialUniforms.uDepthTexture.value = null;
+            this.depthTextureMaterialUniforms.uDepthTextureArray.value = null;
+        }
+        this.depthTextures = undefined;
+        if (firstError !== undefined)
+            throw firstError;
     }
 }
 
@@ -12896,6 +12980,7 @@ class DepthTextures {
         this.depthData[viewId] = depthData;
     }
     updateNativeTexture(depthData, renderer, viewId) {
+        this.renderer = renderer;
         if (this.nativeTextures.length < viewId + 1) {
             this.nativeTextures[viewId] = new THREE.ExternalTexture(depthData.texture);
         }
@@ -12912,6 +12997,28 @@ class DepthTextures {
             return this.dataTextures[viewId];
         }
         return this.nativeTextures[viewId];
+    }
+    dispose() {
+        let firstError;
+        for (const texture of this.dataTextures.splice(0)) {
+            try {
+                texture.dispose();
+            }
+            catch (error) {
+                firstError ??= error;
+            }
+        }
+        for (const texture of this.nativeTextures.splice(0)) {
+            // WebXR owns the native handle; only release our wrapper and metadata.
+            texture.sourceTexture = null;
+            this.renderer?.properties.remove(texture);
+        }
+        this.renderer = undefined;
+        this.float32Arrays.length = 0;
+        this.uint8Arrays.length = 0;
+        this.depthData.length = 0;
+        if (firstError !== undefined)
+            throw firstError;
     }
 }
 
@@ -13303,6 +13410,7 @@ class OcclusionPass extends Pass {
         this.lastOcclusionMapSize = new THREE.Vector2(0, 0);
         this.lastKawaseBlurSize = new THREE.Vector2(0, 0);
         this.renderDimensions = new THREE.Vector2();
+        this.disposed = false;
         this.occlusionMeshMaterial = new OcclusionMapMeshMaterial(camera, useFloatDepth);
         this.occlusionMapUniforms = {
             uDepthTexture: { value: null },
@@ -13519,11 +13627,47 @@ class OcclusionPass extends Pass {
         }
     }
     dispose() {
-        this.occlusionMeshMaterial.dispose();
-        this.occlusionMapTexture.dispose();
-        for (let i = 0; i < this.kawaseBlurQuads.length; i++) {
-            this.kawaseBlurQuads[i].dispose();
+        if (this.disposed)
+            return;
+        this.disposed = true;
+        const quads = [
+            this.occlusionMapQuad,
+            ...this.kawaseBlurQuads,
+            this.occlusionQuad,
+        ];
+        const resources = [
+            this.occlusionMeshMaterial,
+            this.occlusionMapTexture,
+            ...this.kawaseBlurTargets,
+            ...quads.flatMap((quad) => [quad.material, quad]),
+        ];
+        let firstError;
+        for (const resource of resources) {
+            try {
+                resource.dispose();
+            }
+            catch (error) {
+                firstError ??= error;
+            }
         }
+        this.kawaseBlurTargets.length = 0;
+        this.kawaseBlurQuads.length = 0;
+        this.depthTextures.length = 0;
+        this.depthNear.length = 0;
+        this.depthViewMatrices.length = 0;
+        this.depthProjectionMatrices.length = 0;
+        for (const uniforms of [
+            this.occlusionMeshMaterial.uniforms,
+            this.occlusionMapUniforms,
+        ]) {
+            uniforms.uDepthTexture.value = null;
+            uniforms.uDepthTextureArray.value = null;
+        }
+        this.occlusionMapUniforms.tDiffuse.value = null;
+        this.occlusionMapUniforms.tDepth.value = null;
+        this.occlusionUniforms.tDiffuse.value = null;
+        if (firstError !== undefined)
+            throw firstError;
     }
     updateOcclusionMapUniforms(uniforms, renderer) {
         const camera = renderer.xr.getCamera().cameras[0] || this.camera;
@@ -13553,6 +13697,7 @@ class Depth {
      * with Depth in WebXR.
      */
     constructor() {
+        this.disposed = false;
         this.enabled = false;
         this.view = [];
         this.cpuDepthData = [];
@@ -13587,9 +13732,13 @@ class Depth {
      * Initialize Depth manager.
      */
     init(camera, options, renderer, registry, scene) {
+        if (this.disposed) {
+            throw new Error('Depth cannot initialize after disposal.');
+        }
         this.camera = camera;
         this.options = options;
         this.renderer = renderer;
+        this.registry = registry;
         this.enabled = options.enabled;
         this.gpuDepthConverter = new GPUDepthConverter(renderer);
         if (this.options.depthTexture.enabled) {
@@ -13804,7 +13953,7 @@ class Depth {
         return this.depthTextures?.get(viewId);
     }
     update(frame) {
-        if (!this.options.enabled)
+        if (this.disposed || !this.options.enabled)
             return;
         if (frame) {
             this.updateLocalDepth(frame);
@@ -13898,6 +14047,63 @@ class Depth {
             this.depthDataFormat) {
             this.depthMesh.updateFullResolutionGeometry(this.cpuDepthData[0], this.depthDataFormat);
         }
+    }
+    /** Releases depth resources at terminal Core teardown, not on XR exit. */
+    dispose() {
+        if (this.disposed)
+            return;
+        this.disposed = true;
+        this.enabled = false;
+        const mesh = this.depthMesh;
+        const textures = this.depthTextures;
+        const pass = this.occlusionPass;
+        this.depthMesh = undefined;
+        this.depthTextures = undefined;
+        this.occlusionPass = undefined;
+        let firstError;
+        const cleanups = [
+            () => {
+                if (mesh && this.registry?.get(DepthMesh) === mesh) {
+                    this.registry.unregister(DepthMesh);
+                }
+            },
+            () => mesh?.removeFromParent(),
+            () => mesh?.disposeResources(),
+            () => {
+                if (textures && this.registry?.get(DepthTextures) === textures) {
+                    this.registry.unregister(DepthTextures);
+                }
+            },
+            () => textures?.dispose(),
+            () => pass?.dispose(),
+        ];
+        for (const cleanup of cleanups) {
+            try {
+                cleanup();
+            }
+            catch (error) {
+                firstError ??= error;
+            }
+        }
+        // TODO: Wire GPU converter disposal when its cleanup API from #600 lands.
+        this.gpuDepthConverter = undefined;
+        this.registry = undefined;
+        this.view.length = 0;
+        this.cpuDepthData.length = 0;
+        this.gpuDepthData.length = 0;
+        this.depthArray.length = 0;
+        this.depthDataFormat = undefined;
+        this.depthProjectionMatrices.length = 0;
+        this.depthProjectionInverseMatrices.length = 0;
+        this.depthViewMatrices.length = 0;
+        this.depthViewProjectionMatrices.length = 0;
+        this.depthCameraPositions.length = 0;
+        this.depthCameraRotations.length = 0;
+        this.normDepthBufferFromNormViewMatrices.length = 0;
+        this.depthClients.clear();
+        this.occludableShaders.clear();
+        if (firstError !== undefined)
+            throw firstError;
     }
 }
 
@@ -17939,47 +18145,6 @@ function placeObjectAtIntersectionFacingTarget(obj, intersection, target) {
     // authored with +Z forward, or a rotation offset can be applied here.
     obj.quaternion.setFromRotationMatrix(matrix4$1);
     return obj;
-}
-
-function disposeMaterial(material, except = new Set()) {
-    if (!material) {
-        return;
-    }
-    const materials = Array.isArray(material) ? material : [material];
-    for (const item of materials) {
-        if (!except.has(item)) {
-            item.dispose();
-        }
-    }
-}
-function disposeMeshResources(mesh) {
-    disposeRenderableResources(mesh);
-}
-function disposeRenderableResources(object) {
-    const renderable = object;
-    renderable.geometry?.dispose?.();
-    disposeMaterial(renderable.material);
-}
-function hasRenderableResources(object) {
-    const renderable = object;
-    return !!(renderable.geometry || renderable.material);
-}
-function disposeObjectTree(object) {
-    for (const child of [...object.children]) {
-        disposeObjectTree(child);
-        object.remove(child);
-    }
-    if (hasRenderableResources(object)) {
-        disposeRenderableResources(object);
-    }
-    const disposable = object;
-    disposable.dispose?.();
-}
-function disposeObjectChildren(object) {
-    for (const child of [...object.children]) {
-        disposeObjectTree(child);
-        object.remove(child);
-    }
 }
 
 /**
@@ -23767,6 +23932,7 @@ class Core {
             () => this.interaction.clear(),
             () => this.uiRenderer.dispose(),
             () => this.input.dispose(),
+            () => this.depth.dispose(),
             () => {
                 const camera = this.deviceCamera;
                 this.deviceCamera = undefined;
