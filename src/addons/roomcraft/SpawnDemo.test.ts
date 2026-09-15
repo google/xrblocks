@@ -144,6 +144,7 @@ describe('Roomcraft world-space entry positions', () => {
     const sheared = ground();
     sheared.matrixAutoUpdate = false;
     sheared.matrix.elements[8] = 0.5;
+    sheared.matrixWorldNeedsUpdate = true;
     expect(() => getWorldSpawn(sheared, 1.6)).toThrow('not sheared');
   });
 });
