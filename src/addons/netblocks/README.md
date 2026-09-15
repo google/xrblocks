@@ -249,12 +249,11 @@ new WebRTCTransport({
 
 ### WebSocketTransport
 
-Connects to a small relay server included in the addon
-(`server/relay.js`). Run it with:
+Connects to a small relay server included in the addon (`server/relay.js`). Only the Node.js relay needs the optional `ws` peer dependency; browser clients do not. Install it in the project where `xrblocks` is installed:
 
 ```sh
 npm i ws
-node node_modules/xrblocks/build/addons/netblocks/server/relay.js
+node node_modules/xrblocks/src/addons/netblocks/server/relay.js
 # or, in this repo: node src/addons/netblocks/server/relay.js
 ```
 
