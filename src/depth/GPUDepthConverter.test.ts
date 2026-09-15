@@ -22,6 +22,17 @@ function createConverter(xrEnabled = true) {
     xr: {enabled: xrEnabled},
     properties: new WebGLProperties(),
     getRenderTarget: vi.fn(() => currentTarget),
+    getActiveCubeFace: () => 0,
+    getActiveMipmapLevel: () => 0,
+    getCurrentViewport: (target: THREE.Vector4) =>
+      target.copy(currentTarget!.viewport),
+    getViewport: (target: THREE.Vector4) => target.set(0, 0, 1, 1),
+    getContext: () => ({
+      SCISSOR_BOX: 0x0c10,
+      SCISSOR_TEST: 0x0c11,
+      getParameter: () => new Int32Array([0, 0, 1, 1]),
+      isEnabled: () => false,
+    }),
     setRenderTarget: vi.fn((target: THREE.WebGLRenderTarget | null) => {
       currentTarget = target;
     }),

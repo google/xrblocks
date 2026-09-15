@@ -7,11 +7,18 @@ export class GPUDepthConverter {
   private depthMesh!: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private depthCamera!: THREE.OrthographicCamera;
   private gpuPixels!: Float32Array;
+  private savedViewport = new THREE.Vector4();
+  private savedScissor = new THREE.Vector4();
+  private logicalViewport = new THREE.Vector4();
+  private restoredViewport = new THREE.Vector4();
 
   constructor(private renderer: THREE.WebGLRenderer) {}
 
   /**
    * Converts unsigned short GPU depth from Quest 3 to float32 CPU depth.
+   * Restores renderer-managed target and raster state, not arbitrary raw-GL
+   * bindings. An independently overridden canvas viewport is restored in GL,
+   * but its renderer cache cannot be restored without changing logical defaults.
    */
   convertGPUToCPU(
     depthData: Readonly<XRWebGLDepthInformation>
@@ -85,6 +92,14 @@ export class GPUDepthConverter {
     this.depthTexture.sourceTexture = depthData.texture;
 
     const originalRenderTarget = this.renderer.getRenderTarget();
+    const activeCubeFace = this.renderer.getActiveCubeFace();
+    const activeMipmapLevel = this.renderer.getActiveMipmapLevel();
+    this.renderer.getCurrentViewport(this.savedViewport);
+    this.renderer.getViewport(this.logicalViewport);
+    const gl = this.renderer.getContext();
+    // The renderer's scissor getters expose logical defaults, not live state.
+    this.savedScissor.fromArray(gl.getParameter(gl.SCISSOR_BOX));
+    const scissorTest = gl.isEnabled(gl.SCISSOR_TEST);
     const xrEnabled = this.renderer.xr.enabled;
     try {
       this.renderer.xr.enabled = false;
@@ -101,7 +116,39 @@ export class GPUDepthConverter {
       );
     } finally {
       this.renderer.xr.enabled = xrEnabled;
-      this.renderer.setRenderTarget(originalRenderTarget);
+      if (originalRenderTarget) {
+        const {
+          viewport,
+          scissor,
+          scissorTest: targetScissorTest,
+        } = originalRenderTarget;
+        // setViewport/setScissor would overwrite renderer-wide logical defaults.
+        // Rebind with physical pixels, then restore the target's stored defaults.
+        originalRenderTarget.viewport = this.savedViewport;
+        originalRenderTarget.scissor = this.savedScissor;
+        originalRenderTarget.scissorTest = scissorTest;
+        try {
+          this.renderer.setRenderTarget(
+            originalRenderTarget,
+            activeCubeFace,
+            activeMipmapLevel
+          );
+        } finally {
+          originalRenderTarget.viewport = viewport;
+          originalRenderTarget.scissor = scissor;
+          originalRenderTarget.scissorTest = targetScissorTest;
+        }
+      } else {
+        this.renderer.setRenderTarget(null, activeCubeFace, activeMipmapLevel);
+        this.renderer.getCurrentViewport(this.restoredViewport);
+        if (!this.restoredViewport.equals(this.savedViewport)) {
+          // setRenderTarget floors, but setViewport rounds at fractional DPR.
+          this.renderer.setViewport(this.logicalViewport);
+        }
+        this.renderer.state.viewport(this.savedViewport);
+        this.renderer.state.scissor(this.savedScissor);
+        this.renderer.state.setScissorTest(scissorTest);
+      }
     }
 
     return {
