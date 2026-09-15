@@ -14,6 +14,20 @@ describe('Depth', () => {
     return new Depth();
   }
 
+  /**
+   * Builds a transform that swaps the two UV axes, standing in for a
+   * 90-degree rotation between the view and the depth buffer.
+   */
+  function swapUVMatrix(): THREE.Matrix4 {
+    // prettier-ignore
+    return new THREE.Matrix4().set(
+      0, 1, 0, 0, // new_x = old_y
+      1, 0, 0, 0, // new_y = old_x
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    );
+  }
+
   describe('getDepth with normDepthBufferFromNormView', () => {
     it('returns 0 when no depth data is available', () => {
       const depth = createDepth();
@@ -47,32 +61,64 @@ describe('Depth', () => {
 
       // Set up a transform that swaps u and v (simulating a 90-degree rotation
       // between view and depth buffer coordinate systems).
-      const swapMatrix = new THREE.Matrix4().set(
-        0,
-        1,
-        0,
-        0, // new_x = old_y
-        1,
-        0,
-        0,
-        0, // new_y = old_x
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1
-      );
-      depth.normDepthBufferFromNormViewMatrices[0] = swapMatrix;
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
 
-      // Without the transform, getDepth(0, 1) would read (u=0, v=1).
-      // With the swap, it becomes (u=1, v=0), reading the opposite corner.
-      const withTransform = depth.getDepth(0, 1);
-      // u=1,v=0 -> depthX=round(1*2) clamped 1, depthY=round(1*2) clamped 1
-      // -> index 3 -> value 40 * 0.1 = 4.0
-      expect(withTransform).toBeCloseTo(4.0);
+      // getDepth(0, 1) is the top-left of the view, which is (0, 0) once
+      // converted to the top-origin coordinates the transform expects. The
+      // swap leaves (0, 0) alone, so this reads row 0, column 0.
+      expect(depth.getDepth(0, 1)).toBeCloseTo(1.0);
+    });
+
+    it('converts to top-origin coordinates before applying the transform', () => {
+      // https://immersive-web.github.io/depth-sensing/#obtain-depth-at-coordinates
+      // takes top-origin normalized view coordinates, applies
+      // normDepthBufferFromNormView, then scales straight into the buffer.
+      // Flipping V after the transform instead samples a different pixel for
+      // every non-identity transform, and disagrees with DepthMesh, which
+      // flips first.
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([10, 20, 30, 40]);
+      depth.cpuDepthData[0] = {rawValueToMeters: 0.1} as XRCPUDepthInformation;
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
+
+      // View bottom-left, so top-origin (0, 1). The swap makes it (1, 0),
+      // which is row 0, column 1 -> 20. Flipping after the transform would
+      // give row 1, column 0 -> 30.
+      expect(depth.getDepth(0, 0)).toBeCloseTo(2.0);
+    });
+
+    it('samples the same pixel as the depth mesh does', () => {
+      // DepthMesh.updateDepth flips V before applying the transform. The two
+      // paths read the same buffer, so they have to agree.
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([10, 20, 30, 40]);
+      depth.cpuDepthData[0] = {rawValueToMeters: 0.1} as XRCPUDepthInformation;
+      const transform = swapUVMatrix();
+      depth.normDepthBufferFromNormViewMatrices[0] = transform;
+
+      for (const [u, v] of [
+        [0, 0],
+        [0, 1],
+        [1, 0],
+        [1, 1],
+      ]) {
+        const meshCoord = new THREE.Vector3(u, 1.0 - v, 0).applyMatrix4(
+          transform
+        );
+        const column = Math.round(
+          Math.min(Math.max(meshCoord.x * depth.width, 0), depth.width - 1)
+        );
+        const row = Math.round(
+          Math.min(Math.max(meshCoord.y * depth.height, 0), depth.height - 1)
+        );
+        const expected = depth.depthArray[0]![row * depth.width + column] * 0.1;
+
+        expect(depth.getDepth(u, v)).toBeCloseTo(expected);
+      }
     });
   });
 
@@ -93,7 +139,38 @@ describe('Depth', () => {
       // Identity transform — result should be the same as no transform.
       depth.normDepthBufferFromNormViewMatrices[0] = new THREE.Matrix4();
       const vertex = depth.getVertex(0, 1);
+
+      // (0, 1) is the top-left of the view, so clip space (-1, 1) at z = -1.
+      // An identity projection inverse leaves that alone, and the point is
+      // then scaled so that its z equals -depth. Buffer row 0, column 0 holds
+      // 10, which is 1.0 metres.
       expect(vertex).not.toBeNull();
+      expect(vertex!.x).toBeCloseTo(-1.0);
+      expect(vertex!.y).toBeCloseTo(1.0);
+      expect(vertex!.z).toBeCloseTo(-1.0);
+    });
+
+    it('reconstructs clip space from the transformed buffer coordinates', () => {
+      // depthProjectionInverseMatrices is the depth camera's projection, so
+      // the clip space point has to come from the depth buffer coordinates,
+      // not from the raw view UVs.
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([10, 20, 30, 40]);
+      depth.cpuDepthData[0] = {rawValueToMeters: 0.1} as XRCPUDepthInformation;
+      depth.depthProjectionInverseMatrices[0] = new THREE.Matrix4();
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
+
+      // View (0, 0) becomes top-origin (0, 1), and the swap makes it (1, 0):
+      // buffer column 1, row 0 -> 20 -> 2.0 metres. Clip space for buffer
+      // (1, 0) is (1, 1).
+      const vertex = depth.getVertex(0, 0);
+
+      expect(vertex).not.toBeNull();
+      expect(vertex!.x).toBeCloseTo(2.0);
+      expect(vertex!.y).toBeCloseTo(2.0);
+      expect(vertex!.z).toBeCloseTo(-2.0);
     });
   });
 

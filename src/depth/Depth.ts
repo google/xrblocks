@@ -148,6 +148,28 @@ export class Depth {
   }
 
   /**
+   * Converts bottom-origin view UVs into normalized depth buffer coordinates.
+   *
+   * {@link https://immersive-web.github.io/depth-sensing/#obtain-depth-at-coordinates | The WebXR algorithm}
+   * takes top-origin normalized view coordinates, applies
+   * `normDepthBufferFromNormView`, then scales the result straight into the
+   * buffer. Flipping V after the transform instead would sample a different
+   * pixel for every non-identity transform, and would disagree with
+   * {@link DepthMesh}, which flips first.
+   * @param u - Normalized horizontal coordinate, origin at bottom left.
+   * @param v - Normalized vertical coordinate, origin at bottom left.
+   * @param target - Vector that receives the result.
+   * @returns The normalized depth buffer coordinates.
+   */
+  private normDepthBufferCoords(u: number, v: number, target: THREE.Vector3) {
+    target.set(u, 1.0 - v, 0);
+    if (this.normDepthBufferFromNormViewMatrices.length > 0) {
+      target.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
+    }
+    return target;
+  }
+
+  /**
    * Retrieves the depth at normalized coordinates (u, v).
    * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
    * @param u - Normalized horizontal coordinate.
@@ -156,17 +178,10 @@ export class Depth {
    */
   getDepth(u: number, v: number) {
     if (!this.depthArray[0]) return 0.0;
-    // When matchDepthView is false, transform from view-space UVs to
-    // depth buffer UVs using normDepthBufferFromNormView.
-    if (this.normDepthBufferFromNormViewMatrices.length > 0) {
-      normViewCoord.set(u, v, 0);
-      normViewCoord.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
-      u = normViewCoord.x;
-      v = normViewCoord.y;
-    }
-    const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
+    const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+    const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
     const depthY = Math.round(
-      clamp((1.0 - v) * this.height, 0, this.height - 1)
+      clamp(coords.y * this.height, 0, this.height - 1)
     );
     const rawDepth = this.depthArray[0][depthY * this.width + depthX];
     return this.rawValueToMeters * rawDepth;
@@ -215,24 +230,19 @@ export class Depth {
   getVertex(u: number, v: number) {
     if (!this.depthArray[0]) return null;
 
-    // When matchDepthView is false, transform from view-space UVs to
-    // depth buffer UVs using normDepthBufferFromNormView.
-    if (this.normDepthBufferFromNormViewMatrices.length > 0) {
-      normViewCoord.set(u, v, 0);
-      normViewCoord.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
-      u = normViewCoord.x;
-      v = normViewCoord.y;
-    }
-
-    const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
+    const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+    const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
     const depthY = Math.round(
-      clamp((1.0 - v) * this.height, 0, this.height - 1)
+      clamp(coords.y * this.height, 0, this.height - 1)
     );
     const rawDepth = this.depthArray[0][depthY * this.width + depthX];
     const depth = this.rawValueToMeters * rawDepth;
+    // depthProjectionInverseMatrices belongs to the depth camera, so the clip
+    // space point has to come from the depth buffer coordinates. Buffer V
+    // grows downward while clip Y grows upward, hence the flip back here.
     const vertexPosition = new THREE.Vector3(
-      2.0 * (u - 0.5),
-      2.0 * (v - 0.5),
+      2.0 * (coords.x - 0.5),
+      2.0 * (0.5 - coords.y),
       -1
     );
     vertexPosition.applyMatrix4(this.depthProjectionInverseMatrices[0]);
