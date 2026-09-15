@@ -101,9 +101,7 @@ export class XRButton {
     this.simulatorButtonElement.innerText = this.startSimulatorText;
     this.simulatorButtonElement.onclick = async () => {
       if (this.disposed || this.simulatorButtonElement.disabled) return;
-      this.startingSimulator = true;
-      this.simulatorButtonElement.disabled = true;
-      this.xrButtonElement.disabled = true;
+      this.setSimulatorStarting(true);
       this.errorElement.textContent = '';
       this.errorElement.hidden = true;
       try {
@@ -111,11 +109,7 @@ export class XRButton {
         if (!this.disposed) this.domElement.remove();
       } catch (error) {
         if (this.disposed) return;
-        this.startingSimulator = false;
-        this.simulatorButtonElement.disabled =
-          !!this.sessionManager.currentSession;
-        this.xrButtonElement.disabled =
-          this.sessionManager.isXRSupported() !== true;
+        this.setSimulatorStarting(false);
         this.showError(error, 'Simulator');
       }
     };
@@ -203,6 +197,15 @@ export class XRButton {
 
   private onSessionEnded() {
     this.onSessionReady();
+  }
+
+  setSimulatorStarting(starting: boolean) {
+    if (this.disposed) return;
+    this.startingSimulator = starting;
+    this.simulatorButtonElement.disabled =
+      starting || !!this.sessionManager.currentSession;
+    this.xrButtonElement.disabled =
+      starting || this.sessionManager.isXRSupported() !== true;
   }
 
   dispose() {

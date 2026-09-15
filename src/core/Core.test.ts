@@ -376,6 +376,114 @@ describe('Core frame and simulator lifecycle', () => {
   );
 
   it.each(['loader', 'initialization'])(
+    'blocks XR entry during programmatic simulator %s and unlocks after failure',
+    async (pendingStage) => {
+      const originalNavigator = navigator;
+      const events = new EventTarget();
+      const session = Object.assign(events, {
+        end: vi.fn(async () => events.dispatchEvent(new Event('end'))),
+      }) as unknown as XRSession;
+      const requestSession = vi.fn().mockResolvedValue(session);
+      vi.stubGlobal('navigator', {
+        xr: {
+          isSessionSupported: vi.fn().mockResolvedValue(true),
+          requestSession,
+        },
+      });
+      try {
+        vi.spyOn(
+          core as unknown as {initialize(options: Options): Promise<void>},
+          'initialize'
+        ).mockResolvedValue();
+        await core.init(core.options);
+        core.renderer.xr.setSession = vi.fn().mockResolvedValue(undefined);
+        vi.spyOn(
+          core.permissionsManager,
+          'checkAndRequestPermissions'
+        ).mockResolvedValue({granted: true, status: 'granted'});
+
+        core.webXRSessionManager = new WebXRSessionManager(
+          core.renderer,
+          {},
+          'immersive-vr'
+        );
+        const button = new XRButton(
+          core.webXRSessionManager,
+          core.permissionsManager,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          core.startSimulator
+        );
+        core.xrButton = button;
+        document.body.appendChild(button.domElement);
+        await core.webXRSessionManager.initialize();
+        expect(button.xrButtonElement.disabled).toBe(false);
+        const disposeButton = vi.spyOn(button, 'dispose');
+
+        const simulatorModule = await import('../simulator/Simulator.js');
+        const moduleLoaded =
+          Promise.withResolvers<Awaited<ReturnType<SimulatorLoader>>>();
+        const initialization = Promise.withResolvers<void>();
+        const initStarted = Promise.withResolvers<void>();
+        simulatorLoader.mockReturnValueOnce(moduleLoaded.promise);
+        const initScript = vi.fn(() => {
+          initStarted.resolve();
+          return initialization.promise;
+        });
+        scripts(core).initScript = initScript;
+        scripts(core).onSimulatorStarted = vi.fn();
+
+        const startup = core.startSimulator();
+        const error = new Error(`Programmatic ${pendingStage} failed.`);
+        const rejection = expect(startup).rejects.toBe(error);
+        if (pendingStage === 'initialization') {
+          moduleLoaded.resolve(simulatorModule);
+          await initStarted.promise;
+        }
+
+        expect.soft(button.domElement.isConnected).toBe(true);
+        expect.soft(button.xrButtonElement.disabled).toBe(true);
+        expect.soft(button.simulatorButtonElement.disabled).toBe(true);
+        button.xrButtonElement.click();
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        expect.soft(requestSession).not.toHaveBeenCalled();
+        expect.soft(core.webXRSessionManager.currentSession).toBeUndefined();
+        expect.soft(disposeButton).not.toHaveBeenCalled();
+
+        if (pendingStage === 'loader') {
+          moduleLoaded.reject(error);
+          initialization.resolve();
+        } else {
+          initialization.reject(error);
+        }
+        await rejection;
+        expect.soft(button.domElement.isConnected).toBe(true);
+        expect.soft(button.xrButtonElement.disabled).toBe(false);
+        expect.soft(button.simulatorButtonElement.disabled).toBe(false);
+        expect.soft(core.simulatorRunning).toBe(false);
+
+        if (core.webXRSessionManager.currentSession) {
+          await core.webXRSessionManager.endSession();
+        }
+        simulatorLoader.mockResolvedValue(simulatorModule);
+        initScript.mockResolvedValue(undefined);
+        await core.startSimulator();
+        expect(core.simulatorRunning).toBe(true);
+        expect(disposeButton).toHaveBeenCalledOnce();
+        expect(button.domElement.isConnected).toBe(false);
+        expect(core.xrButton).toBeUndefined();
+      } finally {
+        vi.stubGlobal('navigator', originalNavigator);
+      }
+    }
+  );
+
+  it.each(['loader', 'initialization'])(
     'stops simulator startup during %s when Core is disposed',
     async (pendingStage) => {
       vi.spyOn(
