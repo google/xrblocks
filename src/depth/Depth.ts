@@ -153,9 +153,9 @@ export class Depth {
    * {@link https://immersive-web.github.io/depth-sensing/#obtain-depth-at-coordinates | The WebXR algorithm}
    * takes top-origin normalized view coordinates, applies
    * `normDepthBufferFromNormView`, then scales the result straight into the
-   * buffer. Flipping V after the transform instead would sample a different
-   * pixel for every non-identity transform, and would disagree with
-   * {@link DepthMesh}, which flips first.
+   * buffer. Flipping V after the transform instead samples a different pixel
+   * for any transform that does not commute with that flip, and disagrees
+   * with {@link DepthMesh}, which flips first.
    * @param u - Normalized horizontal coordinate, origin at bottom left.
    * @param v - Normalized vertical coordinate, origin at bottom left.
    * @param target - Vector that receives the result.
@@ -172,8 +172,10 @@ export class Depth {
   /**
    * Retrieves the depth at normalized coordinates (u, v).
    * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
-   * @param u - Normalized horizontal coordinate.
-   * @param v - Normalized vertical coordinate.
+   * @param u - Normalized horizontal coordinate, origin at the bottom left of
+   * the view, growing right.
+   * @param v - Normalized vertical coordinate, origin at the bottom left of
+   * the view, growing up.
    * @returns Depth value at the specified coordinates.
    */
   getDepth(u: number, v: number) {
@@ -223,8 +225,10 @@ export class Depth {
   /**
    * Retrieves the depth at normalized coordinates (u, v).
    * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
-   * @param u - Normalized horizontal coordinate.
-   * @param v - Normalized vertical coordinate.
+   * @param u - Normalized horizontal coordinate, origin at the bottom left of
+   * the view, growing right.
+   * @param v - Normalized vertical coordinate, origin at the bottom left of
+   * the view, growing up.
    * @returns Vertex at (u, v)
    */
   getVertex(u: number, v: number) {

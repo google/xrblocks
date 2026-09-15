@@ -89,36 +89,27 @@ describe('Depth', () => {
       expect(depth.getDepth(0, 0)).toBeCloseTo(2.0);
     });
 
-    it('samples the same pixel as the depth mesh does', () => {
-      // DepthMesh.updateDepth flips V before applying the transform. The two
-      // paths read the same buffer, so they have to agree.
+    it('reads interior pixels using the flip-then-transform order', () => {
+      // Corner cases get clamped, which hides ordering mistakes. These use a
+      // 4x4 buffer and interior UVs, with hard-coded expectations so the test
+      // does not just restate the implementation.
       const depth = createDepth();
-      depth.width = 2;
-      depth.height = 2;
-      depth.depthArray[0] = new Float32Array([10, 20, 30, 40]);
-      depth.cpuDepthData[0] = {rawValueToMeters: 0.1} as XRCPUDepthInformation;
-      const transform = swapUVMatrix();
-      depth.normDepthBufferFromNormViewMatrices[0] = transform;
+      depth.width = 4;
+      depth.height = 4;
+      // Values 1..16, so every pixel is distinguishable.
+      depth.depthArray[0] = new Float32Array(
+        Array.from({length: 16}, (_, i) => i + 1)
+      );
+      depth.cpuDepthData[0] = {rawValueToMeters: 1} as XRCPUDepthInformation;
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
 
-      for (const [u, v] of [
-        [0, 0],
-        [0, 1],
-        [1, 0],
-        [1, 1],
-      ]) {
-        const meshCoord = new THREE.Vector3(u, 1.0 - v, 0).applyMatrix4(
-          transform
-        );
-        const column = Math.round(
-          Math.min(Math.max(meshCoord.x * depth.width, 0), depth.width - 1)
-        );
-        const row = Math.round(
-          Math.min(Math.max(meshCoord.y * depth.height, 0), depth.height - 1)
-        );
-        const expected = depth.depthArray[0]![row * depth.width + column] * 0.1;
-
-        expect(depth.getDepth(u, v)).toBeCloseTo(expected);
-      }
+      // (0.25, 0.75) is top-origin (0.25, 0.25), and the swap leaves it there,
+      // so row 1, column 1 -> 6. Transforming before the flip would land on
+      // row 3, column 3 -> 16.
+      expect(depth.getDepth(0.25, 0.75)).toBeCloseTo(6);
+      // (0.75, 0.25) is top-origin (0.75, 0.75) -> row 3, column 3 -> 16.
+      // Transforming first would give row 1, column 1 -> 6.
+      expect(depth.getDepth(0.75, 0.25)).toBeCloseTo(16);
     });
   });
 
@@ -150,10 +141,12 @@ describe('Depth', () => {
       expect(vertex!.z).toBeCloseTo(-1.0);
     });
 
-    it('reconstructs clip space from the transformed buffer coordinates', () => {
-      // depthProjectionInverseMatrices is the depth camera's projection, so
-      // the clip space point has to come from the depth buffer coordinates,
-      // not from the raw view UVs.
+    it('derives clip space Y from the buffer row, not the buffer V', () => {
+      // Buffer V grows downward and clip Y grows upward, so the reconstruction
+      // has to flip back. This pins that orientation only. It does not claim
+      // the reconstruction is geometrically right for a buffer rotated
+      // relative to the depth camera, which is a separate open problem that
+      // predates this change.
       const depth = createDepth();
       depth.width = 2;
       depth.height = 2;
