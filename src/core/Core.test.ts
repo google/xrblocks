@@ -64,8 +64,20 @@ describe('Core frame and simulator lifecycle', () => {
   });
 
   afterEach(async () => {
-    await core.dispose();
+    // Explicit disposal tests may already have asserted a terminal rejection.
+    if (core.lifecycle !== 'disposed') await core.dispose();
     vi.restoreAllMocks();
+  });
+
+  it('disposes a Core left undisposed by the test', ({onTestFinished}) => {
+    const disposeRenderer = vi.fn();
+    core.renderer.dispose = disposeRenderer;
+    expect(core.lifecycle).not.toBe('disposed');
+
+    onTestFinished(() => {
+      expect(core.lifecycle).toBe('disposed');
+      expect(disposeRenderer).toHaveBeenCalledOnce();
+    });
   });
 
   it('shares one initialization and treats disposal as terminal', async () => {
