@@ -2,6 +2,7 @@ import type RAPIER_NS from 'rapier3d';
 import * as THREE from 'three';
 
 import {MeshScript} from '../core/Script';
+import {disposeMaterial} from '../utils/ThreeDisposal';
 import {clamp} from '../utils/utils';
 
 import {DepthMeshTexturedShader} from './DepthMeshTexturedShader';
@@ -40,6 +41,7 @@ export class DepthMesh extends MeshScript {
   private blendedWorld?: RAPIER_NS.World;
   private rigidBody?: RAPIER_NS.RigidBody;
   private colliderId = 0;
+  private disposed = false;
 
   constructor(
     private depthOptions: DepthOptions,
@@ -424,5 +426,46 @@ export class DepthMesh extends MeshScript {
       }
     }
     return undefined;
+  }
+
+  /** Called by Depth at terminal teardown, not on Script disconnection. */
+  disposeResources() {
+    if (this.disposed) return;
+    this.disposed = true;
+
+    const world = this.blendedWorld;
+    const body = this.rigidBody;
+    this.blendedWorld = undefined;
+    this.rigidBody = undefined;
+    this.RAPIER = undefined;
+    this.collider = undefined;
+    this.colliders.length = 0;
+
+    let firstError: unknown;
+    const cleanups = [
+      () => {
+        // Removing the body also removes its single or dual colliders.
+        if (body) world!.removeRigidBody(body);
+      },
+      () => this.geometry.dispose(),
+      () => this.downsampledGeometry?.dispose(),
+      () => disposeMaterial(this.material),
+    ];
+    for (const cleanup of cleanups) {
+      try {
+        cleanup();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+    this.downsampledMesh?.removeFromParent();
+    this.downsampledMesh = undefined;
+    this.downsampledGeometry = undefined;
+    if (this.depthTextureMaterialUniforms) {
+      this.depthTextureMaterialUniforms.uDepthTexture.value = null;
+      this.depthTextureMaterialUniforms.uDepthTextureArray.value = null;
+    }
+    this.depthTextures = undefined;
+    if (firstError !== undefined) throw firstError;
   }
 }
