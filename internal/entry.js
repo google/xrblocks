@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 0c55f4a
- * @builddate 2026-09-14T22:05:41.562Z
+ * @commitid adca533
+ * @builddate 2026-09-15T01:37:01.134Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6456,7 +6456,17 @@ class DirectTouch {
         for (const input of inputs) {
             this.present.add(input.controller);
             const previous = this.active.get(input.controller);
-            const resolved = this.resolver.resolve(this.registry.intersectionsAt(input.point, previous ? DirectTouch.EXIT_PADDING : 0, previous?.resolved.hitObject), 'direct-touch');
+            const resolved = previous?.captureRegion
+                ? this.registry.containsPoint(previous.captureRegion, input.point, DirectTouch.EXIT_PADDING)
+                    ? {
+                        ...previous.resolved,
+                        intersection: {
+                            ...previous.resolved.intersection,
+                            point: input.point.clone(),
+                        },
+                    }
+                    : undefined
+                : this.resolver.resolve(this.registry.intersectionsAt(input.point, previous ? DirectTouch.EXIT_PADDING : 0, previous?.resolved.hitObject), 'direct-touch');
             if (this.awaitingExit.has(input.controller)) {
                 if (!resolved)
                     this.awaitingExit.delete(input.controller);
@@ -6524,6 +6534,12 @@ class DirectTouch {
     }
     has(controller) {
         return this.active.has(controller);
+    }
+    /** A scroll candidate keeps contact with its viewport as children move. */
+    setCaptureRegion(controller, region) {
+        const contact = this.active.get(controller);
+        if (contact)
+            contact.captureRegion = region;
     }
     clear() {
         this.active.clear();
@@ -6610,8 +6626,8 @@ class HitRegistry {
         if (camera)
             this.raycaster.camera = camera;
     }
-    register(physical, logical) {
-        const entry = { physical, logical };
+    register(physical, logical, options = {}) {
+        const entry = { physical, logical, ...options };
         this.mappings.set(physical, entry);
         this.registered.add(entry);
         this.touchCandidates.set(physical, entry);
@@ -6656,6 +6672,23 @@ class HitRegistry {
         }
         return { physical: object, logical: object };
     }
+    find(logical) {
+        for (const entry of this.registered) {
+            if (entry.logical === logical)
+                return entry;
+        }
+        return undefined;
+    }
+    containsPoint(physical, point, padding = 0) {
+        if (physical.xb?.pointerEvents === 'none' || !effectiveVisible$1(physical))
+            return false;
+        const box = new THREE.Box3().setFromObject(physical);
+        if (padding > 0)
+            box.expandByScalar(padding);
+        return (!box.isEmpty() &&
+            box.containsPoint(point) &&
+            this.resolve(physical).containsPoint?.(point, padding) !== false);
+    }
     /** Collects ordered raw hits from the public scene and detached surfaces. */
     raycast(scene, ray, intersections) {
         intersections.length = 0;
@@ -6688,7 +6721,7 @@ class HitRegistry {
         const intersections = [];
         const box = new THREE.Box3();
         const center = new THREE.Vector3();
-        for (const { physical } of this.touchCandidates.values()) {
+        for (const { physical, containsPoint } of this.touchCandidates.values()) {
             if (physical.xb?.pointerEvents === 'none')
                 continue;
             if (!effectiveVisible$1(physical))
@@ -6702,6 +6735,8 @@ class HitRegistry {
             if (padding > 0)
                 box.expandByScalar(padding);
             if (box.isEmpty() || !box.containsPoint(point))
+                continue;
+            if (containsPoint?.(point, padding) === false)
                 continue;
             intersections.push({
                 distance: box.getCenter(center).distanceTo(point),
@@ -6842,6 +6877,8 @@ class HitResolver {
             const registered = this.registry.resolve(rawIntersection.object);
             if (registered.physical.xb?.pointerEvents === 'none')
                 continue;
+            if (registered.containsPoint?.(rawIntersection.point) === false)
+                continue;
             if (registered.logical === rawIntersection.object &&
                 hasPrivateAncestor(rawIntersection.object)) {
                 continue;
@@ -6854,7 +6891,13 @@ class HitResolver {
             const semanticCandidate = eligiblePath.find(isSemanticControl);
             const disabledSemantic = semanticCandidate !== undefined &&
                 isSemanticControlDisabled(semanticCandidate);
-            const semanticControl = disabledSemantic ? undefined : semanticCandidate;
+            const scrollFallback = disabledSemantic
+                ? eligiblePath.find((object) => getSemanticControl(object)?.kind === 'scroll' &&
+                    !isSemanticControlDisabled(object))
+                : undefined;
+            const semanticControl = disabledSemantic
+                ? scrollFallback
+                : semanticCandidate;
             const physicalHandle = registered.physical !== eligiblePath[0] &&
                 registered.physical.xb?.manipulationHandle !== undefined
                 ? registered.physical
@@ -6863,7 +6906,7 @@ class HitResolver {
                 ? undefined
                 : this.manipulation.resolve(physicalHandle ? [physicalHandle, ...eligiblePath] : eligiblePath);
             const callbackTarget = eligiblePath.find((object) => this.callbacks.hasTargetHandler(object, sourceType));
-            const target = disabledSemantic
+            const target = disabledSemantic && !scrollFallback
                 ? undefined
                 : (semanticControl ??
                     this.nearestTarget(eligiblePath, callbackTarget, manipulation?.owner));
@@ -7091,6 +7134,24 @@ function createPlanarSurfaceProjector(surface) {
         };
     };
 }
+/** Supplies the same UV contract for a tracked contact as for a captured ray. */
+function projectPointOnSurface(surface, point) {
+    if (!(surface instanceof THREE.Mesh))
+        return undefined;
+    surface.geometry.computeBoundingBox();
+    const bounds = surface.geometry.boundingBox;
+    if (!bounds || !hasFinitePlanarBounds(bounds))
+        return undefined;
+    surface.updateWorldMatrix(true, false);
+    if (Math.abs(surface.matrixWorld.determinant()) < Number.EPSILON)
+        return undefined;
+    const local = surface.worldToLocal(point.clone());
+    local.z = (bounds.min.z + bounds.max.z) / 2;
+    return {
+        point: local.clone().applyMatrix4(surface.matrixWorld),
+        uv: new THREE.Vector2((local.x - bounds.min.x) / (bounds.max.x - bounds.min.x), (local.y - bounds.min.y) / (bounds.max.y - bounds.min.y)),
+    };
+}
 function hasFinitePlanarBounds(bounds) {
     return (Number.isFinite(bounds.min.x) &&
         Number.isFinite(bounds.max.x) &&
@@ -7294,6 +7355,7 @@ const STYLE_KEYS = new Set([
     ':hover',
     ':active',
     ':disabled',
+    ':focus',
 ]);
 const STATE_STYLE_KEYS = new Set([
     'backgroundColor',
@@ -7389,8 +7451,9 @@ const ENUM_VALUES = {
     whiteSpace: ['normal', 'nowrap', 'pre-line'],
     textOverflow: ['clip', 'ellipsis'],
 };
-const states = new WeakMap();
+const states$2 = new WeakMap();
 const presentationObjects = new WeakMap();
+const presentationBounds = new WeakMap();
 const rootReferences = new Set();
 class UIElement extends Script {
     constructor(kind, options = {}) {
@@ -7398,7 +7461,7 @@ class UIElement extends Script {
         this.isUI = true;
         this.styleTarget = {};
         this.markUIDirty = () => {
-            const state = states.get(this);
+            const state = states$2.get(this);
             if (state)
                 state.revision++;
         };
@@ -7426,7 +7489,7 @@ class UIElement extends Script {
                 throw new Error('Every UI element must be below one UICard or UIOverlay root.');
             }
         };
-        states.set(this, {
+        states$2.set(this, {
             kind,
             revision: 0,
             structureRevision: 0,
@@ -7480,30 +7543,37 @@ class UIElement extends Script {
     }
 }
 function isUIElement(object) {
-    return states.has(object);
+    return states$2.has(object);
 }
 function getUIElementKind(element) {
-    return states.get(element).kind;
+    return states$2.get(element).kind;
 }
 /** Returns the rendered object that owns an element's calculated layout. */
 function getUIPresentationObject(element) {
     return presentationObjects.get(element);
 }
 /** Registers one rendered object for world-space UI queries. */
-function registerUIPresentationObject(element, presentation) {
+function registerUIPresentationObject(element, presentation, bounds) {
     presentationObjects.set(element, presentation);
+    if (bounds)
+        presentationBounds.set(element, bounds);
     return () => {
         if (presentationObjects.get(element) === presentation) {
             presentationObjects.delete(element);
+            presentationBounds.delete(element);
         }
     };
 }
+/** Undefined means no clipping-aware presentation is registered. */
+function getUIPresentationBounds(object, target) {
+    return presentationBounds.get(object)?.(target);
+}
 function getUIRevision(element) {
-    return states.get(element).revision;
+    return states$2.get(element).revision;
 }
 /** Returns the revision that changes only when the physical UI tree changes. */
 function getUIStructureRevision(element) {
-    return states.get(element).structureRevision;
+    return states$2.get(element).structureRevision;
 }
 /** Collects public UI roots without retaining their application lifetime. */
 function collectUIRoots(target) {
@@ -7624,7 +7694,7 @@ function findUIRoot(object) {
 function markRootStructureDirty(root) {
     if (!root)
         return;
-    states.get(root).structureRevision++;
+    states$2.get(root).structureRevision++;
 }
 function isUIRootKind(kind) {
     return kind === 'card' || kind === 'overlay';
@@ -7715,7 +7785,10 @@ function validateStyle(property, value, stateOnly) {
     }
 }
 function isStateStyleKey(property) {
-    return (property === ':hover' || property === ':active' || property === ':disabled');
+    return (property === ':hover' ||
+        property === ':active' ||
+        property === ':disabled' ||
+        property === ':focus');
 }
 function isUIUnit(value) {
     return ((typeof value === 'number' && Number.isFinite(value)) ||
@@ -8701,6 +8774,8 @@ function withDefaultPrevented(event, state) {
 }
 
 const DEFAULT_LONG_SELECT_DURATION = 0.75;
+const SCROLL_DRAG_THRESHOLD = 6;
+const WHEEL_SCALE_SPEED = 0.001;
 const NOOP_PROPAGATION = () => { };
 /** Owns all logical target, hover, capture, completion, and cancellation state. */
 class Interaction {
@@ -8716,6 +8791,7 @@ class Interaction {
         this.touches = new Map();
         this.suppressedUntilRelease = new Set();
         this.scaleIntents = new Map();
+        this.wheelIntents = new Map();
         this.frameSources = new Set();
         this.nextFrameSources = new Set();
         this.registry = new HitRegistry(dependencies.camera);
@@ -8761,6 +8837,10 @@ class Interaction {
                     isSemanticControlDisabled(capture.semanticControl));
                 if (reason)
                     this.cancelCapture(controller, reason);
+                else if (capture.scroll &&
+                    isSemanticControlDisabled(capture.scroll.owner)) {
+                    this.cancelCapture(controller, 'disabled');
+                }
             }
         }
         const snapshots = this.frameSnapshots;
@@ -8781,6 +8861,10 @@ class Interaction {
             this.applyScaleIntent(controller, factor);
         }
         this.scaleIntents.clear();
+        for (const [controller, delta] of this.wheelIntents) {
+            this.applyWheelIntent(controller, delta);
+        }
+        this.wheelIntents.clear();
         if (snapshots.length > 0) {
             try {
                 this.manipulation.update(snapshots);
@@ -8802,6 +8886,7 @@ class Interaction {
                 continue;
             try {
                 if (capture.kind === 'target') {
+                    this.updateScrollCapture(capture, snapshot);
                     this.updateLongSelect(capture, snapshot, deltaSeconds);
                     this.updateSemantic(capture, snapshot);
                 }
@@ -8823,9 +8908,14 @@ class Interaction {
         this.nextFrameSources.clear();
         this.exclusiveControls.clear();
         this.scaleIntents.clear();
+        this.wheelIntents.clear();
     }
-    registerHitSurface(physical, logical) {
-        return this.registry.register(physical, logical);
+    registerHitSurface(physical, logical, options) {
+        return this.registry.register(physical, logical, options);
+    }
+    /** Installs the UI runtime's focus policy without owning a second input path. */
+    setSelectionFocusHandler(handler) {
+        this.focusHandler = handler;
     }
     /** Refreshes bounded direct-touch candidates found by the lifecycle pass. */
     syncTouchCandidates(candidates) {
@@ -8867,6 +8957,7 @@ class Interaction {
         this.gazeDwell.remove(controller);
         this.suppressedUntilRelease.delete(controller);
         this.scaleIntents.delete(controller);
+        this.wheelIntents.delete(controller);
     }
     getSourceSnapshot(controller) {
         return this.sourceStates.get(controller);
@@ -8884,7 +8975,9 @@ class Interaction {
     isSelectingAt(object) {
         for (const capture of this.captures.values()) {
             if (capture.kind === 'target' &&
-                objectIsDescendantOf(capture.selection.surface, object)) {
+                objectIsDescendantOf(capture.scroll?.active
+                    ? capture.scroll.owner
+                    : capture.selection.surface, object)) {
                 return true;
             }
         }
@@ -8954,6 +9047,35 @@ class Interaction {
         this.scaleIntents.set(controller, (this.scaleIntents.get(controller) ?? 1) * factor);
         return true;
     }
+    /** Routes a normalized wheel delta using the next frame's resolved target. */
+    queueWheelIntent(controller, delta) {
+        if (!Number.isFinite(delta) || delta === 0)
+            return false;
+        this.wheelIntents.set(controller, (this.wheelIntents.get(controller) ?? 0) + delta);
+        return true;
+    }
+    applyWheelIntent(controller, delta) {
+        const resolved = this.resolvedRays.get(controller);
+        let owned = false;
+        for (const object of resolved?.objectPath ?? []) {
+            if (object.xb?.interactionEnabled === false)
+                break;
+            const control = getSemanticControl(object);
+            if (!control?.scroll || control.isDisabled())
+                continue;
+            owned = true;
+            if (this.exclusiveControls.has(object))
+                return;
+            let moved = false;
+            this.callbacks.invokeSemantic(object, () => {
+                moved = control.scroll.scrollBy(delta);
+            });
+            if (moved)
+                return;
+        }
+        if (!owned)
+            this.applyScaleIntent(controller, Math.exp(-delta * WHEEL_SCALE_SPEED));
+    }
     applyScaleIntent(controller, factor) {
         const snapshot = this.sourceStates.get(controller);
         const resolved = this.resolvedRays.get(controller);
@@ -9021,7 +9143,8 @@ class Interaction {
             input.sourceType === 'gaze' ||
             input.selected ||
             previousSelected ||
-            input.released === true;
+            input.released === true ||
+            this.wheelIntents.has(input.controller);
         if (!shouldRaycast || !this.scene) {
             intersections.length = 0;
             return intersections;
@@ -9050,6 +9173,7 @@ class Interaction {
             return;
         }
         if (!resolved?.target) {
+            this.focusHandler?.();
             const capture = { kind: 'none' };
             this.installCapture(controller, capture);
             this.runCaptureTransition(controller, () => {
@@ -9068,7 +9192,7 @@ class Interaction {
         const wantsManipulation = !semantic && resolved.manipulation !== undefined;
         if (semantic) {
             action = 'semantic';
-            if (semantic.kind === 'slider' &&
+            if (isContinuousControl(semantic) &&
                 resolved.semanticControl &&
                 this.exclusiveControls.has(resolved.semanticControl)) {
                 action = 'none';
@@ -9079,8 +9203,9 @@ class Interaction {
         }
         if (gaze && semantic?.kind !== 'button')
             action = 'none';
-        const sliderProjector = action === 'semantic' && semantic?.kind === 'slider'
-            ? createPlanarSurfaceProjector(this.registry.resolve(resolved.hitObject).physical)
+        const physicalSurface = this.registry.resolve(resolved.hitObject).physical;
+        const sliderProjector = action === 'semantic' && isContinuousControl(semantic)
+            ? createPlanarSurfaceProjector(physicalSurface)
             : undefined;
         const capture = {
             kind: 'target',
@@ -9090,7 +9215,8 @@ class Interaction {
             semantic,
             semanticControl: resolved.semanticControl,
             sliderProjector,
-            exclusiveControl: action === 'semantic' && semantic?.kind === 'slider'
+            physicalSurface,
+            exclusiveControl: action === 'semantic' && isContinuousControl(semantic)
                 ? resolved.semanticControl
                 : undefined,
             longSelectDuration: 0,
@@ -9098,16 +9224,30 @@ class Interaction {
             lastStablePoint: resolved.intersection.point.clone(),
             touch,
         };
+        if (!gaze && action !== 'none') {
+            capture.scroll = this.createScrollCapture(resolved);
+            if (touch && capture.scroll) {
+                this.directTouch.setCaptureRegion(controller, capture.scroll.physical);
+            }
+        }
         this.installCapture(controller, capture);
         this.runCaptureTransition(controller, () => {
+            this.focusHandler?.(resolved.surface);
+            if (capture.scroll?.scrollbar) {
+                this.activateScrollCapture(capture, snapshot.controller);
+                if (capture.scroll?.active) {
+                    const { state, scrollbar } = capture.scroll;
+                    this.callbacks.invokeSemantic(capture.scroll.owner, () => state.scrollBy(scrollbar.offset - state.getOffset()));
+                }
+            }
             const event = this.createSelectEvent(controller, capture);
             dispatchInteractionPath(this.callbacks, selection.scriptPath, 'onObjectSelectStart', event);
             if (action === 'manipulate' &&
                 !this.manipulation.tryStart(selection, snapshot)) {
                 capture.action = 'none';
             }
-            if (action === 'semantic') {
-                this.invokeSemantic(capture, () => semantic?.begin?.(semanticInput(snapshot, resolved, sliderProjector)));
+            if (capture.action === 'semantic') {
+                this.invokeSemantic(capture, () => semantic?.begin?.(semanticInput(snapshot, resolved, sliderProjector, physicalSurface)));
             }
             this.callbacks.invokeGlobal('onSelectStart', event);
         });
@@ -9127,19 +9267,25 @@ class Interaction {
         }
         else if (capture.kind === 'target') {
             const released = this.resolvedRays.get(controller);
-            const sameTarget = (releasedTarget ?? released?.target) === capture.selection.target;
+            const sameTarget = (releasedTarget ?? released?.target) === capture.selection.target &&
+                (!capture.touch ||
+                    !capture.scroll ||
+                    capture.scroll.active ||
+                    this.registry
+                        .resolve(capture.physicalSurface)
+                        .containsPoint?.((finalSnapshot ?? snapshot).position) !== false);
             if (capture.action === 'manipulate') {
                 completed = this.runManipulationTransition(() => this.manipulation.end(controller, finalSnapshot ?? snapshot));
             }
             else if (capture.action === 'semantic') {
-                const slider = capture.semantic?.kind === 'slider';
+                const continuous = isContinuousControl(capture.semantic);
                 completed =
                     !capture.longSelectFired &&
                         !isSemanticControlDisabled(capture.semanticControl) &&
-                        (slider || sameTarget);
+                        (continuous || sameTarget);
                 if (completed) {
                     this.invokeSemantic(capture, () => {
-                        if (slider)
+                        if (continuous)
                             capture.semantic?.complete?.();
                         else
                             capture.semantic?.activate();
@@ -9153,11 +9299,14 @@ class Interaction {
                 completed =
                     capture.action === 'select' && !capture.longSelectFired && sameTarget;
             }
-            endReason = completed
-                ? 'released'
-                : sameTarget
-                    ? reason
-                    : 'released-outside';
+            endReason =
+                capture.action === 'scroll'
+                    ? 'pointer-cancel'
+                    : completed
+                        ? 'released'
+                        : sameTarget
+                            ? reason
+                            : 'released-outside';
             const endEvent = {
                 ...this.createSelectEvent(controller, capture),
                 completed,
@@ -9186,7 +9335,9 @@ class Interaction {
             reason,
         };
         if (capture.kind === 'target') {
-            this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+            if (capture.action !== 'scroll') {
+                this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+            }
             dispatchInteractionPath(this.callbacks, capture.selection.scriptPath, 'onObjectSelectEnd', event);
         }
         this.callbacks.invokeGlobal('onSelectEnd', event);
@@ -9348,12 +9499,15 @@ class Interaction {
         };
     }
     updateSemantic(capture, snapshot) {
-        if (capture.action !== 'semantic' || capture.semantic?.kind !== 'slider') {
+        if (capture.action !== 'semantic' ||
+            !isContinuousControl(capture.semantic)) {
             return;
         }
         const projection = snapshot.ray
             ? capture.sliderProjector?.(snapshot.ray)
-            : undefined;
+            : capture.physicalSurface
+                ? projectPointOnSurface(capture.physicalSurface, snapshot.position)
+                : undefined;
         if (projection) {
             this.invokeSemantic(capture, () => capture.semantic?.update?.({
                 source: snapshot.source,
@@ -9368,10 +9522,83 @@ class Interaction {
             this.invokeSemantic(capture, () => capture.semantic?.update?.(semanticInput(snapshot, resolved)));
         }
     }
+    createScrollCapture(resolved) {
+        for (const owner of resolved.objectPath) {
+            if (owner.xb?.interactionEnabled === false)
+                break;
+            const control = getSemanticControl(owner);
+            if (control?.isDisabled())
+                continue;
+            if (isContinuousControl(control) && !control?.scroll)
+                return undefined;
+            if (!control?.scroll)
+                continue;
+            const scrollbar = control.scroll.scrollbarHit?.(resolved.intersection.point);
+            if (control.kind === 'input' && !scrollbar)
+                return undefined;
+            if (control.kind !== 'scroll' && !scrollbar)
+                continue;
+            const physical = this.registry.find(owner)?.physical ?? owner;
+            const start = control.scroll.projectPoint(resolved.intersection.point);
+            if (!start)
+                return undefined;
+            return {
+                owner,
+                physical,
+                state: control.scroll,
+                projector: createPlanarSurfaceProjector(physical),
+                start,
+                lastY: start.y,
+                active: false,
+                scrollbar,
+            };
+        }
+        return undefined;
+    }
+    activateScrollCapture(capture, controller) {
+        const scroll = capture.scroll;
+        if (!scroll || scroll.active)
+            return;
+        const owner = this.exclusiveControls.get(scroll.owner);
+        if (owner && owner !== controller) {
+            capture.action = 'none';
+            capture.scroll = undefined;
+            this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+            return;
+        }
+        scroll.active = true;
+        capture.action = 'scroll';
+        capture.exclusiveControl = scroll.owner;
+        this.exclusiveControls.set(scroll.owner, controller);
+        this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+    }
+    updateScrollCapture(capture, snapshot) {
+        const scroll = capture.scroll;
+        if (!scroll || capture.longSelectFired)
+            return;
+        const point = snapshot.ray
+            ? (scroll.projector?.(snapshot.ray)?.point ??
+                this.resolvedRays.get(snapshot.controller)?.intersection.point)
+            : snapshot.position;
+        const projected = point && scroll.state.projectPoint(point);
+        if (!projected)
+            return;
+        if (!scroll.active) {
+            if (Math.abs(projected.y - scroll.start.y) < SCROLL_DRAG_THRESHOLD)
+                return;
+            this.activateScrollCapture(capture, snapshot.controller);
+            if (!scroll.active)
+                return;
+        }
+        const delta = (projected.y - scroll.lastY) * (scroll.scrollbar?.scale ?? -1);
+        scroll.lastY = projected.y;
+        this.callbacks.invokeSemantic(scroll.owner, () => scroll.state.scrollBy(delta));
+    }
     updateLongSelect(capture, snapshot, deltaSeconds) {
         if (capture.longSelectFired ||
             capture.action === 'manipulate' ||
-            capture.semantic?.kind === 'slider' ||
+            capture.action === 'scroll' ||
+            isContinuousControl(capture.semantic) ||
             snapshot.sourceType === 'gaze' ||
             !capture.selection.scriptPath.some((script) => this.callbacks.hasTargetHook(script, 'onObjectLongSelect'))) {
             return;
@@ -9519,6 +9746,7 @@ class Interaction {
         if (!capture)
             return undefined;
         this.captures.delete(controller);
+        this.directTouch.setCaptureRegion(controller);
         if (capture.kind === 'target' &&
             capture.exclusiveControl &&
             this.exclusiveControls.get(capture.exclusiveControl) === controller) {
@@ -9573,13 +9801,20 @@ class Interaction {
         this.callbacks.invokeSemantic(capture.semanticControl, callback);
     }
 }
-function semanticInput(snapshot, resolved, projector) {
-    const projection = snapshot.ray ? projector?.(snapshot.ray) : undefined;
+function semanticInput(snapshot, resolved, projector, physicalSurface) {
+    const projection = snapshot.ray
+        ? projector?.(snapshot.ray)
+        : physicalSurface
+            ? projectPointOnSurface(physicalSurface, snapshot.position)
+            : undefined;
     return {
         source: snapshot.source,
         point: projection?.point ?? resolved.intersection.point.clone(),
         uv: projection?.uv ?? resolved.intersection.uv?.clone(),
     };
+}
+function isContinuousControl(control) {
+    return control?.kind === 'slider' || control?.kind === 'input';
 }
 function clonePublicIntersection(intersection, surface) {
     return {
@@ -9598,6 +9833,131 @@ function controllerIndex(controller) {
 function selectionBelongsTo(selection, object) {
     return (objectIsDescendantOf(selection.target, object) ||
         selection.scriptPath.includes(object));
+}
+
+const DEFAULT_VIEWPORT_HEIGHT = 240;
+const states$1 = new WeakMap();
+/** A vertical viewport for ordinary retained UI children. Offsets use UI units. */
+class UIScrollView extends UIElement {
+    constructor({ ariaLabel = 'Scroll view', scrollTop = 0, onScroll, style, ...options } = {}) {
+        validateOffset(scrollTop);
+        if (!ariaLabel)
+            throw new Error('UIScrollView requires an accessible name.');
+        super('scroll', {
+            ...options,
+            style: { width: '100%', height: DEFAULT_VIEWPORT_HEIGHT, ...style },
+        });
+        this.name = 'UIScrollView';
+        this._clientHeight = 0;
+        this._scrollHeight = 0;
+        this.measured = false;
+        this.ariaLabel = ariaLabel;
+        this._scrollTop = Math.max(0, scrollTop);
+        this.onScroll = onScroll;
+        states$1.set(this, {
+            updateLayout: (height, contentHeight) => {
+                this._clientHeight = height;
+                this._scrollHeight = contentHeight;
+                this.measured = true;
+                this.scrollTo(this._scrollTop);
+            },
+            clearLayout: () => {
+                this.measured = false;
+                this._clientHeight = 0;
+                this._scrollHeight = 0;
+            },
+        });
+        registerSemanticControl(this, {
+            kind: 'scroll',
+            isDisabled: () => !this.ready,
+            activate: () => { },
+            scroll: {
+                getOffset: () => this.scrollTop,
+                getViewportHeight: () => this.clientHeight,
+                projectPoint: (point) => states$1.get(this)?.binding?.projectPoint(point),
+                scrollBy: (delta) => this.scrollBy(delta),
+                scrollbarHit: (point) => states$1.get(this)?.binding?.scrollbarHit?.(point),
+            },
+        });
+    }
+    get ready() {
+        return this.measured && states$1.get(this)?.binding !== undefined;
+    }
+    get scrollTop() {
+        return this._scrollTop;
+    }
+    set scrollTop(offset) {
+        this.scrollTo(offset);
+    }
+    get clientHeight() {
+        return this._clientHeight;
+    }
+    get scrollHeight() {
+        return this._scrollHeight;
+    }
+    get maxScrollTop() {
+        return Math.max(0, this.scrollHeight - this.clientHeight);
+    }
+    /** Sets a clamped offset. Before layout, retains the requested initial offset. */
+    scrollTo(offset) {
+        validateOffset(offset);
+        const next = this.measured
+            ? Math.min(this.maxScrollTop, Math.max(0, offset))
+            : Math.max(0, offset);
+        states$1.get(this)?.binding?.applyOffset(next);
+        if (next === this._scrollTop)
+            return;
+        this._scrollTop = next;
+        this.markUIDirty();
+        this.onScroll?.(next);
+    }
+    /** Returns whether a measured viewport actually moved. */
+    scrollBy(delta) {
+        validateOffset(delta);
+        if (!this.ready)
+            return false;
+        const previous = this.scrollTop;
+        this.scrollTo(previous + delta);
+        return previous !== this.scrollTop;
+    }
+    /** Minimally reveals a descendant after its mounted layout is ready. */
+    reveal(child) {
+        let parent = child.parent;
+        while (parent && parent !== this)
+            parent = parent.parent;
+        if (parent !== this) {
+            throw new Error('UIScrollView.reveal requires a descendant UI element.');
+        }
+        const binding = states$1.get(this)?.binding;
+        if (!this.ready || !binding) {
+            throw new Error('UIScrollView.reveal requires a mounted layout.');
+        }
+        binding.reveal(child);
+    }
+}
+function bindScrollView(view, binding) {
+    const state = states$1.get(view);
+    state.binding = binding;
+    return () => {
+        if (state.binding !== binding)
+            return;
+        state.binding = undefined;
+        state.clearLayout();
+    };
+}
+function updateScrollViewLayout(view, height, contentHeight) {
+    if (!Number.isFinite(height) ||
+        !Number.isFinite(contentHeight) ||
+        height < 0 ||
+        contentHeight < 0) {
+        throw new Error('UIScrollView requires finite, nonnegative layout extents.');
+    }
+    states$1.get(view).updateLayout(height, Math.max(height, contentHeight));
+}
+function validateOffset(offset) {
+    if (!Number.isFinite(offset)) {
+        throw new Error('UIScrollView offsets must be finite.');
+    }
 }
 
 const CONTEXT_NUMBER_SCALE = 10_000;
@@ -10309,6 +10669,9 @@ function isDescendantOf$2(object, ancestor) {
     return false;
 }
 function getObjectBounds(object, target) {
+    const clipped = getUIPresentationBounds(object, target ?? new THREE.Box3());
+    if (clipped !== undefined)
+        return clipped;
     const presentation = getUIPresentationObject(object);
     if (presentation) {
         const presentationBounds = getThreeObjectBounds(presentation, target);
@@ -10453,6 +10816,7 @@ function describeSemanticObject(object, interaction) {
         pointerEvents: object.xb?.pointerEvents ?? 'auto',
         interactionEnabled: object.xb?.interactionEnabled ?? true,
         ...inferValue(object),
+        ...inferEditingState(object),
     };
 }
 function hasSemanticAncestor(object) {
@@ -10487,6 +10851,10 @@ function inferRole(object) {
             return 'button';
         if (kind === 'slider')
             return 'slider';
+        if (kind === 'input')
+            return 'textbox';
+        if (kind === 'scroll')
+            return 'region';
         if (kind === 'text')
             return 'text';
         if (kind === 'image' || kind === 'icon')
@@ -10526,11 +10894,19 @@ function inferTraits(object, disabled) {
         traits.add('manipulable');
     if (isUIElement(object) &&
         (getUIElementKind(object) === 'button' ||
-            getUIElementKind(object) === 'slider') &&
+            getUIElementKind(object) === 'slider' ||
+            getUIElementKind(object) === 'input') &&
         object.xb?.interactionEnabled !== false &&
         !disabled) {
         traits.add('selectable');
     }
+    if (getSemanticControl(object)?.scroll)
+        traits.add('scrollable');
+    if (isUIElement(object) &&
+        getUIElementKind(object) === 'input' &&
+        !object.readOnly &&
+        !disabled)
+        traits.add('editable');
     return traits.size ? [...traits] : undefined;
 }
 function mergeTraits(inferred, explicit) {
@@ -10545,7 +10921,29 @@ function inferValue(object) {
     return { value: slider.value, min: slider.min, max: slider.max };
 }
 function inferDisabled(object) {
-    return object.disabled;
+    return (getSemanticControl(object)?.isDisabled() ??
+        object.disabled);
+}
+function inferEditingState(object) {
+    const description = {};
+    if (isUIElement(object) && getUIElementKind(object) === 'input') {
+        const input = object;
+        description.focused = input.focused;
+        description.readOnly = input.readOnly;
+        description.multiline = input.multiline;
+    }
+    const scroll = getSemanticControl(object)?.scroll;
+    if (scroll) {
+        description.scroll = {
+            offset: roundContextNumber(scroll.getOffset()),
+            viewportHeight: roundContextNumber(scroll.getViewportHeight()),
+        };
+        if (object instanceof UIScrollView) {
+            description.scroll.maximum = roundContextNumber(object.maxScrollTop);
+            description.scroll.contentHeight = roundContextNumber(object.scrollHeight);
+        }
+    }
+    return description;
 }
 function isLayoutOnlyContainer(object, role) {
     const className = object.constructor.name;
@@ -10586,6 +10984,14 @@ function createSemanticNode(object, id, semantic, parentId) {
         node.selected = semantic.selected;
     if (semantic.hovered !== undefined)
         node.hovered = semantic.hovered;
+    if (semantic.focused !== undefined)
+        node.focused = semantic.focused;
+    if (semantic.readOnly !== undefined)
+        node.readOnly = semantic.readOnly;
+    if (semantic.multiline !== undefined)
+        node.multiline = semantic.multiline;
+    if (semantic.scroll !== undefined)
+        node.scroll = semantic.scroll;
     if (semantic.value !== undefined)
         node.value = semantic.value;
     if (semantic.min !== undefined)
@@ -10792,6 +11198,9 @@ function createVisibleObjectsContext({ scene, camera, semanticTree, occlusionOpa
 }
 function createSemanticViewData({ camera, node, object, raycastTargets, occlusionOpacityThreshold, }) {
     if (!node.visible || !isObjectVisible(object)) {
+        return createNotRenderedViewData();
+    }
+    if (getUIPresentationBounds(object, tempBoundsBox) === null) {
         return createNotRenderedViewData();
     }
     const box = getObjectBounds(object, tempBoundsBox);
@@ -15198,6 +15607,8 @@ const UI_THEME_STYLE_ROLES = new Set([
     'text',
     'button',
     'slider',
+    'scroll',
+    'input',
     'image',
     'icon',
 ]);
@@ -15635,6 +16046,11 @@ class UIRenderer {
         };
         this.privateRoot.name = 'XR Blocks private UI';
         this.privateRoot.userData.xrblocksPrivate = true;
+        this.interaction.setSelectionFocusHandler((target) => {
+            if (this.backendState.kind === 'ready') {
+                this.backendState.backend.handlePointerTarget?.(target);
+            }
+        });
     }
     /** Mounts UI roots already connected when Core initializes. */
     async initialize(scene, renderer) {
@@ -15727,6 +16143,7 @@ class UIRenderer {
         this.unmount(root);
     }
     dispose() {
+        this.interaction.setSelectionFocusHandler();
         const backendState = this.backendState;
         this.backendState = { kind: 'disposed' };
         for (const root of [...this.mounts.keys()])
@@ -15799,6 +16216,7 @@ class UIRenderer {
             return;
         record.connected = false;
         record.mount.object.visible = false;
+        record.mount.setActive?.(false);
         this.interaction.cancelObject(root, 'removed');
         for (const unregister of record.unregisterHits)
             unregister();
@@ -15817,6 +16235,9 @@ class UIRenderer {
     reconcileMounts(deltaSeconds, camera) {
         this.viewport.width = window.innerWidth;
         this.viewport.height = window.innerHeight;
+        // A field may have moved out of any root, including a disconnected one.
+        for (const record of this.mounts.values())
+            record.mount.prepareCommit?.();
         for (const record of this.mounts.values()) {
             if (!record.connected)
                 continue;
@@ -15826,6 +16247,7 @@ class UIRenderer {
             }
             record.visible = visible;
             record.mount.object.visible = visible;
+            record.mount.setActive?.(visible);
             syncRootTransform(record.root, record.mount.object, camera);
             const mappings = record.mount.commit(ui.theme, this.viewport, record.order);
             if (mappings) {
@@ -15843,7 +16265,7 @@ class UIRenderer {
     registerHit(mapping, overlay) {
         mapping.physical.userData.xrblocksHitOrder = mapping.physical.renderOrder;
         mapping.physical.userData.xrblocksOverlay = overlay;
-        return this.interaction.registerHitSurface(mapping.physical, mapping.logical);
+        return this.interaction.registerHitSurface(mapping.physical, mapping.logical, mapping.options);
     }
     collectConnectedRoots() {
         collectUIRoots(this.roots);
@@ -15902,7 +16324,7 @@ function syncRootTransform(root, renderRoot, camera) {
     renderRoot.matrixAutoUpdate = false;
 }
 async function defaultLoader() {
-    return import('./UIKitBackend.js');
+    return import('./UIKitBackend.js').then(function (n) { return n.U; });
 }
 
 const DEBUGGING = false;
@@ -26076,6 +26498,306 @@ class UIText extends UIElement {
     }
 }
 
+const DEFAULT_SINGLE_LINE_HEIGHT = 56;
+const DEFAULT_MULTILINE_HEIGHT = 120;
+const states = new WeakMap();
+/** A single-line or multiline text field backed by native browser editing. */
+class UITextInput extends UIElement {
+    constructor({ ariaLabel, value = '', placeholder = '', multiline = false, disabled = false, readOnly = false, maxLength, onInput, onChange, onSubmit, onFocus, onBlur, style, ...options }) {
+        if (!ariaLabel)
+            throw new Error('UITextInput requires ariaLabel.');
+        validateText(value, 'value');
+        validateText(placeholder, 'placeholder');
+        validateFlag(multiline, 'multiline');
+        validateFlag(disabled, 'disabled');
+        validateFlag(readOnly, 'readOnly');
+        validateMaxLength(maxLength);
+        super('input', {
+            ...options,
+            style: {
+                width: '100%',
+                minHeight: multiline
+                    ? DEFAULT_MULTILINE_HEIGHT
+                    : DEFAULT_SINGLE_LINE_HEIGHT,
+                ...style,
+            },
+        });
+        this.name = 'UITextInput';
+        this.ariaLabel = ariaLabel;
+        this.multiline = multiline;
+        this._value = normalizeTextInputValue(value, multiline);
+        this._placeholder = placeholder;
+        this._disabled = disabled;
+        this._readOnly = readOnly;
+        this._maxLength = maxLength;
+        this.onInput = onInput;
+        this.onChange = onChange;
+        this.onSubmit = onSubmit;
+        this.onFocus = onFocus;
+        this.onBlur = onBlur;
+        states.set(this, {
+            baseline: this._value,
+            focused: false,
+            nativeKeyboardRequests: new Set(),
+            internals: {
+                notifyInput: (next) => this.handleNativeInput(next),
+                notifyFocus: () => this.handleNativeFocus(),
+                notifyBlur: () => this.handleNativeBlur(),
+                notifySubmit: () => this.onSubmit?.(this._value),
+            },
+        });
+        const scrollOwner = states.get(this);
+        registerSemanticControl(this, {
+            kind: 'input',
+            isDisabled: () => this._disabled || !this.ready,
+            activate: () => {
+                if (this.ready && !this._disabled)
+                    this.binding.focus();
+            },
+            begin: (input) => this.binding?.begin?.(input),
+            update: (input) => this.binding?.update?.(input),
+            complete: () => this.binding?.complete?.(),
+            cancel: () => this.binding?.cancel?.(),
+            get scroll() {
+                return scrollOwner.binding?.getScroll?.();
+            },
+        });
+    }
+    /** Whether a mounted backend can currently accept editing operations. */
+    get ready() {
+        return this.binding?.isReady() ?? false;
+    }
+    /** A module or text-rendering failure reported by the mounted backend. */
+    get error() {
+        return this.binding?.getError?.();
+    }
+    get focused() {
+        return states.get(this).focused;
+    }
+    /** Whether a custom keyboard currently owns software-keyboard suppression. */
+    get nativeKeyboardSuppressed() {
+        return states.get(this).nativeKeyboardRequests.size > 0;
+    }
+    /**
+     * Requests that the browser's software keyboard stay hidden while a custom
+     * keyboard is active. Call the returned function to release this request.
+     * Native text editing remains enabled; support depends on the browser.
+     */
+    suppressNativeKeyboard() {
+        const state = states.get(this);
+        const token = {};
+        const wasSuppressed = state.nativeKeyboardRequests.size > 0;
+        state.nativeKeyboardRequests.add(token);
+        if (!wasSuppressed)
+            state.binding?.applyOptions();
+        return () => {
+            if (!state.nativeKeyboardRequests.delete(token))
+                return;
+            if (state.nativeKeyboardRequests.size === 0)
+                state.binding?.applyOptions();
+        };
+    }
+    get value() {
+        return this._value;
+    }
+    /** Programmatic assignment never emits onInput and rebases onChange. */
+    set value(value) {
+        validateText(value, 'value');
+        value = normalizeTextInputValue(value, this.multiline);
+        const changed = value !== this._value;
+        const state = states.get(this);
+        this._value = value;
+        state.baseline = value;
+        state.binding?.applyValue(value);
+        if (changed)
+            this.markUIContentDirty();
+    }
+    get placeholder() {
+        return this._placeholder;
+    }
+    set placeholder(value) {
+        validateText(value, 'placeholder');
+        if (value === this._placeholder)
+            return;
+        this._placeholder = value;
+        this.binding?.applyOptions();
+        this.markUIContentDirty();
+    }
+    get disabled() {
+        return this._disabled;
+    }
+    set disabled(value) {
+        validateFlag(value, 'disabled');
+        if (value === this._disabled)
+            return;
+        this._disabled = value;
+        this.binding?.applyOptions();
+        this.markUIDirty();
+    }
+    get readOnly() {
+        return this._readOnly;
+    }
+    set readOnly(value) {
+        validateFlag(value, 'readOnly');
+        if (value === this._readOnly)
+            return;
+        this._readOnly = value;
+        this.binding?.applyOptions();
+        this.markUIDirty();
+    }
+    get maxLength() {
+        return this._maxLength;
+    }
+    set maxLength(value) {
+        validateMaxLength(value);
+        if (value === this._maxLength)
+            return;
+        this._maxLength = value;
+        this.binding?.applyOptions();
+    }
+    get selectionStart() {
+        return this.binding?.getSelection()?.start;
+    }
+    get selectionEnd() {
+        return this.binding?.getSelection()?.end;
+    }
+    get selectionDirection() {
+        return this.binding?.getSelection()?.direction;
+    }
+    /** UTF-16 code unit offsets, matching browser text field indexing. */
+    get selection() {
+        return this.binding?.getSelection();
+    }
+    setSelectionRange(start, end, direction = 'none') {
+        if (!Number.isInteger(start) || !Number.isInteger(end)) {
+            throw new Error('UITextInput selection offsets must be integers.');
+        }
+        if (!['forward', 'backward', 'none'].includes(direction)) {
+            throw new Error('UITextInput selection direction must be forward, backward, or none.');
+        }
+        this.requireBinding('setSelectionRange').setSelectionRange(Math.max(0, start), Math.max(0, end), direction);
+    }
+    focus() {
+        const binding = this.requireBinding('focus');
+        if (this._disabled)
+            return;
+        binding.focus();
+    }
+    blur() {
+        this.binding?.blur();
+    }
+    /** Replaces the current selection, honoring maxLength like typed input. */
+    insertText(text) {
+        validateText(text, 'insertText');
+        const binding = this.requireBinding('insertText');
+        if (this._disabled || this._readOnly)
+            return;
+        binding.insertText(text);
+    }
+    /**
+     * Applies one KeyboardEvent.key name from a virtual keyboard or automation.
+     *
+     * Returns whether the key was applied. Physical keyboards and IME go through
+     * the native element instead of this narrow path.
+     */
+    pressKey(key, modifiers) {
+        if (typeof key !== 'string' || key.length === 0) {
+            throw new Error('UITextInput.pressKey requires a key name.');
+        }
+        if (!this.ready || this._disabled)
+            return false;
+        return this.binding.pressKey(key, modifiers);
+    }
+    get binding() {
+        return states.get(this).binding;
+    }
+    handleNativeInput(value) {
+        value = normalizeTextInputValue(value, this.multiline);
+        if (value === this._value)
+            return;
+        this._value = value;
+        this.markUIContentDirty();
+        this.onInput?.(value);
+    }
+    handleNativeFocus() {
+        const state = states.get(this);
+        if (state.focused)
+            return;
+        state.focused = true;
+        state.baseline = this._value;
+        this.markUIDirty();
+        this.onFocus?.();
+    }
+    handleNativeBlur() {
+        const state = states.get(this);
+        if (!state.focused)
+            return;
+        state.focused = false;
+        this.markUIDirty();
+        const edited = this._value !== state.baseline;
+        state.baseline = this._value;
+        try {
+            if (edited)
+                this.onChange?.(this._value);
+        }
+        finally {
+            this.onBlur?.();
+        }
+    }
+    requireBinding(operation) {
+        const binding = this.binding;
+        if (!binding || !binding.isReady()) {
+            throw new Error(`UITextInput.${operation} requires a mounted, ready text field.`);
+        }
+        return binding;
+    }
+}
+/** Uses the same line-ending rules as native input and textarea values. */
+function normalizeTextInputValue(value, multiline) {
+    return multiline
+        ? value.replace(/\r\n?/g, '\n')
+        : value.replace(/[\r\n]/g, '');
+}
+/** Attaches one native editing backend and returns its reporting callbacks. */
+function bindTextInput(field, binding) {
+    const state = states.get(field);
+    if (state.binding && state.binding !== binding) {
+        throw new Error('UITextInput already has a native editing backend.');
+    }
+    state.binding = binding;
+    const internals = state.internals;
+    return {
+        field,
+        notifyInput: (value) => internals.notifyInput(value),
+        notifyFocus: () => internals.notifyFocus(),
+        notifyBlur: () => internals.notifyBlur(),
+        notifySubmit: () => internals.notifySubmit(),
+        unbind: () => {
+            if (state.binding !== binding)
+                return;
+            state.binding = undefined;
+            internals.notifyBlur();
+        },
+    };
+}
+function validateText(value, property) {
+    if (typeof value !== 'string') {
+        throw new Error(`UITextInput ${property} must be a string.`);
+    }
+}
+function validateFlag(value, property) {
+    if (typeof value !== 'boolean') {
+        throw new Error(`UITextInput ${property} must be a boolean.`);
+    }
+}
+function validateMaxLength(value) {
+    if (value === undefined)
+        return;
+    if (!Number.isInteger(value) || value < 0) {
+        throw new Error('UITextInput maxLength must be a nonnegative integer or undefined.');
+    }
+}
+
 /** A horizontal slider with one exclusive captured interaction. */
 class UISlider extends UIElement {
     constructor({ ariaLabel, min = 0, max = 1, step = 0.01, value = 0, disabled = false, onInput, onChange, ...options }) {
@@ -27328,8 +28050,10 @@ var sdk = /*#__PURE__*/Object.freeze({
     UIImage: UIImage,
     UIOverlay: UIOverlay,
     UIPanel: UIPanel,
+    UIScrollView: UIScrollView,
     UISlider: UISlider,
     UIText: UIText,
+    UITextInput: UITextInput,
     UP: UP,
     User: User,
     VIEW_DEPTH_GAP: VIEW_DEPTH_GAP,
@@ -27456,5 +28180,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { AnchorsOptions as $, registerUIPresentationObject as A, isUIElement as B, getUIRevision as C, Depth as D, getUICardEdgeOptions as E, getSemanticControl as F, UIOverlay as G, Handedness as H, Interaction as I, XR_BLOCKS_ASSETS_PATH as J, Keycodes as K, SIMULATOR_HAND_POSE_NAMES as L, ModelLoader as M, AI as N, Options as O, Physics as P, AIOptions as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UICard as U, ActiveControllers as V, WaitFrame as W, XRDeviceCamera as X, Agent as Y, AnchorManager as Z, AnchoredObjects as _, Script as a, LocalStorageAnchorStore as a$, AudioListener as a0, AudioPlayer as a1, BACK as a2, BackgroundMusic as a3, CategoryVolumes as a4, Context as a5, ContextOptions as a6, Core as a7, CoreSound as a8, DEFAULT_DEVICE_CAMERA_HEIGHT as a9, GamepadController as aA, GazeController as aB, Gemini as aC, GeminiOptions as aD, GenerateSkyboxTool as aE, GestureRecognition as aF, GestureRecognitionOptions as aG, GetWeatherTool as aH, HAND_BONE_IDX_CONNECTION_MAP as aI, HAND_INDEX_TO_LABEL as aJ, HAND_JOINT_COUNT as aK, HAND_JOINT_IDX_CONNECTION_MAP as aL, Hands as aM, HandsOptions as aN, HeadGestureRecognition as aO, HeadGestureRecognitionOptions as aP, HeuristicGestureRecognizer as aQ, HeuristicHeadGestureRecognizer as aR, HumanRecognizer as aS, HumansOptions as aT, InputOptions as aU, InteractionOptions as aV, LEFT as aW, LEFT_VIEW_ONLY_LAYER as aX, Lighting as aY, LightingOptions as aZ, LoadingSpinnerManager as a_, DEFAULT_DEVICE_CAMERA_WIDTH as aa, DEFAULT_RGB_TO_DEPTH_PARAMS as ab, DEVICE_CAMERA_PARAMETERS as ac, DOWN as ad, DepthMesh as ae, DepthMeshOptions as af, DepthOptions as ag, DepthTextures as ah, DetectedBodyPose as ai, DetectedFace as aj, DetectedMesh as ak, DetectedObject as al, DetectedPlane as am, DeviceCameraOptions as an, FINGER_ORDER as ao, FORWARD as ap, FaceCamera as aq, FaceLandmarkName as ar, FaceRecognizer as as, FacesOptions as at, FollowHead as au, FollowObject as av, GEMINI_DEFAULT_FLASH_MODEL as aw, GEMINI_DEFAULT_IMAGE_MODEL as ax, GEMINI_DEFAULT_LIVE_MODEL as ay, GamepadBindings as az, SimulatorMode as b, VolumeCategory as b$, MediaPipeHandContext as b0, MediaPipeHandPoseEstimator as b1, MeshDetectionOptions as b2, MeshDetector as b3, MeshScript as b4, ModelViewer as b5, MouseController as b6, NUM_HANDS as b7, OCCLUDABLE_ITEMS_LAYER as b8, ObjectDetector as b9, Segmenter as bA, SimulatorAnchor as bB, SkyboxAgent as bC, SoundOptions as bD, SoundSynthesizer as bE, SpatialAudio as bF, SpeechRecognizer as bG, SpeechRecognizerOptions as bH, SpeechSynthesizer as bI, SpeechSynthesizerOptions as bJ, StreamState as bK, StrokeRecognizer as bL, StylizedFace as bM, TensorFlowHandPoseEstimator as bN, Tool as bO, UIButton as bP, UIElement as bQ, UIIcon as bR, UIImage as bS, UIPanel as bT, UISlider as bU, UP as bV, User as bW, VIEW_DEPTH_GAP as bX, VideoFileStream as bY, VideoStream as bZ, VisibilityTransition as b_, ObjectsOptions as ba, OcclusionPass as bb, OcclusionUtils as bc, OpenAI as bd, OpenAIOptions as be, Orbit as bf, PhysicsOptions as bg, PlaneDetector as bh, PlanesOptions as bi, PoseJointName as bj, RIGHT as bk, RIGHT_VIEW_ONLY_LAYER as bl, ReticleOptions as bm, Reticles as bn, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bo, SOUND_PRESETS as bp, SceneDetector as bq, SceneOptions as br, SceneSetOfMarkOptions as bs, SceneVisibilityOptions as bt, ScreenshotSynthesizer as bu, ScriptMixin as bv, ScriptsManager as bw, ScriptsManagerEventType as bx, SegmentCategory as by, SegmentationOptions as bz, SetSimulatorModeEvent as c, getUrlParamBool as c$, WebXRHandContext as c0, WebXRHandPoseEstimator as c1, WorldOptions as c2, XRButton as c3, XREffects as c4, XRPass as c5, XRReferenceSpaceCache as c6, XRTransitionOptions as c7, ZERO_VECTOR3 as c8, ZERO_VISEME as c9, getDeltaTime as cA, getDeviceCameraClipFromView as cB, getDeviceCameraWorldFromClip as cC, getDeviceCameraWorldFromView as cD, getElapsedTime as cE, getFingerBendAngles as cF, getFingerCurl as cG, getFingerDirection as cH, getFingerJoint as cI, getFingerPalmAlignment as cJ, getFingerSpread as cK, getFingerStraightness as cL, getFingertipDistance as cM, getFingertipPalmDistance as cN, getObjectTargetPoint as cO, getPalmNormal as cP, getPalmPose as cQ, getPalmRight as cR, getPalmUp as cS, getPalmWidth as cT, getRelativeBoneAngles as cU, getThumbBendAngles as cV, getThumbCurl as cW, getThumbDirection as cX, getThumbOpposition as cY, getThumbStraightness as cZ, getThumbVerticalDirection as c_, _getBvhImportStatus as ca, add as cb, ai as cc, anchorCapability as cd, applyBVH as ce, average as cf, camera as cg, clamp$1 as ch, clamp01 as ci, clampRotationToAngle as cj, context as ck, core as cl, cropImage as cm, defaultAnchorStorageKey as cn, depth as co, disposeBVH as cp, disposeMaterial as cq, disposeMeshResources as cr, disposeRenderableResources as cs, enableAcceleratedRaycast as ct, estimateHandScale as cu, extractYaw as cv, getAdjacentFingerSpreads as cw, getBoneVectors as cx, getCameraParametersSnapshot as cy, getColorHex as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, getUrlParamFloat as d0, getUrlParamInt as d1, getUrlParameter as d2, getVec4ByColorString as d3, getXrCameraLeft as d4, getXrCameraRight as d5, init as d6, initScript as d7, input as d8, intrinsicsToProjectionMatrix as d9, xrDepthMeshOptions as dA, xrDepthMeshPhysicsOptions as dB, xrDepthMeshVisualizationOptions as dC, xrDeviceCameraEnvironmentContinuousOptions as dD, xrDeviceCameraEnvironmentOptions as dE, xrDeviceCameraUserContinuousOptions as dF, xrDeviceCameraUserOptions as dG, isBVHReady as da, isDeviceCameraPoseAvailable as db, lerp as dc, loadStereoImageAsTextures as dd, loadingSpinnerManager as de, lookAtRotation as df, objectIsDescendantOf as dg, parseBase64DataURL as dh, parseSimulatorHandPoseRotations as di, placeObjectAtIntersectionFacingTarget as dj, print as dk, resolveSimulatorRotationsFromKeypoints as dl, scene as dm, showOnlyInLeftEye as dn, showOnlyInRightEye as dp, sound as dq, timer as dr, transformRgbUvToWorld as ds, traverseUtil as dt, ui as du, urlParams as dv, user as dw, visualizeDepth as dx, visualizeDepthMap as dy, world as dz, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIElementKind as w, getUIStructureRevision as x, setResolvedUICardSize as y, UIText as z };
+export { SIMULATOR_HAND_POSE_NAMES as $, normalizeTextInputValue as A, isUIElement as B, getUIElementKind as C, Depth as D, getUIStructureRevision as E, UICard as F, setResolvedUICardSize as G, Handedness as H, Interaction as I, UIText as J, Keycodes as K, UITextInput as L, ModelLoader as M, registerUIPresentationObject as N, Options as O, Physics as P, getUIRevision as Q, Reticle as R, SimulatorHandPose as S, TransformScript as T, UIScrollView as U, getUICardEdgeOptions as V, WaitFrame as W, XRDeviceCamera as X, getSemanticControl as Y, UIOverlay as Z, XR_BLOCKS_ASSETS_PATH as _, Script as a, InputOptions as a$, AI as a0, AIOptions as a1, ActiveControllers as a2, Agent as a3, AnchorManager as a4, AnchoredObjects as a5, AnchorsOptions as a6, AudioListener as a7, AudioPlayer as a8, BACK as a9, FacesOptions as aA, FollowHead as aB, FollowObject as aC, GEMINI_DEFAULT_FLASH_MODEL as aD, GEMINI_DEFAULT_IMAGE_MODEL as aE, GEMINI_DEFAULT_LIVE_MODEL as aF, GamepadBindings as aG, GamepadController as aH, GazeController as aI, Gemini as aJ, GeminiOptions as aK, GenerateSkyboxTool as aL, GestureRecognition as aM, GestureRecognitionOptions as aN, GetWeatherTool as aO, HAND_BONE_IDX_CONNECTION_MAP as aP, HAND_INDEX_TO_LABEL as aQ, HAND_JOINT_COUNT as aR, HAND_JOINT_IDX_CONNECTION_MAP as aS, Hands as aT, HandsOptions as aU, HeadGestureRecognition as aV, HeadGestureRecognitionOptions as aW, HeuristicGestureRecognizer as aX, HeuristicHeadGestureRecognizer as aY, HumanRecognizer as aZ, HumansOptions as a_, BackgroundMusic as aa, CategoryVolumes as ab, Context as ac, ContextOptions as ad, Core as ae, CoreSound as af, DEFAULT_DEVICE_CAMERA_HEIGHT as ag, DEFAULT_DEVICE_CAMERA_WIDTH as ah, DEFAULT_RGB_TO_DEPTH_PARAMS as ai, DEVICE_CAMERA_PARAMETERS as aj, DOWN as ak, DepthMesh as al, DepthMeshOptions as am, DepthOptions as an, DepthTextures as ao, DetectedBodyPose as ap, DetectedFace as aq, DetectedMesh as ar, DetectedObject as as, DetectedPlane as at, DeviceCameraOptions as au, FINGER_ORDER as av, FORWARD as aw, FaceCamera as ax, FaceLandmarkName as ay, FaceRecognizer as az, SimulatorMode as b, UISlider as b$, InteractionOptions as b0, LEFT as b1, LEFT_VIEW_ONLY_LAYER as b2, Lighting as b3, LightingOptions as b4, LoadingSpinnerManager as b5, LocalStorageAnchorStore as b6, MediaPipeHandContext as b7, MediaPipeHandPoseEstimator as b8, MeshDetectionOptions as b9, SceneVisibilityOptions as bA, ScreenshotSynthesizer as bB, ScriptMixin as bC, ScriptsManager as bD, ScriptsManagerEventType as bE, SegmentCategory as bF, SegmentationOptions as bG, Segmenter as bH, SimulatorAnchor as bI, SkyboxAgent as bJ, SoundOptions as bK, SoundSynthesizer as bL, SpatialAudio as bM, SpeechRecognizer as bN, SpeechRecognizerOptions as bO, SpeechSynthesizer as bP, SpeechSynthesizerOptions as bQ, StreamState as bR, StrokeRecognizer as bS, StylizedFace as bT, TensorFlowHandPoseEstimator as bU, Tool as bV, UIButton as bW, UIElement as bX, UIIcon as bY, UIImage as bZ, UIPanel as b_, MeshDetector as ba, MeshScript as bb, ModelViewer as bc, MouseController as bd, NUM_HANDS as be, OCCLUDABLE_ITEMS_LAYER as bf, ObjectDetector as bg, ObjectsOptions as bh, OcclusionPass as bi, OcclusionUtils as bj, OpenAI as bk, OpenAIOptions as bl, Orbit as bm, PhysicsOptions as bn, PlaneDetector as bo, PlanesOptions as bp, PoseJointName as bq, RIGHT as br, RIGHT_VIEW_ONLY_LAYER as bs, ReticleOptions as bt, Reticles as bu, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bv, SOUND_PRESETS as bw, SceneDetector as bx, SceneOptions as by, SceneSetOfMarkOptions as bz, SetSimulatorModeEvent as c, getRelativeBoneAngles as c$, UP as c0, User as c1, VIEW_DEPTH_GAP as c2, VideoFileStream as c3, VideoStream as c4, VisibilityTransition as c5, VolumeCategory as c6, WebXRHandContext as c7, WebXRHandPoseEstimator as c8, WorldOptions as c9, enableAcceleratedRaycast as cA, estimateHandScale as cB, extractYaw as cC, getAdjacentFingerSpreads as cD, getBoneVectors as cE, getCameraParametersSnapshot as cF, getColorHex as cG, getDeltaTime as cH, getDeviceCameraClipFromView as cI, getDeviceCameraWorldFromClip as cJ, getDeviceCameraWorldFromView as cK, getElapsedTime as cL, getFingerBendAngles as cM, getFingerCurl as cN, getFingerDirection as cO, getFingerJoint as cP, getFingerPalmAlignment as cQ, getFingerSpread as cR, getFingerStraightness as cS, getFingertipDistance as cT, getFingertipPalmDistance as cU, getObjectTargetPoint as cV, getPalmNormal as cW, getPalmPose as cX, getPalmRight as cY, getPalmUp as cZ, getPalmWidth as c_, XRButton as ca, XREffects as cb, XRPass as cc, XRReferenceSpaceCache as cd, XRTransitionOptions as ce, ZERO_VECTOR3 as cf, ZERO_VISEME as cg, _getBvhImportStatus as ch, add as ci, ai as cj, anchorCapability as ck, applyBVH as cl, average as cm, camera as cn, clamp$1 as co, clamp01 as cp, clampRotationToAngle as cq, context as cr, core as cs, cropImage as ct, defaultAnchorStorageKey as cu, depth as cv, disposeBVH as cw, disposeMaterial as cx, disposeMeshResources as cy, disposeRenderableResources as cz, SIMULATOR_HAND_POSE_ROTATIONS as d, getThumbBendAngles as d0, getThumbCurl as d1, getThumbDirection as d2, getThumbOpposition as d3, getThumbStraightness as d4, getThumbVerticalDirection as d5, getUrlParamBool as d6, getUrlParamFloat as d7, getUrlParamInt as d8, getUrlParameter as d9, traverseUtil as dA, ui as dB, urlParams as dC, user as dD, visualizeDepth as dE, visualizeDepthMap as dF, world as dG, xrDepthMeshOptions as dH, xrDepthMeshPhysicsOptions as dI, xrDepthMeshVisualizationOptions as dJ, xrDeviceCameraEnvironmentContinuousOptions as dK, xrDeviceCameraEnvironmentOptions as dL, xrDeviceCameraUserContinuousOptions as dM, xrDeviceCameraUserOptions as dN, getVec4ByColorString as da, getXrCameraLeft as db, getXrCameraRight as dc, init as dd, initScript as de, input as df, intrinsicsToProjectionMatrix as dg, isBVHReady as dh, isDeviceCameraPoseAvailable as di, lerp as dj, loadStereoImageAsTextures as dk, loadingSpinnerManager as dl, lookAtRotation as dm, objectIsDescendantOf as dn, parseBase64DataURL as dp, parseSimulatorHandPoseRotations as dq, placeObjectAtIntersectionFacingTarget as dr, print as ds, resolveSimulatorRotationsFromKeypoints as dt, scene as du, showOnlyInLeftEye as dv, showOnlyInRightEye as dw, sound as dx, timer as dy, transformRgbUvToWorld as dz, SimulatorHandPoseChangeRequestEvent as e, HAND_JOINT_NAMES as f, applySimulatorHandPoseRotationConstraints as g, disposeObjectChildren as h, SetSimulatorEnvironmentEvent as i, ShowSimulatorInstructionsEvent as j, SetSimulatorHandPhysicsEvent as k, Registry as l, callInitWithDependencyInjection as m, disposeObjectTree as n, World as o, Input as p, SimulatorOptions as q, resolveSimulatorHandPoseRotations as r, SparkRendererHolder as s, MAX_GRADIENT_STOPS as t, DEFAULT_GRADIENT_PANEL_PROPS as u, ManipulationAction as v, getUIPresentationObject as w, bindScrollView as x, updateScrollViewLayout as y, bindTextInput as z };
 //# sourceMappingURL=entry.js.map

@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 0c55f4a
- * @builddate 2026-09-14T22:05:41.562Z
+ * @commitid adca533
+ * @builddate 2026-09-15T01:37:01.134Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -614,7 +614,6 @@ class SimulatorControllerMode extends SimulatorControlMode {
     }
 }
 
-const WHEEL_SCALE_SPEED = 0.001;
 // Approximate one line-mode wheel unit as 16 CSS pixels.
 const WHEEL_LINE_HEIGHT = 16;
 class SimulatorUserMode extends SimulatorControlMode {
@@ -635,6 +634,7 @@ class SimulatorUserMode extends SimulatorControlMode {
     }
     onPointerDown(event) {
         if (event.buttons & 1) {
+            this.input.mouseController.updateMousePositionFromEvent(event);
             this.input.mouseController.callSelectStart();
         }
     }
@@ -665,7 +665,7 @@ class SimulatorUserMode extends SimulatorControlMode {
         if (!mouseController.userData.connected) {
             return false;
         }
-        return (this.interaction?.queueScaleIntent(mouseController, Math.exp(-deltaY * WHEEL_SCALE_SPEED)) ?? false);
+        return this.interaction?.queueWheelIntent(mouseController, deltaY) ?? false;
     }
 }
 
