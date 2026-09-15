@@ -51,7 +51,8 @@ function resample(points: Point2D[], n: number): Point2D[] | null {
   const newPoints = [points[0]];
   const pts = points.slice();
   let i = 1;
-  // Each iteration consumes an input segment or emits one of the requested samples.
+  // At most m - 1 segment consumptions plus n - 1 insertions are needed.
+  // The budget scales with input length and deliberately allows two extra iterations.
   const maxIterations = points.length + n;
   let iterations = 0;
   while (i < pts.length) {
