@@ -15,14 +15,14 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid efa5cb3
- * @builddate 2026-09-15T17:51:01.841Z
+ * @commitid 64f4194
+ * @builddate 2026-09-15T20:21:08.958Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
  * 1. Include the following importmap for maximum compatibility:
-    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/",
     "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
     "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
     "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
@@ -16323,6 +16323,7 @@ function syncRootTransform(root, renderRoot, camera) {
     root.updateWorldMatrix(true, false);
     renderRoot.matrix.copy(root.matrixWorld);
     renderRoot.matrixAutoUpdate = false;
+    renderRoot.matrixWorldNeedsUpdate = true;
 }
 async function defaultLoader() {
     return import('./UIKitBackend.js').then(function (n) { return n.U; });
@@ -18003,7 +18004,7 @@ class DetectedObject extends THREE.Object3D {
     }
 }
 
-const DEBUG_FONT_URL = 'https://cdn.jsdelivr.net/npm/three@0.184.0/examples/fonts/helvetiker_regular.typeface.json';
+const DEBUG_FONT_URL = 'https://cdn.jsdelivr.net/npm/three@0.185.0/examples/fonts/helvetiker_regular.typeface.json';
 let cachedFontPromise = null;
 function loadDebugFont() {
     if (!cachedFontPromise) {
@@ -26963,7 +26964,6 @@ const jsmUrl = `https://cdn.jsdelivr.net/npm/three@0.${THREE.REVISION}.0/example
 function createGLTFLoader(manager) {
     const dracoLoader = new DRACOLoader(manager);
     dracoLoader.setDecoderPath(jsmUrl + 'libs/draco/');
-    dracoLoader.setDecoderConfig({ type: 'js' });
     const ktx2Loader = new KTX2Loader(manager);
     ktx2Loader.setTranscoderPath(jsmUrl + 'libs/basis/');
     const gltfLoader = new GLTFLoader(manager);

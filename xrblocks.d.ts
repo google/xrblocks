@@ -15,14 +15,14 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid efa5cb3
- * @builddate 2026-09-15T17:51:01.841Z
+ * @commitid 64f4194
+ * @builddate 2026-09-15T20:21:08.958Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
  * 1. Include the following importmap for maximum compatibility:
-    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/",
     "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
     "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
     "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
@@ -3528,7 +3528,7 @@ declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(base: TB
         traverseAncestors(callback: (object: THREE.Object3D) => any): void;
         updateMatrix(): void;
         updateMatrixWorld(force?: boolean): void;
-        updateWorldMatrix(updateParents: boolean, updateChildren: boolean): void;
+        updateWorldMatrix(updateParents: boolean, updateChildren: boolean, force?: boolean): void;
         toJSON(meta?: THREE.JSONMeta): THREE.Object3DJSON;
         clone(recursive?: boolean): /*elided*/ any;
         copy(object: THREE.Object3D, recursive?: boolean): /*elided*/ any;
@@ -3773,7 +3773,7 @@ declare const ScriptMixinObject3D: {
         traverseAncestors(callback: (object: THREE.Object3D) => any): void;
         updateMatrix(): void;
         updateMatrixWorld(force?: boolean): void;
-        updateWorldMatrix(updateParents: boolean, updateChildren: boolean): void;
+        updateWorldMatrix(updateParents: boolean, updateChildren: boolean, force?: boolean): void;
         toJSON(meta?: THREE.JSONMeta): THREE.Object3DJSON;
         clone(recursive?: boolean): /*elided*/ any;
         copy(object: THREE.Object3D, recursive?: boolean): /*elided*/ any;
@@ -4022,7 +4022,7 @@ declare const ScriptMixinMeshScript: {
         traverseAncestors(callback: (object: THREE.Object3D) => any): void;
         updateMatrix(): void;
         updateMatrixWorld(force?: boolean): void;
-        updateWorldMatrix(updateParents: boolean, updateChildren: boolean): void;
+        updateWorldMatrix(updateParents: boolean, updateChildren: boolean, force?: boolean): void;
         toJSON(meta?: THREE.JSONMeta): THREE.Object3DJSON;
         clone(recursive?: boolean): /*elided*/ any;
         copy(object: THREE.Object3D, recursive?: boolean): /*elided*/ any;
