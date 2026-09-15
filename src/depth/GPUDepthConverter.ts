@@ -29,13 +29,6 @@ export class GPUDepthConverter {
         }
       );
       this.depthTexture = new THREE.ExternalTexture(depthData.texture);
-      const textureProperties = this.renderer.properties.get(
-        this.depthTexture
-      ) as {
-        __webglTexture: WebGLTexture;
-        __version: number;
-      };
-      textureProperties.__webglTexture = depthData.texture;
       this.gpuPixels = new Float32Array(depthData.width * depthData.height);
 
       const depthShader = new THREE.ShaderMaterial({
@@ -82,21 +75,27 @@ export class GPUDepthConverter {
       this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     }
 
+    this.depthTexture.sourceTexture = depthData.texture;
+
     const originalRenderTarget = this.renderer.getRenderTarget();
-    this.renderer.xr.enabled = false;
-    this.renderer.setRenderTarget(this.depthTarget);
-    this.renderer.render(this.depthScene, this.depthCamera);
-    this.renderer.readRenderTargetPixels(
-      this.depthTarget,
-      0,
-      0,
-      depthData.width,
-      depthData.height,
-      this.gpuPixels,
-      0
-    );
-    this.renderer.xr.enabled = true;
-    this.renderer.setRenderTarget(originalRenderTarget);
+    const xrEnabled = this.renderer.xr.enabled;
+    try {
+      this.renderer.xr.enabled = false;
+      this.renderer.setRenderTarget(this.depthTarget);
+      this.renderer.render(this.depthScene, this.depthCamera);
+      this.renderer.readRenderTargetPixels(
+        this.depthTarget,
+        0,
+        0,
+        depthData.width,
+        depthData.height,
+        this.gpuPixels,
+        0
+      );
+    } finally {
+      this.renderer.xr.enabled = xrEnabled;
+      this.renderer.setRenderTarget(originalRenderTarget);
+    }
 
     return {
       width: depthData.width,
