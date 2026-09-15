@@ -10,28 +10,34 @@ function surface(x = 0): THREE.Mesh {
 }
 
 describe('HitRegistry direct-touch reentrancy', () => {
-  it('isolates bounds when containment callbacks issue nested queries', () => {
-    const registry = new HitRegistry();
-    const nested = new HitRegistry();
-    const outer = surface(0.5);
-    const inner = surface(20);
-    nested.register(inner, inner);
-    registry.register(outer, outer, {
-      containsPoint: () => {
-        expect(
-          nested.intersectionsAt(new THREE.Vector3(20, 0, 0))
-        ).toHaveLength(1);
-        expect(registry.containsPoint(inner, new THREE.Vector3(20, 0, 0))).toBe(
-          true
-        );
-        return true;
-      },
-    });
+  it.each(['same', 'another'])(
+    'isolates bounds during nested containment queries (%s registry)',
+    (registryKind) => {
+      const registry = new HitRegistry();
+      const nested = registryKind === 'same' ? registry : new HitRegistry();
+      const outer = surface(0.5);
+      const inner = surface(20);
+      let callbackCalls = 0;
+      registry.register(outer, outer, {
+        containsPoint: () => {
+          callbackCalls++;
+          expect(
+            nested.intersectionsAt(new THREE.Vector3(20, 0, 0))
+          ).toHaveLength(1);
+          expect(
+            registry.containsPoint(inner, new THREE.Vector3(20, 0, 0))
+          ).toBe(true);
+          return true;
+        },
+      });
+      nested.register(inner, inner);
 
-    const [hit] = registry.intersectionsAt(new THREE.Vector3());
-    expect(hit.object).toBe(outer);
-    expect(hit.distance).toBe(0.5);
-  });
+      const [hit] = registry.intersectionsAt(new THREE.Vector3());
+      expect(callbackCalls).toBe(1);
+      expect(hit.object).toBe(outer);
+      expect(hit.distance).toBe(0.5);
+    }
+  );
 
   it('isolates bounds when an overridden transform update reenters the registry', () => {
     const registry = new HitRegistry();
