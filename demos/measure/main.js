@@ -4,7 +4,7 @@ import {MeasureScene} from './MeasureScene.js';
 
 const options = new xb.Options({
   antialias: true,
-  reticles: {enabled: true},
+  reticles: {enabled: true, projectOnDepthMesh: true},
   visualizeRays: true,
   depth: xb.xrDepthMeshPhysicsOptions,
 });
