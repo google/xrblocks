@@ -60,7 +60,7 @@ const AXES: Array<[number, [number, number, number]]> = [
 /**
  * Builds the axes + outline overlay for a tracked AprilTag.
  *
- * @param options See {@link AprilTagAnchorVisualsOptions}.
+ * @param options - See {@link AprilTagAnchorVisualsOptions}.
  * @returns A group to add as a child of an `AprilTagTracker`.
  */
 export function createAprilTagAnchorVisuals(

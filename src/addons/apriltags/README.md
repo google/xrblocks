@@ -94,3 +94,12 @@ npm run build:apriltag-wasm
 ```
 
 See [NOTICE.md](./NOTICE.md) for attribution.
+
+## Deploying
+
+The addon is built into `build/addons/apriltags/` together with its Web Worker
+(`AprilTagWorker.js`) and the detector (`wasm/apriltag_wasm.js` +
+`wasm/apriltag_wasm.wasm`); the worker resolves both relative to its own URL.
+The SDK build is code-split into `build/internal/`, so deploy the whole
+`build/` tree (not just `xrblocks.js`) and keep the `addons/apriltags/wasm/`
+directory next to the worker.

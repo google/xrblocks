@@ -16,7 +16,7 @@
     "serve": "http-server --cors -c-1 -a 127.0.0.1 -p 8080",
     "build": "echo \"Building xrblocks.js...\" && rollup -c --failAfterWarnings",
     "build:sdk": "rollup -c --failAfterWarnings --forceExit --environment XRBLOCKS_BUILD:sdk",
-    "build:apriltag-wasm": "node scripts/build-apriltag-wasm.mjs",
+    "build:apriltag-wasm": "node tools/build-apriltag-wasm.js",
     "prepare": "npm run build",
     "lint": "eslint src tools",
     "format": "npm run format:fix",
