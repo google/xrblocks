@@ -57,6 +57,11 @@ export class UIRenderer {
   ) {
     this.privateRoot.name = 'XR Blocks private UI';
     this.privateRoot.userData.xrblocksPrivate = true;
+    this.interaction.setSelectionFocusHandler((target) => {
+      if (this.backendState.kind === 'ready') {
+        this.backendState.backend.handlePointerTarget?.(target);
+      }
+    });
   }
 
   /** Mounts UI roots already connected when Core initializes. */
@@ -150,6 +155,7 @@ export class UIRenderer {
   }
 
   dispose(): void {
+    this.interaction.setSelectionFocusHandler();
     const backendState = this.backendState;
     this.backendState = {kind: 'disposed'};
     for (const root of [...this.mounts.keys()]) this.unmount(root);
@@ -218,6 +224,7 @@ export class UIRenderer {
     if (!record || !record.connected) return;
     record.connected = false;
     record.mount.object.visible = false;
+    record.mount.setActive?.(false);
     this.interaction.cancelObject(root, 'removed');
     for (const unregister of record.unregisterHits) unregister();
     record.unregisterHits = [];
@@ -235,6 +242,8 @@ export class UIRenderer {
   private reconcileMounts(deltaSeconds: number, camera: THREE.Camera): void {
     this.viewport.width = window.innerWidth;
     this.viewport.height = window.innerHeight;
+    // A field may have moved out of any root, including a disconnected one.
+    for (const record of this.mounts.values()) record.mount.prepareCommit?.();
     for (const record of this.mounts.values()) {
       if (!record.connected) continue;
       const visible = effectiveVisible(record.root);
@@ -243,6 +252,7 @@ export class UIRenderer {
       }
       record.visible = visible;
       record.mount.object.visible = visible;
+      record.mount.setActive?.(visible);
       syncRootTransform(record.root, record.mount.object, camera);
       const mappings = record.mount.commit(
         ui.theme,
@@ -282,7 +292,8 @@ export class UIRenderer {
     mapping.physical.userData.xrblocksOverlay = overlay;
     return this.interaction.registerHitSurface(
       mapping.physical,
-      mapping.logical
+      mapping.logical,
+      mapping.options
     );
   }
 

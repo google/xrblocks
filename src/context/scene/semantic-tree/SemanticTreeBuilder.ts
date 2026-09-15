@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 
 import type {Interaction} from '../../../interaction/Interaction';
+import {getSemanticControl} from '../../../interaction/SemanticControl';
+import {UIScrollView} from '../../../ui/components/UIScrollView';
 import {getUIElementKind, isUIElement} from '../../../ui/UIElement';
 import {roundContextNumber} from '../../shared/ContextNumberUtils';
 import {SemanticIdRegistry} from '../../shared/SemanticIdRegistry';
@@ -24,6 +26,9 @@ type SemanticObject = THREE.Object3D & {
   label?: string;
   ariaLabel?: string;
   value?: number;
+  focused?: boolean;
+  readOnly?: boolean;
+  multiline?: boolean;
   min?: number;
   max?: number;
   userData: THREE.Object3D['userData'] & {
@@ -41,6 +46,10 @@ type SemanticDescription = Pick<
   | 'disabled'
   | 'selected'
   | 'hovered'
+  | 'focused'
+  | 'readOnly'
+  | 'multiline'
+  | 'scroll'
   | 'value'
   | 'min'
   | 'max'
@@ -174,6 +183,7 @@ function describeSemanticObject(
     pointerEvents: object.xb?.pointerEvents ?? 'auto',
     interactionEnabled: object.xb?.interactionEnabled ?? true,
     ...inferValue(object),
+    ...inferEditingState(object),
   };
 }
 
@@ -208,6 +218,8 @@ function inferRole(object: THREE.Object3D): string {
     const kind = getUIElementKind(object);
     if (kind === 'button') return 'button';
     if (kind === 'slider') return 'slider';
+    if (kind === 'input') return 'textbox';
+    if (kind === 'scroll') return 'region';
     if (kind === 'text') return 'text';
     if (kind === 'image' || kind === 'icon') return 'image';
     return 'group';
@@ -253,12 +265,21 @@ function inferTraits(
   if (
     isUIElement(object) &&
     (getUIElementKind(object) === 'button' ||
-      getUIElementKind(object) === 'slider') &&
+      getUIElementKind(object) === 'slider' ||
+      getUIElementKind(object) === 'input') &&
     object.xb?.interactionEnabled !== false &&
     !disabled
   ) {
     traits.add('selectable');
   }
+  if (getSemanticControl(object)?.scroll) traits.add('scrollable');
+  if (
+    isUIElement(object) &&
+    getUIElementKind(object) === 'input' &&
+    !(object as SemanticObject).readOnly &&
+    !disabled
+  )
+    traits.add('editable');
   return traits.size ? [...traits] : undefined;
 }
 
@@ -279,7 +300,40 @@ function inferValue(
 }
 
 function inferDisabled(object: THREE.Object3D): boolean | undefined {
-  return (object as SemanticObject).disabled;
+  return (
+    getSemanticControl(object)?.isDisabled() ??
+    (object as SemanticObject).disabled
+  );
+}
+
+function inferEditingState(
+  object: THREE.Object3D
+): Partial<
+  Pick<SemanticDescription, 'focused' | 'readOnly' | 'multiline' | 'scroll'>
+> {
+  const description: Partial<
+    Pick<SemanticDescription, 'focused' | 'readOnly' | 'multiline' | 'scroll'>
+  > = {};
+  if (isUIElement(object) && getUIElementKind(object) === 'input') {
+    const input = object as SemanticObject;
+    description.focused = input.focused;
+    description.readOnly = input.readOnly;
+    description.multiline = input.multiline;
+  }
+  const scroll = getSemanticControl(object)?.scroll;
+  if (scroll) {
+    description.scroll = {
+      offset: roundContextNumber(scroll.getOffset()),
+      viewportHeight: roundContextNumber(scroll.getViewportHeight()),
+    };
+    if (object instanceof UIScrollView) {
+      description.scroll.maximum = roundContextNumber(object.maxScrollTop);
+      description.scroll.contentHeight = roundContextNumber(
+        object.scrollHeight
+      );
+    }
+  }
+  return description;
 }
 
 function isLayoutOnlyContainer(object: THREE.Object3D, role: string): boolean {
@@ -323,6 +377,10 @@ function createSemanticNode(
   if (semantic.disabled !== undefined) node.disabled = semantic.disabled;
   if (semantic.selected !== undefined) node.selected = semantic.selected;
   if (semantic.hovered !== undefined) node.hovered = semantic.hovered;
+  if (semantic.focused !== undefined) node.focused = semantic.focused;
+  if (semantic.readOnly !== undefined) node.readOnly = semantic.readOnly;
+  if (semantic.multiline !== undefined) node.multiline = semantic.multiline;
+  if (semantic.scroll !== undefined) node.scroll = semantic.scroll;
   if (semantic.value !== undefined) node.value = semantic.value;
   if (semantic.min !== undefined) node.min = semantic.min;
   if (semantic.max !== undefined) node.max = semantic.max;

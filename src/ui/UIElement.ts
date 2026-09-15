@@ -86,6 +86,7 @@ export interface UIStyle extends UIStateStyle {
   ':hover'?: UIStateStyle;
   ':active'?: UIStateStyle;
   ':disabled'?: UIStateStyle;
+  ':focus'?: UIStateStyle;
 }
 
 export interface UIElementOptions {
@@ -104,6 +105,8 @@ export type UIElementKind =
   | 'text'
   | 'button'
   | 'slider'
+  | 'scroll'
+  | 'input'
   | 'image'
   | 'icon';
 
@@ -177,6 +180,7 @@ const STYLE_KEYS = new Set<keyof UIStyle>([
   ':hover',
   ':active',
   ':disabled',
+  ':focus',
 ]);
 
 const STATE_STYLE_KEYS = new Set<keyof UIStateStyle>([
@@ -282,6 +286,10 @@ const ENUM_VALUES: Partial<Record<keyof UIStyle, readonly unknown[]>> = {
 
 const states = new WeakMap<UIElement, UIElementState>();
 const presentationObjects = new WeakMap<UIElement, THREE.Object3D>();
+const presentationBounds = new WeakMap<
+  UIElement,
+  (target: THREE.Box3) => THREE.Box3 | null
+>();
 const rootReferences = new Set<WeakRef<UIElement>>();
 
 export abstract class UIElement<
@@ -408,14 +416,25 @@ export function getUIPresentationObject(
 /** Registers one rendered object for world-space UI queries. */
 export function registerUIPresentationObject(
   element: UIElement,
-  presentation: THREE.Object3D
+  presentation: THREE.Object3D,
+  bounds?: (target: THREE.Box3) => THREE.Box3 | null
 ): () => void {
   presentationObjects.set(element, presentation);
+  if (bounds) presentationBounds.set(element, bounds);
   return () => {
     if (presentationObjects.get(element) === presentation) {
       presentationObjects.delete(element);
+      presentationBounds.delete(element);
     }
   };
+}
+
+/** Undefined means no clipping-aware presentation is registered. */
+export function getUIPresentationBounds(
+  object: THREE.Object3D,
+  target: THREE.Box3
+): THREE.Box3 | null | undefined {
+  return presentationBounds.get(object as UIElement)?.(target);
 }
 
 export function getUIRevision(element: UIElement): number {
@@ -680,9 +699,12 @@ function validateStyle(
 
 function isStateStyleKey(
   property: string
-): property is ':hover' | ':active' | ':disabled' {
+): property is ':hover' | ':active' | ':disabled' | ':focus' {
   return (
-    property === ':hover' || property === ':active' || property === ':disabled'
+    property === ':hover' ||
+    property === ':active' ||
+    property === ':disabled' ||
+    property === ':focus'
   );
 }
 

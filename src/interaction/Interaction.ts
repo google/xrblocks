@@ -16,7 +16,7 @@ import type {Controller} from '../input/Controller.js';
 import {objectIsDescendantOf} from '../utils/SceneGraphUtils.js';
 import {DirectTouch, type DirectTouchContact} from './DirectTouch.js';
 import {GazeDwell} from './GazeDwell.js';
-import {HitRegistry} from './HitRegistry.js';
+import {HitRegistry, type HitSurfaceOptions} from './HitRegistry.js';
 import {HitResolver} from './HitResolver.js';
 import {
   getInteractionSource,
@@ -33,6 +33,7 @@ import {
 } from './InteractionUtils.js';
 import {
   createPlanarSurfaceProjector,
+  projectPointOnSurface,
   type PlanarSurfaceProjector,
 } from './PlanarSurface.js';
 import {ReticlePresenter} from './ReticlePresenter.js';
@@ -41,9 +42,22 @@ import {
   getSemanticControl,
   isSemanticControlDisabled,
   type SemanticControlState,
+  type SemanticScrollState,
+  type SemanticScrollbarHit,
 } from './SemanticControl.js';
 
-type AutomaticAction = 'select' | 'semantic' | 'manipulate' | 'none';
+type AutomaticAction = 'select' | 'semantic' | 'manipulate' | 'scroll' | 'none';
+
+interface ScrollCapture {
+  readonly owner: THREE.Object3D;
+  readonly physical: THREE.Object3D;
+  readonly state: SemanticScrollState;
+  readonly projector?: PlanarSurfaceProjector;
+  readonly start: THREE.Vector2;
+  lastY: number;
+  active: boolean;
+  readonly scrollbar?: SemanticScrollbarHit;
+}
 
 interface TargetCapture {
   kind: 'target';
@@ -53,6 +67,8 @@ interface TargetCapture {
   semantic?: SemanticControlState;
   semanticControl?: THREE.Object3D;
   sliderProjector?: PlanarSurfaceProjector;
+  physicalSurface?: THREE.Object3D;
+  scroll?: ScrollCapture;
   exclusiveControl?: THREE.Object3D;
   longSelectDuration: number;
   longSelectFired: boolean;
@@ -72,6 +88,8 @@ interface TouchState {
 type ActiveCapture = {kind: 'none'} | {kind: 'auxiliary'} | TargetCapture;
 
 const DEFAULT_LONG_SELECT_DURATION = 0.75;
+const SCROLL_DRAG_THRESHOLD = 6;
+const WHEEL_SCALE_SPEED = 0.001;
 const NOOP_PROPAGATION = (): void => {};
 
 /** Owns all logical target, hover, capture, completion, and cancellation state. */
@@ -102,6 +120,8 @@ export class Interaction {
   private readonly touches = new Map<Controller, TouchState>();
   private readonly suppressedUntilRelease = new Set<Controller>();
   private readonly scaleIntents = new Map<Controller, number>();
+  private readonly wheelIntents = new Map<Controller, number>();
+  private focusHandler?: (target?: THREE.Object3D) => void;
   private raycastMode: RaycastMode;
   private frameSources = new Set<Controller>();
   private nextFrameSources = new Set<Controller>();
@@ -166,6 +186,12 @@ export class Interaction {
             isSemanticControlDisabled(capture.semanticControl)
         );
         if (reason) this.cancelCapture(controller, reason);
+        else if (
+          capture.scroll &&
+          isSemanticControlDisabled(capture.scroll.owner)
+        ) {
+          this.cancelCapture(controller, 'disabled');
+        }
       }
     }
 
@@ -186,6 +212,10 @@ export class Interaction {
       this.applyScaleIntent(controller, factor);
     }
     this.scaleIntents.clear();
+    for (const [controller, delta] of this.wheelIntents) {
+      this.applyWheelIntent(controller, delta);
+    }
+    this.wheelIntents.clear();
 
     if (snapshots.length > 0) {
       try {
@@ -208,6 +238,7 @@ export class Interaction {
       if (!capture) continue;
       try {
         if (capture.kind === 'target') {
+          this.updateScrollCapture(capture, snapshot);
           this.updateLongSelect(capture, snapshot, deltaSeconds);
           this.updateSemantic(capture, snapshot);
         }
@@ -232,13 +263,20 @@ export class Interaction {
     this.nextFrameSources.clear();
     this.exclusiveControls.clear();
     this.scaleIntents.clear();
+    this.wheelIntents.clear();
   }
 
   registerHitSurface(
     physical: THREE.Object3D,
-    logical: THREE.Object3D
+    logical: THREE.Object3D,
+    options?: HitSurfaceOptions
   ): () => void {
-    return this.registry.register(physical, logical);
+    return this.registry.register(physical, logical, options);
+  }
+
+  /** Installs the UI runtime's focus policy without owning a second input path. */
+  setSelectionFocusHandler(handler?: (target?: THREE.Object3D) => void): void {
+    this.focusHandler = handler;
   }
 
   /** Refreshes bounded direct-touch candidates found by the lifecycle pass. */
@@ -288,6 +326,7 @@ export class Interaction {
     this.gazeDwell.remove(controller);
     this.suppressedUntilRelease.delete(controller);
     this.scaleIntents.delete(controller);
+    this.wheelIntents.delete(controller);
   }
 
   getSourceSnapshot(
@@ -311,7 +350,12 @@ export class Interaction {
     for (const capture of this.captures.values()) {
       if (
         capture.kind === 'target' &&
-        objectIsDescendantOf(capture.selection.surface, object)
+        objectIsDescendantOf(
+          capture.scroll?.active
+            ? capture.scroll.owner
+            : capture.selection.surface,
+          object
+        )
       ) {
         return true;
       }
@@ -389,6 +433,35 @@ export class Interaction {
       (this.scaleIntents.get(controller) ?? 1) * factor
     );
     return true;
+  }
+
+  /** Routes a normalized wheel delta using the next frame's resolved target. */
+  queueWheelIntent(controller: Controller, delta: number): boolean {
+    if (!Number.isFinite(delta) || delta === 0) return false;
+    this.wheelIntents.set(
+      controller,
+      (this.wheelIntents.get(controller) ?? 0) + delta
+    );
+    return true;
+  }
+
+  private applyWheelIntent(controller: Controller, delta: number): void {
+    const resolved = this.resolvedRays.get(controller);
+    let owned = false;
+    for (const object of resolved?.objectPath ?? []) {
+      if (object.xb?.interactionEnabled === false) break;
+      const control = getSemanticControl(object);
+      if (!control?.scroll || control.isDisabled()) continue;
+      owned = true;
+      if (this.exclusiveControls.has(object)) return;
+      let moved = false;
+      this.callbacks.invokeSemantic(object, () => {
+        moved = control.scroll!.scrollBy(delta);
+      });
+      if (moved) return;
+    }
+    if (!owned)
+      this.applyScaleIntent(controller, Math.exp(-delta * WHEEL_SCALE_SPEED));
   }
 
   private applyScaleIntent(controller: Controller, factor: number): boolean {
@@ -481,7 +554,8 @@ export class Interaction {
       input.sourceType === 'gaze' ||
       input.selected ||
       previousSelected ||
-      input.released === true;
+      input.released === true ||
+      this.wheelIntents.has(input.controller);
     if (!shouldRaycast || !this.scene) {
       intersections.length = 0;
       return intersections;
@@ -516,6 +590,7 @@ export class Interaction {
     }
 
     if (!resolved?.target) {
+      this.focusHandler?.();
       const capture = {kind: 'none'} as const;
       this.installCapture(controller, capture);
       this.runCaptureTransition(controller, () => {
@@ -545,7 +620,7 @@ export class Interaction {
     if (semantic) {
       action = 'semantic';
       if (
-        semantic.kind === 'slider' &&
+        isContinuousControl(semantic) &&
         resolved.semanticControl &&
         this.exclusiveControls.has(resolved.semanticControl)
       ) {
@@ -555,11 +630,10 @@ export class Interaction {
       action = 'manipulate';
     }
     if (gaze && semantic?.kind !== 'button') action = 'none';
+    const physicalSurface = this.registry.resolve(resolved.hitObject).physical;
     const sliderProjector =
-      action === 'semantic' && semantic?.kind === 'slider'
-        ? createPlanarSurfaceProjector(
-            this.registry.resolve(resolved.hitObject).physical
-          )
+      action === 'semantic' && isContinuousControl(semantic)
+        ? createPlanarSurfaceProjector(physicalSurface)
         : undefined;
 
     const capture: TargetCapture = {
@@ -570,8 +644,9 @@ export class Interaction {
       semantic,
       semanticControl: resolved.semanticControl,
       sliderProjector,
+      physicalSurface,
       exclusiveControl:
-        action === 'semantic' && semantic?.kind === 'slider'
+        action === 'semantic' && isContinuousControl(semantic)
           ? resolved.semanticControl
           : undefined,
       longSelectDuration: 0,
@@ -579,8 +654,24 @@ export class Interaction {
       lastStablePoint: resolved.intersection.point.clone(),
       touch,
     };
+    if (!gaze && action !== 'none') {
+      capture.scroll = this.createScrollCapture(resolved);
+      if (touch && capture.scroll) {
+        this.directTouch.setCaptureRegion(controller, capture.scroll.physical);
+      }
+    }
     this.installCapture(controller, capture);
     this.runCaptureTransition(controller, () => {
+      this.focusHandler?.(resolved.surface);
+      if (capture.scroll?.scrollbar) {
+        this.activateScrollCapture(capture, snapshot.controller);
+        if (capture.scroll?.active) {
+          const {state, scrollbar} = capture.scroll;
+          this.callbacks.invokeSemantic(capture.scroll.owner, () =>
+            state.scrollBy(scrollbar!.offset - state.getOffset())
+          );
+        }
+      }
       const event = this.createSelectEvent(controller, capture);
       dispatchInteractionPath(
         this.callbacks,
@@ -594,9 +685,11 @@ export class Interaction {
       ) {
         capture.action = 'none';
       }
-      if (action === 'semantic') {
+      if (capture.action === 'semantic') {
         this.invokeSemantic(capture, () =>
-          semantic?.begin?.(semanticInput(snapshot, resolved, sliderProjector))
+          semantic?.begin?.(
+            semanticInput(snapshot, resolved, sliderProjector, physicalSurface)
+          )
         );
       }
       this.callbacks.invokeGlobal('onSelectStart', event);
@@ -624,20 +717,26 @@ export class Interaction {
     } else if (capture.kind === 'target') {
       const released = this.resolvedRays.get(controller);
       const sameTarget =
-        (releasedTarget ?? released?.target) === capture.selection.target;
+        (releasedTarget ?? released?.target) === capture.selection.target &&
+        (!capture.touch ||
+          !capture.scroll ||
+          capture.scroll.active ||
+          this.registry
+            .resolve(capture.physicalSurface!)
+            .containsPoint?.((finalSnapshot ?? snapshot)!.position) !== false);
       if (capture.action === 'manipulate') {
         completed = this.runManipulationTransition(() =>
           this.manipulation.end(controller, finalSnapshot ?? snapshot)
         );
       } else if (capture.action === 'semantic') {
-        const slider = capture.semantic?.kind === 'slider';
+        const continuous = isContinuousControl(capture.semantic);
         completed =
           !capture.longSelectFired &&
           !isSemanticControlDisabled(capture.semanticControl!) &&
-          (slider || sameTarget);
+          (continuous || sameTarget);
         if (completed) {
           this.invokeSemantic(capture, () => {
-            if (slider) capture.semantic?.complete?.();
+            if (continuous) capture.semantic?.complete?.();
             else capture.semantic?.activate();
           });
         } else {
@@ -647,11 +746,14 @@ export class Interaction {
         completed =
           capture.action === 'select' && !capture.longSelectFired && sameTarget;
       }
-      endReason = completed
-        ? 'released'
-        : sameTarget
-          ? reason
-          : 'released-outside';
+      endReason =
+        capture.action === 'scroll'
+          ? 'pointer-cancel'
+          : completed
+            ? 'released'
+            : sameTarget
+              ? reason
+              : 'released-outside';
       const endEvent: SelectEndEvent = {
         ...this.createSelectEvent(controller, capture),
         completed,
@@ -690,7 +792,9 @@ export class Interaction {
       reason,
     };
     if (capture.kind === 'target') {
-      this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+      if (capture.action !== 'scroll') {
+        this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+      }
       dispatchInteractionPath(
         this.callbacks,
         capture.selection.scriptPath,
@@ -931,12 +1035,17 @@ export class Interaction {
     capture: TargetCapture,
     snapshot: InteractionSourceState
   ): void {
-    if (capture.action !== 'semantic' || capture.semantic?.kind !== 'slider') {
+    if (
+      capture.action !== 'semantic' ||
+      !isContinuousControl(capture.semantic)
+    ) {
       return;
     }
     const projection = snapshot.ray
       ? capture.sliderProjector?.(snapshot.ray)
-      : undefined;
+      : capture.physicalSurface
+        ? projectPointOnSurface(capture.physicalSurface, snapshot.position)
+        : undefined;
     if (projection) {
       this.invokeSemantic(capture, () =>
         capture.semantic?.update?.({
@@ -958,6 +1067,83 @@ export class Interaction {
     }
   }
 
+  private createScrollCapture(
+    resolved: ResolvedRay
+  ): ScrollCapture | undefined {
+    for (const owner of resolved.objectPath) {
+      if (owner.xb?.interactionEnabled === false) break;
+      const control = getSemanticControl(owner);
+      if (control?.isDisabled()) continue;
+      if (isContinuousControl(control) && !control?.scroll) return undefined;
+      if (!control?.scroll) continue;
+      const scrollbar = control.scroll.scrollbarHit?.(
+        resolved.intersection.point
+      );
+      if (control.kind === 'input' && !scrollbar) return undefined;
+      if (control.kind !== 'scroll' && !scrollbar) continue;
+      const physical = this.registry.find(owner)?.physical ?? owner;
+      const start = control.scroll.projectPoint(resolved.intersection.point);
+      if (!start) return undefined;
+      return {
+        owner,
+        physical,
+        state: control.scroll,
+        projector: createPlanarSurfaceProjector(physical),
+        start,
+        lastY: start.y,
+        active: false,
+        scrollbar,
+      };
+    }
+    return undefined;
+  }
+
+  private activateScrollCapture(
+    capture: TargetCapture,
+    controller: Controller
+  ): void {
+    const scroll = capture.scroll;
+    if (!scroll || scroll.active) return;
+    const owner = this.exclusiveControls.get(scroll.owner);
+    if (owner && owner !== controller) {
+      capture.action = 'none';
+      capture.scroll = undefined;
+      this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+      return;
+    }
+    scroll.active = true;
+    capture.action = 'scroll';
+    capture.exclusiveControl = scroll.owner;
+    this.exclusiveControls.set(scroll.owner, controller);
+    this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
+  }
+
+  private updateScrollCapture(
+    capture: TargetCapture,
+    snapshot: InteractionSourceState
+  ): void {
+    const scroll = capture.scroll;
+    if (!scroll || capture.longSelectFired) return;
+    const point = snapshot.ray
+      ? (scroll.projector?.(snapshot.ray)?.point ??
+        this.resolvedRays.get(snapshot.controller)?.intersection.point)
+      : snapshot.position;
+    const projected = point && scroll.state.projectPoint(point);
+    if (!projected) return;
+    if (!scroll.active) {
+      if (Math.abs(projected.y - scroll.start.y) < SCROLL_DRAG_THRESHOLD)
+        return;
+      this.activateScrollCapture(capture, snapshot.controller);
+      if (!scroll.active) return;
+    }
+    const delta =
+      (projected.y - scroll.lastY) * (scroll.scrollbar?.scale ?? -1);
+    scroll.lastY = projected.y;
+    this.callbacks.invokeSemantic(scroll.owner, () =>
+      scroll.state.scrollBy(delta)
+    );
+  }
+
   private updateLongSelect(
     capture: TargetCapture,
     snapshot: InteractionSourceState,
@@ -966,7 +1152,8 @@ export class Interaction {
     if (
       capture.longSelectFired ||
       capture.action === 'manipulate' ||
-      capture.semantic?.kind === 'slider' ||
+      capture.action === 'scroll' ||
+      isContinuousControl(capture.semantic) ||
       snapshot.sourceType === 'gaze' ||
       !capture.selection.scriptPath.some((script) =>
         this.callbacks.hasTargetHook(script, 'onObjectLongSelect')
@@ -1168,6 +1355,7 @@ export class Interaction {
     const capture = this.captures.get(controller);
     if (!capture) return undefined;
     this.captures.delete(controller);
+    this.directTouch.setCaptureRegion(controller);
     if (
       capture.kind === 'target' &&
       capture.exclusiveControl &&
@@ -1233,14 +1421,23 @@ export class Interaction {
 function semanticInput(
   snapshot: InteractionSourceState,
   resolved: ResolvedRay,
-  projector?: PlanarSurfaceProjector
+  projector?: PlanarSurfaceProjector,
+  physicalSurface?: THREE.Object3D
 ) {
-  const projection = snapshot.ray ? projector?.(snapshot.ray) : undefined;
+  const projection = snapshot.ray
+    ? projector?.(snapshot.ray)
+    : physicalSurface
+      ? projectPointOnSurface(physicalSurface, snapshot.position)
+      : undefined;
   return {
     source: snapshot.source,
     point: projection?.point ?? resolved.intersection.point.clone(),
     uv: projection?.uv ?? resolved.intersection.uv?.clone(),
   };
+}
+
+function isContinuousControl(control?: SemanticControlState): boolean {
+  return control?.kind === 'slider' || control?.kind === 'input';
 }
 
 function clonePublicIntersection(
