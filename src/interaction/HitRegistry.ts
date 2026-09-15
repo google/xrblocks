@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 
-export interface RegisteredHitSurface {
+export interface HitSurfaceOptions {
+  /** Additional clipping or containment policy, evaluated in world space. */
+  containsPoint?: (point: THREE.Vector3, padding?: number) => boolean;
+}
+
+export interface RegisteredHitSurface extends HitSurfaceOptions {
   readonly physical: THREE.Object3D;
   readonly logical: THREE.Object3D;
 }
@@ -22,8 +27,12 @@ export class HitRegistry {
     if (camera) this.raycaster.camera = camera;
   }
 
-  register(physical: THREE.Object3D, logical: THREE.Object3D): () => void {
-    const entry = {physical, logical};
+  register(
+    physical: THREE.Object3D,
+    logical: THREE.Object3D,
+    options: HitSurfaceOptions = {}
+  ): () => void {
+    const entry = {physical, logical, ...options};
     this.mappings.set(physical, entry);
     this.registered.add(entry);
     this.touchCandidates.set(physical, entry);
@@ -66,6 +75,29 @@ export class HitRegistry {
     return {physical: object, logical: object};
   }
 
+  find(logical: THREE.Object3D): RegisteredHitSurface | undefined {
+    for (const entry of this.registered) {
+      if (entry.logical === logical) return entry;
+    }
+    return undefined;
+  }
+
+  containsPoint(
+    physical: THREE.Object3D,
+    point: THREE.Vector3,
+    padding = 0
+  ): boolean {
+    if (physical.xb?.pointerEvents === 'none' || !effectiveVisible(physical))
+      return false;
+    const box = new THREE.Box3().setFromObject(physical);
+    if (padding > 0) box.expandByScalar(padding);
+    return (
+      !box.isEmpty() &&
+      box.containsPoint(point) &&
+      this.resolve(physical).containsPoint?.(point, padding) !== false
+    );
+  }
+
   /** Collects ordered raw hits from the public scene and detached surfaces. */
   raycast(
     scene: THREE.Scene,
@@ -105,7 +137,7 @@ export class HitRegistry {
     const intersections: THREE.Intersection[] = [];
     const box = new THREE.Box3();
     const center = new THREE.Vector3();
-    for (const {physical} of this.touchCandidates.values()) {
+    for (const {physical, containsPoint} of this.touchCandidates.values()) {
       if (physical.xb?.pointerEvents === 'none') continue;
       if (!effectiveVisible(physical)) continue;
       try {
@@ -115,6 +147,7 @@ export class HitRegistry {
       }
       if (padding > 0) box.expandByScalar(padding);
       if (box.isEmpty() || !box.containsPoint(point)) continue;
+      if (containsPoint?.(point, padding) === false) continue;
       intersections.push({
         distance: box.getCenter(center).distanceTo(point),
         object: physical,

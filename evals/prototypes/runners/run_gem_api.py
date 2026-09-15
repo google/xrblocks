@@ -3,12 +3,13 @@
 in the system prompt and no file-system access for the model.
 
 Mirrors a Canvas deployment which:
-  - has the app contract, task workflow, and canonical references in its prompt
+  - receives selected guidance (or no guidance) in its system prompt
   - has NO filesystem visibility into the xrblocks repo
   - asks the model to produce a complete main.js from scratch
 
 Usage:
-  python evals/prototypes/runners/run_gem_api.py <task_id> {with-skill|without-skill}
+  python evals/prototypes/runners/run_gem_api.py <task_id> <mode>
+  python evals/prototypes/runners/run_gem_api.py <task_id> with-baseline --baseline-file /path/to/prompts.txt
 
 Env:
   GEMINI_API_KEY  required
@@ -16,6 +17,8 @@ Env:
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -23,14 +26,17 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
-
-from google import genai
-from google.genai import types
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 EVALS = REPO_ROOT / "evals"
 TASKS = EVALS / "prototypes" / "tasks"
+
+sys.path.insert(0, str(EVALS))
+from eval_common import MODES, result_path, validate_mode, validate_task_id, workspace_path
+if __package__:
+    from .baseline_prompt import load_baseline
+else:
+    from baseline_prompt import load_baseline
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-pro")
 
@@ -89,9 +95,11 @@ def _safe_join(base: pathlib.Path, rel: str, label: str) -> pathlib.Path:
     return candidate
 
 
-def run_task(task_id: str, mode: str) -> dict:
-    if "/" in task_id or task_id.startswith(".."):
-        raise ValueError(f"invalid task_id: {task_id!r}")
+def run_task(task_id: str, mode: str, *, baseline_file: pathlib.Path | None = None) -> dict:
+    validate_mode(mode)
+    validate_task_id(task_id)
+    if (mode == "with-baseline") != (baseline_file is not None):
+        raise ValueError("--baseline-file is required only for with-baseline")
     task_dir = _safe_join(TASKS, task_id, "task_id")
     spec = json.loads((task_dir / "spec.json").read_text())
     skill_name = spec["skill"]
@@ -101,20 +109,8 @@ def run_task(task_id: str, mode: str) -> dict:
 
     template_dir = _safe_join(REPO_ROOT, template_rel, "spec.template")
 
-    # Workspace: clean copy of the template. Namespaced by model so two
-    # sweeps can co-exist without overwriting each other's files (which the
-    # judge needs to re-read).
-    model_slug = MODEL.replace("/", "-")
-    workspace = (
-        pathlib.Path(tempfile.gettempdir())
-        / f"xrblocks-gem-{model_slug}-{task_id}-{mode}"
-    )
-    if workspace.exists():
-        shutil.rmtree(workspace, ignore_errors=True)
-    # On Windows rmtree can empty the directory but fail to remove the
-    # directory itself, if anything is briefly holding a handle on it, so
-    # allow copying into what is left.
-    shutil.copytree(template_dir, workspace, dirs_exist_ok=True)
+    workspace = workspace_path(MODEL, task_id, mode)
+    _safe_join(workspace, edit_file, "spec.edit_file")
 
     # Build prompt.
     task_body = (task_dir / "prompt.md").read_text()
@@ -126,12 +122,28 @@ def run_task(task_id: str, mode: str) -> dict:
     )
 
     system_prompt = ""
+    baseline = None
     if mode == "with-skill":
         system_prompt = build_system_prompt(skill_name, reference_files)
+    elif mode == "with-baseline":
+        baseline = load_baseline(baseline_file, edit_file)
+        system_prompt = baseline.system_prompt
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise SystemExit("GEMINI_API_KEY not set")
+
+    from google import genai
+    from google.genai import types
+
+    # Validate guidance before replacing an earlier run's workspace.
+    if workspace.exists():
+        shutil.rmtree(workspace, ignore_errors=True)
+    # On Windows rmtree can empty the directory but fail to remove the
+    # directory itself, if anything is briefly holding a handle on it, so
+    # allow copying into what is left.
+    shutil.copytree(template_dir, workspace, dirs_exist_ok=True)
+    target = _safe_join(workspace, edit_file, "spec.edit_file")
 
     client = genai.Client(api_key=api_key)
     config = types.GenerateContentConfig(
@@ -147,16 +159,14 @@ def run_task(task_id: str, mode: str) -> dict:
     raw = resp.text or ""
     code = extract_js(raw)
 
-    # Write the agent's output into the workspace. Guard against an
-    # edit_file that points outside the workspace via traversal.
-    target = _safe_join(workspace, edit_file, "spec.edit_file")
+    # Write the agent's output into the workspace.
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(code)
 
     # Log raw + code + usage.
     log_dir = workspace.parent / f"{workspace.name}-meta"
     log_dir.mkdir(exist_ok=True)
-    (log_dir / "system_prompt.md").write_text(system_prompt or "(empty)")
+    (log_dir / "system_prompt.md").write_bytes(system_prompt.encode("utf-8"))
     (log_dir / "user_msg.md").write_text(user_msg)
     (log_dir / "raw_response.md").write_text(raw)
     usage = getattr(resp, "usage_metadata", None)
@@ -167,12 +177,23 @@ def run_task(task_id: str, mode: str) -> dict:
             if v is not None:
                 usage_dict[k] = v
     (log_dir / "usage.json").write_text(json.dumps(usage_dict, indent=2))
+    run = {
+        "mode": mode,
+        "model": MODEL,
+        "workspace": str(workspace),
+        "metadata_dir": str(log_dir),
+        "temperature": 0.2,
+        "system_prompt_sha256": hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
+    }
+    if baseline is not None:
+        (log_dir / "baseline_original.txt").write_bytes(baseline.original)
+        run["baseline"] = baseline.provenance
+    (log_dir / "run.json").write_text(json.dumps(run, indent=2), encoding="utf-8")
 
     # Score using the existing scorer.
     scorer = EVALS / "prototypes" / "score_proto.py"
-    result_dir = EVALS / "results" / model_slug / mode
-    result_dir.mkdir(parents=True, exist_ok=True)
-    result_path = result_dir / f"{task_id}.json"
+    output_path = result_path(EVALS / "results", MODEL, task_id, mode)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     score_proc = subprocess.run(
         [sys.executable, str(scorer), str(task_dir), str(workspace)],
@@ -180,24 +201,30 @@ def run_task(task_id: str, mode: str) -> dict:
         text=True,
         check=True,
     )
-    result_path.write_text(score_proc.stdout)
+    result = json.loads(score_proc.stdout)
+    result["run"] = run
+    output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
 
     print(f"[{task_id}/{mode}] workspace: {workspace}")
     print(f"[{task_id}/{mode}] response: {len(raw)} chars, code: {len(code)} chars")
     print(f"[{task_id}/{mode}] tokens: {usage_dict}")
     print(score_proc.stdout)
-    return json.loads(score_proc.stdout)
+    return result
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: run_gem_api.py <task_id> {with-skill|without-skill}", file=sys.stderr)
-        return 1
-    task_id, mode = argv
-    if mode not in ("with-skill", "without-skill"):
-        print(f"mode must be with-skill or without-skill, got: {mode}", file=sys.stderr)
-        return 1
-    run_task(task_id, mode)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("task_id")
+    parser.add_argument("mode", choices=MODES)
+    parser.add_argument(
+        "--baseline-file", type=pathlib.Path,
+        help="local, unchanged copy of the supported published prompts.txt (with-baseline only)",
+    )
+    args = parser.parse_args(argv)
+    try:
+        run_task(args.task_id, args.mode, baseline_file=args.baseline_file)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
     return 0
 
 

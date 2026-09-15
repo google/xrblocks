@@ -1,6 +1,5 @@
 import {SimulatorControlMode} from './SimulatorControlMode.js';
 
-const WHEEL_SCALE_SPEED = 0.001;
 // Approximate one line-mode wheel unit as 16 CSS pixels.
 const WHEEL_LINE_HEIGHT = 16;
 
@@ -25,6 +24,7 @@ export class SimulatorUserMode extends SimulatorControlMode {
 
   onPointerDown(event: MouseEvent) {
     if (event.buttons & 1) {
+      this.input.mouseController.updateMousePositionFromEvent(event);
       this.input.mouseController.callSelectStart();
     }
   }
@@ -59,11 +59,6 @@ export class SimulatorUserMode extends SimulatorControlMode {
       return false;
     }
 
-    return (
-      this.interaction?.queueScaleIntent(
-        mouseController,
-        Math.exp(-deltaY * WHEEL_SCALE_SPEED)
-      ) ?? false
-    );
+    return this.interaction?.queueWheelIntent(mouseController, deltaY) ?? false;
   }
 }

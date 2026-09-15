@@ -8,14 +8,28 @@ export interface SemanticControlInput {
   readonly uv?: THREE.Vector2;
 }
 
+export interface SemanticScrollState {
+  getOffset(): number;
+  getViewportHeight(): number;
+  projectPoint(point: THREE.Vector3): THREE.Vector2 | undefined;
+  scrollBy(delta: number): boolean;
+  scrollbarHit?(point: THREE.Vector3): SemanticScrollbarHit | undefined;
+}
+
+export interface SemanticScrollbarHit {
+  readonly offset: number;
+  readonly scale: number;
+}
+
 export interface SemanticControlState {
-  readonly kind: 'button' | 'slider';
+  readonly kind: 'button' | 'slider' | 'scroll' | 'input';
   isDisabled(): boolean;
   activate(): void;
   begin?(input: SemanticControlInput): void;
   update?(input: SemanticControlInput): void;
   complete?(): void;
   cancel?(): void;
+  readonly scroll?: SemanticScrollState;
 }
 
 const CONTROLS = new WeakMap<THREE.Object3D, SemanticControlState>();

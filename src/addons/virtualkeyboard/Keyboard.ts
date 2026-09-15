@@ -1,4 +1,4 @@
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 type CharacterKey = {
@@ -19,6 +19,10 @@ type KeyDefinition = CharacterKey | ActionKey;
 
 export interface KeyboardOptions extends Omit<xb.UIPanelOptions, 'children'> {
   value?: string;
+  /** Binds every key to one text field instead of the standalone buffer. */
+  input?: xb.UITextInput;
+  /** Initial visibility. Omit to preserve the supplied visible/display options. */
+  open?: boolean;
   onValueChange?: (value: string) => void;
   onSubmit?: (value: string) => void;
 }
@@ -107,6 +111,10 @@ export class Keyboard<
   public onSubmit?: (value: string) => void;
 
   private _value: string;
+  private _input?: xb.UITextInput;
+  private suppressedInput?: xb.UITextInput;
+  private releaseNativeKeyboard?: () => void;
+  private disposed = false;
   private shiftActive = false;
   private capsLockActive = false;
   private characterButtons: Array<{
@@ -117,11 +125,16 @@ export class Keyboard<
 
   constructor({
     value = '',
+    input,
+    open,
     onValueChange,
     onSubmit,
     style,
     ...options
   }: KeyboardOptions = {}) {
+    if (open !== undefined && typeof open !== 'boolean') {
+      throw new Error('Keyboard open must be a boolean.');
+    }
     super({
       ...options,
       style: {
@@ -146,28 +159,81 @@ export class Keyboard<
     this._value = value;
     this.onValueChange = onValueChange;
     this.onSubmit = onSubmit;
+    this.addEventListener('added', this.syncNativeKeyboard);
+    this.addEventListener('removed', this.syncNativeKeyboard);
+    if (open !== undefined) this.open = open;
+    this.input = input;
 
     for (const row of KEY_LAYOUT) {
       this.add(this.createRow(row));
     }
   }
 
+  /** The bound field, or undefined while the keyboard owns its own buffer. */
+  get input(): xb.UITextInput | undefined {
+    return this._input;
+  }
+
+  set input(field: xb.UITextInput | undefined) {
+    if (field === this._input) return;
+    if (!field && this._input) this._value = this._input.value;
+    this._input = field;
+    this.xb = {...this.xb, preserveTextFocus: field !== undefined};
+    this.syncNativeKeyboard();
+  }
+
+  get open(): boolean {
+    return this.visible && this.style.display !== 'none';
+  }
+
+  /** Shows or hides the panel and immediately updates native-keyboard ownership. */
+  set open(value: boolean) {
+    if (typeof value !== 'boolean')
+      throw new Error('Keyboard open must be a boolean.');
+    this.visible = value;
+    this.style.display = value ? 'flex' : 'none';
+    this.syncNativeKeyboard();
+  }
+
+  override update(time?: number, frame?: XRFrame): void {
+    super.update(time, frame);
+    this.syncNativeKeyboard();
+  }
+
+  override dispose(): void {
+    this.disposed = true;
+    this.removeEventListener('added', this.syncNativeKeyboard);
+    this.removeEventListener('removed', this.syncNativeKeyboard);
+    this.syncNativeKeyboard();
+    super.dispose();
+  }
+
   get value(): string {
-    return this._value;
+    return this._input ? this._input.value : this._value;
   }
 
   /** Updates the value without emitting an input callback. */
   setValue(value: string): void {
+    if (this._input) {
+      this._input.value = value;
+      return;
+    }
     this._value = value;
   }
 
   /**
    * Applies a key using KeyboardEvent.key names.
    *
-   * Printable layout keys use the current Shift and Caps Lock state. The
-   * return value reports whether this keyboard handles the supplied key.
+   * Printable layout keys use the current Shift and Caps Lock state. While a
+   * field is bound, keys are forwarded to it and the field owns its callbacks.
+   * The return value reports whether this keyboard handles the supplied key.
    */
   pressKey(key: string): boolean {
+    this.syncNativeKeyboard();
+    if (this._input) {
+      if (!this._input.ready || this._input.disabled) return false;
+      if (!this._input.focused) this._input.focus();
+    }
     switch (key) {
       case 'Backspace':
         this.backspace();
@@ -177,14 +243,14 @@ export class Keyboard<
         this.refreshKeys();
         return true;
       case 'Enter':
-        this.onSubmit?.(this._value);
+        this.submit();
         return true;
       case 'Shift':
         this.shiftActive = !this.shiftActive;
         this.refreshKeys();
         return true;
       case 'Tab':
-        this.insert('\t');
+        this.tab();
         return true;
       case ' ':
         this.insert(' ');
@@ -202,6 +268,35 @@ export class Keyboard<
         return false;
       }
     }
+  }
+
+  private syncNativeKeyboard = (): void => {
+    const field =
+      !this.disposed && this._input && this.isConnectedAndVisible()
+        ? this._input
+        : undefined;
+    if (field === this.suppressedInput) return;
+    const release = this.releaseNativeKeyboard;
+    this.releaseNativeKeyboard = undefined;
+    this.suppressedInput = field;
+    release?.();
+    if (!field || this.suppressedInput !== field) return;
+    const acquired = field.suppressNativeKeyboard();
+    if (this.suppressedInput === field) this.releaseNativeKeyboard = acquired;
+    else acquired();
+  };
+
+  private isConnectedAndVisible(): boolean {
+    if (!this.open || this.xb?.pointerEvents === 'none') return false;
+    let object = this.parent;
+    while (object) {
+      if (!object.visible || object.xb?.pointerEvents === 'none') return false;
+      if (object instanceof xb.UIElement && object.style.display === 'none')
+        return false;
+      if (object instanceof THREE.Scene) return true;
+      object = object.parent;
+    }
+    return false;
   }
 
   private createRow(definitions: KeyDefinition[]): xb.UIPanel {
@@ -265,22 +360,48 @@ export class Keyboard<
   }
 
   private insert(text: string): void {
-    this._value += text;
-    this.onValueChange?.(this._value);
-
-    if (this.shiftActive) {
-      this.shiftActive = false;
-      this.refreshKeys();
+    if (this._input) this._input.pressKey(text);
+    else {
+      this._value += text;
+      this.onValueChange?.(this._value);
     }
+    this.consumeShift();
   }
 
   private backspace(): void {
+    if (this._input) {
+      this._input.pressKey('Backspace');
+      return;
+    }
     const codePoints = Array.from(this._value);
     if (codePoints.length === 0) return;
 
     codePoints.pop();
     this._value = codePoints.join('');
     this.onValueChange?.(this._value);
+  }
+
+  private submit(): void {
+    if (this._input) {
+      this._input.pressKey('Enter');
+      return;
+    }
+    this.onSubmit?.(this._value);
+  }
+
+  private tab(): void {
+    if (this._input) {
+      this._input.pressKey('Tab', {shiftKey: this.shiftActive});
+      this.consumeShift();
+      return;
+    }
+    this.insert('\t');
+  }
+
+  private consumeShift(): void {
+    if (!this.shiftActive) return;
+    this.shiftActive = false;
+    this.refreshKeys();
   }
 
   private displayCharacter(definition: CharacterKey): string {
