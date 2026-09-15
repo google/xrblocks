@@ -521,6 +521,7 @@ export class Depth {
 
     let firstError: unknown;
     const cleanups = [
+      () => this.gpuDepthConverter?.dispose(),
       () => {
         if (mesh && this.registry?.get(DepthMesh) === mesh) {
           this.registry.unregister(DepthMesh);
@@ -544,7 +545,6 @@ export class Depth {
       }
     }
 
-    // TODO: Wire GPU converter disposal when its cleanup API from #600 lands.
     this.gpuDepthConverter = undefined;
     this.registry = undefined;
     this.view.length = 0;

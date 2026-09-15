@@ -135,7 +135,7 @@ resolution, or update requirement. Prefer `enableDepth()` for ordinary use.
 
 ## Cleanup
 
-Use `await xb.core.dispose()` when shutting down the application. Core releases the depth mesh and its physics body, depth textures, and occlusion pass before disposing physics and the renderer. WebXR's native depth textures belong to the browser; XR Blocks only releases its references to them.
+Use `await xb.core.dispose()` when shutting down the application. Core releases the GPU depth converter, depth mesh and its physics body, depth textures, and occlusion pass before disposing physics and the renderer. WebXR's native depth textures belong to the browser; XR Blocks only releases its references to them.
 
 Leaving an XR session does not dispose Depth. Its resources are initialized once for the Core lifetime and kept for XR re-entry. Core disposal is terminal; do not call `xb.depth.dispose()` on ordinary session exit or try to reinitialize Depth after disposal.
 
