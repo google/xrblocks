@@ -2,15 +2,15 @@
 """LLM-as-judge: have a strong model rate the agent's output beyond
 binary api-name matching.
 
-We give the judge: the task prompt, the relevant skill description, and
-the agent's generated code. We ask three structured ratings.
+We give the judge the task prompt, public API authority, the task workflow,
+the task's manual or addon references, and the generated code.
 
 Output schema:
   {
     "accomplishes_task": 1-5,
     "idiomatic_xrblocks": 1-5,
-    "would_merge": "yes" | "no",
-    "rationale": "<1-2 sentences>"
+    "hallucination_severity": "none" | "minor" | "major",
+    "rationale": "<one sentence>"
   }
 
 Usage:
@@ -35,12 +35,13 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gemini-2.5-pro")
 
 
-JUDGE_PROMPT = """You are a senior xrblocks reviewer. Rate the candidate \
-implementation against the task. The skill content below is the ground \
-truth for the xrblocks API. If the code uses identifiers, packages, or \
-patterns that do NOT appear in the skill content (e.g. invented elements \
-like `xr-scene` or fake packages), score `idiomatic_xrblocks` low and set \
-`hallucination_severity` to `major`.
+JUDGE_PROMPT = """You are a senior XR Blocks reviewer. Rate the candidate \
+implementation against the task. Use the public barrel and canonical \
+documentation below as the API authority. Use the task skill as workflow \
+guidance, not as a complete API catalog. An identifier does not have to \
+appear in the skill to be valid. Invented packages, elements such as \
+`xr-scene`, or APIs that conflict with the supplied authority are \
+hallucinations.
 
 Respond with ONLY a JSON object, no prose, no fences. Schema:
 
@@ -53,17 +54,17 @@ Respond with ONLY a JSON object, no prose, no fences. Schema:
 
 Definitions:
 - `accomplishes_task`: does the code do what the task asked, regardless of api correctness?
-- `idiomatic_xrblocks`: does it use APIs that actually exist in the skill content?
+- `idiomatic_xrblocks`: does it follow the supplied XR Blocks API and lifecycle?
 - `hallucination_severity`:
-  - "none"  = every imported package, class, method, and event in the code appears in the skill or is a standard library (THREE, web platform, etc).
+  - "none"  = the code is consistent with the supplied API authority and standard libraries.
   - "minor" = one or two questionable identifiers, easy to repair, real intent visible.
   - "major" = invented packages, fake JSX-like elements, or whole APIs the agent made up. The code would not run as-is even with all dependencies installed.
 
 # Task
 {task}
 
-# Ground-truth skill content
-{skill_full}
+# XR Blocks authority and task guidance
+{authority}
 
 # Candidate `main.js`
 ```javascript
@@ -72,11 +73,27 @@ Definitions:
 """
 
 
-def load_skill_content(skill_name: str) -> str:
+def load_authority(spec: dict) -> str:
+    parts = [
+        "# CONTEXT.md\n\n" + (REPO_ROOT / "CONTEXT.md").read_text(),
+        "# Public exports: src/xrblocks.ts\n\n" + (REPO_ROOT / "src" / "xrblocks.ts").read_text(),
+    ]
+    skill_name = spec["skill"]
     skill_md = REPO_ROOT / "skills" / skill_name / "SKILL.md"
-    if not skill_md.exists():
-        return "(no skill file)"
-    return skill_md.read_text()
+    if not skill_md.is_file():
+        raise FileNotFoundError(f"task skill does not exist: {skill_md}")
+    parts.append(f"# Task skill: {skill_name}\n\n{skill_md.read_text()}")
+
+    for reference_file in spec.get("reference_files", []):
+        reference_path = (REPO_ROOT / reference_file).resolve()
+        try:
+            reference_path.relative_to(REPO_ROOT.resolve())
+        except ValueError as e:
+            raise ValueError(f"reference file escapes the repository: {reference_file!r}") from e
+        if not reference_path.is_file():
+            raise FileNotFoundError(f"task reference does not exist: {reference_path}")
+        parts.append(f"# Reference: {reference_file}\n\n{reference_path.read_text()}")
+    return "\n\n---\n\n".join(parts)
 
 
 def judge(task_id: str, workspace: pathlib.Path) -> dict:
@@ -84,10 +101,10 @@ def judge(task_id: str, workspace: pathlib.Path) -> dict:
     spec = json.loads((task_dir / "spec.json").read_text())
     prompt = (task_dir / "prompt.md").read_text()
     code = (workspace / spec["edit_file"]).read_text()
-    skill_full = load_skill_content(spec["skill"])
+    authority = load_authority(spec)
 
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-    full_prompt = JUDGE_PROMPT.format(task=prompt, skill_full=skill_full, code=code)
+    full_prompt = JUDGE_PROMPT.format(task=prompt, authority=authority, code=code)
 
     resp = client.models.generate_content(
         model=JUDGE_MODEL,

@@ -6,7 +6,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2509.25504-b31b1b.svg)](https://arxiv.org/abs/2509.25504)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.24591-b31b1b.svg)](https://arxiv.org/abs/2603.24591)
 
-#### JavaScript library for rapid AI + XR prototyping
+#### AI-native library for rapid AI + XR prototyping & innovation
 
 [Site](https://xrblocks.github.io/) &mdash;
 [Manual](https://xrblocks.github.io/docs/) &mdash;
@@ -28,7 +28,7 @@
 **XR Blocks** is a lightweight, cross-platform library for rapidly prototyping
 advanced XR and AI experiences. Built upon [three.js](https://threejs.org), it
 targets Chrome v136+ with WebXR support on Android XR (e.g.,
-[Galaxy XR](https://www.samsung.com/us/xr/galaxy-xr/galaxy-xr/)) and also
+[Galaxy XR](https://www.samsung.com/us/xr/galaxy-xr/galaxy-xr/), [XREAL Aura](https://www.xreal.com/aura)) and also
 includes a powerful desktop simulator for development. The framework emphasizes
 a user-centric, developer-friendly SDK designed to simplify the creation of
 immersive applications with features like:
@@ -43,8 +43,12 @@ immersive applications with features like:
   `options.enableHeadGestures()` and subscribe through
   `xb.input.headGestures` on device or in the desktop simulator.
 - **World Understanding:** Present samples with depth sensing, geometry-aware
-  physics, and object recognition with Gemini in both XR and desktop
-  simulator.
+  physics, planes, scene meshes, object recognition, human pose, face landmarks,
+  and semantic segmentation in XR and the desktop simulator.
+- **Unified Interaction:** Use one target and capture pipeline for mouse, gaze,
+  hand rays, controllers, direct touch, spatial UI, and object manipulation.
+- **Built-in Spatial UI:** Compose world-space cards and view-space overlays from
+  flex-layout panels, text, images, icons, buttons, sliders, and themes.
 - **Agent Context:** Expose an agent-facing scene context with semantic trees,
   visible-object state, and Set-of-Mark screenshots through `xb.context`.
 - **AI Integration:** Seamlessly connect to Gemini for multimodal
@@ -85,9 +89,8 @@ code below:
     <script type="importmap">
       {
         "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
-          "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/",
           "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
           "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/"
         }
@@ -203,6 +206,12 @@ and the
 [Prettier extension](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode),
 then set Prettier as your default formatter.
 
+#### Devtools
+
+For local before/after Chrome measurements, see the [standalone profiler](https://github.com/google/xrblocks/blob/main/tools/README.md). It records interleaved samples and raw traces and generates a static HTML report, with optional WebGL depth-call counters.
+
+For additional agent-first development tools including UI visualizers, 3d model visualizers, CLI based embodied XR Blocks runners, and automatic agent controls, see [XR Blocks Devtools](https://github.com/xrblocks/xrblocks-devtools).
+
 #### Notice
 
 This is not an officially supported Google product, but will be actively
@@ -285,6 +294,10 @@ as:
   url={https://arxiv.org/abs/2603.24591},
 }
 ```
+
+### Awards
+
+- **[Auggie Award at AWE USA 2026 - Best Use Of AI](https://www.awexr.com/blog/auggie-Award-Winners-at-AWE-USA-2026)**
 
 ### Terms of Service
 

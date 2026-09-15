@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import type {Reticle} from '../ui/core/Reticle';
+import type {Reticle} from '../interaction/reticle/Reticle';
 
 export interface ControllerEventMap extends THREE.Object3DEventMap {
   connected: {target: Controller; data?: XRInputSource};

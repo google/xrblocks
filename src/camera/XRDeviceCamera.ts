@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 
-import {SimulatorCamera} from '../simulator/SimulatorCamera';
-import {SimulatorMediaDeviceInfo} from '../simulator/SimulatorMediaDeviceInfo';
 import {
   StreamState,
   VideoStream,
@@ -13,10 +11,14 @@ import {
   DeviceCameraOptions,
   RgbToDepthParams,
 } from './CameraOptions';
+import type {
+  CameraDeviceInfo,
+  SimulatorCameraSource,
+} from './SimulatorCameraSource';
 
 export type MediaOrSimulatorMediaDeviceInfo =
   | MediaDeviceInfo
-  | SimulatorMediaDeviceInfo;
+  | CameraDeviceInfo;
 
 type XRDeviceCameraDetails = VideoStreamDetails & {
   width?: number;
@@ -32,7 +34,7 @@ type XRDeviceCameraDetails = VideoStreamDetails & {
 export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private static readonly XR_CAMERA_ACCESS_TIMEOUT_MS = 5000;
 
-  simulatorCamera?: SimulatorCamera;
+  simulatorCamera?: SimulatorCameraSource;
   rgbToDepthParams: RgbToDepthParams;
   protected videoConstraints_: MediaTrackConstraints;
   private isInitializing_ = false;
@@ -43,6 +45,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private useXRCameraAccess_ = false;
   private xrCameraTexture_?: THREE.ExternalTexture;
   private xrCameraAccessTimeout_: ReturnType<typeof setTimeout> | null = null;
+  private disposed_ = false;
 
   /**
    * @param options - The configuration options.
@@ -89,11 +92,13 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    * Initializes the camera based on the initial constraints.
    */
   async init() {
+    if (this.disposed_) return;
     this.useXRCameraAccess_ = false;
     this.clearXRCameraAccessTimeout_();
     this.setState_(StreamState.INITIALIZING);
     try {
       this.availableDevices_ = await this.getAvailableVideoDevices();
+      if (this.disposed_) return;
 
       if (this.availableDevices_.length > 0) {
         await this.initStream_();
@@ -130,7 +135,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    * track.
    */
   protected async initStream_() {
-    if (this.isInitializing_) return;
+    if (this.isInitializing_ || this.disposed_) return;
     this.isInitializing_ = true;
     this.setState_(StreamState.INITIALIZING);
 
@@ -184,7 +189,16 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
         stream = await navigator.mediaDevices.getUserMedia({
           video: constraints,
         });
+        if (this.disposed_) {
+          for (const track of stream.getTracks()) track.stop();
+          return;
+        }
         this.availableDevices_ = await this.getAvailableVideoDevices();
+      }
+
+      if (this.disposed_) {
+        for (const track of stream?.getTracks() ?? []) track.stop();
+        return;
       }
 
       const videoTracks = stream?.getVideoTracks() || [];
@@ -229,6 +243,10 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
           );
         });
       });
+      if (this.disposed_) {
+        this.stop_();
+        return;
+      }
 
       const details = {
         width: this.width,
@@ -379,11 +397,23 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     }
   }
 
-  registerSimulatorCamera(simulatorCamera: SimulatorCamera) {
+  registerSimulatorCamera(simulatorCamera?: SimulatorCameraSource) {
     this.simulatorCamera = simulatorCamera;
   }
 
+  override dispose() {
+    this.disposed_ = true;
+    this.clearXRCameraAccessTimeout_();
+    this.xrCameraTexture_?.dispose();
+    this.xrCameraTexture_ = undefined;
+    this.renderer_ = undefined;
+    this.simulatorCamera = undefined;
+    this.useXRCameraAccess_ = false;
+    super.dispose();
+  }
+
   private startXRCameraAccessFallback_(reason: string, error?: unknown) {
+    if (this.disposed_) return;
     if (!this.isXRCameraAccessGranted_()) {
       this.useXRCameraAccess_ = false;
       this.loaded = false;
@@ -404,7 +434,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     this.setState_(StreamState.INITIALIZING, {force: true});
     this.clearXRCameraAccessTimeout_();
     this.xrCameraAccessTimeout_ = setTimeout(() => {
-      if (!this.useXRCameraAccess_ || this.loaded) return;
+      if (this.disposed_ || !this.useXRCameraAccess_ || this.loaded) return;
       this.useXRCameraAccess_ = false;
       this.setState_(StreamState.NO_DEVICES_FOUND, {force: true});
       console.warn(

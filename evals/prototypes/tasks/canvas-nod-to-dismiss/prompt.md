@@ -1,0 +1,1 @@
+I want to answer yes or no without using my hands. Make the cylinder float in front of me, and let me nod to accept it so it turns green, or shake my head to dismiss it so it fades away. My hands are full, so it should work from head movement alone.

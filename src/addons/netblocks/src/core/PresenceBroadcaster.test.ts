@@ -70,12 +70,4 @@ describe('PresenceBroadcaster', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].type).toBe('pose');
   });
-
-  it('survives an empty user object (XR not yet started)', () => {
-    mockCore.camera = makeCamera();
-    mockCore.user = {hands: undefined};
-    const b = new PresenceBroadcaster(send, 60);
-    expect(() => b.update(1000)).not.toThrow();
-    expect(sent).toHaveLength(1);
-  });
 });

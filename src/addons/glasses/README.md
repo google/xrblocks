@@ -1,7 +1,8 @@
 # glasses ui
 
-This is an experimental implementation of Glasses UI inspired by Jetpack Compose Glimmer for use in XR Blocks.
-It depends on @pmndrs/uikit and uiblocks.
+This is an experimental implementation of Glasses UI inspired by Jetpack Compose Glimmer.
+It uses raw `@pmndrs/uikit` components and is separate from the supported XR Blocks
+`UICard` and `UIOverlay` API.
 
 ## Features
 
@@ -12,4 +13,6 @@ It depends on @pmndrs/uikit and uiblocks.
 
 ## Usage
 
-Please see samples/glasses_ui/ for a working example. Note that this is a work in progress and the API may change significantly without notice.
+See `demos/glasses_ui/` for its current composition. Treat this add-on as experimental
+demo code, not as the standard way to build XR Blocks UI. New applications should use the
+public components exported from `xrblocks`; see `templates/01_spatial_ui`.

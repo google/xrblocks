@@ -1,1 +1,3 @@
-When I give a thumbs-up with either hand, a little burst of bright confetti shoots out of the cylinder for a second. When I make a fist, nothing happens (it just resets). Keep the cylinder where it is.
+Create a cylinder. When I give a thumbs-up with either hand, a small burst of
+bright confetti shoots out of it for one second. When I make a fist, reset the
+gesture state without a burst.

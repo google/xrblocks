@@ -1,8 +1,9 @@
 {
-  "skill": "xb-netblocks",
-  "template": "templates/0_basic",
+  "skill": "xb-build-app",
+  "reference_files": ["src/addons/netblocks/README.md"],
+  "template": "templates/00_basic",
   "edit_file": "main.js",
-  "expected_imports": ["xrblocks/addons/netblocks"],
+  "expected_imports": ["xrblocks/addons/netblocks/src/index.js"],
   "expected_apis": ["enableNet", "joinRoom", "NetObject"],
   "forbidden_patterns": ["new WebSocket\\("]
 }

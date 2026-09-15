@@ -1,6 +1,7 @@
 {
-  "skill": "xb-sound",
-  "template": "templates/0_basic",
+  "skill": "xb-build-app",
+  "reference_files": ["docs/docs/manual/Sound.mdx"],
+  "template": "templates/00_basic",
   "edit_file": "main.js",
   "expected_imports": [],
   "expected_apis": ["xb.core.sound", "PositionalAudio", "getAudioListener"],

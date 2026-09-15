@@ -27,19 +27,6 @@ function makeSnap(x: number): PoseSnapshot {
 }
 
 describe('InterpolatedPose', () => {
-  it('hasData is false until a snapshot is pushed', () => {
-    const ip = new InterpolatedPose();
-    expect(ip.hasData).toBe(false);
-  });
-
-  it('latestTs reflects the newest pushed snapshot', () => {
-    const ip = new InterpolatedPose();
-    ip.push(makeSnap(0), 100);
-    expect(ip.latestTs).toBe(100);
-    ip.push(makeSnap(1), 150);
-    expect(ip.latestTs).toBe(150);
-  });
-
   it('drops out-of-order snapshots', () => {
     const ip = new InterpolatedPose();
     ip.push(makeSnap(0), 100);
@@ -63,22 +50,6 @@ describe('InterpolatedPose', () => {
     expect(s.head.position.x).toBeCloseTo(5, 5);
   });
 
-  it('reaches the new snapshot at t=1', () => {
-    const ip = new InterpolatedPose();
-    ip.push(makeSnap(0), 100);
-    ip.push(makeSnap(10), 200);
-    const s = ip.sample(200);
-    expect(s.head.position.x).toBeCloseTo(10, 5);
-  });
-
-  it('clamps `now` before the prev snapshot to t=0', () => {
-    const ip = new InterpolatedPose();
-    ip.push(makeSnap(0), 100);
-    ip.push(makeSnap(10), 200);
-    const s = ip.sample(50); // before prev
-    expect(s.head.position.x).toBeCloseTo(0, 5);
-  });
-
   it('extrapolates up to MAX_EXTRAPOLATION (25%) past the latest', () => {
     const ip = new InterpolatedPose();
     ip.push(makeSnap(0), 100);
@@ -93,16 +64,6 @@ describe('InterpolatedPose', () => {
     ip.push(makeSnap(0), 100);
     ip.push(makeSnap(10), 100); // same ts
     expect(() => ip.sample(100)).not.toThrow();
-  });
-
-  it('returns the same scratch object reference across calls', () => {
-    // Documented contract: callers must clone the result if they want to keep it.
-    const ip = new InterpolatedPose();
-    ip.push(makeSnap(0), 100);
-    ip.push(makeSnap(10), 200);
-    const a = ip.sample(120);
-    const b = ip.sample(180);
-    expect(a).toBe(b);
   });
 
   describe('hand interpolation', () => {

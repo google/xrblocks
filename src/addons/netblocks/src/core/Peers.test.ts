@@ -3,6 +3,9 @@ import * as THREE from 'three';
 
 vi.mock('xrblocks', async () => {
   const T = await import('three');
+  class FakeUIElement extends T.Object3D {
+    dispose() {}
+  }
   return {
     core: undefined,
     // RemoteUserAvatar constructs `new xb.StylizedFace()` in its
@@ -10,6 +13,14 @@ vi.mock('xrblocks', async () => {
     // doesn't need a real canvas/WebGL pipeline.
     StylizedFace: class extends T.Object3D {
       dispose() {}
+    },
+    UICard: FakeUIElement,
+    UIText: class extends FakeUIElement {
+      text = '';
+      constructor(opts?: {text?: string}) {
+        super();
+        this.text = opts?.text ?? '';
+      }
     },
   };
 });
@@ -58,12 +69,6 @@ describe('Peers facade', () => {
     net = new NetCore(root);
   });
 
-  it('list() is empty before joinRoom and after leaveRoom', () => {
-    expect(net.peers.list()).toEqual([]);
-    expect(net.peers.remoteUsers).toEqual([]);
-    expect(net.user.peerId).toBeUndefined();
-  });
-
   it('subscriptions registered before joinRoom fire on remote join', async () => {
     const onJoin = vi.fn();
     const onLeave = vi.fn();
@@ -88,19 +93,6 @@ describe('Peers facade', () => {
     transport.fakePeerLeave('peer-a');
     expect(onLeave).toHaveBeenCalledTimes(1);
     expect(net.peers.list()).toEqual([]);
-  });
-
-  it('off() unsubscribes', async () => {
-    const onJoin = vi.fn();
-    const dispose = net.peers.on('join', onJoin);
-
-    const transport = new FakeTransport();
-    await net.joinRoom('room', {transport});
-
-    dispose();
-    transport.fakePeerJoin('peer-x');
-    transport.receive('peer-x', helloFrom('peer-x'));
-    expect(onJoin).not.toHaveBeenCalled();
   });
 
   it('subscriptions persist across rejoin', async () => {

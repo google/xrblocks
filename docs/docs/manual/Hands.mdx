@@ -14,7 +14,6 @@ XR Blocks provides native support for WebXR Hand Tracking (inputs, joints, visua
 To enable hand tracking, set the corresponding options in your [`Options`](/api/classes/Options) configuration:
 
 ```javascript
-import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 const options = new xb.Options();
@@ -41,6 +40,17 @@ options.simulator.defaultMode = xb.SimulatorMode.POSE;
 
 For scripts that react to physical hand contact (e.g., button presses, picking up virtual items), use the built-in direct touch and grab hooks.
 
+Direct touch, selection, grab, and manipulation are related but separate
+lifecycles. Touch starts selection by default. A pinch while touching starts a
+grab and can start automatic manipulation. Releasing the pinch ends grab and
+manipulation while touch and selection can continue. Call
+`event.preventDefault()` from `onObjectTouchStart` when contact must not start
+the default selection.
+
+Read [Interaction and Manipulation](Interaction.md#touch-selection-grab-and-manipulation-are-separate)
+for the complete phase table, propagation, cancellation, concurrent object
+owners, and two-source scale.
+
 To use these, implement them directly in your [`Script`](/api/classes/Script):
 
 ```javascript
@@ -51,6 +61,7 @@ export class GrabbableItem extends xb.Script {
       new THREE.MeshStandardMaterial({color: 0x00ff00})
     );
     this.add(this.box);
+    this.xb = {manipulation: true};
   }
 
   onObjectTouchStart(event) {
@@ -65,20 +76,28 @@ export class GrabbableItem extends xb.Script {
     // event.handIndex (0 | 1)
     // event.hand (THREE.Object3D representing the wrist joint group)
     console.log('Grabbed by hand index:', event.handIndex);
+    this.box.material.emissive.set(0x225522);
   }
 
   onObjectGrabbing(event) {
-    // Triggers every frame while the object remains grabbed
-    // Example: parent/move the object with the hand wrist group
-    this.position.copy(event.hand.position);
+    // Continuous feedback only. The interaction system preserves the
+    // hand-to-object offset and owns the configured transform.
+    console.log('Grab point:', event.touchPosition);
   }
 
   onObjectGrabEnd(event) {
     // Triggers when the grab/pinch is released
     this.box.material.color.set(0x00ff00);
+    this.box.material.emissive.set(0x000000);
   }
 }
 ```
+
+Configure transform behavior through `object.xb.manipulation`. Do not copy the
+object directly to the wrist in `onObjectGrabbing`: that snaps the object,
+duplicates the interaction system, and loses multi-source ownership. The
+built-in system preserves the initial offset, supports independent objects at
+the same time, and supports two-source scale when enabled.
 
 ---
 
@@ -93,11 +112,11 @@ update(time, frame) {
   const hands = xb.user.hands;
   if (!hands) return; // Hand tracking data not yet active
 
-  // Get index fingertip of the left hand as a THREE.Object3D
-  const leftIndexTip = hands.getIndexTip(xb.Handedness.LEFT);
+  // Get index fingertip of hand 0 (left hand) as a THREE.Object3D
+  const leftIndexTip = hands.getIndexTip(0);
 
-  // Get wrist of the right hand as a THREE.Object3D
-  const rightWrist = hands.getWrist(xb.Handedness.RIGHT);
+  // Get wrist of hand 1 (right hand) as a THREE.Object3D
+  const rightWrist = hands.getWrist(1);
 
   if (leftIndexTip) {
     const worldPos = new THREE.Vector3();
@@ -106,7 +125,7 @@ update(time, frame) {
   }
 
   // Check if hand 0 is pinching
-  const isPinching = xb.user.isSelecting(xb.Handedness.LEFT);
+  const isPinching = xb.user.isSelecting(0);
 }
 ```
 
@@ -117,7 +136,6 @@ update(time, frame) {
   - `0` - Left hand only
   - `1` - Right hand only
   - `2` - Both hands active
-- **`xb.Handedness`**: `LEFT`, `RIGHT`, or `NONE` (use the dominant hand).
-- **`xb.HAND_JOINT_NAMES`**: The exported list of WebXR joint names.
+- **`HandJointNames`**: A list of joints (e.g., thumb tip, index tip, wrist, middle mcp) exported from the SDK.
 
-For a complete reference implementation, see <CodeSearchLink path="templates/2_hands/index.html"/>.
+For a complete reference implementation, see <CodeSearchLink path="templates/02_object_interaction/index.html"/>.

@@ -24,34 +24,23 @@ describe('blendshapesToVisemes', () => {
     expect(out).toEqual(ZERO_VISEME);
   });
 
-  it('jawOpen alone drives the aa channel and leaves oo / ee at zero', () => {
+  it('maps jaw, pucker, and stretch signals to their visible mouth shapes', () => {
     const out = blendshapesToVisemes(makeBlend({jawOpen: 0.8}));
     expect(out.aa).toBeGreaterThan(0.3);
     expect(out.jawOpen).toBeGreaterThan(0.3);
     expect(out.oo).toBe(0);
     expect(out.ee).toBe(0);
-  });
-
-  it('mouthPucker alone drives oo and leaves aa near zero', () => {
-    const out = blendshapesToVisemes(makeBlend({mouthPucker: 0.9}));
-    expect(out.oo).toBeGreaterThan(0.5);
-    expect(out.aa).toBe(0);
-  });
-
-  it('jawOpen + mouthPucker together produces the oh channel', () => {
-    const out = blendshapesToVisemes(
+    const pucker = blendshapesToVisemes(makeBlend({mouthPucker: 0.9}));
+    expect(pucker.oo).toBeGreaterThan(0.5);
+    expect(pucker.aa).toBe(0);
+    const rounded = blendshapesToVisemes(
       makeBlend({jawOpen: 0.7, mouthPucker: 0.7})
     );
-    expect(out.oh).toBeGreaterThan(0.2);
-  });
-
-  it('mouthStretch (not mouthSmile) drives the ee channel', () => {
+    expect(rounded.oh).toBeGreaterThan(0.2);
     const stretch = blendshapesToVisemes(
       makeBlend({mouthStretchLeft: 0.8, mouthStretchRight: 0.8})
     );
     expect(stretch.ee).toBeGreaterThan(0.4);
-
-    // mouthSmile is a much weaker contributor — verify it alone doesn't dominate.
     const smile = blendshapesToVisemes(
       makeBlend({mouthSmileLeft: 0.8, mouthSmileRight: 0.8})
     );

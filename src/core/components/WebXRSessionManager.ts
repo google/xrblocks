@@ -6,6 +6,7 @@ export enum WebXRSessionEventType {
   READY = 'ready',
   SESSION_START = 'sessionstart',
   SESSION_END = 'sessionend',
+  SESSION_ERROR = 'sessionerror',
 }
 
 export type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
@@ -13,6 +14,7 @@ export type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
   [WebXRSessionEventType.READY]: {sessionOptions: XRSessionInit};
   [WebXRSessionEventType.SESSION_START]: {session: XRSession};
   [WebXRSessionEventType.SESSION_END]: object;
+  [WebXRSessionEventType.SESSION_ERROR]: {error: unknown};
 };
 
 /**
@@ -24,6 +26,8 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   private sessionOptions?: XRSessionInit;
   private xrModeSupported?: boolean;
   private waitingForXRSession = false;
+  private disposed = false;
+  private disposalPromise?: Promise<void>;
 
   constructor(
     private renderer: THREE.WebGLRenderer,
@@ -51,20 +55,20 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       modeSupported =
         (await navigator.xr!.isSessionSupported(this.mode)) || false;
     } catch (e) {
+      if (this.disposed) return;
       console.error('Error getting isSessionSupported', e);
       this.xrModeSupported = false;
       this.dispatchEvent({type: WebXRSessionEventType.UNSUPPORTED});
       return;
     }
 
+    if (this.disposed) return;
+
     if (modeSupported) {
       this.xrModeSupported = true;
       this.sessionOptions = {
         ...this.sessionInit,
-        optionalFeatures: [
-          'local-floor',
-          ...(this.sessionInit.optionalFeatures || []),
-        ],
+        optionalFeatures: this.sessionInit.optionalFeatures || [],
       };
 
       // Fire the 'ready' event with the sessionOptions in the data payload
@@ -89,10 +93,12 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   }
 
   /**
-   * Ends the WebXR session.
+   * Requests and initializes a WebXR session.
    */
   public startSession() {
-    if (this.xrModeSupported === undefined) {
+    if (this.disposed) {
+      throw new Error('WebXRSessionManager has been disposed');
+    } else if (this.xrModeSupported === undefined) {
       throw new Error('Initialize not yet complete');
     } else if (!this.xrModeSupported) {
       throw new Error('WebXR not supported');
@@ -104,10 +110,10 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     this.waitingForXRSession = true;
     navigator
       .xr!.requestSession(this.mode, this.sessionOptions)
+      .then(this.onSessionStartedInternal)
       .finally(() => {
         this.waitingForXRSession = false;
       })
-      .then(this.onSessionStartedInternal)
       .catch((err) => {
         console.error(
           'Error requesting session',
@@ -117,18 +123,29 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
           'sesionOptions:',
           this.sessionOptions
         );
+        if (!this.disposed) {
+          this.dispatchEvent({
+            type: WebXRSessionEventType.SESSION_ERROR,
+            error: err,
+          });
+        }
       });
   }
 
   /**
    * Ends the WebXR session.
    */
-  public endSession() {
-    if (!this.currentSession) {
+  public async endSession(): Promise<void> {
+    const session = this.currentSession;
+    if (!session) {
       throw new Error('No session to end');
     }
-    this.currentSession.end();
-    this.currentSession = undefined;
+    try {
+      await session.end();
+    } finally {
+      session.removeEventListener('end', this.onSessionEndedInternal);
+      if (this.currentSession === session) this.currentSession = undefined;
+    }
   }
 
   /**
@@ -145,8 +162,30 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
 
   /** Internal callback for when a session successfully starts. */
   private onSessionStartedInternal = async (session: XRSession) => {
+    if (this.disposed) {
+      await session.end();
+      return;
+    }
     session.addEventListener('end', this.onSessionEndedInternal);
-    await this.renderer.xr.setSession(session);
+    try {
+      await this.renderer.xr.setSession(session);
+    } catch (error) {
+      session.removeEventListener('end', this.onSessionEndedInternal);
+      try {
+        await session.end();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'XR renderer setup failed and the session could not be closed.'
+        );
+      }
+      throw error;
+    }
+    if (this.disposed) {
+      session.removeEventListener('end', this.onSessionEndedInternal);
+      await session.end();
+      return;
+    }
     this.currentSession = session;
 
     // Fire the 'sessionstart' event with the session in the data payload
@@ -158,13 +197,20 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
 
   /** Internal callback for when the session ends. */
   private onSessionEndedInternal = () => {
-    // Fire the 'sessionend' event
-    this.dispatchEvent({type: WebXRSessionEventType.SESSION_END});
-
-    this.currentSession?.removeEventListener(
-      'end',
-      this.onSessionEndedInternal
-    );
+    const session = this.currentSession;
+    session?.removeEventListener('end', this.onSessionEndedInternal);
     this.currentSession = undefined;
+    if (!this.disposed) {
+      this.dispatchEvent({type: WebXRSessionEventType.SESSION_END});
+    }
   };
+
+  dispose(): Promise<void> {
+    if (this.disposalPromise) return this.disposalPromise;
+    this.disposed = true;
+    this.disposalPromise = this.currentSession
+      ? this.endSession()
+      : Promise.resolve();
+    return this.disposalPromise;
+  }
 }

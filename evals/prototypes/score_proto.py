@@ -3,10 +3,12 @@
 
 Scoring (simple, transparent):
   - import_match:    fraction of expected_imports the agent's main file references
-  - api_match:       fraction of expected_apis the agent's main file references
+  - api_match:       fraction of expected_apis the agent's main file uses, ignoring
+                     comments so prose cannot satisfy a task
   - forbidden_clean: 1.0 if no forbidden_patterns matched, else 0.0
   - parse_ok:        1.0 if `node --check` parses the edit_file, else 0.0
-  - composite:       0.25 * each of the four above
+  - composite:       mean of the above, dropping import_match when the task
+                     expects no imports and it would be vacuously 1.0
 
 Output: JSON line to stdout.
 
@@ -20,6 +22,54 @@ import pathlib
 import re
 import subprocess
 import sys
+
+
+def strip_comments(src: str) -> str:
+    """Remove comments, leaving code and string literals intact.
+
+    `expected_apis` are matched as substrings, so without this a task listing a
+    word like "thumbs" is satisfied by a comment reading "detect a thumbs up",
+    and code calling nothing real still scores on the API dimension.
+
+    String literals are deliberately kept. Gesture names and similar are passed
+    as strings in this SDK, so `setGestureEnabled('thumbs-up', true)` is real
+    usage rather than prose. Regex literals containing quote characters are not
+    handled, which is accepted: the result is only used for substring matching.
+    """
+    out: list[str] = []
+    i, n = 0, len(src)
+    while i < n:
+        c = src[i]
+        nxt = src[i + 1] if i + 1 < n else ""
+
+        if c == "/" and nxt == "/":
+            while i < n and src[i] != "\n":
+                i += 1
+        elif c == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                i += 1
+            i += 2
+        elif c in ("'", '"', "`"):
+            # Copied through, but scanned so a // or /* inside a string is not
+            # mistaken for the start of a comment.
+            quote = c
+            out.append(c)
+            i += 1
+            while i < n:
+                if src[i] == "\\":
+                    out.append(src[i : i + 2])
+                    i += 2
+                    continue
+                out.append(src[i])
+                if src[i] == quote:
+                    i += 1
+                    break
+                i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def main(argv: list[str]) -> int:
@@ -37,13 +87,16 @@ def main(argv: list[str]) -> int:
         return 0
 
     src = edit_path.read_text()
+    # Imports are matched against the raw source, since a module specifier
+    # such as "@dimforge/rapier3d" only ever appears inside a string.
+    code = strip_comments(src)
 
     expected_imports = spec.get("expected_imports", [])
     expected_apis = spec.get("expected_apis", [])
     forbidden = spec.get("forbidden_patterns", [])
 
     import_hits = sum(1 for imp in expected_imports if imp in src)
-    api_hits = sum(1 for api in expected_apis if api in src)
+    api_hits = sum(1 for api in expected_apis if api in code)
     forbidden_hits = [pat for pat in forbidden if re.search(pat, src)]
 
     def frac(num: int, denom: int) -> float:

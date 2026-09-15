@@ -15,8 +15,7 @@ export class AISimulator extends xb.Script {
   /**
    * Initializes the script.
    */
-  init(...args) {
-    super.init(...args);
+  async init() {
     xb.core.renderer.localClippingEnabled = true;
 
     this.add(new THREE.HemisphereLight(0x888877, 0x777788, 3));
@@ -24,8 +23,7 @@ export class AISimulator extends xb.Script {
     light.position.set(-0.5, 4, 1.0);
     this.add(light);
 
-    console.log('Gemini Quest UIs: ', xb.core.ui.views);
-    this.loadModels();
+    await this.loadModels();
     document.addEventListener('keydown', (event) => {
       if (event.code === 'KeyI') {
         this.onTriggerRandomQuestion();
@@ -40,58 +38,40 @@ export class AISimulator extends xb.Script {
     }
   }
 
-  queryGemini() {
-    const response = xb.core.ai.query('what is it?', this.image.toBase64());
-  }
-
-  changeMeshColor() {}
-
-  /**
-   * Moves the painter to the pivot position when select starts.
-   * @param {XRInputSourceEvent} event
-   */
-  onSelectStart(event) {}
-
-  /**
-   * Updates the painter's line to the current pivot position during selection.
-   * @param {number} id The controller id.
-   */
-  onSelecting(id) {}
-
-  update() {
-    const deltaTime = xb.getDeltaTime();
-    for (const model of this.data) {
-      model.modelAnimation?.update(deltaTime);
-    }
-  }
-
-  loadModels() {
+  async loadModels() {
+    const loads = [];
     for (let i = 0; i < this.data.length; i++) {
       if (this.data[i].model) {
         const data = this.data[i];
-        const model = new xb.ModelViewer({});
-        model.loadGLTFModel({
-          data: this.data[i].model,
-          setupPlatform: false,
-          setupRaycastCylinder: false,
-          setupRaycastBox: true,
-          renderer: xb.core.renderer,
-          onSceneLoaded: () => {
-            console.log('scene loaded');
-            model.position.copy(data.position);
-            model.rotation.set(
-              data.rotation.x,
-              data.rotation.y,
-              data.rotation.z,
-              'YXZ'
-            );
-            this.add(model);
-          },
-          addOcclusionToShader: true,
+        const source = data.model;
+        const group = new THREE.Group();
+        group.position.copy(data.position);
+        group.rotation.set(
+          data.rotation.x,
+          data.rotation.y,
+          data.rotation.z,
+          'YXZ'
+        );
+        this.add(group);
+
+        const model = new xb.ModelViewer({
+          origin: 'source',
+          occlusion: true,
         });
+        model.position.copy(source.position ?? {x: 0, y: 0, z: 0});
+        group.add(model);
+        loads.push(
+          model.load({
+            url: source.model,
+            path: source.path,
+            scale: source.scale,
+            rotation: source.rotation,
+          })
+        );
         this.models[i] = model;
       }
     }
+    await Promise.all(loads);
   }
 
   onTriggerRandomQuestion() {

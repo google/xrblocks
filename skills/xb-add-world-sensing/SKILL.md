@@ -1,83 +1,73 @@
 ---
 name: xb-add-world-sensing
-description: >-
-  Implement physical-world sensing in an XR Blocks app. Use when adding
-  planes or scene meshes, depth or occlusion, world collision, object, human,
-  or face recognition, segmentation, or agent-facing scene context; also use
-  when choosing simulator and device evidence for those features.
+description: Connect physical-world sensing to XR Blocks application state. Use when adding planes, scene meshes, depth, occlusion, world collision evidence, object or human recognition, face tracking, segmentation, or agent-facing scene context.
 ---
 
 # Add world sensing
 
-Build a complete **sensing behavior**: physical or scene evidence enters the
-app, becomes state, and produces an observable reaction. Use
-[`../xb-build-app/SKILL.md`](../xb-build-app/SKILL.md) when the surrounding app
-does not exist yet.
+Build a complete **sensing behavior**: evidence enters the app, becomes current
+state, and produces an observable reaction.
 
 ## 1. Write the sensor contract
 
-Name all four parts before editing code:
+Name the physical or scene signal, cadence, observable reaction, data freshness,
+permissions, target runtime, and behavior for unsupported, denied, warming-up,
+empty, stale, and failed states.
 
-1. **signal** — the physical fact or scene fact to observe;
-2. **cadence** — engine-updated, one-shot, or continuous;
-3. **reaction** — placement, UI state, physics, occlusion, or agent action;
-4. **absence** — the stable behavior for unsupported, denied, warming-up,
-   empty, stale, and failed states.
+Read [`references/branches.md`](references/branches.md), select the narrowest
+branch that supplies the signal, and read only that branch's manual and example.
 
-Choose the narrowest sensing branch that provides the signal. Read
-[`references/branches.md`](references/branches.md) now for the selection table,
-then read only the selected branch section.
+Complete this step when one named signal maps to one reaction and every absence
+state maps to an explicit application state.
 
-This step is complete when one named signal maps to one reaction and every
-absence state maps to an explicit application state.
+## 2. Prove the selected branch
 
-## 2. Prove the branch before implementation
+Verify each planned symbol in
+[`../../src/xrblocks.ts`](../../src/xrblocks.ts) and its implementation. Inspect
+the linked current manual, template, or sample. Record the exact option,
+permission, WebXR session feature, optional dependency, simulator fidelity, and
+real-device check before editing application code.
 
-Verify every planned symbol in [`../../src/xrblocks.ts`](../../src/xrblocks.ts)
-and its implementation. Then inspect the selected branch's linked sample,
-template, demo, and manual page from the branch reference. Treat executable
-code as authoritative when older prose differs.
+Complete this step when every input has current source or executable evidence
+and the target runtime is explicit.
 
-Record before `xb.init(options)`:
+## 3. Connect evidence to app state
 
-- the exact option that enables the subsystem;
-- browser permissions and WebXR session features;
-- optional imports or import-map entries;
-- simulator fidelity and the real-device check.
+Configure the branch before `xb.init(options)` and keep application behavior in
+an `xb.Script`. Let XR Blocks own sensor and render update loops. For explicit
+detection, prevent uncontrolled concurrent requests and display pending state.
+For continuous detectors, use `start(client)` and `stop(client)` with the same
+client object.
 
-This step is complete when each required input has a source file or working
-artifact that proves it exists and the target runtime is stated.
+Convert success into the requested reaction. Convert empty arrays, `null`,
+missing sensor data, denied permission, rejected session startup, and stale
+observations into the contract's absence state. Clear previous output when it
+is no longer current.
 
-## 3. Connect signal to reaction
+Complete this step when fresh evidence changes observable state and missing or
+stale evidence clears or replaces it deterministically.
 
-Configure sensing before `xb.init(options)`. Put application behavior in an
-`xb.Script`; let XR Blocks own the render and sensor update loops. For explicit
-detection, guard concurrent requests and render a pending state. For continuous
-object, human, face, or context detection, call `start(client)` and later
-`stop(client)` with the same object. Track freshness in application state when
-stale observations matter.
+## 4. Preserve targeting and placement ownership
 
-Convert successful output into the requested reaction. Convert empty arrays,
-`null`, missing data, permission failures, and rejected session startup into
-the contract's absence state rather than leaving old output visible.
+Use the interaction pipeline's resolved hit for ray-based placement. A reticle
+displays that hit; it does not own target data. Use
+`xb.world.placeOnHorizontalSurface()` for one-time surface placement. Use the
+[Placement manual](../../docs/docs/manual/Placement.md) for continuous
+follow/face/orbit behavior and its manipulation rebasing.
 
-This step is complete when a fresh signal changes observable app state and a
-missing signal clears or replaces it deterministically.
+Complete this step when the sensor, interaction resolver, reticle, and placed
+object each have one clear responsibility.
 
-## 4. Prepare the sensing handoff
+## 5. Prove and hand off sensing
 
-Run code-level checks and startup smoke available in the environment. Confirm
-the selected options, imports, permissions, detector ownership, result-to-state
-mapping, absence states, freshness handling, and cleanup are implemented. Add a
-deterministic simulator environment or object ground-truth configuration when
-that branch supports it.
+Build or type-check the app and start the exact simulator route when available.
+Confirm options, imports, permissions, detector ownership, freshness, result
+mapping, absence states, and cleanup. Add deterministic simulator ground truth
+only when the branch supports it.
 
-Give the user separate simulator and device instructions where their evidence
-differs. Name the URL, permission prompts, physical signal to present, expected
-scene reaction, empty/no-result behavior, and how stale output clears. State
-exactly which simulator signals are synthetic and which native behavior still
-requires the target WebXR device.
+Give separate simulator and device instructions when their evidence differs.
+Name the signal to present, expected reaction, empty result, stale clearing,
+permissions, and synthetic versus native evidence.
 
-Finish when the sensing implementation is complete and the user has
-reproducible steps for successful, empty, denied, unsupported, and stale states
-that apply to the selected branch.
+Finish when successful, empty, denied, unsupported, failed, and stale states
+have reproducible checks for the selected branch.

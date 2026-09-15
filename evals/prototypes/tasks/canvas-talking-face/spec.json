@@ -1,0 +1,8 @@
+{
+  "skill": "xb-lipsync",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": ["xrblocks/addons/lipsync"],
+  "expected_apis": ["LipsyncMouth", "getUserMedia", "StylizedFace"],
+  "forbidden_patterns": ["MediaPipe", "new Audio\\("]
+}

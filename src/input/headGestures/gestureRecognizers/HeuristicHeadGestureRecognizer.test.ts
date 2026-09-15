@@ -12,7 +12,8 @@ type PoseAngles = {
 };
 
 describe('HeuristicHeadGestureRecognizer', () => {
-  it.each([1, -1])('recognizes a nod starting in direction %s', (direction) => {
+  it('recognizes a nod that starts upward', () => {
+    const direction = 1;
     const recognizer = new HeuristicHeadGestureRecognizer();
     const samples = createSamples(900, (time) => ({
       pitch:

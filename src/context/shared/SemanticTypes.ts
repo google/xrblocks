@@ -1,12 +1,21 @@
+import type {PointerEvents} from '../../interaction/InteractionTypes';
+
 export type Vec2Tuple = [number, number];
 export type Vec3Tuple = [number, number, number];
 export type QuatTuple = [number, number, number, number];
 
-export type SemanticSource = 'xrblocks' | 'uiblocks' | 'three' | 'app';
+export type SemanticSource = 'xrblocks' | 'three' | 'app';
 
 export interface SemanticBounds {
   center: Vec3Tuple;
   size: Vec3Tuple;
+}
+
+export interface SemanticScrollInfo {
+  offset: number;
+  viewportHeight: number;
+  maximum?: number;
+  contentHeight?: number;
 }
 
 export interface SemanticViewData {
@@ -30,6 +39,10 @@ export interface SemanticNode {
   role: string;
   name: string;
   visible: boolean;
+  /** Local pointer-hit policy. Ancestor policies remain visible in the tree. */
+  pointerEvents: PointerEvents;
+  /** Local interaction policy. */
+  interactionEnabled: boolean;
   position: Vec3Tuple;
   children: string[];
   parentId?: string;
@@ -41,6 +54,13 @@ export interface SemanticNode {
   disabled?: boolean;
   selected?: boolean;
   hovered?: boolean;
+  focused?: boolean;
+  readOnly?: boolean;
+  multiline?: boolean;
+  scroll?: SemanticScrollInfo;
+  value?: number;
+  min?: number;
+  max?: number;
   bounds?: SemanticBounds;
   view?: SemanticViewData;
 }

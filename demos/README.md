@@ -14,6 +14,7 @@ Follow the [development guide](../README.md#development-guide) to serve the
 repository, then open your demo path, for example:
 
 - `http://localhost:8080/demos/math3d/`
+- [Roomcraft](roomcraft/): `http://localhost:8080/demos/roomcraft/` for editable 3D scenes, no-key examples, and optional Gemini scene authoring.
 
 ## Contributing a New Demo
 
@@ -33,7 +34,8 @@ or `/samples/`.
 When using third-party assets, make sure they are compatible with Apache 2
 license and add corresponding LICENSE file to the demo folder. Please submit large assets as a PR to https://github.com/xrblocks/proprietary-assets and use a jsdelivr CDN link to reference them.
 
-For samples with third-party npm dependencies or requiring a build, please configure a `package.json` using `pnpm` and add your project to the `build_all.sh` script. See `drone` for an example.
+For demos with third-party npm dependencies or requiring a build, configure a
+`package.json` and add the project to the repository build.
 
 ### Step 3: Create a pull request
 

@@ -1,8 +1,12 @@
 {
-  "skill": "xb-depth",
-  "template": "templates/0_basic",
+  "skill": "xb-add-world-sensing",
+  "reference_files": ["docs/docs/manual/Depth.md"],
+  "template": "templates/00_basic",
   "edit_file": "main.js",
   "expected_imports": [],
   "expected_apis": ["enableDepth"],
-  "forbidden_patterns": ["navigator\\.xr\\.requestSession.*depth-sensing"]
+  "forbidden_patterns": [
+    "navigator\\.xr\\.requestSession.*depth-sensing",
+    "showReticleOnDepthMesh"
+  ]
 }

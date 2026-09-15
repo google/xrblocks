@@ -1,8 +1,9 @@
 {
-  "skill": "xb-physics",
-  "template": "templates/0_basic",
+  "skill": "xb-add-interactions",
+  "reference_files": ["docs/docs/manual/Physics.md"],
+  "template": "templates/10_environment_physics",
   "edit_file": "main.js",
-  "expected_imports": ["@dimforge/rapier3d"],
+  "expected_imports": ["@dimforge/rapier3d-simd-compat"],
   "expected_apis": ["options.physics.RAPIER", "initPhysics", "physicsStep"],
   "forbidden_patterns": ["cannon-es", "ammo\\.js"]
 }

@@ -16,6 +16,7 @@ import * as xb from 'xrblocks';
 
 export class MyClass extends xb.Script {
   async init() {
+    await super.init();
     // Called when the object is found in the scene.
   }
 
@@ -34,21 +35,19 @@ export class MyClass extends xb.Script {
 - `init()` - Called when the object is found by `Core`. If `init` is async or returns a promise, other lifecycle functions will be called only after the promise resolves.
 - `update()` - Called every frame to update the current object.
 - `dispose()` - Called when the script is removed from the scene (or when the application is shutdown). Use this to clean up three.js resources (geometries, materials, textures, etc.).
-- `onXRSessionStarted(session)` / `onXRSessionEnded()` - Called when an
-  immersive session starts or ends.
-- `onSimulatorStarted()` - Called when the desktop simulator starts.
-- `onKeyDown(event)` / `onKeyUp(event)` - Called for keyboard input; read
-  `event.code`.
 
 ## Global controller functions
 
-The following functions are called on every object when the corresponding event is received by any controller.
-Each callback receives an event. The `THREE.Group` corresponding to the controller can be retrieved from `event.target`.
+The following functions are called on every object when the corresponding
+event is received by any controller. Read the controller from
+`event.source.controller`. Ray-based select events also provide the current
+`event.surface` and `event.intersection` when that surface is still hit.
 
-- `onSelectStart(event)` - Called when any controller begins selecting.
-- `onSelectEnd(event)` - Called when any controller finishes selecting.
-- `onSelect(event)` - Called when any controller completes a select action.
+- `onSelectStart(event)` - Called when any source begins selecting.
+- `onSelectEnd(event)` - Called when any source finishes selecting. Read `completed` and `reason`.
+- `onSelect(event)` - Called when any source completes a valid select action.
 - `onSelecting(event)` - Called every frame for each controller that is selecting.
+- `onLongSelect(event)` - Called once when a captured selection reaches the configured hold delay.
 
 - `onSqueezeStart(event)` - Called when any controller begins squeezing.
 - `onSqueezeEnd(event)` - Called when any controller finishes squeezing.
@@ -62,22 +61,20 @@ See the [WebXR Device API](https://immersive-web.github.io/webxr/input-explainer
 Object specific callbacks are called only when the action is performed while the user is pointing at a specific object.
 Events are propagated up the scene graph from the initial object.
 
-- `onObjectSelectStart(event)` - Called on the current object the controller starts selecting. Return true to prevent propagation.
-- `onObjectSelectEnd(event)` - Called on the previously selected object the controller stops selecting. Return true to prevent propagation.
+- `onObjectSelectStart(event)` - Called on the current object the controller starts selecting. Call `event.stopPropagation()` to prevent propagation.
+- `onObjectSelectEnd(event)` - Called on the previously selected object when selection ends. Call `event.stopPropagation()` to prevent propagation.
+- `onObjectLongSelect(event)` - Called after a held object selection reaches the long-select delay.
+- `onObjectManipulate(event)` - Called for automatic manipulation start, move, end, and cancel phases.
 
-- `onHoverEnter(controller)` - Called when the user hovering over the current object. Always propagates up the scene graph.
-- `onHoverExit(controller)` - Called when the user hovers out of the current object. Always propagates up the scene graph.
-- `onHovering(controller)` - Called while the controller continues hovering.
+- `onHoverEnter(event)` / `onHovering(event)` / `onHoverExit(event)` - Hover lifecycle. Call `event.stopPropagation()` to stop propagation.
+- `onObjectTouchStart(event)` / `onObjectTouching(event)` / `onObjectTouchEnd(event)` - Direct-touch lifecycle.
+- `onObjectGrabStart(event)` / `onObjectGrabbing(event)` / `onObjectGrabEnd(event)` - Touch-plus-pinch grab lifecycle.
 
-Hover callbacks may return `true` to stop propagation, like object-select
-callbacks.
-
-Hands also dispatch direct-interaction callbacks on the target script:
-
-- `onObjectTouchStart(event)`, `onObjectTouching(event)`, and
-  `onObjectTouchEnd(event)` receive `handIndex` and `touchPosition`.
-- `onObjectGrabStart(event)`, `onObjectGrabbing(event)`, and
-  `onObjectGrabEnd(event)` receive `handIndex` and the hand object.
+`event.target` is the logical object, `event.surface` is the public hit surface,
+and `event.source.controller` identifies the source controller. Private
+renderer meshes are normalized to their public owner. See
+[Interaction and Manipulation](Interaction.md) for capture, cancellation, touch, and
+manipulation rules.
 
 ## Physics functions
 
@@ -94,11 +91,11 @@ Since JavaScript does not support multiple inheritance, we provide a mixin: `Scr
 To allow your custom class to be recognized as an `Script`, add `ScriptMixin` as follows:
 
 ```javascript
-import * as THREE from 'three';
-import {ScriptMixin} from 'xrblocks';
-
 export const Script = ScriptMixin(THREE.Object3D);
 ```
 
-To determine whether an object participates in the script lifecycle, check its
-`isXRScript` property rather than relying on `instanceof`.
+To determine if an object is an `Script`, check for the `isXRScript` property rather than `instanceof`.
+
+See [Placement scripts](Placement.md) for built-in scripts that follow the
+viewer or another object, face the camera, orbit a target, and animate
+visibility.

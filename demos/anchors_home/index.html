@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spatial Anchors Demos</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 24px;
+        background: #111;
+        color: #eee;
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        color: #4796e3;
+        border-bottom: 2px solid #4796e3;
+        padding-bottom: 10px;
+      }
+      h2 {
+        color: #ca6673;
+        margin-top: 28px;
+      }
+      a {
+        color: #9177c7;
+        text-decoration: none;
+        display: block;
+        padding: 10px 12px;
+        margin: 6px 0;
+        border-radius: 8px;
+        background: rgba(145, 119, 199, 0.08);
+        font-size: 1.05em;
+      }
+      a:hover {
+        text-decoration: underline;
+        background: rgba(145, 119, 199, 0.16);
+      }
+      .desc {
+        color: #aaa;
+        font-size: 0.9em;
+        display: block;
+        margin-top: 4px;
+      }
+      .tip {
+        background: #2a2030;
+        padding: 12px 14px;
+        border-radius: 8px;
+        margin: 16px 0;
+        font-size: 0.95em;
+      }
+      code {
+        color: #ca6673;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Spatial Anchors Demos</h1>
+    <p>
+      Content that stays where you put it. An anchor is corrected as the
+      platform refines its map of the room, so what you place is still in the
+      same physical spot when you come back to it.
+    </p>
+    <div class="tip">
+      💡 Persistence only works on a headset. Per MDN,
+      <code>requestPersistentHandle</code> and friends are implemented in
+      <strong>Oculus Browser 31.2</strong> and nowhere else, so Chrome on a
+      phone can create anchors but never save them, and desktop has no tracking
+      system to anchor against at all. Each demo says which backing it got, and
+      you want it to read <strong>"Real anchors, saved across sessions"</strong>
+      before any of this means anything.
+    </div>
+
+    <h2>Demos</h2>
+
+    <a href="../anchors/">
+      Markers
+      <span class="desc"
+        >Drop a marker, leave the session, come back and find it in the same
+        place. The smallest thing that shows the mechanism, talking to the
+        anchor subsystem directly and tracking a position per anchor.</span
+      >
+    </a>
+
+    <a href="../anchors_notes/">
+      Anchored notes
+      <span class="desc"
+        >Type on the spatial keyboard and pin the note where you are looking.
+        The text is the anchor's label, so what survives is real content rather
+        than a placeholder.</span
+      >
+    </a>
+
+    <a href="../anchors_gallery/">
+      Anchored gallery
+      <span class="desc"
+        >Leave shapes around the room at the angle you were looking, and find
+        them at that angle next time. Orientation as well as position, restored
+        through the <code>AnchoredObjects</code> helper, which keeps objects
+        glued to their anchors so an app never writes the per-frame pose
+        plumbing.</span
+      >
+    </a>
+
+    <h2>Reading the demos</h2>
+    <div class="tip">
+      Colour means the same thing in all three: anything
+      <strong>green came back out of storage</strong>, everything else was
+      placed this session. After a reload the whole scene should be green, so a
+      newly placed one stands out. That is the quickest way to tell a genuine
+      restore from content that was simply never cleared.
+    </div>
+  </body>
+</html>

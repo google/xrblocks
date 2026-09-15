@@ -11,17 +11,9 @@ describe('GamepadController', () => {
       expect(GamepadController.applyDeadzone(0.14)).toBe(0);
     });
 
-    it('returns remapped value outside deadzone', () => {
-      const result = GamepadController.applyDeadzone(1.0);
-      expect(result).toBeCloseTo(1.0, 2);
-    });
-
-    it('returns negative remapped value for negative input', () => {
-      const result = GamepadController.applyDeadzone(-1.0);
-      expect(result).toBeCloseTo(-1.0, 2);
-    });
-
-    it('remaps linearly from deadzone edge', () => {
+    it('preserves direction and remaps values outside the deadzone', () => {
+      expect(GamepadController.applyDeadzone(1.0)).toBeCloseTo(1.0, 2);
+      expect(GamepadController.applyDeadzone(-1.0)).toBeCloseTo(-1.0, 2);
       // At exactly the deadzone boundary, should be ~0
       const atEdge = GamepadController.applyDeadzone(0.15);
       expect(atEdge).toBeCloseTo(0, 1);
@@ -31,11 +23,8 @@ describe('GamepadController', () => {
       expect(mid).toBeCloseTo(0.5, 1);
     });
 
-    it('returns 0 for NaN', () => {
+    it('returns 0 for invalid input', () => {
       expect(GamepadController.applyDeadzone(NaN)).toBe(0);
-    });
-
-    it('returns 0 for Infinity', () => {
       expect(GamepadController.applyDeadzone(Infinity)).toBe(0);
       expect(GamepadController.applyDeadzone(-Infinity)).toBe(0);
     });

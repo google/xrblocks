@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as xb from 'xrblocks';
 
 // Dynamic import with a cache-buster so the browser always fetches the

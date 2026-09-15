@@ -1,16 +1,22 @@
-A template that showcases stereo content.
+---
+title: Stereo
+---
 
-<b>Stereoscopy</b> is a technique for creating the perception three-dimensional
-depth from a pair of two-dimensional images. It works by presenting slightly
-different images to each eye, mimicking how our natural binocular vision
-perceives depth.
+Render independent images for each eye to present spatial photos, videos, and stereoscopic media in WebXR.
 
-Learn more about stereoscopy here: https://en.wikipedia.org/wiki/Stereoscopy
+### Desktop Controls (User Mode)
 
-Use the <b>1</b> and <b>2</b> number keys to toggle the left eye and right eye views.
+- **Switch Eye View:** Press <kbd>1</kbd> to inspect the left eye view, or <kbd>2</kbd> for the right eye view.
+- **Move Camera:** Use <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd>, <kbd>D</kbd> to move forward, left, backward, and right.
+- **Elevate Camera:** Use <kbd>Q</kbd> and <kbd>E</kbd> to move down and up.
+- **Rotate Camera:** Right-click and drag the mouse to look around.
+
+### XR Controls
+
+- **View in XR:** Experience true stereoscopic depth automatically rendered for each eye in the headset.
 
 import {DocsIFrame} from '../DocsIFrame.jsx';
 import {DocsSource} from '../DocsSource.jsx';
 
-<DocsIFrame template="4_stereo"></DocsIFrame>
-<DocsSource template="4_stereo"></DocsSource>
+<DocsIFrame template="04_stereo" />
+<DocsSource template="04_stereo" />

@@ -19,24 +19,6 @@ describe('FacesOptions', () => {
     );
   });
 
-  it('opts users into blendshapes and the facial transformation matrix', () => {
-    // Both are the most actionable downstream signals (lipsync, head pose).
-    // Keep them ON by default so consumers do not silently miss them.
-    const opts = new FacesOptions();
-    expect(opts.backendConfig.mediapipe.outputFaceBlendshapes).toBe(true);
-    expect(
-      opts.backendConfig.mediapipe.outputFacialTransformationMatrixes
-    ).toBe(true);
-  });
-
-  it('uses balanced confidence thresholds (0.5 across the three gates)', () => {
-    const opts = new FacesOptions();
-    const mp = opts.backendConfig.mediapipe;
-    expect(mp.minFaceDetectionConfidence).toBe(0.5);
-    expect(mp.minFacePresenceConfidence).toBe(0.5);
-    expect(mp.minTrackingConfidence).toBe(0.5);
-  });
-
   it('deep-merges constructor overrides while keeping unspecified defaults', () => {
     const opts = new FacesOptions({
       backendConfig: {

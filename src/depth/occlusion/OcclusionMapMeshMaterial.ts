@@ -14,6 +14,8 @@ export class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
       cameraFar: {value: camera.far},
       cameraNear: {value: camera.near},
       uFloatDepth: {value: useFloatDepth},
+      uDepthViewMatrix: {value: camera.matrixWorldInverse.clone()},
+      uDepthProjectionMatrix: {value: camera.projectionMatrix.clone()},
       // Used for interpreting Quest 3 depth.
       uDepthNear: {value: 0},
     };
@@ -24,6 +26,8 @@ export class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
         .replace(
           '#include <common>',
           [
+            'uniform mat4 uDepthProjectionMatrix;',
+            'uniform mat4 uDepthViewMatrix;',
             'varying vec2 vTexCoord;',
             'varying float vVirtualDepth;',
             '#include <common>',
@@ -33,10 +37,12 @@ export class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
           '#include <fog_vertex>',
           [
             '#include <fog_vertex>',
-            'vec4 view_position = modelViewMatrix * vec4( position, 1.0 );',
-            'vVirtualDepth = -view_position.z;',
-            'gl_Position = gl_Position / gl_Position.w;',
-            'vTexCoord = 0.5 + 0.5 * gl_Position.xy;',
+            'vec4 world_position = modelMatrix * vec4( position, 1.0 );',
+            'vec4 depth_view_position = uDepthViewMatrix * world_position;',
+            'vVirtualDepth = -depth_view_position.z;',
+            'vec4 depth_clip_position = uDepthProjectionMatrix * depth_view_position;',
+            'vec2 depth_ndc = depth_clip_position.xy / max(0.00001, depth_clip_position.w);',
+            'vTexCoord = 0.5 + 0.5 * depth_ndc;',
           ].join('\n')
         );
       shader.fragmentShader = shader.fragmentShader
@@ -86,7 +92,9 @@ export class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
             'vec4 texCoord = vec4(vTexCoord, 0, 1);',
             'vec2 uv = vec2(texCoord.x, uIsTextureArray?texCoord.y:(1.0 - texCoord.y));',
             'highp float real_depth = uIsTextureArray ? DepthArrayGetMeters(uDepthTextureArray, uv) : DepthGetMeters(uDepthTexture, uv);',
-            'gl_FragColor = vec4(step(vVirtualDepth, real_depth), 1.0, 0.0, 1.0);',
+            'bool outOfBounds = uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || vVirtualDepth <= 0.0;',
+            'float isNotOccluded = outOfBounds ? 1.0 : step(vVirtualDepth, real_depth);',
+            'gl_FragColor = vec4(isNotOccluded, 1.0, 0.0, 1.0);',
           ].join('\n')
         );
     };

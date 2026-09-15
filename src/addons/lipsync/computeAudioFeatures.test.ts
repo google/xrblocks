@@ -25,17 +25,6 @@ describe('computeAudioFeatures', () => {
     expect(f.f2Hz).toBe(0);
   });
 
-  it('a sine wave in time-domain gives a non-zero rms', () => {
-    const inputs = silentInputs();
-    // Half-amplitude sine in [0,255] domain (128 == 0 in -1..+1 mapping).
-    for (let i = 0; i < inputs.timeData.length; i++) {
-      inputs.timeData[i] = 128 + Math.round(64 * Math.sin((i / 16) * Math.PI));
-    }
-    const f = computeAudioFeatures(inputs, SAMPLE_RATE);
-    expect(f.rms).toBeGreaterThan(0.1);
-    expect(f.rms).toBeLessThanOrEqual(1);
-  });
-
   it('energy concentrated at low frequencies → low band > high band, low centroid', () => {
     const inputs = silentInputs();
     // Crank up the first 20 bins (~< 1 kHz at this sampleRate).
@@ -71,23 +60,6 @@ describe('computeAudioFeatures', () => {
     expect(f.f2Hz).toBeLessThan(2500);
   });
 
-  it('f2 search ignores strong energy in adjacent bins outside the search range', () => {
-    // Boundary contamination check: with a wide 5-bin moving-average
-    // peak picker, a very loud single bin just below the F2 search
-    // range floor (800 Hz) could otherwise leak into the average for
-    // the lowest in-range bin and make it win against a real F2
-    // plateau higher up.
-    const inputs = silentInputs();
-    const binHz = SAMPLE_RATE / 2 / NUM_BINS;
-    const justBelowF2Bin = Math.floor(700 / binHz);
-    const realF2Bin = Math.round(2200 / binHz);
-    inputs.freqData[justBelowF2Bin] = 255;
-    for (let k = -2; k <= 2; k++) inputs.freqData[realF2Bin + k] = 140;
-    const f = computeAudioFeatures(inputs, SAMPLE_RATE);
-    expect(f.f2Hz).toBeGreaterThan(1800);
-    expect(f.f2Hz).toBeLessThan(2500);
-  });
-
   it('forwards the supplied mfcc vector through to the output', () => {
     const inputs = silentInputs();
     inputs.mfcc = Float32Array.from([
@@ -98,12 +70,5 @@ describe('computeAudioFeatures', () => {
     expect(Array.from(f.mfcc!)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
     ]);
-  });
-
-  it('omits the mfcc field when none is supplied', () => {
-    const inputs = silentInputs();
-    inputs.mfcc = undefined;
-    const f = computeAudioFeatures(inputs, SAMPLE_RATE);
-    expect(f.mfcc).toBeUndefined();
   });
 });

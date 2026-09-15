@@ -1,3 +1,5 @@
+import type {ThinkingLevel} from '@google/genai';
+
 import {Gemini} from '../../../ai/Gemini';
 import {GeminiResponse} from '../../../ai/AITypes';
 import {parseBase64DataURL} from '../../../utils/utils';
@@ -26,8 +28,10 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
   private buildGeminiConfig() {
     const geminiOptions = this.context.options.objects.backendConfig.gemini;
     return {
+      // Keep detection fast by asking for as little reasoning as possible.
+      // gemini-3.8-flash doesn't support MINIMAL, only LOW.
       thinkingConfig: {
-        thinkingBudget: 0,
+        thinkingLevel: 'LOW' as ThinkingLevel,
       },
       responseMimeType: 'application/json',
       responseSchema: geminiOptions.responseSchema,

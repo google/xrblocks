@@ -7,6 +7,7 @@ export class SimulatorPointerLockMode extends SimulatorControlMode {
 
   override init(params: Parameters<SimulatorControlMode['init']>[0]) {
     super.init(params);
+    this.pointerLockController.init({camera: params.camera});
   }
 
   onModeActivated() {

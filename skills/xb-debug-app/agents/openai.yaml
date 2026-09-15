@@ -1,0 +1,6 @@
+interface:
+  display_name: 'Debug XR Blocks App'
+  short_description: 'Trace one failure from red evidence to green'
+  default_prompt: 'Use $xb-debug-app to diagnose and repair this XR Blocks application.'
+policy:
+  allow_implicit_invocation: true

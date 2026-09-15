@@ -1,6 +1,10 @@
 {
-  "skill": "xb-hands",
-  "template": "templates/0_basic",
+  "skill": "xb-add-interactions",
+  "reference_files": [
+    "docs/docs/manual/Hands.mdx",
+    "docs/docs/manual/Interaction.md"
+  ],
+  "template": "templates/02_object_interaction",
   "edit_file": "main.js",
   "expected_imports": [],
   "expected_apis": ["enableHands", "xb.user.hands"],

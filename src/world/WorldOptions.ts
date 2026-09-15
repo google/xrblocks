@@ -8,6 +8,7 @@ import {SoundsOptions} from './sounds/SoundsOptions';
 import {HumansOptions} from './humans/HumansOptions';
 import {FacesOptions} from './faces/FacesOptions';
 import {SegmentationOptions} from './segmentation/SegmentationOptions';
+import {AnchorsOptions} from './anchors/AnchorsOptions';
 
 export class WorldOptions {
   debugging = false;
@@ -20,6 +21,7 @@ export class WorldOptions {
   humans = new HumansOptions();
   faces = new FacesOptions();
   segmentation = new SegmentationOptions();
+  anchors = new AnchorsOptions();
 
   constructor(options?: DeepPartial<WorldOptions>) {
     if (options) {
@@ -51,6 +53,25 @@ export class WorldOptions {
   enableMeshDetection() {
     this.enabled = true;
     this.meshes.enable();
+    return this;
+  }
+
+  /**
+   * Enables spatial anchors.
+   */
+  enableAnchors() {
+    this.enabled = true;
+    this.anchors.enable();
+    return this;
+  }
+
+  /**
+   * Enables spatial anchors and saves their handles so anchored content can be
+   * restored in a later session.
+   */
+  enableAnchorPersistence() {
+    this.enabled = true;
+    this.anchors.enablePersistence();
     return this;
   }
 

@@ -1,5 +1,5 @@
 import type {VideoTexture} from 'three';
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 
 import {VideoStream} from './VideoStream';
 
@@ -45,5 +45,27 @@ describe('VideoStream', () => {
     texture.update();
 
     expect(texture.version).toBeGreaterThan(initialVersion);
+  });
+
+  it('stops active tracks and releases textures on dispose', () => {
+    const stream = new VideoStream();
+    const stop = vi.fn();
+    const mediaStream = {
+      getTracks: () => [{stop}],
+    } as unknown as MediaStream;
+    const internal = stream as unknown as {stream_: MediaStream | null};
+    internal.stream_ = mediaStream;
+    Object.defineProperty(stream.video, 'srcObject', {
+      configurable: true,
+      writable: true,
+      value: mediaStream,
+    });
+    const disposeTexture = vi.spyOn(stream.texture, 'dispose');
+
+    stream.dispose();
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(stream.video.srcObject).toBeNull();
+    expect(disposeTexture).toHaveBeenCalledOnce();
   });
 });

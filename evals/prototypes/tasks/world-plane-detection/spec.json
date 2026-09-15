@@ -1,6 +1,10 @@
 {
-  "skill": "xb-world",
-  "template": "templates/0_basic",
+  "skill": "xb-add-world-sensing",
+  "reference_files": [
+    "docs/docs/manual/World.mdx",
+    "docs/docs/manual/Placement.md"
+  ],
+  "template": "templates/03_spatial_placement",
   "edit_file": "main.js",
   "expected_imports": [],
   "expected_apis": [

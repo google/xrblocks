@@ -27,6 +27,8 @@ import {
 
 const hands = new AgentHands();
 await hands.load();
+// This example updates the rig explicitly below.
+hands.isXRScript = false;
 xb.core.scene.add(hands);
 
 const animator = new AgentGestureAnimator(hands);
@@ -49,3 +51,43 @@ hands.update();
 ```
 
 See the [`agent_hands`](../../../demos/agent_hands/) demo for the full loop, including pointing grounded to real objects through `AgentWorld`.
+
+## Gesture markup
+
+Ask the model to put markup immediately before the word or phrase that the
+gesture emphasizes. `parseAgentGestures()` accepts:
+
+- `[gesture:NAME]` for `thumbs_up`, `thumbs_down`, `fist`, `victory`, `rock`,
+  `open`, or `point`;
+- `[wave]`, `[beat]`, `[size:small|big]`, and `[count:N]` for motions;
+- `[point:LABEL]` for an object label that `AgentWorld` can ground.
+
+`GESTURE_POSE_MAP` and `GESTURE_MOTION_MAP` contain the accepted names and
+aliases. `parseAgentGestures()` returns clean speech text plus gesture marks.
+`buildGestureSteps()` converts them to timed `GestureStep` values and can use a
+label resolver to turn point gestures into world positions.
+
+## Runtime ownership
+
+- `AgentWorld.scan()` detects and grounds objects. `findObject()` and
+  `pointFor()` resolve labels. Call `maybeAutoScan()` from the application frame
+  loop when background rescanning is required. Set `storageKey` only when the
+  application should persist grounded objects in local storage.
+- `AgentSpeechConductor.speak()` starts speech and its gesture timeline.
+  `tick(dt)` advances the timeline. `playTimeline()` runs a scripted preview
+  without a provider. Read `speaking` to drive visible state.
+- `AgentGestureAnimator.fireStep()` starts a pose, motion, or point action.
+  Call `reaim()` each frame while a point must remain locked to a moving target.
+  Call `rest()` when speech or the timeline ends.
+- `AgentHead` is optional. Add `head.root` to the scene, update its gaze from
+  the animator target, update its speaking amount, and call `head.update(dt)`.
+- The application owns the update loop for any `AgentHands` instance that it
+  removes from the normal script lifecycle with `isXRScript = false`.
+
+## Limits
+
+The addon implements a flat subset of the AgentHands gesture taxonomy. Timing
+uses speech word boundaries rather than a per-word energy model. Point
+grounding resolves one depth-mesh position per detected object, not a complete
+oriented object region. Treat missing detections, unavailable depth, and
+speech interruption as normal application states.

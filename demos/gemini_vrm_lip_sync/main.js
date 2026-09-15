@@ -1,5 +1,4 @@
 // Provides 2D simulator UI on desktop — always import first.
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
 
 import * as THREE from 'three';
 import * as xb from 'xrblocks';

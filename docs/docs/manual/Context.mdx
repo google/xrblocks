@@ -1,83 +1,68 @@
 ---
-sidebar_position: 20
-title: Agent Scene Context
+sidebar_position: 12
+title: Agent Context
 ---
 
-# Agent scene context
+# Agent context
 
-`xb.context` turns the Three.js scene into compact observations for agents and
-automation. It can produce a semantic tree, view-aware visible objects, and a
-Set-of-Mark image whose labels map back to stable scene node ids.
+The context subsystem converts the live XR scene into compact data for agents and external
+automation. It can produce a semantic tree, visible-object state, and a Set-of-Mark image.
 
 ## Enable context
-
-Enable all three streams before `xb.init()`:
 
 ```js
 const options = new xb.Options();
 options.enableContext();
-xb.init(options);
+await xb.init(options);
 ```
 
-Or enable only what the application needs:
+Use a narrower method when the application needs fewer streams:
 
 ```js
 options.enableSceneContext();
 options.enableVisibleObjectsContext();
 options.enableSetOfMarkContext();
-options.context.scene.pollingIntervalMs = 3000;
 ```
 
-`xb.context.scene` is `undefined` when scene context was not enabled.
-
-## Take one shared snapshot
-
-Use `runContextDetection()` when several outputs must describe the same frame:
+## Capture one consistent snapshot
 
 ```js
-const result = await xb.context.scene?.runContextDetection({
+const context = await xb.context.scene.runContextDetection({
   semanticTree: true,
   visibleObjects: true,
   setOfMark: true,
 });
 
-console.log(result?.semanticTree?.nodes);
-console.log(result?.visibleObjects?.nodes);
-console.log(result?.setOfMark?.marks);
+console.log(context.semanticTree.nodes);
+console.log(context.visibleObjects.nodes);
+console.log(context.setOfMark.marks);
 ```
 
-For one output, use `runDetection()`, `runVisibleObjectsDetection()`, or
-`runSetOfMarkDetection()`.
+Nodes have stable `ctx_*` identifiers, names, roles, parent and child relationships,
+visibility, object identifiers, and interaction state. Set-of-Mark labels reuse those
+stable identifiers between snapshots.
 
-Semantic nodes have stable `ctx_*` ids, roles, names, parent/child
-relationships, object ids, and optional view state. Treat ids as opaque. To
-recover the live Three.js object represented by a node, call:
+Give meaningful `name` values to application objects and use semantic UI components such
+as `UIButton`. Mark private helper geometry with `object.userData.xrblocksPrivate = true`
+when it must not enter agent context.
 
-```js
-const object = xb.context.scene?.resolveNodeObject(node.id);
-```
-
-## Continuous observations
-
-Continuous detection is reference-counted by client object:
+## Continuous polling
 
 ```js
 const client = {};
-xb.context.scene?.start(client);
+xb.context.scene.start(client);
 
-// Read the latest values after updates.
-console.log(xb.context.scene?.tree);
-console.log(xb.context.scene?.visibleObjects);
-console.log(xb.context.scene?.setOfMark);
-
-xb.context.scene?.stop(client);
+// Read tree, visibleObjects, or setOfMark after polling.
+xb.context.scene.stop(client);
 ```
 
-Always stop with the same client object. Multiple clients share the detector's
-polling work.
+Configure the shared polling interval through
+`options.context.scene.pollingIntervalMs`.
 
 ## Automation
 
-`options.enableAutomationMode()` and `?xrAutomation=1` enable agent context as
-part of the desktop automation preset. Add `?debug=1` to expose `window.xb` and
-`window.xbReady` to a browser driver. See [Desktop Simulator](Simulator.mdx).
+`options.enableAutomationMode()` enables context with desktop simulator defaults. The URL
+parameter `?xrAutomation=1` applies the same preset. Add `?debug=1` when browser tooling
+needs `window.xb` and `window.xbReady`.
+
+See `templates/11_agent_context` for a context-to-AI example.

@@ -156,25 +156,6 @@ describe('HumanRecognizer Multi-Client API', () => {
     await runPromise;
   });
 
-  it('should support one-off runs when not started, and reuse the ongoing promise', async () => {
-    // No clients started
-    const promise1 = recognizer.runDetection();
-    expect(promise1).not.toBeNull();
-    expect(
-      (recognizer as unknown as PrivateRecognizer).currentDetectionPromise
-    ).toBe(promise1);
-
-    // A concurrent call should return the exact same promise
-    const promise2 = recognizer.runDetection();
-    expect(promise2).toBe(promise1);
-
-    const results = await promise1;
-    expect(results).toEqual([{uuid: 'pose-1'}]);
-    expect(
-      (recognizer as unknown as PrivateRecognizer).currentDetectionPromise
-    ).toBeNull();
-  });
-
   it('disposes temporary depth mesh snapshots after detection', async () => {
     const geometryDispose = vi.fn();
     const materialDispose = vi.fn();

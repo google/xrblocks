@@ -1,0 +1,54 @@
+name: MCP API Index Check
+
+on:
+  push:
+    branches-ignore:
+      - 'build'
+    paths:
+      - 'src/**'
+      - 'skills/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'rollup.config.js'
+      - '.github/workflows/mcp-check.yml'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-api-index:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Cache Node Modules
+        id: cache-node-modules
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-root-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # search_api reads the generated definitions. The test workflow only
+      # builds them as a side effect of `npm ci`, which it skips on a
+      # node_modules cache hit, so the check against the real file would run
+      # only sometimes. Building here makes it deterministic.
+      - name: Build SDK
+        run: npm run build:sdk
+
+      - name: Check the API index against the built definitions
+        run: npx vitest run src/addons/mcp

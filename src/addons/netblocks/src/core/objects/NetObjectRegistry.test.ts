@@ -4,32 +4,7 @@ import {NetObject} from './NetObject';
 import {NetObjectRegistry} from './NetObjectRegistry';
 
 describe('NetObjectRegistry', () => {
-  it('add / get / has / remove work as expected', () => {
-    const reg = new NetObjectRegistry();
-    const obj = new NetObject({id: 'cube-1'});
-    reg.add(obj);
-    expect(reg.has('cube-1')).toBe(true);
-    expect(reg.get('cube-1')).toBe(obj);
-    reg.remove(obj);
-    expect(reg.has('cube-1')).toBe(false);
-    expect(reg.get('cube-1')).toBeUndefined();
-  });
-
-  it('values() iterates registered objects', () => {
-    const reg = new NetObjectRegistry();
-    const a = new NetObject({id: 'a'});
-    const b = new NetObject({id: 'b'});
-    reg.add(a);
-    reg.add(b);
-    expect([...reg.values()]).toEqual(expect.arrayContaining([a, b]));
-  });
-
   describe('applyClaim', () => {
-    it('returns false for unknown id', () => {
-      const reg = new NetObjectRegistry();
-      expect(reg.applyClaim('nope', 'peer-A')).toBe(false);
-    });
-
     it('grants ownership unconditionally — explicit grabs preempt', () => {
       const reg = new NetObjectRegistry();
       const obj = new NetObject({id: 'cube-1', ownerId: 'peer-A'});
@@ -38,41 +13,41 @@ describe('NetObjectRegistry', () => {
       expect(obj.ownerId).toBe('peer-B');
     });
 
-    it('clears any pending interp target on ownership change', () => {
-      const reg = new NetObjectRegistry();
-      const obj = new NetObject({id: 'cube-1', ownerId: 'peer-A'});
-      obj.setTargetXform([1, 2, 3, 0, 0, 0, 1, 1, 1, 1]);
-      reg.add(obj);
-      reg.applyClaim('cube-1', 'peer-B');
-      expect(obj._hasTarget).toBe(false);
-    });
+    it.each([
+      ['a', 'b'],
+      ['b', 'a'],
+    ])(
+      'resolves crossed claims deterministically (%s then %s), not by arrival order',
+      (first, second) => {
+        const reg = new NetObjectRegistry();
+        const obj = new NetObject({id: 'cube'});
+        reg.add(obj);
+        reg.applyClaim('cube', first, 1);
+        reg.applyClaim('cube', second, 1);
+        expect(obj.ownerId).toBe('a');
+        expect(reg.applyClaim('cube', 'b', 2)).toBe(true);
+        expect(obj.ownerId).toBe('b');
+        expect(reg.applyClaim('cube', 'a', 1)).toBe(false);
+        expect(obj.ownerId).toBe('b');
+      }
+    );
 
-    it('does not clear target when peer reclaims their own object', () => {
+    it('rejects stale releases and does not resurrect a released claim', () => {
       const reg = new NetObjectRegistry();
-      const obj = new NetObject({id: 'cube-1', ownerId: 'peer-A'});
-      obj.setTargetXform([1, 2, 3, 0, 0, 0, 1, 1, 1, 1]);
+      const obj = new NetObject({id: 'cube'});
       reg.add(obj);
-      reg.applyClaim('cube-1', 'peer-A');
-      expect(obj._hasTarget).toBe(true);
-    });
-
-    it('clears _pendingFinal when ownership transfers — the new owner is about to broadcast their own pose', () => {
-      const reg = new NetObjectRegistry();
-      const obj = new NetObject({id: 'cube-1', ownerId: 'peer-A'});
-      obj.setTargetXform([1, 2, 3, 0, 0, 0, 1, 1, 1, 1]);
-      obj._pendingFinal = true;
-      reg.add(obj);
-      reg.applyClaim('cube-1', 'peer-B');
-      expect(obj._pendingFinal).toBe(false);
+      reg.applyClaim('cube', 'a', 1);
+      reg.applyClaim('cube', 'a', 2);
+      expect(reg.applyRelease('cube', 'a', 1)).toBe(false);
+      expect(obj.ownerId).toBe('a');
+      expect(reg.applyRelease('cube', 'a', 2)).toBe(true);
+      expect(reg.applyClaim('cube', 'a', 2)).toBe(false);
+      expect(obj.ownerId).toBe('');
+      expect(reg.applyClaim('cube', 'b', 3)).toBe(true);
     });
   });
 
   describe('applyRelease', () => {
-    it('returns false for unknown id', () => {
-      const reg = new NetObjectRegistry();
-      expect(reg.applyRelease('nope', 'peer-A')).toBe(false);
-    });
-
     it('only the current owner may release', () => {
       const reg = new NetObjectRegistry();
       const obj = new NetObject({id: 'cube-1', ownerId: 'peer-A'});
@@ -81,14 +56,49 @@ describe('NetObjectRegistry', () => {
       expect(obj.ownerId).toBe('peer-A');
     });
 
+    it('retains the latest claim in snapshots, including its released state', () => {
+      const reg = new NetObjectRegistry();
+      const obj = new NetObject({id: 'cube'});
+      reg.add(obj);
+      expect(
+        reg.applyOwnershipSnapshot('cube', '', {counter: 7, peerId: 'b'})
+      ).toBe(true);
+      expect(obj.claim).toEqual({counter: 7, peerId: 'b'});
+      expect(reg.applyOwnershipSnapshot('cube', '')).toBe(false);
+      expect(
+        reg.applyOwnershipSnapshot('cube', 'a', {counter: 6, peerId: 'a'})
+      ).toBe(false);
+      expect(
+        reg.applyOwnershipSnapshot('cube', 'b', {counter: 7, peerId: 'b'})
+      ).toBe(false);
+      expect(obj.ownerId).toBe('');
+      expect(reg.applyClaim('cube', 'a', 8)).toBe(true);
+      expect(obj.ownerId).toBe('a');
+      reg.releaseOwnedBy('a');
+      expect(reg.applyClaim('cube', 'a', 8)).toBe(false);
+      expect(obj.claim).toEqual({counter: 8, peerId: 'a'});
+    });
+
+    it.each([0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER])(
+      'rejects invalid claim counter %s without changing ownership',
+      (counter) => {
+        const reg = new NetObjectRegistry();
+        const obj = new NetObject({id: 'cube', ownerId: 'a'});
+        reg.add(obj);
+        expect(() => reg.applyClaim('cube', 'b', counter)).toThrow(
+          'claim revision'
+        );
+        expect(obj.ownerId).toBe('a');
+        expect(obj.claim).toBeUndefined();
+      }
+    );
+
     it('clears ownership and pending target on success', () => {
       const reg = new NetObjectRegistry();
       const obj = new NetObject({id: 'cube-1', ownerId: 'peer-A'});
-      obj.setTargetXform([1, 2, 3, 0, 0, 0, 1, 1, 1, 1]);
       reg.add(obj);
       expect(reg.applyRelease('cube-1', 'peer-A')).toBe(true);
       expect(obj.ownerId).toBe('');
-      expect(obj._hasTarget).toBe(false);
     });
   });
 
@@ -105,14 +115,6 @@ describe('NetObjectRegistry', () => {
       expect(a.ownerId).toBe('');
       expect(b.ownerId).toBe('');
       expect(c.ownerId).toBe('peer-B');
-    });
-
-    it('is a no-op when the peer owns nothing', () => {
-      const reg = new NetObjectRegistry();
-      const a = new NetObject({id: 'a', ownerId: 'peer-A'});
-      reg.add(a);
-      reg.releaseOwnedBy('peer-Z');
-      expect(a.ownerId).toBe('peer-A');
     });
   });
 });

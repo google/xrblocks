@@ -306,9 +306,14 @@ export class Depth {
   updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number) {
     this.gpuDepthData[viewId] = depthData;
     this.updateDepthMatrices(depthData, viewId);
+    // Reading the depth target back is a synchronous GPU stall, and in stereo
+    // this runs once per eye. Only the first view's CPU depth is ever
+    // consumed: getDepth, getDepthInMeters, getVertex and the depth mesh all
+    // read index 0. So the second eye's readback stalls the pipeline for data
+    // nothing looks at.
     // For now, assume that we need cpu depth only if depth mesh is enabled.
     // In the future, add a separate option.
-    const needCpuDepth = this.options.depthMesh.enabled;
+    const needCpuDepth = this.options.depthMesh.enabled && viewId === 0;
     const cpuDepth =
       needCpuDepth && this.gpuDepthConverter
         ? this.gpuDepthConverter.convertGPUToCPU(depthData)
@@ -437,17 +442,9 @@ export class Depth {
         this.rawValueToMeters,
         0,
         (this.gpuDepthData[0] as unknown as {depthNear: number} | undefined)
-          ?.depthNear
-      );
-    }
-    const rightDepthTexture = this.getTexture(1);
-    if (rightDepthTexture) {
-      this.occlusionPass!.setDepthTexture(
-        rightDepthTexture,
-        this.rawValueToMeters,
-        1,
-        (this.gpuDepthData[1] as unknown as {depthNear: number} | undefined)
-          ?.depthNear
+          ?.depthNear,
+        this.depthViewMatrices[0],
+        this.depthProjectionMatrices[0]
       );
     }
     const xrIsPresenting = this.renderer.xr.isPresenting;

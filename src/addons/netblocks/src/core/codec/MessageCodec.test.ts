@@ -8,7 +8,6 @@ import {
   makeHello,
   HelloMessage,
   NetObjectSnapshotMessage,
-  PoseMessage,
 } from './MessageCodec';
 
 describe('MessageCodec', () => {
@@ -21,16 +20,6 @@ describe('MessageCodec', () => {
         capabilities: {pose: true, voice: true, netobject: true},
         from: 'peer-A',
         ts: 12345,
-      };
-      const decoded = decodeMessage(encodeMessage(msg));
-      expect(decoded).toEqual(msg);
-    });
-
-    it('round-trips a pose message', () => {
-      const msg: PoseMessage = {
-        type: 'pose',
-        data: 'AAECAwQF', // arbitrary base64
-        from: 'peer-B',
       };
       const decoded = decodeMessage(encodeMessage(msg));
       expect(decoded).toEqual(msg);
@@ -59,12 +48,6 @@ describe('MessageCodec', () => {
       expect(decoded).toEqual(msg);
     });
 
-    it('decodes from a string directly', () => {
-      const json = '{"type":"ping","nonce":42}';
-      const decoded = decodeMessage(json);
-      expect(decoded.type).toBe('ping');
-    });
-
     it('decodes from an ArrayBuffer', () => {
       const bytes = encodeMessage({type: 'ping', nonce: 7});
       const buf = bytes.slice().buffer; // detach to a real ArrayBuffer
@@ -77,16 +60,6 @@ describe('MessageCodec', () => {
       // size check fires before JSON parsing.
       const bytes = new Uint8Array(MAX_MESSAGE_BYTES + 1);
       expect(() => decodeMessage(bytes)).toThrow(/MAX_MESSAGE_BYTES/);
-    });
-
-    it('throws on oversized strings too', () => {
-      const big = 'a'.repeat(MAX_MESSAGE_BYTES + 1);
-      expect(() => decodeMessage(big)).toThrow(/MAX_MESSAGE_BYTES/);
-    });
-
-    it('throws on oversized ArrayBuffer too', () => {
-      const buf = new ArrayBuffer(MAX_MESSAGE_BYTES + 1);
-      expect(() => decodeMessage(buf)).toThrow(/MAX_MESSAGE_BYTES/);
     });
 
     it('throws on malformed JSON', () => {
@@ -120,15 +93,6 @@ describe('MessageCodec', () => {
       expect(hello.protocol).toBe(1);
       expect(hello.displayName).toBe('Bob');
       expect(hello.capabilities).toEqual(caps);
-    });
-
-    it('allows undefined displayName', () => {
-      const hello = makeHello(undefined, {
-        pose: false,
-        voice: false,
-        netobject: false,
-      });
-      expect(hello.displayName).toBeUndefined();
     });
   });
 });

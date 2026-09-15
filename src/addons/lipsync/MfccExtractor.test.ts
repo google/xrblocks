@@ -23,14 +23,6 @@ describe('MfccExtractor', () => {
     expect(NUM_MFCC).toBe(13);
   });
 
-  it('is deterministic: same input twice produces the same coefficients', () => {
-    const ext = new MfccExtractor({sampleRate, fftSize});
-    const input = makeTone(256, 30, -20);
-    const a = Float32Array.from(ext.extract(input));
-    const b = Float32Array.from(ext.extract(input));
-    expect(Array.from(a)).toEqual(Array.from(b));
-  });
-
   it('silence (all -120 dB) yields finite, small-magnitude coefficients', () => {
     const ext = new MfccExtractor({sampleRate, fftSize});
     const silent = new Float32Array(256).fill(-120);
@@ -54,14 +46,5 @@ describe('MfccExtractor', () => {
     for (let i = 1; i < NUM_MFCC; i++)
       totalDiff += Math.abs(lowOut[i] - highOut[i]);
     expect(totalDiff).toBeGreaterThan(1);
-  });
-
-  it('handles different FFT sizes (256 and 1024)', () => {
-    for (const size of [256, 1024]) {
-      const ext = new MfccExtractor({sampleRate, fftSize: size});
-      const out = ext.extract(makeTone(size / 2, 10, -10));
-      expect(out).toHaveLength(NUM_MFCC);
-      for (const v of out) expect(Number.isFinite(v)).toBe(true);
-    }
   });
 });

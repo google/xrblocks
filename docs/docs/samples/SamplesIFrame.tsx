@@ -1,9 +1,12 @@
-import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
-import { useState, useEffect } from "react";
-import styles from "./SamplesIFrame.module.css";
-import { GeminiKeyInputComponent } from "./GeminiKeyInputComponent";
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
+import {useState, useEffect} from 'react';
+import styles from './SamplesIFrame.module.css';
+import {
+  GeminiKeyInputComponent,
+  type GeminiKeyInputComponentProps,
+} from './GeminiKeyInputComponent';
 
-const API_KEY_STORAGE_KEY = "gemini-api-key";
+const API_KEY_STORAGE_KEY = 'gemini-api-key';
 
 export function SamplesIFrame({
   sample,
@@ -18,25 +21,21 @@ export function SamplesIFrame({
   link: string;
   requiresApiKey?: boolean;
   couldSkip?: boolean;
-  KeyInputComponent?: React.ComponentType<{
-    setShowKeyInput: (_: boolean) => void;
-    apiKey: string;
-    setApiKey: (_: string) => void;
-    setKeyPresent: (_: boolean) => void;
-    couldSkip?: boolean;
-  }>;
+  KeyInputComponent?: React.ComponentType<GeminiKeyInputComponentProps>;
 }) {
-  const { siteConfig } = useDocusaurusContext();
-  const [apiKey, setApiKey] = useState<string>("");
+  const {siteConfig} = useDocusaurusContext();
+  const [apiKey, setApiKey] = useState<string>('');
+  const [submittedApiKey, setSubmittedApiKey] = useState<string | null>(null);
+  const [skipRequested, setSkipRequested] = useState(false);
   const [showKeyInput, setShowKeyInput] = useState<boolean>(requiresApiKey);
   const [keyPresent, setKeyPresent] = useState<boolean>(!requiresApiKey);
 
   const buildBaseSrc = () => {
     let s = siteConfig.customFields.xrblocksBaseUrl as string;
     if (sample) {
-      s = s + "samples/" + sample;
+      s = s + 'samples/' + sample;
     } else if (demo) {
-      s = s + "demos/" + demo;
+      s = s + 'demos/' + demo;
     } else {
       console.warn(
         "DocsIFrame: No 'template', 'sample', or 'demo' prop provided. IFrame will be empty."
@@ -51,50 +50,63 @@ export function SamplesIFrame({
     const base = buildBaseSrc();
     let keyToUse = null;
 
-    if (typeof window !== "undefined") {
+    if (typeof window !== 'undefined') {
       const storedKey = window.localStorage.getItem(API_KEY_STORAGE_KEY);
       if (storedKey) {
         keyToUse = storedKey;
       }
     }
 
-    // If the user typed a key in the overlay, prefer that.
-    if (apiKey && requiresApiKey) {
-      keyToUse = apiKey;
-    } else if (typeof window !== "undefined") {
+    if (typeof window !== 'undefined') {
       try {
         const parentParams = new URLSearchParams(window.location.search);
-        if (parentParams.has("key")) {
-          keyToUse = parentParams.get("key");
+        if (parentParams.has('key')) {
+          keyToUse = parentParams.get('key');
         }
-        if (parentParams.has("geminiKey64")) {
-          keyToUse = atob(parentParams.get("geminiKey64"));
+        if (parentParams.has('geminiKey64')) {
+          keyToUse = atob(parentParams.get('geminiKey64'));
         }
       } catch (e) {
         // ignore
       }
     }
 
+    // A submitted key takes priority. Draft input must not start the iframe.
+    if (submittedApiKey && requiresApiKey) {
+      keyToUse = submittedApiKey;
+    }
+
     if (keyToUse) {
-      const separator = base.includes("?") ? "&" : "?";
-      setIframeSrc(base + separator + "key=" + encodeURIComponent(keyToUse));
+      const separator = base.includes('?') ? '&' : '?';
+      setIframeSrc(base + separator + 'key=' + encodeURIComponent(keyToUse));
       setKeyPresent(true);
       window.localStorage.setItem(API_KEY_STORAGE_KEY, keyToUse);
       if (requiresApiKey) setShowKeyInput(false);
+    } else if (skipRequested) {
+      setIframeSrc(base);
+      setKeyPresent(true);
+      setShowKeyInput(false);
     } else {
       setIframeSrc(base);
       setKeyPresent(false);
     }
-  }, [apiKey, sample, demo, requiresApiKey, siteConfig]);
+  }, [
+    submittedApiKey,
+    skipRequested,
+    sample,
+    demo,
+    requiresApiKey,
+    siteConfig,
+  ]);
 
   return (
     <div className={styles.iframeOuterContainer}>
       {showKeyInput && (
         <KeyInputComponent
-          setShowKeyInput={setShowKeyInput}
           apiKey={apiKey}
           setApiKey={setApiKey}
-          setKeyPresent={setKeyPresent}
+          submitApiKey={setSubmittedApiKey}
+          skip={() => setSkipRequested(true)}
           couldSkip={couldSkip}
         />
       )}

@@ -24,6 +24,9 @@ import {LipsyncMouth, VisemeTarget} from './LipsyncMouth';
 import type {VisemeWeights} from './BlendshapeReducer';
 import {ZERO_VISEME} from './BlendshapeReducer';
 
+vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+
 /**
  * Stand-in for an xrblocks `StylizedFace`: captures the most recent
  * viseme weights so tests can assert against them. Real consumers
@@ -112,14 +115,6 @@ beforeEach(() => {
 });
 
 describe('LipsyncMouth', () => {
-  it('is a THREE.Object3D suitable for parenting to a head pivot', () => {
-    const m = new LipsyncMouth(makeStream(), {
-      target: new FakeTarget(),
-      audioContext: ctx as unknown as AudioContext,
-    });
-    expect(m.isObject3D).toBe(true);
-  });
-
   it('constructor + init() builds the audio graph from the injected AudioContext', async () => {
     const m = new LipsyncMouth(makeStream(), {
       target: new FakeTarget(),
@@ -128,18 +123,6 @@ describe('LipsyncMouth', () => {
     await m.init();
     expect(ctx.createMediaStreamSource).toHaveBeenCalled();
     expect(ctx.createAnalyser).toHaveBeenCalled();
-  });
-
-  it('drives the supplied target instead of owning a visual itself', async () => {
-    const target = new FakeTarget();
-    const m = new LipsyncMouth(makeStream(), {
-      target,
-      audioContext: ctx as unknown as AudioContext,
-    });
-    await m.init();
-    // No visual children — the target is the only thing rendering.
-    expect(m.children.length).toBe(0);
-    expect(m.target).toBe(target);
   });
 
   it('update() drives the target visemes when audio is loud / voiced', async () => {
@@ -155,17 +138,6 @@ describe('LipsyncMouth', () => {
     analyser.__setLoudVoiced();
     for (let i = 0; i < 50; i++) m.update(i * 0.016);
     expect(target.visemes.jawOpen).toBeGreaterThan(0.05);
-  });
-
-  it('silent input → target stays at rest', async () => {
-    const target = new FakeTarget();
-    const m = new LipsyncMouth(makeStream(), {
-      target,
-      audioContext: ctx as unknown as AudioContext,
-    });
-    await m.init();
-    for (let i = 0; i < 50; i++) m.update(i * 16);
-    expect(target.visemes.jawOpen).toBeLessThan(0.05);
   });
 
   it('loud then silent: brief silence holds visemes; sustained silence decays them', async () => {
@@ -201,29 +173,6 @@ describe('LipsyncMouth', () => {
     expect(target.visemes.ee).toBeLessThan(0.02);
     expect(target.visemes.oo).toBeLessThan(0.02);
     expect(target.visemes.consonant).toBeLessThan(0.02);
-  });
-
-  it('voiced resumes mid-hold: silence timer resets, target never began decaying', async () => {
-    const target = new FakeTarget();
-    const m = new LipsyncMouth(makeStream(), {
-      target,
-      audioContext: ctx as unknown as AudioContext,
-    });
-    await m.init();
-    const analyser = ctx.createAnalyser.mock.results[0]
-      .value as MockAnalyserNode;
-    analyser.__setLoudVoiced();
-    for (let i = 0; i < 60; i++) m.update(i * 16);
-    const peakJaw = target.visemes.jawOpen;
-
-    // 100 ms silent gap (within the 150 ms hold), then voiced again.
-    analyser.__setSilent();
-    m.update(60 * 16 + 50);
-    m.update(60 * 16 + 100);
-    expect(target.visemes.jawOpen).toBe(peakJaw);
-    analyser.__setLoudVoiced();
-    m.update(60 * 16 + 116);
-    expect(target.visemes.jawOpen).toBeGreaterThan(peakJaw * 0.8);
   });
 
   it('Schmitt hysteresis: noise-floor RMS chatter around silenceThreshold still accumulates the hold timer', async () => {
@@ -270,11 +219,15 @@ describe('LipsyncMouth', () => {
     expect(target.visemes).toEqual(ZERO_VISEME);
   });
 
-  it('dispose() disconnects analyser + source but does NOT dispose the target (caller owns it)', async () => {
+  it('dispose() releases its graph but preserves caller-owned resources', async () => {
     const target = new FakeTarget();
     const disposeSpy = vi.fn();
     (target as unknown as {dispose: () => void}).dispose = disposeSpy;
-    const m = new LipsyncMouth(makeStream(), {
+    const stream = makeStream();
+    const track = {stop: vi.fn()} as unknown as MediaStreamTrack;
+    (stream as unknown as {getTracks: () => MediaStreamTrack[]}).getTracks =
+      () => [track];
+    const m = new LipsyncMouth(stream, {
       target,
       audioContext: ctx as unknown as AudioContext,
     });
@@ -287,56 +240,7 @@ describe('LipsyncMouth', () => {
     expect(source.disconnect).toHaveBeenCalled();
     expect(analyser.disconnect).toHaveBeenCalled();
     expect(disposeSpy).not.toHaveBeenCalled();
-  });
-
-  it('dispose() does NOT close the injected AudioContext (caller owns it)', async () => {
-    const m = new LipsyncMouth(makeStream(), {
-      target: new FakeTarget(),
-      audioContext: ctx as unknown as AudioContext,
-    });
-    await m.init();
-    m.dispose();
     expect(ctx.close).not.toHaveBeenCalled();
-  });
-
-  it('dispose() does NOT stop MediaStream tracks (caller owns the stream)', async () => {
-    const stream = makeStream();
-    const track = {
-      stop: vi.fn(),
-      kind: 'audio',
-      enabled: true,
-    } as unknown as MediaStreamTrack;
-    // jsdom MediaStream doesn't expose addTrack consistently; monkey-patch
-    // getTracks instead since that's what consumers iterate.
-    (stream as unknown as {getTracks: () => MediaStreamTrack[]}).getTracks =
-      () => [track];
-    const m = new LipsyncMouth(stream, {
-      target: new FakeTarget(),
-      audioContext: ctx as unknown as AudioContext,
-    });
-    await m.init();
-    m.dispose();
     expect(track.stop).not.toHaveBeenCalled();
-  });
-
-  it('two LipsyncMouths can share one AudioContext and one target each', async () => {
-    const t1 = new FakeTarget();
-    const t2 = new FakeTarget();
-    const m1 = new LipsyncMouth(makeStream(), {
-      target: t1,
-      audioContext: ctx as unknown as AudioContext,
-    });
-    const m2 = new LipsyncMouth(makeStream(), {
-      target: t2,
-      audioContext: ctx as unknown as AudioContext,
-    });
-    await m1.init();
-    await m2.init();
-    expect(ctx.createMediaStreamSource).toHaveBeenCalledTimes(2);
-    // Disposing one leaves the other working.
-    m1.dispose();
-    expect(ctx.close).not.toHaveBeenCalled();
-    expect(m2.target).toBe(t2);
-    m2.dispose();
   });
 });

@@ -1,0 +1,8 @@
+{
+  "skill": "xb-agenthands",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": ["xrblocks/addons/agenthands"],
+  "expected_apis": ["AgentHands", ".load(", ".wave(", ".beat(", ".rest("],
+  "forbidden_patterns": ["MediaPipe", "navigator\\.xr\\."]
+}

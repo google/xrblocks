@@ -1,0 +1,8 @@
+{
+  "skill": "xb-head-gestures",
+  "template": "templates/0_basic",
+  "edit_file": "main.js",
+  "expected_imports": [],
+  "expected_apis": ["enableHeadGestures", "xb.input.headGestures"],
+  "forbidden_patterns": ["navigator\\.xr\\.", "deviceorientation", "MediaPipe"]
+}

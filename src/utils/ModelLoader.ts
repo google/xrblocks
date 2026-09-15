@@ -11,7 +11,6 @@ const jsmUrl = `https://cdn.jsdelivr.net/npm/three@0.${THREE.REVISION}.0/example
 function createGLTFLoader(manager?: THREE.LoadingManager) {
   const dracoLoader = new DRACOLoader(manager);
   dracoLoader.setDecoderPath(jsmUrl + 'libs/draco/');
-  dracoLoader.setDecoderConfig({type: 'js'});
   const ktx2Loader = new KTX2Loader(manager);
   ktx2Loader.setTranscoderPath(jsmUrl + 'libs/basis/');
 
@@ -113,7 +112,9 @@ export class ModelLoader {
     const {SplatMesh} = await import('@sparkjsdev/spark'); // Dynamic import
     const splatMesh = new SplatMesh({url});
     await splatMesh.initialized;
-    return splatMesh;
+    return Object.assign(splatMesh, {
+      boundingBox: splatMesh.getBoundingBox(false),
+    });
   }
 
   /**

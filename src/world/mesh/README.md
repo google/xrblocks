@@ -63,7 +63,7 @@ Each `XRMesh` reported by the platform becomes a `DetectedMesh` (a
 
 ## Demos
 
-- **`demos/ballpit/`** — uses scene meshes as physics colliders
+- **`samples/advanced/ballpit/`** — uses scene meshes as physics colliders
   (`?scenemesh=true`); falls back to a depth-mesh collider with
   `?scenemesh=false`.
 - **`samples/scene_mesh_projector/`** (xrlabs) — pins a movable TV-style

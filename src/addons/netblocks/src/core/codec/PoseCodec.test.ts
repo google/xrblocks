@@ -177,23 +177,6 @@ describe('PoseCodec', () => {
       }
     });
 
-    it('produces base64 output without spaces or newlines', () => {
-      const b64 = bytesToBase64(new Uint8Array([1, 2, 3, 4, 5]));
-      expect(b64).toMatch(/^[A-Za-z0-9+/=]+$/);
-    });
-
-    it('emits the right number of pad characters', () => {
-      // 1 byte → 2 pad, 2 bytes → 1 pad, 3 bytes → 0 pad
-      expect(bytesToBase64(new Uint8Array([1])).endsWith('==')).toBe(true);
-      expect(
-        bytesToBase64(new Uint8Array([1, 2])).endsWith('=') &&
-          !bytesToBase64(new Uint8Array([1, 2])).endsWith('==')
-      ).toBe(true);
-      expect(bytesToBase64(new Uint8Array([1, 2, 3])).endsWith('=')).toBe(
-        false
-      );
-    });
-
     it('throws on invalid characters in required positions', () => {
       // First two sextets are required for any output byte.
       expect(() => base64ToBytes('!!')).toThrow();

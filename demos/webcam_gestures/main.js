@@ -1,5 +1,3 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as xb from 'xrblocks';
 import {
   DrawingUtils,
@@ -338,7 +336,6 @@ function getBestGesture(activeGestures) {
 
 const webcamSource = new WebcamMediaPipeSource();
 const options = new xb.Options();
-options.enableUI();
 options.enableGestures();
 options.gestures.setPoseEstimator(
   new WebcamMediaPipePoseEstimator(webcamSource)

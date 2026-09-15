@@ -5,6 +5,7 @@ import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 import {getUrlParameter} from '../utils/utils';
 
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
+import {getSessionApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
 import {GeminiResponse} from './AITypes';
 import {Gemini, GeminiQueryInput} from './Gemini';
 import {OpenAI} from './OpenAI';
@@ -13,12 +14,12 @@ export type ModelClass = Gemini | OpenAI;
 export type ModelOptions = GeminiOptions | OpenAIOptions;
 
 export type KeysJson = {
-  [key: string]:
-    | string
-    | {
-        apiKey?: string;
-      };
+  gemini?: {apiKey?: string};
+  openai?: {apiKey?: string};
 };
+
+type ApiKeySource = 'options' | 'url' | 'session' | 'keys.json' | 'none';
+type ResolvedApiKey = {key: string | null; source: ApiKeySource};
 
 const SUPPORTED_MODELS = {
   gemini: Gemini,
@@ -44,9 +45,10 @@ const SUPPORTED_MODELS = {
  * API Key Management Features:
  *
  * 1. Multiple Key Sources (Priority Order):
- *    - URL Parameter: ?key=\<api_key\>
- *    - keys.json file: Local configuration file
- *    - User Prompt: Interactive fallback
+ *    - Model option
+ *    - Generic and model-specific URL parameters
+ *    - Current-page memory
+ *    - keys.json file
  * 2. keys.json Support:
  *    - Structure: \{"gemini": \{"apiKey": "YOUR_KEY_HERE"\}\}
  *    - Automatically loads if present
@@ -105,7 +107,17 @@ export class AI extends Script {
     ModelClass: typeof Gemini | typeof OpenAI,
     modelOptions: ModelOptions
   ) {
-    const apiKey = await this.resolveApiKey(modelOptions);
+    const resolvedKey = await this.resolveApiKeyWithSource(modelOptions);
+    let apiKey = resolvedKey.key;
+    const keyBypassesPrompt =
+      resolvedKey.source === 'url' || resolvedKey.source === 'keys.json';
+    if (
+      this.options.promptForApiKey &&
+      !keyBypassesPrompt &&
+      !isRunningInGeminiCanvas()
+    ) {
+      apiKey = await promptForApiKey(this.options.model, apiKey);
+    }
     if (!apiKey || !this.isValidApiKey(apiKey)) {
       // Initialize the model anyway so runtime key flows (e.g. a key prompt
       // or host-injected credentials) can still succeed later.
@@ -116,7 +128,7 @@ export class AI extends Script {
             'fail, verify your Google login or report bugs on GitHub.'
         );
       } else {
-        console.error(
+        console.warn(
           `No valid API key found for ${this.options.model}. ` +
             'Provide one via AIOptions, the ?key= URL parameter, or ' +
             'keys.json; queries will fail until a key is configured.'
@@ -135,53 +147,46 @@ export class AI extends Script {
   }
 
   async resolveApiKey(modelOptions: ModelOptions): Promise<string | null> {
+    return (await this.resolveApiKeyWithSource(modelOptions)).key;
+  }
+
+  private async resolveApiKeyWithSource(
+    modelOptions: ModelOptions
+  ): Promise<ResolvedApiKey> {
     const modelName = this.options.model;
 
     // 1. Check options
     if (modelOptions.apiKey) {
-      return modelOptions.apiKey;
+      return {key: modelOptions.apiKey, source: 'options'};
     }
 
-    // 2. Check URL parameters for 'key'
-    const genericKey = getUrlParameter('key');
-    if (genericKey) {
-      return genericKey;
+    // 2. Check generic and model-specific URL parameters.
+    const urlKey = this.getUrlApiKey(modelOptions);
+    if (urlKey) return {key: urlKey, source: 'url'};
+
+    // 3. Check the current-page prototype key when the prompt opt-in owns it.
+    if (this.options.promptForApiKey) {
+      const sessionKey = getSessionApiKey(modelName);
+      if (sessionKey) return {key: sessionKey, source: 'session'};
     }
 
-    // 3. Check URL parameters for model-specific key
-    const modelKey = getUrlParameter(modelOptions.urlParam);
-    if (modelKey) return modelKey;
-
-    // 4. Check URL parameters for geminiKey64
-    const geminiKey64 = getUrlParameter('geminiKey64');
-    if (geminiKey64) {
-      try {
-        return window.atob(geminiKey64);
-      } catch {
-        console.warn(
-          'Ignoring malformed base64 in the geminiKey64 URL parameter.'
-        );
-      }
-    }
-
-    // 5. Check keys.json file
+    // 4. Check keys.json file.
     const keysFromFile = await this.loadKeysFromFile();
     if (keysFromFile) {
-      const modelNameWithApiKeySuffix = modelName + `ApiKey`;
-      let keyFromFile: string | null | undefined = null;
-      if (typeof keysFromFile[modelName] === 'object') {
-        keyFromFile = keysFromFile[modelName]?.apiKey;
-      } else if (typeof keysFromFile[modelNameWithApiKeySuffix] === 'string') {
-        keyFromFile = keysFromFile[modelNameWithApiKeySuffix];
-      } else if (typeof keysFromFile[modelName] === 'string') {
-        keyFromFile = keysFromFile[modelName];
-      }
+      const keyFromFile = keysFromFile[modelName]?.apiKey;
       if (keyFromFile) {
-        return keyFromFile;
+        return {key: keyFromFile, source: 'keys.json'};
       }
     }
 
-    return null;
+    return {key: null, source: 'none'};
+  }
+
+  private getUrlApiKey(modelOptions: ModelOptions): string | null {
+    return (
+      getUrlParameter(this.options.globalUrlParams.key) ||
+      getUrlParameter(modelOptions.urlParam)
+    );
   }
 
   isValidApiKey(key: string) {
@@ -271,12 +276,6 @@ export class AI extends Script {
       this.model.isLiveAvailable()
     );
   }
-
-  /**
-   * In simulator mode, pop up a 2D UI to request Gemini key;
-   * In XR mode, show a 3D UI to instruct users to get an API key.
-   */
-  triggerKeyPopup() {}
 
   async generate(
     prompt: string | string[],

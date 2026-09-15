@@ -1,0 +1,1 @@
+I'd like a little assistant that feels present in the room with me. Give it a pair of friendly floating hands that wave hello when it greets me and move about a bit while it's talking, then settle when it's done. It shouldn't be my own hands, it should be its own.

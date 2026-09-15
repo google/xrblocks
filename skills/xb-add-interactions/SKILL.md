@@ -1,134 +1,91 @@
 ---
 name: xb-add-interactions
-description: >-
-  Generate and implement user interactions for an XR Blocks app. Use when
-  adding scene-wide actions, ray hover or selection, direct hand touch or grab,
-  gestures, dragging, manipulation, or physics-driven object behavior.
+description: Design and implement XR Blocks interactions. Use when adding selection, hover, direct touch, grab, gestures, event ownership, propagation, automatic manipulation, or physics-driven object behavior.
 ---
 
 # Add interactions
 
-Produce a complete **interaction design in code**: input intent, event
-ownership, target geometry, state transitions, feedback, cleanup, and user test
-instructions. If the app shell does not run yet, establish it with
-[`xb-build-app`](../xb-build-app/SKILL.md) first.
+Produce a complete **interaction contract in code**: intent, target, phases,
+state owner, feedback, cleanup, and test instructions.
 
-## 1. Inventory every action
+## 1. Inventory each user intent
 
-For each requested interaction, record:
+For every requested action, record the actor, target, trigger, start/update/end
+or cancel phases, one application state transition, feedback, and desktop/XR
+test route. Keep separate rows when two actions have different ownership or
+phase models, even when they use the same object.
 
-1. **actor** — mouse, keyboard, gaze, hand, tracked controller, or head motion;
-2. **target** — whole scene, object, handle, UI control, or empty space;
-3. **trigger** — click, pinch, squeeze, hover, touch, grab, pose, motion, or key;
-4. **phases** — start, continuous update, end, cancel, and disabled where used;
-5. **result** — the single application state transition owned by the action;
-6. **feedback** — visible, audible, or haptic response for available phases;
-7. **parity** — the simulator input and any XR-only behavior.
+Complete this step when every action has a target, phase model, state owner,
+feedback, and user-test path.
 
-Keep one row per distinct user intent. A drag and a tap on the same object are
-separate actions because their ownership and phases differ.
+## 2. Select one event family
 
-This step is complete when every requested action has a target, event phases,
-state owner, feedback, and user-test path.
+Read
+[`../../docs/docs/manual/Interaction.md`](../../docs/docs/manual/Interaction.md).
+Use:
 
-## 2. Select the interaction system
+- global `Script` hooks for scene-owned commands;
+- object select and hover hooks for resolved ray targets;
+- touch and grab hooks for direct hand contact;
+- gesture event targets for recognized hand poses or completed head motion;
+- `object.xb.manipulation` for automatic translation, rotation, or scale;
+- Rapier only for collision, gravity, momentum, throwing, or forces.
 
-Choose the highest-level public API that expresses each action:
+Read the selected branch reference:
 
-- **Scene-wide action:** global `Script` hooks such as `onSelect*`,
-  `onSqueeze*`, and `onKey*`.
-- **Pointed object:** `onObjectSelectStart/End` and `onHover*`; enable reticles
-  when users need a visible ray target.
-- **Direct hand contact:** `options.enableHands()` with `onObjectTouch*` or
-  `onObjectGrab*`.
-- **Named hand pose:** `options.enableGestures()` with
-  `xb.core.gestureRecognition` events.
-- **Completed head motion:** `options.enableHeadGestures()` with
-  `xb.input.headGestures` events.
-- **Ray-driven translation, rotation, or scaling:** `xb.core.dragManager` and
-  `xb.DragMode`.
-- **Collision, gravity, momentum, throwing, or forces:** Rapier through
-  `options.physics.RAPIER`, `initPhysics()`, and `physicsStep()`.
+- [`references/selection-and-direct-hands.md`](references/selection-and-direct-hands.md)
+- [`references/gesture-events.md`](references/gesture-events.md)
+- [`references/manipulation-and-physics.md`](references/manipulation-and-physics.md)
 
-Read [selection and direct hands](references/selection-and-direct-hands.md),
-[gesture events](references/gesture-events.md), or
-[manipulation and physics](references/manipulation-and-physics.md) for the
-selected branch. Confirm every symbol in
-[`../../src/xrblocks.ts`](../../src/xrblocks.ts) and every hook signature in
-[`../../src/core/Script.ts`](../../src/core/Script.ts).
+Complete this step when every action maps to one public event family without a
+second raycast loop or a reconstructed higher-level event.
 
-This step is complete when each action maps to one public event family without
-reconstructing a higher-level event in `update()`.
+## 3. Implement ownership and feedback
 
-## 3. Generate the interaction structure
+Put the handler on the script that owns application state or contains the
+logical target. Give targets intentional hit geometry. Use the event's
+`source`, `target`, `surface`, `currentTarget`, and `intersection` instead of
+raycasting again. Treat the reticle as presentation of the resolved hit.
 
-Create the code around the action inventory:
+Represent useful phases explicitly, such as `idle`, `hovered`, `active`,
+`held`, and `disabled`. Keep handlers thin: validate the resolved event, change
+one domain state, then update feedback. Share the domain method when several
+input sources mean the same action.
 
-- Put the handler on the `xb.Script` that owns the application state or contains
-  the targeted mesh.
-- Give ray and touch targets intentional geometry. Use a separate invisible hit
-  mesh when the visible geometry is too thin, irregular, or small to target
-  comfortably.
-- Represent relevant phases explicitly—commonly `idle`, `hovered`, `active`,
-  `held`, and `disabled`—and derive visuals from that state.
-- Keep event handlers thin: validate the source/target, update one domain state,
-  then update feedback. Share the domain method when several input sources mean
-  the same action.
-- Use continuous callbacks only for continuous behavior such as hover, held
-  selection, grabbing, dragging, or physics synchronization.
-- Make affordances readable before activation: reticle, outline, handle,
-  highlight, label, cursor change, or another cue appropriate to the scene.
-- Give start/hover/held states immediate feedback and make end/cancel restore a
-  stable state.
-- Name interactive objects and handles when simulator instructions, context,
-  automation, or debugging must identify them.
+Complete this step when every intent row has an owner, target geometry,
+handler, phase state, domain transition, feedback, and release or cancel path.
 
-For direct manipulation, preserve the initial hand-to-object or
-controller-to-object offset so the object does not snap on grab. For physics,
-keep the rigid body authoritative and synchronize the visual object during
-`physicsStep()`.
+## 4. Preserve event and manipulation semantics
 
-This step is complete when every inventory row has an owning object, target
-geometry, handler, phase state, domain transition, feedback, and release path in
-the implementation.
+Call `event.stopPropagation()` from a targeted callback only when its ancestor
+propagation must stop. Use `event.preventDefault()` only where the event
+exposes it: touch start can suppress the default touch selection, and
+manipulation start can suppress
+the automatic transform. Propagation and default behavior are independent.
 
-## 4. Preserve XR Blocks event semantics
+Automatic manipulation supports independent simultaneous object owners and
+two-source scale on one owner. Keep per-object state on the object or owning
+script, not in one global drag slot. Placement scripts suspend during
+manipulation and rebase on resume.
 
-Enable required options before `xb.init(options)` and implement matching start
-and end phases.
+Guard optional hands, joints, recognizers, and tracked data. Store listener
+functions and remove them in `dispose()`. Provide stable unavailable,
+interrupted, disabled, and canceled states.
 
-- Return `true` from object-select or hover hooks only when that script consumes
-  the event and ancestor handling should stop.
-- Treat touch and grab hooks as always-bubbling callbacks; their return values
-  do not stop propagation.
-- Assign one domain transition to either the global or object-select family so
-  a single select input cannot apply it twice.
-- Store event-listener functions and remove them in `dispose()`.
-- Guard optional hands, joints, gesture recognizers, and tracked input data.
-- Provide waiting, unavailable, disabled, and interrupted states when the
-  selected input may disappear.
-- Add Rapier only when physical dynamics are part of the requested behavior.
+Complete this step when propagation, default behavior, paired lifecycle phases,
+concurrent owners, optional data, and cleanup are explicit for every branch.
 
-This step is complete when paired lifecycle phases, propagation, optional data,
-and cleanup are explicit for every interaction branch.
+## 5. Prove and hand off each action
 
-## 5. Prepare the user interaction handoff
+Build or type-check the app, run focused tests, and start the exact simulator
+route when available. Confirm targets, affordances, handlers, event fields,
+state transitions, release behavior, and relevant console output. Use
+[`../../templates/02_object_interaction/`](../../templates/02_object_interaction/)
+as the current interaction foundation.
 
-Run code-level checks available in the environment: resolve imports, build or
-type-check changed code, load the initial scene, and confirm interactive targets
-and affordances initialize without relevant console errors. Inspect that each
-inventory row is wired to its intended public callback and state owner.
+Give the user one compact test card per action: simulator steps, XR input,
+target, start/active/result/release feedback, state change, and device-only
+checks.
 
-Give the user one compact card per action:
-
-- simulator mode and exact mouse, keyboard, controller, or simulated-hand steps;
-- XR input source and gesture;
-- target or handle to operate;
-- expected start, active, result, and release feedback;
-- expected application state change;
-- device-only checks such as reach, tracking, target size, grip comfort,
-  throwing feel, or haptics.
-
-Finish when the interaction implementation is complete and the user can test
-every action without inferring controls, expected feedback, or device-specific
-checks from the source.
+Finish when every action can be tested without inferring its controls, expected
+feedback, or cancellation behavior from source.

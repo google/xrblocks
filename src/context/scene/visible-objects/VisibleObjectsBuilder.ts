@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {getUIPresentationBounds} from '../../../ui/UIElement';
 
 import {roundContextNumber} from '../../shared/ContextNumberUtils';
 import {SemanticTreeInternal} from '../semantic-tree/SemanticTreeBuilder';
@@ -77,6 +78,9 @@ function createSemanticViewData({
   occlusionOpacityThreshold: number;
 }): SemanticViewData {
   if (!node.visible || !isObjectVisible(object)) {
+    return createNotRenderedViewData();
+  }
+  if (getUIPresentationBounds(object, tempBoundsBox) === null) {
     return createNotRenderedViewData();
   }
 
@@ -163,6 +167,7 @@ function isObjectInLineOfSight({
     return true;
   }
 
+  raycaster.camera = camera;
   raycaster.set(tempCameraPosition, tempDirection.normalize());
   raycaster.near = 0;
   raycaster.far = targetDistance;
@@ -173,9 +178,6 @@ function isObjectInLineOfSight({
       return false;
     }
     if (isSemanticInternalObject(hit.object)) {
-      return false;
-    }
-    if (ignoresReticleRaycast(hit.object)) {
       return false;
     }
     if (
@@ -191,20 +193,6 @@ function isObjectInLineOfSight({
   });
 
   return occludingHit === undefined;
-}
-
-function ignoresReticleRaycast(object: THREE.Object3D): boolean {
-  let current: THREE.Object3D | null = object;
-  while (current) {
-    if (
-      'ignoreReticleRaycast' in current &&
-      current.ignoreReticleRaycast === true
-    ) {
-      return true;
-    }
-    current = current.parent;
-  }
-  return false;
 }
 
 function isOpacityOccluding(

@@ -1,5 +1,3 @@
-import type {TemplateResult} from 'lit';
-
 import {Handedness} from '../input/Hands';
 import {deepMerge} from '../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../utils/Types';
@@ -23,9 +21,9 @@ const DEFAULT_MODE_TOGGLE_ORDER = {
 };
 
 export interface SimulatorCustomInstruction {
-  header: string | TemplateResult;
+  header: string;
   videoSrc?: string;
-  description: string | TemplateResult;
+  description: string;
 }
 
 export interface SimulatorEnvironment {

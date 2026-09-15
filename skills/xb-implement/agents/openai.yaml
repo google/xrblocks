@@ -1,4 +1,0 @@
-interface:
-  display_name: 'Implement XR Blocks correctly'
-  short_description: 'Apply shared XR Blocks implementation guardrails'
-  default_prompt: 'Use $xb-implement with the relevant workflow skill to ground this XR Blocks implementation in the real runtime and public APIs.'

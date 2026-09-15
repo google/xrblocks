@@ -1,70 +1,63 @@
-# Contribution seam map
+# XR Blocks production seam map
 
-Read the branch that matches the change, then follow any cross-cutting rows it
-touches. Source is authoritative; these landmarks tell you where to verify it.
+Read only the branch selected in the contribution contract.
 
-## Internal branch
+## Internal change
 
-Keep an implementation internal when consumers neither import it nor configure
-it. Trace its existing owner and production caller. Preserve constructor/init,
-per-frame, XR-session, simulator, physics, and `dispose()` ordering as applicable.
-Prove behavior at the nearest stable boundary instead of exporting the helper to
-make it testable.
+Trace:
 
-## Root-public branch
+```text
+existing public behavior
+  -> runtime owner
+  -> internal implementation
+  -> lifecycle and cleanup
+  -> boundary-level test
+```
 
-The consumer import boundary is [`../../../src/xrblocks.ts`](../../../src/xrblocks.ts).
-[`../../../src/entry.ts`](../../../src/entry.ts) re-exports it and installs debug
-globals; adding a second export there is unnecessary. TypeDoc also uses
-`src/xrblocks.ts` as its entry point.
+No new export is required. Prove the existing public behavior that consumes the
+internal change.
 
-For a configurable subsystem, inspect and account for:
+## Root-public change
 
-1. A focused `*Options` class with inert defaults and merge behavior.
-2. Aggregation in `src/core/Options.ts`; a chainable `enable*()` when developers
-   need a high-level switch; prerequisite permissions and feature cascades.
-3. Construction and scene ownership in `src/core/Core.ts` or an existing parent
-   `Script` such as `World`.
-4. Registry registration by the constructor type dependents declare in
-   `static dependencies`. Register option objects and runtime instances before
-   dependent scripts initialize.
-5. WebXR required/optional feature negotiation, renderer setup, and asynchronous
-   initialization where applicable.
-6. Frame, physics, session, simulator, and disposal calls owned by the same
-   lifecycle that constructed the object.
-7. Public values and public types re-exported from `src/xrblocks.ts`.
+Trace:
 
-`Core` initializes depth before input/scripts in its frame loop and initializes
-all scene scripts through `ScriptsManager`; preserve actual ordering unless the
-contract and tests intentionally change it.
+```text
+Options or public constructor
+  -> Core construction and registry registration
+  -> dependent Script or subsystem
+  -> frame/session lifecycle
+  -> disposal
+  -> src/xrblocks.ts
+  -> build/xrblocks.js and build/xrblocks.d.ts
+```
 
-## Addon-public branch
+Confirm any option default, `enable*()` prerequisite, permission, and feature
+dependency. A root consumer imports from `xrblocks`, not an implementation path.
 
-Find the addon's intended entry before adding exports. Common entries include
-`src/addons/<name>/index.ts`; UIBlocks instead exposes
-`src/addons/uiblocks/src/index.ts`. Export consumer values and types from that
-entry, not from the root barrel unless the capability is deliberately becoming
-core.
+## Addon-public change
 
-Rollup emits every non-test addon source file beneath the same relative
-`build/addons/` path. `package.json` exposes `./addons/*` as
-`./build/addons/*`, so verify the complete import including any `index.js` or
-nested segment against the emitted file. Bare repo aliases such as `uiblocks`
-and `netblocks` are separate import-map/TypeScript conveniences; they are not
-created by the package wildcard.
+Trace:
 
-If the addon imports a heavy peer, check `externalPackages` in
-`rollup.config.js`. If addon sources use a bare local alias, check
-`src/addons/tsconfig.lib.json`. A new addon server or CLI may be intentionally
-excluded from the browser Rollup glob and requires its own package/bin contract.
+```text
+addon public entry
+  -> Rollup addon input
+  -> external dependency policy
+  -> emitted build/addons path
+  -> package export wildcard
+  -> addon README and executable sample
+```
 
-## Cross-cutting checks
+Use the addon's intended entry file. Verify the exact browser and package
+subpath from emitted output. Repository-only aliases are not consumer imports.
 
-- Public types appearing in declarations must remain resolvable by consumers.
-- `three` remains one aligned peer dependency; avoid a bundled second copy.
-- New browser permissions must be requested in `Options` before immersive XR.
-- Optional device capabilities need an unsupported/no-data behavior and a
-  desktop-simulator story when the simulator can model them.
-- External AI, camera, microphone, or network behavior needs security/privacy
-  guidance and explicit failure handling.
-- Generated `build/` artifacts come from Rollup and are never hand-edited.
+## Shared lifecycle checks
+
+For each branch, locate or mark not applicable:
+
+- configuration and permissions before initialization;
+- construction and registration order;
+- update, fixed-step, session-start, and session-end hooks;
+- event and listener ownership;
+- GPU, media, timer, worker, network, and registry cleanup;
+- unsupported and partial-runtime states;
+- public type and declaration output.

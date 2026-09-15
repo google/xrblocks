@@ -7,7 +7,7 @@
  *
  * Wiring:
  *   - Mic  → Gemini : xb.core.sound.enableAudio() streams the local mic to the
- *                     live session (same as demos/gemini_icebreakers).
+ *                     live session (same as samples/xr_ai/gemini_icebreakers).
  *   - Gemini → audio: each onmessage carries base64 PCM in `message.data`, which
  *                     we feed to AIAudioPlayer (plays to speakers + exposes a tap).
  *   - audio → mouth : LipsyncMouth analyses AIAudioPlayer.stream and writes visemes
@@ -98,29 +98,40 @@ export class GeminiVRMLipScript extends xb.Script {
   // -------------------------------------------------------------------------
 
   _buildPanel() {
-    const panel = new xb.SpatialPanel({
-      width: 0.5,
-      height: 0.14,
-      backgroundColor: '#1a1a2add',
+    const card = new xb.UICard({
+      size: {width: 0.5, height: 0.14},
     });
-    const grid = panel.addGrid();
-    this._statusView = grid.addRow({weight: 1}).addText({
+    const panel = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#1a1a2add',
+        borderRadius: 16,
+        padding: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+    });
+    this._statusView = new xb.UIText({
       text: 'connecting…',
-      fontSize: 0.045,
-      fontColor: '#7ac0ff',
-      textAlign: 'center',
+      style: {
+        width: '100%',
+        fontSize: 24,
+        color: '#7ac0ff',
+        textAlign: 'center',
+      },
     });
-
-    panel.updateLayouts();
+    panel.add(this._statusView);
+    card.add(panel);
     // Place to the left of the avatar and angle it toward the user.
-    panel.position.set(-0.7, xb.user.height - 0.5, -0.8);
-    panel.rotation.y = Math.PI / 6;
-    this.add(panel);
-    this._panel = panel;
+    card.position.set(-0.7, xb.user.height - 0.5, -0.8);
+    card.rotation.y = Math.PI / 6;
+    this.add(card);
+    this._panel = card;
   }
 
   _setStatus(text) {
-    this._statusView?.setText(text);
+    if (this._statusView) this._statusView.text = text;
   }
 
   // -------------------------------------------------------------------------

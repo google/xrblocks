@@ -1,8 +1,14 @@
 {
-  "skill": "xb-ui",
-  "template": "templates/0_basic",
+  "skill": "xb-add-spatial-ui",
+  "reference_files": ["docs/docs/manual/UI.mdx"],
+  "template": "templates/01_spatial_ui",
   "edit_file": "main.js",
   "expected_imports": [],
-  "expected_apis": ["enableUI", "SpatialPanel", "onTriggered"],
-  "forbidden_patterns": ["document\\.createElement\\(['\"]button['\"]\\)"]
+  "expected_apis": ["UICard", "UIButton", "onClick"],
+  "forbidden_patterns": [
+    "document\\.createElement\\(['\"]button['\"]\\)",
+    "enableUI",
+    "SpatialPanel",
+    "onTriggered"
+  ]
 }

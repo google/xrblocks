@@ -6,11 +6,18 @@ import {SimulatorHands} from './SimulatorHands.js';
 import type {
   SimulatorCustomInstruction,
   SimulatorEnvironment,
+  SimulatorMode,
   SimulatorOptions,
 } from './SimulatorOptions.js';
 import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.js';
 import {ShowSimulatorInstructionsEvent} from './events/SimulatorInstructionsEvents.js';
 import {SetSimulatorHandPhysicsEvent} from './events/SimulatorPhysicsEvents.js';
+
+type SimulatorElementsLoader = () => Promise<unknown>;
+
+function loadSimulatorElements() {
+  return import('./internal/interface/SimulatorElements.js');
+}
 
 /** Minimal interface for the gamepad toast element. */
 interface GamepadToastElement extends HTMLElement {
@@ -53,6 +60,7 @@ function btnName(index: number): string {
 
 type SimulatorInstructionsHTMLElement = HTMLElement & {
   customInstructions: SimulatorCustomInstruction[];
+  simulatorMode?: SimulatorMode;
 };
 
 export class SimulatorInterface {
@@ -60,11 +68,18 @@ export class SimulatorInterface {
   private interfaceVisible = true;
   private _gamepadToast?: GamepadToastElement;
   private _gamepadSettings?: GamepadSettingsElement;
+  private gamepadController?: GamepadController;
+  private simulatorHands?: SimulatorHands;
+  private elementsAvailable?: Promise<boolean>;
+
+  constructor(
+    private readonly simulatorElementsLoader: SimulatorElementsLoader = loadSimulatorElements
+  ) {}
 
   /**
    * Initialize the simulator interface.
    */
-  init(
+  async init(
     simulatorOptions: SimulatorOptions,
     simulatorControls: SimulatorControls,
     simulatorHands: SimulatorHands,
@@ -72,6 +87,8 @@ export class SimulatorInterface {
     setEnvironment?: (environment: SimulatorEnvironment) => Promise<void>,
     handPhysicsAvailable = false
   ) {
+    if (!(await this.ensureElementsAvailable())) return;
+
     if (setEnvironment) {
       this.createSimulatorSettingsPanel(
         simulatorOptions,
@@ -82,6 +99,7 @@ export class SimulatorInterface {
     }
     this.showGeminiLivePanel(simulatorOptions);
     this.createHandPosePanel(simulatorOptions, simulatorHands);
+    this.simulatorHands = simulatorHands;
     simulatorHands.onHandednessChanged = (handedness) => {
       this._ensureGamepadToast().flash(
         `Active Hand: ${handedness === 'left' ? 'Left' : 'Right'}`
@@ -91,6 +109,19 @@ export class SimulatorInterface {
       this.showInstructions(simulatorOptions);
     }
     if (input) this._initGamepadUI(input);
+  }
+
+  private ensureElementsAvailable(): Promise<boolean> {
+    this.elementsAvailable ??= this.simulatorElementsLoader()
+      .then(() => true)
+      .catch((error: unknown) => {
+        console.info(
+          'The simulator interface was not shown because Lit is not available. Add "lit" and "lit/" to the import map to enable it.',
+          error
+        );
+        return false;
+      });
+    return this.elementsAvailable;
   }
 
   createSimulatorSettingsPanel(
@@ -132,8 +163,12 @@ export class SimulatorInterface {
       );
       settingsElement.addEventListener(
         ShowSimulatorInstructionsEvent.type,
-        () => {
-          this.showInstructions(simulatorOptions);
+        (event: Event) => {
+          const mode =
+            event instanceof ShowSimulatorInstructionsEvent
+              ? event.simulatorMode
+              : undefined;
+          this.showInstructions(simulatorOptions, mode);
         }
       );
       settingsElement.addEventListener(
@@ -148,7 +183,10 @@ export class SimulatorInterface {
     }
   }
 
-  showInstructions(simulatorOptions: SimulatorOptions) {
+  showInstructions(
+    simulatorOptions: SimulatorOptions,
+    simulatorMode?: SimulatorMode
+  ) {
     if (simulatorOptions.instructions.enabled) {
       if (document.querySelector(simulatorOptions.instructions.element)) {
         return; // Already showing
@@ -158,6 +196,7 @@ export class SimulatorInterface {
       ) as SimulatorInstructionsHTMLElement;
       element.customInstructions =
         simulatorOptions.instructions.customInstructions;
+      element.simulatorMode = simulatorMode;
       document.body.appendChild(element);
       this.elements.push(element);
     }
@@ -217,13 +256,41 @@ export class SimulatorInterface {
 
   private _initGamepadUI(input: Input) {
     const gp = input.gamepadController;
-    gp.addEventListener('connected', () => {
-      if (!gp.hasShownToast) {
-        gp.hasShownToast = true;
-        this.showGamepadToast(gp);
-      }
-    });
+    this.gamepadController?.removeEventListener(
+      'connected',
+      this.onGamepadConnected
+    );
+    this.gamepadController = gp;
+    gp.addEventListener('connected', this.onGamepadConnected);
     gp.onOpenSettings = () => this.toggleGamepadSettings(gp);
+  }
+
+  private onGamepadConnected = () => {
+    const gp = this.gamepadController;
+    if (!gp || gp.hasShownToast) return;
+    gp.hasShownToast = true;
+    this.showGamepadToast(gp);
+  };
+
+  dispose() {
+    if (this.gamepadController) {
+      this.gamepadController.removeEventListener(
+        'connected',
+        this.onGamepadConnected
+      );
+      this.gamepadController.onOpenSettings = undefined;
+      this.gamepadController = undefined;
+    }
+    if (this.simulatorHands) {
+      this.simulatorHands.onHandednessChanged = undefined;
+      this.simulatorHands = undefined;
+    }
+    for (const element of this.elements) element.remove();
+    this.elements.length = 0;
+    this._gamepadToast?.remove();
+    this._gamepadToast = undefined;
+    this._gamepadSettings?.remove();
+    this._gamepadSettings = undefined;
   }
 
   private _ensureGamepadToast(): GamepadToastElement {

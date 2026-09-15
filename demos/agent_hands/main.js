@@ -1,14 +1,4 @@
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-
 import * as THREE from 'three';
-import {
-  HeadLeashBehavior,
-  ManipulationBehavior,
-  UICore,
-  UIIcon,
-  UIPanel,
-  UIText,
-} from 'uiblocks';
 import {
   AgentGestureAnimator,
   AgentHands,
@@ -311,55 +301,75 @@ class AgentHandsDemo extends xb.Script {
   // ---- spatial control panel (works in XR + simulator) ----
 
   buildSpatialPanel_() {
-    this.uiCore = new UICore(this);
-    const card = this.uiCore.createCard({
-      name: 'AgentHandsControlCard',
-      position: new THREE.Vector3(0, 0.7, -0.8),
-      sizeX: 0.62,
-      sizeY: 0.22,
+    const card = new xb.UICard({
+      size: {width: 0.62, height: 0.22},
+      manipulation: {actions: {translate: true}},
     });
-    const panel = new UIPanel({
-      width: '100%',
-      height: '100%',
-      fillColor: 'rgba(16, 14, 26, 0.94)',
-      strokeWidth: 2,
-      strokeColor: 'rgba(145, 119, 199, 0.55)',
-      cornerRadius: 18,
-      padding: 14,
-      flexDirection: 'column',
-      gap: 8,
-      alignItems: 'stretch',
-      justifyContent: 'center',
+    card.name = 'AgentHandsControlCard';
+    card.position.set(0, 0.7, -0.8);
+    this.add(card);
+    card.add(
+      new xb.FollowHead({
+        offset: new THREE.Vector3(0, PANEL_HEIGHT_M, -PANEL_DISTANCE_M),
+        smoothing: 0.08,
+      }),
+      new xb.FaceCamera({smoothing: 0.1})
+    );
+
+    const panel = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: 'rgba(16, 14, 26, 0.94)',
+        borderWidth: 2,
+        borderColor: 'rgba(145, 119, 199, 0.55)',
+        borderRadius: 18,
+        padding: 14,
+        flexDirection: 'column',
+        gap: 8,
+        alignItems: 'stretch',
+        justifyContent: 'center',
+      },
     });
     panel.add(
-      new UIText('AGENT HANDS', {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#c4b5ff',
-        textAlign: 'center',
-        width: '100%',
+      new xb.UIText({
+        text: 'AGENT HANDS',
+        style: {
+          fontSize: 18,
+          fontWeight: 'bold',
+          color: '#c4b5ff',
+          textAlign: 'center',
+          width: '100%',
+        },
       })
     );
-    this.xrStatusText = new UIText('idle', {
-      fontSize: 12,
-      color: '#8b97a7',
-      textAlign: 'center',
-      width: '100%',
+    this.xrStatusText = new xb.UIText({
+      text: 'idle',
+      style: {
+        fontSize: 12,
+        color: '#8b97a7',
+        textAlign: 'center',
+        width: '100%',
+      },
     });
     panel.add(this.xrStatusText);
     panel.add(
-      new UIPanel({
-        width: '100%',
-        height: 1,
-        fillColor: 'rgba(255, 255, 255, 0.10)',
+      new xb.UIPanel({
+        style: {
+          width: '100%',
+          height: 1,
+          backgroundColor: 'rgba(255, 255, 255, 0.10)',
+        },
       })
     );
-    const row = new UIPanel({
-      width: '100%',
-      flexDirection: 'row',
-      gap: 10,
-      justifyContent: 'center',
-      alignItems: 'center',
+    const row = new xb.UIPanel({
+      style: {
+        width: '100%',
+        flexDirection: 'row',
+        gap: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
     });
     if (this.interactive) {
       row.add(this.makeXrButton_('mic', 'talk', () => this.onTalk_()));
@@ -369,65 +379,50 @@ class AgentHandsDemo extends xb.Script {
     }
     panel.add(row);
     card.add(panel);
-    card.addBehavior(
-      new ManipulationBehavior({draggable: true, faceCamera: false})
-    );
-    // Gently follow the user so the controls stay in reach as they move.
-    card.addBehavior(
-      new HeadLeashBehavior({
-        offset: new THREE.Vector3(0, PANEL_HEIGHT_M, -PANEL_DISTANCE_M),
-        posLerp: 0.08,
-        rotLerp: 0.1,
-      })
-    );
   }
 
   // Icon + caption button mirroring a DOM control (matches world_companion).
   makeXrButton_(iconName, label, onClick) {
     // Idle is a dark chip; hover is a clear purple so the highlight is
     // unmistakable (the old near-black hover was invisible against idle).
-    const idle = '#3a3550';
-    const hover = '#7a5fc7';
-    const btn = new UIPanel({
-      paddingTop: 8,
-      paddingBottom: 8,
-      paddingLeft: 16,
-      paddingRight: 16,
-      cornerRadius: 12,
-      fillColor: idle,
-      strokeWidth: 1,
-      strokeColor: '#6b5fa0',
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      renderOrder: 10,
-      onHoverEnter: () => btn.setFillColor(hover),
-      onHoverExit: () => btn.setFillColor(idle),
+    const button = new xb.UIButton({
+      ariaLabel: label,
       onClick: () => {
-        btn.setFillColor('#b49aff');
-        setTimeout(() => btn.setFillColor(idle), 180);
+        button.style.backgroundColor = '#b49aff';
+        setTimeout(() => {
+          button.style.backgroundColor = '#3a3550';
+        }, 180);
         onClick();
       },
+      style: {
+        paddingTop: 8,
+        paddingBottom: 8,
+        paddingLeft: 16,
+        paddingRight: 16,
+        borderRadius: 12,
+        backgroundColor: '#3a3550',
+        borderWidth: 1,
+        borderColor: '#6b5fa0',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        ':hover': {backgroundColor: '#7a5fc7'},
+        ':active': {backgroundColor: '#b49aff'},
+      },
+      children: [
+        new xb.UIIcon({
+          icon: iconName,
+          ariaLabel: label,
+          style: {color: '#ffffff', width: 22, height: 22},
+        }),
+        new xb.UIText({
+          text: label,
+          style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
+        }),
+      ],
     });
-    btn.add(
-      new UIIcon(iconName, {
-        color: 'white',
-        width: 22,
-        height: 22,
-        renderOrder: 12,
-      })
-    );
-    btn.add(
-      new UIText(label, {
-        fontSize: 14,
-        color: '#ffffff',
-        fontWeight: 'bold',
-        depthTest: false,
-        renderOrder: 100,
-      })
-    );
-    return btn;
+    return button;
   }
 
   // Triggered by either the DOM Talk button or the spatial mic button.
@@ -615,7 +610,7 @@ class AgentHandsDemo extends xb.Script {
     if (el) el.textContent = text;
     // The spatial font lacks some glyphs (ellipsis, middle dot), so normalize.
     if (this.xrStatusText) {
-      this.xrStatusText.setText(text.replace(/…/g, '...').replace(/·/g, '-'));
+      this.xrStatusText.text = text.replace(/…/g, '...').replace(/·/g, '-');
     }
   }
 }
@@ -624,7 +619,6 @@ function start() {
   const options = new xb.Options();
   options.enableAI();
   // Spatial UI (the control panel) + reticle for pointing at it.
-  options.enableUI();
   options.reticles.enabled = true;
   options.sound.speechSynthesizer.enabled = true;
   options.sound.speechSynthesizer.allowInterruptions = true;

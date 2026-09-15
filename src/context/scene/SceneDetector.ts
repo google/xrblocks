@@ -4,6 +4,7 @@ import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {ScreenshotSynthesizer} from '../../core/components/ScreenshotSynthesizer';
 import {SimulationTimer} from '../../core/components/SimulationTimer';
 import {Script} from '../../core/Script';
+import {Interaction} from '../../interaction/Interaction';
 import {ContextOptions} from '../ContextOptions';
 import {
   buildSemanticTree,
@@ -37,12 +38,13 @@ export type SceneContextDetectionResult = {
 };
 
 export class SceneDetector extends Script {
-  static dependencies = {
+  private static readonly dependencies = {
     options: ContextOptions,
     scene: THREE.Scene,
     camera: THREE.Camera,
     screenshotSynthesizer: ScreenshotSynthesizer,
     simulationTimer: SimulationTimer,
+    interaction: Interaction,
   };
 
   private options!: ContextOptions;
@@ -50,6 +52,7 @@ export class SceneDetector extends Script {
   private camera!: THREE.Camera;
   private screenshotSynthesizer!: ScreenshotSynthesizer;
   private simulationTimer?: SimulationTimer;
+  private interaction?: Interaction;
   private deviceCamera?: XRDeviceCamera;
   private registry = new SemanticIdRegistry();
   private snapshot: ContextSnapshot | null = null;
@@ -86,6 +89,7 @@ export class SceneDetector extends Script {
     camera,
     screenshotSynthesizer,
     simulationTimer,
+    interaction,
     deviceCamera,
   }: {
     options: ContextOptions;
@@ -93,6 +97,7 @@ export class SceneDetector extends Script {
     camera: THREE.Camera;
     screenshotSynthesizer: ScreenshotSynthesizer;
     simulationTimer?: SimulationTimer;
+    interaction?: Interaction;
     deviceCamera?: XRDeviceCamera;
   }) {
     this.options = options;
@@ -100,6 +105,7 @@ export class SceneDetector extends Script {
     this.camera = camera;
     this.screenshotSynthesizer = screenshotSynthesizer;
     this.simulationTimer = simulationTimer;
+    this.interaction = interaction;
     this.deviceCamera = deviceCamera ?? this.deviceCamera;
     this.snapshot = null;
     this.disposed = false;
@@ -366,6 +372,7 @@ export class SceneDetector extends Script {
           scene: this.scene,
           registry: this.registry,
           capturedAt: this.getCaptureTimeMs(),
+          interaction: this.interaction,
         });
         this.snapshot = snapshot;
         return snapshot;

@@ -23,7 +23,7 @@ export class XRTransition extends MeshScript<
   THREE.SphereGeometry,
   THREE.MeshBasicMaterial
 > {
-  ignoreReticleRaycast = true;
+  xb = {pointerEvents: 'none' as const};
   static dependencies = {
     renderer: THREE.WebGLRenderer,
     camera: THREE.Camera,
@@ -54,7 +54,6 @@ export class XRTransition extends MeshScript<
       side: THREE.BackSide, // Render on the inside of the sphere.
     });
     super(geometry, material);
-    this.ignoreReticleRaycast = true;
     this.renderOrder = -Infinity;
   }
 

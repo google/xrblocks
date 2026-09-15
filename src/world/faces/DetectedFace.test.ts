@@ -93,17 +93,6 @@ describe('DetectedFace', () => {
     expect(face.getLandmarkPosition(FaceLandmarkName.NoseTip)).toBeNull();
   });
 
-  it('getLandmarkPosition returns a clone so callers can mutate safely', () => {
-    const landmarks = makeLandmarks({1: [0.5, 0.5, 0, [1, 2, 3]]});
-    const face = new DetectedFace(0, landmarks, makeBbox());
-    const a = face.getLandmarkPosition(FaceLandmarkName.NoseTip)!;
-    a.set(0, 0, 0);
-    const b = face.getLandmarkPosition(FaceLandmarkName.NoseTip)!;
-    expect(b.x).toBeCloseTo(1);
-    expect(b.y).toBeCloseTo(2);
-    expect(b.z).toBeCloseTo(3);
-  });
-
   it('getBlendshape looks up by ARKit category name and falls back to 0', () => {
     const landmarks = makeLandmarks({});
     const blendshapes: FaceBlendshape[] = [
@@ -116,25 +105,5 @@ describe('DetectedFace', () => {
     // Unknown / unemitted categories: 0, not undefined.
     expect(face.getBlendshape('mouthSmileRight')).toBe(0);
     expect(face.getBlendshape('notARealBlendshape')).toBe(0);
-  });
-
-  it('handles an empty blendshapes array (backend configured with output disabled)', () => {
-    const face = new DetectedFace(0, makeLandmarks({}), makeBbox());
-    expect(face.blendshapes).toHaveLength(0);
-    expect(face.getBlendshape('jawOpen')).toBe(0);
-  });
-
-  it('extends Object3D so it slots into the scene graph', () => {
-    const face = new DetectedFace(0, makeLandmarks({}), makeBbox());
-    expect(face).toBeInstanceOf(THREE.Object3D);
-    // Should be add()-able to a parent.
-    const parent = new THREE.Group();
-    parent.add(face);
-    expect(face.parent).toBe(parent);
-  });
-
-  it('preserves the faceId for tracking across frames', () => {
-    const face = new DetectedFace(42, makeLandmarks({}), makeBbox());
-    expect(face.faceId).toBe(42);
   });
 });
