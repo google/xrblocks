@@ -36,14 +36,14 @@ Blocks owns sensor acquisition and mesh updates.
 
 After initialization, use `xb.depth`:
 
-| Member             | Meaning                                              |
-| ------------------ | ---------------------------------------------------- |
-| `depthData`        | Per-view WebXR depth information when available      |
-| `depthArray`       | Decoded per-view depth values                        |
-| `rawValueToMeters` | Conversion factor for raw depth values               |
-| `getDepth(u, v)`   | Left-view distance at normalized image coordinates   |
-| `depthMesh`        | Live reconstructed environment geometry when enabled |
-| `depthTextures`    | GPU depth resources used by supported render paths   |
+| Member             | Meaning                                                       |
+| ------------------ | ------------------------------------------------------------- |
+| `depthData`        | Per-view WebXR depth information when available               |
+| `depthArray`       | Decoded per-view depth values                                 |
+| `rawValueToMeters` | Conversion factor for raw depth values                        |
+| `getDepth(u, v)`   | Left-view distance at normalized view UVs, origin bottom left |
+| `depthMesh`        | Live reconstructed environment geometry when enabled          |
+| `depthTextures`    | GPU depth resources used by supported render paths            |
 
 Guard reads. Missing data during startup, an unsupported session, or a lost
 sensor is normal runtime state. Do not keep displaying an old measurement as
