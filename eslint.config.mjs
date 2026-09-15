@@ -7,34 +7,44 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-    {ignores: ['src/addons/apriltags/wasm/apriltag_wasm.js']},
-    eslint.configs.recommended, tseslint.configs.recommended, {
-      plugins: {tsdoc: tsdoceslint},
-      files: ['**/*.ts'],
-      rules: {
-        'tsdoc/syntax': 'warn',
-        '@typescript-eslint/no-unused-vars': [
-          'error', {
-            args: 'all',
-            argsIgnorePattern: '^_',
-            caughtErrors: 'all',
-            caughtErrorsIgnorePattern: '^_',
-            destructuredArrayIgnorePattern: '^_',
-            varsIgnorePattern: '^_',
-            ignoreRestSiblings: true
-          }
-        ]
-      },
+  {ignores: ['src/addons/apriltags/wasm/apriltag_wasm.js']},
+  eslint.configs.recommended,
+  tseslint.configs.recommended,
+  {
+    plugins: {tsdoc: tsdoceslint},
+    files: ['**/*.ts'],
+    rules: {
+      'tsdoc/syntax': 'warn',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          args: 'all',
+          argsIgnorePattern: '^_',
+          caughtErrors: 'all',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
     },
-    {
-      files: ['demos/**/*.js', 'templates/**/*.js', 'samples/**/*.js'],
-      languageOptions: {globals: {...globals.browser}},
-    },
-    {
-      files: ['rollup.config.js', 'docs/docusaurus.config.js', 'src/addons/**/server/**/*.js', 'tools/**/*.js', 'tools/**/*.ts'],
-      languageOptions: {globals: {...globals.node}}
-    },
-    {
-      files: ['tools/profile.js'],
-      languageOptions: {globals: {...globals.browser, ...globals.node}}
-    });
+  },
+  {
+    files: ['demos/**/*.js', 'templates/**/*.js', 'samples/**/*.js'],
+    languageOptions: {globals: {...globals.browser}},
+  },
+  {
+    files: [
+      'rollup.config.js',
+      'docs/docusaurus.config.js',
+      'src/addons/**/server/**/*.js',
+      'tools/**/*.js',
+      'tools/**/*.ts',
+    ],
+    languageOptions: {globals: {...globals.node}},
+  },
+  {
+    files: ['tools/profile.js'],
+    languageOptions: {globals: {...globals.browser, ...globals.node}},
+  }
+);

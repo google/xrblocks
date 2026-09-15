@@ -120,6 +120,60 @@ export interface AprilTagTrackerDiagnostics {
   angularSpeedRadPerSec: number | null;
 }
 
+/** localStorage key holding the persisted calibration for a target device. */
+export function aprilTagCalibrationStorageKey(targetDevice: string): string {
+  return `xrblocks:apriltags:calibration:v${CALIBRATION_STORAGE_VERSION}:${targetDevice}`;
+}
+
+/** Persisted calibration payload, as written by {@link AprilTagTracker}. */
+export interface PersistedAprilTagCalibration {
+  rotation: [number, number, number, number];
+  translation: [number, number, number];
+  rangeScale?: number;
+  tagSizeMeters?: number;
+}
+
+/**
+ * Reads a previously persisted device-camera calibration without
+ * instantiating a tracker — for example to decide whether a "use stored
+ * calibration" UI action has anything to apply. Returns `null` when nothing
+ * is stored, the payload is malformed or from an incompatible storage
+ * version, or storage itself is unavailable (for example inside a
+ * sandboxed iframe, where even `localStorage` access can throw).
+ */
+export function loadPersistedAprilTagCalibration(
+  targetDevice: string
+): PersistedAprilTagCalibration | null {
+  try {
+    const raw = localStorage.getItem(
+      aprilTagCalibrationStorageKey(targetDevice)
+    );
+    if (!raw) return null;
+    const data = JSON.parse(raw) as {
+      v?: number;
+      rotation?: number[];
+      translation?: number[];
+      rangeScale?: number;
+      tagSizeMeters?: number;
+    };
+    if (data?.v !== CALIBRATION_STORAGE_VERSION) return null;
+    if (data.rotation?.length !== 4 || data.translation?.length !== 3) {
+      return null;
+    }
+    if (![...data.rotation, ...data.translation].every(Number.isFinite)) {
+      return null;
+    }
+    return {
+      rotation: data.rotation as [number, number, number, number],
+      translation: data.translation as [number, number, number],
+      rangeScale: data.rangeScale,
+      tagSizeMeters: data.tagSizeMeters,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
 /**
  * Converts an XRBlocks device-camera projection matrix into the pinhole
  * intrinsics required by the AprilTag pose estimator.
@@ -235,6 +289,7 @@ export class AprilTagTracker extends Script {
   private calibrationLoaded = false;
   private calibrationConverged = false;
   private calibrationSource: 'none' | 'restored' | 'pinned' = 'none';
+  private detectionPaused = false;
   private lastLoggedCalibration = '';
   private lastBaselineMeters = 0;
   private lastRmsTranslationResidualM = 0;
@@ -305,6 +360,51 @@ export class AprilTagTracker extends Script {
   /** Recovered multiplicative correction applied to monocular tag ranges. */
   get estimatedRangeScale(): number {
     return this.calibrator.rangeScale;
+  }
+
+  /** Whether the detection loop is currently suspended. */
+  get isDetectionPaused(): boolean {
+    return this.detectionPaused;
+  }
+
+  /**
+   * Suspend or resume the detection loop. While paused, camera poses keep
+   * being recorded (so the pose ring stays warm for an immediate resume),
+   * but no frames are captured, no observations are ingested, and the
+   * anchor and calibration stop changing. Use this to "freeze" a
+   * calibration session once it looks good, or to yield the device camera
+   * to another consumer without tearing the tracker down.
+   */
+  setDetectionPaused(paused: boolean): void {
+    this.detectionPaused = paused;
+  }
+
+  /**
+   * Snapshot of the recovered device-camera calibration, in the same array
+   * shape as the constructor's `calibration` option — so
+   * `new AprilTagTracker({calibration: tracker.getCalibration()})`
+   * round-trips it into a fresh tracker.
+   */
+  getCalibration(): {
+    rotation: [number, number, number, number];
+    translation: [number, number, number];
+    rangeScale: number;
+  } {
+    const calibration = this.calibrator.getCalibration();
+    return {
+      rotation: calibration.rotation.toArray() as [
+        number,
+        number,
+        number,
+        number,
+      ],
+      translation: calibration.translation.toArray() as [
+        number,
+        number,
+        number,
+      ],
+      rangeScale: calibration.rangeScale,
+    };
   }
 
   /** Diagnostics for the most recent detector round trip. */
@@ -430,6 +530,7 @@ export class AprilTagTracker extends Script {
     void frame;
     const poseStamp = typeof time === 'number' ? time : now();
     const params = this.recordCameraPose(poseStamp);
+    if (this.detectionPaused) return;
     if (!this.worker) this.startWorker();
     if (
       !params ||
@@ -635,6 +736,9 @@ export class AprilTagTracker extends Script {
     const request = this.inFlight;
     this.inFlight = null;
     this.captureInFlight = false;
+    // Detection was paused (e.g. the session was frozen) while this image
+    // was in flight; its result must not move the anchor or calibrator.
+    if (this.detectionPaused) return;
     // A tag ID, tag size, or explicit reset changed while this image was being
     // processed. Its result cannot refine the new anchor configuration.
     if (request.configurationEpoch !== this.configurationEpoch) return;
@@ -781,48 +885,28 @@ export class AprilTagTracker extends Script {
   }
 
   private calibrationStorageKey(): string {
-    return `xrblocks:apriltags:calibration:v${CALIBRATION_STORAGE_VERSION}:${this.targetDevice()}`;
+    return aprilTagCalibrationStorageKey(this.targetDevice());
   }
 
   private loadCalibrationOnce(): void {
     if (this.calibrationLoaded) return;
     this.calibrationLoaded = true;
     if (core.deviceCamera?.simulatorCamera) return;
-    try {
-      const raw = localStorage.getItem(this.calibrationStorageKey());
-      if (!raw) return;
-      const data = JSON.parse(raw) as {
-        v?: number;
-        rotation?: number[];
-        translation?: number[];
-        rangeScale?: number;
-        tagSizeMeters?: number;
-      };
-      if (data?.v !== CALIBRATION_STORAGE_VERSION) return;
-      this.calibrator.setCalibration({
-        rotation:
-          data.rotation?.length === 4
-            ? new THREE.Quaternion().fromArray(data.rotation)
-            : undefined,
-        translation:
-          data.translation?.length === 3
-            ? new THREE.Vector3().fromArray(data.translation)
-            : undefined,
-        // The range scale folds in the printed tag size, so only reuse it
-        // when the configured size matches the persisted one.
-        rangeScale:
-          data.tagSizeMeters === this.tagSizeMeters
-            ? data.rangeScale
-            : undefined,
-      });
-      this.calibrationSource = 'restored';
-      console.log(
-        '[AprilTagTracker] Restored persisted camera calibration:',
-        raw
-      );
-    } catch (_error) {
-      // Persisted calibration is a bonus; ignore storage failures.
-    }
+    const data = loadPersistedAprilTagCalibration(this.targetDevice());
+    if (!data) return;
+    this.calibrator.setCalibration({
+      rotation: new THREE.Quaternion().fromArray(data.rotation),
+      translation: new THREE.Vector3().fromArray(data.translation),
+      // The range scale folds in the printed tag size, so only reuse it
+      // when the configured size matches the persisted one.
+      rangeScale:
+        data.tagSizeMeters === this.tagSizeMeters ? data.rangeScale : undefined,
+    });
+    this.calibrationSource = 'restored';
+    console.log(
+      '[AprilTagTracker] Restored persisted camera calibration:',
+      JSON.stringify(data)
+    );
   }
 
   private persistCalibration(timestamp: number): void {
