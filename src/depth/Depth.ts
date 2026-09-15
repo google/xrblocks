@@ -24,6 +24,8 @@ export class Depth {
   private camera!: THREE.Camera;
   private renderer!: THREE.WebGLRenderer;
   private gpuDepthConverter?: GPUDepthConverter;
+  private registry?: Registry;
+  private disposed = false;
 
   enabled = false;
   view: XRView[] = [];
@@ -88,9 +90,13 @@ export class Depth {
     registry: Registry,
     scene: THREE.Scene
   ) {
+    if (this.disposed) {
+      throw new Error('Depth cannot initialize after disposal.');
+    }
     this.camera = camera;
     this.options = options;
     this.renderer = renderer;
+    this.registry = registry;
     this.enabled = options.enabled;
     this.gpuDepthConverter = new GPUDepthConverter(renderer);
 
@@ -375,7 +381,7 @@ export class Depth {
   }
 
   update(frame?: XRFrame) {
-    if (!this.options.enabled) return;
+    if (this.disposed || !this.options.enabled) return;
     if (frame) {
       this.updateLocalDepth(frame);
     }
@@ -495,5 +501,64 @@ export class Depth {
         this.depthDataFormat
       );
     }
+  }
+
+  /** Releases depth resources at terminal Core teardown, not on XR exit. */
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.enabled = false;
+
+    let firstError: unknown;
+    const cleanups = [
+      () => {
+        const mesh = this.depthMesh;
+        this.depthMesh = undefined;
+        if (mesh && this.registry?.get(DepthMesh) === mesh) {
+          this.registry.unregister(DepthMesh);
+        }
+        mesh?.removeFromParent();
+        mesh?.disposeResources();
+      },
+      () => {
+        const textures = this.depthTextures;
+        this.depthTextures = undefined;
+        if (textures && this.registry?.get(DepthTextures) === textures) {
+          this.registry.unregister(DepthTextures);
+        }
+        textures?.dispose();
+      },
+      () => {
+        const pass = this.occlusionPass;
+        this.occlusionPass = undefined;
+        pass?.dispose();
+      },
+    ];
+    for (const cleanup of cleanups) {
+      try {
+        cleanup();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+
+    // TODO: Dispose the GPU converter once its cleanup API lands.
+    this.gpuDepthConverter = undefined;
+    this.registry = undefined;
+    this.view.length = 0;
+    this.cpuDepthData.length = 0;
+    this.gpuDepthData.length = 0;
+    this.depthArray.length = 0;
+    this.depthDataFormat = undefined;
+    this.depthProjectionMatrices.length = 0;
+    this.depthProjectionInverseMatrices.length = 0;
+    this.depthViewMatrices.length = 0;
+    this.depthViewProjectionMatrices.length = 0;
+    this.depthCameraPositions.length = 0;
+    this.depthCameraRotations.length = 0;
+    this.normDepthBufferFromNormViewMatrices.length = 0;
+    this.depthClients.clear();
+    this.occludableShaders.clear();
+    if (firstError !== undefined) throw firstError;
   }
 }
