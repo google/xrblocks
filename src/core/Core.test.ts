@@ -16,6 +16,8 @@ vi.hoisted(() => {
 });
 
 import * as THREE from 'three';
+import {Depth} from '../depth/Depth';
+import {DepthOptions} from '../depth/DepthOptions';
 import {Core} from './Core';
 import {Options} from './Options';
 import {Script} from './Script';
@@ -41,6 +43,7 @@ describe('Core frame and simulator lifecycle', () => {
   beforeEach(async () => {
     await Core.instance?.dispose();
     Core.instance = undefined;
+    Depth.instance = undefined;
     simulatorLoader.mockReset();
     core = new Core(simulatorLoader);
     core.options = new Options();
@@ -160,6 +163,87 @@ describe('Core frame and simulator lifecycle', () => {
         error: expect.objectContaining({message: 'update failed'}),
       })
     );
+  });
+
+  it('disposes depth after scripts and before physics and the renderer', async () => {
+    const disposeDepth = vi.spyOn(core.depth, 'dispose');
+    const disposeScripts = vi.spyOn(scripts(core), 'dispose');
+    const disposePhysics = vi.fn();
+    const disposeRenderer = vi.fn();
+    core.physics = {dispose: disposePhysics} as unknown as Core['physics'];
+    core.renderer.dispose = disposeRenderer;
+
+    await core.dispose();
+    await core.dispose();
+
+    expect(disposeDepth).toHaveBeenCalledOnce();
+    expect(disposeScripts.mock.invocationCallOrder[0]).toBeLessThan(
+      disposeDepth.mock.invocationCallOrder[0]
+    );
+    expect(disposeDepth.mock.invocationCallOrder[0]).toBeLessThan(
+      disposePhysics.mock.invocationCallOrder[0]
+    );
+    expect(disposeDepth.mock.invocationCallOrder[0]).toBeLessThan(
+      disposeRenderer.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('still disposes the renderer when depth cleanup fails', async () => {
+    vi.spyOn(core.depth, 'dispose').mockImplementationOnce(() => {
+      throw new Error('depth disposal failed');
+    });
+    const disposeRenderer = vi.fn();
+    core.renderer.dispose = disposeRenderer;
+
+    await expect(core.dispose()).rejects.toThrow('depth disposal failed');
+    expect(disposeRenderer).toHaveBeenCalledOnce();
+    expect(core.lifecycle).toBe('disposed');
+    Core.instance = undefined;
+  });
+
+  it('keeps depth resources across XR exit and re-entry', async () => {
+    vi.spyOn(
+      core as unknown as {initialize(options: Options): Promise<void>},
+      'initialize'
+    ).mockResolvedValue();
+    await core.init(core.options);
+    core.depth.init(
+      core.camera,
+      new DepthOptions({enabled: true, depthMesh: {enabled: true}}),
+      core.renderer,
+      core.registry,
+      core.scene
+    );
+    const mesh = core.depth.depthMesh;
+    const disposeDepth = vi.spyOn(core.depth, 'dispose');
+    const initDepth = vi.spyOn(core.depth, 'init');
+    const data = new Float32Array([1, 2, 3, 4]);
+    core.depth.depthArray[0] = data;
+    const script = new Script();
+    const onStart = vi.spyOn(script, 'onXRSessionStarted');
+    const onEnd = vi.spyOn(script, 'onXRSessionEnded');
+    await scripts(core).initScript(script);
+    const firstSession = Object.assign(new EventTarget(), {
+      requestReferenceSpace: vi.fn().mockResolvedValue({}),
+    }) as unknown as XRSession;
+    const secondSession = Object.assign(new EventTarget(), {
+      requestReferenceSpace: vi.fn().mockResolvedValue({}),
+    }) as unknown as XRSession;
+
+    await core['onXRSessionStarted'](firstSession);
+    firstSession.dispatchEvent(new Event('end'));
+    core['onXRSessionEnded']();
+    await core['onXRSessionStarted'](secondSession);
+
+    expect(onStart).toHaveBeenNthCalledWith(1, firstSession);
+    expect(onEnd).toHaveBeenCalledOnce();
+    expect(onStart).toHaveBeenNthCalledWith(2, secondSession);
+    expect(disposeDepth).not.toHaveBeenCalled();
+    expect(initDepth).not.toHaveBeenCalled();
+    expect(core.depth.depthArray[0]).toBe(data);
+    expect(core.depth.depthMesh).toBe(mesh);
+    expect(mesh?.parent).toBe(core.scene);
+    expect(core.lifecycle).toBe('running');
   });
 
   it('runs script callbacks and renders through one Core frame', async () => {

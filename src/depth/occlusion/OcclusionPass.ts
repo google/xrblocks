@@ -47,6 +47,7 @@ export class OcclusionPass extends Pass {
   private lastOcclusionMapSize = new THREE.Vector2(0, 0);
   private lastKawaseBlurSize = new THREE.Vector2(0, 0);
   private readonly renderDimensions = new THREE.Vector2();
+  private disposed = false;
 
   constructor(
     private scene: THREE.Scene,
@@ -360,11 +361,45 @@ export class OcclusionPass extends Pass {
   }
 
   dispose() {
-    this.occlusionMeshMaterial.dispose();
-    this.occlusionMapTexture.dispose();
-    for (let i = 0; i < this.kawaseBlurQuads.length; i++) {
-      this.kawaseBlurQuads[i].dispose();
+    if (this.disposed) return;
+    this.disposed = true;
+
+    const quads = [
+      this.occlusionMapQuad,
+      ...this.kawaseBlurQuads,
+      this.occlusionQuad,
+    ];
+    const resources = [
+      this.occlusionMeshMaterial,
+      this.occlusionMapTexture,
+      ...this.kawaseBlurTargets,
+      ...quads.flatMap((quad) => [quad.material, quad]),
+    ];
+    let firstError: unknown;
+    for (const resource of resources) {
+      try {
+        resource.dispose();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
     }
+    this.kawaseBlurTargets.length = 0;
+    this.kawaseBlurQuads.length = 0;
+    this.depthTextures.length = 0;
+    this.depthNear.length = 0;
+    this.depthViewMatrices.length = 0;
+    this.depthProjectionMatrices.length = 0;
+    for (const uniforms of [
+      this.occlusionMeshMaterial.uniforms,
+      this.occlusionMapUniforms,
+    ]) {
+      uniforms.uDepthTexture.value = null;
+      uniforms.uDepthTextureArray.value = null;
+    }
+    this.occlusionMapUniforms.tDiffuse.value = null;
+    this.occlusionMapUniforms.tDepth.value = null;
+    this.occlusionUniforms.tDiffuse.value = null;
+    if (firstError !== undefined) throw firstError;
   }
 
   updateOcclusionMapUniforms(
