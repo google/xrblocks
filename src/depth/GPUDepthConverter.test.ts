@@ -117,4 +117,53 @@ describe('GPUDepthConverter', () => {
       expect(renderer.getRenderTarget()).toBe(originalTarget);
     }
   );
+
+  it.each([
+    [3, 2],
+    [1, 2],
+    [1, 4],
+  ])('resizes the target and readback buffer to %sx%s', (width, height) => {
+    const {converter, renderer} = createConverter();
+    const first = converter.convertGPUToCPU(createDepthData());
+    const target = renderer.setRenderTarget.mock.calls[0][0]!;
+    const dispose = vi.spyOn(target, 'dispose');
+    const scene = renderer.render.mock.calls[0][0];
+    renderer.readRenderTargetPixels.mockImplementation(
+      (readTarget, x, y, readWidth, readHeight, pixels) => {
+        expect(readTarget).toBe(target);
+        expect([readTarget.width, readTarget.height]).toEqual([width, height]);
+        expect([x, y, readWidth, readHeight]).toEqual([0, 0, width, height]);
+        expect(pixels).toBeInstanceOf(Float32Array);
+        expect(pixels.length).toBe(width * height);
+        pixels.fill(7);
+      }
+    );
+
+    const result = converter.convertGPUToCPU({
+      ...createDepthData(),
+      width,
+      height,
+    });
+
+    expect([result.width, result.height]).toEqual([width, height]);
+    expect(Array.from(new Float32Array(result.data))).toEqual(
+      Array(width * height).fill(7)
+    );
+    expect(result.data).not.toBe(first.data);
+    expect(renderer.render.mock.calls[1][0]).toBe(scene);
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it('reuses the target and readback buffer when dimensions are unchanged', () => {
+    const {converter, renderer} = createConverter();
+    const first = converter.convertGPUToCPU(createDepthData());
+    const target = renderer.setRenderTarget.mock.calls[0][0]!;
+    const dispose = vi.spyOn(target, 'dispose');
+
+    const second = converter.convertGPUToCPU(createDepthData());
+
+    expect(second.data).toBe(first.data);
+    expect(renderer.setRenderTarget.mock.calls[2][0]).toBe(target);
+    expect(dispose).not.toHaveBeenCalled();
+  });
 });

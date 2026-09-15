@@ -321,7 +321,10 @@ export class Depth {
     if (cpuDepth) {
       this.cpuDepthData[viewId] = cpuDepth;
       this.depthDataFormat = 'float32';
-      if (this.depthArray[viewId] instanceof Float32Array) {
+      if (
+        this.depthArray[viewId] instanceof Float32Array &&
+        this.depthArray[viewId].byteLength === cpuDepth.data.byteLength
+      ) {
         this.depthArray[viewId].set(new Float32Array(cpuDepth.data));
       } else {
         this.depthArray[viewId] = new Float32Array(cpuDepth.data);

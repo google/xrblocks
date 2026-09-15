@@ -73,6 +73,12 @@ export class GPUDepthConverter {
       this.depthScene = new THREE.Scene();
       this.depthScene.add(depthMesh);
       this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    } else if (
+      this.depthTarget.width !== depthData.width ||
+      this.depthTarget.height !== depthData.height
+    ) {
+      this.depthTarget.setSize(depthData.width, depthData.height);
+      this.gpuPixels = new Float32Array(depthData.width * depthData.height);
     }
 
     this.depthTexture.sourceTexture = depthData.texture;
