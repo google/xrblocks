@@ -227,10 +227,24 @@ export class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
   /**
    * Recognizes a stroke from a list of 2D points by comparing it against stored templates.
    * Supports both forward and backward matching to handle bi-directional strokes.
+   * Returns Unknown with zero confidence for input that cannot form a valid normalized stroke.
    * @param points - The list of points captured during the stroke.
    * @returns The recognition result containing the shape name and confidence score.
    */
   override recognize(points: Point2D[]): StrokeRecognitionResult {
+    if (
+      points.length < 2 ||
+      points.some(
+        (point) => !Number.isFinite(point.x) || !Number.isFinite(point.y)
+      )
+    ) {
+      return {recognizedShape: 'Unknown', confidence: 0};
+    }
+    const length = pathLength(points);
+    if (length === 0 || !Number.isFinite(length)) {
+      return {recognizedShape: 'Unknown', confidence: 0};
+    }
+
     const resampledForward = resample(points, 64);
     const resampledBackward = resampledForward.slice().reverse();
 
