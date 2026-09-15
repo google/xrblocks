@@ -542,7 +542,7 @@ export class Depth {
       }
     }
 
-    // TODO: Dispose the GPU converter once its cleanup API lands.
+    // TODO: Wire GPU converter disposal when its cleanup API from #600 lands.
     this.gpuDepthConverter = undefined;
     this.registry = undefined;
     this.view.length = 0;
