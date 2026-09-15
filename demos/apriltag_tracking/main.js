@@ -1,8 +1,5 @@
-import * as uikit from '@pmndrs/uikit';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-import {UICore, UIPanel, UIText, raycastSortFunction} from 'uiblocks';
 import {
   AprilTagTracker,
   DEFAULT_TAG25H9_ID,
@@ -25,7 +22,6 @@ const STROKE = '#40556d';
 class AprilTagAnchorDemo extends xb.Script {
   constructor() {
     super();
-    this.uiCore = new UICore(this);
     this.tracker = new AprilTagTracker({
       tagId: DEFAULT_TAG25H9_ID,
       // Constant registration offset measured on Galaxy XR: without it the
@@ -45,19 +41,12 @@ class AprilTagAnchorDemo extends xb.Script {
   }
 
   init() {
-    if (xb.core.input?.raycaster) {
-      xb.core.input.raycaster.sortFunction = raycastSortFunction;
-    }
     this.createDashboard();
     this.updateDashboard(true);
   }
 
   update() {
     this.updateDashboard();
-  }
-
-  dispose() {
-    this.uiCore.dispose();
   }
 
   changeTagId(change) {
@@ -70,76 +59,81 @@ class AprilTagAnchorDemo extends xb.Script {
     this.updateDashboard(true);
   }
 
+  // The dashboard is a UICard root (world-space, draggable, faces the user)
+  // with UIPanel rows and UIButton / UIText leaves; see
+  // docs/docs/manual/Migrating-to-v0-20-0.md for the tree conventions.
   createDashboard() {
-    const card = this.uiCore.createCard({
-      name: 'AprilTagDashboard',
-      sizeX: 0.52,
-      sizeY: 0.5,
+    const card = new xb.UICard({
+      size: {width: 0.52, height: 0.5},
       pixelSize: 0.00125,
-      position: new THREE.Vector3(0.42, 1.45, -1.05),
-    });
-    const root = new UIPanel({
-      width: '100%',
-      height: '100%',
-      flexDirection: 'column',
-      gap: 13,
-      padding: 22,
-      fillColor: SURFACE,
-      cornerRadius: 24,
-      strokeWidth: 1,
-      strokeColor: STROKE,
-      strokeAlign: 'inside',
-      dropShadowColor: '#000000',
-      dropShadowBlur: 18,
-      dropShadowSpread: 2,
-    });
-    card.add(root);
-
-    root.add(
-      new UIText('AprilTag spatial anchor', {
+      manipulation: {actions: {translate: {faceCamera: true}}},
+      edge: true,
+      style: {
         width: '100%',
-        fontSize: 27,
-        fontWeight: 'bold',
-        color: TEXT,
-        textAlign: 'center',
+        height: '100%',
+        flexDirection: 'column',
+        gap: 13,
+        padding: 22,
+        backgroundColor: SURFACE,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: STROKE,
+      },
+    });
+    card.name = 'AprilTagDashboard';
+    card.position.set(0.42, 1.45, -1.05);
+
+    card.add(
+      new xb.UIText({
+        text: 'AprilTag spatial anchor',
+        style: {
+          width: '100%',
+          fontSize: 27,
+          fontWeight: 'bold',
+          color: TEXT,
+          textAlign: 'center',
+        },
       })
     );
-    root.add(
-      new UIText(`tag25h9 | code width ${TAG_SIZE_MM.toFixed(1)} mm`, {
-        width: '100%',
-        fontSize: 16,
-        color: MUTED,
-        textAlign: 'center',
+    card.add(
+      new xb.UIText({
+        text: `tag25h9 | code width ${TAG_SIZE_MM.toFixed(1)} mm`,
+        style: {width: '100%', fontSize: 16, color: MUTED, textAlign: 'center'},
       })
     );
 
-    const idRow = new UIPanel({
-      width: '100%',
-      height: 58,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
+    const idRow = new xb.UIPanel({
+      style: {
+        width: '100%',
+        height: 58,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+      },
     });
-    root.add(idRow);
+    card.add(idRow);
     this.createButton(idRow, '-', () => this.changeTagId(-1), {
       width: 64,
       fontSize: 30,
     });
-    const idWell = new UIPanel({
-      flexGrow: 1,
-      height: 58,
-      alignItems: 'center',
-      justifyContent: 'center',
-      fillColor: SURFACE_RAISED,
-      cornerRadius: 13,
-      innerShadowColor: '#000000',
-      innerShadowBlur: 8,
+    const idWell = new xb.UIPanel({
+      style: {
+        flexGrow: 1,
+        height: 58,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: SURFACE_RAISED,
+        borderRadius: 13,
+      },
     });
-    this.idText = new UIText('', {
-      fontSize: 25,
-      fontWeight: 'bold',
-      color: TEXT,
-      textAlign: 'center',
+    this.idText = new xb.UIText({
+      text: '',
+      style: {
+        fontSize: 25,
+        fontWeight: 'bold',
+        color: TEXT,
+        textAlign: 'center',
+      },
     });
     idWell.add(this.idText);
     idRow.add(idWell);
@@ -148,37 +142,39 @@ class AprilTagAnchorDemo extends xb.Script {
       fontSize: 30,
     });
 
-    const statusWell = new UIPanel({
-      width: '100%',
-      flexGrow: 1,
-      minHeight: 62,
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 12,
-      fillColor: SURFACE_RAISED,
-      cornerRadius: 13,
+    const statusWell = new xb.UIPanel({
+      style: {
+        width: '100%',
+        flexGrow: 1,
+        minHeight: 62,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 12,
+        backgroundColor: SURFACE_RAISED,
+        borderRadius: 13,
+      },
     });
-    this.statusText = new UIText('', {
-      width: '100%',
-      fontSize: 17,
-      color: MUTED,
-      textAlign: 'center',
-      maxWidth: 290,
-      lineHeight: 22,
+    this.statusText = new xb.UIText({
+      text: '',
+      style: {
+        width: '100%',
+        fontSize: 17,
+        color: MUTED,
+        textAlign: 'center',
+        lineHeight: 22,
+      },
     });
     statusWell.add(this.statusText);
-    root.add(statusWell);
+    card.add(statusWell);
 
-    this.diagText = new UIText('', {
-      width: '100%',
-      fontSize: 13,
-      color: MUTED,
-      textAlign: 'center',
+    this.diagText = new xb.UIText({
+      text: '',
+      style: {width: '100%', fontSize: 13, color: MUTED, textAlign: 'center'},
     });
-    root.add(this.diagText);
+    card.add(this.diagText);
 
     this.createButton(
-      root,
+      card,
       'Reset anchor',
       () => {
         this.tracker.resetAnchor();
@@ -186,14 +182,13 @@ class AprilTagAnchorDemo extends xb.Script {
       },
       {width: '100%', height: 46, accent: true, fontSize: 18}
     );
-    root.add(
-      new UIText('Axes: X red, Y green, Z blue', {
-        width: '100%',
-        fontSize: 14,
-        color: MUTED,
-        textAlign: 'center',
+    card.add(
+      new xb.UIText({
+        text: 'Axes: X red, Y green, Z blue',
+        style: {width: '100%', fontSize: 14, color: MUTED, textAlign: 'center'},
       })
     );
+    this.add(card);
   }
 
   createButton(
@@ -202,60 +197,54 @@ class AprilTagAnchorDemo extends xb.Script {
     onClick,
     {width, height = 58, fontSize = 20, accent = false} = {}
   ) {
-    let hovered = false;
-    const baseColor = accent ? '#244b6e' : CONTROL;
-    const button = new UIPanel({
-      ...(width === undefined ? {flexGrow: 1} : {width}),
-      height,
-      alignItems: 'center',
-      justifyContent: 'center',
-      fillColor: baseColor,
-      cornerRadius: 13,
-      strokeWidth: accent ? 1 : 0,
-      strokeColor: accent ? ACCENT : STROKE,
-      strokeAlign: 'inside',
-      onHoverEnter: () => {
-        hovered = true;
-        button.setFillColor(CONTROL_HOVER);
+    const button = new xb.UIButton({
+      ariaLabel: label,
+      onClick,
+      style: {
+        ...(width === undefined ? {flexGrow: 1} : {width}),
+        height,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: accent ? '#244b6e' : CONTROL,
+        borderRadius: 13,
+        borderWidth: accent ? 1 : 0,
+        borderColor: accent ? ACCENT : STROKE,
+        ':hover': {backgroundColor: CONTROL_HOVER},
+        ':active': {backgroundColor: accent ? ACCENT : CONTROL_HOVER},
       },
-      onHoverExit: () => {
-        hovered = false;
-        button.setFillColor(baseColor);
-      },
-      onClick: () => {
-        onClick();
-        if (!hovered) button.setFillColor(baseColor);
-        return true;
-      },
+      children: [
+        new xb.UIText({
+          text: label,
+          style: {
+            fontSize,
+            fontWeight: accent ? 'bold' : 'normal',
+            color: accent ? ACCENT : TEXT,
+            textAlign: 'center',
+          },
+        }),
+      ],
     });
-    button.add(
-      new UIText(label, {
-        fontSize,
-        fontWeight: accent ? 'bold' : 'normal',
-        color: accent ? ACCENT : TEXT,
-        textAlign: 'center',
-      })
-    );
     parent.add(button);
     return button;
   }
 
+  // Retained updates: only assign text / colour when a value actually changed,
+  // since every assignment re-lays-out the card.
   updateDashboard(force = false) {
     if (!this.idText || !this.statusText) return;
     const idLabel = `Tag ID ${this.tracker.tagId}`;
     if (force || idLabel !== this.lastIdLabel) {
-      this.idText.setText(idLabel);
+      this.idText.text = idLabel;
       this.lastIdLabel = idLabel;
     }
     if (force || this.tracker.status !== this.lastStatus) {
-      this.statusText.setText(this.tracker.status);
-      this.statusText.setColor(
+      this.statusText.text = this.tracker.status;
+      this.statusText.style.color =
         this.tracker.state === 'tracked'
           ? '#69e6ad'
           : this.tracker.state === 'anchored'
             ? '#ffd27a'
-            : MUTED
-      );
+            : MUTED;
       this.lastStatus = this.tracker.status;
     }
     if (this.diagText) {
@@ -263,7 +252,7 @@ class AprilTagAnchorDemo extends xb.Script {
         ? this.tracker.diagnosticsSummary
         : '';
       if (force || diag !== this.lastDiag) {
-        this.diagText.setText(diag);
+        this.diagText.text = diag;
         this.lastDiag = diag;
       }
     }
@@ -272,11 +261,9 @@ class AprilTagAnchorDemo extends xb.Script {
 
 document.addEventListener('DOMContentLoaded', () => {
   const options = new xb.Options();
-  options.enableUI();
-  options.uikit.enable(uikit);
   options.enableCamera('environment');
   options.deviceCamera.willCaptureFrequently = true;
-  options.reticles.enabled = true;
+  options.enableReticles();
   options.xrButton.showEnterSimulatorButton = true;
   options.setAppTitle('AprilTag spatial anchor');
 
