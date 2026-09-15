@@ -145,6 +145,12 @@ export class SceneEditor extends xb.Script {
 
     this.selectionManager.editorActive = active;
     this.commandHistory.editorActive = active;
+    // The panels keep ticking as Scripts even while the editor is inert --
+    // hiding this.root only hides their DOM. Without this push, the model
+    // picker kept rendering its (invisible) preview through a second
+    // WebGLRenderer every frame and re-fetching the models directory every
+    // 3 s on a real headset. Each panel's update() gates on the flag.
+    this.modelPickerPanel.editorActive = active;
     this.root.style.display = active ? '' : 'none';
   }
 

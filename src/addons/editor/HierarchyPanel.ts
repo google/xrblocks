@@ -72,6 +72,10 @@ export class HierarchyPanel extends xb.Script {
   }
 
   override update() {
+    // Inert editor (real XR, non-editor simulator modes): the rows are
+    // hidden with the rest of the chrome, so per-frame list/label churn
+    // buys nothing. State is kept; the next active frame resyncs.
+    if (!this.selectionManager.editorActive) return;
     const list = this.sceneManager.list();
     const idsKey = list.map((instance) => instance.id).join(',');
     const countByFileName = this.computeFileNameCounts(list);

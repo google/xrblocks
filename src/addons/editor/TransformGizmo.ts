@@ -469,6 +469,11 @@ export class TransformGizmo extends xb.Script {
   }
 
   override update() {
+    // Fully idle while the editor is inert -- but only once the handles are
+    // already hidden and no drag is live, so the normal path below still
+    // runs its own teardown frame (endDrag + visible = false) first.
+    if (!this.selectionManager.editorActive && !this.visible && !this.drag)
+      return;
     const selectedList = this.selectionManager.selectedList();
     const mode = this.selectionManager.mode;
     const active =
