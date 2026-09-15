@@ -42,6 +42,14 @@ Serve the repo root and open `/demos/objects_3d/`. Press **Detect**
 (in the screen panel or the spatial panel). Works in the simulator and
 on Android XR.
 
+## SAM device selection
+
+The default SlimSAM mask path runs entirely in a same-origin module worker, including WASM inference, so CPU fallback does not block XR rendering. It tries WebGPU/fp16, WebGPU/fp32, then WASM/fp32 without checking browser names or GPU vendors. The execution adapter and device must expose both `maxStorageBufferBindingSize` and `maxBufferSize` of at least 384 MiB for fp16 or 768 MiB for fp32; fp16 also requires `shader-f16`. The checked adapter is supplied to ORT before model initialization, and ORT's resulting device is checked before encoding. These are minimum attention-buffer requirements, not a guarantee of enough total GPU memory.
+
+Each failed loading, encoding, or decoding attempt disposes its model and starts a fresh worker for the next candidate, replaying the same snapshot and box prompt. This isolates the pinned Transformers.js 3.0.0 runtime's cached initialization failures. The processor loads before the model, once per worker rather than per snapshot; fallback needs a new processor instance, while browser download caching can reuse its files and weights. Only a completed encoder run establishes the cached worker. Worker errors or unresponsive workers are terminated, and a later Detect press can retry after all candidates fail. `?mask=segmenter` remains an explicit alternative, not an automatic fallback.
+
+Mocked tests cover selection, lifecycle, replay, serialization, and mask output. Transformers.js 3.0.0 also performs a separate default-adapter fp16 probe, which can reject fp16 even when the supplied execution adapter supports it; the next candidate is still tried. Actual headset validation is still needed for driver-specific dispatch errors, available GPU memory, WASM latency, and XR frame pacing; an exposed WebGPU API or passing desktop tests alone does not establish device support.
+
 ## What's next
 
 If this lands well, the natural follow-up is a `box3d: true` option
