@@ -83,7 +83,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   private isRecording = false;
   private gestureStartTime = 0;
   private gestureEndTime = 0;
-  private activeHand: Handedness = Handedness.LEFT;
+  private activeHand: Handedness = Handedness.NONE;
 
   private scene!: THREE.Scene;
   private camera!: THREE.Camera;
@@ -149,10 +149,17 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
   }
 
   /**
-   * Deactivates the stroke recognizer and clears any captured points.
+   * Deactivates the stroke recognizer, cancels recording without an end event,
+   * and clears any captured points. The next stroke starts with a fresh delay
+   * and hand selection after reactivation.
+   * Callers should clear any in-progress stroke UI when deactivating.
    */
   deactivate() {
     this.isActive = false;
+    this.isRecording = false;
+    this.gestureStartTime = 0;
+    this.gestureEndTime = 0;
+    this.activeHand = Handedness.NONE;
     this.clearPoints();
   }
 
