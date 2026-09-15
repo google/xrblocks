@@ -10,7 +10,6 @@ export class MeasureScene extends xb.Script {
   currentColorIndex = 0;
 
   init() {
-    xb.showReticleOnDepthMesh(true);
     this.setupLights();
   }
 
@@ -26,19 +25,17 @@ export class MeasureScene extends xb.Script {
   }
 
   onSelectStart(event) {
-    const controller = event.target;
-    const intersections =
-      xb.core.input.intersectionsForController.get(controller);
-    if (intersections.length == 0) return;
+    const controller = event.source.controller;
+    const intersection = event.intersection;
+    if (!intersection) return;
     if (this.activeMeasuringTapes.has(controller)) {
       this.remove(this.activeMeasuringTapes.get(controller));
     }
-    const closestIntersection = intersections[0];
     const color = palette[this.currentColorIndex];
     this.currentColorIndex = (this.currentColorIndex + 1) % palette.length;
     const measuringTape = new MeasuringTape(
-      closestIntersection.point,
-      closestIntersection.point,
+      intersection.point,
+      intersection.point,
       0.05,
       color
     );
@@ -46,28 +43,15 @@ export class MeasureScene extends xb.Script {
     this.activeMeasuringTapes.set(controller, measuringTape);
   }
 
-  update() {
-    for (const [controller, tape] of this.activeMeasuringTapes) {
-      const intersections = xb.core.input.intersectionsForController
-        .get(controller)
-        .filter((intersection) => {
-          let target = intersection.object;
-          while (target) {
-            if (target.ignoreReticleRaycast === true) {
-              return false;
-            }
-            target = target.parent;
-          }
-          return true;
-        });
-      if (intersections.length > 0) {
-        tape.setSecondPoint(intersections[0].point);
-      }
+  onSelecting(event) {
+    const tape = this.activeMeasuringTapes.get(event.source.controller);
+    if (tape && event.intersection) {
+      tape.setSecondPoint(event.intersection.point);
     }
   }
 
   onSelectEnd(event) {
-    const controller = event.target;
+    const controller = event.source.controller;
     this.activeMeasuringTapes.delete(controller);
   }
 }
