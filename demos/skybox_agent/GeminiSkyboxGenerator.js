@@ -10,6 +10,7 @@ export class GeminiSkyboxGenerator extends xb.Script {
     super();
     this.transcription = null;
     this.liveAgent = null;
+    this.startPending = false;
     this.statusText = null;
     this.defaultText =
       "I am a skybox designer agent. Describe the background you want, and I'll render it for you!";
@@ -55,13 +56,18 @@ export class GeminiSkyboxGenerator extends xb.Script {
   }
 
   async startGeminiLive() {
-    if (this.liveAgent?.getSessionState().isActive) return;
+    if (this.startPending || this.liveAgent?.getSessionState().isActive) return;
+    this.startPending = true;
+    this.toggleButton.disabled = true;
 
     try {
       this.updateStatus('Starting session...');
 
       // Enable audio BEFORE starting the session
       await xb.core.sound.enableAudio();
+      if (!xb.core.sound.isAudioEnabled()) {
+        throw new Error('Microphone capture did not start.');
+      }
 
       // Start live session with callbacks
       await this.liveAgent.startLiveSession({
@@ -79,6 +85,9 @@ export class GeminiSkyboxGenerator extends xb.Script {
         `Error: Failed to start AI session - ${error.message}`
       );
       await this.cleanup();
+    } finally {
+      this.startPending = false;
+      this.toggleButton.disabled = false;
     }
   }
 
@@ -96,35 +105,51 @@ export class GeminiSkyboxGenerator extends xb.Script {
   }
 
   createTextDisplay() {
-    this.textPanel = new xb.SpatialPanel({
-      width: 3,
-      height: 1.8,
-      backgroundColor: '#1a1a1abb',
-    });
-    const grid = this.textPanel.addGrid();
-
-    const statusRow = grid.addRow({weight: 0.1});
-    this.statusText = statusRow.addText({
+    this.statusText = new xb.UIText({
       text: 'Click Start to begin',
-      fontSize: 0.04,
-      fontColor: '#4ecdc4',
-      textAlign: 'center',
+      style: {
+        height: 60,
+        fontSize: 24,
+        lineHeight: 1.35,
+        color: '#4ecdc4',
+        textAlign: 'center',
+      },
     });
 
-    const responseDisplay = grid.addRow({weight: 0.65}).addText({
+    const responseDisplay = new xb.UIText({
       text: this.defaultText,
-      fontSize: 0.03,
-      textAlign: 'left',
+      style: {
+        flexGrow: 1,
+        fontSize: 24,
+        lineHeight: 1.35,
+        whiteSpace: 'pre-line',
+        overflow: 'hidden',
+      },
     });
     this.transcription = new TranscriptionManager(responseDisplay);
 
-    this.toggleButton = grid.addRow({weight: 0.25}).addTextButton({
-      text: '▶ Start',
-      fontColor: '#ffffff',
-      backgroundColor: '#006644',
-      fontSize: 0.2,
+    this.toggleButton = new xb.UIButton({
+      label: 'Start',
+      icon: 'mic',
+      style: {
+        width: '100%',
+        height: 80,
+        color: '#ffffff',
+        backgroundColor: '#006644',
+      },
+      onClick: () => void this.toggleGeminiLive(),
     });
-    this.toggleButton.onTriggered = () => this.toggleGeminiLive();
+    this.textPanel = new xb.UICard({
+      size: {width: 3, height: 1.8},
+      pixelSize: 0.003,
+      style: {
+        flexDirection: 'column',
+        gap: 20,
+        padding: 24,
+        backgroundColor: '#1a1a1abb',
+      },
+      children: [this.statusText, responseDisplay, this.toggleButton],
+    });
 
     this.textPanel.position.set(0, 1.2, -2);
     this.add(this.textPanel);
@@ -197,7 +222,8 @@ export class GeminiSkyboxGenerator extends xb.Script {
 
   updateButtonState() {
     const isActive = this.liveAgent?.getSessionState().isActive;
-    this.toggleButton?.setText(isActive ? '⏹ Stop' : '▶ Start');
+    this.toggleButton.label = isActive ? 'Stop' : 'Start';
+    this.toggleButton.icon = isActive ? 'stop' : 'mic';
   }
 
   updateStatus(message) {
@@ -224,40 +250,14 @@ export class GeminiSkyboxGenerator extends xb.Script {
   }
 }
 
-async function requestAudioPermission() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: 16000,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
-    stream.getTracks().forEach((track) => track.stop());
-    return stream;
-  } catch (error) {
-    this.transcription.addText(
-      `✗ Error requesting audio permission: ${error.message}`
-    );
-    return null;
-  }
-}
-
 async function start() {
-  try {
-    await requestAudioPermission();
+  const options = new xb.Options();
+  options.enableHands();
+  options.enableAI();
+  options.setAppTitle('Generating Skybox with Gemini');
 
-    const options = new xb.Options();
-    options.enableHands();
-    options.enableAI();
-    options.setAppTitle('Generating Skybox with Gemini');
-
-    xb.init(options);
-    xb.add(new GeminiSkyboxGenerator());
-  } catch (error) {
-    this.transcription.addText(`✗ Error initializing: ${error.message}`);
-  }
+  xb.add(new GeminiSkyboxGenerator());
+  await xb.init(options);
 }
 
 document.addEventListener('DOMContentLoaded', function () {

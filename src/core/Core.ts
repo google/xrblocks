@@ -358,6 +358,7 @@ export class Core {
       () => this.interaction.clear(),
       () => this.uiRenderer.dispose(),
       () => this.input.dispose(),
+      () => this.depth.dispose(),
       () => {
         const camera = this.deviceCamera;
         this.deviceCamera = undefined;
