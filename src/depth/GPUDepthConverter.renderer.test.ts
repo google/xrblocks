@@ -135,6 +135,9 @@ describe('GPUDepthConverter with real renderer binding state', () => {
         const liveViewport = gl.getParameter(gl.VIEWPORT);
         const liveScissor = gl.getParameter(gl.SCISSOR_BOX);
         const liveScissorTest = gl.isEnabled(gl.SCISSOR_TEST);
+        const nativeTexture = target
+          ? renderer.properties.get(target.texture).__webglTexture
+          : null;
         if (outcome !== 'success') {
           vi.mocked(renderer[outcome]).mockImplementationOnce(() => {
             throw new Error('conversion failed');
@@ -150,6 +153,8 @@ describe('GPUDepthConverter with real renderer binding state', () => {
             depthNear: 0.1,
           } as XRWebGLDepthInformation);
 
+        vi.mocked(gl.framebufferTexture2D).mockClear();
+        vi.mocked(gl.framebufferTextureLayer).mockClear();
         if (outcome === 'success') {
           convert();
         } else {
@@ -181,9 +186,6 @@ describe('GPUDepthConverter with real renderer binding state', () => {
           expect(target.viewport).toEqual(targetViewport);
           expect(target.scissor).toEqual(targetScissor);
           expect(target.scissorTest).toBe(targetScissorTest);
-          const nativeTexture = renderer.properties.get(
-            target.texture
-          ).__webglTexture;
           if (binding === 'cube') {
             expect(gl.framebufferTexture2D).toHaveBeenLastCalledWith(
               gl.FRAMEBUFFER,
@@ -191,6 +193,9 @@ describe('GPUDepthConverter with real renderer binding state', () => {
               gl.TEXTURE_CUBE_MAP_POSITIVE_X + face,
               nativeTexture,
               mip
+            );
+            expect(vi.mocked(gl.framebufferTexture2D).mock.lastCall?.[3]).toBe(
+              nativeTexture
             );
           } else {
             expect(gl.framebufferTextureLayer).toHaveBeenLastCalledWith(
@@ -200,6 +205,9 @@ describe('GPUDepthConverter with real renderer binding state', () => {
               mip,
               face
             );
+            expect(
+              vi.mocked(gl.framebufferTextureLayer).mock.lastCall?.[2]
+            ).toBe(nativeTexture);
           }
         }
       }
