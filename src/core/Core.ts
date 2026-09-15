@@ -856,8 +856,6 @@ export class Core {
     if (this.startingSimulator) return this.startingSimulator;
 
     this.startingSimulator = (async () => {
-      this.xrButton?.dispose();
-      this.xrButton = undefined;
       const {Simulator} = await this.simulatorLoader();
       this.assertLifecycleActive('load the simulator runtime');
       const simulator = new Simulator(this.renderSceneCallback);
@@ -872,6 +870,8 @@ export class Core {
         this.simulator = simulator;
         this.registry.register(simulator);
         this.onSimulatorStarted();
+        this.xrButton?.dispose();
+        this.xrButton = undefined;
         return simulator;
       } catch (error) {
         simulator.removeFromParent();
