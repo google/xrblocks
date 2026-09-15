@@ -161,19 +161,33 @@ export class GPUDepthConverter {
 
   /**
    * Releases conversion resources without deleting the UA-owned depth texture.
+   * The first cleanup error is rethrown after all releases are attempted.
    * A later conversion lazily recreates the resources.
    */
   dispose(): void {
-    if (!this.depthTarget) return;
+    const {depthTarget, depthMesh, depthTexture, depthScene} = this;
+    if (!depthTarget) return;
 
-    this.depthTarget.dispose();
     this.depthTarget = undefined;
-    this.depthMesh.geometry.dispose();
-    this.depthMesh.material.dispose();
-    this.depthTexture.sourceTexture = null;
-    this.renderer.properties.remove(this.depthTexture);
-    this.depthTexture.dispose();
-    this.depthScene.clear();
     this.gpuPixels = new Float32Array(0);
+    depthTexture.sourceTexture = null;
+
+    let firstError: unknown;
+    const cleanups = [
+      () => depthTarget.dispose(),
+      () => depthMesh.geometry.dispose(),
+      () => depthMesh.material.dispose(),
+      () => this.renderer.properties.remove(depthTexture),
+      () => depthTexture.dispose(),
+      () => depthScene.clear(),
+    ];
+    for (const cleanup of cleanups) {
+      try {
+        cleanup();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+    if (firstError !== undefined) throw firstError;
   }
 }

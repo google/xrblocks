@@ -227,4 +227,58 @@ describe('GPUDepthConverter', () => {
       getDepthMesh(secondScene).material.uniforms.uTexture.value.sourceTexture
     ).toBe(next.texture);
   });
+
+  it.each(['target', 'geometry', 'material', 'texture', 'scene'] as const)(
+    'finishes all cleanup and reports the first error when %s disposal throws',
+    (operation) => {
+      const {converter, renderer} = createConverter();
+      const first = converter.convertGPUToCPU(createDepthData());
+      const target = renderer.setRenderTarget.mock.calls[0][0]!;
+      const scene = renderer.render.mock.calls[0][0];
+      const mesh = getDepthMesh(scene);
+      const texture = mesh.material.uniforms.uTexture
+        .value as THREE.ExternalTexture;
+      renderer.properties.get(texture).__webglTexture = texture.sourceTexture;
+      const resources = {
+        target,
+        geometry: mesh.geometry,
+        material: mesh.material,
+        texture,
+      };
+      const disposals = Object.values(resources).map((resource) =>
+        vi.spyOn(resource, 'dispose')
+      );
+      const removeProperties = vi.spyOn(renderer.properties, 'remove');
+      const clearScene = vi.spyOn(scene, 'clear');
+      const error = new Error(`${operation} disposal failed`);
+      if (operation !== 'scene') {
+        resources[operation].addEventListener('dispose', () => {
+          throw error;
+        });
+      }
+      const sceneError =
+        operation === 'scene' ? error : new Error('scene cleanup failed');
+      mesh.addEventListener('removed', () => {
+        throw sceneError;
+      });
+
+      expect(() => converter.dispose()).toThrow(error);
+      expect.soft(() => converter.dispose()).not.toThrow();
+
+      for (const dispose of disposals) {
+        expect.soft(dispose).toHaveBeenCalledOnce();
+      }
+      expect.soft(removeProperties).toHaveBeenCalledExactlyOnceWith(texture);
+      expect.soft(clearScene).toHaveBeenCalledOnce();
+      expect.soft(texture.sourceTexture).toBeNull();
+      expect.soft(renderer.properties.has(texture)).toBe(false);
+      expect.soft(scene.children).toHaveLength(0);
+      expect.soft(converter['gpuPixels']).toHaveLength(0);
+
+      const second = converter.convertGPUToCPU(createDepthData());
+      expect(second.data).not.toBe(first.data);
+      expect(renderer.setRenderTarget.mock.calls[2][0]).not.toBe(target);
+      expect(renderer.render.mock.calls[1][0]).not.toBe(scene);
+    }
+  );
 });
