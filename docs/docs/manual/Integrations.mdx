@@ -28,6 +28,8 @@ verified mappings from `rollup.config.js` or the closest current template.
 
 ## Built-in UI and renderer extensions
 
+The editable-text presentation uses Canvas 2D and system fonts in a private SDK chunk. `UITextInput` adds no renderer dependency, font download, worker, or import-map entry. Keep the complete `build/` directory when deploying.
+
 `@pmndrs/uikit` and `@preact/signals-core` are peer dependencies of the built-in
 UI renderer. They are not the application UI API. Ordinary applications import
 `UICard`, `UIOverlay`, `UIPanel`, `UIText`, `UIButton`, and other semantic

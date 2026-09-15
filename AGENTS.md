@@ -16,7 +16,7 @@ code runs in an ordinary browser. The published npm package exposes one ESM bund
 > copy a working pattern from `samples/`, `demos/`, or `templates/`.
 
 > [!NOTE]
-> **three.js is a peer dependency** (`^0.184.0`). Apps load it via an importmap; never bundle
+> **three.js is a peer dependency** (`^0.185.0`). Apps load it via an importmap; never bundle
 > a second copy, and keep the version aligned with `package.json`.
 
 ## Build & Test

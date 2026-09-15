@@ -14,7 +14,7 @@ import {DetectedObject} from './DetectedObject';
 import {CameraSnapshot, NormalizedDetectedObject} from './ObjectDetector';
 
 const DEBUG_FONT_URL =
-  'https://cdn.jsdelivr.net/npm/three@0.184.0/examples/fonts/helvetiker_regular.typeface.json';
+  'https://cdn.jsdelivr.net/npm/three@0.185.0/examples/fonts/helvetiker_regular.typeface.json';
 
 let cachedFontPromise: Promise<Font> | null = null;
 

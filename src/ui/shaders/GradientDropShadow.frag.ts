@@ -33,6 +33,7 @@ uniform float u_drop_spread;
 uniform float u_drop_falloff;
 
 void main() {
+    float clippingAlpha = panelClipAlpha();
     // 1. Setup Coordinates.
     vec2 pos = vUv * u_resolution;
     vec2 size = u_resolution;
@@ -119,6 +120,7 @@ void main() {
 
     gl_FragColor = vec4(finalColor.rgb, finalAlpha);
 
+    gl_FragColor.a *= clippingAlpha;
     #include <dithering_fragment>
 }
 `;
