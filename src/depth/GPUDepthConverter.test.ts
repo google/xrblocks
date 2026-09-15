@@ -166,4 +166,54 @@ describe('GPUDepthConverter', () => {
     expect(renderer.setRenderTarget.mock.calls[2][0]).toBe(target);
     expect(dispose).not.toHaveBeenCalled();
   });
+
+  it('can be disposed before its first conversion', () => {
+    const {converter, renderer} = createConverter();
+
+    expect(() => converter.dispose()).not.toThrow();
+    expect(renderer.render).not.toHaveBeenCalled();
+  });
+
+  it('releases owned resources once and drops the borrowed native texture', () => {
+    const {converter, renderer} = createConverter();
+    converter.convertGPUToCPU(createDepthData());
+    const target = renderer.setRenderTarget.mock.calls[0][0]!;
+    const scene = renderer.render.mock.calls[0][0];
+    const mesh = getDepthMesh(scene);
+    const texture = mesh.material.uniforms.uTexture
+      .value as THREE.ExternalTexture;
+    renderer.properties.get(texture).__webglTexture = texture.sourceTexture;
+    const disposals = [target, mesh.geometry, mesh.material, texture].map(
+      (resource) => vi.spyOn(resource, 'dispose')
+    );
+
+    converter.dispose();
+    converter.dispose();
+
+    for (const dispose of disposals) {
+      expect(dispose).toHaveBeenCalledOnce();
+    }
+    expect(texture.sourceTexture).toBeNull();
+    expect(renderer.properties.has(texture)).toBe(false);
+    expect(scene.children).toHaveLength(0);
+  });
+
+  it('allocates fresh resources when converting after disposal', () => {
+    const {converter, renderer} = createConverter();
+    const first = converter.convertGPUToCPU(createDepthData());
+    const firstTarget = renderer.setRenderTarget.mock.calls[0][0];
+    const firstScene = renderer.render.mock.calls[0][0];
+
+    converter.dispose();
+    const next = createDepthData();
+    const second = converter.convertGPUToCPU(next);
+    const secondScene = renderer.render.mock.calls[1][0];
+
+    expect(second.data).not.toBe(first.data);
+    expect(renderer.setRenderTarget.mock.calls[2][0]).not.toBe(firstTarget);
+    expect(secondScene).not.toBe(firstScene);
+    expect(
+      getDepthMesh(secondScene).material.uniforms.uTexture.value.sourceTexture
+    ).toBe(next.texture);
+  });
 });

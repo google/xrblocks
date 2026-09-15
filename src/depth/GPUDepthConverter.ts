@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 
 export class GPUDepthConverter {
-  private depthTarget!: THREE.WebGLRenderTarget;
+  private depthTarget?: THREE.WebGLRenderTarget;
   private depthTexture!: THREE.ExternalTexture;
   private depthScene!: THREE.Scene;
+  private depthMesh!: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private depthCamera!: THREE.OrthographicCamera;
   private gpuPixels!: Float32Array;
 
@@ -66,12 +67,12 @@ export class GPUDepthConverter {
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      const depthMesh = new THREE.Mesh(
+      this.depthMesh = new THREE.Mesh(
         new THREE.PlaneGeometry(2, 2),
         depthShader
       );
       this.depthScene = new THREE.Scene();
-      this.depthScene.add(depthMesh);
+      this.depthScene.add(this.depthMesh);
       this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     } else if (
       this.depthTarget.width !== depthData.width ||
@@ -109,5 +110,23 @@ export class GPUDepthConverter {
       data: this.gpuPixels.buffer,
       rawValueToMeters: depthData.rawValueToMeters,
     } as XRCPUDepthInformation;
+  }
+
+  /**
+   * Releases conversion resources without deleting the UA-owned depth texture.
+   * A later conversion lazily recreates the resources.
+   */
+  dispose(): void {
+    if (!this.depthTarget) return;
+
+    this.depthTarget.dispose();
+    this.depthTarget = undefined;
+    this.depthMesh.geometry.dispose();
+    this.depthMesh.material.dispose();
+    this.depthTexture.sourceTexture = null;
+    this.renderer.properties.remove(this.depthTexture);
+    this.depthTexture.dispose();
+    this.depthScene.clear();
+    this.gpuPixels = new Float32Array(0);
   }
 }
