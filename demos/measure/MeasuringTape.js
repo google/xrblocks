@@ -8,7 +8,7 @@ const upVector = new THREE.Vector3(0.0, 1.0, 0.0);
 const backwardsVector = new THREE.Vector3(0.0, 0.0, 1.0);
 
 export class MeasuringTape extends THREE.Object3D {
-  ignoreReticleRaycast = true;
+  xb = {pointerEvents: 'none'};
 
   constructor(
     firstPoint,
