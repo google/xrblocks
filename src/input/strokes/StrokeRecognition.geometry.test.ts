@@ -138,6 +138,26 @@ describe('StrokeRecognizer', () => {
     );
   });
 
+  it('does not count discarded release jitter toward the minimum stroke size', () => {
+    const backend = vi.spyOn(
+      OneDollarUnistrokeRecognizer.prototype,
+      'recognize'
+    );
+    const {recognition, frame} = createRecording();
+    const onEnd = vi.fn();
+    recognition.addEventListener('unistrokeend', onEnd);
+    frame(0, Handedness.LEFT);
+    for (let i = 0; i < 10; i++) {
+      recognition.addPoint(new THREE.Vector3(i, 0, 0), 0.5);
+    }
+    recognition.addPoint(new THREE.Vector3(1000, 1000, 0), 0.801);
+    frame(1000, null);
+
+    expect(backend).not.toHaveBeenCalled();
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(onEnd.mock.calls[0][0].detail.result).toBeUndefined();
+  });
+
   it('caps captured points and snapshots reused position objects', () => {
     const backend = vi.spyOn(
       OneDollarUnistrokeRecognizer.prototype,
