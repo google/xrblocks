@@ -10,9 +10,11 @@ export interface RegisteredHitSurface extends HitSurfaceOptions {
   readonly logical: THREE.Object3D;
 }
 
+const POINT_AND_LINE_THRESHOLD_METERS = 0.01;
+
 /** Owns physical hit registration, collection, and logical mapping. */
 export class HitRegistry {
-  private readonly raycaster = new THREE.Raycaster();
+  readonly raycaster = new THREE.Raycaster();
   private readonly mappings = new WeakMap<
     THREE.Object3D,
     RegisteredHitSurface
@@ -25,6 +27,8 @@ export class HitRegistry {
 
   constructor(camera?: THREE.Camera) {
     if (camera) this.raycaster.camera = camera;
+    this.raycaster.params.Line = {threshold: POINT_AND_LINE_THRESHOLD_METERS};
+    this.raycaster.params.Points = {threshold: POINT_AND_LINE_THRESHOLD_METERS};
   }
 
   register(
