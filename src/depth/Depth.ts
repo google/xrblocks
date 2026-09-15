@@ -509,30 +509,29 @@ export class Depth {
     this.disposed = true;
     this.enabled = false;
 
+    const mesh = this.depthMesh;
+    const textures = this.depthTextures;
+    const pass = this.occlusionPass;
+    this.depthMesh = undefined;
+    this.depthTextures = undefined;
+    this.occlusionPass = undefined;
+
     let firstError: unknown;
     const cleanups = [
       () => {
-        const mesh = this.depthMesh;
-        this.depthMesh = undefined;
         if (mesh && this.registry?.get(DepthMesh) === mesh) {
           this.registry.unregister(DepthMesh);
         }
-        mesh?.removeFromParent();
-        mesh?.disposeResources();
       },
+      () => mesh?.removeFromParent(),
+      () => mesh?.disposeResources(),
       () => {
-        const textures = this.depthTextures;
-        this.depthTextures = undefined;
         if (textures && this.registry?.get(DepthTextures) === textures) {
           this.registry.unregister(DepthTextures);
         }
-        textures?.dispose();
       },
-      () => {
-        const pass = this.occlusionPass;
-        this.occlusionPass = undefined;
-        pass?.dispose();
-      },
+      () => textures?.dispose(),
+      () => pass?.dispose(),
     ];
     for (const cleanup of cleanups) {
       try {

@@ -1,4 +1,4 @@
-import {afterEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
 
 import {Registry} from '../core/components/Registry';
@@ -6,6 +6,15 @@ import {Depth} from './Depth';
 import {DepthMesh} from './DepthMesh';
 import {DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
+
+// This package's main entry is CommonJS despite declaring type: module.
+const {default: RAPIER} = await vi.importActual<
+  typeof import('@dimforge/rapier3d-simd-compat')
+>('@dimforge/rapier3d-simd-compat/rapier.es.js');
+
+beforeAll(async () => {
+  await RAPIER.init();
+});
 
 afterEach(() => {
   Depth.instance = undefined;
@@ -151,6 +160,78 @@ describe('Depth disposal', () => {
     expect(depth.depthMesh).toBeUndefined();
     expect(() => depth.dispose()).not.toThrow();
   });
+
+  it.each(['removed', 'childremoved'] as const)(
+    'releases GPU resources and physics when a %s listener throws',
+    (eventType) => {
+      const {depth, registry, scene} = createDepth();
+      const mesh = depth.depthMesh!;
+      const world = new RAPIER.World({x: 0, y: -9.81, z: 0});
+      const error = new Error(`${eventType} listener failed`);
+      const onRemove = () => {
+        throw error;
+      };
+      if (eventType === 'removed') mesh.addEventListener('removed', onRemove);
+      else scene.addEventListener('childremoved', onRemove);
+      const geometryDispose = vi.spyOn(mesh.geometry, 'dispose');
+      const downsampledDispose = vi.spyOn(mesh.downsampledGeometry!, 'dispose');
+      const materialDispose = vi.spyOn(
+        mesh.material as THREE.Material,
+        'dispose'
+      );
+      const textureDispose = vi.spyOn(registry.get(DepthTextures)!, 'dispose');
+      const passDispose = vi.spyOn(depth['occlusionPass']!, 'dispose');
+      try {
+        mesh.initRapierPhysics(RAPIER, world);
+        expect(world.bodies.len()).toBe(1);
+        expect(world.colliders.len()).toBe(1);
+
+        expect(() => depth.dispose()).toThrow(error);
+        expect(() => depth.dispose()).not.toThrow();
+
+        expect.soft(geometryDispose).toHaveBeenCalledOnce();
+        expect.soft(downsampledDispose).toHaveBeenCalledOnce();
+        expect.soft(materialDispose).toHaveBeenCalledOnce();
+        expect.soft(world.bodies.len()).toBe(0);
+        expect.soft(world.colliders.len()).toBe(0);
+        expect(textureDispose).toHaveBeenCalledOnce();
+        expect(passDispose).toHaveBeenCalledOnce();
+        expect(mesh.parent).toBeNull();
+        expect(registry.get(DepthMesh)).toBeUndefined();
+        expect(depth.depthMesh).toBeUndefined();
+      } finally {
+        mesh.disposeResources();
+        world.free();
+      }
+    }
+  );
+
+  it.each(['mesh', 'textures'] as const)(
+    'still releases resources if unregistering %s throws',
+    (resource) => {
+      const {depth, registry} = createDepth();
+      const resourceType = resource === 'mesh' ? DepthMesh : DepthTextures;
+      const mesh = depth.depthMesh!;
+      const error = new Error('unregistration failed');
+      const unregister = registry.unregister.bind(registry);
+      vi.spyOn(registry, 'unregister').mockImplementation((type) => {
+        if (type === resourceType) throw error;
+        unregister(type);
+      });
+      const meshDispose = vi.spyOn(mesh, 'disposeResources');
+      const textureDispose = vi.spyOn(registry.get(DepthTextures)!, 'dispose');
+      const passDispose = vi.spyOn(depth['occlusionPass']!, 'dispose');
+
+      expect(() => depth.dispose()).toThrow(error);
+      expect(meshDispose).toHaveBeenCalledOnce();
+      expect(textureDispose).toHaveBeenCalledOnce();
+      expect(passDispose).toHaveBeenCalledOnce();
+      expect(mesh.parent).toBeNull();
+      expect(depth.depthMesh).toBeUndefined();
+      expect(depth.getTexture(0)).toBeUndefined();
+      expect(() => depth.dispose()).not.toThrow();
+    }
+  );
 
   it('does not unregister replacement resources owned by another caller', () => {
     const {depth, registry} = createDepth();
