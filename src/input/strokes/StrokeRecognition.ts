@@ -208,6 +208,7 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
           this.activeHand = Handedness.RIGHT;
 
         this.dispatchEvent({type: 'unistrokestart', target: this, detail: {}});
+        if (!this.isActive || !this.isRecording) return;
       }
 
       const elapsedSincePinch = currentTime - this.gestureStartTime;

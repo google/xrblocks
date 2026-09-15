@@ -54,6 +54,47 @@ function createRecorder() {
 }
 
 describe('StrokeRecognizer recording lifecycle', () => {
+  it.each([false, true])(
+    'stops capture when a start listener cancels (reactivate: %s)',
+    (reactivate) => {
+      const {recorder, getJoint, start, update, end, now} = createRecorder();
+      recorder.deactivate();
+      getJoint.mockClear();
+      update.mockClear();
+      const cancel = () => {
+        recorder.deactivate();
+        if (reactivate) recorder.activate();
+      };
+      recorder.addEventListener('unistrokestart', cancel);
+      now.mockReturnValue(2000);
+      recorder.activate();
+      recorder.update();
+
+      expect(start).toHaveBeenCalledTimes(2);
+      expect.soft(getJoint).not.toHaveBeenCalled();
+      expect.soft(update).not.toHaveBeenCalled();
+      expect.soft(recorder['capturedPoints']).toEqual([]);
+      expect(end).not.toHaveBeenCalled();
+
+      recorder.removeEventListener('unistrokestart', cancel);
+      recorder.activate();
+      now.mockReturnValue(3000);
+      recorder.update();
+      expect(start).toHaveBeenCalledTimes(3);
+      expect.soft(getJoint).not.toHaveBeenCalled();
+      now.mockReturnValue(3199);
+      recorder.update();
+      expect.soft(update).not.toHaveBeenCalled();
+      now.mockReturnValue(3300);
+      recorder.update();
+      expect.soft(update).toHaveBeenCalledTimes(1);
+      expect(getJoint).toHaveBeenLastCalledWith(
+        'index-finger-tip',
+        Handedness.LEFT
+      );
+    }
+  );
+
   it.each([
     ['the other hand', Handedness.RIGHT],
     ['the same hand', Handedness.LEFT],
