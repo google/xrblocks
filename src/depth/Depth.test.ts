@@ -256,4 +256,98 @@ describe('Depth', () => {
       expect(depth.gpuDepthData[1]).toBe(fakeDepthData);
     });
   });
+
+  describe('Depth vs WebXR spec oracle', () => {
+    const W = 37;
+    const H = 23;
+    const clamp = (x: number, a: number, b: number) =>
+      Math.min(Math.max(x, a), b);
+
+    const buffer = new Float32Array(W * H);
+    for (let i = 0; i < buffer.length; i++) buffer[i] = (i * 7919) % 1000;
+
+    /**
+     * The spec algorithm. Takes TOP-origin normalized view coords, applies the
+     * transform, scales straight into the buffer with no further flip.
+     * Uses Math.round (not the spec's truncate) so this isolates the flip
+     * ORDER, holding the separately-tracked rounding policy constant.
+     */
+    function specOracle(uTop: number, vTop: number, M: THREE.Matrix4) {
+      const p = new THREE.Vector3(uTop, vTop, 0).applyMatrix4(M);
+      const col = Math.round(clamp(p.x * W, 0, W - 1));
+      const row = Math.round(clamp(p.y * H, 0, H - 1));
+      return buffer[row * W + col];
+    }
+
+    /** The implementation as it was BEFORE the fix: transform, then flip V. */
+    function oldImpl(u: number, v: number, M: THREE.Matrix4) {
+      const p = new THREE.Vector3(u, v, 0).applyMatrix4(M);
+      const col = Math.round(clamp(p.x * W, 0, W - 1));
+      const row = Math.round(clamp((1 - p.y) * H, 0, H - 1));
+      return buffer[row * W + col];
+    }
+
+    function makeDepth(M: THREE.Matrix4) {
+      Depth.instance = undefined;
+      const depth = new Depth();
+      depth.width = W;
+      depth.height = H;
+      depth.depthArray[0] = buffer;
+      depth.cpuDepthData[0] = {
+        rawValueToMeters: 1,
+      } as XRCPUDepthInformation;
+      depth.normDepthBufferFromNormViewMatrices[0] = M;
+      return depth;
+    }
+
+    // prettier-ignore
+    const transforms: Array<[string, THREE.Matrix4, boolean]> = [
+      ['identity', new THREE.Matrix4().identity(), true],
+      ['rot90', new THREE.Matrix4().set(
+        0, -1, 0, 1,
+        1, 0, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1), false],
+      ['swapUV', swapUVMatrix(), false],
+      ['mirrorX', new THREE.Matrix4().set(
+        -1, 0, 0, 1,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1), true],
+      ['scaleShift', new THREE.Matrix4().set(
+        0.8, 0, 0, 0.1,
+        0, 0.6, 0, 0.1,
+        0, 0, 1, 0,
+        0, 0, 0, 1), false],
+    ];
+
+    for (const [name, M, commutes] of transforms) {
+      it(`matches the spec for ${name}`, () => {
+        const depth = makeDepth(M);
+        let mismatches = 0;
+        let oldMismatches = 0;
+        const N = 4000;
+        for (let i = 0; i < N; i++) {
+          const u = Math.random();
+          const v = Math.random();
+          // getDepth takes BOTTOM-origin v, so the spec's top-origin input
+          // is (u, 1 - v).
+          const expected = specOracle(u, 1 - v, M);
+          if (depth.getDepth(u, v) !== expected) mismatches++;
+          if (oldImpl(u, v, M) !== expected) oldMismatches++;
+        }
+        expect(mismatches).toBe(0);
+        if (commutes) {
+          // The transform commutes with the V flip, so the old ordering
+          // agreed with the spec too. Every aligned device reports identity,
+          // which lands here: the fix is a no-op for them.
+          expect(oldMismatches).toBe(0);
+        } else {
+          // Does not commute: the old ordering must disagree with the spec on
+          // most samples, otherwise this test would prove nothing.
+          expect(oldMismatches).toBeGreaterThan(N * 0.5);
+        }
+      });
+    }
+  });
 });
