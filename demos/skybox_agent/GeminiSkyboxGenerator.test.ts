@@ -1,16 +1,220 @@
-import {afterEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {UIButton, UICard, UIText} from 'xrblocks';
 
+import {AudioListener} from '../../src/sound/AudioListener';
 import {GeminiSkyboxGenerator} from './GeminiSkyboxGenerator.js';
 import {TranscriptionManager} from './TranscriptionManager.js';
+
+const {sound} = vi.hoisted(() => ({
+  sound: {
+    enableAudio: vi.fn<() => Promise<void>>(),
+    isAudioEnabled: vi.fn<() => boolean>(),
+    disableAudio: vi.fn<() => void>(),
+    stopAIAudio: vi.fn<() => void>(),
+  },
+}));
 
 vi.mock('xrblocks', async () => {
   const {Script} = await import('../../src/core/Script');
   const ui = await import('../../src/ui/index');
-  return {Script, ...ui};
+  return {Script, ...ui, core: {sound}};
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+function microphoneStream() {
+  const tracks = [
+    {stop: vi.fn(), getSettings: () => ({sampleRate: 48000})},
+    {stop: vi.fn(), getSettings: () => ({sampleRate: 48000})},
+  ];
+  return {
+    tracks,
+    getTracks: () => tracks,
+    getAudioTracks: () => tracks,
+  };
+}
+
+describe('GeminiSkyboxGenerator startup', () => {
+  let listener: AudioListener;
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        state = 'running';
+        audioWorklet = {addModule: vi.fn().mockResolvedValue(undefined)};
+        createMediaStreamSource() {
+          return {connect: vi.fn(), disconnect: vi.fn()};
+        }
+        close = vi.fn().mockResolvedValue(undefined);
+      }
+    );
+    vi.stubGlobal(
+      'AudioWorkletNode',
+      class {
+        port = {};
+        disconnect = vi.fn();
+      }
+    );
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = vi.fn(() => 'blob:test-audio-processor');
+        static revokeObjectURL = vi.fn();
+      }
+    );
+    listener = new AudioListener();
+    sound.enableAudio
+      .mockReset()
+      .mockImplementation(() => listener.startCapture());
+    sound.disableAudio
+      .mockReset()
+      .mockImplementation(() => listener.stopCapture());
+    sound.isAudioEnabled
+      .mockReset()
+      .mockImplementation(() => listener.getIsCapturing());
+    sound.stopAIAudio.mockReset();
+  });
+
+  afterEach(() => listener.stopCapture());
+
+  function scene() {
+    const generator = new GeminiSkyboxGenerator();
+    generator.createTextDisplay();
+    const state = {isActive: false};
+    const agent = {
+      getSessionState: () => state,
+      startLiveSession: vi.fn(async () => {
+        state.isActive = true;
+      }),
+      stopLiveSession: vi.fn(async () => {
+        state.isActive = false;
+      }),
+    };
+    generator.liveAgent = agent;
+    return {generator, agent};
+  }
+
+  it('serializes two Start clicks and stops every acquired microphone track', async () => {
+    const requests: Array<{
+      stream: ReturnType<typeof microphoneStream>;
+      resolve: (stream: ReturnType<typeof microphoneStream>) => void;
+    }> = [];
+    const getUserMedia = vi.fn(() => {
+      const pending =
+        Promise.withResolvers<ReturnType<typeof microphoneStream>>();
+      requests.push({stream: microphoneStream(), resolve: pending.resolve});
+      return pending.promise;
+    });
+    vi.stubGlobal('navigator', {mediaDevices: {getUserMedia}});
+    const {generator, agent} = scene();
+    const connection = Promise.withResolvers<void>();
+    agent.startLiveSession.mockImplementation(async () => {
+      await connection.promise;
+      agent.getSessionState().isActive = true;
+    });
+    const starts = vi.spyOn(generator, 'startGeminiLive');
+
+    generator.toggleButton.onClick();
+    generator.toggleButton.onClick();
+    expect.soft(getUserMedia).toHaveBeenCalledTimes(1);
+    expect.soft(generator.toggleButton.disabled).toBe(true);
+
+    for (const request of requests) request.resolve(request.stream);
+    await vi.waitFor(() => expect(agent.startLiveSession).toHaveBeenCalled());
+    expect.soft(agent.startLiveSession).toHaveBeenCalledTimes(1);
+    expect.soft(generator.toggleButton.disabled).toBe(true);
+    generator.toggleButton.onClick();
+
+    connection.resolve();
+    await Promise.all(starts.mock.results.map(({value}) => value));
+    expect.soft(sound.enableAudio).toHaveBeenCalledTimes(1);
+    expect.soft(agent.startLiveSession).toHaveBeenCalledTimes(1);
+    expect(generator.toggleButton.disabled).toBe(false);
+    await generator.cleanup();
+    expect(agent.stopLiveSession).toHaveBeenCalledOnce();
+    for (const {stream} of requests) {
+      for (const track of stream.tracks) {
+        expect.soft(track.stop).toHaveBeenCalledOnce();
+      }
+    }
+  });
+
+  it('restores Start after permission denial without opening a session', async () => {
+    const permission =
+      Promise.withResolvers<ReturnType<typeof microphoneStream>>();
+    const stream = microphoneStream();
+    const getUserMedia = vi
+      .fn()
+      .mockReturnValueOnce(permission.promise)
+      .mockResolvedValueOnce(stream);
+    vi.stubGlobal('navigator', {mediaDevices: {getUserMedia}});
+    const error = new DOMException('Permission denied', 'NotAllowedError');
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const {generator, agent} = scene();
+
+    const start = generator.startGeminiLive();
+    expect.soft(generator.toggleButton.disabled).toBe(true);
+    permission.reject(error);
+    await start;
+    expect(logError).toHaveBeenCalledWith(
+      'Failed to start audio capture:',
+      error
+    );
+    expect.soft(agent.startLiveSession).not.toHaveBeenCalled();
+    expect
+      .soft(generator.statusText.text)
+      .toBe('Failed to start: Microphone capture did not start.');
+    expect(generator.toggleButton.disabled).toBe(false);
+
+    await generator.startGeminiLive();
+    expect.soft(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(agent.startLiveSession).toHaveBeenCalledOnce();
+    await generator.cleanup();
+    for (const track of stream.tracks) {
+      expect.soft(track.stop).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('stops capture and allows retry after a connection failure', async () => {
+    const first = microphoneStream();
+    const second = microphoneStream();
+    const getUserMedia = vi
+      .fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second);
+    vi.stubGlobal('navigator', {mediaDevices: {getUserMedia}});
+    const {generator, agent} = scene();
+    const connection = Promise.withResolvers<void>();
+    agent.startLiveSession.mockReturnValueOnce(connection.promise);
+
+    const start = generator.startGeminiLive();
+    await vi.waitFor(() =>
+      expect(agent.startLiveSession).toHaveBeenCalledOnce()
+    );
+    expect.soft(generator.toggleButton.disabled).toBe(true);
+    connection.reject(new Error('Connection failed'));
+    await start;
+    expect(generator.toggleButton.disabled).toBe(false);
+    expect(generator.statusText.text).toBe(
+      'Failed to start: Connection failed'
+    );
+    for (const track of first.tracks) {
+      expect(track.stop).toHaveBeenCalledOnce();
+    }
+
+    await generator.startGeminiLive();
+    expect(agent.startLiveSession).toHaveBeenCalledTimes(2);
+    expect(generator.toggleButton.disabled).toBe(false);
+    await generator.cleanup();
+    for (const track of second.tracks) {
+      expect(track.stop).toHaveBeenCalledOnce();
+    }
+  });
+});
 
 describe('GeminiSkyboxGenerator UI', () => {
   it('builds public UI components and wires the session button', () => {

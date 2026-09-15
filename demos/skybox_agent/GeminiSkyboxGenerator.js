@@ -10,6 +10,7 @@ export class GeminiSkyboxGenerator extends xb.Script {
     super();
     this.transcription = null;
     this.liveAgent = null;
+    this.startPending = false;
     this.statusText = null;
     this.defaultText =
       "I am a skybox designer agent. Describe the background you want, and I'll render it for you!";
@@ -55,13 +56,18 @@ export class GeminiSkyboxGenerator extends xb.Script {
   }
 
   async startGeminiLive() {
-    if (this.liveAgent?.getSessionState().isActive) return;
+    if (this.startPending || this.liveAgent?.getSessionState().isActive) return;
+    this.startPending = true;
+    this.toggleButton.disabled = true;
 
     try {
       this.updateStatus('Starting session...');
 
       // Enable audio BEFORE starting the session
       await xb.core.sound.enableAudio();
+      if (!xb.core.sound.isAudioEnabled()) {
+        throw new Error('Microphone capture did not start.');
+      }
 
       // Start live session with callbacks
       await this.liveAgent.startLiveSession({
@@ -79,6 +85,9 @@ export class GeminiSkyboxGenerator extends xb.Script {
         `Error: Failed to start AI session - ${error.message}`
       );
       await this.cleanup();
+    } finally {
+      this.startPending = false;
+      this.toggleButton.disabled = false;
     }
   }
 
