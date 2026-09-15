@@ -391,6 +391,7 @@ function syncRootTransform(
   root.updateWorldMatrix(true, false);
   renderRoot.matrix.copy(root.matrixWorld);
   renderRoot.matrixAutoUpdate = false;
+  renderRoot.matrixWorldNeedsUpdate = true;
 }
 
 async function defaultLoader(): Promise<UIBackendModule> {
