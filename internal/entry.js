@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 64f4194
- * @builddate 2026-09-15T20:21:08.958Z
+ * @commitid b7cee84
+ * @builddate 2026-09-15T21:02:53.828Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6616,6 +6616,7 @@ class GazeDwell {
     }
 }
 
+const POINT_AND_LINE_THRESHOLD_METERS = 0.01;
 /** Owns physical hit registration, collection, and logical mapping. */
 class HitRegistry {
     constructor(camera) {
@@ -6625,6 +6626,8 @@ class HitRegistry {
         this.touchCandidates = new Map();
         if (camera)
             this.raycaster.camera = camera;
+        this.raycaster.params.Line = { threshold: POINT_AND_LINE_THRESHOLD_METERS };
+        this.raycaster.params.Points = { threshold: POINT_AND_LINE_THRESHOLD_METERS };
     }
     register(physical, logical, options = {}) {
         const entry = { physical, logical, ...options };
