@@ -7,6 +7,7 @@ export class DepthTextures {
   private uint8Arrays: Uint8Array[] = [];
   private dataTextures: THREE.DataTexture[] = [];
   private nativeTextures: THREE.ExternalTexture[] = [];
+  private renderer?: THREE.WebGLRenderer;
   public depthData: XRCPUDepthInformation[] = [];
 
   constructor(private options: DepthOptions) {}
@@ -72,6 +73,7 @@ export class DepthTextures {
     renderer: THREE.WebGLRenderer,
     viewId: number
   ) {
+    this.renderer = renderer;
     if (this.nativeTextures.length < viewId + 1) {
       this.nativeTextures[viewId] = new THREE.ExternalTexture(
         depthData.texture
@@ -96,5 +98,26 @@ export class DepthTextures {
     }
 
     return this.nativeTextures[viewId];
+  }
+
+  dispose() {
+    let firstError: unknown;
+    for (const texture of this.dataTextures.splice(0)) {
+      try {
+        texture.dispose();
+      } catch (error: unknown) {
+        firstError ??= error;
+      }
+    }
+    for (const texture of this.nativeTextures.splice(0)) {
+      // WebXR owns the native handle; only release our wrapper and metadata.
+      texture.sourceTexture = null;
+      this.renderer?.properties.remove(texture);
+    }
+    this.renderer = undefined;
+    this.float32Arrays.length = 0;
+    this.uint8Arrays.length = 0;
+    this.depthData.length = 0;
+    if (firstError !== undefined) throw firstError;
   }
 }
