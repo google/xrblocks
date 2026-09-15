@@ -29,8 +29,15 @@ function makeXrParamsDeviceCamera(): XRDeviceCamera {
   return {
     simulatorCamera: undefined,
     hasXRCameraParams: true,
-    xrCameraClipFromView: new THREE.Matrix4().makeScale(2, 3, 4),
-    xrCameraWorldFromView: new THREE.Matrix4().makeTranslation(1, 2, 3),
+    xrCameraClipFromView: new THREE.Matrix4().makePerspective(
+      -0.05,
+      0.075,
+      0.05,
+      -0.03888888888888889,
+      0.1,
+      100
+    ),
+    xrCameraReferenceFromView: new THREE.Matrix4().makeTranslation(1, 2, 3),
   } as unknown as XRDeviceCamera;
 }
 
@@ -72,6 +79,23 @@ describe('getDeviceCameraClipFromView', () => {
       getDeviceCameraClipFromView(renderCamera, deviceCamera, 'galaxyxr')
     ).toBe(DEVICE_CAMERA_PARAMETERS['galaxyxr'].projectionMatrix);
   });
+
+  it.each([0.5, 2])(
+    'preserves the simulator square crop for aspect %s',
+    (aspect) => {
+      const camera = new THREE.PerspectiveCamera(90, aspect, 0.1, 100);
+      const deviceCamera = makeDeviceCamera(true);
+      const projection = getDeviceCameraClipFromView(
+        camera,
+        deviceCamera,
+        'galaxyxr'
+      );
+      expect(projection.elements[0]).toBeCloseTo(1 / Math.min(aspect, 1));
+      expect(projection.elements[5]).toBeCloseTo(1 / Math.min(aspect, 1));
+      expect(projection.elements[8]).toBe(0);
+      expect(projection.elements[9]).toBe(0);
+    }
+  );
 });
 
 describe('getDeviceCameraWorldFromView', () => {
@@ -85,9 +109,53 @@ describe('getDeviceCameraWorldFromView', () => {
       deviceCamera,
       'galaxyxr'
     );
-    expect(result.equals(deviceCamera.xrCameraWorldFromView!)).toBe(true);
+    expect(result.equals(deviceCamera.xrCameraReferenceFromView!)).toBe(true);
     // A clone, so callers can't mutate the live matrix.
-    expect(result).not.toBe(deviceCamera.xrCameraWorldFromView);
+    expect(result).not.toBe(deviceCamera.xrCameraReferenceFromView);
+  });
+
+  it('converts the reference-space pose through a translated render rig', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const rig = new THREE.Group();
+    rig.add(camera);
+    rig.position.set(10, 0, 0);
+    const result = getDeviceCameraWorldFromView(
+      camera,
+      null,
+      makeXrParamsDeviceCamera(),
+      'galaxyxr'
+    );
+    expect(new THREE.Vector3().setFromMatrixPosition(result).toArray()).toEqual(
+      [11, 2, 3]
+    );
+  });
+
+  it('updates ancestor transforms and rotates both the pose and off-axis ray', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const rig = new THREE.Group();
+    const parent = new THREE.Group();
+    parent.add(rig);
+    rig.add(camera);
+    parent.position.set(10, 0, 0);
+    rig.rotation.y = Math.PI / 2;
+    const snapshot = getCameraParametersSnapshot(
+      camera,
+      null,
+      makeXrParamsDeviceCamera(),
+      'galaxyxr'
+    )!;
+    const origin = new THREE.Vector3().setFromMatrixPosition(
+      snapshot.worldFromView
+    );
+    expect(origin.x).toBeCloseTo(13);
+    expect(origin.y).toBeCloseTo(2);
+    expect(origin.z).toBeCloseTo(-1);
+    const direction = new THREE.Vector3(0, 0, -1)
+      .applyMatrix4(snapshot.worldFromClip)
+      .sub(origin)
+      .normalize();
+    const expected = new THREE.Vector3(-1, 1 / 18, -0.125).normalize();
+    expect(direction.distanceTo(expected)).toBeLessThan(1e-10);
   });
 });
 
