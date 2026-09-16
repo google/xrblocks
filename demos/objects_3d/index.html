@@ -737,14 +737,16 @@
             col.add(this.rotationRow(axis));
           }
 
-          // Everything below needs a reload to take effect.
+          // Everything below needs a reload to take effect. (No flexWrap: the
+          // core UI style validator rejects unknown properties, and a throw
+          // here silently drops the whole card -- the script is marked failed
+          // without a console message.)
           const toggles = new xb.UIPanel({
             style: {
               width: '100%',
               flexDirection: 'row',
               gap: 6,
               justifyContent: 'center',
-              flexWrap: 'wrap',
             },
           });
           toggles.add(
