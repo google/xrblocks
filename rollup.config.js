@@ -71,6 +71,8 @@ ${apache2License}
 
 const externalPackages = [
   'three',
+  'three/webgpu',
+  'three/tsl',
   /three\/addons\//,
   '@google/genai',
   '@mediapipe/tasks-audio',
