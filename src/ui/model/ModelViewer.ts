@@ -93,6 +93,7 @@ class RotationHitSurface extends THREE.Mesh<
     this.removeFromParent();
     this.geometry.dispose();
     this.material.dispose();
+    super.dispose();
   }
 }
 
@@ -283,6 +284,7 @@ export class ModelViewer extends Script {
     this.renderer = undefined;
     this.registry = undefined;
     this.timer = undefined;
+    super.dispose();
   }
 
   private async loadGLTF(

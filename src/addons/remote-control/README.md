@@ -61,9 +61,10 @@ Scene tools registered with the same name override built-in tools.
 
 ## Relay
 
-Run the local relay next to the XR Blocks dev server:
+The relay requires the optional `ws` peer dependency; browser clients do not. Install it in the project where `xrblocks` is installed, then run the local relay next to the XR Blocks dev server:
 
 ```bash
+npm install ws
 npx xrblocks-remote-control
 ```
 

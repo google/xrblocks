@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type {GLTF} from 'three/addons/loaders/GLTFLoader.js';
 import type RAPIER from 'rapier3d';
 
+import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import {disposeObjectTree} from '../../utils/ThreeDisposal';
 import {ModelLoader} from '../../utils/ModelLoader';
 import {
@@ -37,7 +38,7 @@ export class SimulatorEnvironmentManager {
 
   constructor(
     private options: SimulatorOptions,
-    private renderer: THREE.WebGLRenderer,
+    private renderer: WebGLOrWebGPURenderer,
     private simulatorScene: SimulatorScene,
     private simulatorObjects: SimulatorObjectsManager,
     private navMesh: SimulatorNavMesh,

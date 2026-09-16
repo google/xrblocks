@@ -260,7 +260,9 @@ export function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(
     /**
      * Called when the script is removed from the scene. Opposite of init.
      */
-    dispose() {}
+    override dispose(): void {
+      super.dispose();
+    }
   }
 
   markDefaultScriptMethods(MixedScript.prototype);
