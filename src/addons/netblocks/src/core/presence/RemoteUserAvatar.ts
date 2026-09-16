@@ -266,5 +266,6 @@ export class RemoteUserAvatar extends THREE.Group {
       this._nameLabel = undefined;
       this._nameText = undefined;
     }
+    super.dispose();
   }
 }

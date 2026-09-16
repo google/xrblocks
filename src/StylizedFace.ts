@@ -151,6 +151,7 @@ export class StylizedFace extends Script {
     this.texture.dispose();
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();
+    super.dispose();
   }
 
   private drawIfDirty(): void {
