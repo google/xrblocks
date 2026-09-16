@@ -15,14 +15,14 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 7bd32e5
- * @builddate 2026-09-15T23:56:18.876Z
+ * @commitid 3017cb3
+ * @builddate 2026-09-16T17:02:23.288Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
  * 1. Include the following importmap for maximum compatibility:
-    "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
     "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
     "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
     "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
@@ -773,7 +773,9 @@ function ScriptMixin(base) {
         /**
          * Called when the script is removed from the scene. Opposite of init.
          */
-        dispose() { }
+        dispose() {
+            super.dispose();
+        }
     }
     markDefaultScriptMethods(MixedScript.prototype);
     return MixedScript;
@@ -14331,6 +14333,7 @@ class Reticle extends THREE.Mesh {
         this.hoverRing.material.dispose();
         this.intersection = undefined;
         this.targetObject = undefined;
+        super.dispose();
     }
     /**
      * Overrides the default raycast method to make the reticle ignored by
@@ -18172,7 +18175,7 @@ class DetectedObject extends THREE.Object3D {
     }
 }
 
-const DEBUG_FONT_URL = 'https://cdn.jsdelivr.net/npm/three@0.185.0/examples/fonts/helvetiker_regular.typeface.json';
+const DEBUG_FONT_URL = 'https://cdn.jsdelivr.net/npm/three@0.186.0/examples/fonts/helvetiker_regular.typeface.json';
 let cachedFontPromise = null;
 function loadDebugFont() {
     if (!cachedFontPromise) {
@@ -20191,6 +20194,7 @@ class DetectedMesh extends THREE.Mesh {
         }
         this.rigidBody = undefined;
         this.geometry.dispose();
+        super.dispose();
     }
 }
 
@@ -24396,6 +24400,7 @@ class StylizedFace extends Script {
         this.texture.dispose();
         this.mesh.geometry.dispose();
         this.mesh.material.dispose();
+        super.dispose();
     }
     drawIfDirty() {
         const blinkScale = this.showEyes
@@ -27287,6 +27292,7 @@ class ModelViewerPlatform extends THREE.Mesh {
         this.geometry.dispose();
         for (const material of this.material)
             material.dispose();
+        super.dispose();
     }
 }
 function createMaterial() {
@@ -27364,6 +27370,7 @@ class RotationHitSurface extends THREE.Mesh {
         this.removeFromParent();
         this.geometry.dispose();
         this.material.dispose();
+        super.dispose();
     }
 }
 /** Loads and presents one interactive glTF or Gaussian Splat model. */
@@ -27497,6 +27504,7 @@ class ModelViewer extends Script {
         this.renderer = undefined;
         this.registry = undefined;
         this.timer = undefined;
+        super.dispose();
     }
     async loadGLTF(source, generation) {
         const gltf = await this.loader.loadGLTF({
