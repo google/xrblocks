@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 3008ece
- * @builddate 2026-09-16T21:52:01.884Z
+ * @commitid 9d24ea1
+ * @builddate 2026-09-16T23:36:09.420Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2494,6 +2494,42 @@ class VideoStream extends Script {
                 reject(error);
             }
         }
+    }
+    /**
+     * Waits for the next new video frame before returning, so a subsequent
+     * {@link getSnapshot} reads fresh pixels instead of whatever (possibly
+     * stale) frame the `<video>` element currently holds. Hidden or
+     * non-composited video elements — the normal situation inside an immersive
+     * XR session — can be throttled by the browser, in which case the held
+     * frame may be arbitrarily old.
+     *
+     * Resolves with the frame's metadata (whose `captureTime`, when present,
+     * dates the pixels in the `performance.now()` timebase), or `null` when the
+     * signal is unavailable (`requestVideoFrameCallback` unsupported, no active
+     * media stream) or no frame arrived within `timeoutMs`.
+     */
+    waitForFreshFrame(timeoutMs = 400) {
+        const video = this.video_;
+        if (!this.loaded || !video.requestVideoFrameCallback || !video.srcObject) {
+            return Promise.resolve(null);
+        }
+        return new Promise((resolve) => {
+            let done = false;
+            const handle = video.requestVideoFrameCallback((_now, metadata) => {
+                if (done)
+                    return;
+                done = true;
+                clearTimeout(timer);
+                resolve(metadata);
+            });
+            const timer = setTimeout(() => {
+                if (done)
+                    return;
+                done = true;
+                video.cancelVideoFrameCallback?.(handle);
+                resolve(null);
+            }, timeoutMs);
+        });
     }
     getSnapshot({ width = this.width, height = this.height, outputFormat = 'texture', ...rest } = {}) {
         if (!this.loaded ||

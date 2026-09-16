@@ -8,6 +8,10 @@ import * as THREE from 'three';
  */
 // Module-level scratch objects reused across calls to avoid per-call GC.
 const _raycaster = new THREE.Raycaster();
+// three-mesh-bvh honours firstHitOnly and returns the nearest hit without
+// collecting and sorting every intersection along the ray; ignored by the
+// stock three.js raycaster.
+_raycaster.firstHitOnly = true;
 const _ndc = new THREE.Vector2();
 /**
  * Convert a snapshot UV coordinate (`[0, 1]` left-right, top-bottom origin)
@@ -134,11 +138,12 @@ function nextFrame() {
  * @param cameraOverride - Frozen camera, or `null` for live.
  * @param meshOverride - Frozen depth mesh, or `null` for live.
  * @param snapAspect - Snapshot aspect ratio override.
+ * @param maxDistance - Maximum ray-hit distance in metres.
  * @returns Accumulated world-space hit points and foreground pixel count.
  */
-async function sampleDepthInMaskAcrossFrames(mask, box2d, stride = 6, frames = 3, cameraOverride = null, meshOverride = null, snapAspect = null) {
+async function sampleDepthInMaskAcrossFrames(mask, box2d, stride = 6, frames = 3, cameraOverride = null, meshOverride = null, snapAspect = null, maxDistance = 12) {
     if (cameraOverride || meshOverride) {
-        return sampleDepthInMask(mask, box2d, stride, 12, cameraOverride, meshOverride, snapAspect);
+        return sampleDepthInMask(mask, box2d, stride, maxDistance, cameraOverride, meshOverride, snapAspect);
     }
     const all = [];
     let totalFg = 0;

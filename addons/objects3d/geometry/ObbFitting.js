@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { uvToNdc } from './DepthSampling.js';
+import { worldToLocalXZ, pcaYawXZ, minAreaRectXZ, ransacVerticalPlane, pcaYawConfidence, combineYawCandidates, canonicalizeYawObb, yawDelta90, wrapQuarterPi, localToWorldXZ, wrapPi } from './YawEstimation.js';
 
 /**
  * Oriented bounding-box fitters and outlier rejection helpers.
@@ -7,6 +8,123 @@ import { uvToNdc } from './DepthSampling.js';
  * All functions are pure (no `xb.core` dependencies) and are safe to
  * unit-test without a running XR session.
  */
+/** Minimum room-frame confidence before it is allowed to influence a fit. */
+const MIN_ROOM_YAW_CONFIDENCE = 0.3;
+const DEFAULT_SNAP_TOLERANCE_RAD = (12 * Math.PI) / 180;
+const DEFAULT_MIN_YAW_CONFIDENCE = 0.35;
+/**
+ * Reconcile a measured yaw with the orientation policy and the room frame.
+ * This is the single decision point for every fitter, so the modes behave
+ * consistently across categories.
+ *
+ * @param est - Measured yaw, or `null` when estimation failed outright.
+ * @param opts - Orientation policy and room frame.
+ * @returns The yaw to use, its confidence, and which path produced it.
+ */
+function resolveYaw(est, opts = {}) {
+    const mode = opts.mode ?? 'roomFrame';
+    if (mode === 'cardinal') {
+        return {
+            angle: snapYawToCardinal(est?.angle ?? 0),
+            confidence: est?.confidence ?? 0,
+            method: 'cardinal',
+        };
+    }
+    if (!est) {
+        // Nothing measurable; fall back to the room frame (or the world axes).
+        const roomYaw = opts.roomYaw != null &&
+            (opts.roomYawConfidence ?? 0) >= MIN_ROOM_YAW_CONFIDENCE
+            ? opts.roomYaw
+            : 0;
+        return { angle: roomYaw, confidence: 0, method: 'roomFrame' };
+    }
+    if (mode === 'free') {
+        return { angle: est.angle, confidence: est.confidence, method: est.method };
+    }
+    // 'roomFrame'. With no usable room estimate this degenerates to the world
+    // axes, i.e. to the legacy grid, which is the safe direction to fail in.
+    const hasRoom = opts.roomYaw != null &&
+        (opts.roomYawConfidence ?? 0) >= MIN_ROOM_YAW_CONFIDENCE;
+    const roomYaw = hasRoom ? opts.roomYaw : 0;
+    const minConfidence = opts.minYawConfidence ?? DEFAULT_MIN_YAW_CONFIDENCE;
+    if (est.confidence < minConfidence) {
+        // This is the case that used to produce a snap of up to 45°.
+        return { angle: roomYaw, confidence: est.confidence, method: 'roomFrame' };
+    }
+    const tolerance = opts.snapToleranceRad ?? DEFAULT_SNAP_TOLERANCE_RAD;
+    if (Math.abs(yawDelta90(est.angle, roomYaw)) < tolerance) {
+        return {
+            angle: roomYaw,
+            confidence: est.confidence,
+            method: 'roomFrame-snap',
+        };
+    }
+    // Confidently off the room grid: keep the measured angle.
+    return { angle: est.angle, confidence: est.confidence, method: est.method };
+}
+/**
+ * Estimate an object's yaw from its footprint by combining a minimum-area
+ * rectangle fit, a vertical-plane fit, and PCA.
+ *
+ * @param points - World-space samples.
+ * @param cx - Centre X used for the PCA scatter.
+ * @param cz - Centre Z used for the PCA scatter.
+ * @param rng - Random source for the RANSAC vote.
+ */
+function estimateObjectYaw(points, cx, cz, rng = Math.random) {
+    const candidates = [];
+    const scatter = pcaYawXZ(points, cx, cz);
+    // Trim before hulling: the hull is built from extreme points, so a few stray
+    // mask pixels would otherwise steer the rectangle fit.
+    const trimmed = scatter
+        ? trimToPercentile(points, cx, cz, scatter.angle)
+        : points;
+    const rect = minAreaRectXZ(trimmed);
+    if (rect) {
+        candidates.push({
+            angle: rect.angle,
+            weight: rect.supportRatio,
+            method: 'minAreaRect',
+        });
+    }
+    const plane = ransacVerticalPlane(trimmed, { rng });
+    if (plane) {
+        candidates.push({
+            angle: Math.atan2(plane.normal.x, plane.normal.z),
+            weight: 0.7 * plane.inlierRatio,
+            method: 'verticalPlane',
+        });
+    }
+    if (scatter) {
+        candidates.push({
+            angle: scatter.angle,
+            weight: 0.5 * pcaYawConfidence(scatter),
+            method: 'pca',
+        });
+    }
+    return combineYawCandidates(candidates);
+}
+/**
+ * Drop samples outside the 2nd/98th percentile along the box's own axes, so a
+ * handful of outliers cannot drag the convex hull.
+ */
+function trimToPercentile(points, cx, cz, angle) {
+    if (points.length < 12)
+        return points;
+    const us = [];
+    const vs = [];
+    for (const p of points) {
+        const { u, v } = worldToLocalXZ(p.x - cx, p.z - cz, angle);
+        us.push(u);
+        vs.push(v);
+    }
+    const uLo = pctile(us, 0.02), uHi = pctile(us, 0.98);
+    const vLo = pctile(vs, 0.02), vHi = pctile(vs, 0.98);
+    const kept = points.filter((_, i) => {
+        return us[i] >= uLo && us[i] <= uHi && vs[i] >= vLo && vs[i] <= vHi;
+    });
+    return kept.length >= 6 ? kept : points;
+}
 // Module-level scratch objects reused across calls to reduce GC pressure.
 const _ab = new THREE.Vector3();
 const _ac = new THREE.Vector3();
@@ -143,10 +261,12 @@ function rejectByY(points, dy) {
  * @param points - Input point cloud (needs at least 3).
  * @param iters - Number of RANSAC iterations.
  * @param eps - Inlier distance threshold in metres.
+ * @param rng - Random source; inject a seeded generator to make the result
+ *   reproducible (tests would otherwise be flaky).
  * @returns Best plane `{ normal, point, inliers }`, or `null` if fewer than
  *   six inliers were found.
  */
-function ransacPlane(points, iters = 80, eps = 0.02) {
+function ransacPlane(points, iters = 80, eps = 0.02, rng = Math.random) {
     if (points.length < 3)
         return null;
     let best = {
@@ -155,9 +275,9 @@ function ransacPlane(points, iters = 80, eps = 0.02) {
         point: null,
     };
     for (let it = 0; it < iters; it++) {
-        const ia = (Math.random() * points.length) | 0;
-        const ib = (Math.random() * points.length) | 0;
-        const ic = (Math.random() * points.length) | 0;
+        const ia = (rng() * points.length) | 0;
+        const ib = (rng() * points.length) | 0;
+        const ic = (rng() * points.length) | 0;
         if (ia === ib || ib === ic || ia === ic)
             continue;
         const a = points[ia], b = points[ib], c = points[ic];
@@ -244,6 +364,8 @@ function projectBboxToPlane(box2d, camera, planePoint, planeNormal) {
 function fitYawOBB(points, opts = {}) {
     const cat = opts.category ?? 'furniture';
     if (cat === 'flat') {
+        // A flat fitter's angle encodes a surface normal, not a box orientation,
+        // so it keeps its full ±180° range and is not canonicalized.
         if (opts.tinyFlat) {
             const r = fitTinyFlatOBB(opts);
             if (r)
@@ -256,14 +378,15 @@ function fitYawOBB(points, opts = {}) {
     if (cat === 'small') {
         const r = fitSmallOBB(points, opts);
         if (r)
-            return r;
+            return canonicalizeYawObb(r);
     }
     if (cat === 'light') {
         const r = fitLightOBB(points, opts);
         if (r)
-            return r;
+            return canonicalizeYawObb(r);
     }
-    return fitFurnitureOBB(points);
+    const r = fitFurnitureOBB(points, opts);
+    return r ? canonicalizeYawObb(r) : null;
 }
 /**
  * Tiny wall-mounted flats (switches, outlets, thermostats). Their depth
@@ -285,14 +408,17 @@ function fitTinyFlatOBB(opts) {
     uvToNdc(cx, cy, ud.snapAspect, cam.aspect, _tfNdc);
     _tfRay.setFromCamera(_tfNdc, cam);
     const o = _tfRay.ray.origin, d = _tfRay.ray.direction;
+    const roomHalf = opts.roomHalf ?? 3.0;
     let anchorOk = false;
     if (opts.anchor) {
         const a = opts.anchor;
-        if (Math.abs(a.x) <= 4 && Math.abs(a.z) <= 4 && a.y >= -0.5 && a.y <= 4) {
+        if (Math.abs(a.x) <= roomHalf + 1 &&
+            Math.abs(a.z) <= roomHalf + 1 &&
+            a.y >= -0.5 &&
+            a.y <= 4) {
             anchorOk = true;
         }
     }
-    const roomHalf = 3.0;
     const candidates = [
         { n: new THREE.Vector3(1, 0, 0), d: -roomHalf },
         { n: new THREE.Vector3(-1, 0, 0), d: -roomHalf },
@@ -399,12 +525,32 @@ function fitFlatOBB(points, opts) {
     const n = new THREE.Vector3(plane.normal.x, 0, plane.normal.z);
     if (n.lengthSq() < 1e-6)
         return null;
+    const verticality = n.length();
     n.normalize();
-    if (Math.abs(n.x) > Math.abs(n.z)) {
-        n.set(Math.sign(n.x), 0, 0);
-    }
-    else {
-        n.set(0, 0, Math.sign(n.z));
+    // Reconcile the measured wall normal with the room frame rather than
+    // snapping it to the session origin's axes. The confidence blends how many
+    // points supported the plane with how vertical the surface actually is.
+    const inlierRatio = plane.inliers.length / Math.max(1, workingPoints.length);
+    const measured = Math.atan2(n.x, n.z);
+    const resolved = resolveYaw({
+        angle: wrapQuarterPi(measured),
+        confidence: Math.min(1, inlierRatio * verticality),
+        method: 'wallPlane'}, opts.orientation);
+    // resolveYaw works modulo 90°, so rebuild the normal from the resolved yaw
+    // by picking the representative closest to the measured direction, then
+    // restore the camera-facing sign the caller depends on.
+    n.set(Math.sin(resolved.angle), 0, Math.cos(resolved.angle));
+    let bestDot = -Infinity;
+    const measuredDir = new THREE.Vector3(Math.sin(measured), 0, Math.cos(measured));
+    const candidate = new THREE.Vector3();
+    for (let k = 0; k < 4; ++k) {
+        const a = resolved.angle + (k * Math.PI) / 2;
+        candidate.set(Math.sin(a), 0, Math.cos(a));
+        const d = candidate.dot(measuredDir);
+        if (d > bestDot) {
+            bestDot = d;
+            n.copy(candidate);
+        }
     }
     if (opts.camera) {
         _diff.subVectors(opts.camera.position, plane.point);
@@ -432,7 +578,13 @@ function fitFlatOBB(points, opts) {
     const sizeU = Math.max(0.05, umax - umin);
     const sizeY = Math.max(0.05, ymax - ymin);
     const center = new THREE.Vector3(planePoint.x + uc * cs, (ymin + ymax) / 2, planePoint.z - uc * sn);
-    return { center, size: new THREE.Vector3(sizeU, sizeY, 0.05), angle };
+    return {
+        center,
+        size: new THREE.Vector3(sizeU, sizeY, 0.05),
+        angle,
+        yawConfidence: resolved.confidence,
+        yawMethod: resolved.method,
+    };
 }
 /**
  * Small objects (cups, books, controllers): depth-mesh resolution is coarser
@@ -504,7 +656,7 @@ function fitLightOBB(points, opts) {
     if (points.length < 6)
         return null;
     const tight = rejectByDepth(points, opts.camera ?? null, 0.1);
-    return fitFurnitureOBB(tight);
+    return fitFurnitureOBB(tight, opts);
 }
 /**
  * General furniture: yaw-constrained PCA in XZ + percentile-clipped extents.
@@ -514,51 +666,72 @@ function fitLightOBB(points, opts) {
  * @param points - World-space depth samples (at least 6 required).
  * @returns Fitted {@link InternalObb}, or `null` when fewer than 6 points.
  */
-function fitFurnitureOBB(points) {
+function fitFurnitureOBB(points, opts = {}) {
     if (points.length < 6)
         return null;
     const xs = points.map((p) => p.x).sort((a, b) => a - b);
-    const ys = points.map((p) => p.y).sort((a, b) => a - b);
     const zs = points.map((p) => p.z).sort((a, b) => a - b);
     const med = (arr) => arr[Math.floor(arr.length / 2)];
-    const cx = med(xs); med(ys); const cz = med(zs);
-    let Sxx = 0, Sxz = 0, Szz = 0;
-    for (const p of points) {
-        const dx = p.x - cx, dz = p.z - cz;
-        Sxx += dx * dx;
-        Sxz += dx * dz;
-        Szz += dz * dz;
-    }
-    let angle = 0.5 * Math.atan2(2 * Sxz, Sxx - Szz);
-    const snapCandidates = [0, Math.PI / 2, -Math.PI / 2, Math.PI, -Math.PI];
-    let bestSnap = angle, bestErr = Infinity;
-    for (const c of snapCandidates) {
-        const err = Math.abs(((angle - c + Math.PI) % (2 * Math.PI)) - Math.PI);
+    const cx = med(xs), cz = med(zs);
+    const est = estimateObjectYaw(points, cx, cz);
+    const resolved = resolveYaw(est, opts.orientation);
+    const obb = buildYawAlignedObb(points, cx, cz, resolved.angle);
+    obb.yawConfidence = resolved.confidence;
+    obb.yawMethod = resolved.method;
+    return obb;
+}
+/**
+ * Snap a yaw to the nearest of 0 / ±90 / 180°.
+ *
+ * Retained for the legacy `'cardinal'` orientation mode. Note this is an
+ * unconditional snap with no confidence gate, so its worst-case error is 45°,
+ * and it snaps to the *session origin's* axes rather than the room's.
+ */
+function snapYawToCardinal(angle) {
+    const candidates = [0, Math.PI / 2, -Math.PI / 2, Math.PI, -Math.PI];
+    let best = angle;
+    let bestErr = Infinity;
+    for (const c of candidates) {
+        const err = Math.abs(wrapPi(angle - c));
         if (err < bestErr) {
             bestErr = err;
-            bestSnap = c;
+            best = c;
         }
     }
-    angle = bestSnap;
-    const cs = Math.cos(angle), sn = Math.sin(angle);
+    return best;
+}
+/**
+ * Build a yaw-aligned box around `(cx, cz)` at a fixed `angle`, with
+ * percentile-clipped extents so stray mask pixels do not inflate it.
+ *
+ * Projection goes through {@link worldToLocalXZ} / {@link localToWorldXZ} so
+ * the extents are measured along exactly the axes the renderer will draw
+ * along. Measuring along one axis pair and drawing along its mirror is a bug
+ * that stays invisible while yaws are snapped to multiples of 90° and appears
+ * the moment they are not.
+ *
+ * @param points - World-space samples.
+ * @param cx - Seed centre X (median).
+ * @param cz - Seed centre Z (median).
+ * @param angle - Box yaw in radians.
+ */
+function buildYawAlignedObb(points, cx, cz, angle) {
     const us = [], vs = [], ysProj = [];
     for (const p of points) {
-        const dx = p.x - cx, dz = p.z - cz;
-        us.push(dx * cs + dz * sn);
-        vs.push(-dx * sn + dz * cs);
+        const { u, v } = worldToLocalXZ(p.x - cx, p.z - cz, angle);
+        us.push(u);
+        vs.push(v);
         ysProj.push(p.y);
     }
     const umin = pctile(us, 0.05), umax = pctile(us, 0.95);
     const vmin = pctile(vs, 0.05), vmax = pctile(vs, 0.95);
     const ymin = pctile(ysProj, 0.02), ymax = pctile(ysProj, 0.98);
-    const uc = (umin + umax) / 2, vc = (vmin + vmax) / 2;
-    const offX = uc * cs - vc * sn;
-    const offZ = uc * sn + vc * cs;
+    const off = localToWorldXZ((umin + umax) / 2, (vmin + vmax) / 2, angle);
     return {
-        center: new THREE.Vector3(cx + offX, (ymin + ymax) / 2, cz + offZ),
+        center: new THREE.Vector3(cx + off.x, (ymin + ymax) / 2, cz + off.z),
         size: new THREE.Vector3(Math.max(0.02, umax - umin), Math.max(0.02, ymax - ymin), Math.max(0.02, vmax - vmin)),
         angle,
     };
 }
 
-export { fitFlatOBB, fitFurnitureOBB, fitLightOBB, fitSmallOBB, fitTinyFlatOBB, fitYawOBB, projectBboxToPlane, radiusFromBbox, ransacPlane, rayToPlane, rejectByAnchor, rejectByAnchorDepth, rejectByDepth, rejectByY };
+export { buildYawAlignedObb, estimateObjectYaw, fitFlatOBB, fitFurnitureOBB, fitLightOBB, fitSmallOBB, fitTinyFlatOBB, fitYawOBB, projectBboxToPlane, radiusFromBbox, ransacPlane, rayToPlane, rejectByAnchor, rejectByAnchorDepth, rejectByDepth, rejectByY, resolveYaw };

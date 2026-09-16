@@ -6,8 +6,18 @@
  */
 export { Detected3DObject } from './Detected3DObject';
 export { Object3DDetector } from './Object3DDetector';
-export type { Object3DDetectorOptions } from './Object3DDetector';
-export { uvToNdc } from './geometry/DepthSampling';
+export type { Object3DDetectorOptions, Object3DDetectorDiagnostics, } from './Object3DDetector';
+export { uvToNdc, sampleDepthInMask } from './geometry/DepthSampling';
+export { buildFrozenCamera } from './geometry/FrozenCamera';
+export type { FrozenCameraMatrices } from './geometry/FrozenCamera';
+export { PoseRing } from './geometry/PoseRing';
+export { canonicalizeYawObb, combineYawCandidates, convexHullXZ, localToWorldXZ, minAreaRectXZ, pcaYawConfidence, pcaYawXZ, ransacVerticalPlane, worldToLocalXZ, wrapPi, wrapQuarterPi, yawDelta90, } from './geometry/YawEstimation';
+export type { MinAreaRect, PointXZ, ScatterXZ, VerticalPlaneFit, YawCandidate, YawEstimate, } from './geometry/YawEstimation';
+export { estimateRoomYawFromMesh, RoomFrameAccumulator, yawRelativeToRoom, } from './geometry/RoomFrame';
+export type { RoomFrame, RoomFrameOptions } from './geometry/RoomFrame';
+export { buildYawAlignedObb, estimateObjectYaw, resolveYaw, } from './geometry/ObbFitting';
+export type { OrientationMode, OrientationOptions } from './geometry/ObbFitting';
+export { fitYawOBB } from './geometry/ObbFitting';
 export { box2dIoU, snapBoxToFloor, unionDetections } from './geometry/Fusion';
 export type { FusionRecord } from './geometry/Fusion';
 export type { InternalObb, ObbFitOptions } from './geometry/ObbFitting';

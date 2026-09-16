@@ -92,9 +92,10 @@ export declare function nextFrame(): Promise<void>;
  * @param cameraOverride - Frozen camera, or `null` for live.
  * @param meshOverride - Frozen depth mesh, or `null` for live.
  * @param snapAspect - Snapshot aspect ratio override.
+ * @param maxDistance - Maximum ray-hit distance in metres.
  * @returns Accumulated world-space hit points and foreground pixel count.
  */
-export declare function sampleDepthInMaskAcrossFrames(mask: MaskLike, box2d: THREE.Box2, stride?: number, frames?: number, cameraOverride?: THREE.PerspectiveCamera | null, meshOverride?: THREE.Mesh | null, snapAspect?: number | null): Promise<{
+export declare function sampleDepthInMaskAcrossFrames(mask: MaskLike, box2d: THREE.Box2, stride?: number, frames?: number, cameraOverride?: THREE.PerspectiveCamera | null, meshOverride?: THREE.Mesh | null, snapAspect?: number | null, maxDistance?: number): Promise<{
     points: THREE.Vector3[];
     foregroundPixels: number;
 }>;

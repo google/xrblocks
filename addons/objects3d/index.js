@@ -1,12 +1,16 @@
 export { Detected3DObject } from './Detected3DObject.js';
 export { Object3DDetector } from './Object3DDetector.js';
-export { uvToNdc } from './geometry/DepthSampling.js';
+export { sampleDepthInMask, uvToNdc } from './geometry/DepthSampling.js';
+export { buildFrozenCamera } from './geometry/FrozenCamera.js';
+export { PoseRing } from './geometry/PoseRing.js';
+export { canonicalizeYawObb, combineYawCandidates, convexHullXZ, localToWorldXZ, minAreaRectXZ, pcaYawConfidence, pcaYawXZ, ransacVerticalPlane, worldToLocalXZ, wrapPi, wrapQuarterPi, yawDelta90 } from './geometry/YawEstimation.js';
+export { RoomFrameAccumulator, estimateRoomYawFromMesh, yawRelativeToRoom } from './geometry/RoomFrame.js';
+export { buildYawAlignedObb, estimateObjectYaw, fitYawOBB, resolveYaw } from './geometry/ObbFitting.js';
 export { box2dIoU, snapBoxToFloor, unionDetections } from './geometry/Fusion.js';
 export { FLAT_LABEL_RE, LIGHT_LABEL_RE, SMALL_LABEL_RE, SURFACE_LABEL_RE, TINY_FLAT_LABEL_RE, categorize, isFlatLabel, isSurfaceLabel, isTinyFlatLabel } from './labels/Categories.js';
 export { SAM_MODEL_ID } from './masks/SamMask.js';
 import 'three';
 import 'xrblocks';
-import './geometry/ObbFitting.js';
 import './masks/SegmenterMask.js';
 import './visuals/BoxGroup.js';
 import './masks/SamDevice.js';

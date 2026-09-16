@@ -5,6 +5,7 @@
  * unit-test without a running XR session.
  */
 import * as THREE from 'three';
+import type { YawEstimate } from './YawEstimation';
 /**
  * Internal OBB representation used by fitters and fusion.
  * `angle` is yaw rotation around world Y.
@@ -17,6 +18,45 @@ export interface InternalObb {
     size: THREE.Vector3;
     /** Yaw angle around world Y, in radians. */
     angle: number;
+    /**
+     * How well determined {@link angle} was, in `[0, 1]`. Populated by the
+     * fitters; consumed by diagnostics and (in future) by cross-view fusion to
+     * weight one observation's yaw against another's.
+     */
+    yawConfidence?: number;
+    /** Name of the estimator that produced {@link angle}. Diagnostics only. */
+    yawMethod?: string;
+}
+/**
+ * How a fitted yaw should be reconciled with the surrounding room.
+ *
+ * - `'cardinal'` — legacy: snap unconditionally to the nearest multiple of 90°
+ *   about the **session origin**. Kept as an escape hatch and A/B baseline.
+ * - `'roomFrame'` — snap to the estimated room axes, but only when the object's
+ *   own yaw is poorly determined or already close to them.
+ * - `'free'` — always use the measured yaw.
+ */
+export type OrientationMode = 'cardinal' | 'roomFrame' | 'free';
+/** Orientation policy plus the room frame to resolve against. */
+export interface OrientationOptions {
+    /** @defaultValue `'roomFrame'` */
+    mode?: OrientationMode;
+    /** Estimated room yaw in radians, or `null` when unknown. */
+    roomYaw?: number | null;
+    /** Confidence of {@link roomYaw}, in `[0, 1]`. */
+    roomYawConfidence?: number;
+    /**
+     * Objects within this angle of the room frame are snapped to it, which
+     * removes jitter on genuinely wall-aligned furniture.
+     * @defaultValue 12°
+     */
+    snapToleranceRad?: number;
+    /**
+     * Below this yaw confidence the object's own estimate is discarded in favour
+     * of the room frame.
+     * @defaultValue 0.35
+     */
+    minYawConfidence?: number;
 }
 /** Options forwarded from the detector to the per-category fitters. */
 export interface ObbFitOptions {
@@ -30,7 +70,39 @@ export interface ObbFitOptions {
     box2d?: THREE.Box2 | null;
     /** Whether the label is a tiny flat item (switch, outlet, etc.). */
     tinyFlat?: boolean;
+    /**
+     * Assumed distance in metres from the session origin to the cardinal walls
+     * (`x = ±roomHalf`, `z = ±roomHalf`), used by {@link fitTinyFlatOBB}.
+     * Defaults to 3, matching the simulator's wood-cabin scene.
+     */
+    roomHalf?: number;
+    /** Orientation policy and room frame. */
+    orientation?: OrientationOptions;
 }
+/**
+ * Reconcile a measured yaw with the orientation policy and the room frame.
+ * This is the single decision point for every fitter, so the modes behave
+ * consistently across categories.
+ *
+ * @param est - Measured yaw, or `null` when estimation failed outright.
+ * @param opts - Orientation policy and room frame.
+ * @returns The yaw to use, its confidence, and which path produced it.
+ */
+export declare function resolveYaw(est: YawEstimate | null, opts?: OrientationOptions): {
+    angle: number;
+    confidence: number;
+    method: string;
+};
+/**
+ * Estimate an object's yaw from its footprint by combining a minimum-area
+ * rectangle fit, a vertical-plane fit, and PCA.
+ *
+ * @param points - World-space samples.
+ * @param cx - Centre X used for the PCA scatter.
+ * @param cz - Centre Z used for the PCA scatter.
+ * @param rng - Random source for the RANSAC vote.
+ */
+export declare function estimateObjectYaw(points: THREE.Vector3[], cx: number, cz: number, rng?: () => number): YawEstimate | null;
 /**
  * Drop points more than `radius` metres from `anchor` in 3D. Falls back to
  * the original set when fewer than six points survive the filter.
@@ -100,10 +172,12 @@ export declare function rejectByY(points: THREE.Vector3[], dy: number): THREE.Ve
  * @param points - Input point cloud (needs at least 3).
  * @param iters - Number of RANSAC iterations.
  * @param eps - Inlier distance threshold in metres.
+ * @param rng - Random source; inject a seeded generator to make the result
+ *   reproducible (tests would otherwise be flaky).
  * @returns Best plane `{ normal, point, inliers }`, or `null` if fewer than
  *   six inliers were found.
  */
-export declare function ransacPlane(points: THREE.Vector3[], iters?: number, eps?: number): {
+export declare function ransacPlane(points: THREE.Vector3[], iters?: number, eps?: number, rng?: () => number): {
     normal: THREE.Vector3;
     point: THREE.Vector3;
     inliers: THREE.Vector3[];
@@ -196,4 +270,20 @@ export declare function fitLightOBB(points: THREE.Vector3[], opts: ObbFitOptions
  * @param points - World-space depth samples (at least 6 required).
  * @returns Fitted {@link InternalObb}, or `null` when fewer than 6 points.
  */
-export declare function fitFurnitureOBB(points: THREE.Vector3[]): InternalObb | null;
+export declare function fitFurnitureOBB(points: THREE.Vector3[], opts?: ObbFitOptions): InternalObb | null;
+/**
+ * Build a yaw-aligned box around `(cx, cz)` at a fixed `angle`, with
+ * percentile-clipped extents so stray mask pixels do not inflate it.
+ *
+ * Projection goes through {@link worldToLocalXZ} / {@link localToWorldXZ} so
+ * the extents are measured along exactly the axes the renderer will draw
+ * along. Measuring along one axis pair and drawing along its mirror is a bug
+ * that stays invisible while yaws are snapped to multiples of 90° and appears
+ * the moment they are not.
+ *
+ * @param points - World-space samples.
+ * @param cx - Seed centre X (median).
+ * @param cz - Seed centre Z (median).
+ * @param angle - Box yaw in radians.
+ */
+export declare function buildYawAlignedObb(points: THREE.Vector3[], cx: number, cz: number, angle: number): InternalObb;
