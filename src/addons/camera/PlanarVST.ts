@@ -38,7 +38,7 @@ export class PlanarVST extends xb.Script {
     );
     const modelMatrix = xb.getDeviceCameraWorldFromView(
       xb.core.camera,
-      xb.core.renderer.xr.getCamera(),
+      xb.core.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
       xb.core.deviceCamera!,
       this.targetDevice
     );

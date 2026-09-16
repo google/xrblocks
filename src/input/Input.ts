@@ -4,6 +4,7 @@ import {XRHandModelFactory} from 'three/addons/webxr/XRHandModelFactory.js';
 
 import {NUM_HANDS} from '../constants';
 import {Options} from '../core/Options.js';
+import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
 import {KeyEvent} from '../core/Script';
 import type {
   DirectTouchInput,
@@ -82,7 +83,7 @@ export class Input {
   }: {
     systemsGroup: XRSystems;
     options: Options;
-    renderer: THREE.WebGLRenderer;
+    renderer: WebGLOrWebGPURenderer;
   }) {
     systemsGroup.add(this.activeControllers, this.reticles);
 

@@ -6,6 +6,11 @@ import {XRDeviceCamera} from '../camera/XRDeviceCamera.js';
 import {Registry} from '../core/components/Registry';
 import {XREffects} from '../core/components/XREffects';
 import {Options} from '../core/Options';
+import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from '../core/RendererTypes';
 import {Script} from '../core/Script';
 import {Depth} from '../depth/Depth';
 import {Input} from '../input/Input';
@@ -48,7 +53,6 @@ export class Simulator extends Script {
     interaction: Interaction,
     timer: THREE.Timer,
     camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
     registry: Registry,
     options: Options,
@@ -92,7 +96,6 @@ export class Simulator extends Script {
 
   simulatorCamera?: SimulatorCamera;
   options!: SimulatorOptions;
-  renderer?: THREE.WebGLRenderer;
   mainCamera!: THREE.Camera;
   mainScene!: THREE.Scene;
 
@@ -107,9 +110,11 @@ export class Simulator extends Script {
   private useSimulatorObjectDetection = false;
 
   constructor(
-    private renderMainScene: (cameraOverride?: THREE.Camera) => void
+    private renderMainScene: (cameraOverride?: THREE.Camera) => void,
+    public renderer?: WebGLOrWebGPURenderer
   ) {
     super();
+    this.renderer = renderer;
     this.add(this.simulatorUser);
   }
 
@@ -131,7 +136,6 @@ export class Simulator extends Script {
     interaction,
     timer,
     camera,
-    renderer,
     scene,
     registry,
     options,
@@ -143,7 +147,6 @@ export class Simulator extends Script {
     interaction: Interaction;
     timer: THREE.Timer;
     camera: THREE.Camera;
-    renderer: THREE.WebGLRenderer;
     scene: THREE.Scene;
     registry: Registry;
     options: Options;
@@ -151,6 +154,11 @@ export class Simulator extends Script {
     world: World;
   }) {
     if (this.initialized) return;
+    const renderer = this.renderer ?? registry.get(THREE.WebGLRenderer);
+    if (!renderer) {
+      throw new Error('Simulator requires a renderer instance.');
+    }
+    this.renderer = renderer;
     // Get optional dependencies from the registry.
     const deviceCamera = registry.get(XRDeviceCamera);
     this.deviceCamera = deviceCamera;
@@ -160,7 +168,6 @@ export class Simulator extends Script {
         ? new SimulatorPhysics(physics, simulatorOptions.handPhysics)
         : undefined;
     this.options = simulatorOptions;
-    this.renderer = renderer;
     this.mainCamera = camera;
     this.mainScene = scene;
     this.registry = registry;
@@ -229,6 +236,7 @@ export class Simulator extends Script {
       !this.simulatorCamera &&
       this.options.deviceCamera.enabled
     ) {
+      assertWebGLRenderer(renderer, 'SimulatorCamera');
       this.simulatorCamera = new SimulatorCamera(renderer);
       this.simulatorCamera.init();
       deviceCamera.registerSimulatorCamera(this.simulatorCamera);
@@ -236,6 +244,7 @@ export class Simulator extends Script {
     deviceCamera?.init();
 
     if (options.depth.enabled) {
+      assertWebGLRenderer(renderer, 'SimulatorDepth');
       this.renderDepthPass = true;
       this.depth.init(renderer, camera, depth);
     }
@@ -245,22 +254,28 @@ export class Simulator extends Script {
       this.setupStereoCameras(camera);
     }
 
-    this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(
-      renderer.domElement.width,
-      renderer.domElement.height,
-      {stencilBuffer: options.stencil}
-    );
-    const virtualSceneMaterial = new THREE.MeshBasicMaterial({
-      map: this.virtualSceneRenderTarget.texture,
-      transparent: true,
-    });
-    if (this.options.blendingMode === 'screen') {
-      virtualSceneMaterial.blending = THREE.CustomBlending;
-      virtualSceneMaterial.blendSrc = THREE.OneFactor;
-      virtualSceneMaterial.blendDst = THREE.OneMinusSrcColorFactor;
-      virtualSceneMaterial.blendEquation = THREE.AddEquation;
+    if (isWebGPURenderer(renderer)) {
+      this.options.renderToRenderTexture = false;
+    } else {
+      this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(
+        renderer.domElement.width,
+        renderer.domElement.height,
+        {stencilBuffer: options.stencil}
+      );
+      const virtualSceneMaterial = new THREE.MeshBasicMaterial({
+        map: this.virtualSceneRenderTarget.texture,
+        transparent: true,
+      });
+      if (this.options.blendingMode === 'screen') {
+        virtualSceneMaterial.blending = THREE.CustomBlending;
+        virtualSceneMaterial.blendSrc = THREE.OneFactor;
+        virtualSceneMaterial.blendDst = THREE.OneMinusSrcColorFactor;
+        virtualSceneMaterial.blendEquation = THREE.AddEquation;
+      }
+      this.virtualSceneFullScreenQuad = new FullScreenQuad(
+        virtualSceneMaterial
+      );
     }
-    this.virtualSceneFullScreenQuad = new FullScreenQuad(virtualSceneMaterial);
 
     this.initialized = true;
   }
@@ -434,8 +449,14 @@ export class Simulator extends Script {
 
   // Called by core when the simulator is running.
   renderScene() {
-    if (!this.initialized || !this.renderer) return;
-    if (!this.options.renderToRenderTexture) return;
+    if (
+      !this.initialized ||
+      !this.renderer ||
+      !this.options.renderToRenderTexture ||
+      isWebGPURenderer(this.renderer)
+    ) {
+      return;
+    }
     // Allocate a new render target if the resolution changes.
     if (
       this.virtualSceneRenderTarget!.width != this.renderer.domElement.width ||
@@ -471,12 +492,13 @@ export class Simulator extends Script {
     this.onBeforeSimulatorSceneRender();
     this.renderSimulatorSceneToCanvas(this.getRenderCamera());
     this.onSimulatorSceneRendered();
-    if (this.options.renderToRenderTexture) {
+    if (this.options.renderToRenderTexture && !isWebGPURenderer(renderer)) {
       this.virtualSceneFullScreenQuad!.render(renderer);
     } else {
-      // Temporary workaround since splats look faded when rendered to a render
-      // texture.
+      const prevAutoClear = renderer.autoClear;
+      renderer.autoClear = false;
       this.renderMainScene(this.getRenderCamera());
+      renderer.autoClear = prevAutoClear;
     }
   }
 
@@ -487,8 +509,11 @@ export class Simulator extends Script {
       this.sparkRenderer.encodeLinear = false;
     }
     renderer.setRenderTarget(null);
-    if (this.backgroundVideoQuad) {
+    if (this.backgroundVideoQuad && !isWebGPURenderer(renderer)) {
       this.backgroundVideoQuad.render(renderer);
+    }
+    if (isWebGPURenderer(renderer)) {
+      renderer.clear();
     }
     renderer.render(this.simulatorScene, camera);
     renderer.clearDepth();
@@ -523,6 +548,9 @@ export class Simulator extends Script {
     const texture = new THREE.VideoTexture(video);
     texture.colorSpace = THREE.SRGBColorSpace;
     this.videoElement = video;
+    if (this.renderer && isWebGPURenderer(this.renderer)) {
+      return;
+    }
     this.backgroundVideoQuad = new FullScreenQuad(
       new THREE.MeshBasicMaterial({map: texture})
     );
