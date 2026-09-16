@@ -50,7 +50,11 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
-import {assertWebGLRenderer, type WebGLOrWebGPURenderer} from './RendererTypes';
+import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from './RendererTypes';
 
 export type CoreLifecycleState =
   | 'new'
@@ -528,6 +532,13 @@ export class Core {
         alpha: true,
         logarithmicDepthBuffer: options.logarithmicDepthBuffer,
       });
+    }
+    if (isWebGPURenderer(this.renderer)) {
+      const {applyWebGPUReticleMaterial} = await import(
+        '../interaction/reticle/ReticleWebGPUMaterial'
+      );
+      this.assertInitializing();
+      this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
     }
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);

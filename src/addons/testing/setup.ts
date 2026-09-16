@@ -148,8 +148,13 @@ vi.mock('three/webgpu', async () => {
     setRenderTarget = vi.fn();
   }
 
+  class MockNodeMaterial extends original.Material {
+    fragmentNode: unknown;
+  }
+
   return {
     WebGPURenderer: MockWebGPURenderer,
+    NodeMaterial: MockNodeMaterial,
   };
 });
 
