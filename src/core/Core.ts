@@ -50,6 +50,7 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
+import {assertWebGLRenderer, type WebGLOrWebGPURenderer} from './RendererTypes';
 
 export type CoreLifecycleState =
   | 'new'
@@ -161,7 +162,7 @@ export class Core {
   private _isPaused = false;
   private isSteppingFrame = false;
   private manualStepTime = 0;
-  private _renderer?: THREE.WebGLRenderer;
+  private _renderer?: WebGLOrWebGPURenderer;
   options!: Options;
   deviceCamera?: XRDeviceCamera;
   depth = new Depth();
@@ -183,7 +184,7 @@ export class Core {
     }
   });
   renderSceneOverride?: (
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     scene: THREE.Scene,
     camera: THREE.Camera
   ) => void;
@@ -191,10 +192,10 @@ export class Core {
   permissionsManager = new PermissionsManager();
 
   /**
-   * The WebGL renderer, created during {@link Core.init}. Reading it before
-   * `init()` has run returns `undefined` and logs a one-time warning.
+   * The WebGL or WebGPU renderer, created during {@link Core.init}. Reading it
+   * before `init()` has run returns `undefined` and logs a one-time warning.
    */
-  get renderer(): THREE.WebGLRenderer {
+  get renderer(): WebGLOrWebGPURenderer {
     if (!this._renderer) {
       console.warn(
         'xb.core.renderer is not available until xb.init() creates it. ' +
@@ -204,7 +205,7 @@ export class Core {
     return this._renderer!;
   }
 
-  set renderer(renderer: THREE.WebGLRenderer) {
+  set renderer(renderer: WebGLOrWebGPURenderer) {
     this._renderer = renderer;
   }
 
@@ -507,20 +508,36 @@ export class Core {
     );
     this.registry.register(this.camera, THREE.Camera);
     this.registry.register(this.camera, THREE.PerspectiveCamera);
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: options.canvas,
-      antialias: options.antialias,
-      stencil: options.stencil,
-      alpha: true,
-      logarithmicDepthBuffer: options.logarithmicDepthBuffer,
-    });
+    if (options.rendererBackend === 'webgpu') {
+      const {WebGPURenderer} = await import('three/webgpu');
+      this.assertInitializing();
+      this.renderer = new WebGPURenderer({
+        canvas: options.canvas,
+        antialias: options.antialias,
+        stencil: options.stencil,
+        alpha: true,
+        forceWebGL: options.webgpuOptions?.forceWebGL,
+      });
+      await this.renderer.init();
+      this.assertInitializing();
+    } else {
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: options.canvas,
+        antialias: options.antialias,
+        stencil: options.stencil,
+        alpha: true,
+        logarithmicDepthBuffer: options.logarithmicDepthBuffer,
+      });
+    }
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.xr.enabled = true;
     // disable built-in occlusion
-    this.renderer.xr.getDepthSensingMesh = function () {
-      return null;
-    };
+    if ('getDepthSensingMesh' in this.renderer.xr) {
+      this.renderer.xr.getDepthSensingMesh = function () {
+        return null;
+      };
+    }
     this.registry.register(this.renderer);
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
@@ -559,6 +576,7 @@ export class Core {
 
     // Sets up device camera.
     if (options.deviceCamera?.enabled) {
+      assertWebGLRenderer(this.renderer, 'XRDeviceCamera');
       this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
       this.deviceCamera.setRenderer(this.renderer);
       this.registry.register(this.deviceCamera);
@@ -580,6 +598,7 @@ export class Core {
     this.webXRSettings.optionalFeatures = webXROptionalFeatures;
     // Sets up depth.
     if (options.depth.enabled) {
+      assertWebGLRenderer(this.renderer, 'Depth');
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
@@ -635,6 +654,7 @@ export class Core {
 
     // Sets up lighting.
     if (options.lighting.enabled) {
+      assertWebGLRenderer(this.renderer, 'Lighting');
       webXROptionalFeatures.push('light-estimation');
       this.lighting = new Lighting();
       this.lighting.init(
@@ -704,6 +724,7 @@ export class Core {
 
     // Sets up postprocessing effects.
     if (options.usePostprocessing) {
+      assertWebGLRenderer(this.renderer, 'XREffects');
       this.effects = new XREffects(this.renderer, this.scene, this.timer);
     }
 
@@ -724,7 +745,9 @@ export class Core {
     this.uiRenderer.reconcile(0, this.camera);
     this.uiRenderer.present();
 
-    this.renderer.setAnimationLoop(this.update);
+    this.renderer.setAnimationLoop(
+      this.update as (time: number, frame?: XRFrame) => void
+    );
 
     if (this.physics) {
       this.physicsInterval = setInterval(
@@ -819,11 +842,13 @@ export class Core {
     this.uiRenderer.present();
 
     this.renderSimulatorAndScene();
-    this.screenshotSynthesizer.onAfterRender(
-      this.renderer,
-      this.renderSceneCallback,
-      this.deviceCamera
-    );
+    if (this.renderer instanceof THREE.WebGLRenderer) {
+      this.screenshotSynthesizer.onAfterRender(
+        this.renderer,
+        this.renderSceneCallback,
+        this.deviceCamera
+      );
+    }
     if (this.simulatorRunning) {
       this.simulator?.renderSimulatorScene();
     }
@@ -866,7 +891,7 @@ export class Core {
     this.startingSimulator = (async () => {
       const {Simulator} = await this.simulatorLoader();
       this.assertLifecycleActive('load the simulator runtime');
-      const simulator = new Simulator(this.renderSceneCallback);
+      const simulator = new Simulator(this.renderSceneCallback, this.renderer);
       simulator.effects = this.effects;
       try {
         // Keep the simulator connected to the script lifecycle while its async

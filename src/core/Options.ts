@@ -86,6 +86,13 @@ export class XRTransitionOptions {
 const FORM_FACTORS = ['auto', 'xr', 'hud', 'vr', 'desktop', 'mobile'] as const;
 export type FormFactor = (typeof FORM_FACTORS)[number];
 
+export const RENDERER_BACKENDS = ['webgl', 'webgpu'] as const;
+export type RendererBackend = (typeof RENDERER_BACKENDS)[number];
+
+export interface WebGPURendererOptions {
+  forceWebGL?: boolean;
+}
+
 export type AutomationModeOptions = {
   hideSimulatorUi?: boolean;
   defaultHand?: Handedness;
@@ -121,6 +128,16 @@ export class Options {
    * If not defined, a new element will be added to document body.
    */
   canvas?: HTMLCanvasElement;
+
+  /**
+   * The rendering backend to use.
+   */
+  rendererBackend: RendererBackend = 'webgl';
+
+  /**
+   * Optional configuration for WebGPU renderer.
+   */
+  webgpuOptions?: WebGPURendererOptions;
 
   /**
    * Any additional required features when initializing webxr.
@@ -242,9 +259,34 @@ export class Options {
       this.formFactor = formFactorUrlParam as FormFactor;
     }
 
+    const rendererBackendUrlParam = getUrlParameter('rendererBackend');
+    if (
+      rendererBackendUrlParam &&
+      RENDERER_BACKENDS.includes(rendererBackendUrlParam as RendererBackend)
+    ) {
+      this.rendererBackend = rendererBackendUrlParam as RendererBackend;
+    }
+
+    if (getUrlParamBool('forceWebGL')) {
+      this.webgpuOptions = {
+        ...this.webgpuOptions,
+        forceWebGL: true,
+      };
+    }
+
     if (getUrlParamBool('xrAutomation')) {
       this.enableAutomationMode();
     }
+  }
+
+  /**
+   * Configures Core to use THREE.WebGPURenderer instead of THREE.WebGLRenderer.
+   * @param options - Optional WebGPU renderer settings such as `forceWebGL`.
+   */
+  enableWebGPU(options?: WebGPURendererOptions): this {
+    this.rendererBackend = 'webgpu';
+    this.webgpuOptions = options;
+    return this;
   }
 
   /**

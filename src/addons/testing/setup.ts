@@ -53,11 +53,15 @@ if (typeof globalRecord.AudioContext === 'undefined') {
 vi.mock('three', async (importOriginal) => {
   const original = await importOriginal<typeof import('three')>();
 
-  const MockWebGLRenderer = function () {
+  const MockWebGLRenderer = function WebGLRenderer() {
     const self = Object.create(original.WebGLRenderer.prototype);
     self.constructor = MockWebGLRenderer;
 
     self.domElement = document.createElement('canvas');
+    self.extensions = {
+      has: () => false,
+      get: () => null,
+    };
     const controllers = [new original.Group(), new original.Group()];
     const controllerGrips = [new original.Group(), new original.Group()];
     const hands = [new original.Group(), new original.Group()];
@@ -107,6 +111,48 @@ vi.mock('three', async (importOriginal) => {
   };
 });
 
+// Mock three/webgpu WebGPURenderer for JSDOM headless testing.
+vi.mock('three/webgpu', async () => {
+  const original = await vi.importActual<typeof import('three')>('three');
+
+  class MockWebGPURenderer {
+    isWebGPURenderer = true;
+    domElement = document.createElement('canvas');
+    shadowMap = {enabled: false};
+    xr = {
+      enabled: false,
+      isPresenting: false,
+      getCamera: vi.fn(() => ({cameras: []})),
+      getController: vi.fn(() => new original.Group()),
+      getControllerGrip: vi.fn(() => new original.Group()),
+      getHand: vi.fn(() => {
+        const hand = new original.Group();
+        (hand as unknown as {joints: unknown}).joints = {};
+        return hand;
+      }),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      setReferenceSpaceType: vi.fn(),
+      setAnimationLoop: vi.fn(),
+      getDepthSensingMesh: vi.fn(() => null),
+    };
+    init = vi.fn().mockResolvedValue(undefined);
+    setPixelRatio = vi.fn();
+    setSize = vi.fn();
+    setAnimationLoop = vi.fn();
+    render = vi.fn();
+    dispose = vi.fn();
+    hasFeature = vi.fn(() => false);
+    clear = vi.fn();
+    clearDepth = vi.fn();
+    setRenderTarget = vi.fn();
+  }
+
+  return {
+    WebGPURenderer: MockWebGPURenderer,
+  };
+});
+
 // Mock GLTFLoader to return a mock hand hierarchy with bones immediately under JSDOM.
 const isWebGLSupported = () => {
   try {
@@ -122,7 +168,10 @@ const isWebGLSupported = () => {
 if (!isWebGLSupported()) {
   const {HAND_JOINT_NAMES} = await import('xrblocks');
 
-  vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((_url, onLoad) => {
+  GLTFLoader.prototype.load = function (
+    _url: string,
+    onLoad?: (gltf: GLTF) => void
+  ) {
     const mockHandScene = new THREE.Group();
     for (const jointName of HAND_JOINT_NAMES) {
       const bone = new THREE.Group();
@@ -138,5 +187,5 @@ if (!isWebGLSupported()) {
         asset: {},
       } as unknown as GLTF);
     }
-  });
+  } as typeof GLTFLoader.prototype.load;
 }
