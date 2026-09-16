@@ -111,6 +111,8 @@ const dataUrl = await xb.core.screenshotSynthesizer.getScreenshot(true);
 await xb.core.waitFrame.waitFrame();
 ```
 
+`getScreenshot(true)` requires a device camera configured before initialization with `options.enableCamera()`. If no device camera is configured, pending overlay requests reject with `No device camera provided` rather than waiting indefinitely. Handle the returned promise's rejection, or use `getScreenshot()` for a virtual-only image.
+
 Guard optional runtime services. An exported type or constructor does not prove
 that its subsystem is enabled in the current runtime.
 
