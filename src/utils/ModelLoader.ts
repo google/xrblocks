@@ -3,6 +3,8 @@ import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
 import {GLTF, GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {KTX2Loader} from 'three/addons/loaders/KTX2Loader.js';
 
+import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
+
 /**
  * The base URL for Three.js JSM examples, used for DRACO and KTX2 decoders.
  */
@@ -26,7 +28,7 @@ export type ModelLoaderLoadGLTFOptions = {
   /** The URL of the model file. */
   url: string;
   /** The renderer. */
-  renderer?: THREE.WebGLRenderer;
+  renderer?: WebGLOrWebGPURenderer;
 };
 
 export type ModelLoaderLoadOptions = ModelLoaderLoadGLTFOptions & {
@@ -45,7 +47,7 @@ export class ModelLoader {
   private manager: THREE.LoadingManager;
   private gltfLoader?: GLTFLoader;
   private ktx2Loader?: KTX2Loader;
-  private ktxRenderer?: THREE.WebGLRenderer;
+  private ktxRenderer?: WebGLOrWebGPURenderer;
 
   /**
    * Creates an instance of ModelLoader.
@@ -57,7 +59,7 @@ export class ModelLoader {
     this.manager = manager;
   }
 
-  private getGLTFLoader(renderer?: THREE.WebGLRenderer) {
+  private getGLTFLoader(renderer?: WebGLOrWebGPURenderer) {
     if (!this.gltfLoader) {
       const {gltfLoader, ktx2Loader} = createGLTFLoader(this.manager);
       this.gltfLoader = gltfLoader;

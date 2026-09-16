@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
 import {Handedness} from '../input/Hands';
 import {Input} from '../input/Input';
 import {Interaction} from '../interaction/Interaction';
@@ -43,7 +44,7 @@ export class SimulatorControls {
 
   simulatorModeControls: SimulatorControlMode;
   simulatorModes: {[key: string]: SimulatorControlMode};
-  renderer?: THREE.WebGLRenderer;
+  renderer?: WebGLOrWebGPURenderer;
   private simulatorOptions?: SimulatorOptions;
   private activePointerId?: number;
   private connected = false;
@@ -144,7 +145,7 @@ export class SimulatorControls {
     input: Input;
     interaction: Interaction;
     timer: THREE.Timer;
-    renderer: THREE.WebGLRenderer;
+    renderer: WebGLOrWebGPURenderer;
     simulatorOptions: SimulatorOptions;
   }) {
     for (const mode in this.simulatorModes) {

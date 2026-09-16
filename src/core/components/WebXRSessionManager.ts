@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+import type {WebGLOrWebGPURenderer} from '../RendererTypes';
+
 // Event type definitions for clarity
 export enum WebXRSessionEventType {
   UNSUPPORTED = 'unsupported',
@@ -30,7 +32,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   private disposalPromise?: Promise<void>;
 
   constructor(
-    private renderer: THREE.WebGLRenderer,
+    private renderer: WebGLOrWebGPURenderer,
     private sessionInit: XRSessionInit,
     private mode: XRSessionMode
   ) {
