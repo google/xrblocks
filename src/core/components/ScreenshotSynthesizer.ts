@@ -50,7 +50,7 @@ export class ScreenshotSynthesizer {
   private virtualCaptureInFlight = false;
   private virtualRealCaptureInFlight = false;
 
-  async onAfterRender(
+  onAfterRender(
     renderer: THREE.WebGLRenderer,
     renderSceneFn: () => void,
     deviceCamera?: XRDeviceCamera
@@ -98,7 +98,7 @@ export class ScreenshotSynthesizer {
           this.virtualRealCaptureInFlight = false;
         });
     } else if (haveVirtualAndRealReqeusts && !deviceCamera) {
-      throw new Error('No device camera provided');
+      this.rejectVirtualRealRequests(new Error('No device camera provided'));
     }
   }
 
