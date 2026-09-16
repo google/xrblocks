@@ -11,7 +11,6 @@ import {
 
 const TAG_SIZE_MM = DEFAULT_TAG25H9_SIZE_METERS * 1000;
 const SURFACE = '#111923';
-const SURFACE_RAISED = '#1c2938';
 const CONTROL = '#263a50';
 const CONTROL_HOVER = '#34516f';
 const ACCENT = '#5ba7ff';
@@ -60,24 +59,26 @@ class AprilTagAnchorDemo extends xb.Script {
   }
 
   // The dashboard is a UICard root (world-space, draggable, faces the user)
-  // with UIPanel rows and UIButton / UIText leaves; see
-  // docs/docs/manual/Migrating-to-v0-20-0.md for the tree conventions.
+  // with UIPanel rows and UIButton / UIText leaves, built the same way as the
+  // objects_3d control card: default pixel size, every text created with its
+  // initial string, fixed-height rows, no flex-grow filler.
   createDashboard() {
     const card = new xb.UICard({
-      size: {width: 0.52, height: 0.5},
-      pixelSize: 0.00125,
+      size: {width: 0.6, height: 0.52},
       manipulation: {actions: {translate: {faceCamera: true}}},
       edge: true,
       style: {
         width: '100%',
         height: '100%',
-        flexDirection: 'column',
-        gap: 13,
-        padding: 22,
         backgroundColor: SURFACE,
-        borderRadius: 24,
         borderWidth: 1,
         borderColor: STROKE,
+        borderRadius: 22,
+        padding: 18,
+        flexDirection: 'column',
+        gap: 10,
+        alignItems: 'stretch',
+        justifyContent: 'flex-start',
       },
     });
     card.name = 'AprilTagDashboard';
@@ -87,128 +88,117 @@ class AprilTagAnchorDemo extends xb.Script {
       new xb.UIText({
         text: 'AprilTag spatial anchor',
         style: {
-          width: '100%',
-          fontSize: 32,
+          fontSize: 26,
           fontWeight: 'bold',
           color: TEXT,
           textAlign: 'center',
+          width: '100%',
         },
       })
     );
     card.add(
       new xb.UIText({
         text: `tag25h9 | code width ${TAG_SIZE_MM.toFixed(1)} mm`,
-        style: {width: '100%', fontSize: 18, color: MUTED, textAlign: 'center'},
+        style: {fontSize: 16, color: MUTED, textAlign: 'center', width: '100%'},
+      })
+    );
+    card.add(
+      new xb.UIPanel({
+        style: {
+          width: '100%',
+          height: 2,
+          backgroundColor: 'rgba(255, 255, 255, 0.12)',
+          marginBottom: 4,
+        },
       })
     );
 
     const idRow = new xb.UIPanel({
       style: {
         width: '100%',
-        height: 58,
         flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-      },
-    });
-    card.add(idRow);
-    this.createButton(idRow, '-', () => this.changeTagId(-1), {
-      width: 64,
-      fontSize: 32,
-    });
-    const idWell = new xb.UIPanel({
-      style: {
-        flexGrow: 1,
-        height: 58,
-        alignItems: 'center',
+        gap: 14,
         justifyContent: 'center',
-        backgroundColor: SURFACE_RAISED,
-        borderRadius: 13,
+        alignItems: 'center',
       },
     });
+    idRow.add(this.createButton('-', () => this.changeTagId(-1), {width: 64}));
     this.idText = new xb.UIText({
-      text: '',
+      text: `Tag ID ${this.tracker.tagId}`,
       style: {
-        fontSize: 28,
+        width: 220,
+        fontSize: 24,
         fontWeight: 'bold',
         color: TEXT,
         textAlign: 'center',
       },
     });
-    idWell.add(this.idText);
-    idRow.add(idWell);
-    this.createButton(idRow, '+', () => this.changeTagId(1), {
-      width: 64,
-      fontSize: 32,
-    });
+    idRow.add(this.idText);
+    idRow.add(this.createButton('+', () => this.changeTagId(1), {width: 64}));
+    card.add(idRow);
 
-    const statusWell = new xb.UIPanel({
-      style: {
-        width: '100%',
-        flexGrow: 1,
-        minHeight: 62,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 12,
-        backgroundColor: SURFACE_RAISED,
-        borderRadius: 13,
-      },
-    });
     this.statusText = new xb.UIText({
-      text: '',
+      text: this.tracker.status,
       style: {
         width: '100%',
-        fontSize: 19,
+        fontSize: 17,
         color: MUTED,
         textAlign: 'center',
-        lineHeight: 25,
+        marginTop: 4,
       },
     });
-    statusWell.add(this.statusText);
-    card.add(statusWell);
-
+    card.add(this.statusText);
     this.diagText = new xb.UIText({
-      text: '',
-      style: {width: '100%', fontSize: 15, color: MUTED, textAlign: 'center'},
+      text: ' ',
+      style: {width: '100%', fontSize: 14, color: MUTED, textAlign: 'center'},
     });
     card.add(this.diagText);
 
-    this.createButton(
-      card,
-      'Reset anchor',
-      () => {
-        this.tracker.resetAnchor();
-        this.updateDashboard(true);
+    const resetRow = new xb.UIPanel({
+      style: {
+        width: '100%',
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 4,
       },
-      {width: '100%', height: 48, accent: true, fontSize: 20}
+    });
+    resetRow.add(
+      this.createButton(
+        'Reset anchor',
+        () => {
+          this.tracker.resetAnchor();
+          this.updateDashboard(true);
+        },
+        {width: '100%', accent: true}
+      )
     );
+    card.add(resetRow);
     card.add(
       new xb.UIText({
         text: 'Axes: X red, Y green, Z blue',
-        style: {width: '100%', fontSize: 16, color: MUTED, textAlign: 'center'},
+        style: {width: '100%', fontSize: 14, color: MUTED, textAlign: 'center'},
       })
     );
     this.add(card);
   }
 
-  createButton(
-    parent,
-    label,
-    onClick,
-    {width, height = 58, fontSize = 22, accent = false} = {}
-  ) {
-    const button = new xb.UIButton({
+  createButton(label, onClick, {width, accent = false} = {}) {
+    return new xb.UIButton({
       ariaLabel: label,
       onClick,
       style: {
-        ...(width === undefined ? {flexGrow: 1} : {width}),
-        height,
+        width,
+        paddingTop: 8,
+        paddingBottom: 8,
+        paddingLeft: 16,
+        paddingRight: 16,
+        borderRadius: 12,
+        backgroundColor: accent ? '#244b6e' : CONTROL,
+        borderWidth: 1,
+        borderColor: accent ? ACCENT : STROKE,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: accent ? '#244b6e' : CONTROL,
-        borderRadius: 13,
-        borderWidth: accent ? 1 : 0,
-        borderColor: accent ? ACCENT : STROKE,
         ':hover': {backgroundColor: CONTROL_HOVER},
         ':active': {backgroundColor: accent ? ACCENT : CONTROL_HOVER},
       },
@@ -216,16 +206,14 @@ class AprilTagAnchorDemo extends xb.Script {
         new xb.UIText({
           text: label,
           style: {
-            fontSize,
-            fontWeight: accent ? 'bold' : 'normal',
+            fontSize: 20,
+            fontWeight: 'bold',
             color: accent ? ACCENT : TEXT,
             textAlign: 'center',
           },
         }),
       ],
     });
-    parent.add(button);
-    return button;
   }
 
   // Retained updates: only assign text / colour when a value actually changed,
@@ -250,7 +238,7 @@ class AprilTagAnchorDemo extends xb.Script {
     if (this.diagText) {
       const diag = this.tracker.hasAnchor
         ? this.tracker.diagnosticsSummary
-        : '';
+        : ' ';
       if (force || diag !== this.lastDiag) {
         this.diagText.text = diag;
         this.lastDiag = diag;
