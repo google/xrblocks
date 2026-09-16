@@ -69,10 +69,11 @@ class GlassesUISample extends xb.Script {
   }
 
   private renderSceneOverride = (
-    renderer: THREE.WebGLRenderer,
+    renderer: xb.WebGLOrWebGPURenderer,
     scene: THREE.Scene,
     camera: THREE.Camera
   ) => {
+    xb.assertWebGLRenderer(renderer, 'GlassesRenderer');
     this.glassesRenderer!.render(renderer);
     renderer.render(scene, camera);
   };

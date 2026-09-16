@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type RAPIER from 'rapier3d';
 
+import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import {disposeObjectTree} from '../../utils/ThreeDisposal';
 import {ModelLoader} from '../../utils/ModelLoader';
 import type {DetectedMesh} from '../../world/mesh/DetectedMesh';
@@ -72,9 +73,9 @@ export class SimulatorObjectsManager implements SimulatorObjects {
   private nextId = 1;
   private group?: THREE.Group;
   private physics?: SimulatorPhysics;
-  private renderer?: THREE.WebGLRenderer;
+  private renderer?: WebGLOrWebGPURenderer;
 
-  init(renderer: THREE.WebGLRenderer, physics?: SimulatorPhysics) {
+  init(renderer: WebGLOrWebGPURenderer, physics?: SimulatorPhysics) {
     this.renderer = renderer;
     this.physics = physics;
   }
