@@ -56,10 +56,24 @@ export interface RoomFrameOptions {
 }
 
 const DEFAULTS = {
+  // Triangle budget per call. The full-resolution depth mesh is ~47k
+  // triangles (a 23.7k-vertex grid), so 20k visits roughly every other one;
+  // the estimate is an area-weighted histogram, so subsampling costs little.
   maxTriangles: 20000,
+  // Edge-length gate in metres. Triangles on real surfaces at room range are
+  // a few centimetres across; the "skirts" the camera-grid mesh stretches
+  // over depth discontinuities are typically 0.3 m or longer. 0.2 keeps the
+  // former and drops the latter.
   maxEdge: 0.2,
+  // |normal.y| threshold: 0.25 admits surfaces within asin(0.25) ≈ 14.5° of
+  // vertical (walls, cabinet and furniture fronts) and rejects floors,
+  // ceilings and table tops.
   maxAbsNy: 0.25,
+  // Square metres of voting area below which the histogram peak is treated
+  // as noise (a single chair back is ~0.3 m²; one wall is several m²).
   minSupportArea: 1.0,
+  // Metres from the viewer beyond which triangles are ignored: depth noise
+  // grows with range and the mesh is unreliable past ~6 m.
   maxRange: 6,
 };
 

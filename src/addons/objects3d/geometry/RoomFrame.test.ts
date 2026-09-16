@@ -62,15 +62,20 @@ function roomMesh(yawDeg: number, half = 2, cell = 0.1): THREE.Mesh {
   return mesh;
 }
 
+// Floor test mesh: a FLOOR_CELLS × FLOOR_CELLS grid of FLOOR_CELL_M squares
+// (2 m × 2 m), each split into two triangles.
+const FLOOR_CELLS = 20;
+const FLOOR_CELL_M = 0.1;
+
 /** A mesh of only horizontal (floor) triangles. */
 function floorMesh(): THREE.Mesh {
   const positions: number[] = [];
-  for (let i = 0; i < 20; ++i) {
-    for (let j = 0; j < 20; ++j) {
-      const x0 = i * 0.1,
-        x1 = x0 + 0.1;
-      const z0 = j * 0.1,
-        z1 = z0 + 0.1;
+  for (let i = 0; i < FLOOR_CELLS; ++i) {
+    for (let j = 0; j < FLOOR_CELLS; ++j) {
+      const x0 = i * FLOOR_CELL_M,
+        x1 = x0 + FLOOR_CELL_M;
+      const z0 = j * FLOOR_CELL_M,
+        z1 = z0 + FLOOR_CELL_M;
       positions.push(x0, 0, z0, x1, 0, z0, x1, 0, z1);
       positions.push(x0, 0, z0, x1, 0, z1, x0, 0, z1);
     }
@@ -92,8 +97,12 @@ describe('estimateRoomYawFromMesh', () => {
     expect(frame.supportArea).toBeGreaterThan(1);
   });
 
+  // Room yaws in degrees, chosen away from the 0° / 45° / 90° symmetries of
+  // the 4θ vote so a bias toward the cardinal axes would show up.
+  const ROTATED_ROOM_YAWS_DEG = [17, 30, 41];
+
   it('recovers a rotated room', () => {
-    for (const d of [17, 30, 41]) {
+    for (const d of ROTATED_ROOM_YAWS_DEG) {
       const frame = estimateRoomYawFromMesh(roomMesh(d))!;
       expect(Math.abs(yawDelta90(frame.yaw, deg(d)))).toBeLessThan(deg(1.5));
       expect(frame.confidence).toBeGreaterThan(0.9);
