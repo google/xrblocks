@@ -48,7 +48,7 @@ export class TranscriptionManager {
       if (this.currentInputText.trim()) displayText += '\n\n';
       displayText += `AI: ${this.currentOutputText}`;
     }
-    this.responseDisplay?.setText(displayText);
+    this.responseDisplay.text = displayText;
   }
 
   updateFinalDisplay() {
@@ -56,7 +56,7 @@ export class TranscriptionManager {
     for (const entry of this.conversationHistory) {
       displayText += `${entry.speaker}: ${entry.text}\n\n`;
     }
-    this.responseDisplay?.setText(displayText);
+    this.responseDisplay.text = displayText;
   }
 
   clear() {
@@ -66,10 +66,10 @@ export class TranscriptionManager {
   }
 
   addText(text) {
-    this.responseDisplay?.addText(text + '\n\n');
+    this.responseDisplay.text += text + '\n\n';
   }
 
   setText(text) {
-    this.responseDisplay?.setText(text);
+    this.responseDisplay.text = text;
   }
 }

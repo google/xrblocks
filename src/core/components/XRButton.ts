@@ -13,6 +13,7 @@ export class XRButton {
   public xrButtonElement = document.createElement('button');
   private errorElement = document.createElement('p');
   private disposed = false;
+  private startingSimulator = false;
 
   constructor(
     private sessionManager: WebXRSessionManager,
@@ -24,7 +25,7 @@ export class XRButton {
     private invalidText = 'XR NOT SUPPORTED',
     private startSimulatorText = 'START SIMULATOR',
     showEnterSimulatorButton = false,
-    public startSimulator = () => {},
+    public startSimulator: () => void | Promise<unknown> = () => {},
     private permissions = {
       geolocation: false,
       camera: false,
@@ -78,26 +79,39 @@ export class XRButton {
     this.domElement.appendChild(this.errorElement);
   }
 
-  private showError(error: unknown) {
+  private showError(error: unknown, mode: 'XR' | 'Simulator' = 'XR') {
     if (this.disposed) return;
     const detail =
       error instanceof Error
         ? `${error.name}: ${error.message}`
         : String(error);
-    this.errorElement.textContent = `XR could not start. ${detail}`;
+    this.errorElement.textContent = `${mode} could not start. ${detail}`;
     this.errorElement.hidden = false;
+    if (mode === 'Simulator') return;
     this.xrButtonElement.textContent = this.sessionManager.currentSession
       ? this.endText
       : this.startText;
-    this.xrButtonElement.disabled = false;
+    this.xrButtonElement.disabled = this.startingSimulator;
+    this.simulatorButtonElement.disabled =
+      this.startingSimulator || !!this.sessionManager.currentSession;
   }
 
   private createSimulatorButton() {
     this.simulatorButtonElement.classList.add(XRBUTTON_CLASS);
     this.simulatorButtonElement.innerText = this.startSimulatorText;
-    this.simulatorButtonElement.onclick = () => {
-      this.domElement.remove();
-      this.startSimulator();
+    this.simulatorButtonElement.onclick = async () => {
+      if (this.disposed || this.simulatorButtonElement.disabled) return;
+      this.setSimulatorStarting(true);
+      this.errorElement.textContent = '';
+      this.errorElement.hidden = true;
+      try {
+        await this.startSimulator();
+        if (!this.disposed) this.domElement.remove();
+      } catch (error) {
+        if (this.disposed) return;
+        this.setSimulatorStarting(false);
+        this.showError(error, 'Simulator');
+      }
     };
     this.domElement.appendChild(this.simulatorButtonElement);
   }
@@ -133,17 +147,20 @@ export class XRButton {
     const button = this.xrButtonElement;
     button.style.display = '';
     button.innerHTML = this.startText;
-    button.disabled = false;
+    button.disabled = this.startingSimulator;
+    this.simulatorButtonElement.disabled = this.startingSimulator;
 
     const allowsVideoFallback = this.sessionManager
       .getSessionOptions()
       ?.optionalFeatures?.includes('camera-access');
 
     button.onclick = () => {
+      if (this.disposed || button.disabled) return;
       this.errorElement.textContent = '';
       this.errorElement.hidden = true;
       button.textContent = 'ENTERING XR...';
       button.disabled = true;
+      this.simulatorButtonElement.disabled = true;
       this.permissionsManager
         .checkAndRequestPermissions(this.permissions, {
           allowVideoFallback: allowsVideoFallback,
@@ -171,7 +188,8 @@ export class XRButton {
     this.errorElement.textContent = '';
     this.errorElement.hidden = true;
     this.xrButtonElement.innerHTML = this.endText;
-    this.xrButtonElement.disabled = false;
+    this.xrButtonElement.disabled = this.startingSimulator;
+    this.simulatorButtonElement.disabled = true;
     this.xrButtonElement.onclick = () => {
       void this.sessionManager.endSession();
     };
@@ -179,6 +197,15 @@ export class XRButton {
 
   private onSessionEnded() {
     this.onSessionReady();
+  }
+
+  setSimulatorStarting(starting: boolean) {
+    if (this.disposed) return;
+    this.startingSimulator = starting;
+    this.simulatorButtonElement.disabled =
+      starting || !!this.sessionManager.currentSession;
+    this.xrButtonElement.disabled =
+      starting || this.sessionManager.isXRSupported() !== true;
   }
 
   dispose() {

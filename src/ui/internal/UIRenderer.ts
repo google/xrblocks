@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {setUIValidator, ui} from '../UI';
@@ -47,7 +48,7 @@ export class UIRenderer {
   private readonly connectedRoots = new Set<UIElement>();
   private readonly viewport = {width: 0, height: 0};
   private backendState: BackendState = {kind: 'idle'};
-  private renderer?: THREE.WebGLRenderer;
+  private renderer?: WebGLOrWebGPURenderer;
   private publicScene?: THREE.Scene;
 
   constructor(
@@ -67,7 +68,7 @@ export class UIRenderer {
   /** Mounts UI roots already connected when Core initializes. */
   async initialize(
     scene: THREE.Scene,
-    renderer: THREE.WebGLRenderer
+    renderer: WebGLOrWebGPURenderer
   ): Promise<void> {
     this.publicScene = scene;
     this.renderer = renderer;
@@ -191,7 +192,9 @@ export class UIRenderer {
         throw STALE_UI_LOAD;
       }
       try {
-        backend.configureRenderer?.(this.renderer);
+        if (this.renderer instanceof THREE.WebGLRenderer) {
+          backend.configureRenderer?.(this.renderer);
+        }
       } catch (error) {
         backend.dispose();
         throw error;

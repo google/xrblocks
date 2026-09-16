@@ -1,4 +1,4 @@
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, vi} from 'vitest';
 import * as THREE from 'three';
 
 import {OcclusionMapMeshMaterial} from './OcclusionMapMeshMaterial';
@@ -64,6 +64,56 @@ describe('OcclusionMapMeshMaterial', () => {
 });
 
 describe('OcclusionPass', () => {
+  it('disposes all owned targets and quad materials once, not input textures', () => {
+    const pass = new OcclusionPass(
+      new THREE.Scene(),
+      new THREE.PerspectiveCamera()
+    );
+    const input = new THREE.Texture();
+    const inputDispose = vi.spyOn(input, 'dispose');
+    pass.setDepthTexture(input, 1, 0);
+    const targets = [pass['occlusionMapTexture'], ...pass['kawaseBlurTargets']];
+    const quads = [
+      pass['occlusionMapQuad'],
+      ...pass['kawaseBlurQuads'],
+      pass['occlusionQuad'],
+    ];
+    const disposals = [
+      vi.spyOn(pass['occlusionMeshMaterial'], 'dispose'),
+      ...targets.map((target) => vi.spyOn(target, 'dispose')),
+      ...quads.flatMap((quad) => [
+        vi.spyOn(quad, 'dispose'),
+        vi.spyOn(quad.material, 'dispose'),
+      ]),
+    ];
+
+    pass.dispose();
+    pass.dispose();
+
+    for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
+    expect(inputDispose).not.toHaveBeenCalled();
+    expect(pass['depthTextures']).toHaveLength(0);
+  });
+
+  it('continues cleanup after a resource throws and reports the error', () => {
+    const pass = new OcclusionPass(
+      new THREE.Scene(),
+      new THREE.PerspectiveCamera()
+    );
+    vi.spyOn(pass['occlusionMeshMaterial'], 'dispose').mockImplementation(
+      () => {
+        throw new Error('material disposal failed');
+      }
+    );
+    const targetDispose = vi.spyOn(pass['kawaseBlurTargets'][0], 'dispose');
+    const quadDispose = vi.spyOn(pass['occlusionQuad'].material, 'dispose');
+
+    expect(() => pass.dispose()).toThrow('material disposal failed');
+    expect(targetDispose).toHaveBeenCalledOnce();
+    expect(quadDispose).toHaveBeenCalledOnce();
+    expect(() => pass.dispose()).not.toThrow();
+  });
+
   it('stores depthViewMatrix and depthProjectionMatrix when provided to setDepthTexture', () => {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera();
