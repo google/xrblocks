@@ -46,6 +46,7 @@ export class ModelViewerPlatform extends THREE.Mesh<
     this.removeFromParent();
     this.geometry.dispose();
     for (const material of this.material) material.dispose();
+    super.dispose();
   }
 }
 

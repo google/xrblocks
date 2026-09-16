@@ -43,7 +43,17 @@ describe('XR entry feedback', () => {
       'immersive-vr'
     );
     permissions = new PermissionsManager();
-    button = new XRButton(manager, permissions);
+    button = new XRButton(
+      manager,
+      permissions,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
     document.body.appendChild(button.domElement);
     await manager.initialize();
   });
@@ -225,5 +235,156 @@ describe('XR entry feedback', () => {
     await flushRequests();
 
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('retains the entry UI and blocks duplicate and XR clicks while the simulator starts', async () => {
+    const pending = Promise.withResolvers<void>();
+    const startSimulator = vi.fn(() => pending.promise);
+    button.startSimulator = startSimulator;
+
+    button.simulatorButtonElement.click();
+
+    expect.soft(button.domElement.isConnected).toBe(true);
+    expect.soft(button.simulatorButtonElement.disabled).toBe(true);
+    expect.soft(button.xrButtonElement.disabled).toBe(true);
+    button.simulatorButtonElement.click();
+    button.xrButtonElement.click();
+    await flushRequests();
+    expect.soft(startSimulator).toHaveBeenCalledOnce();
+    expect.soft(requestSession).not.toHaveBeenCalled();
+
+    pending.resolve();
+    await flushRequests();
+    expect(button.domElement.isConnected).toBe(false);
+  });
+
+  it('preserves unsupported XR feedback when simulator startup fails', async () => {
+    vi.mocked(navigator.xr!.isSessionSupported).mockResolvedValue(false);
+    await manager.initialize();
+    const pending = Promise.withResolvers<void>();
+    void pending.promise.catch(() => {});
+    button.startSimulator = () => pending.promise;
+
+    button.simulatorButtonElement.click();
+    pending.reject(new Error('Simulator runtime download failed.'));
+    await flushRequests();
+
+    expect.soft(button.domElement.isConnected).toBe(true);
+    expect
+      .soft(button.domElement.textContent)
+      .toContain(
+        'Simulator could not start. Error: Simulator runtime download failed.'
+      );
+    expect
+      .soft(
+        button.domElement.querySelector<HTMLElement>('[role="alert"]')?.hidden
+      )
+      .toBe(false);
+    expect(button.xrButtonElement.textContent).toBe('XR NOT SUPPORTED');
+    expect(button.xrButtonElement.disabled).toBe(true);
+    expect(button.simulatorButtonElement.disabled).toBe(false);
+  });
+
+  it('supports synchronous simulator callbacks', async () => {
+    const startSimulator = vi.fn();
+    button.startSimulator = startSimulator;
+
+    button.simulatorButtonElement.click();
+    await flushRequests();
+
+    expect(startSimulator).toHaveBeenCalledOnce();
+    expect(button.domElement.isConnected).toBe(false);
+  });
+
+  it('shows a synchronous simulator failure and restores both entry buttons', async () => {
+    button.startSimulator = () => {
+      throw new Error('Simulator setup failed.');
+    };
+
+    // Invoke the handler directly so the old synchronous throw is captured too.
+    await expect(
+      Promise.resolve().then(() =>
+        button.simulatorButtonElement.onclick?.call(
+          button.simulatorButtonElement,
+          new MouseEvent('click')
+        )
+      )
+    ).resolves.toBeUndefined();
+
+    expect(button.domElement.isConnected).toBe(true);
+    expect(button.domElement.textContent).toContain(
+      'Simulator could not start. Error: Simulator setup failed.'
+    );
+    expect(button.xrButtonElement.disabled).toBe(false);
+    expect(button.simulatorButtonElement.disabled).toBe(false);
+  });
+
+  it.each(['resolve', 'reject'] as const)(
+    'does not update disposed simulator entry UI after a late %s',
+    async (outcome) => {
+      const pending = Promise.withResolvers<void>();
+      void pending.promise.catch(() => {});
+      button.startSimulator = () => pending.promise;
+      button.simulatorButtonElement.click();
+      button.dispose();
+      const disposedMarkup = button.domElement.outerHTML;
+
+      if (outcome === 'resolve') pending.resolve();
+      else pending.reject(new Error('Late simulator failure.'));
+      await flushRequests();
+
+      expect(button.domElement.isConnected).toBe(false);
+      expect(button.domElement.outerHTML).toBe(disposedMarkup);
+      expect(button.simulatorButtonElement.onclick).toBeNull();
+      expect(button.xrButtonElement.onclick).toBeNull();
+    }
+  );
+
+  it('blocks simulator entry during XR permissions, session startup, and the active session', async () => {
+    const pendingPermissions =
+      Promise.withResolvers<
+        Awaited<ReturnType<PermissionsManager['checkAndRequestPermissions']>>
+      >();
+    vi.spyOn(permissions, 'checkAndRequestPermissions').mockReturnValue(
+      pendingPermissions.promise
+    );
+    const pendingSession = Promise.withResolvers<XRSession>();
+    requestSession.mockReturnValue(pendingSession.promise);
+    const startSimulator = vi.fn();
+    button.startSimulator = startSimulator;
+
+    button.xrButtonElement.click();
+    button.simulatorButtonElement.click();
+    expect.soft(startSimulator).not.toHaveBeenCalled();
+
+    pendingPermissions.resolve({granted: true, status: 'granted'});
+    await flushRequests();
+    button.simulatorButtonElement.click();
+    expect.soft(startSimulator).not.toHaveBeenCalled();
+
+    pendingSession.resolve(createSession());
+    await flushRequests();
+    button.simulatorButtonElement.click();
+    expect.soft(startSimulator).not.toHaveBeenCalled();
+
+    button.xrButtonElement.click();
+    await flushRequests();
+    button.simulatorButtonElement.click();
+    await flushRequests();
+    expect.soft(startSimulator).toHaveBeenCalledOnce();
+  });
+
+  it('restores simulator entry after an XR request fails', async () => {
+    requestSession.mockRejectedValue(new Error('XR request failed.'));
+    const startSimulator = vi.fn();
+    button.startSimulator = startSimulator;
+
+    button.xrButtonElement.click();
+    await flushRequests();
+    button.simulatorButtonElement.click();
+    await flushRequests();
+
+    expect(startSimulator).toHaveBeenCalledOnce();
+    expect(button.domElement.isConnected).toBe(false);
   });
 });
