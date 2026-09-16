@@ -267,25 +267,26 @@ function report(state) {
  */
 function reportInWorld(owner, state) {
   if (!owner.readout) {
-    const panel = new xb.SpatialPanel({
-      width: 1.6,
-      height: 0.24,
-      backgroundColor: '#000000cc',
-      useDefaultPosition: false,
+    owner.readout = new xb.UIText({
+      text: '',
+      style: {color: '#7CFC7C', fontSize: 50, textAlign: 'center'},
+    });
+    const panel = new xb.UICard({
+      size: {width: 1.6, height: 0.24},
+      style: {
+        backgroundColor: '#000000cc',
+        justifyContent: 'center',
+        padding: 16,
+      },
+      children: [owner.readout],
     });
     panel.position.set(0, 0.75, -2);
-    owner.readout = panel.addGrid().addRow({weight: 1}).addText({
-      text: '',
-      fontColor: '#7CFC7C',
-      fontSize: 0.05,
-    });
     owner.add(panel);
   }
-  owner.readout.setText(
+  owner.readout.text =
     `${state.layerPath}${state.requestedWebGL ? ' (webgl asked for)' : ''} | ` +
-      `attached: ${state.layerAttached} | uploads: ${state.uploads} | ` +
-      `${state.layerOnLeft ? 'layer LEFT' : 'layer RIGHT'}`
-  );
+    `attached: ${state.layerAttached} | uploads: ${state.uploads} | ` +
+    `${state.layerOnLeft ? 'layer LEFT' : 'layer RIGHT'}`;
 }
 
 /**
