@@ -184,6 +184,9 @@
 
     <script>
       // Resolve gemini key: ?key= URL param > localStorage > ./keys.json > overlay.
+      // keys.json may use either this page's historical {"key": "..."} shape or
+      // the SDK's own {"gemini": {"apiKey": "..."}} shape (see src/ai/AI.ts),
+      // so a file that already satisfies xb.core.ai never triggers the overlay.
       (async function () {
         const STORAGE_KEY = 'gemini-api-key';
         const params = new URLSearchParams(window.location.search);
@@ -205,7 +208,8 @@
         try {
           const res = await fetch('./keys.json', {cache: 'no-store'});
           if (res.ok) {
-            const k = (await res.json()).key;
+            const json = await res.json();
+            const k = json.key ?? json.gemini?.apiKey;
             if (k) {
               window.localStorage.setItem(STORAGE_KEY, k);
               params.set('key', k);
