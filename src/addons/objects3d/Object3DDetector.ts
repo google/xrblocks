@@ -299,7 +299,12 @@ export class Object3DDetector extends Script {
   override update(): void {
     const deviceCamera = core.deviceCamera;
     if (!deviceCamera || deviceCamera.simulatorCamera) return;
-    const xrCameras = core.renderer?.xr?.getCamera?.();
+    // `core.renderer` may be a WebGPURenderer, whose XR manager types
+    // `getCamera()` as a plain ArrayCamera; the device-camera helpers want the
+    // WebXR-specific shape (same cast as PlanarVST).
+    const xrCameras = core.renderer?.xr?.getCamera?.() as
+      | THREE.WebXRArrayCamera
+      | undefined;
     if (!xrCameras?.cameras?.length) return;
     try {
       this._poseRing.push(
@@ -908,7 +913,7 @@ export class Object3DDetector extends Script {
     try {
       const params = getCameraParametersSnapshot(
         core.camera,
-        core.renderer.xr.getCamera(),
+        core.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
         deviceCamera,
         this._targetDevice()
       );
