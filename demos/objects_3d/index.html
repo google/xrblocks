@@ -899,7 +899,7 @@
             children: [
               new xb.UIText({
                 text,
-                style: {fontSize: 11, color: '#ffffff'},
+                style: {fontSize: 14, color: '#ffffff'},
               }),
             ],
           });
@@ -939,7 +939,7 @@
             new xb.UIText({
               text: 'APRILTAG CALIBRATION',
               style: {
-                fontSize: 15,
+                fontSize: 18,
                 fontWeight: 'bold',
                 color: '#ffd27a',
                 textAlign: 'center',
@@ -952,7 +952,7 @@
               text: `tag25h9 | code width ${(DEFAULT_TAG25H9_SIZE_METERS * 1000).toFixed(1)} mm`,
               style: {
                 width: '100%',
-                fontSize: 10,
+                fontSize: 12,
                 color: '#9ad',
                 textAlign: 'center',
               },
@@ -981,7 +981,7 @@
           calIdText = new xb.UIText({
             text: `Tag ID ${aprilTracker.tagId}`,
             style: {
-              fontSize: 12,
+              fontSize: 15,
               fontWeight: 'bold',
               color: '#ffffff',
               textAlign: 'center',
@@ -995,7 +995,7 @@
             text: aprilTracker.status,
             style: {
               width: '100%',
-              fontSize: 11,
+              fontSize: 13,
               color: '#9ad',
               textAlign: 'center',
             },
@@ -1005,7 +1005,7 @@
             text: '',
             style: {
               width: '100%',
-              fontSize: 10,
+              fontSize: 12,
               color: '#7d8794',
               textAlign: 'center',
             },

@@ -88,7 +88,7 @@ class AprilTagAnchorDemo extends xb.Script {
         text: 'AprilTag spatial anchor',
         style: {
           width: '100%',
-          fontSize: 27,
+          fontSize: 32,
           fontWeight: 'bold',
           color: TEXT,
           textAlign: 'center',
@@ -98,7 +98,7 @@ class AprilTagAnchorDemo extends xb.Script {
     card.add(
       new xb.UIText({
         text: `tag25h9 | code width ${TAG_SIZE_MM.toFixed(1)} mm`,
-        style: {width: '100%', fontSize: 16, color: MUTED, textAlign: 'center'},
+        style: {width: '100%', fontSize: 18, color: MUTED, textAlign: 'center'},
       })
     );
 
@@ -114,7 +114,7 @@ class AprilTagAnchorDemo extends xb.Script {
     card.add(idRow);
     this.createButton(idRow, '-', () => this.changeTagId(-1), {
       width: 64,
-      fontSize: 30,
+      fontSize: 32,
     });
     const idWell = new xb.UIPanel({
       style: {
@@ -129,7 +129,7 @@ class AprilTagAnchorDemo extends xb.Script {
     this.idText = new xb.UIText({
       text: '',
       style: {
-        fontSize: 25,
+        fontSize: 28,
         fontWeight: 'bold',
         color: TEXT,
         textAlign: 'center',
@@ -139,7 +139,7 @@ class AprilTagAnchorDemo extends xb.Script {
     idRow.add(idWell);
     this.createButton(idRow, '+', () => this.changeTagId(1), {
       width: 64,
-      fontSize: 30,
+      fontSize: 32,
     });
 
     const statusWell = new xb.UIPanel({
@@ -158,10 +158,10 @@ class AprilTagAnchorDemo extends xb.Script {
       text: '',
       style: {
         width: '100%',
-        fontSize: 17,
+        fontSize: 19,
         color: MUTED,
         textAlign: 'center',
-        lineHeight: 22,
+        lineHeight: 25,
       },
     });
     statusWell.add(this.statusText);
@@ -169,7 +169,7 @@ class AprilTagAnchorDemo extends xb.Script {
 
     this.diagText = new xb.UIText({
       text: '',
-      style: {width: '100%', fontSize: 13, color: MUTED, textAlign: 'center'},
+      style: {width: '100%', fontSize: 15, color: MUTED, textAlign: 'center'},
     });
     card.add(this.diagText);
 
@@ -180,12 +180,12 @@ class AprilTagAnchorDemo extends xb.Script {
         this.tracker.resetAnchor();
         this.updateDashboard(true);
       },
-      {width: '100%', height: 46, accent: true, fontSize: 18}
+      {width: '100%', height: 48, accent: true, fontSize: 20}
     );
     card.add(
       new xb.UIText({
         text: 'Axes: X red, Y green, Z blue',
-        style: {width: '100%', fontSize: 14, color: MUTED, textAlign: 'center'},
+        style: {width: '100%', fontSize: 16, color: MUTED, textAlign: 'center'},
       })
     );
     this.add(card);
@@ -195,7 +195,7 @@ class AprilTagAnchorDemo extends xb.Script {
     parent,
     label,
     onClick,
-    {width, height = 58, fontSize = 20, accent = false} = {}
+    {width, height = 58, fontSize = 22, accent = false} = {}
   ) {
     const button = new xb.UIButton({
       ariaLabel: label,
