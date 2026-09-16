@@ -554,9 +554,6 @@
           [axis]: THREE.MathUtils.degToRad(deg),
         });
         document.getElementById(axis + 'Input').value = String(deg);
-        if (xrRotationLabels[axis]) {
-          xrRotationLabels[axis].text = `${deg.toFixed(0)}°`;
-        }
         setStatus(
           `rotation offset yaw ${SETTINGS.yawDeg}° pitch ${SETTINGS.pitchDeg}° ` +
             `roll ${SETTINGS.rollDeg}° — press detect to apply`
@@ -611,13 +608,12 @@
       );
 
       // -----------------------------------------------------------------
-      // Spatial control + diagnostics panel for immersive XR, on xb.ui
-      // (UICard root; UIPanel rows; UIButton / UIText / UIIcon leaves). It
-      // mirrors the DOM controls, which are invisible once the session
-      // starts, and refreshes the diagnostics column a few times a second.
+      // Spatial control card for immersive XR, on xb.ui (UICard root; UIPanel
+      // rows; UIButton / UIText / UIIcon leaves). Deliberately compact: the
+      // developer knobs (rotation offsets, depth toggles, the diagnostics
+      // readout) live on the DOM panel; in XR you detect, clear, and pick the
+      // detector, mask and orientation mode.
       // -----------------------------------------------------------------
-      const xrRotationLabels = {};
-      let xrDiagnosticsRows = null;
       let xrOrientLabel = null;
 
       const BUTTON_IDLE = '#2a2a2a';
@@ -631,16 +627,16 @@
         ':active': {backgroundColor: '#4796e3'},
       };
 
-      class DebugPanel extends xb.Script {
+      class ControlPanel extends xb.Script {
         init() {
           const card = new xb.UICard({
-            size: {width: 0.95, height: 0.6},
+            size: {width: 0.62, height: 0.4},
             manipulation: {actions: {translate: {faceCamera: true}}},
             edge: true,
             style: {
               width: '100%',
               height: '100%',
-              backgroundColor: 'rgba(15, 18, 25, 0.92)',
+              backgroundColor: 'rgba(15, 18, 25, 0.9)',
               borderWidth: 3,
               borderColor: {
                 gradientType: 'linear',
@@ -650,22 +646,22 @@
                   {position: 1, color: '#9b5de5'},
                 ],
               },
-              borderRadius: 20,
-              padding: 16,
+              borderRadius: 22,
+              padding: 18,
               flexDirection: 'column',
-              gap: 8,
+              gap: 10,
               alignItems: 'stretch',
               justifyContent: 'flex-start',
             },
           });
-          card.name = 'Objects3dDebugCard';
-          card.position.set(0, 1.35, -0.95);
+          card.name = 'Objects3dControlCard';
+          card.position.set(0, 1.4, -1.0);
 
           card.add(
             new xb.UIText({
-              text: '3D OBJECT BOXES · ADDON',
+              text: '3D OBJECT BOXES',
               style: {
-                fontSize: 18,
+                fontSize: 22,
                 fontWeight: 'bold',
                 color: '#00f0ff',
                 textAlign: 'center',
@@ -676,10 +672,11 @@
           xrStatusText = new xb.UIText({
             text: statusEl.textContent.replace(/…/g, '...'),
             style: {
-              fontSize: 12,
-              color: '#9ad',
+              fontSize: 14,
+              color: '#a0aec0',
               textAlign: 'center',
               width: '100%',
+              paddingBottom: 4,
             },
           });
           card.add(xrStatusText);
@@ -689,88 +686,53 @@
                 width: '100%',
                 height: 2,
                 backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                marginBottom: 4,
               },
             })
           );
 
-          // Two columns: controls on the left, live diagnostics on the right.
-          const body = new xb.UIPanel({
+          const buttonRow = new xb.UIPanel({
             style: {
               width: '100%',
-              flexGrow: 1,
               flexDirection: 'row',
               gap: 14,
-              alignItems: 'stretch',
+              justifyContent: 'center',
+              alignItems: 'center',
             },
           });
-          body.add(this.buildControls());
-          body.add(this.buildDiagnostics());
-          card.add(body);
-          this.add(card);
-        }
+          buttonRow.add(this.iconButton('search', 'detect', detect));
+          buttonRow.add(this.iconButton('delete_sweep', 'clear', clearAll));
+          card.add(buttonRow);
 
-        buildControls() {
-          const col = new xb.UIPanel({
-            style: {
-              width: '42%',
-              flexDirection: 'column',
-              gap: 6,
-              alignItems: 'stretch',
-            },
-          });
-
-          const buttons = new xb.UIPanel({
+          // Detector and mask reload the page (they must be set before
+          // xb.init); orientation applies live to the next detect.
+          const pickerRow = new xb.UIPanel({
             style: {
               width: '100%',
               flexDirection: 'row',
-              gap: 8,
+              gap: 10,
               justifyContent: 'center',
+              alignItems: 'center',
+              marginTop: 4,
             },
           });
-          buttons.add(this.iconButton('search', 'detect', detect));
-          buttons.add(this.iconButton('delete_sweep', 'clear', clearAll));
-          buttons.add(this.iconButton('content_copy', 'copy', copyDiagnostics));
-          col.add(buttons);
-
-          // Nudge the camera rotation offset live, ±5° per press.
-          for (const axis of ['yaw', 'pitch', 'roll']) {
-            col.add(this.rotationRow(axis));
-          }
-
-          // Everything below needs a reload to take effect. (No flexWrap: the
-          // core UI style validator rejects unknown properties, and a throw
-          // here silently drops the whole card -- the script is marked failed
-          // without a console message.)
-          const toggles = new xb.UIPanel({
-            style: {
-              width: '100%',
-              flexDirection: 'row',
-              gap: 6,
-              justifyContent: 'center',
-            },
-          });
-          toggles.add(
-            this.toggleButton('matchDepth', SETTINGS.matchDepthView, () =>
-              reloadWith({matchDepthView: !SETTINGS.matchDepthView})
+          pickerRow.add(
+            this.cycleButton(
+              'detector',
+              SETTINGS.detector,
+              ['gemini', 'mediapipe', 'both'],
+              (next) => reloadWith({backend: next})
             )
           );
-          toggles.add(
-            this.toggleButton('fullResDepth', SETTINGS.fullResDepth, () =>
-              reloadWith({fullResDepth: !SETTINGS.fullResDepth})
+          pickerRow.add(
+            this.cycleButton(
+              'mask',
+              SETTINGS.mask,
+              ['slimsam', 'mediapipe'],
+              (next) => reloadWith({mask: next})
             )
           );
-          col.add(toggles);
-
-          // Orientation cycles live, so it sits apart from the reload pickers.
-          const orientRow = new xb.UIPanel({
-            style: {
-              width: '100%',
-              flexDirection: 'row',
-              gap: 6,
-              justifyContent: 'center',
-            },
-          });
-          orientRow.add(
+          pickerRow.add(
             this.cycleButton(
               'orientation',
               SETTINGS.orient,
@@ -781,183 +743,49 @@
               }
             )
           );
-          col.add(orientRow);
-
-          const pickers = new xb.UIPanel({
-            style: {
-              width: '100%',
-              flexDirection: 'row',
-              gap: 6,
-              justifyContent: 'center',
-            },
-          });
-          pickers.add(
-            this.cycleButton(
-              'detector',
-              SETTINGS.detector,
-              ['gemini', 'mediapipe', 'both'],
-              (next) => reloadWith({backend: next})
-            )
-          );
-          pickers.add(
-            this.cycleButton(
-              'mask',
-              SETTINGS.mask,
-              ['slimsam', 'mediapipe'],
-              (next) => reloadWith({mask: next})
-            )
-          );
-          col.add(pickers);
-          return col;
+          card.add(pickerRow);
+          this.add(card);
         }
 
-        buildDiagnostics() {
-          const col = new xb.UIPanel({
-            style: {
-              width: '58%',
-              flexDirection: 'column',
-              gap: 1,
-              alignItems: 'stretch',
-              paddingLeft: 10,
-              paddingTop: 4,
-              paddingBottom: 4,
-              borderRadius: 10,
-              backgroundColor: 'rgba(0, 0, 0, 0.3)',
-            },
-          });
-          xrDiagnosticsRows = DIAG_ROWS.map(([label]) => {
-            const row = new xb.UIPanel({
-              style: {
-                width: '100%',
-                flexDirection: 'row',
-                gap: 6,
-                alignItems: 'center',
-              },
-            });
-            row.add(
-              new xb.UIText({
-                text: label,
-                style: {width: '38%', fontSize: 9, color: '#7d8794'},
-              })
-            );
-            const value = new xb.UIText({
-              text: '—',
-              style: {width: '62%', fontSize: 9, color: '#d0d6dd'},
-            });
-            row.add(value);
-            col.add(row);
-            return value;
-          });
-          return col;
-        }
-
-        rotationRow(axis) {
-          const row = new xb.UIPanel({
-            style: {
-              width: '100%',
-              flexDirection: 'row',
-              gap: 5,
-              alignItems: 'center',
-              justifyContent: 'center',
-            },
-          });
-          row.add(
-            new xb.UIText({
-              text: axis,
-              style: {width: 34, fontSize: 10, color: '#888888'},
-            })
-          );
-          row.add(
-            this.smallButton('−5°', () =>
-              setRotation(axis, SETTINGS[axis + 'Deg'] - 5)
-            )
-          );
-          const label = new xb.UIText({
-            text: `${SETTINGS[axis + 'Deg'].toFixed(0)}°`,
-            style: {
-              width: 42,
-              fontSize: 12,
-              fontWeight: 'bold',
-              color: '#ffffff',
-              textAlign: 'center',
-            },
-          });
-          xrRotationLabels[axis] = label;
-          row.add(label);
-          row.add(
-            this.smallButton('+5°', () =>
-              setRotation(axis, SETTINGS[axis + 'Deg'] + 5)
-            )
-          );
-          row.add(this.smallButton('0', () => setRotation(axis, 0)));
-          return row;
-        }
-
-        // A button that shows both its name and its current on/off state.
-        toggleButton(label, on, onClick) {
-          return this.cycleButton(label, on ? 'on' : 'off', [], onClick);
-        }
-
-        smallButton(text, onClick) {
-          return new xb.UIButton({
-            ariaLabel: text,
-            onClick,
-            style: {
-              ...BUTTON_STYLE,
-              paddingTop: 3,
-              paddingBottom: 3,
-              paddingLeft: 7,
-              paddingRight: 7,
-              borderRadius: 7,
-            },
-            children: [
-              new xb.UIText({
-                text,
-                style: {fontSize: 11, color: '#ffffff'},
-              }),
-            ],
-          });
-        }
-
+        // Icon + caption, so XR users get the same affordance as the DOM
+        // "Detect" / "Clear" buttons.
         iconButton(iconName, label, onClick) {
           return new xb.UIButton({
             ariaLabel: label,
             onClick,
             style: {
               ...BUTTON_STYLE,
-              paddingTop: 6,
-              paddingBottom: 6,
-              paddingLeft: 10,
-              paddingRight: 10,
-              borderRadius: 10,
+              paddingTop: 8,
+              paddingBottom: 8,
+              paddingLeft: 16,
+              paddingRight: 16,
+              borderRadius: 12,
               flexDirection: 'row',
-              gap: 5,
+              gap: 8,
             },
             children: [
               new xb.UIIcon({
                 icon: iconName,
                 ariaLabel: iconName,
-                style: {color: '#ffffff', width: 16, height: 16},
+                style: {color: '#ffffff', width: 22, height: 22},
               }),
               new xb.UIText({
                 text: label,
-                style: {fontSize: 11, color: '#ffffff', fontWeight: 'bold'},
+                style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
               }),
             ],
           });
         }
 
-        // Tap to advance to the next value. Most of these reload the page
-        // (their setting must be applied before xb.init), but the ones that
-        // apply live track their own value, so pass onLabelReady to keep the
-        // caption in sync.
+        // Tap to advance to the next value. Pickers that apply live pass
+        // onLabelReady so the caption can be kept in sync from elsewhere.
         cycleButton(label, current, values, onChange, onLabelReady) {
           let value = current;
           const valueText = new xb.UIText({
             text: current,
             style: {
-              fontSize: 11,
-              color: current === 'off' ? '#888888' : '#ffffff',
+              fontSize: 14,
+              color: '#ffffff',
               fontWeight: 'bold',
               textAlign: 'center',
             },
@@ -965,50 +793,29 @@
           const btn = new xb.UIButton({
             ariaLabel: `${label}: ${current}`,
             onClick: () => {
-              if (values.length === 0) {
-                onChange();
-                return;
-              }
               value = values[(values.indexOf(value) + 1) % values.length];
               onChange(value);
             },
             style: {
               ...BUTTON_STYLE,
-              paddingTop: 4,
-              paddingBottom: 4,
-              paddingLeft: 8,
-              paddingRight: 8,
-              borderRadius: 8,
+              paddingTop: 6,
+              paddingBottom: 6,
+              paddingLeft: 12,
+              paddingRight: 12,
+              borderRadius: 10,
               flexDirection: 'column',
+              gap: 2,
             },
             children: [
               new xb.UIText({
                 text: label,
-                style: {fontSize: 8, color: '#888888', textAlign: 'center'},
+                style: {fontSize: 10, color: '#888888', textAlign: 'center'},
               }),
               valueText,
             ],
           });
           onLabelReady?.(valueText);
           return btn;
-        }
-
-        // Repainting text allocates, so only touch rows whose value actually
-        // changed, and only a few times a second.
-        update() {
-          if (!xrDiagnosticsRows) return;
-          const now = performance.now();
-          if (now - (this._lastRefresh ?? 0) < 250) return;
-          this._lastRefresh = now;
-          const d = detector.diagnostics;
-          this._cache ??= new Array(DIAG_ROWS.length).fill(null);
-          for (let i = 0; i < DIAG_ROWS.length; ++i) {
-            const text = d ? DIAG_ROWS[i][1](d) : '—';
-            if (text !== this._cache[i]) {
-              this._cache[i] = text;
-              xrDiagnosticsRows[i].text = text;
-            }
-          }
         }
       }
 
@@ -1049,7 +856,7 @@
       options.setAppTitle('3D Object Boxes');
 
       xb.add(detector);
-      xb.add(new DebugPanel());
+      xb.add(new ControlPanel());
       await xb.init(options);
 
       refreshDiagnostics();
