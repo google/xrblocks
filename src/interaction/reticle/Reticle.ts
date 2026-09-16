@@ -189,6 +189,7 @@ export class Reticle extends THREE.Mesh<
     this.hoverRing.material.dispose();
     this.intersection = undefined;
     this.targetObject = undefined;
+    super.dispose();
   }
 
   /**
