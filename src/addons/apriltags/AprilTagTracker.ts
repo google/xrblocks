@@ -613,7 +613,9 @@ export class AprilTagTracker extends Script {
     try {
       const params = getCameraParametersSnapshot(
         core.camera,
-        renderer.xr.getCamera(),
+        // A WebGPURenderer's XR manager types getCamera() as a plain
+        // ArrayCamera; the device-camera helpers want the WebXR shape.
+        renderer.xr.getCamera() as THREE.WebXRArrayCamera,
         deviceCamera,
         this.targetDevice()
       );
