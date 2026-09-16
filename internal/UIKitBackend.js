@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid fbe109a
- * @builddate 2026-09-16T18:22:08.202Z
+ * @commitid 420aa8f
+ * @builddate 2026-09-16T18:51:09.791Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -42,7 +42,7 @@
  */
 import { Container, Component, Custom, abortableEffect, Image, Text, reversePainterSortStable, Svg } from '@pmndrs/uikit';
 import * as THREE from 'three';
-import { T as TransformScript, t as MAX_GRADIENT_STOPS, u as DEFAULT_GRADIENT_PANEL_PROPS, v as ManipulationAction, w as getUIPresentationObject, x as bindScrollView, y as updateScrollViewLayout, z as bindTextInput, A as normalizeTextInputValue, B as isUIElement, U as UIScrollView, C as getUIElementKind, E as getUIStructureRevision, F as UICard, G as setResolvedUICardSize, J as UIText, L as UITextInput, N as registerUIPresentationObject, Q as getUIRevision, V as getUICardEdgeOptions, Y as getSemanticControl, Z as UIOverlay } from './entry.js';
+import { T as TransformScript, v as MAX_GRADIENT_STOPS, w as DEFAULT_GRADIENT_PANEL_PROPS, x as ManipulationAction, y as getUIPresentationObject, z as bindScrollView, A as updateScrollViewLayout, B as bindTextInput, C as normalizeTextInputValue, E as isUIElement, U as UIScrollView, F as getUIElementKind, G as getUIStructureRevision, J as UICard, L as setResolvedUICardSize, N as UIText, Q as UITextInput, V as registerUIPresentationObject, Y as getUIRevision, Z as getUICardEdgeOptions, _ as getSemanticControl, $ as UIOverlay } from './entry.js';
 import { signal, computed, effect } from '@preact/signals-core';
 
 /**

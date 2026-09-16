@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid fbe109a
- * @builddate 2026-09-16T18:22:08.202Z
+ * @commitid 420aa8f
+ * @builddate 2026-09-16T18:51:09.791Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -42,7 +42,7 @@
  */
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { K as Keycodes, S as SimulatorHandPose, a as Script, R as Reticle, b as SimulatorMode, c as SetSimulatorModeEvent, H as Handedness, d as SIMULATOR_HAND_POSE_ROTATIONS, e as SimulatorHandPoseChangeRequestEvent, f as HAND_JOINT_NAMES, r as resolveSimulatorHandPoseRotations, g as applySimulatorHandPoseRotationConstraints, h as disposeObjectChildren, i as SetSimulatorEnvironmentEvent, j as ShowSimulatorInstructionsEvent, k as SetSimulatorHandPhysicsEvent, l as Registry, W as WaitFrame, m as callInitWithDependencyInjection, M as ModelLoader, n as disposeObjectTree, o as World, D as Depth, O as Options, I as Interaction, p as Input, q as SimulatorOptions, X as XRDeviceCamera, P as Physics, s as SparkRendererHolder } from './entry.js';
+import { K as Keycodes, S as SimulatorHandPose, a as Script, R as Reticle, b as SimulatorMode, c as SetSimulatorModeEvent, H as Handedness, d as SIMULATOR_HAND_POSE_ROTATIONS, e as SimulatorHandPoseChangeRequestEvent, f as HAND_JOINT_NAMES, r as resolveSimulatorHandPoseRotations, g as applySimulatorHandPoseRotationConstraints, h as disposeObjectChildren, i as SetSimulatorEnvironmentEvent, j as ShowSimulatorInstructionsEvent, k as SetSimulatorHandPhysicsEvent, l as Registry, W as WaitFrame, m as callInitWithDependencyInjection, M as ModelLoader, n as disposeObjectTree, o as World, D as Depth, O as Options, I as Interaction, p as Input, q as SimulatorOptions, X as XRDeviceCamera, P as Physics, s as assertWebGLRenderer, t as isWebGPURenderer, u as SparkRendererHolder } from './entry.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import 'three/addons/webxr/XRControllerModelFactory.js';
@@ -3476,16 +3476,16 @@ class Simulator extends Script {
         interaction: Interaction,
         timer: THREE.Timer,
         camera: THREE.Camera,
-        renderer: THREE.WebGLRenderer,
         scene: THREE.Scene,
         registry: Registry,
         options: Options,
         depth: Depth,
         world: World,
     }; }
-    constructor(renderMainScene) {
+    constructor(renderMainScene, renderer) {
         super();
         this.renderMainScene = renderMainScene;
+        this.renderer = renderer;
         this.editorIcon = 'simulation';
         this.simulatorScene = new SimulatorScene();
         this.simulatorWorld = new SimulatorWorld();
@@ -3505,6 +3505,7 @@ class Simulator extends Script {
         this.initialized = false;
         this.renderSimulatorSceneToCanvasBound = this.renderSimulatorSceneToCanvas.bind(this);
         this.useSimulatorObjectDetection = false;
+        this.renderer = renderer;
         this.add(this.simulatorUser);
     }
     get userMovementConstrained() {
@@ -3516,9 +3517,14 @@ class Simulator extends Script {
     findRandomUserPath() {
         return this.navMesh.findRandomPathFrom(this.mainCamera.position);
     }
-    async init({ simulatorOptions, input, interaction, timer, camera, renderer, scene, registry, options, depth, world, }) {
+    async init({ simulatorOptions, input, interaction, timer, camera, scene, registry, options, depth, world, }) {
         if (this.initialized)
             return;
+        const renderer = this.renderer ?? registry.get(THREE.WebGLRenderer);
+        if (!renderer) {
+            throw new Error('Simulator requires a renderer instance.');
+        }
+        this.renderer = renderer;
         // Get optional dependencies from the registry.
         const deviceCamera = registry.get(XRDeviceCamera);
         this.deviceCamera = deviceCamera;
@@ -3528,7 +3534,6 @@ class Simulator extends Script {
                 ? new SimulatorPhysics(physics, simulatorOptions.handPhysics)
                 : undefined;
         this.options = simulatorOptions;
-        this.renderer = renderer;
         this.mainCamera = camera;
         this.mainScene = scene;
         this.registry = registry;
@@ -3570,12 +3575,14 @@ class Simulator extends Script {
         if (deviceCamera &&
             !this.simulatorCamera &&
             this.options.deviceCamera.enabled) {
+            assertWebGLRenderer(renderer, 'SimulatorCamera');
             this.simulatorCamera = new SimulatorCamera(renderer);
             this.simulatorCamera.init();
             deviceCamera.registerSimulatorCamera(this.simulatorCamera);
         }
         deviceCamera?.init();
         if (options.depth.enabled) {
+            assertWebGLRenderer(renderer, 'SimulatorDepth');
             this.renderDepthPass = true;
             this.depth.init(renderer, camera, depth);
         }
@@ -3583,18 +3590,23 @@ class Simulator extends Script {
         if (this.options.stereo.enabled) {
             this.setupStereoCameras(camera);
         }
-        this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(renderer.domElement.width, renderer.domElement.height, { stencilBuffer: options.stencil });
-        const virtualSceneMaterial = new THREE.MeshBasicMaterial({
-            map: this.virtualSceneRenderTarget.texture,
-            transparent: true,
-        });
-        if (this.options.blendingMode === 'screen') {
-            virtualSceneMaterial.blending = THREE.CustomBlending;
-            virtualSceneMaterial.blendSrc = THREE.OneFactor;
-            virtualSceneMaterial.blendDst = THREE.OneMinusSrcColorFactor;
-            virtualSceneMaterial.blendEquation = THREE.AddEquation;
+        if (isWebGPURenderer(renderer)) {
+            this.options.renderToRenderTexture = false;
         }
-        this.virtualSceneFullScreenQuad = new FullScreenQuad(virtualSceneMaterial);
+        else {
+            this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(renderer.domElement.width, renderer.domElement.height, { stencilBuffer: options.stencil });
+            const virtualSceneMaterial = new THREE.MeshBasicMaterial({
+                map: this.virtualSceneRenderTarget.texture,
+                transparent: true,
+            });
+            if (this.options.blendingMode === 'screen') {
+                virtualSceneMaterial.blending = THREE.CustomBlending;
+                virtualSceneMaterial.blendSrc = THREE.OneFactor;
+                virtualSceneMaterial.blendDst = THREE.OneMinusSrcColorFactor;
+                virtualSceneMaterial.blendEquation = THREE.AddEquation;
+            }
+            this.virtualSceneFullScreenQuad = new FullScreenQuad(virtualSceneMaterial);
+        }
         this.initialized = true;
     }
     async setEnvironment(nameOrPath, manifestPath) {
@@ -3741,10 +3753,12 @@ class Simulator extends Script {
     }
     // Called by core when the simulator is running.
     renderScene() {
-        if (!this.initialized || !this.renderer)
+        if (!this.initialized ||
+            !this.renderer ||
+            !this.options.renderToRenderTexture ||
+            isWebGPURenderer(this.renderer)) {
             return;
-        if (!this.options.renderToRenderTexture)
-            return;
+        }
         // Allocate a new render target if the resolution changes.
         if (this.virtualSceneRenderTarget.width != this.renderer.domElement.width ||
             this.virtualSceneRenderTarget.height != this.renderer.domElement.height) {
@@ -3772,13 +3786,14 @@ class Simulator extends Script {
         this.onBeforeSimulatorSceneRender();
         this.renderSimulatorSceneToCanvas(this.getRenderCamera());
         this.onSimulatorSceneRendered();
-        if (this.options.renderToRenderTexture) {
+        if (this.options.renderToRenderTexture && !isWebGPURenderer(renderer)) {
             this.virtualSceneFullScreenQuad.render(renderer);
         }
         else {
-            // Temporary workaround since splats look faded when rendered to a render
-            // texture.
+            const prevAutoClear = renderer.autoClear;
+            renderer.autoClear = false;
             this.renderMainScene(this.getRenderCamera());
+            renderer.autoClear = prevAutoClear;
         }
     }
     renderSimulatorSceneToCanvas(camera) {
@@ -3789,8 +3804,11 @@ class Simulator extends Script {
             this.sparkRenderer.encodeLinear = false;
         }
         renderer.setRenderTarget(null);
-        if (this.backgroundVideoQuad) {
+        if (this.backgroundVideoQuad && !isWebGPURenderer(renderer)) {
             this.backgroundVideoQuad.render(renderer);
+        }
+        if (isWebGPURenderer(renderer)) {
+            renderer.clear();
         }
         renderer.render(this.simulatorScene, camera);
         renderer.clearDepth();
@@ -3824,6 +3842,9 @@ class Simulator extends Script {
         const texture = new THREE.VideoTexture(video);
         texture.colorSpace = THREE.SRGBColorSpace;
         this.videoElement = video;
+        if (this.renderer && isWebGPURenderer(this.renderer)) {
+            return;
+        }
         this.backgroundVideoQuad = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: texture }));
     }
 }
