@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 420aa8f
- * @builddate 2026-09-16T18:51:09.791Z
+ * @commitid 3008ece
+ * @builddate 2026-09-16T21:52:01.884Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1165,12 +1165,17 @@ declare class Hands {
     isValid(handIndex?: number): boolean;
 }
 
+interface ReticleUniforms {
+    [uniform: string]: THREE.IUniform;
+    uColor: THREE.IUniform<THREE.Color>;
+    uPressed: THREE.IUniform<number>;
+}
 /**
  * A 3D visual marker used to indicate a user's aim or interaction
  * point in an XR scene. It orients itself to surfaces it intersects with and
  * provides visual feedback for states like "pressed".
  */
-declare class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial> {
+declare class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
     /** Text description of the PanelMesh */
     name: string;
     editorIcon: string;
@@ -1186,6 +1191,11 @@ declare class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMater
     intersection?: THREE.Intersection;
     /** Object on which the reticle is hovering. */
     targetObject?: THREE.Object3D;
+    /** The uniforms driving this reticle's material. */
+    readonly uniforms: ReticleUniforms;
+    /** Whether depth test was requested for this reticle. */
+    readonly depthTestEnabled: boolean;
+    private syncUniforms?;
     /** Ring shown when the reticle is over an interactable object. */
     private readonly hoverRing;
     private readonly originalNormal;
@@ -1194,14 +1204,17 @@ declare class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMater
     private readonly normalVector;
     /**
      * Creates an instance of Reticle.
-     * @param rotationSmoothing - A factor between 0.0 (no smoothing) and
-     * 1.0 (no movement) to smoothly animate orientation changes.
-     * @param offset - A small z-axis offset to prevent z-fighting.
-     * @param size - The radius of the reticle's circle geometry.
+     * @param innerRadius - Inner radius of the reticle ring geometry.
+     * @param outerRadius - Outer radius of the reticle ring geometry.
      * @param depthTest - Determines if the reticle should be occluded by other
      * objects. Defaults to `false` to ensure it is always visible.
      */
-    constructor(rotationSmoothing?: number, offset?: number, size?: number, depthTest?: boolean);
+    constructor(innerRadius?: number, outerRadius?: number, depthTest?: boolean);
+    /**
+     * Replaces the reticle's primary material (e.g. with a WebGPU NodeMaterial)
+     * and registers a callback to synchronize uniform changes.
+     */
+    setCustomMaterial(material: THREE.Material, syncUniforms?: () => void): void;
     /**
      * Orients the reticle to be flush with a surface, based on the surface
      * normal. It smoothly interpolates the rotation for a polished visual effect.
@@ -1687,6 +1700,7 @@ declare class Input {
     rightController?: Controller;
     reticles: Reticles;
     private ownedReticles;
+    private reticleConfigurer?;
     private readonly raySourceInputs;
     private readonly raySourceSlots;
     private readonly directTouchInputs;
@@ -1721,6 +1735,11 @@ declare class Input {
      * false.
      */
     addReticles(): void;
+    /**
+     * Sets a configuration callback for reticles (such as upgrading to WebGPU materials)
+     * and immediately applies it to all existing reticles.
+     */
+    setReticleConfigurer(configurer: (reticle: Reticle) => void): void;
     /**
      * Default action to handle the start of a selection, setting the selecting
      * state to true.

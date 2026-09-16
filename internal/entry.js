@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 420aa8f
- * @builddate 2026-09-16T18:51:09.791Z
+ * @commitid 3008ece
+ * @builddate 2026-09-16T21:52:01.884Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -14178,9 +14178,7 @@ class Depth {
  */
 const ReticleShader = {
     uniforms: {
-        uColor: { value: new THREE.Color().setHex(0xffffff) },
-        uPressed: { value: 0.0 },
-    },
+        uColor: { value: new THREE.Color().setHex(0xffffff) }},
     vertexShader: /* glsl */ `
   varying vec2 vTexCoord;
 
@@ -14268,23 +14266,23 @@ const RETICLE_RENDER_ORDER = 2_000_000_000;
 class Reticle extends THREE.Mesh {
     /**
      * Creates an instance of Reticle.
-     * @param rotationSmoothing - A factor between 0.0 (no smoothing) and
-     * 1.0 (no movement) to smoothly animate orientation changes.
-     * @param offset - A small z-axis offset to prevent z-fighting.
-     * @param size - The radius of the reticle's circle geometry.
+     * @param innerRadius - Inner radius of the reticle ring geometry.
+     * @param outerRadius - Outer radius of the reticle ring geometry.
      * @param depthTest - Determines if the reticle should be occluded by other
      * objects. Defaults to `false` to ensure it is always visible.
      */
-    constructor(rotationSmoothing = 0.8, offset = 0.001, size = 0.019, depthTest = false) {
-        const geometry = new THREE.CircleGeometry(size, 32);
-        geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, offset));
-        super(geometry, new THREE.ShaderMaterial({
-            uniforms: THREE.UniformsUtils.clone(ReticleShader.uniforms),
+    constructor(innerRadius = 0, outerRadius = 0.019, depthTest = false) {
+        const uniforms = {
+            uColor: { value: new THREE.Color(0xffffff) },
+            uPressed: { value: 0.0 },
+        };
+        super(new THREE.RingGeometry(innerRadius, outerRadius, 32), new THREE.ShaderMaterial({
+            uniforms,
             vertexShader: ReticleShader.vertexShader,
             fragmentShader: ReticleShader.fragmentShader,
-            depthTest: depthTest,
-            depthWrite: false,
             transparent: true,
+            depthTest,
+            depthWrite: false,
         }));
         /** Text description of the PanelMesh */
         this.name = 'Reticle';
@@ -14298,20 +14296,32 @@ class Reticle extends THREE.Mesh {
         this.newRotation = new THREE.Quaternion();
         this.objectRotation = new THREE.Quaternion();
         this.normalVector = new THREE.Vector3();
-        this.rotationSmoothing = rotationSmoothing;
-        this.offset = offset;
-        this.hoverRing = new THREE.Mesh(new THREE.RingGeometry(size, size * 1.15, 32), new THREE.MeshBasicMaterial({
+        this.uniforms = uniforms;
+        this.depthTestEnabled = depthTest;
+        this.rotationSmoothing = 0.8;
+        this.offset = 0.001;
+        this.hoverRing = new THREE.Mesh(new THREE.RingGeometry(outerRadius, outerRadius * 1.15, 32), new THREE.MeshBasicMaterial({
             color: getHoverRingColor(this.getColor()),
             depthTest,
             depthWrite: false,
             transparent: true,
             opacity: HOVER_RING_OPACITY,
         }));
-        this.hoverRing.position.z = offset;
+        this.hoverRing.position.z = this.offset;
         this.hoverRing.renderOrder = this.renderOrder;
         this.hoverRing.visible = false;
         this.hoverRing.raycast = () => { };
         this.add(this.hoverRing);
+    }
+    /**
+     * Replaces the reticle's primary material (e.g. with a WebGPU NodeMaterial)
+     * and registers a callback to synchronize uniform changes.
+     */
+    setCustomMaterial(material, syncUniforms) {
+        this.material.dispose();
+        this.material = material;
+        this.syncUniforms = syncUniforms;
+        this.syncUniforms?.();
     }
     /**
      * Orients the reticle to be flush with a surface, based on the surface
@@ -14347,15 +14357,16 @@ class Reticle extends THREE.Mesh {
      * @param color - The color to apply.
      */
     setColor(color) {
-        this.material.uniforms.uColor.value.set(color);
-        this.hoverRing.material.color.copy(getHoverRingColor(this.material.uniforms.uColor.value));
+        this.uniforms.uColor.value.set(color);
+        this.hoverRing.material.color.copy(getHoverRingColor(this.uniforms.uColor.value));
+        this.syncUniforms?.();
     }
     /**
      * Gets the current color of the reticle.
      * @returns The current color from the shader uniform.
      */
     getColor() {
-        return this.material.uniforms.uColor.value;
+        return this.uniforms.uColor.value;
     }
     /**
      * Sets the visual state of the reticle to "pressed" or "unpressed".
@@ -14363,7 +14374,8 @@ class Reticle extends THREE.Mesh {
      * @param pressed - True to show the pressed state, false otherwise.
      */
     setPressed(pressed) {
-        this.material.uniforms.uPressed.value = pressed ? 1.0 : 0.0;
+        this.uniforms.uPressed.value = pressed ? 1.0 : 0.0;
+        this.syncUniforms?.();
         this.scale.setScalar(pressed ? 0.7 : 1.0);
     }
     /**
@@ -14372,7 +14384,8 @@ class Reticle extends THREE.Mesh {
      * pressed).
      */
     setPressedAmount(pressedAmount) {
-        this.material.uniforms.uPressed.value = pressedAmount;
+        this.uniforms.uPressed.value = pressedAmount;
+        this.syncUniforms?.();
         this.scale.setScalar(lerp(1.0, 0.7, pressedAmount));
     }
     /**
@@ -15212,6 +15225,27 @@ class Input {
             }
             controller.reticle.visible = false;
             this.reticles.add(controller.reticle);
+            if (this.reticleConfigurer && controller.reticle) {
+                this.reticleConfigurer(controller.reticle);
+            }
+        }
+    }
+    /**
+     * Sets a configuration callback for reticles (such as upgrading to WebGPU materials)
+     * and immediately applies it to all existing reticles.
+     */
+    setReticleConfigurer(configurer) {
+        this.reticleConfigurer = configurer;
+        const configured = new Set();
+        for (const reticle of this.ownedReticles) {
+            configurer(reticle);
+            configured.add(reticle);
+        }
+        for (const controller of this.controllers) {
+            if (controller.reticle && !configured.has(controller.reticle)) {
+                configurer(controller.reticle);
+                configured.add(controller.reticle);
+            }
         }
     }
     /**
@@ -15480,6 +15514,9 @@ class Input {
         if (controller.reticle) {
             controller.reticle.visible = false;
             this.reticles.add(controller.reticle);
+            if (this.reticleConfigurer) {
+                this.reticleConfigurer(controller.reticle);
+            }
         }
         this.pinchFilter.setupController(controller, this.listeners.keys());
     }
@@ -24160,6 +24197,11 @@ class Core {
                 alpha: true,
                 logarithmicDepthBuffer: options.logarithmicDepthBuffer,
             });
+        }
+        if (isWebGPURenderer(this.renderer)) {
+            const { applyWebGPUReticleMaterial } = await import('./ReticleWebGPUMaterial.js');
+            this.assertInitializing();
+            this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
         }
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.setSize(window.innerWidth, window.innerHeight);

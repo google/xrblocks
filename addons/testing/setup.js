@@ -136,8 +136,11 @@ vi.mock('three/webgpu', async () => {
             this.setRenderTarget = vi.fn();
         }
     }
+    class MockNodeMaterial extends original.Material {
+    }
     return {
         WebGPURenderer: MockWebGPURenderer,
+        NodeMaterial: MockNodeMaterial,
     };
 });
 // Mock GLTFLoader to return a mock hand hierarchy with bones immediately under JSDOM.
