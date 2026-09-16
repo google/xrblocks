@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 3017cb3
- * @builddate 2026-09-16T17:02:23.288Z
+ * @commitid fbe109a
+ * @builddate 2026-09-16T18:22:08.202Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2973,7 +2973,7 @@ class ScreenshotSynthesizer {
         this.virtualCaptureInFlight = false;
         this.virtualRealCaptureInFlight = false;
     }
-    async onAfterRender(renderer, renderSceneFn, deviceCamera) {
+    onAfterRender(renderer, renderSceneFn, deviceCamera) {
         if (this.pendingScreenshotRequests.length == 0) {
             return;
         }
@@ -3010,7 +3010,7 @@ class ScreenshotSynthesizer {
             });
         }
         else if (haveVirtualAndRealReqeusts && !deviceCamera) {
-            throw new Error('No device camera provided');
+            this.rejectVirtualRealRequests(new Error('No device camera provided'));
         }
     }
     async createVirtualImageDataURL(renderer, renderSceneFn) {
@@ -12498,6 +12498,7 @@ class XRButton {
         this.xrButtonElement = document.createElement('button');
         this.errorElement = document.createElement('p');
         this.disposed = false;
+        this.startingSimulator = false;
         this.onUnsupported = () => this.showXRNotSupported();
         this.onReady = () => this.onSessionReady();
         this.onSessionStart = () => this.onSessionStarted();
@@ -12524,25 +12525,43 @@ class XRButton {
         this.errorElement.hidden = true;
         this.domElement.appendChild(this.errorElement);
     }
-    showError(error) {
+    showError(error, mode = 'XR') {
         if (this.disposed)
             return;
         const detail = error instanceof Error
             ? `${error.name}: ${error.message}`
             : String(error);
-        this.errorElement.textContent = `XR could not start. ${detail}`;
+        this.errorElement.textContent = `${mode} could not start. ${detail}`;
         this.errorElement.hidden = false;
+        if (mode === 'Simulator')
+            return;
         this.xrButtonElement.textContent = this.sessionManager.currentSession
             ? this.endText
             : this.startText;
-        this.xrButtonElement.disabled = false;
+        this.xrButtonElement.disabled = this.startingSimulator;
+        this.simulatorButtonElement.disabled =
+            this.startingSimulator || !!this.sessionManager.currentSession;
     }
     createSimulatorButton() {
         this.simulatorButtonElement.classList.add(XRBUTTON_CLASS);
         this.simulatorButtonElement.innerText = this.startSimulatorText;
-        this.simulatorButtonElement.onclick = () => {
-            this.domElement.remove();
-            this.startSimulator();
+        this.simulatorButtonElement.onclick = async () => {
+            if (this.disposed || this.simulatorButtonElement.disabled)
+                return;
+            this.setSimulatorStarting(true);
+            this.errorElement.textContent = '';
+            this.errorElement.hidden = true;
+            try {
+                await this.startSimulator();
+                if (!this.disposed)
+                    this.domElement.remove();
+            }
+            catch (error) {
+                if (this.disposed)
+                    return;
+                this.setSimulatorStarting(false);
+                this.showError(error, 'Simulator');
+            }
         };
         this.domElement.appendChild(this.simulatorButtonElement);
     }
@@ -12574,15 +12593,19 @@ class XRButton {
         const button = this.xrButtonElement;
         button.style.display = '';
         button.innerHTML = this.startText;
-        button.disabled = false;
+        button.disabled = this.startingSimulator;
+        this.simulatorButtonElement.disabled = this.startingSimulator;
         const allowsVideoFallback = this.sessionManager
             .getSessionOptions()
             ?.optionalFeatures?.includes('camera-access');
         button.onclick = () => {
+            if (this.disposed || button.disabled)
+                return;
             this.errorElement.textContent = '';
             this.errorElement.hidden = true;
             button.textContent = 'ENTERING XR...';
             button.disabled = true;
+            this.simulatorButtonElement.disabled = true;
             this.permissionsManager
                 .checkAndRequestPermissions(this.permissions, {
                 allowVideoFallback: allowsVideoFallback,
@@ -12608,13 +12631,23 @@ class XRButton {
         this.errorElement.textContent = '';
         this.errorElement.hidden = true;
         this.xrButtonElement.innerHTML = this.endText;
-        this.xrButtonElement.disabled = false;
+        this.xrButtonElement.disabled = this.startingSimulator;
+        this.simulatorButtonElement.disabled = true;
         this.xrButtonElement.onclick = () => {
             void this.sessionManager.endSession();
         };
     }
     onSessionEnded() {
         this.onSessionReady();
+    }
+    setSimulatorStarting(starting) {
+        if (this.disposed)
+            return;
+        this.startingSimulator = starting;
+        this.simulatorButtonElement.disabled =
+            starting || !!this.sessionManager.currentSession;
+        this.xrButtonElement.disabled =
+            starting || this.sessionManager.isXRSupported() !== true;
     }
     dispose() {
         if (this.disposed)
@@ -23796,9 +23829,8 @@ class Core {
                 return this.simulator;
             if (this.startingSimulator)
                 return this.startingSimulator;
+            this.xrButton?.setSimulatorStarting(true);
             this.startingSimulator = (async () => {
-                this.xrButton?.dispose();
-                this.xrButton = undefined;
                 const { Simulator } = await this.simulatorLoader();
                 this.assertLifecycleActive('load the simulator runtime');
                 const simulator = new Simulator(this.renderSceneCallback);
@@ -23813,6 +23845,8 @@ class Core {
                     this.simulator = simulator;
                     this.registry.register(simulator);
                     this.onSimulatorStarted();
+                    this.xrButton?.dispose();
+                    this.xrButton = undefined;
                     return simulator;
                 }
                 catch (error) {
@@ -23831,6 +23865,7 @@ class Core {
             }
             finally {
                 this.startingSimulator = undefined;
+                this.xrButton?.setSimulatorStarting(false);
             }
         };
         /**

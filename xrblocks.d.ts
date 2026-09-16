@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 3017cb3
- * @builddate 2026-09-16T17:02:23.288Z
+ * @commitid fbe109a
+ * @builddate 2026-09-16T18:22:08.202Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5309,7 +5309,7 @@ declare class ScreenshotSynthesizer {
     private renderTargetWidth;
     private virtualCaptureInFlight;
     private virtualRealCaptureInFlight;
-    onAfterRender(renderer: THREE.WebGLRenderer, renderSceneFn: () => void, deviceCamera?: XRDeviceCamera): Promise<void>;
+    onAfterRender(renderer: THREE.WebGLRenderer, renderSceneFn: () => void, deviceCamera?: XRDeviceCamera): void;
     private createVirtualImageDataURL;
     private resolveVirtualOnlyRequests;
     private rejectVirtualOnlyRequests;
@@ -5782,14 +5782,15 @@ declare class XRButton {
     private endText;
     private invalidText;
     private startSimulatorText;
-    startSimulator: () => void;
+    startSimulator: () => void | Promise<unknown>;
     private permissions;
     domElement: HTMLDivElement;
     simulatorButtonElement: HTMLButtonElement;
     xrButtonElement: HTMLButtonElement;
     private errorElement;
     private disposed;
-    constructor(sessionManager: WebXRSessionManager, permissionsManager: PermissionsManager, appTitle?: string, appDescription?: string, startText?: string, endText?: string, invalidText?: string, startSimulatorText?: string, showEnterSimulatorButton?: boolean, startSimulator?: () => void, permissions?: {
+    private startingSimulator;
+    constructor(sessionManager: WebXRSessionManager, permissionsManager: PermissionsManager, appTitle?: string, appDescription?: string, startText?: string, endText?: string, invalidText?: string, startSimulatorText?: string, showEnterSimulatorButton?: boolean, startSimulator?: () => void | Promise<unknown>, permissions?: {
         geolocation: boolean;
         camera: boolean;
         microphone: boolean;
@@ -5809,6 +5810,7 @@ declare class XRButton {
     private showXRNotSupported;
     private onSessionStarted;
     private onSessionEnded;
+    setSimulatorStarting(starting: boolean): void;
     dispose(): void;
 }
 
