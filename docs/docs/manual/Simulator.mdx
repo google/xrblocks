@@ -40,6 +40,8 @@ const simulator = await xb.core.startSimulator();
 `xb.core.simulator` is undefined before startup completes. Use `onSimulatorStarted()` when
 a script must react to simulator startup.
 
+The Start Simulator button keeps the entry UI visible while the runtime loads and initializes, with both entry buttons disabled during startup. If startup fails, it displays the error and lets the user retry. The entry UI is removed only after startup succeeds.
+
 ## Browser interface
 
 The settings, instructions, and hand-pose panels register automatically when Lit is

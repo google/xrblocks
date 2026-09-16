@@ -110,5 +110,6 @@ export class DetectedMesh extends THREE.Mesh {
     }
     this.rigidBody = undefined;
     this.geometry.dispose();
+    super.dispose();
   }
 }
