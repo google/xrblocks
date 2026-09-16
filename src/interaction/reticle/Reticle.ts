@@ -7,15 +7,18 @@ const HOVER_RING_BRIGHTNESS = 0.4;
 const HOVER_RING_OPACITY = 0.7;
 const RETICLE_RENDER_ORDER = 2_000_000_000;
 
+export interface ReticleUniforms {
+  [uniform: string]: THREE.IUniform;
+  uColor: THREE.IUniform<THREE.Color>;
+  uPressed: THREE.IUniform<number>;
+}
+
 /**
  * A 3D visual marker used to indicate a user's aim or interaction
  * point in an XR scene. It orients itself to surfaces it intersects with and
  * provides visual feedback for states like "pressed".
  */
-export class Reticle extends THREE.Mesh<
-  THREE.BufferGeometry,
-  THREE.ShaderMaterial
-> {
+export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   /** Text description of the PanelMesh */
   name = 'Reticle';
   editorIcon = 'target';
@@ -38,6 +41,14 @@ export class Reticle extends THREE.Mesh<
   /** Object on which the reticle is hovering. */
   targetObject?: THREE.Object3D;
 
+  /** The uniforms driving this reticle's material. */
+  readonly uniforms: ReticleUniforms;
+
+  /** Whether depth test was requested for this reticle. */
+  readonly depthTestEnabled: boolean;
+
+  private syncUniforms?: () => void;
+
   /** Ring shown when the reticle is over an interactable object. */
   private readonly hoverRing: THREE.Mesh<
     THREE.RingGeometry,
@@ -52,39 +63,37 @@ export class Reticle extends THREE.Mesh<
 
   /**
    * Creates an instance of Reticle.
-   * @param rotationSmoothing - A factor between 0.0 (no smoothing) and
-   * 1.0 (no movement) to smoothly animate orientation changes.
-   * @param offset - A small z-axis offset to prevent z-fighting.
-   * @param size - The radius of the reticle's circle geometry.
+   * @param innerRadius - Inner radius of the reticle ring geometry.
+   * @param outerRadius - Outer radius of the reticle ring geometry.
    * @param depthTest - Determines if the reticle should be occluded by other
    * objects. Defaults to `false` to ensure it is always visible.
    */
-  constructor(
-    rotationSmoothing = 0.8,
-    offset = 0.001,
-    size = 0.019,
-    depthTest = false
-  ) {
-    const geometry = new THREE.CircleGeometry(size, 32);
-    geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0, offset));
+  constructor(innerRadius = 0, outerRadius = 0.019, depthTest = false) {
+    const uniforms: ReticleUniforms = {
+      uColor: {value: new THREE.Color(0xffffff)},
+      uPressed: {value: 0.0},
+    };
 
     super(
-      geometry,
+      new THREE.RingGeometry(innerRadius, outerRadius, 32),
       new THREE.ShaderMaterial({
-        uniforms: THREE.UniformsUtils.clone(ReticleShader.uniforms),
+        uniforms,
         vertexShader: ReticleShader.vertexShader,
         fragmentShader: ReticleShader.fragmentShader,
-        depthTest: depthTest,
-        depthWrite: false,
         transparent: true,
+        depthTest,
+        depthWrite: false,
       })
     );
 
-    this.rotationSmoothing = rotationSmoothing;
-    this.offset = offset;
+    this.uniforms = uniforms;
+
+    this.depthTestEnabled = depthTest;
+    this.rotationSmoothing = 0.8;
+    this.offset = 0.001;
 
     this.hoverRing = new THREE.Mesh(
-      new THREE.RingGeometry(size, size * 1.15, 32),
+      new THREE.RingGeometry(outerRadius, outerRadius * 1.15, 32),
       new THREE.MeshBasicMaterial({
         color: getHoverRingColor(this.getColor()),
         depthTest,
@@ -93,11 +102,22 @@ export class Reticle extends THREE.Mesh<
         opacity: HOVER_RING_OPACITY,
       })
     );
-    this.hoverRing.position.z = offset;
+    this.hoverRing.position.z = this.offset;
     this.hoverRing.renderOrder = this.renderOrder;
     this.hoverRing.visible = false;
     this.hoverRing.raycast = () => {};
     this.add(this.hoverRing);
+  }
+
+  /**
+   * Replaces the reticle's primary material (e.g. with a WebGPU NodeMaterial)
+   * and registers a callback to synchronize uniform changes.
+   */
+  setCustomMaterial(material: THREE.Material, syncUniforms?: () => void) {
+    this.material.dispose();
+    this.material = material;
+    this.syncUniforms = syncUniforms;
+    this.syncUniforms?.();
   }
 
   /**
@@ -138,10 +158,11 @@ export class Reticle extends THREE.Mesh<
    * @param color - The color to apply.
    */
   setColor(color: THREE.Color | number | string) {
-    this.material.uniforms.uColor.value.set(color);
+    this.uniforms.uColor.value.set(color);
     this.hoverRing.material.color.copy(
-      getHoverRingColor(this.material.uniforms.uColor.value)
+      getHoverRingColor(this.uniforms.uColor.value)
     );
+    this.syncUniforms?.();
   }
 
   /**
@@ -149,7 +170,7 @@ export class Reticle extends THREE.Mesh<
    * @returns The current color from the shader uniform.
    */
   getColor(): THREE.Color {
-    return this.material.uniforms.uColor.value;
+    return this.uniforms.uColor.value;
   }
 
   /**
@@ -158,7 +179,8 @@ export class Reticle extends THREE.Mesh<
    * @param pressed - True to show the pressed state, false otherwise.
    */
   setPressed(pressed: boolean) {
-    this.material.uniforms.uPressed.value = pressed ? 1.0 : 0.0;
+    this.uniforms.uPressed.value = pressed ? 1.0 : 0.0;
+    this.syncUniforms?.();
     this.scale.setScalar(pressed ? 0.7 : 1.0);
   }
 
@@ -168,7 +190,8 @@ export class Reticle extends THREE.Mesh<
    * pressed).
    */
   setPressedAmount(pressedAmount: number) {
-    this.material.uniforms.uPressed.value = pressedAmount;
+    this.uniforms.uPressed.value = pressedAmount;
+    this.syncUniforms?.();
     this.scale.setScalar(lerp(1.0, 0.7, pressedAmount));
   }
 

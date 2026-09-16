@@ -65,6 +65,7 @@ export class Input {
   private ownedReticles = new Set<Reticle>(
     this.gazeController.reticle ? [this.gazeController.reticle] : []
   );
+  private reticleConfigurer?: (reticle: Reticle) => void;
   private readonly raySourceInputs: RaySourceInput[] = [];
   private readonly raySourceSlots = new Map<Controller, RaySourceInput>();
   private readonly directTouchInputs: DirectTouchInput[] = [];
@@ -226,6 +227,28 @@ export class Input {
       }
       controller.reticle.visible = false;
       this.reticles.add(controller.reticle);
+      if (this.reticleConfigurer && controller.reticle) {
+        this.reticleConfigurer(controller.reticle);
+      }
+    }
+  }
+
+  /**
+   * Sets a configuration callback for reticles (such as upgrading to WebGPU materials)
+   * and immediately applies it to all existing reticles.
+   */
+  setReticleConfigurer(configurer: (reticle: Reticle) => void) {
+    this.reticleConfigurer = configurer;
+    const configured = new Set<Reticle>();
+    for (const reticle of this.ownedReticles) {
+      configurer(reticle);
+      configured.add(reticle);
+    }
+    for (const controller of this.controllers) {
+      if (controller.reticle && !configured.has(controller.reticle)) {
+        configurer(controller.reticle);
+        configured.add(controller.reticle);
+      }
     }
   }
 
@@ -520,6 +543,9 @@ export class Input {
     if (controller.reticle) {
       controller.reticle.visible = false;
       this.reticles.add(controller.reticle);
+      if (this.reticleConfigurer) {
+        this.reticleConfigurer(controller.reticle);
+      }
     }
 
     this.pinchFilter.setupController(controller, this.listeners.keys());
