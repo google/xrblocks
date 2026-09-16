@@ -29,7 +29,6 @@
           "xrblocks/addons/": "../../build/addons/",
           "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs",
           "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm",
-          "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0",
           "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.10/build/index.module.js"
         }
       }
@@ -244,12 +243,7 @@
         FilesetResolver,
         InteractiveSegmenter,
       } from '@mediapipe/tasks-vision';
-      import {
-        AutoProcessor,
-        env as transformersEnv,
-        RawImage,
-        SamModel,
-      } from '@huggingface/transformers';
+      import {createSamClient} from './SamClient.js';
 
       // Route Mesh.raycast() through the BVH-accelerated path via the SDK
       // helper (xb.applyBVH / xb.enableAcceleratedRaycast, added in the
@@ -269,10 +263,6 @@
       // so a press that lands before the import resolves waits it out
       // rather than silently falling back to the stock raycaster.
       const bvhReady = xb.enableAcceleratedRaycast().catch(() => false);
-
-      // Cache transformers.js model downloads in the browser so repeat runs
-      // don't re-fetch the SAM weights.
-      transformersEnv.allowLocalModels = false;
 
       // Backend toggles via URL params so you can A/B the demo without an
       // edit/reload cycle. Examples:
@@ -299,8 +289,8 @@
       const boxes = new THREE.Group();
       let xrStatusText = null;
 
-      // Lazy-loaded MediaPipe InteractiveSegmenter. Kept as a fallback for
-      // environments where the SAM path can't load (no WebGPU + no WASM fp16).
+      // Lazy-loaded MediaPipe InteractiveSegmenter, explicitly selected with
+      // ?mask=segmenter or the mask dropdown.
       let _segmenter = null;
       let _segmenterPromise = null;
       function getSegmenter() {
@@ -324,154 +314,17 @@
         return _segmenterPromise;
       }
 
-      // Lazy-loaded SlimSAM-77-uniform via transformers.js. Tighter per-pixel
-      // masks than the MediaPipe segmenter, especially around wall-mounted
-      // objects where MediaPipe spills onto the surrounding wall. Apache-2,
-      // ~14 MB total (encoder + decoder). The encoder runs once per snapshot;
-      // the decoder runs per detection with the 2D bbox as the prompt.
-      const SAM_MODEL_ID = 'Xenova/slimsam-77-uniform';
-      let _sam = null;
-      let _samProc = null;
-      let _samPromise = null;
-      // SAM's ONNX session isn't reentrant: a second sam(...) call before the
-      // previous one resolves trips "Session already started". Detect runs are
-      // serial in the for-loop but multi-frame waits inside sampleDepth can
-      // overlap with later frames in batches with many objects. Serialise
-      // every sam(...) and proc(...) invocation behind a chained promise so
-      // ORT only ever sees one in-flight call.
-      let _samQueue = Promise.resolve();
-      function samSerialize(fn) {
-        const next = _samQueue.then(fn, fn);
-        _samQueue = next.catch(() => {});
-        return next;
-      }
-      function getSam() {
-        if (_sam && _samProc)
-          return Promise.resolve({sam: _sam, proc: _samProc});
-        if (_samPromise) return _samPromise;
-        _samPromise = (async () => {
-          // Prefer webgpu when available; transformers.js falls back to
-          // wasm/cpu transparently if the backend isn't supported.
-          const device =
-            'gpu' in navigator && navigator.gpu ? 'webgpu' : 'wasm';
-          _sam = await SamModel.from_pretrained(SAM_MODEL_ID, {
-            device,
-            dtype: device === 'webgpu' ? 'fp16' : 'fp32',
-          });
-          _samProc = await AutoProcessor.from_pretrained(SAM_MODEL_ID);
-          return {sam: _sam, proc: _samProc};
-        })();
-        return _samPromise;
-      }
-
-      // Run the SAM encoder on a snapshot ImageData once per Detect press.
-      // Subsequent per-detection mask requests reuse the embedding.
-      async function samEncodeSnapshot(snapshot) {
-        return samSerialize(async () => {
-          const {sam, proc} = await getSam();
-          const canvas = document.createElement('canvas');
-          canvas.width = snapshot.width;
-          canvas.height = snapshot.height;
-          canvas.getContext('2d').putImageData(snapshot, 0, 0);
-          const image = await RawImage.fromCanvas(canvas);
-          const image_inputs = await proc(image);
-          const image_embeddings = await sam.get_image_embeddings(image_inputs);
-          return {
-            image,
-            image_inputs,
-            image_embeddings,
-            width: snapshot.width,
-            height: snapshot.height,
-          };
+      // Keep every SAM operation off the XR render thread. The client caches
+      // a successful worker and replays the snapshot on a fresh fallback worker.
+      const samClient = createSamClient();
+      const samEncodeSnapshot = samClient.encodeSnapshot;
+      const samMaskFromBbox = samClient.maskFromBbox;
+      window.addEventListener('pagehide', (event) => {
+        if (event.persisted) return;
+        samClient.dispose().catch((error) => {
+          console.warn('[objects_3d] SAM page cleanup failed', error);
         });
-      }
-
-      // Per-detection: feed the SAM decoder a single bbox prompt and return
-      // a mask in the same shape sampleDepthInMask() already expects from the
-      // MediaPipe segmenter (width, height, getAsUint8Array() with <128 = fg).
-      async function samMaskFromBbox(samState, box2d) {
-        return samSerialize(async () => {
-          const {sam, proc} = await getSam();
-          const {image, image_embeddings, width, height} = samState;
-          const x1 = box2d.min.x * width;
-          const y1 = box2d.min.y * height;
-          const x2 = box2d.max.x * width;
-          const y2 = box2d.max.y * height;
-          const cx = (x1 + x2) * 0.5;
-          const cy = (y1 + y2) * 0.5;
-          const prompt_inputs = await proc(image, {
-            input_points: [
-              [
-                [
-                  [cx, cy],
-                  [x1, y1],
-                  [x2, y2],
-                ],
-              ],
-            ],
-            input_labels: [[[1, 2, 3]]],
-          });
-          const out = await sam({
-            ...prompt_inputs,
-            image_embeddings,
-          });
-          const masks = await proc.post_process_masks(
-            out.pred_masks,
-            prompt_inputs.original_sizes,
-            prompt_inputs.reshaped_input_sizes
-          );
-          const t = masks[0];
-          const dataBool = t.data;
-          const H = t.dims[t.dims.length - 2];
-          const W = t.dims[t.dims.length - 1];
-          const planeStride = H * W;
-          const numChannels = Math.max(
-            1,
-            Math.floor(dataBool.length / planeStride)
-          );
-          const ious = out.iou_scores?.data;
-          const bx1 = Math.max(0, Math.floor(x1 * (W / width)));
-          const by1 = Math.max(0, Math.floor(y1 * (H / height)));
-          const bx2 = Math.min(W, Math.ceil(x2 * (W / width)));
-          const by2 = Math.min(H, Math.ceil(y2 * (H / height)));
-          let best = 0;
-          let bestScore = -Infinity;
-          for (let c = 0; c < numChannels; c++) {
-            const off = c * planeStride;
-            let inside = 0;
-            let total = 0;
-            for (let y = 0; y < H; y++) {
-              const row = off + y * W;
-              const yIn = y >= by1 && y < by2;
-              for (let x = 0; x < W; x++) {
-                if (dataBool[row + x]) {
-                  total++;
-                  if (yIn && x >= bx1 && x < bx2) inside++;
-                }
-              }
-            }
-            if (total === 0) continue;
-            const containment = inside / total;
-            const iou = ious ? ious[c] : 0;
-            const score = containment + 0.05 * iou;
-            if (score > bestScore) {
-              bestScore = score;
-              best = c;
-            }
-          }
-          const offset = best * planeStride;
-          const buf = new Uint8Array(planeStride);
-          for (let i = 0; i < planeStride; i++) {
-            buf[i] = dataBool[offset + i] ? 0 : 255;
-          }
-          return {
-            width: W,
-            height: H,
-            getAsUint8Array: () => buf,
-            close: () => {},
-          };
-        });
-      }
+      });
 
       // MediaPipe InteractiveSegmenter mask path. Takes the snapshot ImageData
       // + a 2D bbox, prompts the segmenter with the bbox centre as a keypoint,
@@ -1812,10 +1665,7 @@
         // we await `samPrep` below (samState branch).
         let samPrep = null;
         if (MASK_BACKEND === 'slimsam') {
-          samPrep = (async () => {
-            await getSam();
-            return samEncodeSnapshot(snapImageData);
-          })();
+          samPrep = samEncodeSnapshot(snapImageData);
           samPrep.catch(() => {});
         }
         // Release the frozen depth mesh and reset the UI even if detection,
