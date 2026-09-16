@@ -26,6 +26,16 @@ export * from './core/components/XREffects';
 export * from './core/components/XRReferenceSpaceCache';
 export * from './core/Core';
 export * from './core/Options';
+export {
+  RENDERER_BACKENDS,
+  type RendererBackend,
+  type WebGPURendererOptions,
+} from './core/Options';
+export {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from './core/RendererTypes';
 export * from './core/Script';
 export * from './core/User';
 export * from './StylizedFace';
