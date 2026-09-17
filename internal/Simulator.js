@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 9d24ea1
- * @builddate 2026-09-16T23:36:09.420Z
+ * @commitid d9d4508
+ * @builddate 2026-09-17T02:11:38.110Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -41,8 +41,8 @@
     lego-styles.
  */
 import * as THREE from 'three';
+import { S as SparkRendererHolder, i as isWebGPURenderer, K as Keycodes, a as SimulatorHandPose, b as Script, R as Reticle, c as SimulatorMode, d as SetSimulatorModeEvent, H as Handedness, e as SIMULATOR_HAND_POSE_ROTATIONS, f as SimulatorHandPoseChangeRequestEvent, g as HAND_JOINT_NAMES, r as resolveSimulatorHandPoseRotations, h as applySimulatorHandPoseRotationConstraints, j as disposeObjectChildren, k as SetSimulatorEnvironmentEvent, l as ShowSimulatorInstructionsEvent, m as SetSimulatorHandPhysicsEvent, n as Registry, W as WaitFrame, o as callInitWithDependencyInjection, M as ModelLoader, p as disposeObjectTree, q as World, D as Depth, O as Options, I as Interaction, s as Input, t as SimulatorOptions, X as XRDeviceCamera, P as Physics, u as assertWebGLRenderer } from './entry.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { K as Keycodes, S as SimulatorHandPose, a as Script, R as Reticle, b as SimulatorMode, c as SetSimulatorModeEvent, H as Handedness, d as SIMULATOR_HAND_POSE_ROTATIONS, e as SimulatorHandPoseChangeRequestEvent, f as HAND_JOINT_NAMES, r as resolveSimulatorHandPoseRotations, g as applySimulatorHandPoseRotationConstraints, h as disposeObjectChildren, i as SetSimulatorEnvironmentEvent, j as ShowSimulatorInstructionsEvent, k as SetSimulatorHandPhysicsEvent, l as Registry, W as WaitFrame, m as callInitWithDependencyInjection, M as ModelLoader, n as disposeObjectTree, o as World, D as Depth, O as Options, I as Interaction, p as Input, q as SimulatorOptions, X as XRDeviceCamera, P as Physics, s as assertWebGLRenderer, t as isWebGPURenderer, u as SparkRendererHolder } from './entry.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import 'three/addons/webxr/XRControllerModelFactory.js';
@@ -52,6 +52,199 @@ import 'three/addons/loaders/FontLoader.js';
 import 'three/addons/geometries/TextGeometry.js';
 import 'three/addons/loaders/DRACOLoader.js';
 import 'three/addons/loaders/KTX2Loader.js';
+
+/**
+ * Manages the HTMLVideoElement and THREE.VideoTexture for simulator background video playback.
+ */
+class SimulatorBackgroundVideo {
+    /**
+     * Sets or clears the background video path, tearing down any previous video element and texture.
+     *
+     * @param path - Optional URL or file path to the background video.
+     * @returns The created THREE.VideoTexture, or undefined if path is empty/undefined.
+     */
+    setPath(path) {
+        this.videoElement?.pause();
+        this.videoElement?.removeAttribute('src');
+        this.videoElement?.load();
+        this.videoElement = undefined;
+        this.videoTexture?.dispose();
+        this.videoTexture = undefined;
+        if (!path)
+            return undefined;
+        const video = document.createElement('video');
+        video.src = path;
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.play().catch((error) => {
+            console.error(`Simulator: Failed to play video at ${path}`, error);
+        });
+        video.addEventListener('error', () => {
+            console.error(`Simulator: Error loading video at ${path}`, video.error);
+        });
+        const texture = new THREE.VideoTexture(video);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.videoElement = video;
+        this.videoTexture = texture;
+        return texture;
+    }
+    /**
+     * Disposes of the active video element and texture.
+     */
+    dispose() {
+        this.setPath(undefined);
+    }
+}
+
+/**
+ * Abstract base compositor providing shared simulator scene pass, background video quad,
+ * and SparkRenderer linear encoding state management.
+ */
+class BaseSimulatorCompositor {
+    constructor(deps) {
+        this.deps = deps;
+        this.renderSimulatorSceneToCanvasBound = this.renderSimulatorSceneToCanvas.bind(this);
+        this.previousAutoClearColor = deps.renderer.autoClearColor;
+        deps.renderer.autoClearColor = false;
+    }
+    setSparkEncodeLinear(value) {
+        this.sparkRenderer ??=
+            this.deps.registry.get(SparkRendererHolder)?.renderer;
+        if (this.sparkRenderer) {
+            this.sparkRenderer.encodeLinear = value;
+        }
+    }
+    setBackgroundVideo(texture) {
+        if (this.backgroundVideoQuad) {
+            this.backgroundVideoQuad.material.dispose();
+            this.backgroundVideoQuad.dispose();
+            this.backgroundVideoQuad = undefined;
+        }
+        if (texture) {
+            this.backgroundVideoQuad = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: texture }));
+        }
+    }
+    renderSimulatorScenePass(renderCamera, mainCamera) {
+        this.deps.simulatorCamera?.onBeforeSimulatorSceneRender(mainCamera, this.renderSimulatorSceneToCanvasBound);
+        this.renderSimulatorSceneToCanvas(renderCamera);
+        this.deps.simulatorCamera?.onSimulatorSceneRendered();
+    }
+    renderSimulatorSceneToCanvas(camera) {
+        const { renderer, simulatorScene } = this.deps;
+        this.setSparkEncodeLinear(false);
+        renderer.setRenderTarget(null);
+        if (this.backgroundVideoQuad) {
+            this.backgroundVideoQuad.render(renderer);
+        }
+        this.clearBeforeSimulatorScene();
+        renderer.render(simulatorScene, camera);
+        renderer.clearDepth();
+    }
+    clearBeforeSimulatorScene() { }
+    dispose() {
+        this.setBackgroundVideo(undefined);
+        this.deps.renderer.autoClearColor = this.previousAutoClearColor;
+    }
+}
+
+/**
+ * Compositor that renders the simulator scene directly to the canvas
+ * followed by the main scene without an intermediate offscreen render target.
+ */
+class WebGLDirectCompositor extends BaseSimulatorCompositor {
+    renderFrame(renderCamera, mainCamera) {
+        this.renderSimulatorScenePass(renderCamera, mainCamera);
+        const { renderer } = this.deps;
+        const prevAutoClear = renderer.autoClear;
+        renderer.autoClear = false;
+        try {
+            this.deps.renderMainScene(renderCamera);
+        }
+        finally {
+            renderer.autoClear = prevAutoClear;
+        }
+    }
+}
+
+/**
+ * Compositor that renders the main scene to an offscreen WebGLRenderTarget
+ * and composites it onto the simulator scene via a fullscreen quad.
+ */
+class WebGLRenderTargetCompositor extends BaseSimulatorCompositor {
+    constructor(deps) {
+        super(deps);
+        this.stencilBuffer = deps.stencil;
+        this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(deps.renderer.domElement.width, deps.renderer.domElement.height, { stencilBuffer: this.stencilBuffer });
+        const virtualSceneMaterial = new THREE.MeshBasicMaterial({
+            map: this.virtualSceneRenderTarget.texture,
+            transparent: true,
+        });
+        if (deps.blendingMode === 'screen') {
+            virtualSceneMaterial.blending = THREE.CustomBlending;
+            virtualSceneMaterial.blendSrc = THREE.OneFactor;
+            virtualSceneMaterial.blendDst = THREE.OneMinusSrcColorFactor;
+            virtualSceneMaterial.blendEquation = THREE.AddEquation;
+        }
+        this.virtualSceneFullScreenQuad = new FullScreenQuad(virtualSceneMaterial);
+    }
+    renderFrame(renderCamera, mainCamera) {
+        if (this.virtualSceneRenderTarget.width !==
+            this.deps.renderer.domElement.width ||
+            this.virtualSceneRenderTarget.height !==
+                this.deps.renderer.domElement.height) {
+            this.virtualSceneRenderTarget.dispose();
+            this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(this.deps.renderer.domElement.width, this.deps.renderer.domElement.height, { stencilBuffer: this.stencilBuffer });
+            this.virtualSceneFullScreenQuad.material.map = this.virtualSceneRenderTarget.texture;
+        }
+        this.setSparkEncodeLinear(true);
+        this.deps.renderer.setRenderTarget(this.virtualSceneRenderTarget);
+        this.deps.renderer.clear();
+        this.deps.renderMainScene(renderCamera);
+        this.renderSimulatorScenePass(renderCamera, mainCamera);
+        this.virtualSceneFullScreenQuad.render(this.deps.renderer);
+    }
+    dispose() {
+        this.virtualSceneFullScreenQuad.material.dispose();
+        this.virtualSceneFullScreenQuad.dispose();
+        this.virtualSceneRenderTarget.dispose();
+        super.dispose();
+    }
+}
+
+/**
+ * WebGPU compositor implementation for the simulator.
+ *
+ * Note: Phase 1 limitations apply: renders directly to the canvas without an
+ * offscreen render target, ignores the background video quad, and does not apply
+ * custom screen blending (deferred to Phase 2 TSL NodeMaterial compositor).
+ */
+class WebGPUCompositor extends WebGLDirectCompositor {
+    clearBeforeSimulatorScene() {
+        this.deps.renderer.clear();
+    }
+    setBackgroundVideo(_texture) { }
+}
+
+/**
+ * Factory function to create the appropriate SimulatorCompositor instance based
+ * on the active renderer and render-target configuration.
+ *
+ * @param deps - Dependencies for the compositor.
+ * @param renderToRenderTexture - Whether to render the main scene to an offscreen render target.
+ * @returns The instantiated SimulatorCompositor.
+ */
+function createSimulatorCompositor(deps, renderToRenderTexture) {
+    if (isWebGPURenderer(deps.renderer)) {
+        return new WebGPUCompositor(deps);
+    }
+    else if (renderToRenderTexture) {
+        return new WebGLRenderTargetCompositor(deps);
+    }
+    else {
+        return new WebGLDirectCompositor(deps);
+    }
+}
 
 class SimulatorMediaDeviceInfo {
     constructor(deviceId = 'simulator', groupId = 'simulator', kind = 'videoinput', label = 'Simulator Camera') {
@@ -3503,7 +3696,7 @@ class Simulator extends Script {
         this.renderMode = SimulatorRenderMode.DEFAULT;
         this.stereoCameras = [];
         this.initialized = false;
-        this.renderSimulatorSceneToCanvasBound = this.renderSimulatorSceneToCanvas.bind(this);
+        this.backgroundVideo = new SimulatorBackgroundVideo();
         this.useSimulatorObjectDetection = false;
         this.renderer = renderer;
         this.add(this.simulatorUser);
@@ -3541,7 +3734,24 @@ class Simulator extends Script {
         this.simulatorScene.add(this.navMesh.debugVisualization);
         this.navMesh.showDebugVisualizations(this.options.navMesh.showDebugVisualizations);
         camera.position.copy(this.options.initialCameraPosition);
-        renderer.autoClearColor = false;
+        if (deviceCamera &&
+            !this.simulatorCamera &&
+            this.options.deviceCamera.enabled) {
+            assertWebGLRenderer(renderer, 'SimulatorCamera');
+            this.simulatorCamera = new SimulatorCamera(renderer);
+            this.simulatorCamera.init();
+            deviceCamera.registerSimulatorCamera(this.simulatorCamera);
+        }
+        deviceCamera?.init();
+        this.compositor = createSimulatorCompositor({
+            renderer,
+            simulatorScene: this.simulatorScene,
+            renderMainScene: this.renderMainScene,
+            registry,
+            simulatorCamera: this.simulatorCamera,
+            stencil: options.stencil,
+            blendingMode: this.options.blendingMode,
+        }, this.options.renderToRenderTexture);
         await this.simulatorWorld.init(options, world);
         this.simulatorObjects.init(renderer, this.simulatorPhysics);
         this.environment = new SimulatorEnvironmentManager(simulatorOptions, renderer, this.simulatorScene, this.simulatorObjects, this.navMesh, this.simulatorWorld, this.simulatorPhysics, this.setVideoPath.bind(this));
@@ -3572,15 +3782,6 @@ class Simulator extends Script {
             renderer,
             simulatorOptions,
         });
-        if (deviceCamera &&
-            !this.simulatorCamera &&
-            this.options.deviceCamera.enabled) {
-            assertWebGLRenderer(renderer, 'SimulatorCamera');
-            this.simulatorCamera = new SimulatorCamera(renderer);
-            this.simulatorCamera.init();
-            deviceCamera.registerSimulatorCamera(this.simulatorCamera);
-        }
-        deviceCamera?.init();
         if (options.depth.enabled) {
             assertWebGLRenderer(renderer, 'SimulatorDepth');
             this.renderDepthPass = true;
@@ -3589,23 +3790,6 @@ class Simulator extends Script {
         scene.add(camera);
         if (this.options.stereo.enabled) {
             this.setupStereoCameras(camera);
-        }
-        if (isWebGPURenderer(renderer)) {
-            this.options.renderToRenderTexture = false;
-        }
-        else {
-            this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(renderer.domElement.width, renderer.domElement.height, { stencilBuffer: options.stencil });
-            const virtualSceneMaterial = new THREE.MeshBasicMaterial({
-                map: this.virtualSceneRenderTarget.texture,
-                transparent: true,
-            });
-            if (this.options.blendingMode === 'screen') {
-                virtualSceneMaterial.blending = THREE.CustomBlending;
-                virtualSceneMaterial.blendSrc = THREE.OneFactor;
-                virtualSceneMaterial.blendDst = THREE.OneMinusSrcColorFactor;
-                virtualSceneMaterial.blendEquation = THREE.AddEquation;
-            }
-            this.virtualSceneFullScreenQuad = new FullScreenQuad(virtualSceneMaterial);
         }
         this.initialized = true;
     }
@@ -3681,16 +3865,11 @@ class Simulator extends Script {
                 simulatorPhysics?.dispose();
             },
             () => this.setVideoPath(undefined),
+            () => this.backgroundVideo.dispose(),
             () => {
-                const quad = this.virtualSceneFullScreenQuad;
-                this.virtualSceneFullScreenQuad = undefined;
-                quad?.material?.dispose();
-                quad?.dispose();
-            },
-            () => {
-                const target = this.virtualSceneRenderTarget;
-                this.virtualSceneRenderTarget = undefined;
-                target?.dispose();
+                const compositor = this.compositor;
+                this.compositor = undefined;
+                compositor?.dispose();
             },
         ];
         for (const cleanup of cleanups) {
@@ -3701,7 +3880,6 @@ class Simulator extends Script {
                 firstError ??= error;
             }
         }
-        this.effects = undefined;
         this.renderDepthPass = false;
         this.renderer = undefined;
         this.initialized = false;
@@ -3738,12 +3916,6 @@ class Simulator extends Script {
         camera.add(leftCamera, rightCamera);
         this.setStereoRenderMode(SimulatorRenderMode.STEREO_LEFT);
     }
-    onBeforeSimulatorSceneRender() {
-        this.simulatorCamera?.onBeforeSimulatorSceneRender(this.mainCamera, this.renderSimulatorSceneToCanvasBound);
-    }
-    onSimulatorSceneRendered() {
-        this.simulatorCamera?.onSimulatorSceneRendered();
-    }
     getRenderCamera() {
         return {
             [SimulatorRenderMode.DEFAULT]: this.mainCamera,
@@ -3751,101 +3923,18 @@ class Simulator extends Script {
             [SimulatorRenderMode.STEREO_RIGHT]: this.stereoCameras[1],
         }[this.renderMode];
     }
-    // Called by core when the simulator is running.
-    renderScene() {
-        if (!this.initialized ||
-            !this.renderer ||
-            !this.options.renderToRenderTexture ||
-            isWebGPURenderer(this.renderer)) {
+    /**
+     * Renders one complete simulator frame (physical environment + virtual scene)
+     * to the default framebuffer. Called by Core when the simulator is running.
+     */
+    renderFrame() {
+        if (!this.initialized || !this.compositor)
             return;
-        }
-        // Allocate a new render target if the resolution changes.
-        if (this.virtualSceneRenderTarget.width != this.renderer.domElement.width ||
-            this.virtualSceneRenderTarget.height != this.renderer.domElement.height) {
-            const stencilEnabled = !!this.virtualSceneRenderTarget?.stencilBuffer;
-            this.virtualSceneRenderTarget.dispose();
-            this.virtualSceneRenderTarget = new THREE.WebGLRenderTarget(this.renderer.domElement.width, this.renderer.domElement.height, { stencilBuffer: stencilEnabled });
-            this.virtualSceneFullScreenQuad.material.map = this.virtualSceneRenderTarget.texture;
-        }
-        this.sparkRenderer =
-            this.sparkRenderer || this.registry.get(SparkRendererHolder)?.renderer;
-        if (this.sparkRenderer) {
-            this.sparkRenderer.encodeLinear = true;
-        }
-        this.renderer.setRenderTarget(this.virtualSceneRenderTarget);
-        this.renderer.clear();
-        this.renderMainScene(this.getRenderCamera());
-    }
-    // Renders the simulator scene onto the main canvas.
-    // Then composites the virtual render with the simulator render.
-    // Called by core after renderScene.
-    renderSimulatorScene() {
-        const renderer = this.renderer;
-        if (!this.initialized || !renderer)
-            return;
-        this.onBeforeSimulatorSceneRender();
-        this.renderSimulatorSceneToCanvas(this.getRenderCamera());
-        this.onSimulatorSceneRendered();
-        if (this.options.renderToRenderTexture && !isWebGPURenderer(renderer)) {
-            this.virtualSceneFullScreenQuad.render(renderer);
-        }
-        else {
-            const prevAutoClear = renderer.autoClear;
-            renderer.autoClear = false;
-            this.renderMainScene(this.getRenderCamera());
-            renderer.autoClear = prevAutoClear;
-        }
-    }
-    renderSimulatorSceneToCanvas(camera) {
-        const renderer = this.renderer;
-        if (!renderer)
-            return;
-        if (this.sparkRenderer) {
-            this.sparkRenderer.encodeLinear = false;
-        }
-        renderer.setRenderTarget(null);
-        if (this.backgroundVideoQuad && !isWebGPURenderer(renderer)) {
-            this.backgroundVideoQuad.render(renderer);
-        }
-        if (isWebGPURenderer(renderer)) {
-            renderer.clear();
-        }
-        renderer.render(this.simulatorScene, camera);
-        renderer.clearDepth();
+        this.compositor.renderFrame(this.getRenderCamera(), this.mainCamera);
     }
     setVideoPath(path) {
-        this.videoElement?.pause();
-        this.videoElement?.removeAttribute('src');
-        this.videoElement?.load();
-        this.videoElement = undefined;
-        if (this.backgroundVideoQuad) {
-            const material = this.backgroundVideoQuad
-                .material;
-            material.map?.dispose();
-            material.dispose();
-            this.backgroundVideoQuad.dispose();
-        }
-        this.backgroundVideoQuad = undefined;
-        if (!path)
-            return;
-        const video = document.createElement('video');
-        video.src = path;
-        video.loop = true;
-        video.muted = true;
-        video.playsInline = true;
-        video.play().catch((error) => {
-            console.error(`Simulator: Failed to play video at ${path}`, error);
-        });
-        video.addEventListener('error', () => {
-            console.error(`Simulator: Error loading video at ${path}`, video.error);
-        });
-        const texture = new THREE.VideoTexture(video);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        this.videoElement = video;
-        if (this.renderer && isWebGPURenderer(this.renderer)) {
-            return;
-        }
-        this.backgroundVideoQuad = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: texture }));
+        this.currentVideoTexture = this.backgroundVideo.setPath(path);
+        this.compositor?.setBackgroundVideo(this.currentVideoTexture);
     }
 }
 

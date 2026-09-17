@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 9d24ea1
- * @builddate 2026-09-16T23:36:09.420Z
+ * @commitid d9d4508
+ * @builddate 2026-09-17T02:11:38.110Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -46,7 +46,7 @@ import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import RAPIER_NS from 'rapier3d';
 import OpenAIType from 'openai';
-import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { GLTFLoader, GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import * as _sparkjsdev_spark from '@sparkjsdev/spark';
 import { SparkRenderer } from '@sparkjsdev/spark';
@@ -8407,18 +8407,14 @@ declare class Simulator extends Script {
     renderDepthPass: boolean;
     renderMode: SimulatorRenderMode;
     stereoCameras: THREE.Camera[];
-    effects?: XREffects;
-    virtualSceneRenderTarget?: THREE.WebGLRenderTarget;
-    virtualSceneFullScreenQuad?: FullScreenQuad;
-    backgroundVideoQuad?: FullScreenQuad;
-    videoElement?: HTMLVideoElement;
     simulatorCamera?: SimulatorCamera;
     options: SimulatorOptions;
     mainCamera: THREE.Camera;
     mainScene: THREE.Scene;
     private initialized;
-    private renderSimulatorSceneToCanvasBound;
-    private sparkRenderer?;
+    private compositor?;
+    private readonly backgroundVideo;
+    private currentVideoTexture?;
     private registry?;
     private world?;
     private objectDetectionSource?;
@@ -8457,12 +8453,12 @@ declare class Simulator extends Script {
     simulatorUpdate(): void;
     setStereoRenderMode(mode: SimulatorRenderMode): void;
     setupStereoCameras(camera: THREE.Camera): void;
-    onBeforeSimulatorSceneRender(): void;
-    onSimulatorSceneRendered(): void;
     getRenderCamera(): THREE.Camera;
-    renderScene(): void;
-    renderSimulatorScene(): void;
-    private renderSimulatorSceneToCanvas;
+    /**
+     * Renders one complete simulator frame (physical environment + virtual scene)
+     * to the default framebuffer. Called by Core when the simulator is running.
+     */
+    renderFrame(): void;
     private setVideoPath;
 }
 
