@@ -93,7 +93,9 @@ Emscripten installed can refresh them with:
 npm run build:apriltag-wasm
 ```
 
-See [NOTICE.md](./NOTICE.md) for attribution.
+The `.wasm` therefore redistributes AprilTag in binary form under its
+BSD-2-Clause license; [NOTICE.md](./NOTICE.md) carries the required copyright
+notice and license text. Keep it alongside the artifacts when vendoring.
 
 ## Deploying
 

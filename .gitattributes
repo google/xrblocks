@@ -1,0 +1,4 @@
+# Generated AprilTag detector artifacts; rebuild with tools/build-apriltag-wasm.js.
+*.wasm binary
+src/addons/apriltags/wasm/apriltag_wasm.js linguist-generated
+src/addons/apriltags/wasm/apriltag_wasm.wasm linguist-generated
