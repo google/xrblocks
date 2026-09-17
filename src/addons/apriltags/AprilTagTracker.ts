@@ -573,6 +573,16 @@ export class AprilTagTracker extends Script {
     this.captureInFlight = false;
     this.poseRing.clear();
     this.calibrator.resetTag();
+    // Release whatever callers parented to the anchor, typically the
+    // createAprilTagAnchorVisuals() overlay: three.js never frees GPU
+    // resources on its own, so a tracker built per calibration session would
+    // otherwise leak the overlay's geometries and materials. Nested Scripts
+    // are skipped because the ScriptsManager disposes those itself.
+    this.traverse((child) => {
+      if (child === this || child instanceof Script) return;
+      const disposable = child as THREE.Object3D & {dispose?: () => void};
+      if (typeof disposable.dispose === 'function') disposable.dispose();
+    });
   }
 
   private startWorker(): void {

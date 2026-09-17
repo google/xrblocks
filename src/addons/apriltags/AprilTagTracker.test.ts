@@ -26,6 +26,7 @@ const {
   getAprilTagCameraIntrinsics,
   getWorldFromAprilTagPose,
   aprilTagCalibrationStorageKey,
+  createAprilTagAnchorVisuals,
   loadPersistedAprilTagCalibration,
 } = await import('./AprilTagTracker');
 
@@ -97,6 +98,25 @@ describe('AprilTagTracker', () => {
 
     tracker.setDetectionPaused(false);
     expect(tracker.isDetectionPaused).toBe(false);
+  });
+
+  it('dispose() releases overlays parented to the anchor', () => {
+    const tracker = new AprilTagTracker();
+    const visuals = createAprilTagAnchorVisuals();
+    tracker.add(visuals);
+    const mesh = visuals.children.find(
+      (child): child is THREE.Mesh => child instanceof THREE.Mesh
+    )!;
+    const geometryDispose = vi.spyOn(mesh.geometry, 'dispose');
+    const materialDispose = vi.spyOn(
+      mesh.material as THREE.Material,
+      'dispose'
+    );
+
+    tracker.dispose();
+
+    expect(geometryDispose).toHaveBeenCalledTimes(1);
+    expect(materialDispose).toHaveBeenCalledTimes(1);
   });
 
   it('getCalibration() round-trips a pinned constructor calibration', () => {
