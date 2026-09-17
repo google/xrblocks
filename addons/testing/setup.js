@@ -100,7 +100,8 @@ vi.mock('three', async (importOriginal) => {
     };
 });
 // Mock three/webgpu WebGPURenderer for JSDOM headless testing.
-vi.mock('three/webgpu', async () => {
+vi.mock('three/webgpu', async (importOriginal) => {
+    const actual = await importOriginal();
     const original = await vi.importActual('three');
     class MockWebGPURenderer {
         constructor() {
@@ -136,11 +137,9 @@ vi.mock('three/webgpu', async () => {
             this.setRenderTarget = vi.fn();
         }
     }
-    class MockNodeMaterial extends original.Material {
-    }
     return {
+        ...actual,
         WebGPURenderer: MockWebGPURenderer,
-        NodeMaterial: MockNodeMaterial,
     };
 });
 // Mock GLTFLoader to return a mock hand hierarchy with bones immediately under JSDOM.

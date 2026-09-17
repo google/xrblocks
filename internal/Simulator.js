@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid d9d4508
- * @builddate 2026-09-17T02:11:38.110Z
+ * @commitid 7e3b9fd
+ * @builddate 2026-09-17T21:03:36.065Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -45,13 +45,6 @@ import { S as SparkRendererHolder, i as isWebGPURenderer, K as Keycodes, a as Si
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import 'three/addons/webxr/XRControllerModelFactory.js';
-import 'three/addons/webxr/XRHandModelFactory.js';
-import 'three/addons/webxr/XREstimatedLight.js';
-import 'three/addons/loaders/FontLoader.js';
-import 'three/addons/geometries/TextGeometry.js';
-import 'three/addons/loaders/DRACOLoader.js';
-import 'three/addons/loaders/KTX2Loader.js';
 
 /**
  * Manages the HTMLVideoElement and THREE.VideoTexture for simulator background video playback.
@@ -115,15 +108,20 @@ class BaseSimulatorCompositor {
             this.sparkRenderer.encodeLinear = value;
         }
     }
-    setBackgroundVideo(texture) {
+    setBackgroundVideo(videoTexture) {
         if (this.backgroundVideoQuad) {
             this.backgroundVideoQuad.material.dispose();
-            this.backgroundVideoQuad.dispose();
+            if ('dispose' in this.backgroundVideoQuad) {
+                this.backgroundVideoQuad.dispose();
+            }
             this.backgroundVideoQuad = undefined;
         }
-        if (texture) {
-            this.backgroundVideoQuad = new FullScreenQuad(new THREE.MeshBasicMaterial({ map: texture }));
+        if (videoTexture) {
+            this.backgroundVideoQuad = this.createBackgroundVideoQuad(videoTexture);
         }
+    }
+    createBackgroundVideoQuad(videoTexture) {
+        return new FullScreenQuad(new THREE.MeshBasicMaterial({ map: videoTexture }));
     }
     renderSimulatorScenePass(renderCamera, mainCamera) {
         this.deps.simulatorCamera?.onBeforeSimulatorSceneRender(mainCamera, this.renderSimulatorSceneToCanvasBound);
@@ -213,20 +211,6 @@ class WebGLRenderTargetCompositor extends BaseSimulatorCompositor {
 }
 
 /**
- * WebGPU compositor implementation for the simulator.
- *
- * Note: Phase 1 limitations apply: renders directly to the canvas without an
- * offscreen render target, ignores the background video quad, and does not apply
- * custom screen blending (deferred to Phase 2 TSL NodeMaterial compositor).
- */
-class WebGPUCompositor extends WebGLDirectCompositor {
-    clearBeforeSimulatorScene() {
-        this.deps.renderer.clear();
-    }
-    setBackgroundVideo(_texture) { }
-}
-
-/**
  * Factory function to create the appropriate SimulatorCompositor instance based
  * on the active renderer and render-target configuration.
  *
@@ -234,9 +218,16 @@ class WebGPUCompositor extends WebGLDirectCompositor {
  * @param renderToRenderTexture - Whether to render the main scene to an offscreen render target.
  * @returns The instantiated SimulatorCompositor.
  */
-function createSimulatorCompositor(deps, renderToRenderTexture) {
+async function createSimulatorCompositor(deps, renderToRenderTexture) {
     if (isWebGPURenderer(deps.renderer)) {
-        return new WebGPUCompositor(deps);
+        if (renderToRenderTexture) {
+            const { WebGPURenderTargetCompositor } = await import('./WebGPURenderTargetCompositor.js');
+            return new WebGPURenderTargetCompositor(deps);
+        }
+        else {
+            const { WebGPUDirectCompositor } = await import('./WebGPUDirectCompositor.js');
+            return new WebGPUDirectCompositor(deps);
+        }
     }
     else if (renderToRenderTexture) {
         return new WebGLRenderTargetCompositor(deps);
@@ -3743,7 +3734,7 @@ class Simulator extends Script {
             deviceCamera.registerSimulatorCamera(this.simulatorCamera);
         }
         deviceCamera?.init();
-        this.compositor = createSimulatorCompositor({
+        this.compositor = await createSimulatorCompositor({
             renderer,
             simulatorScene: this.simulatorScene,
             renderMainScene: this.renderMainScene,
@@ -3938,5 +3929,10 @@ class Simulator extends Script {
     }
 }
 
-export { Simulator };
+var Simulator$1 = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    Simulator: Simulator
+});
+
+export { BaseSimulatorCompositor as B, Simulator$1 as S, WebGLDirectCompositor as W };
 //# sourceMappingURL=Simulator.js.map
