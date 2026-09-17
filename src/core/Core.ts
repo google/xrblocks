@@ -854,9 +854,6 @@ export class Core {
         this.deviceCamera
       );
     }
-    if (this.simulatorRunning) {
-      this.simulator?.renderSimulatorScene();
-    }
   };
 
   /**
@@ -897,7 +894,6 @@ export class Core {
       const {Simulator} = await this.simulatorLoader();
       this.assertLifecycleActive('load the simulator runtime');
       const simulator = new Simulator(this.renderSceneCallback, this.renderer);
-      simulator.effects = this.effects;
       try {
         // Keep the simulator connected to the script lifecycle while its async
         // initialization runs. Otherwise the frame loop treats it as removed
@@ -987,7 +983,7 @@ export class Core {
 
   private renderSimulatorAndScene() {
     if (this.simulatorRunning && this.simulator) {
-      this.simulator.renderScene();
+      this.simulator.renderFrame();
     } else {
       this.renderScene();
     }
