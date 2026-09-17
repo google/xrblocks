@@ -181,7 +181,7 @@ export class Simulator extends Script {
       deviceCamera.registerSimulatorCamera(this.simulatorCamera);
     }
     deviceCamera?.init();
-    this.compositor = createSimulatorCompositor(
+    this.compositor = await createSimulatorCompositor(
       {
         renderer,
         simulatorScene: this.simulatorScene,

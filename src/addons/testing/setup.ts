@@ -112,7 +112,8 @@ vi.mock('three', async (importOriginal) => {
 });
 
 // Mock three/webgpu WebGPURenderer for JSDOM headless testing.
-vi.mock('three/webgpu', async () => {
+vi.mock('three/webgpu', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('three/webgpu')>();
   const original = await vi.importActual<typeof import('three')>('three');
 
   class MockWebGPURenderer {
@@ -148,13 +149,9 @@ vi.mock('three/webgpu', async () => {
     setRenderTarget = vi.fn();
   }
 
-  class MockNodeMaterial extends original.Material {
-    fragmentNode: unknown;
-  }
-
   return {
+    ...actual,
     WebGPURenderer: MockWebGPURenderer,
-    NodeMaterial: MockNodeMaterial,
   };
 });
 

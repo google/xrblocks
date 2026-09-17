@@ -1,6 +1,7 @@
 import type {SparkRenderer} from '@sparkjsdev/spark';
 import * as THREE from 'three';
 import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
+import type {QuadMesh} from 'three/webgpu';
 
 import {Registry} from '../../../core/components/Registry';
 import type {WebGLOrWebGPURenderer} from '../../../core/RendererTypes';
@@ -35,7 +36,7 @@ export interface SimulatorCompositor {
  */
 export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
   private readonly previousAutoClearColor: boolean;
-  protected backgroundVideoQuad?: FullScreenQuad;
+  protected backgroundVideoQuad?: FullScreenQuad | QuadMesh;
   private sparkRenderer?: SparkRenderer;
   protected readonly renderSimulatorSceneToCanvasBound =
     this.renderSimulatorSceneToCanvas.bind(this);
@@ -58,17 +59,23 @@ export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
     }
   }
 
-  setBackgroundVideo(texture?: THREE.Texture): void {
+  setBackgroundVideo(videoTexture?: THREE.Texture): void {
     if (this.backgroundVideoQuad) {
       (this.backgroundVideoQuad.material as THREE.Material).dispose();
-      this.backgroundVideoQuad.dispose();
+      if ('dispose' in this.backgroundVideoQuad) {
+        this.backgroundVideoQuad.dispose();
+      }
       this.backgroundVideoQuad = undefined;
     }
-    if (texture) {
-      this.backgroundVideoQuad = new FullScreenQuad(
-        new THREE.MeshBasicMaterial({map: texture})
-      );
+    if (videoTexture) {
+      this.backgroundVideoQuad = this.createBackgroundVideoQuad(videoTexture);
     }
+  }
+
+  protected createBackgroundVideoQuad(
+    videoTexture: THREE.Texture
+  ): FullScreenQuad | QuadMesh {
+    return new FullScreenQuad(new THREE.MeshBasicMaterial({map: videoTexture}));
   }
 
   protected renderSimulatorScenePass(
@@ -88,7 +95,7 @@ export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
     this.setSparkEncodeLinear(false);
     renderer.setRenderTarget(null);
     if (this.backgroundVideoQuad) {
-      this.backgroundVideoQuad.render(renderer as THREE.WebGLRenderer);
+      this.backgroundVideoQuad.render(renderer as never);
     }
     this.clearBeforeSimulatorScene();
     renderer.render(simulatorScene, camera);
