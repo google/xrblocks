@@ -170,7 +170,15 @@ export class OcclusionPass extends Pass {
     if (depthProjectionMatrix) {
       this.depthProjectionMatrices[viewId] = depthProjectionMatrix;
     }
-    depthTexture.needsUpdate = true;
+    // CPU depth arrives in a DataTexture whose bytes were rewritten in place,
+    // so it must be re-uploaded. GPU-optimized depth (Quest) is an
+    // ExternalTexture wrapping the native WebGLTexture: it has no image to
+    // upload, and bumping its version makes three's setTexture2DArray (which,
+    // unlike setTexture2D, does not skip external textures) call
+    // uploadTexture -> resizeImage(null) and crash.
+    if (!(depthTexture instanceof THREE.ExternalTexture)) {
+      depthTexture.needsUpdate = true;
+    }
   }
 
   /**

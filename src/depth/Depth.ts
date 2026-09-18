@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 
 import {Registry} from '../core/components/Registry';
+import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from '../core/RendererTypes';
 import type {Shader} from '../utils/Types';
 import {clamp} from '../utils/utils';
 
@@ -22,7 +27,7 @@ export class Depth {
 
   // The main camera.
   private camera!: THREE.Camera;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
   private gpuDepthConverter?: GPUDepthConverter;
   private registry?: Registry;
   private disposed = false;
@@ -86,10 +91,10 @@ export class Depth {
   init(
     camera: THREE.PerspectiveCamera,
     options: DepthOptions,
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     registry: Registry,
     scene: THREE.Scene
-  ) {
+  ): void | Promise<void> {
     if (this.disposed) {
       throw new Error('Depth cannot initialize after disposal.');
     }
@@ -98,11 +103,18 @@ export class Depth {
     this.renderer = renderer;
     this.registry = registry;
     this.enabled = options.enabled;
-    this.gpuDepthConverter = new GPUDepthConverter(renderer);
+    this.gpuDepthConverter = isWebGPURenderer(renderer)
+      ? undefined
+      : new GPUDepthConverter(renderer);
 
     if (this.options.depthTexture.enabled) {
       this.depthTextures = new DepthTextures(options);
       registry.register(this.depthTextures);
+    }
+
+    if (this.options.occlusion.enabled) {
+      assertWebGLRenderer(renderer, 'OcclusionPass');
+      this.occlusionPass = new OcclusionPass(scene, camera);
     }
 
     if (this.options.depthMesh.enabled) {
@@ -117,11 +129,21 @@ export class Depth {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
       }
+      if (
+        isWebGPURenderer(renderer) &&
+        (this.options.depthMesh.useDepthTexture ||
+          this.options.depthMesh.showDebugTexture)
+      ) {
+        return import('./DepthMeshWebGPUMaterial.js').then(
+          ({applyWebGPUDepthMeshMaterial}) => {
+            if (!this.disposed && this.depthMesh) {
+              applyWebGPUDepthMeshMaterial(this.depthMesh);
+              scene.add(this.depthMesh);
+            }
+          }
+        );
+      }
       scene.add(this.depthMesh);
-    }
-
-    if (this.options.occlusion.enabled) {
-      this.occlusionPass = new OcclusionPass(scene, camera);
     }
   }
 
@@ -310,6 +332,7 @@ export class Depth {
   }
 
   updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number) {
+    assertWebGLRenderer(this.renderer, 'WebXR GPU depth');
     this.gpuDepthData[viewId] = depthData;
     this.updateDepthMatrices(depthData, viewId);
     // Reading the depth target back is a synchronous GPU stall, and in stereo
@@ -420,7 +443,7 @@ export class Depth {
           this.view[viewId] = view;
 
           if (session.depthUsage === 'gpu-optimized') {
-            const depthData = binding.getDepthInformation(view);
+            const depthData = binding?.getDepthInformation(view);
             if (!depthData) {
               return;
             }
@@ -444,6 +467,7 @@ export class Depth {
   }
 
   renderOcclusionPass() {
+    assertWebGLRenderer(this.renderer, 'OcclusionPass');
     const leftDepthTexture = this.getTexture(0);
     if (leftDepthTexture) {
       this.occlusionPass!.setDepthTexture(
@@ -511,6 +535,9 @@ export class Depth {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
+    if (Depth.instance === this) {
+      Depth.instance = undefined;
+    }
 
     const mesh = this.depthMesh;
     const textures = this.depthTextures;

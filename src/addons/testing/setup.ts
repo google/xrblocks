@@ -98,6 +98,10 @@ vi.mock('three', async (importOriginal) => {
     self.clearDepth = () => {};
     self.dispose = () => {};
     self.getRenderTarget = () => null;
+    self.getClearColor = (target?: THREE.Color) =>
+      target ?? new original.Color();
+    self.getClearAlpha = () => 0;
+    self.setClearColor = () => {};
     self.readRenderTargetPixelsAsync = () => Promise.resolve();
 
     return self;
@@ -112,7 +116,8 @@ vi.mock('three', async (importOriginal) => {
 });
 
 // Mock three/webgpu WebGPURenderer for JSDOM headless testing.
-vi.mock('three/webgpu', async () => {
+vi.mock('three/webgpu', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('three/webgpu')>();
   const original = await vi.importActual<typeof import('three')>('three');
 
   class MockWebGPURenderer {
@@ -146,9 +151,19 @@ vi.mock('three/webgpu', async () => {
     clear = vi.fn();
     clearDepth = vi.fn();
     setRenderTarget = vi.fn();
+    getRenderTarget = vi.fn(() => null);
+    getClearColor = vi.fn(
+      (target?: THREE.Color) => target ?? new original.Color()
+    );
+    getClearAlpha = vi.fn(() => 0);
+    setClearColor = vi.fn();
+    readRenderTargetPixelsAsync = vi.fn(() =>
+      Promise.resolve(new Float32Array(160 * 160))
+    );
   }
 
   return {
+    ...actual,
     WebGPURenderer: MockWebGPURenderer,
   };
 });

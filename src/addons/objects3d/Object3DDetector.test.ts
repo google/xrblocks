@@ -10,10 +10,22 @@ vi.mock('xrblocks', async () => {
   return {
     Script: THREE.Object3D,
     enableAcceleratedRaycast: vi.fn().mockResolvedValue(false),
+    // No device-camera model in this environment: the detector falls back to
+    // the render-camera frustum (see _buildRenderFrozenCamera).
+    getCameraParametersSnapshot: vi.fn().mockReturnValue(null),
+    getDeviceCameraWorldFromView: vi.fn().mockReturnValue(null),
     core: {
       camera: new THREE.PerspectiveCamera(),
+      renderer: {xr: {getCamera: () => new THREE.ArrayCamera([])}},
       deviceCamera: Object.freeze({getSnapshot: mocks.getSnapshot}),
-      depth: {depthMesh: new THREE.Mesh(new THREE.BoxGeometry())},
+      depth: {
+        depthMesh: new THREE.Mesh(new THREE.BoxGeometry()),
+        // detect() forces a rebuild of the full-resolution mesh before
+        // cloning it; the box above is already "current" here.
+        updateFullResolutionDepthMesh: vi.fn(),
+        normDepthBufferFromNormViewMatrices: [],
+        depthCameraRotations: [],
+      },
       world: {
         objects: {runDetection: mocks.runDetection},
         options: {
@@ -86,7 +98,10 @@ describe('Object3DDetector per-call inputs', () => {
     });
 
     const detection = detector.detect();
-    await Promise.resolve();
+    // detect() awaits a fresh video frame and the BVH readiness probe before
+    // it reaches the backends, so wait for both requests rather than for one
+    // microtask.
+    await vi.waitFor(() => expect(mocks.runDetection).toHaveBeenCalledTimes(2));
 
     expect(mocks.getSnapshot).toHaveBeenCalledTimes(1);
     expect(mocks.runDetection).toHaveBeenNthCalledWith(1, {
