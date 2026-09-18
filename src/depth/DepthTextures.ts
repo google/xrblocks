@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+import {
+  assertWebGLRenderer,
+  type WebGLOrWebGPURenderer,
+} from '../core/RendererTypes';
+
 import {DepthOptions} from './DepthOptions';
 
 export class DepthTextures {
@@ -70,9 +75,10 @@ export class DepthTextures {
 
   updateNativeTexture(
     depthData: XRWebGLDepthInformation,
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     viewId: number
   ) {
+    assertWebGLRenderer(renderer, 'DepthTextures.updateNativeTexture');
     this.renderer = renderer;
     if (this.nativeTextures.length < viewId + 1) {
       this.nativeTextures[viewId] = new THREE.ExternalTexture(

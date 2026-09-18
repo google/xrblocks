@@ -10,9 +10,6 @@ import {DepthMeshOptions, DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
 
 export class DepthMesh extends MeshScript {
-  static dependencies = {
-    renderer: THREE.WebGLRenderer,
-  };
   static isDepthMesh = true;
   private worldPosition = new THREE.Vector3();
   private worldQuaternion = new THREE.Quaternion();
@@ -30,12 +27,12 @@ export class DepthMesh extends MeshScript {
   private colliders: RAPIER_NS.Collider[] = [];
   private colliderUpdateFps: number;
 
-  private renderer!: THREE.WebGLRenderer;
   private projectionMatrixInverse: Readonly<THREE.Matrix4> =
     new THREE.Matrix4();
   private lastColliderUpdateTime = 0;
   private options: DepthMeshOptions;
   private depthTextureMaterialUniforms?;
+  private customMaterialUpdateCallback?: () => void;
 
   private RAPIER?: typeof RAPIER_NS;
   private blendedWorld?: RAPIER_NS.World;
@@ -133,11 +130,33 @@ export class DepthMesh extends MeshScript {
     }
   }
 
+  get depthTextureUniforms() {
+    return this.depthTextureMaterialUniforms;
+  }
+
   /**
-   * Initialize the depth mesh.
+   * Sets a custom material (such as a WebGPU NodeMaterial) and registers a
+   * callback to synchronize uniforms on depth updates.
+   *
+   * @param material - The material to apply to the depth mesh.
+   * @param onUpdate - Optional callback invoked whenever depth uniforms change.
    */
-  init({renderer}: {renderer: THREE.WebGLRenderer}) {
-    this.renderer = renderer;
+  setCustomMaterial(material: THREE.Material, onUpdate?: () => void) {
+    disposeMaterial(this.material);
+    material.visible =
+      this.options.showDebugTexture || this.options.renderShadow;
+    if (this.depthTextureMaterialUniforms) {
+      (material as THREE.Material & {uniforms?: unknown}).uniforms =
+        this.depthTextureMaterialUniforms;
+    }
+    this.material = material;
+    if (this.downsampledMesh) {
+      this.downsampledMesh.material = material;
+    }
+    this.customMaterialUpdateCallback = onUpdate;
+    this.onBeforeRender = () => {
+      this.customMaterialUpdateCallback?.();
+    };
   }
 
   /**
@@ -199,6 +218,8 @@ export class DepthMesh extends MeshScript {
         ? this.depthTextures!.depthData[0].rawValueToMeters
         : 1.0;
     }
+
+    this.customMaterialUpdateCallback?.();
 
     if (this.options.updateVertexNormals) {
       this.geometry.computeVertexNormals();
