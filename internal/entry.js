@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 9f0c682
- * @builddate 2026-09-18T15:53:37.192Z
+ * @commitid b722644
+ * @builddate 2026-09-18T15:57:19.890Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13207,9 +13207,16 @@ class DepthTextures {
 class GPUDepthConverter {
     constructor(renderer) {
         this.renderer = renderer;
+        this.savedViewport = new THREE.Vector4();
+        this.savedScissor = new THREE.Vector4();
+        this.logicalViewport = new THREE.Vector4();
+        this.restoredViewport = new THREE.Vector4();
     }
     /**
      * Converts unsigned short GPU depth from Quest 3 to float32 CPU depth.
+     * Restores renderer-managed target and raster state, not arbitrary raw-GL
+     * bindings. An independently overridden canvas viewport is restored in GL,
+     * but its renderer cache cannot be restored without changing logical defaults.
      */
     convertGPUToCPU(depthData) {
         if (!this.depthTarget) {
@@ -13222,8 +13229,6 @@ class GPUDepthConverter {
                 depthBuffer: false,
             });
             this.depthTexture = new THREE.ExternalTexture(depthData.texture);
-            const textureProperties = this.renderer.properties.get(this.depthTexture);
-            textureProperties.__webglTexture = depthData.texture;
             this.gpuPixels = new Float32Array(depthData.width * depthData.height);
             const depthShader = new THREE.ShaderMaterial({
                 vertexShader: `
@@ -13260,24 +13265,101 @@ class GPUDepthConverter {
                 depthWrite: false,
                 side: THREE.DoubleSide,
             });
-            const depthMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), depthShader);
+            this.depthMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), depthShader);
             this.depthScene = new THREE.Scene();
-            this.depthScene.add(depthMesh);
+            this.depthScene.add(this.depthMesh);
             this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
         }
+        else if (this.depthTarget.width !== depthData.width ||
+            this.depthTarget.height !== depthData.height) {
+            this.depthTarget.setSize(depthData.width, depthData.height);
+            this.gpuPixels = new Float32Array(depthData.width * depthData.height);
+        }
+        this.depthTexture.sourceTexture = depthData.texture;
         const originalRenderTarget = this.renderer.getRenderTarget();
-        this.renderer.xr.enabled = false;
-        this.renderer.setRenderTarget(this.depthTarget);
-        this.renderer.render(this.depthScene, this.depthCamera);
-        this.renderer.readRenderTargetPixels(this.depthTarget, 0, 0, depthData.width, depthData.height, this.gpuPixels, 0);
-        this.renderer.xr.enabled = true;
-        this.renderer.setRenderTarget(originalRenderTarget);
+        const activeCubeFace = this.renderer.getActiveCubeFace();
+        const activeMipmapLevel = this.renderer.getActiveMipmapLevel();
+        this.renderer.getCurrentViewport(this.savedViewport);
+        this.renderer.getViewport(this.logicalViewport);
+        const gl = this.renderer.getContext();
+        // The renderer's scissor getters expose logical defaults, not live state.
+        this.savedScissor.fromArray(gl.getParameter(gl.SCISSOR_BOX));
+        const scissorTest = gl.isEnabled(gl.SCISSOR_TEST);
+        const xrEnabled = this.renderer.xr.enabled;
+        try {
+            this.renderer.xr.enabled = false;
+            this.renderer.setRenderTarget(this.depthTarget);
+            this.renderer.render(this.depthScene, this.depthCamera);
+            this.renderer.readRenderTargetPixels(this.depthTarget, 0, 0, depthData.width, depthData.height, this.gpuPixels, 0);
+        }
+        finally {
+            this.renderer.xr.enabled = xrEnabled;
+            if (originalRenderTarget) {
+                const { viewport, scissor, scissorTest: targetScissorTest, } = originalRenderTarget;
+                // setViewport/setScissor would overwrite renderer-wide logical defaults.
+                // Rebind with physical pixels, then restore the target's stored defaults.
+                originalRenderTarget.viewport = this.savedViewport;
+                originalRenderTarget.scissor = this.savedScissor;
+                originalRenderTarget.scissorTest = scissorTest;
+                try {
+                    this.renderer.setRenderTarget(originalRenderTarget, activeCubeFace, activeMipmapLevel);
+                }
+                finally {
+                    originalRenderTarget.viewport = viewport;
+                    originalRenderTarget.scissor = scissor;
+                    originalRenderTarget.scissorTest = targetScissorTest;
+                }
+            }
+            else {
+                this.renderer.setRenderTarget(null, activeCubeFace, activeMipmapLevel);
+                this.renderer.getCurrentViewport(this.restoredViewport);
+                if (!this.restoredViewport.equals(this.savedViewport)) {
+                    // setRenderTarget floors, but setViewport rounds at fractional DPR.
+                    this.renderer.setViewport(this.logicalViewport);
+                }
+                this.renderer.state.viewport(this.savedViewport);
+                this.renderer.state.scissor(this.savedScissor);
+                this.renderer.state.setScissorTest(scissorTest);
+            }
+        }
         return {
             width: depthData.width,
             height: depthData.height,
             data: this.gpuPixels.buffer,
             rawValueToMeters: depthData.rawValueToMeters,
         };
+    }
+    /**
+     * Releases conversion resources without deleting the UA-owned depth texture.
+     * The first cleanup error is rethrown after all releases are attempted.
+     * A later conversion lazily recreates the resources.
+     */
+    dispose() {
+        const { depthTarget, depthMesh, depthTexture, depthScene } = this;
+        if (!depthTarget)
+            return;
+        this.depthTarget = undefined;
+        this.gpuPixels = new Float32Array(0);
+        depthTexture.sourceTexture = null;
+        let firstError;
+        const cleanups = [
+            () => depthTarget.dispose(),
+            () => depthMesh.geometry.dispose(),
+            () => depthMesh.material.dispose(),
+            () => this.renderer.properties.remove(depthTexture),
+            () => depthTexture.dispose(),
+            () => depthScene.clear(),
+        ];
+        for (const cleanup of cleanups) {
+            try {
+                cleanup();
+            }
+            catch (error) {
+                firstError ??= error;
+            }
+        }
+        if (firstError !== undefined)
+            throw firstError;
     }
 }
 
@@ -14117,7 +14199,8 @@ class Depth {
         if (cpuDepth) {
             this.cpuDepthData[viewId] = cpuDepth;
             this.depthDataFormat = 'float32';
-            if (this.depthArray[viewId] instanceof Float32Array) {
+            if (this.depthArray[viewId] instanceof Float32Array &&
+                this.depthArray[viewId].byteLength === cpuDepth.data.byteLength) {
                 this.depthArray[viewId].set(new Float32Array(cpuDepth.data));
             }
             else {
@@ -14275,6 +14358,7 @@ class Depth {
         this.occlusionPass = undefined;
         let firstError;
         const cleanups = [
+            () => this.gpuDepthConverter?.dispose(),
             () => {
                 if (mesh && this.registry?.get(DepthMesh) === mesh) {
                     this.registry.unregister(DepthMesh);
@@ -14298,7 +14382,6 @@ class Depth {
                 firstError ??= error;
             }
         }
-        // TODO: Wire GPU converter disposal when its cleanup API from #600 lands.
         this.gpuDepthConverter = undefined;
         this.registry = undefined;
         this.view.length = 0;
