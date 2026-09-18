@@ -28,16 +28,21 @@ class MultiplayerScript extends xb.Script {
     const net = enableNet();
 
     // 2. Join a room using a specified Transport
-    const session = await net.joinRoom('main-lounge', {
+    this.session = await net.joinRoom('main-lounge', {
       displayName: 'PlayerOne',
       // BroadcastChannelTransport allows testing multiplayer locally across tabs
       transport: new BroadcastChannelTransport(),
     });
 
-    console.log('Successfully connected to session:', session.id);
+    console.log('Connected as peer:', this.session.localPeerId);
   }
 }
+
+xb.add(new MultiplayerScript());
+await xb.init();
 ```
+
+Keep the session returned by `joinRoom()`. The snippets below use `this.session` inside `MultiplayerScript`, after joining has completed. `enableNet()` also exposes the active session as `xb.core.net.session`; it does not register a string-keyed `'net'` service in the registry.
 
 ---
 
@@ -45,8 +50,8 @@ class MultiplayerScript extends xb.Script {
 
 Transports abstract network routing, allowing you to swap backends without rewriting application logic:
 
-- **`BroadcastChannelTransport`**: Zero-latency local communication. Ideal for local development (open two tabs of the same webpage side-by-side).
-- **`WebRTCTransport`**: Serverless Peer-to-Peer connectivity utilizing PeerJS (best for up to ~12 peers). Requires specifying stun/turn servers in parameters.
+- **`BroadcastChannelTransport`**: Same-origin communication between browser tabs on the same device, without a server.
+- **`WebRTCTransport`**: Peer-to-peer connectivity using the public PeerJS signaling broker by default (up to 12 peers). Default STUN servers are supplied; pass `iceServers` to add TURN when needed.
 - **`WebSocketTransport`**: Relayed connection via a lightweight WebSocket server (scalable to larger rooms).
 
 ---
@@ -57,9 +62,10 @@ A `NetObject` synchronizes a target `THREE.Object3D`'s position, rotation, and s
 
 ### Setting Up a Replicated Object
 
-To replicate a model, wrap it in a `NetObject` and register it with the session:
+To replicate a model, wrap it in a `NetObject` and register it with the session. Add the imports at module scope and the remaining statements after joining in `init()`. Use the same object ID and equivalent parent coordinate systems on every peer:
 
 ```javascript
+import * as THREE from 'three';
 import {NetObject} from 'xrblocks/addons/netblocks/src/index.js';
 
 // 1. Create your local mesh
@@ -70,30 +76,30 @@ const mesh = new THREE.Mesh(
 this.add(mesh);
 
 // 2. Create the NetObject wrapper with a unique ID
-const netObj = new NetObject({
+this.netObj = new NetObject({
   id: 'shared-box-1',
   object: mesh,
 });
 
 // 3. Register to session
-xb.core.registry.get('net').session.netObjects.add(netObj);
+this.session.netObjects.add(this.netObj);
 ```
 
 ### Grabbing and Ownership
 
-Ownership determines which peer broadcasts the object's transform coordinates. When a user interacts with a shared object, they must claim ownership:
+Ownership determines which peer broadcasts the object's transform. Add these direct-hand grab callbacks to `MultiplayerScript` to claim and release the shared object. They manage network ownership, not movement; configure manipulation separately as described in [Interaction and Manipulation](Interaction.md).
 
 ```javascript
 // Claim ownership when grabbed
 onObjectGrabStart(event) {
-  const session = xb.core.registry.get('net').session;
-  session.claim(netObj); // You are now the authoritative sender
+  if (event.target !== this.netObj.object) return;
+  this.session.claim(this.netObj);
 }
 
 // Release ownership when dropped
 onObjectGrabEnd(event) {
-  const session = xb.core.registry.get('net').session;
-  session.release(netObj);
+  if (event.target !== this.netObj.object) return;
+  this.session.release(this.netObj);
 }
 ```
 
@@ -101,10 +107,10 @@ onObjectGrabEnd(event) {
 
 ## RPC & Custom Events
 
-Send and listen for custom events across all connected peers in the room:
+After joining, send and listen for custom events across all connected peers in the room:
 
 ```javascript
-const session = xb.core.registry.get('net').session;
+const session = this.session;
 
 // Listen for a custom event
 session.events.on('ping', (payload, senderId) => {
@@ -122,14 +128,22 @@ session.events.emit('ping', {time: Date.now()});
 Enable spatial WebRTC voice channels so users hear peers panning and attenuating based on their relative distance:
 
 ```javascript
+import {
+  enableNet,
+  WebRTCTransport,
+} from 'xrblocks/addons/netblocks/src/index.js';
+
+const net = enableNet();
 const session = await net.joinRoom('lobby', {
   transport: new WebRTCTransport(),
   voice: true, // Enable voice
 });
 
 // Manually mute/unmute
-// session.voice.mute();
-// session.voice.unmute();
+session.voice.setMuted(true);
+session.voice.setMuted(false);
 ```
+
+Run this after XR Blocks initialization, or use these join options in your script's `init()`. Muting stops outgoing microphone audio without closing peer connections; it does not mute incoming playback. Call `net.leaveRoom()` when leaving the room.
 
 For a complete example, see <CodeSearchLink path="demos/netblocks/index.html"/> and the server relays inside <CodeSearchLink path="src/addons/netblocks/README.md"/>.
