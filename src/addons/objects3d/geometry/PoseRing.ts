@@ -64,6 +64,44 @@ export class PoseRing {
     return this.nearest(t)?.delta ?? null;
   }
 
+  /**
+   * Estimated camera speed around time `t`, from the earliest and latest
+   * stored poses within `±halfWindowMs`. Returns `null` when the window holds
+   * fewer than two sufficiently separated samples.
+   */
+  velocityAround(
+    t: number,
+    halfWindowMs = 90
+  ): {linearMetersPerSec: number; angularRadPerSec: number} | null {
+    let earliest: {t: number; worldFromView: THREE.Matrix4} | null = null;
+    let latest: {t: number; worldFromView: THREE.Matrix4} | null = null;
+    for (let i = 0; i < this.count; ++i) {
+      const entry = this.entries[i];
+      if (Math.abs(entry.t - t) > halfWindowMs) continue;
+      if (!earliest || entry.t < earliest.t) earliest = entry;
+      if (!latest || entry.t > latest.t) latest = entry;
+    }
+    if (!earliest || !latest) return null;
+    const dtSeconds = (latest.t - earliest.t) / 1000;
+    if (dtSeconds < 0.02) return null;
+    const positionA = new THREE.Vector3().setFromMatrixPosition(
+      earliest.worldFromView
+    );
+    const positionB = new THREE.Vector3().setFromMatrixPosition(
+      latest.worldFromView
+    );
+    const quaternionA = new THREE.Quaternion().setFromRotationMatrix(
+      earliest.worldFromView
+    );
+    const quaternionB = new THREE.Quaternion().setFromRotationMatrix(
+      latest.worldFromView
+    );
+    return {
+      linearMetersPerSec: positionB.distanceTo(positionA) / dtSeconds,
+      angularRadPerSec: quaternionA.angleTo(quaternionB) / dtSeconds,
+    };
+  }
+
   private nearest(t: number): {
     entry: {t: number; worldFromView: THREE.Matrix4};
     delta: number;

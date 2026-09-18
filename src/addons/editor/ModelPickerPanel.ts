@@ -57,6 +57,11 @@ export class ModelPickerPanel extends xb.Script {
   lastDirectoryRefresh = 0;
   directoryRefreshInFlight = false;
 
+  /** Pushed every frame by SceneEditor.update(). False outside Editor mode
+   * and in real XR, where rendering the hidden preview and polling the
+   * models directory would be pure waste (see SceneEditor.update). */
+  editorActive = true;
+
   constructor(
     sceneManager: SceneManager,
     {parent = document.body}: ModelPickerPanelOptions = {}
@@ -144,6 +149,7 @@ export class ModelPickerPanel extends xb.Script {
   }
 
   override update() {
+    if (!this.editorActive) return;
     const now = performance.now();
     if (
       !this.directoryRefreshInFlight &&

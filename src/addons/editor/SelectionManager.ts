@@ -114,6 +114,8 @@ export class SelectionManager extends xb.Script {
   }
 
   override update() {
+    // Nothing highlighted and the editor inert: nothing to reflect.
+    if (!this.editorActive && this.highlights.size === 0) return;
     // Reflects editorActive (set every frame by SceneEditor) onto the
     // highlight boxes -- a selection made in Editor mode stays intact
     // when switching to another simulator mode, it just stops rendering

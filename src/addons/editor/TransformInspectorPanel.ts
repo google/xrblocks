@@ -172,6 +172,7 @@ export class TransformInspectorPanel extends xb.Script {
   }
 
   override update() {
+    if (!this.selectionManager.editorActive) return; // hidden with the editor chrome
     this.refresh();
   }
 
