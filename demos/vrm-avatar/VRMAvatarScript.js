@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 import {VRMAvatar} from './VRMAvatar.js';
+import {applyOcclusionToAvatar} from './VRMOcclusion.js';
 
 export class VRMAvatarScript extends xb.Script {
   static dependencies = {
@@ -64,6 +65,14 @@ export class VRMAvatarScript extends xb.Script {
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this._planeHit = new THREE.Vector3();
     this._raycaster = new THREE.Raycaster();
+
+    // Height of the floor the avatar stands on. In XR the reference space is
+    // floor-relative, so it is 0. The desktop simulator's environment is not
+    // built around y = 0 (its living-room floor sits ~0.3 m up), so there it
+    // is found by casting down into the simulator scene once that has loaded.
+    this._floorY = 0;
+    this._floorResolved = false;
+    this._floorProbeFrame = 0;
   }
 
   // -------------------------------------------------------------------------
@@ -110,6 +119,14 @@ export class VRMAvatarScript extends xb.Script {
 
     this.add(this._avatar.root);
 
+    // Pixel-level passthrough occlusion (real-world geometry hides the
+    // avatar). Runs after load so VRMUtils.combineSkeletons has already
+    // replaced the meshes; inert unless occlusion is enabled in options.
+    if (xb.core.options.depth?.occlusion?.enabled) {
+      applyOcclusionToAvatar(this._avatar.root);
+    }
+
+    this._resolveFloor();
     this._placeAvatarFacingUser();
 
     this._avatar.play(this._idleUrl ? 'idle' : 'walk');
@@ -147,7 +164,7 @@ export class VRMAvatarScript extends xb.Script {
     }
 
     if (!hit) return;
-    hit.y = 0;
+    hit.y = this._floorY;
 
     this._walkToTarget = hit;
     this._avatar.play('walk');
@@ -161,6 +178,14 @@ export class VRMAvatarScript extends xb.Script {
    */
   update() {
     if (!this._loaded) return;
+
+    // The simulator environment loads after init; keep probing for its floor
+    // (cheaply, every 30th frame) until it answers, then re-seat the avatar.
+    if (!this._floorResolved && this._floorProbeFrame++ % 30 === 0) {
+      if (this._resolveFloor() && !this._walkToTarget) {
+        this._placeAvatarFacingUser();
+      }
+    }
 
     const delta = this._timer.getDelta();
 
@@ -188,8 +213,46 @@ export class VRMAvatarScript extends xb.Script {
 
   _getUserPosition() {
     const p = this._camera.position.clone();
-    p.y = 0;
+    p.y = this._floorY;
     return p;
+  }
+
+  /**
+   * Determines the floor height under the user.
+   * @returns {boolean} True once the floor is known.
+   */
+  _resolveFloor() {
+    if (xb.core.renderer.xr.isPresenting) {
+      // XR reference space is floor-relative.
+      this._floorY = 0;
+    } else {
+      // Desktop: wait for the simulator and its environment to exist, then
+      // cast down from the eye. (Before entering XR on a headset the
+      // simulator never appears; the avatar is re-seated once presenting.)
+      const scene = xb.core.simulator?.simulatorScene;
+      if (!scene) return false;
+      const eye = this._camera.getWorldPosition(new THREE.Vector3());
+      this._raycaster.set(eye, new THREE.Vector3(0, -1, 0));
+      this._raycaster.far = 3;
+      const hits = this._raycaster.intersectObject(scene, true);
+      this._raycaster.far = Infinity;
+      // Lowest surface within standing height below the eye: skips furniture
+      // tops the ray passes through on the way down.
+      let floorY = null;
+      for (const hit of hits) {
+        if (
+          hit.point.y > eye.y - 2.2 &&
+          (floorY === null || hit.point.y < floorY)
+        ) {
+          floorY = hit.point.y;
+        }
+      }
+      if (floorY === null) return false; // environment not loaded yet
+      this._floorY = floorY;
+    }
+    this._floorResolved = true;
+    this._groundPlane.constant = -this._floorY;
+    return true;
   }
 
   /**
@@ -205,7 +268,7 @@ export class VRMAvatarScript extends xb.Script {
 
     const root = this._avatar.root;
     root.position.copy(userPos).addScaledVector(forward, this._spawnDistance);
-    root.position.y = 0;
+    root.position.y = this._floorY;
 
     this._walkDir.subVectors(userPos, root.position);
     this._walkDir.y = 0;
