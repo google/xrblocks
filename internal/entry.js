@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 9d589ce
- * @builddate 2026-09-18T00:38:02.920Z
+ * @commitid f7fa1d7
+ * @builddate 2026-09-18T00:46:38.699Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -23215,7 +23215,7 @@ class Segmenter extends Script {
  * Manages all interactions with the real-world environment perceived by the XR
  * device. This class abstracts the complexity of various perception APIs
  * (Depth, Planes, Meshes, etc.) and provides a simple, event-driven interface
- * for developers to use `this.world.depth.mesh`, `this.world.planes`.
+ * for developers to use `this.world.planes` and `this.world.meshes`.
  */
 class World extends Script {
     constructor() {
@@ -23294,7 +23294,9 @@ class World extends Script {
         this.resolveInitialized();
     }
     /**
-     * Places an object at the reticle.
+     * Unimplemented placeholder. Does not place or anchor the object.
+     *
+     * @throws Always throws an error because this method is not implemented.
      */
     anchorObjectAtReticle(_object, _reticle) {
         throw new Error('Method not implemented');
@@ -23322,7 +23324,7 @@ class World extends Script {
      * (currently planes) and places a 3D object at the intersection point,
      * oriented to face the user.
      *
-     * See /templates/3_spatial_placement/ for a complete placement example.
+     * See /templates/03_spatial_placement/ for a complete placement example.
      *
      * @param objectToPlace - The object to position in the
      * world.
