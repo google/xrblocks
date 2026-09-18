@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 3389848
- * @builddate 2026-09-18T16:49:09.429Z
+ * @commitid 1b314a6
+ * @builddate 2026-09-18T18:02:45.209Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -16631,14 +16631,22 @@ class UIRenderer {
         this.connectedRoots = new Set();
         this.viewport = { width: 0, height: 0 };
         this.backendState = { kind: 'idle' };
-        this.presentationStateFor = (element, cursorPoints) => ({
-            hovered: this.interaction.isPointingAt(element),
-            active: this.interaction.isSelectingAt(element),
-            disabled: getSemanticControl(element)?.isDisabled() ?? false,
-            cursorPointCount: cursorPoints
+        this.presentationState = {
+            hovered: false,
+            active: false,
+            disabled: false,
+            cursorPointCount: 0,
+        };
+        this.presentationStateFor = (element, cursorPoints) => {
+            const state = this.presentationState;
+            state.hovered = this.interaction.isPointingAt(element);
+            state.active = this.interaction.isSelectingAt(element);
+            state.disabled = getSemanticControl(element)?.isDisabled() ?? false;
+            state.cursorPointCount = cursorPoints
                 ? this.interaction.writeCursorPointsAt(element, cursorPoints[0], cursorPoints[1])
-                : 0,
-        });
+                : 0;
+            return state;
+        };
         /** Reports issues from the latest completed mounted layout. */
         this.validate = (root) => {
             if (this.backendState.kind !== 'ready') {
