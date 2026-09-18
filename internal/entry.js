@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 1de21b5
- * @builddate 2026-09-18T15:49:05.107Z
+ * @commitid 9f0c682
+ * @builddate 2026-09-18T15:53:37.192Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4723,14 +4723,24 @@ function pathLength(points) {
     }
     return d;
 }
-/** Resamples a path into n evenly spaced points. */
+/** Resamples a path into n evenly spaced points, or returns null if it cannot advance. */
 function resample(points, n) {
     const interval = pathLength(points) / (n - 1);
+    if (points.length < 2 || !Number.isFinite(interval) || interval <= 0) {
+        return null;
+    }
     let D = 0;
     const newPoints = [points[0]];
     const pts = points.slice();
     let i = 1;
+    // At most m - 1 segment consumptions plus n - 1 insertions are needed.
+    // The budget scales with input length and deliberately allows two extra iterations.
+    const maxIterations = points.length + n;
+    let iterations = 0;
     while (i < pts.length) {
+        if (iterations++ >= maxIterations) {
+            return null;
+        }
         const pt1 = pts[i - 1];
         const pt2 = pts[i];
         const d = distance(pt1, pt2);
@@ -4740,6 +4750,11 @@ function resample(points, n) {
                 x: pt1.x + t * (pt2.x - pt1.x),
                 y: pt1.y + t * (pt2.y - pt1.y),
             };
+            if (!Number.isFinite(q.x) ||
+                !Number.isFinite(q.y) ||
+                (q.x === pt1.x && q.y === pt1.y)) {
+                return null;
+            }
             newPoints.push(q);
             pts.splice(i, 0, q);
             D = 0;
@@ -4877,11 +4892,23 @@ class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
     /**
      * Recognizes a stroke from a list of 2D points by comparing it against stored templates.
      * Supports both forward and backward matching to handle bi-directional strokes.
+     * Returns Unknown with zero confidence for input that cannot form a valid normalized stroke.
      * @param points - The list of points captured during the stroke.
      * @returns The recognition result containing the shape name and confidence score.
      */
     recognize(points) {
+        if (points.length < 2 ||
+            points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
+            return { recognizedShape: 'Unknown', confidence: 0 };
+        }
+        const length = pathLength(points);
+        if (length === 0 || !Number.isFinite(length)) {
+            return { recognizedShape: 'Unknown', confidence: 0 };
+        }
         const resampledForward = resample(points, 64);
+        if (!resampledForward) {
+            return { recognizedShape: 'Unknown', confidence: 0 };
+        }
         const resampledBackward = resampledForward.slice().reverse();
         const pointsForwardUnrotated = this.scaleAndTranslate(resampledForward);
         const pointsBackwardUnrotated = pointsForwardUnrotated.slice().reverse();
@@ -4977,6 +5004,7 @@ class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
      * @param name - The name of the shape.
      * @param points -  The points defining the shape.
      * @param useRotation - Whether to use rotation invariance.
+     * @throws RangeError if the template cannot be resampled.
      */
     addClosedTemplate(name, points, useRotation = true) {
         const n = points.length;
@@ -4993,6 +5021,7 @@ class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
      * @param name - The name of the shape.
      * @param points - The points defining the shape.
      * @param useRotation - Whether to use rotation invariance.
+     * @throws RangeError if the template cannot be resampled.
      */
     addTemplate(name, points, useRotation = true) {
         this.templates.push({
@@ -5007,9 +5036,14 @@ class OneDollarUnistrokeRecognizer extends StrokeRecognizerBackend {
      * @param points - The list of points to preprocess.
      * @param useRotation - Whether to rotate the points to zero.
      * @returns The preprocessed list of points.
+     * @throws RangeError if the stroke cannot be resampled.
      */
     preprocess(points, useRotation = true) {
-        points = resample(points, 64);
+        const resampled = resample(points, 64);
+        if (!resampled) {
+            throw new RangeError('Cannot normalize stroke: resampling failed.');
+        }
+        points = resampled;
         if (useRotation) {
             points = rotateToZero(points);
         }
