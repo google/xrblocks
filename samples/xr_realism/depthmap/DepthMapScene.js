@@ -9,13 +9,16 @@ export class DepthMapScene extends xb.Script {
     depth: xb.Depth,
   };
 
-  init({camera, depth}) {
+  async init({camera, depth}) {
     if (!xb.core.effects) {
       throw new Error('Depth Map requires post-processing.');
     }
 
     this.depth = depth;
     this.depthVisPass = new DepthVisualizationPass(xb.scene, camera);
+    if (xb.isWebGPURenderer(xb.core.renderer)) {
+      await this.depthVisPass.initWebGPU();
+    }
     xb.core.effects.addPass(this.depthVisPass);
     this.depthVisPass.setAlpha(1);
     this.add(
