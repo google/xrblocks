@@ -13,9 +13,11 @@ export type WebGLOrWebGPURenderer = THREE.WebGLRenderer | WebGPURenderer;
  * @returns True if the renderer is a WebGPURenderer, false otherwise.
  */
 export function isWebGPURenderer(
-  renderer: WebGLOrWebGPURenderer
+  renderer?: WebGLOrWebGPURenderer | null
 ): renderer is WebGPURenderer {
   return (
+    renderer != null &&
+    typeof renderer === 'object' &&
     'isWebGPURenderer' in renderer &&
     (renderer as {isWebGPURenderer?: boolean}).isWebGPURenderer === true
   );
@@ -26,16 +28,13 @@ export function isWebGPURenderer(
  *
  * @param renderer - The renderer instance to check.
  * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
- * @throws Error if the renderer is a WebGPURenderer or not an instance of THREE.WebGLRenderer.
+ * @throws Error if the renderer is a WebGPURenderer.
  */
 export function assertWebGLRenderer(
-  renderer: WebGLOrWebGPURenderer,
+  renderer: WebGLOrWebGPURenderer | undefined,
   consumerName: string
 ): asserts renderer is THREE.WebGLRenderer {
-  if (
-    isWebGPURenderer(renderer) ||
-    !(renderer instanceof THREE.WebGLRenderer)
-  ) {
+  if (isWebGPURenderer(renderer)) {
     throw new Error(
       `${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`
     );

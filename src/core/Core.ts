@@ -609,7 +609,6 @@ export class Core {
     this.webXRSettings.optionalFeatures = webXROptionalFeatures;
     // Sets up depth.
     if (options.depth.enabled) {
-      assertWebGLRenderer(this.renderer, 'Depth');
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
@@ -618,13 +617,14 @@ export class Core {
         depthTypeRequest: options.depth.depthTypeRequest,
         matchDepthView: options.depth.matchDepthView,
       };
-      this.depth.init(
+      await this.depth.init(
         this.camera,
         options.depth,
         this.renderer,
         this.registry,
         this.scene
       );
+      this.assertInitializing();
       if (this.depth.depthMesh) {
         this.depth.depthMesh.xb = {
           ...this.depth.depthMesh.xb,

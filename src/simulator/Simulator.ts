@@ -248,9 +248,8 @@ export class Simulator extends Script {
     });
 
     if (options.depth.enabled) {
-      assertWebGLRenderer(renderer, 'SimulatorDepth');
       this.renderDepthPass = true;
-      this.depth.init(renderer, camera, depth);
+      await this.depth.init(renderer, camera, depth);
     }
     scene.add(camera);
 
