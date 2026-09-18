@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 1b314a6
- * @builddate 2026-09-18T18:02:45.209Z
+ * @commitid 7023b0c
+ * @builddate 2026-09-18T20:08:56.902Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -10192,15 +10192,205 @@ function disposeObjectChildren(object) {
     }
 }
 
+/**
+ * Creates a PlaneGeometry with UVs remapped to the active depth sensor region.
+ */
+function createDepthPlaneGeometry(segments, minU, maxU, minV, maxV) {
+    const geometry = new THREE.PlaneGeometry(1, 1, segments, segments);
+    const uvs = geometry.attributes.uv.array;
+    const rangeU = maxU - minU;
+    const rangeV = maxV - minV;
+    for (let i = 0; i < uvs.length; i += 2) {
+        uvs[i] = minU + uvs[i] * rangeU;
+        uvs[i + 1] = minV + uvs[i + 1] * rangeV;
+    }
+    return geometry;
+}
+/**
+ * Computes smooth vertex normals directly on a regular (cols x rows) grid
+ * using central differences, avoiding Three.js's indexed triangle accumulation.
+ */
+function computeGridVertexNormals(geometry, cols, rows) {
+    const posAttr = geometry.attributes.position;
+    const normAttr = geometry.attributes.normal;
+    if (!normAttr || posAttr.count !== cols * rows) {
+        geometry.computeVertexNormals();
+        return;
+    }
+    const pos = posAttr.array;
+    const norm = normAttr.array;
+    for (let row = 0; row < rows; ++row) {
+        const rowUp = row > 0 ? row - 1 : 0;
+        const rowDown = row < rows - 1 ? row + 1 : rows - 1;
+        const rowOffset = row * cols;
+        const upOffset = rowUp * cols;
+        const downOffset = rowDown * cols;
+        for (let col = 0; col < cols; ++col) {
+            const colLeft = col > 0 ? col - 1 : 0;
+            const colRight = col < cols - 1 ? col + 1 : cols - 1;
+            const iLeft = (rowOffset + colLeft) * 3;
+            const iRight = (rowOffset + colRight) * 3;
+            const iUp = (upOffset + col) * 3;
+            const iDown = (downOffset + col) * 3;
+            const txX = pos[iRight] - pos[iLeft];
+            const txY = pos[iRight + 1] - pos[iLeft + 1];
+            const txZ = pos[iRight + 2] - pos[iLeft + 2];
+            const tyX = pos[iUp] - pos[iDown];
+            const tyY = pos[iUp + 1] - pos[iDown + 1];
+            const tyZ = pos[iUp + 2] - pos[iDown + 2];
+            const nx = txY * tyZ - txZ * tyY;
+            const ny = txZ * tyX - txX * tyZ;
+            const nz = txX * tyY - txY * tyX;
+            const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            const iOut = (rowOffset + col) * 3;
+            if (len > 0) {
+                const invLen = 1.0 / len;
+                norm[iOut] = nx * invLen;
+                norm[iOut + 1] = ny * invLen;
+                norm[iOut + 2] = nz * invLen;
+            }
+            else {
+                norm[iOut] = 0;
+                norm[iOut + 1] = 0;
+                norm[iOut + 2] = 1;
+            }
+        }
+    }
+    normAttr.needsUpdate = true;
+}
+/**
+ * Caches per-vertex camera unprojection rays and performs vectorized depth-mesh
+ * vertex position updates.
+ */
+class DepthGeometryUpdater {
+    constructor() {
+        this.geometryRayCache = new WeakMap();
+        this.scratchVertexPosition = new THREE.Vector3();
+    }
+    getOrComputeUnprojectionRays(geometry, projectionMatrixInverse) {
+        const vertexCount = geometry.attributes.position.count;
+        const projElements = projectionMatrixInverse.elements;
+        let cached = this.geometryRayCache.get(geometry);
+        if (cached && cached.rayXY.length === 2 * vertexCount) {
+            let unchanged = true;
+            for (let k = 0; k < 16; ++k) {
+                if (cached.projInvElements[k] !== projElements[k]) {
+                    unchanged = false;
+                    break;
+                }
+            }
+            if (unchanged) {
+                return cached.rayXY;
+            }
+        }
+        else {
+            cached = {
+                rayXY: new Float64Array(2 * vertexCount),
+                projInvElements: new Float64Array(16),
+            };
+            this.geometryRayCache.set(geometry, cached);
+        }
+        cached.projInvElements.set(projElements);
+        const rayXY = cached.rayXY;
+        const uvArray = geometry.attributes.uv.array;
+        const vertexPosition = this.scratchVertexPosition;
+        for (let i = 0; i < vertexCount; ++i) {
+            const u = uvArray[2 * i];
+            const v = uvArray[2 * i + 1];
+            vertexPosition
+                .set(2.0 * (u - 0.5), 2.0 * (v - 0.5), -1)
+                .applyMatrix4(projectionMatrixInverse);
+            const invNegZ = -1 / vertexPosition.z;
+            rayXY[2 * i] = vertexPosition.x * invNegZ;
+            rayXY[2 * i + 1] = vertexPosition.y * invNegZ;
+        }
+        return rayXY;
+    }
+    updateGeometryPositions(params) {
+        const { depthData, geometry, depthDataFormat, projectionMatrixInverse, patchHoles, patchHolesUpper, minDepthPrev, maxDepthPrev, } = params;
+        let { minDepth, maxDepth } = params;
+        const width = depthData.width;
+        const height = depthData.height;
+        const maxX = width - 1;
+        const maxY = height - 1;
+        const rawValueToMeters = depthData.rawValueToMeters;
+        const depthArray = depthDataFormat === 'float32'
+            ? new Float32Array(depthData.data)
+            : new Uint16Array(depthData.data);
+        const uvArray = geometry.attributes.uv.array;
+        const posArray = geometry.attributes.position.array;
+        const vertexCount = geometry.attributes.position.count;
+        const rayXY = this.getOrComputeUnprojectionRays(geometry, projectionMatrixInverse);
+        const transformMatrix = depthData.normDepthBufferFromNormView?.matrix;
+        const hasTransform = Boolean(transformMatrix);
+        let m0 = 1, m1 = 0, m3 = 0, m4 = 0, m5 = 1, m7 = 0, m12 = 0, m13 = 0, m15 = 1;
+        let isAffineTransform = true;
+        if (transformMatrix) {
+            m0 = transformMatrix[0];
+            m1 = transformMatrix[1];
+            m3 = transformMatrix[3];
+            m4 = transformMatrix[4];
+            m5 = transformMatrix[5];
+            m7 = transformMatrix[7];
+            m12 = transformMatrix[12];
+            m13 = transformMatrix[13];
+            m15 = transformMatrix[15];
+            isAffineTransform = m3 === 0 && m7 === 0 && m15 === 1;
+        }
+        for (let i = 0; i < vertexCount; ++i) {
+            const uvIdx = 2 * i;
+            const u = uvArray[uvIdx];
+            const v = uvArray[uvIdx + 1];
+            const vInv = 1.0 - v;
+            let sampleU = u;
+            let sampleV = vInv;
+            if (hasTransform) {
+                sampleU = m0 * u + m4 * vInv + m12;
+                sampleV = m1 * u + m5 * vInv + m13;
+                if (!isAffineTransform) {
+                    const invW = 1.0 / (m3 * u + m7 * vInv + m15);
+                    sampleU *= invW;
+                    sampleV *= invW;
+                }
+            }
+            const depthX = Math.round(clamp$1(sampleU * maxX, 0, maxX));
+            const depthY = Math.round(clamp$1(sampleV * maxY, 0, maxY));
+            const rawDepth = depthArray[depthY * width + depthX];
+            let depth = rawValueToMeters * rawDepth;
+            if (depth > 0) {
+                if (depth < minDepth) {
+                    minDepth = depth;
+                }
+                else if (depth > maxDepth) {
+                    maxDepth = depth;
+                }
+            }
+            if (depth === 0 && patchHoles) {
+                depth = maxDepthPrev;
+            }
+            if (patchHolesUpper && v > 0.9) {
+                depth = minDepthPrev;
+            }
+            const posIdx = 3 * i;
+            posArray[posIdx] = depth * rayXY[uvIdx];
+            posArray[posIdx + 1] = depth * rayXY[uvIdx + 1];
+            posArray[posIdx + 2] = -depth;
+        }
+        return { minDepth, maxDepth };
+    }
+}
+
 const DepthMeshTexturedShader = {
     vertexShader: /* glsl */ `
 varying vec3 vNormal;
 varying vec3 vViewPosition;
+varying vec3 vObjectPosition;
 varying vec2 vUv;
 
 void main() {
   vUv = uv;
   vNormal = normal;
+  vObjectPosition = position;
 
   // Computes the view position.
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -10221,6 +10411,7 @@ uniform float uRawValueToMeters;
 
 varying vec3 vNormal;
 varying vec3 vViewPosition;
+varying vec3 vObjectPosition;
 varying vec2 vUv;
 
 const highp float kMaxDepthInMeters = 8.0;
@@ -10231,6 +10422,7 @@ uniform float uDebug;
 uniform float uOpacity;
 uniform bool uUsingFloatDepth;
 uniform bool uIsTextureArray;
+uniform bool uUseDerivativeNormals;
 uniform mat4 uNormDepthBufferFromNormView;
 
 float saturate(in float x) {
@@ -10276,6 +10468,9 @@ vec3 DepthGetColorVisualization(in float x) {
 
 void main() {
   vec3 lightDirection = normalize(uLightDirection);
+  vec3 surfaceNormal = uUseDerivativeNormals
+    ? normalize(cross(dFdx(vObjectPosition), dFdy(vObjectPosition)))
+    : normalize(vNormal);
 
   // Compute UV coordinates relative to resolution
   // vec2 uv = gl_FragCoord.xy / uResolution;
@@ -10283,17 +10478,17 @@ void main() {
 
   // Ambient, diffuse, and specular terms
   vec3 ambient = 0.1 * uColor;
-  float diff = max(dot(vNormal, lightDirection), 0.0);
+  float diff = max(dot(surfaceNormal, lightDirection), 0.0);
   vec3 diffuse = diff * uColor;
 
   vec3 viewDir = normalize(vViewPosition);
-  vec3 reflectDir = reflect(-lightDirection, vNormal);
+  vec3 reflectDir = reflect(-lightDirection, surfaceNormal);
   float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
   vec3 specular = vec3(0.5) * spec; // Adjust specular color/strength
 
   // Combine Phong lighting
   vec3 finalColor = ambient + diffuse + specular;
-  // finalColor = vec3(vNormal);
+  // finalColor = vec3(surfaceNormal);
 
   // Output color
   gl_FragColor = uOpacity * vec4(finalColor, 1.0);
@@ -10320,16 +10515,11 @@ class DepthMesh extends MeshScript {
         const depthResolution = options.depthFullResolution;
         const ignoreEdgePixels = options.ignoreEdgePixels;
         const activeRes = Math.max(2, depthResolution - 2 * ignoreEdgePixels);
-        const geometry = new THREE.PlaneGeometry(1, 1, activeRes - 1, activeRes - 1);
         const minU = ignoreEdgePixels / (depthResolution - 1);
         const maxU = (depthResolution - 1 - ignoreEdgePixels) / (depthResolution - 1);
         const minV = ignoreEdgePixels / (depthResolution - 1);
         const maxV = (depthResolution - 1 - ignoreEdgePixels) / (depthResolution - 1);
-        const uvs = geometry.attributes.uv.array;
-        for (let i = 0; i < uvs.length; i += 2) {
-            uvs[i] = minU + uvs[i] * (maxU - minU);
-            uvs[i + 1] = minV + uvs[i + 1] * (maxV - minV);
-        }
+        const geometry = createDepthPlaneGeometry(activeRes - 1, minU, maxU, minV, maxV);
         let material;
         let uniforms;
         if (options.useDepthTexture || options.showDebugTexture) {
@@ -10347,6 +10537,9 @@ class DepthMesh extends MeshScript {
                 uLightDirection: { value: new THREE.Vector3(1.0, 1.0, 1.0).normalize() },
                 uUsingFloatDepth: {
                     value: depthOptions.dataFormatPreference[0] === 'float32',
+                },
+                uUseDerivativeNormals: {
+                    value: !options.updateVertexNormals,
                 },
                 uNormDepthBufferFromNormView: { value: new THREE.Matrix4() },
             };
@@ -10378,6 +10571,8 @@ class DepthMesh extends MeshScript {
         this.lastColliderUpdateTime = 0;
         this.colliderId = 0;
         this.disposed = false;
+        this.geometryUpdater = new DepthGeometryUpdater();
+        this.gridResolution = activeRes;
         this.visible = true;
         this.xb = { pointerEvents: 'none', reticleMode: 'surface' };
         this.options = options;
@@ -10391,12 +10586,7 @@ class DepthMesh extends MeshScript {
         }
         // Create a downsampled geometry for raycasts and physics.
         if (options.useDownsampledGeometry) {
-            this.downsampledGeometry = new THREE.PlaneGeometry(1, 1, 39, 39);
-            const dsUvs = this.downsampledGeometry.attributes.uv.array;
-            for (let i = 0; i < dsUvs.length; i += 2) {
-                dsUvs[i] = minU + dsUvs[i] * (maxU - minU);
-                dsUvs[i + 1] = minV + dsUvs[i + 1] * (maxV - minV);
-            }
+            this.downsampledGeometry = createDepthPlaneGeometry(39, minU, maxU, minV, maxV);
             this.downsampledMesh = new THREE.Mesh(this.downsampledGeometry, material);
             this.downsampledMesh.visible = false;
         }
@@ -10455,6 +10645,8 @@ class DepthMesh extends MeshScript {
         if (depthTextureLeft && this.depthTextureMaterialUniforms) {
             this.depthTextureMaterialUniforms.uUsingFloatDepth.value =
                 depthDataFormat === 'float32';
+            this.depthTextureMaterialUniforms.uUseDerivativeNormals.value =
+                !this.options.updateVertexNormals;
             if (depthData.normDepthBufferFromNormView) {
                 this.depthTextureMaterialUniforms.uNormDepthBufferFromNormView.value.fromArray(depthData.normDepthBufferFromNormView.matrix);
             }
@@ -10480,8 +10672,7 @@ class DepthMesh extends MeshScript {
         }
         this.customMaterialUpdateCallback?.();
         if (this.options.updateVertexNormals) {
-            this.geometry.computeVertexNormals();
-            this.downsampledGeometry?.computeVertexNormals();
+            computeGridVertexNormals(this.geometry, this.gridResolution, this.gridResolution);
         }
         this.updateColliderIfNeeded();
     }
@@ -10505,61 +10696,20 @@ class DepthMesh extends MeshScript {
      * Internal method to update the geometry of the depth mesh.
      */
     updateGeometry(depthData, geometry, depthDataFormat) {
-        const width = depthData.width;
-        const height = depthData.height;
-        const depthArray = depthDataFormat === 'float32'
-            ? new Float32Array(depthData.data)
-            : new Uint16Array(depthData.data);
-        const vertexPosition = new THREE.Vector3();
-        const normViewCoord = new THREE.Vector3();
-        const normDepthBufferFromNormView = depthData.normDepthBufferFromNormView
-            ? new THREE.Matrix4().fromArray(depthData.normDepthBufferFromNormView.matrix)
-            : new THREE.Matrix4().identity();
-        for (let i = 0; i < geometry.attributes.position.count; ++i) {
-            const u = geometry.attributes.uv.array[2 * i];
-            const v = geometry.attributes.uv.array[2 * i + 1];
-            let sampleU = u;
-            let sampleV = v;
-            if (depthData.normDepthBufferFromNormView) {
-                normViewCoord.set(u, 1.0 - v, 0);
-                normViewCoord.applyMatrix4(normDepthBufferFromNormView);
-                sampleU = normViewCoord.x;
-                sampleV = normViewCoord.y;
-            }
-            else {
-                sampleV = 1.0 - v;
-            }
-            // Grabs the nearest for now.
-            const depthX = Math.round(clamp$1(sampleU * (width - 1), 0, width - 1));
-            const depthY = Math.round(clamp$1(sampleV * (height - 1), 0, height - 1));
-            const rawDepth = depthArray[depthY * width + depthX];
-            let depth = depthData.rawValueToMeters * rawDepth;
-            // Finds global min/max.
-            if (depth > 0) {
-                if (depth < this.minDepth) {
-                    this.minDepth = depth;
-                }
-                else if (depth > this.maxDepth) {
-                    this.maxDepth = depth;
-                }
-            }
-            // This is a wrong algorithm to patch holes but working amazingly well.
-            // Per-row maximum may work better but haven't tried here.
-            // A proper local maximum takes another pass.
-            if (depth == 0 && this.options.patchHoles) {
-                depth = this.maxDepthPrev;
-            }
-            if (this.options.patchHolesUpper && v > 0.9) {
-                depth = this.minDepthPrev;
-            }
-            vertexPosition.set(2.0 * (u - 0.5), 2.0 * (v - 0.5), -1);
-            // This relates to camera.near
-            vertexPosition.applyMatrix4(this.projectionMatrixInverse);
-            vertexPosition.multiplyScalar(-depth / vertexPosition.z);
-            geometry.attributes.position.array[3 * i + 0] = vertexPosition.x;
-            geometry.attributes.position.array[3 * i + 1] = vertexPosition.y;
-            geometry.attributes.position.array[3 * i + 2] = vertexPosition.z;
-        }
+        const bounds = this.geometryUpdater.updateGeometryPositions({
+            depthData,
+            geometry,
+            depthDataFormat,
+            projectionMatrixInverse: this.projectionMatrixInverse,
+            patchHoles: this.options.patchHoles,
+            patchHolesUpper: this.options.patchHolesUpper,
+            minDepthPrev: this.minDepthPrev,
+            maxDepthPrev: this.maxDepthPrev,
+            minDepth: this.minDepth,
+            maxDepth: this.maxDepth,
+        });
+        this.minDepth = bounds.minDepth;
+        this.maxDepth = bounds.maxDepth;
     }
     /**
      * Optimizes collider updates to run periodically based on the specified FPS.
@@ -12930,13 +13080,23 @@ class XREffects {
         const deltaTime = this.timer.getDelta();
         const numCameras = renderer.xr.getCamera().cameras.length;
         if (numCameras > 0) {
-            for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
-                const cam = renderer.xr.getCamera().cameras[camIndex];
-                renderer.setViewport(cam.viewport);
-                renderer.setRenderTarget(renderTargets[camIndex]);
-                renderer.clear();
-                renderer.xr.isPresenting = true;
-                renderer.render(this.scene, cam);
+            const prevMatrixWorldAutoUpdate = this.scene.matrixWorldAutoUpdate;
+            if (prevMatrixWorldAutoUpdate) {
+                this.scene.updateMatrixWorld();
+            }
+            this.scene.matrixWorldAutoUpdate = false;
+            try {
+                for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
+                    const cam = renderer.xr.getCamera().cameras[camIndex];
+                    renderer.setViewport(cam.viewport);
+                    renderer.setRenderTarget(renderTargets[camIndex]);
+                    renderer.clear();
+                    renderer.xr.isPresenting = true;
+                    renderer.render(this.scene, cam);
+                }
+            }
+            finally {
+                this.scene.matrixWorldAutoUpdate = prevMatrixWorldAutoUpdate;
             }
             renderer.setRenderTarget(defaultTarget);
             renderer.clear();
@@ -24194,7 +24354,7 @@ class Core {
             const frameCamera = this.getFrameCamera();
             this.uiRenderer.reconcile(deltaSeconds, frameCamera);
             this.interaction.syncTouchCandidates(this.scriptsManager.directTouchCandidates);
-            this.scene.updateMatrixWorld(true);
+            this.scene.updateMatrixWorld();
             this.interaction.update(this.input.getFrame(), deltaSeconds);
             this.uiRenderer.present();
             this.renderSimulatorAndScene();
