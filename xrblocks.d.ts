@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid b722644
- * @builddate 2026-09-18T15:57:19.890Z
+ * @commitid de3e7ae
+ * @builddate 2026-09-18T15:59:33.688Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -4203,12 +4203,23 @@ declare class Gemini extends BaseAIModel {
     isLiveMode: boolean;
     liveCallbacks: Partial<GoogleGenAITypes.LiveCallbacks>;
     ai?: GoogleGenAITypes.GoogleGenAI;
+    private liveSessionPromise?;
+    private liveSessionGeneration;
+    private liveSessionStopped;
     constructor(options: GeminiOptions);
     init(): Promise<void>;
     isAvailable(): boolean;
     isLiveAvailable(): false | typeof GoogleGenAITypes.Modality | undefined;
+    /**
+     * Shares a pending connection between concurrent starts. Stopping or disposing
+     * invalidates that start; any session returned later is closed and the start
+     * rejects with AbortError. The provider cannot be aborted before it returns.
+     */
     startLiveSession(params?: GoogleGenAITypes.LiveConnectConfig, model?: string): Promise<GoogleGenAITypes.Session>;
     stopLiveSession(): Promise<void>;
+    /** Invalidates live work synchronously without creating a teardown promise. */
+    dispose(): void;
+    private closeLiveSession;
     setLiveCallbacks(callbacks: GoogleGenAITypes.LiveCallbacks): void;
     sendToolResponse(response: GoogleGenAITypes.LiveSendToolResponseParameters): void;
     sendRealtimeInput(input: GoogleGenAITypes.LiveSendRealtimeInputParameters): void;
@@ -4307,8 +4318,18 @@ declare class AI extends Script {
     query(input: GeminiQueryInput | {
         prompt: string;
     }, tools?: never[]): Promise<GeminiResponse | string | null>;
+    /**
+     * Concurrent starts share a connection. A start invalidated by stop or dispose
+     * rejects with AbortError when the provider returns, closing that late session.
+     */
     startLiveSession(config?: GoogleGenAITypes.LiveConnectConfig, model?: string): Promise<GoogleGenAITypes.Session>;
+    /**
+     * Invalidates pending live work and closes any established session. This does
+     * not wait for an in-flight provider connection to finish.
+     */
     stopLiveSession(): Promise<void>;
+    /** Closes live resources synchronously for the Script disposal contract. */
+    dispose(): void;
     setLiveCallbacks(callbacks: GoogleGenAITypes.LiveCallbacks): Promise<void>;
     sendToolResponse(response: GoogleGenAITypes.LiveSendToolResponseParameters): void;
     sendRealtimeInput(input: GoogleGenAITypes.LiveSendRealtimeInputParameters): false | void;
@@ -4318,7 +4339,7 @@ declare class AI extends Script {
         isAvailable: boolean | typeof GoogleGenAITypes.Modality | undefined;
     };
     isLiveAvailable(): false | typeof GoogleGenAITypes.Modality | undefined;
-    generate(prompt: string | string[], type?: 'image', systemInstruction?: string, model?: undefined): Promise<string | undefined>;
+    generate(prompt: string | string[], type?: 'image', systemInstruction?: string, model?: string): Promise<string | undefined>;
     /**
      * Create a sample keys.json file structure for reference
      * @returns Sample keys.json structure

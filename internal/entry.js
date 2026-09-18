@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid b722644
- * @builddate 2026-09-18T15:57:19.890Z
+ * @commitid de3e7ae
+ * @builddate 2026-09-18T15:59:33.688Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1332,6 +1332,8 @@ class Gemini extends BaseAIModel {
         this.inited = false;
         this.isLiveMode = false;
         this.liveCallbacks = {};
+        this.liveSessionGeneration = 0;
+        this.liveSessionStopped = false;
     }
     async init() {
         await loadGoogleGenAIModule();
@@ -1350,6 +1352,11 @@ class Gemini extends BaseAIModel {
     isLiveAvailable() {
         return this.isAvailable() && EndSensitivity && StartSensitivity && Modality;
     }
+    /**
+     * Shares a pending connection between concurrent starts. Stopping or disposing
+     * invalidates that start; any session returned later is closed and the start
+     * rejects with AbortError. The provider cannot be aborted before it returns.
+     */
     async startLiveSession(params = {}, model) {
         if (!this.isLiveAvailable()) {
             throw new Error('Live API not available. Make sure @google/genai module is loaded.');
@@ -1357,6 +1364,13 @@ class Gemini extends BaseAIModel {
         if (this.liveSession) {
             return this.liveSession;
         }
+        if (this.liveSessionPromise) {
+            return this.liveSessionPromise;
+        }
+        const generation = ++this.liveSessionGeneration;
+        this.liveSessionStopped = false;
+        const isCurrent = () => generation === this.liveSessionGeneration;
+        const isRunning = () => isCurrent() && !this.liveSessionStopped;
         const defaultConfig = {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
@@ -1368,6 +1382,8 @@ class Gemini extends BaseAIModel {
         };
         const callbacks = {
             onopen: () => {
+                if (!isRunning())
+                    return;
                 this.isLiveMode = true;
                 console.log('🔓 Live session opened.');
                 if (this.liveCallbacks?.onopen) {
@@ -1375,17 +1391,25 @@ class Gemini extends BaseAIModel {
                 }
             },
             onmessage: (e) => {
+                if (!isRunning())
+                    return;
                 if (this.liveCallbacks?.onmessage) {
                     this.liveCallbacks.onmessage(e);
                 }
             },
             onerror: (e) => {
+                if (!isRunning())
+                    return;
                 console.error('❌ Live session error:', e);
                 if (this.liveCallbacks?.onerror) {
                     this.liveCallbacks.onerror(e);
                 }
             },
             onclose: (event) => {
+                if (!isCurrent())
+                    return;
+                this.liveSessionStopped = true;
+                this.liveSessionPromise = undefined;
                 this.isLiveMode = false;
                 this.liveSession = undefined;
                 if (event.reason) {
@@ -1399,28 +1423,56 @@ class Gemini extends BaseAIModel {
                 }
             },
         };
-        try {
-            const connectParams = {
-                model: model ?? this.options.liveModel,
-                callbacks: callbacks,
-                config: defaultConfig,
-            };
-            console.log('Connecting with params:', connectParams);
-            this.liveSession = await this.ai.live.connect(connectParams);
-            return this.liveSession;
-        }
-        catch (error) {
-            console.error('❌ Failed to start live session:', error);
-            throw error;
-        }
+        const connectParams = {
+            model: model ?? this.options.liveModel,
+            callbacks: callbacks,
+            config: defaultConfig,
+        };
+        // Publish the pending promise before provider callbacks can reenter start.
+        this.liveSessionPromise = Promise.resolve().then(async () => {
+            try {
+                if (!isRunning()) {
+                    throw new DOMException('Live session start cancelled.', 'AbortError');
+                }
+                console.log('Connecting with params:', connectParams);
+                const session = await this.ai.live.connect(connectParams);
+                if (!isRunning()) {
+                    session.close();
+                    throw new DOMException('Live session start cancelled.', 'AbortError');
+                }
+                this.liveSession = session;
+                return session;
+            }
+            catch (error) {
+                if (isCurrent()) {
+                    this.liveSessionStopped = true;
+                    this.isLiveMode = false;
+                }
+                console.error('❌ Failed to start live session:', error);
+                throw error;
+            }
+            finally {
+                if (isCurrent())
+                    this.liveSessionPromise = undefined;
+            }
+        });
+        return this.liveSessionPromise;
     }
     async stopLiveSession() {
-        if (!this.liveSession) {
-            return;
-        }
-        this.liveSession.close();
+        this.closeLiveSession();
+    }
+    /** Invalidates live work synchronously without creating a teardown promise. */
+    dispose() {
+        ++this.liveSessionGeneration;
+        this.closeLiveSession();
+    }
+    closeLiveSession() {
+        this.liveSessionStopped = true;
+        this.liveSessionPromise = undefined;
+        const session = this.liveSession;
         this.liveSession = undefined;
         this.isLiveMode = false;
+        session?.close();
     }
     // Set Live session callbacks
     setLiveCallbacks(callbacks) {
@@ -1806,6 +1858,10 @@ class AI extends Script {
         }
         return await this.model.query(input, tools);
     }
+    /**
+     * Concurrent starts share a connection. A start invalidated by stop or dispose
+     * rejects with AbortError when the provider returns, closing that late session.
+     */
     async startLiveSession(config = {}, model) {
         if (!this.model) {
             throw new Error('AI model is not initialized.');
@@ -1822,6 +1878,10 @@ class AI extends Script {
             throw error;
         }
     }
+    /**
+     * Invalidates pending live work and closes any established session. This does
+     * not wait for an in-flight provider connection to finish.
+     */
     async stopLiveSession() {
         if (!this.model)
             return;
@@ -1831,6 +1891,13 @@ class AI extends Script {
         catch (error) {
             console.error('❌ Error stopping Live session:', error);
         }
+    }
+    /** Closes live resources synchronously for the Script disposal contract. */
+    dispose() {
+        if (this.model instanceof Gemini) {
+            this.model.dispose();
+        }
+        super.dispose();
     }
     async setLiveCallbacks(callbacks) {
         if (this.model && 'setLiveCallbacks' in this.model) {
@@ -1858,7 +1925,7 @@ class AI extends Script {
             'isLiveAvailable' in this.model &&
             this.model.isLiveAvailable());
     }
-    async generate(prompt, type = 'image', systemInstruction = 'Generate an image', model = undefined) {
+    async generate(prompt, type = 'image', systemInstruction = 'Generate an image', model) {
         if (!this.isAvailable()) {
             throw new Error("AI is not available. Check if it's enabled and properly initialized.");
         }
