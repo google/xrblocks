@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 96d4d14
- * @builddate 2026-09-18T15:40:06.505Z
+ * @commitid 1de21b5
+ * @builddate 2026-09-18T15:49:05.107Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -24861,7 +24861,7 @@ class StrokeRecognizer extends Script {
         this.isRecording = false;
         this.gestureStartTime = 0;
         this.gestureEndTime = 0;
-        this.activeHand = Handedness.LEFT;
+        this.activeHand = Handedness.NONE;
     }
     static { this.dependencies = {
         scene: THREE.Scene,
@@ -24907,10 +24907,17 @@ class StrokeRecognizer extends Script {
         this.isActive = true;
     }
     /**
-     * Deactivates the stroke recognizer and clears any captured points.
+     * Deactivates the stroke recognizer, cancels recording without an end event,
+     * and clears any captured points. The next stroke starts with a fresh delay
+     * and hand selection after reactivation.
+     * Callers should clear any in-progress stroke UI when deactivating.
      */
     deactivate() {
         this.isActive = false;
+        this.isRecording = false;
+        this.gestureStartTime = 0;
+        this.gestureEndTime = 0;
+        this.activeHand = Handedness.NONE;
         this.clearPoints();
     }
     /**
@@ -24954,6 +24961,8 @@ class StrokeRecognizer extends Script {
                 else if (this.user.isSelecting?.(Handedness.RIGHT))
                     this.activeHand = Handedness.RIGHT;
                 this.dispatchEvent({ type: 'unistrokestart', target: this, detail: {} });
+                if (!this.isActive || !this.isRecording)
+                    return;
             }
             const elapsedSincePinch = currentTime - this.gestureStartTime;
             // Wait for the start delay to avoid capturing the initial jitter of the pinch motion.
