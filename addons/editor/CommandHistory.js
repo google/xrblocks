@@ -9,12 +9,18 @@ const MAX_HISTORY = 50;
  * inspector <input> has focus (same guard SelectionManager uses for its
  * tool-mode shortcuts), so it doesn't fight the browser's native
  * in-field undo.
+ *
+ * Undo/redo requests run in order and move entries only after success.
+ * A new edit or reset invalidates queued requests and pending stack
+ * transfers; it does not roll back command side effects or partial batches.
  */
 class CommandHistory extends xb.Script {
     constructor() {
         super(...arguments);
         this.undoStack = [];
         this.redoStack = [];
+        this.pending = Promise.resolve();
+        this.generation = 0;
         /** Set every frame by SceneEditor -- see SelectionManager.editorActive
          * for the same pattern and why. Keeps Ctrl+Z from firing as a global
          * page-wide shortcut while the user is just browsing in a non-Editor
@@ -22,6 +28,7 @@ class CommandHistory extends xb.Script {
         this.editorActive = true;
     }
     push(command) {
+        this.generation++;
         this.undoStack.push(command);
         if (this.undoStack.length > MAX_HISTORY)
             this.undoStack.shift();
@@ -52,22 +59,35 @@ class CommandHistory extends xb.Script {
         });
     }
     clearHistory() {
+        this.generation++;
         this.undoStack.length = 0;
         this.redoStack.length = 0;
     }
-    async undo() {
-        const command = this.undoStack.pop();
-        if (!command)
-            return;
-        await command.undo();
-        this.redoStack.push(command);
+    undo() {
+        return this.runCommand('undo');
     }
-    async redo() {
-        const command = this.redoStack.pop();
-        if (!command)
-            return;
-        await command.redo();
-        this.undoStack.push(command);
+    redo() {
+        return this.runCommand('redo');
+    }
+    runCommand(direction) {
+        const generation = this.generation;
+        const operation = this.pending.then(async () => {
+            if (generation !== this.generation)
+                return;
+            const source = direction === 'undo' ? this.undoStack : this.redoStack;
+            const target = direction === 'undo' ? this.redoStack : this.undoStack;
+            const command = source.at(-1);
+            if (!command)
+                return;
+            await command[direction]();
+            if (generation !== this.generation || source.at(-1) !== command)
+                return;
+            source.pop();
+            target.push(command);
+        });
+        // Recover the queue tail, but return the original rejection to the caller.
+        this.pending = operation.then(() => { }, () => { });
+        return operation;
     }
     onKeyDown(event) {
         if (!this.editorActive)
@@ -80,12 +100,10 @@ class CommandHistory extends xb.Script {
         if (event.code !== xb.Keycodes.Z_CODE)
             return;
         event.preventDefault();
-        if (event.shiftKey) {
-            this.redo();
-        }
-        else {
-            this.undo();
-        }
+        const direction = event.shiftKey ? 'redo' : 'undo';
+        void this[direction]().catch((error) => {
+            console.error(`[CommandHistory] Failed to ${direction}:`, error);
+        });
     }
 }
 

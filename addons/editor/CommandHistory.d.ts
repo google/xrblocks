@@ -11,10 +11,16 @@ export interface Command {
  * inspector <input> has focus (same guard SelectionManager uses for its
  * tool-mode shortcuts), so it doesn't fight the browser's native
  * in-field undo.
+ *
+ * Undo/redo requests run in order and move entries only after success.
+ * A new edit or reset invalidates queued requests and pending stack
+ * transfers; it does not roll back command side effects or partial batches.
  */
 export declare class CommandHistory extends xb.Script {
     undoStack: Command[];
     redoStack: Command[];
+    private pending;
+    private generation;
     /** Set every frame by SceneEditor -- see SelectionManager.editorActive
      * for the same pattern and why. Keeps Ctrl+Z from firing as a global
      * page-wide shortcut while the user is just browsing in a non-Editor
@@ -30,5 +36,6 @@ export declare class CommandHistory extends xb.Script {
     clearHistory(): void;
     undo(): Promise<void>;
     redo(): Promise<void>;
+    private runCommand;
     onKeyDown(event: KeyboardEvent): void;
 }
