@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 317761c
- * @builddate 2026-09-18T15:30:14.569Z
+ * @commitid 96d4d14
+ * @builddate 2026-09-18T15:40:06.505Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13468,7 +13468,12 @@ class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
             ].join('\n'))
                 .replace('#include <fog_vertex>', [
                 '#include <fog_vertex>',
-                'vec4 world_position = modelMatrix * vec4( position, 1.0 );',
+                // `transformed` is the post-<skinning_vertex> / <morphtarget_vertex>
+                // position (identical to `position` for rigid meshes), so skinned
+                // and morphed meshes -- animated avatars -- write their POSED depth
+                // and sample the occlusion map at their posed location, not at
+                // the bind pose.
+                'vec4 world_position = modelMatrix * vec4( transformed, 1.0 );',
                 'vec4 depth_view_position = uDepthViewMatrix * world_position;',
                 'vVirtualDepth = -depth_view_position.z;',
                 'vec4 depth_clip_position = uDepthProjectionMatrix * depth_view_position;',
@@ -13633,7 +13638,15 @@ class OcclusionPass extends Pass {
         if (depthProjectionMatrix) {
             this.depthProjectionMatrices[viewId] = depthProjectionMatrix;
         }
-        depthTexture.needsUpdate = true;
+        // CPU depth arrives in a DataTexture whose bytes were rewritten in place,
+        // so it must be re-uploaded. GPU-optimized depth (Quest) is an
+        // ExternalTexture wrapping the native WebGLTexture: it has no image to
+        // upload, and bumping its version makes three's setTexture2DArray (which,
+        // unlike setTexture2D, does not skip external textures) call
+        // uploadTexture -> resizeImage(null) and crash.
+        if (!(depthTexture instanceof THREE.ExternalTexture)) {
+            depthTexture.needsUpdate = true;
+        }
     }
     /**
      * Render the occlusion map.
