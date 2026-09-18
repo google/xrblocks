@@ -16,8 +16,18 @@ It runs locally with a heuristic viseme mapper, requiring **zero machine learnin
 ## How It Works
 
 1. **`LipsyncMouth`**: A `Script` component that processes a `MediaStream` chunk-by-chunk using Web Audio FFT, extracting vowel-formant features.
-2. **`StylizedFace`**: A canvas-based decal texture displaying interactive eyes, eyebrows, and a mouth that responds to viseme weight changes.
-3. **`VisemeWeights`**: Float weights representing the shape coordinates (`ah`, `oh`, `ee`, `rest`).
+2. **`StylizedFace`**: A canvas-based decal texture displaying blinking eyes and a mouth that responds to viseme weight changes.
+3. **`VisemeWeights`**: Six numeric weights from 0 to 1: `jawOpen`, `aa`, `oo`, `oh`, `ee`, and `consonant`. Use the exported `ZERO_VISEME` for the rest pose.
+
+For a manually driven face, supply all six weights. `ZERO_VISEME` is exported from the main package:
+
+```javascript
+import * as xb from 'xrblocks';
+
+const face = new xb.StylizedFace();
+face.setVisemes({...xb.ZERO_VISEME, jawOpen: 0.5, aa: 0.7});
+face.setVisemes(xb.ZERO_VISEME);
+```
 
 ---
 
@@ -55,22 +65,32 @@ class MicTestScript extends xb.Script {
 
 You can pair `lipsync` with the [Netblocks](Netblocks.mdx) multiplayer addon so that users see other peers' mouth shapes move when they speak over WebRTC voice channels.
 
-When a remote audio track arrives, instantiate a new `LipsyncMouth` targeting that peer's avatar face:
+The following script joins a local two-tab room in `init()`, installs the voice listeners, and then enables the microphone. When a remote audio track arrives, it creates a `LipsyncMouth` targeting that peer's avatar face. `onSession()` is not an `xb.Script` lifecycle hook; the demo's `NetSample` superclass calls that method explicitly.
 
 ```javascript
-import * as THREE from 'three';
+import * as xb from 'xrblocks';
+import {
+  enableNet,
+  BroadcastChannelTransport,
+} from 'xrblocks/addons/netblocks/src/index.js';
 import {LipsyncMouth} from 'xrblocks/addons/lipsync/index.js';
 
 class MultiplayerLipsync extends xb.Script {
   constructor() {
     super();
     this.drivers = new Map(); // Keep track of active drivers by peer ID
-    this.sharedCtx = THREE.AudioContext.getContext(); // Reuse AudioContext
+    this.unsubscribe = [];
   }
 
-  onSession(session) {
+  async init() {
+    this.sharedCtx = xb.core.sound.listener.context;
+    this.net = enableNet();
+    const session = await this.net.joinRoom('lipsync-room', {
+      transport: new BroadcastChannelTransport(),
+    });
+
     // Triggers when a peer adds a voice stream
-    session.voice.onTrack((peerId, stream) => {
+    const offTrack = session.voice.onTrack((peerId, stream) => {
       const remoteUser = session.users.get(peerId);
       if (!remoteUser) return;
 
@@ -86,10 +106,12 @@ class MultiplayerLipsync extends xb.Script {
       this.drivers.set(peerId, driver);
     });
 
-    session.voice.onTrackRemoved((peerId) => this.removeDriver(peerId));
-    session.addEventListener('user-leave', (e) =>
-      this.removeDriver(e.detail.user.peerId)
+    const offTrackRemoved = session.voice.onTrackRemoved((peerId) =>
+      this.removeDriver(peerId)
     );
+    this.unsubscribe.push(offTrack, offTrackRemoved);
+
+    await session.voice.enable(session.transport.remotePeerIds);
   }
 
   removeDriver(peerId) {
@@ -100,7 +122,16 @@ class MultiplayerLipsync extends xb.Script {
       this.drivers.delete(peerId);
     }
   }
+
+  dispose() {
+    for (const unsubscribe of this.unsubscribe) unsubscribe();
+    for (const peerId of this.drivers.keys()) this.removeDriver(peerId);
+    this.net?.leaveRoom();
+  }
 }
+
+xb.add(new MultiplayerLipsync());
+await xb.init();
 ```
 
 ---
@@ -110,7 +141,7 @@ class MultiplayerLipsync extends xb.Script {
 To prevent audio pipeline memory leaks, manage lifecycle hooks correctly:
 
 - **Mouth Driver**: Disposing the driver (`mouthDriver.dispose()`) disconnects Web Audio nodes, but does **not** close your shared `AudioContext` or stop the underlying `MediaStream` audio tracks.
-- **MediaStream**: The caller is responsible for calling `track.stop()` on the stream when exiting or leaving a room.
+- **MediaStream**: Stop tracks acquired by your own `getUserMedia()` call when they are no longer needed. Let Netblocks manage its voice streams through `net.leaveRoom()`; mouth drivers should not stop those shared tracks.
 - **Target Face**: Disposing the driver resets the target face back to its rest/silent pose. The face mesh itself is not deleted and must be disposed separately.
 
 For complete reference implementation details, see <CodeSearchLink path="src/addons/lipsync/README.md"/> or the code samples under `samples/avatar_lab/lipsync_puppet/` and `demos/netblocks/lipsync/`.

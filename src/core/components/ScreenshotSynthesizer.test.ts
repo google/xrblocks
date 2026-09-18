@@ -27,6 +27,7 @@ function createFixture() {
   const renderer: Partial<THREE.WebGLRenderer> = {
     xr: {isPresenting: false} as THREE.WebGLRenderer['xr'],
     getRenderTarget: vi.fn(() => new THREE.WebGLRenderTarget(640, 480)),
+    getSize: vi.fn((target: THREE.Vector2) => target.set(800, 600)),
     setRenderTarget: vi.fn(),
     clearColor: vi.fn(),
     clearDepth: vi.fn(),
@@ -50,7 +51,7 @@ function createFixture() {
     return {result, rejected};
   }
 
-  return {synthesizer, renderScene, readPixels, renderFrame, camera};
+  return {synthesizer, renderer, renderScene, readPixels, renderFrame, camera};
 }
 
 beforeEach(() => {
@@ -221,4 +222,25 @@ describe('ScreenshotSynthesizer capture preservation', () => {
       expect(readPixels).toHaveBeenCalledTimes(2);
     }
   );
+});
+
+describe('ScreenshotSynthesizer null render target fallback', () => {
+  it('succeeds when renderer.getRenderTarget() returns null by falling back to renderer.getSize and restoring setRenderTarget(null)', async () => {
+    const {synthesizer, renderer, renderFrame} = createFixture();
+    vi.mocked(renderer.getRenderTarget!).mockReturnValue(null);
+
+    const request = observeRequest(synthesizer.getScreenshot(false));
+    renderFrame();
+    await flushMicrotasks();
+
+    expect(renderer.getSize).toHaveBeenCalledOnce();
+    expect(renderer.setRenderTarget).toHaveBeenCalledTimes(2);
+    expect(renderer.setRenderTarget).toHaveBeenNthCalledWith(
+      1,
+      expect.any(THREE.WebGLRenderTarget)
+    );
+    expect(renderer.setRenderTarget).toHaveBeenLastCalledWith(null);
+    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
+    expect(request.rejected).not.toHaveBeenCalled();
+  });
 });

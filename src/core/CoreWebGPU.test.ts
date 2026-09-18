@@ -64,13 +64,14 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when depth is enabled with WebGPU', async () => {
+  it('throws a descriptive error from assertWebGLRenderer when depth occlusion is enabled with WebGPU', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
     options.depth.enabled = true;
+    options.depth.occlusion.enabled = true;
 
     await expect(core.init(options)).rejects.toThrow(
-      'Depth requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
+      'OcclusionPass requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
     );
   });
 
@@ -113,5 +114,28 @@ describe('Core with WebGPURenderer', () => {
     expect(simulator).toBeDefined();
     expect(core.simulator).toBe(simulator);
     expect(simulator.renderer).toBe(core.renderer);
+  });
+
+  it('initializes Simulator depth pipeline and DepthMesh when enableDepth is used with WebGPU', async () => {
+    const core = new Core();
+    const options = new Options().enableWebGPU().enableDepth();
+    await core.init(options);
+
+    expect(core.depth.enabled).toBe(true);
+    expect(core.depth.depthMesh).toBeDefined();
+
+    const simulator = await core.startSimulator();
+    expect(simulator.renderDepthPass).toBe(true);
+    expect(simulator.depth.depthMaterial).toBeDefined();
+  });
+
+  it('dynamically applies WebGPU NodeMaterial to DepthMesh when showDebugTexture is enabled', async () => {
+    const core = new Core();
+    const options = new Options().enableWebGPU().enableDepth();
+    options.depth.depthMesh.showDebugTexture = true;
+    await core.init(options);
+
+    expect(core.depth.depthMesh).toBeDefined();
+    expect(core.depth.depthMesh?.material.type).toBe('NodeMaterial');
   });
 });

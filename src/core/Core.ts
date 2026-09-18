@@ -609,7 +609,6 @@ export class Core {
     this.webXRSettings.optionalFeatures = webXROptionalFeatures;
     // Sets up depth.
     if (options.depth.enabled) {
-      assertWebGLRenderer(this.renderer, 'Depth');
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
@@ -618,13 +617,14 @@ export class Core {
         depthTypeRequest: options.depth.depthTypeRequest,
         matchDepthView: options.depth.matchDepthView,
       };
-      this.depth.init(
+      await this.depth.init(
         this.camera,
         options.depth,
         this.renderer,
         this.registry,
         this.scene
       );
+      this.assertInitializing();
       if (this.depth.depthMesh) {
         this.depth.depthMesh.xb = {
           ...this.depth.depthMesh.xb,
@@ -854,9 +854,6 @@ export class Core {
         this.deviceCamera
       );
     }
-    if (this.simulatorRunning) {
-      this.simulator?.renderSimulatorScene();
-    }
   };
 
   /**
@@ -897,7 +894,6 @@ export class Core {
       const {Simulator} = await this.simulatorLoader();
       this.assertLifecycleActive('load the simulator runtime');
       const simulator = new Simulator(this.renderSceneCallback, this.renderer);
-      simulator.effects = this.effects;
       try {
         // Keep the simulator connected to the script lifecycle while its async
         // initialization runs. Otherwise the frame loop treats it as removed
@@ -987,7 +983,7 @@ export class Core {
 
   private renderSimulatorAndScene() {
     if (this.simulatorRunning && this.simulator) {
-      this.simulator.renderScene();
+      this.simulator.renderFrame();
     } else {
       this.renderScene();
     }
