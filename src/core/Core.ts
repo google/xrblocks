@@ -50,7 +50,11 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
-import {assertWebGLRenderer, type WebGLOrWebGPURenderer} from './RendererTypes';
+import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from './RendererTypes';
 
 export type CoreLifecycleState =
   | 'new'
@@ -529,6 +533,13 @@ export class Core {
         logarithmicDepthBuffer: options.logarithmicDepthBuffer,
       });
     }
+    if (isWebGPURenderer(this.renderer)) {
+      const {applyWebGPUReticleMaterial} = await import(
+        '../interaction/reticle/ReticleWebGPUMaterial'
+      );
+      this.assertInitializing();
+      this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
+    }
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.xr.enabled = true;
@@ -843,9 +854,6 @@ export class Core {
         this.deviceCamera
       );
     }
-    if (this.simulatorRunning) {
-      this.simulator?.renderSimulatorScene();
-    }
   };
 
   /**
@@ -886,7 +894,6 @@ export class Core {
       const {Simulator} = await this.simulatorLoader();
       this.assertLifecycleActive('load the simulator runtime');
       const simulator = new Simulator(this.renderSceneCallback, this.renderer);
-      simulator.effects = this.effects;
       try {
         // Keep the simulator connected to the script lifecycle while its async
         // initialization runs. Otherwise the frame loop treats it as removed
@@ -976,7 +983,7 @@ export class Core {
 
   private renderSimulatorAndScene() {
     if (this.simulatorRunning && this.simulator) {
-      this.simulator.renderScene();
+      this.simulator.renderFrame();
     } else {
       this.renderScene();
     }
