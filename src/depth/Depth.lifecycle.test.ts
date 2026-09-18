@@ -52,6 +52,7 @@ describe('Depth disposal', () => {
     const meshDispose = vi.spyOn(mesh, 'disposeResources');
     const textureDispose = vi.spyOn(textures, 'dispose');
     const passDispose = vi.spyOn(depth['occlusionPass']!, 'dispose');
+    const converterDispose = vi.spyOn(depth['gpuDepthConverter']!, 'dispose');
     const data = {
       width: 2,
       height: 2,
@@ -74,6 +75,7 @@ describe('Depth disposal', () => {
     expect(meshDispose).toHaveBeenCalledOnce();
     expect(textureDispose).toHaveBeenCalledOnce();
     expect(passDispose).toHaveBeenCalledOnce();
+    expect(converterDispose).toHaveBeenCalledOnce();
     expect(scene.children).not.toContain(mesh);
     expect(registry.get(DepthMesh)).toBeUndefined();
     expect(registry.get(DepthTextures)).toBeUndefined();
@@ -159,6 +161,34 @@ describe('Depth disposal', () => {
     expect(registry.get(DepthMesh)).toBeUndefined();
     expect(depth.depthMesh).toBeUndefined();
     expect(() => depth.dispose()).not.toThrow();
+  });
+
+  it('finishes other cleanups when converter disposal throws and does not retry', () => {
+    const {depth, registry, scene} = createDepth();
+    const mesh = depth.depthMesh!;
+    const error = new Error('converter disposal failed');
+    const converterDispose = vi
+      .spyOn(depth['gpuDepthConverter']!, 'dispose')
+      .mockImplementation(() => {
+        throw error;
+      });
+    const meshDispose = vi.spyOn(mesh, 'disposeResources');
+    const textureDispose = vi.spyOn(registry.get(DepthTextures)!, 'dispose');
+    const passDispose = vi.spyOn(depth['occlusionPass']!, 'dispose');
+
+    expect(() => depth.dispose()).toThrow(error);
+    expect(() => depth.dispose()).not.toThrow();
+
+    expect(converterDispose).toHaveBeenCalledOnce();
+    expect(meshDispose).toHaveBeenCalledOnce();
+    expect(textureDispose).toHaveBeenCalledOnce();
+    expect(passDispose).toHaveBeenCalledOnce();
+    expect(scene.children).not.toContain(mesh);
+    expect(registry.get(DepthMesh)).toBeUndefined();
+    expect(registry.get(DepthTextures)).toBeUndefined();
+    expect(depth['gpuDepthConverter']).toBeUndefined();
+    expect(depth.depthMesh).toBeUndefined();
+    expect(depth.enabled).toBe(false);
   });
 
   it.each(['removed', 'childremoved'] as const)(

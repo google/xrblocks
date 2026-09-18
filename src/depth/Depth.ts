@@ -350,7 +350,10 @@ export class Depth {
     if (cpuDepth) {
       this.cpuDepthData[viewId] = cpuDepth;
       this.depthDataFormat = 'float32';
-      if (this.depthArray[viewId] instanceof Float32Array) {
+      if (
+        this.depthArray[viewId] instanceof Float32Array &&
+        this.depthArray[viewId].byteLength === cpuDepth.data.byteLength
+      ) {
         this.depthArray[viewId].set(new Float32Array(cpuDepth.data));
       } else {
         this.depthArray[viewId] = new Float32Array(cpuDepth.data);
@@ -545,6 +548,7 @@ export class Depth {
 
     let firstError: unknown;
     const cleanups = [
+      () => this.gpuDepthConverter?.dispose(),
       () => {
         if (mesh && this.registry?.get(DepthMesh) === mesh) {
           this.registry.unregister(DepthMesh);
@@ -568,7 +572,6 @@ export class Depth {
       }
     }
 
-    // TODO: Wire GPU converter disposal when its cleanup API from #600 lands.
     this.gpuDepthConverter = undefined;
     this.registry = undefined;
     this.view.length = 0;
