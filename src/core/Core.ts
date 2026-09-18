@@ -842,7 +842,7 @@ export class Core {
     this.interaction.syncTouchCandidates(
       this.scriptsManager.directTouchCandidates
     );
-    this.scene.updateMatrixWorld(true);
+    this.scene.updateMatrixWorld();
     this.interaction.update(this.input.getFrame(), deltaSeconds);
     this.uiRenderer.present();
 

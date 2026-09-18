@@ -96,13 +96,22 @@ export class XREffects {
     const deltaTime = this.timer.getDelta();
     const numCameras = renderer.xr.getCamera().cameras.length;
     if (numCameras > 0) {
-      for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
-        const cam = renderer.xr.getCamera().cameras[camIndex];
-        renderer.setViewport(cam.viewport);
-        renderer.setRenderTarget(renderTargets[camIndex]);
-        renderer.clear();
-        renderer.xr.isPresenting = true;
-        renderer.render(this.scene, cam);
+      const prevMatrixWorldAutoUpdate = this.scene.matrixWorldAutoUpdate;
+      if (prevMatrixWorldAutoUpdate) {
+        this.scene.updateMatrixWorld();
+      }
+      this.scene.matrixWorldAutoUpdate = false;
+      try {
+        for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
+          const cam = renderer.xr.getCamera().cameras[camIndex];
+          renderer.setViewport(cam.viewport);
+          renderer.setRenderTarget(renderTargets[camIndex]);
+          renderer.clear();
+          renderer.xr.isPresenting = true;
+          renderer.render(this.scene, cam);
+        }
+      } finally {
+        this.scene.matrixWorldAutoUpdate = prevMatrixWorldAutoUpdate;
       }
       renderer.setRenderTarget(defaultTarget);
       renderer.clear();
