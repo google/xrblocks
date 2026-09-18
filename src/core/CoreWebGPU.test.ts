@@ -95,13 +95,44 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when usePostprocessing is enabled with WebGPU', async () => {
+  it('initializes XREffects for simulator post-processing when usePostprocessing is enabled with WebGPU, and guards renderXr', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
     options.usePostprocessing = true;
 
-    await expect(core.init(options)).rejects.toThrow(
-      'XREffects requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
+    await core.init(options);
+    expect(core.effects).toBeDefined();
+
+    const defaultTarget = new THREE.RenderTarget(160, 160, {
+      stencilBuffer: true,
+    });
+    vi.spyOn(core.renderer, 'getRenderTarget').mockReturnValue(
+      defaultTarget as unknown as THREE.WebGLRenderTarget
+    );
+
+    const passRender = vi.fn();
+    core.effects!.addPass({
+      enabled: true,
+      needsSwap: true,
+      clear: false,
+      renderToScreen: false,
+      setSize: vi.fn(),
+      render: passRender,
+      dispose: vi.fn(),
+    });
+
+    core.effects!.render(core.camera);
+    expect(passRender).toHaveBeenCalledTimes(1);
+    expect(core.effects!.renderTargets[0].depthTexture?.format).toBe(
+      THREE.DepthStencilFormat
+    );
+    expect(core.effects!.renderTargets[0].depthTexture?.type).toBe(
+      THREE.UnsignedInt248Type
+    );
+
+    core.renderer.xr.isPresenting = true;
+    expect(() => core.effects!.render(core.camera)).toThrow(
+      'XREffects.renderXr requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
     );
   });
 
