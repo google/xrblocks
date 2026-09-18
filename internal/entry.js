@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid f7fa1d7
- * @builddate 2026-09-18T00:46:38.699Z
+ * @commitid 317761c
+ * @builddate 2026-09-18T15:30:14.569Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -10213,9 +10213,6 @@ void main() {
 };
 
 class DepthMesh extends MeshScript {
-    static { this.dependencies = {
-        renderer: THREE.WebGLRenderer,
-    }; }
     static { this.isDepthMesh = true; }
     constructor(depthOptions, width, height, depthTextures) {
         const options = depthOptions.depthMesh;
@@ -10303,11 +10300,32 @@ class DepthMesh extends MeshScript {
             this.downsampledMesh.visible = false;
         }
     }
+    get depthTextureUniforms() {
+        return this.depthTextureMaterialUniforms;
+    }
     /**
-     * Initialize the depth mesh.
+     * Sets a custom material (such as a WebGPU NodeMaterial) and registers a
+     * callback to synchronize uniforms on depth updates.
+     *
+     * @param material - The material to apply to the depth mesh.
+     * @param onUpdate - Optional callback invoked whenever depth uniforms change.
      */
-    init({ renderer }) {
-        this.renderer = renderer;
+    setCustomMaterial(material, onUpdate) {
+        disposeMaterial(this.material);
+        material.visible =
+            this.options.showDebugTexture || this.options.renderShadow;
+        if (this.depthTextureMaterialUniforms) {
+            material.uniforms =
+                this.depthTextureMaterialUniforms;
+        }
+        this.material = material;
+        if (this.downsampledMesh) {
+            this.downsampledMesh.material = material;
+        }
+        this.customMaterialUpdateCallback = onUpdate;
+        this.onBeforeRender = () => {
+            this.customMaterialUpdateCallback?.();
+        };
     }
     /**
      * Updates the depth data and geometry positions based on the provided camera
@@ -10359,6 +10377,7 @@ class DepthMesh extends MeshScript {
                 ? this.depthTextures.depthData[0].rawValueToMeters
                 : 1.0;
         }
+        this.customMaterialUpdateCallback?.();
         if (this.options.updateVertexNormals) {
             this.geometry.computeVertexNormals();
             this.downsampledGeometry?.computeVertexNormals();
@@ -13039,6 +13058,31 @@ function debugRequestedByUrl() {
     return value === '1' || value === 'true';
 }
 
+/**
+ * Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
+ *
+ * @param renderer - The renderer instance to test.
+ * @returns True if the renderer is a WebGPURenderer, false otherwise.
+ */
+function isWebGPURenderer(renderer) {
+    return (renderer != null &&
+        typeof renderer === 'object' &&
+        'isWebGPURenderer' in renderer &&
+        renderer.isWebGPURenderer === true);
+}
+/**
+ * Asserts that the provided renderer is a THREE.WebGLRenderer.
+ *
+ * @param renderer - The renderer instance to check.
+ * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
+ * @throws Error if the renderer is a WebGPURenderer.
+ */
+function assertWebGLRenderer(renderer, consumerName) {
+    if (isWebGPURenderer(renderer)) {
+        throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
+    }
+}
+
 class DepthTextures {
     constructor(options) {
         this.options = options;
@@ -13083,6 +13127,7 @@ class DepthTextures {
         this.depthData[viewId] = depthData;
     }
     updateNativeTexture(depthData, renderer, viewId) {
+        assertWebGLRenderer(renderer, 'DepthTextures.updateNativeTexture');
         this.renderer = renderer;
         if (this.nativeTextures.length < viewId + 1) {
             this.nativeTextures[viewId] = new THREE.ExternalTexture(depthData.texture);
@@ -13843,10 +13888,16 @@ class Depth {
         this.renderer = renderer;
         this.registry = registry;
         this.enabled = options.enabled;
-        this.gpuDepthConverter = new GPUDepthConverter(renderer);
+        this.gpuDepthConverter = isWebGPURenderer(renderer)
+            ? undefined
+            : new GPUDepthConverter(renderer);
         if (this.options.depthTexture.enabled) {
             this.depthTextures = new DepthTextures(options);
             registry.register(this.depthTextures);
+        }
+        if (this.options.occlusion.enabled) {
+            assertWebGLRenderer(renderer, 'OcclusionPass');
+            this.occlusionPass = new OcclusionPass(scene, camera);
         }
         if (this.options.depthMesh.enabled) {
             this.depthMesh = new DepthMesh(options, this.width, this.height, this.depthTextures);
@@ -13855,10 +13906,17 @@ class Depth {
                 this.renderer.shadowMap.enabled = true;
                 this.renderer.shadowMap.type = THREE.PCFShadowMap;
             }
+            if (isWebGPURenderer(renderer) &&
+                (this.options.depthMesh.useDepthTexture ||
+                    this.options.depthMesh.showDebugTexture)) {
+                return import('./DepthMeshWebGPUMaterial.js').then(({ applyWebGPUDepthMeshMaterial }) => {
+                    if (!this.disposed && this.depthMesh) {
+                        applyWebGPUDepthMeshMaterial(this.depthMesh);
+                        scene.add(this.depthMesh);
+                    }
+                });
+            }
             scene.add(this.depthMesh);
-        }
-        if (this.options.occlusion.enabled) {
-            this.occlusionPass = new OcclusionPass(scene, camera);
         }
     }
     /**
@@ -13995,6 +14053,7 @@ class Depth {
         }
     }
     updateGPUDepthData(depthData, viewId) {
+        assertWebGLRenderer(this.renderer, 'WebXR GPU depth');
         this.gpuDepthData[viewId] = depthData;
         this.updateDepthMatrices(depthData, viewId);
         // Reading the depth target back is a synchronous GPU stall, and in stereo
@@ -14090,7 +14149,7 @@ class Depth {
                     const view = pose.views[viewId];
                     this.view[viewId] = view;
                     if (session.depthUsage === 'gpu-optimized') {
-                        const depthData = binding.getDepthInformation(view);
+                        const depthData = binding?.getDepthInformation(view);
                         if (!depthData) {
                             return;
                         }
@@ -14111,6 +14170,7 @@ class Depth {
         }
     }
     renderOcclusionPass() {
+        assertWebGLRenderer(this.renderer, 'OcclusionPass');
         const leftDepthTexture = this.getTexture(0);
         if (leftDepthTexture) {
             this.occlusionPass.setDepthTexture(leftDepthTexture, this.rawValueToMeters, 0, this.gpuDepthData[0]
@@ -14157,6 +14217,9 @@ class Depth {
             return;
         this.disposed = true;
         this.enabled = false;
+        if (Depth.instance === this) {
+            Depth.instance = undefined;
+        }
         const mesh = this.depthMesh;
         const textures = this.depthTextures;
         const pass = this.occlusionPass;
@@ -23714,30 +23777,6 @@ class PermissionsManager {
     }
 }
 
-/**
- * Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
- *
- * @param renderer - The renderer instance to test.
- * @returns True if the renderer is a WebGPURenderer, false otherwise.
- */
-function isWebGPURenderer(renderer) {
-    return ('isWebGPURenderer' in renderer &&
-        renderer.isWebGPURenderer === true);
-}
-/**
- * Asserts that the provided renderer is a THREE.WebGLRenderer.
- *
- * @param renderer - The renderer instance to check.
- * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
- * @throws Error if the renderer is a WebGPURenderer or not an instance of THREE.WebGLRenderer.
- */
-function assertWebGLRenderer(renderer, consumerName) {
-    if (isWebGPURenderer(renderer) ||
-        !(renderer instanceof THREE.WebGLRenderer)) {
-        throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
-    }
-}
-
 const EPSILON$1 = 1e-9;
 function loadSimulatorModule() {
     return import('./Simulator.js').then(function (n) { return n.S; });
@@ -24305,7 +24344,6 @@ class Core {
         this.webXRSettings.optionalFeatures = webXROptionalFeatures;
         // Sets up depth.
         if (options.depth.enabled) {
-            assertWebGLRenderer(this.renderer, 'Depth');
             webXRRequiredFeatures.push('depth-sensing');
             webXRRequiredFeatures.push('local-floor');
             this.webXRSettings.depthSensing = {
@@ -24314,7 +24352,8 @@ class Core {
                 depthTypeRequest: options.depth.depthTypeRequest,
                 matchDepthView: options.depth.matchDepthView,
             };
-            this.depth.init(this.camera, options.depth, this.renderer, this.registry, this.scene);
+            await this.depth.init(this.camera, options.depth, this.renderer, this.registry, this.scene);
+            this.assertInitializing();
             if (this.depth.depthMesh) {
                 this.depth.depthMesh.xb = {
                     ...this.depth.depthMesh.xb,

@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid f7fa1d7
- * @builddate 2026-09-18T00:46:38.699Z
+ * @commitid 317761c
+ * @builddate 2026-09-18T15:30:14.569Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1238,12 +1238,47 @@ class SimulatorDepthMaterial extends THREE.MeshBasicMaterial {
     }
 }
 
+/**
+ * WebGL backend implementation for rendering and reading back Simulator depth buffers.
+ */
+class SimulatorDepthWebGLRenderer {
+    constructor(renderer) {
+        this.renderer = renderer;
+        this.depthMaterial = new SimulatorDepthMaterial();
+        this.depthBufferSlice = new Float32Array();
+    }
+    readRenderTargetPixels(renderTarget, width, height, outputBuffer) {
+        // Preventively unbind PIXEL_PACK_BUFFER before reading from the render target
+        // in case external libraries (e.g. Spark.js) left it bound.
+        const context = this.renderer.getContext();
+        context.bindBuffer(context.PIXEL_PACK_BUFFER, null);
+        return this.renderer.readRenderTargetPixelsAsync(renderTarget, 0, 0, width, height, outputBuffer);
+    }
+    unpackDepthPixels(_readbackResult, width, height, outputBuffer) {
+        // Flip the depth buffer vertically in-place (gl.readPixels origin is bottom-left).
+        if (this.depthBufferSlice.length !== width) {
+            this.depthBufferSlice = new Float32Array(width);
+        }
+        for (let i = 0; i < height / 2; ++i) {
+            const j = height - 1 - i;
+            const iOffset = i * width;
+            const jOffset = j * width;
+            this.depthBufferSlice.set(outputBuffer.subarray(iOffset, iOffset + width));
+            outputBuffer.copyWithin(iOffset, jOffset, jOffset + width);
+            outputBuffer.set(this.depthBufferSlice, jOffset);
+        }
+    }
+    dispose() {
+        this.depthMaterial.dispose();
+    }
+}
+
 class SimulatorDepth {
     constructor(simulatorScene) {
         this.simulatorScene = simulatorScene;
         this.depthWidth = 160;
         this.depthHeight = 160;
-        this.depthBufferSlice = new Float32Array();
+        this.tempClearColor = new THREE.Color();
         /**
          * If true, copies the rendering camera's projection matrix each frame.
          */
@@ -1289,10 +1324,13 @@ class SimulatorDepth {
         this.hashFloat = new Float64Array(1);
         this.hashInts = new Int32Array(this.hashFloat.buffer);
     }
+    get depthMaterial() {
+        return this.depthRenderer.depthMaterial;
+    }
     /**
      * Initialize Simulator Depth.
      */
-    init(renderer, camera, depth) {
+    async init(renderer, camera, depth) {
         this.disposed = false;
         this.resourcesDisposed = false;
         this.renderer = renderer;
@@ -1309,7 +1347,15 @@ class SimulatorDepth {
         }
         this.depthCamera.copy(this.camera, /*recursive=*/ false);
         this.createRenderTarget();
-        this.depthMaterial = new SimulatorDepthMaterial();
+        if (isWebGPURenderer(this.renderer)) {
+            const { SimulatorDepthWebGPURenderer } = await import('./SimulatorDepthWebGPURenderer.js');
+            if (this.disposed)
+                return;
+            this.depthRenderer = new SimulatorDepthWebGPURenderer(this.renderer);
+        }
+        else {
+            this.depthRenderer = new SimulatorDepthWebGLRenderer(this.renderer);
+        }
     }
     createRenderTarget() {
         this.depthRenderTarget = new THREE.WebGLRenderTarget(this.depthWidth, this.depthHeight, {
@@ -1410,38 +1456,25 @@ class SimulatorDepth {
     }
     renderDepthScene() {
         const originalRenderTarget = this.renderer.getRenderTarget();
+        const originalClearColor = this.renderer.getClearColor(this.tempClearColor);
+        const originalClearAlpha = this.renderer.getClearAlpha();
         this.renderer.setRenderTarget(this.depthRenderTarget);
-        this.simulatorScene.overrideMaterial = this.depthMaterial;
+        this.renderer.setClearColor(0x000000, 0);
+        this.renderer.clear();
+        this.simulatorScene.overrideMaterial = this.depthRenderer.depthMaterial;
         this.renderer.render(this.simulatorScene, this.depthCamera);
         this.simulatorScene.overrideMaterial = null;
+        this.renderer.setClearColor(originalClearColor, originalClearAlpha);
         this.renderer.setRenderTarget(originalRenderTarget);
     }
     async updateDepth() {
-        // We preventively unbind the PIXEL_PACK_BUFFER before reading from the
-        // render target in case external libraries (Spark.js) left it bound.
-        const context = this.renderer.getContext();
-        context.bindBuffer(context.PIXEL_PACK_BUFFER, null);
         // Cache the projection matrix and transform of the rendered depth.
         const projectionMatrix = this.depthCamera.projectionMatrix.clone();
         const transform = new XRRigidTransform(this.depthCamera.position, this.depthCamera.quaternion);
-        await this.renderer.readRenderTargetPixelsAsync(this.depthRenderTarget, 0, 0, this.depthWidth, this.depthHeight, this.depthBuffer);
+        const result = await this.depthRenderer.readRenderTargetPixels(this.depthRenderTarget, this.depthWidth, this.depthHeight, this.depthBuffer);
         if (this.disposed)
             return;
-        // Flip the depth buffer.
-        if (this.depthBufferSlice.length != this.depthWidth) {
-            this.depthBufferSlice = new Float32Array(this.depthWidth);
-        }
-        for (let i = 0; i < this.depthHeight / 2; ++i) {
-            const j = this.depthHeight - 1 - i;
-            const i_offset = i * this.depthWidth;
-            const j_offset = j * this.depthWidth;
-            // Copy row i to a temp slice
-            this.depthBufferSlice.set(this.depthBuffer.subarray(i_offset, i_offset + this.depthWidth));
-            // Copy row j to row i
-            this.depthBuffer.copyWithin(i_offset, j_offset, j_offset + this.depthWidth);
-            // Copy the temp slice (original row i) to row j
-            this.depthBuffer.set(this.depthBufferSlice, j_offset);
-        }
+        this.depthRenderer.unpackDepthPixels(result, this.depthWidth, this.depthHeight, this.depthBuffer);
         projectionMatrix.toArray(this.projectionMatrixArray);
         const depthData = {
             width: this.depthWidth,
@@ -1463,7 +1496,7 @@ class SimulatorDepth {
             return;
         this.resourcesDisposed = true;
         this.depthRenderTarget?.dispose();
-        this.depthMaterial?.dispose();
+        this.depthRenderer?.dispose();
     }
 }
 
@@ -3774,9 +3807,8 @@ class Simulator extends Script {
             simulatorOptions,
         });
         if (options.depth.enabled) {
-            assertWebGLRenderer(renderer, 'SimulatorDepth');
             this.renderDepthPass = true;
-            this.depth.init(renderer, camera, depth);
+            await this.depth.init(renderer, camera, depth);
         }
         scene.add(camera);
         if (this.options.stereo.enabled) {

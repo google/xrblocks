@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid f7fa1d7
- * @builddate 2026-09-18T00:46:38.699Z
+ * @commitid 317761c
+ * @builddate 2026-09-18T15:30:14.569Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -1319,15 +1319,15 @@ type WebGLOrWebGPURenderer = THREE.WebGLRenderer | WebGPURenderer;
  * @param renderer - The renderer instance to test.
  * @returns True if the renderer is a WebGPURenderer, false otherwise.
  */
-declare function isWebGPURenderer(renderer: WebGLOrWebGPURenderer): renderer is WebGPURenderer;
+declare function isWebGPURenderer(renderer?: WebGLOrWebGPURenderer | null): renderer is WebGPURenderer;
 /**
  * Asserts that the provided renderer is a THREE.WebGLRenderer.
  *
  * @param renderer - The renderer instance to check.
  * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
- * @throws Error if the renderer is a WebGPURenderer or not an instance of THREE.WebGLRenderer.
+ * @throws Error if the renderer is a WebGPURenderer.
  */
-declare function assertWebGLRenderer(renderer: WebGLOrWebGPURenderer, consumerName: string): asserts renderer is THREE.WebGLRenderer;
+declare function assertWebGLRenderer(renderer: WebGLOrWebGPURenderer | undefined, consumerName: string): asserts renderer is THREE.WebGLRenderer;
 
 type GamepadAction = 'select' | 'cycleHandPoseLeft' | 'cycleHandPoseRight' | 'cycleSimulatorMode' | 'toggleUI' | 'toggleHand' | 'moveDown' | 'moveUp' | 'openSettings';
 /**
@@ -6015,7 +6015,7 @@ declare class DepthTextures {
     constructor(options: DepthOptions);
     private createDataDepthTextures;
     updateData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
-    updateNativeTexture(depthData: XRWebGLDepthInformation, renderer: THREE.WebGLRenderer, viewId: number): void;
+    updateNativeTexture(depthData: XRWebGLDepthInformation, renderer: WebGLOrWebGPURenderer, viewId: number): void;
     get(viewId: number): THREE.ExternalTexture | THREE.DataTexture;
     dispose(): void;
 }
@@ -6023,9 +6023,6 @@ declare class DepthTextures {
 declare class DepthMesh extends MeshScript {
     private depthOptions;
     private depthTextures?;
-    static dependencies: {
-        renderer: typeof THREE.WebGLRenderer;
-    };
     static isDepthMesh: boolean;
     private worldPosition;
     private worldQuaternion;
@@ -6039,23 +6036,66 @@ declare class DepthMesh extends MeshScript {
     private collider?;
     private colliders;
     private colliderUpdateFps;
-    private renderer;
     private projectionMatrixInverse;
     private lastColliderUpdateTime;
     private options;
     private depthTextureMaterialUniforms?;
+    private customMaterialUpdateCallback?;
     private RAPIER?;
     private blendedWorld?;
     private rigidBody?;
     private colliderId;
     private disposed;
     constructor(depthOptions: DepthOptions, width: number, height: number, depthTextures?: DepthTextures | undefined);
+    get depthTextureUniforms(): {
+        uDepthTexture: {
+            value: THREE.Texture | null;
+        };
+        uDepthTextureArray: {
+            value: THREE.Texture | null;
+        };
+        uIsTextureArray: {
+            value: number;
+        };
+        uColor: {
+            value: THREE.Color;
+        };
+        uResolution: {
+            value: THREE.Vector2;
+        };
+        uRawValueToMeters: {
+            value: number;
+        };
+        uMinDepth: {
+            value: number;
+        };
+        uMaxDepth: {
+            value: number;
+        };
+        uOpacity: {
+            value: number;
+        };
+        uDebug: {
+            value: number;
+        };
+        uLightDirection: {
+            value: THREE.Vector3;
+        };
+        uUsingFloatDepth: {
+            value: boolean;
+        };
+        uNormDepthBufferFromNormView: {
+            value: THREE.Matrix4;
+        };
+    } | undefined;
     /**
-     * Initialize the depth mesh.
+     * Sets a custom material (such as a WebGPU NodeMaterial) and registers a
+     * callback to synchronize uniforms on depth updates.
+     *
+     * @param material - The material to apply to the depth mesh.
+     * @param onUpdate - Optional callback invoked whenever depth uniforms change.
      */
-    init({ renderer }: {
-        renderer: THREE.WebGLRenderer;
-    }): void;
+    setCustomMaterial(material: THREE.Material, onUpdate?: () => void): void;
     /**
      * Updates the depth data and geometry positions based on the provided camera
      * and depth data.
@@ -6133,7 +6173,7 @@ declare class Depth {
     /**
      * Initialize Depth manager.
      */
-    init(camera: THREE.PerspectiveCamera, options: DepthOptions, renderer: THREE.WebGLRenderer, registry: Registry, scene: THREE.Scene): void;
+    init(camera: THREE.PerspectiveCamera, options: DepthOptions, renderer: WebGLOrWebGPURenderer, registry: Registry, scene: THREE.Scene): void | Promise<void>;
     /**
      * Retrieves the depth at normalized coordinates (u, v).
      * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
@@ -6601,14 +6641,6 @@ declare class SimulatorControls {
     private releasePointerCapture;
 }
 
-declare class SimulatorDepthMaterial extends THREE.MeshBasicMaterial {
-    onBeforeCompile(shader: {
-        vertexShader: string;
-        fragmentShader: string;
-        uniforms: object;
-    }): void;
-}
-
 declare class SimulatorScene extends THREE.Scene {
     gltf?: GLTF;
     environmentRoot?: THREE.Group;
@@ -6624,14 +6656,14 @@ declare class SimulatorScene extends THREE.Scene {
 declare class SimulatorDepth {
     private simulatorScene;
     private renderer;
+    private depthRenderer;
     private camera;
     private depth;
     depthWidth: number;
     depthHeight: number;
-    depthBufferSlice: Float32Array<ArrayBuffer>;
-    depthMaterial: SimulatorDepthMaterial;
     depthRenderTarget: THREE.WebGLRenderTarget;
     depthBuffer: Float32Array;
+    private readonly tempClearColor;
     depthCamera: THREE.Camera;
     /**
      * If true, copies the rendering camera's projection matrix each frame.
@@ -6670,10 +6702,11 @@ declare class SimulatorDepth {
     private readonly hashFloat;
     private readonly hashInts;
     constructor(simulatorScene: SimulatorScene);
+    get depthMaterial(): THREE.Material;
     /**
      * Initialize Simulator Depth.
      */
-    init(renderer: THREE.WebGLRenderer, camera: THREE.Camera, depth: Depth): void;
+    init(renderer: WebGLOrWebGPURenderer, camera: THREE.Camera, depth: Depth): Promise<void>;
     createRenderTarget(): void;
     update(): void;
     /**
@@ -9275,6 +9308,14 @@ declare function resolveSimulatorHandPoseRotations(handedness: Handedness, rotat
 declare function resolveSimulatorRotationsFromKeypoints(handedness: Handedness, joints: DeepReadonly<SimulatorHandPoseJoints>, applyConstraints?: boolean): SimulatorHandPoseRotations;
 
 declare const SIMULATOR_HAND_POSE_ROTATIONS: Readonly<Record<SimulatorHandPose, SimulatorHandPoseRotations>>;
+
+declare class SimulatorDepthMaterial extends THREE.MeshBasicMaterial {
+    onBeforeCompile(shader: {
+        vertexShader: string;
+        fragmentShader: string;
+        uniforms: object;
+    }): void;
+}
 
 interface SimulatorPointerLockControllerEventMap extends THREE.Object3DEventMap {
     connected: {

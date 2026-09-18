@@ -90,6 +90,9 @@ vi.mock('three', async (importOriginal) => {
         self.clearDepth = () => { };
         self.dispose = () => { };
         self.getRenderTarget = () => null;
+        self.getClearColor = (target) => target ?? new original.Color();
+        self.getClearAlpha = () => 0;
+        self.setClearColor = () => { };
         self.readRenderTargetPixelsAsync = () => Promise.resolve();
         return self;
     };
@@ -135,6 +138,11 @@ vi.mock('three/webgpu', async (importOriginal) => {
             this.clear = vi.fn();
             this.clearDepth = vi.fn();
             this.setRenderTarget = vi.fn();
+            this.getRenderTarget = vi.fn(() => null);
+            this.getClearColor = vi.fn((target) => target ?? new original.Color());
+            this.getClearAlpha = vi.fn(() => 0);
+            this.setClearColor = vi.fn();
+            this.readRenderTargetPixelsAsync = vi.fn(() => Promise.resolve(new Float32Array(160 * 160)));
         }
     }
     return {

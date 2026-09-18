@@ -40,52 +40,53 @@
     or generate from primitive shapes of use vox formats for voxels or
     lego-styles.
  */
-import { texture, uv } from 'three/tsl';
-import { NodeMaterial, QuadMesh } from 'three/webgpu';
-import { W as WebGLDirectCompositor } from './Simulator.js';
-import 'three';
-import './entry.js';
-import 'three/addons/postprocessing/Pass.js';
-import 'three/addons/webxr/XRControllerModelFactory.js';
-import 'three/addons/webxr/XRHandModelFactory.js';
-import 'three/addons/webxr/XREstimatedLight.js';
-import 'three/addons/loaders/FontLoader.js';
-import 'three/addons/geometries/TextGeometry.js';
-import 'three/addons/loaders/DRACOLoader.js';
-import 'three/addons/loaders/GLTFLoader.js';
-import 'three/addons/loaders/KTX2Loader.js';
-import 'three/addons/utils/BufferGeometryUtils.js';
+import * as THREE from 'three';
+import { vec4, positionView, float } from 'three/tsl';
+import { NodeMaterial } from 'three/webgpu';
 
 /**
- * Creates a fullscreen QuadMesh with a NodeMaterial configured to sample a
- * video texture right-side-up in both WebGPU and WebGL2 fallback modes.
+ * Creates a WebGPU NodeMaterial for rendering linear view-space depth
+ * (-positionView.z) into a float render target in the Simulator.
+ *
+ * @returns The configured NodeMaterial instance.
  */
-function createWebGPUBackgroundVideoQuad(videoTexture) {
+function createSimulatorDepthNodeMaterial() {
     const material = new NodeMaterial();
-    material.fragmentNode = texture(videoTexture, uv().flipY());
-    material.depthTest = false;
-    material.depthWrite = false;
-    material.lights = false;
-    return new QuadMesh(material);
+    material.blending = THREE.NoBlending;
+    material.forceSinglePass = true;
+    material.fragmentNode = vec4(positionView.z.negate(), float(0.0), float(0.0), float(1.0));
+    return material;
 }
 /**
- * Compositor that renders the simulator scene directly to the canvas
- * followed by the main scene without an intermediate offscreen render target,
- * configured specifically for WebGPURenderer.
+ * WebGPU backend implementation for rendering and reading back Simulator depth buffers.
  */
-class WebGPUDirectCompositor extends WebGLDirectCompositor {
-    createBackgroundVideoQuad(videoTexture) {
-        return createWebGPUBackgroundVideoQuad(videoTexture);
+class SimulatorDepthWebGPURenderer {
+    constructor(renderer) {
+        this.renderer = renderer;
+        this.depthMaterial = createSimulatorDepthNodeMaterial();
     }
-    clearBeforeSimulatorScene() {
-        if (this.backgroundVideoQuad) {
-            this.deps.renderer.clearDepth();
+    readRenderTargetPixels(renderTarget, width, height) {
+        return this.renderer.readRenderTargetPixelsAsync(renderTarget, 0, 0, width, height);
+    }
+    unpackDepthPixels(readbackResult, width, height, outputBuffer) {
+        const readbackBuffer = readbackResult;
+        const isWebGLFallback = 'isWebGLBackend' in this.renderer.backend &&
+            this.renderer.backend.isWebGLBackend === true;
+        const expectedLength = width * height;
+        const rowStride = readbackBuffer.length > expectedLength
+            ? (Math.ceil((width * 4) / 256) * 256) / 4
+            : width;
+        for (let y = 0; y < height; ++y) {
+            const srcRow = isWebGLFallback ? height - 1 - y : y;
+            const srcOffset = srcRow * rowStride;
+            const dstOffset = y * width;
+            outputBuffer.set(readbackBuffer.subarray(srcOffset, srcOffset + width), dstOffset);
         }
-        else {
-            this.deps.renderer.clear();
-        }
+    }
+    dispose() {
+        this.depthMaterial.dispose();
     }
 }
 
-export { WebGPUDirectCompositor, createWebGPUBackgroundVideoQuad };
-//# sourceMappingURL=WebGPUDirectCompositor.js.map
+export { SimulatorDepthWebGPURenderer, createSimulatorDepthNodeMaterial };
+//# sourceMappingURL=SimulatorDepthWebGPURenderer.js.map
