@@ -67,7 +67,11 @@ export class PlanarVST extends xb.Script {
     const frustumHeight = (2.0 * depthInMeters) / P11;
 
     this.mesh.scale.set(frustumWidth, frustumHeight, 1);
-    this.mesh.position.set(0, 0, -depthInMeters);
+    this.mesh.position.set(
+      (depthInMeters * elements[8]) / P00,
+      (depthInMeters * elements[9]) / P11,
+      -depthInMeters
+    );
   }
 
   override dispose() {

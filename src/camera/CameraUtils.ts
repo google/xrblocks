@@ -64,6 +64,12 @@ export function getDeviceCameraClipFromView(
     simulatorCamera.far = renderCamera.far;
     simulatorCamera.updateProjectionMatrix();
     return simulatorCamera.projectionMatrix;
+  } else if (
+    deviceCamera.hasXRCameraParams &&
+    deviceCamera.xrCameraClipFromView
+  ) {
+    // Intrinsics straight from the WebXR view, whatever device this is.
+    return deviceCamera.xrCameraClipFromView;
   } else {
     return DEVICE_CAMERA_PARAMETERS[targetDevice].projectionMatrix;
   }
@@ -77,6 +83,17 @@ export function getDeviceCameraWorldFromView(
 ): THREE.Matrix4 {
   if (deviceCamera?.simulatorCamera) {
     return renderCamera.matrixWorld.clone();
+  } else if (
+    deviceCamera?.hasXRCameraParams &&
+    deviceCamera.xrCameraReferenceFromView
+  ) {
+    const worldFromView = deviceCamera.xrCameraReferenceFromView.clone();
+    const parent = renderCamera.parent;
+    if (parent) {
+      parent.updateWorldMatrix(true, false);
+      worldFromView.premultiply(parent.matrixWorld);
+    }
+    return worldFromView;
   } else if (xrCameras && xrCameras.cameras.length > 0) {
     const target = new THREE.Matrix4();
     DEVICE_CAMERA_PARAMETERS[targetDevice].getCameraPose(
@@ -144,6 +161,7 @@ export function isDeviceCameraPoseAvailable(
 ): boolean {
   return !!(
     deviceCamera?.simulatorCamera ||
+    deviceCamera?.hasXRCameraParams ||
     (xrCameras && xrCameras.cameras.length > 0)
   );
 }
@@ -190,7 +208,7 @@ export function getCameraParametersSnapshot(
     throw new Error('Could not get clip from view');
   }
   return {
-    clipFromView: clipFromView,
+    clipFromView: clipFromView.clone(),
     viewFromClip: clipFromView.clone().invert(),
     worldFromClip: getDeviceCameraWorldFromClip(
       camera,
