@@ -97,6 +97,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'samples/XR-Poet',
         'samples/Gemini-XRObject',
+        'samples/Objects-3D',
         'samples/Language-Detector',
         'samples/Gemini-Icebreakers',
         'samples/Collaborative-Roomcraft',

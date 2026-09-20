@@ -40,8 +40,10 @@ describe('OcclusionMapMeshMaterial', () => {
     expect(fakeShader.vertexShader).toContain(
       'uniform mat4 uDepthProjectionMatrix;'
     );
+    // `transformed`, not `position`: skinned / morphed meshes must write
+    // their posed depth (see OcclusionMapMeshMaterial).
     expect(fakeShader.vertexShader).toContain(
-      'vec4 world_position = modelMatrix * vec4( position, 1.0 );'
+      'vec4 world_position = modelMatrix * vec4( transformed, 1.0 );'
     );
     expect(fakeShader.vertexShader).toContain(
       'vec4 depth_view_position = uDepthViewMatrix * world_position;'

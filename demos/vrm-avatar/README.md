@@ -13,6 +13,7 @@ A point-to-walk VRM avatar demo built on [XRBlocks](https://github.com/google/xr
 - Crossfades between idle and walk animations
 - Walks the avatar to a floor point selected by the user via controller ray or mouse click
 - Procedural eye blink using VRM expression manager
+- Pixel-level passthrough occlusion: real-world geometry (desk, doorway, furniture) hides the avatar via the XRBlocks occlusion map
 - Works in the XRBlocks desktop simulator and in WebXR
 
 ---
@@ -25,6 +26,7 @@ demos/vrm-avatar/
   main.js             — entry point script (scene setup, VRMAvatarScript configuration)
   VRMAvatar.js        — utility class: VRM load, animation, blink, update()
   VRMAvatarScript.js  — xb.Script subclass: scene lifecycle, point-to-walk
+  VRMOcclusion.js     — opts avatar materials into pixel-level passthrough occlusion
 ```
 
 ---
@@ -45,6 +47,9 @@ The VRM model and all animation assets (T-pose, idle, and walking GLB files) are
 
 **Depth mesh floor detection**
 On device, `onSelectEnd` uses the callback's `event.surface` and `event.intersection` values for accurate depth-mesh floor hits. `options.reticles.projectOnDepthMesh` keeps the reticle on that same surface. The avatar root uses `pointerEvents: 'none'`, so its meshes do not block the floor reticle. When the depth mesh is not available, the demo casts from `event.source.controller` to the y=0 ground plane.
+
+**Passthrough occlusion**
+`main.js` enables `options.depth.depthTexture` and `options.depth.occlusion`; `VRMOcclusion.js` then opts every avatar mesh into the XRBlocks occlusion map (layer + alpha-multiply shader patch + `occludableShaders` registration). MToon materials need a custom shader patch because `xb.OcclusionUtils.addOcclusionToShader` only supports built-in three.js materials — the patch anchors on MToon's `litFactor` uniform instead. Known limitations inherited from the occlusion system: the map lags animation by one frame, is rendered mono from the left eye, and forcing `transparent = true` can produce minor self-sorting artifacts on layered avatar meshes.
 
 ---
 

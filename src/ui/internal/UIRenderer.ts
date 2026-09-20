@@ -274,21 +274,30 @@ export class UIRenderer {
     }
   }
 
+  private readonly presentationState = {
+    hovered: false,
+    active: false,
+    disabled: false,
+    cursorPointCount: 0 as 0 | 1 | 2,
+  };
+
   private presentationStateFor = (
     element: UIElement,
     cursorPoints?: readonly [THREE.Vector3, THREE.Vector3]
-  ) => ({
-    hovered: this.interaction.isPointingAt(element),
-    active: this.interaction.isSelectingAt(element),
-    disabled: getSemanticControl(element)?.isDisabled() ?? false,
-    cursorPointCount: cursorPoints
+  ) => {
+    const state = this.presentationState;
+    state.hovered = this.interaction.isPointingAt(element);
+    state.active = this.interaction.isSelectingAt(element);
+    state.disabled = getSemanticControl(element)?.isDisabled() ?? false;
+    state.cursorPointCount = cursorPoints
       ? this.interaction.writeCursorPointsAt(
           element,
           cursorPoints[0],
           cursorPoints[1]
         )
-      : (0 as const),
-  });
+      : 0;
+    return state;
+  };
 
   private registerHit(mapping: UIHitMapping, overlay: boolean): () => void {
     mapping.physical.userData.xrblocksHitOrder = mapping.physical.renderOrder;

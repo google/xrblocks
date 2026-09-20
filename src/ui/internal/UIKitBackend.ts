@@ -450,18 +450,16 @@ class UIKitNodeBinding {
       this.resourceRevision !== this.appliedResourceRevision;
     let hitMappingsChanged = orderChanged;
     if (needsProperties) {
+      const base = baseState(this.element);
       this.renderOrder = order;
-      const properties = this.propertiesFor(
-        context,
-        baseState(this.element),
-        order
-      );
+      const properties = this.propertiesFor(context, base, order);
       this.applyProperties(properties);
       this.baseProperties = properties;
       this.presentedProperties = properties;
-      this.presentationKey = -1;
+      this.presentationKey = stateKey(base);
       this.revision = revision;
       this.theme = context.theme;
+      this.pointerEvents = nextPointerEvents;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
@@ -479,12 +477,18 @@ class UIKitNodeBinding {
 
   present(stateFor: UIPresentationStateFor): void {
     if (this.disposed) return;
-    const state = {
-      ...stateFor(this.element, this.edge ? this.cursorPoints : undefined),
-      focused: this.element instanceof UITextInput && this.element.focused,
-    };
-    const key = stateKey(state);
+    const rawState = stateFor(
+      this.element,
+      this.edge ? this.cursorPoints : undefined
+    );
+    const focused = this.element instanceof UITextInput && this.element.focused;
+    const key =
+      Number(rawState.hovered) |
+      (Number(rawState.active) << 1) |
+      (Number(rawState.disabled) << 2) |
+      (Number(focused) << 3);
     if (key !== this.presentationKey) {
+      const state: UIPresentationState = {...rawState, focused};
       const context: CommitContext = {
         theme: this.theme!,
         rootStack: undefined,
@@ -499,8 +503,8 @@ class UIKitNodeBinding {
       this.textInput?.commit(this.theme!);
     }
     this.edge?.setCursorPoints(
-      state.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
-      state.cursorPointCount > 1 ? this.cursorPoints[1] : undefined
+      rawState.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
+      rawState.cursorPointCount > 1 ? this.cursorPoints[1] : undefined
     );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);
