@@ -134,6 +134,43 @@ describe('VideoLayer', () => {
     expect(layer.getState()).toBe('fallback');
   });
 
+  it('destroys a newly allocated quad if the manager refuses it', () => {
+    const destroy = vi.fn();
+    installMediaBinding(() => ({destroy}) as unknown as XRQuadLayer);
+    const manager = readyManager();
+    vi.spyOn(manager, 'add').mockReturnValue(false);
+    const layer = new VideoLayer(manager);
+
+    expect(layer.attach(fakeVideo(), fakeSession(), space)).toBe(false);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(layer.getLayer()).toBeNull();
+    expect(layer.getState()).toBe('fallback');
+    layer.detach();
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it('cleans up a failed submission without hiding the error', () => {
+    const destroy = vi.fn();
+    installMediaBinding(() => ({destroy}) as unknown as XRQuadLayer);
+    const session = fakeSession();
+    const error = new Error('Layer stack rejected');
+    vi.mocked(session.updateRenderState).mockImplementation(() => {
+      throw error;
+    });
+    const manager = new LayerManager();
+    manager.setSession(session);
+    manager.setBaseLayer({} as XRLayer);
+    const layer = new VideoLayer(manager);
+
+    expect(() => layer.attach(fakeVideo(), session, space)).toThrow(error);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(manager.getLayers()).toEqual([]);
+    expect(layer.getLayer()).toBeNull();
+    expect(layer.getState()).toBe('fallback');
+    layer.detach();
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
   it('removes the layer on detach', () => {
     const destroy = vi.fn();
     installMediaBinding(() => ({destroy}) as unknown as XRQuadLayer);
@@ -146,6 +183,31 @@ describe('VideoLayer', () => {
     expect(destroy).toHaveBeenCalled();
     expect(manager.getLayers()).toHaveLength(0);
     expect(layer.getState()).toBe('fallback');
+  });
+
+  it('cleans up after a rejected removal without hiding the error', () => {
+    const destroy = vi.fn();
+    installMediaBinding(() => ({destroy}) as unknown as XRQuadLayer);
+    const session = fakeSession();
+    const manager = new LayerManager();
+    manager.setSession(session);
+    manager.setBaseLayer({} as XRLayer);
+    const layer = new VideoLayer(manager);
+    layer.attach(fakeVideo(), session, space);
+    const error = new Error('Layer removal rejected');
+    vi.mocked(session.updateRenderState).mockImplementationOnce(() => {
+      throw error;
+    });
+
+    expect(() => layer.detach()).toThrow(error);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(manager.getLayers()).toEqual([]);
+    expect(layer.getLayer()).toBeNull();
+    expect(layer.getState()).toBe('fallback');
+    expect(layer.getPath()).toBe('none');
+    layer.detach();
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(session.updateRenderState).toHaveBeenCalledTimes(2);
   });
 
   it('does not leave the old layer behind when attached twice', () => {

@@ -20,10 +20,11 @@ export class TestCard {
     this.canvas.height = height;
     this.ctx = this.canvas.getContext('2d');
     this.frame = 0;
+    this.consumers = [];
   }
 
   /**
-   * Starts drawing and returns a video element carrying the result.
+   * Returns an independent video consumer of a single shared drawing loop.
    *
    * @returns {HTMLVideoElement} An element playing the test card.
    */
@@ -36,23 +37,33 @@ export class TestCard {
       'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
     document.body.appendChild(video);
 
-    this.draw();
-    // 30fps is plenty: the point is spatial detail, not motion.
-    video.srcObject = this.canvas.captureStream(30);
-    video.play().catch(() => {});
-
-    const tick = () => {
+    if (this.timer === undefined) {
       this.draw();
+      const tick = () => {
+        this.draw();
+        this.timer = requestAnimationFrame(tick);
+      };
       this.timer = requestAnimationFrame(tick);
-    };
-    this.timer = requestAnimationFrame(tick);
+    }
+    // 30fps is plenty: the point is spatial detail, not motion.
+    const stream = this.canvas.captureStream(30);
+    this.consumers.push({video, stream});
+    video.srcObject = stream;
+    video.play().catch(() => {});
     return video;
   }
 
-  /** Stops redrawing. */
+  /** Stops the producer and releases all video consumers. Safe to repeat. */
   stop() {
-    if (this.timer) cancelAnimationFrame(this.timer);
+    if (this.timer !== undefined) cancelAnimationFrame(this.timer);
     this.timer = undefined;
+    for (const {video, stream} of this.consumers) {
+      video.pause();
+      for (const track of stream.getTracks()) track.stop();
+      video.srcObject = null;
+      video.remove();
+    }
+    this.consumers.length = 0;
   }
 
   /** Paints one frame of the card. */

@@ -107,7 +107,12 @@ export class LayerManager {
     if (!this.session || !this.baseLayer) return false;
     if (this.layers.includes(layer)) return true;
     this.layers.push(layer);
-    this.submit();
+    try {
+      this.submit();
+    } catch (error) {
+      this.layers.pop();
+      throw error;
+    }
     return true;
   }
 

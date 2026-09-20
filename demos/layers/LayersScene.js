@@ -27,14 +27,15 @@ export class LayersScene extends xb.Script {
   manager = new xb.LayerManager();
   videoLayer = new xb.VideoLayer(this.manager);
   attached = false;
+  attachAttempted = false;
+  disposed = false;
   layerOnLeft = true;
-  // Set once a layer has presented this session. Gating the timer on the live
-  // `attached` flag instead would mean a single failed re-attach stopped the
-  // comparison for good, with nothing to say why.
+  // Do not start the automatic comparison until a layer has presented.
   everAttached = false;
   sinceSwap = 0;
 
   init({renderer}) {
+    this.disposed = false;
     this.renderer = renderer;
 
     // Quest has both bindings and would always take the media path, so the
@@ -51,12 +52,12 @@ export class LayersScene extends xb.Script {
 
     // Left: stands in for the layer until one can actually be created.
     this.leftMesh = makeVideoMesh(this.layerVideo);
-    this.leftMesh.position.copy(LEFT);
+    this.leftMesh.position.copy(this.layerOnLeft ? LEFT : RIGHT);
     this.add(this.leftMesh);
 
     // Right: always the ordinary in-scene path, the thing to compare against.
     this.rightMesh = makeVideoMesh(this.sceneVideo);
-    this.rightMesh.position.copy(RIGHT);
+    this.rightMesh.position.copy(this.layerOnLeft ? RIGHT : LEFT);
     this.add(this.rightMesh);
 
     const state = this.describe();
@@ -84,29 +85,49 @@ export class LayersScene extends xb.Script {
     this.layerVideo.play().catch(() => {});
     this.sceneVideo.play().catch(() => {});
 
-    this.attached = this.videoLayer.attach(this.layerVideo, session, space, {
-      position: LEFT,
-      width: QUAD_WIDTH_M,
-    });
-    this.everAttached ||= this.attached;
+    this.attachAttempted = false;
     this.sinceSwap = 0;
-    // Only hide the stand-in once something is presenting in its place,
-    // otherwise the comparison quietly loses a side.
-    this.leftMesh.visible = !this.attached;
+    this.retryAttach();
     const state = this.describe();
     report(state);
     reportInWorld(this, state);
   }
 
   onXRSessionEnded() {
-    this.videoLayer.detach();
+    // Do not submit a new layer stack to a session that has already ended.
     this.manager.setSession(null);
+    this.videoLayer.detach();
     this.attached = false;
+    this.attachAttempted = false;
     this.everAttached = false;
     this.leftMesh.visible = true;
     const state = this.describe();
     report(state);
     reportInWorld(this, state);
+  }
+
+  /** Releases owned resources when the Script is removed, not on XR exit. */
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    // Core teardown ends XR before disposing scripts, without the end hook.
+    if (!this.renderer?.xr?.isPresenting) this.manager.setSession(null);
+    try {
+      this.videoLayer.detach();
+    } finally {
+      this.manager.setSession(null);
+      this.attached = false;
+      this.everAttached = false;
+      this.card?.stop();
+      for (const mesh of [this.leftMesh, this.rightMesh]) {
+        if (!mesh) continue;
+        mesh.material.map.dispose();
+        mesh.material.dispose();
+        mesh.geometry.dispose();
+        this.remove(mesh);
+      }
+      super.dispose();
+    }
   }
 
   /**
@@ -126,16 +147,12 @@ export class LayersScene extends xb.Script {
     this.rightMesh.position.copy(meshPos);
     this.leftMesh.position.copy(layerPos);
 
-    const session = this.renderer?.xr?.getSession?.();
-    const space = this.renderer?.xr?.getReferenceSpace?.();
-    if (session && space) {
-      this.videoLayer.detach();
-      this.attached = this.videoLayer.attach(this.layerVideo, session, space, {
-        position: layerPos,
-        width: QUAD_WIDTH_M,
-      });
-      this.everAttached ||= this.attached;
-      this.leftMesh.visible = !this.attached;
+    const layer = this.videoLayer.getLayer();
+    if (layer) {
+      layer.transform = new XRRigidTransform(
+        {x: layerPos.x, y: layerPos.y, z: layerPos.z},
+        layer.transform.orientation
+      );
     }
     this.sinceSwap = 0;
     const state = this.describe();
@@ -165,18 +182,20 @@ export class LayersScene extends xb.Script {
       this.uploads = this.videoLayer.getUploadCount();
     }
 
-    // A canvas stream reports no dimensions for the first frames, and the
-    // WebGL path needs them to size its texture. Retry until it takes,
-    // otherwise a failed first attach leaves the timer below switched off and
-    // nothing ever tries again.
+    // Wait for metadata and a frame, but do not allocate at XR frame rate if
+    // the platform refuses the ready source. A new session gets a new attempt.
     if (!this.attached && this.renderer?.xr?.isPresenting) {
-      this.retryAttach();
+      if (this.retryAttach()) {
+        const state = this.describe();
+        report(state);
+        reportInWorld(this, state);
+      }
     }
 
     if (!this.everAttached) return;
     this.sinceSwap += xb.getDeltaTime();
     // Uploads tick every frame, so the readout has to refresh between swaps or
-    // it looks stuck at whatever it said when the layer was last re-attached.
+    // it looks stuck at whatever it said when the layer was attached.
     if (this.readout && frame) {
       reportInWorld(this, this.describe());
     }
@@ -185,23 +204,33 @@ export class LayersScene extends xb.Script {
     }
   }
 
-  /** Tries again to present the layer once the video has real dimensions. */
+  /**
+   * Waits for a usable source, then makes at most one attempt per session.
+   *
+   * @returns {boolean} Whether an attachment was attempted.
+   */
   retryAttach() {
-    if (!this.layerVideo.videoWidth) return;
+    if (
+      this.attachAttempted ||
+      !this.layerVideo.videoWidth ||
+      !this.layerVideo.videoHeight ||
+      this.layerVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+      return false;
+    }
     const session = this.renderer.xr.getSession();
     const space = this.renderer.xr.getReferenceSpace();
-    if (!session || !space) return;
+    if (!session || !space) return false;
 
+    this.attachAttempted = true;
     this.attached = this.videoLayer.attach(this.layerVideo, session, space, {
       position: this.layerOnLeft ? LEFT : RIGHT,
       width: QUAD_WIDTH_M,
     });
-    if (!this.attached) return;
-    this.everAttached = true;
-    this.leftMesh.visible = false;
-    const state = this.describe();
-    report(state);
-    reportInWorld(this, state);
+    this.everAttached ||= this.attached;
+    // Keep the stand-in visible unless a layer is presenting in its place.
+    this.leftMesh.visible = !this.attached;
+    return true;
   }
 
   /** @returns {object} What the platform offered and what got used. */
@@ -224,6 +253,7 @@ export class LayersScene extends xb.Script {
       hasWebGLQuadLayer,
       inSession,
       layerAttached: this.attached,
+      attachAttempted: this.attachAttempted,
       requestedWebGL: this.requestedWebGL,
       layerPath: this.videoLayer.getPath(),
       uploads: this.uploads ?? 0,

@@ -98,6 +98,28 @@ describe('LayerManager', () => {
     expect(session.updateRenderState).toHaveBeenCalledTimes(1);
   });
 
+  it('rolls back a rejected addition while retaining previously submitted layers', () => {
+    const session = fakeSession();
+    const manager = new LayerManager();
+    manager.setSession(session, webglBinding);
+    manager.setBaseLayer(base);
+    manager.add(quad);
+    const rejected = {} as XRLayer;
+    const error = new Error('Layer stack rejected');
+    session.updateRenderState.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    expect(() => manager.add(rejected)).toThrow(error);
+    expect(manager.getLayers()).toEqual([quad]);
+    expect(session.updateRenderState).toHaveBeenCalledTimes(2);
+    expect(manager.add(rejected)).toBe(true);
+    expect(session.updateRenderState).toHaveBeenCalledTimes(3);
+    expect(session.updateRenderState).toHaveBeenLastCalledWith({
+      layers: [base, quad, rejected],
+    });
+  });
+
   it('keeps the base layer when the last layer is removed', () => {
     const session = fakeSession();
     const manager = new LayerManager();

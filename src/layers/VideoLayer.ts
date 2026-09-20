@@ -121,7 +121,14 @@ export class VideoLayer {
       return false;
     }
 
-    if (!this.manager.add(layer)) {
+    let added = false;
+    try {
+      added = this.manager.add(layer);
+    } finally {
+      // A rejected submission must not leave an unowned native layer behind.
+      if (!added) layer.destroy?.();
+    }
+    if (!added) {
       this.state = 'fallback';
       return false;
     }
@@ -216,16 +223,20 @@ export class VideoLayer {
 
   /** Stops presenting the layer and returns the video to the scene. */
   detach(): void {
-    if (this.layer) {
-      this.manager.remove(this.layer);
-      this.layer.destroy?.();
-      this.layer = null;
-    }
+    const layer = this.layer;
+    this.layer = null;
     this.video = null;
     this.sourceWidth = 0;
     this.sourceHeight = 0;
     this.path = 'none';
     this.state = 'fallback';
+    if (layer) {
+      try {
+        this.manager.remove(layer);
+      } finally {
+        layer.destroy?.();
+      }
+    }
   }
 }
 
@@ -287,9 +298,10 @@ function createMediaLayer(
       width: width * scale,
       height: height * scale,
     });
-  } catch {
+  } catch (error) {
     // A platform can advertise the binding and still refuse a given video, for
     // example one whose metadata has not loaded yet.
+    console.warn('Could not create XR media quad layer:', error);
     return null;
   }
 }
@@ -338,7 +350,8 @@ function createWebGLLayer(
       // static layer once needsRedraw has gone false.
       isStatic: false,
     } as XRQuadLayerInit);
-  } catch {
+  } catch (error) {
+    console.warn('Could not create XR WebGL quad layer:', error);
     return null;
   }
 }
