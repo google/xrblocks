@@ -255,10 +255,7 @@ export class VideoLayer {
  * @returns True when extents must be halved.
  */
 function usesHalfExtents(): boolean {
-  return (
-    typeof (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding ===
-    'function'
-  );
+  return typeof XRMediaBinding === 'function';
 }
 
 /**
@@ -280,18 +277,11 @@ function createMediaLayer(
   width: number,
   height: number
 ): XRQuadLayer | null {
-  const MediaBinding = (
-    globalThis as {
-      XRMediaBinding?: new (session: XRSession) => {
-        createQuadLayer: (video: HTMLVideoElement, init: object) => XRQuadLayer;
-      };
-    }
-  ).XRMediaBinding;
-  if (!MediaBinding) return null;
+  if (typeof XRMediaBinding !== 'function') return null;
 
   const scale = usesHalfExtents() ? 0.5 : 1;
   try {
-    return new MediaBinding(session).createQuadLayer(video, {
+    return new XRMediaBinding(session).createQuadLayer(video, {
       space,
       layout: 'mono',
       transform,

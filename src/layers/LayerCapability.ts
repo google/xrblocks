@@ -36,9 +36,7 @@ export function layerCapability(
   if (preferWebGL && hasWebGLQuad) return 'webgl';
 
   // Media layers need no per-frame drawing, so prefer them where present.
-  const mediaBinding = (globalThis as {XRMediaBinding?: unknown})
-    .XRMediaBinding;
-  if (typeof mediaBinding === 'function') return 'media';
+  if (typeof XRMediaBinding === 'function') return 'media';
 
   if (hasWebGLQuad) return 'webgl';
 
