@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 
 import {LayerManager} from './LayerManager';
 
@@ -16,8 +16,8 @@ describe('LayerManager', () => {
   const base = {} as XRLayer;
   const quad = {} as XRLayer;
 
-  beforeEach(() => {
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('is unsupported until it has both a session and a base layer', () => {
@@ -54,13 +54,12 @@ describe('LayerManager', () => {
   });
 
   it('re-reads the capability when the webgl path is forced', () => {
-    (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding = function () {};
+    vi.stubGlobal('XRMediaBinding', function () {});
     const manager = new LayerManager();
     manager.setPreferWebGL(true);
     manager.setSession(fakeSession(), webglBinding);
 
     expect(manager.getCapability()).toBe('webgl');
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
   });
 
   it('refuses to add a layer before the base layer is known', () => {

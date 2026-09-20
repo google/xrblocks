@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {LayerManager} from './LayerManager';
 import {aspectRatioOf, VideoLayer} from './VideoLayer';
@@ -26,11 +26,9 @@ function installMediaBinding(
     init: Record<string, unknown>
   ) => unknown
 ) {
-  (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding = function (
-    this: unknown
-  ) {
+  vi.stubGlobal('XRMediaBinding', function (this: unknown) {
     return {createQuadLayer};
-  } as unknown;
+  });
 }
 
 function readyManager() {
@@ -39,6 +37,24 @@ function readyManager() {
   manager.setBaseLayer({} as XRLayer);
   return manager;
 }
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'XRRigidTransform',
+    function (
+      this: Record<string, unknown>,
+      position: unknown,
+      orientation: unknown
+    ) {
+      this.position = position;
+      this.orientation = orientation;
+    }
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('aspectRatioOf', () => {
   it('measures a loaded video', () => {
@@ -52,18 +68,6 @@ describe('aspectRatioOf', () => {
 });
 
 describe('VideoLayer', () => {
-  beforeEach(() => {
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
-    (globalThis as {XRRigidTransform?: unknown}).XRRigidTransform = function (
-      this: Record<string, unknown>,
-      position: unknown,
-      orientation: unknown
-    ) {
-      this.position = position;
-      this.orientation = orientation;
-    } as unknown;
-  });
-
   it('falls back when the platform has no layers at all', () => {
     const manager = new LayerManager();
     manager.setSession(fakeSession(), {} as XRWebGLBinding);
@@ -240,18 +244,6 @@ describe('VideoLayer', () => {
 });
 
 describe('VideoLayer on the WebGL path', () => {
-  beforeEach(() => {
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
-    (globalThis as {XRRigidTransform?: unknown}).XRRigidTransform = function (
-      this: Record<string, unknown>,
-      position: unknown,
-      orientation: unknown
-    ) {
-      this.position = position;
-      this.orientation = orientation;
-    } as unknown;
-  });
-
   /** Records the GL calls the upload path is expected to make. */
   function fakeGl() {
     return {
@@ -377,13 +369,6 @@ describe('VideoLayer on the WebGL path', () => {
 });
 
 describe('VideoLayer quad sizing across platforms', () => {
-  beforeEach(() => {
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
-    (globalThis as {XRRigidTransform?: unknown}).XRRigidTransform = function (
-      this: Record<string, unknown>
-    ) {} as unknown;
-  });
-
   function webglOnly(
     createQuadLayer: (init: Record<string, unknown>) => unknown
   ) {
@@ -402,7 +387,7 @@ describe('VideoLayer quad sizing across platforms', () => {
     // taking the webgl path there still needs the correction. Passing full
     // extents renders the quad at twice the size, which is what showed up on
     // device as one side being much bigger than the other.
-    (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding = function () {};
+    vi.stubGlobal('XRMediaBinding', function () {});
     let init: Record<string, unknown> = {};
     const manager = webglOnly((i) => {
       init = i;
@@ -415,7 +400,6 @@ describe('VideoLayer quad sizing across platforms', () => {
 
     expect(layer.getPath()).toBe('webgl');
     expect(init.width).toBeCloseTo(1.6);
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
   });
 
   it('passes full extents where the compositor follows the spec', () => {
@@ -498,13 +482,6 @@ describe('VideoLayer quad sizing across platforms', () => {
 });
 
 describe('VideoLayer upload throttling', () => {
-  beforeEach(() => {
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
-    (globalThis as {XRRigidTransform?: unknown}).XRRigidTransform = function (
-      this: Record<string, unknown>
-    ) {} as unknown;
-  });
-
   function throttleSetup(layerObj: Record<string, unknown>) {
     const gl = {
       TEXTURE_2D: 3553,

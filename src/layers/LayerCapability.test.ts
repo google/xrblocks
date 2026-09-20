@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 
 import {isLayerCapable, layerCapability} from './LayerCapability';
 
@@ -9,8 +9,8 @@ function bindingWithQuad() {
 }
 
 describe('layerCapability', () => {
-  beforeEach(() => {
-    delete (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding;
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('reports unsupported without a session', () => {
@@ -28,7 +28,7 @@ describe('layerCapability', () => {
 
   it('prefers media layers when the platform has them', () => {
     // Cheaper: the compositor drives the video and the app never draws it.
-    (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding = function () {};
+    vi.stubGlobal('XRMediaBinding', function () {});
     expect(layerCapability(session, bindingWithQuad())).toBe('media');
   });
 
@@ -36,12 +36,12 @@ describe('layerCapability', () => {
     // Quest ships both bindings and would always pick media, which leaves the
     // webgl path with no hardware to run on. This override is what makes it
     // testable there.
-    (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding = function () {};
+    vi.stubGlobal('XRMediaBinding', function () {});
     expect(layerCapability(session, bindingWithQuad(), true)).toBe('webgl');
   });
 
   it('still reports media when webgl is asked for but unavailable', () => {
-    (globalThis as {XRMediaBinding?: unknown}).XRMediaBinding = function () {};
+    vi.stubGlobal('XRMediaBinding', function () {});
     expect(layerCapability(session, {} as XRWebGLBinding, true)).toBe('media');
   });
 
