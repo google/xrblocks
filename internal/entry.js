@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 7023b0c
- * @builddate 2026-09-18T20:08:56.902Z
+ * @commitid 428fd5d
+ * @builddate 2026-09-20T19:59:09.622Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -3530,6 +3530,29 @@ class HandsOptions {
     }
 }
 
+/**
+ * Options for WebXR composition layers.
+ *
+ * Off by default. Layers are an optional session feature and the layer types
+ * an app would want are newer than the SDK's baseline browser, so asking for
+ * them unconditionally would mean every app pays for a capability most do not
+ * use.
+ */
+class LayersOptions {
+    constructor() {
+        /** Whether to request the `layers` session feature. */
+        this.enabled = false;
+        /**
+         * Whether a video shown through {@link VideoView} should be presented as a
+         * composition layer when the platform allows it.
+         *
+         * Falls back to rendering into the scene as a texture when it cannot, so an
+         * app can leave this on and still work everywhere.
+         */
+        this.video = true;
+    }
+}
+
 const HAND_JOINT_NAMES = [
     'wrist',
     'thumb-metacarpal',
@@ -6194,6 +6217,7 @@ class Options {
         this.world = new WorldOptions();
         this.context = new ContextOptions();
         this.physics = new PhysicsOptions();
+        this.layers = new LayersOptions();
         this.transition = new XRTransitionOptions();
         this.camera = {
             near: 0.01,
@@ -6315,6 +6339,23 @@ class Options {
      */
     enableDepth() {
         this.depth = new DepthOptions(xrDepthMeshOptions);
+        return this;
+    }
+    /**
+     * Enables WebXR composition layers.
+     *
+     * Content presented as a layer is composited once at its own resolution
+     * rather than being drawn into the eye buffer and resampled again, so video
+     * and text come out sharper, and the compositor keeps reprojecting it to the
+     * latest head pose even when the app's own frame rate dips.
+     *
+     * Requested optionally, and each layer falls back to ordinary in-scene
+     * rendering where the platform cannot present one.
+     *
+     * @returns The instance for chaining.
+     */
+    enableLayers() {
+        this.layers.enabled = true;
         return this;
     }
     /**
@@ -24761,6 +24802,12 @@ class Core {
         if (options.world.meshes.enabled) {
             webXROptionalFeatures.push('mesh-detection');
         }
+        // Composition layers are optional too: without the feature the layer
+        // classes simply never appear and each layer falls back to being drawn
+        // into the scene.
+        if (options.layers.enabled) {
+            webXROptionalFeatures.push('layers');
+        }
         if (options.world.anchors.enabled) {
             webXROptionalFeatures.push('anchors');
         }
@@ -25212,6 +25259,456 @@ class OcclusionUtils {
             'diffuseColor.a *= occlusionEnabled ? occlusion_value : 1.0;',
         ].join('\n'));
     }
+}
+
+/**
+ * Works out how this platform can back a quad layer.
+ *
+ * @param session - The active XR session, if any.
+ * @param binding - The WebGL binding, if one exists.
+ * @param preferWebGL - Take the WebGL path even where a media binding exists.
+ *   Quest ships both, so without this the WebGL path has no hardware to run
+ *   on: every device that can take it would take the media path instead.
+ * @returns Which layer path is available.
+ */
+function layerCapability(session, binding, preferWebGL = false) {
+    if (!session)
+        return 'unsupported';
+    const hasWebGLQuad = typeof binding?.createQuadLayer ===
+        'function';
+    if (preferWebGL && hasWebGLQuad)
+        return 'webgl';
+    // Media layers need no per-frame drawing, so prefer them where present.
+    if (typeof XRMediaBinding === 'function')
+        return 'media';
+    if (hasWebGLQuad)
+        return 'webgl';
+    return 'unsupported';
+}
+/**
+ * Whether a capability can actually present a layer.
+ *
+ * @param capability - Result of {@link layerCapability}.
+ * @returns True when a quad layer can be created.
+ */
+function isLayerCapable(capability) {
+    return capability !== 'unsupported';
+}
+
+/**
+ * Owns the composition layers an app adds on top of the scene.
+ *
+ * three.js sets `layers: [projectionLayer]` once when the session starts and
+ * never touches that array again, so anything extra has to be composed back in
+ * together with its layer. Dropping the projection layer would blank the scene,
+ * which is why {@link setBaseLayer} is required before anything is added.
+ *
+ * Ordering follows the layers spec: earlier entries are composited behind later
+ * ones, so the projection layer goes first and app layers sit in front of it.
+ */
+class LayerManager {
+    constructor() {
+        this.session = null;
+        this.binding = null;
+        this.gl = null;
+        this.baseLayer = null;
+        this.layers = [];
+        this.capability = 'unsupported';
+        this.preferWebGL = false;
+    }
+    /**
+     * Forces the WebGL path on platforms that also offer a media binding.
+     *
+     * Quest has both and would otherwise always take the media path, so without
+     * this the WebGL path cannot be exercised on the hardware most likely to be
+     * to hand.
+     *
+     * @param prefer - Whether to take WebGL over media.
+     */
+    setPreferWebGL(prefer) {
+        this.preferWebGL = prefer;
+        this.capability = layerCapability(this.session, this.binding, prefer);
+    }
+    /**
+     * Binds the manager to a session.
+     *
+     * @param session - The active session, or null when one ends.
+     * @param binding - The WebGL binding, if one exists.
+     * @param gl - The context the binding was made against. Needed to upload
+     *   frames into a layer's texture on the WebGL path.
+     */
+    setSession(session, binding = null, gl = null) {
+        this.session = session;
+        this.binding = binding;
+        this.gl = gl;
+        this.capability = layerCapability(session, binding, this.preferWebGL);
+        if (!session) {
+            this.layers.length = 0;
+            this.baseLayer = null;
+            this.binding = null;
+            this.gl = null;
+        }
+    }
+    /** @returns The WebGL binding, if the session has one. */
+    getBinding() {
+        return this.binding;
+    }
+    /** @returns The context layer textures are uploaded through. */
+    getContext() {
+        return this.gl;
+    }
+    /**
+     * Records the layer three.js renders the scene into.
+     *
+     * @param layer - The projection or WebGL layer backing the scene.
+     */
+    setBaseLayer(layer) {
+        this.baseLayer = layer;
+    }
+    /** @returns Which layer path this platform supports. */
+    getCapability() {
+        return this.capability;
+    }
+    /** @returns True when a layer can actually be presented. */
+    isSupported() {
+        return isLayerCapable(this.capability) && !!this.baseLayer;
+    }
+    /** @returns The layers currently composited in front of the scene. */
+    getLayers() {
+        return this.layers;
+    }
+    /**
+     * Adds a layer in front of the scene.
+     *
+     * @param layer - Layer to present.
+     * @returns True when it was added and submitted.
+     */
+    add(layer) {
+        if (!this.session || !this.baseLayer)
+            return false;
+        if (this.layers.includes(layer))
+            return true;
+        this.layers.push(layer);
+        try {
+            this.submit();
+        }
+        catch (error) {
+            this.layers.pop();
+            throw error;
+        }
+        return true;
+    }
+    /**
+     * Removes a layer.
+     *
+     * @param layer - Layer to stop presenting.
+     * @returns True when it was present and removed.
+     */
+    remove(layer) {
+        const index = this.layers.indexOf(layer);
+        if (index < 0)
+            return false;
+        this.layers.splice(index, 1);
+        this.submit();
+        return true;
+    }
+    /**
+     * Pushes the current layer stack to the compositor.
+     *
+     * Always includes the base layer, since replacing the array without it would
+     * leave the scene itself unrendered.
+     */
+    submit() {
+        if (!this.session || !this.baseLayer)
+            return;
+        this.session.updateRenderState({
+            layers: [this.baseLayer, ...this.layers],
+        });
+    }
+}
+
+const DEFAULT_WIDTH_M = 1.6;
+/**
+ * Presents a video as a composition layer where the platform allows it.
+ *
+ * The point is resampling. Drawn into the scene, a video goes into the eye
+ * buffer and is then warped again by the compositor, so it is sampled twice and
+ * the first of those is into a buffer that is already lower resolution than the
+ * panel. As a layer it is sampled once, at its own resolution.
+ *
+ * Reports {@link VideoLayerState} rather than throwing when it cannot, so an
+ * app can ask for a layer everywhere and draw the video into the scene on the
+ * platforms that have no layers.
+ */
+class VideoLayer {
+    /**
+     * @param manager - Owns the layer stack this layer joins.
+     */
+    constructor(manager) {
+        this.manager = manager;
+        this.layer = null;
+        this.state = 'fallback';
+        this.path = 'none';
+        this.video = null;
+        this.sourceWidth = 0;
+        this.sourceHeight = 0;
+        this.uploads = 0;
+        this.lastFrameTime = -1;
+    }
+    /** @returns Whether the video is being presented as a layer. */
+    getState() {
+        return this.state;
+    }
+    /** @returns Which binding is presenting the video. */
+    getPath() {
+        return this.path;
+    }
+    /** @returns The underlying layer, if one was created. */
+    getLayer() {
+        return this.layer;
+    }
+    /**
+     * Tries to present a video element as a quad layer.
+     *
+     * @param video - The element to present. Must already have metadata loaded
+     *   for its aspect ratio to be known.
+     * @param session - The active XR session.
+     * @param space - Reference space the placement is expressed in.
+     * @param placement - Where to put the quad.
+     * @returns Whether a layer was created.
+     */
+    attach(video, session, space, placement = {}) {
+        this.detach();
+        if (!this.manager.isSupported()) {
+            this.state = 'fallback';
+            return false;
+        }
+        const width = placement.width ?? DEFAULT_WIDTH_M;
+        const height = placement.height ?? width / aspectRatioOf(video);
+        const position = placement.position ?? new THREE.Vector3(0, 0, -2);
+        const quaternion = placement.quaternion ?? new THREE.Quaternion();
+        const transform = new XRRigidTransform({ x: position.x, y: position.y, z: position.z }, { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w });
+        const capability = this.manager.getCapability();
+        const layer = capability === 'media'
+            ? createMediaLayer(video, session, space, transform, width, height)
+            : capability === 'webgl'
+                ? createWebGLLayer(this.manager.getBinding(), video, space, transform, width, height)
+                : null;
+        if (!layer) {
+            this.state = 'fallback';
+            return false;
+        }
+        let added = false;
+        try {
+            added = this.manager.add(layer);
+        }
+        finally {
+            // A rejected submission must not leave an unowned native layer behind.
+            if (!added)
+                layer.destroy?.();
+        }
+        if (!added) {
+            this.state = 'fallback';
+            return false;
+        }
+        this.layer = layer;
+        this.video = video;
+        this.sourceWidth = video.videoWidth;
+        this.sourceHeight = video.videoHeight;
+        this.uploads = 0;
+        this.lastFrameTime = -1;
+        this.path = capability === 'media' ? 'media' : 'webgl';
+        this.state = 'layer';
+        return true;
+    }
+    /**
+     * Draws the current video frame into the layer.
+     *
+     * Only the WebGL path needs this: on the media path the compositor pulls
+     * frames from the element itself and the app never draws one. Safe to call
+     * every frame regardless.
+     *
+     * @param frame - The frame being rendered.
+     */
+    update(frame) {
+        if (this.path !== 'webgl' || !this.layer || !this.video)
+            return;
+        const binding = this.manager.getBinding();
+        const gl = this.manager.getContext();
+        if (!binding || !gl)
+            return;
+        // The layer texture was allocated at the size the video reported when it
+        // was created. If the source has since changed size, texSubImage2D would
+        // raise a GL error on every frame, so re-attach instead of uploading.
+        if (this.video.videoWidth !== this.sourceWidth ||
+            this.video.videoHeight !== this.sourceHeight) {
+            return;
+        }
+        // The card streams at 30fps but the headset renders at 90, so uploading
+        // every frame would push the same 2048x1152 image three times over.
+        // needsRedraw still forces one, since that means the compositor lost the
+        // layer's contents.
+        const stale = this.video.currentTime === this.lastFrameTime;
+        if (stale && !this.layer.needsRedraw)
+            return;
+        this.lastFrameTime = this.video.currentTime;
+        try {
+            const subImage = binding.getSubImage(this.layer, frame);
+            // three.js caches GL state and skips redundant calls, so binding a
+            // texture behind its back leaves its cache describing something that is
+            // no longer true, and it then renders with whatever it thinks is bound.
+            // Everything touched here is put back so the cache stays honest.
+            const previousUnit = gl.getParameter(gl.ACTIVE_TEXTURE);
+            const previousTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+            const previousFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.bindTexture(gl.TEXTURE_2D, subImage.colorTexture);
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.video);
+            gl.bindTexture(gl.TEXTURE_2D, previousTexture);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, previousFlip);
+            gl.activeTexture(previousUnit);
+            this.uploads++;
+        }
+        catch {
+            // getSubImage throws until updateRenderState has taken effect, which is
+            // a frame or two after the layer is added. Dropping a frame is better
+            // than tearing the layer down over a transient state.
+        }
+    }
+    /**
+     * How many frames have actually been uploaded.
+     *
+     * On the WebGL path the app draws every frame itself, so a count that stays
+     * at zero is the difference between a layer that is presenting and one that
+     * was created and then quietly did nothing.
+     *
+     * @returns Number of successful uploads since attaching.
+     */
+    getUploadCount() {
+        return this.uploads;
+    }
+    /** Stops presenting the layer and returns the video to the scene. */
+    detach() {
+        const layer = this.layer;
+        this.layer = null;
+        this.video = null;
+        this.sourceWidth = 0;
+        this.sourceHeight = 0;
+        this.path = 'none';
+        this.state = 'fallback';
+        if (layer) {
+            try {
+                this.manager.remove(layer);
+            }
+            finally {
+                layer.destroy?.();
+            }
+        }
+    }
+}
+/**
+ * Whether this platform treats quad extents as half width and half height.
+ *
+ * The spec means full metres and Chromium passes them to OpenXR unchanged, but
+ * the Quest browser halves them, so the same numbers give a quad at twice the
+ * size there. It applies to the compositor, not to one binding, so the WebGL
+ * path needs the same correction on Quest that the media path does.
+ *
+ * `XRMediaBinding` is the tell: Quest is the only browser that ships it, and it
+ * is still present when the WebGL path is taken by choice.
+ * See immersive-web/layers#324.
+ *
+ * @returns True when extents must be halved.
+ */
+function usesHalfExtents() {
+    return typeof XRMediaBinding === 'function';
+}
+/**
+ * Builds a quad layer the compositor drives itself.
+ *
+ * @param video - Element the compositor reads frames from.
+ * @param session - Session the binding is made against.
+ * @param space - Space the transform is expressed in.
+ * @param transform - Where the quad sits.
+ * @param width - Full width in metres.
+ * @param height - Full height in metres.
+ * @returns The layer, or null when the platform refuses it.
+ */
+function createMediaLayer(video, session, space, transform, width, height) {
+    if (typeof XRMediaBinding !== 'function')
+        return null;
+    const scale = usesHalfExtents() ? 0.5 : 1;
+    try {
+        return new XRMediaBinding(session).createQuadLayer(video, {
+            space,
+            layout: 'mono',
+            transform,
+            width: width * scale,
+            height: height * scale,
+        });
+    }
+    catch (error) {
+        // A platform can advertise the binding and still refuse a given video, for
+        // example one whose metadata has not loaded yet.
+        console.warn('Could not create XR media quad layer:', error);
+        return null;
+    }
+}
+/**
+ * Builds a quad layer the app draws into each frame.
+ *
+ * This is the path Chrome and Android XR need, since neither implements
+ * `XRMediaBinding`.
+ *
+ * @param binding - The WebGL binding for the session.
+ * @param video - Element frames are uploaded from.
+ * @param space - Space the transform is expressed in.
+ * @param transform - Where the quad sits.
+ * @param width - Full width in metres.
+ * @param height - Full height in metres.
+ * @returns The layer, or null when the platform refuses it.
+ */
+function createWebGLLayer(binding, video, space, transform, width, height) {
+    if (!binding?.createQuadLayer)
+        return null;
+    // The texture is allocated once at this size and texSubImage2D refuses a
+    // source that does not fit it. Guessing here and uploading a differently
+    // sized frame raises a GL error every frame, which can take the session down
+    // with it, so wait for the real dimensions instead.
+    if (!video.videoWidth || !video.videoHeight)
+        return null;
+    const scale = usesHalfExtents() ? 0.5 : 1;
+    try {
+        return binding.createQuadLayer({
+            space,
+            // 'default' is a TypeError on a quad layer, so it has to be named.
+            layout: 'mono',
+            transform,
+            width: width * scale,
+            height: height * scale,
+            viewPixelWidth: video.videoWidth,
+            viewPixelHeight: video.videoHeight,
+            // A video changes every frame. getSubImage throws InvalidStateError on a
+            // static layer once needsRedraw has gone false.
+            isStatic: false,
+        });
+    }
+    catch (error) {
+        console.warn('Could not create XR WebGL quad layer:', error);
+        return null;
+    }
+}
+/**
+ * Aspect ratio of a video, falling back to 16:9 before metadata arrives.
+ *
+ * @param video - The element to measure.
+ * @returns Width divided by height.
+ */
+function aspectRatioOf(video) {
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+        return video.videoWidth / video.videoHeight;
+    }
+    return 16 / 9;
 }
 
 /**
@@ -28767,6 +29264,8 @@ var sdk = /*#__PURE__*/Object.freeze({
     get Keycodes () { return Keycodes; },
     LEFT: LEFT,
     LEFT_VIEW_ONLY_LAYER: LEFT_VIEW_ONLY_LAYER,
+    LayerManager: LayerManager,
+    LayersOptions: LayersOptions,
     Lighting: Lighting,
     LightingOptions: LightingOptions,
     LoadingSpinnerManager: LoadingSpinnerManager,
@@ -28856,6 +29355,7 @@ var sdk = /*#__PURE__*/Object.freeze({
     User: User,
     VIEW_DEPTH_GAP: VIEW_DEPTH_GAP,
     VideoFileStream: VideoFileStream,
+    VideoLayer: VideoLayer,
     VideoStream: VideoStream,
     VisibilityTransition: VisibilityTransition,
     get VolumeCategory () { return VolumeCategory; },
@@ -28879,6 +29379,7 @@ var sdk = /*#__PURE__*/Object.freeze({
     anchorCapability: anchorCapability,
     applyBVH: applyBVH,
     applySimulatorHandPoseRotationConstraints: applySimulatorHandPoseRotationConstraints,
+    aspectRatioOf: aspectRatioOf,
     assertWebGLRenderer: assertWebGLRenderer,
     average: average,
     callInitWithDependencyInjection: callInitWithDependencyInjection,
@@ -28944,7 +29445,9 @@ var sdk = /*#__PURE__*/Object.freeze({
     intrinsicsToProjectionMatrix: intrinsicsToProjectionMatrix,
     isBVHReady: isBVHReady,
     isDeviceCameraPoseAvailable: isDeviceCameraPoseAvailable,
+    isLayerCapable: isLayerCapable,
     isWebGPURenderer: isWebGPURenderer,
+    layerCapability: layerCapability,
     lerp: lerp,
     loadStereoImageAsTextures: loadStereoImageAsTextures,
     loadingSpinnerManager: loadingSpinnerManager,
@@ -28980,5 +29483,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { UIOverlay as $, updateScrollViewLayout as A, bindTextInput as B, normalizeTextInputValue as C, Depth as D, isUIElement as E, getUIElementKind as F, getUIStructureRevision as G, Handedness as H, Interaction as I, UICard as J, Keycodes as K, setResolvedUICardSize as L, ModelLoader as M, UIText as N, Options as O, Physics as P, UITextInput as Q, Reticle as R, SparkRendererHolder as S, TransformScript as T, UIScrollView as U, registerUIPresentationObject as V, WaitFrame as W, XRDeviceCamera as X, getUIRevision as Y, getUICardEdgeOptions as Z, getSemanticControl as _, SimulatorHandPose as a, HumanRecognizer as a$, XR_BLOCKS_ASSETS_PATH as a0, SIMULATOR_HAND_POSE_NAMES as a1, AI as a2, AIOptions as a3, ActiveControllers as a4, Agent as a5, AnchorManager as a6, AnchoredObjects as a7, AnchorsOptions as a8, AudioListener as a9, FaceLandmarkName as aA, FaceRecognizer as aB, FacesOptions as aC, FollowHead as aD, FollowObject as aE, GEMINI_DEFAULT_FLASH_MODEL as aF, GEMINI_DEFAULT_IMAGE_MODEL as aG, GEMINI_DEFAULT_LIVE_MODEL as aH, GamepadBindings as aI, GamepadController as aJ, GazeController as aK, Gemini as aL, GeminiOptions as aM, GenerateSkyboxTool as aN, GestureRecognition as aO, GestureRecognitionOptions as aP, GetWeatherTool as aQ, HAND_BONE_IDX_CONNECTION_MAP as aR, HAND_INDEX_TO_LABEL as aS, HAND_JOINT_COUNT as aT, HAND_JOINT_IDX_CONNECTION_MAP as aU, Hands as aV, HandsOptions as aW, HeadGestureRecognition as aX, HeadGestureRecognitionOptions as aY, HeuristicGestureRecognizer as aZ, HeuristicHeadGestureRecognizer as a_, AudioPlayer as aa, BACK as ab, BackgroundMusic as ac, CategoryVolumes as ad, Context as ae, ContextOptions as af, Core as ag, CoreSound as ah, DEFAULT_DEVICE_CAMERA_HEIGHT as ai, DEFAULT_DEVICE_CAMERA_WIDTH as aj, DEFAULT_RGB_TO_DEPTH_PARAMS as ak, DEVICE_CAMERA_PARAMETERS as al, DOWN as am, DepthMesh as an, DepthMeshOptions as ao, DepthOptions as ap, DepthTextures as aq, DetectedBodyPose as ar, DetectedFace as as, DetectedMesh as at, DetectedObject as au, DetectedPlane as av, DeviceCameraOptions as aw, FINGER_ORDER as ax, FORWARD as ay, FaceCamera as az, Script as b, UIIcon as b$, HumansOptions as b0, InputOptions as b1, InteractionOptions as b2, LEFT as b3, LEFT_VIEW_ONLY_LAYER as b4, Lighting as b5, LightingOptions as b6, LoadingSpinnerManager as b7, LocalStorageAnchorStore as b8, MediaPipeHandContext as b9, SceneDetector as bA, SceneOptions as bB, SceneSetOfMarkOptions as bC, SceneVisibilityOptions as bD, ScreenshotSynthesizer as bE, ScriptMixin as bF, ScriptsManager as bG, ScriptsManagerEventType as bH, SegmentCategory as bI, SegmentationOptions as bJ, Segmenter as bK, SimulatorAnchor as bL, SkyboxAgent as bM, SoundOptions as bN, SoundSynthesizer as bO, SpatialAudio as bP, SpeechRecognizer as bQ, SpeechRecognizerOptions as bR, SpeechSynthesizer as bS, SpeechSynthesizerOptions as bT, StreamState as bU, StrokeRecognizer as bV, StylizedFace as bW, TensorFlowHandPoseEstimator as bX, Tool as bY, UIButton as bZ, UIElement as b_, MediaPipeHandPoseEstimator as ba, MeshDetectionOptions as bb, MeshDetector as bc, MeshScript as bd, ModelViewer as be, MouseController as bf, NUM_HANDS as bg, OCCLUDABLE_ITEMS_LAYER as bh, ObjectDetector as bi, ObjectsOptions as bj, OcclusionPass as bk, OcclusionUtils as bl, OpenAI as bm, OpenAIOptions as bn, Orbit as bo, PhysicsOptions as bp, PlaneDetector as bq, PlanesOptions as br, PoseJointName as bs, RENDERER_BACKENDS as bt, RIGHT as bu, RIGHT_VIEW_ONLY_LAYER as bv, ReticleOptions as bw, Reticles as bx, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as by, SOUND_PRESETS as bz, SimulatorMode as c, getPalmRight as c$, UIImage as c0, UIPanel as c1, UISlider as c2, UP as c3, User as c4, VIEW_DEPTH_GAP as c5, VideoFileStream as c6, VideoStream as c7, VisibilityTransition as c8, VolumeCategory as c9, disposeMaterial as cA, disposeMeshResources as cB, disposeRenderableResources as cC, enableAcceleratedRaycast as cD, estimateHandScale as cE, extractYaw as cF, getAdjacentFingerSpreads as cG, getBoneVectors as cH, getCameraParametersSnapshot as cI, getColorHex as cJ, getDeltaTime as cK, getDeviceCameraClipFromView as cL, getDeviceCameraWorldFromClip as cM, getDeviceCameraWorldFromView as cN, getElapsedTime as cO, getFingerBendAngles as cP, getFingerCurl as cQ, getFingerDirection as cR, getFingerJoint as cS, getFingerPalmAlignment as cT, getFingerSpread as cU, getFingerStraightness as cV, getFingertipDistance as cW, getFingertipPalmDistance as cX, getObjectTargetPoint as cY, getPalmNormal as cZ, getPalmPose as c_, WebXRHandContext as ca, WebXRHandPoseEstimator as cb, WorldOptions as cc, XRButton as cd, XREffects as ce, XRPass as cf, XRReferenceSpaceCache as cg, XRTransitionOptions as ch, ZERO_VECTOR3 as ci, ZERO_VISEME as cj, _getBvhImportStatus as ck, add as cl, ai as cm, anchorCapability as cn, applyBVH as co, average as cp, camera as cq, clamp$1 as cr, clamp01 as cs, clampRotationToAngle as ct, context as cu, core as cv, cropImage as cw, defaultAnchorStorageKey as cx, depth as cy, disposeBVH as cz, SetSimulatorModeEvent as d, getPalmUp as d0, getPalmWidth as d1, getRelativeBoneAngles as d2, getThumbBendAngles as d3, getThumbCurl as d4, getThumbDirection as d5, getThumbOpposition as d6, getThumbStraightness as d7, getThumbVerticalDirection as d8, getUrlParamBool as d9, sound as dA, timer as dB, transformRgbUvToWorld as dC, traverseUtil as dD, ui as dE, urlParams as dF, user as dG, visualizeDepth as dH, visualizeDepthMap as dI, world as dJ, xrDepthMeshOptions as dK, xrDepthMeshPhysicsOptions as dL, xrDepthMeshVisualizationOptions as dM, xrDeviceCameraEnvironmentContinuousOptions as dN, xrDeviceCameraEnvironmentOptions as dO, xrDeviceCameraUserContinuousOptions as dP, xrDeviceCameraUserOptions as dQ, getUrlParamFloat as da, getUrlParamInt as db, getUrlParameter as dc, getVec4ByColorString as dd, getXrCameraLeft as de, getXrCameraRight as df, init as dg, initScript as dh, input as di, intrinsicsToProjectionMatrix as dj, isBVHReady as dk, isDeviceCameraPoseAvailable as dl, lerp as dm, loadStereoImageAsTextures as dn, loadingSpinnerManager as dp, lookAtRotation as dq, objectIsDescendantOf as dr, parseBase64DataURL as ds, parseSimulatorHandPoseRotations as dt, placeObjectAtIntersectionFacingTarget as du, print as dv, resolveSimulatorRotationsFromKeypoints as dw, scene as dx, showOnlyInLeftEye as dy, showOnlyInRightEye as dz, SIMULATOR_HAND_POSE_ROTATIONS as e, SimulatorHandPoseChangeRequestEvent as f, HAND_JOINT_NAMES as g, applySimulatorHandPoseRotationConstraints as h, isWebGPURenderer as i, disposeObjectChildren as j, SetSimulatorEnvironmentEvent as k, ShowSimulatorInstructionsEvent as l, SetSimulatorHandPhysicsEvent as m, Registry as n, callInitWithDependencyInjection as o, disposeObjectTree as p, World as q, resolveSimulatorHandPoseRotations as r, Input as s, SimulatorOptions as t, assertWebGLRenderer as u, MAX_GRADIENT_STOPS as v, DEFAULT_GRADIENT_PANEL_PROPS as w, ManipulationAction as x, getUIPresentationObject as y, bindScrollView as z };
+export { UIOverlay as $, updateScrollViewLayout as A, bindTextInput as B, normalizeTextInputValue as C, Depth as D, isUIElement as E, getUIElementKind as F, getUIStructureRevision as G, Handedness as H, Interaction as I, UICard as J, Keycodes as K, setResolvedUICardSize as L, ModelLoader as M, UIText as N, Options as O, Physics as P, UITextInput as Q, Reticle as R, SparkRendererHolder as S, TransformScript as T, UIScrollView as U, registerUIPresentationObject as V, WaitFrame as W, XRDeviceCamera as X, getUIRevision as Y, getUICardEdgeOptions as Z, getSemanticControl as _, SimulatorHandPose as a, HumanRecognizer as a$, XR_BLOCKS_ASSETS_PATH as a0, SIMULATOR_HAND_POSE_NAMES as a1, AI as a2, AIOptions as a3, ActiveControllers as a4, Agent as a5, AnchorManager as a6, AnchoredObjects as a7, AnchorsOptions as a8, AudioListener as a9, FaceLandmarkName as aA, FaceRecognizer as aB, FacesOptions as aC, FollowHead as aD, FollowObject as aE, GEMINI_DEFAULT_FLASH_MODEL as aF, GEMINI_DEFAULT_IMAGE_MODEL as aG, GEMINI_DEFAULT_LIVE_MODEL as aH, GamepadBindings as aI, GamepadController as aJ, GazeController as aK, Gemini as aL, GeminiOptions as aM, GenerateSkyboxTool as aN, GestureRecognition as aO, GestureRecognitionOptions as aP, GetWeatherTool as aQ, HAND_BONE_IDX_CONNECTION_MAP as aR, HAND_INDEX_TO_LABEL as aS, HAND_JOINT_COUNT as aT, HAND_JOINT_IDX_CONNECTION_MAP as aU, Hands as aV, HandsOptions as aW, HeadGestureRecognition as aX, HeadGestureRecognitionOptions as aY, HeuristicGestureRecognizer as aZ, HeuristicHeadGestureRecognizer as a_, AudioPlayer as aa, BACK as ab, BackgroundMusic as ac, CategoryVolumes as ad, Context as ae, ContextOptions as af, Core as ag, CoreSound as ah, DEFAULT_DEVICE_CAMERA_HEIGHT as ai, DEFAULT_DEVICE_CAMERA_WIDTH as aj, DEFAULT_RGB_TO_DEPTH_PARAMS as ak, DEVICE_CAMERA_PARAMETERS as al, DOWN as am, DepthMesh as an, DepthMeshOptions as ao, DepthOptions as ap, DepthTextures as aq, DetectedBodyPose as ar, DetectedFace as as, DetectedMesh as at, DetectedObject as au, DetectedPlane as av, DeviceCameraOptions as aw, FINGER_ORDER as ax, FORWARD as ay, FaceCamera as az, Script as b, UIButton as b$, HumansOptions as b0, InputOptions as b1, InteractionOptions as b2, LEFT as b3, LEFT_VIEW_ONLY_LAYER as b4, LayerManager as b5, LayersOptions as b6, Lighting as b7, LightingOptions as b8, LoadingSpinnerManager as b9, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bA, SOUND_PRESETS as bB, SceneDetector as bC, SceneOptions as bD, SceneSetOfMarkOptions as bE, SceneVisibilityOptions as bF, ScreenshotSynthesizer as bG, ScriptMixin as bH, ScriptsManager as bI, ScriptsManagerEventType as bJ, SegmentCategory as bK, SegmentationOptions as bL, Segmenter as bM, SimulatorAnchor as bN, SkyboxAgent as bO, SoundOptions as bP, SoundSynthesizer as bQ, SpatialAudio as bR, SpeechRecognizer as bS, SpeechRecognizerOptions as bT, SpeechSynthesizer as bU, SpeechSynthesizerOptions as bV, StreamState as bW, StrokeRecognizer as bX, StylizedFace as bY, TensorFlowHandPoseEstimator as bZ, Tool as b_, LocalStorageAnchorStore as ba, MediaPipeHandContext as bb, MediaPipeHandPoseEstimator as bc, MeshDetectionOptions as bd, MeshDetector as be, MeshScript as bf, ModelViewer as bg, MouseController as bh, NUM_HANDS as bi, OCCLUDABLE_ITEMS_LAYER as bj, ObjectDetector as bk, ObjectsOptions as bl, OcclusionPass as bm, OcclusionUtils as bn, OpenAI as bo, OpenAIOptions as bp, Orbit as bq, PhysicsOptions as br, PlaneDetector as bs, PlanesOptions as bt, PoseJointName as bu, RENDERER_BACKENDS as bv, RIGHT as bw, RIGHT_VIEW_ONLY_LAYER as bx, ReticleOptions as by, Reticles as bz, SimulatorMode as c, getFingertipPalmDistance as c$, UIElement as c0, UIIcon as c1, UIImage as c2, UIPanel as c3, UISlider as c4, UP as c5, User as c6, VIEW_DEPTH_GAP as c7, VideoFileStream as c8, VideoLayer as c9, cropImage as cA, defaultAnchorStorageKey as cB, depth as cC, disposeBVH as cD, disposeMaterial as cE, disposeMeshResources as cF, disposeRenderableResources as cG, enableAcceleratedRaycast as cH, estimateHandScale as cI, extractYaw as cJ, getAdjacentFingerSpreads as cK, getBoneVectors as cL, getCameraParametersSnapshot as cM, getColorHex as cN, getDeltaTime as cO, getDeviceCameraClipFromView as cP, getDeviceCameraWorldFromClip as cQ, getDeviceCameraWorldFromView as cR, getElapsedTime as cS, getFingerBendAngles as cT, getFingerCurl as cU, getFingerDirection as cV, getFingerJoint as cW, getFingerPalmAlignment as cX, getFingerSpread as cY, getFingerStraightness as cZ, getFingertipDistance as c_, VideoStream as ca, VisibilityTransition as cb, VolumeCategory as cc, WebXRHandContext as cd, WebXRHandPoseEstimator as ce, WorldOptions as cf, XRButton as cg, XREffects as ch, XRPass as ci, XRReferenceSpaceCache as cj, XRTransitionOptions as ck, ZERO_VECTOR3 as cl, ZERO_VISEME as cm, _getBvhImportStatus as cn, add as co, ai as cp, anchorCapability as cq, applyBVH as cr, aspectRatioOf as cs, average as ct, camera as cu, clamp$1 as cv, clamp01 as cw, clampRotationToAngle as cx, context as cy, core as cz, SetSimulatorModeEvent as d, getObjectTargetPoint as d0, getPalmNormal as d1, getPalmPose as d2, getPalmRight as d3, getPalmUp as d4, getPalmWidth as d5, getRelativeBoneAngles as d6, getThumbBendAngles as d7, getThumbCurl as d8, getThumbDirection as d9, placeObjectAtIntersectionFacingTarget as dA, print as dB, resolveSimulatorRotationsFromKeypoints as dC, scene as dD, showOnlyInLeftEye as dE, showOnlyInRightEye as dF, sound as dG, timer as dH, transformRgbUvToWorld as dI, traverseUtil as dJ, ui as dK, urlParams as dL, user as dM, visualizeDepth as dN, visualizeDepthMap as dO, world as dP, xrDepthMeshOptions as dQ, xrDepthMeshPhysicsOptions as dR, xrDepthMeshVisualizationOptions as dS, xrDeviceCameraEnvironmentContinuousOptions as dT, xrDeviceCameraEnvironmentOptions as dU, xrDeviceCameraUserContinuousOptions as dV, xrDeviceCameraUserOptions as dW, getThumbOpposition as da, getThumbStraightness as db, getThumbVerticalDirection as dc, getUrlParamBool as dd, getUrlParamFloat as de, getUrlParamInt as df, getUrlParameter as dg, getVec4ByColorString as dh, getXrCameraLeft as di, getXrCameraRight as dj, init as dk, initScript as dl, input as dm, intrinsicsToProjectionMatrix as dn, isBVHReady as dp, isDeviceCameraPoseAvailable as dq, isLayerCapable as dr, layerCapability as ds, lerp as dt, loadStereoImageAsTextures as du, loadingSpinnerManager as dv, lookAtRotation as dw, objectIsDescendantOf as dx, parseBase64DataURL as dy, parseSimulatorHandPoseRotations as dz, SIMULATOR_HAND_POSE_ROTATIONS as e, SimulatorHandPoseChangeRequestEvent as f, HAND_JOINT_NAMES as g, applySimulatorHandPoseRotationConstraints as h, isWebGPURenderer as i, disposeObjectChildren as j, SetSimulatorEnvironmentEvent as k, ShowSimulatorInstructionsEvent as l, SetSimulatorHandPhysicsEvent as m, Registry as n, callInitWithDependencyInjection as o, disposeObjectTree as p, World as q, resolveSimulatorHandPoseRotations as r, Input as s, SimulatorOptions as t, assertWebGLRenderer as u, MAX_GRADIENT_STOPS as v, DEFAULT_GRADIENT_PANEL_PROPS as w, ManipulationAction as x, getUIPresentationObject as y, bindScrollView as z };
 //# sourceMappingURL=entry.js.map
