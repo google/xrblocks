@@ -64,6 +64,7 @@ const sidebars: SidebarsConfig = {
         'samples/Reticle',
         'samples/Lighting',
         'samples/3DGS-Walkthrough',
+        'samples/ArUco-Anchor',
       ],
     },
     {
