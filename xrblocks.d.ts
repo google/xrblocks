@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 97eff70
- * @builddate 2026-09-21T16:09:46.179Z
+ * @commitid a237201
+ * @builddate 2026-09-21T23:57:33.414Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5273,7 +5273,7 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     /**
      * Sets the renderer reference, needed for WebXR camera access fallback.
      */
-    setRenderer(renderer: THREE.WebGLRenderer): void;
+    setRenderer(renderer: WebGLOrWebGPURenderer): void;
     /**
      * Initializes the camera based on the initial constraints.
      */
@@ -6324,12 +6324,13 @@ declare class SimulatorCamera implements SimulatorCameraSource {
     width: number;
     height: number;
     camera: THREE.PerspectiveCamera;
-    constructor(renderer: THREE.WebGLRenderer);
+    constructor(renderer: WebGLOrWebGPURenderer);
     init(): void;
     createSimulatorCamera(): void;
     enumerateDevices(): Promise<SimulatorMediaDeviceInfo[]>;
     onBeforeSimulatorSceneRender(camera: THREE.Camera, renderScene: (_: THREE.Camera) => void): void;
     onSimulatorSceneRendered(): void;
+    private captureFromRendererCanvas;
     restartVideoTrack(): void;
     getMedia(constraints?: MediaTrackConstraints): MediaStream | null | undefined;
     dispose(): void;

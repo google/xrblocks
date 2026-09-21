@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 97eff70
- * @builddate 2026-09-21T16:09:46.179Z
+ * @commitid a237201
+ * @builddate 2026-09-21T23:57:33.414Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2462,6 +2462,31 @@ async function cropImage(imageSource, boundingBox) {
 }
 
 /**
+ * Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
+ *
+ * @param renderer - The renderer instance to test.
+ * @returns True if the renderer is a WebGPURenderer, false otherwise.
+ */
+function isWebGPURenderer(renderer) {
+    return (renderer != null &&
+        typeof renderer === 'object' &&
+        'isWebGPURenderer' in renderer &&
+        renderer.isWebGPURenderer === true);
+}
+/**
+ * Asserts that the provided renderer is a THREE.WebGLRenderer.
+ *
+ * @param renderer - The renderer instance to check.
+ * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
+ * @throws Error if the renderer is a WebGPURenderer.
+ */
+function assertWebGLRenderer(renderer, consumerName) {
+    if (isWebGPURenderer(renderer)) {
+        throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
+    }
+}
+
+/**
  * Enum for video stream states.
  */
 var StreamState;
@@ -2946,6 +2971,7 @@ class XRDeviceCamera extends VideoStream {
     updateXRCamera(frame) {
         if (!this.useXRCameraAccess_ || !this.renderer_ || !frame)
             return;
+        assertWebGLRenderer(this.renderer_, 'XRDeviceCamera.updateXRCamera');
         const binding = this.renderer_.xr.getBinding();
         const refSpace = this.renderer_.xr.getReferenceSpace();
         if (!binding || !refSpace)
@@ -3027,6 +3053,9 @@ class XRDeviceCamera extends VideoStream {
         }, XRDeviceCamera.XR_CAMERA_ACCESS_TIMEOUT_MS);
     }
     isXRCameraAccessGranted_() {
+        if (this.renderer_ && isWebGPURenderer(this.renderer_)) {
+            return false;
+        }
         const session = this.renderer_?.xr.getSession();
         if (!session) {
             return true;
@@ -13040,31 +13069,6 @@ class XRButton {
         this.simulatorButtonElement.onclick = null;
         this.xrButtonElement.onclick = null;
         this.domElement.remove();
-    }
-}
-
-/**
- * Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
- *
- * @param renderer - The renderer instance to test.
- * @returns True if the renderer is a WebGPURenderer, false otherwise.
- */
-function isWebGPURenderer(renderer) {
-    return (renderer != null &&
-        typeof renderer === 'object' &&
-        'isWebGPURenderer' in renderer &&
-        renderer.isWebGPURenderer === true);
-}
-/**
- * Asserts that the provided renderer is a THREE.WebGLRenderer.
- *
- * @param renderer - The renderer instance to check.
- * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
- * @throws Error if the renderer is a WebGPURenderer.
- */
-function assertWebGLRenderer(renderer, consumerName) {
-    if (isWebGPURenderer(renderer)) {
-        throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
     }
 }
 
@@ -24748,7 +24752,6 @@ class Core {
         }
         // Sets up device camera.
         if (options.deviceCamera?.enabled) {
-            assertWebGLRenderer(this.renderer, 'XRDeviceCamera');
             this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
             this.deviceCamera.setRenderer(this.renderer);
             this.registry.register(this.deviceCamera);
@@ -29487,5 +29490,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { UIOverlay as $, updateScrollViewLayout as A, bindTextInput as B, normalizeTextInputValue as C, Depth as D, isUIElement as E, getUIElementKind as F, getUIStructureRevision as G, Handedness as H, Interaction as I, UICard as J, Keycodes as K, setResolvedUICardSize as L, ModelLoader as M, UIText as N, Options as O, Physics as P, UITextInput as Q, Reticle as R, SparkRendererHolder as S, TransformScript as T, UIScrollView as U, registerUIPresentationObject as V, WaitFrame as W, XRDeviceCamera as X, getUIRevision as Y, getUICardEdgeOptions as Z, getSemanticControl as _, SimulatorHandPose as a, HumanRecognizer as a$, XR_BLOCKS_ASSETS_PATH as a0, SIMULATOR_HAND_POSE_NAMES as a1, AI as a2, AIOptions as a3, ActiveControllers as a4, Agent as a5, AnchorManager as a6, AnchoredObjects as a7, AnchorsOptions as a8, AudioListener as a9, FaceLandmarkName as aA, FaceRecognizer as aB, FacesOptions as aC, FollowHead as aD, FollowObject as aE, GEMINI_DEFAULT_FLASH_MODEL as aF, GEMINI_DEFAULT_IMAGE_MODEL as aG, GEMINI_DEFAULT_LIVE_MODEL as aH, GamepadBindings as aI, GamepadController as aJ, GazeController as aK, Gemini as aL, GeminiOptions as aM, GenerateSkyboxTool as aN, GestureRecognition as aO, GestureRecognitionOptions as aP, GetWeatherTool as aQ, HAND_BONE_IDX_CONNECTION_MAP as aR, HAND_INDEX_TO_LABEL as aS, HAND_JOINT_COUNT as aT, HAND_JOINT_IDX_CONNECTION_MAP as aU, Hands as aV, HandsOptions as aW, HeadGestureRecognition as aX, HeadGestureRecognitionOptions as aY, HeuristicGestureRecognizer as aZ, HeuristicHeadGestureRecognizer as a_, AudioPlayer as aa, BACK as ab, BackgroundMusic as ac, CategoryVolumes as ad, Context as ae, ContextOptions as af, Core as ag, CoreSound as ah, DEFAULT_DEVICE_CAMERA_HEIGHT as ai, DEFAULT_DEVICE_CAMERA_WIDTH as aj, DEFAULT_RGB_TO_DEPTH_PARAMS as ak, DEVICE_CAMERA_PARAMETERS as al, DOWN as am, DepthMesh as an, DepthMeshOptions as ao, DepthOptions as ap, DepthTextures as aq, DetectedBodyPose as ar, DetectedFace as as, DetectedMesh as at, DetectedObject as au, DetectedPlane as av, DeviceCameraOptions as aw, FINGER_ORDER as ax, FORWARD as ay, FaceCamera as az, Script as b, UIButton as b$, HumansOptions as b0, InputOptions as b1, InteractionOptions as b2, LEFT as b3, LEFT_VIEW_ONLY_LAYER as b4, LayerManager as b5, LayersOptions as b6, Lighting as b7, LightingOptions as b8, LoadingSpinnerManager as b9, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bA, SOUND_PRESETS as bB, SceneDetector as bC, SceneOptions as bD, SceneSetOfMarkOptions as bE, SceneVisibilityOptions as bF, ScreenshotSynthesizer as bG, ScriptMixin as bH, ScriptsManager as bI, ScriptsManagerEventType as bJ, SegmentCategory as bK, SegmentationOptions as bL, Segmenter as bM, SimulatorAnchor as bN, SkyboxAgent as bO, SoundOptions as bP, SoundSynthesizer as bQ, SpatialAudio as bR, SpeechRecognizer as bS, SpeechRecognizerOptions as bT, SpeechSynthesizer as bU, SpeechSynthesizerOptions as bV, StreamState as bW, StrokeRecognizer as bX, StylizedFace as bY, TensorFlowHandPoseEstimator as bZ, Tool as b_, LocalStorageAnchorStore as ba, MediaPipeHandContext as bb, MediaPipeHandPoseEstimator as bc, MeshDetectionOptions as bd, MeshDetector as be, MeshScript as bf, ModelViewer as bg, MouseController as bh, NUM_HANDS as bi, OCCLUDABLE_ITEMS_LAYER as bj, ObjectDetector as bk, ObjectsOptions as bl, OcclusionPass as bm, OcclusionUtils as bn, OpenAI as bo, OpenAIOptions as bp, Orbit as bq, PhysicsOptions as br, PlaneDetector as bs, PlanesOptions as bt, PoseJointName as bu, RENDERER_BACKENDS as bv, RIGHT as bw, RIGHT_VIEW_ONLY_LAYER as bx, ReticleOptions as by, Reticles as bz, SimulatorMode as c, getFingertipPalmDistance as c$, UIElement as c0, UIIcon as c1, UIImage as c2, UIPanel as c3, UISlider as c4, UP as c5, User as c6, VIEW_DEPTH_GAP as c7, VideoFileStream as c8, VideoLayer as c9, cropImage as cA, defaultAnchorStorageKey as cB, depth as cC, disposeBVH as cD, disposeMaterial as cE, disposeMeshResources as cF, disposeRenderableResources as cG, enableAcceleratedRaycast as cH, estimateHandScale as cI, extractYaw as cJ, getAdjacentFingerSpreads as cK, getBoneVectors as cL, getCameraParametersSnapshot as cM, getColorHex as cN, getDeltaTime as cO, getDeviceCameraClipFromView as cP, getDeviceCameraWorldFromClip as cQ, getDeviceCameraWorldFromView as cR, getElapsedTime as cS, getFingerBendAngles as cT, getFingerCurl as cU, getFingerDirection as cV, getFingerJoint as cW, getFingerPalmAlignment as cX, getFingerSpread as cY, getFingerStraightness as cZ, getFingertipDistance as c_, VideoStream as ca, VisibilityTransition as cb, VolumeCategory as cc, WebXRHandContext as cd, WebXRHandPoseEstimator as ce, WorldOptions as cf, XRButton as cg, XREffects as ch, XRPass as ci, XRReferenceSpaceCache as cj, XRTransitionOptions as ck, ZERO_VECTOR3 as cl, ZERO_VISEME as cm, _getBvhImportStatus as cn, add as co, ai as cp, anchorCapability as cq, applyBVH as cr, aspectRatioOf as cs, average as ct, camera as cu, clamp$1 as cv, clamp01 as cw, clampRotationToAngle as cx, context as cy, core as cz, SetSimulatorModeEvent as d, getObjectTargetPoint as d0, getPalmNormal as d1, getPalmPose as d2, getPalmRight as d3, getPalmUp as d4, getPalmWidth as d5, getRelativeBoneAngles as d6, getThumbBendAngles as d7, getThumbCurl as d8, getThumbDirection as d9, placeObjectAtIntersectionFacingTarget as dA, print as dB, resolveSimulatorRotationsFromKeypoints as dC, scene as dD, showOnlyInLeftEye as dE, showOnlyInRightEye as dF, sound as dG, timer as dH, transformRgbUvToWorld as dI, traverseUtil as dJ, ui as dK, urlParams as dL, user as dM, visualizeDepth as dN, visualizeDepthMap as dO, world as dP, xrDepthMeshOptions as dQ, xrDepthMeshPhysicsOptions as dR, xrDepthMeshVisualizationOptions as dS, xrDeviceCameraEnvironmentContinuousOptions as dT, xrDeviceCameraEnvironmentOptions as dU, xrDeviceCameraUserContinuousOptions as dV, xrDeviceCameraUserOptions as dW, getThumbOpposition as da, getThumbStraightness as db, getThumbVerticalDirection as dc, getUrlParamBool as dd, getUrlParamFloat as de, getUrlParamInt as df, getUrlParameter as dg, getVec4ByColorString as dh, getXrCameraLeft as di, getXrCameraRight as dj, init as dk, initScript as dl, input as dm, intrinsicsToProjectionMatrix as dn, isBVHReady as dp, isDeviceCameraPoseAvailable as dq, isLayerCapable as dr, layerCapability as ds, lerp as dt, loadStereoImageAsTextures as du, loadingSpinnerManager as dv, lookAtRotation as dw, objectIsDescendantOf as dx, parseBase64DataURL as dy, parseSimulatorHandPoseRotations as dz, SIMULATOR_HAND_POSE_ROTATIONS as e, SimulatorHandPoseChangeRequestEvent as f, HAND_JOINT_NAMES as g, applySimulatorHandPoseRotationConstraints as h, isWebGPURenderer as i, disposeObjectChildren as j, SetSimulatorEnvironmentEvent as k, ShowSimulatorInstructionsEvent as l, SetSimulatorHandPhysicsEvent as m, Registry as n, callInitWithDependencyInjection as o, disposeObjectTree as p, World as q, resolveSimulatorHandPoseRotations as r, Input as s, SimulatorOptions as t, assertWebGLRenderer as u, MAX_GRADIENT_STOPS as v, DEFAULT_GRADIENT_PANEL_PROPS as w, ManipulationAction as x, getUIPresentationObject as y, bindScrollView as z };
+export { XR_BLOCKS_ASSETS_PATH as $, bindTextInput as A, normalizeTextInputValue as B, isUIElement as C, Depth as D, getUIElementKind as E, getUIStructureRevision as F, UICard as G, Handedness as H, Interaction as I, setResolvedUICardSize as J, Keycodes as K, UIText as L, ModelLoader as M, UITextInput as N, Options as O, Physics as P, registerUIPresentationObject as Q, Reticle as R, SparkRendererHolder as S, TransformScript as T, UIScrollView as U, getUIRevision as V, WaitFrame as W, XRDeviceCamera as X, getUICardEdgeOptions as Y, getSemanticControl as Z, UIOverlay as _, SimulatorHandPose as a, HumansOptions as a$, SIMULATOR_HAND_POSE_NAMES as a0, AI as a1, AIOptions as a2, ActiveControllers as a3, Agent as a4, AnchorManager as a5, AnchoredObjects as a6, AnchorsOptions as a7, AudioListener as a8, AudioPlayer as a9, FaceRecognizer as aA, FacesOptions as aB, FollowHead as aC, FollowObject as aD, GEMINI_DEFAULT_FLASH_MODEL as aE, GEMINI_DEFAULT_IMAGE_MODEL as aF, GEMINI_DEFAULT_LIVE_MODEL as aG, GamepadBindings as aH, GamepadController as aI, GazeController as aJ, Gemini as aK, GeminiOptions as aL, GenerateSkyboxTool as aM, GestureRecognition as aN, GestureRecognitionOptions as aO, GetWeatherTool as aP, HAND_BONE_IDX_CONNECTION_MAP as aQ, HAND_INDEX_TO_LABEL as aR, HAND_JOINT_COUNT as aS, HAND_JOINT_IDX_CONNECTION_MAP as aT, Hands as aU, HandsOptions as aV, HeadGestureRecognition as aW, HeadGestureRecognitionOptions as aX, HeuristicGestureRecognizer as aY, HeuristicHeadGestureRecognizer as aZ, HumanRecognizer as a_, BACK as aa, BackgroundMusic as ab, CategoryVolumes as ac, Context as ad, ContextOptions as ae, Core as af, CoreSound as ag, DEFAULT_DEVICE_CAMERA_HEIGHT as ah, DEFAULT_DEVICE_CAMERA_WIDTH as ai, DEFAULT_RGB_TO_DEPTH_PARAMS as aj, DEVICE_CAMERA_PARAMETERS as ak, DOWN as al, DepthMesh as am, DepthMeshOptions as an, DepthOptions as ao, DepthTextures as ap, DetectedBodyPose as aq, DetectedFace as ar, DetectedMesh as as, DetectedObject as at, DetectedPlane as au, DeviceCameraOptions as av, FINGER_ORDER as aw, FORWARD as ax, FaceCamera as ay, FaceLandmarkName as az, Script as b, UIElement as b$, InputOptions as b0, InteractionOptions as b1, LEFT as b2, LEFT_VIEW_ONLY_LAYER as b3, LayerManager as b4, LayersOptions as b5, Lighting as b6, LightingOptions as b7, LoadingSpinnerManager as b8, LocalStorageAnchorStore as b9, SOUND_PRESETS as bA, SceneDetector as bB, SceneOptions as bC, SceneSetOfMarkOptions as bD, SceneVisibilityOptions as bE, ScreenshotSynthesizer as bF, ScriptMixin as bG, ScriptsManager as bH, ScriptsManagerEventType as bI, SegmentCategory as bJ, SegmentationOptions as bK, Segmenter as bL, SimulatorAnchor as bM, SkyboxAgent as bN, SoundOptions as bO, SoundSynthesizer as bP, SpatialAudio as bQ, SpeechRecognizer as bR, SpeechRecognizerOptions as bS, SpeechSynthesizer as bT, SpeechSynthesizerOptions as bU, StreamState as bV, StrokeRecognizer as bW, StylizedFace as bX, TensorFlowHandPoseEstimator as bY, Tool as bZ, UIButton as b_, MediaPipeHandContext as ba, MediaPipeHandPoseEstimator as bb, MeshDetectionOptions as bc, MeshDetector as bd, MeshScript as be, ModelViewer as bf, MouseController as bg, NUM_HANDS as bh, OCCLUDABLE_ITEMS_LAYER as bi, ObjectDetector as bj, ObjectsOptions as bk, OcclusionPass as bl, OcclusionUtils as bm, OpenAI as bn, OpenAIOptions as bo, Orbit as bp, PhysicsOptions as bq, PlaneDetector as br, PlanesOptions as bs, PoseJointName as bt, RENDERER_BACKENDS as bu, RIGHT as bv, RIGHT_VIEW_ONLY_LAYER as bw, ReticleOptions as bx, Reticles as by, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bz, SimulatorMode as c, getFingertipPalmDistance as c$, UIIcon as c0, UIImage as c1, UIPanel as c2, UISlider as c3, UP as c4, User as c5, VIEW_DEPTH_GAP as c6, VideoFileStream as c7, VideoLayer as c8, VideoStream as c9, cropImage as cA, defaultAnchorStorageKey as cB, depth as cC, disposeBVH as cD, disposeMaterial as cE, disposeMeshResources as cF, disposeRenderableResources as cG, enableAcceleratedRaycast as cH, estimateHandScale as cI, extractYaw as cJ, getAdjacentFingerSpreads as cK, getBoneVectors as cL, getCameraParametersSnapshot as cM, getColorHex as cN, getDeltaTime as cO, getDeviceCameraClipFromView as cP, getDeviceCameraWorldFromClip as cQ, getDeviceCameraWorldFromView as cR, getElapsedTime as cS, getFingerBendAngles as cT, getFingerCurl as cU, getFingerDirection as cV, getFingerJoint as cW, getFingerPalmAlignment as cX, getFingerSpread as cY, getFingerStraightness as cZ, getFingertipDistance as c_, VisibilityTransition as ca, VolumeCategory as cb, WebXRHandContext as cc, WebXRHandPoseEstimator as cd, WorldOptions as ce, XRButton as cf, XREffects as cg, XRPass as ch, XRReferenceSpaceCache as ci, XRTransitionOptions as cj, ZERO_VECTOR3 as ck, ZERO_VISEME as cl, _getBvhImportStatus as cm, add as cn, ai as co, anchorCapability as cp, applyBVH as cq, aspectRatioOf as cr, assertWebGLRenderer as cs, average as ct, camera as cu, clamp$1 as cv, clamp01 as cw, clampRotationToAngle as cx, context as cy, core as cz, SetSimulatorModeEvent as d, getObjectTargetPoint as d0, getPalmNormal as d1, getPalmPose as d2, getPalmRight as d3, getPalmUp as d4, getPalmWidth as d5, getRelativeBoneAngles as d6, getThumbBendAngles as d7, getThumbCurl as d8, getThumbDirection as d9, placeObjectAtIntersectionFacingTarget as dA, print as dB, resolveSimulatorRotationsFromKeypoints as dC, scene as dD, showOnlyInLeftEye as dE, showOnlyInRightEye as dF, sound as dG, timer as dH, transformRgbUvToWorld as dI, traverseUtil as dJ, ui as dK, urlParams as dL, user as dM, visualizeDepth as dN, visualizeDepthMap as dO, world as dP, xrDepthMeshOptions as dQ, xrDepthMeshPhysicsOptions as dR, xrDepthMeshVisualizationOptions as dS, xrDeviceCameraEnvironmentContinuousOptions as dT, xrDeviceCameraEnvironmentOptions as dU, xrDeviceCameraUserContinuousOptions as dV, xrDeviceCameraUserOptions as dW, getThumbOpposition as da, getThumbStraightness as db, getThumbVerticalDirection as dc, getUrlParamBool as dd, getUrlParamFloat as de, getUrlParamInt as df, getUrlParameter as dg, getVec4ByColorString as dh, getXrCameraLeft as di, getXrCameraRight as dj, init as dk, initScript as dl, input as dm, intrinsicsToProjectionMatrix as dn, isBVHReady as dp, isDeviceCameraPoseAvailable as dq, isLayerCapable as dr, layerCapability as ds, lerp as dt, loadStereoImageAsTextures as du, loadingSpinnerManager as dv, lookAtRotation as dw, objectIsDescendantOf as dx, parseBase64DataURL as dy, parseSimulatorHandPoseRotations as dz, SIMULATOR_HAND_POSE_ROTATIONS as e, SimulatorHandPoseChangeRequestEvent as f, HAND_JOINT_NAMES as g, applySimulatorHandPoseRotationConstraints as h, isWebGPURenderer as i, disposeObjectChildren as j, SetSimulatorEnvironmentEvent as k, ShowSimulatorInstructionsEvent as l, SetSimulatorHandPhysicsEvent as m, Registry as n, callInitWithDependencyInjection as o, disposeObjectTree as p, World as q, resolveSimulatorHandPoseRotations as r, Input as s, SimulatorOptions as t, MAX_GRADIENT_STOPS as u, DEFAULT_GRADIENT_PANEL_PROPS as v, ManipulationAction as w, getUIPresentationObject as x, bindScrollView as y, updateScrollViewLayout as z };
 //# sourceMappingURL=entry.js.map

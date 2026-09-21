@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 97eff70
- * @builddate 2026-09-21T16:09:46.179Z
+ * @commitid a237201
+ * @builddate 2026-09-21T23:57:33.414Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -41,7 +41,7 @@
     lego-styles.
  */
 import * as THREE from 'three';
-import { S as SparkRendererHolder, i as isWebGPURenderer, K as Keycodes, a as SimulatorHandPose, b as Script, R as Reticle, c as SimulatorMode, d as SetSimulatorModeEvent, H as Handedness, e as SIMULATOR_HAND_POSE_ROTATIONS, f as SimulatorHandPoseChangeRequestEvent, g as HAND_JOINT_NAMES, r as resolveSimulatorHandPoseRotations, h as applySimulatorHandPoseRotationConstraints, j as disposeObjectChildren, k as SetSimulatorEnvironmentEvent, l as ShowSimulatorInstructionsEvent, m as SetSimulatorHandPhysicsEvent, n as Registry, W as WaitFrame, o as callInitWithDependencyInjection, M as ModelLoader, p as disposeObjectTree, q as World, D as Depth, O as Options, I as Interaction, s as Input, t as SimulatorOptions, X as XRDeviceCamera, P as Physics, u as assertWebGLRenderer } from './entry.js';
+import { S as SparkRendererHolder, i as isWebGPURenderer, K as Keycodes, a as SimulatorHandPose, b as Script, R as Reticle, c as SimulatorMode, d as SetSimulatorModeEvent, H as Handedness, e as SIMULATOR_HAND_POSE_ROTATIONS, f as SimulatorHandPoseChangeRequestEvent, g as HAND_JOINT_NAMES, r as resolveSimulatorHandPoseRotations, h as applySimulatorHandPoseRotationConstraints, j as disposeObjectChildren, k as SetSimulatorEnvironmentEvent, l as ShowSimulatorInstructionsEvent, m as SetSimulatorHandPhysicsEvent, n as Registry, W as WaitFrame, o as callInitWithDependencyInjection, M as ModelLoader, p as disposeObjectTree, q as World, D as Depth, O as Options, I as Interaction, s as Input, t as SimulatorOptions, X as XRDeviceCamera, P as Physics } from './entry.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -339,14 +339,7 @@ class SimulatorCamera {
             this.camera.position.copy(camera.position);
             this.camera.quaternion.copy(camera.quaternion);
             renderScene(this.camera);
-            const sWidth = this.renderer.domElement.width;
-            const sHeight = this.renderer.domElement.height;
-            const aspectRatio = this.width / this.height;
-            const croppedSourceWidth = Math.min(sWidth, sHeight * aspectRatio);
-            const croppedSourceHeight = Math.min(sHeight, sWidth / aspectRatio);
-            const sx = (sWidth - croppedSourceWidth) / 2;
-            const sy = (sHeight - croppedSourceHeight) / 2;
-            this.context.drawImage(this.renderer.domElement, sx, sy, croppedSourceWidth, croppedSourceHeight, 0, 0, this.width, this.height);
+            this.captureFromRendererCanvas();
         }
     }
     onSimulatorSceneRendered() {
@@ -354,15 +347,18 @@ class SimulatorCamera {
             return;
         }
         if (this.matchRenderingCamera) {
-            const sWidth = this.renderer.domElement.width;
-            const sHeight = this.renderer.domElement.height;
-            const aspectRatio = this.width / this.height;
-            const croppedSourceWidth = Math.min(sWidth, sHeight * aspectRatio);
-            const croppedSourceHeight = Math.min(sHeight, sWidth / aspectRatio);
-            const sx = (sWidth - croppedSourceWidth) / 2;
-            const sy = (sHeight - croppedSourceHeight) / 2;
-            this.context.drawImage(this.renderer.domElement, sx, sy, croppedSourceWidth, croppedSourceHeight, 0, 0, this.width, this.height);
+            this.captureFromRendererCanvas();
         }
+    }
+    captureFromRendererCanvas() {
+        const sWidth = this.renderer.domElement.width;
+        const sHeight = this.renderer.domElement.height;
+        const aspectRatio = this.width / this.height;
+        const croppedSourceWidth = Math.min(sWidth, sHeight * aspectRatio);
+        const croppedSourceHeight = Math.min(sHeight, sWidth / aspectRatio);
+        const sx = (sWidth - croppedSourceWidth) / 2;
+        const sy = (sHeight - croppedSourceHeight) / 2;
+        this.context.drawImage(this.renderer.domElement, sx, sy, croppedSourceWidth, croppedSourceHeight, 0, 0, this.width, this.height);
     }
     restartVideoTrack() {
         if (!this.cameraCreated) {
@@ -3761,7 +3757,6 @@ class Simulator extends Script {
         if (deviceCamera &&
             !this.simulatorCamera &&
             this.options.deviceCamera.enabled) {
-            assertWebGLRenderer(renderer, 'SimulatorCamera');
             this.simulatorCamera = new SimulatorCamera(renderer);
             this.simulatorCamera.init();
             deviceCamera.registerSimulatorCamera(this.simulatorCamera);
