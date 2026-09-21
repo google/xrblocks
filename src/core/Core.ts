@@ -735,7 +735,6 @@ export class Core {
 
     // Sets up postprocessing effects.
     if (options.usePostprocessing) {
-      assertWebGLRenderer(this.renderer, 'XREffects');
       this.effects = new XREffects(this.renderer, this.scene, this.timer);
     }
 

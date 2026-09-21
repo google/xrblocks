@@ -34,6 +34,20 @@ export class DepthVisualizationPass extends xb.XRPass {
         fragmentShader: DepthMapShader.fragmentShader,
       })
     );
+    this.webgpuQuad = null;
+    this.syncWebGPUUniforms = null;
+    this.disposeWebGPU = null;
+  }
+
+  async initWebGPU() {
+    const {createWebGPUDepthVisualizationQuad} = await import(
+      './DepthVisualizationWebGPU.js'
+    );
+    const {quadMesh, syncUniforms, dispose} =
+      createWebGPUDepthVisualizationQuad(this.uniforms);
+    this.webgpuQuad = quadMesh;
+    this.syncWebGPUUniforms = syncUniforms;
+    this.disposeWebGPU = dispose;
   }
 
   setAlpha(value) {
@@ -56,13 +70,15 @@ export class DepthVisualizationPass extends xb.XRPass {
 
   render(renderer, writeBuffer, readBuffer, deltaTime, maskActive, viewId) {
     const texture = this.depthTextures[viewId];
-    if (!texture) return;
-    if (texture.isExternalTexture) {
-      this.uniforms.uDepthTextureArray.value = texture;
-      const depthNear = xb.core.depth.gpuDepthData[0].depthNear;
-      this.uniforms.uDepthNear.value = depthNear;
-    } else {
-      this.uniforms.uDepthTexture.value = texture;
+    if (!texture && !this.webgpuQuad) return;
+    if (texture) {
+      if (texture.isExternalTexture) {
+        this.uniforms.uDepthTextureArray.value = texture;
+        const depthNear = xb.core.depth.gpuDepthData[0].depthNear;
+        this.uniforms.uDepthNear.value = depthNear;
+      } else {
+        this.uniforms.uDepthTexture.value = texture;
+      }
     }
     if (xb.core.depth.normDepthBufferFromNormViewMatrices.length > viewId) {
       this.uniforms.uNormDepthBufferFromNormView.value.copy(
@@ -72,10 +88,16 @@ export class DepthVisualizationPass extends xb.XRPass {
     this.uniforms.tDiffuse.value = readBuffer.texture;
     this.uniforms.uView.value = viewId;
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
-    this.depthMapQuad.render(renderer);
+    if (this.webgpuQuad) {
+      this.syncWebGPUUniforms();
+      this.webgpuQuad.render(renderer);
+    } else {
+      this.depthMapQuad.render(renderer);
+    }
   }
 
   dispose() {
     this.depthMapQuad.dispose();
+    this.disposeWebGPU?.();
   }
 }
