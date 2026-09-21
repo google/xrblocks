@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 428fd5d
- * @builddate 2026-09-20T19:59:09.622Z
+ * @commitid 97eff70
+ * @builddate 2026-09-21T16:09:46.179Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5957,7 +5957,7 @@ declare class XRButton {
 }
 
 declare class XRPass extends Pass {
-    render(_renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, _readBuffer: THREE.WebGLRenderTarget, _deltaTime: number, _maskActive: boolean, _viewId?: number): void;
+    render(_renderer: WebGLOrWebGPURenderer, _writeBuffer: THREE.RenderTarget, _readBuffer: THREE.RenderTarget, _deltaTime: number, _maskActive: boolean, _viewId?: number): void;
 }
 /**
  * XREffects manages the XR rendering pipeline.
@@ -5970,9 +5970,10 @@ declare class XREffects {
     private scene;
     private timer;
     passes: XRPass[];
-    renderTargets: THREE.WebGLRenderTarget[];
+    renderTargets: THREE.RenderTarget[];
     dimensions: THREE.Vector2;
-    constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, timer: THREE.Timer);
+    constructor(renderer: WebGLOrWebGPURenderer, scene: THREE.Scene, timer: THREE.Timer);
+    private setRenderTarget;
     /**
      * Adds a pass to the effect pipeline.
      */

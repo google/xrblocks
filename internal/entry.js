@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 428fd5d
- * @builddate 2026-09-20T19:59:09.622Z
+ * @commitid 97eff70
+ * @builddate 2026-09-21T16:09:46.179Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -13043,6 +13043,31 @@ class XRButton {
     }
 }
 
+/**
+ * Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
+ *
+ * @param renderer - The renderer instance to test.
+ * @returns True if the renderer is a WebGPURenderer, false otherwise.
+ */
+function isWebGPURenderer(renderer) {
+    return (renderer != null &&
+        typeof renderer === 'object' &&
+        'isWebGPURenderer' in renderer &&
+        renderer.isWebGPURenderer === true);
+}
+/**
+ * Asserts that the provided renderer is a THREE.WebGLRenderer.
+ *
+ * @param renderer - The renderer instance to check.
+ * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
+ * @throws Error if the renderer is a WebGPURenderer.
+ */
+function assertWebGLRenderer(renderer, consumerName) {
+    if (isWebGPURenderer(renderer)) {
+        throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
+    }
+}
+
 class XRPass extends Pass {
     render(_renderer, _writeBuffer, _readBuffer, _deltaTime, _maskActive, _viewId = 0) { }
 }
@@ -13060,6 +13085,9 @@ class XREffects {
         this.passes = [];
         this.renderTargets = [];
         this.dimensions = new THREE.Vector2();
+    }
+    setRenderTarget(target) {
+        this.renderer.setRenderTarget(target);
     }
     /**
      * Adds a pass to the effect pipeline.
@@ -13084,7 +13112,8 @@ class XREffects {
                 this.renderTargets[i]?.depthTexture?.dispose();
                 this.renderTargets[i]?.dispose();
                 this.renderTargets[i] = defaultTarget.clone();
-                this.renderTargets[i].depthTexture = new THREE.DepthTexture(dimensions.x, dimensions.y);
+                const hasStencil = this.renderTargets[i].stencilBuffer;
+                this.renderTargets[i].depthTexture = new THREE.DepthTexture(dimensions.x, dimensions.y, hasStencil ? THREE.UnsignedInt248Type : THREE.UnsignedIntType, undefined, undefined, undefined, undefined, undefined, undefined, hasStencil ? THREE.DepthStencilFormat : THREE.DepthFormat);
             }
         }
         for (let i = neededRenderTargets; i < this.renderTargets.length; i++) {
@@ -13111,10 +13140,12 @@ class XREffects {
         }
     }
     renderXr() {
+        assertWebGLRenderer(this.renderer, 'XREffects.renderXr');
         const defaultTarget = this.renderer.getRenderTarget();
         const renderer = this.renderer;
         const xrEnabled = renderer.xr.enabled;
         const xrIsPresenting = renderer.xr.isPresenting;
+        const prevAutoClearColor = renderer.autoClearColor;
         const renderTargets = this.renderTargets;
         renderer.xr.cameraAutoUpdate = false;
         renderer.xr.enabled = false;
@@ -13130,7 +13161,7 @@ class XREffects {
                 for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
                     const cam = renderer.xr.getCamera().cameras[camIndex];
                     renderer.setViewport(cam.viewport);
-                    renderer.setRenderTarget(renderTargets[camIndex]);
+                    this.setRenderTarget(renderTargets[camIndex]);
                     renderer.clear();
                     renderer.xr.isPresenting = true;
                     renderer.render(this.scene, cam);
@@ -13139,7 +13170,7 @@ class XREffects {
             finally {
                 this.scene.matrixWorldAutoUpdate = prevMatrixWorldAutoUpdate;
             }
-            renderer.setRenderTarget(defaultTarget);
+            this.setRenderTarget(defaultTarget);
             renderer.clear();
             renderer.xr.isPresenting = false;
             renderer.autoClearColor = false;
@@ -13160,6 +13191,7 @@ class XREffects {
                     /*viewId=*/ eye);
                 }
             }
+            renderer.autoClearColor = prevAutoClearColor;
             renderer.xr.enabled = xrEnabled;
             renderer.xr.isPresenting = xrIsPresenting;
         }
@@ -13168,23 +13200,21 @@ class XREffects {
         const defaultTarget = this.renderer.getRenderTarget();
         const renderer = this.renderer;
         const xrEnabled = renderer.xr.enabled;
-        const xrIsPresenting = renderer.xr.isPresenting;
+        const prevAutoClearColor = renderer.autoClearColor;
         renderer.xr.cameraAutoUpdate = false;
         renderer.xr.enabled = false;
         const deltaTime = this.timer.getDelta();
         if (this.passes.length === 0) {
-            renderer.setRenderTarget(defaultTarget);
+            this.setRenderTarget(defaultTarget);
             renderer.render(this.scene, camera);
             renderer.xr.enabled = xrEnabled;
-            renderer.xr.isPresenting = xrIsPresenting;
             return;
         }
-        renderer.setRenderTarget(this.renderTargets[0]);
+        this.setRenderTarget(this.renderTargets[0]);
         renderer.clear();
         renderer.render(this.scene, camera);
-        renderer.setRenderTarget(defaultTarget);
+        this.setRenderTarget(defaultTarget);
         renderer.clear();
-        renderer.xr.isPresenting = false;
         renderer.autoClearColor = false;
         for (let i = 0; i < this.passes.length - 1; ++i) {
             const lastRenderTargetIndex = i % 2;
@@ -13199,8 +13229,8 @@ class XREffects {
             /*maskActive=*/ false, 
             /*viewId=*/ 0);
         }
+        renderer.autoClearColor = prevAutoClearColor;
         renderer.xr.enabled = xrEnabled;
-        renderer.xr.isPresenting = xrIsPresenting;
     }
     dispose() {
         let firstError;
@@ -13358,31 +13388,6 @@ function debugRequestedByUrl() {
         .get('debug')
         ?.toLowerCase();
     return value === '1' || value === 'true';
-}
-
-/**
- * Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
- *
- * @param renderer - The renderer instance to test.
- * @returns True if the renderer is a WebGPURenderer, false otherwise.
- */
-function isWebGPURenderer(renderer) {
-    return (renderer != null &&
-        typeof renderer === 'object' &&
-        'isWebGPURenderer' in renderer &&
-        renderer.isWebGPURenderer === true);
-}
-/**
- * Asserts that the provided renderer is a THREE.WebGLRenderer.
- *
- * @param renderer - The renderer instance to check.
- * @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
- * @throws Error if the renderer is a WebGPURenderer.
- */
-function assertWebGLRenderer(renderer, consumerName) {
-    if (isWebGPURenderer(renderer)) {
-        throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
-    }
 }
 
 class DepthTextures {
@@ -24843,7 +24848,6 @@ class Core {
         this.assertInitializing();
         // Sets up postprocessing effects.
         if (options.usePostprocessing) {
-            assertWebGLRenderer(this.renderer, 'XREffects');
             this.effects = new XREffects(this.renderer, this.scene, this.timer);
         }
         // Sets up AI services.
