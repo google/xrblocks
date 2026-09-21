@@ -35,6 +35,23 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private static readonly XR_CAMERA_ACCESS_TIMEOUT_MS = 5000;
 
   simulatorCamera?: SimulatorCameraSource;
+  /**
+   * Camera intrinsics (clip-from-view) read straight off the WebXR `XRView`
+   * while raw camera access is streaming. Preferred over the static per-device
+   * fallback table when {@link hasXRCameraParams} is set.
+   */
+  xrCameraClipFromView?: THREE.Matrix4;
+  /**
+   * Camera pose in the reference space passed to `getViewerPose`.
+   * `getDeviceCameraWorldFromView` applies the render camera parent's world
+   * transform to convert this pose into scene-world coordinates.
+   */
+  xrCameraReferenceFromView?: THREE.Matrix4;
+  /**
+   * Whether {@link xrCameraClipFromView} / {@link xrCameraReferenceFromView}
+   * match the image acquired during the latest raw camera frame update.
+   */
+  hasXRCameraParams = false;
   rgbToDepthParams: RgbToDepthParams;
   protected videoConstraints_: MediaTrackConstraints;
   private isInitializing_ = false;
@@ -46,6 +63,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private xrCameraTexture_?: THREE.ExternalTexture;
   private xrCameraAccessTimeout_: ReturnType<typeof setTimeout> | null = null;
   private disposed_ = false;
+  private readonly videoTexture_ = this.texture;
 
   /**
    * @param options - The configuration options.
@@ -85,7 +103,12 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    * Sets the renderer reference, needed for WebXR camera access fallback.
    */
   setRenderer(renderer: THREE.WebGLRenderer) {
+    if (this.disposed_) return;
+    this.removeXRSessionListeners_();
+    this.resetXRCameraAccess_();
     this.renderer_ = renderer;
+    renderer.xr.addEventListener('sessionstart', this.resetXRCameraAccess_);
+    renderer.xr.addEventListener('sessionend', this.resetXRCameraAccess_);
   }
 
   /**
@@ -93,8 +116,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    */
   async init() {
     if (this.disposed_) return;
-    this.useXRCameraAccess_ = false;
-    this.clearXRCameraAccessTimeout_();
+    this.resetXRCameraAccess_();
     this.setState_(StreamState.INITIALIZING);
     try {
       this.availableDevices_ = await this.getAvailableVideoDevices();
@@ -136,6 +158,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    */
   protected async initStream_() {
     if (this.isInitializing_ || this.disposed_) return;
+    this.resetXRCameraAccess_();
     this.isInitializing_ = true;
     this.setState_(StreamState.INITIALIZING);
 
@@ -337,7 +360,9 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    * Must be called each frame from the render loop when in XR camera mode.
    */
   updateXRCamera(frame: XRFrame) {
+    this.hasXRCameraParams = false;
     if (!this.useXRCameraAccess_ || !this.renderer_ || !frame) return;
+    if (frame.session !== this.renderer_.xr.getSession()) return;
 
     const binding = this.renderer_.xr.getBinding();
     const refSpace = this.renderer_.xr.getReferenceSpace();
@@ -371,6 +396,13 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
       this.height = xrCamera.height;
       this.aspectRatio = this.width / this.height;
 
+      (this.xrCameraClipFromView ??= new THREE.Matrix4()).fromArray(
+        view.projectionMatrix
+      );
+      (this.xrCameraReferenceFromView ??= new THREE.Matrix4()).fromArray(
+        view.transform.matrix
+      );
+
       const texProperties = this.renderer_!.properties.get(
         this.xrCameraTexture_
       ) as {
@@ -381,6 +413,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
       texProperties.__version = 1;
 
       this.texture = this.xrCameraTexture_;
+      this.hasXRCameraParams = true;
 
       if (!this.loaded) {
         this.clearXRCameraAccessTimeout_();
@@ -403,19 +436,19 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
 
   override dispose() {
     this.disposed_ = true;
-    this.clearXRCameraAccessTimeout_();
+    this.removeXRSessionListeners_();
+    this.resetXRCameraAccess_();
     this.xrCameraTexture_?.dispose();
     this.xrCameraTexture_ = undefined;
     this.renderer_ = undefined;
     this.simulatorCamera = undefined;
-    this.useXRCameraAccess_ = false;
     super.dispose();
   }
 
   private startXRCameraAccessFallback_(reason: string, error?: unknown) {
     if (this.disposed_) return;
+    this.resetXRCameraAccess_();
     if (!this.isXRCameraAccessGranted_()) {
-      this.useXRCameraAccess_ = false;
       this.loaded = false;
       this.setState_(StreamState.NO_DEVICES_FOUND, {force: true});
       console.warn(
@@ -435,7 +468,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     this.clearXRCameraAccessTimeout_();
     this.xrCameraAccessTimeout_ = setTimeout(() => {
       if (this.disposed_ || !this.useXRCameraAccess_ || this.loaded) return;
-      this.useXRCameraAccess_ = false;
+      this.resetXRCameraAccess_();
       this.setState_(StreamState.NO_DEVICES_FOUND, {force: true});
       console.warn(
         'WebXR Raw Camera Access API did not provide frames in time.'
@@ -463,5 +496,29 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     if (!this.xrCameraAccessTimeout_) return;
     clearTimeout(this.xrCameraAccessTimeout_);
     this.xrCameraAccessTimeout_ = null;
+  }
+
+  private resetXRCameraAccess_ = () => {
+    this.hasXRCameraParams = false;
+    this.xrCameraClipFromView = undefined;
+    this.xrCameraReferenceFromView = undefined;
+    this.clearXRCameraAccessTimeout_();
+    if (this.useXRCameraAccess_) {
+      this.useXRCameraAccess_ = false;
+      this.loaded = false;
+      this.texture = this.videoTexture_;
+      this.setState_(StreamState.IDLE);
+    }
+  };
+
+  private removeXRSessionListeners_() {
+    this.renderer_?.xr.removeEventListener(
+      'sessionstart',
+      this.resetXRCameraAccess_
+    );
+    this.renderer_?.xr.removeEventListener(
+      'sessionend',
+      this.resetXRCameraAccess_
+    );
   }
 }

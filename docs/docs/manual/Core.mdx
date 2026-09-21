@@ -116,6 +116,12 @@ await xb.core.waitFrame.waitFrame();
 Guard optional runtime services. An exported type or constructor does not prove
 that its subsystem is enabled in the current runtime.
 
+### Device camera parameters
+
+When the WebXR Raw Camera Access fallback supplies an image, `getDeviceCameraClipFromView()` uses the projection of that image's view, including its principal-point offsets. `getDeviceCameraWorldFromView()` converts the view's reference-space pose through the render camera parent's world transform, so camera rays follow translated or rotated scene rigs. `getCameraParametersSnapshot()` copies the matrices for later use without changes from subsequent frames.
+
+Live parameters are available only after a matching image and pose are captured. Source changes, session start/end, fallback timeout, disposal, and frame updates without a usable image invalidate them. The getUserMedia path retains the per-device calibration table, and the simulator retains its own projection and pose. Raw Camera Access requires browser/device support and permission; this does not add support to headsets that do not expose it.
+
 ## Construction, injection, and type imports
 
 These are separate uses of a class name:
