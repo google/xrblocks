@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import type {SimulatorCameraSource} from '../camera/SimulatorCameraSource';
+import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
 import {SimulatorMediaDeviceInfo} from './SimulatorMediaDeviceInfo';
 import {
   ConstrainDomStringMatch,
@@ -19,7 +20,7 @@ export class SimulatorCamera implements SimulatorCameraSource {
   height = 512;
   camera = new THREE.PerspectiveCamera();
 
-  constructor(private renderer: THREE.WebGLRenderer) {}
+  constructor(private renderer: WebGLOrWebGPURenderer) {}
 
   init() {
     this.createSimulatorCamera();
@@ -59,24 +60,7 @@ export class SimulatorCamera implements SimulatorCameraSource {
       this.camera.position.copy(camera.position);
       this.camera.quaternion.copy(camera.quaternion);
       renderScene(this.camera);
-      const sWidth = this.renderer.domElement.width;
-      const sHeight = this.renderer.domElement.height;
-      const aspectRatio = this.width / this.height;
-      const croppedSourceWidth = Math.min(sWidth, sHeight * aspectRatio);
-      const croppedSourceHeight = Math.min(sHeight, sWidth / aspectRatio);
-      const sx = (sWidth - croppedSourceWidth) / 2;
-      const sy = (sHeight - croppedSourceHeight) / 2;
-      this.context!.drawImage(
-        this.renderer.domElement,
-        sx,
-        sy,
-        croppedSourceWidth,
-        croppedSourceHeight,
-        0,
-        0,
-        this.width,
-        this.height
-      );
+      this.captureFromRendererCanvas();
     }
   }
 
@@ -85,25 +69,29 @@ export class SimulatorCamera implements SimulatorCameraSource {
       return;
     }
     if (this.matchRenderingCamera) {
-      const sWidth = this.renderer.domElement.width;
-      const sHeight = this.renderer.domElement.height;
-      const aspectRatio = this.width / this.height;
-      const croppedSourceWidth = Math.min(sWidth, sHeight * aspectRatio);
-      const croppedSourceHeight = Math.min(sHeight, sWidth / aspectRatio);
-      const sx = (sWidth - croppedSourceWidth) / 2;
-      const sy = (sHeight - croppedSourceHeight) / 2;
-      this.context!.drawImage(
-        this.renderer.domElement,
-        sx,
-        sy,
-        croppedSourceWidth,
-        croppedSourceHeight,
-        0,
-        0,
-        this.width,
-        this.height
-      );
+      this.captureFromRendererCanvas();
     }
+  }
+
+  private captureFromRendererCanvas() {
+    const sWidth = this.renderer.domElement.width;
+    const sHeight = this.renderer.domElement.height;
+    const aspectRatio = this.width / this.height;
+    const croppedSourceWidth = Math.min(sWidth, sHeight * aspectRatio);
+    const croppedSourceHeight = Math.min(sHeight, sWidth / aspectRatio);
+    const sx = (sWidth - croppedSourceWidth) / 2;
+    const sy = (sHeight - croppedSourceHeight) / 2;
+    this.context!.drawImage(
+      this.renderer.domElement,
+      sx,
+      sy,
+      croppedSourceWidth,
+      croppedSourceHeight,
+      0,
+      0,
+      this.width,
+      this.height
+    );
   }
 
   restartVideoTrack() {

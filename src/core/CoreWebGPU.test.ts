@@ -85,14 +85,16 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when deviceCamera is enabled with WebGPU', async () => {
+  it('initializes XRDeviceCamera when deviceCamera is enabled with WebGPU and disables WebXR camera-access fallback', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
     options.deviceCamera.enabled = true;
 
-    await expect(core.init(options)).rejects.toThrow(
-      'XRDeviceCamera requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
-    );
+    await core.init(options);
+    expect(core.deviceCamera).toBeDefined();
+
+    await core.deviceCamera!.init();
+    expect(core.deviceCamera!.isUsingXRCameraAccess).toBe(false);
   });
 
   it('initializes XREffects for simulator post-processing when usePostprocessing is enabled with WebGPU, and guards renderXr', async () => {
