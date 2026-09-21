@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 
 import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from '../core/RendererTypes';
+import {
   StreamState,
   VideoStream,
   VideoStreamDetails,
@@ -41,7 +46,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private availableDevices_: MediaOrSimulatorMediaDeviceInfo[] = [];
   private currentDeviceIndex_ = -1;
   private currentTrackSettings_?: MediaTrackSettings;
-  private renderer_?: THREE.WebGLRenderer;
+  private renderer_?: WebGLOrWebGPURenderer;
   private useXRCameraAccess_ = false;
   private xrCameraTexture_?: THREE.ExternalTexture;
   private xrCameraAccessTimeout_: ReturnType<typeof setTimeout> | null = null;
@@ -84,7 +89,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   /**
    * Sets the renderer reference, needed for WebXR camera access fallback.
    */
-  setRenderer(renderer: THREE.WebGLRenderer) {
+  setRenderer(renderer: WebGLOrWebGPURenderer) {
     this.renderer_ = renderer;
   }
 
@@ -338,6 +343,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    */
   updateXRCamera(frame: XRFrame) {
     if (!this.useXRCameraAccess_ || !this.renderer_ || !frame) return;
+    assertWebGLRenderer(this.renderer_, 'XRDeviceCamera.updateXRCamera');
 
     const binding = this.renderer_.xr.getBinding();
     const refSpace = this.renderer_.xr.getReferenceSpace();
@@ -371,7 +377,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
       this.height = xrCamera.height;
       this.aspectRatio = this.width / this.height;
 
-      const texProperties = this.renderer_!.properties.get(
+      const texProperties = this.renderer_.properties.get(
         this.xrCameraTexture_
       ) as {
         __webglTexture: WebGLTexture;
@@ -444,6 +450,10 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   }
 
   private isXRCameraAccessGranted_() {
+    if (this.renderer_ && isWebGPURenderer(this.renderer_)) {
+      return false;
+    }
+
     const session = this.renderer_?.xr.getSession() as
       | (XRSession & {enabledFeatures?: string[]})
       | undefined;
