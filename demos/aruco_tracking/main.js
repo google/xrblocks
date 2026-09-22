@@ -24,16 +24,11 @@ const STROKE = '#40556d';
 class ArucoAnchorDemo extends xb.Script {
   constructor() {
     super();
-    this.tracker = new ArucoTracker({
-      // Constant registration offset measured on Galaxy XR: without it the
-      // anchor lands ~2 cm below and ~1 cm left of the printed marker. It is a
-      // device-camera translation correction in metres, in the camera frame
-      // (+x right, +y up, so this moves the anchor up and to the right).
-      // Walking arcs give the self-calibration no head-tilt diversity, so
-      // the vertical component is unobservable and must be seeded; the
-      // solver refines from here whenever the geometry allows.
-      calibration: {translation: [0.01, 0.02, 0]},
-    });
+    // No pinned calibration: the tracker self-calibrates from scratch on
+    // each device (and restores what it persisted last time). Pass a
+    // `calibration` seed here only for a constant offset measured on a
+    // specific headset.
+    this.tracker = new ArucoTracker();
     // Axes + outline square at the printed marker, thick enough to read from
     // across the room (see createArucoAnchorVisuals for why they are meshes
     // rather than AxesHelper/LineLoop).
