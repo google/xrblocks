@@ -53,6 +53,7 @@ import {XRSystems} from './components/XRSystems';
 import {
   assertWebGLRenderer,
   isWebGPURenderer,
+  RendererHolder,
   type WebGLOrWebGPURenderer,
 } from './RendererTypes';
 
@@ -550,6 +551,7 @@ export class Core {
       };
     }
     this.registry.register(this.renderer);
+    this.registry.register(new RendererHolder(this.renderer));
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
     // For desktop simulator:
