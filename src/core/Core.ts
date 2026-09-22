@@ -587,7 +587,6 @@ export class Core {
 
     // Sets up device camera.
     if (options.deviceCamera?.enabled) {
-      assertWebGLRenderer(this.renderer, 'XRDeviceCamera');
       this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
       this.deviceCamera.setRenderer(this.renderer);
       this.registry.register(this.deviceCamera);
@@ -735,7 +734,6 @@ export class Core {
 
     // Sets up postprocessing effects.
     if (options.usePostprocessing) {
-      assertWebGLRenderer(this.renderer, 'XREffects');
       this.effects = new XREffects(this.renderer, this.scene, this.timer);
     }
 

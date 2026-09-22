@@ -3,10 +3,7 @@ import * as THREE from 'three';
 import {XRDeviceCamera} from '../camera/XRDeviceCamera.js';
 import {Registry} from '../core/components/Registry';
 import {Options} from '../core/Options';
-import {
-  assertWebGLRenderer,
-  type WebGLOrWebGPURenderer,
-} from '../core/RendererTypes';
+import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
 import {Script} from '../core/Script';
 import {Depth} from '../depth/Depth';
 import {Input} from '../input/Input';
@@ -175,7 +172,6 @@ export class Simulator extends Script {
       !this.simulatorCamera &&
       this.options.deviceCamera.enabled
     ) {
-      assertWebGLRenderer(renderer, 'SimulatorCamera');
       this.simulatorCamera = new SimulatorCamera(renderer);
       this.simulatorCamera.init();
       deviceCamera.registerSimulatorCamera(this.simulatorCamera);

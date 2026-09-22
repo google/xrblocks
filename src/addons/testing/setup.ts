@@ -157,6 +157,10 @@ vi.mock('three/webgpu', async (importOriginal) => {
     );
     getClearAlpha = vi.fn(() => 0);
     setClearColor = vi.fn();
+    autoClearColor = true;
+    getDrawingBufferSize = vi.fn((target: THREE.Vector2) =>
+      target.set(160, 160)
+    );
     readRenderTargetPixelsAsync = vi.fn(() =>
       Promise.resolve(new Float32Array(160 * 160))
     );
