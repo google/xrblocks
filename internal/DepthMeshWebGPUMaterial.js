@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid a237201
- * @builddate 2026-09-21T23:57:33.414Z
+ * @commitid ad5052b
+ * @builddate 2026-09-22T23:30:27.740Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -86,7 +86,10 @@ function applyWebGPUDepthMeshMaterial(depthMesh) {
         const spec = pow(max(dot(viewDir, reflectDir), float(0.0)), float(16.0)).mul(0.5);
         const finalColor = ambient.add(diff).add(vec3(spec));
         const debugOutput = vec4(finalColor, float(1.0)).mul(uOpacity);
-        const sampledDepth = depthTextureNode.r.mul(uRawValueToMeters).mul(8.0);
+        const sampledDepth = depthTextureNode
+            .toVec4()
+            .r.mul(uRawValueToMeters)
+            .mul(8.0);
         const normalizedDepth = clamp(sampledDepth
             .sub(uMinDepth)
             .div(max(uMaxDepth.sub(uMinDepth), float(0.0001))), float(0.0), float(1.0));

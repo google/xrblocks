@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid a237201
- * @builddate 2026-09-21T23:57:33.414Z
+ * @commitid ad5052b
+ * @builddate 2026-09-22T23:30:27.740Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -43,7 +43,7 @@
 import { LitElement, css, html } from 'lit';
 import { customElement } from 'lit/decorators/custom-element.js';
 import { property } from 'lit/decorators/property.js';
-import { $ as XR_BLOCKS_ASSETS_PATH, c as SimulatorMode, a as SimulatorHandPose, f as SimulatorHandPoseChangeRequestEvent, a0 as SIMULATOR_HAND_POSE_NAMES, k as SetSimulatorEnvironmentEvent, d as SetSimulatorModeEvent, m as SetSimulatorHandPhysicsEvent, l as ShowSimulatorInstructionsEvent } from './entry.js';
+import { a0 as XR_BLOCKS_ASSETS_PATH, c as SimulatorMode, a as SimulatorHandPose, f as SimulatorHandPoseChangeRequestEvent, a1 as SIMULATOR_HAND_POSE_NAMES, k as SetSimulatorEnvironmentEvent, d as SetSimulatorModeEvent, m as SetSimulatorHandPhysicsEvent, l as ShowSimulatorInstructionsEvent } from './entry.js';
 import { state } from 'lit/decorators/state.js';
 import { classMap } from 'lit/directives/class-map.js';
 import { createRef, ref } from 'lit/directives/ref.js';
