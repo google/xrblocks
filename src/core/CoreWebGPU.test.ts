@@ -64,14 +64,16 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when depth occlusion is enabled with WebGPU', async () => {
+  it('initializes WebGPUOcclusionPass when depth occlusion is enabled with WebGPU', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
     options.depth.enabled = true;
     options.depth.occlusion.enabled = true;
 
-    await expect(core.init(options)).rejects.toThrow(
-      'OcclusionPass requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
+    await core.init(options);
+    expect(core.depth['occlusionPass']).toBeDefined();
+    expect(core.depth['occlusionPass']?.constructor.name).toBe(
+      'WebGPUOcclusionPass'
     );
   });
 
