@@ -321,6 +321,14 @@
       import * as THREE from 'three';
       import * as xb from 'xrblocks';
       import {Object3DDetector} from 'xrblocks/addons/objects3d/index.js';
+      import {
+        ARUCO_DICTIONARY_SIZES,
+        ArucoTracker,
+        DEFAULT_ARUCO_MARKER_ID,
+        DEFAULT_ARUCO_MARKER_SIZE_METERS,
+        createArucoAnchorVisuals,
+        loadPersistedArucoCalibration,
+      } from 'xrblocks/addons/aruco/index.js';
 
       // -----------------------------------------------------------------
       // Settings. Anything that must be decided before xb.init() lives in
@@ -406,6 +414,14 @@
             `yaw ${d.cameraRotationOffsetDeg.yaw.toFixed(1)}° ` +
             `pitch ${d.cameraRotationOffsetDeg.pitch.toFixed(1)}° ` +
             `roll ${d.cameraRotationOffsetDeg.roll.toFixed(1)}°`,
+        ],
+        [
+          'extrinsic cal',
+          (d) =>
+            d.cameraExtrinsicCorrection
+              ? `${d.cameraExtrinsicCorrection.rotationDeg.toFixed(1)}° / ` +
+                `${d.cameraExtrinsicCorrection.translationCm.toFixed(1)} cm`
+              : 'none (SDK model)',
         ],
         ['snapshot', (d) => `${d.snapshotWidth}×${d.snapshotHeight}`],
         [
@@ -506,6 +522,14 @@
         inFlight = true;
         detectBtn.disabled = true;
         setStatus('detecting…');
+        // A live (unfrozen) ArUco calibration session polls the same
+        // device camera and transfers its snapshot buffers to a worker; race
+        // that against this multi-second call and it corrupts the shared
+        // frame. Pause it for the duration, and keep a stale calibration
+        // keyframe from being paired with a frame this call has taken over.
+        const pausedForDetect =
+          markerTracker && !markerTracker.isDetectionPaused;
+        if (pausedForDetect) markerTracker.setDetectionPaused(true);
         try {
           const objects = await detector.detect();
           const d = detector.diagnostics;
@@ -517,6 +541,9 @@
           console.error(e);
           setStatus(`failed: ${e?.message ?? e}`);
         } finally {
+          if (pausedForDetect && markerTracker) {
+            markerTracker.setDetectionPaused(false);
+          }
           refreshDiagnostics();
           inFlight = false;
           detectBtn.disabled = false;
@@ -558,6 +585,98 @@
           `rotation offset yaw ${SETTINGS.yawDeg}° pitch ${SETTINGS.pitchDeg}° ` +
             `roll ${SETTINGS.rollDeg}° — press detect to apply`
         );
+      }
+
+      // -----------------------------------------------------------------
+      // Optional ArUco camera calibration. Recovers the device camera's
+      // true 6-DOF extrinsics (rotation + translation) by tracking a
+      // printed marker and self-calibrating against the headset's own SLAM
+      // poses (see demos/aruco_tracking). Only the extrinsic transfers
+      // here — rangeScale does not apply, because this detector gets metric
+      // range from the depth mesh rather than a monocular marker estimate.
+      // -----------------------------------------------------------------
+      let debugPanelInstance = null; // set by DebugPanel.init()
+      let markerTracker = null; // live only during a calibration session
+      let markerVisuals = null; // its axes/outline overlay, disposed with it
+      let calCard = null;
+      let calStatusText = null;
+      let calDiagText = null;
+      let calIdText = null;
+
+      function applyExtrinsic(rotation, translation, sourceLabel) {
+        detector.setCameraExtrinsicCorrection({rotation, translation});
+        // The manual Euler offsets correct the same error as the extrinsic
+        // correction; zero them so the two do not stack.
+        for (const axis of ['yaw', 'pitch', 'roll']) setRotation(axis, 0);
+        const q = new THREE.Quaternion().fromArray(rotation);
+        const rotDeg = THREE.MathUtils.radToDeg(
+          2 * Math.acos(THREE.MathUtils.clamp(Math.abs(q.w), -1, 1))
+        );
+        const cm = Math.hypot(...translation) * 100;
+        setStatus(
+          `camera model: ${sourceLabel} - ${rotDeg.toFixed(1)}deg / ` +
+            `${cm.toFixed(1)}cm - press detect to apply`
+        );
+      }
+
+      function destroyCalCard() {
+        if (calCard && debugPanelInstance) debugPanelInstance.remove(calCard);
+        calCard = null;
+        calStatusText = null;
+        calDiagText = null;
+        calIdText = null;
+      }
+
+      function teardownCalibrationSession() {
+        destroyCalCard();
+        if (markerTracker) {
+          // Dispose the tracker (its worker is terminated and its pose ring
+          // cleared) and drop it from the scene. The overlay's GPU resources
+          // are NOT covered by that -- three.js never frees geometries or
+          // materials on removal -- so release them explicitly, since a new
+          // set is built every time the card is reopened.
+          xb.core.scriptsManager.uninitScript(markerTracker);
+          xb.core.scene.remove(markerTracker);
+          markerVisuals?.dispose();
+          markerVisuals = null;
+          markerTracker = null;
+        }
+      }
+
+      function useStoredCalibration() {
+        teardownCalibrationSession();
+        if (xb.core.deviceCamera?.simulatorCamera) {
+          setStatus('simulator: SDK camera model in use.');
+          return;
+        }
+        const targetDevice = xb.core.world?.objects?.targetDevice ?? 'galaxyxr';
+        const stored = loadPersistedArucoCalibration(targetDevice);
+        if (stored) {
+          applyExtrinsic(
+            stored.rotation,
+            stored.translation,
+            'stored aruco cal'
+          );
+        } else {
+          detector.setCameraExtrinsicCorrection(null);
+          setStatus('no stored calibration; using SDK camera estimate.');
+        }
+      }
+
+      function freezeDetection() {
+        if (!markerTracker) return;
+        markerTracker.setDetectionPaused(true);
+        const cal = markerTracker.getCalibration();
+        const converged = markerTracker.diagnostics.calibrationConverged;
+        applyExtrinsic(
+          cal.rotation,
+          cal.translation,
+          converged ? 'aruco (converged)' : 'aruco (UNCONVERGED)'
+        );
+        // Close the calibration panel but keep the anchor visuals in the
+        // scene (tracker stays, paused) so the frozen registration can be
+        // eyeballed against the physical marker.
+        destroyCalCard();
       }
 
       // -----------------------------------------------------------------
@@ -629,8 +748,9 @@
 
       class ControlPanel extends xb.Script {
         init() {
+          debugPanelInstance = this;
           const card = new xb.UICard({
-            size: {width: 0.62, height: 0.4},
+            size: {width: 0.62, height: 0.48},
             manipulation: {actions: {translate: {faceCamera: true}}},
             edge: true,
             style: {
@@ -744,7 +864,166 @@
             )
           );
           card.add(pickerRow);
+
+          // Optional ArUco camera calibration (see the section above).
+          const calRow = new xb.UIPanel({
+            style: {
+              width: '100%',
+              flexDirection: 'row',
+              gap: 10,
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginTop: 4,
+            },
+          });
+          calRow.add(this.smallButton('use stored cal', useStoredCalibration));
+          calRow.add(
+            this.smallButton('aruco cal', () => this.openCalibrationCard())
+          );
+          card.add(calRow);
           this.add(card);
+        }
+
+        smallButton(text, onClick) {
+          return new xb.UIButton({
+            ariaLabel: text,
+            onClick,
+            style: {
+              ...BUTTON_STYLE,
+              paddingTop: 3,
+              paddingBottom: 3,
+              paddingLeft: 7,
+              paddingRight: 7,
+              borderRadius: 7,
+            },
+            children: [
+              new xb.UIText({
+                text,
+                style: {fontSize: 14, color: '#ffffff'},
+              }),
+            ],
+          });
+        }
+
+        openCalibrationCard() {
+          teardownCalibrationSession();
+
+          markerTracker = new ArucoTracker({markerId: DEFAULT_ARUCO_MARKER_ID});
+          // Thick axes + outline square at the printed marker, readable from
+          // across the room. Kept as a handle so the geometries and materials
+          // can be released when this calibration session is torn down.
+          markerVisuals = createArucoAnchorVisuals();
+          markerTracker.add(markerVisuals);
+          xb.add(markerTracker);
+
+          calCard = new xb.UICard({
+            size: {width: 0.5, height: 0.42},
+            manipulation: {actions: {translate: {faceCamera: true}}},
+            edge: true,
+            style: {
+              width: '100%',
+              height: '100%',
+              backgroundColor: 'rgba(15, 18, 25, 0.92)',
+              borderWidth: 2,
+              borderColor: '#ffd27a',
+              borderRadius: 20,
+              padding: 14,
+              flexDirection: 'column',
+              gap: 8,
+              alignItems: 'stretch',
+            },
+          });
+          calCard.name = 'ArucoCalCard';
+          calCard.position.set(0.62, 1.35, -0.95);
+          calCard.add(
+            new xb.UIText({
+              text: 'ARUCO CALIBRATION',
+              style: {
+                fontSize: 18,
+                fontWeight: 'bold',
+                color: '#ffd27a',
+                textAlign: 'center',
+                width: '100%',
+              },
+            })
+          );
+          calCard.add(
+            new xb.UIText({
+              text:
+                `${markerTracker.dictionary} | black square ` +
+                `${(DEFAULT_ARUCO_MARKER_SIZE_METERS * 1000).toFixed(0)} mm`,
+              style: {
+                width: '100%',
+                fontSize: 12,
+                color: '#9ad',
+                textAlign: 'center',
+              },
+            })
+          );
+
+          const idRow = new xb.UIPanel({
+            style: {
+              width: '100%',
+              flexDirection: 'row',
+              gap: 6,
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+          });
+          const nudgeMarkerId = (delta) => {
+            markerTracker.setMarkerId(
+              THREE.MathUtils.clamp(
+                markerTracker.markerId + delta,
+                0,
+                ARUCO_DICTIONARY_SIZES[markerTracker.dictionary] - 1
+              )
+            );
+          };
+          idRow.add(this.smallButton('-', () => nudgeMarkerId(-1)));
+          calIdText = new xb.UIText({
+            text: `Marker ID ${markerTracker.markerId}`,
+            style: {
+              fontSize: 15,
+              fontWeight: 'bold',
+              color: '#ffffff',
+              textAlign: 'center',
+            },
+          });
+          idRow.add(calIdText);
+          idRow.add(this.smallButton('+', () => nudgeMarkerId(1)));
+          calCard.add(idRow);
+
+          calStatusText = new xb.UIText({
+            text: markerTracker.status,
+            style: {
+              width: '100%',
+              fontSize: 13,
+              color: '#9ad',
+              textAlign: 'center',
+            },
+          });
+          calCard.add(calStatusText);
+          calDiagText = new xb.UIText({
+            text: '',
+            style: {
+              width: '100%',
+              fontSize: 12,
+              color: '#7d8794',
+              textAlign: 'center',
+            },
+          });
+          calCard.add(calDiagText);
+
+          const freezeRow = new xb.UIPanel({
+            style: {
+              width: '100%',
+              flexDirection: 'row',
+              justifyContent: 'center',
+            },
+          });
+          freezeRow.add(this.smallButton('freeze detection', freezeDetection));
+          calCard.add(freezeRow);
+          this.add(calCard);
         }
 
         // Icon + caption, so XR users get the same affordance as the DOM
@@ -817,6 +1096,33 @@
           onLabelReady?.(valueText);
           return btn;
         }
+
+        // The calibration card's texts follow the live tracker; only assign
+        // when a value changed, a few times a second.
+        update() {
+          if (!markerTracker || !calCard) return;
+          const now = performance.now();
+          if (now - (this._lastRefresh ?? 0) < 250) return;
+          this._lastRefresh = now;
+          if (markerTracker && calCard) {
+            const idLabel = `Marker ID ${markerTracker.markerId}`;
+            if (idLabel !== this._lastCalId) {
+              this._lastCalId = idLabel;
+              if (calIdText) calIdText.text = idLabel;
+            }
+            if (markerTracker.status !== this._lastCalStatus) {
+              this._lastCalStatus = markerTracker.status;
+              if (calStatusText) calStatusText.text = markerTracker.status;
+            }
+            const diag = markerTracker.hasAnchor
+              ? markerTracker.diagnosticsSummary
+              : '';
+            if (diag !== this._lastCalDiag) {
+              this._lastCalDiag = diag;
+              if (calDiagText) calDiagText.text = diag;
+            }
+          }
+        }
       }
 
       // -----------------------------------------------------------------
@@ -825,6 +1131,9 @@
       const options = new xb.Options();
       options.enableAI();
       options.enableCamera();
+      // Both the detector's snapshot reads and an optional ArUco
+      // calibration session's ~10 Hz polling benefit from this readback hint.
+      options.deviceCamera.willCaptureFrequently = true;
       options.enableDepth();
       // Off by default: the per-frame full-resolution rebuild unprojects
       // ~23.7k vertices every depth frame. The detector rebuilds the
