@@ -85,6 +85,8 @@ const externalPackages = [
   'rapier3d',
   'three-mesh-bvh',
   '@huggingface/transformers',
+  '@litertjs/core',
+  '@litertjs/wasm-utils',
   'three-pathfinding',
   'vitest',
 ];
