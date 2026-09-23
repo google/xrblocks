@@ -15,7 +15,11 @@ import {UICard} from '../ui/components/UICard';
 import {UISlider} from '../ui/components/UISlider';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
-import type {ManipulationEvent} from './manipulation/ManipulationTypes';
+import type {
+  ManipulationEvent,
+  ManipulationOptions,
+  TranslateOptions,
+} from './manipulation/ManipulationTypes';
 
 async function activateScripts(
   manager: ScriptsManager,
@@ -396,6 +400,50 @@ describe('Interaction public behavior', () => {
     expect(events.at(-1)?.phase).toBe('end');
   });
 
+  it('resizes a card from a corner pinched by a tracked hand', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    new THREE.Scene().add(card);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1));
+    edge.xb = {manipulationHandle: {action: 'translate'}};
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(edge, card, {
+      touchTarget: (point) => (point.x > 0.15 ? corner : undefined),
+    });
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const hand = controller(0);
+    const touch = (selected: boolean, x: number, y: number) => ({
+      controller: hand,
+      handIndex: 0,
+      hand: new THREE.Object3D(),
+      point: new THREE.Vector3(x, y, 0),
+      selected,
+    });
+
+    interaction.update({
+      raySources: [],
+      directTouches: [touch(false, 0.2, 0.1)],
+    });
+    interaction.update({
+      raySources: [],
+      directTouches: [touch(true, 0.2, 0.1)],
+    });
+    expect(interaction.isManipulating(card)).toBe(true);
+    interaction.update({
+      raySources: [],
+      directTouches: [touch(true, 0.25, 0.12)],
+    });
+
+    expect(card.size.width).toBeCloseTo(0.5);
+    expect(card.size.height).toBeCloseTo(0.24);
+    expect(card.position.toArray()).toEqual([0, 0, 0]);
+  });
+
   it('ignores corner handles when resize is disabled', async () => {
     const card = new UICard({
       size: {width: 0.4, height: 0.2},
@@ -425,12 +473,28 @@ describe('Interaction public behavior', () => {
         resize: true,
       },
     });
-    card.manipulation = {
-      actions: {translate: {scaleWithDistance: false}, resize: {}},
-    };
-    expect(card.manipulation).toMatchObject({
-      actions: {translate: {faceCamera: true, scaleWithDistance: false}},
+    card.manipulation = {actions: {translate: {mode: 'spherical'}, resize: {}}};
+    const translate = (card.manipulation as ManipulationOptions).actions
+      ?.translate as TranslateOptions;
+    // An app's own translate options get no Android XR move defaults.
+    expect(translate).toEqual({faceCamera: true, mode: 'spherical'});
+  });
+
+  it('accepts an edge that only resizes', () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: {actions: {resize: true}},
+      edge: true,
     });
+    expect(card.edge).toBeTruthy();
+    expect(
+      () =>
+        new UICard({
+          size: {width: 0.4, height: 0.2},
+          manipulation: {actions: {scale: true}},
+          edge: true,
+        })
+    ).toThrow('UICard edge requires Translate or Resize manipulation.');
   });
 });
 

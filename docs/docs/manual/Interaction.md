@@ -186,10 +186,11 @@ object.xb = {
 ```
 
 For a plain object, `manipulation: true` enables translate and scale and uses
-translate as the surface action. `UICard` makes translation face the camera,
-scales it with distance from the camera, enables thumbstick push/pull and
-corner `resize`, and can display an edge. `ModelViewer` enables move, Y-axis rotate, and scale with
-its own private interaction proxies.
+translate as the surface action. On a `UICard`, `manipulation: true` also
+makes translation face the camera, scale with distance from the camera, and
+follow thumbstick push/pull within Android XR's distance limits, and it enables
+corner `resize`. The card can display an edge. `ModelViewer` enables move,
+Y-axis rotate, and scale with its own private interaction proxies.
 
 Face-camera translation uses `mode: 'capsule'` by default. It keeps an object
 upright within `0.25` meters above or below the camera, then tilts it toward the
@@ -210,7 +211,7 @@ moving the hand.
 Set `translate: {minDistance, maxDistance}` in meters to keep every move,
 including push/pull, within that distance of the viewer. An owner that starts
 outside the limits can still move, just not farther outside them. `UICard`
-defaults to Android XR's 0.75 to 5 meters.
+with `manipulation: true` uses Android XR's 0.75 to 5 meters.
 
 `resize` applies only to `UICard` owners. It changes the card's `size` from a
 dragged corner and keeps `anchor: 'center'` (default) or the `'opposite'` corner

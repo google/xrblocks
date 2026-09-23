@@ -156,8 +156,8 @@ export class UICard<
   ): void {
     if (!enabled) return;
     const config = normalizeManipulationConfig(manipulation);
-    if (!config?.translate) {
-      throw new Error('UICard edge requires Translate manipulation.');
+    if (!config?.translate && !config?.resize) {
+      throw new Error('UICard edge requires Translate or Resize manipulation.');
     }
   }
 }
@@ -239,21 +239,11 @@ function normalizeCardManipulation(
   }
   const actions = value.actions ? {...value.actions} : undefined;
   if (actions?.translate === true) {
-    actions.translate = {
-      faceCamera: true,
-      scaleWithDistance: true,
-      pushPull: true,
-      minDistance: CARD_MIN_DISTANCE,
-      maxDistance: CARD_MAX_DISTANCE,
-    };
+    actions.translate = {faceCamera: true};
   } else if (actions?.translate && typeof actions.translate === 'object') {
     actions.translate = {
       ...actions.translate,
       faceCamera: actions.translate.faceCamera ?? true,
-      scaleWithDistance: actions.translate.scaleWithDistance ?? true,
-      pushPull: actions.translate.pushPull ?? true,
-      minDistance: actions.translate.minDistance ?? CARD_MIN_DISTANCE,
-      maxDistance: actions.translate.maxDistance ?? CARD_MAX_DISTANCE,
     };
   }
   if (actions?.rotate && typeof actions.rotate === 'object') {

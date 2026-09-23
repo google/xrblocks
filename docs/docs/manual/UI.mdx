@@ -66,11 +66,15 @@ await xb.init(new xb.Options());
 corner resize behavior. Moving also scales the card with its distance from the
 viewer the way Android XR panels do, and a controller thumbstick pushes the
 card away or pulls it closer while you drag it. Moves stay between 0.75 and 5
-meters from the viewer, Android XR's panel limits. Set
-`translate: {scaleWithDistance: false, pushPull: false}` to turn those off, and
-`minDistance`/`maxDistance` to change the limits. `edge: true` adds the
-outer translation hit band and requires translation to be enabled. Two-source
+meters from the viewer, Android XR's panel limits. These come only with
+`manipulation: true`. When you pass your own `actions`, opt in with
+`translate: {scaleWithDistance: true, pushPull: true, minDistance: 0.75, maxDistance: 5}`.
+
+`edge: true` adds the outer hit band and requires translation or resize to be
+enabled. Two-source
 scale uses the card's scale action; the edge does not enable a missing action.
+An edge with only `resize` enabled resizes from its corners and does not move
+the card.
 
 When the card's `resize` action is enabled, the corners of the edge band resize
 the card instead of moving it, like Android XR and Quest panels. Point and

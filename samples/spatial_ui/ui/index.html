@@ -36,6 +36,14 @@
       import * as xb from 'xrblocks';
 
       const CARD_SIZE = {width: 0.56, height: 'auto'};
+      // A scroll view has no natural height, so the scrolling card starts at a
+      // fixed one and may shrink to a smaller minimum than its content.
+      const SCROLLING_CARD_SIZE = {width: CARD_SIZE.width, height: 0.62};
+      const SCROLLING_CARD_MIN_HEIGHT = 0.3;
+      // Own manipulation options opt into the moves that `manipulation: true`
+      // gives the other cards, including Android XR's panel distance limits.
+      const MIN_CARD_DISTANCE = 0.75;
+      const MAX_CARD_DISTANCE = 5;
 
       function createHeader(icon, title, subtitle) {
         return new xb.UIPanel({
@@ -165,13 +173,17 @@
           });
 
           const exploreCard = new xb.UICard({
-            // A scroll view has no natural height, so start at a fixed one.
-            size: {width: CARD_SIZE.width, height: 0.62},
+            size: SCROLLING_CARD_SIZE,
             manipulation: {
               actions: {
-                translate: true,
+                translate: {
+                  scaleWithDistance: true,
+                  pushPull: true,
+                  minDistance: MIN_CARD_DISTANCE,
+                  maxDistance: MAX_CARD_DISTANCE,
+                },
                 scale: true,
-                resize: {minSize: {height: 0.3}},
+                resize: {minSize: {height: SCROLLING_CARD_MIN_HEIGHT}},
               },
             },
             edge: {scale: true},
