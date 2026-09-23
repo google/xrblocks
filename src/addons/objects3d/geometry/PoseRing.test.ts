@@ -50,6 +50,27 @@ describe('PoseRing', () => {
     expect(new THREE.Vector3().setFromMatrixPosition(stored).x).toBe(5);
   });
 
+  it('estimates linear and angular speed around a timestamp', () => {
+    const ring = new PoseRing(8);
+    // 0.1 m and 0.1 rad about Y per 100 ms → 1 m/s and 1 rad/s.
+    for (let i = 0; i < 5; ++i) {
+      const pose = new THREE.Matrix4()
+        .makeRotationY(0.1 * i)
+        .setPosition(0.1 * i, 0, 0);
+      ring.push(100 * i, pose);
+    }
+    const velocity = ring.velocityAround(200, 150)!;
+    expect(velocity.linearMetersPerSec).toBeCloseTo(1, 5);
+    expect(velocity.angularRadPerSec).toBeCloseTo(1, 5);
+  });
+
+  it('returns null velocity without two separated samples', () => {
+    const ring = new PoseRing(4);
+    expect(ring.velocityAround(100)).toBeNull();
+    ring.push(100, translation(1));
+    expect(ring.velocityAround(100)).toBeNull();
+  });
+
   it('clear() empties the ring', () => {
     const ring = new PoseRing(4);
     ring.push(100, translation(1));
