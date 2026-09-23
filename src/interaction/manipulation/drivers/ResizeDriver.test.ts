@@ -292,6 +292,27 @@ describe('ResizeDriver', () => {
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.6);
   });
 
+  it('clamps a locked card at the wrapping content crossover instead of expanding when dragged inward', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({resize: {preserveAspectRatio: true}});
+    // At width 0.3m, wrapped content needs 0.15m height (matching the 2:1 ratio).
+    measureContent(session.card, (width) => 0.045 / width);
+    const baseline = driver.capture(session)!;
+    drag(session, -0.1, -0.05);
+    const first = driver.propose(session, baseline)!;
+    expect(first.action === 'resize' && first.width).toBeCloseTo(0.3, 3);
+    expect(first.action === 'resize' && first.height).toBeCloseTo(0.15, 3);
+
+    drag(session, -0.14, -0.07);
+    const fartherInward = driver.propose(session, baseline)!;
+    expect(
+      fartherInward.action === 'resize' && fartherInward.width
+    ).toBeCloseTo(0.3, 3);
+    expect(
+      fartherInward.action === 'resize' && fartherInward.height
+    ).toBeCloseTo(0.15, 3);
+  });
+
   it('keeps an automatic height when a corner is pressed without dragging', () => {
     const driver = new ResizeDriver();
     const session = createSession({size: {width: 0.4, height: 'auto'}});

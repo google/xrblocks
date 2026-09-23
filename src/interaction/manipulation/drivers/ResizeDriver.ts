@@ -172,11 +172,11 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
           : Math.min(content, options.maxSize.height);
       if (floor !== undefined && height < floor) {
         if (locked) {
-          // Grow both axes together. Widening only shortens wrapped content,
-          // so it still fits, and maxSize wins if the ratio cannot reach it.
-          const ratio = lockedRatio(
-            floor / (baseline.height as number),
-            baseline
+          const ratio = lockedContentRatio(
+            card,
+            baseline,
+            width / baseline.width,
+            floor
           );
           width = baseline.width * ratio;
           height = (baseline.height as number) * ratio;
@@ -239,6 +239,35 @@ function contentHeight(
   const height = measureUICardContentHeight(card, width);
   baseline.contentFloor = {width, height};
   return height;
+}
+
+/**
+ * Finds the smallest aspect-locked ratio between `lower` and the `floor` ratio
+ * at which the card height still fits its content at that width.
+ */
+function lockedContentRatio(
+  card: UICard,
+  baseline: ResizeBaseline,
+  lower: number,
+  floor: number
+): number {
+  const baseHeight = baseline.height as number;
+  const maxHeight = baseline.options.maxSize.height;
+  let high = lockedRatio(floor / baseHeight, baseline);
+  let low = Math.min(lower, high);
+  const fitsAt = (ratio: number) => {
+    const measured = contentHeight(card, baseline, baseline.width * ratio);
+    const needed =
+      measured === undefined ? 0 : Math.min(measured, maxHeight);
+    return baseHeight * ratio >= needed - SIZE_EPSILON;
+  };
+  if (!fitsAt(high)) return high;
+  while ((high - low) * baseline.width > SIZE_EPSILON) {
+    const middle = (low + high) / 2;
+    if (fitsAt(middle)) high = middle;
+    else low = middle;
+  }
+  return high;
 }
 
 /** Clamps a uniform resize ratio so both axes stay within their limits. */
