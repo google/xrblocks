@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 58daa2f
- * @builddate 2026-09-23T20:48:02.643Z
+ * @commitid dec4110
+ * @builddate 2026-09-23T21:51:08.809Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -42,7 +42,7 @@
  */
 import { Container, Component, Custom, abortableEffect, Image, Text, reversePainterSortStable, Svg } from '@pmndrs/uikit';
 import * as THREE from 'three';
-import { T as TransformScript, v as MAX_GRADIENT_STOPS, w as DEFAULT_GRADIENT_PANEL_PROPS, x as ManipulationAction, y as getUIPresentationObject, z as bindScrollView, A as updateScrollViewLayout, B as bindTextInput, C as normalizeTextInputValue, E as isUIElement, U as UIScrollView, F as getUIElementKind, G as getUIStructureRevision, J as UICard, L as setResolvedUICardSize, N as UIText, Q as UITextInput, V as registerUIPresentationObject, Y as getUIRevision, Z as getUICardEdgeOptions, _ as getSemanticControl, $ as UIOverlay } from './entry.js';
+import { T as TransformScript, v as MAX_GRADIENT_STOPS, w as DEFAULT_GRADIENT_PANEL_PROPS, x as ManipulationAction, y as getUIPresentationObject, z as bindScrollView, A as updateScrollViewLayout, B as bindTextInput, C as normalizeTextInputValue, E as isUIElement, U as UIScrollView, F as getUIElementKind, G as getUIStructureRevision, J as UICard, L as setUICardContentMeasurer, N as setResolvedUICardSize, Q as UIText, V as UITextInput, Y as registerUIPresentationObject, Z as getUIRevision, _ as getUICardEdgeOptions, $ as normalizeManipulationConfig, a0 as getSemanticControl, a1 as UIOverlay } from './entry.js';
 import { signal, computed, effect } from '@preact/signals-core';
 
 /**
@@ -1640,6 +1640,21 @@ class GradientPanel extends ShaderPanel {
     }
 }
 
+/**
+ * Length of each resize corner along the card's sides, beyond the rounded
+ * corner, in edge margins.
+ */
+const RESIZE_CORNER_SIDE_MARGINS = 2;
+/**
+ * Largest share of each side's half-length a resize corner may cover, so the
+ * middle of every side stays available for moving the card.
+ */
+const MAX_RESIZE_CORNER_FRACTION = 0.5;
+/** Stroke width multiplier for a hovered resize corner. */
+const RESIZE_CORNER_EDGE_WIDTH_SCALE = 2;
+
+/** Formats a number as a GLSL float literal, which needs a decimal point. */
+const glslFloat = (value) => Number.isInteger(value) ? `${value}.0` : `${value}`;
 /** Fragment shader for the hover-lit manipulation edge around a UI card. */
 const UICardEdgeFragmentShader = CommonFunctionsShader +
     `
@@ -1661,6 +1676,30 @@ uniform float u_show_glow;
 uniform vec2 u_cursor_uv_2;
 uniform float u_show_glow_2;
 uniform float u_debug;
+uniform float u_resizable;
+
+const float RESIZE_CORNER_SIDE_MARGINS = ${glslFloat(RESIZE_CORNER_SIDE_MARGINS)};
+const float MAX_RESIZE_CORNER_FRACTION = ${glslFloat(MAX_RESIZE_CORNER_FRACTION)};
+const float RESIZE_CORNER_EDGE_WIDTH_SCALE = ${glslFloat(RESIZE_CORNER_EDGE_WIDTH_SCALE)};
+
+// Matches isOuterEdgeHit and isCornerHit in UICardEdge.ts.
+float cornerHighlight(
+    vec2 p,
+    vec2 cursorUv,
+    float showCursor,
+    vec2 size,
+    vec2 cornerStart,
+    vec2 innerHalfSize,
+    float innerRadius
+) {
+    if (showCursor < 0.5) return 0.0;
+    vec2 cursor = cursorUv * size - size * 0.5;
+    if (sdRoundedBox(cursor, innerHalfSize, innerRadius) < 0.0) return 0.0;
+    bool fragmentInCorner = all(greaterThanEqual(abs(p), cornerStart));
+    bool cursorInCorner = all(greaterThanEqual(abs(cursor), cornerStart));
+    bool sameCorner = all(equal(sign(p), sign(cursor)));
+    return fragmentInCorner && cursorInCorner && sameCorner ? 1.0 : 0.0;
+}
 
 void main() {
     vec2 pixelRes = u_resolution;
@@ -1727,7 +1766,26 @@ void main() {
 
     glowAlpha *= edgeBandMask;
 
-    if (glowAlpha > 0.001) {
+    float corner = 0.0;
+    if (u_resizable > 0.5) {
+        vec2 cornerExtent = min(
+            vec2(innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin),
+            halfSize * MAX_RESIZE_CORNER_FRACTION
+        );
+        vec2 cornerStart = halfSize - cornerExtent;
+        corner = max(
+            cornerHighlight(
+                p, u_cursor_uv, u_show_glow, size, cornerStart,
+                innerHalfSize, innerRadius
+            ),
+            cornerHighlight(
+                p, u_cursor_uv_2, u_show_glow_2, size, cornerStart,
+                innerHalfSize, innerRadius
+            )
+        );
+    }
+
+    if (glowAlpha > 0.001 || corner > 0.0) {
         vec4 glow = u_cursor_spotlight_color;
         glow.a *= glowAlpha;
 
@@ -1746,13 +1804,15 @@ void main() {
             accumColor = vec4(outRGB, outA);
         }
 
-        float width = u_edge_width;
+        // Hovering a resize corner lights its whole arc with a thicker stroke.
+        float width =
+            u_edge_width * mix(1.0, RESIZE_CORNER_EDGE_WIDTH_SCALE, corner);
         float edgeMask = smoothstep(
             -width - aa,
             -width,
             distToEdge
         );
-        float edgeOpacity = glowAlpha;
+        float edgeOpacity = max(glowAlpha, corner);
 
         vec4 edgeResult = vec4(0.0);
         if (edgeMask > 0.0 && edgeOpacity > 0.0) {
@@ -1802,6 +1862,7 @@ const DEFAULT_EDGE_PROPERTIES = {
     spotlightRadius: 20,
     spotlightBlur: 40,
     debug: false,
+    resizable: false,
 };
 class UICardEdgeLayer extends PanelLayer {
     constructor(inputProperties, initialClasses, config = {}) {
@@ -1824,6 +1885,7 @@ class UICardEdgeLayer extends PanelLayer {
             setVector2(this.material, 'u_cursor_uv_2', signals.u_cursor_uv_2?.value);
             setNumber(this.material, 'u_show_glow_2', signals.u_show_glow_2?.value);
             setNumber(this.material, 'u_debug', signals.u_debug?.value);
+            setNumber(this.material, 'u_resizable', signals.u_resizable?.value);
         }, this.abortSignal);
     }
     setCursor(uv, index) {
@@ -1868,26 +1930,62 @@ class UICardEdge extends UICardEdgeLayer {
             u_cursor_uv_2: new THREE.Vector2(0.5, 0.5),
             u_show_glow_2: 0,
             u_debug: resolved.debug ? 1 : 0,
+            u_resizable: resolved.resizable ? 1 : 0,
         });
         this.name = 'UICardEdge';
+        /**
+         * Hit target that edge corner intersections are retargeted to. UIKit only
+         * accepts UIKit children, so it stays detached and mirrors the edge's world
+         * matrix for reticle normals.
+         */
+        this.resizeHandle = new THREE.Object3D();
         this.cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
         this.cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
+        /** Returns true when a world point lies in the outer edge hit band. */
+        this.containsPoint = (point, padding = 0) => {
+            const size = this.size.value;
+            if (!size)
+                return false;
+            this.updateWorldMatrix(true, false);
+            if (Math.abs(this.matrixWorld.determinant()) < Number.EPSILON)
+                return false;
+            const local = this.worldToLocal(point.clone());
+            const xScale = new THREE.Vector3()
+                .setFromMatrixColumn(this.matrixWorld, 0)
+                .length();
+            const paddingPixels = padding > 0 && xScale > Number.EPSILON ? (padding / xScale) * size[0] : 0;
+            const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
+            return isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius, paddingPixels);
+        };
         this.xb = {
             manipulationHandle: { action: ManipulationAction.Translate },
         };
         this.margin = margin;
         this._cardCornerRadius = cardCornerRadius;
+        this._resizable = resolved.resizable;
+        this.resizeHandle.name = 'UICardResizeHandle';
+        this.resizeHandle.xb = {
+            manipulationHandle: { action: ManipulationAction.Resize },
+        };
+        this.resizeHandle.matrixAutoUpdate = false;
+        this.resizeHandle.matrixWorldAutoUpdate = false;
         const baseRaycast = this.raycast.bind(this);
         this.raycast = (raycaster, intersections) => {
             const firstNewIntersection = intersections.length;
             baseRaycast(raycaster, intersections);
             const size = this.size.value;
             for (let index = intersections.length - 1; index >= firstNewIntersection; index--) {
-                const uv = intersections[index].uv;
+                const intersection = intersections[index];
+                const uv = intersection.uv;
                 if (!size ||
                     !uv ||
                     !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius)) {
                     intersections.splice(index, 1);
+                }
+                else if (this._resizable &&
+                    isCornerHit(uv, size, this.margin, this._cardCornerRadius)) {
+                    this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+                    intersection.object = this.resizeHandle;
                 }
             }
         };
@@ -1902,6 +2000,31 @@ class UICardEdge extends UICardEdgeLayer {
         if (signal)
             signal.value = nextRadius;
         setNumber(this.material, 'u_card_corner_radius', nextRadius);
+    }
+    get resizable() {
+        return this._resizable;
+    }
+    setResizable(resizable) {
+        this._resizable = resizable;
+        const signal = this.properties.signal.u_resizable;
+        if (signal)
+            signal.value = resizable ? 1 : 0;
+        setNumber(this.material, 'u_resizable', resizable ? 1 : 0);
+    }
+    /** Returns the resize handle when a world point touches a resize corner. */
+    touchTarget(point) {
+        const size = this.size.value;
+        if (!this._resizable || !size)
+            return undefined;
+        this.updateWorldMatrix(true, false);
+        const local = this.worldToLocal(point.clone());
+        const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
+        if (!isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius) ||
+            !isCornerHit(uv, size, this.margin, this._cardCornerRadius)) {
+            return undefined;
+        }
+        this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+        return this.resizeHandle;
     }
     setCursorPoints(first, second) {
         this.setCursorPoint(first, 0);
@@ -1930,6 +2053,7 @@ function createUniforms() {
         u_cursor_uv_2: { value: new THREE.Vector2(0.5, 0.5) },
         u_show_glow_2: { value: 0 },
         u_debug: { value: 0 },
+        u_resizable: { value: 0 },
     };
 }
 function setNumber(material, name, value) {
@@ -1946,7 +2070,7 @@ function setVector2(material, name, value) {
     if (value !== undefined)
         material.uniforms[name].value.copy(value);
 }
-function isOuterEdgeHit(uv, size, margin, cardCornerRadius) {
+function isOuterEdgeHit(uv, size, margin, cardCornerRadius, padding = 0) {
     const halfWidth = size[0] / 2;
     const halfHeight = size[1] / 2;
     const x = uv.x * size[0] - halfWidth;
@@ -1955,8 +2079,23 @@ function isOuterEdgeHit(uv, size, margin, cardCornerRadius) {
     const innerHalfHeight = Math.max(0, halfHeight - margin);
     const innerRadius = Math.min(cardCornerRadius, innerHalfWidth, innerHalfHeight);
     const outerRadius = Math.min(innerRadius + margin, halfWidth, halfHeight);
-    return (roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= 0 &&
-        roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >= 0);
+    return (roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= padding &&
+        roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >=
+            -padding);
+}
+/**
+ * Returns true inside the band's corner regions. Each region covers the rounded
+ * corner arc plus one margin width along both adjoining sides.
+ */
+function isCornerHit(uv, size, margin, cardCornerRadius) {
+    const halfWidth = size[0] / 2;
+    const halfHeight = size[1] / 2;
+    const innerRadius = Math.min(cardCornerRadius, Math.max(0, halfWidth - margin), Math.max(0, halfHeight - margin));
+    const extent = innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin;
+    const x = Math.abs(uv.x * size[0] - halfWidth);
+    const y = Math.abs(uv.y * size[1] - halfHeight);
+    return (x >= halfWidth - Math.min(extent, halfWidth * MAX_RESIZE_CORNER_FRACTION) &&
+        y >= halfHeight - Math.min(extent, halfHeight * MAX_RESIZE_CORNER_FRACTION));
 }
 function roundedBoxDistance(x, y, halfWidth, halfHeight, radius) {
     const qx = Math.abs(x) - halfWidth + radius;
@@ -3411,6 +3550,7 @@ const ICON_BASE = 'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/
 const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
+const CARD_SIZE_PROPERTY_KEYS = new Set(['width', 'height', 'sizeX', 'sizeY']);
 const imageTextureLoader = new THREE.TextureLoader();
 class UIKitMount {
     constructor(root, icons) {
@@ -3461,17 +3601,29 @@ class UIKitMount {
             this.structureRevision = getUIStructureRevision(this.root);
             this.object.add(this.rendered);
             this.hitMappingsChanged = true;
+            if (this.root instanceof UICard) {
+                const card = this.root;
+                setUICardContentMeasurer(card, {
+                    height: (width) => this.measureCardContentHeight(card, width),
+                    minWidth: () => this.measureCardMinContentWidth(card),
+                });
+            }
         }
         const structureRevision = getUIStructureRevision(this.root);
         if (this.structureRevision !== structureRevision) {
             this.binding.reconcileTree(context);
             this.structureRevision = structureRevision;
             this.hitMappingsChanged = true;
+            this.cachedMinContentWidth = undefined;
         }
         if (this.isOverlay)
             this.updateViewport(viewport);
-        if (this.binding.commit(context))
+        context.sequence.value = 0;
+        const commitResult = this.binding.commit(context);
+        if (commitResult.hitMappingsChanged)
             this.hitMappingsChanged = true;
+        if (commitResult.contentChanged)
+            this.cachedMinContentWidth = undefined;
         if (!this.hitMappingsChanged)
             return undefined;
         this.hitMappingsChanged = false;
@@ -3543,6 +3695,9 @@ class UIKitMount {
     dispose() {
         this.disposed = true;
         this.readyWork.length = 0;
+        if (this.root instanceof UICard) {
+            setUICardContentMeasurer(this.root, undefined);
+        }
         const binding = this.binding;
         const rendered = this.rendered;
         binding?.dispose();
@@ -3556,6 +3711,77 @@ class UIKitMount {
     }
     setActive(active) {
         this.binding?.setActive(active);
+    }
+    /**
+     * Lays the card out once at `width` with an automatic height, reads the
+     * natural height, then restores the committed layout.
+     */
+    measureCardContentHeight(card, width) {
+        if (!(width > 0))
+            return undefined;
+        const height = this.withAutoHeightLayout((yoga) => {
+            yoga.setWidth(width / card.pixelSize);
+            yoga.calculateLayout(undefined, undefined);
+            return yoga.getComputedHeight() * card.pixelSize;
+        });
+        return height !== undefined && Number.isFinite(height) && height > 0
+            ? height
+            : undefined;
+    }
+    /**
+     * Finds the narrowest width at which no content overflows its container,
+     * searching between zero and the current width. Words never break, so text
+     * that no longer fits overflows and narrows the search.
+     */
+    measureCardMinContentWidth(card) {
+        const current = card.size.width / card.pixelSize;
+        if (!(current > 0))
+            return undefined;
+        if (this.cachedMinContentWidth !== undefined &&
+            this.cachedMinContentWidth <= current * card.pixelSize) {
+            return this.cachedMinContentWidth;
+        }
+        const width = this.withAutoHeightLayout((yoga) => {
+            const overflowsAt = (value) => {
+                yoga.setWidth(value);
+                yoga.calculateLayout(undefined, undefined);
+                return yogaContentOverflows(yoga);
+            };
+            if (overflowsAt(current))
+                return current;
+            let fits = current;
+            let overflows = 0;
+            while (fits - overflows > MIN_WIDTH_SEARCH_PRECISION) {
+                const middle = (fits + overflows) / 2;
+                if (overflowsAt(middle))
+                    overflows = middle;
+                else
+                    fits = middle;
+            }
+            return fits;
+        });
+        if (width === undefined)
+            return undefined;
+        const measured = width * card.pixelSize;
+        this.cachedMinContentWidth = measured;
+        return measured;
+    }
+    /** Runs `measure` on the root yoga node, then restores the committed layout. */
+    withAutoHeightLayout(measure) {
+        const yoga = this.binding?.node.node
+            ?.yogaNode;
+        if (!yoga)
+            return undefined;
+        const previousWidth = yoga.getWidth();
+        const previousHeight = yoga.getHeight();
+        try {
+            yoga.setHeightAuto();
+            return measure(yoga);
+        }
+        finally {
+            yoga.setWidth(yogaDimension(previousWidth));
+            yoga.setHeight(yogaDimension(previousHeight));
+        }
     }
     updateViewport(viewport) {
         const wrapper = this.rendered;
@@ -3606,6 +3832,50 @@ class UIKitBackend {
         this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
         this.renderer = undefined;
     }
+}
+// Values of yoga-layout's `Unit`, `Edge`, and `PositionType` enums. yoga-layout
+// is only reached through uikit, so these mirror its enums instead of adding a
+// direct dependency.
+const YOGA_UNIT_POINT = 1;
+const YOGA_UNIT_PERCENT = 2;
+const YOGA_UNIT_AUTO = 3;
+const YOGA_EDGE_LEFT = 0;
+const YOGA_EDGE_RIGHT = 2;
+const YOGA_POSITION_ABSOLUTE = 2;
+// Layout pixels. Matches uikit's own threshold for scrollable overflow.
+const OVERFLOW_TOLERANCE = 0.5;
+// Layout pixels. One pixel is below what a card edge can visibly show.
+const MIN_WIDTH_SEARCH_PRECISION = 1;
+/** True when any in-flow node extends past either side of its parent's content box. */
+function yogaContentOverflows(node) {
+    const left = node.getComputedPadding(YOGA_EDGE_LEFT) +
+        node.getComputedBorder(YOGA_EDGE_LEFT) -
+        OVERFLOW_TOLERANCE;
+    const right = node.getComputedWidth() -
+        node.getComputedPadding(YOGA_EDGE_RIGHT) -
+        node.getComputedBorder(YOGA_EDGE_RIGHT) +
+        OVERFLOW_TOLERANCE;
+    for (let index = 0; index < node.getChildCount(); index++) {
+        const child = node.getChild(index);
+        if (child.getPositionType() === YOGA_POSITION_ABSOLUTE)
+            continue;
+        const childLeft = child.getComputedLeft();
+        if (childLeft < left || childLeft + child.getComputedWidth() > right) {
+            return true;
+        }
+        if (yogaContentOverflows(child))
+            return true;
+    }
+    return false;
+}
+function yogaDimension({ unit, value }) {
+    if (unit === YOGA_UNIT_POINT)
+        return value;
+    if (unit === YOGA_UNIT_PERCENT)
+        return `${value}%`;
+    if (unit === YOGA_UNIT_AUTO)
+        return 'auto';
+    return undefined;
 }
 function createUIBackend() {
     return new UIKitBackend();
@@ -3708,10 +3978,11 @@ class UIKitNodeBinding {
             this.node.add(this.edge);
         }
     }
-    /** Returns true when physical hit mappings changed. */
+    /** Returns whether physical hit mappings or layout content changed. */
     commit(context) {
-        if (this.disposed)
-            return false;
+        if (this.disposed) {
+            return { hitMappingsChanged: false, contentChanged: false };
+        }
         const order = context.rootStack === undefined
             ? undefined
             : context.rootStack +
@@ -3726,10 +3997,15 @@ class UIKitNodeBinding {
             nextPointerEvents !== this.pointerEvents ||
             this.resourceRevision !== this.appliedResourceRevision;
         let hitMappingsChanged = orderChanged;
+        let contentChanged = false;
         if (needsProperties) {
             const base = baseState(this.element);
             this.renderOrder = order;
             const properties = this.propertiesFor(context, base, order);
+            const changed = changedProperties(this.presentedProperties, properties);
+            contentChanged =
+                !(this.element instanceof UICard) ||
+                    Object.keys(changed).some((key) => !CARD_SIZE_PROPERTY_KEYS.has(key));
             this.applyProperties(properties);
             this.baseProperties = properties;
             this.presentedProperties = properties;
@@ -3741,16 +4017,20 @@ class UIKitNodeBinding {
             this.ensurePrivateNodes(context.theme);
             this.scrollView?.commit(this.contentProperties);
             this.textInput?.commit(context.theme);
-            hitMappingsChanged = this.syncEdge(properties);
+            if (this.syncEdge(properties))
+                hitMappingsChanged = true;
         }
         this.node.visible = this.element.visible;
         this.syncImage();
         this.setHitEnabled(this.baseProperties);
         for (const child of this.childOrder) {
-            if (this.children.get(child).commit(context))
+            const childResult = this.children.get(child).commit(context);
+            if (childResult.hitMappingsChanged)
                 hitMappingsChanged = true;
+            if (childResult.contentChanged)
+                contentChanged = true;
         }
-        return hitMappingsChanged;
+        return { hitMappingsChanged, contentChanged };
     }
     present(stateFor) {
         if (this.disposed)
@@ -3788,8 +4068,17 @@ class UIKitNodeBinding {
                 options: { containsPoint: this.hitRegion.containsPoint },
             },
         ];
-        if (this.edge)
-            mappings.push({ physical: this.edge, logical: this.element });
+        if (this.edge) {
+            const edge = this.edge;
+            mappings.push({
+                physical: edge,
+                logical: this.element,
+                options: {
+                    containsPoint: edge.containsPoint,
+                    touchTarget: (point) => edge.touchTarget(point),
+                },
+            }, { physical: edge.resizeHandle, logical: this.element });
+        }
         for (const child of this.childOrder) {
             mappings.push(...this.children.get(child).hitMappings());
         }
@@ -3974,14 +4263,18 @@ class UIKitNodeBinding {
             this.edge = undefined;
             return true;
         }
+        const resizable = !!options &&
+            !!normalizeManipulationConfig(this.element.xb?.manipulation)?.resize;
         if (options && !this.edge) {
             this.edge = new UICardEdge({
                 cardCornerRadius: numericCornerRadius(properties.cornerRadius),
+                resizable,
             });
             this.node.add(this.edge);
             return true;
         }
         this.edge?.setCardCornerRadius(numericCornerRadius(properties.cornerRadius));
+        this.edge?.setResizable(resizable);
         return false;
     }
     syncImage() {

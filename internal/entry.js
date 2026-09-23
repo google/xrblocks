@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid 58daa2f
- * @builddate 2026-09-23T20:48:02.643Z
+ * @commitid dec4110
+ * @builddate 2026-09-23T21:51:08.809Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -6975,7 +6975,7 @@ class HitRegistry {
         const intersections = [];
         const box = new THREE.Box3();
         const center = new THREE.Vector3();
-        for (const { physical, containsPoint } of this.touchCandidates.values()) {
+        for (const { physical, containsPoint, touchTarget, } of this.touchCandidates.values()) {
             if (physical.xb?.pointerEvents === 'none')
                 continue;
             if (!effectiveVisible$1(physical))
@@ -6994,7 +6994,7 @@ class HitRegistry {
                 continue;
             intersections.push({
                 distance: box.getCenter(center).distanceTo(point),
-                object: physical,
+                object: touchTarget?.(point) ?? physical,
                 point: point.clone(),
             });
         }
@@ -8132,6 +8132,7 @@ const ManipulationAction = {
     Translate: 'translate',
     Rotate: 'rotate',
     Scale: 'scale',
+    Resize: 'resize',
     None: 'none',
 };
 
@@ -8149,12 +8150,13 @@ function normalizeManipulationConfig(value) {
     const translate = normalizeAction(value.actions?.translate);
     const rotate = normalizeAction(value.actions?.rotate);
     const scale = normalizeAction(value.actions?.scale);
+    const resize = normalizeAction(value.actions?.resize);
     const handle = value.handle?.action;
     if (handle !== undefined && !isHandleAction(handle))
         return undefined;
-    if (!translate && !rotate && !scale)
+    if (!translate && !rotate && !scale && !resize)
         return undefined;
-    return { translate, rotate, scale, handle };
+    return { translate, rotate, scale, resize, handle };
 }
 function isManipulationActionEnabled(config, action) {
     if (action === ManipulationAction.Translate)
@@ -8163,6 +8165,8 @@ function isManipulationActionEnabled(config, action) {
         return !!config.rotate;
     if (action === ManipulationAction.Scale)
         return !!config.scale;
+    if (action === ManipulationAction.Resize)
+        return !!config.resize;
     return false;
 }
 function isHandleAction(value) {
@@ -8195,7 +8199,8 @@ function normalizeAction(value) {
 function isManipulationAction(value) {
     return (value === ManipulationAction.Translate ||
         value === ManipulationAction.Rotate ||
-        value === ManipulationAction.Scale);
+        value === ManipulationAction.Scale ||
+        value === ManipulationAction.Resize);
 }
 function isFiniteVector$1(value) {
     return (Number.isFinite(value.x) &&
@@ -8284,6 +8289,482 @@ function scaleLimitVector(value, fallback, allowInfinity) {
     const valid = [result.x, result.y, result.z].every((component) => component > 0 &&
         (Number.isFinite(component) || (allowInfinity && component === Infinity)));
     return valid ? result : undefined;
+}
+
+function validateUIAppearance(value) {
+    if (value !== 'surface' && value !== 'none') {
+        throw new Error(`Invalid UI appearance "${String(value)}".`);
+    }
+}
+
+/** The only world-transform root in a spatial UI tree. */
+class UICard extends UIElement {
+    constructor({ size, pixelSize = 0.001, anchorX = 'center', anchorY = 'center', appearance = 'surface', manipulation, edge = false, ...options }) {
+        validateSize(size);
+        validatePixelSize(pixelSize);
+        validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
+        validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
+        validateUIAppearance(appearance);
+        super('card', options);
+        this.name = 'UICard';
+        this.edgeTarget = {
+            translateFromSurface: false,
+        };
+        this.edgeEnabled = false;
+        this.pixelSize = pixelSize;
+        this.anchorX = anchorX;
+        this.anchorY = anchorY;
+        this.appearance = appearance;
+        this.sizeTarget = { ...size };
+        this.sizeProxy = new Proxy(this.sizeTarget, {
+            set: (target, property, value) => {
+                if (property === 'width') {
+                    validateFixedSize(value);
+                }
+                else if (property === 'height') {
+                    validateHeight(value);
+                }
+                else {
+                    throw new Error(`Unknown UICard size property "${String(property)}".`);
+                }
+                Reflect.set(target, property, value);
+                resolvedSizes.delete(this);
+                this.markUIDirty();
+                return true;
+            },
+        });
+        this.edgeProxy = new Proxy(this.edgeTarget, {
+            set: (target, property, value) => {
+                if (property !== 'translateFromSurface' || typeof value !== 'boolean') {
+                    throw new Error(`Unknown or invalid UICard edge option "${String(property)}".`);
+                }
+                const previous = Reflect.get(target, property);
+                Reflect.set(target, property, value);
+                try {
+                    this.validateEdge();
+                }
+                catch (error) {
+                    Reflect.set(target, property, previous);
+                    throw error;
+                }
+                this.markUIDirty();
+                return true;
+            },
+        });
+        this.manipulation = manipulation;
+        this.edge = edge;
+    }
+    get size() {
+        return this.sizeProxy;
+    }
+    set size(value) {
+        validateSize(value);
+        this.sizeProxy.width = value.width;
+        this.sizeProxy.height = value.height;
+    }
+    get manipulation() {
+        return this.xb?.manipulation;
+    }
+    set manipulation(value) {
+        const normalized = normalizeCardManipulation(value);
+        this.validateEdge(this.edgeEnabled, normalized);
+        this.xb ??= {};
+        this.xb.manipulation = normalized;
+        this.markUIDirty();
+    }
+    get edge() {
+        return this.edgeEnabled ? this.edgeProxy : false;
+    }
+    set edge(value) {
+        const enabled = value !== false;
+        const options = value && value !== true ? value : {};
+        const next = {
+            translateFromSurface: options.translateFromSurface ?? false,
+        };
+        this.validateEdge(enabled, this.xb?.manipulation);
+        this.edgeEnabled = enabled;
+        this.edgeTarget.translateFromSurface = next.translateFromSurface;
+        this.markUIDirty();
+    }
+    validateEdge(enabled = this.edgeEnabled, manipulation = this.xb
+        ?.manipulation) {
+        if (!enabled)
+            return;
+        const config = normalizeManipulationConfig(manipulation);
+        if (!config?.translate && !config?.resize) {
+            throw new Error('UICard edge requires Translate or Resize manipulation.');
+        }
+    }
+}
+function getUICardEdgeOptions(card) {
+    return card.edge || undefined;
+}
+const resolvedSizes = new WeakMap();
+/** Returns the current physical card size after layout resolves. */
+function getResolvedUICardSize(card) {
+    if (card.size.height !== 'auto') {
+        return { width: card.size.width, height: card.size.height };
+    }
+    return resolvedSizes.get(card);
+}
+/** Stores a backend-calculated physical size for an automatic-height card. */
+function setResolvedUICardSize(card, size) {
+    if (card.size.height !== 'auto')
+        return;
+    resolvedSizes.set(card, size);
+}
+const contentMeasurers = new WeakMap();
+/** Registers the backend that measures a card's content. */
+function setUICardContentMeasurer(card, measurer) {
+    if (measurer)
+        contentMeasurers.set(card, measurer);
+    else
+        contentMeasurers.delete(card);
+}
+/**
+ * Returns the height in meters that the card's content needs at `width`, or
+ * undefined before the card has a layout.
+ */
+function measureUICardContentHeight(card, width) {
+    return contentMeasurers.get(card)?.height(width);
+}
+/**
+ * Returns the narrowest width in meters at which the card's content does not
+ * overflow, or undefined before the card has a layout.
+ */
+function measureUICardMinContentWidth(card) {
+    return contentMeasurers.get(card)?.minWidth();
+}
+// Android XR's default panel movement limits, in meters from the viewer.
+const CARD_MIN_DISTANCE = 0.75;
+const CARD_MAX_DISTANCE = 5;
+function normalizeCardManipulation(value) {
+    if (value === undefined || value === false)
+        return value;
+    if (value === true) {
+        return {
+            actions: {
+                translate: {
+                    faceCamera: true,
+                    scaleWithDistance: true,
+                    pushPull: true,
+                    minDistance: CARD_MIN_DISTANCE,
+                    maxDistance: CARD_MAX_DISTANCE,
+                },
+                scale: true,
+                resize: true,
+            },
+            handle: { action: 'translate' },
+        };
+    }
+    const actions = value.actions ? { ...value.actions } : undefined;
+    if (actions?.translate === true) {
+        actions.translate = { faceCamera: true };
+    }
+    else if (actions?.translate && typeof actions.translate === 'object') {
+        actions.translate = {
+            ...actions.translate,
+            faceCamera: actions.translate.faceCamera ?? true,
+        };
+    }
+    if (actions?.rotate && typeof actions.rotate === 'object') {
+        actions.rotate = {
+            ...actions.rotate,
+            axis: actions.rotate.axis && typeof actions.rotate.axis === 'object'
+                ? { ...actions.rotate.axis }
+                : actions.rotate.axis,
+        };
+    }
+    if (actions?.scale && typeof actions.scale === 'object') {
+        actions.scale = {
+            ...actions.scale,
+            minScale: actions.scale.minScale && typeof actions.scale.minScale === 'object'
+                ? { ...actions.scale.minScale }
+                : actions.scale.minScale,
+            maxScale: actions.scale.maxScale && typeof actions.scale.maxScale === 'object'
+                ? { ...actions.scale.maxScale }
+                : actions.scale.maxScale,
+        };
+    }
+    if (actions?.resize && typeof actions.resize === 'object') {
+        actions.resize = {
+            ...actions.resize,
+            minSize: actions.resize.minSize ? { ...actions.resize.minSize } : undefined,
+            maxSize: actions.resize.maxSize ? { ...actions.resize.maxSize } : undefined,
+        };
+    }
+    return {
+        ...value,
+        actions,
+        handle: value.handle ? { ...value.handle } : undefined,
+    };
+}
+function validateSize(size) {
+    if (!size)
+        throw new Error('UICard requires a size.');
+    validateFixedSize(size.width);
+    validateHeight(size.height);
+}
+function validateFixedSize(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        throw new Error('UICard fixed size values must be finite and nonnegative.');
+    }
+}
+function validateHeight(value) {
+    if (value === 'auto')
+        return;
+    validateFixedSize(value);
+}
+function validatePixelSize(pixelSize) {
+    if (!Number.isFinite(pixelSize) || pixelSize <= 0) {
+        throw new Error('UICard pixelSize must be positive and finite.');
+    }
+}
+function validateAnchor(value, allowed, property) {
+    if (!allowed.includes(value)) {
+        throw new Error(`UICard ${property} has an invalid value.`);
+    }
+}
+
+const DEFAULT_MIN_SIZE = 0.1;
+// Meters. Sizes closer than this count as unchanged, both for reusing a
+// content measurement and for leaving an automatic height alone.
+const SIZE_EPSILON = 1e-4;
+const CARD_ANCHORS = {
+    left: 0,
+    bottom: 0,
+    center: 0.5,
+    right: 1,
+    top: 1,
+};
+/** Captures and proposes corner Resize data for `UICard` owners. */
+class ResizeDriver {
+    constructor() {
+        this.action = ManipulationAction.Resize;
+        this.sessionCorners = new WeakMap();
+    }
+    capture(session) {
+        const card = asCard(session.owner);
+        const options = session.config.resize;
+        if (!card || !options)
+            return undefined;
+        const anchor = options.anchor ?? 'center';
+        if (anchor !== 'center' && anchor !== 'opposite')
+            return undefined;
+        const minSize = resolveLimit(options.minSize, DEFAULT_MIN_SIZE);
+        const maxSize = resolveLimit(options.maxSize, Infinity);
+        if (!minSize ||
+            !maxSize ||
+            minSize.width > maxSize.width ||
+            minSize.height > maxSize.height) {
+            return undefined;
+        }
+        // Without an explicit minimum width, never go narrower than the content.
+        if (options.minSize?.width === undefined) {
+            const content = measureUICardMinContentWidth(card);
+            if (content !== undefined) {
+                minSize.width = Math.min(Math.max(minSize.width, content), maxSize.width);
+            }
+        }
+        const { width } = card.size;
+        // Automatic heights become fixed once resized, like Quest and Android XR
+        // panels. Before the first layout there is no height to start from.
+        const height = card.size.height === 'auto'
+            ? (getResolvedUICardSize(card)?.height ?? 'auto')
+            : card.size.height;
+        if (!(width > 0) || (height !== 'auto' && !(height > 0))) {
+            return undefined;
+        }
+        const matrixWorld = card.matrixWorld.clone();
+        const inverseMatrixWorld = matrixWorld.clone().invert();
+        if (!isFiniteMatrix(inverseMatrixWorld))
+            return undefined;
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1).transformDirection(matrixWorld), new THREE.Vector3().setFromMatrixPosition(matrixWorld));
+        const baseline = { plane, inverseMatrixWorld };
+        // Use the current pointer for the new delta baseline, and keep the corner
+        // chosen when the session first started.
+        const pointer = pointerOnPlane(session.primary.snapshot, baseline) ??
+            session.primary.capture.point.clone().applyMatrix4(inverseMatrixWorld);
+        const cardAnchor = new THREE.Vector2(CARD_ANCHORS[card.anchorX], CARD_ANCHORS[card.anchorY]);
+        const centerX = (CARD_ANCHORS.center - cardAnchor.x) * width;
+        const centerY = height === 'auto'
+            ? pointer.y
+            : (CARD_ANCHORS.center - cardAnchor.y) * height;
+        let corner = this.sessionCorners.get(session)?.clone();
+        if (!corner) {
+            corner = new THREE.Vector2(pointer.x >= centerX ? 1 : 0, pointer.y >= centerY ? 1 : 0);
+            this.sessionCorners.set(session, corner.clone());
+        }
+        return {
+            action: this.action,
+            width,
+            height,
+            matrixWorld,
+            inverseMatrixWorld,
+            plane,
+            pointer,
+            corner,
+            cardAnchor,
+            autoHeight: card.size.height === 'auto',
+            options: {
+                anchor,
+                minSize,
+                maxSize,
+                fitContent: options.minSize?.height === undefined,
+                preserveAspectRatio: options.preserveAspectRatio === true,
+            },
+        };
+    }
+    propose(session, baseline) {
+        const card = asCard(session.owner);
+        const pointer = pointerOnPlane(session.primary.snapshot, baseline);
+        if (!card || !pointer)
+            return undefined;
+        const { corner, cardAnchor, options } = baseline;
+        const fixed = options.anchor === 'center'
+            ? new THREE.Vector2(CARD_ANCHORS.center, CARD_ANCHORS.center)
+            : new THREE.Vector2(1 - corner.x, 1 - corner.y);
+        let width = resizeAxis(baseline.width, pointer.x - baseline.pointer.x, corner.x, fixed.x, options.minSize.width, options.maxSize.width);
+        let height = baseline.height === 'auto'
+            ? 'auto'
+            : resizeAxis(baseline.height, pointer.y - baseline.pointer.y, corner.y, fixed.y, options.minSize.height, options.maxSize.height);
+        const locked = options.preserveAspectRatio && baseline.height !== 'auto';
+        if (locked && height !== 'auto') {
+            // Follow whichever axis the pointer changed more, relative to its size.
+            const widthRatio = width / baseline.width;
+            const heightRatio = height / baseline.height;
+            const ratio = lockedRatio(Math.abs(Math.log(widthRatio)) >= Math.abs(Math.log(heightRatio))
+                ? widthRatio
+                : heightRatio, baseline);
+            width = baseline.width * ratio;
+            height = baseline.height * ratio;
+        }
+        if (height !== 'auto' && options.fitContent) {
+            const content = contentHeight(card, baseline, width);
+            const floor = content === undefined
+                ? undefined
+                : Math.min(content, options.maxSize.height);
+            if (floor !== undefined && height < floor) {
+                if (locked) {
+                    const ratio = lockedContentRatio(card, baseline, width / baseline.width, floor);
+                    width = baseline.width * ratio;
+                    height = baseline.height * ratio;
+                }
+                else {
+                    height = floor;
+                }
+            }
+        }
+        // Move the card origin so the fixed point keeps its baseline world position.
+        const offset = new THREE.Vector3((fixed.x - cardAnchor.x) * (baseline.width - width), height === 'auto' || baseline.height === 'auto'
+            ? 0
+            : (fixed.y - cardAnchor.y) * (baseline.height - height), 0);
+        const worldPosition = offset.applyMatrix4(baseline.matrixWorld);
+        const parent = session.owner.parent;
+        parent?.updateWorldMatrix(true, false);
+        const position = worldPositionToLocal(worldPosition, parent?.matrixWorld);
+        if (!Number.isFinite(width) || !isFiniteVector(position))
+            return undefined;
+        if (height !== 'auto' && !Number.isFinite(height))
+            return undefined;
+        // An automatic height stays automatic until the size really changes, so a
+        // corner press without a drag does not freeze it.
+        const unchanged = baseline.autoHeight &&
+            Math.abs(width - baseline.width) < SIZE_EPSILON &&
+            (height === 'auto' ||
+                Math.abs(height - baseline.height) < SIZE_EPSILON);
+        const proposedHeight = unchanged ? 'auto' : height;
+        return {
+            action: this.action,
+            width,
+            height: proposedHeight,
+            position,
+            apply: () => {
+                if (unchanged)
+                    return;
+                if (card.size.width !== width)
+                    card.size.width = width;
+                if (proposedHeight !== 'auto' && card.size.height !== proposedHeight) {
+                    card.size.height = proposedHeight;
+                }
+                session.owner.position.copy(position);
+            },
+        };
+    }
+}
+/** Measures the content height at `width`, reusing the last measurement. */
+function contentHeight(card, baseline, width) {
+    const cached = baseline.contentFloor;
+    if (cached && Math.abs(cached.width - width) < SIZE_EPSILON) {
+        return cached.height;
+    }
+    const height = measureUICardContentHeight(card, width);
+    baseline.contentFloor = { width, height };
+    return height;
+}
+/**
+ * Finds the smallest aspect-locked ratio between `lower` and the `floor` ratio
+ * at which the card height still fits its content at that width.
+ */
+function lockedContentRatio(card, baseline, lower, floor) {
+    const baseHeight = baseline.height;
+    const maxHeight = baseline.options.maxSize.height;
+    let high = lockedRatio(floor / baseHeight, baseline);
+    let low = Math.min(lower, high);
+    const fitsAt = (ratio) => {
+        const measured = contentHeight(card, baseline, baseline.width * ratio);
+        const needed = measured === undefined ? 0 : Math.min(measured, maxHeight);
+        return baseHeight * ratio >= needed - SIZE_EPSILON;
+    };
+    if (!fitsAt(high))
+        return high;
+    while ((high - low) * baseline.width > SIZE_EPSILON) {
+        const middle = (low + high) / 2;
+        if (fitsAt(middle))
+            high = middle;
+        else
+            low = middle;
+    }
+    return high;
+}
+/** Clamps a uniform resize ratio so both axes stay within their limits. */
+function lockedRatio(ratio, baseline) {
+    const height = baseline.height;
+    const { minSize, maxSize } = baseline.options;
+    const lower = Math.min(1, Math.max(minSize.width / baseline.width, minSize.height / height));
+    const upper = Math.max(1, Math.min(maxSize.width / baseline.width, maxSize.height / height));
+    return THREE.MathUtils.clamp(ratio, lower, upper);
+}
+function asCard(owner) {
+    return isUIElement(owner) && getUIElementKind(owner) === 'card'
+        ? owner
+        : undefined;
+}
+function resizeAxis(size, delta, corner, fixed, minimum, maximum) {
+    const direction = corner === 1 ? 1 : -1;
+    const next = size + (direction * delta) / Math.abs(corner - fixed);
+    return THREE.MathUtils.clamp(next, Math.min(minimum, size), Math.max(maximum, size));
+}
+function pointerOnPlane(snapshot, baseline) {
+    const world = snapshot.ray
+        ? snapshot.ray.intersectPlane(baseline.plane, new THREE.Vector3())
+        : baseline.plane.projectPoint(snapshot.position, new THREE.Vector3());
+    if (!world || !isFiniteVector(world))
+        return undefined;
+    return world.applyMatrix4(baseline.inverseMatrixWorld);
+}
+function resolveLimit(value, fallback) {
+    const width = value?.width ?? fallback;
+    const height = value?.height ?? fallback;
+    if (!isLimit(width) || !isLimit(height))
+        return undefined;
+    return { width, height };
+}
+function isLimit(value) {
+    return typeof value === 'number' && !Number.isNaN(value) && value >= 0;
+}
+function isFiniteMatrix(matrix) {
+    return matrix.elements.every(Number.isFinite);
 }
 
 /** Captures and proposes Rotate data. It does not own sessions or events. */
@@ -8427,6 +8908,18 @@ class ScaleDriver {
     }
 }
 
+// Thumbstick deflection ignored so resting sticks and drift don't push/pull.
+const PUSH_PULL_DEADZONE = 0.15;
+// xr-standard gamepad mapping: thumbstick Y, where forward is negative.
+const XR_STANDARD_THUMBSTICK_Y_AXIS = 3;
+// Exponential rate: full deflection multiplies the distance by e^1.5 per second.
+const DEFAULT_PUSH_PULL_SPEED = 1.5;
+// Meters. Keeps the grab point in front of the controller when pulling.
+const MIN_RAY_DEPTH = 0.05;
+// Android XR keeps panel size consistent up to 1.75 m, then scales at 0.5 m
+// per meter so farther panels look smaller.
+const CONSTANT_SIZE_DISTANCE = 1.75;
+const FAR_SCALE_RATE = 0.5;
 /** Captures and proposes Translate data. It does not own sessions or events. */
 class TranslateDriver {
     constructor(camera, timer) {
@@ -8437,7 +8930,7 @@ class TranslateDriver {
     capture(session) {
         const snapshot = session.primary.snapshot;
         const options = session.config.translate ?? {};
-        if (options.faceCamera &&
+        if ((options.faceCamera &&
             ((options.mode !== undefined &&
                 options.mode !== 'capsule' &&
                 options.mode !== 'cylindrical' &&
@@ -8446,14 +8939,37 @@ class TranslateDriver {
                     (!Number.isFinite(options.capsuleHalfHeight) ||
                         options.capsuleHalfHeight < 0)) ||
                 (options.smoothing !== undefined &&
-                    (!Number.isFinite(options.smoothing) || options.smoothing < 0)))) {
+                    (!Number.isFinite(options.smoothing) || options.smoothing < 0)))) ||
+            (!!options.pushPull && !resolvePushPull(options.pushPull)) ||
+            !validDistanceLimits(options)) {
             return undefined;
         }
+        const worldPosition = session.owner.getWorldPosition(new THREE.Vector3());
+        const viewerDistance = this.camera
+            ?.getWorldPosition(new THREE.Vector3())
+            .distanceTo(worldPosition);
+        const cameraDistance = options.scaleWithDistance
+            ? viewerDistance
+            : undefined;
+        const hasLimits = options.minDistance !== undefined || options.maxDistance !== undefined;
         const baseline = {
             action: this.action,
-            worldPosition: session.owner.getWorldPosition(new THREE.Vector3()),
+            worldPosition,
             sourcePosition: snapshot.position.clone(),
             options: { ...options },
+            scale: session.owner.scale.clone(),
+            cameraDistance: cameraDistance !== undefined &&
+                isPositiveFinite(cameraDistance) &&
+                isPositiveVector(session.owner.scale)
+                ? cameraDistance
+                : undefined,
+            distanceLimits: hasLimits && viewerDistance !== undefined
+                ? {
+                    min: Math.min(options.minDistance ?? 0, viewerDistance),
+                    max: Math.max(options.maxDistance ?? Infinity, viewerDistance),
+                }
+                : undefined,
+            scaleOptions: cloneScaleOptions(session.config.scale),
         };
         if (snapshot.ray) {
             baseline.rayDepth = snapshot.ray.direction.dot(session.primary.capture.point.clone().sub(snapshot.ray.origin));
@@ -8465,9 +8981,11 @@ class TranslateDriver {
     }
     propose(session, baseline) {
         const snapshot = session.primary.snapshot;
+        const viewer = this.camera?.getWorldPosition(new THREE.Vector3());
         let delta;
         let point;
         if (snapshot.ray && baseline.rayDepth !== undefined && baseline.rayPoint) {
+            baseline.rayDepth = this.pushPull(session, baseline, snapshot.ray, baseline.rayDepth, viewer);
             point = snapshot.ray.at(baseline.rayDepth, new THREE.Vector3());
             delta = point.clone().sub(baseline.rayPoint);
         }
@@ -8476,13 +8994,17 @@ class TranslateDriver {
             point = session.primary.capture.point.clone().add(delta);
         }
         const worldPosition = baseline.worldPosition.clone().add(delta);
+        const correction = this.limitDistance(baseline, worldPosition, viewer);
+        delta.add(correction);
+        point.add(correction);
         const parent = session.owner.parent;
         parent?.updateWorldMatrix(true, false);
         const localPosition = worldPositionToLocal(worldPosition, parent?.matrixWorld);
         const localQuaternion = baseline.options.faceCamera
-            ? faceCameraQuaternion(worldPosition, this.camera?.getWorldPosition(new THREE.Vector3()), parent?.getWorldQuaternion(new THREE.Quaternion()), baseline.options.mode, baseline.options.capsuleHalfHeight ??
+            ? faceCameraQuaternion(worldPosition, viewer, parent?.getWorldQuaternion(new THREE.Quaternion()), baseline.options.mode, baseline.options.capsuleHalfHeight ??
                 DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT)
             : undefined;
+        const scale = this.scaleWithDistance(baseline, worldPosition, viewer);
         const rotationAlpha = this.timer
             ? faceCameraSlerpAlpha(baseline.options.smoothing ?? DEFAULT_FACE_CAMERA_SMOOTHING, this.timer.getDelta())
             : 1;
@@ -8498,10 +9020,14 @@ class TranslateDriver {
             delta,
             position: localPosition,
             worldPosition,
+            scale,
             apply: () => {
                 if (!isFiniteVector(localPosition))
                     return;
                 session.owner.position.copy(localPosition);
+                if (baseline.cameraDistance !== undefined) {
+                    session.owner.scale.copy(scale);
+                }
                 if (localQuaternion) {
                     const speed = delta.length();
                     const effectiveAlpha = Math.min(1, rotationAlpha + speed * 3.0);
@@ -8510,6 +9036,98 @@ class TranslateDriver {
             },
         };
     }
+    /**
+     * Moves `worldPosition` back within the distance limits from the viewer and
+     * returns the correction that was applied.
+     */
+    limitDistance(baseline, worldPosition, viewer) {
+        const correction = new THREE.Vector3();
+        const limits = baseline.distanceLimits;
+        if (!limits || !viewer)
+            return correction;
+        const offset = worldPosition.clone().sub(viewer);
+        const distance = offset.length();
+        if (!isPositiveFinite(distance))
+            return correction;
+        const clamped = THREE.MathUtils.clamp(distance, limits.min, limits.max);
+        if (clamped === distance)
+            return correction;
+        correction.copy(offset).multiplyScalar(clamped / distance - 1);
+        worldPosition.add(correction);
+        return correction;
+    }
+    /**
+     * Moves the grab point along the ray with the thumbstick's forward axis,
+     * keeping the owner within the distance limits from the viewer.
+     */
+    pushPull(session, baseline, ray, depth, viewer) {
+        const speed = resolvePushPull(baseline.options.pushPull);
+        // Only XR controllers: on a desktop gamepad the same axis is the right
+        // stick, which the simulator uses to look up and down.
+        const gamepad = session.primary.snapshot.controller.gamepad;
+        const stick = gamepad?.mapping === 'xr-standard'
+            ? gamepad.axes[XR_STANDARD_THUMBSTICK_Y_AXIS]
+            : undefined;
+        if (!speed ||
+            !this.timer ||
+            stick === undefined ||
+            !Number.isFinite(stick) ||
+            Math.abs(stick) < PUSH_PULL_DEADZONE) {
+            return depth;
+        }
+        // propose() can run more than once per frame; step only once.
+        const time = this.timer.getElapsed();
+        if (baseline.pushPullTime === time)
+            return depth;
+        baseline.pushPullTime = time;
+        const next = Math.max(Math.min(MIN_RAY_DEPTH, depth), depth * Math.exp(-stick * speed * this.timer.getDelta()));
+        const limits = baseline.distanceLimits;
+        if (!limits || !viewer)
+            return next;
+        const distanceAt = (value) => ray
+            .at(value, new THREE.Vector3())
+            .sub(baseline.rayPoint)
+            .add(baseline.worldPosition)
+            .distanceTo(viewer);
+        const current = distanceAt(depth);
+        const candidate = distanceAt(next);
+        // Only block steps that move farther outside the limits, so an owner that
+        // starts outside them never snaps, and pulling back responds immediately.
+        if (candidate > current && candidate > limits.max)
+            return depth;
+        if (candidate < current && candidate < limits.min)
+            return depth;
+        return next;
+    }
+    scaleWithDistance(baseline, worldPosition, viewer) {
+        const scale = baseline.scale.clone();
+        if (baseline.cameraDistance === undefined || !viewer)
+            return scale;
+        const distance = viewer.distanceTo(worldPosition);
+        const factor = clampScaleFactor(sizeDistance(distance) / sizeDistance(baseline.cameraDistance), baseline.scale, baseline.scaleOptions);
+        return isPositiveFinite(factor) ? scale.multiplyScalar(factor) : scale;
+    }
+}
+function sizeDistance(distance) {
+    return distance <= CONSTANT_SIZE_DISTANCE
+        ? distance
+        : CONSTANT_SIZE_DISTANCE +
+            FAR_SCALE_RATE * (distance - CONSTANT_SIZE_DISTANCE);
+}
+/** Returns the push/pull speed, or undefined when disabled or invalid. */
+function resolvePushPull(value) {
+    if (!value)
+        return undefined;
+    const speed = (value === true ? undefined : value.speed) ??
+        DEFAULT_PUSH_PULL_SPEED;
+    return isPositiveFinite(speed) ? speed : undefined;
+}
+function validDistanceLimits({ minDistance, maxDistance }) {
+    if (minDistance !== undefined && !(minDistance >= 0))
+        return false;
+    if (maxDistance !== undefined && !(maxDistance > 0))
+        return false;
+    return (minDistance ?? 0) <= (maxDistance ?? Infinity);
 }
 
 /**
@@ -8524,6 +9142,7 @@ class ManipulationManager {
         this.roles = new Map();
         this.rotateDriver = new RotateDriver();
         this.scaleDriver = new ScaleDriver();
+        this.resizeDriver = new ResizeDriver();
         this.translateDriver = new TranslateDriver(camera, timer);
     }
     resolve(path) {
@@ -8748,6 +9367,7 @@ class ManipulationManager {
         const session = this.roles.get(source);
         if (!session)
             return false;
+        const updated = Boolean(finalSnapshot);
         if (finalSnapshot) {
             if (session.primary.snapshot.controller === source) {
                 session.primary.snapshot.copyFrom(finalSnapshot);
@@ -8758,11 +9378,11 @@ class ManipulationManager {
             this.updateSession(session);
         }
         if (session.primary.snapshot.controller === source) {
-            this.finishSession(session, 'end', true);
+            this.finishSession(session, 'end', true, updated);
             return true;
         }
         if (session.auxiliary?.controller === source) {
-            this.finishAuxiliary(session, source, 'end');
+            this.finishAuxiliary(session, source, 'end', updated);
             return true;
         }
         return false;
@@ -8865,11 +9485,13 @@ class ManipulationManager {
         }
         return true;
     }
-    finishPhase(session, phase) {
+    finishPhase(session, phase, reuseLastProposal = false) {
         const active = session.phase;
         if (!active)
             return;
-        const proposal = this.propose(session) ?? active.lastProposal;
+        const proposal = reuseLastProposal
+            ? (active.lastProposal ?? this.propose(session))
+            : (this.propose(session) ?? active.lastProposal);
         session.phase = undefined;
         this.dispatchPhase(session, active, phase, proposal);
     }
@@ -8890,19 +9512,21 @@ class ManipulationManager {
             throw error;
         }
     }
-    finishSession(session, phase, suppressAuxiliary) {
+    finishSession(session, phase, suppressAuxiliary, reuseLastProposal = false) {
         const active = session.phase;
         const proposal = active
-            ? (this.propose(session) ?? active.lastProposal)
+            ? reuseLastProposal
+                ? (active.lastProposal ?? this.propose(session))
+                : (this.propose(session) ?? active.lastProposal)
             : undefined;
         this.removeSession(session, suppressAuxiliary);
         if (active)
             this.dispatchPhase(session, active, phase, proposal);
     }
-    finishAuxiliary(session, source, phase) {
+    finishAuxiliary(session, source, phase, reuseLastProposal = false) {
         let phaseFinished = false;
         try {
-            this.finishPhase(session, phase);
+            this.finishPhase(session, phase, reuseLastProposal);
             phaseFinished = true;
         }
         finally {
@@ -8936,6 +9560,9 @@ class ManipulationManager {
         if (action === ManipulationAction.Rotate) {
             return this.rotateDriver.capture(session);
         }
+        if (action === ManipulationAction.Resize) {
+            return this.resizeDriver.capture(session);
+        }
         return this.scaleDriver.capture(session, auxiliary);
     }
     propose(session) {
@@ -8947,6 +9574,9 @@ class ManipulationManager {
         }
         if (baseline.action === ManipulationAction.Rotate) {
             return this.rotateDriver.propose(session, baseline);
+        }
+        if (baseline.action === ManipulationAction.Resize) {
+            return this.resizeDriver.propose(session, baseline);
         }
         return this.scaleDriver.propose(session, baseline);
     }
@@ -9001,6 +9631,7 @@ function createEvent(session, currentTarget, phase, proposal, preventState, prop
             delta: proposal.delta.clone(),
             position: proposal.position.clone(),
             worldPosition: proposal.worldPosition.clone(),
+            scale: proposal.scale.clone(),
         }, preventState);
     }
     if (proposal.action === ManipulationAction.Rotate) {
@@ -9009,6 +9640,15 @@ function createEvent(session, currentTarget, phase, proposal, preventState, prop
             action: proposal.action,
             angle: proposal.angle,
             quaternion: proposal.quaternion.clone(),
+        }, preventState);
+    }
+    if (proposal.action === ManipulationAction.Resize) {
+        return withDefaultPrevented({
+            ...common,
+            action: proposal.action,
+            width: proposal.width,
+            height: proposal.height,
+            position: proposal.position.clone(),
         }, preventState);
     }
     return withDefaultPrevented({
@@ -10924,202 +11564,6 @@ class DepthMesh extends MeshScript {
         this.depthTextures = undefined;
         if (firstError !== undefined)
             throw firstError;
-    }
-}
-
-function validateUIAppearance(value) {
-    if (value !== 'surface' && value !== 'none') {
-        throw new Error(`Invalid UI appearance "${String(value)}".`);
-    }
-}
-
-/** The only world-transform root in a spatial UI tree. */
-class UICard extends UIElement {
-    constructor({ size, pixelSize = 0.001, anchorX = 'center', anchorY = 'center', appearance = 'surface', manipulation, edge = false, ...options }) {
-        validateSize(size);
-        validatePixelSize(pixelSize);
-        validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
-        validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
-        validateUIAppearance(appearance);
-        super('card', options);
-        this.name = 'UICard';
-        this.edgeTarget = {
-            translateFromSurface: false,
-        };
-        this.edgeEnabled = false;
-        this.pixelSize = pixelSize;
-        this.anchorX = anchorX;
-        this.anchorY = anchorY;
-        this.appearance = appearance;
-        this.sizeTarget = { ...size };
-        this.sizeProxy = new Proxy(this.sizeTarget, {
-            set: (target, property, value) => {
-                if (property === 'width') {
-                    validateFixedSize(value);
-                }
-                else if (property === 'height') {
-                    validateHeight(value);
-                }
-                else {
-                    throw new Error(`Unknown UICard size property "${String(property)}".`);
-                }
-                Reflect.set(target, property, value);
-                resolvedSizes.delete(this);
-                this.markUIDirty();
-                return true;
-            },
-        });
-        this.edgeProxy = new Proxy(this.edgeTarget, {
-            set: (target, property, value) => {
-                if (property !== 'translateFromSurface' || typeof value !== 'boolean') {
-                    throw new Error(`Unknown or invalid UICard edge option "${String(property)}".`);
-                }
-                const previous = Reflect.get(target, property);
-                Reflect.set(target, property, value);
-                try {
-                    this.validateEdge();
-                }
-                catch (error) {
-                    Reflect.set(target, property, previous);
-                    throw error;
-                }
-                this.markUIDirty();
-                return true;
-            },
-        });
-        this.manipulation = manipulation;
-        this.edge = edge;
-    }
-    get size() {
-        return this.sizeProxy;
-    }
-    set size(value) {
-        validateSize(value);
-        this.sizeProxy.width = value.width;
-        this.sizeProxy.height = value.height;
-    }
-    get manipulation() {
-        return this.xb?.manipulation;
-    }
-    set manipulation(value) {
-        const normalized = normalizeCardManipulation(value);
-        this.validateEdge(this.edgeEnabled, normalized);
-        this.xb ??= {};
-        this.xb.manipulation = normalized;
-        this.markUIDirty();
-    }
-    get edge() {
-        return this.edgeEnabled ? this.edgeProxy : false;
-    }
-    set edge(value) {
-        const enabled = value !== false;
-        const options = value && value !== true ? value : {};
-        const next = {
-            translateFromSurface: options.translateFromSurface ?? false,
-        };
-        this.validateEdge(enabled, this.xb?.manipulation);
-        this.edgeEnabled = enabled;
-        this.edgeTarget.translateFromSurface = next.translateFromSurface;
-        this.markUIDirty();
-    }
-    validateEdge(enabled = this.edgeEnabled, manipulation = this.xb
-        ?.manipulation) {
-        if (!enabled)
-            return;
-        const config = normalizeManipulationConfig(manipulation);
-        if (!config?.translate) {
-            throw new Error('UICard edge requires Translate manipulation.');
-        }
-    }
-}
-function getUICardEdgeOptions(card) {
-    return card.edge || undefined;
-}
-const resolvedSizes = new WeakMap();
-/** Returns the current physical card size after layout resolves. */
-function getResolvedUICardSize(card) {
-    if (card.size.height !== 'auto') {
-        return { width: card.size.width, height: card.size.height };
-    }
-    return resolvedSizes.get(card);
-}
-/** Stores a backend-calculated physical size for an automatic-height card. */
-function setResolvedUICardSize(card, size) {
-    if (card.size.height !== 'auto')
-        return;
-    resolvedSizes.set(card, size);
-}
-function normalizeCardManipulation(value) {
-    if (value === undefined || value === false)
-        return value;
-    if (value === true) {
-        return {
-            actions: {
-                translate: { faceCamera: true },
-                scale: true,
-            },
-            handle: { action: 'translate' },
-        };
-    }
-    const actions = value.actions ? { ...value.actions } : undefined;
-    if (actions?.translate === true) {
-        actions.translate = { faceCamera: true };
-    }
-    else if (actions?.translate && typeof actions.translate === 'object') {
-        actions.translate = {
-            ...actions.translate,
-            faceCamera: actions.translate.faceCamera ?? true,
-        };
-    }
-    if (actions?.rotate && typeof actions.rotate === 'object') {
-        actions.rotate = {
-            ...actions.rotate,
-            axis: actions.rotate.axis && typeof actions.rotate.axis === 'object'
-                ? { ...actions.rotate.axis }
-                : actions.rotate.axis,
-        };
-    }
-    if (actions?.scale && typeof actions.scale === 'object') {
-        actions.scale = {
-            ...actions.scale,
-            minScale: actions.scale.minScale && typeof actions.scale.minScale === 'object'
-                ? { ...actions.scale.minScale }
-                : actions.scale.minScale,
-            maxScale: actions.scale.maxScale && typeof actions.scale.maxScale === 'object'
-                ? { ...actions.scale.maxScale }
-                : actions.scale.maxScale,
-        };
-    }
-    return {
-        ...value,
-        actions,
-        handle: value.handle ? { ...value.handle } : undefined,
-    };
-}
-function validateSize(size) {
-    if (!size)
-        throw new Error('UICard requires a size.');
-    validateFixedSize(size.width);
-    validateHeight(size.height);
-}
-function validateFixedSize(value) {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-        throw new Error('UICard fixed size values must be finite and nonnegative.');
-    }
-}
-function validateHeight(value) {
-    if (value === 'auto')
-        return;
-    validateFixedSize(value);
-}
-function validatePixelSize(pixelSize) {
-    if (!Number.isFinite(pixelSize) || pixelSize <= 0) {
-        throw new Error('UICard pixelSize must be positive and finite.');
-    }
-}
-function validateAnchor(value, allowed, property) {
-    if (!allowed.includes(value)) {
-        throw new Error(`UICard ${property} has an invalid value.`);
     }
 }
 
@@ -29559,5 +30003,5 @@ var sdk = /*#__PURE__*/Object.freeze({
 
 registerDebugGlobals(sdk);
 
-export { UIOverlay as $, updateScrollViewLayout as A, bindTextInput as B, normalizeTextInputValue as C, Depth as D, isUIElement as E, getUIElementKind as F, getUIStructureRevision as G, Handedness as H, Interaction as I, UICard as J, Keycodes as K, setResolvedUICardSize as L, ModelLoader as M, UIText as N, Options as O, Physics as P, UITextInput as Q, Reticle as R, SparkRendererHolder as S, TransformScript as T, UIScrollView as U, registerUIPresentationObject as V, WaitFrame as W, XRDeviceCamera as X, getUIRevision as Y, getUICardEdgeOptions as Z, getSemanticControl as _, SimulatorHandPose as a, HumanRecognizer as a$, XR_BLOCKS_ASSETS_PATH as a0, SIMULATOR_HAND_POSE_NAMES as a1, AI as a2, AIOptions as a3, ActiveControllers as a4, Agent as a5, AnchorManager as a6, AnchoredObjects as a7, AnchorsOptions as a8, AudioListener as a9, FaceLandmarkName as aA, FaceRecognizer as aB, FacesOptions as aC, FollowHead as aD, FollowObject as aE, GEMINI_DEFAULT_FLASH_MODEL as aF, GEMINI_DEFAULT_IMAGE_MODEL as aG, GEMINI_DEFAULT_LIVE_MODEL as aH, GamepadBindings as aI, GamepadController as aJ, GazeController as aK, Gemini as aL, GeminiOptions as aM, GenerateSkyboxTool as aN, GestureRecognition as aO, GestureRecognitionOptions as aP, GetWeatherTool as aQ, HAND_BONE_IDX_CONNECTION_MAP as aR, HAND_INDEX_TO_LABEL as aS, HAND_JOINT_COUNT as aT, HAND_JOINT_IDX_CONNECTION_MAP as aU, Hands as aV, HandsOptions as aW, HeadGestureRecognition as aX, HeadGestureRecognitionOptions as aY, HeuristicGestureRecognizer as aZ, HeuristicHeadGestureRecognizer as a_, AudioPlayer as aa, BACK as ab, BackgroundMusic as ac, CategoryVolumes as ad, Context as ae, ContextOptions as af, Core as ag, CoreSound as ah, DEFAULT_DEVICE_CAMERA_HEIGHT as ai, DEFAULT_DEVICE_CAMERA_WIDTH as aj, DEFAULT_RGB_TO_DEPTH_PARAMS as ak, DEVICE_CAMERA_PARAMETERS as al, DOWN as am, DepthMesh as an, DepthMeshOptions as ao, DepthOptions as ap, DepthTextures as aq, DetectedBodyPose as ar, DetectedFace as as, DetectedMesh as at, DetectedObject as au, DetectedPlane as av, DeviceCameraOptions as aw, FINGER_ORDER as ax, FORWARD as ay, FaceCamera as az, Script as b, UIElement as b$, HumansOptions as b0, InputOptions as b1, InteractionOptions as b2, LEFT as b3, LEFT_VIEW_ONLY_LAYER as b4, LayerManager as b5, LayersOptions as b6, Lighting as b7, LightingOptions as b8, LoadingSpinnerManager as b9, SOUND_PRESETS as bA, SceneDetector as bB, SceneOptions as bC, SceneSetOfMarkOptions as bD, SceneVisibilityOptions as bE, ScreenshotSynthesizer as bF, ScriptMixin as bG, ScriptsManager as bH, ScriptsManagerEventType as bI, SegmentCategory as bJ, SegmentationOptions as bK, Segmenter as bL, SimulatorAnchor as bM, SkyboxAgent as bN, SoundOptions as bO, SoundSynthesizer as bP, SpatialAudio as bQ, SpeechRecognizer as bR, SpeechRecognizerOptions as bS, SpeechSynthesizer as bT, SpeechSynthesizerOptions as bU, StreamState as bV, StrokeRecognizer as bW, StylizedFace as bX, TensorFlowHandPoseEstimator as bY, Tool as bZ, UIButton as b_, LocalStorageAnchorStore as ba, MediaPipeHandContext as bb, MediaPipeHandPoseEstimator as bc, MeshDetectionOptions as bd, MeshDetector as be, MeshScript as bf, ModelViewer as bg, MouseController as bh, NUM_HANDS as bi, ObjectDetector as bj, ObjectsOptions as bk, OcclusionPass as bl, OcclusionUtils as bm, OpenAI as bn, OpenAIOptions as bo, Orbit as bp, PhysicsOptions as bq, PlaneDetector as br, PlanesOptions as bs, PoseJointName as bt, RENDERER_BACKENDS as bu, RIGHT as bv, RIGHT_VIEW_ONLY_LAYER as bw, ReticleOptions as bx, Reticles as by, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bz, SimulatorMode as c, getFingertipPalmDistance as c$, UIIcon as c0, UIImage as c1, UIPanel as c2, UISlider as c3, UP as c4, User as c5, VIEW_DEPTH_GAP as c6, VideoFileStream as c7, VideoLayer as c8, VideoStream as c9, cropImage as cA, defaultAnchorStorageKey as cB, depth as cC, disposeBVH as cD, disposeMaterial as cE, disposeMeshResources as cF, disposeRenderableResources as cG, enableAcceleratedRaycast as cH, estimateHandScale as cI, extractYaw as cJ, getAdjacentFingerSpreads as cK, getBoneVectors as cL, getCameraParametersSnapshot as cM, getColorHex as cN, getDeltaTime as cO, getDeviceCameraClipFromView as cP, getDeviceCameraWorldFromClip as cQ, getDeviceCameraWorldFromView as cR, getElapsedTime as cS, getFingerBendAngles as cT, getFingerCurl as cU, getFingerDirection as cV, getFingerJoint as cW, getFingerPalmAlignment as cX, getFingerSpread as cY, getFingerStraightness as cZ, getFingertipDistance as c_, VisibilityTransition as ca, VolumeCategory as cb, WebXRHandContext as cc, WebXRHandPoseEstimator as cd, WorldOptions as ce, XRButton as cf, XREffects as cg, XRPass as ch, XRReferenceSpaceCache as ci, XRTransitionOptions as cj, ZERO_VECTOR3 as ck, ZERO_VISEME as cl, _getBvhImportStatus as cm, add as cn, ai as co, anchorCapability as cp, applyBVH as cq, aspectRatioOf as cr, assertWebGLRenderer as cs, average as ct, camera as cu, clamp$1 as cv, clamp01 as cw, clampRotationToAngle as cx, context as cy, core as cz, SetSimulatorModeEvent as d, getObjectTargetPoint as d0, getPalmNormal as d1, getPalmPose as d2, getPalmRight as d3, getPalmUp as d4, getPalmWidth as d5, getRelativeBoneAngles as d6, getThumbBendAngles as d7, getThumbCurl as d8, getThumbDirection as d9, placeObjectAtIntersectionFacingTarget as dA, print as dB, resolveSimulatorRotationsFromKeypoints as dC, scene as dD, showOnlyInLeftEye as dE, showOnlyInRightEye as dF, sound as dG, timer as dH, transformRgbUvToWorld as dI, traverseUtil as dJ, ui as dK, urlParams as dL, user as dM, visualizeDepth as dN, visualizeDepthMap as dO, world as dP, xrDepthMeshOptions as dQ, xrDepthMeshPhysicsOptions as dR, xrDepthMeshVisualizationOptions as dS, xrDeviceCameraEnvironmentContinuousOptions as dT, xrDeviceCameraEnvironmentOptions as dU, xrDeviceCameraUserContinuousOptions as dV, xrDeviceCameraUserOptions as dW, getThumbOpposition as da, getThumbStraightness as db, getThumbVerticalDirection as dc, getUrlParamBool as dd, getUrlParamFloat as de, getUrlParamInt as df, getUrlParameter as dg, getVec4ByColorString as dh, getXrCameraLeft as di, getXrCameraRight as dj, init as dk, initScript as dl, input as dm, intrinsicsToProjectionMatrix as dn, isBVHReady as dp, isDeviceCameraPoseAvailable as dq, isLayerCapable as dr, layerCapability as ds, lerp as dt, loadStereoImageAsTextures as du, loadingSpinnerManager as dv, lookAtRotation as dw, objectIsDescendantOf as dx, parseBase64DataURL as dy, parseSimulatorHandPoseRotations as dz, SIMULATOR_HAND_POSE_ROTATIONS as e, SimulatorHandPoseChangeRequestEvent as f, HAND_JOINT_NAMES as g, applySimulatorHandPoseRotationConstraints as h, isWebGPURenderer as i, disposeObjectChildren as j, SetSimulatorEnvironmentEvent as k, ShowSimulatorInstructionsEvent as l, SetSimulatorHandPhysicsEvent as m, Registry as n, callInitWithDependencyInjection as o, disposeObjectTree as p, World as q, resolveSimulatorHandPoseRotations as r, Input as s, SimulatorOptions as t, OCCLUDABLE_ITEMS_LAYER as u, MAX_GRADIENT_STOPS as v, DEFAULT_GRADIENT_PANEL_PROPS as w, ManipulationAction as x, getUIPresentationObject as y, bindScrollView as z };
+export { normalizeManipulationConfig as $, updateScrollViewLayout as A, bindTextInput as B, normalizeTextInputValue as C, Depth as D, isUIElement as E, getUIElementKind as F, getUIStructureRevision as G, Handedness as H, Interaction as I, UICard as J, Keycodes as K, setUICardContentMeasurer as L, ModelLoader as M, setResolvedUICardSize as N, Options as O, Physics as P, UIText as Q, Reticle as R, SparkRendererHolder as S, TransformScript as T, UIScrollView as U, UITextInput as V, WaitFrame as W, XRDeviceCamera as X, registerUIPresentationObject as Y, getUIRevision as Z, getUICardEdgeOptions as _, SimulatorHandPose as a, HeuristicGestureRecognizer as a$, getSemanticControl as a0, UIOverlay as a1, XR_BLOCKS_ASSETS_PATH as a2, SIMULATOR_HAND_POSE_NAMES as a3, AI as a4, AIOptions as a5, ActiveControllers as a6, Agent as a7, AnchorManager as a8, AnchoredObjects as a9, FORWARD as aA, FaceCamera as aB, FaceLandmarkName as aC, FaceRecognizer as aD, FacesOptions as aE, FollowHead as aF, FollowObject as aG, GEMINI_DEFAULT_FLASH_MODEL as aH, GEMINI_DEFAULT_IMAGE_MODEL as aI, GEMINI_DEFAULT_LIVE_MODEL as aJ, GamepadBindings as aK, GamepadController as aL, GazeController as aM, Gemini as aN, GeminiOptions as aO, GenerateSkyboxTool as aP, GestureRecognition as aQ, GestureRecognitionOptions as aR, GetWeatherTool as aS, HAND_BONE_IDX_CONNECTION_MAP as aT, HAND_INDEX_TO_LABEL as aU, HAND_JOINT_COUNT as aV, HAND_JOINT_IDX_CONNECTION_MAP as aW, Hands as aX, HandsOptions as aY, HeadGestureRecognition as aZ, HeadGestureRecognitionOptions as a_, AnchorsOptions as aa, AudioListener as ab, AudioPlayer as ac, BACK as ad, BackgroundMusic as ae, CategoryVolumes as af, Context as ag, ContextOptions as ah, Core as ai, CoreSound as aj, DEFAULT_DEVICE_CAMERA_HEIGHT as ak, DEFAULT_DEVICE_CAMERA_WIDTH as al, DEFAULT_RGB_TO_DEPTH_PARAMS as am, DEVICE_CAMERA_PARAMETERS as an, DOWN as ao, DepthMesh as ap, DepthMeshOptions as aq, DepthOptions as ar, DepthTextures as as, DetectedBodyPose as at, DetectedFace as au, DetectedMesh as av, DetectedObject as aw, DetectedPlane as ax, DeviceCameraOptions as ay, FINGER_ORDER as az, Script as b, Tool as b$, HeuristicHeadGestureRecognizer as b0, HumanRecognizer as b1, HumansOptions as b2, InputOptions as b3, InteractionOptions as b4, LEFT as b5, LEFT_VIEW_ONLY_LAYER as b6, LayerManager as b7, LayersOptions as b8, Lighting as b9, Reticles as bA, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as bB, SOUND_PRESETS as bC, SceneDetector as bD, SceneOptions as bE, SceneSetOfMarkOptions as bF, SceneVisibilityOptions as bG, ScreenshotSynthesizer as bH, ScriptMixin as bI, ScriptsManager as bJ, ScriptsManagerEventType as bK, SegmentCategory as bL, SegmentationOptions as bM, Segmenter as bN, SimulatorAnchor as bO, SkyboxAgent as bP, SoundOptions as bQ, SoundSynthesizer as bR, SpatialAudio as bS, SpeechRecognizer as bT, SpeechRecognizerOptions as bU, SpeechSynthesizer as bV, SpeechSynthesizerOptions as bW, StreamState as bX, StrokeRecognizer as bY, StylizedFace as bZ, TensorFlowHandPoseEstimator as b_, LightingOptions as ba, LoadingSpinnerManager as bb, LocalStorageAnchorStore as bc, MediaPipeHandContext as bd, MediaPipeHandPoseEstimator as be, MeshDetectionOptions as bf, MeshDetector as bg, MeshScript as bh, ModelViewer as bi, MouseController as bj, NUM_HANDS as bk, ObjectDetector as bl, ObjectsOptions as bm, OcclusionPass as bn, OcclusionUtils as bo, OpenAI as bp, OpenAIOptions as bq, Orbit as br, PhysicsOptions as bs, PlaneDetector as bt, PlanesOptions as bu, PoseJointName as bv, RENDERER_BACKENDS as bw, RIGHT as bx, RIGHT_VIEW_ONLY_LAYER as by, ReticleOptions as bz, SimulatorMode as c, getFingerStraightness as c$, UIButton as c0, UIElement as c1, UIIcon as c2, UIImage as c3, UIPanel as c4, UISlider as c5, UP as c6, User as c7, VIEW_DEPTH_GAP as c8, VideoFileStream as c9, context as cA, core as cB, cropImage as cC, defaultAnchorStorageKey as cD, depth as cE, disposeBVH as cF, disposeMaterial as cG, disposeMeshResources as cH, disposeRenderableResources as cI, enableAcceleratedRaycast as cJ, estimateHandScale as cK, extractYaw as cL, getAdjacentFingerSpreads as cM, getBoneVectors as cN, getCameraParametersSnapshot as cO, getColorHex as cP, getDeltaTime as cQ, getDeviceCameraClipFromView as cR, getDeviceCameraWorldFromClip as cS, getDeviceCameraWorldFromView as cT, getElapsedTime as cU, getFingerBendAngles as cV, getFingerCurl as cW, getFingerDirection as cX, getFingerJoint as cY, getFingerPalmAlignment as cZ, getFingerSpread as c_, VideoLayer as ca, VideoStream as cb, VisibilityTransition as cc, VolumeCategory as cd, WebXRHandContext as ce, WebXRHandPoseEstimator as cf, WorldOptions as cg, XRButton as ch, XREffects as ci, XRPass as cj, XRReferenceSpaceCache as ck, XRTransitionOptions as cl, ZERO_VECTOR3 as cm, ZERO_VISEME as cn, _getBvhImportStatus as co, add as cp, ai as cq, anchorCapability as cr, applyBVH as cs, aspectRatioOf as ct, assertWebGLRenderer as cu, average as cv, camera as cw, clamp$1 as cx, clamp01 as cy, clampRotationToAngle as cz, SetSimulatorModeEvent as d, getFingertipDistance as d0, getFingertipPalmDistance as d1, getObjectTargetPoint as d2, getPalmNormal as d3, getPalmPose as d4, getPalmRight as d5, getPalmUp as d6, getPalmWidth as d7, getRelativeBoneAngles as d8, getThumbBendAngles as d9, parseBase64DataURL as dA, parseSimulatorHandPoseRotations as dB, placeObjectAtIntersectionFacingTarget as dC, print as dD, resolveSimulatorRotationsFromKeypoints as dE, scene as dF, showOnlyInLeftEye as dG, showOnlyInRightEye as dH, sound as dI, timer as dJ, transformRgbUvToWorld as dK, traverseUtil as dL, ui as dM, urlParams as dN, user as dO, visualizeDepth as dP, visualizeDepthMap as dQ, world as dR, xrDepthMeshOptions as dS, xrDepthMeshPhysicsOptions as dT, xrDepthMeshVisualizationOptions as dU, xrDeviceCameraEnvironmentContinuousOptions as dV, xrDeviceCameraEnvironmentOptions as dW, xrDeviceCameraUserContinuousOptions as dX, xrDeviceCameraUserOptions as dY, getThumbCurl as da, getThumbDirection as db, getThumbOpposition as dc, getThumbStraightness as dd, getThumbVerticalDirection as de, getUrlParamBool as df, getUrlParamFloat as dg, getUrlParamInt as dh, getUrlParameter as di, getVec4ByColorString as dj, getXrCameraLeft as dk, getXrCameraRight as dl, init as dm, initScript as dn, input as dp, intrinsicsToProjectionMatrix as dq, isBVHReady as dr, isDeviceCameraPoseAvailable as ds, isLayerCapable as dt, layerCapability as du, lerp as dv, loadStereoImageAsTextures as dw, loadingSpinnerManager as dx, lookAtRotation as dy, objectIsDescendantOf as dz, SIMULATOR_HAND_POSE_ROTATIONS as e, SimulatorHandPoseChangeRequestEvent as f, HAND_JOINT_NAMES as g, applySimulatorHandPoseRotationConstraints as h, isWebGPURenderer as i, disposeObjectChildren as j, SetSimulatorEnvironmentEvent as k, ShowSimulatorInstructionsEvent as l, SetSimulatorHandPhysicsEvent as m, Registry as n, callInitWithDependencyInjection as o, disposeObjectTree as p, World as q, resolveSimulatorHandPoseRotations as r, Input as s, SimulatorOptions as t, OCCLUDABLE_ITEMS_LAYER as u, MAX_GRADIENT_STOPS as v, DEFAULT_GRADIENT_PANEL_PROPS as w, ManipulationAction as x, getUIPresentationObject as y, bindScrollView as z };
 //# sourceMappingURL=entry.js.map
