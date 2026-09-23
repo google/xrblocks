@@ -243,7 +243,10 @@ describe('UIKitMount retained updates', () => {
     )!.physical;
     expect(handle.xb?.manipulationHandle).toEqual({action: 'resize'});
 
-    const {touchTarget} = edgeMapping().options!;
+    const {containsPoint, touchTarget} = edgeMapping().options!;
+    expect(containsPoint!(new THREE.Vector3(0.225, 0.11, 0))).toBe(true);
+    expect(containsPoint!(new THREE.Vector3(0, 0.12, 0))).toBe(true);
+    expect(containsPoint!(new THREE.Vector3(0, 0, 0))).toBe(false);
     expect(touchTarget!(new THREE.Vector3(0.225, 0.11, 0))).toBe(handle);
     expect(touchTarget!(new THREE.Vector3(0, 0.12, 0))).toBeUndefined();
 

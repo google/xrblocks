@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {describe, expect, it} from 'vitest';
 
-import {isCornerHit} from './UICardEdge';
+import {isCornerHit, isOuterEdgeHit} from './UICardEdge';
 
 // A 400x200 card with a 50px band gives a 500x300 edge layer.
 const SIZE = [500, 300] as const;
@@ -26,5 +26,14 @@ describe('isCornerHit', () => {
     // A large radius is capped at half of each side.
     expect(isCornerHit(uv(240, 70), SIZE, MARGIN, 500)).toBe(false);
     expect(isCornerHit(uv(240, 80), SIZE, MARGIN, 500)).toBe(true);
+  });
+});
+
+describe('isOuterEdgeHit', () => {
+  it('accepts the outer band and rejects the hollow interior', () => {
+    expect(isOuterEdgeHit(uv(0, 120), SIZE, MARGIN, 24)).toBe(true);
+    expect(isOuterEdgeHit(uv(0, 0), SIZE, MARGIN, 24)).toBe(false);
+    expect(isOuterEdgeHit(uv(0, 95), SIZE, MARGIN, 24)).toBe(false);
+    expect(isOuterEdgeHit(uv(0, 95), SIZE, MARGIN, 24, 10)).toBe(true);
   });
 });

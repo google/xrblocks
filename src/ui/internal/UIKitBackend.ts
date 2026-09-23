@@ -665,7 +665,10 @@ class UIKitNodeBinding {
         {
           physical: edge,
           logical: this.element,
-          options: {touchTarget: (point) => edge.touchTarget(point)},
+          options: {
+            containsPoint: edge.containsPoint,
+            touchTarget: (point) => edge.touchTarget(point),
+          },
         },
         {physical: edge.resizeHandle, logical: this.element}
       );

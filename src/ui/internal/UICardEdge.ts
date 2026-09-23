@@ -262,6 +262,30 @@ export class UICardEdge extends UICardEdgeLayer {
     setNumber(this.material, 'u_resizable', resizable ? 1 : 0);
   }
 
+  /** Returns true when a world point lies in the outer edge hit band. */
+  containsPoint = (point: THREE.Vector3, padding = 0): boolean => {
+    const size = this.size.value;
+    if (!size) return false;
+    this.updateWorldMatrix(true, false);
+    if (Math.abs(this.matrixWorld.determinant()) < Number.EPSILON) return false;
+    const local = this.worldToLocal(point.clone());
+    const xScale = new THREE.Vector3()
+      .setFromMatrixColumn(this.matrixWorld, 0)
+      .length();
+    const paddingPixels =
+      padding > 0 && xScale > Number.EPSILON
+        ? (padding / xScale) * size[0]
+        : 0;
+    const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
+    return isOuterEdgeHit(
+      uv,
+      size,
+      this.margin,
+      this._cardCornerRadius,
+      paddingPixels
+    );
+  };
+
   /** Returns the resize handle when a world point touches a resize corner. */
   touchTarget(point: THREE.Vector3): THREE.Object3D | undefined {
     const size = this.size.value;
@@ -341,11 +365,12 @@ function setVector2(
   if (value !== undefined) material.uniforms[name].value.copy(value);
 }
 
-function isOuterEdgeHit(
+export function isOuterEdgeHit(
   uv: THREE.Vector2,
   size: readonly [number, number],
   margin: number,
-  cardCornerRadius: number
+  cardCornerRadius: number,
+  padding = 0
 ): boolean {
   const halfWidth = size[0] / 2;
   const halfHeight = size[1] / 2;
@@ -360,8 +385,9 @@ function isOuterEdgeHit(
   );
   const outerRadius = Math.min(innerRadius + margin, halfWidth, halfHeight);
   return (
-    roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= 0 &&
-    roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >= 0
+    roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= padding &&
+    roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >=
+      -padding
   );
 }
 
