@@ -62,10 +62,67 @@ xb.add(card);
 await xb.init(new xb.Options());
 ```
 
-`manipulation: true` enables the card's standard face-camera move and scale
-behavior. `edge: true` adds the outer translation hit band and requires
-translation to be enabled. Two-source scale uses the card's scale action; the
-edge does not enable a missing action.
+`manipulation: true` enables the card's standard face-camera move, scale, and
+corner resize behavior. Moving also scales the card with its distance from the
+viewer the way Android XR panels do, and a controller thumbstick pushes the
+card away or pulls it closer while you drag it. Moves stay between 0.75 and 5
+meters from the viewer, Android XR's panel limits. Set
+`translate: {scaleWithDistance: false, pushPull: false}` to turn those off, and
+`minDistance`/`maxDistance` to change the limits. `edge: true` adds the
+outer translation hit band and requires translation to be enabled. Two-source
+scale uses the card's scale action; the edge does not enable a missing action.
+
+When the card's `resize` action is enabled, the corners of the edge band resize
+the card instead of moving it, like Android XR and Quest panels. Point and
+pinch with a ray, or pinch a corner directly with your hand. Resizing
+changes `size` in meters and reflows the layout; it does not scale the content.
+Resizing a card with `height: 'auto'` switches it to a fixed height, starting
+from its laid-out height.
+
+By default a card never gets shorter than its content needs at the current
+width, so narrowing a card makes it taller as text wraps. To let a card get
+smaller than its content, put the content in a `UIScrollView` and set an
+explicit `minSize.height`, which turns off the content floor:
+
+```js
+const card = new xb.UICard({
+  // A scroll view has no natural height, so use a fixed starting height.
+  size: {width: 0.56, height: 0.6},
+  edge: true,
+  manipulation: {
+    actions: {translate: true, resize: {minSize: {height: 0.3}}},
+  },
+  children: [
+    header,
+    new xb.UIScrollView({
+      style: {flexGrow: 1, flexBasis: 0},
+      children: [body],
+    }),
+  ],
+});
+```
+
+```js
+const card = new xb.UICard({
+  size: {width: 0.6, height: 0.4},
+  edge: true,
+  manipulation: {
+    actions: {
+      translate: true,
+      resize: {
+        anchor: 'center', // or 'opposite' to keep the far corner in place
+        preserveAspectRatio: false,
+        minSize: {width: 0.3, height: 0.2},
+        maxSize: {width: 1.2, height: 0.8},
+      },
+    },
+  },
+});
+```
+
+`anchor: 'center'` is the default and grows the card around its center.
+`minSize` defaults to 0.1 meters per axis, and `maxSize` is unbounded. A
+`maxSize.height` below the content height wins over the content floor.
 
 Use `height: 'auto'` when the card should fit its children, gaps, and padding.
 Keep the width fixed so text wrapping and percentage-width children have a
