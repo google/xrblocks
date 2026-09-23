@@ -15,6 +15,7 @@ import {UICard} from '../ui/components/UICard';
 import {UISlider} from '../ui/components/UISlider';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
+import type {ManipulationEvent} from './manipulation/ManipulationTypes';
 
 async function activateScripts(
   manager: ScriptsManager,
@@ -344,6 +345,92 @@ describe('Interaction public behavior', () => {
       ),
     ]);
     expect(card.scale.x).not.toBe(1);
+  });
+
+  it('resizes a card from a corner handle and reports resize events', async () => {
+    const scene = new THREE.Scene();
+    const events: ManipulationEvent[] = [];
+    class RecordingCard extends UICard {
+      override onObjectManipulate(event: ManipulationEvent): void {
+        events.push(event);
+      }
+    }
+    const card = new RecordingCard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    scene.add(card);
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const source = controller(0);
+    const grab = (x: number, y: number) => ({
+      distance: 1,
+      object: corner,
+      point: new THREE.Vector3(x, y, 0),
+    });
+    const aim = (selected: boolean, x: number, y: number) => ({
+      ...ray(source, selected, grab(x, y), 'controller-ray'),
+      ray: new THREE.Ray(
+        new THREE.Vector3(x, y, 1),
+        new THREE.Vector3(0, 0, -1)
+      ),
+    });
+
+    updateRays(interaction, [aim(false, 0.2, 0.1)]);
+    updateRays(interaction, [aim(true, 0.2, 0.1)]);
+    expect(interaction.isManipulating(card)).toBe(true);
+    updateRays(interaction, [aim(true, 0.25, 0.12)]);
+
+    expect(card.size.width).toBeCloseTo(0.5);
+    expect(card.size.height).toBeCloseTo(0.24);
+    expect(card.position.toArray()).toEqual([0, 0, 0]);
+    const update = events.findLast((event) => event.phase === 'update');
+    expect(update?.action).toBe('resize');
+    expect(update?.action === 'resize' && update.width).toBeCloseTo(0.5);
+
+    updateRays(interaction, [aim(false, 0.25, 0.12)]);
+    expect(interaction.isManipulating(card)).toBe(false);
+    expect(events.at(-1)?.phase).toBe('end');
+  });
+
+  it('ignores corner handles when resize is disabled', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: {actions: {translate: true}},
+      edge: true,
+    });
+    new THREE.Scene().add(card);
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const source = controller(0);
+
+    updateRays(interaction, [ray(source, false, hit(corner))]);
+    updateRays(interaction, [ray(source, true, hit(corner))]);
+    expect(interaction.isManipulating(card)).toBe(false);
+  });
+
+  it('enables corner resize and distance scaling for default card manipulation', () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+    });
+    expect(card.manipulation).toMatchObject({
+      actions: {
+        translate: {faceCamera: true, scaleWithDistance: true},
+        resize: true,
+      },
+    });
+    card.manipulation = {
+      actions: {translate: {scaleWithDistance: false}, resize: {}},
+    };
+    expect(card.manipulation).toMatchObject({
+      actions: {translate: {faceCamera: true, scaleWithDistance: false}},
+    });
   });
 });
 

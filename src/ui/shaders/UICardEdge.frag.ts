@@ -22,6 +22,26 @@ uniform float u_show_glow;
 uniform vec2 u_cursor_uv_2;
 uniform float u_show_glow_2;
 uniform float u_debug;
+uniform float u_resizable;
+
+// Matches isOuterEdgeHit and isCornerHit in UICardEdge.ts.
+float cornerHighlight(
+    vec2 p,
+    vec2 cursorUv,
+    float showCursor,
+    vec2 size,
+    vec2 cornerStart,
+    vec2 innerHalfSize,
+    float innerRadius
+) {
+    if (showCursor < 0.5) return 0.0;
+    vec2 cursor = cursorUv * size - size * 0.5;
+    if (sdRoundedBox(cursor, innerHalfSize, innerRadius) < 0.0) return 0.0;
+    bool fragmentInCorner = all(greaterThanEqual(abs(p), cornerStart));
+    bool cursorInCorner = all(greaterThanEqual(abs(cursor), cornerStart));
+    bool sameCorner = all(equal(sign(p), sign(cursor)));
+    return fragmentInCorner && cursorInCorner && sameCorner ? 1.0 : 0.0;
+}
 
 void main() {
     vec2 pixelRes = u_resolution;
@@ -88,7 +108,26 @@ void main() {
 
     glowAlpha *= edgeBandMask;
 
-    if (glowAlpha > 0.001) {
+    float corner = 0.0;
+    if (u_resizable > 0.5) {
+        vec2 cornerExtent = min(
+            vec2(innerRadius + 2.0 * margin),
+            halfSize * 0.5
+        );
+        vec2 cornerStart = halfSize - cornerExtent;
+        corner = max(
+            cornerHighlight(
+                p, u_cursor_uv, u_show_glow, size, cornerStart,
+                innerHalfSize, innerRadius
+            ),
+            cornerHighlight(
+                p, u_cursor_uv_2, u_show_glow_2, size, cornerStart,
+                innerHalfSize, innerRadius
+            )
+        );
+    }
+
+    if (glowAlpha > 0.001 || corner > 0.0) {
         vec4 glow = u_cursor_spotlight_color;
         glow.a *= glowAlpha;
 
@@ -107,13 +146,14 @@ void main() {
             accumColor = vec4(outRGB, outA);
         }
 
-        float width = u_edge_width;
+        // Hovering a resize corner lights its whole arc with a thicker stroke.
+        float width = u_edge_width * (1.0 + corner);
         float edgeMask = smoothstep(
             -width - aa,
             -width,
             distToEdge
         );
-        float edgeOpacity = glowAlpha;
+        float edgeOpacity = max(glowAlpha, corner);
 
         vec4 edgeResult = vec4(0.0);
         if (edgeMask > 0.0 && edgeOpacity > 0.0) {

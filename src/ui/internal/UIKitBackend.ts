@@ -10,11 +10,13 @@ import {
 import * as THREE from 'three';
 
 import {getSemanticControl} from '../../interaction/SemanticControl';
+import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {UIButton} from '../components/UIButton';
 import {
   UICard,
   getUICardEdgeOptions,
   setResolvedUICardSize,
+  setUICardContentMeasurer,
 } from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
@@ -121,6 +123,12 @@ class UIKitMount implements UIMount {
       this.structureRevision = getUIStructureRevision(this.root);
       this.object.add(this.rendered);
       this.hitMappingsChanged = true;
+      if (this.root instanceof UICard) {
+        const card = this.root;
+        setUICardContentMeasurer(card, (width) =>
+          this.measureCardContentHeight(card, width)
+        );
+      }
     }
 
     const structureRevision = getUIStructureRevision(this.root);
@@ -206,6 +214,9 @@ class UIKitMount implements UIMount {
   dispose(): void {
     this.disposed = true;
     this.readyWork.length = 0;
+    if (this.root instanceof UICard) {
+      setUICardContentMeasurer(this.root, undefined);
+    }
     const binding = this.binding;
     const rendered = this.rendered;
     binding?.dispose();
@@ -221,6 +232,33 @@ class UIKitMount implements UIMount {
 
   setActive(active: boolean): void {
     this.binding?.setActive(active);
+  }
+
+  /**
+   * Lays the card out once at `width` with an automatic height, reads the
+   * natural height, then restores the committed layout.
+   */
+  private measureCardContentHeight(
+    card: UICard,
+    width: number
+  ): number | undefined {
+    const yoga = (this.binding?.node.node as unknown as {yogaNode?: YogaNode})
+      ?.yogaNode;
+    if (!yoga || !(width > 0)) return undefined;
+    const previousWidth = yoga.getWidth();
+    const previousHeight = yoga.getHeight();
+    let height: number;
+    try {
+      yoga.setWidth(width / card.pixelSize);
+      yoga.setHeightAuto();
+      yoga.calculateLayout(undefined, undefined);
+      height = yoga.getComputedHeight() * card.pixelSize;
+    } finally {
+      yoga.setWidth(yogaDimension(previousWidth));
+      yoga.setHeight(yogaDimension(previousHeight));
+      yoga.calculateLayout(undefined, undefined);
+    }
+    return Number.isFinite(height) && height > 0 ? height : undefined;
   }
 
   private enqueue = (work: () => void): void => {
@@ -282,6 +320,27 @@ class UIKitBackend implements UIBackend {
     this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
     this.renderer = undefined;
   }
+}
+
+type YogaValue = {unit: number; value: number};
+type YogaDimension = number | 'auto' | `${number}%` | undefined;
+
+interface YogaNode {
+  getWidth(): YogaValue;
+  getHeight(): YogaValue;
+  setWidth(width: YogaDimension): void;
+  setHeight(height: YogaDimension): void;
+  setHeightAuto(): void;
+  calculateLayout(width: undefined, height: undefined): void;
+  getComputedHeight(): number;
+}
+
+// Yoga units: 0 undefined, 1 point, 2 percent, 3 auto.
+function yogaDimension({unit, value}: YogaValue): YogaDimension {
+  if (unit === 1) return value;
+  if (unit === 2) return `${value}%`;
+  if (unit === 3) return 'auto';
+  return undefined;
 }
 
 export function createUIBackend(): UIBackend {
@@ -518,7 +577,17 @@ class UIKitNodeBinding {
         options: {containsPoint: this.hitRegion.containsPoint},
       },
     ];
-    if (this.edge) mappings.push({physical: this.edge, logical: this.element});
+    if (this.edge) {
+      const edge = this.edge;
+      mappings.push(
+        {
+          physical: edge,
+          logical: this.element,
+          options: {touchTarget: (point) => edge.touchTarget(point)},
+        },
+        {physical: edge.resizeHandle, logical: this.element}
+      );
+    }
     for (const child of this.childOrder) {
       mappings.push(...this.children.get(child)!.hitMappings());
     }
@@ -717,9 +786,13 @@ class UIKitNodeBinding {
       this.edge = undefined;
       return true;
     }
+    const resizable =
+      !!options &&
+      !!normalizeManipulationConfig(this.element.xb?.manipulation)?.resize;
     if (options && !this.edge) {
       this.edge = new UICardEdge({
         cardCornerRadius: numericCornerRadius(properties.cornerRadius),
+        resizable,
       });
       this.node.add(this.edge);
       return true;
@@ -727,6 +800,7 @@ class UIKitNodeBinding {
     this.edge?.setCardCornerRadius(
       numericCornerRadius(properties.cornerRadius)
     );
+    this.edge?.setResizable(resizable);
     return false;
   }
 

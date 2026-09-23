@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import {describe, expect, it, vi} from 'vitest';
 
 import {ui} from '../UI';
-import {UICard} from '../components/UICard';
+import {UICard, measureUICardContentHeight} from '../components/UICard';
 import {UIImage} from '../components/UIImage';
 import {UIText} from '../components/UIText';
 import {UITextInput} from '../components/UITextInput';
@@ -125,6 +125,82 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
     expect(view.ready).toBe(false);
+  });
+
+  it('measures card content height at a width and restores the committed layout', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.1},
+      pixelSize: 0.001,
+      style: {padding: 10, gap: 10, justifyContent: 'flex-start'},
+      children: [
+        new UIPanel({style: {height: 80, flexShrink: 0}}),
+        new UIPanel({style: {height: 60, flexShrink: 0}}),
+      ],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    const node = () =>
+      mount.object.children[0] as unknown as {
+        size: {peek(): [number, number]};
+      };
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(node().size.peek()).toEqual([400, 100]);
+    });
+
+    expect(measureUICardContentHeight(card, 0.3)).toBeCloseTo(0.17);
+    mount.update(0.016);
+    expect(node().size.peek()).toEqual([400, 100]);
+
+    mount.dispose();
+    backend.dispose();
+    expect(measureUICardContentHeight(card, 0.3)).toBeUndefined();
+  });
+
+  it('routes ray and touch hits on edge corners to the resize handle', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    let mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const edgeMapping = () =>
+      mappings.find((mapping) => mapping.physical.name === 'UICardEdge')!;
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      const edge = edgeMapping().physical as unknown as {
+        size: {value?: [number, number]};
+      };
+      expect(edge.size.value?.[0]).toBeGreaterThan(0);
+    });
+    const handle = mappings.find(
+      (mapping) => mapping.physical.name === 'UICardResizeHandle'
+    )!.physical;
+    expect(handle.xb?.manipulationHandle).toEqual({action: 'resize'});
+
+    const {touchTarget} = edgeMapping().options!;
+    expect(touchTarget!(new THREE.Vector3(0.225, 0.11, 0))).toBe(handle);
+    expect(touchTarget!(new THREE.Vector3(0, 0.12, 0))).toBeUndefined();
+
+    const intersections: THREE.Intersection[] = [];
+    const raycaster = new THREE.Raycaster(
+      new THREE.Vector3(0.225, 0.11, 1),
+      new THREE.Vector3(0, 0, -1)
+    );
+    edgeMapping().physical.raycast(raycaster, intersections);
+    expect(intersections[0]?.object).toBe(handle);
+
+    card.manipulation = {actions: {translate: true}};
+    mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0) ?? mappings;
+    expect(
+      edgeMapping().options!.touchTarget!(new THREE.Vector3(0.225, 0.11, 0))
+    ).toBeUndefined();
+
+    mount.dispose();
+    backend.dispose();
   });
 
   it('honors single-line button labels and updates wrapping without replacing the text node', () => {

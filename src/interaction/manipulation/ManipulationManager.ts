@@ -32,6 +32,7 @@ import {
   type ManipulationPhase,
 } from './ManipulationTypes';
 import type {PhaseBaseline, Proposal} from './drivers/DriverTypes';
+import {ResizeDriver} from './drivers/ResizeDriver';
 import {RotateDriver} from './drivers/RotateDriver';
 import {ScaleDriver} from './drivers/ScaleDriver';
 import {TranslateDriver} from './drivers/TranslateDriver';
@@ -74,6 +75,7 @@ export class ManipulationManager {
   private readonly translateDriver: TranslateDriver;
   private readonly rotateDriver = new RotateDriver();
   private readonly scaleDriver = new ScaleDriver();
+  private readonly resizeDriver = new ResizeDriver();
 
   constructor(
     private readonly dispatch: DispatchManipulationEvent,
@@ -549,6 +551,9 @@ export class ManipulationManager {
     if (action === ManipulationAction.Rotate) {
       return this.rotateDriver.capture(session);
     }
+    if (action === ManipulationAction.Resize) {
+      return this.resizeDriver.capture(session);
+    }
     return this.scaleDriver.capture(session, auxiliary);
   }
 
@@ -560,6 +565,9 @@ export class ManipulationManager {
     }
     if (baseline.action === ManipulationAction.Rotate) {
       return this.rotateDriver.propose(session, baseline);
+    }
+    if (baseline.action === ManipulationAction.Resize) {
+      return this.resizeDriver.propose(session, baseline);
     }
     return this.scaleDriver.propose(session, baseline);
   }
@@ -644,6 +652,7 @@ function createEvent(
         delta: proposal.delta.clone(),
         position: proposal.position.clone(),
         worldPosition: proposal.worldPosition.clone(),
+        scale: proposal.scale.clone(),
       },
       preventState
     );
@@ -655,6 +664,18 @@ function createEvent(
         action: proposal.action,
         angle: proposal.angle,
         quaternion: proposal.quaternion.clone(),
+      },
+      preventState
+    );
+  }
+  if (proposal.action === ManipulationAction.Resize) {
+    return withDefaultPrevented(
+      {
+        ...common,
+        action: proposal.action,
+        width: proposal.width,
+        height: proposal.height,
+        position: proposal.position.clone(),
       },
       preventState
     );

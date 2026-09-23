@@ -189,6 +189,34 @@ export function setResolvedUICardSize(
   resolvedSizes.set(card, size);
 }
 
+type UICardContentMeasurer = (width: number) => number | undefined;
+
+const contentMeasurers = new WeakMap<UICard, UICardContentMeasurer>();
+
+/** Registers the backend that measures a card's content height at a width. */
+export function setUICardContentMeasurer(
+  card: UICard,
+  measurer: UICardContentMeasurer | undefined
+): void {
+  if (measurer) contentMeasurers.set(card, measurer);
+  else contentMeasurers.delete(card);
+}
+
+/**
+ * Returns the height in meters that the card's content needs at `width`, or
+ * undefined before the card has a layout.
+ */
+export function measureUICardContentHeight(
+  card: UICard,
+  width: number
+): number | undefined {
+  return contentMeasurers.get(card)?.(width);
+}
+
+// Android XR's default panel movement limits, in meters from the viewer.
+const CARD_MIN_DISTANCE = 0.75;
+const CARD_MAX_DISTANCE = 5;
+
 function normalizeCardManipulation(
   value: boolean | ManipulationOptions | undefined
 ): boolean | ManipulationOptions | undefined {
@@ -196,19 +224,36 @@ function normalizeCardManipulation(
   if (value === true) {
     return {
       actions: {
-        translate: {faceCamera: true},
+        translate: {
+          faceCamera: true,
+          scaleWithDistance: true,
+          pushPull: true,
+          minDistance: CARD_MIN_DISTANCE,
+          maxDistance: CARD_MAX_DISTANCE,
+        },
         scale: true,
+        resize: true,
       },
       handle: {action: 'translate'},
     };
   }
   const actions = value.actions ? {...value.actions} : undefined;
   if (actions?.translate === true) {
-    actions.translate = {faceCamera: true};
+    actions.translate = {
+      faceCamera: true,
+      scaleWithDistance: true,
+      pushPull: true,
+      minDistance: CARD_MIN_DISTANCE,
+      maxDistance: CARD_MAX_DISTANCE,
+    };
   } else if (actions?.translate && typeof actions.translate === 'object') {
     actions.translate = {
       ...actions.translate,
       faceCamera: actions.translate.faceCamera ?? true,
+      scaleWithDistance: actions.translate.scaleWithDistance ?? true,
+      pushPull: actions.translate.pushPull ?? true,
+      minDistance: actions.translate.minDistance ?? CARD_MIN_DISTANCE,
+      maxDistance: actions.translate.maxDistance ?? CARD_MAX_DISTANCE,
     };
   }
   if (actions?.rotate && typeof actions.rotate === 'object') {
@@ -231,6 +276,13 @@ function normalizeCardManipulation(
         actions.scale.maxScale && typeof actions.scale.maxScale === 'object'
           ? {...actions.scale.maxScale}
           : actions.scale.maxScale,
+    };
+  }
+  if (actions?.resize && typeof actions.resize === 'object') {
+    actions.resize = {
+      ...actions.resize,
+      minSize: actions.resize.minSize ? {...actions.resize.minSize} : undefined,
+      maxSize: actions.resize.maxSize ? {...actions.resize.maxSize} : undefined,
     };
   }
   return {
