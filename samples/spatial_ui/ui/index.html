@@ -132,13 +132,12 @@
             },
           });
 
-          const exploreCard = new xb.UICard({
-            size: CARD_SIZE,
-            manipulation: true,
-            edge: {scale: true},
-            style: {justifyContent: 'flex-start', gap: 18},
+          // The body scrolls, so this card can be resized smaller than its
+          // content. An explicit minimum height turns off the content floor.
+          const exploreBody = new xb.UIScrollView({
+            ariaLabel: 'Explore details',
+            style: {flexGrow: 1, flexBasis: 0, gap: 18},
             children: [
-              createHeader('explore', 'Explore', 'Images, layout, and actions'),
               new xb.UIImage({
                 src: 'https://picsum.photos/id/1018/900/600',
                 ariaLabel: 'Mountain lake landscape',
@@ -162,6 +161,24 @@
                 text: '你好！',
                 style: {fontSize: 18, lineHeight: 1.35},
               }),
+            ],
+          });
+
+          const exploreCard = new xb.UICard({
+            // A scroll view has no natural height, so start at a fixed one.
+            size: {width: CARD_SIZE.width, height: 0.62},
+            manipulation: {
+              actions: {
+                translate: true,
+                scale: true,
+                resize: {minSize: {height: 0.3}},
+              },
+            },
+            edge: {scale: true},
+            style: {justifyContent: 'flex-start', gap: 18},
+            children: [
+              createHeader('explore', 'Explore', 'Images, layout, and actions'),
+              exploreBody,
               new xb.UIPanel({
                 style: {width: '100%', flexDirection: 'row', gap: 12},
                 children: [
@@ -276,7 +293,7 @@
               createFeature(
                 'open_with',
                 'Move',
-                'Drag a panel from the outside edge.'
+                'Drag the outside edge to move, or a corner to resize.'
               ),
               createFeature(
                 'aspect_ratio',
