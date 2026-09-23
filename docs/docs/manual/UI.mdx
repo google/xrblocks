@@ -86,21 +86,19 @@ from its laid-out height.
 By default a card never gets narrower than its content allows, such as its
 longest word or a row of buttons, and never shorter than its content needs at
 the current width, so narrowing a card makes it taller as text wraps. To let a card get
-smaller than its content, put the content in a `UIScrollView` and set an
-explicit `minSize.height`, which turns off the content floor:
+smaller than its content, put the scrollable content in a `UIScrollView` (or set
+an explicit `minSize.height` to override the content floor):
 
 ```js
 const card = new xb.UICard({
   // A scroll view has no natural height, so use a fixed starting height.
   size: {width: 0.56, height: 0.6},
   edge: true,
-  manipulation: {
-    actions: {translate: true, resize: {minSize: {height: 0.3}}},
-  },
+  manipulation: true,
   children: [
     header,
     new xb.UIScrollView({
-      style: {flexGrow: 1, flexBasis: 0},
+      style: {flexGrow: 1, flexBasis: 0, minHeight: 160},
       children: [body],
     }),
   ],

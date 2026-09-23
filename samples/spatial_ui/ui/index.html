@@ -39,11 +39,6 @@
       // A scroll view has no natural height, so the scrolling card starts at a
       // fixed one and may shrink to a smaller minimum than its content.
       const SCROLLING_CARD_SIZE = {width: CARD_SIZE.width, height: 0.62};
-      const SCROLLING_CARD_MIN_HEIGHT = 0.3;
-      // Own manipulation options opt into the moves that `manipulation: true`
-      // gives the other cards, including Android XR's panel distance limits.
-      const MIN_CARD_DISTANCE = 0.75;
-      const MAX_CARD_DISTANCE = 5;
 
       function createHeader(icon, title, subtitle) {
         return new xb.UIPanel({
@@ -141,10 +136,10 @@
           });
 
           // The body scrolls, so this card can be resized smaller than its
-          // content. An explicit minimum height turns off the content floor.
+          // content while keeping a minimum scroll viewport height.
           const exploreBody = new xb.UIScrollView({
             ariaLabel: 'Explore details',
-            style: {flexGrow: 1, flexBasis: 0, gap: 18},
+            style: {flexGrow: 1, flexBasis: 0, minHeight: 160, gap: 18},
             children: [
               new xb.UIImage({
                 src: 'https://picsum.photos/id/1018/900/600',
@@ -174,19 +169,8 @@
 
           const exploreCard = new xb.UICard({
             size: SCROLLING_CARD_SIZE,
-            manipulation: {
-              actions: {
-                translate: {
-                  scaleWithDistance: true,
-                  pushPull: true,
-                  minDistance: MIN_CARD_DISTANCE,
-                  maxDistance: MAX_CARD_DISTANCE,
-                },
-                scale: true,
-                resize: {minSize: {height: SCROLLING_CARD_MIN_HEIGHT}},
-              },
-            },
-            edge: {scale: true},
+            manipulation: true,
+            edge: true,
             style: {justifyContent: 'flex-start', gap: 18},
             children: [
               createHeader('explore', 'Explore', 'Images, layout, and actions'),
@@ -244,7 +228,7 @@
           const tuneCard = new xb.UICard({
             size: CARD_SIZE,
             manipulation: true,
-            edge: {scale: true},
+            edge: true,
             style: {justifyContent: 'flex-start', gap: 18},
             children: [
               createHeader('tune', 'Tune', 'Live controls and theme state'),
@@ -299,7 +283,7 @@
           const featuresCard = new xb.UICard({
             size: CARD_SIZE,
             manipulation: true,
-            edge: {scale: true},
+            edge: true,
             style: {justifyContent: 'flex-start', gap: 18},
             children: [
               createHeader('view_in_ar', 'Spatial', 'Interaction built in'),
