@@ -394,6 +394,13 @@ describe('ResizeDriver', () => {
     driver.propose(session, baseline)!.apply();
 
     expect(session.card.size.width).toBeCloseTo(1.1);
+
+    // Even if the pointer crosses to the other side of the card center during
+    // two-source scale, restarting the resize phase keeps the initial corner.
+    drag(session, -0.3, -0.2);
+    baseline = driver.capture(session)!;
+    expect(baseline.corner.x).toBe(1);
+    expect(baseline.corner.y).toBe(1);
   });
 
   it('holds the last proposal when the ray misses the card plane', () => {

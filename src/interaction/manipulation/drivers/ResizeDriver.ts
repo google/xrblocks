@@ -33,6 +33,10 @@ const CARD_ANCHORS = {
 /** Captures and proposes corner Resize data for `UICard` owners. */
 export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
   readonly action = ManipulationAction.Resize;
+  private readonly sessionCorners = new WeakMap<
+    ManipulationDriverSession,
+    THREE.Vector2
+  >();
 
   capture(session: ManipulationDriverSession): ResizeBaseline | undefined {
     const card = asCard(session.owner);
@@ -79,8 +83,8 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       new THREE.Vector3().setFromMatrixPosition(matrixWorld)
     );
     const baseline = {plane, inverseMatrixWorld};
-    // Use the current pointer, not the Select start point, so a phase that
-    // restarts after two-source scale keeps dragging the same corner.
+    // Use the current pointer for the new delta baseline, and keep the corner
+    // chosen when the session first started.
     const pointer =
       pointerOnPlane(session.primary.snapshot, baseline) ??
       session.primary.capture.point.clone().applyMatrix4(inverseMatrixWorld);
@@ -93,10 +97,14 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       height === 'auto'
         ? pointer.y
         : (CARD_ANCHORS.center - cardAnchor.y) * height;
-    const corner = new THREE.Vector2(
-      pointer.x >= centerX ? 1 : 0,
-      pointer.y >= centerY ? 1 : 0
-    );
+    let corner = this.sessionCorners.get(session)?.clone();
+    if (!corner) {
+      corner = new THREE.Vector2(
+        pointer.x >= centerX ? 1 : 0,
+        pointer.y >= centerY ? 1 : 0
+      );
+      this.sessionCorners.set(session, corner.clone());
+    }
     return {
       action: this.action,
       width,
