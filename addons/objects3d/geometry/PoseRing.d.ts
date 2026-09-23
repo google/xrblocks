@@ -35,5 +35,14 @@ export declare class PoseRing {
      * pose recorded at essentially the right instant.
      */
     matchErrorMs(t: number): number | null;
+    /**
+     * Estimated camera speed around time `t`, from the earliest and latest
+     * stored poses within `±halfWindowMs`. Returns `null` when the window holds
+     * fewer than two sufficiently separated samples.
+     */
+    velocityAround(t: number, halfWindowMs?: number): {
+        linearMetersPerSec: number;
+        angularRadPerSec: number;
+    } | null;
     private nearest;
 }
