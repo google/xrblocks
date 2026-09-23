@@ -1,0 +1,29 @@
+Third-party notices for demos/read_aloud
+
+This demo's source is part of XR Blocks (Apache License 2.0, see the LICENSE
+file at the repository root). server/matcha_tts.py is adapted from the
+"Text → Speech" web demo in google-ai-edge/litert-samples (samples/web_demos),
+Apache License 2.0,
+https://github.com/google-ai-edge/litert-samples/blob/main/LICENSE
+
+Assets downloaded at runtime by the laptop server (nothing is redistributed in
+this repository):
+
+- Matcha-TTS LiteRT models and glue data (matcha_textenc_fp16.tflite,
+  matcha_decoder_fp16.tflite, matcha_vocoder_fp16.tflite, emb.bin,
+  config.json, g2p_meta.json)
+  https://huggingface.co/litert-community/Matcha-TTS
+  License: MIT. Converted from Matcha-TTS (MIT,
+  https://github.com/shivammehta25/Matcha-TTS) and HiFi-GAN (MIT,
+  https://github.com/jik876/hifi-gan).
+
+- DeepPhonemizer G2P model (dp_g2p_matcha_fp16.tflite)
+  https://github.com/as-ideas/DeepPhonemizer — License: MIT
+
+- OpenPhonemizer espeak-IPA dictionary (g2p_dict.txt.gz)
+  https://github.com/NeuralVox/OpenPhonemizer — License: Clear BSD
+
+Python dependencies (installed by the user, not vendored):
+
+- ai-edge-litert — Apache License 2.0
+- numpy — BSD 3-Clause
