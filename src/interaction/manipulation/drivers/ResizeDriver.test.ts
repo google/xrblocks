@@ -50,6 +50,14 @@ function createSession({
   };
 }
 
+function measureContent(
+  card: UICard,
+  height: (width: number) => number | undefined,
+  minWidth?: number
+): void {
+  setUICardContentMeasurer(card, {height, minWidth: () => minWidth});
+}
+
 function rayAt(point: THREE.Vector3): InteractionSourceState {
   const origin = point.clone().setZ(0);
   return {
@@ -168,7 +176,7 @@ describe('ResizeDriver', () => {
     const driver = new ResizeDriver();
     const session = createSession();
     // Content wraps to more lines as the card gets narrower.
-    setUICardContentMeasurer(session.card, (width) => 0.06 / width);
+    measureContent(session.card, (width) => 0.06 / width);
     const baseline = driver.capture(session)!;
 
     drag(session, 0, -0.1);
@@ -181,18 +189,42 @@ describe('ResizeDriver', () => {
     expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(0.3);
 
     const scrolling = createSession({resize: {minSize: {height: 0.1}}});
-    setUICardContentMeasurer(scrolling.card, () => 0.18);
+    measureContent(scrolling.card, () => 0.18);
     const scrollingBaseline = driver.capture(scrolling)!;
     drag(scrolling, 0, -0.1);
     proposal = driver.propose(scrolling, scrollingBaseline)!;
     expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(0.1);
   });
 
+  it('never gets narrower than its content unless a minimum width is set', () => {
+    const driver = new ResizeDriver();
+    const session = createSession();
+    measureContent(session.card, () => undefined, 0.3);
+    const baseline = driver.capture(session)!;
+    drag(session, -1, 0);
+    let proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.3);
+
+    const explicit = createSession({resize: {minSize: {width: 0.15}}});
+    measureContent(explicit.card, () => undefined, 0.3);
+    const explicitBaseline = driver.capture(explicit)!;
+    drag(explicit, -1, 0);
+    proposal = driver.propose(explicit, explicitBaseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.15);
+
+    const capped = createSession({resize: {maxSize: {width: 0.35}}});
+    measureContent(capped.card, () => undefined, 0.5);
+    const cappedBaseline = driver.capture(capped)!;
+    drag(capped, -1, 0);
+    proposal = driver.propose(capped, cappedBaseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.35);
+  });
+
   it('measures the content again only when the width changes', () => {
     const driver = new ResizeDriver();
     const session = createSession();
     let measurements = 0;
-    setUICardContentMeasurer(session.card, () => {
+    measureContent(session.card, () => {
       measurements++;
       return 0.1;
     });
@@ -210,7 +242,7 @@ describe('ResizeDriver', () => {
   it('lets maxSize cap the content height', () => {
     const driver = new ResizeDriver();
     const session = createSession({resize: {maxSize: {height: 0.25}}});
-    setUICardContentMeasurer(session.card, () => 0.4);
+    measureContent(session.card, () => 0.4);
     const baseline = driver.capture(session)!;
     drag(session, 0, 0);
     const proposal = driver.propose(session, baseline)!;
@@ -239,7 +271,7 @@ describe('ResizeDriver', () => {
   it('widens a locked card to keep its content floor', () => {
     const driver = new ResizeDriver();
     const session = createSession({resize: {preserveAspectRatio: true}});
-    setUICardContentMeasurer(session.card, () => 0.3);
+    measureContent(session.card, () => 0.3);
     const baseline = driver.capture(session)!;
     drag(session, -0.05, -0.05);
     const proposal = driver.propose(session, baseline)!;
@@ -251,7 +283,7 @@ describe('ResizeDriver', () => {
     const driver = new ResizeDriver();
     const session = createSession({size: {width: 0.4, height: 'auto'}});
     setResolvedUICardSize(session.card, {width: 0.4, height: 0.2});
-    setUICardContentMeasurer(session.card, () => 0.20001);
+    measureContent(session.card, () => 0.20001);
     const baseline = driver.capture(session)!;
     const proposal = driver.propose(session, baseline)!;
     proposal.apply();

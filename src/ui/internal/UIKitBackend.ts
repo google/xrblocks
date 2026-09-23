@@ -125,9 +125,10 @@ class UIKitMount implements UIMount {
       this.hitMappingsChanged = true;
       if (this.root instanceof UICard) {
         const card = this.root;
-        setUICardContentMeasurer(card, (width) =>
-          this.measureCardContentHeight(card, width)
-        );
+        setUICardContentMeasurer(card, {
+          height: (width) => this.measureCardContentHeight(card, width),
+          minWidth: () => this.measureCardMinContentWidth(card),
+        });
       }
     }
 
@@ -242,23 +243,61 @@ class UIKitMount implements UIMount {
     card: UICard,
     width: number
   ): number | undefined {
+    if (!(width > 0)) return undefined;
+    const height = this.withAutoHeightLayout((yoga) => {
+      yoga.setWidth(width / card.pixelSize);
+      yoga.calculateLayout(undefined, undefined);
+      return yoga.getComputedHeight() * card.pixelSize;
+    });
+    return height !== undefined && Number.isFinite(height) && height > 0
+      ? height
+      : undefined;
+  }
+
+  /**
+   * Finds the narrowest width at which no content overflows its container,
+   * searching between zero and the current width. Words never break, so text
+   * that no longer fits overflows and narrows the search.
+   */
+  private measureCardMinContentWidth(card: UICard): number | undefined {
+    const current = card.size.width / card.pixelSize;
+    if (!(current > 0)) return undefined;
+    const width = this.withAutoHeightLayout((yoga) => {
+      const overflowsAt = (value: number) => {
+        yoga.setWidth(value);
+        yoga.calculateLayout(undefined, undefined);
+        return yogaContentOverflows(yoga);
+      };
+      if (overflowsAt(current)) return current;
+      let fits = current;
+      let overflows = 0;
+      while (fits - overflows > MIN_WIDTH_SEARCH_PRECISION) {
+        const middle = (fits + overflows) / 2;
+        if (overflowsAt(middle)) overflows = middle;
+        else fits = middle;
+      }
+      return fits;
+    });
+    return width === undefined ? undefined : width * card.pixelSize;
+  }
+
+  /** Runs `measure` on the root yoga node, then restores the committed layout. */
+  private withAutoHeightLayout<T>(
+    measure: (yoga: YogaNode) => T
+  ): T | undefined {
     const yoga = (this.binding?.node.node as unknown as {yogaNode?: YogaNode})
       ?.yogaNode;
-    if (!yoga || !(width > 0)) return undefined;
+    if (!yoga) return undefined;
     const previousWidth = yoga.getWidth();
     const previousHeight = yoga.getHeight();
-    let height: number;
     try {
-      yoga.setWidth(width / card.pixelSize);
       yoga.setHeightAuto();
-      yoga.calculateLayout(undefined, undefined);
-      height = yoga.getComputedHeight() * card.pixelSize;
+      return measure(yoga);
     } finally {
       yoga.setWidth(yogaDimension(previousWidth));
       yoga.setHeight(yogaDimension(previousHeight));
       yoga.calculateLayout(undefined, undefined);
     }
-    return Number.isFinite(height) && height > 0 ? height : undefined;
   }
 
   private enqueue = (work: () => void): void => {
@@ -333,12 +372,41 @@ interface YogaNode {
   setHeightAuto(): void;
   calculateLayout(width: undefined, height: undefined): void;
   getComputedHeight(): number;
+  getComputedWidth(): number;
+  getComputedLeft(): number;
+  getComputedPadding(edge: number): number;
+  getComputedBorder(edge: number): number;
+  getPositionType(): number;
+  getChildCount(): number;
+  getChild(index: number): YogaNode;
 }
 
-// Values of yoga-layout's `Unit` enum.
+// Values of yoga-layout's `Unit`, `Edge`, and `PositionType` enums.
 const YOGA_UNIT_POINT = 1;
 const YOGA_UNIT_PERCENT = 2;
 const YOGA_UNIT_AUTO = 3;
+const YOGA_EDGE_RIGHT = 2;
+const YOGA_POSITION_ABSOLUTE = 2;
+// Layout pixels. Matches uikit's own threshold for scrollable overflow.
+const OVERFLOW_TOLERANCE = 0.5;
+// Layout pixels.
+const MIN_WIDTH_SEARCH_PRECISION = 1;
+
+/** True when any in-flow node extends past its parent's content box. */
+function yogaContentOverflows(node: YogaNode): boolean {
+  const limit =
+    node.getComputedWidth() -
+    node.getComputedPadding(YOGA_EDGE_RIGHT) -
+    node.getComputedBorder(YOGA_EDGE_RIGHT) +
+    OVERFLOW_TOLERANCE;
+  for (let index = 0; index < node.getChildCount(); index++) {
+    const child = node.getChild(index);
+    if (child.getPositionType() === YOGA_POSITION_ABSOLUTE) continue;
+    if (child.getComputedLeft() + child.getComputedWidth() > limit) return true;
+    if (yogaContentOverflows(child)) return true;
+  }
+  return false;
+}
 
 function yogaDimension({unit, value}: YogaValue): YogaDimension {
   if (unit === YOGA_UNIT_POINT) return value;

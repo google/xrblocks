@@ -4,6 +4,7 @@ import {getUIElementKind, isUIElement} from '../../../ui/UIElement';
 import {
   getResolvedUICardSize,
   measureUICardContentHeight,
+  measureUICardMinContentWidth,
   type UICard,
 } from '../../../ui/components/UICard';
 import type {InteractionSourceState} from '../../InteractionTypes';
@@ -46,6 +47,16 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       minSize.height > maxSize.height
     ) {
       return undefined;
+    }
+    // Without an explicit minimum width, never go narrower than the content.
+    if (options.minSize?.width === undefined) {
+      const content = measureUICardMinContentWidth(card);
+      if (content !== undefined) {
+        minSize.width = Math.min(
+          Math.max(minSize.width, content),
+          maxSize.width
+        );
+      }
     }
     const {width} = card.size;
     // Automatic heights become fixed once resized, like Quest and Android XR

@@ -74,8 +74,10 @@ export interface ResizeOptions {
   anchor?: 'center' | 'opposite';
   /**
    * Minimum card size in meters. Defaults to 0.1 meters per axis. Without an
-   * explicit `height`, the card also never gets shorter than its content needs
-   * at the current width. Set `height` when the card scrolls its own content.
+   * explicit `width`, the card never gets narrower than its content allows,
+   * and without an explicit `height` it never gets shorter than its content
+   * needs at the current width. Set `height` when the card scrolls its own
+   * content.
    */
   minSize?: ResizeSize;
   /** Maximum card size in meters. Unbounded by default. */

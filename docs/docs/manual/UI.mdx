@@ -83,8 +83,9 @@ changes `size` in meters and reflows the layout; it does not scale the content.
 Resizing a card with `height: 'auto'` switches it to a fixed height, starting
 from its laid-out height.
 
-By default a card never gets shorter than its content needs at the current
-width, so narrowing a card makes it taller as text wraps. To let a card get
+By default a card never gets narrower than its content allows, such as its
+longest word or a row of buttons, and never shorter than its content needs at
+the current width, so narrowing a card makes it taller as text wraps. To let a card get
 smaller than its content, put the content in a `UIScrollView` and set an
 explicit `minSize.height`, which turns off the content floor:
 

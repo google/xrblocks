@@ -3,7 +3,11 @@ import * as THREE from 'three';
 import {describe, expect, it, vi} from 'vitest';
 
 import {ui} from '../UI';
-import {UICard, measureUICardContentHeight} from '../components/UICard';
+import {
+  UICard,
+  measureUICardContentHeight,
+  measureUICardMinContentWidth,
+} from '../components/UICard';
 import {UIImage} from '../components/UIImage';
 import {UIText} from '../components/UIText';
 import {UITextInput} from '../components/UITextInput';
@@ -156,6 +160,42 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
     expect(measureUICardContentHeight(card, 0.3)).toBeUndefined();
+  });
+
+  it('measures the narrowest width at which card content fits', async () => {
+    const card = new UICard({
+      size: {width: 0.5, height: 0.2},
+      pixelSize: 0.001,
+      style: {padding: 10},
+      children: [
+        new UIPanel({
+          style: {flexDirection: 'row', gap: 10},
+          children: [
+            new UIPanel({style: {width: 150, height: 40, flexShrink: 0}}),
+            new UIPanel({style: {width: 150, height: 40, flexShrink: 0}}),
+          ],
+        }),
+      ],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    const node = () =>
+      mount.object.children[0] as unknown as {
+        size: {peek(): [number, number]};
+      };
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(node().size.peek()).toEqual([500, 200]);
+    });
+
+    // 10 + 150 + 10 + 150 + 10 layout pixels.
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.33, 3);
+    mount.update(0.016);
+    expect(node().size.peek()).toEqual([500, 200]);
+
+    mount.dispose();
+    backend.dispose();
   });
 
   it('routes ray and touch hits on edge corners to the resize handle', async () => {

@@ -189,11 +189,17 @@ export function setResolvedUICardSize(
   resolvedSizes.set(card, size);
 }
 
-type UICardContentMeasurer = (width: number) => number | undefined;
+/** Backend measurements of a card's content, in meters. */
+export interface UICardContentMeasurer {
+  /** Height the content needs at `width`. */
+  height(width: number): number | undefined;
+  /** Narrowest width at which no content overflows. */
+  minWidth(): number | undefined;
+}
 
 const contentMeasurers = new WeakMap<UICard, UICardContentMeasurer>();
 
-/** Registers the backend that measures a card's content height at a width. */
+/** Registers the backend that measures a card's content. */
 export function setUICardContentMeasurer(
   card: UICard,
   measurer: UICardContentMeasurer | undefined
@@ -210,7 +216,15 @@ export function measureUICardContentHeight(
   card: UICard,
   width: number
 ): number | undefined {
-  return contentMeasurers.get(card)?.(width);
+  return contentMeasurers.get(card)?.height(width);
+}
+
+/**
+ * Returns the narrowest width in meters at which the card's content does not
+ * overflow, or undefined before the card has a layout.
+ */
+export function measureUICardMinContentWidth(card: UICard): number | undefined {
+  return contentMeasurers.get(card)?.minWidth();
 }
 
 // Android XR's default panel movement limits, in meters from the viewer.
