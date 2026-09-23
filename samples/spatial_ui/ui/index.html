@@ -292,6 +292,7 @@
               card.position.copy(initial.position);
               card.quaternion.copy(initial.quaternion);
               card.scale.copy(initial.scale);
+              card.size = {...initial.size};
             });
           };
 
@@ -340,6 +341,7 @@
               position: card.position.clone(),
               quaternion: card.quaternion.clone(),
               scale: card.scale.clone(),
+              size: {...card.size},
             };
             this.add(card);
           });
