@@ -188,6 +188,25 @@ describe('ResizeDriver', () => {
     expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(0.1);
   });
 
+  it('measures the content again only when the width changes', () => {
+    const driver = new ResizeDriver();
+    const session = createSession();
+    let measurements = 0;
+    setUICardContentMeasurer(session.card, () => {
+      measurements++;
+      return 0.1;
+    });
+    const baseline = driver.capture(session)!;
+    drag(session, 0, 0.01);
+    driver.propose(session, baseline);
+    drag(session, 0, 0.02);
+    driver.propose(session, baseline);
+    expect(measurements).toBe(1);
+    drag(session, 0.01, 0.02);
+    driver.propose(session, baseline);
+    expect(measurements).toBe(2);
+  });
+
   it('lets maxSize cap the content height', () => {
     const driver = new ResizeDriver();
     const session = createSession({resize: {maxSize: {height: 0.25}}});

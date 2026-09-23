@@ -7,6 +7,10 @@ import {
 import * as THREE from 'three';
 
 import {ManipulationAction} from '../../interaction/manipulation/ManipulationTypes';
+import {
+  MAX_RESIZE_CORNER_FRACTION,
+  RESIZE_CORNER_SIDE_MARGINS,
+} from '../constants/UICardEdgeConstants';
 import {UICardEdgeFragmentShader} from '../shaders/UICardEdge.frag';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import {
@@ -378,13 +382,12 @@ export function isCornerHit(
     Math.max(0, halfWidth - margin),
     Math.max(0, halfHeight - margin)
   );
-  // Keep the middle half of every side free for translation.
-  const extent = innerRadius + 2 * margin;
+  const extent = innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin;
   const x = Math.abs(uv.x * size[0] - halfWidth);
   const y = Math.abs(uv.y * size[1] - halfHeight);
   return (
-    x >= halfWidth - Math.min(extent, halfWidth / 2) &&
-    y >= halfHeight - Math.min(extent, halfHeight / 2)
+    x >= halfWidth - Math.min(extent, halfWidth * MAX_RESIZE_CORNER_FRACTION) &&
+    y >= halfHeight - Math.min(extent, halfHeight * MAX_RESIZE_CORNER_FRACTION)
   );
 }
 

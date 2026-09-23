@@ -335,11 +335,15 @@ interface YogaNode {
   getComputedHeight(): number;
 }
 
-// Yoga units: 0 undefined, 1 point, 2 percent, 3 auto.
+// Values of yoga-layout's `Unit` enum.
+const YOGA_UNIT_POINT = 1;
+const YOGA_UNIT_PERCENT = 2;
+const YOGA_UNIT_AUTO = 3;
+
 function yogaDimension({unit, value}: YogaValue): YogaDimension {
-  if (unit === 1) return value;
-  if (unit === 2) return `${value}%`;
-  if (unit === 3) return 'auto';
+  if (unit === YOGA_UNIT_POINT) return value;
+  if (unit === YOGA_UNIT_PERCENT) return `${value}%`;
+  if (unit === YOGA_UNIT_AUTO) return 'auto';
   return undefined;
 }
 

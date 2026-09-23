@@ -27,6 +27,8 @@ import type {
 } from './DriverTypes';
 
 const PUSH_PULL_DEADZONE = 0.15;
+// xr-standard gamepad mapping: thumbstick Y, where forward is negative.
+const XR_STANDARD_THUMBSTICK_Y_AXIS = 3;
 const DEFAULT_PUSH_PULL_SPEED = 1.5;
 const MIN_RAY_DEPTH = 0.05;
 // Android XR keeps panel size consistent up to 1.75 m, then scales at 0.5 m
@@ -213,12 +215,13 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     depth: number
   ): number {
     const speed = resolvePushPull(baseline.options.pushPull);
-    // Only XR controllers: on a desktop gamepad axes[3] is the right stick,
-    // which the simulator uses to look up and down. In the xr-standard
-    // mapping axes[3] is thumbstick Y, and forward is negative.
+    // Only XR controllers: on a desktop gamepad the same axis is the right
+    // stick, which the simulator uses to look up and down.
     const gamepad = session.primary.snapshot.controller.gamepad;
     const stick =
-      gamepad?.mapping === 'xr-standard' ? gamepad.axes[3] : undefined;
+      gamepad?.mapping === 'xr-standard'
+        ? gamepad.axes[XR_STANDARD_THUMBSTICK_Y_AXIS]
+        : undefined;
     if (
       !speed ||
       !this.timer ||

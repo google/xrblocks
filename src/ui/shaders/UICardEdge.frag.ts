@@ -1,4 +1,11 @@
+import {
+  MAX_RESIZE_CORNER_FRACTION,
+  RESIZE_CORNER_EDGE_WIDTH_SCALE,
+  RESIZE_CORNER_SIDE_MARGINS,
+} from '../constants/UICardEdgeConstants';
 import {CommonFunctionsShader} from './CommonFunctions.glsl';
+
+const glslFloat = (value: number) => value.toFixed(4);
 
 /** Fragment shader for the hover-lit manipulation edge around a UI card. */
 export const UICardEdgeFragmentShader =
@@ -23,6 +30,12 @@ uniform vec2 u_cursor_uv_2;
 uniform float u_show_glow_2;
 uniform float u_debug;
 uniform float u_resizable;
+
+const float RESIZE_CORNER_SIDE_MARGINS = ${glslFloat(RESIZE_CORNER_SIDE_MARGINS)};
+const float MAX_RESIZE_CORNER_FRACTION = ${glslFloat(MAX_RESIZE_CORNER_FRACTION)};
+const float RESIZE_CORNER_EDGE_WIDTH_SCALE = ${glslFloat(
+    RESIZE_CORNER_EDGE_WIDTH_SCALE
+  )};
 
 // Matches isOuterEdgeHit and isCornerHit in UICardEdge.ts.
 float cornerHighlight(
@@ -111,8 +124,8 @@ void main() {
     float corner = 0.0;
     if (u_resizable > 0.5) {
         vec2 cornerExtent = min(
-            vec2(innerRadius + 2.0 * margin),
-            halfSize * 0.5
+            vec2(innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin),
+            halfSize * MAX_RESIZE_CORNER_FRACTION
         );
         vec2 cornerStart = halfSize - cornerExtent;
         corner = max(
@@ -147,7 +160,8 @@ void main() {
         }
 
         // Hovering a resize corner lights its whole arc with a thicker stroke.
-        float width = u_edge_width * (1.0 + corner);
+        float width =
+            u_edge_width * mix(1.0, RESIZE_CORNER_EDGE_WIDTH_SCALE, corner);
         float edgeMask = smoothstep(
             -width - aa,
             -width,

@@ -75,9 +75,11 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       CARD_ANCHORS[card.anchorX],
       CARD_ANCHORS[card.anchorY]
     );
-    const centerX = (0.5 - cardAnchor.x) * width;
+    const centerX = (CARD_ANCHORS.center - cardAnchor.x) * width;
     const centerY =
-      height === 'auto' ? pointer.y : (0.5 - cardAnchor.y) * height;
+      height === 'auto'
+        ? pointer.y
+        : (CARD_ANCHORS.center - cardAnchor.y) * height;
     const corner = new THREE.Vector2(
       pointer.x >= centerX ? 1 : 0,
       pointer.y >= centerY ? 1 : 0
@@ -113,7 +115,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     const {corner, cardAnchor, options} = baseline;
     const fixed =
       options.anchor === 'center'
-        ? new THREE.Vector2(0.5, 0.5)
+        ? new THREE.Vector2(CARD_ANCHORS.center, CARD_ANCHORS.center)
         : new THREE.Vector2(1 - corner.x, 1 - corner.y);
 
     let width = resizeAxis(
@@ -150,7 +152,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       height = (baseline.height as number) * ratio;
     }
     if (height !== 'auto' && options.fitContent) {
-      const content = measureUICardContentHeight(card, width);
+      const content = contentHeight(card, baseline, width);
       const floor =
         content === undefined
           ? undefined
@@ -205,6 +207,21 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       },
     };
   }
+}
+
+/** Measures the content height at `width`, reusing the last measurement. */
+function contentHeight(
+  card: UICard,
+  baseline: ResizeBaseline,
+  width: number
+): number | undefined {
+  const cached = baseline.contentFloor;
+  if (cached && Math.abs(cached.width - width) < SIZE_EPSILON) {
+    return cached.height;
+  }
+  const height = measureUICardContentHeight(card, width);
+  baseline.contentFloor = {width, height};
+  return height;
 }
 
 /** Clamps a uniform resize ratio so both axes stay within their limits. */
