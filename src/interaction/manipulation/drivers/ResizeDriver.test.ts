@@ -249,6 +249,19 @@ describe('ResizeDriver', () => {
     expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(0.25);
   });
 
+  it('keeps a locked aspect ratio when maxSize stops the content floor', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      resize: {preserveAspectRatio: true, maxSize: {width: 0.45}},
+    });
+    measureContent(session.card, () => 0.3);
+    const baseline = driver.capture(session)!;
+    drag(session, 0, 0);
+    const proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.45);
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(0.225);
+  });
+
   it('keeps the aspect ratio when locked, following the larger change', () => {
     const driver = new ResizeDriver();
     const session = createSession({resize: {preserveAspectRatio: true}});

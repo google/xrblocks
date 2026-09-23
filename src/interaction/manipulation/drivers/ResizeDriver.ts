@@ -18,6 +18,8 @@ import type {
 } from './DriverTypes';
 
 const DEFAULT_MIN_SIZE = 0.1;
+// Meters. Sizes closer than this count as unchanged, both for reusing a
+// content measurement and for leaving an automatic height alone.
 const SIZE_EPSILON = 1e-4;
 
 const CARD_ANCHORS = {
@@ -169,13 +171,17 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
           ? undefined
           : Math.min(content, options.maxSize.height);
       if (floor !== undefined && height < floor) {
-        height = floor;
-        // Widening only shortens wrapped content, so it still fits.
         if (locked) {
-          width = Math.min(
-            (baseline.width * floor) / (baseline.height as number),
-            Math.max(options.maxSize.width, baseline.width)
+          // Grow both axes together. Widening only shortens wrapped content,
+          // so it still fits, and maxSize wins if the ratio cannot reach it.
+          const ratio = lockedRatio(
+            floor / (baseline.height as number),
+            baseline
           );
+          width = baseline.width * ratio;
+          height = (baseline.height as number) * ratio;
+        } else {
+          height = floor;
         }
       }
     }

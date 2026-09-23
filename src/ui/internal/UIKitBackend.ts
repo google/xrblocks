@@ -381,20 +381,27 @@ interface YogaNode {
   getChild(index: number): YogaNode;
 }
 
-// Values of yoga-layout's `Unit`, `Edge`, and `PositionType` enums.
+// Values of yoga-layout's `Unit`, `Edge`, and `PositionType` enums. yoga-layout
+// is only reached through uikit, so these mirror its enums instead of adding a
+// direct dependency.
 const YOGA_UNIT_POINT = 1;
 const YOGA_UNIT_PERCENT = 2;
 const YOGA_UNIT_AUTO = 3;
+const YOGA_EDGE_LEFT = 0;
 const YOGA_EDGE_RIGHT = 2;
 const YOGA_POSITION_ABSOLUTE = 2;
 // Layout pixels. Matches uikit's own threshold for scrollable overflow.
 const OVERFLOW_TOLERANCE = 0.5;
-// Layout pixels.
+// Layout pixels. One pixel is below what a card edge can visibly show.
 const MIN_WIDTH_SEARCH_PRECISION = 1;
 
-/** True when any in-flow node extends past its parent's content box. */
+/** True when any in-flow node extends past either side of its parent's content box. */
 function yogaContentOverflows(node: YogaNode): boolean {
-  const limit =
+  const left =
+    node.getComputedPadding(YOGA_EDGE_LEFT) +
+    node.getComputedBorder(YOGA_EDGE_LEFT) -
+    OVERFLOW_TOLERANCE;
+  const right =
     node.getComputedWidth() -
     node.getComputedPadding(YOGA_EDGE_RIGHT) -
     node.getComputedBorder(YOGA_EDGE_RIGHT) +
@@ -402,7 +409,10 @@ function yogaContentOverflows(node: YogaNode): boolean {
   for (let index = 0; index < node.getChildCount(); index++) {
     const child = node.getChild(index);
     if (child.getPositionType() === YOGA_POSITION_ABSOLUTE) continue;
-    if (child.getComputedLeft() + child.getComputedWidth() > limit) return true;
+    const childLeft = child.getComputedLeft();
+    if (childLeft < left || childLeft + child.getComputedWidth() > right) {
+      return true;
+    }
     if (yogaContentOverflows(child)) return true;
   }
   return false;

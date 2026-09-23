@@ -198,6 +198,28 @@ describe('UIKitMount retained updates', () => {
     backend.dispose();
   });
 
+  it('counts content that overflows to the left toward the minimum width', async () => {
+    const card = new UICard({
+      size: {width: 0.5, height: 0.2},
+      pixelSize: 0.001,
+      style: {padding: 10, alignItems: 'flex-end'},
+      children: [new UIPanel({style: {width: 300, height: 40, flexShrink: 0}})],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(measureUICardMinContentWidth(card)).toBeDefined();
+    });
+
+    // 10 + 300 + 10 layout pixels.
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.32, 3);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
   it('routes ray and touch hits on edge corners to the resize handle', async () => {
     const card = new UICard({
       size: {width: 0.4, height: 0.2},
