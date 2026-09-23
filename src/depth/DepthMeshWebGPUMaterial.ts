@@ -88,7 +88,10 @@ export function applyWebGPUDepthMeshMaterial(depthMesh: DepthMesh): void {
     const finalColor = ambient.add(diff).add(vec3(spec));
     const debugOutput = vec4(finalColor, float(1.0)).mul(uOpacity);
 
-    const sampledDepth = depthTextureNode.r.mul(uRawValueToMeters).mul(8.0);
+    const sampledDepth = depthTextureNode
+      .toVec4()
+      .r.mul(uRawValueToMeters)
+      .mul(8.0);
     const normalizedDepth = clamp(
       sampledDepth
         .sub(uMinDepth)

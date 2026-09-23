@@ -13,7 +13,7 @@ export type WebGLOrWebGPURenderer = THREE.WebGLRenderer | WebGPURenderer;
  * @returns True if the renderer is a WebGPURenderer, false otherwise.
  */
 export function isWebGPURenderer(
-  renderer?: WebGLOrWebGPURenderer | null
+  renderer?: unknown
 ): renderer is WebGPURenderer {
   return (
     renderer != null &&
@@ -39,4 +39,13 @@ export function assertWebGLRenderer(
       `${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`
     );
   }
+}
+
+/**
+ * Dependency injection holder for the active Three.js renderer (`WebGLRenderer`
+ * or `WebGPURenderer`), allowing scripts to request the renderer via `Registry`
+ * in O(1) time without statically importing `three/webgpu`.
+ */
+export class RendererHolder {
+  constructor(public readonly renderer: WebGLOrWebGPURenderer) {}
 }
