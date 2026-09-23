@@ -36,6 +36,9 @@
       import * as xb from 'xrblocks';
 
       const CARD_SIZE = {width: 0.56, height: 'auto'};
+      // A scroll view has no natural height, so the scrolling card starts at a
+      // fixed one and may shrink to a smaller minimum than its content.
+      const SCROLLING_CARD_SIZE = {width: CARD_SIZE.width, height: 0.62};
 
       function createHeader(icon, title, subtitle) {
         return new xb.UIPanel({
@@ -132,13 +135,12 @@
             },
           });
 
-          const exploreCard = new xb.UICard({
-            size: CARD_SIZE,
-            manipulation: true,
-            edge: {scale: true},
-            style: {justifyContent: 'flex-start', gap: 18},
+          // The body scrolls, so this card can be resized smaller than its
+          // content while keeping a minimum scroll viewport height.
+          const exploreBody = new xb.UIScrollView({
+            ariaLabel: 'Explore details',
+            style: {flexGrow: 1, flexBasis: 0, minHeight: 160, gap: 18},
             children: [
-              createHeader('explore', 'Explore', 'Images, layout, and actions'),
               new xb.UIImage({
                 src: 'https://picsum.photos/id/1018/900/600',
                 ariaLabel: 'Mountain lake landscape',
@@ -162,6 +164,17 @@
                 text: '你好！',
                 style: {fontSize: 18, lineHeight: 1.35},
               }),
+            ],
+          });
+
+          const exploreCard = new xb.UICard({
+            size: SCROLLING_CARD_SIZE,
+            manipulation: true,
+            edge: true,
+            style: {justifyContent: 'flex-start', gap: 18},
+            children: [
+              createHeader('explore', 'Explore', 'Images, layout, and actions'),
+              exploreBody,
               new xb.UIPanel({
                 style: {width: '100%', flexDirection: 'row', gap: 12},
                 children: [
@@ -215,7 +228,7 @@
           const tuneCard = new xb.UICard({
             size: CARD_SIZE,
             manipulation: true,
-            edge: {scale: true},
+            edge: true,
             style: {justifyContent: 'flex-start', gap: 18},
             children: [
               createHeader('tune', 'Tune', 'Live controls and theme state'),
@@ -263,13 +276,14 @@
               card.position.copy(initial.position);
               card.quaternion.copy(initial.quaternion);
               card.scale.copy(initial.scale);
+              card.size = {...initial.size};
             });
           };
 
           const featuresCard = new xb.UICard({
             size: CARD_SIZE,
             manipulation: true,
-            edge: {scale: true},
+            edge: true,
             style: {justifyContent: 'flex-start', gap: 18},
             children: [
               createHeader('view_in_ar', 'Spatial', 'Interaction built in'),
@@ -280,8 +294,8 @@
               ),
               createFeature(
                 'aspect_ratio',
-                'Scale',
-                'Drag the edge with two hands or use your scroll wheel to scale the panel.'
+                'Resize',
+                'Drag a corner of the panel to resize it.'
               ),
               createFeature(
                 'widgets',
@@ -311,6 +325,7 @@
               position: card.position.clone(),
               quaternion: card.quaternion.clone(),
               scale: card.scale.clone(),
+              size: {...card.size},
             };
             this.add(card);
           });

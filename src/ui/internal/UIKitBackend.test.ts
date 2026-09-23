@@ -3,10 +3,15 @@ import * as THREE from 'three';
 import {describe, expect, it, vi} from 'vitest';
 
 import {ui} from '../UI';
-import {UICard} from '../components/UICard';
+import {
+  UICard,
+  measureUICardContentHeight,
+  measureUICardMinContentWidth,
+} from '../components/UICard';
 import {UIImage} from '../components/UIImage';
 import {UIText} from '../components/UIText';
 import {UITextInput} from '../components/UITextInput';
+import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
@@ -127,6 +132,158 @@ describe('UIKitMount retained updates', () => {
     expect(view.ready).toBe(false);
   });
 
+  it('measures card content height at a width and restores the committed layout', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.1},
+      pixelSize: 0.001,
+      style: {padding: 10, gap: 10, justifyContent: 'flex-start'},
+      children: [
+        new UIPanel({style: {height: 80, flexShrink: 0}}),
+        new UIPanel({style: {height: 60, flexShrink: 0}}),
+      ],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    const node = () =>
+      mount.object.children[0] as unknown as {
+        size: {peek(): [number, number]};
+      };
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(node().size.peek()).toEqual([400, 100]);
+    });
+
+    expect(measureUICardContentHeight(card, 0.3)).toBeCloseTo(0.17);
+    mount.update(0.016);
+    expect(node().size.peek()).toEqual([400, 100]);
+
+    mount.dispose();
+    backend.dispose();
+    expect(measureUICardContentHeight(card, 0.3)).toBeUndefined();
+  });
+
+  it('measures the narrowest width at which card content fits', async () => {
+    const card = new UICard({
+      size: {width: 0.5, height: 0.2},
+      pixelSize: 0.001,
+      style: {padding: 10},
+      children: [
+        new UIPanel({
+          style: {flexDirection: 'row', gap: 10},
+          children: [
+            new UIPanel({style: {width: 150, height: 40, flexShrink: 0}}),
+            new UIPanel({style: {width: 150, height: 40, flexShrink: 0}}),
+          ],
+        }),
+      ],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    const node = () =>
+      mount.object.children[0] as unknown as {
+        size: {peek(): [number, number]};
+      };
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(node().size.peek()).toEqual([500, 200]);
+    });
+
+    // 10 + 150 + 10 + 150 + 10 layout pixels.
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.33, 3);
+    mount.update(0.016);
+    expect(node().size.peek()).toEqual([500, 200]);
+
+    const yoga = (
+      node() as unknown as {node: {yogaNode: {calculateLayout(): void}}}
+    ).node.yogaNode;
+    const calculateLayoutSpy = vi.spyOn(yoga, 'calculateLayout');
+    card.size = {width: 0.45, height: 0.18};
+    mount.commit(ui.theme, {width: 800, height: 600}, 1);
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.33, 3);
+    expect(calculateLayoutSpy).not.toHaveBeenCalled();
+
+    const childRow = card.children[0] as UIPanel;
+    childRow.style = {flexDirection: 'row', gap: 20};
+    mount.commit(ui.theme, {width: 800, height: 600}, 2);
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.34, 3);
+    expect(calculateLayoutSpy).toHaveBeenCalled();
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('counts content that overflows to the left toward the minimum width', async () => {
+    const card = new UICard({
+      size: {width: 0.5, height: 0.2},
+      pixelSize: 0.001,
+      style: {padding: 10, alignItems: 'flex-end'},
+      children: [new UIPanel({style: {width: 300, height: 40, flexShrink: 0}})],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(measureUICardMinContentWidth(card)).toBeDefined();
+    });
+
+    // 10 + 300 + 10 layout pixels.
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.32, 3);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('routes ray and touch hits on edge corners to the resize handle', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    let mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const edgeMapping = () =>
+      mappings.find((mapping) => mapping.physical.name === 'UICardEdge')!;
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      const edge = edgeMapping().physical as unknown as {
+        size: {value?: [number, number]};
+      };
+      expect(edge.size.value?.[0]).toBeGreaterThan(0);
+    });
+    const handle = mappings.find(
+      (mapping) => mapping.physical.name === 'UICardResizeHandle'
+    )!.physical;
+    expect(handle.xb?.manipulationHandle).toEqual({action: 'resize'});
+
+    const {containsPoint, touchTarget} = edgeMapping().options!;
+    expect(containsPoint!(new THREE.Vector3(0.225, 0.11, 0))).toBe(true);
+    expect(containsPoint!(new THREE.Vector3(0, 0.12, 0))).toBe(true);
+    expect(containsPoint!(new THREE.Vector3(0, 0, 0))).toBe(false);
+    expect(touchTarget!(new THREE.Vector3(0.225, 0.11, 0))).toBe(handle);
+    expect(touchTarget!(new THREE.Vector3(0, 0.12, 0))).toBeUndefined();
+
+    const intersections: THREE.Intersection[] = [];
+    const raycaster = new THREE.Raycaster(
+      new THREE.Vector3(0.225, 0.11, 1),
+      new THREE.Vector3(0, 0, -1)
+    );
+    edgeMapping().physical.raycast(raycaster, intersections);
+    expect(intersections[0]?.object).toBe(handle);
+
+    card.manipulation = {actions: {translate: true}};
+    mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0) ?? mappings;
+    expect(
+      edgeMapping().options!.touchTarget!(new THREE.Vector3(0.225, 0.11, 0))
+    ).toBeUndefined();
+
+    mount.dispose();
+    backend.dispose();
+  });
+
   it('honors single-line button labels and updates wrapping without replacing the text node', () => {
     const button = new UIButton({
       label: 'Miniature city',
@@ -212,6 +369,19 @@ describe('UIKitMount retained updates', () => {
     await Promise.resolve();
     mount.commit(ui.theme, viewport, 0);
     expect(physical.texture.value).not.toBe(previous);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('reports changed hit mappings when overlay stack order changes', () => {
+    const overlay = new UIOverlay({style: {width: 200, height: 100}});
+    const backend = createUIBackend();
+    const mount = backend.createMount(overlay);
+    const viewport = {width: 800, height: 600};
+    expect(mount.commit(ui.theme, viewport, 0)).toBeDefined();
+    expect(mount.commit(ui.theme, viewport, 0)).toBeUndefined();
+    expect(mount.commit(ui.theme, viewport, 1)).toBeDefined();
 
     mount.dispose();
     backend.dispose();
