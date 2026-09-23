@@ -342,6 +342,7 @@ export class ManipulationManager {
   end(source: Controller, finalSnapshot?: InteractionSourceState): boolean {
     const session = this.roles.get(source);
     if (!session) return false;
+    const updated = Boolean(finalSnapshot);
     if (finalSnapshot) {
       if (session.primary.snapshot.controller === source) {
         session.primary.snapshot.copyFrom(finalSnapshot);
@@ -352,12 +353,12 @@ export class ManipulationManager {
     }
 
     if (session.primary.snapshot.controller === source) {
-      this.finishSession(session, 'end', true);
+      this.finishSession(session, 'end', true, updated);
       return true;
     }
 
     if (session.auxiliary?.controller === source) {
-      this.finishAuxiliary(session, source, 'end');
+      this.finishAuxiliary(session, source, 'end', updated);
       return true;
     }
     return false;
@@ -476,10 +477,16 @@ export class ManipulationManager {
     return true;
   }
 
-  private finishPhase(session: Session, phase: 'end' | 'cancel'): void {
+  private finishPhase(
+    session: Session,
+    phase: 'end' | 'cancel',
+    reuseLastProposal = false
+  ): void {
     const active = session.phase;
     if (!active) return;
-    const proposal = this.propose(session) ?? active.lastProposal;
+    const proposal = reuseLastProposal
+      ? (active.lastProposal ?? this.propose(session))
+      : (this.propose(session) ?? active.lastProposal);
     session.phase = undefined;
     this.dispatchPhase(session, active, phase, proposal);
   }
@@ -501,11 +508,14 @@ export class ManipulationManager {
   private finishSession(
     session: Session,
     phase: 'end' | 'cancel',
-    suppressAuxiliary: boolean
+    suppressAuxiliary: boolean,
+    reuseLastProposal = false
   ): void {
     const active = session.phase;
     const proposal = active
-      ? (this.propose(session) ?? active.lastProposal)
+      ? reuseLastProposal
+        ? (active.lastProposal ?? this.propose(session))
+        : (this.propose(session) ?? active.lastProposal)
       : undefined;
     this.removeSession(session, suppressAuxiliary);
     if (active) this.dispatchPhase(session, active, phase, proposal);
@@ -514,11 +524,12 @@ export class ManipulationManager {
   private finishAuxiliary(
     session: Session,
     source: Controller,
-    phase: 'end' | 'cancel'
+    phase: 'end' | 'cancel',
+    reuseLastProposal = false
   ): void {
     let phaseFinished = false;
     try {
-      this.finishPhase(session, phase);
+      this.finishPhase(session, phase, reuseLastProposal);
       phaseFinished = true;
     } finally {
       this.releaseAuxiliaryRole(session, source);

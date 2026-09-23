@@ -61,6 +61,7 @@ const ICON_BASE =
 const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
+const CARD_SIZE_PROPERTY_KEYS = new Set(['width', 'height', 'sizeX', 'sizeY']);
 const imageTextureLoader = new THREE.TextureLoader();
 
 class UIKitMount implements UIMount {
@@ -73,6 +74,7 @@ class UIKitMount implements UIMount {
   private disposed = false;
   private viewportWidth = -1;
   private viewportHeight = -1;
+  private cachedMinContentWidth?: number;
   private readonly isOverlay: boolean;
 
   constructor(
@@ -137,10 +139,13 @@ class UIKitMount implements UIMount {
       this.binding.reconcileTree(context);
       this.structureRevision = structureRevision;
       this.hitMappingsChanged = true;
+      this.cachedMinContentWidth = undefined;
     }
     if (this.isOverlay) this.updateViewport(viewport);
     context.sequence.value = 0;
-    if (this.binding.commit(context)) this.hitMappingsChanged = true;
+    const commitResult = this.binding.commit(context);
+    if (commitResult.hitMappingsChanged) this.hitMappingsChanged = true;
+    if (commitResult.contentChanged) this.cachedMinContentWidth = undefined;
 
     if (!this.hitMappingsChanged) return undefined;
     this.hitMappingsChanged = false;
@@ -263,6 +268,12 @@ class UIKitMount implements UIMount {
   private measureCardMinContentWidth(card: UICard): number | undefined {
     const current = card.size.width / card.pixelSize;
     if (!(current > 0)) return undefined;
+    if (
+      this.cachedMinContentWidth !== undefined &&
+      this.cachedMinContentWidth <= current * card.pixelSize
+    ) {
+      return this.cachedMinContentWidth;
+    }
     const width = this.withAutoHeightLayout((yoga) => {
       const overflowsAt = (value: number) => {
         yoga.setWidth(value);
@@ -279,7 +290,10 @@ class UIKitMount implements UIMount {
       }
       return fits;
     });
-    return width === undefined ? undefined : width * card.pixelSize;
+    if (width === undefined) return undefined;
+    const measured = width * card.pixelSize;
+    this.cachedMinContentWidth = measured;
+    return measured;
   }
 
   /** Runs `measure` on the root yoga node, then restores the committed layout. */
@@ -297,7 +311,6 @@ class UIKitMount implements UIMount {
     } finally {
       yoga.setWidth(yogaDimension(previousWidth));
       yoga.setHeight(yogaDimension(previousHeight));
-      yoga.calculateLayout(undefined, undefined);
     }
   }
 
@@ -572,9 +585,14 @@ class UIKitNodeBinding {
     }
   }
 
-  /** Returns true when physical hit mappings changed. */
-  commit(context: CommitContext): boolean {
-    if (this.disposed) return false;
+  /** Returns whether physical hit mappings or layout content changed. */
+  commit(context: CommitContext): {
+    hitMappingsChanged: boolean;
+    contentChanged: boolean;
+  } {
+    if (this.disposed) {
+      return {hitMappingsChanged: false, contentChanged: false};
+    }
     const order =
       context.rootStack === undefined
         ? undefined
@@ -591,10 +609,15 @@ class UIKitNodeBinding {
       nextPointerEvents !== this.pointerEvents ||
       this.resourceRevision !== this.appliedResourceRevision;
     let hitMappingsChanged = orderChanged;
+    let contentChanged = false;
     if (needsProperties) {
       const base = baseState(this.element);
       this.renderOrder = order;
       const properties = this.propertiesFor(context, base, order);
+      const changed = changedProperties(this.presentedProperties, properties);
+      contentChanged =
+        !(this.element instanceof UICard) ||
+        Object.keys(changed).some((key) => !CARD_SIZE_PROPERTY_KEYS.has(key));
       this.applyProperties(properties);
       this.baseProperties = properties;
       this.presentedProperties = properties;
@@ -612,9 +635,11 @@ class UIKitNodeBinding {
     this.syncImage();
     this.setHitEnabled(this.baseProperties);
     for (const child of this.childOrder) {
-      if (this.children.get(child)!.commit(context)) hitMappingsChanged = true;
+      const childResult = this.children.get(child)!.commit(context);
+      if (childResult.hitMappingsChanged) hitMappingsChanged = true;
+      if (childResult.contentChanged) contentChanged = true;
     }
-    return hitMappingsChanged;
+    return {hitMappingsChanged, contentChanged};
   }
 
   present(stateFor: UIPresentationStateFor): void {

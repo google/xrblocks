@@ -113,6 +113,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     baseline: TranslateBaseline
   ): Proposal | undefined {
     const snapshot = session.primary.snapshot;
+    const viewer = this.camera?.getWorldPosition(new THREE.Vector3());
     let delta: THREE.Vector3;
     let point: THREE.Vector3;
     if (snapshot.ray && baseline.rayDepth !== undefined && baseline.rayPoint) {
@@ -120,7 +121,8 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
         session,
         baseline,
         snapshot.ray,
-        baseline.rayDepth
+        baseline.rayDepth,
+        viewer
       );
       point = snapshot.ray.at(baseline.rayDepth, new THREE.Vector3());
       delta = point.clone().sub(baseline.rayPoint);
@@ -129,7 +131,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
       point = session.primary.capture.point.clone().add(delta);
     }
     const worldPosition = baseline.worldPosition.clone().add(delta);
-    const correction = this.limitDistance(baseline, worldPosition);
+    const correction = this.limitDistance(baseline, worldPosition, viewer);
     delta.add(correction);
     point.add(correction);
     const parent = session.owner.parent;
@@ -141,14 +143,14 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     const localQuaternion = baseline.options.faceCamera
       ? faceCameraQuaternion(
           worldPosition,
-          this.camera?.getWorldPosition(new THREE.Vector3()),
+          viewer,
           parent?.getWorldQuaternion(new THREE.Quaternion()),
           baseline.options.mode,
           baseline.options.capsuleHalfHeight ??
             DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT
         )
       : undefined;
-    const scale = this.scaleWithDistance(baseline, worldPosition);
+    const scale = this.scaleWithDistance(baseline, worldPosition, viewer);
     const rotationAlpha = this.timer
       ? faceCameraSlerpAlpha(
           baseline.options.smoothing ?? DEFAULT_FACE_CAMERA_SMOOTHING,
@@ -191,11 +193,11 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
    */
   private limitDistance(
     baseline: TranslateBaseline,
-    worldPosition: THREE.Vector3
+    worldPosition: THREE.Vector3,
+    viewer?: THREE.Vector3
   ): THREE.Vector3 {
     const correction = new THREE.Vector3();
     const limits = baseline.distanceLimits;
-    const viewer = this.camera?.getWorldPosition(new THREE.Vector3());
     if (!limits || !viewer) return correction;
     const offset = worldPosition.clone().sub(viewer);
     const distance = offset.length();
@@ -215,7 +217,8 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     session: ManipulationDriverSession,
     baseline: TranslateBaseline,
     ray: THREE.Ray,
-    depth: number
+    depth: number,
+    viewer?: THREE.Vector3
   ): number {
     const speed = resolvePushPull(baseline.options.pushPull);
     // Only XR controllers: on a desktop gamepad the same axis is the right
@@ -243,7 +246,6 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
       depth * Math.exp(-stick * speed * this.timer.getDelta())
     );
     const limits = baseline.distanceLimits;
-    const viewer = this.camera?.getWorldPosition(new THREE.Vector3());
     if (!limits || !viewer) return next;
     const distanceAt = (value: number) =>
       ray
@@ -262,13 +264,12 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
 
   private scaleWithDistance(
     baseline: TranslateBaseline,
-    worldPosition: THREE.Vector3
+    worldPosition: THREE.Vector3,
+    viewer?: THREE.Vector3
   ): THREE.Vector3 {
     const scale = baseline.scale.clone();
-    if (baseline.cameraDistance === undefined || !this.camera) return scale;
-    const distance = this.camera
-      .getWorldPosition(new THREE.Vector3())
-      .distanceTo(worldPosition);
+    if (baseline.cameraDistance === undefined || !viewer) return scale;
+    const distance = viewer.distanceTo(worldPosition);
     const factor = clampScaleFactor(
       sizeDistance(distance) / sizeDistance(baseline.cameraDistance),
       baseline.scale,

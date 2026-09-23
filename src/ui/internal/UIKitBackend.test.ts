@@ -195,6 +195,21 @@ describe('UIKitMount retained updates', () => {
     mount.update(0.016);
     expect(node().size.peek()).toEqual([500, 200]);
 
+    const yoga = (
+      node() as unknown as {node: {yogaNode: {calculateLayout(): void}}}
+    ).node.yogaNode;
+    const calculateLayoutSpy = vi.spyOn(yoga, 'calculateLayout');
+    card.size = {width: 0.45, height: 0.18};
+    mount.commit(ui.theme, {width: 800, height: 600}, 1);
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.33, 3);
+    expect(calculateLayoutSpy).not.toHaveBeenCalled();
+
+    const childRow = card.children[0] as UIPanel;
+    childRow.style = {flexDirection: 'row', gap: 20};
+    mount.commit(ui.theme, {width: 800, height: 600}, 2);
+    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.34, 3);
+    expect(calculateLayoutSpy).toHaveBeenCalled();
+
     mount.dispose();
     backend.dispose();
   });

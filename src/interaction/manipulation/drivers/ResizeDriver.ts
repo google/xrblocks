@@ -265,8 +265,7 @@ function lockedContentRatio(
   let low = Math.min(lower, high);
   const fitsAt = (ratio: number) => {
     const measured = contentHeight(card, baseline, baseline.width * ratio);
-    const needed =
-      measured === undefined ? 0 : Math.min(measured, maxHeight);
+    const needed = measured === undefined ? 0 : Math.min(measured, maxHeight);
     return baseHeight * ratio >= needed - SIZE_EPSILON;
   };
   if (!fitsAt(high)) return high;

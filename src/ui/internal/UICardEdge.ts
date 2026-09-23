@@ -273,9 +273,7 @@ export class UICardEdge extends UICardEdgeLayer {
       .setFromMatrixColumn(this.matrixWorld, 0)
       .length();
     const paddingPixels =
-      padding > 0 && xScale > Number.EPSILON
-        ? (padding / xScale) * size[0]
-        : 0;
+      padding > 0 && xScale > Number.EPSILON ? (padding / xScale) * size[0] : 0;
     const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
     return isOuterEdgeHit(
       uv,
