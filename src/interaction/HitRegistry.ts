@@ -4,8 +4,11 @@ export interface HitSurfaceOptions {
   /** Additional clipping or containment policy, evaluated in world space. */
   containsPoint?: (point: THREE.Vector3, padding?: number) => boolean;
   /**
-   * Returns a registered object that should receive a direct touch at `point`
-   * instead of this surface, such as a resize corner of a card edge.
+   * Direct touch only. Returns an object that should receive a touch at the
+   * world-space `point` instead of this surface, such as a resize corner of a
+   * card edge, or undefined to keep this surface. The returned object must be
+   * registered with its own hit surface, which supplies its logical target
+   * and manipulation handle; an unregistered object resolves as itself.
    */
   touchTarget?: (point: THREE.Vector3) => THREE.Object3D | undefined;
 }

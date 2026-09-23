@@ -26,10 +26,13 @@ import type {
   TranslateBaseline,
 } from './DriverTypes';
 
+// Thumbstick deflection ignored so resting sticks and drift don't push/pull.
 const PUSH_PULL_DEADZONE = 0.15;
 // xr-standard gamepad mapping: thumbstick Y, where forward is negative.
 const XR_STANDARD_THUMBSTICK_Y_AXIS = 3;
+// Exponential rate: full deflection multiplies the distance by e^1.5 per second.
 const DEFAULT_PUSH_PULL_SPEED = 1.5;
+// Meters. Keeps the grab point in front of the controller when pulling.
 const MIN_RAY_DEPTH = 0.05;
 // Android XR keeps panel size consistent up to 1.75 m, then scales at 0.5 m
 // per meter so farther panels look smaller.

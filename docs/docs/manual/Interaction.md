@@ -205,7 +205,8 @@ that scale.
 
 Set `translate: {pushPull: true}` to push an owner away with thumbstick forward
 and pull it closer with thumbstick back while a controller ray translates it.
-Pass `{speed}` to tune it. Hands have no thumbstick, so they change depth by
+Pass `{speed}` to tune it: the distance changes exponentially by `e^speed`
+per second at full deflection, 1.5 by default. Hands have no thumbstick, so they change depth by
 moving the hand.
 
 Set `translate: {minDistance, maxDistance}` in meters to keep every move,

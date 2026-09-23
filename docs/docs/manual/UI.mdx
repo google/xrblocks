@@ -126,8 +126,9 @@ const card = new xb.UICard({
 ```
 
 `anchor: 'center'` is the default and grows the card around its center.
-`minSize` defaults to 0.1 meters per axis, and `maxSize` is unbounded. A
-`maxSize.height` below the content height wins over the content floor.
+`minSize` defaults to 0.1 meters per axis, and `maxSize` is unbounded. When
+`maxSize` is smaller than the content needs, `maxSize` wins over the content
+floors, and a card with `preserveAspectRatio` keeps its proportions.
 
 Use `height: 'auto'` when the card should fit its children, gaps, and padding.
 Keep the width fixed so text wrapping and percentage-width children have a

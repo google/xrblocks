@@ -44,7 +44,10 @@ export interface TranslateOptions {
 }
 
 export interface PushPullOptions {
-  /** Distance change rate at full deflection, as a multiple per second. */
+  /**
+   * Exponential distance change rate at full deflection: the distance is
+   * multiplied by e^speed per second. Defaults to 1.5.
+   */
   speed?: number;
 }
 
@@ -148,8 +151,9 @@ export interface ScaleManipulationEvent extends BaseManipulationEvent {
 export interface ResizeManipulationEvent extends BaseManipulationEvent {
   readonly action: typeof ManipulationAction.Resize;
   /**
-   * Proposed card size in meters. An automatic height becomes fixed once
-   * resized, and stays `'auto'` only if the card has not been laid out yet.
+   * Proposed card size in meters. An automatic height stays `'auto'` until the
+   * resize actually changes the card's size, then becomes fixed. Before the
+   * card's first layout, only the width can change.
    */
   readonly width: number;
   readonly height: number | 'auto';

@@ -5,7 +5,9 @@ import {
 } from '../constants/UICardEdgeConstants';
 import {CommonFunctionsShader} from './CommonFunctions.glsl';
 
-const glslFloat = (value: number) => value.toFixed(4);
+/** Formats a number as a GLSL float literal, which needs a decimal point. */
+const glslFloat = (value: number) =>
+  Number.isInteger(value) ? `${value}.0` : `${value}`;
 
 /** Fragment shader for the hover-lit manipulation edge around a UI card. */
 export const UICardEdgeFragmentShader =
