@@ -11,6 +11,7 @@ import {
 import {UIImage} from '../components/UIImage';
 import {UIText} from '../components/UIText';
 import {UITextInput} from '../components/UITextInput';
+import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
@@ -353,6 +354,19 @@ describe('UIKitMount retained updates', () => {
     await Promise.resolve();
     mount.commit(ui.theme, viewport, 0);
     expect(physical.texture.value).not.toBe(previous);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('reports changed hit mappings when overlay stack order changes', () => {
+    const overlay = new UIOverlay({style: {width: 200, height: 100}});
+    const backend = createUIBackend();
+    const mount = backend.createMount(overlay);
+    const viewport = {width: 800, height: 600};
+    expect(mount.commit(ui.theme, viewport, 0)).toBeDefined();
+    expect(mount.commit(ui.theme, viewport, 0)).toBeUndefined();
+    expect(mount.commit(ui.theme, viewport, 1)).toBeDefined();
 
     mount.dispose();
     backend.dispose();

@@ -139,6 +139,7 @@ class UIKitMount implements UIMount {
       this.hitMappingsChanged = true;
     }
     if (this.isOverlay) this.updateViewport(viewport);
+    context.sequence.value = 0;
     if (this.binding.commit(context)) this.hitMappingsChanged = true;
 
     if (!this.hitMappingsChanged) return undefined;
@@ -605,7 +606,7 @@ class UIKitNodeBinding {
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
       this.textInput?.commit(context.theme);
-      hitMappingsChanged = this.syncEdge(properties);
+      if (this.syncEdge(properties)) hitMappingsChanged = true;
     }
     this.node.visible = this.element.visible;
     this.syncImage();
