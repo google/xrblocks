@@ -53,6 +53,7 @@ import {XRSystems} from './components/XRSystems';
 import {
   assertWebGLRenderer,
   isWebGPURenderer,
+  RendererHolder,
   type WebGLOrWebGPURenderer,
 } from './RendererTypes';
 
@@ -550,6 +551,7 @@ export class Core {
       };
     }
     this.registry.register(this.renderer);
+    this.registry.register(new RendererHolder(this.renderer));
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
     // For desktop simulator:
@@ -587,7 +589,6 @@ export class Core {
 
     // Sets up device camera.
     if (options.deviceCamera?.enabled) {
-      assertWebGLRenderer(this.renderer, 'XRDeviceCamera');
       this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
       this.deviceCamera.setRenderer(this.renderer);
       this.registry.register(this.deviceCamera);
@@ -735,7 +736,6 @@ export class Core {
 
     // Sets up postprocessing effects.
     if (options.usePostprocessing) {
-      assertWebGLRenderer(this.renderer, 'XREffects');
       this.effects = new XREffects(this.renderer, this.scene, this.timer);
     }
 

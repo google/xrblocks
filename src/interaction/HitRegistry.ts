@@ -3,6 +3,14 @@ import * as THREE from 'three';
 export interface HitSurfaceOptions {
   /** Additional clipping or containment policy, evaluated in world space. */
   containsPoint?: (point: THREE.Vector3, padding?: number) => boolean;
+  /**
+   * Direct touch only. Returns an object that should receive a touch at the
+   * world-space `point` instead of this surface, such as a resize corner of a
+   * card edge, or undefined to keep this surface. The returned object must be
+   * registered with its own hit surface, which supplies its logical target
+   * and manipulation handle; an unregistered object resolves as itself.
+   */
+  touchTarget?: (point: THREE.Vector3) => THREE.Object3D | undefined;
 }
 
 export interface RegisteredHitSurface extends HitSurfaceOptions {
@@ -141,7 +149,11 @@ export class HitRegistry {
     const intersections: THREE.Intersection[] = [];
     const box = new THREE.Box3();
     const center = new THREE.Vector3();
-    for (const {physical, containsPoint} of this.touchCandidates.values()) {
+    for (const {
+      physical,
+      containsPoint,
+      touchTarget,
+    } of this.touchCandidates.values()) {
       if (physical.xb?.pointerEvents === 'none') continue;
       if (!effectiveVisible(physical)) continue;
       try {
@@ -154,7 +166,7 @@ export class HitRegistry {
       if (containsPoint?.(point, padding) === false) continue;
       intersections.push({
         distance: box.getCenter(center).distanceTo(point),
-        object: physical,
+        object: touchTarget?.(point) ?? physical,
         point: point.clone(),
       });
     }
