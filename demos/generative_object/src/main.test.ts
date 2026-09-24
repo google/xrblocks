@@ -1,3 +1,4 @@
+import {Blob as NodeBlob} from 'node:buffer';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import * as xb from 'xrblocks';
 
@@ -7,40 +8,65 @@ import {GenerativeObjectDemo, start} from './main.js';
 vi.mock('../../../src/singletons', async () => {
   const {Scene} = await import('three');
   return {
-    core: {scene: new Scene(), sound: {speechRecognizer: null}},
+    core: {scene: new Scene(), ai: undefined},
     add: vi.fn(),
     init: vi.fn().mockResolvedValue(undefined),
   };
 });
+
+class TestRecorder {
+  static isTypeSupported = () => true;
+  state = 'inactive';
+  ondataavailable: ((event: {data: NodeBlob}) => void) | null = null;
+  onstop: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  start() {
+    this.state = 'recording';
+    this.ondataavailable?.({data: new NodeBlob([new Uint8Array([1, 2, 3])])});
+  }
+  stop() {
+    this.state = 'inactive';
+    const onstop = this.onstop;
+    queueMicrotask(() => onstop?.());
+  }
+}
+
+/** Stubs the microphone, MediaRecorder and a configured Gemini client. */
+function stubVoice() {
+  const track = Object.assign(new EventTarget(), {stop: vi.fn()});
+  const stream = {getTracks: () => [track], getAudioTracks: () => [track]};
+  const getUserMedia = vi.fn().mockResolvedValue(stream);
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: {getUserMedia},
+  });
+  vi.stubGlobal('MediaRecorder', TestRecorder);
+  vi.stubGlobal('Blob', NodeBlob);
+  const gemini = new xb.Gemini(new xb.GeminiOptions());
+  const generateContent = vi
+    .fn()
+    .mockResolvedValue({text: '{"transcript":"a red chair"}'});
+  gemini.ai = {models: {generateContent}} as unknown as xb.Gemini['ai'];
+  const ai = new xb.AI();
+  ai.options = new xb.AIOptions();
+  ai.model = gemini;
+  vi.spyOn(ai, 'isAvailable').mockReturnValue(true);
+  xb.core.ai = ai;
+  return {track, getUserMedia, generateContent};
+}
+
+const status = () => document.getElementById('status')!.textContent;
 
 function setup() {
   const generative = new GenerativeObjects();
   vi.spyOn(generative, 'isSupported', 'get').mockReturnValue(true);
   const imagine = vi.spyOn(generative, 'imagine').mockResolvedValue(null);
   const clear = vi.spyOn(generative, 'clearObjects');
-  const recognizer = new xb.SpeechRecognizer(new xb.SoundSynthesizer());
-  const start = vi.spyOn(recognizer, 'start').mockImplementation(() => {});
-  const stop = vi.spyOn(recognizer, 'stop').mockImplementation(() => {});
-  const add = vi.spyOn(recognizer, 'addEventListener');
-  const remove = vi.spyOn(recognizer, 'removeEventListener');
-  xb.core.sound.speechRecognizer = recognizer;
   const demo = new GenerativeObjectDemo(generative);
   demo.init();
   const buttons = Array.from(document.querySelectorAll('button'));
   const card = demo.children.find((child) => child instanceof xb.UICard)!;
-  return {
-    generative,
-    imagine,
-    clear,
-    recognizer,
-    start,
-    stop,
-    add,
-    remove,
-    demo,
-    buttons,
-    card,
-  };
+  return {generative, imagine, clear, demo, buttons, card};
 }
 
 beforeEach(() => {
@@ -50,29 +76,89 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (navigator as {mediaDevices?: unknown}).mediaDevices;
+  xb.core.ai = undefined as unknown as xb.AI;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe('GenerativeObjectDemo lifecycle', () => {
-  it('disconnects speech, controls, lights and generated work on disposal', () => {
+  it('releases the microphone, controls, lights and generated work on disposal', async () => {
+    const voice = stubVoice();
     const s = setup();
     s.buttons[1].click();
-    expect(s.start).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(status()).toContain('listening'));
     s.demo.dispose();
 
-    expect(s.stop).toHaveBeenCalledOnce();
-    expect(s.remove.mock.calls.map(([type]) => type).sort()).toEqual([
-      'end',
-      'error',
-      'result',
-    ]);
+    expect(voice.track.stop).toHaveBeenCalledOnce();
     expect(document.querySelectorAll('button')).toHaveLength(0);
     expect(xb.core.scene.children).toHaveLength(0);
     expect(s.clear).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(voice.generateContent).not.toHaveBeenCalled();
+  });
+
+  it('records on Speak and summons what Gemini transcribes on the second tap', async () => {
+    const voice = stubVoice();
+    const s = setup();
+    const speak = s.buttons[1];
+    speak.click();
+    await vi.waitFor(() =>
+      expect(status()).toBe("listening... tap speak again when you're done.")
+    );
+    expect(speak.textContent).toBe('🔴 Tap to send');
+    expect(voice.generateContent).not.toHaveBeenCalled();
+
+    speak.click();
+    expect(voice.track.stop).toHaveBeenCalledOnce();
+    await vi.waitFor(() =>
+      expect(s.imagine).toHaveBeenCalledWith('a red chair')
+    );
+    expect(voice.generateContent).toHaveBeenCalledOnce();
+    expect(speak.textContent).toBe('🎙️ Speak');
+    s.demo.dispose();
+  });
+
+  it('explains a blocked microphone instead of listening forever', async () => {
+    const voice = stubVoice();
+    voice.getUserMedia.mockRejectedValue(
+      Object.assign(new Error('native'), {name: 'NotAllowedError'})
+    );
+    const s = setup();
+    s.buttons[1].click();
+    await vi.waitFor(() => expect(status()).toContain('microphone blocked'));
+    expect(s.buttons[1].textContent).toBe('🎙️ Speak');
+    expect(s.imagine).not.toHaveBeenCalled();
+    s.demo.dispose();
+  });
+
+  it('asks for Gemini before using the microphone', async () => {
+    const s = setup();
+    s.buttons[1].click();
+    await vi.waitFor(() => expect(status()).toContain('voice needs Gemini'));
+    expect(s.buttons[1].textContent).toBe('🎙️ Speak');
+    s.demo.dispose();
+  });
+
+  it('says so instead of dropping a transcript while another summon runs', async () => {
+    stubVoice();
+    const s = setup();
+    s.imagine.mockReturnValue(new Promise(() => {}));
+    s.buttons[0].click();
+    s.buttons[1].click();
+    await vi.waitFor(() => expect(status()).toContain('listening'));
+    s.buttons[1].click();
+    await vi.waitFor(() =>
+      expect(status()).toBe(
+        'heard "a red chair", but a summon is still running.'
+      )
+    );
+    expect(s.imagine).toHaveBeenCalledOnce();
+    s.demo.dispose();
   });
 
   it('ignores retained DOM, spatial and keyboard callbacks after removal', async () => {
+    const voice = stubVoice();
     const s = setup();
     const spatial: xb.UIButton[] = [];
     s.card.traverse((child) => {
@@ -89,7 +175,7 @@ describe('GenerativeObjectDemo lifecycle', () => {
     await Promise.resolve();
 
     expect(s.imagine).not.toHaveBeenCalled();
-    expect(s.start).not.toHaveBeenCalled();
+    expect(voice.getUserMedia).not.toHaveBeenCalled();
     expect(s.clear).toHaveBeenCalledTimes(calls);
     expect(s.generative.options).toEqual(previousOptions);
     expect(document.getElementById('status')!.textContent).toBe(status);
@@ -158,17 +244,18 @@ describe('GenerativeObjectDemo lifecycle', () => {
     await manager.dispose();
   });
 
-  it('attempts later releases even when stopping speech throws', () => {
+  it('attempts later releases even when releasing the microphone throws', async () => {
+    const voice = stubVoice();
     const s = setup();
     s.buttons[1].click();
+    await vi.waitFor(() => expect(status()).toContain('listening'));
     const failure = new Error('stop failed');
-    s.stop.mockImplementation(() => {
+    voice.track.stop.mockImplementation(() => {
       throw failure;
     });
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     expect(() => s.demo.dispose()).toThrow(failure);
-    expect(s.remove).toHaveBeenCalledTimes(3);
     expect(document.querySelectorAll('button')).toHaveLength(0);
     expect(xb.core.scene.children).toHaveLength(0);
     expect(s.clear).toHaveBeenCalledOnce();
@@ -215,6 +302,7 @@ describe('GenerativeObjectDemo lifecycle', () => {
     const options = vi.mocked(xb.init).mock.calls[0][0]!;
     expect(options.ai.gemini.apiKey).toBe('startup-fixture');
     expect(window.location.search).not.toContain('key=');
+    expect(options.sound.speechRecognizer.enabled).toBe(false);
     // Placement raycasts the downsampled depth mesh, so the hidden
     // full-resolution mesh does not need per-frame updates.
     expect(options.depth.depthMesh.enabled).toBe(true);

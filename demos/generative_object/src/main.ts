@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 import {GenerativeObjects} from './GenerativeObjects.js';
+import {GeminiVoiceInput, type VoiceState} from './GeminiVoice.js';
 import {runCleanupSteps} from './cleanup.js';
 import {resolveApiKey} from './ApiKey.js';
 
@@ -27,11 +28,17 @@ const PRESET_PROMPTS = [
   'a paper airplane',
 ];
 
+const SPEAK_LABELS: Record<VoiceState, string> = {
+  idle: '🎙️ Speak',
+  starting: '⏳ Starting mic...',
+  recording: '🔴 Tap to send',
+  transcribing: '✍️ Transcribing...',
+};
+
 export class GenerativeObjectDemo extends xb.Script {
   private presetIndex = 0;
   private busy = false;
-  private listening = false;
-  private recognizer: xb.SpeechRecognizer | null = null;
+  private voice: GeminiVoiceInput | null = null;
   private domSpeakButton: HTMLButtonElement | null = null;
   private xrStatusText: xb.UIText | null = null;
   private card: xb.UICard | null = null;
@@ -40,16 +47,6 @@ export class GenerativeObjectDemo extends xb.Script {
   private lights: THREE.Light[] = [];
   private disposed = true;
   private request = 0;
-  private onSpeechResult = (event: {isFinal: boolean; transcript: string}) => {
-    if (this.disposed || !this.listening) return;
-    if (event.isFinal && event.transcript.trim()) {
-      void this.imagine(event.transcript.trim());
-      this.setListening_(false);
-    }
-  };
-  private onSpeechEnd = () => {
-    if (!this.disposed) this.setListening_(false);
-  };
 
   /**
    * @param generative - The demo-owned generative helper, added to the engine
@@ -69,13 +66,24 @@ export class GenerativeObjectDemo extends xb.Script {
     key.position.set(0.5, 1, 1);
     xb.core.scene.add(ambient, key);
 
-    // Voice trigger: imagine whatever you say.
-    this.recognizer = xb.core.sound?.speechRecognizer ?? null;
-    if (this.recognizer) {
-      this.recognizer.addEventListener('result', this.onSpeechResult);
-      this.recognizer.addEventListener('end', this.onSpeechEnd);
-      this.recognizer.addEventListener('error', this.onSpeechEnd);
-    }
+    // Voice trigger: record one instruction and summon what Gemini transcribes.
+    this.voice = new GeminiVoiceInput({
+      getAI: () => xb.core.ai,
+      onStateChange: (state) => this.onVoiceState_(state),
+      onTranscript: (transcript) => {
+        if (this.disposed) return;
+        if (this.busy) {
+          this.setStatus_(
+            `heard "${transcript}", but a summon is still running.`
+          );
+          return;
+        }
+        void this.imagine(transcript);
+      },
+      onError: (error) => {
+        if (!this.disposed) this.setStatus_(error.message);
+      },
+    });
 
     this.buildDomControls_();
     this.buildSpatialPanel_();
@@ -92,14 +100,27 @@ export class GenerativeObjectDemo extends xb.Script {
   }
 
   private toggleSpeak_() {
-    if (this.disposed || !this.recognizer) return;
-    if (this.listening) {
-      this.recognizer.stop();
-      this.setListening_(false);
-    } else {
-      this.recognizer.start();
-      this.setListening_(true);
-      this.setStatus_('listening... say what to summon.');
+    if (this.disposed || !this.voice) return;
+    if (this.voice.state === 'recording') {
+      this.voice.finish();
+    } else if (this.voice.state === 'idle') {
+      void this.voice.start();
+    } else if (this.voice.cancel()) {
+      this.setStatus_('voice cancelled.');
+    }
+  }
+
+  private onVoiceState_(state: VoiceState) {
+    if (this.disposed) return;
+    if (this.domSpeakButton) {
+      this.domSpeakButton.textContent = SPEAK_LABELS[state];
+    }
+    if (state === 'starting') {
+      this.setStatus_('waiting for the microphone...');
+    } else if (state === 'recording') {
+      this.setStatus_("listening... tap speak again when you're done.");
+    } else if (state === 'transcribing') {
+      this.setStatus_('transcribing...');
     }
   }
 
@@ -215,15 +236,6 @@ export class GenerativeObjectDemo extends xb.Script {
       signal: this.domEvents!.signal,
     });
     return button;
-  }
-
-  private setListening_(listening: boolean) {
-    this.listening = listening;
-    if (this.domSpeakButton) {
-      this.domSpeakButton.textContent = listening
-        ? '🔴 Listening...'
-        : '🎙️ Speak';
-    }
   }
 
   // ---- spatial control panel (XR) ----
@@ -351,14 +363,12 @@ export class GenerativeObjectDemo extends xb.Script {
     if (this.disposed) return;
     this.disposed = true;
     this.request++;
-    const recognizer = this.recognizer;
-    const listening = this.listening;
+    const voice = this.voice;
     const controls = this.controls;
     const domEvents = this.domEvents;
     const card = this.card;
     const lights = this.lights;
-    this.recognizer = null;
-    this.listening = false;
+    this.voice = null;
     this.busy = false;
     this.controls = null;
     this.domEvents = null;
@@ -368,12 +378,7 @@ export class GenerativeObjectDemo extends xb.Script {
     this.lights = [];
 
     runCleanupSteps([
-      () => recognizer?.removeEventListener('result', this.onSpeechResult),
-      () => recognizer?.removeEventListener('end', this.onSpeechEnd),
-      () => recognizer?.removeEventListener('error', this.onSpeechEnd),
-      () => {
-        if (listening) recognizer?.stop();
-      },
+      () => voice?.dispose(),
       () => domEvents?.abort(),
       () => controls?.remove(),
       () => this.generative.clearObjects(),
@@ -406,8 +411,8 @@ export async function start() {
   options.depth.depthTexture.enabled = true;
   options.depth.occlusion.enabled = true;
 
-  // Voice input to describe objects.
-  options.sound.speechRecognizer.enabled = true;
+  // Voice stays on Gemini rather than a browser-managed speech service.
+  options.sound.speechRecognizer.enabled = false;
 
   options.setAppTitle('Generative Object');
   options.setAppDescription(
