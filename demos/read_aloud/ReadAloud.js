@@ -17,11 +17,11 @@ const CAMERA_STATE_LABELS = {
 };
 
 /**
- * Say "read" (or press Read): a device-camera photo goes to Gemini (or, with
- * `?ocr=ollama`, to a local Ollama vision model through the laptop server)
- * for text extraction, and the text is spoken by Matcha-TTS running on the
- * tethered laptop (`server/server.py`). "stop" cancels playback. Falls back
- * to the browser's speech synthesis when the server is unreachable.
+ * Press Read: a device-camera photo goes to Gemini (or, with `?ocr=ollama`,
+ * to a local Ollama vision model through the laptop server) for text
+ * extraction, and the text is spoken by Matcha-TTS running on the tethered
+ * laptop (`server/server.py`). Stop cancels playback. Falls back to the
+ * browser's speech synthesis when the server is unreachable.
  */
 export class ReadAloud extends xb.Script {
   static dependencies = {ai: xb.AI, deviceCamera: xb.XRDeviceCamera};
@@ -35,7 +35,6 @@ export class ReadAloud extends xb.Script {
   generator = null;
   frozenTexture = null;
   readyLabel = 'Ready.';
-  voiceLabel = '';
 
   init({ai, deviceCamera}) {
     this.ai = ai;
@@ -95,7 +94,7 @@ export class ReadAloud extends xb.Script {
           style: {fontSize: 26, fontWeight: 'bold'},
         }),
         new xb.UIText({
-          text: 'Hold a page in front of you and say “read”. The text is extracted and spoken by Matcha-TTS on the tethered laptop. Say “stop” to stop.',
+          text: 'Hold a page in front of you and click Read. The text is extracted and spoken by Matcha-TTS on the tethered laptop. Click Stop to stop.',
           style: {fontSize: 14, lineHeight: 1.35, opacity: 0.8},
         }),
         new xb.UIPanel({
@@ -126,63 +125,6 @@ export class ReadAloud extends xb.Script {
     if (this.busy || this.speaking || this.mode === 'loading') return;
     const label = CAMERA_STATE_LABELS[state];
     if (label) this.status(label);
-  }
-
-  // ---------------------------------------------------------------- voice
-
-  setupVoice() {
-    const recognizer = xb.core.sound?.speechRecognizer;
-    if (!recognizer || !recognizer.recognition || recognizer.error) {
-      this.voiceLabel = 'Voice commands unavailable — use the Read button.';
-      return;
-    }
-    this.recognizer = recognizer;
-    this.voiceLabel = 'Say “read” or press Read.';
-    this.onSpeech = (event) => this.handleSpeech(event);
-    this.onSpeechError = (event) => {
-      if (
-        event.error === 'not-allowed' ||
-        event.error === 'service-not-allowed'
-      ) {
-        this.voiceLabel = 'Microphone blocked — use the Read button.';
-        // The SDK restarts continuous recognition after every end; without
-        // a microphone that becomes a permanent error loop.
-        recognizer.options.continuous = false;
-        recognizer.stop();
-        this.refreshReadyLabel();
-        return;
-      }
-      // Transient errors (no-speech, network, aborted): keep listening.
-      setTimeout(() => this.startListening(), 1000);
-    };
-    recognizer.addEventListener('result', this.onSpeech);
-    recognizer.addEventListener('error', this.onSpeechError);
-    this.startListening();
-  }
-
-  startListening() {
-    if (this.recognizer && !this.recognizer.isListening) {
-      try {
-        this.recognizer.start();
-      } catch {
-        // Not available in this session; the button still works.
-      }
-    }
-  }
-
-  handleSpeech(event) {
-    if (!event.isFinal) return;
-    // The SDK's command match is a substring test ("ready", "already"), so
-    // re-check on word boundaries.
-    const transcript = event.transcript.toLowerCase();
-    if (/\bstop\b/.test(transcript)) {
-      this.stop();
-      return;
-    }
-    // Ignore "read" while speaking so the spoken text cannot retrigger it.
-    if (/\bread\b/.test(transcript) && !this.busy && !this.speaking) {
-      void this.read();
-    }
   }
 
   // ----------------------------------------------------------------- boot
@@ -227,11 +169,8 @@ export class ReadAloud extends xb.Script {
           engineLabel += `\nOCR: Ollama ${ocr.ollamaModel} via the laptop.`;
         }
       }
-      this.readyLabel = engineLabel;
-      // Other subsystems (the speech recognizer among them) have initialized
-      // by now; set up voice once.
-      if (!this.recognizer && !this.voiceLabel) this.setupVoice();
-      this.refreshReadyLabel();
+      this.readyLabel = `${engineLabel}\nClick Read to read a page.`;
+      this.status(this.readyLabel);
       this.readButton.disabled = false;
 
       const text = this.params.get('text');
@@ -242,14 +181,6 @@ export class ReadAloud extends xb.Script {
         `Failed to start: ${describeError(error)}\nPress Read to retry.`
       );
       this.readButton.disabled = false;
-    }
-  }
-
-  refreshReadyLabel() {
-    const base = this.readyLabel.split('\nSay ')[0].split('\nVoice ')[0];
-    this.readyLabel = `${base.split('\nMicrophone ')[0]}\n${this.voiceLabel}`;
-    if (!this.busy && !this.speaking && this.mode !== 'loading') {
-      this.status(this.readyLabel);
     }
   }
 
@@ -403,9 +334,6 @@ export class ReadAloud extends xb.Script {
 
   dispose() {
     this.stop();
-    this.recognizer?.removeEventListener('result', this.onSpeech);
-    this.recognizer?.removeEventListener('error', this.onSpeechError);
-    this.recognizer?.stop();
     this.deviceCamera?.removeEventListener('statechange', this.onCameraState);
     this.frozenTexture?.dispose();
     this.frozenTexture = null;

@@ -1,11 +1,10 @@
 # Read Aloud
 
-Say **"read"** while holding a book, sheet or screen in front of you. The
-headset camera takes a photo, the printed text is extracted, and
-[Matcha-TTS](https://huggingface.co/litert-community/Matcha-TTS) speaks it.
-Say **"stop"** to stop. The spatial card shows the last photo, the extracted
-text, the pipeline status, and Read / Stop buttons for when voice is not
-available.
+Hold a book, sheet or screen in front of you and click **Read** on the
+spatial card. The headset camera takes a photo, the printed text is extracted,
+and [Matcha-TTS](https://huggingface.co/litert-community/Matcha-TTS) speaks
+it. **Stop** cancels playback. The card shows the last photo, the extracted
+text and the pipeline status.
 
 The models run on a **laptop tethered to the headset**: `server/server.py`
 hosts Matcha-TTS on [LiteRT](https://ai.google.dev/edge/litert) (CPU, XNNPACK)
@@ -56,19 +55,19 @@ In the docs site the key comes from the iframe's `?key=` parameter.
 ### 3. Page
 
 Serve the repo (`npm run dev` from the repo root). On a headset, forward both
-ports over USB and open the page through `localhost`, which keeps camera,
-microphone and the server request all on one secure origin:
+ports over USB and open the page through `localhost`, which keeps the camera
+and the server request on one secure origin:
 
 ```sh
 adb reverse tcp:8080 tcp:8080
 adb reverse tcp:8790 tcp:8790
 ```
 
-Then open `http://localhost:8080/demos/read_aloud/` and allow camera and
-microphone access. The status line reports `Ready · Matcha-TTS on the laptop
-(matcha-tts/litert · 8 threads · 4 steps)` once the server answered. If the
-server is unreachable the demo says so and falls back to the browser's own
-voice (`xb.core.sound.speechSynthesizer`).
+Then open `http://localhost:8080/demos/read_aloud/` and allow camera access.
+The status line reports `Ready · Matcha-TTS on the laptop (matcha-tts/litert ·
+8 threads · 4 steps)` once the server answered. If the server is unreachable
+the demo says so and falls back to the browser's own voice
+(`xb.core.sound.speechSynthesizer`).
 
 ## Local text extraction with Ollama
 
