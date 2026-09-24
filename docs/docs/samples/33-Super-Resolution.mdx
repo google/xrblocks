@@ -1,0 +1,26 @@
+---
+title: Super-Resolution
+hide_title: true
+breadcrumbs: false
+pagination_next: null
+pagination_prev: null
+---
+
+import {SamplesIFrame} from './SamplesIFrame';
+
+<SamplesIFrame
+  demo="super_resolution"
+  link="https://github.com/google/xrblocks/tree/main/demos/super_resolution/"
+></SamplesIFrame>
+
+## How it works
+
+This demo uses the live device camera or desktop simulator view as a viewfinder. Choose a center crop size, press **Enhance**, and the page captures that square with `deviceCamera.getSnapshot({outputFormat: 'imageData'})`.
+
+The crop is split into overlapping 128 px tiles, processed sequentially by LiteRT.js with the Real-ESRGAN general-x4v3 model, and stitched back together using the non-overlapping core of each tile. The result stays on-device and can be compared with a bilinear before image.
+
+WebGPU is preferred. If WebGPU is unavailable or fails the startup self-check, the demo falls back to WASM and reports that slower backend in the status line.
+
+## Credits
+
+Real-ESRGAN by Xintao Wang et al. is BSD-3-Clause. The LiteRT conversion is provided by litert-community on Hugging Face, and LiteRT.js is Apache-2.0.
