@@ -10,11 +10,13 @@ import {
 import * as THREE from 'three';
 
 import {getSemanticControl} from '../../interaction/SemanticControl';
+import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {UIButton} from '../components/UIButton';
 import {
   UICard,
   getUICardEdgeOptions,
   setResolvedUICardSize,
+  setUICardContentMeasurer,
 } from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
@@ -59,6 +61,7 @@ const ICON_BASE =
 const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
+const CARD_SIZE_PROPERTY_KEYS = new Set(['width', 'height', 'sizeX', 'sizeY']);
 const imageTextureLoader = new THREE.TextureLoader();
 
 class UIKitMount implements UIMount {
@@ -71,6 +74,7 @@ class UIKitMount implements UIMount {
   private disposed = false;
   private viewportWidth = -1;
   private viewportHeight = -1;
+  private cachedMinContentWidth?: number;
   private readonly isOverlay: boolean;
 
   constructor(
@@ -121,6 +125,13 @@ class UIKitMount implements UIMount {
       this.structureRevision = getUIStructureRevision(this.root);
       this.object.add(this.rendered);
       this.hitMappingsChanged = true;
+      if (this.root instanceof UICard) {
+        const card = this.root;
+        setUICardContentMeasurer(card, {
+          height: (width) => this.measureCardContentHeight(card, width),
+          minWidth: () => this.measureCardMinContentWidth(card),
+        });
+      }
     }
 
     const structureRevision = getUIStructureRevision(this.root);
@@ -128,9 +139,13 @@ class UIKitMount implements UIMount {
       this.binding.reconcileTree(context);
       this.structureRevision = structureRevision;
       this.hitMappingsChanged = true;
+      this.cachedMinContentWidth = undefined;
     }
     if (this.isOverlay) this.updateViewport(viewport);
-    if (this.binding.commit(context)) this.hitMappingsChanged = true;
+    context.sequence.value = 0;
+    const commitResult = this.binding.commit(context);
+    if (commitResult.hitMappingsChanged) this.hitMappingsChanged = true;
+    if (commitResult.contentChanged) this.cachedMinContentWidth = undefined;
 
     if (!this.hitMappingsChanged) return undefined;
     this.hitMappingsChanged = false;
@@ -206,6 +221,9 @@ class UIKitMount implements UIMount {
   dispose(): void {
     this.disposed = true;
     this.readyWork.length = 0;
+    if (this.root instanceof UICard) {
+      setUICardContentMeasurer(this.root, undefined);
+    }
     const binding = this.binding;
     const rendered = this.rendered;
     binding?.dispose();
@@ -221,6 +239,79 @@ class UIKitMount implements UIMount {
 
   setActive(active: boolean): void {
     this.binding?.setActive(active);
+  }
+
+  /**
+   * Lays the card out once at `width` with an automatic height, reads the
+   * natural height, then restores the committed layout.
+   */
+  private measureCardContentHeight(
+    card: UICard,
+    width: number
+  ): number | undefined {
+    if (!(width > 0)) return undefined;
+    const height = this.withAutoHeightLayout((yoga) => {
+      yoga.setWidth(width / card.pixelSize);
+      yoga.calculateLayout(undefined, undefined);
+      return yoga.getComputedHeight() * card.pixelSize;
+    });
+    return height !== undefined && Number.isFinite(height) && height > 0
+      ? height
+      : undefined;
+  }
+
+  /**
+   * Finds the narrowest width at which no content overflows its container,
+   * searching between zero and the current width. Words never break, so text
+   * that no longer fits overflows and narrows the search.
+   */
+  private measureCardMinContentWidth(card: UICard): number | undefined {
+    const current = card.size.width / card.pixelSize;
+    if (!(current > 0)) return undefined;
+    if (
+      this.cachedMinContentWidth !== undefined &&
+      this.cachedMinContentWidth <= current * card.pixelSize
+    ) {
+      return this.cachedMinContentWidth;
+    }
+    const width = this.withAutoHeightLayout((yoga) => {
+      const overflowsAt = (value: number) => {
+        yoga.setWidth(value);
+        yoga.calculateLayout(undefined, undefined);
+        return yogaContentOverflows(yoga);
+      };
+      if (overflowsAt(current)) return current;
+      let fits = current;
+      let overflows = 0;
+      while (fits - overflows > MIN_WIDTH_SEARCH_PRECISION) {
+        const middle = (fits + overflows) / 2;
+        if (overflowsAt(middle)) overflows = middle;
+        else fits = middle;
+      }
+      return fits;
+    });
+    if (width === undefined) return undefined;
+    const measured = width * card.pixelSize;
+    this.cachedMinContentWidth = measured;
+    return measured;
+  }
+
+  /** Runs `measure` on the root yoga node, then restores the committed layout. */
+  private withAutoHeightLayout<T>(
+    measure: (yoga: YogaNode) => T
+  ): T | undefined {
+    const yoga = (this.binding?.node.node as unknown as {yogaNode?: YogaNode})
+      ?.yogaNode;
+    if (!yoga) return undefined;
+    const previousWidth = yoga.getWidth();
+    const previousHeight = yoga.getHeight();
+    try {
+      yoga.setHeightAuto();
+      return measure(yoga);
+    } finally {
+      yoga.setWidth(yogaDimension(previousWidth));
+      yoga.setHeight(yogaDimension(previousHeight));
+    }
   }
 
   private enqueue = (work: () => void): void => {
@@ -282,6 +373,70 @@ class UIKitBackend implements UIBackend {
     this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
     this.renderer = undefined;
   }
+}
+
+type YogaValue = {unit: number; value: number};
+type YogaDimension = number | 'auto' | `${number}%` | undefined;
+
+interface YogaNode {
+  getWidth(): YogaValue;
+  getHeight(): YogaValue;
+  setWidth(width: YogaDimension): void;
+  setHeight(height: YogaDimension): void;
+  setHeightAuto(): void;
+  calculateLayout(width: undefined, height: undefined): void;
+  getComputedHeight(): number;
+  getComputedWidth(): number;
+  getComputedLeft(): number;
+  getComputedPadding(edge: number): number;
+  getComputedBorder(edge: number): number;
+  getPositionType(): number;
+  getChildCount(): number;
+  getChild(index: number): YogaNode;
+}
+
+// Values of yoga-layout's `Unit`, `Edge`, and `PositionType` enums. yoga-layout
+// is only reached through uikit, so these mirror its enums instead of adding a
+// direct dependency.
+const YOGA_UNIT_POINT = 1;
+const YOGA_UNIT_PERCENT = 2;
+const YOGA_UNIT_AUTO = 3;
+const YOGA_EDGE_LEFT = 0;
+const YOGA_EDGE_RIGHT = 2;
+const YOGA_POSITION_ABSOLUTE = 2;
+// Layout pixels. Matches uikit's own threshold for scrollable overflow.
+const OVERFLOW_TOLERANCE = 0.5;
+// Layout pixels. One pixel is below what a card edge can visibly show.
+const MIN_WIDTH_SEARCH_PRECISION = 1;
+
+/** True when any in-flow node extends past either side of its parent's content box. */
+function yogaContentOverflows(node: YogaNode): boolean {
+  const left =
+    node.getComputedPadding(YOGA_EDGE_LEFT) +
+    node.getComputedBorder(YOGA_EDGE_LEFT) -
+    OVERFLOW_TOLERANCE;
+  const right =
+    node.getComputedWidth() -
+    node.getComputedPadding(YOGA_EDGE_RIGHT) -
+    node.getComputedBorder(YOGA_EDGE_RIGHT) +
+    OVERFLOW_TOLERANCE;
+  for (let index = 0; index < node.getChildCount(); index++) {
+    const child = node.getChild(index);
+    if (child.getPositionType() === YOGA_POSITION_ABSOLUTE) continue;
+    const childLeft = child.getComputedLeft();
+    if (childLeft < left || childLeft + child.getComputedWidth() > right) {
+      return true;
+    }
+    if (yogaContentOverflows(child)) return true;
+  }
+  return false;
+}
+
+function yogaDimension({unit, value}: YogaValue): YogaDimension {
+  if (unit === YOGA_UNIT_POINT) return value;
+  if (unit === YOGA_UNIT_PERCENT) return `${value}%`;
+  if (unit === YOGA_UNIT_AUTO) return 'auto';
+  return undefined;
 }
 
 export function createUIBackend(): UIBackend {
@@ -430,9 +585,14 @@ class UIKitNodeBinding {
     }
   }
 
-  /** Returns true when physical hit mappings changed. */
-  commit(context: CommitContext): boolean {
-    if (this.disposed) return false;
+  /** Returns whether physical hit mappings or layout content changed. */
+  commit(context: CommitContext): {
+    hitMappingsChanged: boolean;
+    contentChanged: boolean;
+  } {
+    if (this.disposed) {
+      return {hitMappingsChanged: false, contentChanged: false};
+    }
     const order =
       context.rootStack === undefined
         ? undefined
@@ -449,42 +609,53 @@ class UIKitNodeBinding {
       nextPointerEvents !== this.pointerEvents ||
       this.resourceRevision !== this.appliedResourceRevision;
     let hitMappingsChanged = orderChanged;
+    let contentChanged = false;
     if (needsProperties) {
+      const base = baseState(this.element);
       this.renderOrder = order;
-      const properties = this.propertiesFor(
-        context,
-        baseState(this.element),
-        order
-      );
+      const properties = this.propertiesFor(context, base, order);
+      const changed = changedProperties(this.presentedProperties, properties);
+      contentChanged =
+        !(this.element instanceof UICard) ||
+        Object.keys(changed).some((key) => !CARD_SIZE_PROPERTY_KEYS.has(key));
       this.applyProperties(properties);
       this.baseProperties = properties;
       this.presentedProperties = properties;
-      this.presentationKey = -1;
+      this.presentationKey = stateKey(base);
       this.revision = revision;
       this.theme = context.theme;
+      this.pointerEvents = nextPointerEvents;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
       this.textInput?.commit(context.theme);
-      hitMappingsChanged = this.syncEdge(properties);
+      if (this.syncEdge(properties)) hitMappingsChanged = true;
     }
     this.node.visible = this.element.visible;
     this.syncImage();
     this.setHitEnabled(this.baseProperties);
     for (const child of this.childOrder) {
-      if (this.children.get(child)!.commit(context)) hitMappingsChanged = true;
+      const childResult = this.children.get(child)!.commit(context);
+      if (childResult.hitMappingsChanged) hitMappingsChanged = true;
+      if (childResult.contentChanged) contentChanged = true;
     }
-    return hitMappingsChanged;
+    return {hitMappingsChanged, contentChanged};
   }
 
   present(stateFor: UIPresentationStateFor): void {
     if (this.disposed) return;
-    const state = {
-      ...stateFor(this.element, this.edge ? this.cursorPoints : undefined),
-      focused: this.element instanceof UITextInput && this.element.focused,
-    };
-    const key = stateKey(state);
+    const rawState = stateFor(
+      this.element,
+      this.edge ? this.cursorPoints : undefined
+    );
+    const focused = this.element instanceof UITextInput && this.element.focused;
+    const key =
+      Number(rawState.hovered) |
+      (Number(rawState.active) << 1) |
+      (Number(rawState.disabled) << 2) |
+      (Number(focused) << 3);
     if (key !== this.presentationKey) {
+      const state: UIPresentationState = {...rawState, focused};
       const context: CommitContext = {
         theme: this.theme!,
         rootStack: undefined,
@@ -499,8 +670,8 @@ class UIKitNodeBinding {
       this.textInput?.commit(this.theme!);
     }
     this.edge?.setCursorPoints(
-      state.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
-      state.cursorPointCount > 1 ? this.cursorPoints[1] : undefined
+      rawState.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
+      rawState.cursorPointCount > 1 ? this.cursorPoints[1] : undefined
     );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);
@@ -514,7 +685,20 @@ class UIKitNodeBinding {
         options: {containsPoint: this.hitRegion.containsPoint},
       },
     ];
-    if (this.edge) mappings.push({physical: this.edge, logical: this.element});
+    if (this.edge) {
+      const edge = this.edge;
+      mappings.push(
+        {
+          physical: edge,
+          logical: this.element,
+          options: {
+            containsPoint: edge.containsPoint,
+            touchTarget: (point) => edge.touchTarget(point),
+          },
+        },
+        {physical: edge.resizeHandle, logical: this.element}
+      );
+    }
     for (const child of this.childOrder) {
       mappings.push(...this.children.get(child)!.hitMappings());
     }
@@ -713,9 +897,13 @@ class UIKitNodeBinding {
       this.edge = undefined;
       return true;
     }
+    const resizable =
+      !!options &&
+      !!normalizeManipulationConfig(this.element.xb?.manipulation)?.resize;
     if (options && !this.edge) {
       this.edge = new UICardEdge({
         cardCornerRadius: numericCornerRadius(properties.cornerRadius),
+        resizable,
       });
       this.node.add(this.edge);
       return true;
@@ -723,6 +911,7 @@ class UIKitNodeBinding {
     this.edge?.setCardCornerRadius(
       numericCornerRadius(properties.cornerRadius)
     );
+    this.edge?.setResizable(resizable);
     return false;
   }
 

@@ -21,7 +21,8 @@ object.xb = {
 
 `manipulation: true` enables translate and scale with translate as the default
 surface action. `UICard` and `ModelViewer` supply their documented defaults and
-can expose separate handles.
+can expose separate handles. A `UICard` edge resizes the card from its corners
+when the `resize` action is enabled, which `manipulation: true` does.
 
 The manager keeps one session per owner, so separate objects can be manipulated
 at the same time. A second source on the same scale-enabled owner changes that

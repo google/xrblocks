@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 
 import {Registry} from '../core/components/Registry';
+import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from '../core/RendererTypes';
 import type {Shader} from '../utils/Types';
 import {clamp} from '../utils/utils';
 
@@ -8,7 +13,11 @@ import {DepthMesh} from './DepthMesh';
 import {DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
 import {GPUDepthConverter} from './GPUDepthConverter';
-import {OcclusionPass} from './occlusion/OcclusionPass';
+import {
+  OcclusionPass,
+  type OcclusionPassBackend,
+} from './occlusion/OcclusionPass';
+import {OcclusionUtils} from './occlusion/OcclusionUtils';
 
 const DEFAULT_DEPTH_WIDTH = 160;
 const DEFAULT_DEPTH_HEIGHT = DEFAULT_DEPTH_WIDTH;
@@ -22,7 +31,7 @@ export class Depth {
 
   // The main camera.
   private camera!: THREE.Camera;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
   private gpuDepthConverter?: GPUDepthConverter;
   private registry?: Registry;
   private disposed = false;
@@ -47,7 +56,7 @@ export class Depth {
     return 0;
   }
   occludableShaders = new Set<Shader>();
-  private occlusionPass?: OcclusionPass;
+  private occlusionPass?: OcclusionPassBackend;
 
   // Whether we're counting the number of depth clients.
   private depthClientsInitialized = false;
@@ -86,10 +95,10 @@ export class Depth {
   init(
     camera: THREE.PerspectiveCamera,
     options: DepthOptions,
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     registry: Registry,
     scene: THREE.Scene
-  ) {
+  ): void | Promise<void> {
     if (this.disposed) {
       throw new Error('Depth cannot initialize after disposal.');
     }
@@ -98,11 +107,37 @@ export class Depth {
     this.renderer = renderer;
     this.registry = registry;
     this.enabled = options.enabled;
-    this.gpuDepthConverter = new GPUDepthConverter(renderer);
+    const isWebGPU = isWebGPURenderer(renderer);
+    this.gpuDepthConverter = isWebGPU
+      ? undefined
+      : new GPUDepthConverter(renderer);
 
     if (this.options.depthTexture.enabled) {
       this.depthTextures = new DepthTextures(options);
       registry.register(this.depthTextures);
+    }
+
+    const asyncTasks: Promise<void>[] = [];
+
+    if (this.options.occlusion.enabled) {
+      if (isWebGPU) {
+        asyncTasks.push(
+          Promise.all([
+            import('./occlusion/WebGPUOcclusionPass.js'),
+            import('./occlusion/WebGPUOcclusionUtils.js'),
+          ]).then(([{WebGPUOcclusionPass}, {addWebGPUOcclusionToMaterial}]) => {
+            if (!this.disposed) {
+              OcclusionUtils.setWebGPUMaterialHandler(
+                addWebGPUOcclusionToMaterial
+              );
+              this.occlusionPass = new WebGPUOcclusionPass(scene, camera);
+            }
+          })
+        );
+      } else {
+        OcclusionUtils.setWebGPUMaterialHandler(undefined);
+        this.occlusionPass = new OcclusionPass(scene, camera);
+      }
     }
 
     if (this.options.depthMesh.enabled) {
@@ -117,34 +152,68 @@ export class Depth {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
       }
-      scene.add(this.depthMesh);
+      if (
+        isWebGPU &&
+        (this.options.depthMesh.useDepthTexture ||
+          this.options.depthMesh.showDebugTexture)
+      ) {
+        asyncTasks.push(
+          import('./DepthMeshWebGPUMaterial.js').then(
+            ({applyWebGPUDepthMeshMaterial}) => {
+              if (!this.disposed && this.depthMesh) {
+                applyWebGPUDepthMeshMaterial(this.depthMesh);
+                scene.add(this.depthMesh);
+              }
+            }
+          )
+        );
+      } else {
+        scene.add(this.depthMesh);
+      }
     }
 
-    if (this.options.occlusion.enabled) {
-      this.occlusionPass = new OcclusionPass(scene, camera);
+    if (asyncTasks.length > 0) {
+      return Promise.all(asyncTasks).then(() => {});
     }
+  }
+
+  /**
+   * Converts bottom-origin view UVs into normalized depth buffer coordinates.
+   *
+   * {@link https://immersive-web.github.io/depth-sensing/#obtain-depth-at-coordinates | The WebXR algorithm}
+   * takes top-origin normalized view coordinates, applies
+   * `normDepthBufferFromNormView`, then scales the result straight into the
+   * buffer. Flipping V after the transform instead samples a different pixel
+   * for any transform that does not commute with that flip, and disagrees
+   * with {@link DepthMesh}, which flips first.
+   * @param u - Normalized horizontal coordinate, origin at bottom left.
+   * @param v - Normalized vertical coordinate, origin at bottom left.
+   * @param target - Vector that receives the result.
+   * @returns The normalized depth buffer coordinates.
+   */
+  private normDepthBufferCoords(u: number, v: number, target: THREE.Vector3) {
+    target.set(u, 1.0 - v, 0);
+    if (this.normDepthBufferFromNormViewMatrices.length > 0) {
+      target.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
+    }
+    return target;
   }
 
   /**
    * Retrieves the depth at normalized coordinates (u, v).
    * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
-   * @param u - Normalized horizontal coordinate.
-   * @param v - Normalized vertical coordinate.
+   * @param u - Normalized horizontal coordinate, origin at the bottom left of
+   * the view, growing right.
+   * @param v - Normalized vertical coordinate, origin at the bottom left of
+   * the view, growing up.
    * @returns Depth value at the specified coordinates.
    */
   getDepth(u: number, v: number) {
     if (!this.depthArray[0]) return 0.0;
-    // When matchDepthView is false, transform from view-space UVs to
-    // depth buffer UVs using normDepthBufferFromNormView.
-    if (this.normDepthBufferFromNormViewMatrices.length > 0) {
-      normViewCoord.set(u, v, 0);
-      normViewCoord.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
-      u = normViewCoord.x;
-      v = normViewCoord.y;
-    }
-    const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
+    const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+    const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
     const depthY = Math.round(
-      clamp((1.0 - v) * this.height, 0, this.height - 1)
+      clamp(coords.y * this.height, 0, this.height - 1)
     );
     const rawDepth = this.depthArray[0][depthY * this.width + depthX];
     return this.rawValueToMeters * rawDepth;
@@ -186,31 +255,28 @@ export class Depth {
   /**
    * Retrieves the depth at normalized coordinates (u, v).
    * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
-   * @param u - Normalized horizontal coordinate.
-   * @param v - Normalized vertical coordinate.
+   * @param u - Normalized horizontal coordinate, origin at the bottom left of
+   * the view, growing right.
+   * @param v - Normalized vertical coordinate, origin at the bottom left of
+   * the view, growing up.
    * @returns Vertex at (u, v)
    */
   getVertex(u: number, v: number) {
     if (!this.depthArray[0]) return null;
 
-    // When matchDepthView is false, transform from view-space UVs to
-    // depth buffer UVs using normDepthBufferFromNormView.
-    if (this.normDepthBufferFromNormViewMatrices.length > 0) {
-      normViewCoord.set(u, v, 0);
-      normViewCoord.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
-      u = normViewCoord.x;
-      v = normViewCoord.y;
-    }
-
-    const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
+    const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+    const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
     const depthY = Math.round(
-      clamp((1.0 - v) * this.height, 0, this.height - 1)
+      clamp(coords.y * this.height, 0, this.height - 1)
     );
     const rawDepth = this.depthArray[0][depthY * this.width + depthX];
     const depth = this.rawValueToMeters * rawDepth;
+    // depthProjectionInverseMatrices belongs to the depth camera, so the clip
+    // space point has to come from the depth buffer coordinates. Buffer V
+    // grows downward while clip Y grows upward, hence the flip back here.
     const vertexPosition = new THREE.Vector3(
-      2.0 * (u - 0.5),
-      2.0 * (v - 0.5),
+      2.0 * (coords.x - 0.5),
+      2.0 * (0.5 - coords.y),
       -1
     );
     vertexPosition.applyMatrix4(this.depthProjectionInverseMatrices[0]);
@@ -310,6 +376,7 @@ export class Depth {
   }
 
   updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number) {
+    assertWebGLRenderer(this.renderer, 'WebXR GPU depth');
     this.gpuDepthData[viewId] = depthData;
     this.updateDepthMatrices(depthData, viewId);
     // Reading the depth target back is a synchronous GPU stall, and in stereo
@@ -327,7 +394,10 @@ export class Depth {
     if (cpuDepth) {
       this.cpuDepthData[viewId] = cpuDepth;
       this.depthDataFormat = 'float32';
-      if (this.depthArray[viewId] instanceof Float32Array) {
+      if (
+        this.depthArray[viewId] instanceof Float32Array &&
+        this.depthArray[viewId].byteLength === cpuDepth.data.byteLength
+      ) {
         this.depthArray[viewId].set(new Float32Array(cpuDepth.data));
       } else {
         this.depthArray[viewId] = new Float32Array(cpuDepth.data);
@@ -417,7 +487,7 @@ export class Depth {
           this.view[viewId] = view;
 
           if (session.depthUsage === 'gpu-optimized') {
-            const depthData = binding.getDepthInformation(view);
+            const depthData = binding?.getDepthInformation(view);
             if (!depthData) {
               return;
             }
@@ -441,9 +511,10 @@ export class Depth {
   }
 
   renderOcclusionPass() {
+    if (!this.occlusionPass) return;
     const leftDepthTexture = this.getTexture(0);
     if (leftDepthTexture) {
-      this.occlusionPass!.setDepthTexture(
+      this.occlusionPass.setDepthTexture(
         leftDepthTexture,
         this.rawValueToMeters,
         0,
@@ -453,12 +524,12 @@ export class Depth {
         this.depthProjectionMatrices[0]
       );
     }
-    const xrIsPresenting = this.renderer.xr.isPresenting;
-    this.renderer.xr.isPresenting = false;
-    this.occlusionPass!.render(this.renderer, undefined, undefined, 0);
-    this.renderer.xr.isPresenting = xrIsPresenting;
+    const currentXREnabled = this.renderer.xr.enabled;
+    this.renderer.xr.enabled = false;
+    this.occlusionPass.render(this.renderer, undefined, undefined, 0);
+    this.renderer.xr.enabled = currentXREnabled;
     for (const shader of this.occludableShaders) {
-      this.occlusionPass!.updateOcclusionMapUniforms(
+      this.occlusionPass.updateOcclusionMapUniforms(
         shader.uniforms,
         this.renderer
       );
@@ -508,6 +579,9 @@ export class Depth {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
+    if (Depth.instance === this) {
+      Depth.instance = undefined;
+    }
 
     const mesh = this.depthMesh;
     const textures = this.depthTextures;
@@ -518,6 +592,7 @@ export class Depth {
 
     let firstError: unknown;
     const cleanups = [
+      () => this.gpuDepthConverter?.dispose(),
       () => {
         if (mesh && this.registry?.get(DepthMesh) === mesh) {
           this.registry.unregister(DepthMesh);
@@ -541,7 +616,6 @@ export class Depth {
       }
     }
 
-    // TODO: Wire GPU converter disposal when its cleanup API from #600 lands.
     this.gpuDepthConverter = undefined;
     this.registry = undefined;
     this.view.length = 0;
@@ -558,6 +632,7 @@ export class Depth {
     this.normDepthBufferFromNormViewMatrices.length = 0;
     this.depthClients.clear();
     this.occludableShaders.clear();
+    OcclusionUtils.setWebGPUMaterialHandler(undefined);
     if (firstError !== undefined) throw firstError;
   }
 }

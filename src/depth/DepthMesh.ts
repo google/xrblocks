@@ -3,16 +3,17 @@ import * as THREE from 'three';
 
 import {MeshScript} from '../core/Script';
 import {disposeMaterial} from '../utils/ThreeDisposal';
-import {clamp} from '../utils/utils';
 
+import {
+  computeGridVertexNormals,
+  createDepthPlaneGeometry,
+  DepthGeometryUpdater,
+} from './DepthMeshGeometry';
 import {DepthMeshTexturedShader} from './DepthMeshTexturedShader';
 import {DepthMeshOptions, DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
 
 export class DepthMesh extends MeshScript {
-  static dependencies = {
-    renderer: THREE.WebGLRenderer,
-  };
   static isDepthMesh = true;
   private worldPosition = new THREE.Vector3();
   private worldQuaternion = new THREE.Quaternion();
@@ -30,18 +31,20 @@ export class DepthMesh extends MeshScript {
   private colliders: RAPIER_NS.Collider[] = [];
   private colliderUpdateFps: number;
 
-  private renderer!: THREE.WebGLRenderer;
   private projectionMatrixInverse: Readonly<THREE.Matrix4> =
     new THREE.Matrix4();
   private lastColliderUpdateTime = 0;
   private options: DepthMeshOptions;
   private depthTextureMaterialUniforms?;
+  private customMaterialUpdateCallback?: () => void;
 
   private RAPIER?: typeof RAPIER_NS;
   private blendedWorld?: RAPIER_NS.World;
   private rigidBody?: RAPIER_NS.RigidBody;
   private colliderId = 0;
   private disposed = false;
+  private readonly gridResolution: number;
+  private readonly geometryUpdater = new DepthGeometryUpdater();
 
   constructor(
     private depthOptions: DepthOptions,
@@ -53,13 +56,6 @@ export class DepthMesh extends MeshScript {
     const depthResolution = options.depthFullResolution;
     const ignoreEdgePixels = options.ignoreEdgePixels;
     const activeRes = Math.max(2, depthResolution - 2 * ignoreEdgePixels);
-    const geometry = new THREE.PlaneGeometry(
-      1,
-      1,
-      activeRes - 1,
-      activeRes - 1
-    );
-
     const minU = ignoreEdgePixels / (depthResolution - 1);
     const maxU =
       (depthResolution - 1 - ignoreEdgePixels) / (depthResolution - 1);
@@ -67,11 +63,13 @@ export class DepthMesh extends MeshScript {
     const maxV =
       (depthResolution - 1 - ignoreEdgePixels) / (depthResolution - 1);
 
-    const uvs = geometry.attributes.uv.array;
-    for (let i = 0; i < uvs.length; i += 2) {
-      uvs[i] = minU + uvs[i] * (maxU - minU);
-      uvs[i + 1] = minV + uvs[i + 1] * (maxV - minV);
-    }
+    const geometry = createDepthPlaneGeometry(
+      activeRes - 1,
+      minU,
+      maxU,
+      minV,
+      maxV
+    );
 
     let material: THREE.Material;
     let uniforms;
@@ -91,6 +89,9 @@ export class DepthMesh extends MeshScript {
         uUsingFloatDepth: {
           value: depthOptions.dataFormatPreference[0] === 'float32',
         },
+        uUseDerivativeNormals: {
+          value: !options.updateVertexNormals,
+        },
         uNormDepthBufferFromNormView: {value: new THREE.Matrix4()},
       };
       material = new THREE.ShaderMaterial({
@@ -108,6 +109,7 @@ export class DepthMesh extends MeshScript {
     material.visible = options.showDebugTexture || options.renderShadow;
     super(geometry, material);
 
+    this.gridResolution = activeRes;
     this.visible = true;
     this.xb = {pointerEvents: 'none', reticleMode: 'surface'};
     this.options = options;
@@ -122,22 +124,45 @@ export class DepthMesh extends MeshScript {
 
     // Create a downsampled geometry for raycasts and physics.
     if (options.useDownsampledGeometry) {
-      this.downsampledGeometry = new THREE.PlaneGeometry(1, 1, 39, 39);
-      const dsUvs = this.downsampledGeometry.attributes.uv.array;
-      for (let i = 0; i < dsUvs.length; i += 2) {
-        dsUvs[i] = minU + dsUvs[i] * (maxU - minU);
-        dsUvs[i + 1] = minV + dsUvs[i + 1] * (maxV - minV);
-      }
+      this.downsampledGeometry = createDepthPlaneGeometry(
+        39,
+        minU,
+        maxU,
+        minV,
+        maxV
+      );
       this.downsampledMesh = new THREE.Mesh(this.downsampledGeometry, material);
       this.downsampledMesh.visible = false;
     }
   }
 
+  get depthTextureUniforms() {
+    return this.depthTextureMaterialUniforms;
+  }
+
   /**
-   * Initialize the depth mesh.
+   * Sets a custom material (such as a WebGPU NodeMaterial) and registers a
+   * callback to synchronize uniforms on depth updates.
+   *
+   * @param material - The material to apply to the depth mesh.
+   * @param onUpdate - Optional callback invoked whenever depth uniforms change.
    */
-  init({renderer}: {renderer: THREE.WebGLRenderer}) {
-    this.renderer = renderer;
+  setCustomMaterial(material: THREE.Material, onUpdate?: () => void) {
+    disposeMaterial(this.material);
+    material.visible =
+      this.options.showDebugTexture || this.options.renderShadow;
+    if (this.depthTextureMaterialUniforms) {
+      (material as THREE.Material & {uniforms?: unknown}).uniforms =
+        this.depthTextureMaterialUniforms;
+    }
+    this.material = material;
+    if (this.downsampledMesh) {
+      this.downsampledMesh.material = material;
+    }
+    this.customMaterialUpdateCallback = onUpdate;
+    this.onBeforeRender = () => {
+      this.customMaterialUpdateCallback?.();
+    };
   }
 
   /**
@@ -175,6 +200,8 @@ export class DepthMesh extends MeshScript {
     if (depthTextureLeft && this.depthTextureMaterialUniforms) {
       this.depthTextureMaterialUniforms.uUsingFloatDepth.value =
         depthDataFormat === 'float32';
+      this.depthTextureMaterialUniforms.uUseDerivativeNormals.value =
+        !this.options.updateVertexNormals;
       if (depthData.normDepthBufferFromNormView) {
         this.depthTextureMaterialUniforms.uNormDepthBufferFromNormView.value.fromArray(
           depthData.normDepthBufferFromNormView.matrix
@@ -200,9 +227,14 @@ export class DepthMesh extends MeshScript {
         : 1.0;
     }
 
+    this.customMaterialUpdateCallback?.();
+
     if (this.options.updateVertexNormals) {
-      this.geometry.computeVertexNormals();
-      this.downsampledGeometry?.computeVertexNormals();
+      computeGridVertexNormals(
+        this.geometry,
+        this.gridResolution,
+        this.gridResolution
+      );
     }
 
     this.updateColliderIfNeeded();
@@ -237,73 +269,20 @@ export class DepthMesh extends MeshScript {
     geometry: THREE.BufferGeometry,
     depthDataFormat: XRDepthDataFormat
   ) {
-    const width = depthData.width;
-    const height = depthData.height;
-    const depthArray =
-      depthDataFormat === 'float32'
-        ? new Float32Array(depthData.data)
-        : new Uint16Array(depthData.data);
-    const vertexPosition = new THREE.Vector3();
-    const normViewCoord = new THREE.Vector3();
-    const normDepthBufferFromNormView = depthData.normDepthBufferFromNormView
-      ? new THREE.Matrix4().fromArray(
-          depthData.normDepthBufferFromNormView.matrix
-        )
-      : new THREE.Matrix4().identity();
-
-    for (let i = 0; i < geometry.attributes.position.count; ++i) {
-      const u = geometry.attributes.uv.array[2 * i];
-      const v = geometry.attributes.uv.array[2 * i + 1];
-
-      let sampleU = u;
-      let sampleV = v;
-
-      if (depthData.normDepthBufferFromNormView) {
-        normViewCoord.set(u, 1.0 - v, 0);
-        normViewCoord.applyMatrix4(normDepthBufferFromNormView);
-        sampleU = normViewCoord.x;
-        sampleV = normViewCoord.y;
-      } else {
-        sampleV = 1.0 - v;
-      }
-
-      // Grabs the nearest for now.
-      const depthX = Math.round(clamp(sampleU * (width - 1), 0, width - 1));
-      const depthY = Math.round(clamp(sampleV * (height - 1), 0, height - 1));
-      const rawDepth = depthArray[depthY * width + depthX];
-      let depth = depthData.rawValueToMeters * rawDepth;
-
-      // Finds global min/max.
-      if (depth > 0) {
-        if (depth < this.minDepth) {
-          this.minDepth = depth;
-        } else if (depth > this.maxDepth) {
-          this.maxDepth = depth;
-        }
-      }
-
-      // This is a wrong algorithm to patch holes but working amazingly well.
-      // Per-row maximum may work better but haven't tried here.
-      // A proper local maximum takes another pass.
-      if (depth == 0 && this.options.patchHoles) {
-        depth = this.maxDepthPrev;
-      }
-
-      if (this.options.patchHolesUpper && v > 0.9) {
-        depth = this.minDepthPrev;
-      }
-
-      vertexPosition.set(2.0 * (u - 0.5), 2.0 * (v - 0.5), -1);
-
-      // This relates to camera.near
-      vertexPosition.applyMatrix4(this.projectionMatrixInverse);
-
-      vertexPosition.multiplyScalar(-depth / vertexPosition.z);
-
-      geometry.attributes.position.array[3 * i + 0] = vertexPosition.x;
-      geometry.attributes.position.array[3 * i + 1] = vertexPosition.y;
-      geometry.attributes.position.array[3 * i + 2] = vertexPosition.z;
-    }
+    const bounds = this.geometryUpdater.updateGeometryPositions({
+      depthData,
+      geometry,
+      depthDataFormat,
+      projectionMatrixInverse: this.projectionMatrixInverse,
+      patchHoles: this.options.patchHoles,
+      patchHolesUpper: this.options.patchHolesUpper,
+      minDepthPrev: this.minDepthPrev,
+      maxDepthPrev: this.maxDepthPrev,
+      minDepth: this.minDepth,
+      maxDepth: this.maxDepth,
+    });
+    this.minDepth = bounds.minDepth;
+    this.maxDepth = bounds.maxDepth;
   }
 
   /**

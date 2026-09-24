@@ -64,6 +64,7 @@ const sidebars: SidebarsConfig = {
         'samples/Reticle',
         'samples/Lighting',
         'samples/3DGS-Walkthrough',
+        'samples/ArUco-Anchor',
       ],
     },
     {
@@ -97,6 +98,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'samples/XR-Poet',
         'samples/Gemini-XRObject',
+        'samples/Objects-3D',
         'samples/Language-Detector',
         'samples/Gemini-Icebreakers',
         'samples/Collaborative-Roomcraft',

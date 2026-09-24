@@ -1,11 +1,16 @@
 import * as THREE from 'three';
 import {Pass} from 'three/addons/postprocessing/Pass.js';
 
+import {
+  assertWebGLRenderer,
+  type WebGLOrWebGPURenderer,
+} from '../RendererTypes';
+
 export class XRPass extends Pass {
   render(
-    _renderer: THREE.WebGLRenderer,
-    _writeBuffer: THREE.WebGLRenderTarget,
-    _readBuffer: THREE.WebGLRenderTarget,
+    _renderer: WebGLOrWebGPURenderer,
+    _writeBuffer: THREE.RenderTarget,
+    _readBuffer: THREE.RenderTarget,
     _deltaTime: number,
     _maskActive: boolean,
     _viewId: number = 0
@@ -20,14 +25,18 @@ export class XRPass extends Pass {
  */
 export class XREffects {
   passes: XRPass[] = [];
-  renderTargets: THREE.WebGLRenderTarget[] = [];
+  renderTargets: THREE.RenderTarget[] = [];
   dimensions = new THREE.Vector2();
 
   constructor(
-    private renderer: THREE.WebGLRenderer,
+    private renderer: WebGLOrWebGPURenderer,
     private scene: THREE.Scene,
     private timer: THREE.Timer
   ) {}
+
+  private setRenderTarget(target: THREE.RenderTarget | null) {
+    this.renderer.setRenderTarget(target as THREE.WebGLRenderTarget | null);
+  }
 
   /**
    * Adds a pass to the effect pipeline.
@@ -55,9 +64,18 @@ export class XREffects {
         this.renderTargets[i]?.depthTexture?.dispose();
         this.renderTargets[i]?.dispose();
         this.renderTargets[i] = defaultTarget.clone();
+        const hasStencil = this.renderTargets[i].stencilBuffer;
         this.renderTargets[i].depthTexture = new THREE.DepthTexture(
           dimensions.x,
-          dimensions.y
+          dimensions.y,
+          hasStencil ? THREE.UnsignedInt248Type : THREE.UnsignedIntType,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          hasStencil ? THREE.DepthStencilFormat : THREE.DepthFormat
         );
       }
     }
@@ -86,25 +104,36 @@ export class XREffects {
   }
 
   private renderXr() {
+    assertWebGLRenderer(this.renderer, 'XREffects.renderXr');
     const defaultTarget = this.renderer.getRenderTarget()!;
     const renderer = this.renderer;
     const xrEnabled = renderer.xr.enabled;
     const xrIsPresenting = renderer.xr.isPresenting;
+    const prevAutoClearColor = renderer.autoClearColor;
     const renderTargets = this.renderTargets;
     renderer.xr.cameraAutoUpdate = false;
     renderer.xr.enabled = false;
     const deltaTime = this.timer.getDelta();
     const numCameras = renderer.xr.getCamera().cameras.length;
     if (numCameras > 0) {
-      for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
-        const cam = renderer.xr.getCamera().cameras[camIndex];
-        renderer.setViewport(cam.viewport);
-        renderer.setRenderTarget(renderTargets[camIndex]);
-        renderer.clear();
-        renderer.xr.isPresenting = true;
-        renderer.render(this.scene, cam);
+      const prevMatrixWorldAutoUpdate = this.scene.matrixWorldAutoUpdate;
+      if (prevMatrixWorldAutoUpdate) {
+        this.scene.updateMatrixWorld();
       }
-      renderer.setRenderTarget(defaultTarget);
+      this.scene.matrixWorldAutoUpdate = false;
+      try {
+        for (let camIndex = 0; camIndex < numCameras; ++camIndex) {
+          const cam = renderer.xr.getCamera().cameras[camIndex];
+          renderer.setViewport(cam.viewport);
+          this.setRenderTarget(renderTargets[camIndex]);
+          renderer.clear();
+          renderer.xr.isPresenting = true;
+          renderer.render(this.scene, cam);
+        }
+      } finally {
+        this.scene.matrixWorldAutoUpdate = prevMatrixWorldAutoUpdate;
+      }
+      this.setRenderTarget(defaultTarget);
       renderer.clear();
       renderer.xr.isPresenting = false;
       renderer.autoClearColor = false;
@@ -145,6 +174,7 @@ export class XREffects {
           );
         }
       }
+      renderer.autoClearColor = prevAutoClearColor;
       renderer.xr.enabled = xrEnabled;
       renderer.xr.isPresenting = xrIsPresenting;
     }
@@ -154,23 +184,21 @@ export class XREffects {
     const defaultTarget = this.renderer.getRenderTarget()!;
     const renderer = this.renderer;
     const xrEnabled = renderer.xr.enabled;
-    const xrIsPresenting = renderer.xr.isPresenting;
+    const prevAutoClearColor = renderer.autoClearColor;
     renderer.xr.cameraAutoUpdate = false;
     renderer.xr.enabled = false;
     const deltaTime = this.timer.getDelta();
     if (this.passes.length === 0) {
-      renderer.setRenderTarget(defaultTarget);
+      this.setRenderTarget(defaultTarget);
       renderer.render(this.scene, camera);
       renderer.xr.enabled = xrEnabled;
-      renderer.xr.isPresenting = xrIsPresenting;
       return;
     }
-    renderer.setRenderTarget(this.renderTargets[0]);
+    this.setRenderTarget(this.renderTargets[0]);
     renderer.clear();
     renderer.render(this.scene, camera);
-    renderer.setRenderTarget(defaultTarget);
+    this.setRenderTarget(defaultTarget);
     renderer.clear();
-    renderer.xr.isPresenting = false;
     renderer.autoClearColor = false;
     for (let i = 0; i < this.passes.length - 1; ++i) {
       const lastRenderTargetIndex = i % 2;
@@ -195,8 +223,8 @@ export class XREffects {
         /*viewId=*/ 0
       );
     }
+    renderer.autoClearColor = prevAutoClearColor;
     renderer.xr.enabled = xrEnabled;
-    renderer.xr.isPresenting = xrIsPresenting;
   }
 
   dispose() {

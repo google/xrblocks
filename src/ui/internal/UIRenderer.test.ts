@@ -156,4 +156,44 @@ describe('UIRenderer presentation', () => {
 
     renderer.dispose();
   });
+
+  it('skips UIKit property recomputation on unchanged reconcile and present frames', async () => {
+    const button = new UIButton({label: 'Stable'});
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      children: [button],
+    });
+    const scene = new THREE.Scene();
+    scene.add(card);
+    const backend = createUIBackend();
+    const renderer = new UIRenderer(
+      new Interaction({callbacks: new ScriptsManager(async () => {})}),
+      async () => ({
+        createUIBackend: () => ({
+          createMount: (root) => backend.createMount(root),
+          dispose: () => backend.dispose(),
+        }),
+      })
+    );
+
+    try {
+      await renderer.initialize(scene, {} as THREE.WebGLRenderer);
+      const camera = new THREE.PerspectiveCamera();
+      renderer.reconcile(0, camera);
+      renderer.present();
+
+      const styleGetter = vi.spyOn(button, 'style', 'get');
+      renderer.reconcile(0, camera);
+      renderer.present();
+      expect(styleGetter).not.toHaveBeenCalled();
+
+      button.style.opacity = 0.5;
+      styleGetter.mockClear();
+      renderer.reconcile(0, camera);
+      renderer.present();
+      expect(styleGetter).toHaveBeenCalled();
+    } finally {
+      renderer.dispose();
+    }
+  });
 });

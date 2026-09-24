@@ -50,7 +50,12 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
-import {assertWebGLRenderer, type WebGLOrWebGPURenderer} from './RendererTypes';
+import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from './RendererTypes';
 
 export type CoreLifecycleState =
   | 'new'
@@ -529,6 +534,13 @@ export class Core {
         logarithmicDepthBuffer: options.logarithmicDepthBuffer,
       });
     }
+    if (isWebGPURenderer(this.renderer)) {
+      const {applyWebGPUReticleMaterial} = await import(
+        '../interaction/reticle/ReticleWebGPUMaterial'
+      );
+      this.assertInitializing();
+      this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
+    }
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.xr.enabled = true;
@@ -539,6 +551,7 @@ export class Core {
       };
     }
     this.registry.register(this.renderer);
+    this.registry.register(new RendererHolder(this.renderer));
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
     // For desktop simulator:
@@ -576,7 +589,6 @@ export class Core {
 
     // Sets up device camera.
     if (options.deviceCamera?.enabled) {
-      assertWebGLRenderer(this.renderer, 'XRDeviceCamera');
       this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
       this.deviceCamera.setRenderer(this.renderer);
       this.registry.register(this.deviceCamera);
@@ -598,7 +610,6 @@ export class Core {
     this.webXRSettings.optionalFeatures = webXROptionalFeatures;
     // Sets up depth.
     if (options.depth.enabled) {
-      assertWebGLRenderer(this.renderer, 'Depth');
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
@@ -607,13 +618,14 @@ export class Core {
         depthTypeRequest: options.depth.depthTypeRequest,
         matchDepthView: options.depth.matchDepthView,
       };
-      this.depth.init(
+      await this.depth.init(
         this.camera,
         options.depth,
         this.renderer,
         this.registry,
         this.scene
       );
+      this.assertInitializing();
       if (this.depth.depthMesh) {
         this.depth.depthMesh.xb = {
           ...this.depth.depthMesh.xb,
@@ -641,6 +653,12 @@ export class Core {
     }
     if (options.world.meshes.enabled) {
       webXROptionalFeatures.push('mesh-detection');
+    }
+    // Composition layers are optional too: without the feature the layer
+    // classes simply never appear and each layer falls back to being drawn
+    // into the scene.
+    if (options.layers.enabled) {
+      webXROptionalFeatures.push('layers');
     }
     if (options.world.anchors.enabled) {
       webXROptionalFeatures.push('anchors');
@@ -718,7 +736,6 @@ export class Core {
 
     // Sets up postprocessing effects.
     if (options.usePostprocessing) {
-      assertWebGLRenderer(this.renderer, 'XREffects');
       this.effects = new XREffects(this.renderer, this.scene, this.timer);
     }
 
@@ -831,7 +848,7 @@ export class Core {
     this.interaction.syncTouchCandidates(
       this.scriptsManager.directTouchCandidates
     );
-    this.scene.updateMatrixWorld(true);
+    this.scene.updateMatrixWorld();
     this.interaction.update(this.input.getFrame(), deltaSeconds);
     this.uiRenderer.present();
 
@@ -842,9 +859,6 @@ export class Core {
         this.renderSceneCallback,
         this.deviceCamera
       );
-    }
-    if (this.simulatorRunning) {
-      this.simulator?.renderSimulatorScene();
     }
   };
 
@@ -886,7 +900,6 @@ export class Core {
       const {Simulator} = await this.simulatorLoader();
       this.assertLifecycleActive('load the simulator runtime');
       const simulator = new Simulator(this.renderSceneCallback, this.renderer);
-      simulator.effects = this.effects;
       try {
         // Keep the simulator connected to the script lifecycle while its async
         // initialization runs. Otherwise the frame loop treats it as removed
@@ -976,7 +989,7 @@ export class Core {
 
   private renderSimulatorAndScene() {
     if (this.simulatorRunning && this.simulator) {
-      this.simulator.renderScene();
+      this.simulator.renderFrame();
     } else {
       this.renderScene();
     }
