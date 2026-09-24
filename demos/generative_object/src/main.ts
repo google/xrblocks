@@ -400,10 +400,9 @@ export async function start() {
   options.reticles.enabled = true;
 
   // Real-world depth so generated objects are occluded by your environment, and
-  // so placement raycasts hit the current full-resolution surface.
+  // so placement raycasts hit the current depth surface.
   options.depth.enabled = true;
   options.depth.depthMesh.enabled = true;
-  options.depth.depthMesh.updateFullResolutionGeometry = true;
   options.depth.depthTexture.enabled = true;
   options.depth.occlusion.enabled = true;
 

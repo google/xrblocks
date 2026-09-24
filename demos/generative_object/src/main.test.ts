@@ -215,5 +215,10 @@ describe('GenerativeObjectDemo lifecycle', () => {
     const options = vi.mocked(xb.init).mock.calls[0][0]!;
     expect(options.ai.gemini.apiKey).toBe('startup-fixture');
     expect(window.location.search).not.toContain('key=');
+    // Placement raycasts the downsampled depth mesh, so the hidden
+    // full-resolution mesh does not need per-frame updates.
+    expect(options.depth.depthMesh.enabled).toBe(true);
+    expect(options.depth.depthMesh.useDownsampledGeometry).toBe(true);
+    expect(options.depth.depthMesh.updateFullResolutionGeometry).toBe(false);
   });
 });
