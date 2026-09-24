@@ -157,6 +157,48 @@ describe('GenerativeObjectDemo lifecycle', () => {
     s.demo.dispose();
   });
 
+  it('stops an active recording on Clear so it is never sent', async () => {
+    const voice = stubVoice();
+    const s = setup();
+    s.buttons[1].click();
+    await vi.waitFor(() => expect(status()).toContain('listening'));
+    s.buttons[3].click();
+
+    expect(voice.track.stop).toHaveBeenCalledOnce();
+    expect(s.buttons[1].textContent).toBe('🎙️ Speak');
+    expect(status()).toBe('cleared. summon something new.');
+    // The next tap starts a fresh recording instead of sending the old one.
+    s.buttons[1].click();
+    await vi.waitFor(() => expect(voice.getUserMedia).toHaveBeenCalledTimes(2));
+    await new Promise((done) => setTimeout(done, 0));
+    expect(voice.generateContent).not.toHaveBeenCalled();
+    expect(s.imagine).not.toHaveBeenCalled();
+    s.demo.dispose();
+  });
+
+  it('discards a pending transcription on Clear', async () => {
+    const voice = stubVoice();
+    let resolve!: (response: {text: string}) => void;
+    voice.generateContent.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    const s = setup();
+    s.buttons[1].click();
+    await vi.waitFor(() => expect(status()).toContain('listening'));
+    s.buttons[1].click();
+    await vi.waitFor(() => expect(voice.generateContent).toHaveBeenCalled());
+    s.buttons[3].click();
+    resolve({text: '{"transcript":"a late chair"}'});
+    await new Promise((done) => setTimeout(done, 0));
+
+    expect(s.imagine).not.toHaveBeenCalled();
+    expect(status()).toBe('cleared. summon something new.');
+    expect(s.buttons[1].textContent).toBe('🎙️ Speak');
+    s.demo.dispose();
+  });
+
   it('ignores retained DOM, spatial and keyboard callbacks after removal', async () => {
     const voice = stubVoice();
     const s = setup();

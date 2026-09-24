@@ -141,6 +141,8 @@ export class GenerativeObjectDemo extends xb.Script {
     if (this.disposed) return;
     this.request++;
     this.busy = false;
+    // Clear drops voice work too, so nothing recorded earlier summons later.
+    this.voice?.cancel();
     try {
       this.generative.clearObjects();
       this.setStatus_('cleared. summon something new.');
