@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid af6fdd5
- * @builddate 2026-09-25T15:43:06.242Z
+ * @commitid 0e2a7c9
+ * @builddate 2026-09-25T15:45:54.778Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -25563,7 +25563,7 @@ class Core {
             }
         }
         if (options.hands.enabled) {
-            webXRRequiredFeatures.push('hand-tracking');
+            webXROptionalFeatures.push('hand-tracking');
             this.user.hands = new Hands(this.input.hands);
             if (options.gestures.enabled) {
                 this.poseEstimation = options.gestures.poseEstimator;
