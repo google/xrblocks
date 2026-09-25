@@ -17,23 +17,19 @@ import {SamplesIFrame} from './SamplesIFrame';
 
 Gemma 4 runs fully on this device. Ask anything; presets use the scene. Type a general question for a normal conversational answer, or select and move a cube, sphere, or cylinder and ask about it.
 
-Both typed prompts and presets receive the same fresh optional scene metadata from XR Blocks' public semantic-tree API: object names, shapes, and rounded coordinates, with selection marked inline alongside the selected object's name and shape. Internal object IDs are not sent to the model. There are no keyword heuristics; Gemma is instructed to use the metadata only when relevant. Replies use greedy sampling, which does not guarantee correctness. The context summary stays hidden until metadata is first sent. Viewer position is not supplied, and the assistant does not use native vision, camera images, speech, or generated actions.
+Typed prompts and presets receive fresh optional scene metadata: names, shapes, rounded coordinates, and the selected object inline. Internal IDs are omitted. Gemma uses this context when relevant and answers general questions normally. It does not receive camera images, microphone audio, or viewer position, and cannot change the scene.
 
-Use desktop Chrome with WebGPU and approximately 4 GB of available RAM. Choose **Download Gemma 4 (~2 GB)** to download the text-only, **Apache-2.0** model. Use a persistent Chrome profile to retain the browser's ~2 GB model cache; a later visit on the same origin offers **Load cached Gemma 4**. Browser storage can still reject or evict the entry. No API key is required.
+The demo requires WebGPU and approximately 4 GB of available RAM. Choose **Download Gemma 4** to fetch the text-only, Apache-2.0 model, approximately 2 GB. This never starts automatically. Use a persistent browser profile to retain the cache; later visits on the same origin offer **Load cached Gemma 4**. Browser storage can reject or evict the entry. No API key is required.
 
-On an XR-capable browser, use the HTML download/load panel before entering XR. Wait for **Model ready**, then choose **ENTER XR**. Download progress, errors, and cancellation use the same scene loader as the spatial card; the loaded engine is reused on entry. Initialization cannot be canceled.
+Load the model from the ordinary page before entering XR. Wait for **Model ready**, then choose **ENTER XR**; the engine is reused on entry. Downloads show progress and can be canceled. Initialization cannot be canceled.
 
-Quest 3 testing of the earlier worker build found freezes during initialization and sending prompts. The latest transcript fix still needs a Quest retest. Preloading before XR does not guarantee smooth generation; rendering and inference still share the GPU. Headset keyboard caveats remain, and other headsets are unverified. Phones need WebXR, WebGPU, and approximately 4 GB of available RAM. Hand tracking is optional; physical phone XR entry, input, and inference remain unverified.
+Tested in desktop Chrome, on an Android phone, and on Quest 3. Rendering and inference share the GPU, so there can be brief pauses while the model loads or starts a reply, especially on standalone headsets. Hand tracking is optional.
 
 ## What stays on-device
 
-Prompts, scene metadata, and inference stay in the browser. Initial setup fetches the model and browser dependencies from Hugging Face and public CDNs. Only the model is explicitly cached: inference can continue without network access in the loaded page, but **offline page reload is not supported**.
+Prompts, scene metadata, and inference stay in the browser. Initial setup fetches weights and browser dependencies from Hugging Face and public CDNs. Inference works without network access once the page and model are loaded. Offline page reload is not supported because only the model is explicitly cached.
 
-The model engine, conversation, and cached model reads run in a dedicated classic worker. The scene and spatial UI remain on the main thread, with no main-thread inference fallback if the worker fails. Rendering and inference still share GPU resources, so this separation alone does not guarantee smooth frames or a particular generation speed.
-
-Six general replies in mixed-conversation checks answered normally without mentioning scene objects. A final 14-turn desktop check correctly handled each of the three objects three times, a moved cube twice, and three general questions. The network-blocked check made zero requests; this demonstrates inference in the loaded page, not offline reload.
-
-Profiling on Apple M4 traced the earlier regular 500–700 ms warm-response stalls to whole-card UI rebuilds. A stable transcript removed those structural rebuilds, but **the demo is not hitch-free**: the later production run still showed sporadic warm outliers of 233, 166, and 433 ms, and initialization reached 933 ms in the latest loaded-host run. GPU batch-size and weight-upload-wait experiments showed no clear benefit and worse pauses, so defaults remain unchanged. See the README for diagnostic comparisons and limitations. Quest retesting is pending; desktop improvements do not establish headset responsiveness.
+The model runs in a dedicated worker while the scene and spatial UI remain on the main thread. Streamed Markdown replies use a stable text element rather than rebuilding the card: uppercase headings, indented lists and code, and link labels. Inline emphasis keeps its original case without markers; rich inline fonts and clickable links are not used.
 
 The card shows streamed replies, time to first text, and the runtime's decode tokens/sec. Type in the prompt field, use a preset, or open the optional panel keyboard. Stop preserves the partial reply and starts a fresh model conversation before the next prompt; New chat also resets the visible history.
 
