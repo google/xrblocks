@@ -1,10 +1,3 @@
-import {
-  isWebGPUSupported,
-  loadLiteRt,
-  Tensor,
-  unloadLiteRt,
-} from '@litertjs/core';
-
 import {detectLayout, upscaleImage} from './tiling.js';
 
 export const LITERT_WASM_DIR =
@@ -16,7 +9,9 @@ export const TILE_OVERLAP = 16;
 const SELF_CHECK_EPSILON = 1e-2;
 
 export class Upscaler {
-  constructor() {
+  constructor(runtimeLoader = loadLiteRtRuntime) {
+    this.runtimeLoader = runtimeLoader;
+    this.runtime = null;
     this.liteRt = null;
     this.model = null;
     this.backend = null;
@@ -29,21 +24,27 @@ export class Upscaler {
     this.loadMs = 0;
     this.warmupMs = 0;
     this.disposed = false;
+    this.activeOperations = 0;
+    this.unloaded = false;
   }
 
   async init() {
     const start = performance.now();
-    const liteRt = await loadLiteRt(LITERT_WASM_DIR, {
-      threads: false,
-      jspi: false,
-    });
+    this.runtime = await this.trackOperation(() => this.runtimeLoader());
+    this.liteRt = await this.trackOperation(() =>
+      this.runtime.loadLiteRt(LITERT_WASM_DIR, {
+        threads: false,
+        jspi: false,
+      })
+    );
     if (this.disposed) {
-      unloadLiteRt();
+      this.cleanupIfIdle();
       throw new Error('Upscaler disposed');
     }
-    this.liteRt = liteRt;
 
-    const preferredBackend = isWebGPUSupported() ? 'webgpu' : 'wasm';
+    const preferredBackend = this.runtime.isWebGPUSupported()
+      ? 'webgpu'
+      : 'wasm';
     try {
       await this.compile(preferredBackend);
     } catch (error) {
@@ -63,9 +64,11 @@ export class Upscaler {
     this.ensureActive();
     this.model?.delete();
     this.model = null;
-    const model = await this.liteRt.loadAndCompile(MODEL_URL, {
-      accelerator: backend,
-    });
+    const model = await this.trackOperation(() =>
+      this.liteRt.loadAndCompile(MODEL_URL, {
+        accelerator: backend,
+      })
+    );
     if (this.disposed) {
       model.delete();
       throw new Error('Upscaler disposed');
@@ -179,20 +182,22 @@ export class Upscaler {
 
   async runTile(tile) {
     this.ensureActive();
-    let input;
-    let outputs;
-    try {
-      input = new Tensor(tile, this.inputShape);
-      outputs = await this.model.run(input);
-      this.ensureActive();
-      const output = outputs[0];
-      const data = await output.data();
-      this.ensureActive();
-      return new Float32Array(data);
-    } finally {
-      input?.delete();
-      outputs?.forEach((output) => output.delete());
-    }
+    return this.trackOperation(async () => {
+      let input;
+      let outputs;
+      try {
+        input = new this.runtime.Tensor(tile, this.inputShape);
+        outputs = await this.model.run(input);
+        this.ensureActive();
+        const output = outputs[0];
+        const data = await output.data();
+        this.ensureActive();
+        return new Float32Array(data);
+      } finally {
+        input?.delete();
+        outputs?.forEach((output) => output.delete());
+      }
+    });
   }
 
   ensureActive() {
@@ -203,15 +208,36 @@ export class Upscaler {
     return this.backend === 'webgpu' ? 'WebGPU' : 'WASM';
   }
 
-  dispose() {
-    this.disposed = true;
-    this.model?.delete();
-    this.model = null;
-    if (this.liteRt) {
-      this.liteRt = null;
-      unloadLiteRt();
+  async trackOperation(callback) {
+    this.activeOperations++;
+    try {
+      return await callback();
+    } finally {
+      this.activeOperations--;
+      this.cleanupIfIdle();
     }
   }
+
+  dispose() {
+    this.disposed = true;
+    this.cleanupIfIdle();
+  }
+
+  cleanupIfIdle() {
+    if (!this.disposed || this.activeOperations > 0) return;
+    this.model?.delete();
+    this.model = null;
+    if (this.liteRt && this.runtime && !this.unloaded) {
+      this.liteRt = null;
+      this.runtime.unloadLiteRt();
+      this.unloaded = true;
+    }
+  }
+}
+
+async function loadLiteRtRuntime() {
+  const specifier = '@litertjs/core';
+  return await import(/* @vite-ignore */ specifier);
 }
 
 function messageFor(error) {
