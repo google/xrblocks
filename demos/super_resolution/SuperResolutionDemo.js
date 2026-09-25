@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 import {Upscaler} from './Upscaler.js';
-import {cropCenter} from './tiling.js';
+import {cropSquare} from './tiling.js';
 
 const EMPTY_IMAGE =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
@@ -292,7 +292,7 @@ export class SuperResolutionDemo extends xb.Script {
         );
         return;
       }
-      const crop = cropCenter(snapshot, this.cropSize);
+      const crop = cropSquare(snapshot, this.cropSize);
       this.beforeTexture = this.replaceTexture(
         this.beforeTexture,
         this.textureFromImage(crop, this.upscaler.scale)

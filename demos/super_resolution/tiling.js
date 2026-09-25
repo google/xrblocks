@@ -30,26 +30,30 @@ export function computeAxisTiles(length, tileSize, overlap) {
   return tiles;
 }
 
-export function cropCenter(image, size) {
-  const cropSize = Math.max(
-    1,
-    Math.min(image.width, image.height, Math.floor(size))
-  );
-  const width = cropSize;
-  const height = cropSize;
-  const x0 = Math.floor((image.width - width) / 2);
-  const y0 = Math.floor((image.height - height) / 2);
-  const data = new Uint8ClampedArray(width * height * 4);
+export function squareCropRect(width, height, size, u = 0.5, v = 0.5) {
+  if (width <= 0 || height <= 0)
+    throw new Error('image dimensions must be positive');
+  const side = Math.max(1, Math.min(width, height, Math.floor(size)));
+  const centerX = clampNumber(u, 0, 1) * width;
+  const centerY = clampNumber(v, 0, 1) * height;
+  const x0 = clampInt(Math.round(centerX - side / 2), 0, width - side);
+  const y0 = clampInt(Math.round(centerY - side / 2), 0, height - side);
+  return {x0, y0, side};
+}
 
-  for (let y = 0; y < height; y++) {
+export function cropSquare(image, size, u = 0.5, v = 0.5) {
+  const {x0, y0, side} = squareCropRect(image.width, image.height, size, u, v);
+  const data = new Uint8ClampedArray(side * side * 4);
+
+  for (let y = 0; y < side; y++) {
     const sourceStart = ((y0 + y) * image.width + x0) * 4;
-    const targetStart = y * width * 4;
+    const targetStart = y * side * 4;
     data.set(
-      image.data.subarray(sourceStart, sourceStart + width * 4),
+      image.data.subarray(sourceStart, sourceStart + side * 4),
       targetStart
     );
   }
-  return {data, width, height};
+  return {data, width: side, height: side};
 }
 
 export function packTile(
@@ -161,6 +165,10 @@ export async function upscaleImage(image, options) {
 
 function clampInt(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, Number.isFinite(value) ? value : 0.5));
 }
 
 function toByte(value) {

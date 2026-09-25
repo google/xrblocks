@@ -2,9 +2,10 @@ import {describe, expect, it} from 'vitest';
 
 import {
   computeAxisTiles,
-  cropCenter,
+  cropSquare,
   detectLayout,
   packTile,
+  squareCropRect,
   upscaleImage,
   writeTileOutput,
 } from './tiling.js';
@@ -117,13 +118,73 @@ describe('computeAxisTiles', () => {
   });
 });
 
-describe('cropCenter', () => {
-  it('crops the centered square and clamps to image dimensions', () => {
-    const image = makeImage(5, 3);
-    const crop = cropCenter(image, 10);
-    expect(crop.width).toBe(3);
-    expect(crop.height).toBe(3);
-    expect([...crop.data.slice(0, 4)]).toEqual([...image.data.slice(4, 8)]);
+describe('squareCropRect', () => {
+  it('defaults to the old centered crop behaviour', () => {
+    expect(squareCropRect(5, 3, 10)).toEqual({x0: 1, y0: 0, side: 3});
+    expect(squareCropRect(6, 5, 3)).toEqual({x0: 2, y0: 1, side: 3});
+  });
+
+  it('clamps to all four edges and corners', () => {
+    expect(squareCropRect(100, 80, 20, 0, 0)).toEqual({
+      x0: 0,
+      y0: 0,
+      side: 20,
+    });
+    expect(squareCropRect(100, 80, 20, 1, 0)).toEqual({
+      x0: 80,
+      y0: 0,
+      side: 20,
+    });
+    expect(squareCropRect(100, 80, 20, 0, 1)).toEqual({
+      x0: 0,
+      y0: 60,
+      side: 20,
+    });
+    expect(squareCropRect(100, 80, 20, 1, 1)).toEqual({
+      x0: 80,
+      y0: 60,
+      side: 20,
+    });
+  });
+
+  it('clamps sizes larger than the image', () => {
+    expect(squareCropRect(5, 3, 10, 0.25, 0.75)).toEqual({
+      x0: 0,
+      y0: 0,
+      side: 3,
+    });
+  });
+
+  it('handles odd sizes and integer rounding', () => {
+    expect(squareCropRect(10, 10, 5, 0.5, 0.5)).toEqual({
+      x0: 3,
+      y0: 3,
+      side: 5,
+    });
+    expect(squareCropRect(11, 9, 5.9, 0.25, 0.75)).toEqual({
+      x0: 0,
+      y0: 4,
+      side: 5,
+    });
+  });
+});
+
+describe('cropSquare', () => {
+  it('copies pixels from the requested crop rect', () => {
+    const image = makeImage(6, 4);
+    const rect = squareCropRect(image.width, image.height, 3, 0.8, 0.75);
+    const crop = cropSquare(image, 3, 0.8, 0.75);
+    expect(crop.width).toBe(rect.side);
+    expect(crop.height).toBe(rect.side);
+    for (let y = 0; y < rect.side; y++) {
+      for (let x = 0; x < rect.side; x++) {
+        const source = ((rect.y0 + y) * image.width + rect.x0 + x) * 4;
+        const target = (y * rect.side + x) * 4;
+        expect([...crop.data.slice(target, target + 4)]).toEqual([
+          ...image.data.slice(source, source + 4),
+        ]);
+      }
+    }
   });
 });
 
