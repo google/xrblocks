@@ -7,6 +7,7 @@
  * oriented bounding box (OBB), fuse across views, and optionally show debug
  * wireframe boxes.
  */
+import * as THREE from 'three';
 import { Script } from 'xrblocks';
 import { Detected3DObject } from './Detected3DObject';
 import { RoomFrameAccumulator } from './geometry/RoomFrame';
@@ -78,6 +79,21 @@ export interface Object3DDetectorOptions {
         roll?: number;
     };
     /**
+     * Full 6-DOF correction to the SDK's estimated device-camera extrinsics,
+     * post-multiplied in the camera's own view frame (+x right, +y up, −z
+     * forward), applied after {@link cameraRotationOffset}: `worldFromView`
+     * becomes `worldFromView · T(translation) · R(rotation)`. Same shape and
+     * convention as the ArUco tracker's `calibration` option, so a
+     * calibration recovered by `ArucoTracker.getCalibration()` can be passed
+     * straight through (its `rangeScale` does not apply here — metric range
+     * comes from the depth mesh, not a monocular marker estimate).
+     * @defaultValue `undefined` (no correction)
+     */
+    cameraExtrinsicCorrection?: {
+        rotation?: number[];
+        translation?: number[];
+    };
+    /**
      * How fitted yaws are reconciled with the room. Defaults to
      * `{mode: 'roomFrame'}`, which estimates the room's own wall direction from
      * the depth mesh and falls back to it only when an object's own orientation
@@ -118,6 +134,12 @@ export interface Object3DDetectorDiagnostics {
         pitch: number;
         roll: number;
     };
+    /** Applied 6-DOF extrinsic correction (e.g. from an ArUco calibration
+     * session), or `null` when none is set. */
+    cameraExtrinsicCorrection: {
+        rotationDeg: number;
+        translationCm: number;
+    } | null;
     snapshotWidth: number;
     snapshotHeight: number;
     /** Whether the platform's view→depth-buffer UV remap is the identity. */
@@ -168,6 +190,19 @@ export interface Object3DDetectorDiagnostics {
     }>;
 }
 /**
+ * Post-multiplies the manual Euler offset, then a 6-DOF extrinsic
+ * correction matrix, onto `worldFromView` — both in the camera's own view
+ * space, on top of the SDK's estimated extrinsics:
+ * `worldFromView · R(offset) · extrinsic`. Exported as a pure function so
+ * the composition can be unit-tested without an XR session. Returns the
+ * input instance unchanged when both corrections are identity/absent.
+ */
+export declare function applyCameraPoseCorrections(worldFromView: THREE.Matrix4, offset: {
+    yaw: number;
+    pitch: number;
+    roll: number;
+}, extrinsic: THREE.Matrix4 | null): THREE.Matrix4;
+/**
  * The 3-D object-detection pipeline as a reusable {@link Script}. See the
  * `objects_3d` demo for a worked integration. Attach it to the scene before
  * `xb.init()`, then
@@ -189,6 +224,7 @@ export declare class Object3DDetector extends Script {
     private readonly _poseRing;
     private readonly _roomFrame;
     private _diagnostics;
+    private _extrinsic;
     /**
      * @param options - Configuration options.
      */
@@ -226,6 +262,22 @@ export declare class Object3DDetector extends Script {
         pitch?: number;
         roll?: number;
     }): void;
+    /** The currently applied 6-DOF extrinsic correction, or `null`. */
+    get cameraExtrinsicCorrection(): {
+        rotation: number[];
+        translation: number[];
+    } | null;
+    /**
+     * Set or clear the 6-DOF extrinsic correction (see
+     * {@link Object3DDetectorOptions.cameraExtrinsicCorrection}). Pass `null`
+     * or an object with neither field to clear it. Safe to call between
+     * `detect()` calls, so a calibration recovered on the fly (e.g. from an
+     * ArUco calibration session) can be applied mid-session.
+     */
+    setCameraExtrinsicCorrection(correction: {
+        rotation?: number[];
+        translation?: number[];
+    } | null | undefined): void;
     /** The orientation policy currently in force. */
     get orientationMode(): OrientationMode;
     /**
