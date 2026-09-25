@@ -64,7 +64,6 @@ const sidebars: SidebarsConfig = {
         'samples/Reticle',
         'samples/Lighting',
         'samples/3DGS-Walkthrough',
-        'samples/ArUco-Anchor',
       ],
     },
     {
@@ -102,6 +101,7 @@ const sidebars: SidebarsConfig = {
         'samples/Language-Detector',
         'samples/Gemini-Icebreakers',
         'samples/Collaborative-Roomcraft',
+        'samples/Super-Resolution',
       ],
     },
     {
