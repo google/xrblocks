@@ -461,6 +461,29 @@ describe('GemmaScene', () => {
     expect(stopLabel).not.toHaveBeenCalled();
   });
 
+  it('keeps the transcript UI tree stable across sends, streaming, and New chat', async () => {
+    await ready();
+    const originalChildren = [...scene.history.children];
+    const add = vi.spyOn(scene.history, 'add');
+    const clear = vi.spyOn(scene.history, 'clear');
+    for (const prompt of ['Describe selected', 'Compare the objects']) {
+      scene.composer.value = prompt;
+      await scene.send();
+    }
+    expect(add).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    expect(scene.history.children).toEqual(originalChildren);
+    expect(scene.historyText.text).toContain('You\nDescribe selected');
+    expect(scene.historyText.text).toContain('You\nCompare the objects');
+    expect(scene.historyText.text).toContain(
+      'Gemma\nThe amber cube is selected.'
+    );
+    await scene.newChat();
+    expect(clear).not.toHaveBeenCalled();
+    expect(scene.history.children).toEqual(originalChildren);
+    expect(scene.historyText.text).toBe('');
+  });
+
   it('surfaces input backend failures and disables Send even if the backend still reports ready', async () => {
     await ready();
     scene.composer.value = 'Hello';
@@ -566,7 +589,7 @@ describe('GemmaScene', () => {
     expect(scene.status.text).toMatch(/fresh|new conversation/i);
     await scene.newChatButton.onClick();
     expect(scene.client.newChat).toHaveBeenCalledOnce();
-    expect(scene.history.children).toHaveLength(0);
+    expect(scene.historyText.text).toBe('');
     expect(downloadModel).toHaveBeenCalledOnce();
     expect(scene.client.loaded).toBe(true);
   });
@@ -591,7 +614,8 @@ describe('GemmaScene', () => {
     scene.client.newChat.mockRejectedValueOnce(new Error('Reset failed'));
     await expect(scene.newChatButton.onClick()).resolves.toBeUndefined();
     expect(scene.status.text).toContain('Reset failed');
-    expect(scene.history.children).toHaveLength(2);
+    expect(scene.historyText.text).toContain('You\nDescribe');
+    expect(scene.historyText.text).toContain('Gemma\nPartial');
     expect(scene.newChatButton.disabled).toBe(false);
     expect(scene.client.stop).toHaveBeenCalledOnce();
   });
