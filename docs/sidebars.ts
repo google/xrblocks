@@ -101,6 +101,7 @@ const sidebars: SidebarsConfig = {
         'samples/Language-Detector',
         'samples/Gemini-Icebreakers',
         'samples/Collaborative-Roomcraft',
+        'samples/Super-Resolution',
       ],
     },
     {
