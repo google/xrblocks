@@ -628,4 +628,29 @@ describe('XRDeviceCamera raw camera snapshots', () => {
     expect(camera.isUsingXRCameraAccess).toBe(false);
     expect(camera.getSnapshot({outputFormat: 'imageData'})).toBeNull();
   });
+
+  it('clears the raw camera frame and stops streaming when the XR session ends', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer} = createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+    const pending = camera.captureSnapshot({outputFormat: 'imageData'});
+    camera.updateXRCamera(createFrame());
+    await pending;
+    expect(camera.state).toBe('streaming');
+
+    camera.onXRSessionEnded();
+
+    expect(camera.isUsingXRCameraAccess).toBe(false);
+    expect(camera.state).toBe('idle');
+    expect(camera.getSnapshot({outputFormat: 'imageData'})).toBeNull();
+  });
+
+  it('keeps a getUserMedia stream loaded when the XR session ends', () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    camera.loaded = true;
+
+    camera.onXRSessionEnded();
+
+    expect(camera.loaded).toBe(true);
+  });
 });
