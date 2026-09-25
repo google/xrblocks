@@ -111,12 +111,15 @@ export class RemoteTts {
     }
   }
 
-  /** Extracts text from a base64 image through the server's Ollama proxy. */
-  async ocr(base64, mimeType = 'image/jpeg', {signal} = {}) {
+  /**
+   * Sends a base64 image and a prompt to the server's Ollama proxy; `json`
+   * asks the model for a JSON reply. Returns the model's raw text.
+   */
+  async ocr(base64, mimeType = 'image/jpeg', {prompt, json, signal} = {}) {
     const response = await fetch(`${this.baseUrl}/ocr`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({image: base64, mimeType}),
+      body: JSON.stringify({image: base64, mimeType, prompt, json}),
       signal,
     });
     if (!response.ok) {

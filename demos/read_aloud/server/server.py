@@ -28,11 +28,27 @@ from pathlib import Path
 
 from matcha_tts import DEFAULT_MODEL_DIR, DEFAULT_STEPS, MatchaTTS, to_wav_bytes
 
+# Default for direct /ocr calls; the page sends its own prompt (ocr.js), which
+# also asks for an English translation as JSON.
 OCR_PROMPT = (
     "Transcribe all printed text in this photo in natural reading order. "
     "Return only the text, with paragraphs separated by blank lines. "
     "Do not describe the image. If there is no readable text, return exactly NONE."
 )
+
+
+def ollama_chat_request(model: str, prompt: str, image_b64: str, want_json: bool = False) -> dict:
+    """Body for Ollama's /api/chat: one user turn with the image; `want_json`
+    turns on Ollama's JSON output mode so the reply parses without a fence."""
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
+        "stream": False,
+        "options": {"temperature": 0},
+    }
+    if want_json:
+        body["format"] = "json"
+    return body
 
 
 class Engine:
@@ -113,13 +129,8 @@ class Engine:
         with self.lock:
             return self.tts.synthesize(text, steps=steps, seed=seed)
 
-    def ocr(self, image_b64: str) -> str:
-        payload = json.dumps({
-            "model": self.args.ollama_model,
-            "messages": [{"role": "user", "content": OCR_PROMPT, "images": [image_b64]}],
-            "stream": False,
-            "options": {"temperature": 0},
-        }).encode()
+    def ocr(self, image_b64: str, prompt: str = OCR_PROMPT, want_json: bool = False) -> str:
+        payload = json.dumps(ollama_chat_request(self.args.ollama_model, prompt, image_b64, want_json)).encode()
         request = urllib.request.Request(
             self.args.ollama_url + "/api/chat", data=payload,
             headers={"Content-Type": "application/json"})
@@ -214,8 +225,10 @@ class Handler(BaseHTTPRequestHandler):
         if image.startswith("data:"):
             image = image.split(",", 1)[1]
         base64.b64decode(image, validate=True)  # reject junk before Ollama sees it
+        prompt = str(data.get("prompt") or OCR_PROMPT)
+        want_json = bool(data.get("json", False))
         start = time.perf_counter()
-        text = self.engine.ocr(image)
+        text = self.engine.ocr(image, prompt, want_json)
         self._json(HTTPStatus.OK, {"text": text, "model": self.engine.args.ollama_model,
                                    "ms": round((time.perf_counter() - start) * 1000)})
 

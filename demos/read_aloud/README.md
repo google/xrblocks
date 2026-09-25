@@ -3,8 +3,11 @@
 Hold a book, sheet or screen in front of you and click **Read** on the
 spatial card. The headset camera takes a photo, the printed text is extracted,
 and [Matcha-TTS](https://huggingface.co/litert-community/Matcha-TTS) speaks
-it. **Stop** cancels playback. The card shows the last photo, the extracted
-text and the pipeline status.
+it. A page in another language is translated to English first and the
+translation is read (Matcha's voice is English-only); the card then shows
+`[French → English]` above the text and the status line says which language
+it came from. **Stop** cancels playback. The card shows the last photo, the
+extracted text and the pipeline status.
 
 The models run on a **laptop tethered to the headset**: `server/server.py`
 hosts Matcha-TTS on [LiteRT](https://ai.google.dev/edge/litert) (CPU, XNNPACK)
@@ -96,11 +99,16 @@ shows which model is answering.
 
 ## Server API
 
-| Route         | Body                               | Response                                            |
-| ------------- | ---------------------------------- | --------------------------------------------------- |
-| `GET /health` |                                    | `{ok, tts: {threads, steps, …}, ocr: {ollama…}}`    |
-| `POST /tts`   | `{"text", "steps"?, "seed"?}`      | `audio/wav` (16-bit, 22.05 kHz), `X-Timings` header |
-| `POST /ocr`   | `{"image": <base64>, "mimeType"?}` | `{"text", "model", "ms"}`                           |
+| Route         | Body                                                   | Response                                            |
+| ------------- | ------------------------------------------------------ | --------------------------------------------------- |
+| `GET /health` |                                                        | `{ok, tts: {threads, steps, …}, ocr: {ollama…}}`    |
+| `POST /tts`   | `{"text", "steps"?, "seed"?}`                          | `audio/wav` (16-bit, 22.05 kHz), `X-Timings` header |
+| `POST /ocr`   | `{"image": <base64>, "mimeType"?, "prompt"?, "json"?}` | `{"text", "model", "ms"}`                           |
+
+`/ocr` returns the model's reply verbatim; the page's prompt (`ocr.js`) asks
+for a JSON object with the transcription, its language and an English
+translation, and `json: true` switches Ollama to JSON output mode. Without a
+prompt the server just transcribes.
 
 CORS is open (`*`) because the page and the server sit on different ports.
 Run `python -m unittest` in `server/` for the model-free unit tests.

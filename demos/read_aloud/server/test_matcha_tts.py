@@ -6,6 +6,7 @@ import numpy as np
 
 from matcha_tts import (G2P, length_regulate, number_to_words, parse_dict,
                         phonemize, sin_pos_emb, split_sentences)
+from server import OCR_PROMPT, ollama_chat_request
 
 META = {
     "char2idx": {"a": 3, "b": 4},
@@ -107,6 +108,16 @@ class SynthHelpersTest(unittest.TestCase):
         self.assertEqual(ylen, 10)  # 5 valid positions x 2 frames
         np.testing.assert_array_equal(mu_y[0, :10], [0, 0, 1, 1, 2, 2, 3, 3, 4, 4])
         self.assertEqual(mu_y[0, 10], 0)
+
+
+
+
+class OllamaRequestTest(unittest.TestCase):
+    def test_prompt_image_and_json_mode(self):
+        body = ollama_chat_request("m", "say hi", "AAAA")
+        self.assertEqual(body["messages"], [{"role": "user", "content": "say hi", "images": ["AAAA"]}])
+        self.assertNotIn("format", body)
+        self.assertEqual(ollama_chat_request("m", OCR_PROMPT, "AAAA", want_json=True)["format"], "json")
 
 
 if __name__ == "__main__":

@@ -1,14 +1,11 @@
 import * as xb from 'xrblocks';
 
+import {OCR_PROMPT, parseOcrResponse} from './ocr.js';
 import {ChunkPlayer} from './playback.js';
 import {DEFAULT_SERVER_URL, RemoteTts} from './remote-tts.js';
 
 const EMPTY_IMAGE =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-const OCR_PROMPT =
-  'Transcribe all printed text in this photo in natural reading order. ' +
-  'Return only the text, with paragraphs separated by blank lines. ' +
-  'Do not describe the image. If there is no readable text, return exactly NONE.';
 const MAX_SHOWN_CHARS = 420;
 const CAMERA_STATE_LABELS = {
   initializing: 'Starting camera…',
@@ -18,10 +15,11 @@ const CAMERA_STATE_LABELS = {
 
 /**
  * Press Read: a device-camera photo goes to Gemini (or, with `?ocr=ollama`,
- * to a local Ollama vision model through the laptop server) for text
- * extraction, and the text is spoken by Matcha-TTS running on the tethered
- * laptop (`server/server.py`). Stop cancels playback. Falls back to the
- * browser's speech synthesis when the server is unreachable.
+ * to a local Ollama vision model through the laptop server), which
+ * transcribes the text and translates it to English when the page is in
+ * another language. The English text is spoken by Matcha-TTS running on the
+ * tethered laptop (`server/server.py`). Stop cancels playback. Falls back to
+ * the browser's speech synthesis when the server is unreachable.
  */
 export class ReadAloud extends xb.Script {
   static dependencies = {ai: xb.AI, deviceCamera: xb.XRDeviceCamera};
@@ -237,7 +235,12 @@ export class ReadAloud extends xb.Script {
         this.status(
           `Reading the page with ${this.remote.health.ocr.ollamaModel} on the laptop…`
         );
-        raw = (await this.remote.ocr(strippedBase64, mimeType)).text;
+        raw = (
+          await this.remote.ocr(strippedBase64, mimeType, {
+            prompt: OCR_PROMPT,
+            json: true,
+          })
+        ).text;
       } else {
         this.status('Reading the page with Gemini…');
         const response = await this.ai.query({
@@ -251,16 +254,22 @@ export class ReadAloud extends xb.Script {
           typeof response === 'string' ? response : response?.text
         )?.trim();
       }
-      if (!raw || raw === 'NONE') {
+      const page = parseOcrResponse(raw);
+      if (!page.english) {
         this.extractedText.text = '(no readable text in this photo)';
         this.status(`No text found.\n${this.readyLabel}`);
         return;
       }
-      this.extractedText.text =
-        raw.length > MAX_SHOWN_CHARS
-          ? raw.slice(0, MAX_SHOWN_CHARS) + '…'
-          : raw;
-      await this.speak(raw);
+      const shown =
+        page.english.length > MAX_SHOWN_CHARS
+          ? page.english.slice(0, MAX_SHOWN_CHARS) + '…'
+          : page.english;
+      this.extractedText.text = page.translated
+        ? `[${page.language} → English]\n${shown}`
+        : shown;
+      await this.speak(page.english, {
+        note: page.translated ? `Translated from ${page.language} · ` : '',
+      });
     } catch (error) {
       this.status(`Failed: ${describeError(error)}`);
     } finally {
@@ -279,12 +288,13 @@ export class ReadAloud extends xb.Script {
 
   // ---------------------------------------------------------------- speak
 
-  async speak(text) {
+  /** Speaks `text`; `note` is prefixed to the progress line (translation). */
+  async speak(text, {note = ''} = {}) {
     this.speaking = true;
     this.stopButton.disabled = false;
     try {
       if (this.mode === 'native') {
-        this.status('Speaking (browser voice)…');
+        this.status(`${note}Speaking (browser voice)…`);
         await xb.core.sound.speechSynthesizer.speak(text);
         this.status(`Done.\n${this.readyLabel}`);
         return;
@@ -301,7 +311,7 @@ export class ReadAloud extends xb.Script {
         audioSeconds += item.buffer.duration;
         for (const key in totals) totals[key] += item.timings[key] ?? 0;
         this.status(
-          `Speaking ${item.index + 1}/${item.count} · ` +
+          `${note}Speaking ${item.index + 1}/${item.count} · ` +
             `decoder ${totals.decoder.toFixed(0)} ms · vocoder ${totals.vocoder.toFixed(0)} ms · ` +
             `RTF ${(totals.total / 1000 / audioSeconds).toFixed(2)}`
         );
