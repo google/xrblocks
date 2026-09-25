@@ -681,9 +681,11 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   }
 
   override onXRSessionEnded() {
+    if (!this.useXRCameraAccess_) return;
     this.useXRCameraAccess_ = false;
     this.loaded = false;
     this.disposeXRCameraAccessResources_();
+    this.setState_(StreamState.IDLE);
   }
 
   private startXRCameraAccessFallback_(reason: string, error?: unknown) {
