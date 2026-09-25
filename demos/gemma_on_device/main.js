@@ -5,7 +5,7 @@ const options = new xb.Options().enableSceneContext().enableHands();
 options.xrButton.showEnterSimulatorButton = true;
 options.xrButton.appTitle = 'Gemma 4 on-device';
 options.xrButton.appDescription =
-  'Select a scene object and ask Gemma about it. No API key or cloud inference.';
+  'Ask anything, or select an object and use a scene preset. No API key or cloud inference.';
 
 xb.add(new GemmaScene());
 try {

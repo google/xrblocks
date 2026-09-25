@@ -211,6 +211,7 @@ describe('GemmaScene', () => {
     expect(scene.composer.maxLength).toBe(2000);
     expect(scene.keyboard.open).toBe(false);
     expect(scene.keyboardToggle.xb.preserveTextFocus).toBe(true);
+    expect(scene.contextLabel.text).toBe('');
     expect(scene.loadButton.label).toBe('Download Gemma 4 (~2 GB)');
     expect(scene.sendButton.disabled).toBe(true);
     expect(downloadModel).not.toHaveBeenCalled();
@@ -482,6 +483,22 @@ describe('GemmaScene', () => {
     expect(clear).not.toHaveBeenCalled();
     expect(scene.history.children).toEqual(originalChildren);
     expect(scene.historyText.text).toBe('');
+    expect(scene.contextLabel.text).toBe('');
+  });
+
+  it('passes typed general questions unchanged with optional fresh metadata', async () => {
+    await ready();
+    scene.composer.value = 'How can I be more productive?';
+    await scene.sendButton.onClick();
+    expect(scene.client.send).toHaveBeenCalledWith(
+      'How can I be more productive?',
+      expect.objectContaining({objects: expect.any(Array)}),
+      expect.objectContaining({onText: expect.any(Function)})
+    );
+    expect(scene.contextLabel.text).toContain(
+      'Scene metadata, not camera vision:'
+    );
+    expect(scene.status.text).not.toContain('Reply based on scene');
   });
 
   it('surfaces input backend failures and disables Send even if the backend still reports ready', async () => {

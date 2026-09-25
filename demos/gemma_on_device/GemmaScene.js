@@ -177,7 +177,7 @@ export class GemmaScene extends xb.Script {
       style: noteStyle,
     });
     this.contextLabel = new xb.UIText({
-      text: 'Scene metadata, not camera vision. A fresh snapshot is taken only on Send.',
+      text: '',
       style: noteStyle,
     });
     this.metrics = new xb.UIText({
@@ -196,7 +196,7 @@ export class GemmaScene extends xb.Script {
     });
     this.composer = new xb.UITextInput({
       ariaLabel: 'Prompt for on-device Gemma',
-      placeholder: 'Ask about these objects. Enter sends.',
+      placeholder: 'Ask anything. Enter sends.',
       maxLength: MAX_PROMPT_LENGTH,
       style: {height: 56, fontSize: 22},
       onSubmit: () => this.send(),
@@ -263,11 +263,15 @@ export class GemmaScene extends xb.Script {
       },
       children: [
         new xb.UIText({
-          text: 'Gemma 4 · On-device scene assistant',
+          text: 'Gemma 4 · On-device assistant',
           style: {fontSize: 28, fontWeight: 'bold'},
         }),
         new xb.UIText({
-          text: '~2 GB download/disk · ~4 GB free RAM recommended. Desktop Chrome primary; headsets untested.',
+          text: 'Gemma 4 runs fully on this device. Ask anything. Presets use the scene.',
+          style: noteStyle,
+        }),
+        new xb.UIText({
+          text: '~2 GB download/disk · ~4 GB free RAM recommended. Desktop Chrome primary; standalone headsets may pause.',
           style: noteStyle,
         }),
         new xb.UIText({
@@ -435,6 +439,7 @@ export class GemmaScene extends xb.Script {
     }
     this.busy = true;
     this.status.text = 'Reading scene metadata…';
+    this.contextLabel.text = '';
     this.refreshControls();
     let acceptingText = true;
     try {
@@ -480,7 +485,7 @@ export class GemmaScene extends xb.Script {
         ? 'Interrupted. Partial reply kept; the next prompt starts a fresh model conversation.'
         : this.client.needsNewChat
           ? 'Context is nearly full. Choose New chat before sending.'
-          : 'Ready. Reply based on scene metadata, not camera vision.';
+          : 'Ready. Inference and prompts stay on this device.';
     } catch (error) {
       if (!this.disposed) this.flushText();
       this.showError(error);
@@ -517,6 +522,7 @@ export class GemmaScene extends xb.Script {
       if (this.disposed) return;
       this.messages.length = 0;
       this.historyText.text = '';
+      this.contextLabel.text = '';
       this.pendingBottom = undefined;
       this.pendingText = undefined;
       this.response = undefined;
