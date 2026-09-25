@@ -1,12 +1,16 @@
-# Gemma 4 on-device scene assistant
+# Gemma 4 on-device assistant
 
-A spatial assistant that uses Gemma 4 E2B to discuss three selectable objects in an XR Blocks scene. Move a cube, sphere, or cylinder, select it, and ask a question. The public scene-context API supplies names, positions, and bounds as text. The model does not see camera images or execute actions.
+Gemma 4 E2B runs fully on this device. Ask anything; presets use the scene. Type general questions into the spatial chat card, or move and select a cube, sphere, or cylinder to ask about them. The public scene-context API supplies optional object names, shapes, and rounded coordinates as text. The model does not see camera images or execute actions.
 
 ## Run
 
-Build the SDK with `npm run build:sdk`, serve the repository on an available localhost port, and open `/demos/gemma_on_device/` in desktop Chrome with WebGPU. HTTPS or localhost is required. The desktop simulator is the primary target; headset performance, keyboard behavior, and compatibility are untested.
+Build the SDK with `npm run build:sdk`, serve the repository on an available localhost port, and open `/demos/gemma_on_device/` in desktop Chrome with WebGPU. HTTPS or localhost is required. The desktop simulator remains the primary target. Quest 3 testing of the earlier worker build found visible freezes during initialization and sending prompts; the latest transcript update still needs a Quest retest.
 
 Select **Download Gemma 4 (~2 GB)** to fetch the model from Hugging Face. Nothing downloads automatically beyond the page and its normal XR dependencies. Keep approximately 4 GB of RAM available and at least 2.01 GB of browser storage free, plus room for the runtime. These are guidelines, not a guarantee that a device can run the model. GPU memory pressure can still cause initialization or generation to fail.
+
+On an XR-capable browser, the ordinary HTML page offers **Download Gemma 4 (~2 GB)** or **Load cached Gemma 4** before you enter XR. Wait for **Model ready**, then choose the existing **ENTER XR** button. This reuses the same scene, worker, model cache, and load/cancel flow; entering XR does not create another engine or reload the model. Downloads can be canceled, but initialization cannot. The spatial controls remain available after entry, and desktop simulator users can load from the spatial card.
+
+Preloading moves model initialization out of the immersive session; it does **not** promise to eliminate freezing. The desktop UI-rebuild stall described below has been fixed, but rendering and generation still share GPU resources, and standalone headsets may still pause. Quest retesting is pending, headset keyboard caveats remain, and other headsets have not been verified. Phones need WebXR, WebGPU, and approximately 4 GB of available RAM. Hand tracking is optional; physical phone XR entry, input, and inference remain unverified.
 
 The download shows progress and can be canceled. A complete model is stored in the browser's Cache API. Use a persistent Chrome profile to retain this ~2 GB cache between visits; later visits offer **Load cached Gemma 4** without downloading the weights again. Browser storage is origin-specific and can be evicted; changing the localhost port also changes the origin. A canceled download restarts from the beginning. Use browser site-data settings to remove the cached model.
 
@@ -14,9 +18,11 @@ Storage estimates are advisory. A browser can still reject this large cache entr
 
 ## Interaction
 
-Select or move an object with the normal XR Blocks interaction controls. Type into the spatial prompt field, use a preset, or open the optional panel keyboard. Native and panel keyboards can conflict on some headsets, so the panel keyboard starts closed. **Send** supplies the latest metadata for only the three demo objects, with the selected object identified. No screenshot, microphone audio, or other scene content is included.
+Type a general question, use a scene preset, or open the optional panel keyboard. General questions are answered normally; presets ask about the selected object or compare the scene. Select or move objects with the normal XR Blocks interaction controls. Native and panel keyboards can conflict on some headsets, so the panel keyboard starts closed.
 
-Chat supports one generation at a time, up to 2,000 characters per user prompt and 256 output tokens per reply. **New chat** clears the conversation while keeping the model loaded. Near the model's context limit, the demo asks you to start a new chat rather than silently removing earlier messages. **Stop** preserves the partial response but resets the model conversation before the next prompt. Chat history is not saved across reloads.
+Every **Send**, whether typed or from a preset, attaches fresh optional metadata for only the three demo objects: names, shapes, and rounded coordinates, with selection marked inline alongside the selected object's name and shape. Internal object IDs are not sent to the model. There is no keyword-based routing: the model is instructed to use this context only when relevant to the question. The context summary appears after metadata is first sent. No screenshot, microphone audio, viewer position, or other scene content is included; questions needing missing information cannot be answered reliably.
+
+Chat uses greedy sampling and supports one generation at a time, up to 2,000 characters per user prompt and 256 output tokens per reply. Greedy sampling does not guarantee correct answers. **New chat** clears the conversation while keeping the model loaded. Near the model's context limit, the demo asks you to start a new chat rather than silently removing earlier messages. **Stop** preserves the partial response but resets the model conversation before the next prompt. Chat history is not saved across reloads.
 
 Replies stream into the spatial card. **Time to first text** measures the delay until the first nonempty text arrives; it is not a tokenizer measurement. **Decode tokens/sec** comes from the runtime's benchmark data, not a count of streamed chunks. Missing metrics are shown as unavailable.
 
@@ -30,9 +36,22 @@ The renderer uses the normal XR Blocks configuration and simulator environment. 
 
 ## Observed desktop behavior
 
-Real scene prompts and a follow-up with browser networking disabled worked in persistent Chrome 154 on an Apple M4 with 16 GB RAM. The network-blocked reply made no network requests. With the default simulator room and physics, the first reply took 24.2 seconds to first text at 10.4 decode tokens/sec; a warm reply took 1.9 seconds at 11.5 tokens/sec.
+Validation used persistent Chrome 154 on an Apple M4 with 16 GB RAM. Six general replies in mixed conversations answered the questions without mentioning scene objects despite receiving optional metadata. The final 14-turn production check correctly handled each of the three objects three times, the moved cube twice, and three general questions. The network-blocked check made zero network requests. These are observed results, not a guarantee that every answer will be correct.
 
-The test machine was heavily contended (load averages around 35-40), so these are observations, not a performance guarantee or a controlled comparison against main-thread inference. Frame intervals had a p95 of about 19 ms, but maximum pauses were 2.35 seconds for the cold reply and 0.55 seconds for the warm reply. Main-thread long tasks remained observable with the worker. The demo is not hitch-free, and the contribution from shared GPU/driver work versus host contention has not been isolated.
+Profiling isolated the earlier long warm-response pauses to the app adding transcript panels, which triggered whole-card UIKit binding reconciliation. UI reconciliation took 476–658 ms in the baseline runs; WebGL rendering took 9–11 ms, and worker-message handling took 0.4–2.5 ms. These measured stalls were app-level UI rebuilds, not evidence that worker dispatch or shared GPU work caused them.
+
+The transcript now retains one text element and updates its contents at most 10 times per second, preserving roles, history, and scrolling without rebuilding the card tree. This removed the regular 500–700 ms UI-rebuild stall. UI reconciliation fell to 31–41 ms, with no structural binding-tree reconciliations during generation in the initial diagnostic runs. Those before/after comparisons used unchanged default GPU settings:
+
+| Reply  | Before: maximum frame interval | After: maximum frame interval | After: time to first text | After: decode tokens/sec |
+| ------ | ------------------------------ | ----------------------------- | ------------------------- | ------------------------ |
+| Cold   | 2,617.5 ms                     | 116.7 ms                      | 10.676 s                  | 8.24                     |
+| Warm 1 | 683.3 ms                       | 49.1 ms                       | 1.949 s                   | 14.90                    |
+| Warm 2 | 483.1 ms                       | 33.3 ms                       | 1.065 s                   | 18.79                    |
+| Warm 3 | 583.3 ms                       | 33.6 ms                       | 1.474 s                   | 17.80                    |
+
+The initial updated cold reply's p95 frame interval was 17.6 ms. **The demo is not hitch-free:** the later production run still had sporadic warm frame-interval outliers of 233, 166, and 433 ms. Initialization reached a maximum frame interval of 933 ms in the latest loaded-host run, so preloading before XR remains useful. The regular UI-rebuild stall is fixed; the remaining outliers have not been fully attributed.
+
+A shorter prompt alone did not fix the UI stall. Trials with a GPU batch size of 32 or waiting for weight uploads showed worse pauses without a clear benefit, so the demo keeps the runtime defaults. The host was not controlled, and these M4 observations are not guarantees for other workloads or devices. Quest retesting is pending, and rendering and inference still share GPU resources.
 
 ## Model and dependencies
 
