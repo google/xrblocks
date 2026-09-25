@@ -941,6 +941,7 @@ export class Core {
    */
   private onXRSessionEnded = () => {
     if (!this.isLifecycleActive()) return;
+    this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();
   };
 
