@@ -3,10 +3,18 @@ import * as xb from 'xrblocks';
 import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
 
 import {GemmaClient, MAX_PROMPT_LENGTH} from './GemmaClient.js';
+import {markdownText} from './markdown.js';
 import {MODEL_BYTES, downloadModel, hasCachedModel} from './modelStore.js';
 
 const TEXT_UPDATE_MS = 100;
 const BOTTOM_TOLERANCE = 8;
+
+function displayReply(text) {
+  // Separate leading spaces so UIText's wrapping does not trim or collapse them.
+  return markdownText(text).replace(/^ +/gm, (spaces) =>
+    '\u200b '.repeat(spaces.length)
+  );
+}
 
 export function compactSceneContext(tree, objects, selected) {
   if (!tree?.nodes) throw new Error('Scene semantic context is unavailable.');
@@ -540,7 +548,11 @@ export class GemmaScene extends xb.Script {
 
   appendMessage(role, message) {
     this.queueBottom();
-    const entry = {role, text: message};
+    const entry = {
+      role,
+      text: message,
+      display: role === 'Gemma' ? displayReply(message) : message,
+    };
     this.messages.push(entry);
     this.renderTranscript();
     return entry;
@@ -549,7 +561,7 @@ export class GemmaScene extends xb.Script {
   renderTranscript() {
     // Keep the UI tree stable: adding message panels rebinds the whole card.
     this.historyText.text = this.messages
-      .map(({role, text}) => `${role}\n${text}`)
+      .map(({role, display}) => `${role}\n${display}`)
       .join('\n\n');
   }
 
@@ -569,6 +581,7 @@ export class GemmaScene extends xb.Script {
     if (this.pendingText === undefined || !this.response) return;
     this.queueBottom();
     this.response.text = this.pendingText;
+    this.response.display = displayReply(this.pendingText);
     this.renderTranscript();
     this.pendingText = undefined;
     this.lastTextUpdate = performance.now();

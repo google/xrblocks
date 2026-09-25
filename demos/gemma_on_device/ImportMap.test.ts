@@ -37,6 +37,16 @@ describe('Gemma demo import map', () => {
     expect(main).not.toMatch(/loadRuntime|@litert/);
   });
 
+  it('pins the Markdown lexer to the same exact version used by tests', () => {
+    const {devDependencies} = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8')
+    );
+    expect(devDependencies.marked).toBe('14.1.4');
+    expect(imports().marked).toBe(
+      `https://esm.sh/marked@${devDependencies.marked}`
+    );
+  });
+
   it('pins the worker bundle and matching WASM without a document import map', () => {
     const worker = readFileSync(
       resolve(import.meta.dirname, 'gemmaWorker.js'),
