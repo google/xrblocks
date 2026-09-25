@@ -115,7 +115,7 @@ export class VideoStream<
   }
 
   private willCaptureFrequently_: boolean;
-  private frozenTexture_: THREE.Texture | null = null;
+  private frozenTextures_ = new Set<THREE.Texture>();
   private canvas_: HTMLCanvasElement | null = null;
   private context_: CanvasRenderingContext2D | null = null;
 
@@ -236,6 +236,27 @@ export class VideoStream<
   }
 
   /**
+   * Whether the current snapshot source has pixels available.
+   * Subclasses may override this to provide non-video sources while preserving
+   * {@link getSnapshot}'s format handling.
+   */
+  protected snapshotSourceAvailable_(): boolean {
+    return this.video_.readyState >= this.video_.HAVE_CURRENT_DATA;
+  }
+
+  /**
+   * Draws the current snapshot source into `context` at the requested size.
+   * Subclasses may override this to provide pixels from another source.
+   */
+  protected drawSnapshotSource_(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ) {
+    context.drawImage(this.video_, 0, 0, width, height);
+  }
+
+  /**
    * Captures the current video frame.
    * @param options - The options for the snapshot.
    * @returns The captured data.
@@ -252,12 +273,7 @@ export class VideoStream<
     outputFormat = 'texture',
     ...rest
   }: VideoStreamGetSnapshotOptions = {}) {
-    if (
-      !this.loaded ||
-      !width ||
-      !height ||
-      this.video_.readyState < this.video_.HAVE_CURRENT_DATA
-    ) {
+    if (!this.loaded || !width || !height || !this.snapshotSourceAvailable_()) {
       return null;
     }
 
@@ -290,7 +306,7 @@ export class VideoStream<
         }) as CanvasRenderingContext2D;
       }
 
-      this.context_!.drawImage(this.video_, 0, 0, width, height);
+      this.drawSnapshotSource_(this.context_!, width, height);
       switch (outputFormat) {
         case 'imageData':
           return this.context_!.getImageData(0, 0, width, height);
@@ -307,8 +323,8 @@ export class VideoStream<
           const frozenTexture = new THREE.Texture(this.canvas_);
           frozenTexture.needsUpdate = true;
           frozenTexture.colorSpace = THREE.SRGBColorSpace;
-          this.frozenTexture_ = frozenTexture;
-          return this.frozenTexture_;
+          this.frozenTextures_.add(frozenTexture);
+          return frozenTexture;
         }
       }
     } catch (error) {
@@ -342,7 +358,8 @@ export class VideoStream<
   override dispose() {
     this.stop_();
     this.texture?.dispose();
-    this.frozenTexture_?.dispose();
+    for (const texture of this.frozenTextures_) texture.dispose();
+    this.frozenTextures_.clear();
     this.canvas_ = null;
     this.context_ = null;
     super.dispose();
