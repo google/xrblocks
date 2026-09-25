@@ -63,11 +63,11 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private xrCameraSnapshotImageData_: ImageData | null = null;
   private xrCameraSnapshotCanvas_: HTMLCanvasElement | null = null;
   private xrCameraSnapshotContext_: CanvasRenderingContext2D | null = null;
-  private pendingXRCameraCapture_?: {
+  private pendingXRCameraCaptures_: Array<{
     options: VideoStreamGetSnapshotOptions;
     resolve(value: unknown): void;
     timeout: ReturnType<typeof setTimeout>;
-  };
+  }> = [];
   private xrCameraAccessTimeout_: ReturnType<typeof setTimeout> | null = null;
   private disposed_ = false;
 
@@ -401,15 +401,19 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
 
     if (!this.renderer_) return Promise.resolve(null);
 
-    this.resolvePendingXRCameraCapture_(null);
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        if (this.pendingXRCameraCapture_?.resolve === resolve) {
-          this.pendingXRCameraCapture_ = undefined;
-          resolve(null);
-        }
-      }, 1000);
-      this.pendingXRCameraCapture_ = {options, resolve, timeout};
+      const request = {
+        options,
+        resolve,
+        timeout: setTimeout(() => {
+          const index = this.pendingXRCameraCaptures_.indexOf(request);
+          if (index !== -1) {
+            this.pendingXRCameraCaptures_.splice(index, 1);
+            resolve(null);
+          }
+        }, 1000),
+      };
+      this.pendingXRCameraCaptures_.push(request);
     });
   }
 
@@ -521,24 +525,27 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   }
 
   private processPendingXRCameraCapture_() {
-    const request = this.pendingXRCameraCapture_;
-    if (!request) return;
+    if (!this.pendingXRCameraCaptures_.length) return;
+    const requests = this.pendingXRCameraCaptures_.splice(0);
+    for (const request of requests) clearTimeout(request.timeout);
     try {
       this.xrCameraSnapshotImageData_ = this.captureXRCameraSnapshot_();
-      const result = (
-        this.getSnapshot as (
-          options: VideoStreamGetSnapshotOptions
-        ) =>
-          | ImageData
-          | Promise<string | null>
-          | THREE.Texture
-          | Promise<Blob | null>
-          | null
-      )(request.options);
-      this.resolvePendingXRCameraCapture_(result);
+      for (const request of requests) {
+        const result = (
+          this.getSnapshot as (
+            options: VideoStreamGetSnapshotOptions
+          ) =>
+            | ImageData
+            | Promise<string | null>
+            | THREE.Texture
+            | Promise<Blob | null>
+            | null
+        )(request.options);
+        request.resolve(result);
+      }
     } catch (error) {
       console.error('Error capturing WebXR camera snapshot:', error);
-      this.resolvePendingXRCameraCapture_(null);
+      for (const request of requests) request.resolve(null);
     }
   }
 
@@ -649,16 +656,16 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     return this.xrCameraSnapshotCanvas_;
   }
 
-  private resolvePendingXRCameraCapture_(value: unknown) {
-    const request = this.pendingXRCameraCapture_;
-    if (!request) return;
-    this.pendingXRCameraCapture_ = undefined;
-    clearTimeout(request.timeout);
-    request.resolve(value);
+  private resolvePendingXRCameraCaptures_(value: unknown) {
+    const requests = this.pendingXRCameraCaptures_.splice(0);
+    for (const request of requests) {
+      clearTimeout(request.timeout);
+      request.resolve(value);
+    }
   }
 
   private disposeXRCameraAccessResources_() {
-    this.resolvePendingXRCameraCapture_(null);
+    this.resolvePendingXRCameraCaptures_(null);
     this.xrCameraSnapshotImageData_ = null;
     if (this.texture === this.xrCameraTexture_)
       this.texture = this.mediaTexture_;

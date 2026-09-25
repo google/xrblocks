@@ -483,6 +483,22 @@ describe('XRDeviceCamera raw camera snapshots', () => {
     expect(camera.getSnapshot({outputFormat: 'imageData'})?.width).toBe(2);
   });
 
+  it('resolves concurrent captures with different formats from one readback', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer, render, readRenderTargetPixels} =
+      createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+
+    const image = camera.captureSnapshot({outputFormat: 'imageData'});
+    const texture = camera.captureSnapshot({outputFormat: 'texture'});
+    camera.updateXRCamera(createFrame());
+
+    await expect(image).resolves.toMatchObject({width: 2, height: 2});
+    await expect(texture).resolves.toBeInstanceOf(THREE.Texture);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(readRenderTargetPixels).toHaveBeenCalledTimes(1);
+  });
+
   it('restores render target and xr.enabled when rendering throws', async () => {
     const camera = new XRDeviceCamera(createMockOptions());
     const {renderer, previousTarget} = createRawCameraRenderer({
