@@ -1,11 +1,9 @@
-import terser from '@rollup/plugin-terser';
-import typescript from '@rollup/plugin-typescript';
 import {execSync} from 'child_process';
 import fs from 'fs';
 import {globSync} from 'glob';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {dts} from 'rollup-plugin-dts';
+import {dts} from 'rolldown-plugin-dts';
 
 // Read the version from package.json
 const packageJson = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
@@ -95,54 +93,36 @@ const xrblocksPackages = ['xrblocks', 'netblocks', /xrblocks\/addons\//];
 
 const sdkBuilds = [
   {
-    input: 'src/entry.ts',
+    input: {xrblocks: 'src/entry.ts'},
     external: externalPackages,
+    tsconfig: 'tsconfig.json',
     output: {
       dir: 'build',
-      entryFileNames: 'xrblocks.js',
+      entryFileNames: '[name].js',
       chunkFileNames: 'internal/[name].js',
       format: 'esm',
       banner: bannerText,
       sourcemap: true,
     },
     plugins: [
-      typescript({
-        compilerOptions: {
-          composite: false,
-          declaration: false,
-        },
+      dts({
+        tsconfig: 'tsconfig.json',
+        generator: 'tsgo',
       }),
     ],
   },
   {
     input: 'src/entry.ts',
     external: externalPackages,
-    output: {
-      file: 'build/xrblocks.d.ts',
-      format: 'esm',
-      banner: bannerText,
-    },
-    plugins: [dts()],
-  },
-  {
-    input: 'src/entry.ts',
-    external: externalPackages,
+    tsconfig: 'tsconfig.json',
     output: {
       dir: 'build',
       entryFileNames: 'xrblocks.min.js',
       chunkFileNames: 'internal/[name].min.js',
       format: 'esm',
       sourcemap: true,
+      minify: true,
     },
-    plugins: [
-      typescript({
-        compilerOptions: {
-          composite: false,
-          declaration: false,
-        },
-      }),
-      terser(),
-    ],
     watch: false, // Skip this rule when using watch.
   },
   {
@@ -168,18 +148,17 @@ const sdkBuilds = [
       ])
     ),
     external: [...externalPackages, ...xrblocksPackages],
+    tsconfig: 'src/addons/tsconfig.lib.json',
     output: {
       dir: 'build/',
       format: 'esm',
+      preserveModules: true,
+      preserveModulesRoot: 'src',
     },
     plugins: [
-      typescript({
+      dts({
         tsconfig: 'src/addons/tsconfig.lib.json',
-        exclude: ['src/!(addons)/**/*.ts', 'src/*.ts'],
-        compilerOptions: {
-          declaration: true,
-          declarationDir: 'build/addons/',
-        },
+        generator: 'tsgo',
       }),
     ],
   },
@@ -197,6 +176,7 @@ const demoBuilds = globSync('demos/**/*.ts', {
 }).map((file) => ({
   input: file,
   external: () => true,
+  tsconfig: false,
   output: {
     file: path.join(
       path.dirname(file),
@@ -205,22 +185,6 @@ const demoBuilds = globSync('demos/**/*.ts', {
     ),
     format: 'esm',
   },
-  plugins: [
-    typescript({
-      tsconfig: false,
-      include: [file],
-      compilerOptions: {
-        target: 'ES2022',
-        module: 'ESNext',
-        moduleResolution: 'bundler',
-        esModuleInterop: true,
-        forceConsistentCasingInFileNames: true,
-        strict: true,
-        skipLibCheck: true,
-        declaration: false,
-      },
-    }),
-  ],
 }));
 
 // Enable sample projects to use TypeScript and import it in their index.html
@@ -230,6 +194,7 @@ const sampleBuilds = globSync('samples/**/*.ts', {
 }).map((file) => ({
   input: file,
   external: () => true,
+  tsconfig: false,
   output: {
     file: path.join(
       path.dirname(file),
@@ -238,22 +203,6 @@ const sampleBuilds = globSync('samples/**/*.ts', {
     ),
     format: 'esm',
   },
-  plugins: [
-    typescript({
-      tsconfig: false,
-      include: [file],
-      compilerOptions: {
-        target: 'ES2022',
-        module: 'ESNext',
-        moduleResolution: 'bundler',
-        esModuleInterop: true,
-        forceConsistentCasingInFileNames: true,
-        strict: true,
-        skipLibCheck: true,
-        declaration: false,
-      },
-    }),
-  ],
 }));
 
 export default buildExamples
