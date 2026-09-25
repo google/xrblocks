@@ -7,6 +7,10 @@ import {
 import * as THREE from 'three';
 
 import {ManipulationAction} from '../../interaction/manipulation/ManipulationTypes';
+import {
+  MAX_RESIZE_CORNER_FRACTION,
+  RESIZE_CORNER_SIDE_MARGINS,
+} from '../constants/UICardEdgeConstants';
 import {UICardEdgeFragmentShader} from '../shaders/UICardEdge.frag';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import {
@@ -25,6 +29,7 @@ const DEFAULT_EDGE_PROPERTIES = {
   spotlightRadius: 20,
   spotlightBlur: 40,
   debug: false,
+  resizable: false,
 } as const;
 
 /** Private visual and hit-area settings for a card manipulation edge. */
@@ -43,6 +48,8 @@ export interface UICardEdgeProperties {
   spotlightBlur?: number;
   /** Shows the complete hit surface for diagnostics. */
   debug?: boolean;
+  /** Routes corner hits to the Resize action instead of Translate. */
+  resizable?: boolean;
 }
 
 type HandleLayerProperties = PanelLayerProperties & {
@@ -57,6 +64,7 @@ type HandleLayerProperties = PanelLayerProperties & {
   u_cursor_uv_2?: THREE.Vector2;
   u_show_glow_2?: number;
   u_debug?: number;
+  u_resizable?: number;
 };
 
 class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
@@ -114,6 +122,7 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       setVector2(this.material, 'u_cursor_uv_2', signals.u_cursor_uv_2?.value);
       setNumber(this.material, 'u_show_glow_2', signals.u_show_glow_2?.value);
       setNumber(this.material, 'u_debug', signals.u_debug?.value);
+      setNumber(this.material, 'u_resizable', signals.u_resizable?.value);
     }, this.abortSignal);
   }
 
@@ -142,7 +151,14 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
 export class UICardEdge extends UICardEdgeLayer {
   name = 'UICardEdge';
   readonly margin: number;
+  /**
+   * Hit target that edge corner intersections are retargeted to. UIKit only
+   * accepts UIKit children, so it stays detached and mirrors the edge's world
+   * matrix for reticle normals.
+   */
+  readonly resizeHandle = new THREE.Object3D();
   private _cardCornerRadius: number;
+  private _resizable: boolean;
   private readonly cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
   private readonly cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
 
@@ -171,12 +187,20 @@ export class UICardEdge extends UICardEdgeLayer {
       u_cursor_uv_2: new THREE.Vector2(0.5, 0.5),
       u_show_glow_2: 0,
       u_debug: resolved.debug ? 1 : 0,
+      u_resizable: resolved.resizable ? 1 : 0,
     });
     this.xb = {
       manipulationHandle: {action: ManipulationAction.Translate},
     };
     this.margin = margin;
     this._cardCornerRadius = cardCornerRadius;
+    this._resizable = resolved.resizable;
+    this.resizeHandle.name = 'UICardResizeHandle';
+    this.resizeHandle.xb = {
+      manipulationHandle: {action: ManipulationAction.Resize},
+    };
+    this.resizeHandle.matrixAutoUpdate = false;
+    this.resizeHandle.matrixWorldAutoUpdate = false;
 
     const baseRaycast = this.raycast.bind(this);
     this.raycast = (raycaster, intersections) => {
@@ -188,13 +212,20 @@ export class UICardEdge extends UICardEdgeLayer {
         index >= firstNewIntersection;
         index--
       ) {
-        const uv = intersections[index].uv;
+        const intersection = intersections[index];
+        const uv = intersection.uv;
         if (
           !size ||
           !uv ||
           !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius)
         ) {
           intersections.splice(index, 1);
+        } else if (
+          this._resizable &&
+          isCornerHit(uv, size, this.margin, this._cardCornerRadius)
+        ) {
+          this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+          intersection.object = this.resizeHandle;
         }
       }
     };
@@ -214,6 +245,60 @@ export class UICardEdge extends UICardEdgeLayer {
     ).signal.u_card_corner_radius;
     if (signal) signal.value = nextRadius;
     setNumber(this.material, 'u_card_corner_radius', nextRadius);
+  }
+
+  get resizable(): boolean {
+    return this._resizable;
+  }
+
+  setResizable(resizable: boolean): void {
+    this._resizable = resizable;
+    const signal = (
+      this.properties as unknown as {
+        signal: WritableSignalProperties<HandleLayerProperties>;
+      }
+    ).signal.u_resizable;
+    if (signal) signal.value = resizable ? 1 : 0;
+    setNumber(this.material, 'u_resizable', resizable ? 1 : 0);
+  }
+
+  /** Returns true when a world point lies in the outer edge hit band. */
+  containsPoint = (point: THREE.Vector3, padding = 0): boolean => {
+    const size = this.size.value;
+    if (!size) return false;
+    this.updateWorldMatrix(true, false);
+    if (Math.abs(this.matrixWorld.determinant()) < Number.EPSILON) return false;
+    const local = this.worldToLocal(point.clone());
+    const xScale = new THREE.Vector3()
+      .setFromMatrixColumn(this.matrixWorld, 0)
+      .length();
+    const paddingPixels =
+      padding > 0 && xScale > Number.EPSILON ? (padding / xScale) * size[0] : 0;
+    const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
+    return isOuterEdgeHit(
+      uv,
+      size,
+      this.margin,
+      this._cardCornerRadius,
+      paddingPixels
+    );
+  };
+
+  /** Returns the resize handle when a world point touches a resize corner. */
+  touchTarget(point: THREE.Vector3): THREE.Object3D | undefined {
+    const size = this.size.value;
+    if (!this._resizable || !size) return undefined;
+    this.updateWorldMatrix(true, false);
+    const local = this.worldToLocal(point.clone());
+    const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
+    if (
+      !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius) ||
+      !isCornerHit(uv, size, this.margin, this._cardCornerRadius)
+    ) {
+      return undefined;
+    }
+    this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+    return this.resizeHandle;
   }
 
   setCursorPoints(first?: THREE.Vector3, second?: THREE.Vector3): void {
@@ -248,6 +333,7 @@ function createUniforms(): Record<string, THREE.IUniform> {
     u_cursor_uv_2: {value: new THREE.Vector2(0.5, 0.5)},
     u_show_glow_2: {value: 0},
     u_debug: {value: 0},
+    u_resizable: {value: 0},
   };
 }
 
@@ -277,11 +363,12 @@ function setVector2(
   if (value !== undefined) material.uniforms[name].value.copy(value);
 }
 
-function isOuterEdgeHit(
+export function isOuterEdgeHit(
   uv: THREE.Vector2,
   size: readonly [number, number],
   margin: number,
-  cardCornerRadius: number
+  cardCornerRadius: number,
+  padding = 0
 ): boolean {
   const halfWidth = size[0] / 2;
   const halfHeight = size[1] / 2;
@@ -296,8 +383,35 @@ function isOuterEdgeHit(
   );
   const outerRadius = Math.min(innerRadius + margin, halfWidth, halfHeight);
   return (
-    roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= 0 &&
-    roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >= 0
+    roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= padding &&
+    roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >=
+      -padding
+  );
+}
+
+/**
+ * Returns true inside the band's corner regions. Each region covers the rounded
+ * corner arc plus one margin width along both adjoining sides.
+ */
+export function isCornerHit(
+  uv: THREE.Vector2,
+  size: readonly [number, number],
+  margin: number,
+  cardCornerRadius: number
+): boolean {
+  const halfWidth = size[0] / 2;
+  const halfHeight = size[1] / 2;
+  const innerRadius = Math.min(
+    cardCornerRadius,
+    Math.max(0, halfWidth - margin),
+    Math.max(0, halfHeight - margin)
+  );
+  const extent = innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin;
+  const x = Math.abs(uv.x * size[0] - halfWidth);
+  const y = Math.abs(uv.y * size[1] - halfHeight);
+  return (
+    x >= halfWidth - Math.min(extent, halfWidth * MAX_RESIZE_CORNER_FRACTION) &&
+    y >= halfHeight - Math.min(extent, halfHeight * MAX_RESIZE_CORNER_FRACTION)
   );
 }
 

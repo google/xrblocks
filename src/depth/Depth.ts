@@ -13,7 +13,11 @@ import {DepthMesh} from './DepthMesh';
 import {DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
 import {GPUDepthConverter} from './GPUDepthConverter';
-import {OcclusionPass} from './occlusion/OcclusionPass';
+import {
+  OcclusionPass,
+  type OcclusionPassBackend,
+} from './occlusion/OcclusionPass';
+import {OcclusionUtils} from './occlusion/OcclusionUtils';
 
 const DEFAULT_DEPTH_WIDTH = 160;
 const DEFAULT_DEPTH_HEIGHT = DEFAULT_DEPTH_WIDTH;
@@ -52,7 +56,7 @@ export class Depth {
     return 0;
   }
   occludableShaders = new Set<Shader>();
-  private occlusionPass?: OcclusionPass;
+  private occlusionPass?: OcclusionPassBackend;
 
   // Whether we're counting the number of depth clients.
   private depthClientsInitialized = false;
@@ -103,7 +107,8 @@ export class Depth {
     this.renderer = renderer;
     this.registry = registry;
     this.enabled = options.enabled;
-    this.gpuDepthConverter = isWebGPURenderer(renderer)
+    const isWebGPU = isWebGPURenderer(renderer);
+    this.gpuDepthConverter = isWebGPU
       ? undefined
       : new GPUDepthConverter(renderer);
 
@@ -112,9 +117,27 @@ export class Depth {
       registry.register(this.depthTextures);
     }
 
+    const asyncTasks: Promise<void>[] = [];
+
     if (this.options.occlusion.enabled) {
-      assertWebGLRenderer(renderer, 'OcclusionPass');
-      this.occlusionPass = new OcclusionPass(scene, camera);
+      if (isWebGPU) {
+        asyncTasks.push(
+          Promise.all([
+            import('./occlusion/WebGPUOcclusionPass.js'),
+            import('./occlusion/WebGPUOcclusionUtils.js'),
+          ]).then(([{WebGPUOcclusionPass}, {addWebGPUOcclusionToMaterial}]) => {
+            if (!this.disposed) {
+              OcclusionUtils.setWebGPUMaterialHandler(
+                addWebGPUOcclusionToMaterial
+              );
+              this.occlusionPass = new WebGPUOcclusionPass(scene, camera);
+            }
+          })
+        );
+      } else {
+        OcclusionUtils.setWebGPUMaterialHandler(undefined);
+        this.occlusionPass = new OcclusionPass(scene, camera);
+      }
     }
 
     if (this.options.depthMesh.enabled) {
@@ -130,20 +153,27 @@ export class Depth {
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
       }
       if (
-        isWebGPURenderer(renderer) &&
+        isWebGPU &&
         (this.options.depthMesh.useDepthTexture ||
           this.options.depthMesh.showDebugTexture)
       ) {
-        return import('./DepthMeshWebGPUMaterial.js').then(
-          ({applyWebGPUDepthMeshMaterial}) => {
-            if (!this.disposed && this.depthMesh) {
-              applyWebGPUDepthMeshMaterial(this.depthMesh);
-              scene.add(this.depthMesh);
+        asyncTasks.push(
+          import('./DepthMeshWebGPUMaterial.js').then(
+            ({applyWebGPUDepthMeshMaterial}) => {
+              if (!this.disposed && this.depthMesh) {
+                applyWebGPUDepthMeshMaterial(this.depthMesh);
+                scene.add(this.depthMesh);
+              }
             }
-          }
+          )
         );
+      } else {
+        scene.add(this.depthMesh);
       }
-      scene.add(this.depthMesh);
+    }
+
+    if (asyncTasks.length > 0) {
+      return Promise.all(asyncTasks).then(() => {});
     }
   }
 
@@ -481,10 +511,10 @@ export class Depth {
   }
 
   renderOcclusionPass() {
-    assertWebGLRenderer(this.renderer, 'OcclusionPass');
+    if (!this.occlusionPass) return;
     const leftDepthTexture = this.getTexture(0);
     if (leftDepthTexture) {
-      this.occlusionPass!.setDepthTexture(
+      this.occlusionPass.setDepthTexture(
         leftDepthTexture,
         this.rawValueToMeters,
         0,
@@ -494,12 +524,12 @@ export class Depth {
         this.depthProjectionMatrices[0]
       );
     }
-    const xrIsPresenting = this.renderer.xr.isPresenting;
-    this.renderer.xr.isPresenting = false;
-    this.occlusionPass!.render(this.renderer, undefined, undefined, 0);
-    this.renderer.xr.isPresenting = xrIsPresenting;
+    const currentXREnabled = this.renderer.xr.enabled;
+    this.renderer.xr.enabled = false;
+    this.occlusionPass.render(this.renderer, undefined, undefined, 0);
+    this.renderer.xr.enabled = currentXREnabled;
     for (const shader of this.occludableShaders) {
-      this.occlusionPass!.updateOcclusionMapUniforms(
+      this.occlusionPass.updateOcclusionMapUniforms(
         shader.uniforms,
         this.renderer
       );
@@ -602,6 +632,7 @@ export class Depth {
     this.normDepthBufferFromNormViewMatrices.length = 0;
     this.depthClients.clear();
     this.occludableShaders.clear();
+    OcclusionUtils.setWebGPUMaterialHandler(undefined);
     if (firstError !== undefined) throw firstError;
   }
 }

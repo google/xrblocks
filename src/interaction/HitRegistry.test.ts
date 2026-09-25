@@ -57,4 +57,23 @@ describe('HitRegistry direct-touch reentrancy', () => {
     );
     expect(registry.intersectionsAt(new THREE.Vector3())[0].distance).toBe(0.5);
   });
+
+  it('lets a touched surface hand the touch to another registered target', () => {
+    const registry = new HitRegistry();
+    const edge = surface();
+    const corner = new THREE.Object3D();
+    const logical = new THREE.Object3D();
+    registry.register(edge, logical, {
+      touchTarget: (point) => (point.x > 0.5 ? corner : undefined),
+    });
+    registry.register(corner, logical);
+
+    expect(
+      registry.intersectionsAt(new THREE.Vector3(0.8, 0, 0))[0].object
+    ).toBe(corner);
+    expect(registry.resolve(corner).physical).toBe(corner);
+    expect(registry.intersectionsAt(new THREE.Vector3(0, 0, 0))[0].object).toBe(
+      edge
+    );
+  });
 });

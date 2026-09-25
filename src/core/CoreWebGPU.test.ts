@@ -35,6 +35,46 @@ describe('Core with WebGPURenderer', () => {
     expect(core.renderer).toBeInstanceOf(THREE.WebGLRenderer);
   });
 
+  it.each(['webgl', 'webgpu'] as const)(
+    'requests enabled hand tracking as optional with %s',
+    async (backend) => {
+      const core = new Core();
+      const options = new Options().enableHands();
+      if (backend === 'webgpu') options.enableWebGPU();
+      await core.init(options);
+
+      const session = core.webXRSessionManager!.getSessionOptions();
+      expect(session.optionalFeatures).toContain('hand-tracking');
+      expect(session.requiredFeatures).not.toContain('hand-tracking');
+      expect(core.user.hands).toBeDefined();
+      expect(core.user.hands!.getIndexTip()).toBeUndefined();
+      expect(() => core.input.sampleSources()).not.toThrow();
+      expect(core.input.getFrame().directTouches).toHaveLength(0);
+    }
+  );
+
+  it('does not request hand tracking when disabled and preserves explicitly required features', async () => {
+    const core = new Core();
+    const options = new Options();
+    options.hands.enabled = false;
+    options.webxrRequiredFeatures = ['local-floor'];
+    await core.init(options);
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.optionalFeatures).not.toContain('hand-tracking');
+    expect(session.requiredFeatures).toContain('local-floor');
+  });
+
+  it('preserves an explicit requirement for hand tracking', async () => {
+    const core = new Core();
+    const options = new Options().enableHands();
+    options.webxrRequiredFeatures = ['hand-tracking'];
+    await core.init(options);
+
+    expect(
+      core.webXRSessionManager!.getSessionOptions().requiredFeatures
+    ).toContain('hand-tracking');
+  });
+
   it('initializes Core with WebGPURenderer and awaits renderer.init() when enableWebGPU is called', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
@@ -64,14 +104,16 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when depth occlusion is enabled with WebGPU', async () => {
+  it('initializes WebGPUOcclusionPass when depth occlusion is enabled with WebGPU', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
     options.depth.enabled = true;
     options.depth.occlusion.enabled = true;
 
-    await expect(core.init(options)).rejects.toThrow(
-      'OcclusionPass requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
+    await core.init(options);
+    expect(core.depth['occlusionPass']).toBeDefined();
+    expect(core.depth['occlusionPass']?.constructor.name).toBe(
+      'WebGPUOcclusionPass'
     );
   });
 
