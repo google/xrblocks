@@ -635,7 +635,7 @@ export class Core {
       }
     }
     if (options.hands.enabled) {
-      webXRRequiredFeatures.push('hand-tracking');
+      webXROptionalFeatures.push('hand-tracking');
       this.user.hands = new Hands(this.input.hands);
       if (options.gestures.enabled) {
         this.poseEstimation = options.gestures.poseEstimator;
@@ -941,6 +941,7 @@ export class Core {
    */
   private onXRSessionEnded = () => {
     if (!this.isLifecycleActive()) return;
+    this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();
   };
 

@@ -236,6 +236,27 @@ export class VideoStream<
   }
 
   /**
+   * Whether the current snapshot source has pixels available.
+   * Subclasses may override this to provide non-video sources while preserving
+   * {@link getSnapshot}'s format handling.
+   */
+  protected snapshotSourceAvailable_(): boolean {
+    return this.video_.readyState >= this.video_.HAVE_CURRENT_DATA;
+  }
+
+  /**
+   * Draws the current snapshot source into `context` at the requested size.
+   * Subclasses may override this to provide pixels from another source.
+   */
+  protected drawSnapshotSource_(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ) {
+    context.drawImage(this.video_, 0, 0, width, height);
+  }
+
+  /**
    * Captures the current video frame.
    * @param options - The options for the snapshot.
    * @returns The captured data.
@@ -251,13 +272,12 @@ export class VideoStream<
     height = this.height,
     outputFormat = 'texture',
     ...rest
-  }: VideoStreamGetSnapshotOptions = {}) {
-    if (
-      !this.loaded ||
-      !width ||
-      !height ||
-      this.video_.readyState < this.video_.HAVE_CURRENT_DATA
-    ) {
+  }: VideoStreamGetSnapshotOptions = {}):
+    | ImageData
+    | Promise<string | Blob | null>
+    | THREE.Texture
+    | null {
+    if (!this.loaded || !width || !height || !this.snapshotSourceAvailable_()) {
       return null;
     }
 
@@ -290,14 +310,14 @@ export class VideoStream<
         }) as CanvasRenderingContext2D;
       }
 
-      this.context_!.drawImage(this.video_, 0, 0, width, height);
+      this.drawSnapshotSource_(this.context_!, width, height);
       switch (outputFormat) {
         case 'imageData':
           return this.context_!.getImageData(0, 0, width, height);
         case 'base64':
           return new Promise<Blob | null>((resolve) =>
             this.canvas_!.toBlob(resolve, mimeType, quality)
-          ).then((blob) => (blob ? blobToBase64(blob) : null));
+          ).then(async (blob) => (blob ? await blobToBase64(blob) : null));
         case 'blob':
           return new Promise<Blob | null>((resolve) =>
             this.canvas_!.toBlob(resolve, mimeType, quality)
