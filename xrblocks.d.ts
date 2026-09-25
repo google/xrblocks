@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid e2c6ae6
- * @builddate 2026-09-23T23:07:43.536Z
+ * @commitid af6fdd5
+ * @builddate 2026-09-25T15:43:06.242Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -5286,6 +5286,17 @@ declare class VideoStream<T extends VideoStreamDetails = VideoStreamDetails> ext
      */
     waitForFreshFrame(timeoutMs?: number): Promise<VideoFrameMetadata | null>;
     /**
+     * Whether the current snapshot source has pixels available.
+     * Subclasses may override this to provide non-video sources while preserving
+     * {@link getSnapshot}'s format handling.
+     */
+    protected snapshotSourceAvailable_(): boolean;
+    /**
+     * Draws the current snapshot source into `context` at the requested size.
+     * Subclasses may override this to provide pixels from another source.
+     */
+    protected drawSnapshotSource_(context: CanvasRenderingContext2D, width: number, height: number): void;
+    /**
      * Captures the current video frame.
      * @param options - The options for the snapshot.
      * @returns The captured data.
@@ -5338,8 +5349,17 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     private currentDeviceIndex_;
     private currentTrackSettings_?;
     private renderer_?;
+    private readonly mediaTexture_;
     private useXRCameraAccess_;
     private xrCameraTexture_?;
+    private xrCameraRenderTarget_?;
+    private xrCameraCopyScene_?;
+    private xrCameraCopyCamera_?;
+    private xrCameraCopyMaterial_?;
+    private xrCameraSnapshotImageData_;
+    private xrCameraSnapshotCanvas_;
+    private xrCameraSnapshotContext_;
+    private pendingXRCameraCaptures_;
     private xrCameraAccessTimeout_;
     private disposed_;
     /**
@@ -5399,12 +5419,42 @@ declare class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
      */
     get isUsingXRCameraAccess(): boolean;
     /**
+     * Captures a snapshot from the active camera source.
+     *
+     * In the normal video path this resolves from {@link getSnapshot}
+     * immediately. In the WebXR Raw Camera Access fallback, the browser camera
+     * image is only valid during the XR frame that produced it, so this queues a
+     * one-shot GPU readback for the next {@link updateXRCamera} call and then
+     * resolves through {@link getSnapshot}. Concurrent camera-access calls share
+     * that next XR-frame readback, but each resolves with its own requested
+     * format. If no XR camera frame arrives within about one second, or the raw
+     * camera path is stopped, the promise resolves to `null`. Synchronous
+     * {@link getSnapshot} on that fallback path returns the most recently
+     * captured one-shot frame, or `null` when no capture has completed yet.
+     */
+    captureSnapshot(): Promise<THREE.Texture | null>;
+    captureSnapshot(options: VideoStreamGetSnapshotImageDataOptions): Promise<ImageData | null>;
+    captureSnapshot(options: VideoStreamGetSnapshotBase64Options): Promise<string | null>;
+    captureSnapshot(options: VideoStreamGetSnapshotTextureOptions): Promise<THREE.Texture | null>;
+    captureSnapshot(options: VideoStreamGetSnapshotBlobOptions): Promise<Blob | null>;
+    captureSnapshot(options: VideoStreamGetSnapshotOptions): Promise<ImageData | string | THREE.Texture | Blob | null>;
+    protected snapshotSourceAvailable_(): boolean;
+    protected drawSnapshotSource_(context: CanvasRenderingContext2D, width: number, height: number): void;
+    /**
      * Updates the camera texture from the WebXR Raw Camera Access API.
      * Must be called each frame from the render loop when in XR camera mode.
      */
     updateXRCamera(frame: XRFrame): void;
     registerSimulatorCamera(simulatorCamera?: SimulatorCameraSource): void;
     dispose(): void;
+    private processPendingXRCameraCapture_;
+    private captureXRCameraSnapshot_;
+    private ensureXRCameraRenderTarget_;
+    private ensureXRCameraCopyObjects_;
+    private snapshotCanvasForImageData_;
+    private resolvePendingXRCameraCaptures_;
+    private disposeXRCameraAccessResources_;
+    onXRSessionEnded(): void;
     private startXRCameraAccessFallback_;
     private isXRCameraAccessGranted_;
     private clearXRCameraAccessTimeout_;
@@ -6156,7 +6206,7 @@ declare class DepthTextures {
     private createDataDepthTextures;
     updateData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
     updateNativeTexture(depthData: XRWebGLDepthInformation, renderer: WebGLOrWebGPURenderer, viewId: number): void;
-    get(viewId: number): THREE.ExternalTexture | THREE.DataTexture;
+    get(viewId: number): THREE.DataTexture | THREE.ExternalTexture;
     dispose(): void;
 }
 
@@ -6371,7 +6421,7 @@ declare class Depth {
      * expensive geometry rebuild can be throttled.
      */
     private shouldUpdateDepthMesh;
-    getTexture(viewId: number): THREE.ExternalTexture | THREE.DataTexture | undefined;
+    getTexture(viewId: number): THREE.DataTexture | THREE.ExternalTexture | undefined;
     update(frame?: XRFrame): void;
     updateLocalDepth(frame: XRFrame): void;
     renderOcclusionPass(): void;

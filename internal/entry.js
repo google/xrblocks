@@ -15,8 +15,8 @@
  *
  * @file xrblocks.js
  * @version v0.21.1
- * @commitid e2c6ae6
- * @builddate 2026-09-23T23:07:43.536Z
+ * @commitid af6fdd5
+ * @builddate 2026-09-25T15:43:06.242Z
  * @description XR Blocks SDK, built from source with the above commit ID.
  * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
  * and follow rules below:
@@ -2633,11 +2633,23 @@ class VideoStream extends Script {
             }, timeoutMs);
         });
     }
+    /**
+     * Whether the current snapshot source has pixels available.
+     * Subclasses may override this to provide non-video sources while preserving
+     * {@link getSnapshot}'s format handling.
+     */
+    snapshotSourceAvailable_() {
+        return this.video_.readyState >= this.video_.HAVE_CURRENT_DATA;
+    }
+    /**
+     * Draws the current snapshot source into `context` at the requested size.
+     * Subclasses may override this to provide pixels from another source.
+     */
+    drawSnapshotSource_(context, width, height) {
+        context.drawImage(this.video_, 0, 0, width, height);
+    }
     getSnapshot({ width = this.width, height = this.height, outputFormat = 'texture', ...rest } = {}) {
-        if (!this.loaded ||
-            !width ||
-            !height ||
-            this.video_.readyState < this.video_.HAVE_CURRENT_DATA) {
+        if (!this.loaded || !width || !height || !this.snapshotSourceAvailable_()) {
             return null;
         }
         if (width > this.width || height > this.height) {
@@ -2657,12 +2669,12 @@ class VideoStream extends Script {
                     willReadFrequently: this.willCaptureFrequently_,
                 });
             }
-            this.context_.drawImage(this.video_, 0, 0, width, height);
+            this.drawSnapshotSource_(this.context_, width, height);
             switch (outputFormat) {
                 case 'imageData':
                     return this.context_.getImageData(0, 0, width, height);
                 case 'base64':
-                    return new Promise((resolve) => this.canvas_.toBlob(resolve, mimeType, quality)).then((blob) => (blob ? blobToBase64(blob) : null));
+                    return new Promise((resolve) => this.canvas_.toBlob(resolve, mimeType, quality)).then(async (blob) => (blob ? await blobToBase64(blob) : null));
                 case 'blob':
                     return new Promise((resolve) => this.canvas_.toBlob(resolve, mimeType, quality));
                 case 'texture':
@@ -2711,6 +2723,18 @@ class VideoStream extends Script {
     }
 }
 
+/** Flips RGBA pixels read from WebGL's bottom-left origin into top-left image order. */
+function flipWebGLPixelRows(source, width, height) {
+    const rowBytes = width * 4;
+    const target = new Uint8ClampedArray(source.length);
+    for (let y = 0; y < height; y++) {
+        const sourceStart = (height - 1 - y) * rowBytes;
+        const targetStart = y * rowBytes;
+        target.set(source.subarray(sourceStart, sourceStart + rowBytes), targetStart);
+    }
+    return target;
+}
+
 /**
  * Handles video capture from a device camera, manages the device list,
  * and reports its state using VideoStream's event model.
@@ -2727,8 +2751,13 @@ class XRDeviceCamera extends VideoStream {
         this.availableDevices_ = [];
         this.currentDeviceIndex_ = -1;
         this.useXRCameraAccess_ = false;
+        this.xrCameraSnapshotImageData_ = null;
+        this.xrCameraSnapshotCanvas_ = null;
+        this.xrCameraSnapshotContext_ = null;
+        this.pendingXRCameraCaptures_ = [];
         this.xrCameraAccessTimeout_ = null;
         this.disposed_ = false;
+        this.mediaTexture_ = this.texture;
         this.videoConstraints_ = options.videoConstraints ?? {
             facingMode: 'environment',
         };
@@ -2767,6 +2796,7 @@ class XRDeviceCamera extends VideoStream {
         if (this.disposed_)
             return;
         this.useXRCameraAccess_ = false;
+        this.disposeXRCameraAccessResources_();
         this.clearXRCameraAccessTimeout_();
         this.setState_(StreamState.INITIALIZING);
         try {
@@ -2974,6 +3004,48 @@ class XRDeviceCamera extends VideoStream {
     get isUsingXRCameraAccess() {
         return this.useXRCameraAccess_;
     }
+    captureSnapshot(options = {}) {
+        if (!this.useXRCameraAccess_) {
+            return Promise.resolve(this.getSnapshot(options));
+        }
+        if (!this.renderer_)
+            return Promise.resolve(null);
+        return new Promise((resolve) => {
+            const request = {
+                options,
+                resolve,
+                timeout: setTimeout(() => {
+                    const index = this.pendingXRCameraCaptures_.indexOf(request);
+                    if (index !== -1) {
+                        this.pendingXRCameraCaptures_.splice(index, 1);
+                        resolve(null);
+                    }
+                }, 1000),
+            };
+            this.pendingXRCameraCaptures_.push(request);
+        });
+    }
+    snapshotSourceAvailable_() {
+        if (this.useXRCameraAccess_)
+            return this.xrCameraSnapshotImageData_ !== null;
+        return super.snapshotSourceAvailable_();
+    }
+    drawSnapshotSource_(context, width, height) {
+        if (!this.useXRCameraAccess_) {
+            super.drawSnapshotSource_(context, width, height);
+            return;
+        }
+        const imageData = this.xrCameraSnapshotImageData_;
+        if (!imageData)
+            return;
+        if (width === imageData.width && height === imageData.height) {
+            context.putImageData(imageData, 0, 0);
+            return;
+        }
+        const canvas = this.snapshotCanvasForImageData_(imageData);
+        if (canvas)
+            context.drawImage(canvas, 0, 0, width, height);
+    }
     /**
      * Updates the camera texture from the WebXR Raw Camera Access API.
      * Must be called each frame from the render loop when in XR camera mode.
@@ -3023,6 +3095,7 @@ class XRDeviceCamera extends VideoStream {
                     aspectRatio: this.aspectRatio,
                 });
             }
+            this.processPendingXRCameraCapture_();
             break;
         }
     }
@@ -3032,12 +3105,144 @@ class XRDeviceCamera extends VideoStream {
     dispose() {
         this.disposed_ = true;
         this.clearXRCameraAccessTimeout_();
-        this.xrCameraTexture_?.dispose();
-        this.xrCameraTexture_ = undefined;
+        this.disposeXRCameraAccessResources_();
         this.renderer_ = undefined;
         this.simulatorCamera = undefined;
         this.useXRCameraAccess_ = false;
         super.dispose();
+    }
+    processPendingXRCameraCapture_() {
+        if (!this.pendingXRCameraCaptures_.length)
+            return;
+        const requests = this.pendingXRCameraCaptures_.splice(0);
+        for (const request of requests)
+            clearTimeout(request.timeout);
+        try {
+            this.xrCameraSnapshotImageData_ = this.captureXRCameraSnapshot_();
+            for (const request of requests) {
+                const result = this.getSnapshot(request.options);
+                request.resolve(result);
+            }
+        }
+        catch (error) {
+            console.error('Error capturing WebXR camera snapshot:', error);
+            for (const request of requests)
+                request.resolve(null);
+        }
+    }
+    captureXRCameraSnapshot_() {
+        if (!this.renderer_ ||
+            !this.xrCameraTexture_ ||
+            !this.width ||
+            !this.height) {
+            return null;
+        }
+        assertWebGLRenderer(this.renderer_, 'XRDeviceCamera.captureSnapshot');
+        this.ensureXRCameraCopyObjects_();
+        this.ensureXRCameraRenderTarget_();
+        if (!this.xrCameraRenderTarget_)
+            return null;
+        if (this.xrCameraCopyMaterial_.map !== this.xrCameraTexture_) {
+            this.xrCameraCopyMaterial_.map = this.xrCameraTexture_;
+            this.xrCameraCopyMaterial_.needsUpdate = true;
+        }
+        const previousTarget = this.renderer_.getRenderTarget();
+        const previousXrEnabled = this.renderer_.xr.enabled;
+        this.renderer_.xr.enabled = false;
+        try {
+            this.renderer_.setRenderTarget(this.xrCameraRenderTarget_);
+            this.renderer_.render(this.xrCameraCopyScene_, this.xrCameraCopyCamera_);
+        }
+        finally {
+            this.renderer_.setRenderTarget(previousTarget);
+            this.renderer_.xr.enabled = previousXrEnabled;
+        }
+        const width = this.xrCameraRenderTarget_.width;
+        const height = this.xrCameraRenderTarget_.height;
+        const pixels = new Uint8Array(width * height * 4);
+        this.renderer_.readRenderTargetPixels(this.xrCameraRenderTarget_, 0, 0, width, height, pixels);
+        return new ImageData(flipWebGLPixelRows(pixels, width, height), width, height);
+    }
+    ensureXRCameraRenderTarget_() {
+        if (this.xrCameraRenderTarget_ &&
+            this.xrCameraRenderTarget_.width === this.width &&
+            this.xrCameraRenderTarget_.height === this.height) {
+            return;
+        }
+        this.xrCameraRenderTarget_?.dispose();
+        this.xrCameraRenderTarget_ = new THREE.WebGLRenderTarget(this.width, this.height, {
+            format: THREE.RGBAFormat,
+            type: THREE.UnsignedByteType,
+            depthBuffer: false,
+            stencilBuffer: false,
+        });
+        this.xrCameraRenderTarget_.texture.colorSpace = THREE.SRGBColorSpace;
+    }
+    ensureXRCameraCopyObjects_() {
+        if (this.xrCameraCopyScene_)
+            return;
+        this.xrCameraCopyScene_ = new THREE.Scene();
+        this.xrCameraCopyCamera_ = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.xrCameraCopyMaterial_ = new THREE.MeshBasicMaterial({
+            depthTest: false,
+            depthWrite: false,
+            toneMapped: false,
+        });
+        const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.xrCameraCopyMaterial_);
+        this.xrCameraCopyScene_.add(quad);
+    }
+    snapshotCanvasForImageData_(imageData) {
+        if (!this.xrCameraSnapshotCanvas_ ||
+            this.xrCameraSnapshotCanvas_.width !== imageData.width ||
+            this.xrCameraSnapshotCanvas_.height !== imageData.height) {
+            this.xrCameraSnapshotCanvas_ = document.createElement('canvas');
+            this.xrCameraSnapshotCanvas_.width = imageData.width;
+            this.xrCameraSnapshotCanvas_.height = imageData.height;
+            this.xrCameraSnapshotContext_ =
+                this.xrCameraSnapshotCanvas_.getContext('2d');
+        }
+        if (!this.xrCameraSnapshotContext_)
+            return null;
+        this.xrCameraSnapshotContext_.putImageData(imageData, 0, 0);
+        return this.xrCameraSnapshotCanvas_;
+    }
+    resolvePendingXRCameraCaptures_(value) {
+        const requests = this.pendingXRCameraCaptures_.splice(0);
+        for (const request of requests) {
+            clearTimeout(request.timeout);
+            request.resolve(value);
+        }
+    }
+    disposeXRCameraAccessResources_() {
+        this.resolvePendingXRCameraCaptures_(null);
+        this.xrCameraSnapshotImageData_ = null;
+        if (this.texture === this.xrCameraTexture_)
+            this.texture = this.mediaTexture_;
+        this.xrCameraTexture_?.dispose();
+        this.xrCameraTexture_ = undefined;
+        this.xrCameraRenderTarget_?.dispose();
+        this.xrCameraRenderTarget_ = undefined;
+        if (this.xrCameraCopyMaterial_) {
+            this.xrCameraCopyMaterial_.map = null;
+            this.xrCameraCopyMaterial_.dispose();
+        }
+        this.xrCameraCopyMaterial_ = undefined;
+        this.xrCameraCopyScene_?.traverse((object) => {
+            if (object instanceof THREE.Mesh)
+                object.geometry.dispose();
+        });
+        this.xrCameraCopyScene_ = undefined;
+        this.xrCameraCopyCamera_ = undefined;
+        this.xrCameraSnapshotCanvas_ = null;
+        this.xrCameraSnapshotContext_ = null;
+    }
+    onXRSessionEnded() {
+        if (!this.useXRCameraAccess_)
+            return;
+        this.useXRCameraAccess_ = false;
+        this.loaded = false;
+        this.disposeXRCameraAccessResources_();
+        this.setState_(StreamState.IDLE);
     }
     startXRCameraAccessFallback_(reason, error) {
         if (this.disposed_)
@@ -25039,6 +25244,7 @@ class Core {
         this.onXRSessionEnded = () => {
             if (!this.isLifecycleActive())
                 return;
+            this.deviceCamera?.onXRSessionEnded();
             this.scriptsManager.onXRSessionEnded();
         };
         /**
