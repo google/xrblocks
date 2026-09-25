@@ -3,6 +3,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {GemmaScene, compactSceneContext} from './GemmaScene.js';
 import {GemmaClient} from './GemmaClient.js';
+import * as markdown from './markdown.js';
 import {downloadModel, hasCachedModel} from './modelStore.js';
 import {UITextInput} from '../../src/ui/components/UITextInput';
 import {UIScrollView} from '../../src/ui/components/UIScrollView';
@@ -499,6 +500,47 @@ describe('GemmaScene', () => {
       'Scene metadata, not camera vision:'
     );
     expect(scene.status.text).not.toContain('Reply based on scene');
+  });
+
+  it('renders Markdown without changing the transcript tree or raw reply', async () => {
+    await ready();
+    const children = [...scene.history.children];
+    scene.appendMessage('You', 'Explain **Markdown**');
+    const partial =
+      '## Steps\n\n**Read** first.\n\n- One\n  - Nested\n\n```js\nconst n = 2;';
+    scene.response = scene.appendMessage('Gemma', partial);
+    expect(scene.historyText.text).toContain('You\nExplain **Markdown**');
+    expect(scene.historyText.text).toContain('Gemma\nSTEPS');
+    expect(scene.historyText.text).toContain('Read first.');
+    expect(scene.historyText.text).toContain('• One\n\u200b \u200b • Nested');
+    expect(scene.historyText.text).toContain(
+      'Code (js)\n\u200b \u200b \u200b \u200b const n = 2;'
+    );
+    expect(scene.historyText.text).not.toContain('```');
+    scene.pendingText = `${partial}\n\`\`\``;
+    scene.flushText();
+    expect(scene.response.text).toBe(`${partial}\n\`\`\``);
+    expect(scene.historyText.text).not.toContain('```');
+    expect(scene.history.children).toEqual(children);
+  });
+
+  it('parses only changed assistant text, not user prompts or previous replies', async () => {
+    await ready();
+    const parse = vi.spyOn(markdown, 'markdownText');
+    scene.appendMessage('You', '**Keep my input**');
+    scene.response = scene.appendMessage('Gemma', '**First**');
+    scene.renderTranscript();
+    scene.renderTranscript();
+    expect(parse).toHaveBeenCalledExactlyOnceWith('**First**');
+    scene.pendingText = '**First** reply';
+    scene.flushText();
+    expect(parse).toHaveBeenCalledTimes(2);
+    scene.appendMessage('You', 'Next question');
+    scene.response = scene.appendMessage('Gemma', '## Next');
+    scene.renderTranscript();
+    expect(parse).toHaveBeenCalledTimes(3);
+    expect(scene.historyText.text).toContain('First reply');
+    expect(scene.historyText.text).toContain('Gemma\nNEXT');
   });
 
   it('surfaces input backend failures and disables Send even if the backend still reports ready', async () => {
