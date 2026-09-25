@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
 import {Upscaler} from './Upscaler.js';
-import {cropSquare} from './tiling.js';
+import {cropSquare, squareCropRect} from './tiling.js';
 
 const EMPTY_IMAGE =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
@@ -14,12 +14,31 @@ const CONTROL = '#1e293bcc';
 const ACTIVE = '#155e75';
 const VIEWFINDER_WIDTH = 260;
 
+class ViewfinderPanel extends xb.UIPanel {
+  constructor(onPlace, options) {
+    super(options);
+    this.name = 'Super-resolution viewfinder';
+    this.onPlace = onPlace;
+  }
+
+  onObjectSelectStart(event) {
+    event.stopPropagation();
+    this.onPlace(event);
+  }
+
+  onObjectSelectEnd(event) {
+    event.stopPropagation();
+    this.onPlace(event);
+  }
+}
+
 export class SuperResolutionDemo extends xb.Script {
   constructor() {
     super();
     this.name = 'Super-resolution demo';
     this.upscaler = new Upscaler();
     this.cropSize = 128;
+    this.cropTarget = {u: 0.5, v: 0.5};
     this.busy = false;
     this.disposed = false;
     this.modelReady = false;
@@ -61,20 +80,24 @@ export class SuperResolutionDemo extends xb.Script {
         borderColor: ACCENT,
         backgroundColor: '#00000000',
       },
+      pointerEvents: 'none',
     });
-    this.viewfinder = new xb.UIPanel({
-      style: {
-        position: 'relative',
-        width: VIEWFINDER_WIDTH,
-        height: VIEWFINDER_WIDTH,
-        overflow: 'hidden',
-        borderRadius: 14,
-        backgroundColor: '#020617',
-        borderWidth: 1,
-        borderColor: '#334155',
-      },
-      children: [this.preview, this.cropOutline],
-    });
+    this.viewfinder = new ViewfinderPanel(
+      (event) => this.placeCropFromEvent(event),
+      {
+        style: {
+          position: 'relative',
+          width: VIEWFINDER_WIDTH,
+          height: VIEWFINDER_WIDTH,
+          overflow: 'hidden',
+          borderRadius: 14,
+          backgroundColor: '#020617',
+          borderWidth: 1,
+          borderColor: '#334155',
+        },
+        children: [this.preview, this.cropOutline],
+      }
+    );
 
     this.resultImage = new xb.UIImage({
       src: EMPTY_IMAGE,
@@ -140,7 +163,7 @@ export class SuperResolutionDemo extends xb.Script {
           },
         }),
         new xb.UIText({
-          text: 'Aim the center square, then enhance a crop with LiteRT.js.',
+          text: 'Tap the viewfinder to place the square, then press Enhance.',
           style: {fontSize: 15, color: MUTED, textAlign: 'center'},
         }),
         new xb.UIPanel({
@@ -242,13 +265,25 @@ export class SuperResolutionDemo extends xb.Script {
   updateCropOutline() {
     const cameraWidth = this.camera?.width || this.cropSize;
     const cameraHeight = this.camera?.height || this.cropSize;
-    const side = Math.min(cameraWidth, cameraHeight, this.cropSize);
-    const widthFraction = side / cameraWidth;
-    const heightFraction = side / cameraHeight;
-    this.cropOutline.style.width = `${Math.round(widthFraction * 100)}%`;
-    this.cropOutline.style.height = `${Math.round(heightFraction * 100)}%`;
-    this.cropOutline.style.left = `${Math.round((1 - widthFraction) * 50)}%`;
-    this.cropOutline.style.top = `${Math.round((1 - heightFraction) * 50)}%`;
+    const rect = squareCropRect(
+      cameraWidth,
+      cameraHeight,
+      this.cropSize,
+      this.cropTarget.u,
+      this.cropTarget.v
+    );
+    this.cropOutline.style.width = `${(rect.side / cameraWidth) * 100}%`;
+    this.cropOutline.style.height = `${(rect.side / cameraHeight) * 100}%`;
+    this.cropOutline.style.left = `${(rect.x0 / cameraWidth) * 100}%`;
+    this.cropOutline.style.top = `${(rect.y0 / cameraHeight) * 100}%`;
+  }
+
+  placeCropFromEvent(event) {
+    if (this.busy) return;
+    const target = normalizedHit(event);
+    if (!target) return;
+    this.cropTarget = target;
+    this.updateCropOutline();
   }
 
   async enhance() {
@@ -292,7 +327,12 @@ export class SuperResolutionDemo extends xb.Script {
         );
         return;
       }
-      const crop = cropSquare(snapshot, this.cropSize);
+      const crop = cropSquare(
+        snapshot,
+        this.cropSize,
+        this.cropTarget.u,
+        this.cropTarget.v
+      );
       this.beforeTexture = this.replaceTexture(
         this.beforeTexture,
         this.textureFromImage(crop, this.upscaler.scale)
@@ -418,6 +458,16 @@ export class SuperResolutionDemo extends xb.Script {
     this.textures.clear();
     this.upscaler.dispose();
   }
+}
+
+function normalizedHit(event) {
+  const uv = event.intersection?.uv;
+  if (!uv) return null;
+  return {u: clamp01(uv.x), v: clamp01(1 - uv.y)};
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
 }
 
 function messageFor(error) {

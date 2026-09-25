@@ -1,8 +1,8 @@
 # Super-resolution
 
-This demo captures the center square of the live device camera or desktop simulator view and upscales it 4x on-device with LiteRT.js and Real-ESRGAN general-x4v3.
+This demo captures a square region of the live device camera or desktop simulator view and upscales it 4x on-device with LiteRT.js and Real-ESRGAN general-x4v3.
 
-Run `npm run dev` from the repository root, then open `http://127.0.0.1:8080/demos/super_resolution/` in Chrome. Use the crop-size buttons to choose a 64, 128, or 256 px source crop, then press Enhance to compare the bilinear before image with the super-resolved after image.
+Run `npm run dev` from the repository root, then open `http://127.0.0.1:8080/demos/super_resolution/` in Chrome. Use the crop-size buttons to choose a 64, 128, or 256 px source crop. The square starts centered; tap the viewfinder to move it, then press Enhance to compare the bilinear before image with the super-resolved after image.
 
 WebGPU is recommended. The demo falls back to WASM when WebGPU is unavailable or fails the startup self-check, but the CPU path can take several seconds per tile. Headset behavior is untested, and the WebXR raw camera-access fallback currently exposes the camera texture but not snapshots.
 
