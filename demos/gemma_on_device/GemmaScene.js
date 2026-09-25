@@ -287,7 +287,7 @@ export class GemmaScene extends xb.Script {
           style: noteStyle,
         }),
         new xb.UIText({
-          text: '~2 GB download/disk · ~4 GB free RAM recommended. Desktop Chrome primary; standalone headsets may pause.',
+          text: '~2 GB download/disk · ~4 GB free RAM recommended · WebGPU required.',
           style: noteStyle,
         }),
         new xb.UIText({
