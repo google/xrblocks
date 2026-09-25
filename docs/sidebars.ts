@@ -103,6 +103,7 @@ const sidebars: SidebarsConfig = {
         'samples/Collaborative-Roomcraft',
         'samples/Super-Resolution',
         'samples/Offline-Captions',
+        'samples/Gemma-On-Device',
       ],
     },
     {

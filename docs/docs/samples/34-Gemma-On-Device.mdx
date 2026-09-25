@@ -1,0 +1,32 @@
+---
+title: Gemma 4 On-Device
+hide_title: true
+breadcrumbs: false
+pagination_next: null
+pagination_prev: null
+---
+
+import {SamplesIFrame} from './SamplesIFrame';
+
+<SamplesIFrame
+  demo="gemma_on_device"
+  link="https://github.com/google/xrblocks/tree/main/demos/gemma_on_device/"
+></SamplesIFrame>
+
+## A local spatial assistant
+
+Select a cube, sphere, or cylinder and ask Gemma 4 E2B about the scene. The assistant receives names, positions, and bounds from XR Blocks' public semantic-tree API. It does not use native vision, camera images, speech, or generated actions. Try moving an object before asking another question.
+
+Use desktop Chrome with WebGPU and approximately 4 GB of available RAM. Choose **Download Gemma 4 (~2 GB)** to download the text-only, **Apache-2.0** model. Use a persistent Chrome profile to retain the browser's ~2 GB model cache; a later visit on the same origin offers **Load cached Gemma 4**. Browser storage can still reject or evict the entry. No API key is required. Headset compatibility, performance, and keyboard behavior are untested.
+
+## What stays on-device
+
+Prompts, scene metadata, and inference stay in the browser. Initial setup fetches the model and browser dependencies from Hugging Face and public CDNs. Only the model is explicitly cached: inference can continue without network access in the loaded page, but **offline page reload is not supported**.
+
+The model engine, conversation, and cached model reads run in a dedicated classic worker. The scene and spatial UI remain on the main thread, with no main-thread inference fallback if the worker fails. Rendering and inference still share GPU resources, so this separation alone does not guarantee smooth frames or a particular generation speed.
+
+Real desktop prompts worked with networking disabled after initialization. Visible pauses still occurred during generation on the tested, heavily contended Apple M4 machine, including a 0.55-second maximum frame interval for a warm reply. See the README for the measured results and test conditions; this demo is not yet suitable for latency-sensitive XR interactions.
+
+The card shows streamed replies, time to first text, and the runtime's decode tokens/sec. Type in the prompt field, use a preset, or open the optional panel keyboard. Stop preserves the partial reply and starts a fresh model conversation before the next prompt; New chat also resets the visible history.
+
+See the [demo README](https://github.com/google/xrblocks/tree/main/demos/gemma_on_device/) for storage requirements, model attribution, and runtime limitations.
