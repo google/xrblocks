@@ -210,7 +210,15 @@ export class GemmaScene extends xb.Script {
       onSubmit: () => this.send(),
       onInput: () => this.refreshControls(),
     });
-    this.keyboard = new Keyboard({input: this.composer, open: false});
+    this.keyboard = new Keyboard({
+      input: this.composer,
+      open: false,
+      style: {
+        dropShadowColor: 'transparent',
+        dropShadowBlur: 0,
+        dropShadowSpread: 0,
+      },
+    });
     this.keyboardToggle = new xb.UIButton({
       label: 'Show keyboard',
       onClick: () => {

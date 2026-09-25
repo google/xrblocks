@@ -190,6 +190,14 @@ describe('GemmaScene', () => {
     await scene.loadModel();
   }
 
+  it('keeps the optional keyboard closed without a separate shadow effect', async () => {
+    await scene.init({context});
+    expect(scene.keyboard.open).toBe(false);
+    expect(scene.keyboard.style.dropShadowColor).toBe('transparent');
+    expect(scene.keyboard.style.dropShadowBlur).toBe(0);
+    expect(scene.keyboard.style.dropShadowSpread).toBe(0);
+  });
+
   it('constructs real public UI and movable named objects without loading weights', async () => {
     await scene.init({context});
     expect(scene.objects.map((object) => object.name)).toEqual([
