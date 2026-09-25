@@ -272,7 +272,11 @@ export class VideoStream<
     height = this.height,
     outputFormat = 'texture',
     ...rest
-  }: VideoStreamGetSnapshotOptions = {}): any {
+  }: VideoStreamGetSnapshotOptions = {}):
+    | ImageData
+    | Promise<string | Blob | null>
+    | THREE.Texture
+    | null {
     if (!this.loaded || !width || !height || !this.snapshotSourceAvailable_()) {
       return null;
     }
@@ -313,7 +317,7 @@ export class VideoStream<
         case 'base64':
           return new Promise<Blob | null>((resolve) =>
             this.canvas_!.toBlob(resolve, mimeType, quality)
-          ).then((blob) => (blob ? blobToBase64(blob) : null));
+          ).then(async (blob) => (blob ? await blobToBase64(blob) : null));
         case 'blob':
           return new Promise<Blob | null>((resolve) =>
             this.canvas_!.toBlob(resolve, mimeType, quality)
