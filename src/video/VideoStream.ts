@@ -115,7 +115,7 @@ export class VideoStream<
   }
 
   private willCaptureFrequently_: boolean;
-  private frozenTextures_ = new Set<THREE.Texture>();
+  private frozenTexture_: THREE.Texture | null = null;
   private canvas_: HTMLCanvasElement | null = null;
   private context_: CanvasRenderingContext2D | null = null;
 
@@ -327,8 +327,8 @@ export class VideoStream<
           const frozenTexture = new THREE.Texture(this.canvas_);
           frozenTexture.needsUpdate = true;
           frozenTexture.colorSpace = THREE.SRGBColorSpace;
-          this.frozenTextures_.add(frozenTexture);
-          return frozenTexture;
+          this.frozenTexture_ = frozenTexture;
+          return this.frozenTexture_;
         }
       }
     } catch (error) {
@@ -362,8 +362,7 @@ export class VideoStream<
   override dispose() {
     this.stop_();
     this.texture?.dispose();
-    for (const texture of this.frozenTextures_) texture.dispose();
-    this.frozenTextures_.clear();
+    this.frozenTexture_?.dispose();
     this.canvas_ = null;
     this.context_ = null;
     super.dispose();
