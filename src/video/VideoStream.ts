@@ -272,7 +272,7 @@ export class VideoStream<
     height = this.height,
     outputFormat = 'texture',
     ...rest
-  }: VideoStreamGetSnapshotOptions = {}) {
+  }: VideoStreamGetSnapshotOptions = {}): any {
     if (!this.loaded || !width || !height || !this.snapshotSourceAvailable_()) {
       return null;
     }
