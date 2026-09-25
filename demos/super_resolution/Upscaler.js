@@ -126,6 +126,22 @@ export class Upscaler {
     this.ensureActive();
     const second = await this.runTile(tile);
     this.ensureActive();
+    const expectedLength = this.outputShape.reduce(
+      (total, value) => total * value,
+      1
+    );
+    if (
+      first.length === 0 ||
+      second.length === 0 ||
+      first.length !== second.length ||
+      first.length !== expectedLength
+    ) {
+      return {
+        ok: false,
+        reason: `${this.backendLabel()} self-check returned ${first.length} and ${second.length} values, expected ${expectedLength}`,
+      };
+    }
+
     let maxDiff = 0;
     let maxAbs = 0;
     for (let i = 0; i < first.length; i++) {
@@ -138,9 +154,9 @@ export class Upscaler {
         };
       }
       maxDiff = Math.max(maxDiff, Math.abs(a - b));
-      maxAbs = Math.max(maxAbs, Math.abs(a));
+      maxAbs = Math.max(maxAbs, Math.abs(a), Math.abs(b));
     }
-    if (this.backend === 'webgpu' && maxAbs === 0) {
+    if (maxAbs === 0) {
       return {
         ok: false,
         reason: `${this.backendLabel()} self-check returned all zeros`,
