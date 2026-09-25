@@ -184,9 +184,15 @@ export class GemmaScene extends xb.Script {
       text: 'Time to first text: unavailable · Decode: unavailable',
       style: noteStyle,
     });
+    this.messages = [];
+    this.historyText = new xb.UIText({
+      text: '',
+      style: {fontSize: 22, whiteSpace: 'pre-line', lineHeight: 1.3},
+    });
     this.history = new xb.UIScrollView({
       ariaLabel: 'Local Gemma conversation',
       style: {height: 220, gap: 10, backgroundColor: '#141c29', padding: 12},
+      children: [this.historyText],
     });
     this.composer = new xb.UITextInput({
       ariaLabel: 'Prompt for on-device Gemma',
@@ -509,7 +515,8 @@ export class GemmaScene extends xb.Script {
     try {
       await this.client.newChat();
       if (this.disposed) return;
-      this.history.clear();
+      this.messages.length = 0;
+      this.historyText.text = '';
       this.pendingBottom = undefined;
       this.pendingText = undefined;
       this.response = undefined;
@@ -527,23 +534,17 @@ export class GemmaScene extends xb.Script {
 
   appendMessage(role, message) {
     this.queueBottom();
-    const text = new xb.UIText({
-      text: message,
-      style: {fontSize: 22, whiteSpace: 'pre-line', lineHeight: 1.3},
-    });
-    this.history.add(
-      new xb.UIPanel({
-        style: {flexDirection: 'column', gap: 4, flexShrink: 0},
-        children: [
-          new xb.UIText({
-            text: role,
-            style: {fontSize: 16, fontWeight: 'bold', color: '#a9c7ec'},
-          }),
-          text,
-        ],
-      })
-    );
-    return text;
+    const entry = {role, text: message};
+    this.messages.push(entry);
+    this.renderTranscript();
+    return entry;
+  }
+
+  renderTranscript() {
+    // Keep the UI tree stable: adding message panels rebinds the whole card.
+    this.historyText.text = this.messages
+      .map(({role, text}) => `${role}\n${text}`)
+      .join('\n\n');
   }
 
   queueBottom() {
@@ -562,6 +563,7 @@ export class GemmaScene extends xb.Script {
     if (this.pendingText === undefined || !this.response) return;
     this.queueBottom();
     this.response.text = this.pendingText;
+    this.renderTranscript();
     this.pendingText = undefined;
     this.lastTextUpdate = performance.now();
   }
