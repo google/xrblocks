@@ -61,6 +61,7 @@ function setup() {
   };
   const library = {
     Backend: {GPU_ARTISAN: 'gpu-artisan'},
+    SamplerType: {GREEDY: 3},
     Engine: {create: vi.fn(async (_options: unknown) => engine)},
   };
   const loadRuntime = vi.fn(async () => library);
@@ -117,7 +118,10 @@ describe('GemmaRuntime loading and protocol', () => {
       mainExecutorSettings: {maxNumTokens: 8192},
     });
     expect(engine.createConversation).toHaveBeenCalledExactlyOnceWith({
-      sessionConfig: {maxOutputTokens: 256},
+      sessionConfig: {
+        maxOutputTokens: 256,
+        samplerParams: {type: 3, k: 1, temperature: 0, seed: 0},
+      },
       preface: {
         messages: [
           {
@@ -133,6 +137,15 @@ describe('GemmaRuntime loading and protocol', () => {
       id: 1,
       result: {contextTokens: 100},
     });
+    await runtime.handle({type: 'reset', id: 2});
+    expect(engine.createConversation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sessionConfig: {
+          maxOutputTokens: 256,
+          samplerParams: {type: 3, k: 1, temperature: 0, seed: 0},
+        },
+      })
+    );
   });
 
   it('keeps the proven classic-worker runtime and WASM locations pinned', () => {

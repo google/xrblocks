@@ -439,6 +439,11 @@ describe('GemmaScene', () => {
     const sent = scene.client.send.mock.calls[0][1];
     expect(sent.selectedId).toBe(`node-${scene.objects[2].id}`);
     expect(sent.objects).toHaveLength(3);
+    expect(sent.objects.map((object) => object.type)).toEqual([
+      'cube',
+      'sphere',
+      'cylinder',
+    ]);
     expect(sent.objects[2].position).toEqual([2, 3, -1]);
     expect(JSON.stringify(sent)).not.toContain('Gemma');
     expect(scene.contextLabel.text).toMatch(/metadata.*not camera vision/i);

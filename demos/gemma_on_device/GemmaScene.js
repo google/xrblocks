@@ -20,7 +20,10 @@ export function compactSceneContext(tree, objects, selected) {
     objects: nodes.map((node) => ({
       id: node.id,
       name: node.name,
-      type: node.type ?? node.role,
+      type:
+        objects.find((object) => object.id === node.objectId).shape ??
+        node.type ??
+        node.role,
       position: [...node.position],
       ...(node.bounds
         ? {
@@ -35,9 +38,10 @@ export function compactSceneContext(tree, objects, selected) {
 }
 
 class SceneObject extends xb.MeshScript {
-  constructor(name, geometry, color, onChoose) {
+  constructor(name, shape, geometry, color, onChoose) {
     super(geometry, new THREE.MeshStandardMaterial({color, roughness: 0.45}));
     this.name = name;
+    this.shape = shape;
     this.xb = {manipulation: true};
     this.onChoose = onChoose;
   }
@@ -135,18 +139,21 @@ export class GemmaScene extends xb.Script {
     this.objects = [
       new SceneObject(
         'Amber cube',
+        'cube',
         new THREE.BoxGeometry(0.2, 0.2, 0.2),
         0xfbbc04,
         choose
       ),
       new SceneObject(
         'Blue sphere',
+        'sphere',
         new THREE.SphereGeometry(0.11, 24, 16),
         0x4285f4,
         choose
       ),
       new SceneObject(
         'Green cylinder',
+        'cylinder',
         new THREE.CylinderGeometry(0.09, 0.09, 0.23, 24),
         0x34a853,
         choose
