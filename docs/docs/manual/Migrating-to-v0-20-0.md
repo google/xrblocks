@@ -99,7 +99,7 @@ features. For built-in UI, this includes:
 
 Map `lit` and `lit/` when the simulator browser UI is used. Copy the current,
 version-aligned mappings from `templates/01_spatial_ui/index.html` or
-[`rollup.config.js`](../../../rollup.config.js). Application code must not import
+[`rolldown.config.js`](../../../rolldown.config.js). Application code must not import
 these modules to configure XR Blocks. They are renderer dependencies.
 
 Map both `lit` and the `lit/` prefix to the same release. Remove older mixed
