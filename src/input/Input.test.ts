@@ -10,6 +10,7 @@ import {Reticle} from '../interaction/reticle/Reticle';
 import {UIButton} from '../ui/components/UIButton';
 import {Input} from './Input';
 import {Controller} from './Controller';
+import {Hands} from './Hands';
 
 function updateInput(input: Input) {
   input.sampleSources();
@@ -46,6 +47,70 @@ describe('Input head gestures', () => {
 });
 
 describe('Input direct touch', () => {
+  it.each(['tracked-pointer', 'screen'] as const)(
+    'keeps %s selection working when enabled hands have no granted tracking data',
+    async (targetRayMode) => {
+      const input = new Input();
+      const spaces = [new WebXRController(), new WebXRController()];
+      const options = new Options().enableHands();
+      options.controllers.visualization = false;
+      options.controllers.visualizeRays = false;
+      options.hands.visualization = false;
+      const renderer = {
+        xr: {
+          getController: (index: number) => spaces[index].getTargetRaySpace(),
+          getHand: (index: number) => spaces[index].getHandSpace(),
+        },
+      } as unknown as THREE.WebGLRenderer;
+      input.init({systemsGroup: new XRSystems(), options, renderer});
+      const controller = input.controllers[0];
+      controller.userData.connected = true;
+      controller.inputSource = {targetRayMode};
+      const hands = new Hands(input.hands);
+      expect(hands.getIndexTip()).toBeUndefined();
+      expect(hands.getWrist()).toBeUndefined();
+      expect(
+        hands.toPositionQuaternionArray().every((value) => value === 0)
+      ).toBe(true);
+
+      const callbacks = new ScriptsManager(async () => {});
+      const interaction = new Interaction({
+        callbacks,
+        scene: new THREE.Scene(),
+      });
+      const clicked = vi.fn();
+      const button = new UIButton({label: 'Send', onClick: clicked});
+      const surface = new THREE.Mesh(
+        new THREE.BoxGeometry(0.4, 0.4, 0.1),
+        new THREE.MeshBasicMaterial()
+      );
+      surface.position.z = -1;
+      await callbacks.initScript(button);
+      const unregister = interaction.registerHitSurface(surface, button);
+      const sample = () => {
+        input.sampleSources();
+        expect(input.getFrame().directTouches).toHaveLength(0);
+        interaction.update(input.getFrame());
+      };
+      try {
+        sample();
+        expect(interaction.getResolvedRay(controller)?.target).toBe(button);
+        controller.dispatchEvent({type: 'selectstart', target: controller});
+        sample();
+        controller.dispatchEvent({type: 'selectend', target: controller});
+        sample();
+        expect(clicked).toHaveBeenCalledOnce();
+      } finally {
+        interaction.clear();
+        unregister();
+        button.dispose();
+        surface.geometry.dispose();
+        surface.material.dispose();
+        input.dispose();
+      }
+    }
+  );
+
   it('reports the contact point, selection, and wrist without scanning the scene', () => {
     const input = new Input();
     const controller = new THREE.Object3D() as Controller;
