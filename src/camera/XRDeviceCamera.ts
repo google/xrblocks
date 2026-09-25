@@ -365,10 +365,14 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
    * immediately. In the WebXR Raw Camera Access fallback, the browser camera
    * image is only valid during the XR frame that produced it, so this queues a
    * one-shot GPU readback for the next {@link updateXRCamera} call and then
-   * resolves through {@link getSnapshot}. Synchronous {@link getSnapshot} on
-   * that fallback path returns the most recently captured one-shot frame, or
-   * `null` when no capture has completed yet.
+   * resolves through {@link getSnapshot}. Concurrent camera-access calls share
+   * that next XR-frame readback, but each resolves with its own requested
+   * format. If no XR camera frame arrives within about one second, or the raw
+   * camera path is stopped, the promise resolves to `null`. Synchronous
+   * {@link getSnapshot} on that fallback path returns the most recently
+   * captured one-shot frame, or `null` when no capture has completed yet.
    */
+  captureSnapshot(): Promise<THREE.Texture | null>;
   captureSnapshot(
     options: VideoStreamGetSnapshotImageDataOptions
   ): Promise<ImageData | null>;
@@ -381,6 +385,9 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   captureSnapshot(
     options: VideoStreamGetSnapshotBlobOptions
   ): Promise<Blob | null>;
+  captureSnapshot(
+    options: VideoStreamGetSnapshotOptions
+  ): Promise<ImageData | string | THREE.Texture | Blob | null>;
   captureSnapshot(
     options: VideoStreamGetSnapshotOptions = {}
   ): Promise<ImageData | string | THREE.Texture | Blob | null> {
