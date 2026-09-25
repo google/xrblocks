@@ -1,13 +1,11 @@
 # Read Aloud
 
 Hold a book, sheet or screen in front of you and click **Read** on the
-spatial card. The headset camera takes a photo, the printed text is extracted,
+spatial card. The headset camera takes a photo, the printed text is extracted
+(and translated to English when the page is in another language, see below),
 and [Matcha-TTS](https://huggingface.co/litert-community/Matcha-TTS) speaks
-it. A page in another language is translated to English first and the
-translation is read (Matcha's voice is English-only); the card then shows
-`[French → English]` above the text and the status line says which language
-it came from. **Stop** cancels playback. The card shows the last photo, the
-extracted text and the pipeline status.
+it. **Stop** cancels playback. The card shows the last photo, the extracted
+text and the pipeline status.
 
 The models run on a **laptop tethered to the headset**: `server/server.py`
 hosts Matcha-TTS on [LiteRT](https://ai.google.dev/edge/litert) (CPU, XNNPACK)
@@ -72,6 +70,24 @@ The status line reports `Ready · Matcha-TTS on the laptop (matcha-tts/litert ·
 the demo says so and falls back to the browser's own voice
 (`xb.core.sound.speechSynthesizer`).
 
+## Translation
+
+Pages in other languages are read out in English. The text-extraction prompt
+(`ocr.js`, shared by both backends) asks the model for one JSON object with
+the transcription, the language it is in, and an English translation, so
+reading and translating cost a single model call. When the page was not
+English:
+
+- the card shows `[French → English]` above the translated text,
+- the status line reads `Translated from French · Speaking 1/3 …`,
+- Matcha speaks the translation.
+
+English pages pass through unchanged, with no label. The target language is
+fixed to English because Matcha's voice is English-only (`TARGET_LANGUAGE`
+in `ocr.js`). Both Gemini and the Ollama models tested (`gemma4:26b-uc`)
+handle the transcribe-and-translate step in one go; a model that answers
+with plain text instead of JSON is still read, just without translation.
+
 ## Local text extraction with Ollama
 
 Install Ollama and pull a model with the _vision_ capability; the default is
@@ -111,7 +127,9 @@ translation, and `json: true` switches Ollama to JSON output mode. Without a
 prompt the server just transcribes.
 
 CORS is open (`*`) because the page and the server sit on different ports.
-Run `python -m unittest` in `server/` for the model-free unit tests.
+Run `python -m unittest` in `server/` for the model-free unit tests, and
+`pylint *.py` there for style (the `.pylintrc` next to the code sets the line
+length and the few checks the numeric pipeline turns off).
 
 ## Credits
 

@@ -1,4 +1,5 @@
-"""Unit tests for the model-free parts of matcha_tts (run: python -m unittest)."""
+"""Unit tests for the model-free parts of matcha_tts and server (run: python -m unittest)."""
+# pylint: disable=missing-docstring,too-few-public-methods
 
 import unittest
 

@@ -15,6 +15,7 @@ cached in a user directory on first use; nothing is stored in the repository.
 from __future__ import annotations
 
 import gzip
+import io
 import json
 import math
 import os
@@ -22,6 +23,7 @@ import re
 import sys
 import time
 import urllib.request
+import wave
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -143,7 +145,8 @@ class Model:
     """One compiled .tflite model with positional inputs/outputs."""
 
     def __init__(self, path: Path, num_threads: int):
-        from ai_edge_litert.interpreter import Interpreter
+        # Imported here so the model-free unit tests run without ai-edge-litert.
+        from ai_edge_litert.interpreter import Interpreter  # pylint: disable=import-outside-toplevel
 
         self.interpreter = Interpreter(model_path=str(path), num_threads=num_threads)
         self.interpreter.allocate_tensors()
@@ -151,6 +154,7 @@ class Model:
         self.outputs = self.interpreter.get_output_details()
 
     def run(self, *arrays: np.ndarray) -> list[np.ndarray]:
+        """Feeds the float32 inputs in order and returns all outputs."""
         for detail, value in zip(self.inputs, arrays):
             self.interpreter.set_tensor(detail["index"], np.ascontiguousarray(value, dtype=np.float32))
         self.interpreter.invoke()
@@ -158,6 +162,8 @@ class Model:
 
 
 class G2P:
+    """Grapheme-to-phoneme: dictionary lookup, DeepPhonemizer for the rest."""
+
     def __init__(self, dictionary: dict[str, str], meta: dict, model: Model | None):
         self.dict = dictionary
         self.meta = meta
@@ -166,6 +172,7 @@ class G2P:
         self.cache: dict[str, str] = {}
 
     def word_to_ipa(self, word: str) -> str:
+        """IPA for one lower-case word ('' when the neural model is absent)."""
         hit = self.dict.get(word)
         if hit is not None:
             return hit
@@ -283,6 +290,8 @@ def length_regulate(mu: np.ndarray, logw: np.ndarray, tmask: np.ndarray, cfg: di
 
 @dataclass
 class SynthesisResult:
+    """Waveform plus how many phoneme chunks it took and per-stage timings."""
+
     wav: np.ndarray  # float32 in [-1, 1]
     sample_rate: int
     chunks: int
@@ -290,6 +299,8 @@ class SynthesisResult:
 
 
 class MatchaTTS:
+    """The full text-to-waveform pipeline on four LiteRT interpreters."""
+
     def __init__(self, model_dir: Path = DEFAULT_MODEL_DIR, num_threads: int | None = None, log=print):
         self.num_threads = num_threads or max(1, min(8, os.cpu_count() or 4))
         paths = fetch_assets(model_dir, log)
@@ -307,15 +318,17 @@ class MatchaTTS:
 
     @property
     def sample_rate(self) -> int:
+        """Output sample rate (22 050 Hz for the published model)."""
         return int(self.cfg["sample_rate"])
 
     def warm_up(self) -> float:
+        """Runs one short synthesis so the first request is not slow; returns ms."""
         start = time.perf_counter()
         self.synthesize("Ready.", steps=1)
         return (time.perf_counter() - start) * 1000
 
     def synthesize(self, text: str, steps: int = DEFAULT_STEPS, seed: int = 0) -> SynthesisResult:
-        cfg = self.cfg
+        """Text -> waveform; `steps` Euler steps per chunk, `seed` fixes the noise."""
         timings = {"g2p": 0.0, "textenc": 0.0, "decoder": 0.0, "vocoder": 0.0}
         t0 = time.perf_counter()
         chunks = phonemize(self.g2p, self.sym_to_id, text)
@@ -362,12 +375,9 @@ class MatchaTTS:
 
 def to_wav_bytes(wav: np.ndarray, sample_rate: int) -> bytes:
     """Float32 mono -> 16-bit PCM WAV."""
-    import io
-    import wave
-
     pcm = (np.clip(wav, -1, 1) * 32767).astype("<i2")
     buf = io.BytesIO()
-    with wave.open(buf, "wb") as w:
+    with wave.Wave_write(buf) as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sample_rate)
@@ -375,14 +385,20 @@ def to_wav_bytes(wav: np.ndarray, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-if __name__ == "__main__":
+def main():
+    """Synthesizes the command-line text into read_aloud_test.wav (smoke test)."""
     text = " ".join(sys.argv[1:]) or "Hello from Matcha T T S on the laptop."
     tts = MatchaTTS()
     print(f"warm-up {tts.warm_up():.0f} ms")
     result = tts.synthesize(text)
     seconds = len(result.wav) / result.sample_rate
     total = sum(result.timings_ms.values())
-    print(f"{result.chunks} chunk(s), {seconds:.1f} s of audio, {result.timings_ms}, RTF {total / 1000 / max(seconds, 1e-6):.2f}")
+    print(f"{result.chunks} chunk(s), {seconds:.1f} s of audio, {result.timings_ms}, "
+          f"RTF {total / 1000 / max(seconds, 1e-6):.2f}")
     out = Path("read_aloud_test.wav")
     out.write_bytes(to_wav_bytes(result.wav, result.sample_rate))
     print(f"wrote {out}")
+
+
+if __name__ == "__main__":
+    main()
