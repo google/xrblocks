@@ -19,7 +19,7 @@ This demo uses the live device camera or desktop simulator view as a viewfinder.
 
 The crop is split into overlapping 128 px tiles, processed sequentially by LiteRT.js with the Real-ESRGAN general-x4v3 model, and stitched back together using the non-overlapping core of each tile. The result stays on-device and can be compared with a bilinear before image.
 
-WebGPU is preferred. If WebGPU is unavailable or fails the startup self-check, the demo falls back to WASM and reports that slower backend in the status line.
+WebGPU is preferred. If WebGPU is unavailable or fails the startup self-check, the demo falls back to WASM and reports that slower backend in the status line. In phone AR, XR Blocks snapshots the WebXR raw camera-access texture that ARCore provides during the XR frame.
 
 ## Credits
 

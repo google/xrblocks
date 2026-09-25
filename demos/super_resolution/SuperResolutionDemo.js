@@ -296,21 +296,15 @@ export class SuperResolutionDemo extends xb.Script {
       this.setStatus('Camera is not ready yet.', '#fbbf24');
       return;
     }
-    if (this.camera.isUsingXRCameraAccess) {
-      this.setStatus(
-        'This XR camera path exposes a live texture but not snapshots yet.',
-        '#fbbf24'
-      );
-      return;
-    }
-
     this.busy = true;
     this.setStatus('Capturing camera crop…', MUTED);
     try {
-      try {
-        await this.camera.waitForFreshFrame();
-      } catch (_error) {
-        // Freshness is best-effort.
+      if (!this.camera.isUsingXRCameraAccess) {
+        try {
+          await this.camera.waitForFreshFrame();
+        } catch (_error) {
+          // Freshness is best-effort.
+        }
       }
       if (this.camera.state !== 'streaming') {
         this.setStatus(
@@ -319,7 +313,9 @@ export class SuperResolutionDemo extends xb.Script {
         );
         return;
       }
-      const snapshot = this.camera.getSnapshot({outputFormat: 'imageData'});
+      const snapshot = await this.camera.captureSnapshot({
+        outputFormat: 'imageData',
+      });
       if (!snapshot) {
         this.setStatus(
           'Camera snapshot is unavailable. Try again when the preview is moving.',
