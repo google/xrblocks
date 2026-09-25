@@ -345,6 +345,11 @@ describe('GenerativeObjectDemo lifecycle', () => {
     expect(options.ai.gemini.apiKey).toBe('startup-fixture');
     expect(window.location.search).not.toContain('key=');
     expect(options.sound.speechRecognizer.enabled).toBe(false);
+    // Reticles point at the panel; depth grounds objects and occludes them.
+    expect(options.reticles.enabled).toBe(true);
+    expect(options.depth.enabled).toBe(true);
+    expect(options.depth.depthTexture.enabled).toBe(true);
+    expect(options.depth.occlusion.enabled).toBe(true);
     // Placement raycasts the downsampled depth mesh, so the hidden
     // full-resolution mesh does not need per-frame updates.
     expect(options.depth.depthMesh.enabled).toBe(true);
