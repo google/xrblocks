@@ -459,11 +459,10 @@ export class SuperResolutionDemo extends xb.Script {
 function normalizedHit(event) {
   const uv = event.intersection?.uv;
   if (!uv) return null;
-  return {u: clamp01(uv.x), v: clamp01(1 - uv.y)};
-}
-
-function clamp01(value) {
-  return Math.max(0, Math.min(1, value));
+  return {
+    u: THREE.MathUtils.clamp(uv.x, 0, 1),
+    v: THREE.MathUtils.clamp(1 - uv.y, 0, 1),
+  };
 }
 
 function messageFor(error) {
