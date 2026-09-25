@@ -1,5 +1,6 @@
+import * as THREE from 'three';
 import type {WebGLRenderer} from 'three';
-import {describe, it, expect, vi, beforeEach} from 'vitest';
+import {afterEach, describe, it, expect, vi, beforeEach} from 'vitest';
 
 import {StreamState} from '../video/VideoStream';
 
@@ -355,5 +356,276 @@ describe('XRDeviceCamera', () => {
     );
     expect(camera.getCurrentDeviceIndex()).toBe(0);
     expect(camera.getCurrentDevice()?.deviceId).toBe('real-device-resolved');
+  });
+});
+
+describe('XRDeviceCamera raw camera snapshots', () => {
+  let lastImageData: ImageData | undefined;
+
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'ImageData', {
+      value: class ImageData {
+        data: Uint8ClampedArray;
+        width: number;
+        height: number;
+        constructor(data: Uint8ClampedArray, width: number, height: number) {
+          this.data = data;
+          this.width = width;
+          this.height = height;
+        }
+      },
+      configurable: true,
+    });
+    lastImageData = undefined;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
+      function (this: HTMLCanvasElement) {
+        return {
+          putImageData: vi.fn((imageData: ImageData) => {
+            lastImageData = imageData;
+          }),
+          drawImage: vi.fn(),
+          getImageData: vi.fn(
+            (_x: number, _y: number, width: number, height: number) =>
+              lastImageData?.width === width && lastImageData?.height === height
+                ? lastImageData
+                : new ImageData(
+                    new Uint8ClampedArray(width * height * 4),
+                    width,
+                    height
+                  )
+          ),
+        } as unknown as CanvasRenderingContext2D;
+      }
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  function createRawCameraRenderer({renderThrows = false} = {}) {
+    const glTexture = {} as WebGLTexture;
+    const previousTarget = {previous: true};
+    const render = vi.fn(() => {
+      if (renderThrows) throw new Error('render failed');
+    });
+    const readRenderTargetPixels = vi.fn(
+      (_target, _x, _y, width: number, height: number, pixels: Uint8Array) => {
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const offset = (y * width + x) * 4;
+            pixels[offset] = y === 0 ? 10 + x : 100 + x;
+            pixels[offset + 1] = y === 0 ? 20 + x : 110 + x;
+            pixels[offset + 2] = y === 0 ? 30 + x : 120 + x;
+            pixels[offset + 3] = 255;
+          }
+        }
+      }
+    );
+    const renderer = {
+      xr: {
+        enabled: true,
+        getSession: () =>
+          ({
+            mode: 'immersive-ar',
+            enabledFeatures: ['camera-access'],
+          }) as XRSession,
+        getBinding: () => ({getCameraImage: () => glTexture}),
+        getReferenceSpace: () => ({}),
+      },
+      properties: {get: vi.fn(() => ({}))},
+      getRenderTarget: vi.fn(() => previousTarget),
+      setRenderTarget: vi.fn(),
+      render,
+      readRenderTargetPixels,
+    } as unknown as WebGLRenderer;
+    return {
+      renderer,
+      glTexture,
+      previousTarget,
+      render,
+      readRenderTargetPixels,
+    };
+  }
+
+  function createFrame(width = 2, height = 2) {
+    return {
+      getViewerPose: () => ({views: [{camera: {width, height}}]}),
+    } as unknown as XRFrame;
+  }
+
+  async function startRawFallback(
+    camera: XRDeviceCamera,
+    renderer: WebGLRenderer
+  ) {
+    vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([]);
+    camera.setRenderer(renderer);
+    await camera.init();
+  }
+
+  it('captureSnapshot resolves on the next WebXR camera frame', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer} = createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+
+    const pending = camera.captureSnapshot({outputFormat: 'imageData'});
+    expect(camera.getSnapshot({outputFormat: 'imageData'})).toBeNull();
+    camera.updateXRCamera(createFrame());
+    const snapshot = await pending;
+
+    expect(snapshot?.width).toBe(2);
+    expect(snapshot?.height).toBe(2);
+    expect([...(snapshot?.data ?? [])]).toEqual([
+      100, 110, 120, 255, 101, 111, 121, 255, 10, 20, 30, 255, 11, 21, 31, 255,
+    ]);
+    expect(renderer.xr.enabled).toBe(true);
+    expect(camera.getSnapshot({outputFormat: 'imageData'})?.width).toBe(2);
+  });
+
+  it('restores render target and xr.enabled when rendering throws', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer, previousTarget} = createRawCameraRenderer({
+      renderThrows: true,
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await startRawFallback(camera, renderer);
+
+    const pending = camera.captureSnapshot({outputFormat: 'imageData'});
+    camera.updateXRCamera(createFrame());
+
+    await expect(pending).resolves.toBeNull();
+    expect(renderer.setRenderTarget).toHaveBeenLastCalledWith(previousTarget);
+    expect(renderer.xr.enabled).toBe(true);
+    errorSpy.mockRestore();
+  });
+
+  it('recreates the render target and disposes the old one when size changes', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer} = createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+
+    const first = camera.captureSnapshot({outputFormat: 'imageData'});
+    camera.updateXRCamera(createFrame(2, 2));
+    await first;
+    const internals = camera as unknown as {
+      xrCameraRenderTarget_: THREE.WebGLRenderTarget;
+    };
+    const oldTarget = internals.xrCameraRenderTarget_;
+    const dispose = vi.spyOn(oldTarget, 'dispose');
+
+    const second = camera.captureSnapshot({outputFormat: 'imageData'});
+    camera.updateXRCamera(createFrame(4, 2));
+    await second;
+
+    expect(dispose).toHaveBeenCalled();
+    expect(internals.xrCameraRenderTarget_).not.toBe(oldTarget);
+    expect(internals.xrCameraRenderTarget_.width).toBe(4);
+    expect(internals.xrCameraRenderTarget_.height).toBe(2);
+  });
+
+  it('does not mark the copy material dirty when the texture object is unchanged', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer} = createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+
+    const first = camera.captureSnapshot({outputFormat: 'imageData'});
+    camera.updateXRCamera(createFrame());
+    await first;
+    const internals = camera as unknown as {
+      xrCameraCopyMaterial_: THREE.MeshBasicMaterial;
+    };
+    const version = internals.xrCameraCopyMaterial_.version;
+
+    const second = camera.captureSnapshot({outputFormat: 'imageData'});
+    camera.updateXRCamera(createFrame());
+    await second;
+
+    expect(internals.xrCameraCopyMaterial_.version).toBe(version);
+  });
+
+  it('resizes requested WebXR camera snapshots through VideoStream formatting', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer} = createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+
+    const context = {
+      putImageData: vi.fn(),
+      drawImage: vi.fn(),
+      getImageData: vi.fn(
+        () => new ImageData(new Uint8ClampedArray([1, 2, 3, 255]), 1, 1)
+      ),
+    };
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context as unknown as CanvasRenderingContext2D);
+
+    const pending = camera.captureSnapshot({
+      outputFormat: 'imageData',
+      width: 1,
+      height: 1,
+    });
+    camera.updateXRCamera(createFrame(2, 2));
+    const snapshot = await pending;
+
+    expect(snapshot?.width).toBe(1);
+    expect(snapshot?.height).toBe(1);
+    expect(context.drawImage).toHaveBeenCalled();
+    getContext.mockRestore();
+  });
+
+  it('delegates captureSnapshot to getSnapshot on the video path', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const imageData = new ImageData(
+      new Uint8ClampedArray([1, 2, 3, 255]),
+      1,
+      1
+    );
+    const getSnapshot = vi
+      .spyOn(camera, 'getSnapshot')
+      .mockReturnValue(imageData as ImageData);
+
+    await expect(
+      camera.captureSnapshot({outputFormat: 'imageData'})
+    ).resolves.toBe(imageData);
+    expect(getSnapshot).toHaveBeenCalledWith({outputFormat: 'imageData'});
+    getSnapshot.mockRestore();
+  });
+
+  it('captureSnapshot resolves null on timeout', async () => {
+    vi.useFakeTimers();
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer} = createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+
+    const pending = camera.captureSnapshot({outputFormat: 'imageData'});
+    await vi.advanceTimersByTimeAsync(1000);
+
+    await expect(pending).resolves.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('captureSnapshot resolves null on dispose and clears raw resources', async () => {
+    const camera = new XRDeviceCamera(createMockOptions());
+    const {renderer} = createRawCameraRenderer();
+    await startRawFallback(camera, renderer);
+    const first = camera.captureSnapshot({outputFormat: 'imageData'});
+    camera.updateXRCamera(createFrame());
+    await first;
+    const pending = camera.captureSnapshot({outputFormat: 'imageData'});
+    const internals = camera as unknown as {
+      xrCameraTexture_?: THREE.Texture;
+      xrCameraRenderTarget_?: THREE.WebGLRenderTarget;
+    };
+    const textureDispose = vi.spyOn(internals.xrCameraTexture_!, 'dispose');
+    const targetDispose = vi.spyOn(internals.xrCameraRenderTarget_!, 'dispose');
+
+    camera.dispose();
+
+    await expect(pending).resolves.toBeNull();
+    expect(textureDispose).toHaveBeenCalled();
+    expect(targetDispose).toHaveBeenCalled();
+    expect(camera.isUsingXRCameraAccess).toBe(false);
+    expect(camera.getSnapshot({outputFormat: 'imageData'})).toBeNull();
   });
 });
