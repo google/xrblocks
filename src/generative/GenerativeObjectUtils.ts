@@ -30,13 +30,15 @@ export function computeBillboardScale(
 }
 
 /**
- * Computes a pose `distance` meters in front of the camera, oriented so its
- * front face (+Z) points back toward the user.
+ * Computes a world-space pose `distance` meters in front of the camera,
+ * oriented so its front face (+Z) points back toward the user. Copy the result
+ * straight onto a direct child of the scene; for an object under a transformed
+ * parent, convert it into the parent's space first.
  * @param camera - The user's camera.
  * @param distance - Distance in front of the camera, in meters.
- * @param position - Optional output position.
- * @param quaternion - Optional output orientation.
- * @returns The position and orientation.
+ * @param position - Optional output world position.
+ * @param quaternion - Optional output world orientation.
+ * @returns The world position and orientation.
  */
 export function poseInFrontOfCamera(
   camera: THREE.Camera,
@@ -55,12 +57,14 @@ export function poseInFrontOfCamera(
 }
 
 /**
- * Computes an orientation that turns a plane's front face (+Z) toward the
- * camera while keeping the object upright (yaw only). Used to billboard a
- * generated cutout so it faces the user like a standee, without tilting.
+ * Computes a world-space orientation that turns a plane's front face (+Z)
+ * toward the camera while keeping the object upright (yaw only). Used to
+ * billboard a generated cutout so it faces the user like a standee, without
+ * tilting. Apply it directly to a child of the scene; under a transformed
+ * parent, convert it into the parent's space first.
  * @param objectPosition - World position of the object.
  * @param cameraPosition - World position of the camera.
- * @param target - Optional output orientation.
+ * @param target - Optional output world orientation.
  * @returns `target` oriented so +Z points toward the camera, staying upright.
  */
 export function quaternionFacingCamera(

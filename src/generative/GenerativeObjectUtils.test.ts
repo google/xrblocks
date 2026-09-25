@@ -71,6 +71,22 @@ describe('poseInFrontOfCamera', () => {
     const toCamera = camera.position.clone().sub(position).normalize();
     expect(normal.dot(toCamera)).toBeGreaterThan(0.99);
   });
+
+  it('returns a world-space pose when the camera has a transformed parent', () => {
+    const rig = new THREE.Group();
+    rig.position.set(5, 0, 0);
+    rig.rotation.y = Math.PI / 2;
+    const camera = new THREE.PerspectiveCamera();
+    rig.add(camera);
+    rig.updateMatrixWorld(true);
+    const {position, quaternion} = poseInFrontOfCamera(camera, 1.0);
+    // The rig turns the camera's -Z forward into world -X.
+    expect(position.x).toBeCloseTo(4);
+    expect(position.y).toBeCloseTo(0);
+    expect(position.z).toBeCloseTo(0);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion);
+    expect(normal.x).toBeCloseTo(1);
+  });
 });
 
 describe('quaternionFacingCamera', () => {
