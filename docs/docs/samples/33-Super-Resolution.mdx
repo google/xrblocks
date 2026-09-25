@@ -15,7 +15,7 @@ import {SamplesIFrame} from './SamplesIFrame';
 
 ## How it works
 
-This demo uses the live device camera or desktop simulator view as a viewfinder. Choose a crop size, tap the viewfinder to place the square (it starts centered), press **Enhance**, and the page captures that square with `deviceCamera.getSnapshot({outputFormat: 'imageData'})`.
+This demo uses the live device camera or desktop simulator view as a viewfinder. Choose a crop size, tap the viewfinder to place the square (it starts centered), and press **Enhance**. The page awaits `deviceCamera.captureSnapshot({outputFormat: 'imageData'})` for the current full camera frame, then crops the selected square locally.
 
 The crop is split into overlapping 128 px tiles, processed sequentially by LiteRT.js with the Real-ESRGAN general-x4v3 model, and stitched back together using the non-overlapping core of each tile. The result stays on-device and can be compared with a bilinear before image.
 
