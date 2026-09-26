@@ -48,6 +48,7 @@
     "@emnapi/runtime": "^1.11.1",
     "@eslint/js": "^9.35.0",
     "@google/genai": "^2.7.0",
+    "@litertjs/core": "^2.5.3",
     "@mediapipe/tasks-audio": "^0.10.35",
     "@mediapipe/tasks-vision": "^0.10.34",
     "@modelcontextprotocol/sdk": "^1.30.0",
