@@ -2,7 +2,7 @@
  * Ambient stub for `@huggingface/transformers`.
  *
  * The package is loaded at runtime via the page importmap; it is NOT installed
- * in node_modules (it is listed as external in rollup.config.js). These stubs
+ * in node_modules (it is listed as external in rolldown.config.js). These stubs
  * give TypeScript enough information to compile dynamic `import()` calls
  * without needing the package to be installed.
  */
