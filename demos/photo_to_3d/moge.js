@@ -73,20 +73,35 @@ export function preprocess(source, sourceWidth, sourceHeight, ctx) {
   return {nchw, rgba: data, valid};
 }
 
-function sampleAbsMax(array) {
-  let max = 0;
-  const step = Math.max(1, Math.floor(array.length / 5000));
-  for (let i = 0; i < array.length; i += step) {
-    const v = Math.abs(array[i]);
-    if (v > max) max = v;
+/**
+ * Mean |‖v‖ − 1| over ~5000 sampled pixels of an [h,w,3] map: ≈0 for a
+ * normal map, anything else for a point map. Sampling whole pixels (not a
+ * fixed float stride, which can land on one component only) keeps this
+ * independent of the scene's scale.
+ */
+function unitLengthError(map) {
+  const pixels = map.length / 3;
+  const step = Math.max(1, Math.floor(pixels / 5000));
+  let sum = 0;
+  let n = 0;
+  for (let p = 0; p < pixels; p += step) {
+    const x = map[p * 3];
+    const y = map[p * 3 + 1];
+    const z = map[p * 3 + 2];
+    const len = Math.sqrt(x * x + y * y + z * z);
+    if (!Number.isFinite(len)) continue;
+    sum += Math.abs(len - 1);
+    n++;
   }
-  return max;
+  return n ? sum / n : Infinity;
 }
 
 /**
  * The .tflite output order is not guaranteed; identify the tensors by size
- * and range (the same strategy as the reference Android app): points is the
- * [h,w,3] map with values beyond [-1,1], normals are unit vectors.
+ * and content (the same strategy as the reference Android app): of the two
+ * [h,w,3] maps, the normal map is the one made of unit vectors, so the other
+ * is the point map. A range threshold is not safe here: a close-range scene
+ * keeps the affine point coordinates small, below the normals' ±1.
  */
 export function resolveOutputs(buffers) {
   const plane = MOGE_SIZE * MOGE_SIZE;
@@ -96,7 +111,8 @@ export function resolveOutputs(buffers) {
   if (big.length !== 2 || !mask || !scale) {
     throw new Error('unexpected model outputs');
   }
-  const points = sampleAbsMax(big[0]) > 2 ? big[0] : big[1];
+  const points =
+    unitLengthError(big[0]) >= unitLengthError(big[1]) ? big[0] : big[1];
   return {points, mask, scale: scale[0]};
 }
 
@@ -145,6 +161,9 @@ export function buildCloud(
   const plane = SIZE * SIZE;
   const positions = [];
   const colors = [];
+  let candidates = 0;
+  let confident = 0;
+  let nonFinite = 0;
   for (let i = 0; i < plane; i++) {
     if (!valid[i]) continue; // letterbox padding — not part of the photo
     const px = i % SIZE;
@@ -162,11 +181,14 @@ export function buildCloud(
     ) {
       continue;
     }
+    candidates++;
     if (mask[i] <= MOGE_MASK_THRESHOLD) continue;
+    confident++;
     const x = points[i * 3];
     const y = points[i * 3 + 1];
     const z = points[i * 3 + 2];
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      nonFinite++;
       continue;
     }
     positions.push(x, -y, -z);
@@ -177,7 +199,12 @@ export function buildCloud(
     );
   }
   if (positions.length === 0) {
-    throw new Error('no confident points in this photo');
+    // Say why: a black frame reads as "0 confident", a GPU numeric failure
+    // as "N non-finite".
+    throw new Error(
+      `no confident points in this photo (${confident} of ${candidates} ` +
+        `pixels confident, ${nonFinite} non-finite)`
+    );
   }
 
   // Trim the far tail (deep background shells dwarf the subject) and the
@@ -205,7 +232,10 @@ export function buildCloud(
     ys.push(y);
   }
   if (kept.length === 0) {
-    throw new Error('no confident points in this photo');
+    throw new Error(
+      `no confident points in this photo (all ${count} fell outside the ` +
+        `depth trim around median ${medianDepth.toPrecision(3)})`
+    );
   }
 
   // Robust extent from percentiles so stray points do not shrink the subject.

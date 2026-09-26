@@ -39,9 +39,12 @@ export class PhotoTo3D extends xb.Script {
   cloud = null;
   ready = false;
   busy = false;
+  disposed = false;
   bootStage = 'runtime';
   cropContext = null;
+  cropTexture = null;
   worldScale = new THREE.Vector3();
+  debug = new URLSearchParams(location.search).has('debug');
 
   init({deviceCamera}) {
     this.deviceCamera = deviceCamera;
@@ -83,6 +86,9 @@ export class PhotoTo3D extends xb.Script {
           style: {flexDirection: 'row', gap: 10},
           children: [this.captureButton, this.clearButton],
         }),
+        // ?debug=1: show the letterboxed 448² input exactly as the model
+        // saw it, to tell a camera problem from a model problem.
+        ...(this.debug ? [this.createDebugThumbnail()] : []),
       ],
     });
     card.position.set(0.4, xb.user.height + 0.05, -1.1);
@@ -113,7 +119,13 @@ export class PhotoTo3D extends xb.Script {
   }
 
   status(text) {
+    if (this.disposed) return;
     this.statusText.text = text;
+  }
+
+  /** Aborts an async step that finished after {@link dispose}. */
+  throwIfDisposed() {
+    if (this.disposed) throw new Error('PhotoTo3D was disposed');
   }
 
   updateCameraState(state) {
@@ -132,6 +144,7 @@ export class PhotoTo3D extends xb.Script {
       const params = new URLSearchParams(location.search);
       const requested = params.get('backend'); // ?backend=wasm|webgpu
       this.runtime = await loadLiteRtRuntime();
+      this.throwIfDisposed();
       const accelerator =
         requested === 'wasm' || requested === 'webgpu'
           ? requested
@@ -160,10 +173,17 @@ export class PhotoTo3D extends xb.Script {
 
       const testUrl = params.get('img');
       if (testUrl) {
-        const blob = await (await fetch(testUrl)).blob();
+        this.bootStage = 'test image';
+        const response = await fetch(testUrl);
+        if (!response.ok) {
+          throw new Error(`${testUrl} → HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        this.throwIfDisposed();
         await this.runOnImage(await createImageBitmap(blob));
       }
     } catch (error) {
+      if (this.disposed) return;
       this.status(
         `Failed to start (${this.bootStage}): ${describeError(error)}\nPress Capture to retry.`
       );
@@ -196,6 +216,7 @@ export class PhotoTo3D extends xb.Script {
         }
       },
     });
+    this.throwIfDisposed();
 
     this.bootStage = `compile ${accelerator}`;
     this.status(
@@ -206,6 +227,11 @@ export class PhotoTo3D extends xb.Script {
       // A wasm fallback must use the fp32 model; handled by the caller.
       fallbackToWasm: false,
     });
+    if (this.disposed) {
+      // Torn down while compiling: never adopt the model, just free it.
+      handle.model.delete();
+      this.throwIfDisposed();
+    }
     this.releaseModel();
     this.model = handle.model;
     this.accelerator = handle.accelerator;
@@ -215,6 +241,7 @@ export class PhotoTo3D extends xb.Script {
     const gray = new Float32Array(3 * MOGE_SIZE * MOGE_SIZE).fill(0.5);
     const start = performance.now();
     await inferMoge(this.model, gray, runModel);
+    this.throwIfDisposed();
     const warmSeconds = (performance.now() - start) / 1000;
     const threads = this.runtime.threads ? 'wasm' : 'wasm·1-thread';
     this.readyLabel =
@@ -238,11 +265,16 @@ export class PhotoTo3D extends xb.Script {
       // The hidden video element is throttled inside an immersive session;
       // wait for a fresh frame so the snapshot is not stale.
       await camera.waitForFreshFrame?.();
-      const imageData = camera.getSnapshot({outputFormat: 'imageData'});
+      // captureSnapshot also serves the WebXR raw-camera-access fallback,
+      // where the frame is read back from the GPU on the next XR frame.
+      const imageData = await camera.captureSnapshot({
+        outputFormat: 'imageData',
+      });
+      if (this.disposed) return;
       if (!imageData) {
         this.status(
           camera.isUsingXRCameraAccess
-            ? 'Camera frames are only available as a GPU texture on this device — snapshots are unsupported.'
+            ? 'No camera frame arrived — is the XR session running?'
             : `Camera not ready (${CAMERA_STATE_LABELS[camera.state] ?? camera.state}).`
         );
         return;
@@ -256,11 +288,15 @@ export class PhotoTo3D extends xb.Script {
   }
 
   async runOnImage(source) {
-    if (!this.model) return;
+    if (!this.model || this.disposed) {
+      source.close?.();
+      return;
+    }
     const wasBusy = this.busy;
     this.busy = true;
     this.captureButton.disabled = true;
     this.status('Running MoGe-2…');
+    let photoInfo = '';
     try {
       const {nchw, rgba, valid} = preprocess(
         source,
@@ -268,6 +304,10 @@ export class PhotoTo3D extends xb.Script {
         source.height,
         this.getCropContext()
       );
+      if (this.cropTexture) this.cropTexture.needsUpdate = true;
+      photoInfo =
+        `photo ${source.width}×${source.height}` +
+        ` · mean ${PhotoTo3D.meanBrightness(rgba, valid).toFixed(0)}/255`;
       const {points, mask, elapsed} = await inferMoge(
         this.model,
         nchw,
@@ -279,12 +319,34 @@ export class PhotoTo3D extends xb.Script {
         `Done · ${elapsed.toFixed(0)} ms · ${(cloud.userData.count / 1000).toFixed(0)}k points\n${this.readyLabel}`
       );
     } catch (error) {
-      this.status(`Failed: ${describeError(error)}`);
+      this.status(`Failed: ${describeError(error)}\n${photoInfo}`);
     } finally {
       if (typeof source.close === 'function') source.close();
       this.captureButton.disabled = false;
       this.busy = wasBusy;
     }
+  }
+
+  createDebugThumbnail() {
+    this.cropTexture = new THREE.CanvasTexture(this.getCropContext().canvas);
+    this.cropTexture.colorSpace = THREE.SRGBColorSpace;
+    return new xb.UIImage({
+      src: this.cropTexture,
+      ariaLabel: 'Model input',
+      style: {width: 224, height: 224, borderRadius: 12, alignSelf: 'center'},
+    });
+  }
+
+  /** Mean 8-bit brightness of the photo pixels (padding excluded). */
+  static meanBrightness(rgba, valid) {
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < valid.length; i++) {
+      if (!valid[i]) continue;
+      sum += rgba[i * 4] + rgba[i * 4 + 1] + rgba[i * 4 + 2];
+      n += 3;
+    }
+    return n ? sum / n : 0;
   }
 
   getCropContext() {
@@ -325,9 +387,12 @@ export class PhotoTo3D extends xb.Script {
   }
 
   dispose() {
+    this.disposed = true;
     this.deviceCamera?.removeEventListener('statechange', this.onCameraState);
     disposeCloud(this.cloud);
     this.cloud = null;
+    this.cropTexture?.dispose();
     this.releaseModel();
+    super.dispose();
   }
 }

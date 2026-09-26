@@ -11,7 +11,8 @@ import {
 
 const PLANE = MOGE_SIZE * MOGE_SIZE;
 
-function fullMaps(pointValue = 3, normalValue = 0.5) {
+// Unit normals (|n| = 1) and a point map whose coordinates are scale-free.
+function fullMaps(pointValue = 3, normalValue = 1 / Math.sqrt(3)) {
   const points = new Float32Array(PLANE * 3).fill(pointValue);
   const normal = new Float32Array(PLANE * 3).fill(normalValue);
   const mask = new Float32Array(PLANE).fill(1);
@@ -29,6 +30,19 @@ describe('resolveOutputs', () => {
 
     const shuffled = resolveOutputs([scale, normal, mask, points]);
     expect(shuffled.points).toBe(points);
+  });
+
+  it('tells points from unit normals even when the points are smaller', () => {
+    // A close-range scene: affine coordinates well inside the normals' ±1.
+    const {points, normal, mask, scale} = fullMaps(0.3);
+    expect(resolveOutputs([normal, points, mask, scale]).points).toBe(points);
+    expect(resolveOutputs([points, normal, mask, scale]).points).toBe(points);
+    // Normals with only an x component, the case a fixed float stride sees.
+    const axisNormal = new Float32Array(PLANE * 3);
+    for (let p = 0; p < PLANE; p++) axisNormal[p * 3] = p % 2 ? 1 : -1;
+    expect(resolveOutputs([axisNormal, points, mask, scale]).points).toBe(
+      points
+    );
   });
 
   it('throws when the outputs do not look like MoGe', () => {
