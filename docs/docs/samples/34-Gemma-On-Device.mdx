@@ -1,0 +1,36 @@
+---
+title: Gemma 4 On-Device
+hide_title: true
+breadcrumbs: false
+pagination_next: null
+pagination_prev: null
+---
+
+import {SamplesIFrame} from './SamplesIFrame';
+
+<SamplesIFrame
+  demo="gemma_on_device"
+  link="https://github.com/google/xrblocks/tree/main/demos/gemma_on_device/"
+></SamplesIFrame>
+
+## Ask anything, on-device
+
+Gemma 4 runs fully on this device. Ask anything; presets use the scene. Type a general question for a normal conversational answer, or select and move a cube, sphere, or cylinder and ask about it.
+
+Typed prompts and presets receive fresh optional scene metadata: names, shapes, rounded coordinates, and the selected object inline. Internal IDs are omitted. Gemma uses this context when relevant and answers general questions normally. It does not receive camera images, microphone audio, or viewer position, and cannot change the scene.
+
+The demo requires WebGPU and approximately 4 GB of available RAM. Choose **Download Gemma 4** to fetch the text-only, Apache-2.0 model, approximately 2 GB. This never starts automatically. Use a persistent browser profile to retain the cache; later visits on the same origin offer **Load cached Gemma 4**. Browser storage can reject or evict the entry. No API key is required.
+
+Load the model from the ordinary page before entering XR. Wait for **Model ready**, then choose **ENTER XR**; the engine is reused on entry. Downloads show progress and can be canceled. Initialization cannot be canceled.
+
+Tested in desktop Chrome, on an Android phone, and on Quest 3. Rendering and inference share the GPU, so there can be brief pauses while the model loads or starts a reply, especially on standalone headsets. Hand tracking is optional.
+
+## What stays on-device
+
+Prompts, scene metadata, and inference stay in the browser. Initial setup fetches weights and browser dependencies from Hugging Face and public CDNs. Inference works without network access once the page and model are loaded. Offline page reload is not supported because only the model is explicitly cached.
+
+The model runs in a dedicated worker while the scene and spatial UI remain on the main thread. Streamed Markdown replies use a stable text element rather than rebuilding the card: uppercase headings, indented lists and code, and link labels. Inline emphasis keeps its original case without markers; rich inline fonts and clickable links are not used.
+
+The card shows streamed replies, time to first text, and the runtime's decode tokens/sec. Type in the prompt field, use a preset, or open the optional panel keyboard. Stop preserves the partial reply and starts a fresh model conversation before the next prompt; New chat also resets the visible history.
+
+See the [demo README](https://github.com/google/xrblocks/tree/main/demos/gemma_on_device/) for storage requirements, model attribution, and runtime limitations.
