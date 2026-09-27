@@ -1,14 +1,16 @@
-import { BaseOutProperties, Container, InProperties } from '@pmndrs/uikit';
+import { BaseOutProperties, Container, InProperties } from "@pmndrs/uikit";
+//#region src/addons/glasses/ui/CardActionButton.d.ts
 export type CardActionButtonProperties = {
-    text: string;
-    icon?: string;
-    iconStyle?: string;
-    iconWeight?: number;
+  text: string;
+  icon?: string;
+  iconStyle?: string;
+  iconWeight?: number;
 } & BaseOutProperties;
 export declare class CardActionButton extends Container<BaseOutProperties> {
-    name: string;
-    private shadowCanvas;
-    private shadowTexture;
-    constructor(properties: InProperties<CardActionButtonProperties>);
-    dispose(): void;
+  name: string;
+  private shadowCanvas;
+  private shadowTexture;
+  constructor(properties: InProperties<CardActionButtonProperties>);
+  dispose(): void;
 }
+//#endregion

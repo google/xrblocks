@@ -1,2 +1,2 @@
-import './setup';
-export { TestRunner, type TestRunnerConfig } from './TestRunner';
+import { TestRunner, TestRunnerConfig } from "./TestRunner.js";
+export { TestRunner, type TestRunnerConfig };

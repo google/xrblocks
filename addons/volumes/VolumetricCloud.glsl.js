@@ -1,6 +1,7 @@
+//#region src/addons/volumes/VolumetricCloud.glsl.ts
 const VolumetricCloudShader = {
-    name: 'VolumeCloudShader',
-    vertexShader: /* glsl */ `
+	name: "VolumeCloudShader",
+	vertexShader: `
 in vec3 position;
 
 uniform mat4 modelMatrix;
@@ -20,7 +21,7 @@ void main() {
   gl_Position = projectionMatrix * mvPosition;
 }
     `,
-    fragmentShader: /* glsl */ `
+	fragmentShader: `
 precision highp float;
 precision highp sampler3D;
 
@@ -120,7 +121,7 @@ void main(){
   if ( color.a == 0.0 ) discard;
 
 }
-`,
+`
 };
-
+//#endregion
 export { VolumetricCloudShader };

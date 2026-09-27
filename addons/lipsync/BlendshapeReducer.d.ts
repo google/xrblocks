@@ -1,3 +1,5 @@
+import { VisemeWeights } from "xrblocks";
+//#region src/addons/lipsync/BlendshapeReducer.d.ts
 /**
  * BlendshapeReducer
  *
@@ -24,18 +26,18 @@
  * supplies a model whose outputs are indexed by this order.
  */
 export declare const ARKIT_BLENDSHAPE_NAMES: readonly string[];
-import type { VisemeWeights } from 'xrblocks';
-export type { VisemeWeights };
 export declare const ZERO_VISEME: Readonly<{
-    jawOpen: 0;
-    aa: 0;
-    oo: 0;
-    oh: 0;
-    ee: 0;
-    consonant: 0;
+  jawOpen: 0;
+  aa: 0;
+  oo: 0;
+  oh: 0;
+  ee: 0;
+  consonant: 0;
 }>;
 /**
  * Reduce a 52-element ARKit blendshape vector to viseme weights for the
  * stylised mouth. Pure function; safe to call every frame.
  */
 export declare function blendshapesToVisemes(arr: Float32Array): VisemeWeights;
+//#endregion
+export type { VisemeWeights };

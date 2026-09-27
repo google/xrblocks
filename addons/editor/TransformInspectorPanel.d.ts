@@ -1,15 +1,16 @@
-import * as xb from 'xrblocks';
-import type { CommandHistory } from './CommandHistory';
-import type { SceneManager } from './SceneManager';
-import type { SelectionManager } from './SelectionManager';
+import { CommandHistory } from "./CommandHistory.js";
+import { SceneManager } from "./SceneManager.js";
+import { SelectionManager } from "./SelectionManager.js";
+import * as xb from "xrblocks";
+//#region src/addons/editor/TransformInspectorPanel.d.ts
 type Axis = 'x' | 'y' | 'z';
 interface AxisInputs {
-    x: HTMLInputElement;
-    y: HTMLInputElement;
-    z: HTMLInputElement;
+  x: HTMLInputElement;
+  y: HTMLInputElement;
+  z: HTMLInputElement;
 }
 export interface TransformInspectorPanelOptions {
-    parent?: HTMLElement;
+  parent?: HTMLElement;
 }
 /**
  * Numeric position/rotation/scale readout+editor for the current
@@ -31,31 +32,31 @@ export interface TransformInspectorPanelOptions {
  * artifacts if you mix field edits with gizmo drags on other axes.
  */
 export declare class TransformInspectorPanel extends xb.Script {
-    selectionManager: SelectionManager;
-    sceneManager: SceneManager;
-    commandHistory: CommandHistory | null;
-    root: HTMLDivElement;
-    nameLabel: HTMLDivElement;
-    spaceButton: HTMLButtonElement;
-    positionInputs: AxisInputs;
-    rotationInputs: AxisInputs;
-    scaleInputs: AxisInputs;
-    constructor(selectionManager: SelectionManager, sceneManager: SceneManager, commandHistory?: CommandHistory | null, { parent }?: TransformInspectorPanelOptions);
-    toggleSpace(): void;
-    updateSpaceButton(): void;
-    wireInput(input: HTMLInputElement, apply: () => void): void;
-    update(): void;
-    onKeyDown(event: KeyboardEvent): void;
-    applyPosition(axis: Axis): void;
-    applyRotation(axis: Axis): void;
-    applyScale(axis: Axis): void;
-    duplicateSelected(): Promise<void>;
-    deleteSelected(): void;
-    /** Writes one axis-triple of values into `inputs`, blanking any field
-     * the selection doesn't agree on (within `epsilon`) with a "Mixed"
-     * placeholder instead. Skips a field the user is actively typing into,
-     * or the live per-frame refresh would overwrite keystrokes mid-edit. */
-    setFieldValues(inputs: AxisInputs, valuesByAxis: Record<Axis, number[]>, decimals: number, epsilon: number): void;
-    refresh(): void;
+  selectionManager: SelectionManager;
+  sceneManager: SceneManager;
+  commandHistory: CommandHistory | null;
+  root: HTMLDivElement;
+  nameLabel: HTMLDivElement;
+  spaceButton: HTMLButtonElement;
+  positionInputs: AxisInputs;
+  rotationInputs: AxisInputs;
+  scaleInputs: AxisInputs;
+  constructor(selectionManager: SelectionManager, sceneManager: SceneManager, commandHistory?: CommandHistory | null, { parent }?: TransformInspectorPanelOptions);
+  toggleSpace(): void;
+  updateSpaceButton(): void;
+  wireInput(input: HTMLInputElement, apply: () => void): void;
+  update(): void;
+  onKeyDown(event: KeyboardEvent): void;
+  applyPosition(axis: Axis): void;
+  applyRotation(axis: Axis): void;
+  applyScale(axis: Axis): void;
+  duplicateSelected(): Promise<void>;
+  deleteSelected(): void;
+  /** Writes one axis-triple of values into `inputs`, blanking any field
+   * the selection doesn't agree on (within `epsilon`) with a "Mixed"
+   * placeholder instead. Skips a field the user is actively typing into,
+   * or the live per-frame refresh would overwrite keystrokes mid-edit. */
+  setFieldValues(inputs: AxisInputs, valuesByAxis: Record<Axis, number[]>, decimals: number, epsilon: number): void;
+  refresh(): void;
 }
-export {};
+//#endregion

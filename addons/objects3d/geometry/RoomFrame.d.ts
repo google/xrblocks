@@ -1,51 +1,38 @@
-/**
- * Estimation of a room's dominant horizontal axis ("Manhattan frame") from a
- * depth mesh.
- *
- * Snapping object yaws to the *session origin's* X/Z axes assumes the user
- * happened to be facing a wall when the session started, which on a headset is
- * essentially never true. Estimating the room's own axes from the geometry the
- * device already reconstructs removes that assumption: a box whose orientation
- * is ill-determined can then fall back to something physically meaningful
- * instead of an arbitrary grid.
- *
- * All functions are pure (no `xb.core` dependencies): they take a
- * `THREE.Mesh` and are safe to unit-test, or to run server-side in Node.
- */
-import * as THREE from 'three';
+import * as THREE from "three";
+//#region src/addons/objects3d/geometry/RoomFrame.d.ts
 /** Estimated room orientation. */
 export interface RoomFrame {
-    /** Dominant horizontal axis of the room, wrapped into `[0, π/2)`. */
-    yaw: number;
-    /**
-     * Mean resultant length of the vote in the 4θ domain, in `[0, 1]`. High for
-     * a rectangular room, low for a curved or cluttered one.
-     */
-    confidence: number;
-    /** Total area of vertical surface that voted, in m². */
-    supportArea: number;
-    /** Number of triangles that passed all filters. */
-    triangles: number;
+  /** Dominant horizontal axis of the room, wrapped into `[0, π/2)`. */
+  yaw: number;
+  /**
+   * Mean resultant length of the vote in the 4θ domain, in `[0, 1]`. High for
+   * a rectangular room, low for a curved or cluttered one.
+   */
+  confidence: number;
+  /** Total area of vertical surface that voted, in m². */
+  supportArea: number;
+  /** Number of triangles that passed all filters. */
+  triangles: number;
 }
 /** Tuning for {@link estimateRoomYawFromMesh}. */
 export interface RoomFrameOptions {
-    /** Cap on triangles visited; the mesh is strided down to this. */
-    maxTriangles?: number;
-    /**
-     * Reject triangles with any edge longer than this, in metres. Essential:
-     * the depth mesh is a camera-grid mesh, so triangles spanning a depth
-     * discontinuity become long "skirts" whose normals are silhouette
-     * artefacts rather than real surfaces.
-     */
-    maxEdge?: number;
-    /** Keep only surfaces whose normal is within this of horizontal. */
-    maxAbsNy?: number;
-    /** Minimum total voting area before a result is trusted at all. */
-    minSupportArea?: number;
-    /** Viewer position; triangles beyond `maxRange` of it are ignored. */
-    viewerPosition?: THREE.Vector3;
-    /** Range cap in metres — depth noise grows with distance. */
-    maxRange?: number;
+  /** Cap on triangles visited; the mesh is strided down to this. */
+  maxTriangles?: number;
+  /**
+   * Reject triangles with any edge longer than this, in metres. Essential:
+   * the depth mesh is a camera-grid mesh, so triangles spanning a depth
+   * discontinuity become long "skirts" whose normals are silhouette
+   * artefacts rather than real surfaces.
+   */
+  maxEdge?: number;
+  /** Keep only surfaces whose normal is within this of horizontal. */
+  maxAbsNy?: number;
+  /** Minimum total voting area before a result is trusted at all. */
+  minSupportArea?: number;
+  /** Viewer position; triangles beyond `maxRange` of it are ignored. */
+  viewerPosition?: THREE.Vector3;
+  /** Range cap in metres — depth noise grows with distance. */
+  maxRange?: number;
 }
 /**
  * Estimate the room's dominant horizontal axis from a depth mesh.
@@ -70,25 +57,26 @@ export declare function estimateRoomYawFromMesh(mesh: THREE.Mesh, options?: Room
  * disagree with the accumulated value clear it and re-seed.
  */
 export declare class RoomFrameAccumulator {
-    private sumCos;
-    private sumSin;
-    private sumWeight;
-    private consecutiveOutliers;
-    private latest;
-    /** The accumulated frame, or `null` before any usable estimate. */
-    get current(): RoomFrame | null;
-    /**
-     * Fold one per-capture estimate into the running frame.
-     *
-     * @param frame - Estimate from {@link estimateRoomYawFromMesh}, or `null`.
-     * @returns The updated accumulated frame.
-     */
-    push(frame: RoomFrame | null): RoomFrame | null;
-    /** Discard all accumulated evidence. */
-    reset(): void;
+  private sumCos;
+  private sumSin;
+  private sumWeight;
+  private consecutiveOutliers;
+  private latest;
+  /** The accumulated frame, or `null` before any usable estimate. */
+  get current(): RoomFrame | null;
+  /**
+   * Fold one per-capture estimate into the running frame.
+   *
+   * @param frame - Estimate from {@link estimateRoomYawFromMesh}, or `null`.
+   * @returns The updated accumulated frame.
+   */
+  push(frame: RoomFrame | null): RoomFrame | null;
+  /** Discard all accumulated evidence. */
+  reset(): void;
 }
 /**
  * Signed angle from the room frame to `yaw`, in `[-π/4, π/4)`. Near zero means
  * the object is aligned with the room's walls.
  */
 export declare function yawRelativeToRoom(yaw: number, frame: RoomFrame | null): number;
+//#endregion

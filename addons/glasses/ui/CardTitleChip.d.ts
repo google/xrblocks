@@ -1,12 +1,14 @@
-import { BaseOutProperties, Container, InProperties, RenderContext, WithSignal } from '@pmndrs/uikit';
+import { BaseOutProperties, Container, InProperties, RenderContext, WithSignal } from "@pmndrs/uikit";
+//#region src/addons/glasses/ui/CardTitleChip.d.ts
 export type CardTitleChipOutProperties = BaseOutProperties & {
-    text: string;
+  text: string;
 };
 export declare class CardTitleChip<OutProperties extends CardTitleChipOutProperties> extends Container<OutProperties> {
-    name: string;
-    constructor(properties?: InProperties<OutProperties>, initialClasses?: Array<InProperties<OutProperties> | string>, config?: {
-        renderContext?: RenderContext;
-        defaultOverrides?: OutProperties;
-        defaults?: WithSignal<OutProperties>;
-    });
+  name: string;
+  constructor(properties?: InProperties<OutProperties>, initialClasses?: Array<InProperties<OutProperties> | string>, config?: {
+    renderContext?: RenderContext;
+    defaultOverrides?: OutProperties;
+    defaults?: WithSignal<OutProperties>;
+  });
 }
+//#endregion

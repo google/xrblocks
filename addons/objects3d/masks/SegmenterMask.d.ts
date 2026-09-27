@@ -1,3 +1,4 @@
+//#region src/addons/objects3d/masks/SegmenterMask.d.ts
 /**
  * MediaPipe InteractiveSegmenter mask backend.
  *
@@ -8,14 +9,14 @@
 type InteractiveSegmenter = unknown;
 /** Mask result compatible with {@link sampleDepthInMask}. */
 export interface SegmenterMaskResult {
-    /** Mask width in pixels. */
-    readonly width: number;
-    /** Mask height in pixels. */
-    readonly height: number;
-    /** Raw pixel data; values `< 128` are foreground. */
-    getAsUint8Array(): Uint8Array;
-    /** Release GPU resources held by the underlying MediaPipe mask. */
-    close(): void;
+  /** Mask width in pixels. */
+  readonly width: number;
+  /** Mask height in pixels. */
+  readonly height: number;
+  /** Raw pixel data; values `< 128` are foreground. */
+  getAsUint8Array(): Uint8Array;
+  /** Release GPU resources held by the underlying MediaPipe mask. */
+  close(): void;
 }
 /**
  * Lazily initialise the MediaPipe `InteractiveSegmenter`. The segmenter is
@@ -33,13 +34,13 @@ export declare function getSegmenter(): Promise<InteractiveSegmenter>;
  * @returns Mask with foreground pixels at value `< 128`, or `null` on failure.
  */
 export declare function segmenterMaskFromSnapshot(snapshot: ImageData, box2d: {
-    min: {
-        x: number;
-        y: number;
-    };
-    max: {
-        x: number;
-        y: number;
-    };
+  min: {
+    x: number;
+    y: number;
+  };
+  max: {
+    x: number;
+    y: number;
+  };
 }): Promise<SegmenterMaskResult | null>;
-export {};
+//#endregion

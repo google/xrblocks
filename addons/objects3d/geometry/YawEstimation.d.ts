@@ -1,32 +1,6 @@
-/**
- * Yaw-angle utilities for oriented bounding boxes.
- *
- * All functions are pure (no `xb.core` dependencies) and are safe to
- * unit-test without a running XR session.
- *
- * ## Conventions
- *
- * An {@link InternalObb}'s `angle` is a yaw about world +Y, and the renderer
- * applies it as `group.rotation.y = angle` (see `visuals/BoxGroup.ts`'s
- * `buildBoxGroup`). A three.js Y-rotation by `a` maps local
- * +X to world `(cos a, 0, -sin a)`, so the box's local u-axis is
- * `(cos a, -sin a)` and its v-axis is `(sin a, cos a)` in the world XZ plane.
- * {@link worldToLocalXZ} and {@link localToWorldXZ} are the single definition
- * of that convention; every fitter should go through them rather than inlining
- * the trigonometry, which is how the two halves of the codebase drifted apart
- * in the first place.
- *
- * ## The mod-90° quotient
- *
- * A box's yaw is only defined modulo 90°: rotating by 90° and swapping
- * `size.x` with `size.z` describes an identical box. Comparisons, averaging and
- * snapping therefore operate on `4θ` mapped onto the unit circle, where two
- * angles 90° apart coincide (they are the same box) and two 45° apart are
- * antipodal (maximally disagreeing). {@link yawDelta90} and
- * {@link canonicalizeYawObb} implement that quotient.
- */
-import * as THREE from 'three';
-import type { InternalObb } from './ObbFitting';
+import { InternalObb } from "./ObbFitting.js";
+import * as THREE from "three";
+//#region src/addons/objects3d/geometry/YawEstimation.d.ts
 /** Wrap an angle into `(-π, π]`. */
 export declare function wrapPi(a: number): number;
 /**
@@ -48,8 +22,8 @@ export declare function yawDelta90(a: number, b: number): number;
  * @param a - Box yaw in radians.
  */
 export declare function worldToLocalXZ(dx: number, dz: number, a: number): {
-    u: number;
-    v: number;
+  u: number;
+  v: number;
 };
 /**
  * Map a box-local (u, v) offset back into world XZ.
@@ -60,8 +34,8 @@ export declare function worldToLocalXZ(dx: number, dz: number, a: number): {
  * @param a - Box yaw in radians.
  */
 export declare function localToWorldXZ(u: number, v: number, a: number): {
-    x: number;
-    z: number;
+  x: number;
+  z: number;
 };
 /**
  * Rewrite an OBB so its yaw is the canonical representative of its mod-90°
@@ -78,8 +52,8 @@ export declare function localToWorldXZ(u: number, v: number, a: number): {
 export declare function canonicalizeYawObb(obb: InternalObb): InternalObb;
 /** A 2-D point in the world XZ plane. */
 export interface PointXZ {
-    x: number;
-    z: number;
+  x: number;
+  z: number;
 }
 /**
  * Convex hull of a set of XZ points, via Andrew's monotone chain.
@@ -89,22 +63,22 @@ export interface PointXZ {
 export declare function convexHullXZ(points: readonly PointXZ[]): PointXZ[];
 /** Result of {@link minAreaRectXZ}. */
 export interface MinAreaRect {
-    /** Canonical yaw in `[-π/4, π/4)`, in the render convention. */
-    angle: number;
-    /** Extent along the box's local u axis. */
-    width: number;
-    /** Extent along the box's local v axis. */
-    depth: number;
-    /** Area of the minimising rectangle, in m². */
-    area: number;
-    /** Number of hull vertices the fit was computed from. */
-    hullCount: number;
-    /**
-     * How strongly the hull actually supports these axes: the fraction of hull
-     * perimeter lying within 10° (mod 90°) of a rectangle edge. Near 1 for a
-     * genuinely box-like footprint, low for a rounded or blobby one.
-     */
-    supportRatio: number;
+  /** Canonical yaw in `[-π/4, π/4)`, in the render convention. */
+  angle: number;
+  /** Extent along the box's local u axis. */
+  width: number;
+  /** Extent along the box's local v axis. */
+  depth: number;
+  /** Area of the minimising rectangle, in m². */
+  area: number;
+  /** Number of hull vertices the fit was computed from. */
+  hullCount: number;
+  /**
+   * How strongly the hull actually supports these axes: the fraction of hull
+   * perimeter lying within 10° (mod 90°) of a rectangle edge. Near 1 for a
+   * genuinely box-like footprint, low for a rounded or blobby one.
+   */
+  supportRatio: number;
 }
 /**
  * Minimum-area enclosing rectangle of the XZ footprint, by rotating calipers
@@ -127,18 +101,18 @@ export interface MinAreaRect {
 export declare function minAreaRectXZ(points: readonly PointXZ[]): MinAreaRect | null;
 /** Second-moment summary of an XZ point set. */
 export interface ScatterXZ {
-    /** Yaw of the major axis, in the render convention. */
-    angle: number;
-    /** Larger eigenvalue of the normalised scatter matrix. */
-    lambda1: number;
-    /** Smaller eigenvalue. */
-    lambda2: number;
-    /** `(λ1 − λ2) / (λ1 + λ2)`, in `[0, 1]`. Zero for an isotropic blob. */
-    anisotropy: number;
-    /** Asymptotic standard error of {@link angle}, in radians. */
-    sigmaThetaRad: number;
-    /** Number of points. */
-    count: number;
+  /** Yaw of the major axis, in the render convention. */
+  angle: number;
+  /** Larger eigenvalue of the normalised scatter matrix. */
+  lambda1: number;
+  /** Smaller eigenvalue. */
+  lambda2: number;
+  /** `(λ1 − λ2) / (λ1 + λ2)`, in `[0, 1]`. Zero for an isotropic blob. */
+  anisotropy: number;
+  /** Asymptotic standard error of {@link angle}, in radians. */
+  sigmaThetaRad: number;
+  /** Number of points. */
+  count: number;
 }
 /**
  * Principal-axis yaw of an XZ point set, with an uncertainty estimate.
@@ -162,14 +136,14 @@ export declare function pcaYawXZ(points: readonly PointXZ[], cx: number, cz: num
 export declare function pcaYawConfidence(s: ScatterXZ): number;
 /** Result of {@link ransacVerticalPlane}. */
 export interface VerticalPlaneFit {
-    /** Horizontal unit normal of the fitted plane. */
-    normal: THREE.Vector3;
-    /** A point on the plane (centroid of the inliers). */
-    point: THREE.Vector3;
-    /** Fraction of input points within `eps` of the plane. */
-    inlierRatio: number;
-    /** Number of inliers. */
-    inlierCount: number;
+  /** Horizontal unit normal of the fitted plane. */
+  normal: THREE.Vector3;
+  /** A point on the plane (centroid of the inliers). */
+  point: THREE.Vector3;
+  /** Fraction of input points within `eps` of the plane. */
+  inlierRatio: number;
+  /** Number of inliers. */
+  inlierCount: number;
 }
 /**
  * RANSAC fit of a *vertical* plane, sampling two points and taking
@@ -185,28 +159,28 @@ export interface VerticalPlaneFit {
  * @param options - Iteration count, inlier threshold, and random source.
  * @returns The best vertical plane, or `null` if none had enough support.
  */
-export declare function ransacVerticalPlane(points: readonly THREE.Vector3[], { iters, eps, rng, }?: {
-    iters?: number;
-    eps?: number;
-    rng?: () => number;
+export declare function ransacVerticalPlane(points: readonly THREE.Vector3[], { iters, eps, rng }?: {
+  iters?: number;
+  eps?: number;
+  rng?: () => number;
 }): VerticalPlaneFit | null;
 /** One estimator's opinion about an object's yaw. */
 export interface YawCandidate {
-    angle: number;
-    /** Relative trust in this candidate; candidates with weight ≤ 0 are ignored. */
-    weight: number;
-    method: string;
+  angle: number;
+  /** Relative trust in this candidate; candidates with weight ≤ 0 are ignored. */
+  weight: number;
+  method: string;
 }
 /** Combined yaw estimate produced by {@link combineYawCandidates}. */
 export interface YawEstimate {
-    /** Canonical yaw in `[-π/4, π/4)`. */
-    angle: number;
-    /** 0..1 overall confidence, folding in how well the candidates agreed. */
-    confidence: number;
-    /** Method name of the highest-weighted contributing candidate. */
-    method: string;
-    /** Mean resultant length of the candidates in the 4θ domain, 0..1. */
-    agreementR: number;
+  /** Canonical yaw in `[-π/4, π/4)`. */
+  angle: number;
+  /** 0..1 overall confidence, folding in how well the candidates agreed. */
+  confidence: number;
+  /** Method name of the highest-weighted contributing candidate. */
+  method: string;
+  /** Mean resultant length of the candidates in the 4θ domain, 0..1. */
+  agreementR: number;
 }
 /**
  * Combine yaw candidates by averaging them in the `4θ` domain, so that
@@ -218,3 +192,4 @@ export interface YawEstimate {
  * @returns Combined estimate, or `null` when no candidate carried any weight.
  */
 export declare function combineYawCandidates(candidates: readonly YawCandidate[]): YawEstimate | null;
+//#endregion

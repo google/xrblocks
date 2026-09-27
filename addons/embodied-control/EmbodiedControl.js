@@ -1,129 +1,106 @@
-import * as THREE from 'three';
-import { Script, Core } from 'xrblocks';
-import { EmbodiedControlExecutor } from './EmbodiedControlExecutor.js';
-import { DEFAULT_EMBODIED_CONTROL_OPTIONS } from './EmbodiedControlTypes.js';
-import './EmbodiedControlTiming.js';
-
-class EmbodiedControl extends Script {
-    static { this.dependencies = {
-        core: Core,
-        camera: THREE.Camera,
-    }; }
-    constructor(options = {}) {
-        super();
-        this.editorIcon = 'sports_martial_arts';
-        this.autoPauseScheduled = false;
-        this.autoPauseComplete = false;
-        this.readyComplete = false;
-        /** Resolves after initialization and any requested auto-pause complete. */
-        this.ready = new Promise((resolve) => {
-            this.resolveReady = resolve;
-        });
-        this.options = {
-            ...DEFAULT_EMBODIED_CONTROL_OPTIONS,
-            ...options,
-        };
-    }
-    init(dependencies) {
-        this.core = dependencies.core;
-        this.camera = dependencies.camera;
-        this.initializeExecutor();
-        if (this.options.autoPause && dependencies.core.simulatorRunning) {
-            this.scheduleAutoPause();
-        }
-        else if (!this.options.autoPause) {
-            this.markReady();
-        }
-    }
-    onSimulatorStarted() {
-        this.initializeExecutor();
-        if (this.options.autoPause) {
-            this.scheduleAutoPause();
-        }
-    }
-    initializeExecutor() {
-        if (this.executor || !this.core || !this.camera)
-            return;
-        const simulator = this.core.simulator;
-        if (!simulator)
-            return;
-        this.executor = new EmbodiedControlExecutor({ core: this.core, simulator, camera: this.camera }, this.options);
-    }
-    scheduleAutoPause() {
-        if (this.autoPauseScheduled || this.autoPauseComplete)
-            return;
-        this.autoPauseScheduled = true;
-        this.afterRenderedFrame(() => {
-            if (!this.core)
-                return;
-            this.core.pause();
-            this.autoPauseComplete = true;
-            this.markReady();
-        });
-    }
-    markReady() {
-        if (this.readyComplete)
-            return;
-        this.readyComplete = true;
-        this.resolveReady();
-    }
-    afterRenderedFrame(callback) {
-        const schedule = typeof requestAnimationFrame === 'function'
-            ? requestAnimationFrame
-            : (handler) => {
-                setTimeout(() => handler(performance.now()), 0);
-                return 0;
-            };
-        schedule(() => schedule(() => callback()));
-    }
-    step(step) {
-        if (!this.executor) {
-            throw new Error('EmbodiedControl is not initialized.');
-        }
-        return this.executor.step({
-            ...step,
-            control: step.control || {},
-        });
-    }
-    applyControl(control) {
-        if (!this.executor) {
-            throw new Error('EmbodiedControl is not initialized.');
-        }
-        this.executor.applyControl(control);
-    }
-    get busy() {
-        return this.executor?.busy ?? false;
-    }
-    teleportTo(target, options) {
-        if (!this.executor) {
-            throw new Error('EmbodiedControl is not initialized.');
-        }
-        return this.executor.teleportTo(target, options);
-    }
-    lookAtTarget(target, options) {
-        if (!this.executor) {
-            throw new Error('EmbodiedControl is not initialized.');
-        }
-        return this.executor.lookAtTarget(target, options);
-    }
-    pointTo(handIndex, target, options) {
-        if (!this.executor) {
-            throw new Error('EmbodiedControl is not initialized.');
-        }
-        return this.executor.pointTo(handIndex, target, options);
-    }
-    reachTo(handIndex, target, options) {
-        if (!this.executor) {
-            throw new Error('EmbodiedControl is not initialized.');
-        }
-        return this.executor.reachTo(handIndex, target, options);
-    }
-    click(handIndex = 1, options) {
-        if (!this.executor) {
-            throw new Error('EmbodiedControl is not initialized.');
-        }
-        return this.executor.click(handIndex, options);
-    }
-}
-
+import { DEFAULT_EMBODIED_CONTROL_OPTIONS } from "./EmbodiedControlTypes.js";
+import { EmbodiedControlExecutor } from "./EmbodiedControlExecutor.js";
+import * as THREE from "three";
+import { Core, Script } from "xrblocks";
+//#region src/addons/embodied-control/EmbodiedControl.ts
+var EmbodiedControl = class extends Script {
+	static {
+		this.dependencies = {
+			core: Core,
+			camera: THREE.Camera
+		};
+	}
+	constructor(options = {}) {
+		super();
+		this.editorIcon = "sports_martial_arts";
+		this.autoPauseScheduled = false;
+		this.autoPauseComplete = false;
+		this.readyComplete = false;
+		this.ready = new Promise((resolve) => {
+			this.resolveReady = resolve;
+		});
+		this.options = {
+			...DEFAULT_EMBODIED_CONTROL_OPTIONS,
+			...options
+		};
+	}
+	init(dependencies) {
+		this.core = dependencies.core;
+		this.camera = dependencies.camera;
+		this.initializeExecutor();
+		if (this.options.autoPause && dependencies.core.simulatorRunning) this.scheduleAutoPause();
+		else if (!this.options.autoPause) this.markReady();
+	}
+	onSimulatorStarted() {
+		this.initializeExecutor();
+		if (this.options.autoPause) this.scheduleAutoPause();
+	}
+	initializeExecutor() {
+		if (this.executor || !this.core || !this.camera) return;
+		const simulator = this.core.simulator;
+		if (!simulator) return;
+		this.executor = new EmbodiedControlExecutor({
+			core: this.core,
+			simulator,
+			camera: this.camera
+		}, this.options);
+	}
+	scheduleAutoPause() {
+		if (this.autoPauseScheduled || this.autoPauseComplete) return;
+		this.autoPauseScheduled = true;
+		this.afterRenderedFrame(() => {
+			if (!this.core) return;
+			this.core.pause();
+			this.autoPauseComplete = true;
+			this.markReady();
+		});
+	}
+	markReady() {
+		if (this.readyComplete) return;
+		this.readyComplete = true;
+		this.resolveReady();
+	}
+	afterRenderedFrame(callback) {
+		const schedule = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (handler) => {
+			setTimeout(() => handler(performance.now()), 0);
+			return 0;
+		};
+		schedule(() => schedule(() => callback()));
+	}
+	step(step) {
+		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
+		return this.executor.step({
+			...step,
+			control: step.control || {}
+		});
+	}
+	applyControl(control) {
+		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
+		this.executor.applyControl(control);
+	}
+	get busy() {
+		return this.executor?.busy ?? false;
+	}
+	teleportTo(target, options) {
+		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
+		return this.executor.teleportTo(target, options);
+	}
+	lookAtTarget(target, options) {
+		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
+		return this.executor.lookAtTarget(target, options);
+	}
+	pointTo(handIndex, target, options) {
+		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
+		return this.executor.pointTo(handIndex, target, options);
+	}
+	reachTo(handIndex, target, options) {
+		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
+		return this.executor.reachTo(handIndex, target, options);
+	}
+	click(handIndex = 1, options) {
+		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
+		return this.executor.click(handIndex, options);
+	}
+};
+//#endregion
 export { EmbodiedControl };

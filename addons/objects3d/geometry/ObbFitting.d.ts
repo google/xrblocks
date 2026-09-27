@@ -1,31 +1,26 @@
-/**
- * Oriented bounding-box fitters and outlier rejection helpers.
- *
- * All functions are pure (no `xb.core` dependencies) and are safe to
- * unit-test without a running XR session.
- */
-import * as THREE from 'three';
-import type { YawEstimate } from './YawEstimation';
+import { YawEstimate } from "./YawEstimation.js";
+import * as THREE from "three";
+//#region src/addons/objects3d/geometry/ObbFitting.d.ts
 /**
  * Internal OBB representation used by fitters and fusion.
  * `angle` is yaw rotation around world Y.
  * `size` is full extents (two times the half-extents on each axis).
  */
 export interface InternalObb {
-    /** World-space centroid of the box. */
-    center: THREE.Vector3;
-    /** Full extents (width, height, depth) of the box in metres. */
-    size: THREE.Vector3;
-    /** Yaw angle around world Y, in radians. */
-    angle: number;
-    /**
-     * How well determined {@link angle} was, in `[0, 1]`. Populated by the
-     * fitters; consumed by diagnostics and (in future) by cross-view fusion to
-     * weight one observation's yaw against another's.
-     */
-    yawConfidence?: number;
-    /** Name of the estimator that produced {@link angle}. Diagnostics only. */
-    yawMethod?: string;
+  /** World-space centroid of the box. */
+  center: THREE.Vector3;
+  /** Full extents (width, height, depth) of the box in metres. */
+  size: THREE.Vector3;
+  /** Yaw angle around world Y, in radians. */
+  angle: number;
+  /**
+   * How well determined {@link angle} was, in `[0, 1]`. Populated by the
+   * fitters; consumed by diagnostics and (in future) by cross-view fusion to
+   * weight one observation's yaw against another's.
+   */
+  yawConfidence?: number;
+  /** Name of the estimator that produced {@link angle}. Diagnostics only. */
+  yawMethod?: string;
 }
 /**
  * How a fitted yaw should be reconciled with the surrounding room.
@@ -39,45 +34,45 @@ export interface InternalObb {
 export type OrientationMode = 'cardinal' | 'roomFrame' | 'free';
 /** Orientation policy plus the room frame to resolve against. */
 export interface OrientationOptions {
-    /** @defaultValue `'roomFrame'` */
-    mode?: OrientationMode;
-    /** Estimated room yaw in radians, or `null` when unknown. */
-    roomYaw?: number | null;
-    /** Confidence of {@link roomYaw}, in `[0, 1]`. */
-    roomYawConfidence?: number;
-    /**
-     * Objects within this angle of the room frame are snapped to it, which
-     * removes jitter on genuinely wall-aligned furniture.
-     * @defaultValue 12°
-     */
-    snapToleranceRad?: number;
-    /**
-     * Below this yaw confidence the object's own estimate is discarded in favour
-     * of the room frame.
-     * @defaultValue 0.35
-     */
-    minYawConfidence?: number;
+  /** @defaultValue `'roomFrame'` */
+  mode?: OrientationMode;
+  /** Estimated room yaw in radians, or `null` when unknown. */
+  roomYaw?: number | null;
+  /** Confidence of {@link roomYaw}, in `[0, 1]`. */
+  roomYawConfidence?: number;
+  /**
+   * Objects within this angle of the room frame are snapped to it, which
+   * removes jitter on genuinely wall-aligned furniture.
+   * @defaultValue 12°
+   */
+  snapToleranceRad?: number;
+  /**
+   * Below this yaw confidence the object's own estimate is discarded in favour
+   * of the room frame.
+   * @defaultValue 0.35
+   */
+  minYawConfidence?: number;
 }
 /** Options forwarded from the detector to the per-category fitters. */
 export interface ObbFitOptions {
-    /** Detector category from {@link categorize}. */
-    category?: string;
-    /** Frozen camera from snapshot time. */
-    camera?: THREE.PerspectiveCamera | null;
-    /** World-space anchor from the bbox-centre raycast. */
-    anchor?: THREE.Vector3 | null;
-    /** Normalised 2-D bounding box from the detector. */
-    box2d?: THREE.Box2 | null;
-    /** Whether the label is a tiny flat item (switch, outlet, etc.). */
-    tinyFlat?: boolean;
-    /**
-     * Assumed distance in metres from the session origin to the cardinal walls
-     * (`x = ±roomHalf`, `z = ±roomHalf`), used by {@link fitTinyFlatOBB}.
-     * Defaults to 3, matching the simulator's wood-cabin scene.
-     */
-    roomHalf?: number;
-    /** Orientation policy and room frame. */
-    orientation?: OrientationOptions;
+  /** Detector category from {@link categorize}. */
+  category?: string;
+  /** Frozen camera from snapshot time. */
+  camera?: THREE.PerspectiveCamera | null;
+  /** World-space anchor from the bbox-centre raycast. */
+  anchor?: THREE.Vector3 | null;
+  /** Normalised 2-D bounding box from the detector. */
+  box2d?: THREE.Box2 | null;
+  /** Whether the label is a tiny flat item (switch, outlet, etc.). */
+  tinyFlat?: boolean;
+  /**
+   * Assumed distance in metres from the session origin to the cardinal walls
+   * (`x = ±roomHalf`, `z = ±roomHalf`), used by {@link fitTinyFlatOBB}.
+   * Defaults to 3, matching the simulator's wood-cabin scene.
+   */
+  roomHalf?: number;
+  /** Orientation policy and room frame. */
+  orientation?: OrientationOptions;
 }
 /**
  * Reconcile a measured yaw with the orientation policy and the room frame.
@@ -89,9 +84,9 @@ export interface ObbFitOptions {
  * @returns The yaw to use, its confidence, and which path produced it.
  */
 export declare function resolveYaw(est: YawEstimate | null, opts?: OrientationOptions): {
-    angle: number;
-    confidence: number;
-    method: string;
+  angle: number;
+  confidence: number;
+  method: string;
 };
 /**
  * Estimate an object's yaw from its footprint by combining a minimum-area
@@ -125,11 +120,11 @@ export declare function rejectByAnchor(points: THREE.Vector3[], anchor: THREE.Ve
  * @param opts - Padding, clamp limits, and fallback radius.
  * @returns Estimated rejection radius in metres.
  */
-export declare function radiusFromBbox(box2d: THREE.Box2 | null | undefined, camera: THREE.PerspectiveCamera | null | undefined, anchor: THREE.Vector3 | null | undefined, { pad, minR, maxR, fallback, }?: {
-    pad?: number;
-    minR?: number;
-    maxR?: number;
-    fallback?: number;
+export declare function radiusFromBbox(box2d: THREE.Box2 | null | undefined, camera: THREE.PerspectiveCamera | null | undefined, anchor: THREE.Vector3 | null | undefined, { pad, minR, maxR, fallback }?: {
+  pad?: number;
+  minR?: number;
+  maxR?: number;
+  fallback?: number;
 }): number;
 /**
  * Drop points whose camera-distance differs by more than `tol` metres from
@@ -178,9 +173,9 @@ export declare function rejectByY(points: THREE.Vector3[], dy: number): THREE.Ve
  *   six inliers were found.
  */
 export declare function ransacPlane(points: THREE.Vector3[], iters?: number, eps?: number, rng?: () => number): {
-    normal: THREE.Vector3;
-    point: THREE.Vector3;
-    inliers: THREE.Vector3[];
+  normal: THREE.Vector3;
+  point: THREE.Vector3;
+  inliers: THREE.Vector3[];
 } | null;
 /**
  * Shoot a ray through normalised image coordinates `(u, v) ∈ [0, 1]`
@@ -206,10 +201,10 @@ export declare function rayToPlane(u: number, v: number, camera: THREE.Perspecti
  * @returns Corner world positions, or `null` on any miss.
  */
 export declare function projectBboxToPlane(box2d: THREE.Box2, camera: THREE.PerspectiveCamera, planePoint: THREE.Vector3, planeNormal: THREE.Vector3): {
-    TL: THREE.Vector3;
-    TR: THREE.Vector3;
-    BR: THREE.Vector3;
-    BL: THREE.Vector3;
+  TL: THREE.Vector3;
+  TR: THREE.Vector3;
+  BR: THREE.Vector3;
+  BL: THREE.Vector3;
 } | null;
 /**
  * Dispatcher: picks the appropriate per-category fitter and returns an
@@ -287,3 +282,4 @@ export declare function fitFurnitureOBB(points: THREE.Vector3[], opts?: ObbFitOp
  * @param angle - Box yaw in radians.
  */
 export declare function buildYawAlignedObb(points: THREE.Vector3[], cx: number, cz: number, angle: number): InternalObb;
+//#endregion

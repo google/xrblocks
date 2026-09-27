@@ -1,3 +1,4 @@
+//#region src/addons/netblocks/src/core/transport/Transport.d.ts
 /**
  * Transport: the contract every netblocks transport must satisfy.
  *
@@ -18,20 +19,20 @@
  */
 export type TransportPayload = Uint8Array;
 export interface TransportConnectOptions {
-    /** Application-specific room identifier. Peers in the same room see each other. */
-    roomId: string;
-    /**
-     * Optional override for the local peer id. If omitted, the transport
-     * generates one. Stable peer ids are useful for reconnection scenarios.
-     */
-    peerId?: string;
+  /** Application-specific room identifier. Peers in the same room see each other. */
+  roomId: string;
+  /**
+   * Optional override for the local peer id. If omitted, the transport
+   * generates one. Stable peer ids are useful for reconnection scenarios.
+   */
+  peerId?: string;
 }
 export interface TransportPeerEventDetail {
-    peerId: string;
+  peerId: string;
 }
 export interface TransportMessageEventDetail {
-    peerId: string;
-    data: TransportPayload;
+  peerId: string;
+  data: TransportPayload;
 }
 /**
  * `peer-join` and `peer-leave` are dispatched as
@@ -42,28 +43,29 @@ export interface TransportMessageEventDetail {
  */
 export type TransportEventName = 'open' | 'close' | 'error' | 'peer-join' | 'peer-leave' | 'message';
 export declare abstract class Transport extends EventTarget {
-    /** The local peer id. Defined after `connect` resolves. */
-    abstract readonly localPeerId: string;
-    /** True between a successful `connect` and a `close`. */
-    abstract readonly isOpen: boolean;
-    /** All currently-known remote peer ids. */
-    abstract readonly remotePeerIds: ReadonlySet<string>;
-    /** A short, human-friendly transport name used for logging/UX. */
-    abstract readonly name: string;
-    /** Connect to the room. Must be called exactly once per instance. */
-    abstract connect(opts: TransportConnectOptions): Promise<void>;
-    /** Disconnect; idempotent. */
-    abstract close(): void;
-    /**
-     * Send a payload to a specific peer or broadcast to all known peers when
-     * `targetPeerId` is omitted.
-     */
-    abstract send(payload: TransportPayload, targetPeerId?: string): void;
-    /** Convenience: typed event subscription. */
-    on<K extends TransportEventName>(type: K, listener: (event: CustomEvent) => void): void;
-    off<K extends TransportEventName>(type: K, listener: (event: CustomEvent) => void): void;
-    protected emitPeerJoin(peerId: string): void;
-    protected emitPeerLeave(peerId: string): void;
-    protected emitMessage(peerId: string, data: TransportPayload): void;
-    protected emitError(error: Error): void;
+  /** The local peer id. Defined after `connect` resolves. */
+  abstract readonly localPeerId: string;
+  /** True between a successful `connect` and a `close`. */
+  abstract readonly isOpen: boolean;
+  /** All currently-known remote peer ids. */
+  abstract readonly remotePeerIds: ReadonlySet<string>;
+  /** A short, human-friendly transport name used for logging/UX. */
+  abstract readonly name: string;
+  /** Connect to the room. Must be called exactly once per instance. */
+  abstract connect(opts: TransportConnectOptions): Promise<void>;
+  /** Disconnect; idempotent. */
+  abstract close(): void;
+  /**
+   * Send a payload to a specific peer or broadcast to all known peers when
+   * `targetPeerId` is omitted.
+   */
+  abstract send(payload: TransportPayload, targetPeerId?: string): void;
+  /** Convenience: typed event subscription. */
+  on<K extends TransportEventName>(type: K, listener: (event: CustomEvent) => void): void;
+  off<K extends TransportEventName>(type: K, listener: (event: CustomEvent) => void): void;
+  protected emitPeerJoin(peerId: string): void;
+  protected emitPeerLeave(peerId: string): void;
+  protected emitMessage(peerId: string, data: TransportPayload): void;
+  protected emitError(error: Error): void;
 }
+//#endregion

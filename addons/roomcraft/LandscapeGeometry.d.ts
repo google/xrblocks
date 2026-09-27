@@ -1,5 +1,6 @@
-import * as THREE from 'three';
-import { type SceneLandscape } from './SceneTypes';
+import { SceneLandscape } from "./SceneTypes.js";
+import * as THREE from "three";
+//#region src/addons/roomcraft/LandscapeGeometry.d.ts
 /**
  * Measures a landscape recipe without building it, so a feature can be sized,
  * placed, and fitted before any GPU resource exists. The box is conservative:
@@ -29,3 +30,4 @@ export declare function getLandscapeBounds(definition: SceneLandscape): THREE.Bo
  *     disposal of a successful result.
  */
 export declare function createLandscapeContent(definition: SceneLandscape, color: string): THREE.Group;
+//#endregion

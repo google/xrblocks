@@ -1,5 +1,6 @@
-import * as THREE from 'three';
-import { SimulatorHandPose } from 'xrblocks';
+import * as THREE from "three";
+import { SimulatorHandPose } from "xrblocks";
+//#region src/addons/agenthands/AgentGestures.d.ts
 /** Maps gesture names the agent can emit to concrete hand poses. */
 export declare const GESTURE_POSE_MAP: Readonly<Record<string, SimulatorHandPose>>;
 /** Motion gesture kinds the agent can emit (animated, not static poses). */
@@ -8,28 +9,28 @@ export type AgentMotionKind = 'beat' | 'wave' | 'size' | 'count';
 export declare const GESTURE_MOTION_MAP: Readonly<Record<string, AgentMotionKind>>;
 /** A gesture the agent emitted, located within its (cleaned) reply text. */
 export interface AgentGestureEvent {
-    /** The hand pose to play, for static-pose gestures. */
-    pose?: SimulatorHandPose;
-    /** The animated motion to play, for motion gestures (beat/wave/size/count). */
-    motion?: AgentMotionKind;
-    /** Optional parameter for a motion gesture, e.g. `big` for size, `2` for count. */
-    param?: string;
-    /** The raw gesture name from the markup. */
-    name: string;
-    /** Character index in the cleaned text where the gesture occurs. */
-    index: number;
-    /**
-     * Optional target label for a spatial gesture, e.g. the object to point at
-     * from markup like `[point:the table]`. Lowercased and trimmed.
-     */
-    target?: string;
+  /** The hand pose to play, for static-pose gestures. */
+  pose?: SimulatorHandPose;
+  /** The animated motion to play, for motion gestures (beat/wave/size/count). */
+  motion?: AgentMotionKind;
+  /** Optional parameter for a motion gesture, e.g. `big` for size, `2` for count. */
+  param?: string;
+  /** The raw gesture name from the markup. */
+  name: string;
+  /** Character index in the cleaned text where the gesture occurs. */
+  index: number;
+  /**
+   * Optional target label for a spatial gesture, e.g. the object to point at
+   * from markup like `[point:the table]`. Lowercased and trimmed.
+   */
+  target?: string;
 }
 /** The agent's reply with gesture markup stripped, plus the gestures found. */
 export interface ParsedAgentSpeech {
-    /** The reply text with all gesture markup removed. */
-    text: string;
-    /** The gestures, in order of appearance. */
-    gestures: AgentGestureEvent[];
+  /** The reply text with all gesture markup removed. */
+  text: string;
+  /** The gestures, in order of appearance. */
+  gestures: AgentGestureEvent[];
 }
 /**
  * Resolves a gesture name (e.g. "thumbs up", "point") to a hand pose.
@@ -57,18 +58,18 @@ export declare function parseAgentGestures(input: string): ParsedAgentSpeech;
  * position where applicable.
  */
 export interface GestureStep {
-    /** Seconds from the start of speech at which to play this step. */
-    at: number;
-    /** Character index in the spoken text, for word-boundary synchronization. */
-    charIndex: number;
-    /** The static hand pose to play, if any. */
-    pose?: SimulatorHandPose;
-    /** The animated motion to play, if any. */
-    motion?: AgentMotionKind;
-    /** Optional parameter for a motion gesture (e.g. `big`, `2`). */
-    param?: string;
-    /** Resolved world-space point to aim at, for a `[point:...]` gesture. */
-    point?: THREE.Vector3;
+  /** Seconds from the start of speech at which to play this step. */
+  at: number;
+  /** Character index in the spoken text, for word-boundary synchronization. */
+  charIndex: number;
+  /** The static hand pose to play, if any. */
+  pose?: SimulatorHandPose;
+  /** The animated motion to play, if any. */
+  motion?: AgentMotionKind;
+  /** Optional parameter for a motion gesture (e.g. `big`, `2`). */
+  param?: string;
+  /** Resolved world-space point to aim at, for a `[point:...]` gesture. */
+  point?: THREE.Vector3;
 }
 /**
  * Resolves a point gesture's target label to a world position. Returns the
@@ -88,3 +89,4 @@ export type PointResolver = (target: string) => THREE.Vector3 | null | undefined
  * @returns The timed gesture steps.
  */
 export declare function buildGestureSteps(text: string, gestures: AgentGestureEvent[], duration: number, resolvePoint?: PointResolver): GestureStep[];
+//#endregion

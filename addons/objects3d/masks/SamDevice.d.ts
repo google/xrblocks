@@ -1,3 +1,4 @@
+//#region src/addons/objects3d/masks/SamDevice.d.ts
 /**
  * Device selection for the SlimSAM mask backend.
  *
@@ -22,14 +23,14 @@
 export declare const SAM_ATTENTION_ELEMENTS: number;
 /** The WebGPU adapter fields the SAM device choice depends on. */
 export interface SamGpuAdapterInfo {
-    /** Adapter feature set, queried for `shader-f16`. */
-    features: {
-        has(feature: string): boolean;
-    };
-    /** Adapter limits, queried for `maxStorageBufferBindingSize`. */
-    limits: {
-        maxStorageBufferBindingSize?: number;
-    };
+  /** Adapter feature set, queried for `shader-f16`. */
+  features: {
+    has(feature: string): boolean;
+  };
+  /** Adapter limits, queried for `maxStorageBufferBindingSize`. */
+  limits: {
+    maxStorageBufferBindingSize?: number;
+  };
 }
 /**
  * A `from_pretrained` backend configuration to attempt.
@@ -38,10 +39,10 @@ export interface SamGpuAdapterInfo {
  * the `Record<string, unknown>` options parameter of `from_pretrained`.
  */
 export type SamLoadOption = {
-    /** transformers.js execution device. */
-    device: 'webgpu' | 'wasm';
-    /** Weight precision for that device. */
-    dtype: 'fp16' | 'fp32';
+  /** transformers.js execution device. */
+  device: 'webgpu' | 'wasm';
+  /** Weight precision for that device. */
+  dtype: 'fp16' | 'fp32';
 };
 /**
  * Build the ordered list of load configurations to try for SlimSAM.
@@ -61,3 +62,4 @@ export type SamLoadOption = {
  * @returns Load configurations in preference order, never empty.
  */
 export declare function samDeviceCandidates(adapter: SamGpuAdapterInfo | null): SamLoadOption[];
+//#endregion

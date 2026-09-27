@@ -1,17 +1,18 @@
-import * as THREE from 'three';
-import type { SceneAsset, SceneVector3 } from './SceneTypes';
+import { SceneAsset, SceneVector3 } from "./SceneTypes.js";
+import * as THREE from "three";
+//#region src/addons/roomcraft/Catalog.d.ts
 /** Options for a preauthored glTF model supplied by the application. */
 export interface ModelAssetOptions {
-    /** The catalog ID exposed to the planner. */
-    id: string;
-    /** A short description of the model for the planner. */
-    description: string;
-    /** Unscaled width, height, and depth in meters. */
-    size: SceneVector3;
-    /** A URL controlled by the application, never one produced by a model. */
-    url: string;
-    /** The renderer, required only for KTX2 compressed textures. */
-    renderer?: THREE.WebGLRenderer;
+  /** The catalog ID exposed to the planner. */
+  id: string;
+  /** A short description of the model for the planner. */
+  description: string;
+  /** Unscaled width, height, and depth in meters. */
+  size: SceneVector3;
+  /** A URL controlled by the application, never one produced by a model. */
+  url: string;
+  /** The renderer, required only for KTX2 compressed textures. */
+  renderer?: THREE.WebGLRenderer;
 }
 /**
  * Builds the built-in procedural catalog. Every factory returns a fresh,
@@ -31,4 +32,5 @@ export declare function createDefaultCatalog(): SceneAsset[];
  * @returns A catalog asset that loads the model and multiplies its authored
  *     materials by the requested color; white leaves them unchanged.
  */
-export declare function createModelAsset({ id, description, size, url, renderer, }: ModelAssetOptions): SceneAsset;
+export declare function createModelAsset({ id, description, size, url, renderer }: ModelAssetOptions): SceneAsset;
+//#endregion

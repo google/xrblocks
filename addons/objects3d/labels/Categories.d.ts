@@ -1,3 +1,4 @@
+//#region src/addons/objects3d/labels/Categories.d.ts
 /**
  * Label categorisation helpers for the objects3d addon.
  *
@@ -64,3 +65,4 @@ export declare function isTinyFlatLabel(label: string | null | undefined): boole
  * @returns The most appropriate {@link ObjectCategory} for this label.
  */
 export declare function categorize(label: string | null | undefined): ObjectCategory;
+//#endregion

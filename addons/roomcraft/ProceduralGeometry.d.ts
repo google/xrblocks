@@ -1,5 +1,6 @@
-import * as THREE from 'three';
-import { type ScenePart } from './SceneTypes';
+import { ScenePart } from "./SceneTypes.js";
+import * as THREE from "three";
+//#region src/addons/roomcraft/ProceduralGeometry.d.ts
 /**
  * Computes a conservative object-local bounding box from the physical size of
  * every part and its full motion envelope, transformed through the part
@@ -26,3 +27,4 @@ export declare function getProceduralBounds(parts: readonly ScenePart[]): THREE.
  *     rethrows; Roomcraft owns disposal of a successful result.
  */
 export declare function createProceduralContent(parts: readonly ScenePart[], tint: string): THREE.Group;
+//#endregion

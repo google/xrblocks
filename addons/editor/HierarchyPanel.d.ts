@@ -1,16 +1,17 @@
-import * as xb from 'xrblocks';
-import type { SceneInstance, SceneManager } from './SceneManager';
-import type { SelectionManager } from './SelectionManager';
+import { SceneInstance, SceneManager } from "./SceneManager.js";
+import { SelectionManager } from "./SelectionManager.js";
+import * as xb from "xrblocks";
+//#region src/addons/editor/HierarchyPanel.d.ts
 interface RowEntry {
-    row: HTMLDivElement;
-    instance: SceneInstance;
-    labelEl: HTMLSpanElement;
-    visBtn: HTMLButtonElement;
-    lockBtn: HTMLButtonElement;
-    editing: boolean;
+  row: HTMLDivElement;
+  instance: SceneInstance;
+  labelEl: HTMLSpanElement;
+  visBtn: HTMLButtonElement;
+  lockBtn: HTMLButtonElement;
+  editing: boolean;
 }
 export interface HierarchyPanelOptions {
-    parent?: HTMLElement;
+  parent?: HTMLElement;
 }
 /**
  * Basic outliner: one row per live scene instance, self-contained 2D HTML
@@ -35,19 +36,19 @@ export interface HierarchyPanelOptions {
  * gizmo-driven selection, and direct instance mutation alike.
  */
 export declare class HierarchyPanel extends xb.Script {
-    sceneManager: SceneManager;
-    selectionManager: SelectionManager;
-    root: HTMLDivElement;
-    listEl: HTMLDivElement;
-    rowsById: Map<string, RowEntry>;
-    lastIdsKey: string | null;
-    constructor(sceneManager: SceneManager, selectionManager: SelectionManager, { parent }?: HierarchyPanelOptions);
-    update(): void;
-    computeFileNameCounts(list: SceneInstance[]): Map<string, number>;
-    /** The manifest label wins, then the stable id, then the asset filename. */
-    computeLabel(instance: SceneInstance, countByFileName: Map<string, number>): string;
-    rebuildRows(list: SceneInstance[]): void;
-    beginRename(instance: SceneInstance, labelEl: HTMLSpanElement): void;
-    syncRows(countByFileName: Map<string, number>): void;
+  sceneManager: SceneManager;
+  selectionManager: SelectionManager;
+  root: HTMLDivElement;
+  listEl: HTMLDivElement;
+  rowsById: Map<string, RowEntry>;
+  lastIdsKey: string | null;
+  constructor(sceneManager: SceneManager, selectionManager: SelectionManager, { parent }?: HierarchyPanelOptions);
+  update(): void;
+  computeFileNameCounts(list: SceneInstance[]): Map<string, number>;
+  /** The manifest label wins, then the stable id, then the asset filename. */
+  computeLabel(instance: SceneInstance, countByFileName: Map<string, number>): string;
+  rebuildRows(list: SceneInstance[]): void;
+  beginRename(instance: SceneInstance, labelEl: HTMLSpanElement): void;
+  syncRows(countByFileName: Map<string, number>): void;
 }
-export {};
+//#endregion

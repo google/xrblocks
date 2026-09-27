@@ -1,114 +1,93 @@
 /**
- * Copyright 2025 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * @file xrblocks.js
- * @version v0.21.1
- * @commitid 4d7c04d
- * @builddate 2026-09-26T01:40:17.499Z
- * @description XR Blocks SDK, built from source with the above commit ID.
- * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
- * and follow rules below:
- * 1. Include the following importmap for maximum compatibility:
-    "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
-    "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
-    "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
-    "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
-    "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
-    "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
-    "lit": "https://esm.sh/lit@3.3.1",
-    "lit/": "https://esm.sh/lit@3.3.1/",
-    "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
-    2. If the app focus on standalone objects, spawn it in front of the user in
-    WebXR and rescale to reasonable physical size. Wrap them with xb.ModelViewer
-    and make sure users can drag the platform to move it around in XR.
-    3. When rendering a large scene, remember users may navigate the scene in a
-    physical world space, also add locomotion methods like pinch to teleport.
-    4. Do not halluciate mode files --- use either public high-quality assets,
-    or generate from primitive shapes of use vox formats for voxels or
-    lego-styles.
- */
-import { LitElement, css, html } from 'lit';
-import { customElement } from 'lit/decorators/custom-element.js';
-import { property } from 'lit/decorators/property.js';
-import { a2 as XR_BLOCKS_ASSETS_PATH, c as SimulatorMode, a as SimulatorHandPose, f as SimulatorHandPoseChangeRequestEvent, a3 as SIMULATOR_HAND_POSE_NAMES, k as SetSimulatorEnvironmentEvent, d as SetSimulatorModeEvent, m as SetSimulatorHandPhysicsEvent, l as ShowSimulatorInstructionsEvent } from './entry.js';
-import { state } from 'lit/decorators/state.js';
-import { classMap } from 'lit/directives/class-map.js';
-import { createRef, ref } from 'lit/directives/ref.js';
-import 'three';
-import 'three/addons/postprocessing/Pass.js';
-import 'three/addons/webxr/XRControllerModelFactory.js';
-import 'three/addons/webxr/XRHandModelFactory.js';
-import 'three/addons/webxr/XREstimatedLight.js';
-import 'three/addons/loaders/FontLoader.js';
-import 'three/addons/geometries/TextGeometry.js';
-import 'three/addons/loaders/DRACOLoader.js';
-import 'three/addons/loaders/GLTFLoader.js';
-import 'three/addons/loaders/KTX2Loader.js';
-
-/******************************************************************************
-Copyright (c) Microsoft Corporation.
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THIS SOFTWARE.
-***************************************************************************** */
-/* global Reflect, Promise, SuppressedError, Symbol, Iterator */
-
-
-function __decorate(decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-}
-
-typeof SuppressedError === "function" ? SuppressedError : function (error, suppressed, message) {
-    var e = new Error(message);
-    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
+* Copyright 2025 Google LLC
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*
+* @file xrblocks.js
+* @version v0.21.1
+* @commitid bdbc03b
+* @builddate 2026-09-27T23:29:01.045Z
+* @description XR Blocks SDK, built from source with the above commit ID.
+* @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
+* and follow rules below:
+* 1. Include the following importmap for maximum compatibility:
+"three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+"@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+"@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+"@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+"@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+"yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+"lit": "https://esm.sh/lit@3.3.1",
+"lit/": "https://esm.sh/lit@3.3.1/",
+"three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
+2. If the app focus on standalone objects, spawn it in front of the user in
+WebXR and rescale to reasonable physical size. Wrap them with xb.ModelViewer
+and make sure users can drag the platform to move it around in XR.
+3. When rendering a large scene, remember users may navigate the scene in a
+physical world space, also add locomotion methods like pinch to teleport.
+4. Do not halluciate mode files --- use either public high-quality assets,
+or generate from primitive shapes of use vox formats for voxels or
+lego-styles.
+*/
+import { d as XR_BLOCKS_ASSETS_PATH } from "./constants.js";
+import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES } from "./HandPoses.js";
+import { LitElement, css, html } from "lit";
+import { customElement } from "lit/decorators/custom-element.js";
+import { property } from "lit/decorators/property.js";
+import { state } from "lit/decorators/state.js";
+import { classMap } from "lit/directives/class-map.js";
+import { createRef, ref } from "lit/directives/ref.js";
+//#region src/simulator/internal/interface/instructions/SimulatorInstructionsEvents.ts
+var SimulatorInstructionsNextEvent = class SimulatorInstructionsNextEvent extends Event {
+	static {
+		this.type = "simulatorInstructionsNextEvent";
+	}
+	constructor() {
+		super(SimulatorInstructionsNextEvent.type, {
+			bubbles: true,
+			composed: true
+		});
+	}
 };
-
-class SimulatorInstructionsNextEvent extends Event {
-    static { this.type = 'simulatorInstructionsNextEvent'; }
-    constructor() {
-        super(SimulatorInstructionsNextEvent.type, { bubbles: true, composed: true });
-    }
+var SimulatorInstructionsCloseEvent = class SimulatorInstructionsCloseEvent extends Event {
+	static {
+		this.type = "simulatorInstructionsCloseEvent";
+	}
+	constructor() {
+		super(SimulatorInstructionsCloseEvent.type, {
+			bubbles: true,
+			composed: true
+		});
+	}
+};
+//#endregion
+//#region \0@oxc-project+runtime@0.151.0/helpers/esm/decorate.js
+function __decorate(decorators, target, key, desc) {
+	var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+	if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+	else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+	return c > 3 && r && Object.defineProperty(target, key, r), r;
 }
-class SimulatorInstructionsCloseEvent extends Event {
-    static { this.type = 'simulatorInstructionsCloseEvent'; }
-    constructor() {
-        super(SimulatorInstructionsCloseEvent.type, {
-            bubbles: true,
-            composed: true,
-        });
-    }
-}
-
+//#endregion
+//#region src/simulator/internal/interface/instructions/SimulatorInstructionsCard.ts
 let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitElement {
-    constructor() {
-        super(...arguments);
-        this.continueButtonText = 'Continue';
-    }
-    static { this.styles = css `
+	constructor(..._args) {
+		super(..._args);
+		this.continueButtonText = "Continue";
+	}
+	static {
+		this.styles = css`
     :host {
       position: relative;
       box-sizing: border-box;
@@ -177,24 +156,25 @@ let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitEleme
       margin-top: 0px;
       margin-bottom: 0px;
     }
-  `; }
-    continueButtonClicked() {
-        this.dispatchEvent(new SimulatorInstructionsNextEvent());
-    }
-    closeButtonClicked() {
-        this.dispatchEvent(new SimulatorInstructionsCloseEvent());
-    }
-    getHeaderContents() {
-        return html ` <h1>Welcome to XR Blocks!</h1> `;
-    }
-    getImageContents() {
-        return html ``;
-    }
-    getDescriptionContents() {
-        return html ``;
-    }
-    render() {
-        return html `
+  `;
+	}
+	continueButtonClicked() {
+		this.dispatchEvent(new SimulatorInstructionsNextEvent());
+	}
+	closeButtonClicked() {
+		this.dispatchEvent(new SimulatorInstructionsCloseEvent());
+	}
+	getHeaderContents() {
+		return html` <h1>Welcome to XR Blocks!</h1> `;
+	}
+	getImageContents() {
+		return html``;
+	}
+	getDescriptionContents() {
+		return html``;
+	}
+	render() {
+		return html`
       <button class="close-button" @click=${this.closeButtonClicked}>X</button>
       <div class="header-div">${this.getHeaderContents()}</div>
       <div class="image-div">${this.getImageContents()}</div>
@@ -203,56 +183,47 @@ let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitEleme
         ${this.continueButtonText}
       </button>
     `;
-    }
+	}
 };
-__decorate([
-    property({ type: String })
-], SimulatorInstructionsCard.prototype, "continueButtonText", void 0);
-SimulatorInstructionsCard = __decorate([
-    customElement('xrblocks-simulator-instructions-card')
-], SimulatorInstructionsCard);
-
+__decorate([property({ type: String })], SimulatorInstructionsCard.prototype, "continueButtonText", void 0);
+SimulatorInstructionsCard = __decorate([customElement("xrblocks-simulator-instructions-card")], SimulatorInstructionsCard);
+//#endregion
+//#region src/simulator/internal/interface/instructions/CustomInstruction.ts
 let CustomInstruction = class CustomInstruction extends SimulatorInstructionsCard {
-    getHeaderContents() {
-        return html `<h1>${this.customInstruction.header}</h1>`;
-    }
-    getImageContents() {
-        return this.customInstruction.videoSrc
-            ? html `
+	getHeaderContents() {
+		return html`<h1>${this.customInstruction.header}</h1>`;
+	}
+	getImageContents() {
+		return this.customInstruction.videoSrc ? html`
           <video playsinline autoplay muted loop>
             <source src=${this.customInstruction.videoSrc} type="video/webm" />
             Your browser does not support the video tag.
           </video>
-        `
-            : html ``;
-    }
-    getDescriptionContents() {
-        return html `<p>${this.customInstruction.description}</p>`;
-    }
-    render() {
-        return super.render();
-    }
+        ` : html``;
+	}
+	getDescriptionContents() {
+		return html`<p>${this.customInstruction.description}</p>`;
+	}
+	render() {
+		return super.render();
+	}
 };
-__decorate([
-    property()
-], CustomInstruction.prototype, "customInstruction", void 0);
-CustomInstruction = __decorate([
-    customElement('xrblocks-simulator-custom-instruction')
-], CustomInstruction);
-
-const SIMULATOR_HANDS_VIDEO_PATH = XR_BLOCKS_ASSETS_PATH +
-    'simulator/instructions/xr_blocks_simulator_hands.webm';
+__decorate([property()], CustomInstruction.prototype, "customInstruction", void 0);
+CustomInstruction = __decorate([customElement("xrblocks-simulator-custom-instruction")], CustomInstruction);
+//#endregion
+//#region src/simulator/internal/interface/instructions/HandsInstructions.ts
+const SIMULATOR_HANDS_VIDEO_PATH = XR_BLOCKS_ASSETS_PATH + "simulator/instructions/xr_blocks_simulator_hands.webm";
 let HandsInstructions = class HandsInstructions extends SimulatorInstructionsCard {
-    getImageContents() {
-        return html `
+	getImageContents() {
+		return html`
       <video playsinline autoplay muted loop>
         <source src="${SIMULATOR_HANDS_VIDEO_PATH}" type="video/webm" />
         Your browser does not support the video tag.
       </video>
     `;
-    }
-    getDescriptionContents() {
-        return html `
+	}
+	getDescriptionContents() {
+		return html`
       <h2>Hands Mode</h2>
       <p>
         Hands Mode allows for precise manipulation of virtual hands while
@@ -276,25 +247,23 @@ let HandsInstructions = class HandsInstructions extends SimulatorInstructionsCar
         <li><strong>Simulate Pinch:</strong> Press the Spacebar.</li>
       </ul>
     `;
-    }
+	}
 };
-HandsInstructions = __decorate([
-    customElement('xrblocks-simulator-hands-instructions')
-], HandsInstructions);
-
-const SIMULATOR_NAVIGATION_VIDEO_PATH = XR_BLOCKS_ASSETS_PATH +
-    'simulator/instructions/xr_blocks_simulator_navigation.webm';
+HandsInstructions = __decorate([customElement("xrblocks-simulator-hands-instructions")], HandsInstructions);
+//#endregion
+//#region src/simulator/internal/interface/instructions/NavigationInstructions.ts
+const SIMULATOR_NAVIGATION_VIDEO_PATH = XR_BLOCKS_ASSETS_PATH + "simulator/instructions/xr_blocks_simulator_navigation.webm";
 let NavigationInstructions = class NavigationInstructions extends SimulatorInstructionsCard {
-    getImageContents() {
-        return html `
+	getImageContents() {
+		return html`
       <video playsinline autoplay muted loop>
         <source src=${SIMULATOR_NAVIGATION_VIDEO_PATH} type="video/webm" />
         Your browser does not support the video tag.
       </video>
     `;
-    }
-    getDescriptionContents() {
-        return html `
+	}
+	getDescriptionContents() {
+		return html`
       <h2>Navigation Mode</h2>
       <p>
         Press <strong>Left Shift</strong> to toggle Navigation Mode. In this
@@ -309,25 +278,23 @@ let NavigationInstructions = class NavigationInstructions extends SimulatorInstr
         <li><strong>Rotate Camera:</strong> Click and drag the mouse.</li>
       </ul>
     `;
-    }
+	}
 };
-NavigationInstructions = __decorate([
-    customElement('xrblocks-simulator-navigation-instructions')
-], NavigationInstructions);
-
-const SIMULATOR_USER_VIDEO_PATH = XR_BLOCKS_ASSETS_PATH +
-    'simulator/instructions/xr_blocks_simulator_user.webm';
+NavigationInstructions = __decorate([customElement("xrblocks-simulator-navigation-instructions")], NavigationInstructions);
+//#endregion
+//#region src/simulator/internal/interface/instructions/UserInstructions.ts
+const SIMULATOR_USER_VIDEO_PATH = XR_BLOCKS_ASSETS_PATH + "simulator/instructions/xr_blocks_simulator_user.webm";
 let UserInstructions = class UserInstructions extends SimulatorInstructionsCard {
-    getImageContents() {
-        return html `
+	getImageContents() {
+		return html`
       <video playsinline autoplay muted loop>
         <source src=${SIMULATOR_USER_VIDEO_PATH} type="video/webm" />
         Your browser does not support the video tag.
       </video>
     `;
-    }
-    getDescriptionContents() {
-        return html `
+	}
+	getDescriptionContents() {
+		return html`
       <h2>User Mode</h2>
       <p>
         The simulator starts in <strong>User Mode</strong> by default. This mode
@@ -349,14 +316,14 @@ let UserInstructions = class UserInstructions extends SimulatorInstructionsCard 
         <li><strong>Select Object:</strong> Left-click the mouse.</li>
       </ul>
     `;
-    }
+	}
 };
-UserInstructions = __decorate([
-    customElement('xrblocks-simulator-user-instructions')
-], UserInstructions);
-
+UserInstructions = __decorate([customElement("xrblocks-simulator-user-instructions")], UserInstructions);
+//#endregion
+//#region src/simulator/internal/interface/instructions/SimulatorInstructions.ts
 let SimulatorInstructions = class SimulatorInstructions extends LitElement {
-    static { this.styles = css `
+	static {
+		this.styles = css`
     :host {
       background: #000000aa;
       position: absolute;
@@ -368,113 +335,93 @@ let SimulatorInstructions = class SimulatorInstructions extends LitElement {
       justify-content: center;
       align-items: center;
     }
-  `; }
-    getSteps() {
-        const isSinglePage = this.customInstructions.length === 0;
-        const buttonText = isSinglePage ? 'Close' : 'Continue';
-        if (this.simulatorMode) {
-            switch (this.simulatorMode) {
-                case SimulatorMode.USER:
-                case SimulatorMode.EDITOR:
-                case SimulatorMode.POINTER_LOCK:
-                    return [
-                        html `<xrblocks-simulator-user-instructions
+  `;
+	}
+	getSteps() {
+		const buttonText = this.customInstructions.length === 0 ? "Close" : "Continue";
+		if (this.simulatorMode) switch (this.simulatorMode) {
+			case "User":
+			case "Editor":
+			case "PointerLock": return [html`<xrblocks-simulator-user-instructions
               .continueButtonText=${buttonText}
-            />`,
-                    ];
-                case SimulatorMode.POSE:
-                    return [
-                        html `<xrblocks-simulator-navigation-instructions
+            />`];
+			case "Navigation": return [html`<xrblocks-simulator-navigation-instructions
               .continueButtonText=${buttonText}
-            />`,
-                    ];
-                case SimulatorMode.CONTROLLER:
-                    return [
-                        html `<xrblocks-simulator-hands-instructions
+            />`];
+			case "Hands": return [html`<xrblocks-simulator-hands-instructions
               .continueButtonText=${buttonText}
-            />`,
-                    ];
-            }
-        }
-        return [
-            html `<xrblocks-simulator-user-instructions />`,
-            html `<xrblocks-simulator-navigation-instructions />`,
-            html `<xrblocks-simulator-hands-instructions
+            />`];
+		}
+		return [
+			html`<xrblocks-simulator-user-instructions />`,
+			html`<xrblocks-simulator-navigation-instructions />`,
+			html`<xrblocks-simulator-hands-instructions
         .continueButtonText=${buttonText}
-      />`,
-        ];
-    }
-    constructor() {
-        super();
-        this.customInstructions = [];
-        this.step = 0;
-        this.addEventListener(SimulatorInstructionsNextEvent.type, this.continueButtonClicked.bind(this));
-        this.addEventListener(SimulatorInstructionsCloseEvent.type, this.closeInstructions.bind(this));
-    }
-    closeInstructions() {
-        this.remove();
-    }
-    continueButtonClicked() {
-        const steps = this.getSteps();
-        if (this.step + 1 >= steps.length + this.customInstructions.length) {
-            this.closeInstructions();
-            return;
-        }
-        this.step++;
-    }
-    render() {
-        const steps = this.getSteps();
-        return this.step < steps.length
-            ? steps[this.step]
-            : html `<xrblocks-simulator-custom-instruction
+      />`
+		];
+	}
+	constructor() {
+		super();
+		this.customInstructions = [];
+		this.step = 0;
+		this.addEventListener(SimulatorInstructionsNextEvent.type, this.continueButtonClicked.bind(this));
+		this.addEventListener(SimulatorInstructionsCloseEvent.type, this.closeInstructions.bind(this));
+	}
+	closeInstructions() {
+		this.remove();
+	}
+	continueButtonClicked() {
+		const steps = this.getSteps();
+		if (this.step + 1 >= steps.length + this.customInstructions.length) {
+			this.closeInstructions();
+			return;
+		}
+		this.step++;
+	}
+	render() {
+		const steps = this.getSteps();
+		return this.step < steps.length ? steps[this.step] : html`<xrblocks-simulator-custom-instruction
           .customInstruction=${this.customInstructions[this.step - steps.length]}
         />`;
-    }
+	}
 };
-__decorate([
-    property()
-], SimulatorInstructions.prototype, "simulatorMode", void 0);
-__decorate([
-    property()
-], SimulatorInstructions.prototype, "customInstructions", void 0);
-__decorate([
-    property()
-], SimulatorInstructions.prototype, "step", void 0);
-SimulatorInstructions = __decorate([
-    customElement('xrblocks-simulator-instructions')
-], SimulatorInstructions);
-
+__decorate([property()], SimulatorInstructions.prototype, "simulatorMode", void 0);
+__decorate([property()], SimulatorInstructions.prototype, "customInstructions", void 0);
+__decorate([property()], SimulatorInstructions.prototype, "step", void 0);
+SimulatorInstructions = __decorate([customElement("xrblocks-simulator-instructions")], SimulatorInstructions);
+//#endregion
+//#region src/simulator/internal/interface/ui/GamepadToast.ts
 const BUTTON_NAMES = {
-    0: 'A',
-    1: 'B',
-    2: 'X',
-    3: 'Y',
-    4: 'LB',
-    5: 'RB',
-    6: 'LT',
-    7: 'RT',
-    8: 'Back',
-    9: 'Start',
-    10: 'L3',
-    11: 'R3',
-    12: 'D-Up',
-    13: 'D-Down',
-    14: 'D-Left',
-    15: 'D-Right',
+	0: "A",
+	1: "B",
+	2: "X",
+	3: "Y",
+	4: "LB",
+	5: "RB",
+	6: "LT",
+	7: "RT",
+	8: "Back",
+	9: "Start",
+	10: "L3",
+	11: "R3",
+	12: "D-Up",
+	13: "D-Down",
+	14: "D-Left",
+	15: "D-Right"
 };
 function buttonName(index) {
-    return BUTTON_NAMES[index] ?? `Btn ${index}`;
+	return BUTTON_NAMES[index] ?? `Btn ${index}`;
 }
 let GamepadToast = class GamepadToast extends LitElement {
-    constructor() {
-        super(...arguments);
-        this.visible = false;
-        this._timer = null;
-        /** Map of button label → action description. */
-        this.controls = {};
-        this._flashMessage = '';
-    }
-    static { this.styles = css `
+	constructor(..._args) {
+		super(..._args);
+		this.visible = false;
+		this._timer = null;
+		this.controls = {};
+		this._flashMessage = "";
+	}
+	static {
+		this.styles = css`
     :host {
       position: fixed;
       top: 1.5rem;
@@ -524,93 +471,82 @@ let GamepadToast = class GamepadToast extends LitElement {
     .action {
       color: #ccc;
     }
-  `; }
-    show(controls, duration = 5000) {
-        this.controls = controls;
-        this._flashMessage = '';
-        this.visible = true;
-        if (this._timer)
-            clearTimeout(this._timer);
-        this._timer = setTimeout(() => this.dismiss(), duration);
-    }
-    /** Show a brief single-line message (e.g. "Active Hand: Right"). */
-    flash(message, duration = 1500) {
-        this._flashMessage = message;
-        this.controls = {};
-        this.visible = true;
-        if (this._timer)
-            clearTimeout(this._timer);
-        this._timer = setTimeout(() => this.dismiss(), duration);
-    }
-    dismiss() {
-        this.visible = false;
-        if (this._timer) {
-            clearTimeout(this._timer);
-            this._timer = null;
-        }
-    }
-    render() {
-        if (this._flashMessage) {
-            return html `
+  `;
+	}
+	show(controls, duration = 5e3) {
+		this.controls = controls;
+		this._flashMessage = "";
+		this.visible = true;
+		if (this._timer) clearTimeout(this._timer);
+		this._timer = setTimeout(() => this.dismiss(), duration);
+	}
+	/** Show a brief single-line message (e.g. "Active Hand: Right"). */
+	flash(message, duration = 1500) {
+		this._flashMessage = message;
+		this.controls = {};
+		this.visible = true;
+		if (this._timer) clearTimeout(this._timer);
+		this._timer = setTimeout(() => this.dismiss(), duration);
+	}
+	dismiss() {
+		this.visible = false;
+		if (this._timer) {
+			clearTimeout(this._timer);
+			this._timer = null;
+		}
+	}
+	render() {
+		if (this._flashMessage) return html`
         <div
-          class="toast ${this.visible ? '' : 'hidden'}"
+          class="toast ${this.visible ? "" : "hidden"}"
           @click=${this.dismiss}
         >
           <span class="action">${this._flashMessage}</span>
         </div>
       `;
-        }
-        return html `
-      <div class="toast ${this.visible ? '' : 'hidden'}" @click=${this.dismiss}>
+		return html`
+      <div class="toast ${this.visible ? "" : "hidden"}" @click=${this.dismiss}>
         <h3>🎮 Gamepad Connected</h3>
         <div class="controls">
-          ${Object.entries(this.controls).map(([key, action]) => html `
+          ${Object.entries(this.controls).map(([key, action]) => html`
               <span class="key">${key}</span>
               <span class="action">${action}</span>
             `)}
         </div>
       </div>
     `;
-    }
+	}
 };
-__decorate([
-    property({ type: Boolean })
-], GamepadToast.prototype, "visible", void 0);
-__decorate([
-    property({ type: Object })
-], GamepadToast.prototype, "controls", void 0);
-__decorate([
-    property({ type: String })
-], GamepadToast.prototype, "_flashMessage", void 0);
-GamepadToast = __decorate([
-    customElement('xrblocks-gamepad-toast')
-], GamepadToast);
-
+__decorate([property({ type: Boolean })], GamepadToast.prototype, "visible", void 0);
+__decorate([property({ type: Object })], GamepadToast.prototype, "controls", void 0);
+__decorate([property({ type: String })], GamepadToast.prototype, "_flashMessage", void 0);
+GamepadToast = __decorate([customElement("xrblocks-gamepad-toast")], GamepadToast);
+//#endregion
+//#region src/simulator/internal/interface/ui/GamepadSettingsPanel.ts
 const ACTION_LABELS = {
-    select: 'Select / Interact',
-    cycleHandPoseLeft: 'Previous Hand Pose',
-    cycleHandPoseRight: 'Next Hand Pose',
-    cycleSimulatorMode: 'Cycle Simulator Mode',
-    toggleUI: 'Toggle UI',
-    toggleHand: 'Swap Active Hand',
-    moveUp: 'Move Up',
-    moveDown: 'Move Down',
-    openSettings: 'Open Settings',
+	select: "Select / Interact",
+	cycleHandPoseLeft: "Previous Hand Pose",
+	cycleHandPoseRight: "Next Hand Pose",
+	cycleSimulatorMode: "Cycle Simulator Mode",
+	toggleUI: "Toggle UI",
+	toggleHand: "Swap Active Hand",
+	moveUp: "Move Up",
+	moveDown: "Move Down",
+	openSettings: "Open Settings"
 };
-// Actions hidden from the rebind list. openSettings must always stay bound
-// so users can never lock themselves out of the menu.
-const REBINDABLE_ACTIONS = Object.keys(ACTION_LABELS).filter((a) => a !== 'openSettings');
+const REBINDABLE_ACTIONS = Object.keys(ACTION_LABELS).filter((a) => a !== "openSettings");
 let GamepadSettingsPanel = class GamepadSettingsPanel extends LitElement {
-    constructor() {
-        super(...arguments);
-        this._listeningAction = null;
-        this._bindingSnapshot = {};
-        this._focusedIndex = 0;
-        this._rafId = null;
-        this._prevStickY = 0;
-        this._navPrevButtons = [];
-    }
-    static { this.styles = css `
+	constructor(..._args) {
+		super(..._args);
+		this._listeningAction = null;
+		this._bindingSnapshot = {};
+		this._focusedIndex = 0;
+		this._rafId = null;
+		this._prevStickY = 0;
+		this._navPrevButtons = [];
+	}
+	static {
+		this.styles = css`
     :host {
       position: fixed;
       top: 0;
@@ -741,193 +677,142 @@ let GamepadSettingsPanel = class GamepadSettingsPanel extends LitElement {
       color: #888;
       text-align: center;
     }
-  `; }
-    _navJustPressed(gp, index) {
-        const down = gp.activeGamepad?.buttons[index]?.pressed ?? false;
-        const wasDown = this._navPrevButtons[index] ?? false;
-        return down && !wasDown;
-    }
-    _navUpdatePrev(gp) {
-        const buttons = gp.activeGamepad?.buttons;
-        if (!buttons)
-            return;
-        for (let i = 0; i < buttons.length; i++) {
-            this._navPrevButtons[i] = buttons[i]?.pressed ?? false;
-        }
-    }
-    get _totalItems() {
-        return REBINDABLE_ACTIONS.length + 2; // bindings + reset + close
-    }
-    show() {
-        this.hidden = false;
-        this._refreshSnapshot();
-        this._focusedIndex = 0;
-        this._prevStickY = 0;
-        this._navPrevButtons = [];
-        if (this.gamepadController) {
-            this.gamepadController.menuActive = true;
-            this._navUpdatePrev(this.gamepadController);
-        }
-        this._startNavLoop();
-    }
-    hide() {
-        this.hidden = true;
-        if (this._listeningAction) {
-            this.gamepadController?.cancelCapture();
-            this._listeningAction = null;
-        }
-        if (this.gamepadController) {
-            this.gamepadController.menuActive = false;
-        }
-        this._stopNavLoop();
-    }
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        this._stopNavLoop();
-        if (this.gamepadController) {
-            this.gamepadController.menuActive = false;
-        }
-    }
-    _startNavLoop() {
-        if (this._rafId !== null)
-            return;
-        const loop = () => {
-            this._rafId = requestAnimationFrame(loop);
-            this._pollNavigation();
-        };
-        this._rafId = requestAnimationFrame(loop);
-    }
-    _stopNavLoop() {
-        if (this._rafId !== null) {
-            cancelAnimationFrame(this._rafId);
-            this._rafId = null;
-        }
-    }
-    _pollNavigation() {
-        const gp = this.gamepadController;
-        if (!gp || !gp.userData.connected)
-            return;
-        // While listening for a rebind, the next button press is consumed by the
-        // capture callback — don't double-handle navigation. Still update prev
-        // button state so we don't fire a stale rising edge on the next frame.
-        if (this._listeningAction !== null) {
-            this._navUpdatePrev(gp);
-            return;
-        }
-        // Left stick Y for focus movement (rising-edge debounced).
-        const [, ly] = gp.getAxes();
-        const THRESH = 0.5;
-        if (ly < -THRESH && this._prevStickY >= -THRESH) {
-            this._moveFocus(-1);
-        }
-        else if (ly > THRESH && this._prevStickY <= THRESH) {
-            this._moveFocus(1);
-        }
-        this._prevStickY = ly;
-        // D-pad up/down for focus movement.
-        if (this._navJustPressed(gp, 12))
-            this._moveFocus(-1);
-        if (this._navJustPressed(gp, 13))
-            this._moveFocus(1);
-        // Triggers as alternate up/down.
-        if (this._navJustPressed(gp, 6))
-            this._moveFocus(-1);
-        if (this._navJustPressed(gp, 7))
-            this._moveFocus(1);
-        // A button (button 0) — activate focused item.
-        if (this._navJustPressed(gp, 0))
-            this._activateFocused();
-        // B button (button 1) — close panel.
-        if (this._navJustPressed(gp, 1))
-            this.hide();
-        // Settings button (whichever is bound to openSettings) — also closes.
-        const settingsBtn = this.bindings?.getBinding('openSettings') ?? -1;
-        if (settingsBtn >= 0 &&
-            settingsBtn !== 0 &&
-            settingsBtn !== 1 &&
-            this._navJustPressed(gp, settingsBtn)) {
-            this.hide();
-        }
-        this._navUpdatePrev(gp);
-    }
-    _moveFocus(delta) {
-        const max = this._totalItems - 1;
-        this._focusedIndex = Math.max(0, Math.min(max, this._focusedIndex + delta));
-    }
-    _activateFocused() {
-        const actions = REBINDABLE_ACTIONS;
-        if (this._focusedIndex < actions.length) {
-            this._startListening(actions[this._focusedIndex]);
-        }
-        else if (this._focusedIndex === actions.length) {
-            this._resetDefaults();
-        }
-        else {
-            this.hide();
-        }
-    }
-    _refreshSnapshot() {
-        if (this.bindings) {
-            this._bindingSnapshot = { ...this.bindings.getAllBindings() };
-        }
-    }
-    _startListening(action) {
-        this._listeningAction = action;
-        this.gamepadController?.captureNextButtonPress((buttonIndex) => {
-            this.bindings?.setBinding(action, buttonIndex);
-            this._listeningAction = null;
-            this._refreshSnapshot();
-            // Sync nav prev-buttons to current state so the just-captured press
-            // isn't seen as a fresh rising edge by the next nav poll (which would
-            // e.g. close the menu when B is bound).
-            if (this.gamepadController) {
-                this._navUpdatePrev(this.gamepadController);
-            }
-        });
-    }
-    _resetDefaults() {
-        this.bindings?.resetDefaults();
-        this._refreshSnapshot();
-    }
-    render() {
-        const actions = REBINDABLE_ACTIONS;
-        const resetIdx = actions.length;
-        const closeIdx = actions.length + 1;
-        return html `
+  `;
+	}
+	_navJustPressed(gp, index) {
+		const down = gp.activeGamepad?.buttons[index]?.pressed ?? false;
+		const wasDown = this._navPrevButtons[index] ?? false;
+		return down && !wasDown;
+	}
+	_navUpdatePrev(gp) {
+		const buttons = gp.activeGamepad?.buttons;
+		if (!buttons) return;
+		for (let i = 0; i < buttons.length; i++) this._navPrevButtons[i] = buttons[i]?.pressed ?? false;
+	}
+	get _totalItems() {
+		return REBINDABLE_ACTIONS.length + 2;
+	}
+	show() {
+		this.hidden = false;
+		this._refreshSnapshot();
+		this._focusedIndex = 0;
+		this._prevStickY = 0;
+		this._navPrevButtons = [];
+		if (this.gamepadController) {
+			this.gamepadController.menuActive = true;
+			this._navUpdatePrev(this.gamepadController);
+		}
+		this._startNavLoop();
+	}
+	hide() {
+		this.hidden = true;
+		if (this._listeningAction) {
+			this.gamepadController?.cancelCapture();
+			this._listeningAction = null;
+		}
+		if (this.gamepadController) this.gamepadController.menuActive = false;
+		this._stopNavLoop();
+	}
+	disconnectedCallback() {
+		super.disconnectedCallback();
+		this._stopNavLoop();
+		if (this.gamepadController) this.gamepadController.menuActive = false;
+	}
+	_startNavLoop() {
+		if (this._rafId !== null) return;
+		const loop = () => {
+			this._rafId = requestAnimationFrame(loop);
+			this._pollNavigation();
+		};
+		this._rafId = requestAnimationFrame(loop);
+	}
+	_stopNavLoop() {
+		if (this._rafId !== null) {
+			cancelAnimationFrame(this._rafId);
+			this._rafId = null;
+		}
+	}
+	_pollNavigation() {
+		const gp = this.gamepadController;
+		if (!gp || !gp.userData.connected) return;
+		if (this._listeningAction !== null) {
+			this._navUpdatePrev(gp);
+			return;
+		}
+		const [, ly] = gp.getAxes();
+		const THRESH = .5;
+		if (ly < -.5 && this._prevStickY >= -.5) this._moveFocus(-1);
+		else if (ly > THRESH && this._prevStickY <= THRESH) this._moveFocus(1);
+		this._prevStickY = ly;
+		if (this._navJustPressed(gp, 12)) this._moveFocus(-1);
+		if (this._navJustPressed(gp, 13)) this._moveFocus(1);
+		if (this._navJustPressed(gp, 6)) this._moveFocus(-1);
+		if (this._navJustPressed(gp, 7)) this._moveFocus(1);
+		if (this._navJustPressed(gp, 0)) this._activateFocused();
+		if (this._navJustPressed(gp, 1)) this.hide();
+		const settingsBtn = this.bindings?.getBinding("openSettings") ?? -1;
+		if (settingsBtn >= 0 && settingsBtn !== 0 && settingsBtn !== 1 && this._navJustPressed(gp, settingsBtn)) this.hide();
+		this._navUpdatePrev(gp);
+	}
+	_moveFocus(delta) {
+		const max = this._totalItems - 1;
+		this._focusedIndex = Math.max(0, Math.min(max, this._focusedIndex + delta));
+	}
+	_activateFocused() {
+		const actions = REBINDABLE_ACTIONS;
+		if (this._focusedIndex < actions.length) this._startListening(actions[this._focusedIndex]);
+		else if (this._focusedIndex === actions.length) this._resetDefaults();
+		else this.hide();
+	}
+	_refreshSnapshot() {
+		if (this.bindings) this._bindingSnapshot = { ...this.bindings.getAllBindings() };
+	}
+	_startListening(action) {
+		this._listeningAction = action;
+		this.gamepadController?.captureNextButtonPress((buttonIndex) => {
+			this.bindings?.setBinding(action, buttonIndex);
+			this._listeningAction = null;
+			this._refreshSnapshot();
+			if (this.gamepadController) this._navUpdatePrev(this.gamepadController);
+		});
+	}
+	_resetDefaults() {
+		this.bindings?.resetDefaults();
+		this._refreshSnapshot();
+	}
+	render() {
+		const actions = REBINDABLE_ACTIONS;
+		const resetIdx = actions.length;
+		const closeIdx = actions.length + 1;
+		return html`
       <div class="backdrop" @click=${this.hide}></div>
       <div class="panel">
         <h2>🎮 Gamepad Settings</h2>
         ${actions.map((action, i) => {
-            const btnIdx = this._bindingSnapshot[action] ?? -1;
-            const isListening = this._listeningAction === action;
-            const isFocused = this._focusedIndex === i;
-            return html `
+			const btnIdx = this._bindingSnapshot[action] ?? -1;
+			const isListening = this._listeningAction === action;
+			const isFocused = this._focusedIndex === i;
+			return html`
             <div class="binding-row">
               <span class="action-label">${ACTION_LABELS[action]}</span>
               <button
-                class="bind-btn ${isListening ? 'listening' : ''} ${isFocused
-                ? 'focused'
-                : ''}"
+                class="bind-btn ${isListening ? "listening" : ""} ${isFocused ? "focused" : ""}"
                 @click=${() => isListening ? null : this._startListening(action)}
               >
-                ${isListening
-                ? 'Press button...'
-                : btnIdx >= 0
-                    ? buttonName(btnIdx)
-                    : 'Unbound'}
+                ${isListening ? "Press button..." : btnIdx >= 0 ? buttonName(btnIdx) : "Unbound"}
               </button>
             </div>
           `;
-        })}
+		})}
         <div class="footer">
           <button
-            class=${this._focusedIndex === resetIdx ? 'focused' : ''}
+            class=${this._focusedIndex === resetIdx ? "focused" : ""}
             @click=${this._resetDefaults}
           >
             Reset Defaults
           </button>
           <button
-            class=${this._focusedIndex === closeIdx ? 'focused' : ''}
+            class=${this._focusedIndex === closeIdx ? "focused" : ""}
             @click=${this.hide}
           >
             Close
@@ -938,36 +823,25 @@ let GamepadSettingsPanel = class GamepadSettingsPanel extends LitElement {
         </div>
       </div>
     `;
-    }
+	}
 };
-__decorate([
-    property({ type: Object })
-], GamepadSettingsPanel.prototype, "bindings", void 0);
-__decorate([
-    property({ type: Object })
-], GamepadSettingsPanel.prototype, "gamepadController", void 0);
-__decorate([
-    state()
-], GamepadSettingsPanel.prototype, "_listeningAction", void 0);
-__decorate([
-    state()
-], GamepadSettingsPanel.prototype, "_bindingSnapshot", void 0);
-__decorate([
-    state()
-], GamepadSettingsPanel.prototype, "_focusedIndex", void 0);
-GamepadSettingsPanel = __decorate([
-    customElement('xrblocks-gamepad-settings')
-], GamepadSettingsPanel);
-
+__decorate([property({ type: Object })], GamepadSettingsPanel.prototype, "bindings", void 0);
+__decorate([property({ type: Object })], GamepadSettingsPanel.prototype, "gamepadController", void 0);
+__decorate([state()], GamepadSettingsPanel.prototype, "_listeningAction", void 0);
+__decorate([state()], GamepadSettingsPanel.prototype, "_bindingSnapshot", void 0);
+__decorate([state()], GamepadSettingsPanel.prototype, "_focusedIndex", void 0);
+GamepadSettingsPanel = __decorate([customElement("xrblocks-gamepad-settings")], GamepadSettingsPanel);
+//#endregion
+//#region src/simulator/internal/interface/ui/HandPosePanel.ts
 let HandPosePanel = class HandPosePanel extends LitElement {
-    constructor() {
-        super(...arguments);
-        this.posePanelRef = createRef();
-        // Default to the first hand pose
-        this.handPose = Object.values(SimulatorHandPose)[0];
-        this.visible = true;
-    }
-    static { this.styles = css `
+	constructor(..._args) {
+		super(..._args);
+		this.posePanelRef = createRef();
+		this.handPose = Object.values(SimulatorHandPose)[0];
+		this.visible = true;
+	}
+	static {
+		this.styles = css`
     :host {
       position: absolute;
       bottom: 0;
@@ -1014,29 +888,28 @@ let HandPosePanel = class HandPosePanel extends LitElement {
     .hand-pose-button.selected {
       color: #ffffffff;
     }
-  `; }
-    update(changedProperties) {
-        if (changedProperties.has('handPose')) {
-            this.onHandPoseChanged();
-        }
-        super.update(changedProperties);
-    }
-    sendHandPoseRequest(pose) {
-        this.dispatchEvent(new SimulatorHandPoseChangeRequestEvent(pose));
-    }
-    /**
-     * @returns An array of `TemplateResult` objects, one for each hand pose.
-     */
-    getHandPoseButtons() {
-        const buttons = [];
-        for (const pose of Object.values(SimulatorHandPose)) {
-            const poseName = SIMULATOR_HAND_POSE_NAMES[pose];
-            const classes = {
-                'hand-pose-button': true,
-                selected: this.handPose === pose,
-            };
-            const clickCall = () => this.sendHandPoseRequest(pose);
-            buttons.push(html `
+  `;
+	}
+	update(changedProperties) {
+		if (changedProperties.has("handPose")) this.onHandPoseChanged();
+		super.update(changedProperties);
+	}
+	sendHandPoseRequest(pose) {
+		this.dispatchEvent(new SimulatorHandPoseChangeRequestEvent(pose));
+	}
+	/**
+	* @returns An array of `TemplateResult` objects, one for each hand pose.
+	*/
+	getHandPoseButtons() {
+		const buttons = [];
+		for (const pose of Object.values(SimulatorHandPose)) {
+			const poseName = SIMULATOR_HAND_POSE_NAMES[pose];
+			const classes = {
+				"hand-pose-button": true,
+				selected: this.handPose === pose
+			};
+			const clickCall = () => this.sendHandPoseRequest(pose);
+			buttons.push(html`
         <button
           class=${classMap(classes)}
           @click=${clickCall}
@@ -1045,59 +918,50 @@ let HandPosePanel = class HandPosePanel extends LitElement {
           ${poseName}
         </button>
       `);
-        }
-        return buttons;
-    }
-    onHandPoseChanged() {
-        this.scrollToCurrentHandPose();
-    }
-    scrollToCurrentHandPose() {
-        const handPosePanel = this.posePanelRef.value;
-        if (!handPosePanel)
-            return;
-        const selectedButton = handPosePanel.querySelector(`.hand-pose-button[data-pose=${this.handPose}]`);
-        if (selectedButton) {
-            selectedButton.scrollIntoView({
-                behavior: 'smooth',
-                inline: 'center',
-                block: 'nearest',
-            });
-        }
-    }
-    render() {
-        if (!this.visible) {
-            return html ``;
-        }
-        const handPoseButtons = this.getHandPoseButtons();
-        return html `
+		}
+		return buttons;
+	}
+	onHandPoseChanged() {
+		this.scrollToCurrentHandPose();
+	}
+	scrollToCurrentHandPose() {
+		const handPosePanel = this.posePanelRef.value;
+		if (!handPosePanel) return;
+		const selectedButton = handPosePanel.querySelector(`.hand-pose-button[data-pose=${this.handPose}]`);
+		if (selectedButton) selectedButton.scrollIntoView({
+			behavior: "smooth",
+			inline: "center",
+			block: "nearest"
+		});
+	}
+	render() {
+		if (!this.visible) return html``;
+		const handPoseButtons = this.getHandPoseButtons();
+		return html`
       <div class="hand-pose-panel" ${ref(this.posePanelRef)}>
         ${handPoseButtons}
       </div>
     `;
-    }
+	}
 };
-__decorate([
-    property({ type: String })
-], HandPosePanel.prototype, "handPose", void 0);
-__decorate([
-    property({ type: Boolean })
-], HandPosePanel.prototype, "visible", void 0);
-HandPosePanel = __decorate([
-    customElement('xrblocks-simulator-hand-pose-panel')
-], HandPosePanel);
-
+__decorate([property({ type: String })], HandPosePanel.prototype, "handPose", void 0);
+__decorate([property({ type: Boolean })], HandPosePanel.prototype, "visible", void 0);
+HandPosePanel = __decorate([customElement("xrblocks-simulator-hand-pose-panel")], HandPosePanel);
+//#endregion
+//#region src/simulator/internal/interface/ui/SimulatorSettingsPanel.ts
 let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
-    constructor() {
-        super(...arguments);
-        this.environments = [];
-        this.activeEnvironmentIndex = 0;
-        this.simulatorMode = SimulatorMode.USER;
-        this.instructionsEnabled = false;
-        this.handPhysicsAvailable = false;
-        this.handPhysicsEnabled = false;
-        this._isOpen = false;
-    }
-    static { this.styles = css `
+	constructor(..._args) {
+		super(..._args);
+		this.environments = [];
+		this.activeEnvironmentIndex = 0;
+		this.simulatorMode = "User";
+		this.instructionsEnabled = false;
+		this.handPhysicsAvailable = false;
+		this.handPhysicsEnabled = false;
+		this._isOpen = false;
+	}
+	static {
+		this.styles = css`
     :host {
       position: fixed;
       bottom: 0;
@@ -1261,42 +1125,35 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
     .instructions-btn:active {
       background: rgba(255, 255, 255, 0.15);
     }
-  `; }
-    _togglePanel() {
-        this._isOpen = !this._isOpen;
-    }
-    _onEnvironmentChange(e) {
-        const select = e.target;
-        const idx = parseInt(select.value, 10);
-        this.activeEnvironmentIndex = idx;
-        this.dispatchEvent(new SetSimulatorEnvironmentEvent(idx));
-    }
-    _onModeChange(e) {
-        const select = e.target;
-        const newMode = select.value;
-        this.simulatorMode = newMode;
-        this.dispatchEvent(new SetSimulatorModeEvent(newMode));
-    }
-    _onHandPhysicsChange(e) {
-        const input = e.target;
-        this.handPhysicsEnabled = input.checked;
-        this.dispatchEvent(new SetSimulatorHandPhysicsEvent(this.handPhysicsEnabled));
-    }
-    _onShowInstructions() {
-        this._isOpen = false;
-        this.dispatchEvent(new ShowSimulatorInstructionsEvent(this.simulatorMode));
-    }
-    render() {
-        const modes = [
-            { label: 'User', value: SimulatorMode.USER },
-            { label: 'Navigation', value: SimulatorMode.POSE },
-            { label: 'Hands', value: SimulatorMode.CONTROLLER },
-            { label: 'Pointer Lock', value: SimulatorMode.POINTER_LOCK },
-            { label: 'Editor', value: SimulatorMode.EDITOR },
-        ];
-        return html `
+  `;
+	}
+	_togglePanel() {
+		this._isOpen = !this._isOpen;
+	}
+	_onEnvironmentChange(e) {
+		const select = e.target;
+		const idx = parseInt(select.value, 10);
+		this.activeEnvironmentIndex = idx;
+		this.dispatchEvent(new SetSimulatorEnvironmentEvent(idx));
+	}
+	_onModeChange(e) {
+		const newMode = e.target.value;
+		this.simulatorMode = newMode;
+		this.dispatchEvent(new SetSimulatorModeEvent(newMode));
+	}
+	_onHandPhysicsChange(e) {
+		const input = e.target;
+		this.handPhysicsEnabled = input.checked;
+		this.dispatchEvent(new SetSimulatorHandPhysicsEvent(this.handPhysicsEnabled));
+	}
+	_onShowInstructions() {
+		this._isOpen = false;
+		this.dispatchEvent(new ShowSimulatorInstructionsEvent(this.simulatorMode));
+	}
+	render() {
+		return html`
       <button
-        class="settings-btn ${this._isOpen ? 'open' : ''}"
+        class="settings-btn ${this._isOpen ? "open" : ""}"
         @click=${this._togglePanel}
         title="Simulator Settings"
       >
@@ -1307,18 +1164,18 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
         </svg>
       </button>
 
-      <div class="panel ${this._isOpen ? 'open' : ''}">
+      <div class="panel ${this._isOpen ? "open" : ""}">
         <h3>Simulator Settings</h3>
 
         <div class="form-group">
           <label>AR Simulation Environment</label>
           <select @change=${this._onEnvironmentChange}>
-            ${this.environments.map((env, idx) => html `
+            ${this.environments.map((env, idx) => html`
                 <option
                   value=${idx}
                   ?selected=${idx === this.activeEnvironmentIndex}
                 >
-                  ${env.name ?? env.manifestPath.split('/').pop()}
+                  ${env.name ?? env.manifestPath.split("/").pop()}
                 </option>
               `)}
           </select>
@@ -1327,7 +1184,28 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
         <div class="form-group">
           <label>Interaction Mode</label>
           <select @change=${this._onModeChange}>
-            ${modes.map((mode) => html `
+            ${[
+			{
+				label: "User",
+				value: "User"
+			},
+			{
+				label: "Navigation",
+				value: "Navigation"
+			},
+			{
+				label: "Hands",
+				value: "Hands"
+			},
+			{
+				label: "Pointer Lock",
+				value: "PointerLock"
+			},
+			{
+				label: "Editor",
+				value: "Editor"
+			}
+		].map((mode) => html`
                 <option
                   value=${mode.value}
                   ?selected=${mode.value === this.simulatorMode}
@@ -1350,8 +1228,7 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
           </label>
         </div>
 
-        ${this.instructionsEnabled
-            ? html `
+        ${this.instructionsEnabled ? html`
               <div class="form-group">
                 <button
                   class="instructions-btn"
@@ -1360,34 +1237,19 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
                   View Simulator Instructions
                 </button>
               </div>
-            `
-            : ''}
+            ` : ""}
       </div>
     `;
-    }
+	}
 };
-__decorate([
-    property({ type: Array })
-], SimulatorSettingsPanel.prototype, "environments", void 0);
-__decorate([
-    property({ type: Number })
-], SimulatorSettingsPanel.prototype, "activeEnvironmentIndex", void 0);
-__decorate([
-    property({ type: String })
-], SimulatorSettingsPanel.prototype, "simulatorMode", void 0);
-__decorate([
-    property({ type: Boolean })
-], SimulatorSettingsPanel.prototype, "instructionsEnabled", void 0);
-__decorate([
-    property({ type: Boolean })
-], SimulatorSettingsPanel.prototype, "handPhysicsAvailable", void 0);
-__decorate([
-    property({ type: Boolean })
-], SimulatorSettingsPanel.prototype, "handPhysicsEnabled", void 0);
-__decorate([
-    state()
-], SimulatorSettingsPanel.prototype, "_isOpen", void 0);
-SimulatorSettingsPanel = __decorate([
-    customElement('xrblocks-simulator-settings')
-], SimulatorSettingsPanel);
+__decorate([property({ type: Array })], SimulatorSettingsPanel.prototype, "environments", void 0);
+__decorate([property({ type: Number })], SimulatorSettingsPanel.prototype, "activeEnvironmentIndex", void 0);
+__decorate([property({ type: String })], SimulatorSettingsPanel.prototype, "simulatorMode", void 0);
+__decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "instructionsEnabled", void 0);
+__decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "handPhysicsAvailable", void 0);
+__decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "handPhysicsEnabled", void 0);
+__decorate([state()], SimulatorSettingsPanel.prototype, "_isOpen", void 0);
+SimulatorSettingsPanel = __decorate([customElement("xrblocks-simulator-settings")], SimulatorSettingsPanel);
+//#endregion
+
 //# sourceMappingURL=SimulatorElements.js.map

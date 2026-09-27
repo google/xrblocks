@@ -1,7 +1,8 @@
-import * as THREE from 'three';
-import { LocalUser, Peers } from './Peers';
-import { NetSession, NetSessionOptions } from './NetSession';
-import { Transport } from './transport/Transport';
+import { Transport } from "./transport/Transport.js";
+import { NetSession, NetSessionOptions } from "./NetSession.js";
+import { LocalUser, Peers } from "./Peers.js";
+import * as THREE from "three";
+//#region src/addons/netblocks/src/core/NetCore.d.ts
 /**
  * NetCore is the public entry point for the netblocks addon. The easiest
  * way to use it is `xb.enableNet()`, which constructs one for you and
@@ -27,41 +28,42 @@ import { Transport } from './transport/Transport';
  * ```
  */
 export interface JoinRoomOptions extends NetSessionOptions {
-    /**
-     * Transport to use. Defaults to a fresh `WebRTCTransport()` so
-     * `joinRoom('lobby')` works for the common case; pass
-     * `BroadcastChannelTransport` for same-tab demos or
-     * `WebSocketTransport` for relay-backed setups.
-     */
-    transport?: Transport;
+  /**
+   * Transport to use. Defaults to a fresh `WebRTCTransport()` so
+   * `joinRoom('lobby')` works for the common case; pass
+   * `BroadcastChannelTransport` for same-tab demos or
+   * `WebSocketTransport` for relay-backed setups.
+   */
+  transport?: Transport;
 }
 export declare class NetCore {
-    /** The currently active session, or undefined when not joined. */
-    session?: NetSession;
-    /**
-     * Lazy facade over the connected peer roster. Safe to read and subscribe
-     * on before `joinRoom()`; subscriptions persist across rejoins.
-     */
-    readonly peers: Peers;
-    /** The local network identity (peerId, displayName). */
-    readonly user: LocalUser;
-    private _root;
-    /**
-     * @param root - The Object3D under which remote-user avatars are added.
-     *   Usually your app's root xb.Script. When using `enableNet()`, this is
-     *   the xrblocks scene.
-     */
-    constructor(root: THREE.Object3D);
-    /** Connect to a room. Defaults to a fresh WebRTCTransport when omitted. */
-    joinRoom(roomId: string, opts?: JoinRoomOptions): Promise<NetSession>;
-    /** Disconnect and clean up. */
-    leaveRoom(): void;
-    /**
-     * Broadcast `data` on `topic` to every connected peer. Shorthand for
-     * `session.events.emit(topic, data)`. Throws if not joined.
-     */
-    send(topic: string, data: unknown): void;
-    /** Per-frame tick. Driven automatically when registered via `enableNet()`. */
-    update(time?: number, frame?: XRFrame): void;
-    dispose(): void;
+  /** The currently active session, or undefined when not joined. */
+  session?: NetSession;
+  /**
+   * Lazy facade over the connected peer roster. Safe to read and subscribe
+   * on before `joinRoom()`; subscriptions persist across rejoins.
+   */
+  readonly peers: Peers;
+  /** The local network identity (peerId, displayName). */
+  readonly user: LocalUser;
+  private _root;
+  /**
+   * @param root - The Object3D under which remote-user avatars are added.
+   *   Usually your app's root xb.Script. When using `enableNet()`, this is
+   *   the xrblocks scene.
+   */
+  constructor(root: THREE.Object3D);
+  /** Connect to a room. Defaults to a fresh WebRTCTransport when omitted. */
+  joinRoom(roomId: string, opts?: JoinRoomOptions): Promise<NetSession>;
+  /** Disconnect and clean up. */
+  leaveRoom(): void;
+  /**
+   * Broadcast `data` on `topic` to every connected peer. Shorthand for
+   * `session.events.emit(topic, data)`. Throws if not joined.
+   */
+  send(topic: string, data: unknown): void;
+  /** Per-frame tick. Driven automatically when registered via `enableNet()`. */
+  update(time?: number, frame?: XRFrame): void;
+  dispose(): void;
 }
+//#endregion

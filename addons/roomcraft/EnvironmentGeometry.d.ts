@@ -1,5 +1,6 @@
-import * as THREE from 'three';
-import { type SceneEnvironment } from './SceneTypes';
+import { SceneEnvironment } from "./SceneTypes.js";
+import * as THREE from "three";
+//#region src/addons/roomcraft/EnvironmentGeometry.d.ts
 /**
  * Bounds of the ground a virtual environment owns, in environment-local
  * meters. The sky dome, its celestial body, and the lights are backdrop, so
@@ -24,3 +25,4 @@ export declare function getEnvironmentBounds(environment: SceneEnvironment): THR
  *     Roomcraft owns disposal of a successful result.
  */
 export declare function createEnvironmentContent(environment: SceneEnvironment): THREE.Group;
+//#endregion

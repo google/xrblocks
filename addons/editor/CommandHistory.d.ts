@@ -1,7 +1,8 @@
-import * as xb from 'xrblocks';
+import * as xb from "xrblocks";
+//#region src/addons/editor/CommandHistory.d.ts
 export interface Command {
-    undo: () => void | Promise<void>;
-    redo: () => void | Promise<void>;
+  undo: () => void | Promise<void>;
+  redo: () => void | Promise<void>;
 }
 /**
  * Undo/redo command stack. Each entry is \{undo, redo\}; redo is never
@@ -17,25 +18,26 @@ export interface Command {
  * transfers; it does not roll back command side effects or partial batches.
  */
 export declare class CommandHistory extends xb.Script {
-    undoStack: Command[];
-    redoStack: Command[];
-    private pending;
-    private generation;
-    /** Set every frame by SceneEditor -- see SelectionManager.editorActive
-     * for the same pattern and why. Keeps Ctrl+Z from firing as a global
-     * page-wide shortcut while the user is just browsing in a non-Editor
-     * simulator mode. */
-    editorActive: boolean;
-    push(command: Command): void;
-    /** Combines several \{undo, redo\} entries into a single stack entry, so
-     * one Ctrl+Z reverts all of them together (e.g. a group gizmo drag or a
-     * multi-object delete). Sub-commands undo in reverse order, redo in
-     * forward order. No-op entries should be filtered out by the caller
-     * before calling this. */
-    pushBatch(commands: Array<Command | undefined | null>): void;
-    clearHistory(): void;
-    undo(): Promise<void>;
-    redo(): Promise<void>;
-    private runCommand;
-    onKeyDown(event: KeyboardEvent): void;
+  undoStack: Command[];
+  redoStack: Command[];
+  private pending;
+  private generation;
+  /** Set every frame by SceneEditor -- see SelectionManager.editorActive
+   * for the same pattern and why. Keeps Ctrl+Z from firing as a global
+   * page-wide shortcut while the user is just browsing in a non-Editor
+   * simulator mode. */
+  editorActive: boolean;
+  push(command: Command): void;
+  /** Combines several \{undo, redo\} entries into a single stack entry, so
+   * one Ctrl+Z reverts all of them together (e.g. a group gizmo drag or a
+   * multi-object delete). Sub-commands undo in reverse order, redo in
+   * forward order. No-op entries should be filtered out by the caller
+   * before calling this. */
+  pushBatch(commands: Array<Command | undefined | null>): void;
+  clearHistory(): void;
+  undo(): Promise<void>;
+  redo(): Promise<void>;
+  private runCommand;
+  onKeyDown(event: KeyboardEvent): void;
 }
+//#endregion

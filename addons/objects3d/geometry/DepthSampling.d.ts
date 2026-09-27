@@ -1,23 +1,18 @@
-/**
- * Depth-mesh sampling and UV→NDC projection helpers.
- *
- * All functions are pure (no `xb.core` dependencies) and are safe to
- * unit-test without a running XR session.
- */
-import * as THREE from 'three';
+import * as THREE from "three";
+//#region src/addons/objects3d/geometry/DepthSampling.d.ts
 /** Mask returned by both the SAM and MediaPipe segmenter backends. */
 export interface MaskLike {
-    /** Mask width in pixels. */
-    readonly width: number;
-    /** Mask height in pixels. */
-    readonly height: number;
-    /**
-     * Raw pixel data where values `< 128` are foreground (selected object) and
-     * values `>= 128` are background.
-     */
-    getAsUint8Array(): Uint8Array;
-    /** Release GPU / WASM resources associated with the mask. */
-    close(): void;
+  /** Mask width in pixels. */
+  readonly width: number;
+  /** Mask height in pixels. */
+  readonly height: number;
+  /**
+   * Raw pixel data where values `< 128` are foreground (selected object) and
+   * values `>= 128` are background.
+   */
+  getAsUint8Array(): Uint8Array;
+  /** Release GPU / WASM resources associated with the mask. */
+  close(): void;
 }
 /**
  * Convert a snapshot UV coordinate (`[0, 1]` left-right, top-bottom origin)
@@ -57,8 +52,8 @@ export declare function uvToNdc(u: number, v: number, snapAspect: number | null 
  *   count of foreground pixels visited.
  */
 export declare function sampleDepthInMask(mask: MaskLike, box2d: THREE.Box2, stride?: number, maxDistance?: number, camera?: THREE.PerspectiveCamera | null, mesh?: THREE.Mesh | null, snapAspect?: number | null): {
-    points: THREE.Vector3[];
-    foregroundPixels: number;
+  points: THREE.Vector3[];
+  foregroundPixels: number;
 };
 /**
  * Cast a single ray through the 2D bbox centre using the frozen camera and
@@ -96,6 +91,7 @@ export declare function nextFrame(): Promise<void>;
  * @returns Accumulated world-space hit points and foreground pixel count.
  */
 export declare function sampleDepthInMaskAcrossFrames(mask: MaskLike, box2d: THREE.Box2, stride?: number, frames?: number, cameraOverride?: THREE.PerspectiveCamera | null, meshOverride?: THREE.Mesh | null, snapAspect?: number | null, maxDistance?: number): Promise<{
-    points: THREE.Vector3[];
-    foregroundPixels: number;
+  points: THREE.Vector3[];
+  foregroundPixels: number;
 }>;
+//#endregion

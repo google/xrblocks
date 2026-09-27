@@ -1,3 +1,4 @@
+//#region src/addons/lipsync/MfccExtractor.d.ts
 /**
  * MFCC (Mel-Frequency Cepstral Coefficients) extractor for real-time
  * lipsync. Standard speech-recognition input features:
@@ -22,30 +23,31 @@
  */
 export declare const NUM_MFCC = 13;
 export interface MfccExtractorOptions {
-    /** AudioContext sample rate (Hz). */
-    sampleRate: number;
-    /** AnalyserNode FFT size (power of two). `numBins = fftSize / 2`. */
-    fftSize: number;
+  /** AudioContext sample rate (Hz). */
+  sampleRate: number;
+  /** AnalyserNode FFT size (power of two). `numBins = fftSize / 2`. */
+  fftSize: number;
 }
 export declare class MfccExtractor {
-    readonly sampleRate: number;
-    readonly numBins: number;
-    readonly numMels = 26;
-    readonly numMfcc = 13;
-    private readonly melBank;
-    private readonly dct;
-    private readonly melEnergies;
-    private readonly logMel;
-    private readonly mfcc;
-    constructor({ sampleRate, fftSize }: MfccExtractorOptions);
-    /**
-     * Compute MFCCs for one frame.
-     *
-     * @param freqDb - Magnitude spectrum in dB from
-     *   `AnalyserNode.getFloatFrequencyData()`. Length must equal `numBins`.
-     * @returns A 13-element MFCC vector. The returned `Float32Array` is a
-     *   live internal buffer; copy it (`Float32Array.from(out)`) if you
-     *   need to retain it across frames.
-     */
-    extract(freqDb: Float32Array): Float32Array;
+  readonly sampleRate: number;
+  readonly numBins: number;
+  readonly numMels = 26;
+  readonly numMfcc = 13;
+  private readonly melBank;
+  private readonly dct;
+  private readonly melEnergies;
+  private readonly logMel;
+  private readonly mfcc;
+  constructor({ sampleRate, fftSize }: MfccExtractorOptions);
+  /**
+   * Compute MFCCs for one frame.
+   *
+   * @param freqDb - Magnitude spectrum in dB from
+   *   `AnalyserNode.getFloatFrequencyData()`. Length must equal `numBins`.
+   * @returns A 13-element MFCC vector. The returned `Float32Array` is a
+   *   live internal buffer; copy it (`Float32Array.from(out)`) if you
+   *   need to retain it across frames.
+   */
+  extract(freqDb: Float32Array): Float32Array;
 }
+//#endregion

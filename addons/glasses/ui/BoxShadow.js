@@ -1,90 +1,74 @@
-import { Custom } from '@pmndrs/uikit';
-import { effect } from '@preact/signals-core';
-import * as THREE from 'three';
-
-class BoxShadowMaterial extends THREE.MeshBasicMaterial {
-    get boxCornerRadius() {
-        return this.boxCornerRadiusUniform.value;
-    }
-    set boxCornerRadius(value) {
-        this.boxCornerRadiusUniform.value = value;
-    }
-    get shadow1BlurSize() {
-        return this.shadow1BlurSizeUniform.value;
-    }
-    set shadow1BlurSize(value) {
-        this.shadow1BlurSizeUniform.value = value;
-    }
-    get shadow1SpreadSize() {
-        return this.shadow1SpreadSizeUniform.value;
-    }
-    set shadow1SpreadSize(value) {
-        this.shadow1SpreadSizeUniform.value = value;
-    }
-    get shadow2BlurSize() {
-        return this.shadow2BlurSizeUniform.value;
-    }
-    set shadow2BlurSize(value) {
-        this.shadow2BlurSizeUniform.value = value;
-    }
-    get shadow2SpreadSize() {
-        return this.shadow2SpreadSizeUniform.value;
-    }
-    set shadow2SpreadSize(value) {
-        this.shadow2SpreadSizeUniform.value = value;
-    }
-    constructor(options) {
-        super({
-            ...options,
-            color: 0x000000,
-            transparent: true,
-        });
-        /**
-         * Size of the BoxShadow.
-         */
-        this.size = new THREE.Vector2(180, 71);
-        this.margin = new THREE.Vector2(15, 15);
-        /**
-         * Size of the box within the box shadow.
-         */
-        this.boxSize = new THREE.Vector2(146, 56);
-        this.boxCornerRadiusUniform = {
-            value: 0,
-        };
-        this.shadow1Color = new THREE.Vector4(0, 0, 0, 0.9);
-        this.shadow1BlurSizeUniform = {
-            value: 12,
-        };
-        this.shadow1SpreadSizeUniform = {
-            value: 6,
-        };
-        this.shadow2Color = new THREE.Vector4(0, 0, 0, 0);
-        this.shadow2BlurSizeUniform = {
-            value: 6,
-        };
-        this.shadow2SpreadSizeUniform = {
-            value: 2,
-        };
-    }
-    onBeforeCompile(parameters) {
-        parameters.defines = {
-            ...parameters.defines,
-            USE_UV: '',
-        };
-        parameters.fragmentShader = parameters.fragmentShader.replace('#include <clipping_planes_pars_fragment>', [
-            '#include <clipping_planes_pars_fragment>',
-            'uniform vec2 u_resolution;',
-            'uniform vec2 u_margin;',
-            'uniform vec2 u_boxSize_px;',
-            'uniform float u_borderRadius_px;',
-            'uniform vec4 u_shadow1_color;',
-            'uniform float u_shadow1_blur_px;',
-            'uniform float u_shadow1_spread_px;',
-            'uniform vec4 u_shadow2_color;',
-            'uniform float u_shadow2_blur_px;',
-            'uniform float u_shadow2_spread_px;',
-        ].join('\n'));
-        const shadowShader = `
+import * as THREE from "three";
+import { effect } from "@preact/signals-core";
+import { Custom } from "@pmndrs/uikit";
+//#region src/addons/glasses/ui/BoxShadow.ts
+var BoxShadowMaterial = class extends THREE.MeshBasicMaterial {
+	get boxCornerRadius() {
+		return this.boxCornerRadiusUniform.value;
+	}
+	set boxCornerRadius(value) {
+		this.boxCornerRadiusUniform.value = value;
+	}
+	get shadow1BlurSize() {
+		return this.shadow1BlurSizeUniform.value;
+	}
+	set shadow1BlurSize(value) {
+		this.shadow1BlurSizeUniform.value = value;
+	}
+	get shadow1SpreadSize() {
+		return this.shadow1SpreadSizeUniform.value;
+	}
+	set shadow1SpreadSize(value) {
+		this.shadow1SpreadSizeUniform.value = value;
+	}
+	get shadow2BlurSize() {
+		return this.shadow2BlurSizeUniform.value;
+	}
+	set shadow2BlurSize(value) {
+		this.shadow2BlurSizeUniform.value = value;
+	}
+	get shadow2SpreadSize() {
+		return this.shadow2SpreadSizeUniform.value;
+	}
+	set shadow2SpreadSize(value) {
+		this.shadow2SpreadSizeUniform.value = value;
+	}
+	constructor(options) {
+		super({
+			...options,
+			color: 0,
+			transparent: true
+		});
+		this.size = new THREE.Vector2(180, 71);
+		this.margin = new THREE.Vector2(15, 15);
+		this.boxSize = new THREE.Vector2(146, 56);
+		this.boxCornerRadiusUniform = { value: 0 };
+		this.shadow1Color = new THREE.Vector4(0, 0, 0, .9);
+		this.shadow1BlurSizeUniform = { value: 12 };
+		this.shadow1SpreadSizeUniform = { value: 6 };
+		this.shadow2Color = new THREE.Vector4(0, 0, 0, 0);
+		this.shadow2BlurSizeUniform = { value: 6 };
+		this.shadow2SpreadSizeUniform = { value: 2 };
+	}
+	onBeforeCompile(parameters) {
+		parameters.defines = {
+			...parameters.defines,
+			USE_UV: ""
+		};
+		parameters.fragmentShader = parameters.fragmentShader.replace("#include <clipping_planes_pars_fragment>", [
+			"#include <clipping_planes_pars_fragment>",
+			"uniform vec2 u_resolution;",
+			"uniform vec2 u_margin;",
+			"uniform vec2 u_boxSize_px;",
+			"uniform float u_borderRadius_px;",
+			"uniform vec4 u_shadow1_color;",
+			"uniform float u_shadow1_blur_px;",
+			"uniform float u_shadow1_spread_px;",
+			"uniform vec4 u_shadow2_color;",
+			"uniform float u_shadow2_blur_px;",
+			"uniform float u_shadow2_spread_px;"
+		].join("\n"));
+		parameters.fragmentShader = parameters.fragmentShader.replace("void main() {", [`
 float sdRoundedBox(vec2 p, vec2 b, float r) {
   r = min(r, min(b.x, b.y));
   vec2 d = abs(p) - b + r;
@@ -124,67 +108,50 @@ vec4 getShadowColor() {
   vec4 finalShadow = mix(shadow2, shadow1, shadow1.a);
   return finalShadow;
 }
-`;
-        parameters.fragmentShader = parameters.fragmentShader.replace('void main() {', [shadowShader, 'void main() {'].join('\n'));
-        parameters.fragmentShader = parameters.fragmentShader.replace('#include <color_fragment>', ['#include <color_fragment>', 'diffuseColor = getShadowColor();'].join('\n'));
-        const uniforms = parameters.uniforms;
-        uniforms.u_resolution = {
-            value: this.size,
-        };
-        uniforms.u_margin = {
-            value: this.margin,
-        };
-        uniforms.u_boxSize_px = {
-            value: this.boxSize,
-        };
-        uniforms.u_borderRadius_px = this.boxCornerRadiusUniform;
-        uniforms.u_shadow1_color = {
-            value: this.shadow1Color,
-        };
-        uniforms.u_shadow1_blur_px = this.shadow1BlurSizeUniform;
-        uniforms.u_shadow1_spread_px = this.shadow1SpreadSizeUniform;
-        uniforms.u_shadow2_color = {
-            value: this.shadow2Color,
-        };
-        uniforms.u_shadow2_blur_px = this.shadow2BlurSizeUniform;
-        uniforms.u_shadow2_spread_px = this.shadow2SpreadSizeUniform;
-    }
-    customProgramCacheKey() {
-        return 'BoxShadowMaterial-v1';
-    }
-}
-class BoxShadow extends Custom {
-    constructor(inputProperties, initialClasses, config) {
-        const material = new BoxShadowMaterial({});
-        super(inputProperties, initialClasses, {
-            material,
-            ...config,
-        });
-        this.name = 'Box Shadow';
-        this.material = material;
-        effect(() => {
-            const size = this.size.value;
-            if (size !== undefined) {
-                material.size.set(size[0], size[1]);
-            }
-        });
-        effect(() => {
-            const boxSize = this.properties.signal.boxSize?.value;
-            if (boxSize !== undefined) {
-                material.boxSize.set(boxSize[0], boxSize[1]);
-            }
-        });
-        effect(() => {
-            const boxBorderRadius = this.properties.signal.boxCornerRadius?.value;
-            if (boxBorderRadius !== undefined) {
-                material.boxCornerRadius = Number(boxBorderRadius);
-            }
-        });
-    }
-    dispose() {
-        super.dispose();
-        this.material.dispose();
-    }
-}
-
+`, "void main() {"].join("\n"));
+		parameters.fragmentShader = parameters.fragmentShader.replace("#include <color_fragment>", ["#include <color_fragment>", "diffuseColor = getShadowColor();"].join("\n"));
+		const uniforms = parameters.uniforms;
+		uniforms.u_resolution = { value: this.size };
+		uniforms.u_margin = { value: this.margin };
+		uniforms.u_boxSize_px = { value: this.boxSize };
+		uniforms.u_borderRadius_px = this.boxCornerRadiusUniform;
+		uniforms.u_shadow1_color = { value: this.shadow1Color };
+		uniforms.u_shadow1_blur_px = this.shadow1BlurSizeUniform;
+		uniforms.u_shadow1_spread_px = this.shadow1SpreadSizeUniform;
+		uniforms.u_shadow2_color = { value: this.shadow2Color };
+		uniforms.u_shadow2_blur_px = this.shadow2BlurSizeUniform;
+		uniforms.u_shadow2_spread_px = this.shadow2SpreadSizeUniform;
+	}
+	customProgramCacheKey() {
+		return "BoxShadowMaterial-v1";
+	}
+};
+var BoxShadow = class extends Custom {
+	constructor(inputProperties, initialClasses, config) {
+		const material = new BoxShadowMaterial({});
+		super(inputProperties, initialClasses, {
+			material,
+			...config
+		});
+		this.name = "Box Shadow";
+		this.material = material;
+		effect(() => {
+			const size = this.size.value;
+			if (size !== void 0) material.size.set(size[0], size[1]);
+		});
+		effect(() => {
+			const boxSize = this.properties.signal.boxSize?.value;
+			if (boxSize !== void 0) material.boxSize.set(boxSize[0], boxSize[1]);
+		});
+		effect(() => {
+			const boxBorderRadius = this.properties.signal.boxCornerRadius?.value;
+			if (boxBorderRadius !== void 0) material.boxCornerRadius = Number(boxBorderRadius);
+		});
+	}
+	dispose() {
+		super.dispose();
+		this.material.dispose();
+	}
+};
+//#endregion
 export { BoxShadow, BoxShadowMaterial };

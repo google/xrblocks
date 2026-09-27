@@ -1,23 +1,24 @@
-import * as THREE from 'three';
-import { type SceneMotionAxis, type ScenePart } from './SceneTypes';
+import { SceneMotionAxis, ScenePart } from "./SceneTypes.js";
+import * as THREE from "three";
+//#region src/addons/roomcraft/ProceduralMotion.d.ts
 /** Component index of each part-local motion axis. */
 export declare const MOTION_AXIS_INDEX: Record<SceneMotionAxis, number>;
 interface MotionBase {
-    /** Axis in the part's own rotated frame. */
-    axis: SceneMotionAxis;
-    /** Hinge or axle in part-local meters, relative to the authored center. */
-    pivot: THREE.Vector3;
-    /** Declared starting fraction of a cycle; an absent phase reads as 0. */
-    phase: number;
+  /** Axis in the part's own rotated frame. */
+  axis: SceneMotionAxis;
+  /** Hinge or axle in part-local meters, relative to the authored center. */
+  pivot: THREE.Vector3;
+  /** Declared starting fraction of a cycle; an absent phase reads as 0. */
+  phase: number;
 }
 export interface SwingMotion extends MotionBase {
-    kind: 'swing';
-    amplitude: number;
-    period: number;
+  kind: 'swing';
+  amplitude: number;
+  period: number;
 }
 export interface SpinMotion extends MotionBase {
-    kind: 'spin';
-    speed: number;
+  kind: 'spin';
+  speed: number;
 }
 /** A validated, detached copy of one part's motion definition. */
 export type PartMotion = SwingMotion | SpinMotion;
@@ -44,33 +45,33 @@ export declare function motionAngleRange(motion: PartMotion): [number, number];
  * timers, subscriptions, or GPU resources; the caller drives it per frame.
  */
 export declare class ProceduralMotionPlayer {
-    private readonly tracks;
-    private readonly axis;
-    private readonly offset;
-    private readonly lever;
-    /**
-     * @param content - The built design; its part groups are posed in place.
-     * @param parts - The authored parts, read and copied, never retained.
-     * @param previous - The replaced player, read once for live cycle phases.
-     */
-    constructor(content: THREE.Group, parts: readonly ScenePart[], previous?: ProceduralMotionPlayer);
-    /** How many parts this player animates. */
-    get count(): number;
-    /**
-     * Advances every cycle and reposes the design.
-     *
-     * @param deltaSeconds - Elapsed frame time; zero re-applies the current pose.
-     */
-    update(deltaSeconds: number): void;
-    /**
-     * Samples absolute playback time from the authored phase, never the last cycle.
-     * Unlike delta playback's phase carry, retuned periods or speeds are applied
-     * to the entire elapsed time. Later delta updates continue from this sample.
-     *
-     * @param elapsedSeconds - Finite, non-negative seconds since playback began.
-     */
-    seek(elapsedSeconds: number): void;
-    /** Rebuilds each animated pose from its rest data, never from the last frame. */
-    private apply;
+  private readonly tracks;
+  private readonly axis;
+  private readonly offset;
+  private readonly lever;
+  /**
+   * @param content - The built design; its part groups are posed in place.
+   * @param parts - The authored parts, read and copied, never retained.
+   * @param previous - The replaced player, read once for live cycle phases.
+   */
+  constructor(content: THREE.Group, parts: readonly ScenePart[], previous?: ProceduralMotionPlayer);
+  /** How many parts this player animates. */
+  get count(): number;
+  /**
+   * Advances every cycle and reposes the design.
+   *
+   * @param deltaSeconds - Elapsed frame time; zero re-applies the current pose.
+   */
+  update(deltaSeconds: number): void;
+  /**
+   * Samples absolute playback time from the authored phase, never the last cycle.
+   * Unlike delta playback's phase carry, retuned periods or speeds are applied
+   * to the entire elapsed time. Later delta updates continue from this sample.
+   *
+   * @param elapsedSeconds - Finite, non-negative seconds since playback began.
+   */
+  seek(elapsedSeconds: number): void;
+  /** Rebuilds each animated pose from its rest data, never from the last frame. */
+  private apply;
 }
-export {};
+//#endregion

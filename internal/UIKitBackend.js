@@ -1,112 +1,172 @@
 /**
- * Copyright 2025 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- * @file xrblocks.js
- * @version v0.21.1
- * @commitid 4d7c04d
- * @builddate 2026-09-26T01:40:17.499Z
- * @description XR Blocks SDK, built from source with the above commit ID.
- * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
- * and follow rules below:
- * 1. Include the following importmap for maximum compatibility:
-    "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
-    "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
-    "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
-    "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
-    "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
-    "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
-    "lit": "https://esm.sh/lit@3.3.1",
-    "lit/": "https://esm.sh/lit@3.3.1/",
-    "three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
-    2. If the app focus on standalone objects, spawn it in front of the user in
-    WebXR and rescale to reasonable physical size. Wrap them with xb.ModelViewer
-    and make sure users can drag the platform to move it around in XR.
-    3. When rendering a large scene, remember users may navigate the scene in a
-    physical world space, also add locomotion methods like pinch to teleport.
-    4. Do not halluciate mode files --- use either public high-quality assets,
-    or generate from primitive shapes of use vox formats for voxels or
-    lego-styles.
- */
-import { Container, Component, Custom, abortableEffect, Image, Text, reversePainterSortStable, Svg } from '@pmndrs/uikit';
-import * as THREE from 'three';
-import { T as TransformScript, v as MAX_GRADIENT_STOPS, w as DEFAULT_GRADIENT_PANEL_PROPS, x as ManipulationAction, y as getUIPresentationObject, z as bindScrollView, A as updateScrollViewLayout, B as bindTextInput, C as normalizeTextInputValue, E as isUIElement, U as UIScrollView, F as getUIElementKind, G as getUIStructureRevision, J as UICard, L as setUICardContentMeasurer, N as setResolvedUICardSize, Q as UIText, V as UITextInput, Y as registerUIPresentationObject, Z as getUIRevision, _ as getUICardEdgeOptions, $ as normalizeManipulationConfig, a0 as getSemanticControl, a1 as UIOverlay } from './entry.js';
-import { signal, computed, effect } from '@preact/signals-core';
-
+* Copyright 2025 Google LLC
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*
+* @file xrblocks.js
+* @version v0.21.1
+* @commitid bdbc03b
+* @builddate 2026-09-27T23:29:01.045Z
+* @description XR Blocks SDK, built from source with the above commit ID.
+* @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
+* and follow rules below:
+* 1. Include the following importmap for maximum compatibility:
+"three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+"@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+"@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+"@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+"@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+"yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+"lit": "https://esm.sh/lit@3.3.1",
+"lit/": "https://esm.sh/lit@3.3.1/",
+"three-pathfinding": "https://cdn.jsdelivr.net/npm/three-pathfinding@1.3.0/dist/three-pathfinding.module.js",
+2. If the app focus on standalone objects, spawn it in front of the user in
+WebXR and rescale to reasonable physical size. Wrap them with xb.ModelViewer
+and make sure users can drag the platform to move it around in XR.
+3. When rendering a large scene, remember users may navigate the scene in a
+physical world space, also add locomotion methods like pinch to teleport.
+4. Do not halluciate mode files --- use either public high-quality assets,
+or generate from primitive shapes of use vox formats for voxels or
+lego-styles.
+*/
+import { t as __exportAll } from "./rolldown-runtime.js";
+import { C as isUIElement, E as TransformScript, S as getUIStructureRevision, T as DEFAULT_GRADIENT_PANEL_PROPS, b as getUIPresentationObject, f as normalizeManipulationConfig, k as getSemanticControl, m as ManipulationAction, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, v as getUIElementKind, w as registerUIPresentationObject, x as getUIRevision } from "./UICard.js";
+import { a as UIOverlay, c as updateScrollViewLayout, i as UIText, n as bindTextInput, o as UIScrollView, r as normalizeTextInputValue, s as bindScrollView, t as UITextInput } from "./UITextInput.js";
+import * as THREE from "three";
+import { Component, Container, Custom, Image, Svg, Text, abortableEffect, reversePainterSortStable } from "@pmndrs/uikit";
+import { computed, effect, signal } from "@preact/signals-core";
+//#region src/ui/internal/UIContentDefaults.ts
+/** Line-height fallback as a multiple of the current font size. */
+const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
+//#endregion
+//#region src/ui/internal/CanvasTextStyle.ts
 /**
- * A Container that renders one or more PanelLayers as its background.
- * It automatically syncs Container properties (size) to the panel layers.
- */
-class ShaderPanel extends Container {
-    constructor(properties) {
-        const { ...containerProps } = properties;
-        const containerConfig = {
-            hasNonUikitChildren: true,
-        };
-        // Default styles.
-        const defaultProps = {
-            positionType: properties.positionType ?? 'relative',
-            backgroundColor: undefined,
-            pointerEvents: 'auto',
-            ...containerProps,
-        };
-        // XR Blocks panels may contain non-rendering placement Scripts alongside
-        // UIKit layout children. Non-UIKit children do not enter the Yoga layout.
-        super(defaultProps, undefined, containerConfig);
-        /** Array of PanelLayers rendered as background. */
-        this.panelLayers = [];
-    }
-    add(...objects) {
-        for (const object of objects) {
-            if (!(object instanceof Component) &&
-                !(object instanceof TransformScript)) {
-                throw new Error('XR Blocks UI panels only accept UIKit components or TransformScript children.');
-            }
-        }
-        return super.add(...objects);
-    }
-    /**
-     * Adds a PanelLayer to the background and configures it.
-     * @param layer - The layer to add.
-     */
-    addLayer(layer) {
-        this.panelLayers.push(layer);
-        this.add(layer);
-        // Enforce absolute positioning to fill container.
-        layer.setProperties({
-            positionType: 'absolute',
-            positionTop: 0,
-            positionLeft: 0,
-            positionRight: 0,
-            positionBottom: 0,
-            zIndexOffset: -1,
-        });
-    }
-    /**
-     * Removes a PanelLayer from the background.
-     * @param layer - The layer to remove.
-     */
-    removeLayer(layer) {
-        const index = this.panelLayers.indexOf(layer);
-        if (index !== -1) {
-            this.panelLayers.splice(index, 1);
-            this.remove(layer);
-        }
-    }
+* Font stack shared by every canvas-rendered UI text.
+*
+* It resolves to the host operating system's UI face, so the platform's own
+* fallback chain covers every script the device can display instead of a single
+* bundled typeface that would draw missing-glyph boxes.
+*/
+const SYSTEM_FONT_STACK = "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
+const NORMAL_FONT_WEIGHT = 400;
+const MEDIUM_FONT_WEIGHT = 500;
+const BOLD_FONT_WEIGHT = 700;
+/** Largest canvas edge we allocate, which every WebGL 2 device supports. */
+const MAX_CANVAS_DIMENSION = 4096;
+/**
+* Samples per device pixel. Text is magnified by the headset optics, so one
+* device pixel per layout pixel leaves visible stair-stepping on glyph edges.
+*/
+const CANVAS_SUPERSAMPLING = 2;
+const graphemeSegmenter$1 = new Intl.Segmenter(void 0, { granularity: "grapheme" });
+/** Maps the CSS-like weight keywords onto numeric CSS font weights. */
+function resolveFontWeight(value) {
+	if (typeof value === "number") return value;
+	if (value === "bold") return BOLD_FONT_WEIGHT;
+	if (value === "medium") return MEDIUM_FONT_WEIGHT;
+	return NORMAL_FONT_WEIGHT;
 }
-
+/** Builds a CSS `font` shorthand for a canvas context or a DOM mirror. */
+function fontShorthand(fontSize, weight) {
+	return `${resolveFontWeight(weight)} ${fontSize}px ${SYSTEM_FONT_STACK}`;
+}
+/** Converts a Three.js color representation into a CSS color string. */
+function cssColor(color) {
+	if (typeof color === "string") return color;
+	return `#${new THREE.Color(color).getHexString()}`;
+}
+/**
+* Resolves a CSS-like line height into layout units. Bare numbers are a
+* multiple of the font size, matching CSS.
+*/
+function resolveLineHeight(value, fontSize) {
+	if (typeof value === "number") return value * fontSize;
+	if (typeof value === "string" && value.endsWith("px")) return Number.parseFloat(value);
+	if (typeof value === "string" && value.endsWith("%")) return Number.parseFloat(value) / 100 * fontSize;
+	return fontSize * DEFAULT_TEXT_LINE_HEIGHT;
+}
+/** Splits text into user-perceived characters, never inside a grapheme. */
+function graphemes(text) {
+	return Array.from(graphemeSegmenter$1.segment(text), ({ segment }) => segment);
+}
+/** Splits text into graphemes carrying their UTF-16 start index. */
+function graphemeSegments(text) {
+	return Array.from(graphemeSegmenter$1.segment(text), ({ segment, index }) => ({
+		segment,
+		index
+	}));
+}
+/**
+* Supersampling factor for a canvas covering `width` by `height` layout units,
+* capped so the backing texture stays within {@link MAX_CANVAS_DIMENSION}.
+*/
+function resolveRasterScale(width, height) {
+	return Math.max(Number.EPSILON, Math.min((globalThis.devicePixelRatio || 1) * CANVAS_SUPERSAMPLING, MAX_CANVAS_DIMENSION / width, MAX_CANVAS_DIMENSION / height));
+}
+//#endregion
+//#region src/ui/primitives/ShaderPanel.ts
+/**
+* A Container that renders one or more PanelLayers as its background.
+* It automatically syncs Container properties (size) to the panel layers.
+*/
+var ShaderPanel = class extends Container {
+	constructor(properties) {
+		const { ...containerProps } = properties;
+		const containerConfig = { hasNonUikitChildren: true };
+		const defaultProps = {
+			positionType: properties.positionType ?? "relative",
+			backgroundColor: void 0,
+			pointerEvents: "auto",
+			...containerProps
+		};
+		super(defaultProps, void 0, containerConfig);
+		this.panelLayers = [];
+	}
+	add(...objects) {
+		for (const object of objects) if (!(object instanceof Component) && !(object instanceof TransformScript)) throw new Error("XR Blocks UI panels only accept UIKit components or TransformScript children.");
+		return super.add(...objects);
+	}
+	/**
+	* Adds a PanelLayer to the background and configures it.
+	* @param layer - The layer to add.
+	*/
+	addLayer(layer) {
+		this.panelLayers.push(layer);
+		this.add(layer);
+		layer.setProperties({
+			positionType: "absolute",
+			positionTop: 0,
+			positionLeft: 0,
+			positionRight: 0,
+			positionBottom: 0,
+			zIndexOffset: -1
+		});
+	}
+	/**
+	* Removes a PanelLayer from the background.
+	* @param layer - The layer to remove.
+	*/
+	removeLayer(layer) {
+		const index = this.panelLayers.indexOf(layer);
+		if (index !== -1) {
+			this.panelLayers.splice(index, 1);
+			this.remove(layer);
+		}
+	}
+};
+//#endregion
+//#region src/ui/shaders/CommonFunctions.glsl.ts
 const CommonFunctionsShader = `
 #include <clipping_planes_pars_fragment>
 
@@ -122,7 +182,8 @@ float sdRoundedBox(vec2 p, vec2 b, float r) {
     return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - r;
 }
 `;
-
+//#endregion
+//#region src/ui/shaders/GradientFunctions.glsl.ts
 const GradientFunctionsShader = `
 float rand(vec2 n) {
 	return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
@@ -244,10 +305,9 @@ vec4 getGradientColor(
     return mixGradientStops(t, numStops, stops, colors);
 }
 `;
-
-const GradientDropShadowFragmentShader = CommonFunctionsShader +
-    GradientFunctionsShader +
-    `
+//#endregion
+//#region src/ui/shaders/GradientDropShadow.frag.ts
+const GradientDropShadowFragmentShader = CommonFunctionsShader + GradientFunctionsShader + `
 varying vec2 vUv;
 
 uniform vec2 u_resolution;
@@ -367,309 +427,247 @@ void main() {
     #include <dithering_fragment>
 }
 `;
-
+//#endregion
+//#region src/ui/types/ShaderTypes.ts
 /**
- * Numeric IDs mapped to `GradientType` for shader uniforms lookup.
- */
+* Numeric IDs mapped to `GradientType` for shader uniforms lookup.
+*/
 const GradientTypeIds = {
-    Linear: 0,
-    Radial: 1,
-    Angular: 2,
-    Diamond: 3,
+	Linear: 0,
+	Radial: 1,
+	Angular: 2,
+	Diamond: 3
 };
 /**
- * Numeric IDs indicating solid vs gradient configurations inside uniform structures.
- */
+* Numeric IDs indicating solid vs gradient configurations inside uniform structures.
+*/
 const PaintTypeIds = {
-    Solid: 0,
-    Gradient: 1,
+	Solid: 0,
+	Gradient: 1
 };
-
+//#endregion
+//#region src/ui/utils/ColorUtils.ts
 /**
- * Parses a THREE.ColorRepresentation into a THREE.Color and an opacity value.
- * Supports:
- * - Hex strings (#RRGGBB, #RRGGBBAA, #RGB, #RGBA).
- * - rgb() and rgba() CSS strings.
- * - CSS Color Names ('white', 'red', 'aliceblue') natively via THREE.Color.
- * @param value - The color representation to parse.
- * @returns An object containing the parsed THREE.Color and opacity float (0 to 1).
- */
+* Parses a THREE.ColorRepresentation into a THREE.Color and an opacity value.
+* Supports:
+* - Hex strings (#RRGGBB, #RRGGBBAA, #RGB, #RGBA).
+* - rgb() and rgba() CSS strings.
+* - CSS Color Names ('white', 'red', 'aliceblue') natively via THREE.Color.
+* @param value - The color representation to parse.
+* @returns An object containing the parsed THREE.Color and opacity float (0 to 1).
+*/
 function parseColorWithAlpha(value) {
-    const result = { color: new THREE.Color(0xffffff), opacity: 1.0 };
-    if (value === undefined)
-        return result;
-    if (typeof value === 'string') {
-        if (value.trim().toLowerCase() === 'transparent') {
-            result.color.set(0x000000);
-            result.opacity = 0;
-            return result;
-        }
-        // 1. Match rgb() or rgba() formats (e.g., rgba(255, 0, 0, 0.5)).
-        const rgbaMatch = value.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
-        if (rgbaMatch) {
-            result.color.setRGB(parseInt(rgbaMatch[1]) / 255, parseInt(rgbaMatch[2]) / 255, parseInt(rgbaMatch[3]) / 255);
-            if (rgbaMatch[4] !== undefined) {
-                result.opacity = parseFloat(rgbaMatch[4]);
-            }
-            return result;
-        }
-        // 2. Match Hex formats with alpha (#RRGGBBAA or #RGBA).
-        if (value.startsWith('#') && (value.length === 9 || value.length === 5)) {
-            const hex = value.slice(1);
-            const isShort = hex.length === 4;
-            const maxVal = isShort ? 15 : 255;
-            const colorHex = '#' + hex.slice(0, hex.length - (isShort ? 1 : 2));
-            const alphaHex = hex.slice(hex.length - (isShort ? 1 : 2));
-            result.color.set(colorHex);
-            result.opacity = parseInt(alphaHex, 16) / maxVal;
-            return result;
-        }
-    }
-    // 3. Fallback: Parse standard 3/6-digit Hex, CSS names, or numbers.
-    result.color.set(value);
-    return result;
+	const result = {
+		color: new THREE.Color(16777215),
+		opacity: 1
+	};
+	if (value === void 0) return result;
+	if (typeof value === "string") {
+		if (value.trim().toLowerCase() === "transparent") {
+			result.color.set(0);
+			result.opacity = 0;
+			return result;
+		}
+		const rgbaMatch = value.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+		if (rgbaMatch) {
+			result.color.setRGB(parseInt(rgbaMatch[1]) / 255, parseInt(rgbaMatch[2]) / 255, parseInt(rgbaMatch[3]) / 255);
+			if (rgbaMatch[4] !== void 0) result.opacity = parseFloat(rgbaMatch[4]);
+			return result;
+		}
+		if (value.startsWith("#") && (value.length === 9 || value.length === 5)) {
+			const hex = value.slice(1);
+			const isShort = hex.length === 4;
+			const maxVal = isShort ? 15 : 255;
+			const colorHex = "#" + hex.slice(0, hex.length - (isShort ? 1 : 2));
+			const alphaHex = hex.slice(hex.length - (isShort ? 1 : 2));
+			result.color.set(colorHex);
+			result.opacity = parseInt(alphaHex, 16) / maxVal;
+			return result;
+		}
+	}
+	result.color.set(value);
+	return result;
 }
-
+//#endregion
+//#region src/ui/utils/ShaderUtils.ts
 /**
- * Helper to get a uniform by name or prefix+name.
- * @param uniforms - The uniforms object.
- * @param arg1 - Name of uniform, or prefix if arg2 is provided.
- * @param arg2 - Optional name of uniform if arg1 is prefix.
- */
+* Helper to get a uniform by name or prefix+name.
+* @param uniforms - The uniforms object.
+* @param arg1 - Name of uniform, or prefix if arg2 is provided.
+* @param arg2 - Optional name of uniform if arg1 is prefix.
+*/
 function getU(uniforms, arg1, arg2) {
-    const key = arg2 ? `${arg1}${arg2}` : arg1;
-    return uniforms[key];
+	return uniforms[arg2 ? `${arg1}${arg2}` : arg1];
 }
-
+//#endregion
+//#region src/ui/utils/GradientPanelUtils.ts
 /**
- * Type guard to check if a Paint is a GradientPaint.
- */
+* Type guard to check if a Paint is a GradientPaint.
+*/
 function _isGradient(paint) {
-    return typeof paint === 'object' && paint !== null && 'stops' in paint;
+	return typeof paint === "object" && paint !== null && "stops" in paint;
 }
 /** Returns whether a paint can produce a fragment with non-zero alpha. */
 function isPaintVisible(paint) {
-    if (paint === undefined)
-        return false;
-    if (_isGradient(paint)) {
-        return paint.stops.some(({ color }) => parseColorWithAlpha(color).opacity > 0);
-    }
-    return parseColorWithAlpha(paint).opacity > 0;
+	if (paint === void 0) return false;
+	if (_isGradient(paint)) return paint.stops.some(({ color }) => parseColorWithAlpha(color).opacity > 0);
+	return parseColorWithAlpha(paint).opacity > 0;
 }
 /**
- * Sets a solid color into ShaderUniforms.
- */
+* Sets a solid color into ShaderUniforms.
+*/
 function _setSolid(uniforms, prefix, color, opacity) {
-    const paintTypeU = getU(uniforms, prefix, 'paintType');
-    if (paintTypeU)
-        paintTypeU.value = PaintTypeIds.Solid;
-    const solidColorU = getU(uniforms, prefix, 'solidColor');
-    if (solidColorU) {
-        const { color: c } = parseColorWithAlpha(color);
-        const cObj = new THREE.Color(c);
-        solidColorU.value.set(cObj.r, cObj.g, cObj.b, opacity);
-    }
+	const paintTypeU = getU(uniforms, prefix, "paintType");
+	if (paintTypeU) paintTypeU.value = PaintTypeIds.Solid;
+	const solidColorU = getU(uniforms, prefix, "solidColor");
+	if (solidColorU) {
+		const { color: c } = parseColorWithAlpha(color);
+		const cObj = new THREE.Color(c);
+		solidColorU.value.set(cObj.r, cObj.g, cObj.b, opacity);
+	}
 }
-// ==========================================
-// 2. Paint Uniforms (Fill / Stroke)
-// ==========================================
 /**
- * Creates a set of uniforms for a Paint structure.
- * @param prefix - The prefix for uniform names (e.g., 'u_fill_', 'u_stroke_').
- * @returns An object containing initialized ShaderUniforms sets.
- */
+* Creates a set of uniforms for a Paint structure.
+* @param prefix - The prefix for uniform names (e.g., 'u_fill_', 'u_stroke_').
+* @returns An object containing initialized ShaderUniforms sets.
+*/
 function createPaintUniforms(prefix) {
-    return {
-        // 0 for Solid, 1 for Gradient. See PaintTypeIds.
-        [`${prefix}paintType`]: { value: 0 },
-        // RGBA vector supporting solid color maps.
-        [`${prefix}solidColor`]: { value: new THREE.Vector4(0, 0, 0, 1) },
-        // 0 for Linear, 1 for Radial, etc. See GradientTypeIds.
-        [`${prefix}gradientType`]: { value: 0 },
-        // Center anchor coordinate offset mapped from [0, 1].
-        [`${prefix}center`]: { value: new THREE.Vector2(0.5, 0.5) },
-        // Scalar multipliers scaling the bounding box stretch.
-        [`${prefix}scale`]: { value: new THREE.Vector2(1, 1) },
-        // Rotation scalar mapped in radians.
-        [`${prefix}rotation`]: { value: 0 },
-        // Array containing positional steps floats.
-        [`${prefix}gradientStops`]: { value: new Array(MAX_GRADIENT_STOPS).fill(0) },
-        // Array containing keyed color nodes mapped concurrently with stops.
-        [`${prefix}gradientColors`]: {
-            value: new Array(MAX_GRADIENT_STOPS)
-                .fill(null)
-                .map(() => new THREE.Vector4(0, 0, 0, 1)),
-        },
-        // Total count of verified stops mapped inside arrays.
-        [`${prefix}numStops`]: { value: 0 },
-    };
+	return {
+		[`${prefix}paintType`]: { value: 0 },
+		[`${prefix}solidColor`]: { value: new THREE.Vector4(0, 0, 0, 1) },
+		[`${prefix}gradientType`]: { value: 0 },
+		[`${prefix}center`]: { value: new THREE.Vector2(.5, .5) },
+		[`${prefix}scale`]: { value: new THREE.Vector2(1, 1) },
+		[`${prefix}rotation`]: { value: 0 },
+		[`${prefix}gradientStops`]: { value: new Array(4).fill(0) },
+		[`${prefix}gradientColors`]: { value: new Array(4).fill(null).map(() => new THREE.Vector4(0, 0, 0, 1)) },
+		[`${prefix}numStops`]: { value: 0 }
+	};
 }
 /**
- * Updates ShaderUniforms based on a Paint definition.
- * @param uniforms - The uniforms object to update.
- * @param input - The Paint definition (color or gradient) to apply.
- * @param prefix - The uniform name prefix.
- */
+* Updates ShaderUniforms based on a Paint definition.
+* @param uniforms - The uniforms object to update.
+* @param input - The Paint definition (color or gradient) to apply.
+* @param prefix - The uniform name prefix.
+*/
 function updatePaintUniforms(uniforms, input, prefix) {
-    if (input === undefined) {
-        let defColor = 0x000000;
-        let defOpacity = 0.0;
-        if (prefix === 'u_fill_') {
-            defColor = DEFAULT_GRADIENT_PANEL_PROPS.fillColor;
-            defOpacity = 1.0;
-        }
-        else if (prefix === 'u_stroke_') {
-            defColor = DEFAULT_GRADIENT_PANEL_PROPS.strokeColor;
-            defOpacity = 1.0;
-        }
-        _setSolid(uniforms, prefix, defColor, defOpacity);
-        return;
-    }
-    if (!_isGradient(input)) {
-        const { color, opacity } = parseColorWithAlpha(input);
-        _setSolid(uniforms, prefix, color, opacity);
-        return;
-    }
-    const gradient = input;
-    const stops = gradient.stops || [];
-    const paintTypeU = getU(uniforms, prefix, 'paintType');
-    if (paintTypeU)
-        paintTypeU.value = PaintTypeIds.Gradient;
-    const gradientTypeU = getU(uniforms, prefix, 'gradientType');
-    if (gradientTypeU) {
-        const typeName = (gradient.gradientType.charAt(0).toUpperCase() +
-            gradient.gradientType.slice(1));
-        gradientTypeU.value = GradientTypeIds[typeName] ?? 0;
-    }
-    const rotationU = getU(uniforms, prefix, 'rotation');
-    if (rotationU)
-        rotationU.value = THREE.MathUtils.degToRad(gradient.rotation ?? 0);
-    const centerU = getU(uniforms, prefix, 'center');
-    if (centerU) {
-        const c = gradient.center ?? [0.5, 0.5];
-        if (Array.isArray(c))
-            centerU.value.set(c[0], c[1]);
-        else
-            centerU.value.copy(c);
-    }
-    const scaleU = getU(uniforms, prefix, 'scale');
-    if (scaleU) {
-        const s = gradient.scale ?? [1, 1];
-        if (Array.isArray(s))
-            scaleU.value.set(s[0], s[1]);
-        else
-            scaleU.value.copy(s);
-    }
-    const numStops = Math.min(stops.length, MAX_GRADIENT_STOPS);
-    const numStopsU = getU(uniforms, prefix, 'numStops');
-    if (numStopsU)
-        numStopsU.value = numStops;
-    const gradientStopsU = getU(uniforms, prefix, 'gradientStops');
-    const gradientColorsU = getU(uniforms, prefix, 'gradientColors');
-    const stopPositions = gradientStopsU
-        ? gradientStopsU.value
-        : [];
-    const stopColors = gradientColorsU
-        ? gradientColorsU.value
-        : [];
-    for (let i = 0; i < MAX_GRADIENT_STOPS; i++) {
-        if (i < numStops) {
-            const s = stops[i];
-            if (stopPositions[i] !== undefined)
-                stopPositions[i] = s.position;
-            const { color, opacity } = parseColorWithAlpha(s.color);
-            if (stopColors[i])
-                stopColors[i].set(color.r, color.g, color.b, opacity);
-        }
-        else {
-            if (stopPositions[i] !== undefined)
-                stopPositions[i] = 0;
-            if (stopColors[i])
-                stopColors[i].set(0, 0, 0, 0);
-        }
-    }
+	if (input === void 0) {
+		let defColor = 0;
+		let defOpacity = 0;
+		if (prefix === "u_fill_") {
+			defColor = DEFAULT_GRADIENT_PANEL_PROPS.fillColor;
+			defOpacity = 1;
+		} else if (prefix === "u_stroke_") {
+			defColor = DEFAULT_GRADIENT_PANEL_PROPS.strokeColor;
+			defOpacity = 1;
+		}
+		_setSolid(uniforms, prefix, defColor, defOpacity);
+		return;
+	}
+	if (!_isGradient(input)) {
+		const { color, opacity } = parseColorWithAlpha(input);
+		_setSolid(uniforms, prefix, color, opacity);
+		return;
+	}
+	const gradient = input;
+	const stops = gradient.stops || [];
+	const paintTypeU = getU(uniforms, prefix, "paintType");
+	if (paintTypeU) paintTypeU.value = PaintTypeIds.Gradient;
+	const gradientTypeU = getU(uniforms, prefix, "gradientType");
+	if (gradientTypeU) {
+		const typeName = gradient.gradientType.charAt(0).toUpperCase() + gradient.gradientType.slice(1);
+		gradientTypeU.value = GradientTypeIds[typeName] ?? 0;
+	}
+	const rotationU = getU(uniforms, prefix, "rotation");
+	if (rotationU) rotationU.value = THREE.MathUtils.degToRad(gradient.rotation ?? 0);
+	const centerU = getU(uniforms, prefix, "center");
+	if (centerU) {
+		const c = gradient.center ?? [.5, .5];
+		if (Array.isArray(c)) centerU.value.set(c[0], c[1]);
+		else centerU.value.copy(c);
+	}
+	const scaleU = getU(uniforms, prefix, "scale");
+	if (scaleU) {
+		const s = gradient.scale ?? [1, 1];
+		if (Array.isArray(s)) scaleU.value.set(s[0], s[1]);
+		else scaleU.value.copy(s);
+	}
+	const numStops = Math.min(stops.length, 4);
+	const numStopsU = getU(uniforms, prefix, "numStops");
+	if (numStopsU) numStopsU.value = numStops;
+	const gradientStopsU = getU(uniforms, prefix, "gradientStops");
+	const gradientColorsU = getU(uniforms, prefix, "gradientColors");
+	const stopPositions = gradientStopsU ? gradientStopsU.value : [];
+	const stopColors = gradientColorsU ? gradientColorsU.value : [];
+	for (let i = 0; i < 4; i++) if (i < numStops) {
+		const s = stops[i];
+		if (stopPositions[i] !== void 0) stopPositions[i] = s.position;
+		const { color, opacity } = parseColorWithAlpha(s.color);
+		if (stopColors[i]) stopColors[i].set(color.r, color.g, color.b, opacity);
+	} else {
+		if (stopPositions[i] !== void 0) stopPositions[i] = 0;
+		if (stopColors[i]) stopColors[i].set(0, 0, 0, 0);
+	}
 }
-// ==========================================
-// 3. Shadow Uniforms
-// ==========================================
 /**
- * Creates a set of uniforms for a Shadow structure.
- * @param prefix - The prefix for uniform names (e.g., 'u_inner_shadow_', 'u_outer_shadow_').
- * @returns An object containing ShaderUniforms.
- */
+* Creates a set of uniforms for a Shadow structure.
+* @param prefix - The prefix for uniform names (e.g., 'u_inner_shadow_', 'u_outer_shadow_').
+* @returns An object containing ShaderUniforms.
+*/
 function createShadowUniforms(prefix) {
-    return {
-        ...createPaintUniforms(prefix),
-        // Softness radius of the shadow blur.
-        [`${prefix}blur`]: { value: 0 },
-        // Directional offset [x, y] of the shadow cast.
-        [`${prefix}position`]: { value: new THREE.Vector2(0, 0) },
-        // Scalar expansion of the shadow silhouette before blur.
-        [`${prefix}spread`]: { value: 0 },
-        // Rate of exponential decay from core density to edge.
-        [`${prefix}falloff`]: { value: 0 },
-    };
+	return {
+		...createPaintUniforms(prefix),
+		[`${prefix}blur`]: { value: 0 },
+		[`${prefix}position`]: { value: new THREE.Vector2(0, 0) },
+		[`${prefix}spread`]: { value: 0 },
+		[`${prefix}falloff`]: { value: 0 }
+	};
 }
 /**
- * Updates ShaderUniforms based on Shadow properties.
- * @param uniforms - The uniforms object to update.
- * @param properties - Shadow properties containing blur, position, spread, falloff.
- * @param prefix - The uniform name prefix.
- */
+* Updates ShaderUniforms based on Shadow properties.
+* @param uniforms - The uniforms object to update.
+* @param properties - Shadow properties containing blur, position, spread, falloff.
+* @param prefix - The uniform name prefix.
+*/
 function updateShadowUniforms(uniforms, properties, prefix) {
-    if (properties.color !== undefined) {
-        updatePaintUniforms(uniforms, properties.color, prefix);
-    }
-    if (properties.blur !== undefined) {
-        const u = getU(uniforms, prefix, 'blur');
-        if (u)
-            u.value = properties.blur;
-    }
-    if (properties.spread !== undefined) {
-        const u = getU(uniforms, prefix, 'spread');
-        if (u)
-            u.value = properties.spread;
-    }
-    if (properties.falloff !== undefined) {
-        const u = getU(uniforms, prefix, 'falloff');
-        if (u)
-            u.value = properties.falloff;
-    }
-    if (properties.position) {
-        const pos = properties.position;
-        const u = getU(uniforms, prefix, 'position');
-        if (u) {
-            if (Array.isArray(pos)) {
-                u.value.set(pos[0], pos[1]);
-            }
-            else {
-                u.value.copy(pos);
-            }
-        }
-    }
+	if (properties.color !== void 0) updatePaintUniforms(uniforms, properties.color, prefix);
+	if (properties.blur !== void 0) {
+		const u = getU(uniforms, prefix, "blur");
+		if (u) u.value = properties.blur;
+	}
+	if (properties.spread !== void 0) {
+		const u = getU(uniforms, prefix, "spread");
+		if (u) u.value = properties.spread;
+	}
+	if (properties.falloff !== void 0) {
+		const u = getU(uniforms, prefix, "falloff");
+		if (u) u.value = properties.falloff;
+	}
+	if (properties.position) {
+		const pos = properties.position;
+		const u = getU(uniforms, prefix, "position");
+		if (u) {
+			if (Array.isArray(pos)) u.value.set(pos[0], pos[1]);
+			else u.value.copy(pos);
+		}
+	}
 }
-// ==========================================
-// 4. Stroke Uniforms
-// ==========================================
 /**
- * Updates ShaderUniforms based on Stroke properties.
- * @param uniforms - The uniforms object to update.
- * @param properties - Stroke properties containing width and alignment.
- */
+* Updates ShaderUniforms based on Stroke properties.
+* @param uniforms - The uniforms object to update.
+* @param properties - Stroke properties containing width and alignment.
+*/
 function updateStrokeUniforms(uniforms, properties) {
-    if (uniforms.u_stroke_width && properties.strokeWidth !== undefined) {
-        uniforms.u_stroke_width.value = properties.strokeWidth;
-    }
-    if (uniforms.u_stroke_align && properties.strokeAlign !== undefined) {
-        let shaderAlign = 0.0;
-        if (properties.strokeAlign === 'inside')
-            shaderAlign = -1;
-        else if (properties.strokeAlign === 'outside')
-            shaderAlign = 1.0;
-        uniforms.u_stroke_align.value = shaderAlign;
-    }
+	if (uniforms.u_stroke_width && properties.strokeWidth !== void 0) uniforms.u_stroke_width.value = properties.strokeWidth;
+	if (uniforms.u_stroke_align && properties.strokeAlign !== void 0) {
+		let shaderAlign = 0;
+		if (properties.strokeAlign === "inside") shaderAlign = -1;
+		else if (properties.strokeAlign === "outside") shaderAlign = 1;
+		uniforms.u_stroke_align.value = shaderAlign;
+	}
 }
-
+//#endregion
+//#region src/ui/shaders/Panel.vert.ts
 const PanelVertexShader = `
 #include <clipping_planes_pars_vertex>
 varying vec2 vUv;
@@ -680,23 +678,23 @@ void main() {
     #include <clipping_planes_vertex>
 }
 `;
-
+//#endregion
+//#region src/ui/primitives/layers/PanelLayer.ts
 /**
- * Base ShaderMaterial for Panels.
- *
- * Provides default uniforms safe for general use:
- * - `u_time`: 0.0 (safe default for animated shaders)
- * - `u_resolution`: 1x1 (updated automatically by PanelLayer)
- * - `u_opacity`: 1.0 (updated automatically from the UI opacity property)
- *
- * Subclasses should extend this and add their own specific uniforms.
- */
-class PanelShaderMaterial extends THREE.ShaderMaterial {
-    constructor(parameters) {
-        super({
-            vertexShader: PanelVertexShader,
-            // Default to pink to indicate "Missing Shader" - Subclasses must override
-            fragmentShader: `
+* Base ShaderMaterial for Panels.
+*
+* Provides default uniforms safe for general use:
+* - `u_time`: 0.0 (safe default for animated shaders)
+* - `u_resolution`: 1x1 (updated automatically by PanelLayer)
+* - `u_opacity`: 1.0 (updated automatically from the UI opacity property)
+*
+* Subclasses should extend this and add their own specific uniforms.
+*/
+var PanelShaderMaterial = class extends THREE.ShaderMaterial {
+	constructor(parameters) {
+		super({
+			vertexShader: PanelVertexShader,
+			fragmentShader: `
         #include <clipping_planes_pars_fragment>
         void main() {
           vec4 diffuseColor = vec4(1.0, 0.0, 1.0, 1.0);
@@ -704,120 +702,109 @@ class PanelShaderMaterial extends THREE.ShaderMaterial {
           gl_FragColor = diffuseColor;
         }
       `,
-            clipping: true,
-            transparent: true,
-            side: THREE.FrontSide,
-            forceSinglePass: true,
-            dithering: true,
-            ...parameters,
-            uniforms: {
-                u_time: { value: 0 },
-                u_resolution: { value: new THREE.Vector2(1, 1) },
-                u_opacity: { value: 1 },
-                ...parameters?.uniforms,
-            },
-        });
-    }
-}
+			clipping: true,
+			transparent: true,
+			side: THREE.FrontSide,
+			forceSinglePass: true,
+			dithering: true,
+			...parameters,
+			uniforms: {
+				u_time: { value: 0 },
+				u_resolution: { value: new THREE.Vector2(1, 1) },
+				u_opacity: { value: 1 },
+				...parameters?.uniforms
+			}
+		});
+	}
+};
 /**
- * A Custom component that wraps a PanelShaderMaterial.
- *
- * It automatically handles:
- * - Rendering Order (forces `elementType: 0` to render before content)
- * - Resolution Syncing (updates `u_resolution` uniform on resize)
- *
- * It is designed to be added to a `ShaderPanel` via `addLayer()`.
- */
-class PanelLayer extends Custom {
-    /**
-     * @param material - The PanelShaderMaterial instance to use for rendering.
-     * @param inputProperties - Properties provided by the consumer component.
-     * @param initialClasses - Array of classes or styles to apply.
-     * @param config - Optional configuration settings for the layer lifecycle.
-     */
-    constructor(material, inputProperties, initialClasses, config) {
-        super(inputProperties, initialClasses, {
-            material,
-            ...config,
-        });
-        this.material = material;
-        // Force ElementType.Panel (0) to ensure background renders before content (Icons/Text).
-        abortableEffect(() => {
-            const orderInfo = this.orderInfo.value;
-            if (orderInfo && orderInfo.elementType !== 0) {
-                // We override the elementType in place to correct the sorting order.
-                this.orderInfo.value = { ...orderInfo, elementType: 0 };
-            }
-        }, this.abortSignal);
-        // Handle resizing.
-        abortableEffect(() => {
-            const size = this.size.value;
-            if (size) {
-                this.material.uniforms.u_resolution.value.set(size[0], size[1]);
-            }
-        }, this.abortSignal);
-        // Custom shader layers do not use UIKit's built-in panel material, so they
-        // must apply the resolved opacity property through a shared uniform.
-        abortableEffect(() => {
-            const opacity = this.properties.signal.opacity?.value;
-            this.material.uniforms.u_opacity.value =
-                typeof opacity === 'string'
-                    ? Number.parseFloat(opacity) / 100
-                    : (opacity ?? 1);
-        }, this.abortSignal);
-    }
-    /**
-     * Helper method to update a shader uniform safely if it exists.
-     * @param name - The name of the uniform to update.
-     * @param value - The new value for the uniform.
-     */
-    updateUniform(name, value) {
-        if (this.material.uniforms[name]) {
-            const u = this.material.uniforms[name];
-            if (u)
-                u.value = value;
-        }
-    }
-}
-
-class DropShadowLayer extends PanelLayer {
-    constructor(inputProperties, initialClasses = undefined, config = {}) {
-        const material = new PanelShaderMaterial({
-            fragmentShader: GradientDropShadowFragmentShader,
-            uniforms: {
-                ...createPaintUniforms('u_drop_'),
-                ...createShadowUniforms('u_drop_'),
-                u_corner_radius: { value: 0.0 },
-                u_stroke_width: { value: 0.0 },
-                u_stroke_align: { value: 0.0 },
-                u_drop_shadow_margin: { value: 0.0 },
-            },
-        });
-        super(material, inputProperties, initialClasses, config);
-        this.name = 'DropShadowLayer';
-        abortableEffect(() => {
-            const signalProps = this.properties.signal;
-            const dropShadowColor = signalProps.dropShadowColor?.value;
-            updatePaintUniforms(this.material.uniforms, dropShadowColor, 'u_drop_');
-            updateShadowUniforms(this.material.uniforms, {
-                blur: signalProps.dropShadowBlur?.value,
-                position: signalProps.dropShadowPosition?.value,
-                spread: signalProps.dropShadowSpread?.value,
-                falloff: signalProps.dropShadowFalloff?.value,
-            }, 'u_drop_');
-            // Stroke Props for shadow adjustment.
-            updateStrokeUniforms(this.material.uniforms, {
-                strokeWidth: signalProps.strokeWidth?.value,
-                strokeAlign: signalProps.strokeAlign?.value,
-            });
-            this.material.visible = isPaintVisible(dropShadowColor);
-        }, this.abortSignal);
-    }
-}
-
-const GradientFillFragmentShader = CommonFunctionsShader +
-    GradientFunctionsShader +
-    `
+* A Custom component that wraps a PanelShaderMaterial.
+*
+* It automatically handles:
+* - Rendering Order (forces `elementType: 0` to render before content)
+* - Resolution Syncing (updates `u_resolution` uniform on resize)
+*
+* It is designed to be added to a `ShaderPanel` via `addLayer()`.
+*/
+var PanelLayer = class extends Custom {
+	/**
+	* @param material - The PanelShaderMaterial instance to use for rendering.
+	* @param inputProperties - Properties provided by the consumer component.
+	* @param initialClasses - Array of classes or styles to apply.
+	* @param config - Optional configuration settings for the layer lifecycle.
+	*/
+	constructor(material, inputProperties, initialClasses, config) {
+		super(inputProperties, initialClasses, {
+			material,
+			...config
+		});
+		this.material = material;
+		abortableEffect(() => {
+			const orderInfo = this.orderInfo.value;
+			if (orderInfo && orderInfo.elementType !== 0) this.orderInfo.value = {
+				...orderInfo,
+				elementType: 0
+			};
+		}, this.abortSignal);
+		abortableEffect(() => {
+			const size = this.size.value;
+			if (size) this.material.uniforms.u_resolution.value.set(size[0], size[1]);
+		}, this.abortSignal);
+		abortableEffect(() => {
+			const opacity = this.properties.signal.opacity?.value;
+			this.material.uniforms.u_opacity.value = typeof opacity === "string" ? Number.parseFloat(opacity) / 100 : opacity ?? 1;
+		}, this.abortSignal);
+	}
+	/**
+	* Helper method to update a shader uniform safely if it exists.
+	* @param name - The name of the uniform to update.
+	* @param value - The new value for the uniform.
+	*/
+	updateUniform(name, value) {
+		if (this.material.uniforms[name]) {
+			const u = this.material.uniforms[name];
+			if (u) u.value = value;
+		}
+	}
+};
+//#endregion
+//#region src/ui/primitives/layers/DropShadowLayer.ts
+var DropShadowLayer = class extends PanelLayer {
+	constructor(inputProperties, initialClasses = void 0, config = {}) {
+		const material = new PanelShaderMaterial({
+			fragmentShader: GradientDropShadowFragmentShader,
+			uniforms: {
+				...createPaintUniforms("u_drop_"),
+				...createShadowUniforms("u_drop_"),
+				u_corner_radius: { value: 0 },
+				u_stroke_width: { value: 0 },
+				u_stroke_align: { value: 0 },
+				u_drop_shadow_margin: { value: 0 }
+			}
+		});
+		super(material, inputProperties, initialClasses, config);
+		this.name = "DropShadowLayer";
+		abortableEffect(() => {
+			const signalProps = this.properties.signal;
+			const dropShadowColor = signalProps.dropShadowColor?.value;
+			updatePaintUniforms(this.material.uniforms, dropShadowColor, "u_drop_");
+			updateShadowUniforms(this.material.uniforms, {
+				blur: signalProps.dropShadowBlur?.value,
+				position: signalProps.dropShadowPosition?.value,
+				spread: signalProps.dropShadowSpread?.value,
+				falloff: signalProps.dropShadowFalloff?.value
+			}, "u_drop_");
+			updateStrokeUniforms(this.material.uniforms, {
+				strokeWidth: signalProps.strokeWidth?.value,
+				strokeAlign: signalProps.strokeAlign?.value
+			});
+			this.material.visible = isPaintVisible(dropShadowColor);
+		}, this.abortSignal);
+	}
+};
+//#endregion
+//#region src/ui/shaders/GradientFill.frag.ts
+const GradientFillFragmentShader = CommonFunctionsShader + GradientFunctionsShader + `
 varying vec2 vUv;
 
 uniform vec2 u_resolution;
@@ -889,37 +876,35 @@ void main() {
     #include <dithering_fragment>
 }
 `;
-
+//#endregion
+//#region src/ui/primitives/layers/FillLayer.ts
 /**
- * Layer responsible for rendering the background fill color or gradient.
- * Uses GradientFillFragmentShader.
- */
-class FillLayer extends PanelLayer {
-    constructor(inputProperties, initialClasses = undefined, config = {}) {
-        const material = new PanelShaderMaterial({
-            fragmentShader: GradientFillFragmentShader,
-            uniforms: {
-                ...createPaintUniforms('u_fill_'),
-                u_corner_radius: { value: 0.0 },
-                u_stroke_width: { value: 0.0 },
-                u_drop_shadow_margin: { value: 0.0 },
-            },
-        });
-        super(material, inputProperties, initialClasses, config);
-        this.name = 'FillLayer';
-        // Sync Signals to Uniforms.
-        abortableEffect(() => {
-            const signalProps = this.properties.signal;
-            const fillColor = signalProps.fillColor?.value;
-            updatePaintUniforms(this.material.uniforms, fillColor, 'u_fill_');
-            this.material.visible = isPaintVisible(fillColor);
-        }, this.abortSignal);
-    }
-}
-
-const GradientInnerShadowFragmentShader = CommonFunctionsShader +
-    GradientFunctionsShader +
-    `
+* Layer responsible for rendering the background fill color or gradient.
+* Uses GradientFillFragmentShader.
+*/
+var FillLayer = class extends PanelLayer {
+	constructor(inputProperties, initialClasses = void 0, config = {}) {
+		const material = new PanelShaderMaterial({
+			fragmentShader: GradientFillFragmentShader,
+			uniforms: {
+				...createPaintUniforms("u_fill_"),
+				u_corner_radius: { value: 0 },
+				u_stroke_width: { value: 0 },
+				u_drop_shadow_margin: { value: 0 }
+			}
+		});
+		super(material, inputProperties, initialClasses, config);
+		this.name = "FillLayer";
+		abortableEffect(() => {
+			const fillColor = this.properties.signal.fillColor?.value;
+			updatePaintUniforms(this.material.uniforms, fillColor, "u_fill_");
+			this.material.visible = isPaintVisible(fillColor);
+		}, this.abortSignal);
+	}
+};
+//#endregion
+//#region src/ui/shaders/GradientInnerShadow.frag.ts
+const GradientInnerShadowFragmentShader = CommonFunctionsShader + GradientFunctionsShader + `
 varying vec2 vUv;
 
 uniform vec2 u_resolution;
@@ -1070,49 +1055,48 @@ void main() {
     #include <dithering_fragment>
 }
 `;
-
+//#endregion
+//#region src/ui/primitives/layers/InnerShadowLayer.ts
 /**
- * Layer responsible for rendering the panel's inner shadow.
- * Uses GradientInnerShadowFragmentShader.
- */
-class InnerShadowLayer extends PanelLayer {
-    constructor(inputProperties, initialClasses = undefined, config = {}) {
-        const material = new PanelShaderMaterial({
-            fragmentShader: GradientInnerShadowFragmentShader,
-            uniforms: {
-                ...createPaintUniforms('u_inner_'),
-                ...createShadowUniforms('u_inner_'),
-                u_corner_radius: { value: 0.0 },
-                u_stroke_width: { value: 0.0 },
-                u_stroke_align: { value: 0.0 },
-                u_drop_shadow_margin: { value: 0.0 },
-            },
-        });
-        super(material, inputProperties, initialClasses, config);
-        this.name = 'InnerShadowLayer';
-        abortableEffect(() => {
-            const signalProps = this.properties.signal;
-            const innerShadowColor = signalProps.innerShadowColor?.value;
-            updatePaintUniforms(this.material.uniforms, innerShadowColor, 'u_inner_');
-            updateShadowUniforms(this.material.uniforms, {
-                blur: signalProps.innerShadowBlur?.value,
-                position: signalProps.innerShadowPosition?.value,
-                spread: signalProps.innerShadowSpread?.value,
-                falloff: signalProps.innerShadowFalloff?.value,
-            }, 'u_inner_');
-            // Stroke Props for shadow adjustment.
-            updateStrokeUniforms(this.material.uniforms, {
-                strokeWidth: signalProps.strokeWidth?.value,
-                strokeAlign: signalProps.strokeAlign?.value,
-            });
-            this.material.visible = isPaintVisible(innerShadowColor);
-        }, this.abortSignal);
-    }
-}
-
-const GradientStrokeFragmentShader = CommonFunctionsShader +
-    GradientFunctionsShader +
-    `
+* Layer responsible for rendering the panel's inner shadow.
+* Uses GradientInnerShadowFragmentShader.
+*/
+var InnerShadowLayer = class extends PanelLayer {
+	constructor(inputProperties, initialClasses = void 0, config = {}) {
+		const material = new PanelShaderMaterial({
+			fragmentShader: GradientInnerShadowFragmentShader,
+			uniforms: {
+				...createPaintUniforms("u_inner_"),
+				...createShadowUniforms("u_inner_"),
+				u_corner_radius: { value: 0 },
+				u_stroke_width: { value: 0 },
+				u_stroke_align: { value: 0 },
+				u_drop_shadow_margin: { value: 0 }
+			}
+		});
+		super(material, inputProperties, initialClasses, config);
+		this.name = "InnerShadowLayer";
+		abortableEffect(() => {
+			const signalProps = this.properties.signal;
+			const innerShadowColor = signalProps.innerShadowColor?.value;
+			updatePaintUniforms(this.material.uniforms, innerShadowColor, "u_inner_");
+			updateShadowUniforms(this.material.uniforms, {
+				blur: signalProps.innerShadowBlur?.value,
+				position: signalProps.innerShadowPosition?.value,
+				spread: signalProps.innerShadowSpread?.value,
+				falloff: signalProps.innerShadowFalloff?.value
+			}, "u_inner_");
+			updateStrokeUniforms(this.material.uniforms, {
+				strokeWidth: signalProps.strokeWidth?.value,
+				strokeAlign: signalProps.strokeAlign?.value
+			});
+			this.material.visible = isPaintVisible(innerShadowColor);
+		}, this.abortSignal);
+	}
+};
+//#endregion
+//#region src/ui/shaders/GradientStroke.frag.ts
+const GradientStrokeFragmentShader = CommonFunctionsShader + GradientFunctionsShader + `
 // Uniforms.
 uniform int u_stroke_gradientType;
 uniform int u_stroke_paintType;
@@ -1195,469 +1179,345 @@ void main() {
     #include <dithering_fragment>
 }
 `;
-
+//#endregion
+//#region src/ui/primitives/layers/StrokeLayer.ts
 /**
- * Layer responsible for rendering the panel's stroke or border.
- * Uses GradientStrokeFragmentShader.
- */
-class StrokeLayer extends PanelLayer {
-    constructor(inputProperties, initialClasses = undefined, config = {}) {
-        const material = new PanelShaderMaterial({
-            fragmentShader: GradientStrokeFragmentShader,
-            uniforms: {
-                ...createPaintUniforms('u_stroke_'),
-                u_stroke_align: { value: 0.0 },
-                u_corner_radius: { value: 0.0 },
-                u_stroke_width: { value: 0.0 },
-                u_drop_shadow_margin: { value: 0.0 },
-            },
-        });
-        super(material, inputProperties, initialClasses, config);
-        this.name = 'StrokeLayer';
-        abortableEffect(() => {
-            const signalProps = this.properties.signal;
-            const strokeColor = signalProps.strokeColor?.value;
-            const strokeWidth = signalProps.strokeWidth?.value;
-            updatePaintUniforms(this.material.uniforms, strokeColor, 'u_stroke_');
-            updateStrokeUniforms(this.material.uniforms, {
-                strokeWidth,
-                strokeAlign: signalProps.strokeAlign?.value,
-            });
-            this.material.visible =
-                isPaintVisible(strokeColor) && (strokeWidth ?? 0) > 0;
-        }, this.abortSignal);
-    }
-}
-
+* Layer responsible for rendering the panel's stroke or border.
+* Uses GradientStrokeFragmentShader.
+*/
+var StrokeLayer = class extends PanelLayer {
+	constructor(inputProperties, initialClasses = void 0, config = {}) {
+		const material = new PanelShaderMaterial({
+			fragmentShader: GradientStrokeFragmentShader,
+			uniforms: {
+				...createPaintUniforms("u_stroke_"),
+				u_stroke_align: { value: 0 },
+				u_corner_radius: { value: 0 },
+				u_stroke_width: { value: 0 },
+				u_drop_shadow_margin: { value: 0 }
+			}
+		});
+		super(material, inputProperties, initialClasses, config);
+		this.name = "StrokeLayer";
+		abortableEffect(() => {
+			const signalProps = this.properties.signal;
+			const strokeColor = signalProps.strokeColor?.value;
+			const strokeWidth = signalProps.strokeWidth?.value;
+			updatePaintUniforms(this.material.uniforms, strokeColor, "u_stroke_");
+			updateStrokeUniforms(this.material.uniforms, {
+				strokeWidth,
+				strokeAlign: signalProps.strokeAlign?.value
+			});
+			this.material.visible = isPaintVisible(strokeColor) && (strokeWidth ?? 0) > 0;
+		}, this.abortSignal);
+	}
+};
+//#endregion
+//#region src/ui/primitives/GradientPanel.ts
 /**
- * GradientPanel.
- * Supports Gradients for Stroke, InnerShadow, and DropShadow.
- */
-class GradientPanel extends ShaderPanel {
-    // Constructor
-    constructor(properties = {}) {
-        // Corner Radius
-        const cornerRadiusSignal = signal(properties.cornerRadius ??
-            DEFAULT_GRADIENT_PANEL_PROPS.cornerRadius);
-        // Fill
-        const fillColorSignal = signal(properties.fillColor ?? DEFAULT_GRADIENT_PANEL_PROPS.fillColor);
-        const backfaceColorSignal = properties.backfaceColor === undefined
-            ? undefined
-            : signal(properties.backfaceColor);
-        // Inner Shadow.
-        const innerShadowColorSignal = signal(properties.innerShadowColor ??
-            DEFAULT_GRADIENT_PANEL_PROPS.innerShadowColor);
-        const innerShadowBlurSignal = signal(properties.innerShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowBlur);
-        const innerShadowPositionSignal = signal(properties.innerShadowPosition ??
-            DEFAULT_GRADIENT_PANEL_PROPS.innerShadowPosition);
-        const innerShadowSpreadSignal = signal(properties.innerShadowSpread ??
-            DEFAULT_GRADIENT_PANEL_PROPS.innerShadowSpread);
-        const innerShadowFalloffSignal = signal(properties.innerShadowFalloff ??
-            DEFAULT_GRADIENT_PANEL_PROPS.innerShadowFalloff);
-        // Drop Shadow.
-        const dropShadowColorSignal = signal(properties.dropShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowColor);
-        const dropShadowBlurSignal = signal(properties.dropShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowBlur);
-        const dropShadowPositionSignal = signal(properties.dropShadowPosition ??
-            DEFAULT_GRADIENT_PANEL_PROPS.dropShadowPosition);
-        const dropShadowSpreadSignal = signal(properties.dropShadowSpread ??
-            DEFAULT_GRADIENT_PANEL_PROPS.dropShadowSpread);
-        const dropShadowFalloffSignal = signal(properties.dropShadowFalloff ??
-            DEFAULT_GRADIENT_PANEL_PROPS.dropShadowFalloff);
-        // Margin = max(DropShadowBlur + Position + Spread, StrokeWidth / 2).
-        const shadowExpansion = computed(() => {
-            const blur = Math.max(dropShadowBlurSignal.value, 0);
-            const spread = Math.max(dropShadowSpreadSignal.value, 0);
-            const pos = dropShadowPositionSignal.value;
-            let extra = 0;
-            if (pos) {
-                if (Array.isArray(pos))
-                    extra = Math.max(Math.abs(pos[0]), Math.abs(pos[1]));
-                else
-                    extra = Math.max(Math.abs(pos.x), Math.abs(pos.y));
-            }
-            return blur + extra + spread;
-        });
-        // Stroke
-        const strokeColorSignal = signal(properties.strokeColor ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeColor);
-        const strokeWidthSignal = signal(properties.strokeWidth ??
-            DEFAULT_GRADIENT_PANEL_PROPS.strokeWidth);
-        const strokeAlignSignal = signal(properties.strokeAlign ??
-            DEFAULT_GRADIENT_PANEL_PROPS.strokeAlign);
-        // Margin for layout expansion.
-        const expansionMarginSignal = computed(() => {
-            const s = shadowExpansion.value;
-            const sWidth = strokeWidthSignal.value;
-            const align = strokeAlignSignal.value;
-            let strokeExpand = 0;
-            // If Center (1), expand by W/2.
-            // If Outside (2), expand by W.
-            if (align === 'center')
-                strokeExpand = sWidth * 0.5;
-            else if (align === 'outside')
-                strokeExpand = sWidth;
-            // The shadow starts from the stroke edge, so we need to add the stroke expansion to the shadow expansion.
-            // But we also need to ensure we at least cover the stroke itself (which is strokeExpand).
-            // Since s + strokeExpand >= strokeExpand (assuming s >= 0), we can just sum them.
-            return s + strokeExpand;
-        });
-        super({
-            ...properties,
-            overflow: 'visible',
-        });
-        this.name = 'GradientPanel';
-        // Drop Shadow
-        this.dropShadowLayer = new DropShadowLayer({
-            dropShadowColor: dropShadowColorSignal,
-            dropShadowBlur: dropShadowBlurSignal,
-            dropShadowPosition: dropShadowPositionSignal,
-            dropShadowSpread: dropShadowSpreadSignal,
-            dropShadowFalloff: dropShadowFalloffSignal,
-            strokeWidth: strokeWidthSignal,
-            strokeAlign: strokeAlignSignal,
-        });
-        // Fill.
-        this.fillLayer = new FillLayer({
-            fillColor: fillColorSignal,
-        });
-        if (backfaceColorSignal) {
-            this.backfaceLayer = new FillLayer({
-                fillColor: backfaceColorSignal,
-            });
-            this.backfaceLayer.name = 'BackfaceLayer';
-            this.backfaceLayer.material.side = THREE.BackSide;
-        }
-        // Inner Shadow
-        this.innerShadowLayer = new InnerShadowLayer({
-            innerShadowColor: innerShadowColorSignal,
-            innerShadowBlur: innerShadowBlurSignal,
-            innerShadowPosition: innerShadowPositionSignal,
-            innerShadowSpread: innerShadowSpreadSignal,
-            innerShadowFalloff: innerShadowFalloffSignal,
-            strokeWidth: strokeWidthSignal,
-            strokeAlign: strokeAlignSignal,
-        });
-        // Stroke
-        this.strokeLayer = new StrokeLayer({
-            strokeColor: strokeColorSignal,
-            strokeWidth: strokeWidthSignal,
-            strokeAlign: strokeAlignSignal,
-        });
-        if (this.backfaceLayer) {
-            this.backfaceStrokeLayer = new StrokeLayer({
-                strokeColor: strokeColorSignal,
-                strokeWidth: strokeWidthSignal,
-                strokeAlign: strokeAlignSignal,
-            });
-            this.backfaceStrokeLayer.name = 'BackfaceStrokeLayer';
-            this.backfaceStrokeLayer.material.side = THREE.BackSide;
-        }
-        // Add Layers in correct order.
-        if (this.backfaceLayer)
-            this.addLayer(this.backfaceLayer);
-        if (this.backfaceStrokeLayer)
-            this.addLayer(this.backfaceStrokeLayer);
-        this.addLayer(this.dropShadowLayer);
-        this.addLayer(this.fillLayer);
-        this.addLayer(this.innerShadowLayer);
-        this.addLayer(this.strokeLayer);
-        // Store Signals.
-        this.cornerRadiusSignal = cornerRadiusSignal;
-        this.fillColorSignal = fillColorSignal;
-        this.backfaceColorSignal = backfaceColorSignal;
-        this.innerShadowColorSignal = innerShadowColorSignal;
-        this.innerShadowBlurSignal = innerShadowBlurSignal;
-        this.innerShadowPositionSignal = innerShadowPositionSignal;
-        this.innerShadowSpreadSignal = innerShadowSpreadSignal;
-        this.innerShadowFalloffSignal = innerShadowFalloffSignal;
-        this.dropShadowColorSignal = dropShadowColorSignal;
-        this.dropShadowBlurSignal = dropShadowBlurSignal;
-        this.dropShadowPositionSignal = dropShadowPositionSignal;
-        this.dropShadowSpreadSignal = dropShadowSpreadSignal;
-        this.dropShadowFalloffSignal = dropShadowFalloffSignal;
-        this.expansionMarginSignal = expansionMarginSignal;
-        this.strokeColorSignal = strokeColorSignal;
-        this.strokeWidthSignal = strokeWidthSignal;
-        this.strokeAlignSignal = strokeAlignSignal;
-        // Layout & Z-Order.
-        // Common layout configs.
-        const absProps = {
-            positionType: 'absolute',
-            pointerEvents: 'none',
-        };
-        // Fill
-        this.fillLayer.setProperties({
-            ...absProps,
-            zIndexOffset: -10,
-            pointerEvents: properties.pointerEvents ?? 'auto',
-        });
-        this.backfaceLayer?.setProperties({
-            ...absProps,
-            zIndexOffset: -12,
-        });
-        this.backfaceStrokeLayer?.setProperties({
-            ...absProps,
-            zIndexOffset: -11,
-        });
-        // Inner Shadow
-        this.innerShadowLayer.setProperties({
-            ...absProps,
-            zIndexOffset: -8,
-        });
-        // Drop Shadow
-        this.dropShadowLayer.setProperties({
-            ...absProps,
-            zIndexOffset: -4,
-        });
-        // Stroke
-        this.strokeLayer.setProperties({
-            ...absProps,
-            zIndexOffset: -6,
-        });
-        // Sync layout.
-        const marginNeg = computed(() => -this.expansionMarginSignal.value);
-        abortableEffect(() => {
-            const m = marginNeg.value;
-            const props = {
-                positionTop: m,
-                positionLeft: m,
-                positionRight: m,
-                positionBottom: m,
-            };
-            this.fillLayer.setProperties(props);
-            this.innerShadowLayer.setProperties(props);
-            this.dropShadowLayer.setProperties(props);
-            this.strokeLayer.setProperties(props);
-        }, this.abortSignal);
-        // Sync Corner Radius & Stroke Width & Margin.
-        abortableEffect(() => {
-            const r = this.cornerRadiusSignal.value;
-            const w = this.strokeWidthSignal.value;
-            const m = this.expansionMarginSignal.value;
-            // Apply to all layers.
-            for (const layer of this.panelLayers) {
-                if (layer.material.uniforms.u_corner_radius) {
-                    layer.material.uniforms.u_corner_radius.value = r;
-                }
-                if (layer.material.uniforms.u_stroke_width) {
-                    layer.material.uniforms.u_stroke_width.value = w;
-                }
-                if (layer.material.uniforms.u_drop_shadow_margin) {
-                    layer.material.uniforms.u_drop_shadow_margin.value = m;
-                }
-            }
-        }, this.abortSignal);
-        // Auto-calculate renderOrder based on Nesting Level to prevent nested Z-fighting.
-        const nestingLevelSignal = computed(() => {
-            let count = 0;
-            let p = this
-                .parentContainer?.value;
-            while (p != null) {
-                count++;
-                p = p
-                    .parentContainer?.value;
-            }
-            return count;
-        });
-        this.nestingLevelSignal = nestingLevelSignal;
-        abortableEffect(() => {
-            const level = nestingLevelSignal.value;
-            // Physically separate sequential layers inside local Group Z-stack.
-            const baseZ = level * 0.01;
-            if (this.backfaceLayer)
-                this.backfaceLayer.position.z = baseZ - 0.001;
-            if (this.backfaceStrokeLayer)
-                this.backfaceStrokeLayer.position.z = baseZ - 0.002;
-            this.dropShadowLayer.position.z = baseZ;
-            this.fillLayer.position.z = baseZ + 0.001;
-            this.innerShadowLayer.position.z = baseZ + 0.002;
-            this.strokeLayer.position.z = baseZ + 0.003;
-            const contentZ = baseZ + 0.004;
-            for (const child of this.children) {
-                if (child === this.dropShadowLayer ||
-                    child === this.backfaceLayer ||
-                    child === this.backfaceStrokeLayer ||
-                    child === this.fillLayer ||
-                    child === this.innerShadowLayer ||
-                    child === this.strokeLayer) {
-                    continue;
-                }
-                const childWithProps = child;
-                if (typeof childWithProps.setProperties === 'function') {
-                    childWithProps.setProperties({ transformTranslateZ: contentZ });
-                }
-                else {
-                    child.position.z = contentZ;
-                }
-            }
-        }, this.abortSignal);
-    }
-    /** Overrides add method to cascade physical Z-position offsets for nested panels. */
-    add(...objects) {
-        super.add(...objects);
-        const level = this.nestingLevelSignal?.value ?? 0;
-        const baseZ = level * 0.01;
-        const contentZ = baseZ + 0.004;
-        for (const obj of objects) {
-            if (obj === this.dropShadowLayer ||
-                obj === this.backfaceLayer ||
-                obj === this.backfaceStrokeLayer ||
-                obj === this.fillLayer ||
-                obj === this.innerShadowLayer ||
-                obj === this.strokeLayer) {
-                continue;
-            }
-            const objWithProps = obj;
-            if (typeof objWithProps.setProperties === 'function') {
-                objWithProps.setProperties({ transformTranslateZ: contentZ });
-            }
-            else {
-                obj.position.z = contentZ;
-            }
-        }
-        return this;
-    }
-    // Setters.
-    /** Sets the corner radius of the panel. */
-    setCornerRadius(radius) {
-        this.cornerRadiusSignal.value = radius;
-    }
-    /** Sets the fill color or gradient. */
-    setFillColor(c) {
-        this.fillColorSignal.value = c;
-    }
-    /** Sets the optional rear-face color or gradient. */
-    setBackfaceColor(c) {
-        if (this.backfaceColorSignal)
-            this.backfaceColorSignal.value = c;
-    }
-    /** Sets the inner shadow color or gradient. */
-    setInnerShadowColor(c) {
-        this.innerShadowColorSignal.value = c;
-    }
-    /** Sets the inner shadow blur radius. */
-    setInnerShadowBlur(v) {
-        this.innerShadowBlurSignal.value = v;
-    }
-    /** Sets the inner shadow position offset. */
-    setInnerShadowPosition(v) {
-        this.innerShadowPositionSignal.value = v;
-    }
-    /** Sets the inner shadow spread expansion. */
-    setInnerShadowSpread(v) {
-        this.innerShadowSpreadSignal.value = v;
-    }
-    /** Sets the inner shadow falloff rate. */
-    setInnerShadowFalloff(v) {
-        this.innerShadowFalloffSignal.value = v;
-    }
-    /** Sets the drop shadow color or gradient. */
-    setDropShadowColor(c) {
-        this.dropShadowColorSignal.value = c;
-    }
-    /** Sets the drop shadow blur radius. */
-    setDropShadowBlur(v) {
-        this.dropShadowBlurSignal.value = v;
-    }
-    /** Sets the drop shadow position offset. */
-    setDropShadowPosition(v) {
-        this.dropShadowPositionSignal.value = v;
-    }
-    /** Sets the drop shadow spread expansion. */
-    setDropShadowSpread(v) {
-        this.dropShadowSpreadSignal.value = v;
-    }
-    /** Sets the drop shadow falloff rate. */
-    setDropShadowFalloff(v) {
-        this.dropShadowFalloffSignal.value = v;
-    }
-    /** Sets the stroke color or gradient. */
-    setStrokeColor(c) {
-        this.strokeColorSignal.value = c;
-    }
-    /** Sets the stroke width. */
-    setStrokeWidth(width) {
-        this.strokeWidthSignal.value = width;
-    }
-    /** Sets the stroke alignment (inside, outside, center). */
-    setStrokeAlign(align) {
-        this.strokeAlignSignal.value = align;
-    }
-    /**
-     * Updates multiple properties at once.
-     * Extracts known properties to apply them via signals/setters,
-     * passing remaining properties to the super class.
-     * @param props - Object containing properties to update.
-     */
-    setProperties(props) {
-        // Extract properties to ensure they are applied in the correct order
-        // and not passed to super if not needed.
-        const { fillColor, backfaceColor, innerShadowColor, innerShadowBlur, innerShadowPosition, innerShadowSpread, innerShadowFalloff, dropShadowColor, dropShadowBlur, dropShadowPosition, dropShadowSpread, dropShadowFalloff, strokeColor, strokeWidth, strokeAlign, cornerRadius, ...superProps } = props;
-        // Pass the rest to ShaderPanel.
-        super.setProperties(superProps);
-        // 1. Fill.
-        if (fillColor !== undefined) {
-            this.setFillColor(fillColor);
-        }
-        if (backfaceColor !== undefined) {
-            this.setBackfaceColor(backfaceColor);
-        }
-        // 2. Inner Shadow.
-        if (innerShadowColor !== undefined)
-            this.innerShadowColorSignal.value = innerShadowColor;
-        if (innerShadowBlur !== undefined)
-            this.innerShadowBlurSignal.value = innerShadowBlur;
-        if (innerShadowPosition !== undefined)
-            this.innerShadowPositionSignal.value = innerShadowPosition;
-        if (innerShadowSpread !== undefined)
-            this.innerShadowSpreadSignal.value = innerShadowSpread;
-        if (innerShadowFalloff !== undefined)
-            this.innerShadowFalloffSignal.value = innerShadowFalloff;
-        // 3. Drop Shadow.
-        if (dropShadowColor !== undefined)
-            this.dropShadowColorSignal.value = dropShadowColor;
-        if (dropShadowBlur !== undefined)
-            this.dropShadowBlurSignal.value = dropShadowBlur;
-        if (dropShadowPosition !== undefined)
-            this.dropShadowPositionSignal.value = dropShadowPosition;
-        if (dropShadowSpread !== undefined)
-            this.dropShadowSpreadSignal.value = dropShadowSpread;
-        if (dropShadowFalloff !== undefined)
-            this.dropShadowFalloffSignal.value = dropShadowFalloff;
-        // 4. Stroke.
-        if (strokeColor !== undefined) {
-            this.setStrokeColor(strokeColor);
-        }
-        if (strokeWidth !== undefined) {
-            this.setStrokeWidth(strokeWidth);
-        }
-        if (strokeAlign !== undefined) {
-            this.setStrokeAlign(strokeAlign);
-        }
-        // 5. Corner Radius.
-        if (cornerRadius !== undefined) {
-            this.setCornerRadius(cornerRadius);
-        }
-    }
-}
-
+* GradientPanel.
+* Supports Gradients for Stroke, InnerShadow, and DropShadow.
+*/
+var GradientPanel = class extends ShaderPanel {
+	constructor(properties = {}) {
+		const cornerRadiusSignal = signal(properties.cornerRadius ?? DEFAULT_GRADIENT_PANEL_PROPS.cornerRadius);
+		const fillColorSignal = signal(properties.fillColor ?? DEFAULT_GRADIENT_PANEL_PROPS.fillColor);
+		const backfaceColorSignal = properties.backfaceColor === void 0 ? void 0 : signal(properties.backfaceColor);
+		const innerShadowColorSignal = signal(properties.innerShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowColor);
+		const innerShadowBlurSignal = signal(properties.innerShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowBlur);
+		const innerShadowPositionSignal = signal(properties.innerShadowPosition ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowPosition);
+		const innerShadowSpreadSignal = signal(properties.innerShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowSpread);
+		const innerShadowFalloffSignal = signal(properties.innerShadowFalloff ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowFalloff);
+		const dropShadowColorSignal = signal(properties.dropShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowColor);
+		const dropShadowBlurSignal = signal(properties.dropShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowBlur);
+		const dropShadowPositionSignal = signal(properties.dropShadowPosition ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowPosition);
+		const dropShadowSpreadSignal = signal(properties.dropShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowSpread);
+		const dropShadowFalloffSignal = signal(properties.dropShadowFalloff ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowFalloff);
+		const shadowExpansion = computed(() => {
+			const blur = Math.max(dropShadowBlurSignal.value, 0);
+			const spread = Math.max(dropShadowSpreadSignal.value, 0);
+			const pos = dropShadowPositionSignal.value;
+			let extra = 0;
+			if (pos) {
+				if (Array.isArray(pos)) extra = Math.max(Math.abs(pos[0]), Math.abs(pos[1]));
+				else extra = Math.max(Math.abs(pos.x), Math.abs(pos.y));
+			}
+			return blur + extra + spread;
+		});
+		const strokeColorSignal = signal(properties.strokeColor ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeColor);
+		const strokeWidthSignal = signal(properties.strokeWidth ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeWidth);
+		const strokeAlignSignal = signal(properties.strokeAlign ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeAlign);
+		const expansionMarginSignal = computed(() => {
+			const s = shadowExpansion.value;
+			const sWidth = strokeWidthSignal.value;
+			const align = strokeAlignSignal.value;
+			let strokeExpand = 0;
+			if (align === "center") strokeExpand = sWidth * .5;
+			else if (align === "outside") strokeExpand = sWidth;
+			return s + strokeExpand;
+		});
+		super({
+			...properties,
+			overflow: "visible"
+		});
+		this.name = "GradientPanel";
+		this.dropShadowLayer = new DropShadowLayer({
+			dropShadowColor: dropShadowColorSignal,
+			dropShadowBlur: dropShadowBlurSignal,
+			dropShadowPosition: dropShadowPositionSignal,
+			dropShadowSpread: dropShadowSpreadSignal,
+			dropShadowFalloff: dropShadowFalloffSignal,
+			strokeWidth: strokeWidthSignal,
+			strokeAlign: strokeAlignSignal
+		});
+		this.fillLayer = new FillLayer({ fillColor: fillColorSignal });
+		if (backfaceColorSignal) {
+			this.backfaceLayer = new FillLayer({ fillColor: backfaceColorSignal });
+			this.backfaceLayer.name = "BackfaceLayer";
+			this.backfaceLayer.material.side = THREE.BackSide;
+		}
+		this.innerShadowLayer = new InnerShadowLayer({
+			innerShadowColor: innerShadowColorSignal,
+			innerShadowBlur: innerShadowBlurSignal,
+			innerShadowPosition: innerShadowPositionSignal,
+			innerShadowSpread: innerShadowSpreadSignal,
+			innerShadowFalloff: innerShadowFalloffSignal,
+			strokeWidth: strokeWidthSignal,
+			strokeAlign: strokeAlignSignal
+		});
+		this.strokeLayer = new StrokeLayer({
+			strokeColor: strokeColorSignal,
+			strokeWidth: strokeWidthSignal,
+			strokeAlign: strokeAlignSignal
+		});
+		if (this.backfaceLayer) {
+			this.backfaceStrokeLayer = new StrokeLayer({
+				strokeColor: strokeColorSignal,
+				strokeWidth: strokeWidthSignal,
+				strokeAlign: strokeAlignSignal
+			});
+			this.backfaceStrokeLayer.name = "BackfaceStrokeLayer";
+			this.backfaceStrokeLayer.material.side = THREE.BackSide;
+		}
+		if (this.backfaceLayer) this.addLayer(this.backfaceLayer);
+		if (this.backfaceStrokeLayer) this.addLayer(this.backfaceStrokeLayer);
+		this.addLayer(this.dropShadowLayer);
+		this.addLayer(this.fillLayer);
+		this.addLayer(this.innerShadowLayer);
+		this.addLayer(this.strokeLayer);
+		this.cornerRadiusSignal = cornerRadiusSignal;
+		this.fillColorSignal = fillColorSignal;
+		this.backfaceColorSignal = backfaceColorSignal;
+		this.innerShadowColorSignal = innerShadowColorSignal;
+		this.innerShadowBlurSignal = innerShadowBlurSignal;
+		this.innerShadowPositionSignal = innerShadowPositionSignal;
+		this.innerShadowSpreadSignal = innerShadowSpreadSignal;
+		this.innerShadowFalloffSignal = innerShadowFalloffSignal;
+		this.dropShadowColorSignal = dropShadowColorSignal;
+		this.dropShadowBlurSignal = dropShadowBlurSignal;
+		this.dropShadowPositionSignal = dropShadowPositionSignal;
+		this.dropShadowSpreadSignal = dropShadowSpreadSignal;
+		this.dropShadowFalloffSignal = dropShadowFalloffSignal;
+		this.expansionMarginSignal = expansionMarginSignal;
+		this.strokeColorSignal = strokeColorSignal;
+		this.strokeWidthSignal = strokeWidthSignal;
+		this.strokeAlignSignal = strokeAlignSignal;
+		const absProps = {
+			positionType: "absolute",
+			pointerEvents: "none"
+		};
+		this.fillLayer.setProperties({
+			...absProps,
+			zIndexOffset: -10,
+			pointerEvents: properties.pointerEvents ?? "auto"
+		});
+		this.backfaceLayer?.setProperties({
+			...absProps,
+			zIndexOffset: -12
+		});
+		this.backfaceStrokeLayer?.setProperties({
+			...absProps,
+			zIndexOffset: -11
+		});
+		this.innerShadowLayer.setProperties({
+			...absProps,
+			zIndexOffset: -8
+		});
+		this.dropShadowLayer.setProperties({
+			...absProps,
+			zIndexOffset: -4
+		});
+		this.strokeLayer.setProperties({
+			...absProps,
+			zIndexOffset: -6
+		});
+		const marginNeg = computed(() => -this.expansionMarginSignal.value);
+		abortableEffect(() => {
+			const m = marginNeg.value;
+			const props = {
+				positionTop: m,
+				positionLeft: m,
+				positionRight: m,
+				positionBottom: m
+			};
+			this.fillLayer.setProperties(props);
+			this.innerShadowLayer.setProperties(props);
+			this.dropShadowLayer.setProperties(props);
+			this.strokeLayer.setProperties(props);
+		}, this.abortSignal);
+		abortableEffect(() => {
+			const r = this.cornerRadiusSignal.value;
+			const w = this.strokeWidthSignal.value;
+			const m = this.expansionMarginSignal.value;
+			for (const layer of this.panelLayers) {
+				if (layer.material.uniforms.u_corner_radius) layer.material.uniforms.u_corner_radius.value = r;
+				if (layer.material.uniforms.u_stroke_width) layer.material.uniforms.u_stroke_width.value = w;
+				if (layer.material.uniforms.u_drop_shadow_margin) layer.material.uniforms.u_drop_shadow_margin.value = m;
+			}
+		}, this.abortSignal);
+		const nestingLevelSignal = computed(() => {
+			let count = 0;
+			let p = this.parentContainer?.value;
+			while (p != null) {
+				count++;
+				p = p.parentContainer?.value;
+			}
+			return count;
+		});
+		this.nestingLevelSignal = nestingLevelSignal;
+		abortableEffect(() => {
+			const baseZ = nestingLevelSignal.value * .01;
+			if (this.backfaceLayer) this.backfaceLayer.position.z = baseZ - .001;
+			if (this.backfaceStrokeLayer) this.backfaceStrokeLayer.position.z = baseZ - .002;
+			this.dropShadowLayer.position.z = baseZ;
+			this.fillLayer.position.z = baseZ + .001;
+			this.innerShadowLayer.position.z = baseZ + .002;
+			this.strokeLayer.position.z = baseZ + .003;
+			const contentZ = baseZ + .004;
+			for (const child of this.children) {
+				if (child === this.dropShadowLayer || child === this.backfaceLayer || child === this.backfaceStrokeLayer || child === this.fillLayer || child === this.innerShadowLayer || child === this.strokeLayer) continue;
+				const childWithProps = child;
+				if (typeof childWithProps.setProperties === "function") childWithProps.setProperties({ transformTranslateZ: contentZ });
+				else child.position.z = contentZ;
+			}
+		}, this.abortSignal);
+	}
+	/** Overrides add method to cascade physical Z-position offsets for nested panels. */
+	add(...objects) {
+		super.add(...objects);
+		const contentZ = (this.nestingLevelSignal?.value ?? 0) * .01 + .004;
+		for (const obj of objects) {
+			if (obj === this.dropShadowLayer || obj === this.backfaceLayer || obj === this.backfaceStrokeLayer || obj === this.fillLayer || obj === this.innerShadowLayer || obj === this.strokeLayer) continue;
+			const objWithProps = obj;
+			if (typeof objWithProps.setProperties === "function") objWithProps.setProperties({ transformTranslateZ: contentZ });
+			else obj.position.z = contentZ;
+		}
+		return this;
+	}
+	/** Sets the corner radius of the panel. */
+	setCornerRadius(radius) {
+		this.cornerRadiusSignal.value = radius;
+	}
+	/** Sets the fill color or gradient. */
+	setFillColor(c) {
+		this.fillColorSignal.value = c;
+	}
+	/** Sets the optional rear-face color or gradient. */
+	setBackfaceColor(c) {
+		if (this.backfaceColorSignal) this.backfaceColorSignal.value = c;
+	}
+	/** Sets the inner shadow color or gradient. */
+	setInnerShadowColor(c) {
+		this.innerShadowColorSignal.value = c;
+	}
+	/** Sets the inner shadow blur radius. */
+	setInnerShadowBlur(v) {
+		this.innerShadowBlurSignal.value = v;
+	}
+	/** Sets the inner shadow position offset. */
+	setInnerShadowPosition(v) {
+		this.innerShadowPositionSignal.value = v;
+	}
+	/** Sets the inner shadow spread expansion. */
+	setInnerShadowSpread(v) {
+		this.innerShadowSpreadSignal.value = v;
+	}
+	/** Sets the inner shadow falloff rate. */
+	setInnerShadowFalloff(v) {
+		this.innerShadowFalloffSignal.value = v;
+	}
+	/** Sets the drop shadow color or gradient. */
+	setDropShadowColor(c) {
+		this.dropShadowColorSignal.value = c;
+	}
+	/** Sets the drop shadow blur radius. */
+	setDropShadowBlur(v) {
+		this.dropShadowBlurSignal.value = v;
+	}
+	/** Sets the drop shadow position offset. */
+	setDropShadowPosition(v) {
+		this.dropShadowPositionSignal.value = v;
+	}
+	/** Sets the drop shadow spread expansion. */
+	setDropShadowSpread(v) {
+		this.dropShadowSpreadSignal.value = v;
+	}
+	/** Sets the drop shadow falloff rate. */
+	setDropShadowFalloff(v) {
+		this.dropShadowFalloffSignal.value = v;
+	}
+	/** Sets the stroke color or gradient. */
+	setStrokeColor(c) {
+		this.strokeColorSignal.value = c;
+	}
+	/** Sets the stroke width. */
+	setStrokeWidth(width) {
+		this.strokeWidthSignal.value = width;
+	}
+	/** Sets the stroke alignment (inside, outside, center). */
+	setStrokeAlign(align) {
+		this.strokeAlignSignal.value = align;
+	}
+	/**
+	* Updates multiple properties at once.
+	* Extracts known properties to apply them via signals/setters,
+	* passing remaining properties to the super class.
+	* @param props - Object containing properties to update.
+	*/
+	setProperties(props) {
+		const { fillColor, backfaceColor, innerShadowColor, innerShadowBlur, innerShadowPosition, innerShadowSpread, innerShadowFalloff, dropShadowColor, dropShadowBlur, dropShadowPosition, dropShadowSpread, dropShadowFalloff, strokeColor, strokeWidth, strokeAlign, cornerRadius, ...superProps } = props;
+		super.setProperties(superProps);
+		if (fillColor !== void 0) this.setFillColor(fillColor);
+		if (backfaceColor !== void 0) this.setBackfaceColor(backfaceColor);
+		if (innerShadowColor !== void 0) this.innerShadowColorSignal.value = innerShadowColor;
+		if (innerShadowBlur !== void 0) this.innerShadowBlurSignal.value = innerShadowBlur;
+		if (innerShadowPosition !== void 0) this.innerShadowPositionSignal.value = innerShadowPosition;
+		if (innerShadowSpread !== void 0) this.innerShadowSpreadSignal.value = innerShadowSpread;
+		if (innerShadowFalloff !== void 0) this.innerShadowFalloffSignal.value = innerShadowFalloff;
+		if (dropShadowColor !== void 0) this.dropShadowColorSignal.value = dropShadowColor;
+		if (dropShadowBlur !== void 0) this.dropShadowBlurSignal.value = dropShadowBlur;
+		if (dropShadowPosition !== void 0) this.dropShadowPositionSignal.value = dropShadowPosition;
+		if (dropShadowSpread !== void 0) this.dropShadowSpreadSignal.value = dropShadowSpread;
+		if (dropShadowFalloff !== void 0) this.dropShadowFalloffSignal.value = dropShadowFalloff;
+		if (strokeColor !== void 0) this.setStrokeColor(strokeColor);
+		if (strokeWidth !== void 0) this.setStrokeWidth(strokeWidth);
+		if (strokeAlign !== void 0) this.setStrokeAlign(strokeAlign);
+		if (cornerRadius !== void 0) this.setCornerRadius(cornerRadius);
+	}
+};
+//#endregion
+//#region src/ui/constants/UICardEdgeConstants.ts
 /**
- * Length of each resize corner along the card's sides, beyond the rounded
- * corner, in edge margins.
- */
-const RESIZE_CORNER_SIDE_MARGINS = 2;
-/**
- * Largest share of each side's half-length a resize corner may cover, so the
- * middle of every side stays available for moving the card.
- */
-const MAX_RESIZE_CORNER_FRACTION = 0.5;
-/** Stroke width multiplier for a hovered resize corner. */
-const RESIZE_CORNER_EDGE_WIDTH_SCALE = 2;
-
+* Largest share of each side's half-length a resize corner may cover, so the
+* middle of every side stays available for moving the card.
+*/
+const MAX_RESIZE_CORNER_FRACTION = .5;
+//#endregion
+//#region src/ui/shaders/UICardEdge.frag.ts
 /** Formats a number as a GLSL float literal, which needs a decimal point. */
 const glslFloat = (value) => Number.isInteger(value) ? `${value}.0` : `${value}`;
 /** Fragment shader for the hover-lit manipulation edge around a UI card. */
-const UICardEdgeFragmentShader = CommonFunctionsShader +
-    `
+const UICardEdgeFragmentShader = CommonFunctionsShader + `
 #include <common>
 #include <dithering_pars_fragment>
 
@@ -1678,9 +1538,9 @@ uniform float u_show_glow_2;
 uniform float u_debug;
 uniform float u_resizable;
 
-const float RESIZE_CORNER_SIDE_MARGINS = ${glslFloat(RESIZE_CORNER_SIDE_MARGINS)};
+const float RESIZE_CORNER_SIDE_MARGINS = ${glslFloat(2)};
 const float MAX_RESIZE_CORNER_FRACTION = ${glslFloat(MAX_RESIZE_CORNER_FRACTION)};
-const float RESIZE_CORNER_EDGE_WIDTH_SCALE = ${glslFloat(RESIZE_CORNER_EDGE_WIDTH_SCALE)};
+const float RESIZE_CORNER_EDGE_WIDTH_SCALE = ${glslFloat(2)};
 
 // Matches isOuterEdgeHit and isCornerHit in UICardEdge.ts.
 float cornerHighlight(
@@ -1853,2904 +1713,2326 @@ void main() {
     #include <dithering_fragment>
 }
 `;
-
+//#endregion
+//#region src/ui/internal/UICardEdge.ts
 const DEFAULT_EDGE_PROPERTIES = {
-    margin: 50,
-    cardCornerRadius: 0,
-    edgeWidth: 2,
-    spotlightColor: 'rgba(255, 255, 255, 1)',
-    spotlightRadius: 20,
-    spotlightBlur: 40,
-    debug: false,
-    resizable: false,
+	margin: 50,
+	cardCornerRadius: 0,
+	edgeWidth: 2,
+	spotlightColor: "rgba(255, 255, 255, 1)",
+	spotlightRadius: 20,
+	spotlightBlur: 40,
+	debug: false,
+	resizable: false
 };
-class UICardEdgeLayer extends PanelLayer {
-    constructor(inputProperties, initialClasses, config = {}) {
-        super(new PanelShaderMaterial({
-            fragmentShader: UICardEdgeFragmentShader,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-            uniforms: createUniforms(),
-        }), inputProperties, initialClasses, config);
-        abortableEffect(() => {
-            const signals = this.properties.signal;
-            setNumber(this.material, 'u_edge_margin', signals.u_edge_margin?.value);
-            setNumber(this.material, 'u_card_corner_radius', signals.u_card_corner_radius?.value);
-            setNumber(this.material, 'u_edge_width', signals.u_edge_width?.value);
-            setColor(this.material, 'u_cursor_spotlight_color', signals.u_cursor_spotlight_color?.value);
-            setNumber(this.material, 'u_cursor_radius', signals.u_cursor_radius?.value);
-            setNumber(this.material, 'u_cursor_spotlight_blur', signals.u_cursor_spotlight_blur?.value);
-            setVector2(this.material, 'u_cursor_uv', signals.u_cursor_uv?.value);
-            setNumber(this.material, 'u_show_glow', signals.u_show_glow?.value);
-            setVector2(this.material, 'u_cursor_uv_2', signals.u_cursor_uv_2?.value);
-            setNumber(this.material, 'u_show_glow_2', signals.u_show_glow_2?.value);
-            setNumber(this.material, 'u_debug', signals.u_debug?.value);
-            setNumber(this.material, 'u_resizable', signals.u_resizable?.value);
-        }, this.abortSignal);
-    }
-    setCursor(uv, index) {
-        const signals = this.properties.signal;
-        const cursor = index === 0 ? signals.u_cursor_uv : signals.u_cursor_uv_2;
-        const visible = index === 0 ? signals.u_show_glow : signals.u_show_glow_2;
-        if (cursor && uv) {
-            if (cursor.value)
-                cursor.value.copy(uv);
-            else
-                cursor.value = uv;
-            setVector2(this.material, index === 0 ? 'u_cursor_uv' : 'u_cursor_uv_2', uv);
-        }
-        if (visible)
-            visible.value = uv ? 1 : 0;
-    }
-}
+var UICardEdgeLayer = class extends PanelLayer {
+	constructor(inputProperties, initialClasses, config = {}) {
+		super(new PanelShaderMaterial({
+			fragmentShader: UICardEdgeFragmentShader,
+			depthWrite: false,
+			side: THREE.DoubleSide,
+			uniforms: createUniforms()
+		}), inputProperties, initialClasses, config);
+		abortableEffect(() => {
+			const signals = this.properties.signal;
+			setNumber(this.material, "u_edge_margin", signals.u_edge_margin?.value);
+			setNumber(this.material, "u_card_corner_radius", signals.u_card_corner_radius?.value);
+			setNumber(this.material, "u_edge_width", signals.u_edge_width?.value);
+			setColor(this.material, "u_cursor_spotlight_color", signals.u_cursor_spotlight_color?.value);
+			setNumber(this.material, "u_cursor_radius", signals.u_cursor_radius?.value);
+			setNumber(this.material, "u_cursor_spotlight_blur", signals.u_cursor_spotlight_blur?.value);
+			setVector2(this.material, "u_cursor_uv", signals.u_cursor_uv?.value);
+			setNumber(this.material, "u_show_glow", signals.u_show_glow?.value);
+			setVector2(this.material, "u_cursor_uv_2", signals.u_cursor_uv_2?.value);
+			setNumber(this.material, "u_show_glow_2", signals.u_show_glow_2?.value);
+			setNumber(this.material, "u_debug", signals.u_debug?.value);
+			setNumber(this.material, "u_resizable", signals.u_resizable?.value);
+		}, this.abortSignal);
+	}
+	setCursor(uv, index) {
+		const signals = this.properties.signal;
+		const cursor = index === 0 ? signals.u_cursor_uv : signals.u_cursor_uv_2;
+		const visible = index === 0 ? signals.u_show_glow : signals.u_show_glow_2;
+		if (cursor && uv) {
+			if (cursor.value) cursor.value.copy(uv);
+			else cursor.value = uv;
+			setVector2(this.material, index === 0 ? "u_cursor_uv" : "u_cursor_uv_2", uv);
+		}
+		if (visible) visible.value = uv ? 1 : 0;
+	}
+};
 /** Private shader-backed card edge. */
-class UICardEdge extends UICardEdgeLayer {
-    constructor(properties = {}) {
-        const resolved = { ...DEFAULT_EDGE_PROPERTIES, ...properties };
-        const margin = Math.max(0, resolved.margin);
-        const cardCornerRadius = Math.max(0, resolved.cardCornerRadius);
-        super({
-            positionType: 'absolute',
-            positionTop: -margin,
-            positionRight: -margin,
-            positionBottom: -margin,
-            positionLeft: -margin,
-            width: 'auto',
-            height: 'auto',
-            pointerEvents: 'auto',
-            zIndexOffset: -20,
-            u_edge_margin: margin,
-            u_card_corner_radius: cardCornerRadius,
-            u_edge_width: resolved.edgeWidth,
-            u_cursor_spotlight_color: resolved.spotlightColor,
-            u_cursor_radius: resolved.spotlightRadius,
-            u_cursor_spotlight_blur: resolved.spotlightBlur,
-            u_cursor_uv: new THREE.Vector2(0.5, 0.5),
-            u_show_glow: 0,
-            u_cursor_uv_2: new THREE.Vector2(0.5, 0.5),
-            u_show_glow_2: 0,
-            u_debug: resolved.debug ? 1 : 0,
-            u_resizable: resolved.resizable ? 1 : 0,
-        });
-        this.name = 'UICardEdge';
-        /**
-         * Hit target that edge corner intersections are retargeted to. UIKit only
-         * accepts UIKit children, so it stays detached and mirrors the edge's world
-         * matrix for reticle normals.
-         */
-        this.resizeHandle = new THREE.Object3D();
-        this.cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
-        this.cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
-        /** Returns true when a world point lies in the outer edge hit band. */
-        this.containsPoint = (point, padding = 0) => {
-            const size = this.size.value;
-            if (!size)
-                return false;
-            this.updateWorldMatrix(true, false);
-            if (Math.abs(this.matrixWorld.determinant()) < Number.EPSILON)
-                return false;
-            const local = this.worldToLocal(point.clone());
-            const xScale = new THREE.Vector3()
-                .setFromMatrixColumn(this.matrixWorld, 0)
-                .length();
-            const paddingPixels = padding > 0 && xScale > Number.EPSILON ? (padding / xScale) * size[0] : 0;
-            const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
-            return isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius, paddingPixels);
-        };
-        this.xb = {
-            manipulationHandle: { action: ManipulationAction.Translate },
-        };
-        this.margin = margin;
-        this._cardCornerRadius = cardCornerRadius;
-        this._resizable = resolved.resizable;
-        this.resizeHandle.name = 'UICardResizeHandle';
-        this.resizeHandle.xb = {
-            manipulationHandle: { action: ManipulationAction.Resize },
-        };
-        this.resizeHandle.matrixAutoUpdate = false;
-        this.resizeHandle.matrixWorldAutoUpdate = false;
-        const baseRaycast = this.raycast.bind(this);
-        this.raycast = (raycaster, intersections) => {
-            const firstNewIntersection = intersections.length;
-            baseRaycast(raycaster, intersections);
-            const size = this.size.value;
-            for (let index = intersections.length - 1; index >= firstNewIntersection; index--) {
-                const intersection = intersections[index];
-                const uv = intersection.uv;
-                if (!size ||
-                    !uv ||
-                    !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius)) {
-                    intersections.splice(index, 1);
-                }
-                else if (this._resizable &&
-                    isCornerHit(uv, size, this.margin, this._cardCornerRadius)) {
-                    this.resizeHandle.matrixWorld.copy(this.matrixWorld);
-                    intersection.object = this.resizeHandle;
-                }
-            }
-        };
-    }
-    get cardCornerRadius() {
-        return this._cardCornerRadius;
-    }
-    setCardCornerRadius(radius) {
-        const nextRadius = Math.max(0, radius);
-        this._cardCornerRadius = nextRadius;
-        const signal = this.properties.signal.u_card_corner_radius;
-        if (signal)
-            signal.value = nextRadius;
-        setNumber(this.material, 'u_card_corner_radius', nextRadius);
-    }
-    get resizable() {
-        return this._resizable;
-    }
-    setResizable(resizable) {
-        this._resizable = resizable;
-        const signal = this.properties.signal.u_resizable;
-        if (signal)
-            signal.value = resizable ? 1 : 0;
-        setNumber(this.material, 'u_resizable', resizable ? 1 : 0);
-    }
-    /** Returns the resize handle when a world point touches a resize corner. */
-    touchTarget(point) {
-        const size = this.size.value;
-        if (!this._resizable || !size)
-            return undefined;
-        this.updateWorldMatrix(true, false);
-        const local = this.worldToLocal(point.clone());
-        const uv = new THREE.Vector2(local.x + 0.5, local.y + 0.5);
-        if (!isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius) ||
-            !isCornerHit(uv, size, this.margin, this._cardCornerRadius)) {
-            return undefined;
-        }
-        this.resizeHandle.matrixWorld.copy(this.matrixWorld);
-        return this.resizeHandle;
-    }
-    setCursorPoints(first, second) {
-        this.setCursorPoint(first, 0);
-        this.setCursorPoint(second, 1);
-    }
-    setCursorPoint(point, index) {
-        if (!point || !this.size.value) {
-            this.setCursor(undefined, index);
-            return;
-        }
-        const local = this.cursorLocal[index].copy(point);
-        this.worldToLocal(local);
-        this.setCursor(this.cursorUV[index].set(local.x + 0.5, local.y + 0.5), index);
-    }
-}
+var UICardEdge = class extends UICardEdgeLayer {
+	constructor(properties = {}) {
+		const resolved = {
+			...DEFAULT_EDGE_PROPERTIES,
+			...properties
+		};
+		const margin = Math.max(0, resolved.margin);
+		const cardCornerRadius = Math.max(0, resolved.cardCornerRadius);
+		super({
+			positionType: "absolute",
+			positionTop: -margin,
+			positionRight: -margin,
+			positionBottom: -margin,
+			positionLeft: -margin,
+			width: "auto",
+			height: "auto",
+			pointerEvents: "auto",
+			zIndexOffset: -20,
+			u_edge_margin: margin,
+			u_card_corner_radius: cardCornerRadius,
+			u_edge_width: resolved.edgeWidth,
+			u_cursor_spotlight_color: resolved.spotlightColor,
+			u_cursor_radius: resolved.spotlightRadius,
+			u_cursor_spotlight_blur: resolved.spotlightBlur,
+			u_cursor_uv: new THREE.Vector2(.5, .5),
+			u_show_glow: 0,
+			u_cursor_uv_2: new THREE.Vector2(.5, .5),
+			u_show_glow_2: 0,
+			u_debug: resolved.debug ? 1 : 0,
+			u_resizable: resolved.resizable ? 1 : 0
+		});
+		this.name = "UICardEdge";
+		this.resizeHandle = new THREE.Object3D();
+		this.cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
+		this.cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
+		this.containsPoint = (point, padding = 0) => {
+			const size = this.size.value;
+			if (!size) return false;
+			this.updateWorldMatrix(true, false);
+			if (Math.abs(this.matrixWorld.determinant()) < Number.EPSILON) return false;
+			const local = this.worldToLocal(point.clone());
+			const xScale = new THREE.Vector3().setFromMatrixColumn(this.matrixWorld, 0).length();
+			const paddingPixels = padding > 0 && xScale > Number.EPSILON ? padding / xScale * size[0] : 0;
+			return isOuterEdgeHit(new THREE.Vector2(local.x + .5, local.y + .5), size, this.margin, this._cardCornerRadius, paddingPixels);
+		};
+		this.xb = { manipulationHandle: { action: ManipulationAction.Translate } };
+		this.margin = margin;
+		this._cardCornerRadius = cardCornerRadius;
+		this._resizable = resolved.resizable;
+		this.resizeHandle.name = "UICardResizeHandle";
+		this.resizeHandle.xb = { manipulationHandle: { action: ManipulationAction.Resize } };
+		this.resizeHandle.matrixAutoUpdate = false;
+		this.resizeHandle.matrixWorldAutoUpdate = false;
+		const baseRaycast = this.raycast.bind(this);
+		this.raycast = (raycaster, intersections) => {
+			const firstNewIntersection = intersections.length;
+			baseRaycast(raycaster, intersections);
+			const size = this.size.value;
+			for (let index = intersections.length - 1; index >= firstNewIntersection; index--) {
+				const intersection = intersections[index];
+				const uv = intersection.uv;
+				if (!size || !uv || !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius)) intersections.splice(index, 1);
+				else if (this._resizable && isCornerHit(uv, size, this.margin, this._cardCornerRadius)) {
+					this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+					intersection.object = this.resizeHandle;
+				}
+			}
+		};
+	}
+	get cardCornerRadius() {
+		return this._cardCornerRadius;
+	}
+	setCardCornerRadius(radius) {
+		const nextRadius = Math.max(0, radius);
+		this._cardCornerRadius = nextRadius;
+		const signal = this.properties.signal.u_card_corner_radius;
+		if (signal) signal.value = nextRadius;
+		setNumber(this.material, "u_card_corner_radius", nextRadius);
+	}
+	get resizable() {
+		return this._resizable;
+	}
+	setResizable(resizable) {
+		this._resizable = resizable;
+		const signal = this.properties.signal.u_resizable;
+		if (signal) signal.value = resizable ? 1 : 0;
+		setNumber(this.material, "u_resizable", resizable ? 1 : 0);
+	}
+	/** Returns the resize handle when a world point touches a resize corner. */
+	touchTarget(point) {
+		const size = this.size.value;
+		if (!this._resizable || !size) return void 0;
+		this.updateWorldMatrix(true, false);
+		const local = this.worldToLocal(point.clone());
+		const uv = new THREE.Vector2(local.x + .5, local.y + .5);
+		if (!isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius) || !isCornerHit(uv, size, this.margin, this._cardCornerRadius)) return;
+		this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+		return this.resizeHandle;
+	}
+	setCursorPoints(first, second) {
+		this.setCursorPoint(first, 0);
+		this.setCursorPoint(second, 1);
+	}
+	setCursorPoint(point, index) {
+		if (!point || !this.size.value) {
+			this.setCursor(void 0, index);
+			return;
+		}
+		const local = this.cursorLocal[index].copy(point);
+		this.worldToLocal(local);
+		this.setCursor(this.cursorUV[index].set(local.x + .5, local.y + .5), index);
+	}
+};
 function createUniforms() {
-    return {
-        u_edge_margin: { value: 0 },
-        u_card_corner_radius: { value: 0 },
-        u_edge_width: { value: 0 },
-        u_cursor_spotlight_color: { value: new THREE.Vector4(1, 1, 1, 1) },
-        u_cursor_radius: { value: 0 },
-        u_cursor_spotlight_blur: { value: 0 },
-        u_cursor_uv: { value: new THREE.Vector2(0.5, 0.5) },
-        u_show_glow: { value: 0 },
-        u_cursor_uv_2: { value: new THREE.Vector2(0.5, 0.5) },
-        u_show_glow_2: { value: 0 },
-        u_debug: { value: 0 },
-        u_resizable: { value: 0 },
-    };
+	return {
+		u_edge_margin: { value: 0 },
+		u_card_corner_radius: { value: 0 },
+		u_edge_width: { value: 0 },
+		u_cursor_spotlight_color: { value: new THREE.Vector4(1, 1, 1, 1) },
+		u_cursor_radius: { value: 0 },
+		u_cursor_spotlight_blur: { value: 0 },
+		u_cursor_uv: { value: new THREE.Vector2(.5, .5) },
+		u_show_glow: { value: 0 },
+		u_cursor_uv_2: { value: new THREE.Vector2(.5, .5) },
+		u_show_glow_2: { value: 0 },
+		u_debug: { value: 0 },
+		u_resizable: { value: 0 }
+	};
 }
 function setNumber(material, name, value) {
-    if (value !== undefined)
-        material.uniforms[name].value = value;
+	if (value !== void 0) material.uniforms[name].value = value;
 }
 function setColor(material, name, value) {
-    if (value === undefined)
-        return;
-    const { color, opacity } = parseColorWithAlpha(value);
-    material.uniforms[name].value.set(color.r, color.g, color.b, opacity);
+	if (value === void 0) return;
+	const { color, opacity } = parseColorWithAlpha(value);
+	material.uniforms[name].value.set(color.r, color.g, color.b, opacity);
 }
 function setVector2(material, name, value) {
-    if (value !== undefined)
-        material.uniforms[name].value.copy(value);
+	if (value !== void 0) material.uniforms[name].value.copy(value);
 }
 function isOuterEdgeHit(uv, size, margin, cardCornerRadius, padding = 0) {
-    const halfWidth = size[0] / 2;
-    const halfHeight = size[1] / 2;
-    const x = uv.x * size[0] - halfWidth;
-    const y = uv.y * size[1] - halfHeight;
-    const innerHalfWidth = Math.max(0, halfWidth - margin);
-    const innerHalfHeight = Math.max(0, halfHeight - margin);
-    const innerRadius = Math.min(cardCornerRadius, innerHalfWidth, innerHalfHeight);
-    const outerRadius = Math.min(innerRadius + margin, halfWidth, halfHeight);
-    return (roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= padding &&
-        roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >=
-            -padding);
+	const halfWidth = size[0] / 2;
+	const halfHeight = size[1] / 2;
+	const x = uv.x * size[0] - halfWidth;
+	const y = uv.y * size[1] - halfHeight;
+	const innerHalfWidth = Math.max(0, halfWidth - margin);
+	const innerHalfHeight = Math.max(0, halfHeight - margin);
+	const innerRadius = Math.min(cardCornerRadius, innerHalfWidth, innerHalfHeight);
+	return roundedBoxDistance(x, y, halfWidth, halfHeight, Math.min(innerRadius + margin, halfWidth, halfHeight)) <= padding && roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >= -padding;
 }
 /**
- * Returns true inside the band's corner regions. Each region covers the rounded
- * corner arc plus one margin width along both adjoining sides.
- */
+* Returns true inside the band's corner regions. Each region covers the rounded
+* corner arc plus one margin width along both adjoining sides.
+*/
 function isCornerHit(uv, size, margin, cardCornerRadius) {
-    const halfWidth = size[0] / 2;
-    const halfHeight = size[1] / 2;
-    const innerRadius = Math.min(cardCornerRadius, Math.max(0, halfWidth - margin), Math.max(0, halfHeight - margin));
-    const extent = innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin;
-    const x = Math.abs(uv.x * size[0] - halfWidth);
-    const y = Math.abs(uv.y * size[1] - halfHeight);
-    return (x >= halfWidth - Math.min(extent, halfWidth * MAX_RESIZE_CORNER_FRACTION) &&
-        y >= halfHeight - Math.min(extent, halfHeight * MAX_RESIZE_CORNER_FRACTION));
+	const halfWidth = size[0] / 2;
+	const halfHeight = size[1] / 2;
+	const extent = Math.min(cardCornerRadius, Math.max(0, halfWidth - margin), Math.max(0, halfHeight - margin)) + 2 * margin;
+	const x = Math.abs(uv.x * size[0] - halfWidth);
+	const y = Math.abs(uv.y * size[1] - halfHeight);
+	return x >= halfWidth - Math.min(extent, halfWidth * .5) && y >= halfHeight - Math.min(extent, halfHeight * .5);
 }
 function roundedBoxDistance(x, y, halfWidth, halfHeight, radius) {
-    const qx = Math.abs(x) - halfWidth + radius;
-    const qy = Math.abs(y) - halfHeight + radius;
-    return (Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) +
-        Math.min(Math.max(qx, qy), 0) -
-        radius);
+	const qx = Math.abs(x) - halfWidth + radius;
+	const qy = Math.abs(y) - halfHeight + radius;
+	return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - radius;
 }
-
-const EMOJI_SEQUENCE_SOURCE = String.raw `(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?)*)`;
-const EMOJI_SEQUENCE_REGEX = new RegExp(EMOJI_SEQUENCE_SOURCE, 'u');
-const EMOJI_SEQUENCE_GLOBAL_REGEX = new RegExp(EMOJI_SEQUENCE_SOURCE, 'gu');
-const TEXT_SEGMENT_REGEX = new RegExp(`${EMOJI_SEQUENCE_SOURCE}|\\n|[ \\t\\r]+|[a-zA-Z0-9]+|[^a-zA-Z0-9\\s]`, 'gu');
+//#endregion
+//#region src/ui/internal/EmojiText.ts
+const EMOJI_SEQUENCE_SOURCE = String.raw`(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?)*)`;
+const EMOJI_SEQUENCE_REGEX = new RegExp(EMOJI_SEQUENCE_SOURCE, "u");
+const EMOJI_SEQUENCE_GLOBAL_REGEX = new RegExp(EMOJI_SEQUENCE_SOURCE, "gu");
+const TEXT_SEGMENT_REGEX = new RegExp(`${EMOJI_SEQUENCE_SOURCE}|\\n|[ \\t\\r]+|[a-zA-Z0-9]+|[^a-zA-Z0-9\\s]`, "gu");
 /** Renders ASCII text as sharp UIKit glyphs and emoji as inline images. */
-class EmojiText extends Container {
-    constructor(properties) {
-        super(emojiContainerProperties(properties));
-        this.name = 'EmojiText';
-        this.updateTextProperties(properties);
-    }
-    updateTextProperties(properties) {
-        this.resetProperties(emojiContainerProperties(properties));
-        for (const child of [...this.children]) {
-            if (child instanceof Container ||
-                child instanceof Image ||
-                child instanceof Text) {
-                child.dispose();
-            }
-        }
-        const fontSize = properties.fontSize ?? 16;
-        const emojiSize = fontSize * 1.05;
-        for (const segment of parseSegments(properties.text, fontSize)) {
-            if (segment.type === 'space') {
-                this.add(new Container({
-                    width: fontSize * 0.26 * segment.text.length,
-                    height: fontSize,
-                }));
-            }
-            else if (segment.type === 'newline') {
-                this.add(new Container({
-                    width: '100%',
-                    height: segment.blankLine ? fontSize : 0,
-                }));
-            }
-            else if (segment.type === 'emoji') {
-                this.add(new Image({
-                    src: emojiUrl(segment.text),
-                    width: emojiSize,
-                    height: emojiSize,
-                    keepAspectRatio: true,
-                    transformTranslateY: -emojiSize * 0.08,
-                    marginRight: segment.trailingSpaceWidth,
-                    pointerEvents: 'none',
-                }));
-            }
-            else {
-                this.add(new Text({
-                    text: segment.text,
-                    fontSize,
-                    lineHeight: properties.lineHeight,
-                    color: properties.color,
-                    fontWeight: properties.fontWeight,
-                    whiteSpace: 'pre',
-                    marginRight: segment.trailingSpaceWidth,
-                    pointerEvents: 'none',
-                }));
-            }
-        }
-    }
-}
+var EmojiText = class extends Container {
+	constructor(properties) {
+		super(emojiContainerProperties(properties));
+		this.name = "EmojiText";
+		this.updateTextProperties(properties);
+	}
+	updateTextProperties(properties) {
+		this.resetProperties(emojiContainerProperties(properties));
+		for (const child of [...this.children]) if (child instanceof Container || child instanceof Image || child instanceof Text) child.dispose();
+		const fontSize = properties.fontSize ?? 16;
+		const emojiSize = fontSize * 1.05;
+		for (const segment of parseSegments(properties.text, fontSize)) if (segment.type === "space") this.add(new Container({
+			width: fontSize * .26 * segment.text.length,
+			height: fontSize
+		}));
+		else if (segment.type === "newline") this.add(new Container({
+			width: "100%",
+			height: segment.blankLine ? fontSize : 0
+		}));
+		else if (segment.type === "emoji") this.add(new Image({
+			src: emojiUrl(segment.text),
+			width: emojiSize,
+			height: emojiSize,
+			keepAspectRatio: true,
+			transformTranslateY: -emojiSize * .08,
+			marginRight: segment.trailingSpaceWidth,
+			pointerEvents: "none"
+		}));
+		else this.add(new Text({
+			text: segment.text,
+			fontSize,
+			lineHeight: properties.lineHeight,
+			color: properties.color,
+			fontWeight: properties.fontWeight,
+			whiteSpace: "pre",
+			marginRight: segment.trailingSpaceWidth,
+			pointerEvents: "none"
+		}));
+	}
+};
 function canRenderEmojiText(value) {
-    if (!EMOJI_SEQUENCE_REGEX.test(value))
-        return false;
-    const textWithoutEmoji = value.replace(EMOJI_SEQUENCE_GLOBAL_REGEX, '');
-    return !/[^\u0020-\u007e\n\r\t]/u.test(textWithoutEmoji);
+	if (!EMOJI_SEQUENCE_REGEX.test(value)) return false;
+	const textWithoutEmoji = value.replace(EMOJI_SEQUENCE_GLOBAL_REGEX, "");
+	return !/[^\u0020-\u007e\n\r\t]/u.test(textWithoutEmoji);
 }
 function emojiContainerProperties(properties) {
-    return {
-        flexDirection: 'row',
-        flexWrap: properties.whiteSpace === 'nowrap' ? 'no-wrap' : 'wrap',
-        alignItems: 'center',
-        justifyContent: properties.textAlign === 'center'
-            ? 'center'
-            : properties.textAlign === 'right'
-                ? 'flex-end'
-                : 'flex-start',
-        color: properties.color,
-        fontSize: properties.fontSize,
-        fontWeight: properties.fontWeight,
-        lineHeight: properties.lineHeight,
-        flexShrink: 0,
-        pointerEvents: 'none',
-    };
+	return {
+		flexDirection: "row",
+		flexWrap: properties.whiteSpace === "nowrap" ? "no-wrap" : "wrap",
+		alignItems: "center",
+		justifyContent: properties.textAlign === "center" ? "center" : properties.textAlign === "right" ? "flex-end" : "flex-start",
+		color: properties.color,
+		fontSize: properties.fontSize,
+		fontWeight: properties.fontWeight,
+		lineHeight: properties.lineHeight,
+		flexShrink: 0,
+		pointerEvents: "none"
+	};
 }
 function parseSegments(text, fontSize) {
-    const rawSegments = text.replace(/\r\n/gu, '\n').match(TEXT_SEGMENT_REGEX) ?? [];
-    const segments = [];
-    for (let index = 0; index < rawSegments.length; index++) {
-        const value = rawSegments[index];
-        if (value === '\n') {
-            segments.push({
-                type: 'newline',
-                text: value,
-                blankLine: index === 0 || rawSegments[index - 1] === '\n',
-            });
-        }
-        else if (/^[ \t\r]+$/u.test(value)) {
-            const previous = segments[segments.length - 1];
-            if (previous?.type === 'word' || previous?.type === 'emoji') {
-                previous.trailingSpaceWidth = fontSize * 0.26 * value.length;
-            }
-            else {
-                segments.push({ type: 'space', text: value });
-            }
-        }
-        else if (EMOJI_SEQUENCE_REGEX.test(value)) {
-            segments.push({ type: 'emoji', text: value });
-        }
-        else {
-            segments.push({ type: 'word', text: value.replace(/\uFE0F/gu, '') });
-        }
-    }
-    return segments;
+	const rawSegments = text.replace(/\r\n/gu, "\n").match(TEXT_SEGMENT_REGEX) ?? [];
+	const segments = [];
+	for (let index = 0; index < rawSegments.length; index++) {
+		const value = rawSegments[index];
+		if (value === "\n") segments.push({
+			type: "newline",
+			text: value,
+			blankLine: index === 0 || rawSegments[index - 1] === "\n"
+		});
+		else if (/^[ \t\r]+$/u.test(value)) {
+			const previous = segments[segments.length - 1];
+			if (previous?.type === "word" || previous?.type === "emoji") previous.trailingSpaceWidth = fontSize * .26 * value.length;
+			else segments.push({
+				type: "space",
+				text: value
+			});
+		} else if (EMOJI_SEQUENCE_REGEX.test(value)) segments.push({
+			type: "emoji",
+			text: value
+		});
+		else segments.push({
+			type: "word",
+			text: value.replace(/\uFE0F/gu, "")
+		});
+	}
+	return segments;
 }
 function emojiUrl(emoji) {
-    let hex = Array.from(emoji)
-        .map((character) => character.codePointAt(0).toString(16))
-        .join('-');
-    if (!hex.includes('200d') && hex.endsWith('-fe0f')) {
-        hex = hex.slice(0, -5);
-    }
-    return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${hex}.png`;
+	let hex = Array.from(emoji).map((character) => character.codePointAt(0).toString(16)).join("-");
+	if (!hex.includes("200d") && hex.endsWith("-fe0f")) hex = hex.slice(0, -5);
+	return `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${hex}.png`;
 }
-
-/** Shared scrollbar width and reserved gutter, in UI layout units. */
-const DEFAULT_SCROLLBAR_WIDTH = 8;
-/** Line-height fallback as a multiple of the current font size. */
-const DEFAULT_TEXT_LINE_HEIGHT = 1.2;
-/** Font-size fallback, in UI layout units, when a style supplies none. */
-const DEFAULT_TEXT_FONT_SIZE = 16;
-/** Width of an editable tab stop, measured in spaces. */
-const DEFAULT_TEXT_TAB_SIZE = 4;
-
-/**
- * Font stack shared by every canvas-rendered UI text.
- *
- * It resolves to the host operating system's UI face, so the platform's own
- * fallback chain covers every script the device can display instead of a single
- * bundled typeface that would draw missing-glyph boxes.
- */
-const SYSTEM_FONT_STACK = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const NORMAL_FONT_WEIGHT = 400;
-const MEDIUM_FONT_WEIGHT = 500;
-const BOLD_FONT_WEIGHT = 700;
-/** Largest canvas edge we allocate, which every WebGL 2 device supports. */
-const MAX_CANVAS_DIMENSION = 4096;
-/**
- * Samples per device pixel. Text is magnified by the headset optics, so one
- * device pixel per layout pixel leaves visible stair-stepping on glyph edges.
- */
-const CANVAS_SUPERSAMPLING = 2;
-const graphemeSegmenter$1 = new Intl.Segmenter(undefined, {
-    granularity: 'grapheme',
-});
-/** Maps the CSS-like weight keywords onto numeric CSS font weights. */
-function resolveFontWeight(value) {
-    if (typeof value === 'number')
-        return value;
-    if (value === 'bold')
-        return BOLD_FONT_WEIGHT;
-    if (value === 'medium')
-        return MEDIUM_FONT_WEIGHT;
-    return NORMAL_FONT_WEIGHT;
-}
-/** Builds a CSS `font` shorthand for a canvas context or a DOM mirror. */
-function fontShorthand(fontSize, weight) {
-    return `${resolveFontWeight(weight)} ${fontSize}px ${SYSTEM_FONT_STACK}`;
-}
-/** Converts a Three.js color representation into a CSS color string. */
-function cssColor(color) {
-    if (typeof color === 'string')
-        return color;
-    return `#${new THREE.Color(color).getHexString()}`;
-}
-/**
- * Resolves a CSS-like line height into layout units. Bare numbers are a
- * multiple of the font size, matching CSS.
- */
-function resolveLineHeight(value, fontSize) {
-    if (typeof value === 'number')
-        return value * fontSize;
-    if (typeof value === 'string' && value.endsWith('px')) {
-        return Number.parseFloat(value);
-    }
-    if (typeof value === 'string' && value.endsWith('%')) {
-        return (Number.parseFloat(value) / 100) * fontSize;
-    }
-    return fontSize * DEFAULT_TEXT_LINE_HEIGHT;
-}
-/** Splits text into user-perceived characters, never inside a grapheme. */
-function graphemes(text) {
-    return Array.from(graphemeSegmenter$1.segment(text), ({ segment }) => segment);
-}
-/** Splits text into graphemes carrying their UTF-16 start index. */
-function graphemeSegments(text) {
-    return Array.from(graphemeSegmenter$1.segment(text), ({ segment, index }) => ({
-        segment,
-        index,
-    }));
-}
-/**
- * Supersampling factor for a canvas covering `width` by `height` layout units,
- * capped so the backing texture stays within {@link MAX_CANVAS_DIMENSION}.
- */
-function resolveRasterScale(width, height) {
-    return Math.max(Number.EPSILON, Math.min((globalThis.devicePixelRatio || 1) * CANVAS_SUPERSAMPLING, MAX_CANVAS_DIMENSION / width, MAX_CANVAS_DIMENSION / height));
-}
-
+//#endregion
+//#region src/ui/internal/UnicodeText.ts
 const MEASURE_MODE_UNDEFINED = 0;
 const MEASURE_MODE_EXACTLY = 1;
 /** Canvas-backed text used when UIkit's fixed glyph atlas cannot render text. */
-class UnicodeText extends Image {
-    constructor(properties) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 1;
-        canvas.height = 1;
-        const context = canvas.getContext('2d');
-        if (!context) {
-            throw new Error('Canvas 2D is required to render Unicode UI text.');
-        }
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        super(imageProperties(properties, texture));
-        this.canvas = canvas;
-        this.context = context;
-        this.canvasTexture = texture;
-        this.textProperties = properties;
-        this.configureLayout();
-        this.stopSizeEffect = effect(() => {
-            const size = this.size.value;
-            if (size)
-                this.draw(size[0], size[1]);
-        });
-    }
-    setTextProperties(properties) {
-        this.textProperties = properties;
-        this.resetProperties(imageProperties(properties, this.canvasTexture));
-        this.configureLayout();
-        const size = this.size.peek();
-        if (size)
-            this.draw(size[0], size[1]);
-    }
-    dispose() {
-        this.stopSizeEffect();
-        this.canvasTexture.dispose();
-        super.dispose();
-    }
-    configureLayout() {
-        const style = metricsStyle(this.textProperties);
-        applyFont(this.context, style);
-        const measure = (width, widthMode) => {
-            const availableWidth = widthMode === MEASURE_MODE_UNDEFINED ? Number.POSITIVE_INFINITY : width;
-            const layout = layoutText(this.context, this.textProperties.text, style, availableWidth);
-            return {
-                width: widthMode === MEASURE_MODE_EXACTLY ? width : layout.width,
-                height: layout.height,
-            };
-        };
-        const minimum = layoutText(this.context, widestCharacter(this.context, this.textProperties.text), { ...style, whiteSpace: 'nowrap' }, Number.POSITIVE_INFINITY);
-        this.node.setCustomLayouting({
-            minWidth: minimum.width,
-            minHeight: style.lineHeight,
-            measure,
-        });
-    }
-    draw(width, height) {
-        if (!(width > 0) || !(height > 0))
-            return;
-        const scale = resolveRasterScale(width, height);
-        const pixelWidth = Math.max(1, Math.ceil(width * scale));
-        const pixelHeight = Math.max(1, Math.ceil(height * scale));
-        if (this.canvas.width !== pixelWidth ||
-            this.canvas.height !== pixelHeight) {
-            // Force Three.js to allocate matching GPU storage before the next upload.
-            this.canvasTexture.dispose();
-            this.canvas.width = pixelWidth;
-            this.canvas.height = pixelHeight;
-        }
-        this.context.setTransform(1, 0, 0, 1, 0, 0);
-        this.context.clearRect(0, 0, pixelWidth, pixelHeight);
-        this.context.setTransform(scale, 0, 0, scale, 0, 0);
-        const style = metricsStyle(this.textProperties);
-        applyFont(this.context, style);
-        this.context.fillStyle = style.color;
-        this.context.textAlign = style.textAlign;
-        this.context.textBaseline = 'top';
-        const layout = layoutText(this.context, this.textProperties.text, style, width);
-        const x = style.textAlign === 'center'
-            ? width / 2
-            : style.textAlign === 'right'
-                ? width
-                : 0;
-        for (let index = 0; index < layout.lines.length; index++) {
-            this.context.fillText(layout.lines[index], x, index * style.lineHeight);
-        }
-        this.canvasTexture.needsUpdate = true;
-        this.root.peek().requestRender?.();
-    }
-}
+var UnicodeText = class extends Image {
+	constructor(properties) {
+		const canvas = document.createElement("canvas");
+		canvas.width = 1;
+		canvas.height = 1;
+		const context = canvas.getContext("2d");
+		if (!context) throw new Error("Canvas 2D is required to render Unicode UI text.");
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		texture.minFilter = THREE.LinearFilter;
+		texture.magFilter = THREE.LinearFilter;
+		super(imageProperties(properties, texture));
+		this.canvas = canvas;
+		this.context = context;
+		this.canvasTexture = texture;
+		this.textProperties = properties;
+		this.configureLayout();
+		this.stopSizeEffect = effect(() => {
+			const size = this.size.value;
+			if (size) this.draw(size[0], size[1]);
+		});
+	}
+	setTextProperties(properties) {
+		this.textProperties = properties;
+		this.resetProperties(imageProperties(properties, this.canvasTexture));
+		this.configureLayout();
+		const size = this.size.peek();
+		if (size) this.draw(size[0], size[1]);
+	}
+	dispose() {
+		this.stopSizeEffect();
+		this.canvasTexture.dispose();
+		super.dispose();
+	}
+	configureLayout() {
+		const style = metricsStyle(this.textProperties);
+		applyFont(this.context, style);
+		const measure = (width, widthMode) => {
+			const availableWidth = widthMode === MEASURE_MODE_UNDEFINED ? Number.POSITIVE_INFINITY : width;
+			const layout = layoutText(this.context, this.textProperties.text, style, availableWidth);
+			return {
+				width: widthMode === MEASURE_MODE_EXACTLY ? width : layout.width,
+				height: layout.height
+			};
+		};
+		const minimum = layoutText(this.context, widestCharacter(this.context, this.textProperties.text), {
+			...style,
+			whiteSpace: "nowrap"
+		}, Number.POSITIVE_INFINITY);
+		this.node.setCustomLayouting({
+			minWidth: minimum.width,
+			minHeight: style.lineHeight,
+			measure
+		});
+	}
+	draw(width, height) {
+		if (!(width > 0) || !(height > 0)) return;
+		const scale = resolveRasterScale(width, height);
+		const pixelWidth = Math.max(1, Math.ceil(width * scale));
+		const pixelHeight = Math.max(1, Math.ceil(height * scale));
+		if (this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight) {
+			this.canvasTexture.dispose();
+			this.canvas.width = pixelWidth;
+			this.canvas.height = pixelHeight;
+		}
+		this.context.setTransform(1, 0, 0, 1, 0, 0);
+		this.context.clearRect(0, 0, pixelWidth, pixelHeight);
+		this.context.setTransform(scale, 0, 0, scale, 0, 0);
+		const style = metricsStyle(this.textProperties);
+		applyFont(this.context, style);
+		this.context.fillStyle = style.color;
+		this.context.textAlign = style.textAlign;
+		this.context.textBaseline = "top";
+		const layout = layoutText(this.context, this.textProperties.text, style, width);
+		const x = style.textAlign === "center" ? width / 2 : style.textAlign === "right" ? width : 0;
+		for (let index = 0; index < layout.lines.length; index++) this.context.fillText(layout.lines[index], x, index * style.lineHeight);
+		this.canvasTexture.needsUpdate = true;
+		this.root.peek().requestRender?.();
+	}
+};
 function imageProperties(properties, texture) {
-    const { text: _text, color: _color, fontSize: _fontSize, fontWeight: _fontWeight, lineHeight: _lineHeight, textAlign: _textAlign, whiteSpace: _whiteSpace, ...layoutProperties } = properties;
-    return {
-        ...layoutProperties,
-        src: texture,
-        keepAspectRatio: false,
-        objectFit: 'fill',
-    };
+	const { text: _text, color: _color, fontSize: _fontSize, fontWeight: _fontWeight, lineHeight: _lineHeight, textAlign: _textAlign, whiteSpace: _whiteSpace, ...layoutProperties } = properties;
+	return {
+		...layoutProperties,
+		src: texture,
+		keepAspectRatio: false,
+		objectFit: "fill"
+	};
 }
 function metricsStyle(properties) {
-    const fontSize = properties.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
-    return {
-        color: cssColor(properties.color ?? '#ffffff'),
-        font: fontShorthand(fontSize, properties.fontWeight),
-        lineHeight: resolveLineHeight(properties.lineHeight, fontSize),
-        textAlign: properties.textAlign ?? 'left',
-        whiteSpace: properties.whiteSpace ?? 'normal',
-    };
+	const fontSize = properties.fontSize ?? 16;
+	return {
+		color: cssColor(properties.color ?? "#ffffff"),
+		font: fontShorthand(fontSize, properties.fontWeight),
+		lineHeight: resolveLineHeight(properties.lineHeight, fontSize),
+		textAlign: properties.textAlign ?? "left",
+		whiteSpace: properties.whiteSpace ?? "normal"
+	};
 }
 function applyFont(context, style) {
-    context.font = style.font;
+	context.font = style.font;
 }
 function layoutText(context, text, style, availableWidth) {
-    const paragraphs = style.whiteSpace === 'pre-line'
-        ? text.split(/\r?\n/u).map((line) => line.replace(/[\t ]+/gu, ' ').trim())
-        : [text.replace(/\s+/gu, ' ').trim()];
-    const lines = style.whiteSpace === 'nowrap'
-        ? paragraphs
-        : paragraphs.flatMap((line) => wrapLine(context, line, availableWidth));
-    const width = lines.reduce((maximum, line) => Math.max(maximum, context.measureText(line).width), 0);
-    return {
-        lines: lines.length > 0 ? lines : [''],
-        width,
-        height: Math.max(1, lines.length) * style.lineHeight,
-    };
+	const paragraphs = style.whiteSpace === "pre-line" ? text.split(/\r?\n/u).map((line) => line.replace(/[\t ]+/gu, " ").trim()) : [text.replace(/\s+/gu, " ").trim()];
+	const lines = style.whiteSpace === "nowrap" ? paragraphs : paragraphs.flatMap((line) => wrapLine(context, line, availableWidth));
+	const width = lines.reduce((maximum, line) => Math.max(maximum, context.measureText(line).width), 0);
+	return {
+		lines: lines.length > 0 ? lines : [""],
+		width,
+		height: Math.max(1, lines.length) * style.lineHeight
+	};
 }
 function wrapLine(context, text, availableWidth) {
-    if (!Number.isFinite(availableWidth) || text.length === 0)
-        return [text];
-    const lines = [];
-    let current = '';
-    for (const token of text.split(/(\s+)/u)) {
-        if (!token)
-            continue;
-        const normalized = /^\s+$/u.test(token) ? ' ' : token;
-        const candidate = current
-            ? `${current}${normalized}`
-            : normalized.trimStart();
-        if (context.measureText(candidate).width <= availableWidth) {
-            current = candidate;
-            continue;
-        }
-        if (current.trimEnd())
-            lines.push(current.trimEnd());
-        current = '';
-        if (context.measureText(normalized).width <= availableWidth) {
-            current = normalized.trimStart();
-            continue;
-        }
-        for (const character of graphemes(normalized)) {
-            const next = `${current}${character}`;
-            if (current && context.measureText(next).width > availableWidth) {
-                lines.push(current);
-                current = character;
-            }
-            else {
-                current = next;
-            }
-        }
-    }
-    if (current || lines.length === 0)
-        lines.push(current.trimEnd());
-    return lines;
+	if (!Number.isFinite(availableWidth) || text.length === 0) return [text];
+	const lines = [];
+	let current = "";
+	for (const token of text.split(/(\s+)/u)) {
+		if (!token) continue;
+		const normalized = /^\s+$/u.test(token) ? " " : token;
+		const candidate = current ? `${current}${normalized}` : normalized.trimStart();
+		if (context.measureText(candidate).width <= availableWidth) {
+			current = candidate;
+			continue;
+		}
+		if (current.trimEnd()) lines.push(current.trimEnd());
+		current = "";
+		if (context.measureText(normalized).width <= availableWidth) {
+			current = normalized.trimStart();
+			continue;
+		}
+		for (const character of graphemes(normalized)) {
+			const next = `${current}${character}`;
+			if (current && context.measureText(next).width > availableWidth) {
+				lines.push(current);
+				current = character;
+			} else current = next;
+		}
+	}
+	if (current || lines.length === 0) lines.push(current.trimEnd());
+	return lines;
 }
 function widestCharacter(context, text) {
-    let widest = '';
-    let maximumWidth = 0;
-    for (const character of graphemes(text)) {
-        const width = context.measureText(character).width;
-        if (!/\s/u.test(character) && width > maximumWidth) {
-            widest = character;
-            maximumWidth = width;
-        }
-    }
-    return widest || ' ';
+	let widest = "";
+	let maximumWidth = 0;
+	for (const character of graphemes(text)) {
+		const width = context.measureText(character).width;
+		if (!/\s/u.test(character) && width > maximumWidth) {
+			widest = character;
+			maximumWidth = width;
+		}
+	}
+	return widest || " ";
 }
-
+//#endregion
+//#region src/ui/internal/AdaptiveText.ts
 /** Stable layout node that selects native or canvas glyph rendering internally. */
-class AdaptiveText extends Container {
-    constructor(properties) {
-        super(containerProperties(properties));
-        this.name = 'AdaptiveText';
-        this.updateTextProperties(properties);
-    }
-    updateTextProperties(properties) {
-        this.resetProperties(containerProperties(properties));
-        const next = canRenderEmojiText(properties.text)
-            ? this.updateEmojiText(properties)
-            : requiresUnicodeTextRenderer(properties.text)
-                ? this.updateUnicodeText(properties)
-                : this.updateNativeText(properties);
-        if (next === this.activeText)
-            return;
-        this.activeText?.removeFromParent();
-        this.add(next);
-        this.activeText = next;
-    }
-    dispose() {
-        this.nativeText?.removeFromParent();
-        this.emojiText?.removeFromParent();
-        this.unicodeText?.removeFromParent();
-        this.nativeText?.dispose();
-        this.emojiText?.dispose();
-        this.unicodeText?.dispose();
-        this.nativeText = undefined;
-        this.emojiText = undefined;
-        this.unicodeText = undefined;
-        this.activeText = undefined;
-        super.dispose();
-    }
-    updateNativeText(properties) {
-        const textProperties = nativeTextProperties(properties);
-        if (!this.nativeText)
-            this.nativeText = new Text(textProperties);
-        else
-            this.nativeText.resetProperties(textProperties);
-        return this.nativeText;
-    }
-    updateEmojiText(properties) {
-        if (!this.emojiText)
-            this.emojiText = new EmojiText(properties);
-        else
-            this.emojiText.updateTextProperties(properties);
-        return this.emojiText;
-    }
-    updateUnicodeText(properties) {
-        const textProperties = unicodeTextProperties(properties);
-        if (!this.unicodeText)
-            this.unicodeText = new UnicodeText(textProperties);
-        else
-            this.unicodeText.setTextProperties(textProperties);
-        return this.unicodeText;
-    }
-}
+var AdaptiveText = class extends Container {
+	constructor(properties) {
+		super(containerProperties(properties));
+		this.name = "AdaptiveText";
+		this.updateTextProperties(properties);
+	}
+	updateTextProperties(properties) {
+		this.resetProperties(containerProperties(properties));
+		const next = canRenderEmojiText(properties.text) ? this.updateEmojiText(properties) : requiresUnicodeTextRenderer(properties.text) ? this.updateUnicodeText(properties) : this.updateNativeText(properties);
+		if (next === this.activeText) return;
+		this.activeText?.removeFromParent();
+		this.add(next);
+		this.activeText = next;
+	}
+	dispose() {
+		this.nativeText?.removeFromParent();
+		this.emojiText?.removeFromParent();
+		this.unicodeText?.removeFromParent();
+		this.nativeText?.dispose();
+		this.emojiText?.dispose();
+		this.unicodeText?.dispose();
+		this.nativeText = void 0;
+		this.emojiText = void 0;
+		this.unicodeText = void 0;
+		this.activeText = void 0;
+		super.dispose();
+	}
+	updateNativeText(properties) {
+		const textProperties = nativeTextProperties(properties);
+		if (!this.nativeText) this.nativeText = new Text(textProperties);
+		else this.nativeText.resetProperties(textProperties);
+		return this.nativeText;
+	}
+	updateEmojiText(properties) {
+		if (!this.emojiText) this.emojiText = new EmojiText(properties);
+		else this.emojiText.updateTextProperties(properties);
+		return this.emojiText;
+	}
+	updateUnicodeText(properties) {
+		const textProperties = unicodeTextProperties(properties);
+		if (!this.unicodeText) this.unicodeText = new UnicodeText(textProperties);
+		else this.unicodeText.setTextProperties(textProperties);
+		return this.unicodeText;
+	}
+};
 function requiresUnicodeTextRenderer(value) {
-    return /[^\u0020-\u007e\n\r\t]/u.test(value);
+	return /[^\u0020-\u007e\n\r\t]/u.test(value);
 }
 function containerProperties(properties) {
-    const { text: _text, color: _color, fontSize: _fontSize, fontWeight: _fontWeight, lineHeight: _lineHeight, textAlign: _textAlign, verticalAlign = 'middle', whiteSpace: _whiteSpace, textOverflow: _textOverflow, ...layoutProperties } = properties;
-    return {
-        ...layoutProperties,
-        flexDirection: 'column',
-        alignItems: 'stretch',
-        justifyContent: verticalAlign === 'top'
-            ? 'flex-start'
-            : verticalAlign === 'bottom'
-                ? 'flex-end'
-                : 'center',
-    };
+	const { text: _text, color: _color, fontSize: _fontSize, fontWeight: _fontWeight, lineHeight: _lineHeight, textAlign: _textAlign, verticalAlign = "middle", whiteSpace: _whiteSpace, textOverflow: _textOverflow, ...layoutProperties } = properties;
+	return {
+		...layoutProperties,
+		flexDirection: "column",
+		alignItems: "stretch",
+		justifyContent: verticalAlign === "top" ? "flex-start" : verticalAlign === "bottom" ? "flex-end" : "center"
+	};
 }
 function nativeTextProperties(properties) {
-    const shared = glyphProperties(properties);
-    return {
-        ...shared,
-        ...nativeTextWrapping(properties.whiteSpace),
-    };
+	return {
+		...glyphProperties(properties),
+		...nativeTextWrapping(properties.whiteSpace)
+	};
 }
 function nativeTextWrapping(whiteSpace) {
-    return {
-        whiteSpace: whiteSpace === 'nowrap' ? 'normal' : whiteSpace,
-        wordBreak: whiteSpace === 'nowrap' ? 'keep-all' : 'break-word',
-    };
+	return {
+		whiteSpace: whiteSpace === "nowrap" ? "normal" : whiteSpace,
+		wordBreak: whiteSpace === "nowrap" ? "keep-all" : "break-word"
+	};
 }
 function unicodeTextProperties(properties) {
-    return {
-        ...glyphProperties(properties),
-        whiteSpace: properties.whiteSpace,
-    };
+	return {
+		...glyphProperties(properties),
+		whiteSpace: properties.whiteSpace
+	};
 }
 function glyphProperties(properties) {
-    return {
-        text: properties.text,
-        color: properties.color,
-        fontSize: properties.fontSize,
-        fontWeight: properties.fontWeight,
-        lineHeight: properties.lineHeight,
-        textAlign: properties.textAlign,
-        flexShrink: 0,
-        pointerEvents: 'none',
-    };
+	return {
+		text: properties.text,
+		color: properties.color,
+		fontSize: properties.fontSize,
+		fontWeight: properties.fontWeight,
+		lineHeight: properties.lineHeight,
+		textAlign: properties.textAlign,
+		flexShrink: 0,
+		pointerEvents: "none"
+	};
 }
-
+//#endregion
+//#region src/ui/internal/ScrollViewPresentation.ts
 /** Keeps scroll clipping inside the decorative shell instead of clipping its shadows. */
-class ScrollViewPresentation {
-    constructor(view, shell) {
-        this.view = view;
-        this.viewport = new Container({
-            width: '100%',
-            flexGrow: 1,
-            flexShrink: 1,
-            flexBasis: 0,
-            minHeight: 0,
-            overflow: 'scroll',
-            scrollbarWidth: DEFAULT_SCROLLBAR_WIDTH,
-            paddingRight: DEFAULT_SCROLLBAR_WIDTH,
-            flexDirection: 'column',
-        });
-        this.content = new Container({
-            width: '100%',
-            flexShrink: 0,
-            flexDirection: 'column',
-            alignItems: 'stretch',
-        });
-        this.projectPoint = (point) => {
-            const size = this.viewport.size.peek();
-            if (!size || size[0] <= 0 || size[1] <= 0)
-                return undefined;
-            const local = this.viewport.worldToLocal(point.clone());
-            return new THREE.Vector2((local.x + 0.5) * size[0], (0.5 - local.y) * size[1]);
-        };
-        this.applyOffset = (offset) => {
-            const current = this.viewport.scrollPosition.peek();
-            this.viewport.scrollVelocity.set(0, 0);
-            if (current[0] !== 0 || current[1] !== offset) {
-                this.viewport.scrollPosition.value = [0, offset];
-            }
-        };
-        this.reveal = (child) => {
-            const physical = getUIPresentationObject(child);
-            if (!(physical instanceof THREE.Mesh)) {
-                throw new Error('Cannot reveal UI before its presentation is mounted.');
-            }
-            physical.updateWorldMatrix(true, false);
-            const points = [-0.5, 0.5].flatMap((x) => [-0.5, 0.5].map((y) => this.projectPoint(new THREE.Vector3(x, y, 0).applyMatrix4(physical.matrixWorld))));
-            if (points.some((point) => !point)) {
-                throw new Error('Cannot reveal UI before its viewport has a layout.');
-            }
-            const ys = points.map((point) => point.y);
-            const top = Math.min(...ys);
-            const bottom = Math.max(...ys);
-            if (top < 0)
-                this.view.scrollBy(top);
-            else if (bottom > this.view.clientHeight) {
-                this.view.scrollBy(bottom - this.view.clientHeight);
-            }
-        };
-        shell.add(this.viewport);
-        this.viewport.add(this.content);
-        this.unbind = bindScrollView(view, {
-            projectPoint: this.projectPoint,
-            reveal: this.reveal,
-            applyOffset: this.applyOffset,
-            scrollbarHit: (point) => scrollbarHit(this.viewport, point),
-        });
-    }
-    commit(properties) {
-        this.content.setProperties({
-            flexDirection: properties.flexDirection ?? 'column',
-            alignItems: properties.alignItems ?? 'stretch',
-            justifyContent: properties.justifyContent ?? 'flex-start',
-            gapRow: properties.rowGap ?? properties.gap,
-            gapColumn: properties.columnGap ?? properties.gap,
-        });
-        this.viewport.setProperties({
-            scrollbarColor: properties.color ?? '#888888',
-        });
-    }
-    afterLayout() {
-        const size = this.viewport.size.peek();
-        if (!size)
-            return;
-        const height = size[1];
-        const maximum = this.viewport.maxScrollPosition.peek()[1] ?? 0;
-        updateScrollViewLayout(this.view, height, height + maximum);
-        this.applyOffset(this.view.scrollTop);
-    }
-    dispose() {
-        this.unbind();
-        this.content.removeFromParent();
-        this.content.dispose();
-        this.viewport.removeFromParent();
-        this.viewport.dispose();
-    }
-}
+var ScrollViewPresentation = class {
+	constructor(view, shell) {
+		this.view = view;
+		this.viewport = new Container({
+			width: "100%",
+			flexGrow: 1,
+			flexShrink: 1,
+			flexBasis: 0,
+			minHeight: 0,
+			overflow: "scroll",
+			scrollbarWidth: 8,
+			paddingRight: 8,
+			flexDirection: "column"
+		});
+		this.content = new Container({
+			width: "100%",
+			flexShrink: 0,
+			flexDirection: "column",
+			alignItems: "stretch"
+		});
+		this.projectPoint = (point) => {
+			const size = this.viewport.size.peek();
+			if (!size || size[0] <= 0 || size[1] <= 0) return void 0;
+			const local = this.viewport.worldToLocal(point.clone());
+			return new THREE.Vector2((local.x + .5) * size[0], (.5 - local.y) * size[1]);
+		};
+		this.applyOffset = (offset) => {
+			const current = this.viewport.scrollPosition.peek();
+			this.viewport.scrollVelocity.set(0, 0);
+			if (current[0] !== 0 || current[1] !== offset) this.viewport.scrollPosition.value = [0, offset];
+		};
+		this.reveal = (child) => {
+			const physical = getUIPresentationObject(child);
+			if (!(physical instanceof THREE.Mesh)) throw new Error("Cannot reveal UI before its presentation is mounted.");
+			physical.updateWorldMatrix(true, false);
+			const points = [-.5, .5].flatMap((x) => [-.5, .5].map((y) => this.projectPoint(new THREE.Vector3(x, y, 0).applyMatrix4(physical.matrixWorld))));
+			if (points.some((point) => !point)) throw new Error("Cannot reveal UI before its viewport has a layout.");
+			const ys = points.map((point) => point.y);
+			const top = Math.min(...ys);
+			const bottom = Math.max(...ys);
+			if (top < 0) this.view.scrollBy(top);
+			else if (bottom > this.view.clientHeight) this.view.scrollBy(bottom - this.view.clientHeight);
+		};
+		shell.add(this.viewport);
+		this.viewport.add(this.content);
+		this.unbind = bindScrollView(view, {
+			projectPoint: this.projectPoint,
+			reveal: this.reveal,
+			applyOffset: this.applyOffset,
+			scrollbarHit: (point) => scrollbarHit(this.viewport, point)
+		});
+	}
+	commit(properties) {
+		this.content.setProperties({
+			flexDirection: properties.flexDirection ?? "column",
+			alignItems: properties.alignItems ?? "stretch",
+			justifyContent: properties.justifyContent ?? "flex-start",
+			gapRow: properties.rowGap ?? properties.gap,
+			gapColumn: properties.columnGap ?? properties.gap
+		});
+		this.viewport.setProperties({ scrollbarColor: properties.color ?? "#888888" });
+	}
+	afterLayout() {
+		const size = this.viewport.size.peek();
+		if (!size) return;
+		const height = size[1];
+		const maximum = this.viewport.maxScrollPosition.peek()[1] ?? 0;
+		updateScrollViewLayout(this.view, height, height + maximum);
+		this.applyOffset(this.view.scrollTop);
+	}
+	dispose() {
+		this.unbind();
+		this.content.removeFromParent();
+		this.content.dispose();
+		this.viewport.removeFromParent();
+		this.viewport.dispose();
+	}
+};
 /** Maps the viewport's proportional thumb/track to a vertical scroll gesture. */
 function scrollbarHit(viewport, point) {
-    const size = viewport.size.peek();
-    const maximum = viewport.maxScrollPosition.peek()[1];
-    if (!size || maximum === undefined || maximum <= 0)
-        return undefined;
-    const width = viewport.properties.peek().scrollbarWidth;
-    const [top, right, bottom] = viewport.borderInset.peek() ?? [0, 0, 0, 0];
-    const local = viewport.worldToLocal(point.clone());
-    const x = (local.x + 0.5) * size[0];
-    const y = (0.5 - local.y) * size[1] - top;
-    const height = size[1] - top - bottom;
-    if (x < size[0] - right - width ||
-        x > size[0] - right ||
-        y < 0 ||
-        y > height) {
-        return undefined;
-    }
-    const thumb = Math.max(width, (height * height) / (height + maximum));
-    const travel = height - thumb;
-    if (travel <= 0)
-        return undefined;
-    const offset = viewport.scrollPosition.peek()[1];
-    const start = (offset / maximum) * travel;
-    return {
-        offset: y >= start && y <= start + thumb
-            ? offset
-            : Math.max(0, Math.min(maximum, ((y - thumb / 2) * maximum) / travel)),
-        scale: maximum / travel,
-    };
+	const size = viewport.size.peek();
+	const maximum = viewport.maxScrollPosition.peek()[1];
+	if (!size || maximum === void 0 || maximum <= 0) return void 0;
+	const width = viewport.properties.peek().scrollbarWidth;
+	const [top, right, bottom] = viewport.borderInset.peek() ?? [
+		0,
+		0,
+		0,
+		0
+	];
+	const local = viewport.worldToLocal(point.clone());
+	const x = (local.x + .5) * size[0];
+	const y = (.5 - local.y) * size[1] - top;
+	const height = size[1] - top - bottom;
+	if (x < size[0] - right - width || x > size[0] - right || y < 0 || y > height) return;
+	const thumb = Math.max(width, height * height / (height + maximum));
+	const travel = height - thumb;
+	if (travel <= 0) return void 0;
+	const offset = viewport.scrollPosition.peek()[1];
+	const start = offset / maximum * travel;
+	return {
+		offset: y >= start && y <= start + thumb ? offset : Math.max(0, Math.min(maximum, (y - thumb / 2) * maximum / travel)),
+		scale: maximum / travel
+	};
 }
-
+//#endregion
+//#region src/ui/internal/UIHitRegion.ts
 const MIN_AREA_VECTOR_LENGTH_SQ = 1e-20;
 /** Shares mounted clipping geometry between ray hits, touch, and scene context. */
-class UIHitRegion {
-    constructor(node) {
-        this.node = node;
-        this.containsPoint = (point, padding = 0) => {
-            const node = this.node;
-            if (!this.available())
-                return false;
-            node.updateWorldMatrix(true, false);
-            if (Math.abs(node.matrixWorld.determinant()) < Number.EPSILON)
-                return false;
-            const local = node.worldToLocal(point.clone());
-            const xScale = new THREE.Vector3()
-                .setFromMatrixColumn(node.matrixWorld, 0)
-                .length();
-            const yScale = new THREE.Vector3()
-                .setFromMatrixColumn(node.matrixWorld, 1)
-                .length();
-            if (Math.abs(local.x) > 0.5 + padding / xScale ||
-                Math.abs(local.y) > 0.5 + padding / yScale) {
-                return false;
-            }
-            const global = point.clone().applyMatrix4(this.globalToWorld().invert());
-            return this.planes().every((plane) => plane.distanceToPoint(global) >= -1e-9);
-        };
-        this.bounds = (target) => {
-            if (!this.available())
-                return null;
-            const panel = this.node.globalPanelMatrix.peek();
-            if (!panel)
-                return null;
-            let polygon = [
-                new THREE.Vector3(-0.5, -0.5, 0),
-                new THREE.Vector3(0.5, -0.5, 0),
-                new THREE.Vector3(0.5, 0.5, 0),
-                new THREE.Vector3(-0.5, 0.5, 0),
-            ].map((point) => point.applyMatrix4(panel));
-            for (const plane of this.planes())
-                polygon = clipPolygon(polygon, plane);
-            if (polygon.length < 3)
-                return null;
-            const area = new THREE.Vector3();
-            for (let i = 1; i + 1 < polygon.length; i++) {
-                area.add(polygon[i]
-                    .clone()
-                    .sub(polygon[0])
-                    .cross(polygon[i + 1].clone().sub(polygon[0])));
-            }
-            if (area.lengthSq() < MIN_AREA_VECTOR_LENGTH_SQ)
-                return null;
-            const matrix = this.globalToWorld();
-            target.makeEmpty();
-            for (const point of polygon)
-                target.expandByPoint(point.applyMatrix4(matrix));
-            return target;
-        };
-    }
-    available() {
-        const size = this.node.size.peek();
-        return Boolean(this.node.visible &&
-            this.node.displayed.peek() &&
-            !this.node.isClipped.peek() &&
-            size &&
-            size[0] > 0 &&
-            size[1] > 0);
-    }
-    planes() {
-        return this.node.parentContainer.peek()?.clippingRect.peek()?.planes ?? [];
-    }
-    globalToWorld() {
-        const root = this.node.root.peek().component;
-        root.parent?.updateWorldMatrix(true, false);
-        root.updateMatrix();
-        const matrix = root.matrix.clone();
-        if (root.parent)
-            matrix.premultiply(root.parent.matrixWorld);
-        return matrix;
-    }
-}
+var UIHitRegion = class {
+	constructor(node) {
+		this.node = node;
+		this.containsPoint = (point, padding = 0) => {
+			const node = this.node;
+			if (!this.available()) return false;
+			node.updateWorldMatrix(true, false);
+			if (Math.abs(node.matrixWorld.determinant()) < Number.EPSILON) return false;
+			const local = node.worldToLocal(point.clone());
+			const xScale = new THREE.Vector3().setFromMatrixColumn(node.matrixWorld, 0).length();
+			const yScale = new THREE.Vector3().setFromMatrixColumn(node.matrixWorld, 1).length();
+			if (Math.abs(local.x) > .5 + padding / xScale || Math.abs(local.y) > .5 + padding / yScale) return false;
+			const global = point.clone().applyMatrix4(this.globalToWorld().invert());
+			return this.planes().every((plane) => plane.distanceToPoint(global) >= -1e-9);
+		};
+		this.bounds = (target) => {
+			if (!this.available()) return null;
+			const panel = this.node.globalPanelMatrix.peek();
+			if (!panel) return null;
+			let polygon = [
+				new THREE.Vector3(-.5, -.5, 0),
+				new THREE.Vector3(.5, -.5, 0),
+				new THREE.Vector3(.5, .5, 0),
+				new THREE.Vector3(-.5, .5, 0)
+			].map((point) => point.applyMatrix4(panel));
+			for (const plane of this.planes()) polygon = clipPolygon(polygon, plane);
+			if (polygon.length < 3) return null;
+			const area = new THREE.Vector3();
+			for (let i = 1; i + 1 < polygon.length; i++) area.add(polygon[i].clone().sub(polygon[0]).cross(polygon[i + 1].clone().sub(polygon[0])));
+			if (area.lengthSq() < MIN_AREA_VECTOR_LENGTH_SQ) return null;
+			const matrix = this.globalToWorld();
+			target.makeEmpty();
+			for (const point of polygon) target.expandByPoint(point.applyMatrix4(matrix));
+			return target;
+		};
+	}
+	available() {
+		const size = this.node.size.peek();
+		return Boolean(this.node.visible && this.node.displayed.peek() && !this.node.isClipped.peek() && size && size[0] > 0 && size[1] > 0);
+	}
+	planes() {
+		return this.node.parentContainer.peek()?.clippingRect.peek()?.planes ?? [];
+	}
+	globalToWorld() {
+		const root = this.node.root.peek().component;
+		root.parent?.updateWorldMatrix(true, false);
+		root.updateMatrix();
+		const matrix = root.matrix.clone();
+		if (root.parent) matrix.premultiply(root.parent.matrixWorld);
+		return matrix;
+	}
+};
 function clipPolygon(polygon, plane) {
-    const result = [];
-    for (let i = 0; i < polygon.length; i++) {
-        const a = polygon[i];
-        const b = polygon[(i + 1) % polygon.length];
-        const da = plane.distanceToPoint(a);
-        const db = plane.distanceToPoint(b);
-        if (da >= 0)
-            result.push(a);
-        if (da < 0 !== db < 0) {
-            result.push(a.clone().lerp(b, da / (da - db)));
-        }
-    }
-    return result;
+	const result = [];
+	for (let i = 0; i < polygon.length; i++) {
+		const a = polygon[i];
+		const b = polygon[(i + 1) % polygon.length];
+		const da = plane.distanceToPoint(a);
+		const db = plane.distanceToPoint(b);
+		if (da >= 0) result.push(a);
+		if (da < 0 !== db < 0) result.push(a.clone().lerp(b, da / (da - db)));
+	}
+	return result;
 }
-
+//#endregion
+//#region src/ui/internal/TextInputEditor.ts
 const IME_COMPOSITION_KEY_CODE = 229;
-const editors = new Set();
+const editors = /* @__PURE__ */ new Set();
 let focusedEditor;
 /**
- * Owns the hidden native element that performs real text editing.
- *
- * The native control stays authoritative for physical keyboards, IME, and
- * clipboard. This class only mirrors its results into the retained field and
- * exposes the narrow operations a virtual keyboard or automation needs.
- */
-class TextInputEditor {
-    constructor(field, presentation) {
-        this.field = field;
-        this.presentation = presentation;
-        this.listeners = [];
-        this.available = true;
-        this.disposed = false;
-        this.composing = false;
-        this.nativeKeyboardSuppressed = false;
-        this.element = createEditingElement(field);
-        this.host = bindTextInput(field, this.createBinding());
-        document.body.appendChild(this.element);
-        this.listen('input', () => this.host.notifyInput(this.element.value));
-        this.listen('compositionstart', () => (this.composing = true));
-        this.listen('compositionend', () => {
-            this.composing = false;
-            this.host.notifyInput(this.element.value);
-        });
-        this.listen('keydown', (event) => this.handleKeyDown(event));
-        this.listen('focus', () => {
-            setFocusedEditor(this);
-            this.host.notifyFocus();
-            this.presentation.reveal?.();
-        });
-        this.listen('blur', () => {
-            if (focusedEditor === this)
-                setFocusedEditor(undefined);
-            this.anchor = undefined;
-            this.host.notifyBlur();
-        });
-        editors.add(this);
-        this.sync(true);
-    }
-    /**
-     * Applies retained field state to the native control.
-     *
-     * Pass false for hidden or unmounted fields, which also releases focus.
-     * Clipping alone is not an unmounted state.
-     */
-    sync(available = true) {
-        if (this.disposed)
-            return;
-        this.available = available;
-        const element = this.element;
-        if (!available) {
-            this.releaseFocus();
-            element.disabled = true;
-            return;
-        }
-        const field = this.field;
-        if (field.disabled)
-            this.releaseFocus();
-        element.disabled = field.disabled;
-        element.tabIndex = this.presentation.isReady() ? 0 : -1;
-        element.readOnly = field.readOnly;
-        this.syncKeyboardPolicy();
-        element.placeholder = field.placeholder;
-        element.setAttribute('aria-label', field.ariaLabel);
-        if (field.maxLength === undefined)
-            element.removeAttribute('maxlength');
-        else
-            element.maxLength = field.maxLength;
-        if (element.value !== field.value)
-            element.value = field.value;
-    }
-    dispose() {
-        if (this.disposed)
-            return;
-        this.releaseFocus();
-        for (const [type, listener] of this.listeners) {
-            this.element.removeEventListener(type, listener);
-        }
-        this.listeners.length = 0;
-        this.element.remove();
-        this.disposed = true;
-        this.available = false;
-        editors.delete(this);
-        if (focusedEditor === this)
-            setFocusedEditor(undefined);
-        this.host.unbind();
-    }
-    /** Blurs the focused field unless the pointer target preserves its focus. */
-    static handlePointerTarget(target) {
-        const editor = focusedEditor;
-        if (!editor)
-            return;
-        if (target && preservesFocus(editor.field, target))
-            return;
-        editor.element.blur();
-    }
-    /**
-     * Suppresses the browser's default canvas blur while a field is focused.
-     *
-     * Propagation is untouched, and unrelated DOM controls keep their default
-     * behavior because only events targeting the canvas are prevented.
-     */
-    static guardCanvas(canvas) {
-        const guard = (event) => {
-            if (!focusedEditor)
-                return;
-            if (event.target !== canvas)
-                return;
-            event.preventDefault();
-        };
-        canvas.addEventListener('pointerdown', guard);
-        canvas.addEventListener('mousedown', guard);
-        let removed = false;
-        return () => {
-            if (removed)
-                return;
-            removed = true;
-            canvas.removeEventListener('pointerdown', guard);
-            canvas.removeEventListener('mousedown', guard);
-        };
-    }
-    listen(type, listener) {
-        this.element.addEventListener(type, listener);
-        this.listeners.push([type, listener]);
-    }
-    createBinding() {
-        return {
-            isReady: () => this.isReady(),
-            getError: () => this.presentation.getError?.(),
-            applyValue: (value) => {
-                if (this.element.value === value)
-                    return;
-                const selection = this.getSelection();
-                this.element.value = value;
-                if (selection) {
-                    this.setSelectionRange(selection.start, selection.end, selection.direction);
-                }
-            },
-            applyOptions: () => this.sync(this.available),
-            getSelection: () => this.getSelection(),
-            setSelectionRange: (start, end, direction) => this.setSelectionRange(start, end, direction),
-            focus: () => this.focusElement(),
-            blur: () => this.element.blur(),
-            insertText: (text) => void this.replaceSelection(text),
-            pressKey: (key, modifiers) => this.pressKey(key, modifiers),
-            begin: (input) => this.beginPointer(input),
-            update: (input) => this.updatePointer(input),
-            complete: () => (this.anchor = undefined),
-            cancel: () => (this.anchor = undefined),
-            getScroll: () => this.presentation.scroll,
-        };
-    }
-    isReady() {
-        return !this.disposed && this.available && this.presentation.isReady();
-    }
-    canFocus() {
-        return this.isReady() && !this.field.disabled;
-    }
-    syncKeyboardPolicy() {
-        const suppressed = this.field.nativeKeyboardSuppressed;
-        if (suppressed === this.nativeKeyboardSuppressed)
-            return;
-        this.nativeKeyboardSuppressed = suppressed;
-        if (!suppressed) {
-            this.element.removeAttribute('inputmode');
-            this.element.removeAttribute('virtualkeyboardpolicy');
-            return;
-        }
-        this.element.inputMode = 'none';
-        this.element.setAttribute('virtualkeyboardpolicy', 'manual');
-        if (document.activeElement !== this.element)
-            return;
-        const keyboard = 'virtualKeyboard' in navigator ? navigator.virtualKeyboard : undefined;
-        if (keyboard &&
-            typeof keyboard === 'object' &&
-            'hide' in keyboard &&
-            typeof keyboard.hide === 'function') {
-            keyboard.hide();
-        }
-    }
-    releaseFocus() {
-        if (focusedEditor === this || document.activeElement === this.element) {
-            this.element.blur();
-        }
-    }
-    getSelection() {
-        const { selectionStart, selectionEnd, selectionDirection } = this.element;
-        if (selectionStart == null || selectionEnd == null)
-            return undefined;
-        return {
-            start: selectionStart,
-            end: selectionEnd,
-            direction: (selectionDirection ??
-                'none'),
-        };
-    }
-    setSelectionRange(start, end, direction) {
-        this.element.setSelectionRange(Math.max(0, start), Math.max(0, end), direction);
-    }
-    handleKeyDown(event) {
-        const composing = this.composing ||
-            event.isComposing ||
-            event.keyCode === IME_COMPOSITION_KEY_CODE;
-        if (composing)
-            return;
-        if (this.presentation.handleKeyDown?.(event))
-            return;
-        if (event.key === 'Escape' && !composing) {
-            event.preventDefault();
-            this.element.blur();
-            return;
-        }
-        if (event.key !== 'Enter' || composing)
-            return;
-        if (!this.field.multiline) {
-            event.preventDefault();
-            this.host.notifySubmit();
-            return;
-        }
-        if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            this.host.notifySubmit();
-        }
-    }
-    pressKey(key, modifiers = {}) {
-        if (!this.isReady() || this.field.disabled || this.composing)
-            return false;
-        switch (key) {
-            case 'Tab':
-                return this.navigate(modifiers.shiftKey === true);
-            case 'Enter':
-                if (!this.field.multiline ||
-                    modifiers.ctrlKey === true ||
-                    modifiers.metaKey === true) {
-                    this.host.notifySubmit();
-                    return true;
-                }
-                return this.replaceSelection('\n');
-            case 'Backspace':
-                return this.deleteAtCaret('backward');
-            case 'Delete':
-                return this.deleteAtCaret('forward');
-            case 'Escape':
-                this.element.blur();
-                return true;
-            default:
-                if (countGraphemes(key) !== 1)
-                    return false;
-                return this.replaceSelection(key);
-        }
-    }
-    navigate(backward) {
-        const eligible = [...editors].filter((editor) => editor.canFocus());
-        const index = eligible.indexOf(this);
-        if (index < 0)
-            return false;
-        const next = eligible[backward ? index - 1 : index + 1];
-        if (!next) {
-            this.element.blur();
-            return true;
-        }
-        next.focusElement();
-        return true;
-    }
-    beginPointer(input) {
-        if (!this.canFocus())
-            return;
-        const index = this.presentation.caretAtPoint(input.point);
-        this.anchor = index;
-        this.focusElement();
-        if (index !== undefined)
-            this.setSelectionRange(index, index, 'none');
-    }
-    updatePointer(input) {
-        if (this.anchor === undefined || !this.isReady())
-            return;
-        const index = this.presentation.caretAtPoint(input.point);
-        if (index === undefined)
-            return;
-        const anchor = this.anchor;
-        this.setSelectionRange(Math.min(anchor, index), Math.max(anchor, index), anchor <= index ? 'forward' : 'backward');
-    }
-    deleteAtCaret(direction) {
-        const value = this.element.value;
-        const selection = this.getSelection() ?? {
-            start: value.length,
-            end: value.length};
-        if (selection.start !== selection.end)
-            return this.replaceSelection('');
-        const containing = containingGrapheme(value, selection.start);
-        if (containing)
-            return this.replaceRange(containing.start, containing.end, '');
-        if (direction === 'backward') {
-            if (selection.start === 0)
-                return false;
-            const start = graphemeBoundaryBefore(value, selection.start);
-            return this.replaceRange(start, selection.end, '');
-        }
-        if (selection.end >= value.length)
-            return false;
-        const end = graphemeBoundaryAfter(value, selection.end);
-        return this.replaceRange(selection.start, end, '');
-    }
-    replaceSelection(text) {
-        const value = this.element.value;
-        const selection = this.getSelection();
-        const start = selection?.start ?? value.length;
-        const end = selection?.end ?? value.length;
-        return this.replaceRange(start, end, text);
-    }
-    replaceRange(start, end, text) {
-        if (!this.isReady() ||
-            this.field.disabled ||
-            this.field.readOnly ||
-            this.composing) {
-            return false;
-        }
-        const element = this.element;
-        const value = element.value;
-        const from = Math.min(Math.max(0, start), value.length);
-        const to = Math.min(Math.max(from, end), value.length);
-        const insertion = clampInsertion(normalizeTextInputValue(text, this.field.multiline), value.length - (to - from), this.field.maxLength);
-        const next = value.slice(0, from) + insertion + value.slice(to);
-        if (next === value)
-            return false;
-        element.value = next;
-        const caret = from + insertion.length;
-        element.setSelectionRange(caret, caret, 'none');
-        this.host.notifyInput(element.value);
-        return true;
-    }
-    focusElement() {
-        this.element.focus();
-        if (document.activeElement !== this.element) {
-            throw new Error('The browser did not focus the text field.');
-        }
-    }
-}
+* Owns the hidden native element that performs real text editing.
+*
+* The native control stays authoritative for physical keyboards, IME, and
+* clipboard. This class only mirrors its results into the retained field and
+* exposes the narrow operations a virtual keyboard or automation needs.
+*/
+var TextInputEditor = class {
+	constructor(field, presentation) {
+		this.field = field;
+		this.presentation = presentation;
+		this.listeners = [];
+		this.available = true;
+		this.disposed = false;
+		this.composing = false;
+		this.nativeKeyboardSuppressed = false;
+		this.element = createEditingElement(field);
+		this.host = bindTextInput(field, this.createBinding());
+		document.body.appendChild(this.element);
+		this.listen("input", () => this.host.notifyInput(this.element.value));
+		this.listen("compositionstart", () => this.composing = true);
+		this.listen("compositionend", () => {
+			this.composing = false;
+			this.host.notifyInput(this.element.value);
+		});
+		this.listen("keydown", (event) => this.handleKeyDown(event));
+		this.listen("focus", () => {
+			setFocusedEditor(this);
+			this.host.notifyFocus();
+			this.presentation.reveal?.();
+		});
+		this.listen("blur", () => {
+			if (focusedEditor === this) setFocusedEditor(void 0);
+			this.anchor = void 0;
+			this.host.notifyBlur();
+		});
+		editors.add(this);
+		this.sync(true);
+	}
+	/**
+	* Applies retained field state to the native control.
+	*
+	* Pass false for hidden or unmounted fields, which also releases focus.
+	* Clipping alone is not an unmounted state.
+	*/
+	sync(available = true) {
+		if (this.disposed) return;
+		this.available = available;
+		const element = this.element;
+		if (!available) {
+			this.releaseFocus();
+			element.disabled = true;
+			return;
+		}
+		const field = this.field;
+		if (field.disabled) this.releaseFocus();
+		element.disabled = field.disabled;
+		element.tabIndex = this.presentation.isReady() ? 0 : -1;
+		element.readOnly = field.readOnly;
+		this.syncKeyboardPolicy();
+		element.placeholder = field.placeholder;
+		element.setAttribute("aria-label", field.ariaLabel);
+		if (field.maxLength === void 0) element.removeAttribute("maxlength");
+		else element.maxLength = field.maxLength;
+		if (element.value !== field.value) element.value = field.value;
+	}
+	dispose() {
+		if (this.disposed) return;
+		this.releaseFocus();
+		for (const [type, listener] of this.listeners) this.element.removeEventListener(type, listener);
+		this.listeners.length = 0;
+		this.element.remove();
+		this.disposed = true;
+		this.available = false;
+		editors.delete(this);
+		if (focusedEditor === this) setFocusedEditor(void 0);
+		this.host.unbind();
+	}
+	/** Blurs the focused field unless the pointer target preserves its focus. */
+	static handlePointerTarget(target) {
+		const editor = focusedEditor;
+		if (!editor) return;
+		if (target && preservesFocus(editor.field, target)) return;
+		editor.element.blur();
+	}
+	/**
+	* Suppresses the browser's default canvas blur while a field is focused.
+	*
+	* Propagation is untouched, and unrelated DOM controls keep their default
+	* behavior because only events targeting the canvas are prevented.
+	*/
+	static guardCanvas(canvas) {
+		const guard = (event) => {
+			if (!focusedEditor) return;
+			if (event.target !== canvas) return;
+			event.preventDefault();
+		};
+		canvas.addEventListener("pointerdown", guard);
+		canvas.addEventListener("mousedown", guard);
+		let removed = false;
+		return () => {
+			if (removed) return;
+			removed = true;
+			canvas.removeEventListener("pointerdown", guard);
+			canvas.removeEventListener("mousedown", guard);
+		};
+	}
+	listen(type, listener) {
+		this.element.addEventListener(type, listener);
+		this.listeners.push([type, listener]);
+	}
+	createBinding() {
+		return {
+			isReady: () => this.isReady(),
+			getError: () => this.presentation.getError?.(),
+			applyValue: (value) => {
+				if (this.element.value === value) return;
+				const selection = this.getSelection();
+				this.element.value = value;
+				if (selection) this.setSelectionRange(selection.start, selection.end, selection.direction);
+			},
+			applyOptions: () => this.sync(this.available),
+			getSelection: () => this.getSelection(),
+			setSelectionRange: (start, end, direction) => this.setSelectionRange(start, end, direction),
+			focus: () => this.focusElement(),
+			blur: () => this.element.blur(),
+			insertText: (text) => void this.replaceSelection(text),
+			pressKey: (key, modifiers) => this.pressKey(key, modifiers),
+			begin: (input) => this.beginPointer(input),
+			update: (input) => this.updatePointer(input),
+			complete: () => this.anchor = void 0,
+			cancel: () => this.anchor = void 0,
+			getScroll: () => this.presentation.scroll
+		};
+	}
+	isReady() {
+		return !this.disposed && this.available && this.presentation.isReady();
+	}
+	canFocus() {
+		return this.isReady() && !this.field.disabled;
+	}
+	syncKeyboardPolicy() {
+		const suppressed = this.field.nativeKeyboardSuppressed;
+		if (suppressed === this.nativeKeyboardSuppressed) return;
+		this.nativeKeyboardSuppressed = suppressed;
+		if (!suppressed) {
+			this.element.removeAttribute("inputmode");
+			this.element.removeAttribute("virtualkeyboardpolicy");
+			return;
+		}
+		this.element.inputMode = "none";
+		this.element.setAttribute("virtualkeyboardpolicy", "manual");
+		if (document.activeElement !== this.element) return;
+		const keyboard = "virtualKeyboard" in navigator ? navigator.virtualKeyboard : void 0;
+		if (keyboard && typeof keyboard === "object" && "hide" in keyboard && typeof keyboard.hide === "function") keyboard.hide();
+	}
+	releaseFocus() {
+		if (focusedEditor === this || document.activeElement === this.element) this.element.blur();
+	}
+	getSelection() {
+		const { selectionStart, selectionEnd, selectionDirection } = this.element;
+		if (selectionStart == null || selectionEnd == null) return void 0;
+		return {
+			start: selectionStart,
+			end: selectionEnd,
+			direction: selectionDirection ?? "none"
+		};
+	}
+	setSelectionRange(start, end, direction) {
+		this.element.setSelectionRange(Math.max(0, start), Math.max(0, end), direction);
+	}
+	handleKeyDown(event) {
+		const composing = this.composing || event.isComposing || event.keyCode === IME_COMPOSITION_KEY_CODE;
+		if (composing) return;
+		if (this.presentation.handleKeyDown?.(event)) return;
+		if (event.key === "Escape" && !composing) {
+			event.preventDefault();
+			this.element.blur();
+			return;
+		}
+		if (event.key !== "Enter" || composing) return;
+		if (!this.field.multiline) {
+			event.preventDefault();
+			this.host.notifySubmit();
+			return;
+		}
+		if (event.ctrlKey || event.metaKey) {
+			event.preventDefault();
+			this.host.notifySubmit();
+		}
+	}
+	pressKey(key, modifiers = {}) {
+		if (!this.isReady() || this.field.disabled || this.composing) return false;
+		switch (key) {
+			case "Tab": return this.navigate(modifiers.shiftKey === true);
+			case "Enter":
+				if (!this.field.multiline || modifiers.ctrlKey === true || modifiers.metaKey === true) {
+					this.host.notifySubmit();
+					return true;
+				}
+				return this.replaceSelection("\n");
+			case "Backspace": return this.deleteAtCaret("backward");
+			case "Delete": return this.deleteAtCaret("forward");
+			case "Escape":
+				this.element.blur();
+				return true;
+			default:
+				if (countGraphemes(key) !== 1) return false;
+				return this.replaceSelection(key);
+		}
+	}
+	navigate(backward) {
+		const eligible = [...editors].filter((editor) => editor.canFocus());
+		const index = eligible.indexOf(this);
+		if (index < 0) return false;
+		const next = eligible[backward ? index - 1 : index + 1];
+		if (!next) {
+			this.element.blur();
+			return true;
+		}
+		next.focusElement();
+		return true;
+	}
+	beginPointer(input) {
+		if (!this.canFocus()) return;
+		const index = this.presentation.caretAtPoint(input.point);
+		this.anchor = index;
+		this.focusElement();
+		if (index !== void 0) this.setSelectionRange(index, index, "none");
+	}
+	updatePointer(input) {
+		if (this.anchor === void 0 || !this.isReady()) return;
+		const index = this.presentation.caretAtPoint(input.point);
+		if (index === void 0) return;
+		const anchor = this.anchor;
+		this.setSelectionRange(Math.min(anchor, index), Math.max(anchor, index), anchor <= index ? "forward" : "backward");
+	}
+	deleteAtCaret(direction) {
+		const value = this.element.value;
+		const selection = this.getSelection() ?? {
+			start: value.length,
+			end: value.length,
+			direction: "none"
+		};
+		if (selection.start !== selection.end) return this.replaceSelection("");
+		const containing = containingGrapheme(value, selection.start);
+		if (containing) return this.replaceRange(containing.start, containing.end, "");
+		if (direction === "backward") {
+			if (selection.start === 0) return false;
+			const start = graphemeBoundaryBefore(value, selection.start);
+			return this.replaceRange(start, selection.end, "");
+		}
+		if (selection.end >= value.length) return false;
+		const end = graphemeBoundaryAfter(value, selection.end);
+		return this.replaceRange(selection.start, end, "");
+	}
+	replaceSelection(text) {
+		const value = this.element.value;
+		const selection = this.getSelection();
+		const start = selection?.start ?? value.length;
+		const end = selection?.end ?? value.length;
+		return this.replaceRange(start, end, text);
+	}
+	replaceRange(start, end, text) {
+		if (!this.isReady() || this.field.disabled || this.field.readOnly || this.composing) return false;
+		const element = this.element;
+		const value = element.value;
+		const from = Math.min(Math.max(0, start), value.length);
+		const to = Math.min(Math.max(from, end), value.length);
+		const insertion = clampInsertion(normalizeTextInputValue(text, this.field.multiline), value.length - (to - from), this.field.maxLength);
+		const next = value.slice(0, from) + insertion + value.slice(to);
+		if (next === value) return false;
+		element.value = next;
+		const caret = from + insertion.length;
+		element.setSelectionRange(caret, caret, "none");
+		this.host.notifyInput(element.value);
+		return true;
+	}
+	focusElement() {
+		this.element.focus();
+		if (document.activeElement !== this.element) throw new Error("The browser did not focus the text field.");
+	}
+};
 function setFocusedEditor(editor) {
-    focusedEditor = editor;
+	focusedEditor = editor;
 }
 function createEditingElement(field) {
-    const element = field.multiline
-        ? document.createElement('textarea')
-        : document.createElement('input');
-    if (element instanceof HTMLInputElement)
-        element.type = 'text';
-    element.spellcheck = false;
-    element.setAttribute('autocomplete', 'off');
-    element.setAttribute('autocorrect', 'off');
-    element.setAttribute('autocapitalize', 'off');
-    element.setAttribute('aria-label', field.ariaLabel);
-    const style = element.style;
-    style.setProperty('position', 'fixed');
-    style.setProperty('left', '0');
-    style.setProperty('top', '0');
-    style.setProperty('width', '1px');
-    style.setProperty('height', '1px');
-    style.setProperty('padding', '0');
-    style.setProperty('border', '0');
-    style.setProperty('outline', 'none');
-    style.setProperty('opacity', '0');
-    style.setProperty('z-index', '-1');
-    style.setProperty('pointer-events', 'none');
-    style.setProperty('caret-color', 'transparent');
-    return element;
+	const element = field.multiline ? document.createElement("textarea") : document.createElement("input");
+	if (element instanceof HTMLInputElement) element.type = "text";
+	element.spellcheck = false;
+	element.setAttribute("autocomplete", "off");
+	element.setAttribute("autocorrect", "off");
+	element.setAttribute("autocapitalize", "off");
+	element.setAttribute("aria-label", field.ariaLabel);
+	const style = element.style;
+	style.setProperty("position", "fixed");
+	style.setProperty("left", "0");
+	style.setProperty("top", "0");
+	style.setProperty("width", "1px");
+	style.setProperty("height", "1px");
+	style.setProperty("padding", "0");
+	style.setProperty("border", "0");
+	style.setProperty("outline", "none");
+	style.setProperty("opacity", "0");
+	style.setProperty("z-index", "-1");
+	style.setProperty("pointer-events", "none");
+	style.setProperty("caret-color", "transparent");
+	return element;
 }
 function preservesFocus(field, target) {
-    let node = target;
-    while (node) {
-        if (node === field)
-            return true;
-        if (node.xb?.preserveTextFocus)
-            return true;
-        node = node.parent;
-    }
-    return false;
+	let node = target;
+	while (node) {
+		if (node === field) return true;
+		if (node.xb?.preserveTextFocus) return true;
+		node = node.parent;
+	}
+	return false;
 }
 function clampInsertion(text, retainedLength, maxLength) {
-    if (maxLength === undefined)
-        return text;
-    const remaining = maxLength - retainedLength;
-    if (remaining <= 0)
-        return '';
-    if (text.length <= remaining)
-        return text;
-    return truncateToGrapheme(text, remaining);
+	if (maxLength === void 0) return text;
+	const remaining = maxLength - retainedLength;
+	if (remaining <= 0) return "";
+	if (text.length <= remaining) return text;
+	return truncateToGrapheme(text, remaining);
 }
 let graphemeSegmenter;
 function getGraphemeSegmenter() {
-    if (graphemeSegmenter === undefined) {
-        graphemeSegmenter =
-            typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
-                ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-                : null;
-    }
-    return graphemeSegmenter;
+	if (graphemeSegmenter === void 0) graphemeSegmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
+	return graphemeSegmenter;
 }
 function countGraphemes(value) {
-    const segmenter = getGraphemeSegmenter();
-    if (!segmenter)
-        return [...value].length;
-    let count = 0;
-    for (const _segment of segmenter.segment(value))
-        count++;
-    return count;
+	const segmenter = getGraphemeSegmenter();
+	if (!segmenter) return [...value].length;
+	let count = 0;
+	for (const _segment of segmenter.segment(value)) count++;
+	return count;
 }
 function containingGrapheme(value, index) {
-    const segmenter = getGraphemeSegmenter();
-    if (!segmenter)
-        return undefined;
-    for (const { index: start, segment } of segmenter.segment(value)) {
-        const end = start + segment.length;
-        if (start < index && index < end)
-            return { start, end };
-        if (start >= index)
-            break;
-    }
-    return undefined;
+	const segmenter = getGraphemeSegmenter();
+	if (!segmenter) return void 0;
+	for (const { index: start, segment } of segmenter.segment(value)) {
+		const end = start + segment.length;
+		if (start < index && index < end) return {
+			start,
+			end
+		};
+		if (start >= index) break;
+	}
 }
 /** Returns the cluster-safe offset preceding a UTF-16 caret position. */
 function graphemeBoundaryBefore(value, index) {
-    if (index <= 0)
-        return 0;
-    const segmenter = getGraphemeSegmenter();
-    if (!segmenter)
-        return codePointBoundaryBefore(value, index);
-    let boundary = 0;
-    for (const { index: start } of segmenter.segment(value)) {
-        if (start >= index)
-            break;
-        boundary = start;
-    }
-    return boundary;
+	if (index <= 0) return 0;
+	const segmenter = getGraphemeSegmenter();
+	if (!segmenter) return codePointBoundaryBefore(value, index);
+	let boundary = 0;
+	for (const { index: start } of segmenter.segment(value)) {
+		if (start >= index) break;
+		boundary = start;
+	}
+	return boundary;
 }
 /** Returns the cluster-safe offset following a UTF-16 caret position. */
 function graphemeBoundaryAfter(value, index) {
-    if (index >= value.length)
-        return value.length;
-    const segmenter = getGraphemeSegmenter();
-    if (!segmenter)
-        return codePointBoundaryAfter(value, index);
-    for (const { index: start, segment } of segmenter.segment(value)) {
-        const end = start + segment.length;
-        if (end > index)
-            return end;
-    }
-    return value.length;
+	if (index >= value.length) return value.length;
+	const segmenter = getGraphemeSegmenter();
+	if (!segmenter) return codePointBoundaryAfter(value, index);
+	for (const { index: start, segment } of segmenter.segment(value)) {
+		const end = start + segment.length;
+		if (end > index) return end;
+	}
+	return value.length;
 }
 function codePointBoundaryBefore(value, index) {
-    const code = value.charCodeAt(index - 1);
-    const isTrailSurrogate = code >= 0xdc00 && code <= 0xdfff;
-    return Math.max(0, index - (isTrailSurrogate && index >= 2 ? 2 : 1));
+	const code = value.charCodeAt(index - 1);
+	return Math.max(0, index - (code >= 56320 && code <= 57343 && index >= 2 ? 2 : 1));
 }
 function codePointBoundaryAfter(value, index) {
-    const code = value.charCodeAt(index);
-    const isLeadSurrogate = code >= 0xd800 && code <= 0xdbff;
-    return Math.min(value.length, index + (isLeadSurrogate ? 2 : 1));
+	const code = value.charCodeAt(index);
+	const isLeadSurrogate = code >= 55296 && code <= 56319;
+	return Math.min(value.length, index + (isLeadSurrogate ? 2 : 1));
 }
 function truncateToGrapheme(value, limit) {
-    const boundary = graphemeBoundaryBefore(value, limit + 1);
-    return value.slice(0, Math.min(boundary, limit));
+	const boundary = graphemeBoundaryBefore(value, limit + 1);
+	return value.slice(0, Math.min(boundary, limit));
 }
-
-const CARET_BLINK_INTERVAL_SECONDS = 0.5;
+//#endregion
+//#region src/ui/internal/TextFieldPresentation.ts
+const CARET_BLINK_INTERVAL_SECONDS = .5;
 const TEXT_DEPTH_OFFSET = -1;
 /** The native editor stays light; glyph rendering loads only for editable fields. */
-class TextFieldPresentation {
-    constructor(field, shell, changed) {
-        this.field = field;
-        this.shell = shell;
-        this.changed = changed;
-        this.row = new Container({
-            width: '100%',
-            flexGrow: 1,
-            flexShrink: 1,
-            flexBasis: 0,
-            minHeight: 0,
-            flexDirection: 'row',
-            alignItems: 'stretch',
-        });
-        this.viewport = new Container({
-            flexGrow: 1,
-            flexBasis: 0,
-            minWidth: 0,
-            height: '100%',
-            overflow: 'hidden',
-        });
-        this.scrollbar = new Container({
-            width: DEFAULT_SCROLLBAR_WIDTH,
-            height: '100%',
-            flexShrink: 0,
-            overflow: 'scroll',
-            scrollbarWidth: DEFAULT_SCROLLBAR_WIDTH,
-            pointerEvents: 'none',
-        });
-        this.spacer = new Container({
-            width: DEFAULT_SCROLLBAR_WIDTH,
-            height: 0,
-            flexShrink: 0,
-        });
-        this.available = true;
-        this.active = true;
-        this.disposed = false;
-        this.elapsed = 0;
-        this.selectionKey = '';
-        this.contentHeight = -1;
-        shell.add(this.row);
-        this.row.add(this.viewport, this.scrollbar);
-        this.scrollbar.add(this.spacer);
-        this.scrollbar.setProperties({ display: field.multiline ? 'flex' : 'none' });
-        this.editor = new TextInputEditor(field, {
-            caretAtPoint: (point) => this.editable?.caretAtPoint(point),
-            isReady: () => this.editable?.isReady === true && this.hasLayout(),
-            getError: () => this.error,
-            reveal: () => this.revealField(),
-            handleKeyDown: (event) => this.handleKeyDown(event),
-            scroll: field.multiline
-                ? {
-                    getOffset: () => this.editable?.offsetY ?? 0,
-                    getViewportHeight: () => this.editable?.scroll.getViewportHeight() ?? 0,
-                    projectPoint: (point) => this.projectPoint(point),
-                    scrollBy: (delta) => this.editable?.scrollBy(delta) ?? false,
-                    scrollbarHit: (point) => field.multiline ? scrollbarHit(this.scrollbar, point) : undefined,
-                }
-                : undefined,
-        });
-        void import('./EditableText.js')
-            .then(({ EditableText: Presentation }) => {
-            if (this.disposed)
-                return;
-            this.editable = new Presentation(this.viewport, {
-                onError: (failure) => this.reportFailure(failure),
-                onLayout: () => {
-                    if (this.disposed)
-                        return;
-                    this.error = undefined;
-                    this.editor.sync(this.available);
-                    this.changed();
-                },
-            });
-            this.update();
-            this.changed();
-        })
-            .catch((cause) => {
-            if (this.disposed)
-                return;
-            this.reportFailure({
-                kind: 'layout-failed',
-                message: 'Editable text could not be initialized. Deploy the complete XR Blocks build directory.',
-                cause,
-            });
-        });
-    }
-    commit(theme) {
-        this.theme = theme;
-        this.scrollbar.setProperties({ scrollbarColor: theme.colors.outline });
-        this.update();
-    }
-    update(deltaSeconds = 0) {
-        if (this.disposed)
-            return;
-        this.available = this.active && this.publiclyVisible();
-        this.editor.sync(this.available);
-        const editable = this.editable;
-        if (!editable || !this.theme || !this.hasLayout())
-            return;
-        const selection = this.field.selection;
-        const key = `${this.field.focused}|${selection?.start}|${selection?.end}|${this.field.value.length}`;
-        if (key !== this.selectionKey) {
-            this.selectionKey = key;
-            this.elapsed = 0;
-        }
-        else {
-            this.elapsed += Math.max(0, deltaSeconds);
-        }
-        const properties = this.shell.properties.peek();
-        const fontSize = typeof properties.fontSize === 'number'
-            ? properties.fontSize
-            : Number.parseFloat(properties.fontSize);
-        const size = this.viewport.size.peek();
-        const lineHeight = lineHeightRatio(properties.lineHeight, fontSize);
-        const fontWeight = properties.fontWeight;
-        const color = properties.color;
-        const state = {
-            text: this.field.value,
-            placeholder: this.field.placeholder,
-            multiline: this.field.multiline,
-            focused: this.field.focused,
-            caretVisible: Math.floor(this.elapsed / CARET_BLINK_INTERVAL_SECONDS) % 2 === 0,
-            selectionStart: selection?.start,
-            selectionEnd: selection?.end,
-            selectionDirection: selection?.direction,
-            fontSize,
-            lineHeight,
-            fontWeight: typeof fontWeight === 'number' ||
-                fontWeight === 'medium' ||
-                fontWeight === 'bold'
-                ? fontWeight
-                : 'normal',
-            textAlign: properties.textAlign === 'center' || properties.textAlign === 'right'
-                ? properties.textAlign
-                : 'left',
-            color: typeof color === 'string' ||
-                typeof color === 'number' ||
-                color instanceof THREE.Color
-                ? color
-                : this.field.disabled
-                    ? this.theme.colors.disabledText
-                    : this.theme.colors.text,
-            placeholderColor: this.theme.colors.secondaryText,
-            caretColor: this.theme.colors.primary,
-            selectionColor: this.theme.colors.primary,
-            opacity: typeof properties.opacity === 'string'
-                ? Number.parseFloat(properties.opacity) / 100
-                : properties.opacity,
-            depthTest: properties.depthTest,
-            depthOffset: TEXT_DEPTH_OFFSET,
-            renderOrder: this.shell.renderOrder,
-        };
-        const nativeStyle = this.editor.element.style;
-        nativeStyle.width = `${size[0]}px`;
-        nativeStyle.height = `${size[1]}px`;
-        nativeStyle.font = fontShorthand(fontSize, state.fontWeight);
-        nativeStyle.lineHeight = String(lineHeight);
-        nativeStyle.fontKerning = 'normal';
-        nativeStyle.fontVariantLigatures = 'normal';
-        nativeStyle.tabSize = String(DEFAULT_TEXT_TAB_SIZE);
-        nativeStyle.textAlign = state.textAlign ?? 'left';
-        this.editor.element.dir = state.direction ?? 'auto';
-        editable.afterLayout();
-        editable.update(state);
-        this.editor.sync(this.available);
-        if (this.contentHeight !== editable.scrollHeight) {
-            this.contentHeight = editable.scrollHeight;
-            this.spacer.setProperties({ height: this.contentHeight });
-        }
-        this.scrollbar.scrollVelocity.set(0, 0);
-        if (this.scrollbar.scrollPosition.peek()[1] !== editable.offsetY) {
-            this.scrollbar.scrollPosition.value = [0, editable.offsetY];
-        }
-    }
-    setActive(active) {
-        this.active = active;
-        if (!active) {
-            this.available = false;
-            this.editor.sync(false);
-        }
-    }
-    dispose() {
-        if (this.disposed)
-            return;
-        this.disposed = true;
-        this.editor.dispose();
-        this.editable?.dispose();
-        for (const node of [this.spacer, this.scrollbar, this.viewport, this.row]) {
-            node.removeFromParent();
-            node.dispose();
-        }
-    }
-    hasLayout() {
-        const size = this.viewport.size.peek();
-        return Boolean(size && size[0] > 0 && size[1] > 0);
-    }
-    projectPoint(point) {
-        const size = this.viewport.size.peek();
-        if (!size || !this.hasLayout())
-            return undefined;
-        const local = this.viewport.worldToLocal(point.clone());
-        return new THREE.Vector2((local.x + 0.5) * size[0], (0.5 - local.y) * size[1]);
-    }
-    publiclyVisible() {
-        let object = this.field;
-        while (object) {
-            if (!object.visible ||
-                (isUIElement(object) && object.style.display === 'none'))
-                return false;
-            object = object.parent;
-        }
-        return this.field.parent !== null;
-    }
-    revealField() {
-        let parent = this.field.parent;
-        while (parent) {
-            if (parent instanceof UIScrollView && parent.ready)
-                parent.reveal(this.field);
-            parent = parent.parent;
-        }
-    }
-    handleKeyDown(event) {
-        if (event.ctrlKey ||
-            event.metaKey ||
-            event.altKey ||
-            !isNavigationKey(event.key))
-            return false;
-        this.update();
-        const next = this.editable?.navigate(event.key, { extend: event.shiftKey });
-        if (!next)
-            return false;
-        event.preventDefault();
-        this.field.setSelectionRange(next.start, next.end, next.direction);
-        this.update();
-        return true;
-    }
-    reportFailure(failure) {
-        this.error = new Error(failure.message, { cause: failure.cause });
-        console.error('XR Blocks editable text:', this.error);
-        this.changed();
-    }
-}
+var TextFieldPresentation = class {
+	constructor(field, shell, changed) {
+		this.field = field;
+		this.shell = shell;
+		this.changed = changed;
+		this.row = new Container({
+			width: "100%",
+			flexGrow: 1,
+			flexShrink: 1,
+			flexBasis: 0,
+			minHeight: 0,
+			flexDirection: "row",
+			alignItems: "stretch"
+		});
+		this.viewport = new Container({
+			flexGrow: 1,
+			flexBasis: 0,
+			minWidth: 0,
+			height: "100%",
+			overflow: "hidden"
+		});
+		this.scrollbar = new Container({
+			width: 8,
+			height: "100%",
+			flexShrink: 0,
+			overflow: "scroll",
+			scrollbarWidth: 8,
+			pointerEvents: "none"
+		});
+		this.spacer = new Container({
+			width: 8,
+			height: 0,
+			flexShrink: 0
+		});
+		this.available = true;
+		this.active = true;
+		this.disposed = false;
+		this.elapsed = 0;
+		this.selectionKey = "";
+		this.contentHeight = -1;
+		shell.add(this.row);
+		this.row.add(this.viewport, this.scrollbar);
+		this.scrollbar.add(this.spacer);
+		this.scrollbar.setProperties({ display: field.multiline ? "flex" : "none" });
+		this.editor = new TextInputEditor(field, {
+			caretAtPoint: (point) => this.editable?.caretAtPoint(point),
+			isReady: () => this.editable?.isReady === true && this.hasLayout(),
+			getError: () => this.error,
+			reveal: () => this.revealField(),
+			handleKeyDown: (event) => this.handleKeyDown(event),
+			scroll: field.multiline ? {
+				getOffset: () => this.editable?.offsetY ?? 0,
+				getViewportHeight: () => this.editable?.scroll.getViewportHeight() ?? 0,
+				projectPoint: (point) => this.projectPoint(point),
+				scrollBy: (delta) => this.editable?.scrollBy(delta) ?? false,
+				scrollbarHit: (point) => field.multiline ? scrollbarHit(this.scrollbar, point) : void 0
+			} : void 0
+		});
+		import("./EditableText.js").then(({ EditableText: Presentation }) => {
+			if (this.disposed) return;
+			this.editable = new Presentation(this.viewport, {
+				onError: (failure) => this.reportFailure(failure),
+				onLayout: () => {
+					if (this.disposed) return;
+					this.error = void 0;
+					this.editor.sync(this.available);
+					this.changed();
+				}
+			});
+			this.update();
+			this.changed();
+		}).catch((cause) => {
+			if (this.disposed) return;
+			this.reportFailure({
+				kind: "layout-failed",
+				message: "Editable text could not be initialized. Deploy the complete XR Blocks build directory.",
+				cause
+			});
+		});
+	}
+	commit(theme) {
+		this.theme = theme;
+		this.scrollbar.setProperties({ scrollbarColor: theme.colors.outline });
+		this.update();
+	}
+	update(deltaSeconds = 0) {
+		if (this.disposed) return;
+		this.available = this.active && this.publiclyVisible();
+		this.editor.sync(this.available);
+		const editable = this.editable;
+		if (!editable || !this.theme || !this.hasLayout()) return;
+		const selection = this.field.selection;
+		const key = `${this.field.focused}|${selection?.start}|${selection?.end}|${this.field.value.length}`;
+		if (key !== this.selectionKey) {
+			this.selectionKey = key;
+			this.elapsed = 0;
+		} else this.elapsed += Math.max(0, deltaSeconds);
+		const properties = this.shell.properties.peek();
+		const fontSize = typeof properties.fontSize === "number" ? properties.fontSize : Number.parseFloat(properties.fontSize);
+		const size = this.viewport.size.peek();
+		const lineHeight = lineHeightRatio(properties.lineHeight, fontSize);
+		const fontWeight = properties.fontWeight;
+		const color = properties.color;
+		const state = {
+			text: this.field.value,
+			placeholder: this.field.placeholder,
+			multiline: this.field.multiline,
+			focused: this.field.focused,
+			caretVisible: Math.floor(this.elapsed / CARET_BLINK_INTERVAL_SECONDS) % 2 === 0,
+			selectionStart: selection?.start,
+			selectionEnd: selection?.end,
+			selectionDirection: selection?.direction,
+			fontSize,
+			lineHeight,
+			fontWeight: typeof fontWeight === "number" || fontWeight === "medium" || fontWeight === "bold" ? fontWeight : "normal",
+			textAlign: properties.textAlign === "center" || properties.textAlign === "right" ? properties.textAlign : "left",
+			color: typeof color === "string" || typeof color === "number" || color instanceof THREE.Color ? color : this.field.disabled ? this.theme.colors.disabledText : this.theme.colors.text,
+			placeholderColor: this.theme.colors.secondaryText,
+			caretColor: this.theme.colors.primary,
+			selectionColor: this.theme.colors.primary,
+			opacity: typeof properties.opacity === "string" ? Number.parseFloat(properties.opacity) / 100 : properties.opacity,
+			depthTest: properties.depthTest,
+			depthOffset: TEXT_DEPTH_OFFSET,
+			renderOrder: this.shell.renderOrder
+		};
+		const nativeStyle = this.editor.element.style;
+		nativeStyle.width = `${size[0]}px`;
+		nativeStyle.height = `${size[1]}px`;
+		nativeStyle.font = fontShorthand(fontSize, state.fontWeight);
+		nativeStyle.lineHeight = String(lineHeight);
+		nativeStyle.fontKerning = "normal";
+		nativeStyle.fontVariantLigatures = "normal";
+		nativeStyle.tabSize = String(4);
+		nativeStyle.textAlign = state.textAlign ?? "left";
+		this.editor.element.dir = state.direction ?? "auto";
+		editable.afterLayout();
+		editable.update(state);
+		this.editor.sync(this.available);
+		if (this.contentHeight !== editable.scrollHeight) {
+			this.contentHeight = editable.scrollHeight;
+			this.spacer.setProperties({ height: this.contentHeight });
+		}
+		this.scrollbar.scrollVelocity.set(0, 0);
+		if (this.scrollbar.scrollPosition.peek()[1] !== editable.offsetY) this.scrollbar.scrollPosition.value = [0, editable.offsetY];
+	}
+	setActive(active) {
+		this.active = active;
+		if (!active) {
+			this.available = false;
+			this.editor.sync(false);
+		}
+	}
+	dispose() {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.editor.dispose();
+		this.editable?.dispose();
+		for (const node of [
+			this.spacer,
+			this.scrollbar,
+			this.viewport,
+			this.row
+		]) {
+			node.removeFromParent();
+			node.dispose();
+		}
+	}
+	hasLayout() {
+		const size = this.viewport.size.peek();
+		return Boolean(size && size[0] > 0 && size[1] > 0);
+	}
+	projectPoint(point) {
+		const size = this.viewport.size.peek();
+		if (!size || !this.hasLayout()) return void 0;
+		const local = this.viewport.worldToLocal(point.clone());
+		return new THREE.Vector2((local.x + .5) * size[0], (.5 - local.y) * size[1]);
+	}
+	publiclyVisible() {
+		let object = this.field;
+		while (object) {
+			if (!object.visible || isUIElement(object) && object.style.display === "none") return false;
+			object = object.parent;
+		}
+		return this.field.parent !== null;
+	}
+	revealField() {
+		let parent = this.field.parent;
+		while (parent) {
+			if (parent instanceof UIScrollView && parent.ready) parent.reveal(this.field);
+			parent = parent.parent;
+		}
+	}
+	handleKeyDown(event) {
+		if (event.ctrlKey || event.metaKey || event.altKey || !isNavigationKey(event.key)) return false;
+		this.update();
+		const next = this.editable?.navigate(event.key, { extend: event.shiftKey });
+		if (!next) return false;
+		event.preventDefault();
+		this.field.setSelectionRange(next.start, next.end, next.direction);
+		this.update();
+		return true;
+	}
+	reportFailure(failure) {
+		this.error = new Error(failure.message, { cause: failure.cause });
+		console.error("XR Blocks editable text:", this.error);
+		this.changed();
+	}
+};
 function isNavigationKey(key) {
-    return (key === 'ArrowUp' || key === 'ArrowDown' || key === 'Home' || key === 'End');
+	return key === "ArrowUp" || key === "ArrowDown" || key === "Home" || key === "End";
 }
 function lineHeightRatio(value, fontSize) {
-    if (typeof value === 'number')
-        return value;
-    if (value.endsWith('%'))
-        return Number.parseFloat(value) / 100;
-    if (value.endsWith('px'))
-        return Number.parseFloat(value) / fontSize;
-    return DEFAULT_TEXT_LINE_HEIGHT;
+	if (typeof value === "number") return value;
+	if (value.endsWith("%")) return Number.parseFloat(value) / 100;
+	if (value.endsWith("px")) return Number.parseFloat(value) / fontSize;
+	return DEFAULT_TEXT_LINE_HEIGHT;
 }
-
-const ICON_BASE = 'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/';
-const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
-const OVERLAY_Z_INDEX_STEP = 100_000_000;
-const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
-const CARD_SIZE_PROPERTY_KEYS = new Set(['width', 'height', 'sizeX', 'sizeY']);
+//#endregion
+//#region src/ui/internal/UIKitBackend.ts
+var UIKitBackend_exports = /* @__PURE__ */ __exportAll({ createUIBackend: () => createUIBackend });
+const ICON_BASE = "https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/";
+const OVERLAY_RENDER_ORDER_BASE = 1e9;
+const OVERLAY_Z_INDEX_STEP = 1e8;
+const OVERLAY_ROOT_ORDER_STEP = 1e6;
+const CARD_SIZE_PROPERTY_KEYS = /* @__PURE__ */ new Set([
+	"width",
+	"height",
+	"sizeX",
+	"sizeY"
+]);
 const imageTextureLoader = new THREE.TextureLoader();
-class UIKitMount {
-    constructor(root, icons) {
-        this.root = root;
-        this.icons = icons;
-        this.object = new THREE.Group();
-        this.readyWork = [];
-        this.structureRevision = -1;
-        this.hitMappingsChanged = true;
-        this.disposed = false;
-        this.viewportWidth = -1;
-        this.viewportHeight = -1;
-        this.enqueue = (work) => {
-            if (!this.disposed)
-                this.readyWork.push(work);
-        };
-        this.object.name = `Private ${root.name}`;
-        this.isOverlay = getUIElementKind(root) === 'overlay';
-    }
-    prepareCommit() {
-        if (this.structureRevision !== getUIStructureRevision(this.root)) {
-            this.binding?.removeDetachedChildren();
-        }
-    }
-    commit(theme, viewport, rootOrder) {
-        if (this.disposed)
-            return undefined;
-        this.prepareCommit();
-        for (const work of this.readyWork.splice(0))
-            work();
-        const rootStack = this.isOverlay
-            ? OVERLAY_RENDER_ORDER_BASE +
-                Number(this.root.style.zIndex ?? 0) * OVERLAY_Z_INDEX_STEP +
-                rootOrder * OVERLAY_ROOT_ORDER_STEP
-            : undefined;
-        const context = {
-            theme,
-            rootStack,
-            sequence: { value: 0 },
-        };
-        if (!this.binding) {
-            this.binding = new UIKitNodeBinding(this.root, this.icons, this.enqueue, context);
-            this.rendered = this.isOverlay
-                ? createOverlayViewport(this.binding.node, viewport)
-                : this.binding.node;
-            this.viewportWidth = viewport.width;
-            this.viewportHeight = viewport.height;
-            this.structureRevision = getUIStructureRevision(this.root);
-            this.object.add(this.rendered);
-            this.hitMappingsChanged = true;
-            if (this.root instanceof UICard) {
-                const card = this.root;
-                setUICardContentMeasurer(card, {
-                    height: (width) => this.measureCardContentHeight(card, width),
-                    minWidth: () => this.measureCardMinContentWidth(card),
-                });
-            }
-        }
-        const structureRevision = getUIStructureRevision(this.root);
-        if (this.structureRevision !== structureRevision) {
-            this.binding.reconcileTree(context);
-            this.structureRevision = structureRevision;
-            this.hitMappingsChanged = true;
-            this.cachedMinContentWidth = undefined;
-        }
-        if (this.isOverlay)
-            this.updateViewport(viewport);
-        context.sequence.value = 0;
-        const commitResult = this.binding.commit(context);
-        if (commitResult.hitMappingsChanged)
-            this.hitMappingsChanged = true;
-        if (commitResult.contentChanged)
-            this.cachedMinContentWidth = undefined;
-        if (!this.hitMappingsChanged)
-            return undefined;
-        this.hitMappingsChanged = false;
-        return this.binding.hitMappings();
-    }
-    present(stateFor) {
-        this.binding?.present(stateFor);
-    }
-    update(deltaSeconds) {
-        this.rendered?.update(deltaSeconds * 1000);
-        this.binding?.afterLayout(deltaSeconds);
-        if (!(this.root instanceof UICard) || !this.binding)
-            return;
-        const size = this.binding.node.size.peek();
-        if (!validPair(size))
-            return;
-        setResolvedUICardSize(this.root, {
-            width: size[0] * this.root.pixelSize,
-            height: size[1] * this.root.pixelSize,
-        });
-    }
-    validate() {
-        const issues = [];
-        for (const [element, node] of this.binding?.elementNodes() ?? []) {
-            const size = node.size.peek();
-            const center = node.relativeCenter.peek();
-            if (!validPair(size) ||
-                (node.parentContainer.peek() && !validPair(center))) {
-                issues.push({
-                    code: 'invalid-layout',
-                    severity: 'error',
-                    element,
-                    message: `${element.name} does not have a finite calculated layout.`,
-                });
-                continue;
-            }
-            if (element instanceof UIText &&
-                node.isClipped.peek() &&
-                !hasScrollAncestor(element)) {
-                issues.push({
-                    code: 'text-clipped',
-                    severity: 'error',
-                    element,
-                    message: `${element.name} is clipped by its layout container.`,
-                });
-            }
-            const parent = node.parentContainer.peek();
-            const parentSize = parent?.size.peek();
-            if (!parent || !validPair(parentSize) || !center)
-                continue;
-            const bounds = boundsFromCenter(center, size);
-            const containerBounds = contentBounds(parent);
-            if (containsBounds(containerBounds, bounds))
-                continue;
-            const overlayRoot = element === this.root && this.isOverlay;
-            issues.push({
-                code: overlayRoot ? 'outside-viewport' : 'content-overflow',
-                severity: overlayRoot ? 'error' : 'warning',
-                element,
-                message: overlayRoot
-                    ? `${element.name} extends outside the overlay viewport.`
-                    : `${element.name} extends outside its layout container.`,
-                bounds,
-                containerBounds,
-            });
-        }
-        return issues;
-    }
-    dispose() {
-        this.disposed = true;
-        this.readyWork.length = 0;
-        if (this.root instanceof UICard) {
-            setUICardContentMeasurer(this.root, undefined);
-        }
-        const binding = this.binding;
-        const rendered = this.rendered;
-        binding?.dispose();
-        if (rendered && rendered !== binding?.node) {
-            rendered.removeFromParent();
-            rendered.dispose();
-        }
-        this.binding = undefined;
-        this.rendered = undefined;
-        this.object.clear();
-    }
-    setActive(active) {
-        this.binding?.setActive(active);
-    }
-    /**
-     * Lays the card out once at `width` with an automatic height, reads the
-     * natural height, then restores the committed layout.
-     */
-    measureCardContentHeight(card, width) {
-        if (!(width > 0))
-            return undefined;
-        const height = this.withAutoHeightLayout((yoga) => {
-            yoga.setWidth(width / card.pixelSize);
-            yoga.calculateLayout(undefined, undefined);
-            return yoga.getComputedHeight() * card.pixelSize;
-        });
-        return height !== undefined && Number.isFinite(height) && height > 0
-            ? height
-            : undefined;
-    }
-    /**
-     * Finds the narrowest width at which no content overflows its container,
-     * searching between zero and the current width. Words never break, so text
-     * that no longer fits overflows and narrows the search.
-     */
-    measureCardMinContentWidth(card) {
-        const current = card.size.width / card.pixelSize;
-        if (!(current > 0))
-            return undefined;
-        if (this.cachedMinContentWidth !== undefined &&
-            this.cachedMinContentWidth <= current * card.pixelSize) {
-            return this.cachedMinContentWidth;
-        }
-        const width = this.withAutoHeightLayout((yoga) => {
-            const overflowsAt = (value) => {
-                yoga.setWidth(value);
-                yoga.calculateLayout(undefined, undefined);
-                return yogaContentOverflows(yoga);
-            };
-            if (overflowsAt(current))
-                return current;
-            let fits = current;
-            let overflows = 0;
-            while (fits - overflows > MIN_WIDTH_SEARCH_PRECISION) {
-                const middle = (fits + overflows) / 2;
-                if (overflowsAt(middle))
-                    overflows = middle;
-                else
-                    fits = middle;
-            }
-            return fits;
-        });
-        if (width === undefined)
-            return undefined;
-        const measured = width * card.pixelSize;
-        this.cachedMinContentWidth = measured;
-        return measured;
-    }
-    /** Runs `measure` on the root yoga node, then restores the committed layout. */
-    withAutoHeightLayout(measure) {
-        const yoga = this.binding?.node.node
-            ?.yogaNode;
-        if (!yoga)
-            return undefined;
-        const previousWidth = yoga.getWidth();
-        const previousHeight = yoga.getHeight();
-        try {
-            yoga.setHeightAuto();
-            return measure(yoga);
-        }
-        finally {
-            yoga.setWidth(yogaDimension(previousWidth));
-            yoga.setHeight(yogaDimension(previousHeight));
-        }
-    }
-    updateViewport(viewport) {
-        const wrapper = this.rendered;
-        if (!wrapper ||
-            (this.viewportWidth === viewport.width &&
-                this.viewportHeight === viewport.height))
-            return;
-        this.viewportWidth = viewport.width;
-        this.viewportHeight = viewport.height;
-        wrapper.setProperties({
-            width: viewport.width,
-            height: viewport.height,
-            sizeX: viewport.width,
-            sizeY: viewport.height,
-        });
-    }
-}
-class UIKitBackend {
-    constructor() {
-        this.icons = new IconCache();
-        this.previousLocalClippingEnabled = false;
-    }
-    configureRenderer(renderer) {
-        if (this.renderer === renderer)
-            return;
-        this.restoreRenderer();
-        this.renderer = renderer;
-        this.releaseFocusGuard = TextInputEditor.guardCanvas(renderer.domElement);
-        this.previousLocalClippingEnabled = renderer.localClippingEnabled;
-        renderer.localClippingEnabled = true;
-        renderer.setTransparentSort(reversePainterSortStable);
-    }
-    createMount(root) {
-        return new UIKitMount(root, this.icons);
-    }
-    handlePointerTarget(target) {
-        TextInputEditor.handlePointerTarget(target);
-    }
-    dispose() {
-        this.restoreRenderer();
-        this.icons.dispose();
-    }
-    restoreRenderer() {
-        this.releaseFocusGuard?.();
-        this.releaseFocusGuard = undefined;
-        if (!this.renderer)
-            return;
-        this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
-        this.renderer = undefined;
-    }
-}
-// Values of yoga-layout's `Unit`, `Edge`, and `PositionType` enums. yoga-layout
-// is only reached through uikit, so these mirror its enums instead of adding a
-// direct dependency.
+var UIKitMount = class {
+	constructor(root, icons) {
+		this.root = root;
+		this.icons = icons;
+		this.object = new THREE.Group();
+		this.readyWork = [];
+		this.structureRevision = -1;
+		this.hitMappingsChanged = true;
+		this.disposed = false;
+		this.viewportWidth = -1;
+		this.viewportHeight = -1;
+		this.enqueue = (work) => {
+			if (!this.disposed) this.readyWork.push(work);
+		};
+		this.object.name = `Private ${root.name}`;
+		this.isOverlay = getUIElementKind(root) === "overlay";
+	}
+	prepareCommit() {
+		if (this.structureRevision !== getUIStructureRevision(this.root)) this.binding?.removeDetachedChildren();
+	}
+	commit(theme, viewport, rootOrder) {
+		if (this.disposed) return void 0;
+		this.prepareCommit();
+		for (const work of this.readyWork.splice(0)) work();
+		const context = {
+			theme,
+			rootStack: this.isOverlay ? OVERLAY_RENDER_ORDER_BASE + Number(this.root.style.zIndex ?? 0) * OVERLAY_Z_INDEX_STEP + rootOrder * OVERLAY_ROOT_ORDER_STEP : void 0,
+			sequence: { value: 0 }
+		};
+		if (!this.binding) {
+			this.binding = new UIKitNodeBinding(this.root, this.icons, this.enqueue, context);
+			this.rendered = this.isOverlay ? createOverlayViewport(this.binding.node, viewport) : this.binding.node;
+			this.viewportWidth = viewport.width;
+			this.viewportHeight = viewport.height;
+			this.structureRevision = getUIStructureRevision(this.root);
+			this.object.add(this.rendered);
+			this.hitMappingsChanged = true;
+			if (this.root instanceof UICard) {
+				const card = this.root;
+				setUICardContentMeasurer(card, {
+					height: (width) => this.measureCardContentHeight(card, width),
+					minWidth: () => this.measureCardMinContentWidth(card)
+				});
+			}
+		}
+		const structureRevision = getUIStructureRevision(this.root);
+		if (this.structureRevision !== structureRevision) {
+			this.binding.reconcileTree(context);
+			this.structureRevision = structureRevision;
+			this.hitMappingsChanged = true;
+			this.cachedMinContentWidth = void 0;
+		}
+		if (this.isOverlay) this.updateViewport(viewport);
+		context.sequence.value = 0;
+		const commitResult = this.binding.commit(context);
+		if (commitResult.hitMappingsChanged) this.hitMappingsChanged = true;
+		if (commitResult.contentChanged) this.cachedMinContentWidth = void 0;
+		if (!this.hitMappingsChanged) return void 0;
+		this.hitMappingsChanged = false;
+		return this.binding.hitMappings();
+	}
+	present(stateFor) {
+		this.binding?.present(stateFor);
+	}
+	update(deltaSeconds) {
+		this.rendered?.update(deltaSeconds * 1e3);
+		this.binding?.afterLayout(deltaSeconds);
+		if (!(this.root instanceof UICard) || !this.binding) return;
+		const size = this.binding.node.size.peek();
+		if (!validPair(size)) return;
+		setResolvedUICardSize(this.root, {
+			width: size[0] * this.root.pixelSize,
+			height: size[1] * this.root.pixelSize
+		});
+	}
+	validate() {
+		const issues = [];
+		for (const [element, node] of this.binding?.elementNodes() ?? []) {
+			const size = node.size.peek();
+			const center = node.relativeCenter.peek();
+			if (!validPair(size) || node.parentContainer.peek() && !validPair(center)) {
+				issues.push({
+					code: "invalid-layout",
+					severity: "error",
+					element,
+					message: `${element.name} does not have a finite calculated layout.`
+				});
+				continue;
+			}
+			if (element instanceof UIText && node.isClipped.peek() && !hasScrollAncestor(element)) issues.push({
+				code: "text-clipped",
+				severity: "error",
+				element,
+				message: `${element.name} is clipped by its layout container.`
+			});
+			const parent = node.parentContainer.peek();
+			const parentSize = parent?.size.peek();
+			if (!parent || !validPair(parentSize) || !center) continue;
+			const bounds = boundsFromCenter(center, size);
+			const containerBounds = contentBounds(parent);
+			if (containsBounds(containerBounds, bounds)) continue;
+			const overlayRoot = element === this.root && this.isOverlay;
+			issues.push({
+				code: overlayRoot ? "outside-viewport" : "content-overflow",
+				severity: overlayRoot ? "error" : "warning",
+				element,
+				message: overlayRoot ? `${element.name} extends outside the overlay viewport.` : `${element.name} extends outside its layout container.`,
+				bounds,
+				containerBounds
+			});
+		}
+		return issues;
+	}
+	dispose() {
+		this.disposed = true;
+		this.readyWork.length = 0;
+		if (this.root instanceof UICard) setUICardContentMeasurer(this.root, void 0);
+		const binding = this.binding;
+		const rendered = this.rendered;
+		binding?.dispose();
+		if (rendered && rendered !== binding?.node) {
+			rendered.removeFromParent();
+			rendered.dispose();
+		}
+		this.binding = void 0;
+		this.rendered = void 0;
+		this.object.clear();
+	}
+	setActive(active) {
+		this.binding?.setActive(active);
+	}
+	/**
+	* Lays the card out once at `width` with an automatic height, reads the
+	* natural height, then restores the committed layout.
+	*/
+	measureCardContentHeight(card, width) {
+		if (!(width > 0)) return void 0;
+		const height = this.withAutoHeightLayout((yoga) => {
+			yoga.setWidth(width / card.pixelSize);
+			yoga.calculateLayout(void 0, void 0);
+			return yoga.getComputedHeight() * card.pixelSize;
+		});
+		return height !== void 0 && Number.isFinite(height) && height > 0 ? height : void 0;
+	}
+	/**
+	* Finds the narrowest width at which no content overflows its container,
+	* searching between zero and the current width. Words never break, so text
+	* that no longer fits overflows and narrows the search.
+	*/
+	measureCardMinContentWidth(card) {
+		const current = card.size.width / card.pixelSize;
+		if (!(current > 0)) return void 0;
+		if (this.cachedMinContentWidth !== void 0 && this.cachedMinContentWidth <= current * card.pixelSize) return this.cachedMinContentWidth;
+		const width = this.withAutoHeightLayout((yoga) => {
+			const overflowsAt = (value) => {
+				yoga.setWidth(value);
+				yoga.calculateLayout(void 0, void 0);
+				return yogaContentOverflows(yoga);
+			};
+			if (overflowsAt(current)) return current;
+			let fits = current;
+			let overflows = 0;
+			while (fits - overflows > MIN_WIDTH_SEARCH_PRECISION) {
+				const middle = (fits + overflows) / 2;
+				if (overflowsAt(middle)) overflows = middle;
+				else fits = middle;
+			}
+			return fits;
+		});
+		if (width === void 0) return void 0;
+		const measured = width * card.pixelSize;
+		this.cachedMinContentWidth = measured;
+		return measured;
+	}
+	/** Runs `measure` on the root yoga node, then restores the committed layout. */
+	withAutoHeightLayout(measure) {
+		const yoga = (this.binding?.node.node)?.yogaNode;
+		if (!yoga) return void 0;
+		const previousWidth = yoga.getWidth();
+		const previousHeight = yoga.getHeight();
+		try {
+			yoga.setHeightAuto();
+			return measure(yoga);
+		} finally {
+			yoga.setWidth(yogaDimension(previousWidth));
+			yoga.setHeight(yogaDimension(previousHeight));
+		}
+	}
+	updateViewport(viewport) {
+		const wrapper = this.rendered;
+		if (!wrapper || this.viewportWidth === viewport.width && this.viewportHeight === viewport.height) return;
+		this.viewportWidth = viewport.width;
+		this.viewportHeight = viewport.height;
+		wrapper.setProperties({
+			width: viewport.width,
+			height: viewport.height,
+			sizeX: viewport.width,
+			sizeY: viewport.height
+		});
+	}
+};
+var UIKitBackend = class {
+	constructor() {
+		this.icons = new IconCache();
+		this.previousLocalClippingEnabled = false;
+	}
+	configureRenderer(renderer) {
+		if (this.renderer === renderer) return;
+		this.restoreRenderer();
+		this.renderer = renderer;
+		this.releaseFocusGuard = TextInputEditor.guardCanvas(renderer.domElement);
+		this.previousLocalClippingEnabled = renderer.localClippingEnabled;
+		renderer.localClippingEnabled = true;
+		renderer.setTransparentSort(reversePainterSortStable);
+	}
+	createMount(root) {
+		return new UIKitMount(root, this.icons);
+	}
+	handlePointerTarget(target) {
+		TextInputEditor.handlePointerTarget(target);
+	}
+	dispose() {
+		this.restoreRenderer();
+		this.icons.dispose();
+	}
+	restoreRenderer() {
+		this.releaseFocusGuard?.();
+		this.releaseFocusGuard = void 0;
+		if (!this.renderer) return;
+		this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
+		this.renderer = void 0;
+	}
+};
 const YOGA_UNIT_POINT = 1;
 const YOGA_UNIT_PERCENT = 2;
 const YOGA_UNIT_AUTO = 3;
 const YOGA_EDGE_LEFT = 0;
 const YOGA_EDGE_RIGHT = 2;
 const YOGA_POSITION_ABSOLUTE = 2;
-// Layout pixels. Matches uikit's own threshold for scrollable overflow.
-const OVERFLOW_TOLERANCE = 0.5;
-// Layout pixels. One pixel is below what a card edge can visibly show.
+const OVERFLOW_TOLERANCE = .5;
 const MIN_WIDTH_SEARCH_PRECISION = 1;
 /** True when any in-flow node extends past either side of its parent's content box. */
 function yogaContentOverflows(node) {
-    const left = node.getComputedPadding(YOGA_EDGE_LEFT) +
-        node.getComputedBorder(YOGA_EDGE_LEFT) -
-        OVERFLOW_TOLERANCE;
-    const right = node.getComputedWidth() -
-        node.getComputedPadding(YOGA_EDGE_RIGHT) -
-        node.getComputedBorder(YOGA_EDGE_RIGHT) +
-        OVERFLOW_TOLERANCE;
-    for (let index = 0; index < node.getChildCount(); index++) {
-        const child = node.getChild(index);
-        if (child.getPositionType() === YOGA_POSITION_ABSOLUTE)
-            continue;
-        const childLeft = child.getComputedLeft();
-        if (childLeft < left || childLeft + child.getComputedWidth() > right) {
-            return true;
-        }
-        if (yogaContentOverflows(child))
-            return true;
-    }
-    return false;
+	const left = node.getComputedPadding(YOGA_EDGE_LEFT) + node.getComputedBorder(YOGA_EDGE_LEFT) - OVERFLOW_TOLERANCE;
+	const right = node.getComputedWidth() - node.getComputedPadding(YOGA_EDGE_RIGHT) - node.getComputedBorder(YOGA_EDGE_RIGHT) + OVERFLOW_TOLERANCE;
+	for (let index = 0; index < node.getChildCount(); index++) {
+		const child = node.getChild(index);
+		if (child.getPositionType() === YOGA_POSITION_ABSOLUTE) continue;
+		const childLeft = child.getComputedLeft();
+		if (childLeft < left || childLeft + child.getComputedWidth() > right) return true;
+		if (yogaContentOverflows(child)) return true;
+	}
+	return false;
 }
 function yogaDimension({ unit, value }) {
-    if (unit === YOGA_UNIT_POINT)
-        return value;
-    if (unit === YOGA_UNIT_PERCENT)
-        return `${value}%`;
-    if (unit === YOGA_UNIT_AUTO)
-        return 'auto';
-    return undefined;
+	if (unit === YOGA_UNIT_POINT) return value;
+	if (unit === YOGA_UNIT_PERCENT) return `${value}%`;
+	if (unit === YOGA_UNIT_AUTO) return "auto";
 }
 function createUIBackend() {
-    return new UIKitBackend();
+	return new UIKitBackend();
 }
 /** A retained physical node and the small private subtree it owns. */
-class UIKitNodeBinding {
-    constructor(element, icons, enqueue, context) {
-        this.element = element;
-        this.icons = icons;
-        this.enqueue = enqueue;
-        this.children = new Map();
-        this.childOrder = [];
-        this.cursorPoints = [
-            new THREE.Vector3(),
-            new THREE.Vector3(),
-        ];
-        this.notifyResource = () => {
-            if (!this.disposed)
-                this.enqueue(() => this.resourceRevision++);
-        };
-        this.contentProperties = {};
-        this.ownsImageTexture = false;
-        this.imageRequest = 0;
-        this.resourceRevision = 0;
-        this.appliedResourceRevision = -1;
-        this.revision = -1;
-        this.presentationKey = -1;
-        this.baseProperties = {};
-        this.presentedProperties = {};
-        this.disposed = false;
-        const properties = this.propertiesFor(context, baseState(element), undefined);
-        const kind = getUIElementKind(element);
-        if (kind === 'text') {
-            this.node = new AdaptiveText(properties);
-        }
-        else if (kind === 'image') {
-            this.node = new Image(properties, undefined, { loadTexture: false });
-        }
-        else if (kind === 'icon') {
-            this.node = new Svg(properties);
-        }
-        else {
-            this.node = new GradientPanel(properties);
-        }
-        if (element instanceof UIScrollView && this.node instanceof Container) {
-            this.scrollView = new ScrollViewPresentation(element, this.node);
-        }
-        if (element instanceof UITextInput && this.node instanceof Container) {
-            this.textInput = new TextFieldPresentation(element, this.node, this.notifyResource);
-        }
-        this.hitRegion = new UIHitRegion(this.node);
-        this.unregisterPresentationObject = registerUIPresentationObject(this.element, this.node, this.hitRegion.bounds);
-        this.baseProperties = properties;
-        this.presentedProperties = properties;
-        this.theme = context.theme;
-        this.reconcileTree(context);
-        this.commit(context);
-    }
-    removeDetachedChildren() {
-        for (const [element, binding] of this.children) {
-            if (element.parent !== this.element) {
-                this.children.delete(element);
-                this.childOrder.splice(this.childOrder.indexOf(element), 1);
-                binding.dispose();
-            }
-            else {
-                binding.removeDetachedChildren();
-            }
-        }
-    }
-    reconcileTree(context) {
-        if (!isContainerNode(this.node))
-            return;
-        const content = this.scrollView?.content ?? this.node;
-        const nextOrder = this.element.children.filter(isUIElement);
-        const next = new Map();
-        for (const child of nextOrder) {
-            const binding = this.children.get(child) ??
-                new UIKitNodeBinding(child, this.icons, this.enqueue, context);
-            next.set(child, binding);
-        }
-        for (const [element, binding] of this.children) {
-            if (!next.has(element))
-                binding.dispose();
-        }
-        this.children.clear();
-        this.childOrder.length = 0;
-        for (const child of nextOrder) {
-            const binding = next.get(child);
-            this.children.set(child, binding);
-            this.childOrder.push(child);
-            content.add(binding.node);
-            binding.reconcileTree(context);
-        }
-        this.ensurePrivateNodes(context.theme);
-        this.scrollView?.commit(this.contentProperties);
-        this.textInput?.commit(context.theme);
-        if (this.edge) {
-            this.edge.removeFromParent();
-            this.node.add(this.edge);
-        }
-    }
-    /** Returns whether physical hit mappings or layout content changed. */
-    commit(context) {
-        if (this.disposed) {
-            return { hitMappingsChanged: false, contentChanged: false };
-        }
-        const order = context.rootStack === undefined
-            ? undefined
-            : context.rootStack +
-                Number(this.element.style.zIndex ?? 0) * 1_000 +
-                context.sequence.value++;
-        const orderChanged = order !== this.renderOrder;
-        const revision = getUIRevision(this.element);
-        const nextPointerEvents = this.element.xb?.pointerEvents;
-        const needsProperties = revision !== this.revision ||
-            context.theme !== this.theme ||
-            orderChanged ||
-            nextPointerEvents !== this.pointerEvents ||
-            this.resourceRevision !== this.appliedResourceRevision;
-        let hitMappingsChanged = orderChanged;
-        let contentChanged = false;
-        if (needsProperties) {
-            const base = baseState(this.element);
-            this.renderOrder = order;
-            const properties = this.propertiesFor(context, base, order);
-            const changed = changedProperties(this.presentedProperties, properties);
-            contentChanged =
-                !(this.element instanceof UICard) ||
-                    Object.keys(changed).some((key) => !CARD_SIZE_PROPERTY_KEYS.has(key));
-            this.applyProperties(properties);
-            this.baseProperties = properties;
-            this.presentedProperties = properties;
-            this.presentationKey = stateKey(base);
-            this.revision = revision;
-            this.theme = context.theme;
-            this.pointerEvents = nextPointerEvents;
-            this.appliedResourceRevision = this.resourceRevision;
-            this.ensurePrivateNodes(context.theme);
-            this.scrollView?.commit(this.contentProperties);
-            this.textInput?.commit(context.theme);
-            if (this.syncEdge(properties))
-                hitMappingsChanged = true;
-        }
-        this.node.visible = this.element.visible;
-        this.syncImage();
-        this.setHitEnabled(this.baseProperties);
-        for (const child of this.childOrder) {
-            const childResult = this.children.get(child).commit(context);
-            if (childResult.hitMappingsChanged)
-                hitMappingsChanged = true;
-            if (childResult.contentChanged)
-                contentChanged = true;
-        }
-        return { hitMappingsChanged, contentChanged };
-    }
-    present(stateFor) {
-        if (this.disposed)
-            return;
-        const rawState = stateFor(this.element, this.edge ? this.cursorPoints : undefined);
-        const focused = this.element instanceof UITextInput && this.element.focused;
-        const key = Number(rawState.hovered) |
-            (Number(rawState.active) << 1) |
-            (Number(rawState.disabled) << 2) |
-            (Number(focused) << 3);
-        if (key !== this.presentationKey) {
-            const state = { ...rawState, focused };
-            const context = {
-                theme: this.theme,
-                rootStack: undefined,
-                sequence: { value: 0 },
-            };
-            const properties = this.propertiesFor(context, state, this.renderOrder);
-            this.applyProperties(properties);
-            this.presentedProperties = properties;
-            this.presentationKey = key;
-            this.ensurePrivateNodes(this.theme);
-            this.scrollView?.commit(this.contentProperties);
-            this.textInput?.commit(this.theme);
-        }
-        this.edge?.setCursorPoints(rawState.cursorPointCount > 0 ? this.cursorPoints[0] : undefined, rawState.cursorPointCount > 1 ? this.cursorPoints[1] : undefined);
-        for (const child of this.childOrder)
-            this.children.get(child).present(stateFor);
-    }
-    hitMappings() {
-        const mappings = [
-            {
-                physical: this.node,
-                logical: this.element,
-                options: { containsPoint: this.hitRegion.containsPoint },
-            },
-        ];
-        if (this.edge) {
-            const edge = this.edge;
-            mappings.push({
-                physical: edge,
-                logical: this.element,
-                options: {
-                    containsPoint: edge.containsPoint,
-                    touchTarget: (point) => edge.touchTarget(point),
-                },
-            }, { physical: edge.resizeHandle, logical: this.element });
-        }
-        for (const child of this.childOrder) {
-            mappings.push(...this.children.get(child).hitMappings());
-        }
-        return mappings;
-    }
-    *elementNodes() {
-        yield [this.element, this.node];
-        for (const child of this.childOrder)
-            yield* this.children.get(child).elementNodes();
-    }
-    afterLayout(deltaSeconds) {
-        this.scrollView?.afterLayout();
-        this.textInput?.update(deltaSeconds);
-        for (const child of this.childOrder)
-            this.children.get(child).afterLayout(deltaSeconds);
-    }
-    setActive(active) {
-        this.textInput?.setActive(active);
-        for (const child of this.childOrder)
-            this.children.get(child).setActive(active);
-    }
-    dispose() {
-        if (this.disposed)
-            return;
-        this.disposed = true;
-        this.unregisterPresentationObject();
-        for (const child of this.children.values())
-            child.dispose();
-        this.children.clear();
-        this.childOrder.length = 0;
-        this.edge?.removeFromParent();
-        this.edge?.dispose();
-        this.buttonIcon?.removeFromParent();
-        this.buttonIcon?.dispose();
-        this.buttonLabel?.removeFromParent();
-        this.buttonLabel?.dispose();
-        this.sliderContent?.dispose();
-        this.scrollView?.dispose();
-        this.textInput?.dispose();
-        if (this.ownsImageTexture)
-            this.imageTexture?.dispose();
-        this.imageTexture = undefined;
-        this.node.removeFromParent();
-        this.node.dispose();
-    }
-    propertiesFor(context, state, renderOrder) {
-        const resolvedStyle = resolveStyle(this.element, state, context.theme);
-        const style = toUIKitStyle(resolvedStyle);
-        if (renderOrder !== undefined) {
-            style.depthTest = false;
-            style.depthWrite = false;
-            style.renderOrder = renderOrder;
-        }
-        const kind = getUIElementKind(this.element);
-        if (kind === 'text') {
-            return {
-                text: this.element.text,
-                color: style.color ??
-                    context.theme.colors.text,
-                ...style,
-                pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
-            };
-        }
-        if (kind === 'image') {
-            const { cornerRadius: rawCornerRadius, ...imageStyle } = style;
-            const cornerRadius = numericCornerRadius(rawCornerRadius);
-            return {
-                ...imageStyle,
-                borderTopLeftRadius: cornerRadius,
-                borderTopRightRadius: cornerRadius,
-                borderBottomLeftRadius: cornerRadius,
-                borderBottomRightRadius: cornerRadius,
-                pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
-            };
-        }
-        if (kind === 'icon') {
-            return {
-                content: this.icons.get(iconAssetPath(this.element), this.notifyResource),
-                ...style,
-                pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
-            };
-        }
-        if (kind === 'scroll' || kind === 'input') {
-            this.contentProperties = {
-                ...resolvedStyle,
-                color: resolvedStyle.color ?? context.theme.colors.outline,
-            };
-            return panelDefaults(this.element, context.theme, {
-                ...style,
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                justifyContent: 'flex-start',
-                gapRow: 0,
-                gapColumn: 0,
-            });
-        }
-        return panelDefaults(this.element, context.theme, style);
-    }
-    applyProperties(properties) {
-        const changed = changedProperties(this.presentedProperties, properties);
-        if (Object.keys(changed).length === 0)
-            return;
-        if (this.node instanceof AdaptiveText) {
-            this.node.updateTextProperties(properties);
-        }
-        else {
-            this.node.setProperties(changed);
-        }
-        if (this.node instanceof Image) {
-            this.node.material.opacity = resolvedOpacity(properties.opacity);
-        }
-        if (this.renderOrder !== undefined)
-            this.node.renderOrder = this.renderOrder;
-    }
-    ensurePrivateNodes(theme) {
-        if (!(this.node instanceof GradientPanel))
-            return;
-        const kind = getUIElementKind(this.element);
-        if (kind === 'button')
-            this.updateButtonContent(theme);
-        if (kind === 'slider') {
-            this.sliderContent ??= createSliderContent(this.node);
-            this.sliderContent.update(this.element, theme);
-        }
-    }
-    updateButtonContent(theme) {
-        const button = this.element;
-        const color = this.presentedProperties.color ??
-            (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
-        if (button.icon) {
-            const properties = {
-                content: this.icons.get(defaultIconAssetPath(button.icon), this.notifyResource),
-                width: 24,
-                height: 24,
-                color,
-                pointerEvents: 'none',
-            };
-            if (!this.buttonIcon) {
-                this.buttonIcon = new Svg(properties);
-                this.node.add(this.buttonIcon);
-            }
-            else {
-                this.buttonIcon.setProperties(properties);
-            }
-        }
-        else if (this.buttonIcon) {
-            this.buttonIcon.removeFromParent();
-            this.buttonIcon.dispose();
-            this.buttonIcon = undefined;
-        }
-        if (button.label) {
-            const properties = {
-                text: button.label,
-                color,
-                ...nativeTextWrapping(this.presentedProperties
-                    .whiteSpace),
-                pointerEvents: 'none',
-            };
-            if (!this.buttonLabel) {
-                this.buttonLabel = new Text(properties);
-                this.node.add(this.buttonLabel);
-            }
-            else {
-                this.buttonLabel.setProperties(properties);
-            }
-        }
-        else if (this.buttonLabel) {
-            this.buttonLabel.removeFromParent();
-            this.buttonLabel.dispose();
-            this.buttonLabel = undefined;
-        }
-    }
-    syncEdge(properties) {
-        if (!(this.node instanceof GradientPanel))
-            return false;
-        const options = getUIElementKind(this.element) === 'card'
-            ? getUICardEdgeOptions(this.element)
-            : undefined;
-        if (!options && this.edge) {
-            this.edge.removeFromParent();
-            this.edge.dispose();
-            this.edge = undefined;
-            return true;
-        }
-        const resizable = !!options &&
-            !!normalizeManipulationConfig(this.element.xb?.manipulation)?.resize;
-        if (options && !this.edge) {
-            this.edge = new UICardEdge({
-                cardCornerRadius: numericCornerRadius(properties.cornerRadius),
-                resizable,
-            });
-            this.node.add(this.edge);
-            return true;
-        }
-        this.edge?.setCardCornerRadius(numericCornerRadius(properties.cornerRadius));
-        this.edge?.setResizable(resizable);
-        return false;
-    }
-    syncImage() {
-        if (!(this.node instanceof Image))
-            return;
-        const source = this.element.src;
-        if (source === this.imageSource)
-            return;
-        this.imageSource = source;
-        const request = ++this.imageRequest;
-        if (source instanceof THREE.Texture) {
-            this.replaceImageTexture(source, false);
-            return;
-        }
-        void imageTextureLoader
-            .loadAsync(source)
-            .then((texture) => {
-            texture.colorSpace = THREE.SRGBColorSpace;
-            texture.matrixAutoUpdate = false;
-            if (this.disposed) {
-                texture.dispose();
-                return;
-            }
-            this.enqueue(() => {
-                if (this.disposed ||
-                    request !== this.imageRequest ||
-                    this.imageSource !== source) {
-                    texture.dispose();
-                    return;
-                }
-                this.replaceImageTexture(texture, true);
-                this.resourceRevision++;
-            });
-        })
-            .catch(() => undefined);
-    }
-    replaceImageTexture(texture, ownsTexture) {
-        const previous = this.imageTexture;
-        const previousOwned = this.ownsImageTexture;
-        this.imageTexture = texture;
-        this.ownsImageTexture = ownsTexture;
-        this.node.texture.value = texture;
-        if (previousOwned && previous && previous !== texture)
-            previous.dispose();
-    }
-    setHitEnabled(properties) {
-        const kind = getUIElementKind(this.element);
-        const blocksHits = kind === 'button' ||
-            kind === 'slider' ||
-            kind === 'scroll' ||
-            kind === 'input' ||
-            !isTransparent(properties.fillColor);
-        const pointerEvents = this.element.xb?.pointerEvents;
-        const enabled = blocksHits && pointerEvents !== 'none';
-        if (pointerEvents === this.pointerEvents && enabled === this.hitEnabled)
-            return;
-        this.pointerEvents = pointerEvents;
-        this.hitEnabled = enabled;
-        setPhysicalHitEnabled(this.node, enabled);
-    }
-}
+var UIKitNodeBinding = class UIKitNodeBinding {
+	constructor(element, icons, enqueue, context) {
+		this.element = element;
+		this.icons = icons;
+		this.enqueue = enqueue;
+		this.children = /* @__PURE__ */ new Map();
+		this.childOrder = [];
+		this.cursorPoints = [new THREE.Vector3(), new THREE.Vector3()];
+		this.notifyResource = () => {
+			if (!this.disposed) this.enqueue(() => this.resourceRevision++);
+		};
+		this.contentProperties = {};
+		this.ownsImageTexture = false;
+		this.imageRequest = 0;
+		this.resourceRevision = 0;
+		this.appliedResourceRevision = -1;
+		this.revision = -1;
+		this.presentationKey = -1;
+		this.baseProperties = {};
+		this.presentedProperties = {};
+		this.disposed = false;
+		const properties = this.propertiesFor(context, baseState(element), void 0);
+		const kind = getUIElementKind(element);
+		if (kind === "text") this.node = new AdaptiveText(properties);
+		else if (kind === "image") this.node = new Image(properties, void 0, { loadTexture: false });
+		else if (kind === "icon") this.node = new Svg(properties);
+		else this.node = new GradientPanel(properties);
+		if (element instanceof UIScrollView && this.node instanceof Container) this.scrollView = new ScrollViewPresentation(element, this.node);
+		if (element instanceof UITextInput && this.node instanceof Container) this.textInput = new TextFieldPresentation(element, this.node, this.notifyResource);
+		this.hitRegion = new UIHitRegion(this.node);
+		this.unregisterPresentationObject = registerUIPresentationObject(this.element, this.node, this.hitRegion.bounds);
+		this.baseProperties = properties;
+		this.presentedProperties = properties;
+		this.theme = context.theme;
+		this.reconcileTree(context);
+		this.commit(context);
+	}
+	removeDetachedChildren() {
+		for (const [element, binding] of this.children) if (element.parent !== this.element) {
+			this.children.delete(element);
+			this.childOrder.splice(this.childOrder.indexOf(element), 1);
+			binding.dispose();
+		} else binding.removeDetachedChildren();
+	}
+	reconcileTree(context) {
+		if (!isContainerNode(this.node)) return;
+		const content = this.scrollView?.content ?? this.node;
+		const nextOrder = this.element.children.filter(isUIElement);
+		const next = /* @__PURE__ */ new Map();
+		for (const child of nextOrder) {
+			const binding = this.children.get(child) ?? new UIKitNodeBinding(child, this.icons, this.enqueue, context);
+			next.set(child, binding);
+		}
+		for (const [element, binding] of this.children) if (!next.has(element)) binding.dispose();
+		this.children.clear();
+		this.childOrder.length = 0;
+		for (const child of nextOrder) {
+			const binding = next.get(child);
+			this.children.set(child, binding);
+			this.childOrder.push(child);
+			content.add(binding.node);
+			binding.reconcileTree(context);
+		}
+		this.ensurePrivateNodes(context.theme);
+		this.scrollView?.commit(this.contentProperties);
+		this.textInput?.commit(context.theme);
+		if (this.edge) {
+			this.edge.removeFromParent();
+			this.node.add(this.edge);
+		}
+	}
+	/** Returns whether physical hit mappings or layout content changed. */
+	commit(context) {
+		if (this.disposed) return {
+			hitMappingsChanged: false,
+			contentChanged: false
+		};
+		const order = context.rootStack === void 0 ? void 0 : context.rootStack + Number(this.element.style.zIndex ?? 0) * 1e3 + context.sequence.value++;
+		const orderChanged = order !== this.renderOrder;
+		const revision = getUIRevision(this.element);
+		const nextPointerEvents = this.element.xb?.pointerEvents;
+		const needsProperties = revision !== this.revision || context.theme !== this.theme || orderChanged || nextPointerEvents !== this.pointerEvents || this.resourceRevision !== this.appliedResourceRevision;
+		let hitMappingsChanged = orderChanged;
+		let contentChanged = false;
+		if (needsProperties) {
+			const base = baseState(this.element);
+			this.renderOrder = order;
+			const properties = this.propertiesFor(context, base, order);
+			const changed = changedProperties(this.presentedProperties, properties);
+			contentChanged = !(this.element instanceof UICard) || Object.keys(changed).some((key) => !CARD_SIZE_PROPERTY_KEYS.has(key));
+			this.applyProperties(properties);
+			this.baseProperties = properties;
+			this.presentedProperties = properties;
+			this.presentationKey = stateKey(base);
+			this.revision = revision;
+			this.theme = context.theme;
+			this.pointerEvents = nextPointerEvents;
+			this.appliedResourceRevision = this.resourceRevision;
+			this.ensurePrivateNodes(context.theme);
+			this.scrollView?.commit(this.contentProperties);
+			this.textInput?.commit(context.theme);
+			if (this.syncEdge(properties)) hitMappingsChanged = true;
+		}
+		this.node.visible = this.element.visible;
+		this.syncImage();
+		this.setHitEnabled(this.baseProperties);
+		for (const child of this.childOrder) {
+			const childResult = this.children.get(child).commit(context);
+			if (childResult.hitMappingsChanged) hitMappingsChanged = true;
+			if (childResult.contentChanged) contentChanged = true;
+		}
+		return {
+			hitMappingsChanged,
+			contentChanged
+		};
+	}
+	present(stateFor) {
+		if (this.disposed) return;
+		const rawState = stateFor(this.element, this.edge ? this.cursorPoints : void 0);
+		const focused = this.element instanceof UITextInput && this.element.focused;
+		const key = Number(rawState.hovered) | Number(rawState.active) << 1 | Number(rawState.disabled) << 2 | Number(focused) << 3;
+		if (key !== this.presentationKey) {
+			const state = {
+				...rawState,
+				focused
+			};
+			const context = {
+				theme: this.theme,
+				rootStack: void 0,
+				sequence: { value: 0 }
+			};
+			const properties = this.propertiesFor(context, state, this.renderOrder);
+			this.applyProperties(properties);
+			this.presentedProperties = properties;
+			this.presentationKey = key;
+			this.ensurePrivateNodes(this.theme);
+			this.scrollView?.commit(this.contentProperties);
+			this.textInput?.commit(this.theme);
+		}
+		this.edge?.setCursorPoints(rawState.cursorPointCount > 0 ? this.cursorPoints[0] : void 0, rawState.cursorPointCount > 1 ? this.cursorPoints[1] : void 0);
+		for (const child of this.childOrder) this.children.get(child).present(stateFor);
+	}
+	hitMappings() {
+		const mappings = [{
+			physical: this.node,
+			logical: this.element,
+			options: { containsPoint: this.hitRegion.containsPoint }
+		}];
+		if (this.edge) {
+			const edge = this.edge;
+			mappings.push({
+				physical: edge,
+				logical: this.element,
+				options: {
+					containsPoint: edge.containsPoint,
+					touchTarget: (point) => edge.touchTarget(point)
+				}
+			}, {
+				physical: edge.resizeHandle,
+				logical: this.element
+			});
+		}
+		for (const child of this.childOrder) mappings.push(...this.children.get(child).hitMappings());
+		return mappings;
+	}
+	*elementNodes() {
+		yield [this.element, this.node];
+		for (const child of this.childOrder) yield* this.children.get(child).elementNodes();
+	}
+	afterLayout(deltaSeconds) {
+		this.scrollView?.afterLayout();
+		this.textInput?.update(deltaSeconds);
+		for (const child of this.childOrder) this.children.get(child).afterLayout(deltaSeconds);
+	}
+	setActive(active) {
+		this.textInput?.setActive(active);
+		for (const child of this.childOrder) this.children.get(child).setActive(active);
+	}
+	dispose() {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.unregisterPresentationObject();
+		for (const child of this.children.values()) child.dispose();
+		this.children.clear();
+		this.childOrder.length = 0;
+		this.edge?.removeFromParent();
+		this.edge?.dispose();
+		this.buttonIcon?.removeFromParent();
+		this.buttonIcon?.dispose();
+		this.buttonLabel?.removeFromParent();
+		this.buttonLabel?.dispose();
+		this.sliderContent?.dispose();
+		this.scrollView?.dispose();
+		this.textInput?.dispose();
+		if (this.ownsImageTexture) this.imageTexture?.dispose();
+		this.imageTexture = void 0;
+		this.node.removeFromParent();
+		this.node.dispose();
+	}
+	propertiesFor(context, state, renderOrder) {
+		const resolvedStyle = resolveStyle(this.element, state, context.theme);
+		const style = toUIKitStyle(resolvedStyle);
+		if (renderOrder !== void 0) {
+			style.depthTest = false;
+			style.depthWrite = false;
+			style.renderOrder = renderOrder;
+		}
+		const kind = getUIElementKind(this.element);
+		if (kind === "text") return {
+			text: this.element.text,
+			color: style.color ?? context.theme.colors.text,
+			...style,
+			pointerEvents: this.element.xb?.pointerEvents ?? "auto"
+		};
+		if (kind === "image") {
+			const { cornerRadius: rawCornerRadius, ...imageStyle } = style;
+			const cornerRadius = numericCornerRadius(rawCornerRadius);
+			return {
+				...imageStyle,
+				borderTopLeftRadius: cornerRadius,
+				borderTopRightRadius: cornerRadius,
+				borderBottomLeftRadius: cornerRadius,
+				borderBottomRightRadius: cornerRadius,
+				pointerEvents: this.element.xb?.pointerEvents ?? "auto"
+			};
+		}
+		if (kind === "icon") return {
+			content: this.icons.get(iconAssetPath(this.element), this.notifyResource),
+			...style,
+			pointerEvents: this.element.xb?.pointerEvents ?? "auto"
+		};
+		if (kind === "scroll" || kind === "input") {
+			this.contentProperties = {
+				...resolvedStyle,
+				color: resolvedStyle.color ?? context.theme.colors.outline
+			};
+			return panelDefaults(this.element, context.theme, {
+				...style,
+				flexDirection: "column",
+				alignItems: "stretch",
+				justifyContent: "flex-start",
+				gapRow: 0,
+				gapColumn: 0
+			});
+		}
+		return panelDefaults(this.element, context.theme, style);
+	}
+	applyProperties(properties) {
+		const changed = changedProperties(this.presentedProperties, properties);
+		if (Object.keys(changed).length === 0) return;
+		if (this.node instanceof AdaptiveText) this.node.updateTextProperties(properties);
+		else this.node.setProperties(changed);
+		if (this.node instanceof Image) this.node.material.opacity = resolvedOpacity(properties.opacity);
+		if (this.renderOrder !== void 0) this.node.renderOrder = this.renderOrder;
+	}
+	ensurePrivateNodes(theme) {
+		if (!(this.node instanceof GradientPanel)) return;
+		const kind = getUIElementKind(this.element);
+		if (kind === "button") this.updateButtonContent(theme);
+		if (kind === "slider") {
+			this.sliderContent ??= createSliderContent(this.node);
+			this.sliderContent.update(this.element, theme);
+		}
+	}
+	updateButtonContent(theme) {
+		const button = this.element;
+		const color = this.presentedProperties.color ?? (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
+		if (button.icon) {
+			const properties = {
+				content: this.icons.get(defaultIconAssetPath(button.icon), this.notifyResource),
+				width: 24,
+				height: 24,
+				color,
+				pointerEvents: "none"
+			};
+			if (!this.buttonIcon) {
+				this.buttonIcon = new Svg(properties);
+				this.node.add(this.buttonIcon);
+			} else this.buttonIcon.setProperties(properties);
+		} else if (this.buttonIcon) {
+			this.buttonIcon.removeFromParent();
+			this.buttonIcon.dispose();
+			this.buttonIcon = void 0;
+		}
+		if (button.label) {
+			const properties = {
+				text: button.label,
+				color,
+				...nativeTextWrapping(this.presentedProperties.whiteSpace),
+				pointerEvents: "none"
+			};
+			if (!this.buttonLabel) {
+				this.buttonLabel = new Text(properties);
+				this.node.add(this.buttonLabel);
+			} else this.buttonLabel.setProperties(properties);
+		} else if (this.buttonLabel) {
+			this.buttonLabel.removeFromParent();
+			this.buttonLabel.dispose();
+			this.buttonLabel = void 0;
+		}
+	}
+	syncEdge(properties) {
+		if (!(this.node instanceof GradientPanel)) return false;
+		const options = getUIElementKind(this.element) === "card" ? getUICardEdgeOptions(this.element) : void 0;
+		if (!options && this.edge) {
+			this.edge.removeFromParent();
+			this.edge.dispose();
+			this.edge = void 0;
+			return true;
+		}
+		const resizable = !!options && !!normalizeManipulationConfig(this.element.xb?.manipulation)?.resize;
+		if (options && !this.edge) {
+			this.edge = new UICardEdge({
+				cardCornerRadius: numericCornerRadius(properties.cornerRadius),
+				resizable
+			});
+			this.node.add(this.edge);
+			return true;
+		}
+		this.edge?.setCardCornerRadius(numericCornerRadius(properties.cornerRadius));
+		this.edge?.setResizable(resizable);
+		return false;
+	}
+	syncImage() {
+		if (!(this.node instanceof Image)) return;
+		const source = this.element.src;
+		if (source === this.imageSource) return;
+		this.imageSource = source;
+		const request = ++this.imageRequest;
+		if (source instanceof THREE.Texture) {
+			this.replaceImageTexture(source, false);
+			return;
+		}
+		imageTextureLoader.loadAsync(source).then((texture) => {
+			texture.colorSpace = THREE.SRGBColorSpace;
+			texture.matrixAutoUpdate = false;
+			if (this.disposed) {
+				texture.dispose();
+				return;
+			}
+			this.enqueue(() => {
+				if (this.disposed || request !== this.imageRequest || this.imageSource !== source) {
+					texture.dispose();
+					return;
+				}
+				this.replaceImageTexture(texture, true);
+				this.resourceRevision++;
+			});
+		}).catch(() => void 0);
+	}
+	replaceImageTexture(texture, ownsTexture) {
+		const previous = this.imageTexture;
+		const previousOwned = this.ownsImageTexture;
+		this.imageTexture = texture;
+		this.ownsImageTexture = ownsTexture;
+		this.node.texture.value = texture;
+		if (previousOwned && previous && previous !== texture) previous.dispose();
+	}
+	setHitEnabled(properties) {
+		const kind = getUIElementKind(this.element);
+		const blocksHits = kind === "button" || kind === "slider" || kind === "scroll" || kind === "input" || !isTransparent(properties.fillColor);
+		const pointerEvents = this.element.xb?.pointerEvents;
+		const enabled = blocksHits && pointerEvents !== "none";
+		if (pointerEvents === this.pointerEvents && enabled === this.hitEnabled) return;
+		this.pointerEvents = pointerEvents;
+		this.hitEnabled = enabled;
+		setPhysicalHitEnabled(this.node, enabled);
+	}
+};
 function isContainerNode(node) {
-    return node instanceof Container || node instanceof GradientPanel;
+	return node instanceof Container || node instanceof GradientPanel;
 }
 function hasScrollAncestor(element) {
-    let parent = element.parent;
-    while (parent) {
-        if (parent instanceof UIScrollView)
-            return true;
-        parent = parent.parent;
-    }
-    return false;
+	let parent = element.parent;
+	while (parent) {
+		if (parent instanceof UIScrollView) return true;
+		parent = parent.parent;
+	}
+	return false;
 }
 function baseState(element) {
-    return {
-        hovered: false,
-        active: false,
-        disabled: getSemanticControl(element)?.isDisabled() ?? false,
-        focused: element instanceof UITextInput && element.focused,
-        cursorPointCount: 0,
-    };
+	return {
+		hovered: false,
+		active: false,
+		disabled: getSemanticControl(element)?.isDisabled() ?? false,
+		focused: element instanceof UITextInput && element.focused,
+		cursorPointCount: 0
+	};
 }
 function setPhysicalHitEnabled(object, enabled) {
-    object.xb ??= {};
-    object.xb.pointerEvents = enabled ? 'auto' : 'none';
+	object.xb ??= {};
+	object.xb.pointerEvents = enabled ? "auto" : "none";
 }
 function changedProperties(previous, next) {
-    const properties = {};
-    for (const [key, value] of Object.entries(next)) {
-        if (!Object.is(previous[key], value))
-            properties[key] = value;
-    }
-    for (const key of Object.keys(previous)) {
-        if (!(key in next))
-            properties[key] = undefined;
-    }
-    return properties;
+	const properties = {};
+	for (const [key, value] of Object.entries(next)) if (!Object.is(previous[key], value)) properties[key] = value;
+	for (const key of Object.keys(previous)) if (!(key in next)) properties[key] = void 0;
+	return properties;
 }
 function numericCornerRadius(value) {
-    return typeof value === 'number' && Number.isFinite(value)
-        ? Math.max(0, value)
-        : 0;
+	return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 function resolvedOpacity(value) {
-    if (typeof value === 'number')
-        return value;
-    if (typeof value === 'string' && value.endsWith('%')) {
-        return Number.parseFloat(value) / 100;
-    }
-    return 1;
+	if (typeof value === "number") return value;
+	if (typeof value === "string" && value.endsWith("%")) return Number.parseFloat(value) / 100;
+	return 1;
 }
 function resolveStyle(element, state, theme) {
-    const kind = getUIElementKind(element);
-    const surfaceStyle = hasSurfaceAppearance(element)
-        ? (theme.styles?.surface ?? {})
-        : {};
-    const themeStyle = kind === 'card' || kind === 'overlay' ? {} : (theme.styles?.[kind] ?? {});
-    const style = element.style;
-    return {
-        ...(kind === 'input'
-            ? {
-                backgroundColor: theme.colors.raisedSurface,
-                borderColor: state.focused
-                    ? theme.colors.primary
-                    : theme.colors.outline,
-                borderWidth: 1,
-                borderRadius: 8,
-                fontSize: 24,
-                padding: 8,
-            }
-            : {}),
-        ...surfaceStyle,
-        ...themeStyle,
-        ...style,
-        ...(state.hovered ? surfaceStyle?.[':hover'] : undefined),
-        ...(state.hovered ? themeStyle[':hover'] : undefined),
-        ...(state.hovered ? style[':hover'] : undefined),
-        ...(state.active ? surfaceStyle?.[':active'] : undefined),
-        ...(state.active ? themeStyle[':active'] : undefined),
-        ...(state.active ? style[':active'] : undefined),
-        ...(state.disabled ? surfaceStyle?.[':disabled'] : undefined),
-        ...(state.disabled ? themeStyle[':disabled'] : undefined),
-        ...(state.disabled ? style[':disabled'] : undefined),
-        ...(state.focused ? themeStyle[':focus'] : undefined),
-        ...(state.focused ? style[':focus'] : undefined),
-    };
+	const kind = getUIElementKind(element);
+	const surfaceStyle = hasSurfaceAppearance(element) ? theme.styles?.surface ?? {} : {};
+	const themeStyle = kind === "card" || kind === "overlay" ? {} : theme.styles?.[kind] ?? {};
+	const style = element.style;
+	return {
+		...kind === "input" ? {
+			backgroundColor: theme.colors.raisedSurface,
+			borderColor: state.focused ? theme.colors.primary : theme.colors.outline,
+			borderWidth: 1,
+			borderRadius: 8,
+			fontSize: 24,
+			padding: 8
+		} : {},
+		...surfaceStyle,
+		...themeStyle,
+		...style,
+		...state.hovered ? surfaceStyle?.[":hover"] : void 0,
+		...state.hovered ? themeStyle[":hover"] : void 0,
+		...state.hovered ? style[":hover"] : void 0,
+		...state.active ? surfaceStyle?.[":active"] : void 0,
+		...state.active ? themeStyle[":active"] : void 0,
+		...state.active ? style[":active"] : void 0,
+		...state.disabled ? surfaceStyle?.[":disabled"] : void 0,
+		...state.disabled ? themeStyle[":disabled"] : void 0,
+		...state.disabled ? style[":disabled"] : void 0,
+		...state.focused ? themeStyle[":focus"] : void 0,
+		...state.focused ? style[":focus"] : void 0
+	};
 }
 function stateKey(state) {
-    return (Number(state.hovered) |
-        (Number(state.active) << 1) |
-        (Number(state.disabled) << 2) |
-        (Number(state.focused) << 3));
+	return Number(state.hovered) | Number(state.active) << 1 | Number(state.disabled) << 2 | Number(state.focused) << 3;
 }
 function isTransparent(color) {
-    if (color === undefined || color === 'transparent')
-        return true;
-    if (typeof color !== 'string')
-        return false;
-    const compact = color.replace(/\s/g, '').toLowerCase();
-    return (/^#[0-9a-f]{3}0$/u.test(compact) ||
-        /^#[0-9a-f]{6}00$/u.test(compact) ||
-        /^(?:rgba|hsla)\([^)]*,0(?:\.0+)?\)$/u.test(compact));
+	if (color === void 0 || color === "transparent") return true;
+	if (typeof color !== "string") return false;
+	const compact = color.replace(/\s/g, "").toLowerCase();
+	return /^#[0-9a-f]{3}0$/u.test(compact) || /^#[0-9a-f]{6}00$/u.test(compact) || /^(?:rgba|hsla)\([^)]*,0(?:\.0+)?\)$/u.test(compact);
 }
 function panelDefaults(element, theme, style) {
-    const kind = getUIElementKind(element);
-    const defaults = {
-        fillColor: kind === 'button'
-            ? element.disabled
-                ? theme.colors.disabledSurface
-                : theme.colors.primary
-            : hasSurfaceAppearance(element)
-                ? theme.colors.surface
-                : kind === 'slider'
-                    ? 'rgba(255, 255, 255, 0)'
-                    : 'rgba(0, 0, 0, 0)',
-        cornerRadius: theme.borderRadius,
-        opacity: style.opacity ?? 1,
-        strokeColor: style.strokeColor ?? 'transparent',
-        strokeWidth: style.strokeWidth ?? 0,
-        strokeAlign: style.strokeAlign ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeAlign,
-        innerShadowColor: style.innerShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowColor,
-        innerShadowBlur: style.innerShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowBlur,
-        innerShadowPosition: style.innerShadowPosition ??
-            DEFAULT_GRADIENT_PANEL_PROPS.innerShadowPosition,
-        innerShadowSpread: style.innerShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowSpread,
-        innerShadowFalloff: style.innerShadowFalloff ??
-            DEFAULT_GRADIENT_PANEL_PROPS.innerShadowFalloff,
-        dropShadowColor: style.dropShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowColor,
-        dropShadowBlur: style.dropShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowBlur,
-        dropShadowPosition: style.dropShadowPosition ??
-            DEFAULT_GRADIENT_PANEL_PROPS.dropShadowPosition,
-        dropShadowSpread: style.dropShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowSpread,
-        dropShadowFalloff: style.dropShadowFalloff ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowFalloff,
-        color: style.color,
-        pointerEvents: element.xb?.pointerEvents ?? 'auto',
-        ...style,
-    };
-    if (kind === 'card' || kind === 'overlay') {
-        defaults.flexDirection = style.flexDirection ?? 'column';
-        defaults.justifyContent = style.justifyContent ?? 'center';
-        defaults.alignItems = style.alignItems ?? 'stretch';
-    }
-    if (kind === 'panel') {
-        defaults.flexShrink = style.flexShrink ?? 1;
-    }
-    if (kind === 'card') {
-        const card = element;
-        defaults.backfaceColor = defaults.fillColor;
-        defaults.pixelSize = card.pixelSize;
-        defaults.sizeX = card.size.width;
-        defaults.width = card.size.width / card.pixelSize;
-        if (card.size.height !== 'auto') {
-            defaults.sizeY = card.size.height;
-            defaults.height = card.size.height / card.pixelSize;
-        }
-        defaults.anchorX = card.anchorX;
-        defaults.anchorY = card.anchorY;
-    }
-    else if (kind === 'overlay') {
-        defaults.depthTest = false;
-    }
-    return defaults;
+	const kind = getUIElementKind(element);
+	const defaults = {
+		fillColor: kind === "button" ? element.disabled ? theme.colors.disabledSurface : theme.colors.primary : hasSurfaceAppearance(element) ? theme.colors.surface : kind === "slider" ? "rgba(255, 255, 255, 0)" : "rgba(0, 0, 0, 0)",
+		cornerRadius: theme.borderRadius,
+		opacity: style.opacity ?? 1,
+		strokeColor: style.strokeColor ?? "transparent",
+		strokeWidth: style.strokeWidth ?? 0,
+		strokeAlign: style.strokeAlign ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeAlign,
+		innerShadowColor: style.innerShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowColor,
+		innerShadowBlur: style.innerShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowBlur,
+		innerShadowPosition: style.innerShadowPosition ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowPosition,
+		innerShadowSpread: style.innerShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowSpread,
+		innerShadowFalloff: style.innerShadowFalloff ?? DEFAULT_GRADIENT_PANEL_PROPS.innerShadowFalloff,
+		dropShadowColor: style.dropShadowColor ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowColor,
+		dropShadowBlur: style.dropShadowBlur ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowBlur,
+		dropShadowPosition: style.dropShadowPosition ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowPosition,
+		dropShadowSpread: style.dropShadowSpread ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowSpread,
+		dropShadowFalloff: style.dropShadowFalloff ?? DEFAULT_GRADIENT_PANEL_PROPS.dropShadowFalloff,
+		color: style.color,
+		pointerEvents: element.xb?.pointerEvents ?? "auto",
+		...style
+	};
+	if (kind === "card" || kind === "overlay") {
+		defaults.flexDirection = style.flexDirection ?? "column";
+		defaults.justifyContent = style.justifyContent ?? "center";
+		defaults.alignItems = style.alignItems ?? "stretch";
+	}
+	if (kind === "panel") defaults.flexShrink = style.flexShrink ?? 1;
+	if (kind === "card") {
+		const card = element;
+		defaults.backfaceColor = defaults.fillColor;
+		defaults.pixelSize = card.pixelSize;
+		defaults.sizeX = card.size.width;
+		defaults.width = card.size.width / card.pixelSize;
+		if (card.size.height !== "auto") {
+			defaults.sizeY = card.size.height;
+			defaults.height = card.size.height / card.pixelSize;
+		}
+		defaults.anchorX = card.anchorX;
+		defaults.anchorY = card.anchorY;
+	} else if (kind === "overlay") defaults.depthTest = false;
+	return defaults;
 }
 function createOverlayViewport(surface, viewport) {
-    const wrapper = new Container({
-        width: viewport.width,
-        height: viewport.height,
-        sizeX: viewport.width,
-        sizeY: viewport.height,
-        pixelSize: 1,
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        pointerEvents: 'none',
-        depthTest: false,
-    });
-    wrapper.add(surface);
-    return wrapper;
+	const wrapper = new Container({
+		width: viewport.width,
+		height: viewport.height,
+		sizeX: viewport.width,
+		sizeY: viewport.height,
+		pixelSize: 1,
+		flexDirection: "column",
+		justifyContent: "center",
+		alignItems: "center",
+		pointerEvents: "none",
+		depthTest: false
+	});
+	wrapper.add(surface);
+	return wrapper;
 }
 function hasSurfaceAppearance(element) {
-    return ((element instanceof UICard || element instanceof UIOverlay) &&
-        element.appearance === 'surface');
+	return (element instanceof UICard || element instanceof UIOverlay) && element.appearance === "surface";
 }
 function validPair(value) {
-    return (value !== undefined &&
-        Number.isFinite(value[0]) &&
-        Number.isFinite(value[1]));
+	return value !== void 0 && Number.isFinite(value[0]) && Number.isFinite(value[1]);
 }
 function boundsFromCenter(center, size) {
-    return {
-        x: center[0] - size[0] / 2,
-        y: center[1] - size[1] / 2,
-        width: size[0],
-        height: size[1],
-    };
+	return {
+		x: center[0] - size[0] / 2,
+		y: center[1] - size[1] / 2,
+		width: size[0],
+		height: size[1]
+	};
 }
 function contentBounds(parent) {
-    const [width, height] = parent.size.peek() ?? [0, 0];
-    const [top, right, bottom, left] = parent.paddingInset.peek() ?? [0, 0, 0, 0];
-    return {
-        x: -width / 2 + left,
-        y: -height / 2 + bottom,
-        width: Math.max(0, width - left - right),
-        height: Math.max(0, height - top - bottom),
-    };
+	const [width, height] = parent.size.peek() ?? [0, 0];
+	const [top, right, bottom, left] = parent.paddingInset.peek() ?? [
+		0,
+		0,
+		0,
+		0
+	];
+	return {
+		x: -width / 2 + left,
+		y: -height / 2 + bottom,
+		width: Math.max(0, width - left - right),
+		height: Math.max(0, height - top - bottom)
+	};
 }
 function containsBounds(container, child) {
-    const tolerance = 0.5;
-    return (child.x >= container.x - tolerance &&
-        child.y >= container.y - tolerance &&
-        child.x + child.width <= container.x + container.width + tolerance &&
-        child.y + child.height <= container.y + container.height + tolerance);
+	const tolerance = .5;
+	return child.x >= container.x - tolerance && child.y >= container.y - tolerance && child.x + child.width <= container.x + container.width + tolerance && child.y + child.height <= container.y + container.height + tolerance;
 }
 const FALLBACK_ICON = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
   <path fill="#ffffff" d="M11 18h2v2h-2zm1-16a7 7 0 0 0-7 7h2a5 5 0 1 1 8.6 3.5C13.7 14.2 11 15.2 11 18h2c0-1.5 1.4-2.2 3.1-3.7A7 7 0 0 0 12 2z"/>
 </svg>`;
 /** Backend-owned icon cache. Completions are staged by bindings. */
-class IconCache {
-    constructor() {
-        this.content = new Map();
-        this.pending = new Map();
-        this.disposed = false;
-    }
-    get(path, subscriber) {
-        const cached = this.content.get(path);
-        if (cached)
-            return cached;
-        let request = this.pending.get(path);
-        if (!request) {
-            const controller = new AbortController();
-            const newRequest = { controller, subscribers: new Set() };
-            request = newRequest;
-            this.pending.set(path, newRequest);
-            void fetch(`${ICON_BASE}${path}`, {
-                signal: controller.signal,
-            })
-                .then((response) => {
-                if (!response.ok)
-                    throw new Error(`Icon request failed: ${response.status}`);
-                return response.text();
-            })
-                .then((content) => {
-                if (this.disposed)
-                    return;
-                if (!content.includes('<svg'))
-                    throw new Error('Invalid icon SVG.');
-                this.content.set(path, content);
-                for (const notify of newRequest.subscribers)
-                    notify();
-            })
-                .catch(() => {
-                if (!this.disposed) {
-                    this.content.set(path, FALLBACK_ICON);
-                    for (const notify of newRequest.subscribers)
-                        notify();
-                }
-            })
-                .finally(() => this.pending.delete(path));
-        }
-        request.subscribers.add(subscriber);
-        return FALLBACK_ICON;
-    }
-    dispose() {
-        this.disposed = true;
-        for (const { controller } of this.pending.values())
-            controller.abort();
-        this.pending.clear();
-        this.content.clear();
-    }
-}
+var IconCache = class {
+	constructor() {
+		this.content = /* @__PURE__ */ new Map();
+		this.pending = /* @__PURE__ */ new Map();
+		this.disposed = false;
+	}
+	get(path, subscriber) {
+		const cached = this.content.get(path);
+		if (cached) return cached;
+		let request = this.pending.get(path);
+		if (!request) {
+			const controller = new AbortController();
+			const newRequest = {
+				controller,
+				subscribers: /* @__PURE__ */ new Set()
+			};
+			request = newRequest;
+			this.pending.set(path, newRequest);
+			fetch(`${ICON_BASE}${path}`, { signal: controller.signal }).then((response) => {
+				if (!response.ok) throw new Error(`Icon request failed: ${response.status}`);
+				return response.text();
+			}).then((content) => {
+				if (this.disposed) return;
+				if (!content.includes("<svg")) throw new Error("Invalid icon SVG.");
+				this.content.set(path, content);
+				for (const notify of newRequest.subscribers) notify();
+			}).catch(() => {
+				if (!this.disposed) {
+					this.content.set(path, FALLBACK_ICON);
+					for (const notify of newRequest.subscribers) notify();
+				}
+			}).finally(() => this.pending.delete(path));
+		}
+		request.subscribers.add(subscriber);
+		return FALLBACK_ICON;
+	}
+	dispose() {
+		this.disposed = true;
+		for (const { controller } of this.pending.values()) controller.abort();
+		this.pending.clear();
+		this.content.clear();
+	}
+};
 function createSliderContent(panel) {
-    const thumbSize = 28;
-    const rail = new Container({
-        positionType: 'absolute',
-        positionLeft: thumbSize / 2,
-        positionRight: thumbSize / 2,
-        positionTop: '50%',
-        transformTranslateY: '-50%',
-        height: thumbSize,
-        pointerEvents: 'none',
-    });
-    const track = new GradientPanel({
-        positionType: 'absolute',
-        positionLeft: 0,
-        positionRight: 0,
-        positionTop: '50%',
-        transformTranslateY: '-50%',
-        height: 10,
-        fillColor: 'transparent',
-        cornerRadius: 5,
-        pointerEvents: 'none',
-    });
-    const fill = new GradientPanel({
-        positionType: 'absolute',
-        positionLeft: 0,
-        positionTop: '50%',
-        transformTranslateY: '-50%',
-        height: 10,
-        cornerRadius: 5,
-        pointerEvents: 'none',
-    });
-    const thumb = new GradientPanel({
-        positionType: 'absolute',
-        positionTop: '50%',
-        transformTranslateX: '-50%',
-        transformTranslateY: '-50%',
-        width: thumbSize,
-        height: thumbSize,
-        cornerRadius: thumbSize / 2,
-        pointerEvents: 'none',
-    });
-    const update = (slider, theme) => {
-        const ratio = slider.max === slider.min
-            ? 0
-            : (slider.value - slider.min) / (slider.max - slider.min);
-        const color = slider.disabled
-            ? theme.colors.disabledText
-            : theme.colors.primary;
-        track.setProperties({ fillColor: theme.colors.outline });
-        fill.setProperties({ width: `${ratio * 100}%`, fillColor: color });
-        thumb.setProperties({
-            positionLeft: `${ratio * 100}%`,
-            fillColor: color,
-        });
-    };
-    rail.add(track, fill, thumb);
-    panel.add(rail);
-    return {
-        update,
-        dispose: () => {
-            track.removeFromParent();
-            fill.removeFromParent();
-            thumb.removeFromParent();
-            track.dispose();
-            fill.dispose();
-            thumb.dispose();
-            rail.removeFromParent();
-            rail.dispose();
-        },
-    };
+	const thumbSize = 28;
+	const rail = new Container({
+		positionType: "absolute",
+		positionLeft: thumbSize / 2,
+		positionRight: thumbSize / 2,
+		positionTop: "50%",
+		transformTranslateY: "-50%",
+		height: thumbSize,
+		pointerEvents: "none"
+	});
+	const track = new GradientPanel({
+		positionType: "absolute",
+		positionLeft: 0,
+		positionRight: 0,
+		positionTop: "50%",
+		transformTranslateY: "-50%",
+		height: 10,
+		fillColor: "transparent",
+		cornerRadius: 5,
+		pointerEvents: "none"
+	});
+	const fill = new GradientPanel({
+		positionType: "absolute",
+		positionLeft: 0,
+		positionTop: "50%",
+		transformTranslateY: "-50%",
+		height: 10,
+		cornerRadius: 5,
+		pointerEvents: "none"
+	});
+	const thumb = new GradientPanel({
+		positionType: "absolute",
+		positionTop: "50%",
+		transformTranslateX: "-50%",
+		transformTranslateY: "-50%",
+		width: thumbSize,
+		height: thumbSize,
+		cornerRadius: thumbSize / 2,
+		pointerEvents: "none"
+	});
+	const update = (slider, theme) => {
+		const ratio = slider.max === slider.min ? 0 : (slider.value - slider.min) / (slider.max - slider.min);
+		const color = slider.disabled ? theme.colors.disabledText : theme.colors.primary;
+		track.setProperties({ fillColor: theme.colors.outline });
+		fill.setProperties({
+			width: `${ratio * 100}%`,
+			fillColor: color
+		});
+		thumb.setProperties({
+			positionLeft: `${ratio * 100}%`,
+			fillColor: color
+		});
+	};
+	rail.add(track, fill, thumb);
+	panel.add(rail);
+	return {
+		update,
+		dispose: () => {
+			track.removeFromParent();
+			fill.removeFromParent();
+			thumb.removeFromParent();
+			track.dispose();
+			fill.dispose();
+			thumb.dispose();
+			rail.removeFromParent();
+			rail.dispose();
+		}
+	};
 }
 function toUIKitStyle(style) {
-    const result = {};
-    if (style.padding !== undefined) {
-        result.paddingTop = style.padding;
-        result.paddingRight = style.padding;
-        result.paddingBottom = style.padding;
-        result.paddingLeft = style.padding;
-    }
-    if (style.margin !== undefined) {
-        result.marginTop = style.margin;
-        result.marginRight = style.margin;
-        result.marginBottom = style.margin;
-        result.marginLeft = style.margin;
-    }
-    if (style.gap !== undefined) {
-        result.gapRow = style.gap;
-        result.gapColumn = style.gap;
-    }
-    if (style.transform?.translateX !== undefined) {
-        result.transformTranslateX = style.transform.translateX;
-    }
-    if (style.transform?.translateY !== undefined) {
-        result.transformTranslateY = style.transform.translateY;
-    }
-    for (const [key, value] of Object.entries(style)) {
-        if (key.startsWith(':') ||
-            value === undefined ||
-            key === 'padding' ||
-            key === 'margin' ||
-            key === 'gap' ||
-            key === 'transform') {
-            continue;
-        }
-        const mapped = key === 'position'
-            ? 'positionType'
-            : key === 'backgroundColor'
-                ? 'fillColor'
-                : key === 'borderColor'
-                    ? 'strokeColor'
-                    : key === 'borderWidth'
-                        ? 'strokeWidth'
-                        : key === 'borderAlign'
-                            ? 'strokeAlign'
-                            : key === 'borderRadius'
-                                ? 'cornerRadius'
-                                : key === 'top'
-                                    ? 'positionTop'
-                                    : key === 'right'
-                                        ? 'positionRight'
-                                        : key === 'bottom'
-                                            ? 'positionBottom'
-                                            : key === 'left'
-                                                ? 'positionLeft'
-                                                : key === 'rowGap'
-                                                    ? 'gapRow'
-                                                    : key === 'columnGap'
-                                                        ? 'gapColumn'
-                                                        : key;
-        result[mapped] = value;
-    }
-    return result;
+	const result = {};
+	if (style.padding !== void 0) {
+		result.paddingTop = style.padding;
+		result.paddingRight = style.padding;
+		result.paddingBottom = style.padding;
+		result.paddingLeft = style.padding;
+	}
+	if (style.margin !== void 0) {
+		result.marginTop = style.margin;
+		result.marginRight = style.margin;
+		result.marginBottom = style.margin;
+		result.marginLeft = style.margin;
+	}
+	if (style.gap !== void 0) {
+		result.gapRow = style.gap;
+		result.gapColumn = style.gap;
+	}
+	if (style.transform?.translateX !== void 0) result.transformTranslateX = style.transform.translateX;
+	if (style.transform?.translateY !== void 0) result.transformTranslateY = style.transform.translateY;
+	for (const [key, value] of Object.entries(style)) {
+		if (key.startsWith(":") || value === void 0 || key === "padding" || key === "margin" || key === "gap" || key === "transform") continue;
+		const mapped = key === "position" ? "positionType" : key === "backgroundColor" ? "fillColor" : key === "borderColor" ? "strokeColor" : key === "borderWidth" ? "strokeWidth" : key === "borderAlign" ? "strokeAlign" : key === "borderRadius" ? "cornerRadius" : key === "top" ? "positionTop" : key === "right" ? "positionRight" : key === "bottom" ? "positionBottom" : key === "left" ? "positionLeft" : key === "rowGap" ? "gapRow" : key === "columnGap" ? "gapColumn" : key;
+		result[mapped] = value;
+	}
+	return result;
 }
 function iconAssetPath(icon) {
-    const name = `${encodeURIComponent(icon.icon)}${icon.filled ? '-fill' : ''}`;
-    return `${icon.weight}/${icon.variant}/${name}.svg`;
+	const name = `${encodeURIComponent(icon.icon)}${icon.filled ? "-fill" : ""}`;
+	return `${icon.weight}/${icon.variant}/${name}.svg`;
 }
 function defaultIconAssetPath(icon) {
-    return `400/outlined/${encodeURIComponent(icon)}.svg`;
+	return `400/outlined/${encodeURIComponent(icon)}.svg`;
 }
+//#endregion
+export { resolveRasterScale as a, createUIBackend, graphemeSegments as i, cssColor as n, DEFAULT_TEXT_LINE_HEIGHT as o, fontShorthand as r, UIKitBackend_exports as t };
 
-var UIKitBackend$1 = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    createUIBackend: createUIBackend
-});
-
-export { DEFAULT_TEXT_TAB_SIZE as D, UIKitBackend$1 as U, DEFAULT_TEXT_LINE_HEIGHT as a, DEFAULT_TEXT_FONT_SIZE as b, cssColor as c, fontShorthand as f, graphemeSegments as g, resolveRasterScale as r };
 //# sourceMappingURL=UIKitBackend.js.map

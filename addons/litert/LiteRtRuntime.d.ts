@@ -1,12 +1,5 @@
-/**
- * LiteRT.js runtime bootstrap.
- *
- * `@litertjs/core` is an external peer dependency resolved by the page's
- * import map and loaded with a dynamic `import()`, so nothing from it is
- * bundled into `xrblocks`. The wasm runtime itself is fetched from a CDN by
- * default; no model or runtime file has to be checked in.
- */
-import type { LiteRt } from '@litertjs/core';
+import { LiteRt } from "@litertjs/core";
+//#region src/addons/litert/LiteRtRuntime.d.ts
 /** The dynamically imported `@litertjs/core` module. */
 export type LiteRtCore = typeof import('@litertjs/core');
 /** Accelerators LiteRT.js can compile a model for. */
@@ -18,31 +11,31 @@ export declare const DEFAULT_LITERT_WASM_DIR = "https://cdn.jsdelivr.net/npm/@li
 /** The Emscripten glue LiteRT.js picks for the `{threads: true}` build. */
 export declare const LITERT_THREADED_GLUE_FILE = "litert_wasm_threaded_internal.js";
 export interface LoadLiteRtRuntimeOptions {
-    /** Where the wasm runtime lives. Defaults to {@link DEFAULT_LITERT_WASM_DIR}. */
-    wasmDir?: string;
-    /**
-     * Try the multi-threaded runtime first. Only honored on a cross-origin
-     * isolated page (`crossOriginIsolated === true`); otherwise the
-     * single-threaded build is loaded directly.
-     */
-    preferThreads?: boolean;
-    /**
-     * Accelerator to report for model compilation. Defaults to `'webgpu'`
-     * when `isWebGPUSupported()` says so, else `'wasm'`.
-     */
-    preferAccelerator?: LiteRtAccelerator;
+  /** Where the wasm runtime lives. Defaults to {@link DEFAULT_LITERT_WASM_DIR}. */
+  wasmDir?: string;
+  /**
+   * Try the multi-threaded runtime first. Only honored on a cross-origin
+   * isolated page (`crossOriginIsolated === true`); otherwise the
+   * single-threaded build is loaded directly.
+   */
+  preferThreads?: boolean;
+  /**
+   * Accelerator to report for model compilation. Defaults to `'webgpu'`
+   * when `isWebGPUSupported()` says so, else `'wasm'`.
+   */
+  preferAccelerator?: LiteRtAccelerator;
 }
 export interface LiteRtRuntime {
-    /** The imported `@litertjs/core` module (`Tensor`, `loadAndCompile`, …). */
-    core: LiteRtCore;
-    /** The loaded runtime. */
-    liteRt: LiteRt;
-    /** Accelerator models should be compiled for on this device. */
-    accelerator: LiteRtAccelerator;
-    /** Whether the multi-threaded wasm build is the one that loaded. */
-    threads: boolean;
-    /** The wasm directory that was used. */
-    wasmDir: string;
+  /** The imported `@litertjs/core` module (`Tensor`, `loadAndCompile`, …). */
+  core: LiteRtCore;
+  /** The loaded runtime. */
+  liteRt: LiteRt;
+  /** Accelerator models should be compiled for on this device. */
+  accelerator: LiteRtAccelerator;
+  /** Whether the multi-threaded wasm build is the one that loaded. */
+  threads: boolean;
+  /** The wasm directory that was used. */
+  wasmDir: string;
 }
 /**
  * Loads LiteRT.js once per page and resolves with the runtime plus the
@@ -62,3 +55,4 @@ export declare function resetLiteRtRuntimeForTesting(): void;
 export declare function describeError(error: unknown): string;
 /** Threads to give XNNPACK: the hardware count, capped. */
 export declare function defaultNumThreads(max?: number): number;
+//#endregion

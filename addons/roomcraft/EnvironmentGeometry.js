@@ -1,8 +1,8 @@
-import * as THREE from 'three';
-import { SCENE_TIMES_OF_DAY } from './SceneTypes.js';
-
+import { SCENE_TIMES_OF_DAY } from "./SceneTypes.js";
+import * as THREE from "three";
+//#region src/addons/roomcraft/EnvironmentGeometry.ts
 /** A modest slab, so the ground reads as solid at a grazing angle. */
-const GROUND_THICKNESS = 0.1;
+const GROUND_THICKNESS = .1;
 /** Fixed, modest tessellation; an environment never chooses its own detail. */
 const GROUND_SEGMENTS = 24;
 const SKY_SEGMENTS = 32;
@@ -10,13 +10,13 @@ const SKY_RINGS = 20;
 /** Well inside the default far plane of 100 meters. */
 const SKY_RADIUS = 60;
 /** Gentle authored ground variation, as fractions of the ground color. */
-const EDGE_SHADE = 0.22;
-const PATCH_SHADE = 0.12;
+const EDGE_SHADE = .22;
+const PATCH_SHADE = .12;
 const KEY_LIGHT_DISTANCE = 24;
 /**
- * A very low key light stretches shadows past any bounded shadow camera, so
- * the light keeps the sky azimuth but never drops below this elevation.
- */
+* A very low key light stretches shadows past any bounded shadow camera, so
+* the light keeps the sky azimuth but never drops below this elevation.
+*/
 const MIN_KEY_ELEVATION = 18;
 const SHADOW_MAP_SIZE = 1024;
 const MIN_SHADOW_EXTENT = 8;
@@ -24,92 +24,92 @@ const MAX_SHADOW_EXTENT = 26;
 /** Room for the shadows a low key light casts beyond the ground itself. */
 const SHADOW_MARGIN = 8;
 const PALETTES = {
-    moonlight: {
-        zenith: '#050a1c',
-        horizon: '#16274f',
-        haze: '#070b16',
-        body: '#eef2ff',
-        bodyElevation: 35,
-        bodyAzimuth: 38,
-        bodyAngularRadius: 0.05,
-        bodyDetail: 1,
-        glow: '#8fa8e8',
-        glowStrength: 0.6,
-        glowFalloff: 160,
-        starIntensity: 0.9,
-        keyColor: '#bacfff',
-        keyIntensity: 1.1,
-        skyLight: '#879dc4',
-        groundLight: '#344566',
-        fillIntensity: 0.8,
-        groundTint: '#a0b4d8',
-        groundRoughness: 0.95,
-    },
-    sunrise: {
-        zenith: '#2a5a96',
-        horizon: '#ffb877',
-        haze: '#2a1f1c',
-        body: '#fff0c9',
-        bodyElevation: 8,
-        bodyAzimuth: 24,
-        bodyAngularRadius: 0.06,
-        bodyDetail: 0,
-        glow: '#ff9a4d',
-        glowStrength: 1,
-        glowFalloff: 22,
-        starIntensity: 0,
-        keyColor: '#ffb066',
-        keyIntensity: 1.8,
-        skyLight: '#ffd2a1',
-        groundLight: '#4a3428',
-        fillIntensity: 0.6,
-        groundTint: '#ffd0a8',
-        groundRoughness: 0.85,
-    },
-    daylight: {
-        zenith: '#2a72d4',
-        horizon: '#cfe4ff',
-        haze: '#4a4f45',
-        body: '#fffdf5',
-        bodyElevation: 62,
-        bodyAzimuth: -10,
-        bodyAngularRadius: 0.045,
-        bodyDetail: 0,
-        glow: '#ffe9c2',
-        glowStrength: 0.5,
-        glowFalloff: 300,
-        starIntensity: 0,
-        keyColor: '#fff6e2',
-        keyIntensity: 2.4,
-        skyLight: '#bcd8ff',
-        groundLight: '#6b6a55',
-        fillIntensity: 0.9,
-        groundTint: '#ffffff',
-        groundRoughness: 0.8,
-    },
-    sunset: {
-        zenith: '#1f2c63',
-        horizon: '#ff7a44',
-        haze: '#1d1512',
-        body: '#ffd9a0',
-        bodyElevation: 7,
-        bodyAzimuth: 200,
-        bodyAngularRadius: 0.062,
-        bodyDetail: 0,
-        glow: '#ff6a2c',
-        glowStrength: 1.1,
-        glowFalloff: 18,
-        starIntensity: 0.12,
-        keyColor: '#ff8a4a',
-        keyIntensity: 1.6,
-        skyLight: '#ffb391',
-        groundLight: '#33231a',
-        fillIntensity: 0.5,
-        groundTint: '#f4b48d',
-        groundRoughness: 0.85,
-    },
+	moonlight: {
+		zenith: "#050a1c",
+		horizon: "#16274f",
+		haze: "#070b16",
+		body: "#eef2ff",
+		bodyElevation: 35,
+		bodyAzimuth: 38,
+		bodyAngularRadius: .05,
+		bodyDetail: 1,
+		glow: "#8fa8e8",
+		glowStrength: .6,
+		glowFalloff: 160,
+		starIntensity: .9,
+		keyColor: "#bacfff",
+		keyIntensity: 1.1,
+		skyLight: "#879dc4",
+		groundLight: "#344566",
+		fillIntensity: .8,
+		groundTint: "#a0b4d8",
+		groundRoughness: .95
+	},
+	sunrise: {
+		zenith: "#2a5a96",
+		horizon: "#ffb877",
+		haze: "#2a1f1c",
+		body: "#fff0c9",
+		bodyElevation: 8,
+		bodyAzimuth: 24,
+		bodyAngularRadius: .06,
+		bodyDetail: 0,
+		glow: "#ff9a4d",
+		glowStrength: 1,
+		glowFalloff: 22,
+		starIntensity: 0,
+		keyColor: "#ffb066",
+		keyIntensity: 1.8,
+		skyLight: "#ffd2a1",
+		groundLight: "#4a3428",
+		fillIntensity: .6,
+		groundTint: "#ffd0a8",
+		groundRoughness: .85
+	},
+	daylight: {
+		zenith: "#2a72d4",
+		horizon: "#cfe4ff",
+		haze: "#4a4f45",
+		body: "#fffdf5",
+		bodyElevation: 62,
+		bodyAzimuth: -10,
+		bodyAngularRadius: .045,
+		bodyDetail: 0,
+		glow: "#ffe9c2",
+		glowStrength: .5,
+		glowFalloff: 300,
+		starIntensity: 0,
+		keyColor: "#fff6e2",
+		keyIntensity: 2.4,
+		skyLight: "#bcd8ff",
+		groundLight: "#6b6a55",
+		fillIntensity: .9,
+		groundTint: "#ffffff",
+		groundRoughness: .8
+	},
+	sunset: {
+		zenith: "#1f2c63",
+		horizon: "#ff7a44",
+		haze: "#1d1512",
+		body: "#ffd9a0",
+		bodyElevation: 7,
+		bodyAzimuth: 200,
+		bodyAngularRadius: .062,
+		bodyDetail: 0,
+		glow: "#ff6a2c",
+		glowStrength: 1.1,
+		glowFalloff: 18,
+		starIntensity: .12,
+		keyColor: "#ff8a4a",
+		keyIntensity: 1.6,
+		skyLight: "#ffb391",
+		groundLight: "#33231a",
+		fillIntensity: .5,
+		groundTint: "#f4b48d",
+		groundRoughness: .85
+	}
 };
-const SKY_VERTEX_SHADER = /* glsl */ `
+const SKY_VERTEX_SHADER = `
 varying vec3 vDirection;
 
 void main() {
@@ -118,10 +118,10 @@ void main() {
 }
 `;
 /**
- * An authored gradient sky with one celestial body, its halo, and procedural
- * stars. It samples no texture and runs no generated code.
- */
-const SKY_FRAGMENT_SHADER = /* glsl */ `
+* An authored gradient sky with one celestial body, its halo, and procedural
+* stars. It samples no texture and runs no generated code.
+*/
+const SKY_FRAGMENT_SHADER = `
 #include <common>
 #include <dithering_pars_fragment>
 
@@ -186,164 +186,149 @@ void main() {
 }
 `;
 function readPalette(environment) {
-    const palette = SCENE_TIMES_OF_DAY.includes(environment.timeOfDay)
-        ? PALETTES[environment.timeOfDay]
-        : undefined;
-    if (!palette) {
-        throw new Error(`Unsupported environment time of day "${environment.timeOfDay}".`);
-    }
-    return palette;
+	const palette = SCENE_TIMES_OF_DAY.includes(environment.timeOfDay) ? PALETTES[environment.timeOfDay] : void 0;
+	if (!palette) throw new Error(`Unsupported environment time of day "${environment.timeOfDay}".`);
+	return palette;
 }
 function readSize(environment) {
-    const size = environment.size;
-    if (!Array.isArray(size) ||
-        size.length !== 2 ||
-        size.some((value) => !Number.isFinite(value) || value <= 0)) {
-        throw new Error('A virtual environment needs a finite, positive ground size.');
-    }
-    return [size[0], size[1]];
+	const size = environment.size;
+	if (!Array.isArray(size) || size.length !== 2 || size.some((value) => !Number.isFinite(value) || value <= 0)) throw new Error("A virtual environment needs a finite, positive ground size.");
+	return [size[0], size[1]];
 }
 function directionOf(elevation, azimuth) {
-    const polar = THREE.MathUtils.degToRad(elevation);
-    const around = THREE.MathUtils.degToRad(azimuth);
-    return new THREE.Vector3(Math.cos(polar) * Math.sin(around), Math.sin(polar), -Math.cos(polar) * Math.cos(around));
+	const polar = THREE.MathUtils.degToRad(elevation);
+	const around = THREE.MathUtils.degToRad(azimuth);
+	return new THREE.Vector3(Math.cos(polar) * Math.sin(around), Math.sin(polar), -Math.cos(polar) * Math.cos(around));
 }
 /** Deterministic, texture-free ground variation. */
 function patch(x, z) {
-    const value = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
-    return value - Math.floor(value);
+	const value = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
+	return value - Math.floor(value);
 }
 /**
- * A slab whose top sits at Y=0, shaded per vertex so a large ground plane is
- * not a flat plastic sheet: mild patchiness plus a soft edge falloff.
- */
+* A slab whose top sits at Y=0, shaded per vertex so a large ground plane is
+* not a flat plastic sheet: mild patchiness plus a soft edge falloff.
+*/
 function createGroundGeometry(width, depth) {
-    const geometry = new THREE.BoxGeometry(width, GROUND_THICKNESS, depth, GROUND_SEGMENTS, 1, GROUND_SEGMENTS);
-    geometry.translate(0, -GROUND_THICKNESS / 2, 0);
-    const position = geometry.getAttribute('position');
-    const shades = new Float32Array(position.count * 3);
-    for (let index = 0; index < position.count; index++) {
-        const x = position.getX(index);
-        const z = position.getZ(index);
-        const rim = Math.max(Math.abs(x) / (width / 2), Math.abs(z) / (depth / 2));
-        const shade = (1 - EDGE_SHADE * THREE.MathUtils.smoothstep(rim, 0.65, 1)) *
-            (1 + PATCH_SHADE * (patch(x * 0.9, z * 0.9) - 0.5));
-        shades.fill(shade, index * 3, index * 3 + 3);
-    }
-    geometry.setAttribute('color', new THREE.BufferAttribute(shades, 3));
-    return geometry;
+	const geometry = new THREE.BoxGeometry(width, GROUND_THICKNESS, depth, GROUND_SEGMENTS, 1, GROUND_SEGMENTS);
+	geometry.translate(0, -.1 / 2, 0);
+	const position = geometry.getAttribute("position");
+	const shades = new Float32Array(position.count * 3);
+	for (let index = 0; index < position.count; index++) {
+		const x = position.getX(index);
+		const z = position.getZ(index);
+		const rim = Math.max(Math.abs(x) / (width / 2), Math.abs(z) / (depth / 2));
+		const shade = (1 - EDGE_SHADE * THREE.MathUtils.smoothstep(rim, .65, 1)) * (1 + PATCH_SHADE * (patch(x * .9, z * .9) - .5));
+		shades.fill(shade, index * 3, index * 3 + 3);
+	}
+	geometry.setAttribute("color", new THREE.BufferAttribute(shades, 3));
+	return geometry;
 }
 /**
- * Bounds of the ground a virtual environment owns, in environment-local
- * meters. The sky dome, its celestial body, and the lights are backdrop, so
- * they are deliberately excluded and a whole-world fit stays finite and tight.
- *
- * @param environment - The environment settings.
- * @returns A new box covering the ground slab, centered in X/Z with its top
- *     at Y=0.
- */
+* Bounds of the ground a virtual environment owns, in environment-local
+* meters. The sky dome, its celestial body, and the lights are backdrop, so
+* they are deliberately excluded and a whole-world fit stays finite and tight.
+*
+* @param environment - The environment settings.
+* @returns A new box covering the ground slab, centered in X/Z with its top
+*     at Y=0.
+*/
 function getEnvironmentBounds(environment) {
-    const [width, depth] = readSize(environment);
-    // Reject settings the content build could not render, from either entry.
-    readPalette(environment);
-    return new THREE.Box3(new THREE.Vector3(-width / 2, -GROUND_THICKNESS, -depth / 2), new THREE.Vector3(width / 2, 0, depth / 2));
+	const [width, depth] = readSize(environment);
+	readPalette(environment);
+	return new THREE.Box3(new THREE.Vector3(-width / 2, -.1, -depth / 2), new THREE.Vector3(width / 2, 0, depth / 2));
 }
 /**
- * Builds a bounded virtual setting as one detached group: a ground slab, a
- * back-sided sky dome with an authored gradient, celestial body, and stars,
- * and the key and fill lights for that time of day. Every geometry, material,
- * and light is freshly owned by this result; nothing is cached or shared
- * between builds, and no global renderer, scene, or camera state is touched.
- * The sky and ground never take pointer hits, so objects and UI stay reachable.
- *
- * @param environment - The environment settings; they are never mutated.
- * @returns A new group holding `ground`, `sky`, `key-light`, its target, and
- *     `fill-light`. Failed construction disposes what it built and rethrows;
- *     Roomcraft owns disposal of a successful result.
- */
+* Builds a bounded virtual setting as one detached group: a ground slab, a
+* back-sided sky dome with an authored gradient, celestial body, and stars,
+* and the key and fill lights for that time of day. Every geometry, material,
+* and light is freshly owned by this result; nothing is cached or shared
+* between builds, and no global renderer, scene, or camera state is touched.
+* The sky and ground never take pointer hits, so objects and UI stay reachable.
+*
+* @param environment - The environment settings; they are never mutated.
+* @returns A new group holding `ground`, `sky`, `key-light`, its target, and
+*     `fill-light`. Failed construction disposes what it built and rethrows;
+*     Roomcraft owns disposal of a successful result.
+*/
 function createEnvironmentContent(environment) {
-    const [width, depth] = readSize(environment);
-    const palette = readPalette(environment);
-    const root = new THREE.Group();
-    root.name = 'environment';
-    root.xb = { pointerEvents: 'none' };
-    const owned = [];
-    try {
-        const groundGeometry = createGroundGeometry(width, depth);
-        owned.push(groundGeometry);
-        const groundMaterial = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(environment.groundColor).multiply(new THREE.Color(palette.groundTint)),
-            roughness: palette.groundRoughness,
-            metalness: 0,
-            vertexColors: true,
-            dithering: true,
-        });
-        owned.push(groundMaterial);
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.name = 'ground';
-        ground.receiveShadow = true;
-        ground.xb = { pointerEvents: 'none' };
-        const bodyDirection = directionOf(palette.bodyElevation, palette.bodyAzimuth);
-        const skyGeometry = new THREE.SphereGeometry(SKY_RADIUS, SKY_SEGMENTS, SKY_RINGS);
-        owned.push(skyGeometry);
-        const skyMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                zenithColor: { value: new THREE.Color(palette.zenith) },
-                horizonColor: { value: new THREE.Color(palette.horizon) },
-                hazeColor: { value: new THREE.Color(palette.haze) },
-                bodyColor: { value: new THREE.Color(palette.body) },
-                bodyDirection: { value: bodyDirection },
-                bodyAngularRadius: { value: palette.bodyAngularRadius },
-                bodyDetail: { value: palette.bodyDetail },
-                glowColor: { value: new THREE.Color(palette.glow) },
-                glowStrength: { value: palette.glowStrength },
-                glowFalloff: { value: palette.glowFalloff },
-                starIntensity: { value: palette.starIntensity },
-            },
-            vertexShader: SKY_VERTEX_SHADER,
-            fragmentShader: SKY_FRAGMENT_SHADER,
-            side: THREE.BackSide,
-            depthWrite: false,
-            dithering: true,
-        });
-        owned.push(skyMaterial);
-        const sky = new THREE.Mesh(skyGeometry, skyMaterial);
-        sky.name = 'sky';
-        sky.xb = { pointerEvents: 'none' };
-        const key = new THREE.DirectionalLight(new THREE.Color(palette.keyColor), palette.keyIntensity);
-        key.name = 'key-light';
-        owned.push(key);
-        key.position
-            .copy(directionOf(Math.max(palette.bodyElevation, MIN_KEY_ELEVATION), palette.bodyAzimuth))
-            .multiplyScalar(KEY_LIGHT_DISTANCE);
-        key.castShadow = true;
-        key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-        key.shadow.bias = -0.0005;
-        key.shadow.normalBias = 0.02;
-        const extent = THREE.MathUtils.clamp(Math.hypot(width, depth) / 2 + SHADOW_MARGIN, MIN_SHADOW_EXTENT, MAX_SHADOW_EXTENT);
-        const shadowCamera = key.shadow.camera;
-        shadowCamera.left = -extent;
-        shadowCamera.right = extent;
-        shadowCamera.top = extent;
-        shadowCamera.bottom = -extent;
-        shadowCamera.near = 1;
-        shadowCamera.far = KEY_LIGHT_DISTANCE * 2;
-        shadowCamera.updateProjectionMatrix();
-        // Aim at this environment's own origin, wherever Roomcraft is placed.
-        const keyTarget = new THREE.Object3D();
-        keyTarget.name = 'key-light-target';
-        key.target = keyTarget;
-        const fill = new THREE.HemisphereLight(new THREE.Color(palette.skyLight), new THREE.Color(palette.groundLight), palette.fillIntensity);
-        fill.name = 'fill-light';
-        owned.push(fill);
-        root.add(ground, sky, key, keyTarget, fill);
-    }
-    catch (error) {
-        for (const resource of owned)
-            resource.dispose();
-        throw error;
-    }
-    return root;
+	const [width, depth] = readSize(environment);
+	const palette = readPalette(environment);
+	const root = new THREE.Group();
+	root.name = "environment";
+	root.xb = { pointerEvents: "none" };
+	const owned = [];
+	try {
+		const groundGeometry = createGroundGeometry(width, depth);
+		owned.push(groundGeometry);
+		const groundMaterial = new THREE.MeshStandardMaterial({
+			color: new THREE.Color(environment.groundColor).multiply(new THREE.Color(palette.groundTint)),
+			roughness: palette.groundRoughness,
+			metalness: 0,
+			vertexColors: true,
+			dithering: true
+		});
+		owned.push(groundMaterial);
+		const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+		ground.name = "ground";
+		ground.receiveShadow = true;
+		ground.xb = { pointerEvents: "none" };
+		const bodyDirection = directionOf(palette.bodyElevation, palette.bodyAzimuth);
+		const skyGeometry = new THREE.SphereGeometry(SKY_RADIUS, SKY_SEGMENTS, SKY_RINGS);
+		owned.push(skyGeometry);
+		const skyMaterial = new THREE.ShaderMaterial({
+			uniforms: {
+				zenithColor: { value: new THREE.Color(palette.zenith) },
+				horizonColor: { value: new THREE.Color(palette.horizon) },
+				hazeColor: { value: new THREE.Color(palette.haze) },
+				bodyColor: { value: new THREE.Color(palette.body) },
+				bodyDirection: { value: bodyDirection },
+				bodyAngularRadius: { value: palette.bodyAngularRadius },
+				bodyDetail: { value: palette.bodyDetail },
+				glowColor: { value: new THREE.Color(palette.glow) },
+				glowStrength: { value: palette.glowStrength },
+				glowFalloff: { value: palette.glowFalloff },
+				starIntensity: { value: palette.starIntensity }
+			},
+			vertexShader: SKY_VERTEX_SHADER,
+			fragmentShader: SKY_FRAGMENT_SHADER,
+			side: THREE.BackSide,
+			depthWrite: false,
+			dithering: true
+		});
+		owned.push(skyMaterial);
+		const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+		sky.name = "sky";
+		sky.xb = { pointerEvents: "none" };
+		const key = new THREE.DirectionalLight(new THREE.Color(palette.keyColor), palette.keyIntensity);
+		key.name = "key-light";
+		owned.push(key);
+		key.position.copy(directionOf(Math.max(palette.bodyElevation, MIN_KEY_ELEVATION), palette.bodyAzimuth)).multiplyScalar(KEY_LIGHT_DISTANCE);
+		key.castShadow = true;
+		key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+		key.shadow.bias = -5e-4;
+		key.shadow.normalBias = .02;
+		const extent = THREE.MathUtils.clamp(Math.hypot(width, depth) / 2 + SHADOW_MARGIN, MIN_SHADOW_EXTENT, MAX_SHADOW_EXTENT);
+		const shadowCamera = key.shadow.camera;
+		shadowCamera.left = -extent;
+		shadowCamera.right = extent;
+		shadowCamera.top = extent;
+		shadowCamera.bottom = -extent;
+		shadowCamera.near = 1;
+		shadowCamera.far = 48;
+		shadowCamera.updateProjectionMatrix();
+		const keyTarget = new THREE.Object3D();
+		keyTarget.name = "key-light-target";
+		key.target = keyTarget;
+		const fill = new THREE.HemisphereLight(new THREE.Color(palette.skyLight), new THREE.Color(palette.groundLight), palette.fillIntensity);
+		fill.name = "fill-light";
+		owned.push(fill);
+		root.add(ground, sky, key, keyTarget, fill);
+	} catch (error) {
+		for (const resource of owned) resource.dispose();
+		throw error;
+	}
+	return root;
 }
-
+//#endregion
 export { createEnvironmentContent, getEnvironmentBounds };

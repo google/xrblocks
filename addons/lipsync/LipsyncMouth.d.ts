@@ -1,4 +1,5 @@
-import { Script, VisemeWeights } from 'xrblocks';
+import { Script, VisemeWeights } from "xrblocks";
+//#region src/addons/lipsync/LipsyncMouth.d.ts
 /**
  * Minimal duck-typed target that {@link LipsyncMouth} drives every
  * frame. Anything with a `setVisemes` method satisfies the contract —
@@ -6,39 +7,39 @@ import { Script, VisemeWeights } from 'xrblocks';
  * which sits on every netblocks `RemoteUserAvatar` out of the box.
  */
 export interface VisemeTarget {
-    setVisemes(visemes: VisemeWeights): void;
+  setVisemes(visemes: VisemeWeights): void;
 }
 export interface LipsyncMouthOptions {
-    /**
-     * The face this lipsync driver animates. Required. Caller owns the
-     * target — `LipsyncMouth.dispose()` will never dispose it. Pass the
-     * `face` field on a netblocks avatar (`user.avatar.face`), or build
-     * a standalone `StylizedFace` for a non-multiplayer puppet.
-     */
-    target: VisemeTarget;
-    /**
-     * Reuse an existing `AudioContext` instead of creating a new one.
-     * Browsers cap the number of contexts per page (typically 6-8), so
-     * when driving multiple peer streams (one driver per peer) pass the
-     * shared context from `xb.core.sound.listener.context` or
-     * `THREE.AudioContext.getContext()`. When provided, this class will
-     * not close the context on `dispose()`.
-     */
-    audioContext?: AudioContext;
-    /** AnalyserNode FFT size; must be a power of two. Defaults to 1024. */
-    fftSize?: number;
-    /**
-     * Below this RMS the mouth enters its "silence" path. Default 0.01.
-     */
-    silenceThreshold?: number;
-    /**
-     * Minimum continuous silence duration (ms) before the mouth starts
-     * closing. Brief sub-threshold gaps shorter than this (plosive
-     * stops, breaths, syllable boundaries) leave the mouth held in place
-     * so it doesn't jitter. Once exceeded, the mapper's natural
-     * smoothing decays the mouth to rest. Default 150.
-     */
-    silenceHoldMs?: number;
+  /**
+   * The face this lipsync driver animates. Required. Caller owns the
+   * target — `LipsyncMouth.dispose()` will never dispose it. Pass the
+   * `face` field on a netblocks avatar (`user.avatar.face`), or build
+   * a standalone `StylizedFace` for a non-multiplayer puppet.
+   */
+  target: VisemeTarget;
+  /**
+   * Reuse an existing `AudioContext` instead of creating a new one.
+   * Browsers cap the number of contexts per page (typically 6-8), so
+   * when driving multiple peer streams (one driver per peer) pass the
+   * shared context from `xb.core.sound.listener.context` or
+   * `THREE.AudioContext.getContext()`. When provided, this class will
+   * not close the context on `dispose()`.
+   */
+  audioContext?: AudioContext;
+  /** AnalyserNode FFT size; must be a power of two. Defaults to 1024. */
+  fftSize?: number;
+  /**
+   * Below this RMS the mouth enters its "silence" path. Default 0.01.
+   */
+  silenceThreshold?: number;
+  /**
+   * Minimum continuous silence duration (ms) before the mouth starts
+   * closing. Brief sub-threshold gaps shorter than this (plosive
+   * stops, breaths, syllable boundaries) leave the mouth held in place
+   * so it doesn't jitter. Once exceeded, the mapper's natural
+   * smoothing decays the mouth to rest. Default 150.
+   */
+  silenceHoldMs?: number;
 }
 /**
  * `LipsyncMouth` reads audio from a `MediaStream`, runs an FFT +
@@ -83,25 +84,26 @@ export interface LipsyncMouthOptions {
  * ```
  */
 export declare class LipsyncMouth extends Script {
-    /** The face this driver animates. Caller-owned. */
-    readonly target: VisemeTarget;
-    private readonly stream;
-    private readonly fftSize;
-    private readonly silenceThreshold;
-    private readonly silenceHoldMs;
-    private readonly externalContext;
-    private ctx?;
-    private source?;
-    private analyser?;
-    private freqData?;
-    private timeData?;
-    private primer?;
-    private readonly mapper;
-    private lastTime;
-    /** Wall-clock ms when the most recent silence run started, or null. */
-    private silenceSinceMs;
-    constructor(stream: MediaStream, opts: LipsyncMouthOptions);
-    init(): Promise<void>;
-    update(time?: number): void;
-    dispose(): void;
+  /** The face this driver animates. Caller-owned. */
+  readonly target: VisemeTarget;
+  private readonly stream;
+  private readonly fftSize;
+  private readonly silenceThreshold;
+  private readonly silenceHoldMs;
+  private readonly externalContext;
+  private ctx?;
+  private source?;
+  private analyser?;
+  private freqData?;
+  private timeData?;
+  private primer?;
+  private readonly mapper;
+  private lastTime;
+  /** Wall-clock ms when the most recent silence run started, or null. */
+  private silenceSinceMs;
+  constructor(stream: MediaStream, opts: LipsyncMouthOptions);
+  init(): Promise<void>;
+  update(time?: number): void;
+  dispose(): void;
 }
+//#endregion

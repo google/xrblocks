@@ -1,9 +1,10 @@
-import { NetCore } from './NetCore';
+import { NetCore } from "./NetCore.js";
+//#region src/addons/netblocks/src/core/enableNet.d.ts
 declare module 'xrblocks' {
-    interface Core {
-        /** Set by `enableNet()`; undefined until then. */
-        net?: NetCore;
-    }
+  interface Core {
+    /** Set by `enableNet()`; undefined until then. */
+    net?: NetCore;
+  }
 }
 /**
  * Register the netblocks addon with the running xrblocks core. Idempotent —
@@ -19,3 +20,4 @@ declare module 'xrblocks' {
  * You can `joinRoom()` on the returned instance whenever you're ready.
  */
 export declare function enableNet(): NetCore;
+//#endregion

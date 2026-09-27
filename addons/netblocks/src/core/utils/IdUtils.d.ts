@@ -1,3 +1,4 @@
+//#region src/addons/netblocks/src/core/utils/IdUtils.d.ts
 export declare function makeId(length?: number): string;
 /**
  * Deterministic-ish hash used to derive a stable per-peer color from a peer
@@ -10,3 +11,4 @@ export declare function hashStringToHue(input: string): number;
  * (e.g. picking a per-peer color from a fixed palette).
  */
 export declare function hashStringToIndex(input: string, modulo: number): number;
+//#endregion

@@ -1,8 +1,5 @@
-const STYLE_ELEMENT_ID = 'xrblocks-editor-styles';
-// Ported verbatim from the desktop/simulator-only 2D overlay UI originally
-// developed in playground/spatial-agent/model-viewer/index.html. Plain HTML
-// on top of the canvas rather than a 3D SpatialPanel -- gives real typed
-// number inputs and sidesteps SpatialPanel's font-sizing quirks.
+//#region src/addons/editor/styles.ts
+const STYLE_ELEMENT_ID = "xrblocks-editor-styles";
 const CSS = `
 .xr-panel {
   position: fixed;
@@ -223,15 +220,14 @@ const CSS = `
 }
 `;
 /** Injects the editor's shared stylesheet into the page exactly once,
- * regardless of how many editor panels/instances end up calling this --
- * safe to call from every panel's constructor. */
+* regardless of how many editor panels/instances end up calling this --
+* safe to call from every panel's constructor. */
 function injectEditorStyles() {
-    if (document.getElementById(STYLE_ELEMENT_ID))
-        return;
-    const style = document.createElement('style');
-    style.id = STYLE_ELEMENT_ID;
-    style.textContent = CSS;
-    document.head.appendChild(style);
+	if (document.getElementById(STYLE_ELEMENT_ID)) return;
+	const style = document.createElement("style");
+	style.id = STYLE_ELEMENT_ID;
+	style.textContent = CSS;
+	document.head.appendChild(style);
 }
-
+//#endregion
 export { injectEditorStyles };

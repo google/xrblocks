@@ -1,3 +1,5 @@
+import { SAM_ATTENTION_ELEMENTS, SamGpuAdapterInfo, SamLoadOption, samDeviceCandidates } from "./SamDevice.js";
+//#region src/addons/objects3d/masks/SamMask.d.ts
 /**
  * SlimSAM-77-uniform mask backend via `@huggingface/transformers`.
  *
@@ -9,30 +11,29 @@ type AutoProcessor = unknown;
 type RawImage = unknown;
 /** Hugging Face model ID for SlimSAM-77-uniform. Apache-2 licensed, ~14 MB. */
 export declare const SAM_MODEL_ID = "Xenova/slimsam-77-uniform";
-export { SAM_ATTENTION_ELEMENTS, samDeviceCandidates, type SamGpuAdapterInfo, type SamLoadOption, } from './SamDevice';
 /** Encoded snapshot state reused across all per-detection mask calls. */
 export interface SamState {
-    /** The RawImage wrapper used by the processor. */
-    image: RawImage;
-    /** Raw processor inputs (cached for the decoder). */
-    image_inputs: object;
-    /** Image embeddings from the SAM encoder (reused per detection). */
-    image_embeddings: object;
-    /** Snapshot width in pixels. */
-    width: number;
-    /** Snapshot height in pixels. */
-    height: number;
+  /** The RawImage wrapper used by the processor. */
+  image: RawImage;
+  /** Raw processor inputs (cached for the decoder). */
+  image_inputs: object;
+  /** Image embeddings from the SAM encoder (reused per detection). */
+  image_embeddings: object;
+  /** Snapshot width in pixels. */
+  width: number;
+  /** Snapshot height in pixels. */
+  height: number;
 }
 /** Mask-compatible return value from the SAM decoder. */
 export interface SamMaskResult {
-    /** Mask width in pixels. */
-    readonly width: number;
-    /** Mask height in pixels. */
-    readonly height: number;
-    /** Raw pixel buffer; values `< 128` are foreground. */
-    getAsUint8Array(): Uint8Array;
-    /** No-op for API compatibility with MediaPipe masks. */
-    close(): void;
+  /** Mask width in pixels. */
+  readonly width: number;
+  /** Mask height in pixels. */
+  readonly height: number;
+  /** Raw pixel buffer; values `< 128` are foreground. */
+  getAsUint8Array(): Uint8Array;
+  /** No-op for API compatibility with MediaPipe masks. */
+  close(): void;
 }
 /**
  * Enqueue `fn` behind the SAM serialisation queue. Ensures that at most one
@@ -50,8 +51,8 @@ export declare function samSerialize<T>(fn: () => Promise<T>): Promise<T>;
  * @returns Model and processor instances.
  */
 export declare function getSam(): Promise<{
-    sam: SamModel;
-    proc: AutoProcessor;
+  sam: SamModel;
+  proc: AutoProcessor;
 }>;
 /**
  * Run the SAM encoder on a snapshot `ImageData` (once per detect press).
@@ -71,12 +72,14 @@ export declare function samEncodeSnapshot(snapshot: ImageData): Promise<SamState
  * @returns Mask with foreground pixels at value `< 128`.
  */
 export declare function samMaskFromBbox(samState: SamState, box2d: {
-    min: {
-        x: number;
-        y: number;
-    };
-    max: {
-        x: number;
-        y: number;
-    };
+  min: {
+    x: number;
+    y: number;
+  };
+  max: {
+    x: number;
+    y: number;
+  };
 }): Promise<SamMaskResult>;
+//#endregion
+export { SAM_ATTENTION_ELEMENTS, type SamGpuAdapterInfo, type SamLoadOption, samDeviceCandidates };

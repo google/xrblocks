@@ -1,29 +1,24 @@
-/**
- * OBB fusion, IoU dedupe, and floor-snapping helpers.
- *
- * All functions are pure (no `xb.core` dependencies) and are safe to
- * unit-test without a running XR session.
- */
-import * as THREE from 'three';
-import type { InternalObb } from './ObbFitting';
+import { InternalObb } from "./ObbFitting.js";
+import * as THREE from "three";
+//#region src/addons/objects3d/geometry/Fusion.d.ts
 /**
  * Minimal interface implemented by {@link Detected3DObject} that lets
  * {@link fuseIntoBoxes} perform fusion without importing the concrete class
  * (avoids circular dependencies).
  */
 export interface FusionRecord {
-    /** Semantic label returned by the detector. */
-    readonly label: string;
-    /** Category bucket matched during detection. */
-    readonly category: string;
-    /** Mutable centroid used for running-average blending. */
-    _fusionCenter: THREE.Vector3;
-    /** Full extents (2× half-extents) of the fused OBB. */
-    _fusionSize: THREE.Vector3;
-    /** Yaw angle of the fused OBB in radians. */
-    _fusionAngle: number;
-    /** Number of observations accumulated so far. */
-    _fusionSamples: number;
+  /** Semantic label returned by the detector. */
+  readonly label: string;
+  /** Category bucket matched during detection. */
+  readonly category: string;
+  /** Mutable centroid used for running-average blending. */
+  _fusionCenter: THREE.Vector3;
+  /** Full extents (2× half-extents) of the fused OBB. */
+  _fusionSize: THREE.Vector3;
+  /** Yaw angle of the fused OBB in radians. */
+  _fusionAngle: number;
+  /** Number of observations accumulated so far. */
+  _fusionSamples: number;
 }
 /**
  * Compute the 2-D intersection-over-union between two axis-aligned bounding
@@ -47,7 +42,7 @@ export declare function box2dIoU(a: THREE.Box2 | null | undefined, b: THREE.Box2
  * @returns Merged detection list.
  */
 export declare function unionDetections<T extends {
-    detection2DBoundingBox: THREE.Box2;
+  detection2DBoundingBox: THREE.Box2;
 }>(a: T[], b: T[], iouThresh?: number): T[];
 /**
  * If the OBB bottom dips below `floorY` by more than `slack`, pin the bottom
@@ -76,3 +71,4 @@ export declare function snapBoxToFloor(obb: InternalObb, floorY: number | null, 
  *   `null` when no match was found.
  */
 export declare function fuseIntoBoxes(records: FusionRecord[], newObb: InternalObb, category: string, label: string): FusionRecord | null;
+//#endregion

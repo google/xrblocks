@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-
+import * as THREE from "three";
+//#region src/addons/glasses/ui/HighlightMaterial.ts
 const LINEAR_GRADIENT_GLSL = `
 vec4 get_linear_gradient_color() {
     // --- 1. Calculate Gradient Angle (104deg) ---
@@ -75,17 +75,14 @@ vec4 get_linear_gradient_color() {
     return vec4(finalColor, 1.0);
 }
 `;
-class HighlightMaterial extends THREE.MeshBasicMaterial {
-    onBeforeCompile(parameters) {
-        parameters.fragmentShader = parameters.fragmentShader.replace('#include <clipping_planes_pars_fragment>', ['#include <clipping_planes_pars_fragment>', LINEAR_GRADIENT_GLSL].join('\n'));
-        parameters.fragmentShader = parameters.fragmentShader.replace('#include <clipping_planes_fragment>', [
-            '#include <clipping_planes_fragment>',
-            'borderColor=get_linear_gradient_color().xyz;',
-        ].join('\n'));
-    }
-    customProgramCacheKey() {
-        return 'HighlightMaterial-v1';
-    }
-}
-
+var HighlightMaterial = class extends THREE.MeshBasicMaterial {
+	onBeforeCompile(parameters) {
+		parameters.fragmentShader = parameters.fragmentShader.replace("#include <clipping_planes_pars_fragment>", ["#include <clipping_planes_pars_fragment>", LINEAR_GRADIENT_GLSL].join("\n"));
+		parameters.fragmentShader = parameters.fragmentShader.replace("#include <clipping_planes_fragment>", ["#include <clipping_planes_fragment>", "borderColor=get_linear_gradient_color().xyz;"].join("\n"));
+	}
+	customProgramCacheKey() {
+		return "HighlightMaterial-v1";
+	}
+};
+//#endregion
 export { HighlightMaterial };

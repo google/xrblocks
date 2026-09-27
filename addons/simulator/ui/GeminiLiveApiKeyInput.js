@@ -1,15 +1,16 @@
-import { _ as __decorate } from '../../../tslib.es6--gQC4x5c.js';
-import { LitElement, css, html } from 'lit';
-import { customElement } from 'lit/decorators/custom-element.js';
-import { createRef, ref } from 'lit/directives/ref.js';
-import { ApiKeyEnteredEvent } from './GeminiLiveEvents.js';
-
+import { ApiKeyEnteredEvent } from "./GeminiLiveEvents.js";
+import __decorate from "../../../_virtual/_@oxc-project_runtime@0.151.0/helpers/esm/decorate.js";
+import { LitElement, css, html } from "lit";
+import { customElement } from "lit/decorators/custom-element.js";
+import { createRef, ref } from "lit/directives/ref.js";
+//#region src/addons/simulator/ui/GeminiLiveApiKeyInput.ts
 let GeminiLiveApiKeyInput = class GeminiLiveApiKeyInput extends LitElement {
-    constructor() {
-        super(...arguments);
-        this.textInputRef = createRef();
-    }
-    static { this.styles = css `
+	constructor(..._args) {
+		super(..._args);
+		this.textInputRef = createRef();
+	}
+	static {
+		this.styles = css`
     :host {
       position: absolute;
       top: 10%;
@@ -59,18 +60,17 @@ let GeminiLiveApiKeyInput = class GeminiLiveApiKeyInput extends LitElement {
       outline: none;
       border: 1px solid #555;
     }
-  `; }
-    firstUpdated() {
-        this.textInputRef.value.addEventListener('keydown', this.textInputKeyDown.bind(this));
-    }
-    textInputKeyDown(event) {
-        if (event.key === 'Enter') {
-            this.dispatchEvent(new ApiKeyEnteredEvent(event.target.value));
-        }
-        event.stopPropagation();
-    }
-    render() {
-        return html `
+  `;
+	}
+	firstUpdated() {
+		this.textInputRef.value.addEventListener("keydown", this.textInputKeyDown.bind(this));
+	}
+	textInputKeyDown(event) {
+		if (event.key === "Enter") this.dispatchEvent(new ApiKeyEnteredEvent(event.target.value));
+		event.stopPropagation();
+	}
+	render() {
+		return html`
       <p class="info-prompt">
         Gemini Key Required: Please paste your key from Google AI Studio below.
       </p>
@@ -82,10 +82,8 @@ let GeminiLiveApiKeyInput = class GeminiLiveApiKeyInput extends LitElement {
         ${ref(this.textInputRef)}
       />
     `;
-    }
+	}
 };
-GeminiLiveApiKeyInput = __decorate([
-    customElement('xrblocks-simulator-geminilive-apikeyinput')
-], GeminiLiveApiKeyInput);
-
+GeminiLiveApiKeyInput = __decorate([customElement("xrblocks-simulator-geminilive-apikeyinput")], GeminiLiveApiKeyInput);
+//#endregion
 export { GeminiLiveApiKeyInput };

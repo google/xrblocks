@@ -1,3 +1,4 @@
+//#region src/addons/netblocks/src/core/constants/NetConstants.d.ts
 /**
  * Compile-time constants for the netblocks runtime. Keep these as plain
  * literals so consumers can override them by editing this file (no DI cost).
@@ -39,10 +40,11 @@ export declare const PEER_TIMEOUT_SECONDS = 8;
 export declare const KEEPALIVE_HZ = 1;
 /** Public PeerJS broker used by WebRTCTransport when no signaling is supplied. */
 export declare const DEFAULT_PEERJS_BROKER: {
-    readonly host: "0.peerjs.com";
-    readonly port: 443;
-    readonly path: "/";
-    readonly secure: true;
+  readonly host: '0.peerjs.com';
+  readonly port: 443;
+  readonly path: '/';
+  readonly secure: true;
 };
 /** STUN servers used by WebRTC; override via WebRTCTransport options. */
 export declare const DEFAULT_ICE_SERVERS: RTCIceServer[];
+//#endregion

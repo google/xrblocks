@@ -1,9 +1,11 @@
+//#region src/addons/simulator/ui/GeminiLiveEvents.d.ts
 export declare class MicButtonPressedEvent extends Event {
-    static type: string;
-    constructor();
+  static type: string;
+  constructor();
 }
 export declare class ApiKeyEnteredEvent extends Event {
-    static type: string;
-    apiKey: string;
-    constructor(apikey: string);
+  static type: string;
+  apiKey: string;
+  constructor(apikey: string);
 }
+//#endregion

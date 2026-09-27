@@ -1,12 +1,6 @@
-/**
- * Debug box-group builder and label sprite helpers.
- *
- * These helpers depend on the DOM (`document.createElement`) and are therefore
- * excluded from unit tests. They are only called when `showDebugBoxes` is
- * enabled on {@link Object3DDetector}.
- */
-import * as THREE from 'three';
-import type { InternalObb } from '../geometry/ObbFitting';
+import { InternalObb } from "../geometry/ObbFitting.js";
+import * as THREE from "three";
+//#region src/addons/objects3d/visuals/BoxGroup.d.ts
 /**
  * Per-category edge colours for debug visualisation.
  * Flat (paintings/TV) = orange, furniture = green, small (cup/remote) = cyan,
@@ -43,3 +37,4 @@ export declare function buildBoxGroup(obb: InternalObb, label: string, color?: n
  * @param obb - New OBB to apply.
  */
 export declare function rebuildBoxGroupGeometry(group: THREE.Group, obb: InternalObb): void;
+//#endregion

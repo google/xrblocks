@@ -1,31 +1,32 @@
-import type { VisemeWeights } from './BlendshapeReducer';
+import { VisemeWeights } from "./BlendshapeReducer.js";
+//#region src/addons/lipsync/FormantVisemeMapper.d.ts
 /**
  * Per-frame audio features the FormantVisemeMapper consumes. Produced by
  * the audio pipeline (AnalyserNode + FFT analysis) and shared between the
  * formant heuristic and any optional learned mapper.
  */
 export interface AudioFeatures {
-    /** Root-mean-square amplitude in [0, 1]; used for voicing + jaw drive. */
-    rms: number;
-    /** Spectral centroid in Hz; used as a brightness proxy for sibilance. */
-    centroid: number;
-    /** Low-band, mid-band, and high-band energy fractions. */
-    low: number;
-    mid: number;
-    high: number;
-    /** Estimated first and second formant in Hz; 0 when unknown. */
-    f1Hz: number;
-    f2Hz: number;
-    /** Voicing decision (true when periodic energy is present). */
-    voiced: boolean;
+  /** Root-mean-square amplitude in [0, 1]; used for voicing + jaw drive. */
+  rms: number;
+  /** Spectral centroid in Hz; used as a brightness proxy for sibilance. */
+  centroid: number;
+  /** Low-band, mid-band, and high-band energy fractions. */
+  low: number;
+  mid: number;
+  high: number;
+  /** Estimated first and second formant in Hz; 0 when unknown. */
+  f1Hz: number;
+  f2Hz: number;
+  /** Voicing decision (true when periodic energy is present). */
+  voiced: boolean;
 }
 export interface FormantVisemeMapperOptions {
-    /**
-     * Time constants (seconds) for the exponential smoothing of each output
-     * channel. Smaller means snappier. Independent of frame rate.
-     */
-    vowelTau?: number;
-    consonantTau?: number;
+  /**
+   * Time constants (seconds) for the exponential smoothing of each output
+   * channel. Smaller means snappier. Independent of frame rate.
+   */
+  vowelTau?: number;
+  consonantTau?: number;
 }
 /**
  * Heuristic audio-to-viseme mapper based on the first two formants. Vowel
@@ -44,14 +45,15 @@ export interface FormantVisemeMapperOptions {
  * the previous frame.
  */
 export declare class FormantVisemeMapper {
-    private current;
-    private smoothF1;
-    private smoothF2;
-    /** Seconds of contiguous unvoiced input; resets to 0 on any voiced frame. */
-    private silentFor;
-    private readonly vowelTau;
-    private readonly consonantTau;
-    constructor(opts?: FormantVisemeMapperOptions);
-    update(features: AudioFeatures, dt: number): VisemeWeights;
-    reset(): void;
+  private current;
+  private smoothF1;
+  private smoothF2;
+  /** Seconds of contiguous unvoiced input; resets to 0 on any voiced frame. */
+  private silentFor;
+  private readonly vowelTau;
+  private readonly consonantTau;
+  constructor(opts?: FormantVisemeMapperOptions);
+  update(features: AudioFeatures, dt: number): VisemeWeights;
+  reset(): void;
 }
+//#endregion
