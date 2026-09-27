@@ -157,6 +157,26 @@ Cards and overlays use the theme's `surface` appearance by default. Set
 `appearance: 'none'` for a transparent root used only for layout. `UIPanel` is
 a neutral nested element unless its style or theme role gives it an appearance.
 
+For a visual overlay that brightens the scene, select screen compositing like on glasses:
+
+```js
+xb.add(
+  new xb.UIOverlay({
+    compositing: 'screen',
+    appearance: 'none',
+    style: {position: 'absolute', top: 24, right: 24},
+    children: [new xb.UIText({text: 'Ready', style: {fontSize: 24}})],
+  })
+);
+```
+
+Screen blending leaves black pixels transparent and lets bright pixels add light
+to the output. These overlays render after the scene and simulator, and appear
+in virtual-scene screenshots. Layout follows each XR eye's viewport. Screen
+overlays and their descendants cannot receive pointer input. The mode is fixed
+at construction; `direct` is the default. Screen compositing requires the WebGL
+renderer and reports an error when used with WebGPU.
+
 ## Layout units and text
 
 UI values have two separate unit systems:
