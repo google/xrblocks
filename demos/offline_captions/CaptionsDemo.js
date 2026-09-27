@@ -35,6 +35,18 @@ export function levelPercent(level) {
   return Math.round(Math.min(100, Math.max(0, ((db + 60) / 60) * 100)));
 }
 
+const MICROPHONE_BUSY =
+  'The microphone is busy in another tab or app. Close it and press Start again.';
+const MICROPHONE_MISSING = 'No microphone found.';
+/** Short messages for getUserMedia failures, by DOMException name. */
+const MICROPHONE_ERRORS = {
+  NotAllowedError: 'Allow microphone access to caption speech.',
+  NotReadableError: MICROPHONE_BUSY,
+  AbortError: MICROPHONE_BUSY,
+  NotFoundError: MICROPHONE_MISSING,
+  OverconstrainedError: MICROPHONE_MISSING,
+};
+
 /** One caption card, microphone pipeline and worker shared with the preload panel. */
 export class CaptionsDemo extends xb.Script {
   constructor({
@@ -507,11 +519,8 @@ export class CaptionsDemo extends xb.Script {
       } catch (error) {
         if (this.listening === session) this.listening = null;
         if (!this.disposed) {
-          this.showError(
-            error?.name === 'NotAllowedError'
-              ? new Error('Allow microphone access to caption speech.')
-              : error
-          );
+          const message = MICROPHONE_ERRORS[error?.name];
+          this.showError(message ? new Error(message) : error);
         }
         this.refreshControls();
         return false;

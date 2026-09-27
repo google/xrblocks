@@ -381,6 +381,31 @@ describe('CaptionsDemo', () => {
     expect(demo.listening).toBeNull();
   });
 
+  it.each([
+    [
+      'NotReadableError',
+      'The microphone is busy in another tab or app. Close it and press Start again.',
+    ],
+    [
+      'AbortError',
+      'The microphone is busy in another tab or app. Close it and press Start again.',
+    ],
+    ['NotFoundError', 'No microphone found.'],
+    ['OverconstrainedError', 'No microphone found.'],
+  ])('explains %s and lets Start retry', async (name, message) => {
+    const {demo, microphone} = await ready();
+    microphone.start.mockRejectedValueOnce(
+      Object.assign(new Error('Could not start audio source'), {name})
+    );
+    expect(await demo.startListening()).toBe(false);
+    expect(demo.status.text).toBe(`Error: ${message}`);
+    expect(demo.listening).toBeNull();
+    expect(demo.listenButton.label).toBe('Start listening');
+    expect(demo.listenButton.disabled).toBe(false);
+    expect(await demo.startListening()).toBe(true);
+    expect(demo.listening).not.toBeNull();
+  });
+
   it('stops listening and asks for a reload when the worker crashes', async () => {
     const context = await ready();
     const {demo, client, microphone} = context;
