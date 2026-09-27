@@ -173,13 +173,13 @@ export async function downloadAssets({
 
 /**
  * @param {string} file A model file name from the manifest.
- * @param {{cacheStorage?: CacheStorage, assets?: typeof ASSETS}} [options]
+ * @param {{cacheStorage?: CacheStorage, assets?: typeof ASSETS, base?: string}} [options]
  */
 export async function readCachedJSON(
   file,
-  {cacheStorage = globalThis.caches, assets = ASSETS} = {}
+  {cacheStorage = globalThis.caches, assets = ASSETS, base = MODEL_BASE} = {}
 ) {
-  const asset = assets.find((candidate) => candidate.url === MODEL_BASE + file);
+  const asset = assets.find((candidate) => candidate.url === base + file);
   if (!asset) throw new Error(`${file} is not a pinned model file.`);
   const cache = await openCache(cacheStorage);
   const response = await cache.match(asset.url);

@@ -198,11 +198,14 @@ export class CaptionsClient {
       return;
     }
     const {result} = message;
-    if (pending.type === 'load') {
-      if (!Number.isFinite(result.loadMs)) {
-        throw new Error('Malformed captions worker load result.');
-      }
-      this.loaded = true;
+    this._validate(pending, result);
+    if (pending.type === 'load') this.loaded = true;
+    this._finish(pending, null, result);
+  }
+
+  _validate(pending, result) {
+    if (pending.type === 'load' && !Number.isFinite(result.loadMs)) {
+      throw new Error('Malformed captions worker load result.');
     }
     if (
       pending.type === 'transcribe' &&
@@ -212,7 +215,6 @@ export class CaptionsClient {
     ) {
       throw new Error('Malformed captions worker transcription.');
     }
-    this._finish(pending, null, result);
   }
 
   _finish(pending, error, result = {}) {

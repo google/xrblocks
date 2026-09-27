@@ -19,6 +19,22 @@ export function checkCapabilities() {
   }
 }
 
+/**
+ * Serve pinned files from the Cache API only, on single-threaded WASM.
+ * @param {any} tf Transformers.js module.
+ * @param {{cacheOnlyFetch: typeof fetch}} store
+ */
+export function configureRuntime(tf, store) {
+  tf.env.cacheKey = CACHE_NAME;
+  tf.env.useBrowserCache = true;
+  tf.env.useWasmCache = true;
+  tf.env.allowLocalModels = false;
+  tf.env.allowRemoteModels = true;
+  tf.env.fetch = store.cacheOnlyFetch;
+  tf.env.backends.onnx.wasm.proxy = false;
+  tf.env.backends.onnx.wasm.numThreads = 1;
+}
+
 /** Worker-side request handler; one operation runs at a time. */
 export class CaptionsRuntime {
   constructor({
@@ -58,21 +74,7 @@ export class CaptionsRuntime {
     const operation = {id, abort: new AbortController(), promise: null};
     this.active = operation;
     operation.promise = Promise.resolve()
-      .then(() => {
-        switch (message.type) {
-          case 'check':
-            this.probe();
-            return {};
-          case 'download':
-            return this.download(operation);
-          case 'load':
-            return this.load();
-          case 'transcribe':
-            return this.transcribe(message.audio);
-          default:
-            throw new Error(`Unknown captions operation: ${message.type}`);
-        }
-      })
+      .then(() => this.perform(message, operation))
       .then(
         (result) => this.post({type: 'result', id, result}),
         (error) => this.error(id, error)
@@ -83,11 +85,28 @@ export class CaptionsRuntime {
     return operation.promise;
   }
 
-  async download(operation) {
+  perform(message, operation) {
+    switch (message.type) {
+      case 'check':
+        this.probe();
+        return {};
+      case 'download':
+        return this.download(operation);
+      case 'load':
+        return this.load();
+      case 'transcribe':
+        return this.transcribe(message.audio);
+      default:
+        throw new Error(`Unknown captions operation: ${message.type}`);
+    }
+  }
+
+  async download(operation, assets) {
     this.probe();
     let last = -Infinity;
     let pending = null;
     const result = await this.store.downloadAssets({
+      ...(assets && {assets}),
       signal: operation.abort.signal,
       onProgress: (event) => {
         pending = event;
@@ -112,14 +131,7 @@ export class CaptionsRuntime {
     }
     const started = this.now();
     const tf = await this.loadRuntime();
-    tf.env.cacheKey = CACHE_NAME;
-    tf.env.useBrowserCache = true;
-    tf.env.useWasmCache = true;
-    tf.env.allowLocalModels = false;
-    tf.env.allowRemoteModels = true;
-    tf.env.fetch = this.store.cacheOnlyFetch;
-    tf.env.backends.onnx.wasm.proxy = false;
-    tf.env.backends.onnx.wasm.numThreads = 1;
+    configureRuntime(tf, this.store);
     // Built from cached JSON: AutoTokenizer would also query the main branch.
     const tokenizer = new tf.PreTrainedTokenizer(
       await this.store.readCachedJSON('tokenizer.json'),

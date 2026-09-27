@@ -195,6 +195,31 @@ describe('modelStore', () => {
     ).rejects.toThrow(/example\.com/);
   });
 
+  it('reads cached JSON from another pinned model base', async () => {
+    const storage = new FakeCacheStorage();
+    const base = 'https://huggingface.co/other/resolve/abc/';
+    const body = JSON.stringify({ok: true});
+    const assets = [
+      {
+        file: 'tokenizer.json',
+        url: `${base}tokenizer.json`,
+        bytes: body.length,
+        sha256: '',
+      },
+    ];
+    (await storage.open(CACHE_NAME)).entries.set(
+      assets[0].url,
+      new Response(body, {headers: {'Content-Length': String(body.length)}})
+    );
+    const cacheStorage = asCacheStorage(storage);
+    await expect(
+      readCachedJSON('tokenizer.json', {cacheStorage, assets, base})
+    ).resolves.toEqual({ok: true});
+    await expect(
+      readCachedJSON('tokenizer.json', {cacheStorage, assets})
+    ).rejects.toThrow(/not a pinned/);
+  });
+
   it('throws when a cached JSON file is missing or unpinned', async () => {
     const storage = asCacheStorage(new FakeCacheStorage());
     await expect(
