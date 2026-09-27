@@ -104,6 +104,7 @@ describe('ObjectDetector Multi-Client API', () => {
   it('starts continuous detection for clients and caches results to detectedObjects', async () => {
     const client = {};
     detector.start(client);
+    detector.update();
 
     const promise = (detector as unknown as PrivateObjectDetector)
       .currentDetectionPromise;
@@ -130,6 +131,7 @@ describe('ObjectDetector Multi-Client API', () => {
     options.objects.pollingIntervalMs = 100;
 
     detector.start({});
+    detector.update();
     await (detector as unknown as PrivateObjectDetector)
       .currentDetectionPromise;
 
@@ -159,6 +161,7 @@ describe('ObjectDetector Multi-Client API', () => {
 
     detector.start(client1);
     detector.start(client2);
+    detector.update();
 
     const promise = (detector as unknown as PrivateObjectDetector)
       .currentDetectionPromise;
@@ -183,6 +186,7 @@ describe('ObjectDetector Multi-Client API', () => {
   it('returns the ongoing promise for concurrent runDetection calls when started', async () => {
     const client = {};
     detector.start(client);
+    detector.update();
 
     const continuousPromise = (detector as unknown as PrivateObjectDetector)
       .currentDetectionPromise;
@@ -503,6 +507,7 @@ describe('ObjectDetector Multi-Client API', () => {
 
   it('clears public results, tracked objects, and scene children', async () => {
     detector.start({});
+    detector.update();
     await (detector as unknown as PrivateObjectDetector)
       .currentDetectionPromise;
     expect(detector.detectedObjects).toHaveLength(1);
