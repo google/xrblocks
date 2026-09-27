@@ -24,6 +24,19 @@ function createScene() {
       scene.client.loaded = true;
     }),
     cancelLoad: vi.fn(async () => {}),
+    language: null as null | string,
+    translationCached: false,
+    translationOperation: undefined as undefined | {language: string},
+    translateButton: {label: 'Translation off', disabled: true},
+    selectLanguage: vi.fn(async (code: string | null) => {
+      scene.language = code;
+      scene.translateButton = {
+        label: 'Download Spanish (~119 MB)',
+        disabled: false,
+      };
+    }),
+    loadTranslation: vi.fn(async (_options: {allowDownload: boolean}) => {}),
+    cancelTranslation: vi.fn(async () => {}),
   };
   return scene;
 }
@@ -37,6 +50,8 @@ beforeEach(() => {
 });
 
 const $ = (id: string) => panel.querySelector<HTMLButtonElement>(`#${id}`)!;
+const select = () =>
+  panel.querySelector<HTMLSelectElement>('#translate-language')!;
 
 describe('preload panel', () => {
   it('mirrors the scene and loads with download consent from the click', async () => {
@@ -88,6 +103,54 @@ describe('preload panel', () => {
     $('preload-continue').click();
     expect(scene.loadModel).not.toHaveBeenCalled();
     expect(panel.hidden).toBe(false);
+  });
+
+  it('picks a language without downloading, then downloads on a click', async () => {
+    const scene = createScene();
+    const controls = bindPreload(scene, panel);
+    expect([...select().options].map(({value, text}) => [value, text])).toEqual(
+      [
+        ['', 'Off'],
+        ['es', 'Spanish'],
+        ['fr', 'French'],
+        ['de', 'German'],
+      ]
+    );
+    expect(select().disabled).toBe(false);
+    expect($('translate-load').hidden).toBe(true);
+    select().value = 'es';
+    select().dispatchEvent(new Event('change'));
+    expect(scene.selectLanguage).toHaveBeenCalledWith('es');
+    await vi.waitFor(() => expect($('translate-load').hidden).toBe(false));
+    expect(scene.loadTranslation).not.toHaveBeenCalled();
+    expect($('translate-load').textContent).toBe('Download Spanish (~119 MB)');
+    $('translate-load').click();
+    expect(scene.loadTranslation).toHaveBeenCalledWith({allowDownload: true});
+    select().value = '';
+    select().dispatchEvent(new Event('change'));
+    expect(scene.selectLanguage).toHaveBeenLastCalledWith(null);
+    controls.dispose();
+  });
+
+  it('loads a cached language without consent and cancels from the button', () => {
+    const scene = createScene();
+    scene.language = 'fr';
+    scene.translationCached = true;
+    scene.translateButton = {label: 'Load cached French', disabled: false};
+    const controls = bindPreload(scene, panel);
+    expect(select().value).toBe('fr');
+    $('translate-load').click();
+    expect(scene.loadTranslation).toHaveBeenCalledWith({allowDownload: false});
+    scene.translationOperation = {language: 'fr'};
+    scene.translateButton = {label: 'Cancel', disabled: false};
+    controls.refresh();
+    expect(select().disabled).toBe(true);
+    $('translate-load').click();
+    expect(scene.cancelTranslation).toHaveBeenCalled();
+    controls.dispose();
+    scene.translationOperation = undefined;
+    $('translate-load').click();
+    expect(scene.loadTranslation).toHaveBeenCalledTimes(1);
   });
 
   it('reports load errors in the status line', async () => {

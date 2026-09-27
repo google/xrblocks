@@ -1,3 +1,5 @@
+import {LANGUAGES} from './translationConfig.js';
+
 /** Bind the landing panel to the same scene and worker used inside XR. */
 export function bindPreload(scene, panel) {
   const load = panel.querySelector('#preload-load');
@@ -5,6 +7,11 @@ export function bindPreload(scene, panel) {
   const status = panel.querySelector('#startup');
   const ready = panel.querySelector('#preload-ready');
   const continueButton = panel.querySelector('#preload-continue');
+  const languageSelect = panel.querySelector('#translate-language');
+  const translateLoad = panel.querySelector('#translate-load');
+  for (const {code, label} of LANGUAGES) {
+    languageSelect.append(new Option(label, code));
+  }
   let disposed = false;
   let pending = false;
 
@@ -28,6 +35,14 @@ export function bindPreload(scene, panel) {
     stop.hidden = !loading;
     stop.disabled = !loading || !!scene.stopping;
     ready.hidden = !scene.client.loaded;
+    const language = scene.language ?? '';
+    if (languageSelect.value !== language) languageSelect.value = language;
+    languageSelect.disabled = !scene.supported || !!scene.translationOperation;
+    translateLoad.hidden = !scene.language;
+    if (translateLoad.textContent !== scene.translateButton.label) {
+      translateLoad.textContent = scene.translateButton.label;
+    }
+    translateLoad.disabled = scene.translateButton.disabled;
   }
 
   async function run(action) {
@@ -57,6 +72,24 @@ export function bindPreload(scene, panel) {
     refresh();
   }
 
+  function selectLanguage() {
+    if (disposed || languageSelect.disabled) return;
+    void scene.selectLanguage(languageSelect.value || null).finally(refresh);
+    refresh();
+  }
+
+  function loadTranslation() {
+    if (disposed || translateLoad.disabled) return;
+    if (scene.translationOperation) {
+      void scene.cancelTranslation().finally(refresh);
+      refresh();
+      return;
+    }
+    // Same rule as the captions model: a cache-only click never downloads.
+    const allowDownload = !scene.translationCached;
+    void run(() => scene.loadTranslation({allowDownload}));
+  }
+
   function continueInSimulator() {
     if (!disposed && !continueButton.hidden) panel.hidden = true;
   }
@@ -64,6 +97,8 @@ export function bindPreload(scene, panel) {
   load.addEventListener('click', loadModel);
   stop.addEventListener('click', stopModel);
   continueButton.addEventListener('click', continueInSimulator);
+  languageSelect.addEventListener('change', selectLanguage);
+  translateLoad.addEventListener('click', loadTranslation);
   refresh();
   return {
     refresh,
@@ -72,6 +107,8 @@ export function bindPreload(scene, panel) {
       load.removeEventListener('click', loadModel);
       stop.removeEventListener('click', stopModel);
       continueButton.removeEventListener('click', continueInSimulator);
+      languageSelect.removeEventListener('change', selectLanguage);
+      translateLoad.removeEventListener('click', loadTranslation);
     },
   };
 }

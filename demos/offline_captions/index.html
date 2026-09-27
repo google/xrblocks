@@ -42,7 +42,17 @@
         font: inherit;
         text-transform: none;
       }
-      #model-preload button:disabled {
+      #model-preload select {
+        padding: 10px 12px;
+        margin: 4px 4px 4px 0;
+        border: 1px solid #a9c7ec;
+        border-radius: 8px;
+        color: #fff;
+        background: #30445d;
+        font: inherit;
+      }
+      #model-preload button:disabled,
+      #model-preload select:disabled {
         opacity: 0.6;
         cursor: default;
       }
@@ -98,6 +108,10 @@
         Use Chrome with a microphone. Download the ~94 MB model once, then load
         it from the browser cache.
       </p>
+      <p>
+        Captions can also be translated into Spanish, French or German with
+        Opus-MT, on this device too. Each language is a separate download.
+      </p>
       <p>Audio stays on this device. No cloud, no API key.</p>
       <p id="startup" role="status" aria-live="polite" aria-atomic="true">
         Preparing the scene.
@@ -112,6 +126,13 @@
       <button id="preload-continue" type="button" hidden>
         Continue in simulator
       </button>
+      <p>
+        <label for="translate-language">Translate captions</label>
+        <select id="translate-language" disabled>
+          <option value="">Off</option>
+        </select>
+        <button id="translate-load" type="button" hidden disabled></button>
+      </p>
     </section>
     <script type="module" src="./main.js"></script>
   </body>
