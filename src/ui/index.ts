@@ -9,10 +9,7 @@ export type {
   UISize,
 } from './components/UICard';
 export {UIOverlay} from './components/UIOverlay';
-export type {
-  UIOverlayCompositing,
-  UIOverlayOptions,
-} from './components/UIOverlay';
+export type {UIOverlayOptions} from './components/UIOverlay';
 export {UIButton} from './components/UIButton';
 export type {UIButtonOptions} from './components/UIButton';
 export {UIIcon} from './components/UIIcon';

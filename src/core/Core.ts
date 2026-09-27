@@ -123,10 +123,6 @@ export class Core {
 
   private renderSceneCallback = (cameraOverride?: THREE.Camera) =>
     this.renderScene(cameraOverride);
-  private renderSceneForCaptureCallback = () => {
-    this.renderScene();
-    this.uiRenderer.renderScreenOverlays(true);
-  };
 
   /** The desktop XR simulator after its runtime chunk has loaded. */
   simulator?: Simulator;
@@ -860,11 +856,10 @@ export class Core {
     if (this.renderer instanceof THREE.WebGLRenderer) {
       this.screenshotSynthesizer.onAfterRender(
         this.renderer,
-        this.renderSceneForCaptureCallback,
+        this.renderSceneCallback,
         this.deviceCamera
       );
     }
-    this.uiRenderer.renderScreenOverlays();
   };
 
   /**
