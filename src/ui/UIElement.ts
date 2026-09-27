@@ -444,7 +444,8 @@ export function getUIPresentationBounds(
   object: THREE.Object3D,
   target: THREE.Box3
 ): THREE.Box3 | null | undefined {
-  return presentationBounds.get(object as UIElement)?.(target);
+  const element = presentationOwners.get(object) ?? (object as UIElement);
+  return presentationBounds.get(element)?.(target);
 }
 
 export function getUIRevision(element: UIElement): number {
