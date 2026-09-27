@@ -1,9 +1,14 @@
 import * as THREE from 'three';
 
-import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
+import {
+  assertWebGLRenderer,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {setUIValidator, ui} from '../UI';
+import {UIOverlay} from '../components/UIOverlay';
+import {UIOverlayCompositor, type ViewportSize} from './UIOverlayCompositor';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
   UIBackend,
@@ -50,6 +55,7 @@ export class UIRenderer {
   private backendState: BackendState = {kind: 'idle'};
   private renderer?: WebGLOrWebGPURenderer;
   private publicScene?: THREE.Scene;
+  private compositor?: UIOverlayCompositor;
 
   constructor(
     private readonly interaction: Interaction,
@@ -150,6 +156,27 @@ export class UIRenderer {
     }
   }
 
+  /** Blends visual-only overlays over the current output or capture target. */
+  renderScreenOverlays(capture = false): void {
+    if (!this.renderer || !this.compositor) return;
+    assertWebGLRenderer(this.renderer, 'Screen-composited UI overlays');
+    this.compositor.render(
+      this.renderer,
+      this.viewport,
+      this.layoutScreenOverlays,
+      capture
+    );
+  }
+
+  private layoutScreenOverlays = (viewport: ViewportSize): void => {
+    for (const record of this.mounts.values()) {
+      if (!record.connected || !record.visible || !isScreenOverlay(record.root))
+        continue;
+      record.mount.commit(ui.theme, viewport, record.order);
+      record.mount.update(0);
+    }
+  };
+
   /** Cancels hit mappings and releases one disconnected public root. */
   release(root: UIElement): void {
     this.unmount(root);
@@ -166,6 +193,8 @@ export class UIRenderer {
     this.viewport.width = 0;
     this.viewport.height = 0;
     setUIValidator(undefined);
+    this.compositor?.dispose();
+    this.compositor = undefined;
     this.privateRoot.removeFromParent();
     this.publicScene = undefined;
     this.renderer = undefined;
@@ -210,8 +239,17 @@ export class UIRenderer {
   }
 
   private mount(root: UIElement, backend: UIBackend, order: number): void {
+    if (isScreenOverlay(root)) {
+      assertWebGLRenderer(this.renderer, 'Screen-composited UI overlays');
+    }
     const mount = backend.createMount(root);
-    this.privateRoot.add(mount.object);
+    if (isScreenOverlay(root)) {
+      mount.object.scale.setScalar(0.001);
+      this.compositor ??= new UIOverlayCompositor();
+      this.compositor.add(mount.object);
+    } else {
+      this.privateRoot.add(mount.object);
+    }
     this.mounts.set(root, {
       root,
       mount,
@@ -243,8 +281,9 @@ export class UIRenderer {
   }
 
   private reconcileMounts(deltaSeconds: number, camera: THREE.Camera): void {
-    this.viewport.width = window.innerWidth;
-    this.viewport.height = window.innerHeight;
+    const canvas = this.renderer?.domElement;
+    this.viewport.width = canvas?.clientWidth || window.innerWidth || 1;
+    this.viewport.height = canvas?.clientHeight || window.innerHeight || 1;
     // A field may have moved out of any root, including a disconnected one.
     for (const record of this.mounts.values()) record.mount.prepareCommit?.();
     for (const record of this.mounts.values()) {
@@ -256,7 +295,9 @@ export class UIRenderer {
       record.visible = visible;
       record.mount.object.visible = visible;
       record.mount.setActive?.(visible);
-      syncRootTransform(record.root, record.mount.object, camera);
+      const screenOverlay = isScreenOverlay(record.root);
+      if (!screenOverlay)
+        syncRootTransform(record.root, record.mount.object, camera);
       const mappings = record.mount.commit(
         ui.theme,
         this.viewport,
@@ -266,8 +307,10 @@ export class UIRenderer {
         for (const unregister of record.unregisterHits) unregister();
         record.unregisterHits.length = 0;
         const overlay = getUIElementKind(record.root) === 'overlay';
-        for (const mapping of mappings) {
-          record.unregisterHits.push(this.registerHit(mapping, overlay));
+        if (!screenOverlay) {
+          for (const mapping of mappings) {
+            record.unregisterHits.push(this.registerHit(mapping, overlay));
+          }
         }
       }
       record.mount.update(deltaSeconds);
@@ -357,6 +400,10 @@ export class UIRenderer {
     this.roots.length = connectedCount;
     return this.roots;
   }
+}
+
+function isScreenOverlay(root: UIElement): root is UIOverlay {
+  return root instanceof UIOverlay && root.compositing === 'screen';
 }
 
 function effectiveVisible(object: THREE.Object3D): boolean {
