@@ -2,13 +2,14 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {CaptionsDemo, levelPercent} from './CaptionsDemo.js';
-import {PLACEHOLDER} from './captions.js';
+import {PLACEHOLDER, formatMetrics} from './captions.js';
 import {
   CACHED_LABEL,
   DOWNLOAD_LABEL,
   LOADED_LABEL,
   TOTAL_BYTES,
 } from './modelConfig.js';
+import {getLanguage} from './translationConfig.js';
 
 vi.mock('xrblocks', async () => {
   const {Object3D} = await import('three');
@@ -87,6 +88,33 @@ function createClient() {
   return client;
 }
 
+function createTranslator() {
+  const translator = {
+    loaded: false,
+    language: null as null | string,
+    download: vi.fn(async (_code: string, _options?: unknown) => ({
+      downloadedBytes: 1,
+    })),
+    load: vi.fn(async (code: string) => {
+      translator.loaded = true;
+      translator.language = code;
+      return {loadMs: 2000, warmupMs: 300};
+    }),
+    translate: vi.fn(async (text: string) => ({
+      text: `[${translator.language}] ${text}`,
+      language: translator.language!,
+      translateMs: 250,
+    })),
+    unload: vi.fn(() => {
+      translator.loaded = false;
+      translator.language = null;
+    }),
+    stop: vi.fn(async () => {}),
+    dispose: vi.fn(async () => {}),
+  };
+  return translator;
+}
+
 function createMicrophone() {
   const microphone = {
     onAudio: null as null | ((samples: Float32Array, rate: number) => void),
@@ -106,10 +134,11 @@ function createMicrophone() {
 function createStore(complete = false) {
   const store = {
     complete,
-    inspectCache: vi.fn(async () => ({
-      complete: store.complete,
-      missingBytes: store.complete ? 0 : TOTAL_BYTES,
-    })),
+    translationComplete: false,
+    inspectCache: vi.fn(async (options?: {assets?: unknown}) => {
+      const done = options?.assets ? store.translationComplete : store.complete;
+      return {complete: done, missingBytes: done ? 0 : TOTAL_BYTES};
+    }),
     prepareStorage: vi.fn(async () => ({persistent: true})),
   };
   return store;
@@ -124,16 +153,18 @@ async function settle() {
 
 function setup({cached = false} = {}) {
   const client = createClient();
+  const translator = createTranslator();
   const microphone = createMicrophone();
   const store = createStore(cached);
   const demo = new CaptionsDemo({
     client: client as never,
+    translator: translator as never,
     microphone: microphone as never,
     store: store as never,
     now,
     follow: false,
   });
-  return {demo, client, microphone, store};
+  return {demo, client, translator, microphone, store};
 }
 
 async function ready(options = {}) {
@@ -393,6 +424,176 @@ describe('CaptionsDemo', () => {
     }
   });
 
+  it('starts with translation off and captions exactly as before', async () => {
+    const context = await ready();
+    const {demo, translator, store} = context;
+    expect(demo.languageButton.label).toBe('Translate: Off');
+    expect(demo.translateButton.label).toBe('Translation off');
+    expect(demo.translateButton.disabled).toBe(true);
+    await demo.startListening();
+    await play(context, 0.5, 0);
+    await play(context, 1.5, 0.3);
+    await play(context, 1, 0);
+    await idle(demo);
+    expect(demo.captionText.text).toMatch(/^words \d+$/);
+    expect(translator.translate).not.toHaveBeenCalled();
+    expect(demo.metrics.text).not.toMatch(/Translate/);
+    expect(
+      store.inspectCache.mock.calls.some(([options]) => options?.assets)
+    ).toBe(false);
+  });
+
+  it('never downloads a language on selection, only on an explicit click', async () => {
+    const {demo, translator, store} = await ready();
+    await demo.cycleLanguage();
+    expect(demo.language).toBe('es');
+    expect(demo.languageButton.label).toBe('Translate: Spanish');
+    expect(demo.translateButton.label).toBe(getLanguage('es').downloadLabel);
+    expect(demo.status.text).toBe(
+      'Download Spanish once to translate captions.'
+    );
+    expect(translator.download).not.toHaveBeenCalled();
+    expect(demo.metrics.text).toBe(formatMetrics({translating: true}));
+
+    await demo.onTranslateButton();
+    expect(store.prepareStorage).toHaveBeenCalled();
+    expect(translator.download).toHaveBeenCalledWith('es', expect.anything());
+    expect(translator.load).toHaveBeenCalledWith('es');
+    expect(demo.translateButton.label).toBe('Spanish ready');
+    expect(demo.translateButton.disabled).toBe(true);
+    expect(demo.status.text).toMatch(/^Spanish ready in 2\.0 s/);
+  });
+
+  it('loads a cached language without download consent', async () => {
+    const {demo, translator, store} = await ready();
+    store.translationComplete = true;
+    await demo.selectLanguage('fr');
+    expect(demo.translateButton.label).toBe('Load cached French');
+    // Evicted between the check and the click: still no download.
+    store.translationComplete = false;
+    await demo.onTranslateButton();
+    expect(translator.download).not.toHaveBeenCalled();
+    expect(translator.load).not.toHaveBeenCalled();
+    expect(demo.status.text).toMatch(/French is not cached\. Choose Download/);
+  });
+
+  it('translates finalized lines into the same text node', async () => {
+    const context = await ready();
+    const {demo, translator} = context;
+    const cardChildren = [...demo.card.children];
+    context.store.translationComplete = true;
+    await demo.selectLanguage('de');
+    await demo.onTranslateButton();
+    await demo.startListening();
+    await play(context, 0.5, 0);
+    await play(context, 1.5, 0.3);
+    await play(context, 1, 0);
+    await idle(demo);
+    const [original, translated] = demo.captionText.text.split('\n');
+    expect(original).toMatch(/^words \d+$/);
+    expect(translated).toBe(`→ [de] ${original}`);
+    // Interim text is never translated.
+    expect(translator.translate).toHaveBeenCalledTimes(1);
+    expect(demo.history[0]).toMatchObject({
+      translation: `[de] ${original}`,
+      language: 'de',
+      translateMs: 250,
+    });
+    expect(demo.history[0].translationLatencyMs).toBeGreaterThanOrEqual(
+      demo.history[0].finalLatencyMs
+    );
+    expect(demo.metrics.text).toMatch(/ · Translate: 250 ms$/);
+    expect(demo.card.children).toEqual(cardChildren);
+    expect(demo.captionView.children).toEqual([demo.captionText]);
+
+    await demo.selectLanguage(null);
+    await idle(demo);
+    expect(translator.unload).toHaveBeenCalled();
+    expect(demo.captionText.text).toBe(original);
+    expect(demo.metrics.text).not.toMatch(/Translate/);
+    expect(demo.status.text).toBe('Translation off. Captions only.');
+  });
+
+  it('drops a translation that finishes after a language change or Clear', async () => {
+    const context = await ready();
+    const {demo, translator} = context;
+    context.store.translationComplete = true;
+    let finish!: (value: unknown) => void;
+    translator.translate.mockImplementation(
+      () => new Promise((resolve) => (finish = resolve))
+    );
+    await demo.selectLanguage('es');
+    await demo.onTranslateButton();
+    await demo.startListening();
+    await play(context, 0.5, 0);
+    await play(context, 1.5, 0.3);
+    await play(context, 1, 0);
+    await idle(demo);
+    expect(translator.translate).toHaveBeenCalledTimes(1);
+    await demo.selectLanguage('fr');
+    finish({text: 'tarde', language: 'es', translateMs: 1});
+    await idle(demo);
+    expect(demo.captionText.text).not.toMatch(/tarde/);
+
+    await demo.onTranslateButton();
+    await play(context, 1.5, 0.3);
+    await play(context, 1, 0);
+    await idle(demo);
+    expect(translator.translate).toHaveBeenCalledTimes(2);
+    await demo.clearCaptions();
+    finish({text: 'trop tard', language: 'fr', translateMs: 1});
+    await idle(demo);
+    expect(demo.captionText.text).toBe(PLACEHOLDER);
+  });
+
+  it('asks to reload the language when the translation worker crashes', async () => {
+    const context = await ready();
+    const {demo, translator} = context;
+    context.store.translationComplete = true;
+    await demo.selectLanguage('es');
+    await demo.onTranslateButton();
+    translator.translate.mockImplementation(async () => {
+      translator.loaded = false;
+      translator.language = null;
+      throw new Error('The captions worker crashed.');
+    });
+    await demo.startListening();
+    await play(context, 0.5, 0);
+    await play(context, 1.5, 0.3);
+    await play(context, 1, 0);
+    await idle(demo);
+    expect(demo.status.text).toMatch(
+      /Load Spanish again to keep translating\.$/
+    );
+    expect(demo.translateButton.label).toBe('Load cached Spanish');
+    expect(demo.translateButton.disabled).toBe(false);
+    // Captioning keeps going.
+    expect(demo.listening).not.toBeNull();
+    expect(demo.captionText.text).toMatch(/^words \d+$/);
+  });
+
+  it('cancels a translation download from the same button', async () => {
+    const {demo, translator} = await ready();
+    let release!: () => void;
+    translator.download.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({downloadedBytes: 0});
+        })
+    );
+    translator.stop.mockImplementation(async () => release());
+    await demo.selectLanguage('es');
+    const loading = demo.onTranslateButton();
+    await settle();
+    expect(demo.translateButton.label).toBe('Cancel');
+    expect(demo.languageButton.disabled).toBe(true);
+    await demo.onTranslateButton();
+    await loading;
+    expect(translator.load).not.toHaveBeenCalled();
+    expect(demo.status.text).toMatch(/Spanish canceled/);
+    expect(demo.languageButton.disabled).toBe(false);
+  });
+
   it('maps microphone levels to a meter', () => {
     expect(levelPercent(0)).toBe(0);
     expect(levelPercent(0.001)).toBe(0);
@@ -401,11 +602,12 @@ describe('CaptionsDemo', () => {
   });
 
   it('disposes the microphone and worker', async () => {
-    const {demo, client, microphone} = await ready();
+    const {demo, client, translator, microphone} = await ready();
     await demo.startListening();
     await demo.dispose();
     expect(microphone.stop).toHaveBeenCalled();
     expect(client.dispose).toHaveBeenCalled();
+    expect(translator.dispose).toHaveBeenCalled();
     expect(demo.loadButton.onClick).toBeUndefined();
   });
 });

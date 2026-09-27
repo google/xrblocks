@@ -13,6 +13,9 @@ import {
 } from './modelConfig.js';
 import * as modelStore from './modelStore.js';
 import {CaptionScheduler} from './scheduler.js';
+import {TranslationClient} from './TranslationClient.js';
+import {TranslationQueue} from './translation.js';
+import {LANGUAGES, getLanguage} from './translationConfig.js';
 import {SpeechSegmenter} from './vad.js';
 
 export const PARTIAL_MS = 700;
@@ -21,6 +24,9 @@ export const MIN_PARTIAL_SPEECH_MS = 400;
 const NOTE_STYLE = {fontSize: 18, color: '#cbd5e1'};
 const LEVEL_STEP = 3;
 const RELOAD = 'Load the model again to keep captioning.';
+const TRANSLATION_OFF = 'Translation off';
+/** Language button order: Off, then each language. */
+const LANGUAGE_CYCLE = [null, ...LANGUAGES.map(({code}) => code)];
 
 /** Maps an RMS level to a 0-100 meter value over a 60 dB range. */
 export function levelPercent(level) {
@@ -33,6 +39,7 @@ export function levelPercent(level) {
 export class CaptionsDemo extends xb.Script {
   constructor({
     client = new CaptionsClient(),
+    translator = new TranslationClient(),
     microphone = new Microphone(),
     store = modelStore,
     now = () => performance.now(),
@@ -41,6 +48,7 @@ export class CaptionsDemo extends xb.Script {
     super();
     this.name = 'Offline captions demo';
     this.client = client;
+    this.translator = translator;
     this.microphone = microphone;
     this.store = store;
     this.now = now;
@@ -50,6 +58,11 @@ export class CaptionsDemo extends xb.Script {
     this.disposed = false;
     this.listening = null;
     this.previousLoaded = client.loaded;
+    /** Selected translation language code, or null when translation is off. */
+    this.language = null;
+    this.translationCached = false;
+    this.translationOperation = undefined;
+    this.shownTranslations = [];
     this.log = new CaptionLog();
     this.utterances = new Map();
     this.shownFinals = [];
@@ -66,6 +79,7 @@ export class CaptionsDemo extends xb.Script {
       now: () => this.now(),
     });
     this.scheduler = this.createScheduler();
+    this.translations = this.createTranslationQueue();
     this.createPanel(follow);
     this.refreshControls();
   }
@@ -81,6 +95,9 @@ export class CaptionsDemo extends xb.Script {
         if (this.log.finalize(id, result.text)) {
           this.shownFinals.push({id, text: result.text.trim(), result, meta});
           this.textWriter.schedule();
+          if (this.translationReady) {
+            this.translations.submit(id, result.text, meta);
+          }
         }
       },
       onError: (error) => {
@@ -89,6 +106,36 @@ export class CaptionsDemo extends xb.Script {
         if (!this.client.loaded) this.showUnloaded();
       },
     });
+  }
+
+  createTranslationQueue() {
+    return new TranslationQueue({
+      translate: (text) => this.translator.translate(text),
+      onResult: (id, result, meta) => {
+        if (this.disposed || result.language !== this.language) return;
+        if (this.log.setTranslation(id, result.text)) {
+          this.shownTranslations.push({id, result, meta});
+          this.textWriter.schedule();
+        }
+      },
+      onError: (error) => {
+        if (this.disposed) return;
+        this.showError(error);
+        if (!this.translator.loaded && this.language) {
+          this.translations.clear();
+          this.status.text = `${this.status.text} Load ${getLanguage(this.language).label} again to keep translating.`;
+        }
+      },
+    });
+  }
+
+  /** Whether finalized lines should be translated right now. */
+  get translationReady() {
+    return (
+      !!this.language &&
+      this.translator.loaded &&
+      this.translator.language === this.language
+    );
   }
 
   createPanel(follow) {
@@ -137,7 +184,17 @@ export class CaptionsDemo extends xb.Script {
     this.loadButton = button(DOWNLOAD_LABEL, () => this.onLoadButton());
     this.listenButton = button('Start listening', () => this.toggleListening());
     this.clearButton = button('Clear', () => this.clearCaptions());
-    this.buttons = [this.loadButton, this.listenButton, this.clearButton];
+    this.languageButton = button('Translate: Off', () => this.cycleLanguage());
+    this.translateButton = button(TRANSLATION_OFF, () =>
+      this.onTranslateButton()
+    );
+    this.buttons = [
+      this.loadButton,
+      this.listenButton,
+      this.clearButton,
+      this.languageButton,
+      this.translateButton,
+    ];
     this.card = new xb.UICard({
       size: {width: 1.2, height: 'auto'},
       manipulation: true,
@@ -159,6 +216,10 @@ export class CaptionsDemo extends xb.Script {
         new xb.UIPanel({
           style: {flexDirection: 'row', gap: 8, justifyContent: 'center'},
           children: [this.listenButton, this.clearButton],
+        }),
+        new xb.UIPanel({
+          style: {flexDirection: 'row', gap: 8, justifyContent: 'center'},
+          children: [this.languageButton, this.translateButton],
         }),
         this.metrics,
         new xb.UIText({
@@ -274,6 +335,142 @@ export class CaptionsDemo extends xb.Script {
       this.stopping = false;
       this.refreshControls();
     }
+  }
+
+  cycleLanguage() {
+    const index = LANGUAGE_CYCLE.indexOf(this.language);
+    return this.selectLanguage(
+      LANGUAGE_CYCLE[(index + 1) % LANGUAGE_CYCLE.length]
+    );
+  }
+
+  /**
+   * Switch the translation language, or turn translation off with null.
+   * Never downloads; a cached language still waits for an explicit Load.
+   * @param {string | null} code
+   */
+  async selectLanguage(code) {
+    if (this.disposed || this.translationOperation) return;
+    const language = code ? getLanguage(code) : null;
+    if (code === this.language) return;
+    this.language = code;
+    this.translations.clear();
+    this.shownTranslations = [];
+    this.translator.unload();
+    this.translationCached = false;
+    const changed = this.log.clearTranslations();
+    if (this.log.setShowTranslations(!!code) || changed) {
+      this.textWriter.schedule();
+    }
+    this.metricsValues.translateMs = undefined;
+    this.metrics.text = formatMetrics(this.metricsDisplay());
+    this.refreshControls();
+    if (!language) {
+      this.status.text = 'Translation off. Captions only.';
+      return;
+    }
+    this.status.text = `Checking ${language.label}.`;
+    let cached = false;
+    try {
+      cached =
+        (await this.store.inspectCache({assets: language.assets})).complete ===
+        true;
+    } catch (error) {
+      if (this.language === code) this.showError(error);
+      return;
+    }
+    if (this.disposed || this.language !== code) return;
+    this.translationCached = cached;
+    this.status.text = cached
+      ? `${language.label} cached. Choose Load to translate captions.`
+      : `Download ${language.label} once to translate captions.`;
+    this.refreshControls();
+  }
+
+  onTranslateButton() {
+    if (this.translationOperation) return this.cancelTranslation();
+    // A cache-only click never becomes download consent after eviction.
+    return this.loadTranslation({allowDownload: !this.translationCached});
+  }
+
+  async loadTranslation({allowDownload = false} = {}) {
+    const code = this.language;
+    if (
+      this.disposed ||
+      !code ||
+      !this.supported ||
+      this.translationOperation ||
+      this.translationReady
+    ) {
+      return;
+    }
+    const language = getLanguage(code);
+    const operation = {language: code, canceled: false};
+    const current = () =>
+      !this.disposed &&
+      this.translationOperation === operation &&
+      !operation.canceled;
+    this.translationOperation = operation;
+    this.refreshControls();
+    try {
+      const cached = await this.store.inspectCache({assets: language.assets});
+      if (!current()) return;
+      this.translationCached = cached.complete === true;
+      if (!this.translationCached) {
+        if (!allowDownload) {
+          throw new Error(`${language.label} is not cached. Choose Download.`);
+        }
+        await this.store.prepareStorage(cached.missingBytes);
+        if (!current()) return;
+        this.status.text = `Downloading ${language.label}.`;
+        this.lastProgressAt = this.now();
+        await this.translator.download(code, {
+          onProgress: (event) => {
+            if (!current()) return;
+            const percent = Math.floor((event.loaded / event.total) * 100);
+            this.pendingProgress = `Downloading ${language.label}: ${percent}% of ${Math.round(event.total / 1e6)} MB`;
+          },
+        });
+        if (!current()) return;
+        this.pendingProgress = undefined;
+        this.translationCached = true;
+      }
+      this.status.text = `Loading ${language.label}.`;
+      const result = await this.translator.load(code);
+      if (!current()) return;
+      this.status.text = `${language.label} ready in ${(result.loadMs / 1000).toFixed(1)} s. New captions are translated.`;
+      this.metrics.text = formatMetrics(this.metricsDisplay());
+    } catch (error) {
+      if (current()) this.showError(error);
+    } finally {
+      if (!this.disposed && operation.canceled) {
+        this.status.text = `${language.label} canceled. Choose the button again to retry.`;
+      }
+      if (this.translationOperation === operation) {
+        this.translationOperation = undefined;
+        this.pendingProgress = undefined;
+      }
+      this.refreshControls();
+    }
+  }
+
+  async cancelTranslation() {
+    const operation = this.translationOperation;
+    if (!operation || operation.canceled) return;
+    operation.canceled = true;
+    this.status.text = 'Canceling.';
+    this.refreshControls();
+    try {
+      await this.translator.stop();
+    } catch (error) {
+      if (!this.disposed) this.showError(error);
+    } finally {
+      this.refreshControls();
+    }
+  }
+
+  metricsDisplay() {
+    return {...this.metricsValues, translating: !!this.language};
   }
 
   toggleListening() {
@@ -444,7 +641,9 @@ export class CaptionsDemo extends xb.Script {
   async whenIdle() {
     while (
       !this.disposed &&
-      (this.scheduler.busy || this.textWriter.hasPending)
+      (this.scheduler.busy ||
+        this.translations.busy ||
+        this.textWriter.hasPending)
     ) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
@@ -453,12 +652,14 @@ export class CaptionsDemo extends xb.Script {
   async clearCaptions() {
     if (this.disposed) return;
     this.scheduler.clear();
+    this.translations.clear();
     this.log.clear();
     this.utterances.clear();
     this.shownFinals = [];
+    this.shownTranslations = [];
     this.history = [];
     this.metricsValues = {};
-    this.metrics.text = formatMetrics();
+    this.metrics.text = formatMetrics(this.metricsDisplay());
     this.textWriter.schedule();
     this.textWriter.flush();
     this.captionView.scrollTo(0);
@@ -499,9 +700,19 @@ export class CaptionsDemo extends xb.Script {
       this.metricsValues.finalLatencyMs = utterance.finalLatencyMs;
       this.metricsValues.rtf = utterance.rtf;
     }
-    if (this.shownFinals.length) {
+    for (const shown of this.shownTranslations) {
+      const utterance = this.history.find(({id}) => id === shown.id);
+      if (!utterance) continue;
+      utterance.translation = shown.result.text;
+      utterance.language = shown.result.language;
+      utterance.translateMs = shown.result.translateMs;
+      utterance.translationLatencyMs = now - shown.meta.speechEndedAt;
+      this.metricsValues.translateMs = shown.result.translateMs;
+    }
+    if (this.shownFinals.length || this.shownTranslations.length) {
       this.shownFinals = [];
-      this.metrics.text = formatMetrics(this.metricsValues);
+      this.shownTranslations = [];
+      this.metrics.text = formatMetrics(this.metricsDisplay());
     }
   }
 
@@ -568,6 +779,28 @@ export class CaptionsDemo extends xb.Script {
     this.listenButton.disabled =
       unavailable || busy || (!this.client.loaded && !this.listening);
     this.clearButton.disabled = this.disposed || this.log.empty;
+    const language = this.language ? getLanguage(this.language) : null;
+    const languageLabel = `Translate: ${language?.label ?? 'Off'}`;
+    if (this.languageButton.label !== languageLabel) {
+      this.languageButton.label = languageLabel;
+    }
+    this.languageButton.disabled = unavailable || !!this.translationOperation;
+    const translating = !!this.translationOperation;
+    const translateLabel = !language
+      ? TRANSLATION_OFF
+      : translating
+        ? 'Cancel'
+        : this.translationReady
+          ? language.loadedLabel
+          : this.translationCached
+            ? language.cachedLabel
+            : language.downloadLabel;
+    if (this.translateButton.label !== translateLabel) {
+      this.translateButton.label = translateLabel;
+    }
+    this.translateButton.disabled = translating
+      ? !!this.translationOperation.canceled
+      : unavailable || !language || this.translationReady;
     const unloaded =
       !this.disposed && this.previousLoaded && !this.client.loaded && !busy;
     this.previousLoaded = this.client.loaded;
@@ -621,6 +854,8 @@ export class CaptionsDemo extends xb.Script {
     this.disposed = true;
     if (this.operation) this.operation.canceled = true;
     this.scheduler.clear();
+    this.translations.clear();
+    if (this.translationOperation) this.translationOperation.canceled = true;
     this.textWriter.cancel();
     this.pendingBottom = undefined;
     this.pendingProgress = undefined;
@@ -630,7 +865,9 @@ export class CaptionsDemo extends xb.Script {
     this.clear();
     this.disposing = Promise.resolve()
       .then(() => listening?.source === 'microphone' && this.microphone.stop())
-      .then(() => this.client.dispose())
+      .then(() =>
+        Promise.all([this.client.dispose(), this.translator.dispose()])
+      )
       .catch((error) => console.error('Offline captions:', error));
     return this.disposing;
   }
