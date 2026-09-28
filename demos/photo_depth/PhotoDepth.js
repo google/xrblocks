@@ -76,10 +76,11 @@ const TAP_MODES = ['pins', 'draw', 'balls'];
 const BALLS_PER_SECOND = 12;
 const BALL_SPEED = 4; // m/s
 /**
- * The photo floor becomes a physics floor only this far below the camera:
- * a desk-only photo reports the desk as its lowest surface.
+ * The photo's lowest upward-facing surface counts as its floor only this far
+ * below the camera: a desk-only photo reports the desk (0.9 m still picked
+ * up a desk on a headset).
  */
-const MIN_FLOOR_DROP = 0.9;
+const MIN_FLOOR_DROP = xb.getUrlParamFloat('minFloorDrop', 1.2);
 
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 /** Manual depth-scale steps; nearer and farther undo each other. */
@@ -133,6 +134,8 @@ export class PhotoDepth extends xb.Script {
     : 'pins';
   /** World height of the photo's floor (null: none in the photo). */
   photoFloorY = null;
+  /** Whether balls also land on a plane at the photo floor (off by default). */
+  floorPlane = xb.getUrlParamBool('floorPlane', false);
   /** The demo's own Rapier world (loaded on first use of balls). */
   physics = null;
   physicsLoading = null;
@@ -234,6 +237,9 @@ export class PhotoDepth extends xb.Script {
       'touch_app',
       () => void this.cycleTapMode()
     );
+    this.floorPlaneButton = button('Floor plane: off', 'layers', () =>
+      this.toggleFloorPlane()
+    );
     this.clearMarksButton = button(
       'Clear marks',
       'ink_eraser',
@@ -277,7 +283,7 @@ export class PhotoDepth extends xb.Script {
           text: 'Pinch / click in open space to pin a note, draw (hold) or throw balls:',
           style: {fontSize: 13, opacity: 0.8},
         }),
-        row(this.tapButton, this.clearMarksButton),
+        row(this.tapButton, this.floorPlaneButton, this.clearMarksButton),
         row(this.cameraButton, this.calibrateButton),
       ],
     });
@@ -441,10 +447,26 @@ export class PhotoDepth extends xb.Script {
       this.physics = physics;
       this.ballShooter.setupPhysics({RAPIER, world: physics.world});
       physics.setSurface(this.mesh?.geometry ?? null, this.mesh?.matrix);
-      physics.setFloor(this.photoFloorY);
+      physics.setFloor(this.floorPlane ? this.photoFloorY : null);
       xb.core.renderer.shadowMap.enabled = true;
     })();
     await this.physicsLoading;
+  }
+
+  /**
+   * Toggles the ball floor: a plane at the photo's floor height that catches
+   * balls falling through the holes a single photo leaves behind objects.
+   */
+  toggleFloorPlane() {
+    this.floorPlane = !this.floorPlane;
+    this.physics?.setFloor(this.floorPlane ? this.photoFloorY : null);
+    this.refreshButtons();
+    if (this.floorPlane && this.result && this.photoFloorY == null) {
+      this.status(
+        `${this.resultStatus()}\nFloor plane: no floor in the photo ` +
+          `(needs a surface ${MIN_FLOOR_DROP} m below the camera).`
+      );
+    }
   }
 
   /** Removes the pins and the drawings. */
@@ -484,6 +506,7 @@ export class PhotoDepth extends xb.Script {
     this.cloudButton.label = this.cloudVisible ? 'Hide cloud' : 'Show cloud';
     this.meshButton.disabled = !hasResult;
     this.tapButton.label = `Tap: ${this.tapMode}`;
+    this.floorPlaneButton.label = `Floor plane: ${this.floorPlane ? 'on' : 'off'}`;
     this.clearMarksButton.disabled =
       this.pins.count === 0 && this.ink.count === 0;
     this.meshButton.label = `Mesh: ${this.meshMode}`;
@@ -814,7 +837,7 @@ export class PhotoDepth extends xb.Script {
     const cameraY = r.worldFromView.elements[13];
     this.photoFloorY =
       floor && cameraY - floor.y >= MIN_FLOOR_DROP ? floor.y : null;
-    this.physics?.setFloor(this.photoFloorY);
+    this.physics?.setFloor(this.floorPlane ? this.photoFloorY : null);
     this.comparison = compareDepth(this.depthMap, r.worldFromView, r.sensed);
     this.status(this.resultStatus());
     this.refreshButtons();

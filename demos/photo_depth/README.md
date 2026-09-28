@@ -41,7 +41,8 @@ Serve the repository (`npm run dev` from the repo root) and open
   pin where the ray meets the photo surface; **draw** draws on the surfaces
   for as long as it is held (a tap leaves a dot); **balls** throws balls for
   as long as it is held (Rapier physics loads on the first switch). **Clear
-  marks** removes the pins and drawings. Pins, drawings and balls live in
+  marks** removes the pins and drawings. **Floor plane: off / on** adds a
+  plane at the photo's floor height for the balls (see Notes). Pins, drawings and balls live in
   world space, so they stay put across re-captures and scale changes.
 - **Camera: SDK / ArUco** switches the camera model used by the next capture
   (below). **Calibrate** runs the ArUco calibration.
@@ -98,26 +99,28 @@ extrinsics transfer; the calibration's range scale is not applied.
 
 ## Query parameters
 
-| Parameter         | Effect                                                                                  |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| `?sensedDepth=0`  | Do not request depth sensing (run like a depthless device; no accuracy readout).        |
-| `?cal=sdk`        | Start with the SDK camera estimate even if an ArUco calibration is stored.              |
-| `?markerId=<n>`   | ArUco marker ID for calibration (default 0).                                            |
-| `?markerSize=<m>` | Printed black-square width in meters (default 0.15).                                    |
-| `?fov=<deg>`      | Override the camera's horizontal field of view; `?fov=auto` uses MoGe's estimate.       |
-| `?shift=camera`   | Solve MoGe's shift with the camera focal length (see above).                            |
-| `?autoScale=`     | `sensed` or `floor`: apply Fit to sensed / Snap floor after every capture.              |
-| `?floorY=<m>`     | Floor height for Snap floor (0 on headsets; about 0.307 in the desktop simulator room). |
-| `?stride=<n>`     | Keep every n-th pixel in the cloud (default 1: all 448² pixels).                        |
-| `?mesh=<mode>`    | Start with the mesh shown: `depth`, `photo` or `wire` (default `off`).                  |
-| `?meshStride=<n>` | Mesh vertex spacing in model pixels (default 4).                                        |
-| `?maxRelJump=<r>` | Drop triangles whose corner depths differ by more than this ratio (default 0.1).        |
-| `?tap=<mode>`     | Start with taps in `pins` (default), `draw` or `balls` mode.                            |
-| `?inkWidth=<m>`   | Width of drawn strokes (default 0.01).                                                  |
-| `?ballRadius=<m>` | Ball radius (default 0.05).                                                             |
-| `?ballLifeMs=<n>` | How long a ball lives before it deflates (default 6000).                                |
-| `?img=<url>`      | Run on that image at start-up (MoGe's own focal; placed in front of the camera).        |
-| `?backend=wasm`   | Force the wasm build even when WebGPU is available.                                     |
+| Parameter           | Effect                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| `?sensedDepth=0`    | Do not request depth sensing (run like a depthless device; no accuracy readout).        |
+| `?cal=sdk`          | Start with the SDK camera estimate even if an ArUco calibration is stored.              |
+| `?markerId=<n>`     | ArUco marker ID for calibration (default 0).                                            |
+| `?markerSize=<m>`   | Printed black-square width in meters (default 0.15).                                    |
+| `?fov=<deg>`        | Override the camera's horizontal field of view; `?fov=auto` uses MoGe's estimate.       |
+| `?shift=camera`     | Solve MoGe's shift with the camera focal length (see above).                            |
+| `?autoScale=`       | `sensed` or `floor`: apply Fit to sensed / Snap floor after every capture.              |
+| `?floorY=<m>`       | Floor height for Snap floor (0 on headsets; about 0.307 in the desktop simulator room). |
+| `?stride=<n>`       | Keep every n-th pixel in the cloud (default 1: all 448² pixels).                        |
+| `?mesh=<mode>`      | Start with the mesh shown: `depth`, `photo` or `wire` (default `off`).                  |
+| `?meshStride=<n>`   | Mesh vertex spacing in model pixels (default 4).                                        |
+| `?maxRelJump=<r>`   | Drop triangles whose corner depths differ by more than this ratio (default 0.1).        |
+| `?tap=<mode>`       | Start with taps in `pins` (default), `draw` or `balls` mode.                            |
+| `?floorPlane=1`     | Start with the ball floor plane on.                                                     |
+| `?minFloorDrop=<m>` | How far below the camera the photo floor must be (default 1.2).                         |
+| `?inkWidth=<m>`     | Width of drawn strokes (default 0.01).                                                  |
+| `?ballRadius=<m>`   | Ball radius (default 0.05).                                                             |
+| `?ballLifeMs=<n>`   | How long a ball lives before it deflates (default 6000).                                |
+| `?img=<url>`        | Run on that image at start-up (MoGe's own focal; placed in front of the camera).        |
+| `?backend=wasm`     | Force the wasm build even when WebGPU is available.                                     |
 
 ## Accuracy to expect
 
@@ -181,12 +184,15 @@ scored against the simulator's rendered depth:
   sensed depth on (for scoring), the SDK makes its sensed depth mesh a
   collider as soon as physics is enabled, and balls would bounce off the
   sensor's surface instead of the photo's. The demo's world holds only the
-  photo mesh (as a trimesh collider, rebuilt with every scale change) and a
-  floor plane at the photo's own floor height, since one photo has no floor
-  behind or under what stands on it. The floor plane is only added when the
-  photo's lowest upward-facing surface is at least 0.9 m below the camera, so
-  a desk-only photo gets no plane at desk height. The status line shows it
-  (`photo floor y ... m` or `none`).
+  photo mesh (as a trimesh collider, rebuilt with every scale change) and,
+  when **Floor plane** is on, a plane at the photo's own floor height: one
+  photo has no floor behind or under what stands on it, so balls otherwise
+  fall through those holes. The photo floor is the lowest upward-facing
+  surface, and only counts when it is at least 1.2 m below the camera
+  (`?minFloorDrop=`), so a desk-only photo gets no plane at desk height. The
+  status line shows it (`photo floor y ... m` or `none`). The desktop
+  simulator's camera is only 1.19 m above its room floor; use
+  `?minFloorDrop=0.9` there.
 - Drawing turns the ray's hits on the photo mesh into strokes: a One Euro
   filter smooths them (heavy smoothing for a slow hand, where a tremor alone
   moves the hit about 1 cm at 2 m; little lag for a fast one), points closer
