@@ -27,7 +27,7 @@ npm run dev            # rolldown watch + http-server on http://127.0.0.1:8080
 npm run build:sdk      # preferred product build for testing without building demos/samples
 npm run serve          # serve the repo without rebuilding
 npm test               # vitest run
-npm run lint           # eslint src
+npm run lint           # oxlint src tools
 npm run format         # prettier --write
 ```
 
@@ -94,8 +94,7 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 
 - **TypeScript**, strict. Public symbols re-exported via `src/xrblocks.ts`.
 - **Tests**: colocated `*.test.ts`, run with Vitest.
-- **Lint/format**: ESLint flat config ([`eslint.config.mjs`](eslint.config.mjs), with
-  `eslint-plugin-tsdoc`) + Prettier ([`.prettierrc.json`](.prettierrc.json)).
+- **Lint/format**: Oxlint ([`.oxlintrc.json`](.oxlintrc.json)) + Prettier ([`.prettierrc.json`](.prettierrc.json)).
 - **Imports**: some intra-`src` imports carry `.js` extensions for module resolution — follow
   the surrounding file rather than "fixing" them ad hoc.
 - **Dependency injection over globals**: prefer `static dependencies = {...}` on a `Script`

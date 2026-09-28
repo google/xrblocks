@@ -13,7 +13,7 @@ on:
       - '**/*.mdx'
       - '**/*.ts'
       - '**/*.css'
-      - 'eslint.config.mjs'
+      - '.oxlintrc.json'
       - '.prettierrc.json'
       - '.prettierignore'
       - 'package.json'
@@ -51,7 +51,7 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Run ESLint check
+      - name: Run Oxlint check
         run: npm run lint
 
       - name: Run Prettier check
