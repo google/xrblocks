@@ -126,25 +126,20 @@ export function compareDepth(
 }
 
 /**
- * Sensor-free scale correction from the floor. Picks the photo's lowest
- * horizontal surface (normal within ~25° of vertical), and returns the factor
- * `k` that, scaling all depths about the camera, puts it at world height
- * `floorY` (0 in the `local-floor` reference space used on headsets; the
- * desktop simulator's room floor is higher). Needs the floor in the photo: a
- * desk-only photo would snap the desk to the floor, which the range check
- * below cannot always catch.
+ * World height of the photo's floor: the low band (10th percentile) of the
+ * surfaces that face up (normal within ~25° of vertical) below the camera,
+ * from MoGe's depth and normals alone. Needs the floor in the photo; a
+ * desk-only photo reports the desk.
  * @param normals - MoGe's normal map (OpenCV camera axes), 448²×3.
- * @returns `{k, floorY, n}` or `null` when no floor-like surface was found.
+ * @returns `{y, n}` or `null` when no such surface was found.
  */
-export function floorScale(
+export function photoFloorHeight(
   depthMap,
   normals,
   worldFromView,
-  {floorY = 0, stride = 2, minCos = 0.9, minSamples = 200} = {}
+  {stride = 2, minCos = 0.9, minSamples = 200} = {}
 ) {
   const camera = new THREE.Vector3().setFromMatrixPosition(worldFromView);
-  const height = camera.y - floorY;
-  if (!(height > 0.3)) return null; // camera not above a known floor
   const rotation = new THREE.Matrix3().setFromMatrix4(worldFromView);
   const normal = new THREE.Vector3();
   const point = new THREE.Vector3();
@@ -170,10 +165,33 @@ export function floorScale(
   if (ys.length < minSamples) return null;
   const sorted = Float64Array.from(ys).sort();
   // Low percentile, not the minimum: the floor band, robust to stray points.
-  const photoFloorY = sorted[Math.floor(sorted.length * 0.1)];
-  const drop = camera.y - photoFloorY;
+  return {y: sorted[Math.floor(sorted.length * 0.1)], n: ys.length};
+}
+
+/**
+ * Sensor-free scale correction from the floor: the factor `k` that, scaling
+ * all depths about the camera, puts the {@link photoFloorHeight} at world
+ * height `floorY` (0 in the `local-floor` reference space used on headsets;
+ * the desktop simulator's room floor is higher). A desk-only photo would
+ * snap the desk to the floor, which the range check below cannot always
+ * catch.
+ * @returns `{k, photoFloorY, n}` or `null` when no floor-like surface was
+ *   found.
+ */
+export function floorScale(
+  depthMap,
+  normals,
+  worldFromView,
+  {floorY = 0, ...options} = {}
+) {
+  const camera = new THREE.Vector3().setFromMatrixPosition(worldFromView);
+  const height = camera.y - floorY;
+  if (!(height > 0.3)) return null; // camera not above a known floor
+  const floor = photoFloorHeight(depthMap, normals, worldFromView, options);
+  if (!floor) return null;
+  const drop = camera.y - floor.y;
   if (!(drop > 0.2)) return null;
   const k = height / drop;
   if (!(k > 0.33 && k < 3)) return null;
-  return {k, photoFloorY, n: ys.length};
+  return {k, photoFloorY: floor.y, n: floor.n};
 }

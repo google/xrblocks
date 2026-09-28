@@ -9,9 +9,9 @@ colored point cloud overlaying the real scene. On a headset that also senses
 depth, the photo depth is scored against the sensor so its precision can be
 judged by eye and in numbers.
 
-The depth map is also turned into a triangle mesh, the surface later phases
-build on: virtual annotations and a ball pit that use the photo depth instead
-of sensed depth.
+The depth map is also turned into a triangle mesh, and that photo surface is
+what the apps use instead of sensed depth: numbered annotation pins placed on
+the desk or wall, and a ball pit whose balls bounce off the photographed room.
 
 ## Run
 
@@ -35,6 +35,12 @@ Serve the repository (`npm run dev` from the repo root) and open
   sensed depth). **Snap floor** rescales it so the photographed floor lands on
   the real floor, without any depth sensor (the floor must be in the photo).
   **Reset scale** undoes both.
+- **Tap: pins / balls** picks what a pinch, trigger or click in open space
+  (not on the panel) does once there is a mesh: **pins** puts a numbered pin
+  where the ray meets the photo surface; **balls** throws balls for as long as
+  it is held (Rapier physics loads on the first switch). **Clear pins**
+  removes the pins. Pins and balls live in world space, so they stay put
+  across re-captures and scale changes.
 - **Camera: SDK / ArUco** switches the camera model used by the next capture
   (below). **Calibrate** runs the ArUco calibration.
 
@@ -104,6 +110,9 @@ extrinsics transfer; the calibration's range scale is not applied.
 | `?mesh=<mode>`    | Start with the mesh shown: `depth`, `photo` or `wire` (default `off`).                  |
 | `?meshStride=<n>` | Mesh vertex spacing in model pixels (default 4).                                        |
 | `?maxRelJump=<r>` | Drop triangles whose corner depths differ by more than this ratio (default 0.1).        |
+| `?tap=balls`      | Start with taps throwing balls instead of placing pins.                                 |
+| `?ballRadius=<m>` | Ball radius (default 0.05).                                                             |
+| `?ballLifeMs=<n>` | How long a ball lives before it deflates (default 6000).                                |
 | `?img=<url>`      | Run on that image at start-up (MoGe's own focal; placed in front of the camera).        |
 | `?backend=wasm`   | Force the wasm build even when WebGPU is available.                                     |
 
@@ -165,6 +174,19 @@ scored against the simulator's rendered depth:
   their corner depths differ by more than 10%, so silhouettes don't grow
   skirts down to the background. It is rebuilt with every scale change (14 ms
   for depth map, cloud, mesh and scoring together on a desktop).
+- Balls live in a Rapier world of the demo's own, not the SDK's physics: with
+  sensed depth on (for scoring), the SDK makes its sensed depth mesh a
+  collider as soon as physics is enabled, and balls would bounce off the
+  sensor's surface instead of the photo's. The demo's world holds only the
+  photo mesh (as a trimesh collider, rebuilt with every scale change) and a
+  floor plane at the photo's own floor height, since one photo has no floor
+  behind or under what stands on it. The floor plane is only added when the
+  photo's lowest upward-facing surface is at least 0.9 m below the camera, so
+  a desk-only photo gets no plane at desk height. The status line shows it
+  (`photo floor y ... m` or `none`).
+- The ball pit's balls, lights and shooter are a trimmed copy of
+  `samples/advanced/ballpit` (the sample also retired balls behind the sensed
+  depth, which this demo must not consult; here they expire by age only).
 - Panel text is ASCII only: the UI font lacks glyphs such as `°` or `·`.
 
 ## Credits

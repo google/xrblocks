@@ -7,10 +7,17 @@ import {
   loadLiteRtRuntime,
   runModel,
 } from 'xrblocks/addons/litert/index.js';
+import {palette} from 'xrblocks/addons/utils/Palette.js';
 
 import {ArucoCalibration} from './ArucoCalibration.js';
+import {BallShooter} from './BallShooter.js';
 import {CameraModel} from './CameraModel.js';
-import {compareDepth, floorScale, freezeSensedDepth} from './depthcompare.js';
+import {
+  compareDepth,
+  floorScale,
+  freezeSensedDepth,
+  photoFloorHeight,
+} from './depthcompare.js';
 import {
   buildDepthMap,
   depthMapToCloud,
@@ -39,6 +46,8 @@ import {
   inferMoge,
   preprocess,
 } from './moge.js';
+import {PhotoPhysics} from './PhotoPhysics.js';
+import {Pins, pinPlacement, raycastMesh} from './Pins.js';
 
 const CACHE_NAME = 'xrblocks-photo-depth-v1';
 const CAMERA_STATE_LABELS = {
@@ -60,6 +69,16 @@ function blankTexture() {
   }
   return BLANK;
 }
+
+/** What a pinch / trigger / click in open space does once there is a mesh. */
+const TAP_MODES = ['pins', 'balls'];
+const BALLS_PER_SECOND = 12;
+const BALL_SPEED = 4; // m/s
+/**
+ * The photo floor becomes a physics floor only this far below the camera:
+ * a desk-only photo reports the desk as its lowest surface.
+ */
+const MIN_FLOOR_DROP = 0.9;
 
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 /** Manual depth-scale steps; nearer and farther undo each other. */
@@ -106,6 +125,19 @@ export class PhotoDepth extends xb.Script {
     : 'off';
   photoTexture = null;
   depthTexture = null;
+  /** Invisible copy of the mesh that catches the balls' shadows. */
+  shadowCatcher = null;
+  tapMode = TAP_MODES.includes(this.params.get('tap'))
+    ? this.params.get('tap')
+    : 'pins';
+  /** World height of the photo's floor (null: none in the photo). */
+  photoFloorY = null;
+  /** The demo's own Rapier world (loaded on first use of balls). */
+  physics = null;
+  physicsLoading = null;
+  /** Controllers holding select in balls mode -> last spawn time. */
+  shooting = new Map();
+  lastUpdateTime = null;
   /** User scale correction on top of MoGe's metric scale. */
   userScale = 1;
   scaleNote = '';
@@ -196,6 +228,17 @@ export class PhotoDepth extends xb.Script {
       });
     this.photoImage = thumbnail();
     this.depthImage = thumbnail();
+    this.tapButton = button(
+      'Tap: pins',
+      'touch_app',
+      () => void this.cycleTapMode()
+    );
+    this.clearPinsButton = button(
+      'Clear pins',
+      'location_off',
+      () => this.clearPins(),
+      true
+    );
     this.cloudButton = button(
       'Hide cloud',
       'visibility_off',
@@ -229,12 +272,29 @@ export class PhotoDepth extends xb.Script {
         }),
         row(...this.nudgeButtons),
         row(this.fitButton, this.floorButton, this.resetScaleButton),
+        new xb.UIText({
+          text: 'Pinch / click in open space to pin a note or throw balls:',
+          style: {fontSize: 13, opacity: 0.8},
+        }),
+        row(this.tapButton, this.clearPinsButton),
         row(this.cameraButton, this.calibrateButton),
       ],
     });
     card.position.set(0.45, xb.user.height + 0.05, -1.1);
     card.rotation.y = -0.35;
     this.add(card);
+
+    // Pins and balls live in world space, independent of any capture.
+    this.pins = new Pins();
+    this.add(this.pins);
+    this.ballShooter = new BallShooter({
+      numBalls: 100,
+      radius: xb.getUrlParamFloat('ballRadius', 0.05),
+      palette,
+      liveDuration: xb.getUrlParamInt('ballLifeMs', 6000),
+    });
+    this.add(this.ballShooter);
+    this.addLights();
 
     this.onCameraState = (event) => this.updateCameraState(event.state);
     this.deviceCamera?.addEventListener('statechange', this.onCameraState);
@@ -246,6 +306,121 @@ export class PhotoDepth extends xb.Script {
   update() {
     this.cameraModel.record();
     this.calibration.update();
+    const now = performance.now();
+    const deltaSeconds = (now - (this.lastUpdateTime ?? now)) / 1000;
+    this.lastUpdateTime = now;
+    if (this.physics) {
+      for (const [controller, lastSpawn] of this.shooting) {
+        if (now - lastSpawn >= 1000 / BALLS_PER_SECOND) {
+          this.throwBall(controller, now);
+          this.shooting.set(controller, now);
+        }
+      }
+      this.physics.step(deltaSeconds);
+      this.ballShooter.physicsStep(now);
+    }
+  }
+
+  /** Lights for the balls (the photo mesh and the UI are unlit). */
+  addLights() {
+    this.add(new THREE.HemisphereLight(0xbbbbbb, 0x888888, 3));
+    const light = new THREE.DirectionalLight(0xffffff, 2);
+    light.position.set(0.5, 4, 0.5);
+    light.castShadow = true;
+    light.shadow.mapSize.set(2048, 2048);
+    Object.assign(light.shadow.camera, {
+      left: -4,
+      right: 4,
+      top: 4,
+      bottom: -4,
+      near: 0.1,
+      far: 10,
+    });
+    this.add(light);
+  }
+
+  /**
+   * A select that starts in open space (no UI or other target under the
+   * ray) pins a note on the photo mesh or starts throwing balls.
+   */
+  onSelectStart(event) {
+    const controller = event.source?.controller;
+    if (event.target || !controller || !this.mesh) return;
+    if (this.tapMode === 'pins') {
+      this.placePin(controller);
+    } else if (this.physics) {
+      this.shooting.set(controller, -Infinity);
+    }
+  }
+
+  onSelectEnd(event) {
+    this.shooting.delete(event.source?.controller);
+  }
+
+  /** The controller's pointing ray in world space. */
+  controllerRay(controller, ray = new THREE.Ray()) {
+    controller.updateMatrixWorld();
+    ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    ray.direction.set(0, 0, -1).transformDirection(controller.matrixWorld);
+    return ray;
+  }
+
+  placePin(controller) {
+    const raycaster = new THREE.Raycaster();
+    this.controllerRay(controller, raycaster.ray);
+    this.mesh.updateWorldMatrix(true, false);
+    const hit = raycastMesh(this.mesh, raycaster)[0];
+    if (!hit) return;
+    const {point, normal} = pinPlacement(hit, raycaster.ray);
+    this.pins.addPin(point, normal);
+    this.refreshButtons();
+  }
+
+  throwBall(controller, now) {
+    const ray = this.controllerRay(controller);
+    const position = ray.at(0.08, new THREE.Vector3());
+    const velocity = ray.direction.clone().multiplyScalar(BALL_SPEED);
+    this.ballShooter.spawnBallAt(position, velocity, now);
+  }
+
+  async cycleTapMode() {
+    this.tapMode =
+      TAP_MODES[(TAP_MODES.indexOf(this.tapMode) + 1) % TAP_MODES.length];
+    this.shooting.clear();
+    this.refreshButtons();
+    if (this.tapMode === 'balls') {
+      try {
+        await this.ensurePhysics();
+      } catch (error) {
+        this.status(`Physics failed to load: ${describeError(error)}`);
+      }
+    }
+    if (this.shadowCatcher) {
+      this.shadowCatcher.visible = this.tapMode === 'balls';
+    }
+  }
+
+  /** Loads Rapier and builds the world around the current mesh, once. */
+  async ensurePhysics() {
+    this.physicsLoading ??= (async () => {
+      const {default: RAPIER} = await import('@dimforge/rapier3d-simd-compat');
+      const physics = await PhotoPhysics.create(RAPIER);
+      if (this.disposed) {
+        physics.dispose();
+        return;
+      }
+      this.physics = physics;
+      this.ballShooter.setupPhysics({RAPIER, world: physics.world});
+      physics.setSurface(this.mesh?.geometry ?? null, this.mesh?.matrix);
+      physics.setFloor(this.photoFloorY);
+      xb.core.renderer.shadowMap.enabled = true;
+    })();
+    await this.physicsLoading;
+  }
+
+  clearPins() {
+    this.pins.clear();
+    this.refreshButtons();
   }
 
   status(text) {
@@ -277,6 +452,8 @@ export class PhotoDepth extends xb.Script {
     this.cloudButton.disabled = !hasResult;
     this.cloudButton.label = this.cloudVisible ? 'Hide cloud' : 'Show cloud';
     this.meshButton.disabled = !hasResult;
+    this.tapButton.label = `Tap: ${this.tapMode}`;
+    this.clearPinsButton.disabled = this.pins.count === 0;
     this.meshButton.label = `Mesh: ${this.meshMode}`;
     this.fitButton.disabled = !idle || !this.comparison;
     this.floorButton.disabled = !idle || !hasResult;
@@ -601,6 +778,11 @@ export class PhotoDepth extends xb.Script {
     mesh.matrix.copy(r.worldFromView);
     applyMeshMode(mesh, this.meshMode);
     this.setMesh(mesh);
+    const floor = photoFloorHeight(this.depthMap, r.normals, r.worldFromView);
+    const cameraY = r.worldFromView.elements[13];
+    this.photoFloorY =
+      floor && cameraY - floor.y >= MIN_FLOOR_DROP ? floor.y : null;
+    this.physics?.setFloor(this.photoFloorY);
     this.comparison = compareDepth(this.depthMap, r.worldFromView, r.sensed);
     this.status(this.resultStatus());
     this.refreshButtons();
@@ -618,7 +800,8 @@ export class PhotoDepth extends xb.Script {
       r.cameraLabel + pose,
       `hFOV: rays ${r.photoFov.toFixed(0)} deg (${r.intrinsicsSource}) | MoGe ${r.mogeFov.toFixed(0)} deg` +
         ` | shift ${r.shift.toFixed(3)} (${r.shiftSource}) | reproj ${r.rmsPx.toFixed(1)} px`,
-      `metric scale ${r.scale.toFixed(3)} x user ${this.userScale.toFixed(3)}${this.scaleNote}`,
+      `metric scale ${r.scale.toFixed(3)} x user ${this.userScale.toFixed(3)}${this.scaleNote}` +
+        ` | photo floor ${this.photoFloorY == null ? 'none' : `y ${this.photoFloorY.toFixed(2)} m`}`,
     ];
     const c = this.comparison;
     if (c) {
@@ -740,13 +923,38 @@ export class PhotoDepth extends xb.Script {
     if (cloud) this.add(cloud);
   }
 
+  /**
+   * Swaps the photo mesh, with its shadow catcher and, once physics is
+   * loaded, its collider: the photo surface is the only thing balls hit.
+   */
   setMesh(mesh) {
     if (this.mesh) {
       this.mesh.removeFromParent();
       disposeObject(this.mesh);
+      this.shadowCatcher.removeFromParent();
+      this.shadowCatcher.material.dispose();
+      this.shadowCatcher = null;
     }
     this.mesh = mesh;
-    if (mesh) this.add(mesh);
+    if (mesh) {
+      this.add(mesh);
+      const catcher = new THREE.Mesh(
+        mesh.geometry,
+        new THREE.ShadowMaterial({
+          opacity: 0.35,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+        })
+      );
+      catcher.matrixAutoUpdate = false;
+      catcher.matrix.copy(mesh.matrix);
+      catcher.receiveShadow = true;
+      catcher.raycast = () => {};
+      catcher.visible = this.tapMode === 'balls';
+      this.add(catcher);
+      this.shadowCatcher = catcher;
+    }
+    this.physics?.setSurface(mesh?.geometry ?? null, mesh?.matrix);
   }
 
   /** Shows new thumbnails (null = blank) and frees the previous ones. */
@@ -763,6 +971,8 @@ export class PhotoDepth extends xb.Script {
     this.setCloud(null);
     this.setMesh(null);
     this.setThumbnails(null, null);
+    this.photoFloorY = null;
+    this.physics?.setFloor(null);
     this.result = null;
     this.depthMap = null;
     this.comparison = null;
@@ -789,6 +999,11 @@ export class PhotoDepth extends xb.Script {
     this.photoTexture?.dispose();
     this.depthTexture?.dispose();
     BLANK?.dispose();
+    this.shooting.clear();
+    this.ballShooter.dispose();
+    this.pins.dispose();
+    this.physics?.dispose();
+    this.physics = null;
     this.releaseModel();
     super.dispose();
   }

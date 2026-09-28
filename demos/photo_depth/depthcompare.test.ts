@@ -1,7 +1,12 @@
 import * as THREE from 'three';
 import {describe, expect, it} from 'vitest';
 
-import {compareDepth, floorScale, freezeSensedDepth} from './depthcompare.js';
+import {
+  compareDepth,
+  floorScale,
+  freezeSensedDepth,
+  photoFloorHeight,
+} from './depthcompare.js';
 import {MOGE_SIZE} from './moge.js';
 import {PLANE, cameraPose, planeDepth} from './testScenes';
 
@@ -141,6 +146,13 @@ describe('floorScale', () => {
       1.25,
       2
     );
+  });
+
+  it('reports the photo floor height without a known floor', () => {
+    const map = depthMapFrom(planeDepth(K, pose, floor), 0.8);
+    const result = photoFloorHeight(map, normals, pose)!;
+    expect(result.y).toBeCloseTo(1.6 - 0.8 * 1.6, 2);
+    expect(result.n).toBeGreaterThan(200);
   });
 
   it('gives up without a horizontal surface below the camera', () => {

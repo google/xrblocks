@@ -20,3 +20,7 @@ Assets downloaded at runtime (nothing is redistributed in this repository):
 - js-aruco2 (loaded by the ArUco addon's worker for the optional camera
   calibration), https://github.com/damianofalcioni/js-aruco2
   License: MIT
+
+- Rapier physics (@dimforge/rapier3d-simd-compat), for the ball pit
+  https://rapier.rs, https://github.com/dimforge/rapier.js
+  License: Apache License 2.0
