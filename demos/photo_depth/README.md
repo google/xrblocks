@@ -11,7 +11,8 @@ judged by eye and in numbers.
 
 The depth map is also turned into a triangle mesh, and that photo surface is
 what the apps use instead of sensed depth: numbered annotation pins placed on
-the desk or wall, and a ball pit whose balls bounce off the photographed room.
+the desk or wall, drawing on surfaces, and a ball pit whose balls bounce off
+the photographed room.
 
 ## Run
 
@@ -35,12 +36,13 @@ Serve the repository (`npm run dev` from the repo root) and open
   sensed depth). **Snap floor** rescales it so the photographed floor lands on
   the real floor, without any depth sensor (the floor must be in the photo).
   **Reset scale** undoes both.
-- **Tap: pins / balls** picks what a pinch, trigger or click in open space
-  (not on the panel) does once there is a mesh: **pins** puts a numbered pin
-  where the ray meets the photo surface; **balls** throws balls for as long as
-  it is held (Rapier physics loads on the first switch). **Clear pins**
-  removes the pins. Pins and balls live in world space, so they stay put
-  across re-captures and scale changes.
+- **Tap: pins / draw / balls** picks what a pinch, trigger or click in open
+  space (not on the panel) does once there is a mesh: **pins** puts a numbered
+  pin where the ray meets the photo surface; **draw** draws on the surfaces
+  for as long as it is held (a tap leaves a dot); **balls** throws balls for
+  as long as it is held (Rapier physics loads on the first switch). **Clear
+  marks** removes the pins and drawings. Pins, drawings and balls live in
+  world space, so they stay put across re-captures and scale changes.
 - **Camera: SDK / ArUco** switches the camera model used by the next capture
   (below). **Calibrate** runs the ArUco calibration.
 
@@ -110,7 +112,8 @@ extrinsics transfer; the calibration's range scale is not applied.
 | `?mesh=<mode>`    | Start with the mesh shown: `depth`, `photo` or `wire` (default `off`).                  |
 | `?meshStride=<n>` | Mesh vertex spacing in model pixels (default 4).                                        |
 | `?maxRelJump=<r>` | Drop triangles whose corner depths differ by more than this ratio (default 0.1).        |
-| `?tap=balls`      | Start with taps throwing balls instead of placing pins.                                 |
+| `?tap=<mode>`     | Start with taps in `pins` (default), `draw` or `balls` mode.                            |
+| `?inkWidth=<m>`   | Width of drawn strokes (default 0.01).                                                  |
 | `?ballRadius=<m>` | Ball radius (default 0.05).                                                             |
 | `?ballLifeMs=<n>` | How long a ball lives before it deflates (default 6000).                                |
 | `?img=<url>`      | Run on that image at start-up (MoGe's own focal; placed in front of the camera).        |
@@ -184,6 +187,16 @@ scored against the simulator's rendered depth:
   photo's lowest upward-facing surface is at least 0.9 m below the camera, so
   a desk-only photo gets no plane at desk height. The status line shows it
   (`photo floor y ... m` or `none`).
+- Drawing turns the ray's hits on the photo mesh into strokes: a One Euro
+  filter smooths them (heavy smoothing for a slow hand, where a tremor alone
+  moves the hit about 1 cm at 2 m; little lag for a fast one), points closer
+  than 5 mm to the last one are skipped, a point that only continues a
+  straight run moves the run's end instead of adding a segment, and releasing
+  simplifies the stroke with Douglas-Peucker (2 mm). Strokes break where the
+  ray leaves the surface or jumps more than 10 cm (a table edge in front of
+  the floor), so no line hangs in the air. A stroke is a flat ribbon on the
+  surface (1 cm wide, lifted 5 mm): WebGL ignores line widths, and a ribbon
+  needs no screen-resolution setup in stereo.
 - The ball pit's balls, lights and shooter are a trimmed copy of
   `samples/advanced/ballpit` (the sample also retired balls behind the sensed
   depth, which this demo must not consult; here they expire by age only).

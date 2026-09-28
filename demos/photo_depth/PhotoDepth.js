@@ -47,6 +47,7 @@ import {
   preprocess,
 } from './moge.js';
 import {PhotoPhysics} from './PhotoPhysics.js';
+import {Ink} from './Ink.js';
 import {Pins, pinPlacement, raycastMesh} from './Pins.js';
 
 const CACHE_NAME = 'xrblocks-photo-depth-v1';
@@ -71,7 +72,7 @@ function blankTexture() {
 }
 
 /** What a pinch / trigger / click in open space does once there is a mesh. */
-const TAP_MODES = ['pins', 'balls'];
+const TAP_MODES = ['pins', 'draw', 'balls'];
 const BALLS_PER_SECOND = 12;
 const BALL_SPEED = 4; // m/s
 /**
@@ -233,10 +234,10 @@ export class PhotoDepth extends xb.Script {
       'touch_app',
       () => void this.cycleTapMode()
     );
-    this.clearPinsButton = button(
-      'Clear pins',
-      'location_off',
-      () => this.clearPins(),
+    this.clearMarksButton = button(
+      'Clear marks',
+      'ink_eraser',
+      () => this.clearMarks(),
       true
     );
     this.cloudButton = button(
@@ -273,10 +274,10 @@ export class PhotoDepth extends xb.Script {
         row(...this.nudgeButtons),
         row(this.fitButton, this.floorButton, this.resetScaleButton),
         new xb.UIText({
-          text: 'Pinch / click in open space to pin a note or throw balls:',
+          text: 'Pinch / click in open space to pin a note, draw (hold) or throw balls:',
           style: {fontSize: 13, opacity: 0.8},
         }),
-        row(this.tapButton, this.clearPinsButton),
+        row(this.tapButton, this.clearMarksButton),
         row(this.cameraButton, this.calibrateButton),
       ],
     });
@@ -284,9 +285,11 @@ export class PhotoDepth extends xb.Script {
     card.rotation.y = -0.35;
     this.add(card);
 
-    // Pins and balls live in world space, independent of any capture.
+    // Pins, ink and balls live in world space, independent of any capture.
     this.pins = new Pins();
     this.add(this.pins);
+    this.ink = new Ink({width: xb.getUrlParamFloat('inkWidth', 0.01)});
+    this.add(this.ink);
     this.ballShooter = new BallShooter({
       numBalls: 100,
       radius: xb.getUrlParamFloat('ballRadius', 0.05),
@@ -309,6 +312,9 @@ export class PhotoDepth extends xb.Script {
     const now = performance.now();
     const deltaSeconds = (now - (this.lastUpdateTime ?? now)) / 1000;
     this.lastUpdateTime = now;
+    for (const controller of this.ink.active.keys()) {
+      this.ink.addHit(controller, this.surfaceHit(controller), now / 1000);
+    }
     if (this.physics) {
       for (const [controller, lastSpawn] of this.shooting) {
         if (now - lastSpawn >= 1000 / BALLS_PER_SECOND) {
@@ -341,20 +347,31 @@ export class PhotoDepth extends xb.Script {
 
   /**
    * A select that starts in open space (no UI or other target under the
-   * ray) pins a note on the photo mesh or starts throwing balls.
+   * ray) pins a note on the photo mesh, starts a stroke, or starts throwing
+   * balls.
    */
   onSelectStart(event) {
     const controller = event.source?.controller;
     if (event.target || !controller || !this.mesh) return;
     if (this.tapMode === 'pins') {
       this.placePin(controller);
+    } else if (this.tapMode === 'draw') {
+      this.ink.begin(controller);
+      this.ink.addHit(
+        controller,
+        this.surfaceHit(controller),
+        performance.now() / 1000
+      );
+      this.refreshButtons();
     } else if (this.physics) {
       this.shooting.set(controller, -Infinity);
     }
   }
 
   onSelectEnd(event) {
-    this.shooting.delete(event.source?.controller);
+    const controller = event.source?.controller;
+    this.shooting.delete(controller);
+    this.ink.end(controller);
   }
 
   /** The controller's pointing ray in world space. */
@@ -365,14 +382,23 @@ export class PhotoDepth extends xb.Script {
     return ray;
   }
 
-  placePin(controller) {
+  /**
+   * Where the controller's ray meets the photo mesh: `{point, normal}` with
+   * the normal facing the user, or null.
+   */
+  surfaceHit(controller) {
+    if (!this.mesh) return null;
     const raycaster = new THREE.Raycaster();
     this.controllerRay(controller, raycaster.ray);
     this.mesh.updateWorldMatrix(true, false);
     const hit = raycastMesh(this.mesh, raycaster)[0];
+    return hit ? pinPlacement(hit, raycaster.ray) : null;
+  }
+
+  placePin(controller) {
+    const hit = this.surfaceHit(controller);
     if (!hit) return;
-    const {point, normal} = pinPlacement(hit, raycaster.ray);
-    this.pins.addPin(point, normal);
+    this.pins.addPin(hit.point, hit.normal);
     this.refreshButtons();
   }
 
@@ -387,6 +413,9 @@ export class PhotoDepth extends xb.Script {
     this.tapMode =
       TAP_MODES[(TAP_MODES.indexOf(this.tapMode) + 1) % TAP_MODES.length];
     this.shooting.clear();
+    for (const controller of [...this.ink.active.keys()]) {
+      this.ink.end(controller);
+    }
     this.refreshButtons();
     if (this.tapMode === 'balls') {
       try {
@@ -418,8 +447,10 @@ export class PhotoDepth extends xb.Script {
     await this.physicsLoading;
   }
 
-  clearPins() {
+  /** Removes the pins and the drawings. */
+  clearMarks() {
     this.pins.clear();
+    this.ink.clear();
     this.refreshButtons();
   }
 
@@ -453,7 +484,8 @@ export class PhotoDepth extends xb.Script {
     this.cloudButton.label = this.cloudVisible ? 'Hide cloud' : 'Show cloud';
     this.meshButton.disabled = !hasResult;
     this.tapButton.label = `Tap: ${this.tapMode}`;
-    this.clearPinsButton.disabled = this.pins.count === 0;
+    this.clearMarksButton.disabled =
+      this.pins.count === 0 && this.ink.count === 0;
     this.meshButton.label = `Mesh: ${this.meshMode}`;
     this.fitButton.disabled = !idle || !this.comparison;
     this.floorButton.disabled = !idle || !hasResult;
@@ -1002,6 +1034,7 @@ export class PhotoDepth extends xb.Script {
     this.shooting.clear();
     this.ballShooter.dispose();
     this.pins.dispose();
+    this.ink.dispose();
     this.physics?.dispose();
     this.physics = null;
     this.releaseModel();
