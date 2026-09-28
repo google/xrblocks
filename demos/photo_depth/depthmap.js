@@ -282,7 +282,7 @@ export function depthRange(depthMap, low = 0.02, high = 0.98) {
 }
 
 // sRGB byte → linear float, so photo colors survive three.js color management.
-const SRGB_TO_LINEAR = new Float32Array(256);
+export const SRGB_TO_LINEAR = new Float32Array(256);
 for (let i = 0; i < 256; i++) {
   const c = i / 255;
   SRGB_TO_LINEAR[i] =

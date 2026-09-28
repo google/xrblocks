@@ -9,9 +9,9 @@ colored point cloud overlaying the real scene. On a headset that also senses
 depth, the photo depth is scored against the sensor so its precision can be
 judged by eye and in numbers.
 
-This is phase 1 of a larger demo: next come a mesh built from the depth map
-(with a visualization), then virtual annotations and a ball pit that use the
-photo depth instead of sensed depth.
+The depth map is also turned into a triangle mesh, the surface later phases
+build on: virtual annotations and a ball pit that use the photo depth instead
+of sensed depth.
 
 ## Run
 
@@ -22,6 +22,10 @@ Serve the repository (`npm run dev` from the repo root) and open
   around: where the colored points drift off the real surfaces is where the
   depth is wrong.
 - **Hide/Show cloud** toggles the overlay.
+- **Mesh: off / depth / photo / wire** cycles the triangle mesh of the depth
+  map: colored by depth (Turbo, near = blue, far = red), textured with the
+  photo, or as a depth-colored wireframe. The panel also shows the photo MoGe
+  saw next to its depth map (black = no depth).
 - **Nearer 5% / 1%, 1% / Farther 5%** adjust the depth by hand until the
   points sit on the real surfaces. They scale all depths about the capture
   point, so every point slides along its own camera ray and the cloud stays
@@ -97,6 +101,9 @@ extrinsics transfer; the calibration's range scale is not applied.
 | `?autoScale=`     | `sensed` or `floor`: apply Fit to sensed / Snap floor after every capture.              |
 | `?floorY=<m>`     | Floor height for Snap floor (0 on headsets; about 0.307 in the desktop simulator room). |
 | `?stride=<n>`     | Keep every n-th pixel in the cloud (default 1: all 448² pixels).                        |
+| `?mesh=<mode>`    | Start with the mesh shown: `depth`, `photo` or `wire` (default `off`).                  |
+| `?meshStride=<n>` | Mesh vertex spacing in model pixels (default 4).                                        |
+| `?maxRelJump=<r>` | Drop triangles whose corner depths differ by more than this ratio (default 0.1).        |
 | `?img=<url>`      | Run on that image at start-up (MoGe's own focal; placed in front of the camera).        |
 | `?backend=wasm`   | Force the wasm build even when WebGPU is available.                                     |
 
@@ -150,6 +157,14 @@ scored against the simulator's rendered depth:
   That readback costs frame time; `?sensedDepth=0` avoids it.
 - The depth map lives on the 448² letterboxed model grid; padding, a two-pixel
   rim and low-confidence pixels have no depth.
+- The mesh is built from the MoGe depth map alone, never from sensed depth
+  (the target is glasses without a depth sensor). Vertices sit on every 4th
+  model pixel (about 3 cm apart at 2 m, finer than MoGe's few-percent shape
+  error); about 13k triangles for a 16:9 headset photo, 23k for the square
+  simulator photo. Triangles are dropped where MoGe gave no depth and where
+  their corner depths differ by more than 10%, so silhouettes don't grow
+  skirts down to the background. It is rebuilt with every scale change (14 ms
+  for depth map, cloud, mesh and scoring together on a desktop).
 - Panel text is ASCII only: the UI font lacks glyphs such as `°` or `·`.
 
 ## Credits

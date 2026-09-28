@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import * as xb from 'xrblocks';
 import {
   compileModel,
@@ -24,6 +25,14 @@ import {
   solveShift,
 } from './depthmap.js';
 import {
+  MESH_MODES,
+  applyMeshMode,
+  buildDepthMesh,
+  createDepthMesh,
+  depthTexture,
+  photoTexture,
+} from './depthmesh.js';
+import {
   MOGE_MODEL_SIZES_MB,
   MOGE_MODEL_URLS,
   MOGE_SIZE,
@@ -37,6 +46,20 @@ const CAMERA_STATE_LABELS = {
   no_devices_found: 'No camera found - capture is unavailable.',
   error: 'Camera failed to start.',
 };
+
+let BLANK = null;
+/** A shared 16:9 dark placeholder for the thumbnails. */
+function blankTexture() {
+  if (!BLANK) {
+    const w = 16;
+    const h = 9;
+    const data = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i++) data.set([40, 40, 40, 255], i * 4);
+    BLANK = new THREE.DataTexture(data, w, h);
+    BLANK.needsUpdate = true;
+  }
+  return BLANK;
+}
 
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 /** Manual depth-scale steps; nearer and farther undo each other. */
@@ -76,6 +99,13 @@ export class PhotoDepth extends xb.Script {
   comparison = null;
   cloud = null;
   cloudVisible = true;
+  /** Triangle mesh of the depth map, and how it is shown. */
+  mesh = null;
+  meshMode = MESH_MODES.includes(this.params.get('mesh'))
+    ? this.params.get('mesh')
+    : 'off';
+  photoTexture = null;
+  depthTexture = null;
   /** User scale correction on top of MoGe's metric scale. */
   userScale = 1;
   scaleNote = '';
@@ -151,6 +181,21 @@ export class PhotoDepth extends xb.Script {
     this.calibrateButton = button('Calibrate', 'qr_code_2', () =>
       this.toggleCalibration()
     );
+    this.meshButton = button(
+      'Mesh: off',
+      'deployed_code',
+      () => this.cycleMeshMode(),
+      true
+    );
+    // What MoGe saw and what it made of it (padding cropped; black = no
+    // depth). Placeholders until the first capture.
+    const thumbnail = () =>
+      new xb.UIImage({
+        src: blankTexture(),
+        style: {flexGrow: 1, flexBasis: 0, borderRadius: 6},
+      });
+    this.photoImage = thumbnail();
+    this.depthImage = thumbnail();
     this.cloudButton = button(
       'Hide cloud',
       'visibility_off',
@@ -175,7 +220,9 @@ export class PhotoDepth extends xb.Script {
           style: {fontSize: 13, lineHeight: 1.35, opacity: 0.8},
         }),
         this.statusText,
-        row(this.captureButton, this.clearButton, this.cloudButton),
+        row(this.captureButton, this.clearButton),
+        row(this.photoImage, this.depthImage),
+        row(this.cloudButton, this.meshButton),
         new xb.UIText({
           text: 'Adjust depth until the points sit on the real surfaces:',
           style: {fontSize: 13, opacity: 0.8},
@@ -229,6 +276,8 @@ export class PhotoDepth extends xb.Script {
     this.clearButton.disabled = !hasResult || !idle;
     this.cloudButton.disabled = !hasResult;
     this.cloudButton.label = this.cloudVisible ? 'Hide cloud' : 'Show cloud';
+    this.meshButton.disabled = !hasResult;
+    this.meshButton.label = `Mesh: ${this.meshMode}`;
     this.fitButton.disabled = !idle || !this.comparison;
     this.floorButton.disabled = !idle || !hasResult;
     this.resetScaleButton.disabled = !idle || this.userScale === 1;
@@ -508,6 +557,11 @@ export class PhotoDepth extends xb.Script {
       this.userScale = 1;
       this.scaleNote = '';
       this.rebuild();
+      // Turbo is normalized to the depth range, so scaling never changes it.
+      this.setThumbnails(
+        photoTexture(rgba, letterbox, MOGE_SIZE),
+        depthTexture(this.depthMap, letterbox)
+      );
 
       const auto = this.params.get('autoScale');
       if (auto === 'sensed' && this.comparison) this.fitToSensed();
@@ -534,6 +588,19 @@ export class PhotoDepth extends xb.Script {
     cloud.matrix.copy(r.worldFromView);
     cloud.visible = this.cloudVisible;
     this.setCloud(cloud);
+    // The mesh comes from the (scaled) MoGe depth map only; sensed depth is
+    // for scoring, never for shaping the surface.
+    const mesh = createDepthMesh(
+      buildDepthMesh(this.depthMap, {
+        stride: Math.max(1, xb.getUrlParamInt('meshStride', 4)),
+        maxRelJump: xb.getUrlParamFloat('maxRelJump', 0.1),
+        rgba: r.rgba,
+      })
+    );
+    mesh.matrixAutoUpdate = false;
+    mesh.matrix.copy(r.worldFromView);
+    applyMeshMode(mesh, this.meshMode);
+    this.setMesh(mesh);
     this.comparison = compareDepth(this.depthMap, r.worldFromView, r.sensed);
     this.status(this.resultStatus());
     this.refreshButtons();
@@ -546,6 +613,7 @@ export class PhotoDepth extends xb.Script {
       r.poseMatchMs == null ? '' : ` | pose ${r.poseMatchMs.toFixed(0)} ms`;
     const lines = [
       `Aligned | ${r.elapsed.toFixed(0)} ms | ${(this.cloud.userData.count / 1000).toFixed(0)}k pts` +
+        ` | ${(this.mesh.geometry.userData.triangles / 1000).toFixed(1)}k tris` +
         ` | depth ${range.near.toFixed(2)}-${range.far.toFixed(2)} m`,
       r.cameraLabel + pose,
       `hFOV: rays ${r.photoFov.toFixed(0)} deg (${r.intrinsicsSource}) | MoGe ${r.mogeFov.toFixed(0)} deg` +
@@ -646,6 +714,13 @@ export class PhotoDepth extends xb.Script {
     this.refreshButtons();
   }
 
+  cycleMeshMode() {
+    this.meshMode =
+      MESH_MODES[(MESH_MODES.indexOf(this.meshMode) + 1) % MESH_MODES.length];
+    if (this.mesh) applyMeshMode(this.mesh, this.meshMode);
+    this.refreshButtons();
+  }
+
   getCropContext() {
     if (!this.cropContext) {
       const canvas = document.createElement('canvas');
@@ -665,8 +740,29 @@ export class PhotoDepth extends xb.Script {
     if (cloud) this.add(cloud);
   }
 
+  setMesh(mesh) {
+    if (this.mesh) {
+      this.mesh.removeFromParent();
+      disposeObject(this.mesh);
+    }
+    this.mesh = mesh;
+    if (mesh) this.add(mesh);
+  }
+
+  /** Shows new thumbnails (null = blank) and frees the previous ones. */
+  setThumbnails(photo, depth) {
+    this.photoImage.src = photo ?? blankTexture();
+    this.depthImage.src = depth ?? blankTexture();
+    this.photoTexture?.dispose();
+    this.depthTexture?.dispose();
+    this.photoTexture = photo;
+    this.depthTexture = depth;
+  }
+
   clear() {
     this.setCloud(null);
+    this.setMesh(null);
+    this.setThumbnails(null, null);
     this.result = null;
     this.depthMap = null;
     this.comparison = null;
@@ -689,6 +785,10 @@ export class PhotoDepth extends xb.Script {
     this.deviceCamera?.removeEventListener('statechange', this.onCameraState);
     this.calibration?.close();
     this.setCloud(null);
+    this.setMesh(null);
+    this.photoTexture?.dispose();
+    this.depthTexture?.dispose();
+    BLANK?.dispose();
     this.releaseModel();
     super.dispose();
   }
