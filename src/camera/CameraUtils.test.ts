@@ -3,6 +3,7 @@ import {describe, it, expect} from 'vitest';
 
 import {XRDeviceCamera} from './XRDeviceCamera';
 import {
+  detectDeviceCameraTarget,
   getCameraParametersSnapshot,
   isDeviceCameraPoseAvailable,
 } from './CameraUtils';
@@ -20,6 +21,27 @@ function makeDeviceCamera(withSimulatorCamera: boolean): XRDeviceCamera {
       : undefined,
   } as unknown as XRDeviceCamera;
 }
+
+describe('detectDeviceCameraTarget', () => {
+  it('picks the Quest profile in the Meta Quest browser', () => {
+    expect(
+      detectDeviceCameraTarget(
+        'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) OculusBrowser/40.0 Chrome/136.0 VR Safari/537.36'
+      )
+    ).toBe('quest3');
+  });
+
+  it('defaults to the Galaxy XR profile', () => {
+    expect(
+      detectDeviceCameraTarget(
+        'Mozilla/5.0 (Linux; Android 14; SM-I610) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/136.0 Mobile Safari/537.36'
+      )
+    ).toBe('galaxyxr');
+    expect(detectDeviceCameraTarget('')).toBe('galaxyxr');
+  });
+});
 
 describe('isDeviceCameraPoseAvailable', () => {
   it('is false before either camera source is ready', () => {
