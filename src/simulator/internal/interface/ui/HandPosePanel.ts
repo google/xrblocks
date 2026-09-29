@@ -17,6 +17,10 @@ export class HandPosePanel extends LitElement {
       position: absolute;
       bottom: 0;
       left: 50%;
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
       -webkit-transform: translateX(-50%);
       transform: translateX(-50%);
       max-width: calc(100% - 24rem);
@@ -47,6 +51,7 @@ export class HandPosePanel extends LitElement {
     }
 
     .hand-pose-button {
+      font-family: inherit;
       color: #ffffff44;
       font-size: 1.2em;
       line-height: 3rem;
