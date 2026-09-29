@@ -1,6 +1,4 @@
-import {afterEach, describe, expect, it, vi} from 'vitest';
-import ts from 'typescript';
-import {resolve} from 'node:path';
+import {afterEach, describe, expect, expectTypeOf, it, vi} from 'vitest';
 
 import {AI} from './AI';
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
@@ -13,34 +11,9 @@ afterEach(() => {
 
 describe('AI.generate', () => {
   it('infers an optional model string for TypeScript callers', () => {
-    // Vitest transpiles without type checking. Inspect the actual parameter
-    // with TypeScript, without loading the unrelated SDK import graph.
-    const configPath = resolve('tsconfig.json');
-    const config = ts.readConfigFile(configPath, ts.sys.readFile);
-    const parsed = ts.parseJsonConfigFileContent(
-      config.config,
-      ts.sys,
-      process.cwd()
-    );
-    const path = resolve('src/ai/AI.ts');
-    const program = ts.createProgram([path], {
-      ...parsed.options,
-      composite: false,
-      noEmit: true,
-      noResolve: true,
-      noLib: true,
-    });
-    const source = program.getSourceFile(path)!;
-    const ai = source.statements
-      .filter(ts.isClassDeclaration)
-      .find((declaration) => declaration.name?.text === 'AI')!;
-    const generate = ai.members
-      .filter(ts.isMethodDeclaration)
-      .find((method) => method.name.getText(source) === 'generate')!;
-    const checker = program.getTypeChecker();
-    const model = checker.getTypeAtLocation(generate.parameters[3]);
-
-    expect(checker.typeToString(model)).toBe('string | undefined');
+    expectTypeOf<Parameters<AI['generate']>[3]>().toEqualTypeOf<
+      string | undefined
+    >();
   });
 
   it('forwards an explicit model to Gemini', async () => {

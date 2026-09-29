@@ -11,7 +11,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig*.json'
-      - 'rollup.config.js'
+      - 'rolldown.config.js'
       - '.github/workflows/build-check.yml'
   pull_request:
 
