@@ -192,16 +192,16 @@ npm run dev
 
 #### Linting and formatting
 
-XR Blocks uses ESLint for linting and Prettier for formatting. Run the following
+XR Blocks uses Oxlint for linting and Prettier for formatting. Run the following
 commands to check your code before submitting a pull request:
 
 ```bash
-npm run lint # ESLint check
+npm run lint # Oxlint check
 npm run format # Prettier format
 ```
 
 If you are using VS Code, install the
-[ESLint extension](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
+[Oxc extension](https://marketplace.visualstudio.com/items?itemName=oxc.oxc-vscode)
 and the
 [Prettier extension](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode),
 then set Prettier as your default formatter.

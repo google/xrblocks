@@ -4,8 +4,8 @@ import {resolve} from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      'xrblocks/addons': resolve(__dirname, './src/addons'),
-      xrblocks: resolve(__dirname, './src/xrblocks.ts'),
+      'xrblocks/addons': resolve(import.meta.dirname, './src/addons'),
+      xrblocks: resolve(import.meta.dirname, './src/xrblocks.ts'),
     },
   },
   test: {
