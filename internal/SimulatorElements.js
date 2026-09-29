@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 1c5af3e
-* @builddate 2026-09-29T21:17:16.493Z
+* @commitid 7451068
+* @builddate 2026-09-29T21:57:03.512Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -100,6 +100,10 @@ let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitEleme
       min-width: 30rem;
       border-radius: 1.6rem;
       color: #000000;
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
       padding: 1.5rem;
       flex-direction: column;
     }
@@ -136,6 +140,7 @@ let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitEleme
     }
 
     button {
+      font-family: inherit;
       align-self: flex-end;
       width: min-content;
       height: min-content;
@@ -846,6 +851,10 @@ let HandPosePanel = class HandPosePanel extends LitElement {
       position: absolute;
       bottom: 0;
       left: 50%;
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
       -webkit-transform: translateX(-50%);
       transform: translateX(-50%);
       max-width: calc(100% - 24rem);
@@ -876,6 +885,7 @@ let HandPosePanel = class HandPosePanel extends LitElement {
     }
 
     .hand-pose-button {
+      font-family: inherit;
       color: #ffffff44;
       font-size: 1.2em;
       line-height: 3rem;
@@ -971,6 +981,11 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
         system-ui,
         -apple-system,
         sans-serif;
+    }
+
+    button,
+    select {
+      font-family: inherit;
     }
 
     .settings-btn {
