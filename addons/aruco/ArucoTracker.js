@@ -3,7 +3,7 @@ import { ARUCO_DICTIONARY_SIZES, DEFAULT_ARUCO_DICTIONARY, DEFAULT_ARUCO_MARKER_
 import { MarkerAnchorCalibrator } from "./MarkerAnchorCalibration.js";
 import { createArucoAnchorVisuals } from "./ArucoVisuals.js";
 import * as THREE from "three";
-import { Script, core, getCameraParametersSnapshot } from "xrblocks";
+import { Script, core, detectDeviceCameraTarget, getCameraParametersSnapshot } from "xrblocks";
 //#region src/addons/aruco/ArucoTracker.ts
 /**
 * A persistent ArUco-marker spatial anchor backed by the js-aruco2
@@ -643,7 +643,7 @@ var ArucoTracker = class extends Script {
 		console.error(`[ArucoTracker] ${message}`);
 	}
 	targetDevice() {
-		return core.world?.objects?.targetDevice ?? "galaxyxr";
+		return core.world?.objects?.targetDevice ?? detectDeviceCameraTarget();
 	}
 	searchingStatus() {
 		return `Looking for ${this.dictionary} ID ${this.markerId}.`;
