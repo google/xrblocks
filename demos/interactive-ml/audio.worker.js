@@ -20,8 +20,8 @@ self.onmessage = async ({data}) => {
     })();
     const backend = await loading;
     const features = data.clip ? await extractor.extract(data.clip) : undefined;
-    self.postMessage({id: data.id, features, backend});
+    self.postMessage({features, backend});
   } catch (error) {
-    self.postMessage({id: data.id, error: error.message});
+    self.postMessage({error: error.message});
   }
 };

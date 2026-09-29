@@ -1,7 +1,8 @@
+import {Dataset} from './Dataset';
 import {HAND_FEATURE_ID, poseFeatures, validateFrames} from './HandFeatures';
 import {trainClassifier} from './Learning';
 import {Predictor} from './Predictor';
-import {assertLabel, evaluatePredictions} from './Types';
+import {evaluatePredictions} from './Types';
 import type {HandFrame, ModelArtifact, TrainingOptions} from './Types';
 
 export interface HandExample {
@@ -18,48 +19,11 @@ export interface HandProject {
 }
 
 /** A persistent dataset. Training snapshots it and never changes an active model. */
-export class HandTrainer {
-  private examples: HandExample[] = [];
+export class HandTrainer extends Dataset<HandExample> {
   readonly kind = 'hand-pose' as const;
-  get counts(): Record<string, number> {
-    return Object.fromEntries(
-      [...new Set(this.examples.map((e) => e.label))].map((label) => [
-        label,
-        this.examples.filter((e) => e.label === label).length,
-      ])
-    );
-  }
   addExample(label: string, frames: HandFrame[]): string {
-    assertLabel(label);
     validateFrames(frames);
-    const perClass = this.examples.filter((e) => e.label === label).length;
-    if (
-      this.examples.length >= 512 ||
-      perClass >= 64 ||
-      (!perClass && Object.keys(this.counts).length >= 32)
-    )
-      throw new Error('Dataset limit reached. Remove old examples first.');
-    const id = crypto.randomUUID();
-    this.examples.push({id, label, frames: structuredClone(frames)});
-    return id;
-  }
-  removeExample(id: string) {
-    this.examples = this.examples.filter((e) => e.id !== id);
-  }
-  relabelExample(id: string, label: string) {
-    assertLabel(label);
-    const example = this.examples.find((e) => e.id === id);
-    if (!example) throw new Error('Unknown example.');
-    if (example.label === label) return;
-    const count = this.counts[label] ?? 0;
-    if (
-      count >= 64 ||
-      (!count &&
-        Object.keys(this.counts).length >= 32 &&
-        this.counts[example.label] > 1)
-    )
-      throw new Error('Class limit reached.');
-    example.label = label;
+    return this.add({label, frames});
   }
   exportProject(): HandProject {
     return structuredClone({
@@ -81,14 +45,7 @@ export class HandTrainer {
     )
       throw new Error('Unsupported training project.');
     const trainer = new HandTrainer();
-    const ids = new Set<string>();
-    for (const e of p.examples) {
-      if (!e || typeof e.id !== 'string' || !e.id || ids.has(e.id))
-        throw new Error('Invalid example ID.');
-      trainer.addExample(e.label, e.frames);
-      trainer.examples.at(-1)!.id = e.id;
-      ids.add(e.id);
-    }
+    trainer.restore(p.examples, (example) => validateFrames(example.frames));
     return trainer;
   }
   async train(

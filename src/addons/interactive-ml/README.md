@@ -6,6 +6,7 @@ then use the returned predictor. At least two classes are required.
 ## Hands
 
 ```js
+import * as xb from 'xrblocks';
 import {
   captureHand,
   HandTrainer,
@@ -13,8 +14,8 @@ import {
 } from 'xrblocks/addons/interactive-ml/index.js';
 
 const trainer = new HandTrainer();
-// Get handContext from the SDK's hand pose estimator while the hand is tracked.
-const frame = captureHand(handContext, performance.now());
+// Read the SDK's existing hand tracking from your Script.update().
+const frame = captureHand(user.hands, xb.Handedness.RIGHT, performance.now());
 if (frame) trainer.addExample('open', [frame]);
 // Repeat for other poses, such as 'closed', with several takes per class.
 const model = await trainer.train();
@@ -22,6 +23,10 @@ const result = model.predictHand([freshFrame]);
 // result: {label, score, scores}. label is null when the pose is unknown.
 ```
 
+Use the SDK User instance from `static dependencies = {user: xb.User}` as `user`
+and call `captureHand(user.hands, xb.Handedness.RIGHT, timeMs)` in a script.
+`captureHand` returns null when tracking is unavailable. It only normalizes the
+SDK joint positions; no separate hand tracker or pose estimator is needed.
 A frame contains `{hand, timeMs, pose}`. Either hand can teach both hands.
 Pass a single frame for live prediction or a clip to average its pose features.
 Add examples and call `train()` again to replace the model. Training uses a
@@ -49,6 +54,10 @@ Run YAMNet in a worker for XR.
 Features are cached for retraining. `addFeatures(label, features)` accepts an
 embedding already produced by the same extractor. Dispose the extractor when
 finished with it.
+
+Both trainers expose `counts`, `removeExample(id)`, `relabelExample(id, label)`,
+and `removeLastExample()`. Undo removes the newest example without exporting or
+copying the project. Dataset edits take effect when you train again.
 
 ## Save and load
 

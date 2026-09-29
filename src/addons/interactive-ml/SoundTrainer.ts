@@ -9,7 +9,6 @@ export interface AudioClip {
   sampleRate: number;
 }
 export interface SoundFeatureExtractor {
-  /** Exact encoder and preprocessing identity; included in saved models. */
   readonly featureId: string;
   readonly dimensions: number;
   extract(clip: AudioClip): Promise<number[]>;
@@ -19,11 +18,9 @@ export interface SoundProject {
   version: 1;
   featureId: string;
   dimensions: number;
-  /** Cached features permit retraining; original audio is owned by the app. */
   examples: {id: string; label: string; features: number[]}[];
 }
 
-/** Owns cached training features, not the extractor or the microphone. */
 export class SoundTrainer {
   private examples: SoundProject['examples'] = [];
   constructor(readonly extractor: SoundFeatureExtractor) {
@@ -48,7 +45,6 @@ export class SoundTrainer {
     assertLabel(label);
     return this.addFeatures(label, await this.extractor.extract(clip));
   }
-  /** Add an embedding from this trainer's extractor without extracting twice. */
   addFeatures(label: string, features: number[]) {
     assertLabel(label);
     assertVector(features, this.extractor.dimensions);
