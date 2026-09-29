@@ -239,3 +239,132 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
   b.finish(root, 'TFL3');
   return b.asUint8Array().slice();
 }
+
+/** Read classifier parameters from files produced by encodeTFLite. */
+export function decodeTFLite(bytes: Uint8Array): ModelArtifact {
+  const invalid = () => new Error('Invalid Interactive ML TFLite file.');
+  if (
+    bytes.length < 8 ||
+    bytes.length > 20 * 1024 * 1024 ||
+    new TextDecoder().decode(bytes.subarray(4, 8)) !== 'TFL3'
+  )
+    throw invalid();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const check = (offset: number, length: number) => {
+    if (offset < 0 || length < 0 || offset + length > bytes.length)
+      throw invalid();
+  };
+  const u32 = (offset: number) => {
+    check(offset, 4);
+    return view.getUint32(offset, true);
+  };
+  function field(table: number, slot: number) {
+    check(table, 4);
+    const vtable = table - view.getInt32(table, true);
+    check(vtable, 4);
+    const size = view.getUint16(vtable, true);
+    check(vtable, size);
+    const entry = 4 + slot * 2;
+    const offset = entry + 2 <= size ? view.getUint16(vtable + entry, true) : 0;
+    return offset ? table + offset : 0;
+  }
+  function vector(table: number, slot: number, width: number) {
+    const f = field(table, slot);
+    if (!f) return {start: 0, length: 0};
+    const target = f + u32(f);
+    const length = u32(target);
+    check(target + 4, length * width);
+    return {start: target + 4, length};
+  }
+  function tables(table: number, slot: number) {
+    const {start, length} = vector(table, slot, 4);
+    if (length > 128) throw invalid();
+    return Array.from({length}, (_, i) => start + i * 4 + u32(start + i * 4));
+  }
+  function data(table: number, slot: number) {
+    const {start, length} = vector(table, slot, 1);
+    return bytes.subarray(start, start + length);
+  }
+  const text = (table: number, slot: number) =>
+    new TextDecoder('utf-8', {fatal: true}).decode(data(table, slot));
+  const number = (table: number, slot: number) => {
+    const f = field(table, slot);
+    return f ? u32(f) : 0;
+  };
+  const root = u32(0);
+  if (number(root, 0) !== 3) throw invalid();
+  const buffers = tables(root, 4);
+  const metadata = tables(root, 6).find(
+    (entry) => text(entry, 0) === 'xrblocks-interactive-ml'
+  );
+  if (metadata === undefined) throw invalid();
+  const metadataBuffer = buffers[number(metadata, 1)];
+  if (metadataBuffer === undefined) throw invalid();
+  const info = JSON.parse(text(metadataBuffer, 0));
+  const dimensions = info?.input?.shape?.[1];
+  const classes = info?.labels?.length;
+  if (
+    info?.format !== 'xrblocks-interactive-ml-tflite' ||
+    info.version !== 1 ||
+    !Number.isInteger(dimensions) ||
+    dimensions < 1 ||
+    dimensions > 2048 ||
+    !Array.isArray(info.labels) ||
+    classes < 2 ||
+    classes > 32
+  )
+    throw invalid();
+  const graphs = tables(root, 2);
+  if (graphs.length !== 1) throw invalid();
+  const tensors = new Map<string, number>();
+  for (const tensor of tables(graphs[0], 0)) {
+    const name = text(tensor, 3);
+    if (tensors.has(name)) throw invalid();
+    tensors.set(name, tensor);
+  }
+  function constant(name: string, shape: number[]) {
+    const tensor = tensors.get(name);
+    if (tensor === undefined) throw invalid();
+    const type = field(tensor, 1);
+    if (type) {
+      check(type, 1);
+      if (view.getUint8(type) !== FLOAT32) throw invalid();
+    }
+    const actual = vector(tensor, 0, 4);
+    if (
+      actual.length !== shape.length ||
+      shape.some((n, i) => u32(actual.start + i * 4) !== n)
+    )
+      throw invalid();
+    const buffer = buffers[number(tensor, 2)];
+    if (buffer === undefined) throw invalid();
+    const values = vector(buffer, 0, 1);
+    const length = shape.reduce((a, b) => a * b, 1);
+    if (values.length !== length * 4) throw invalid();
+    return Array.from({length}, (_, i) =>
+      view.getFloat32(values.start + i * 4, true)
+    );
+  }
+  const matrix = (name: string) => {
+    const values = constant(name, [classes, dimensions]);
+    return Array.from({length: classes}, (_, i) =>
+      values.slice(i * dimensions, (i + 1) * dimensions)
+    );
+  };
+  return {
+    format: 'xrblocks-interactive-ml',
+    version: 1,
+    kind: info.kind,
+    featureId: info.featureId,
+    threshold: constant('threshold', [1])[0],
+    classifier: {
+      labels: info.labels,
+      mean: constant('mean', [dimensions]),
+      scale: constant('scale', [dimensions]),
+      weights: matrix('weights'),
+      bias: constant('bias', [classes]),
+      centers: matrix('centers'),
+      radii: constant('radii', [classes]),
+    },
+  };
+}

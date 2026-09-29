@@ -40,7 +40,6 @@ const readings = {
   right: 'No tracking',
   sound: 'Microphone off',
 };
-const key = () => state.kind;
 const message = (text) => {
   statusText = text;
   if (ui) ui.status.text = text;
@@ -59,7 +58,7 @@ function ensureIdle() {
   if (busy()) throw new Error('Finish or cancel the current operation first.');
 }
 function trainer() {
-  const id = key();
+  const id = state.kind;
   if (!projects.has(id))
     projects.set(
       id,
@@ -86,11 +85,11 @@ function refresh() {
     button.disabled = state.kind === kind;
   ui.handPredictions.style.display = state.kind === 'sound' ? 'none' : 'flex';
   ui.soundPrediction.style.display = state.kind === 'sound' ? 'flex' : 'none';
-  ui.test.disabled = !models.has(key());
+  ui.test.disabled = !models.has(state.kind);
   ui.train.disabled = !!training || !!recording;
   ui.record.disabled = !!training || !!recording;
   ui.cancel.disabled = !training && !recording;
-  ui.model.text = models.has(key())
+  ui.model.text = models.has(state.kind)
     ? 'Model active / live predictions below'
     : 'Record examples, then Train & use';
 }
@@ -107,8 +106,8 @@ function selectProject(kind = state.kind) {
   );
 }
 function activateModel(next) {
-  const old = models.get(key());
-  models.set(key(), next);
+  const old = models.get(state.kind);
+  models.set(state.kind, next);
   old?.dispose();
   refresh();
 }
@@ -149,7 +148,7 @@ function recordingTick() {
 }
 function record(test = false) {
   ensureIdle();
-  if (test && !models.has(key()))
+  if (test && !models.has(state.kind))
     throw new Error('Train or load a model first.');
   if (state.kind === 'sound' && !audioContext)
     throw new Error('Enable the microphone first.');
@@ -160,7 +159,7 @@ function record(test = false) {
     test,
     hand: state.hand,
     label: state.label.trim(),
-    key: key(),
+    key: state.kind,
     start: now + 2000,
     end: now + (state.kind === 'sound' ? 3000 : 3500),
     frames: [],
@@ -233,7 +232,7 @@ function receiveHand(hand, frame) {
       frame.timeMs <= recording.end
     )
       recording.frames.push(frame);
-    const model = models.get(key());
+    const model = models.get(state.kind);
     if (model && model.kind !== 'sound') {
       const result = model.predictHand([frame]);
       if (result)
@@ -348,7 +347,7 @@ function buildUI() {
           download(trainer().exportProject(), 'interactive-ml-project.json')
         ),
         button('Export TFLite', () => {
-          const model = models.get(key());
+          const model = models.get(state.kind);
           if (!model) throw new Error('Train a model first.');
           download(
             new Blob([model.exportTFLite()], {
@@ -362,7 +361,7 @@ function buildUI() {
         })
       ),
       row(
-        button('Import JSON', () => importInput.click()),
+        button('Import model/project', () => importInput.click()),
         button('Undo example', () => {
           ensureIdle();
           const examples = trainer().exportProject().examples;
@@ -562,15 +561,7 @@ async function handleAudio(clip, generation) {
         `Fresh sound test: expected ${record.label}; predicted ${result.label ?? 'unknown'}.`
       );
     } else {
-      // Reuse the extraction rather than running YAMNet a second time.
-      const soundTrainer = projects.get('sound');
-      const saved = soundTrainer.exportProject();
-      saved.examples.push({
-        id: crypto.randomUUID(),
-        label: record.label,
-        features,
-      });
-      projects.set('sound', SoundTrainer.loadProject(saved, extractor));
+      projects.get('sound').addFeatures(record.label, features);
       refresh();
       message(`Added sound example: ${record.label}.`);
     }
@@ -622,7 +613,7 @@ function download(value, name) {
 }
 async function browserProject(write) {
   ensureIdle();
-  const projectKey = key();
+  const projectKey = state.kind;
   const value = write ? trainer().exportProject() : null;
   const db = await new Promise((resolve, reject) => {
     const request = indexedDB.open('xrblocks-interactive-ml-demo', 1);
@@ -654,35 +645,54 @@ async function browserProject(write) {
     db.close();
   }
 }
+function importModel(next) {
+  ensureIdle();
+  if (
+    next.kind === 'sound' &&
+    (next.featureId !== YAMNET_FEATURE_ID ||
+      next.export().classifier.mean.length !== extractor.dimensions)
+  ) {
+    next.dispose();
+    throw new Error('This demo uses YAMNet features.');
+  }
+  selectProject(next.kind);
+  activateModel(next);
+  message('Model loaded and active.');
+}
 function importValue(value) {
   ensureIdle();
-  if (value.format === 'xrblocks-interactive-ml') {
-    const next = new Predictor(value);
-    if (next.kind === 'sound' && next.featureId !== YAMNET_FEATURE_ID) {
-      next.dispose();
-      throw new Error('This demo uses YAMNet features.');
-    }
-    state.kind = next.kind;
-    selectProject();
-    activateModel(next);
-    message('Model loaded and active.');
-  } else {
-    const next = value.kind
-      ? HandTrainer.loadProject(value)
-      : SoundTrainer.loadProject(value, extractor);
-    state.kind = value.kind ?? 'sound';
-    selectProject();
-    projects.set(key(), next);
-    refresh();
+  if (value?.format === 'xrblocks-interactive-ml') {
+    importModel(new Predictor(value));
+    return;
   }
+  const isHand = value?.format === 'xrblocks-interactive-ml-project';
+  const next = isHand
+    ? HandTrainer.loadProject(value)
+    : SoundTrainer.loadProject(value, extractor);
+  selectProject(isHand ? 'hand-pose' : 'sound');
+  // A restored dataset has no trained model until the user trains it.
+  models.get(state.kind)?.dispose();
+  models.delete(state.kind);
+  projects.set(state.kind, next);
+  state.label = Object.keys(next.counts)[0] ?? state.label;
+  refresh();
+  message('Project loaded. Train to activate a model.');
 }
 importInput.onchange = run(async () => {
   const file = importInput.files[0];
   if (!file) return;
-  if (file.size > 20 * 1024 * 1024)
-    throw new Error('Use a file smaller than 20 MB.');
-  importValue(JSON.parse(await file.text()));
-  importInput.value = '';
+  try {
+    ensureIdle();
+    if (file.size > 20 * 1024 * 1024)
+      throw new Error('Use a file smaller than 20 MB.');
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    ensureIdle();
+    if (new TextDecoder().decode(bytes.subarray(4, 8)) === 'TFL3')
+      importModel(Predictor.fromTFLite(bytes));
+    else importValue(JSON.parse(new TextDecoder().decode(bytes)));
+  } finally {
+    importInput.value = '';
+  }
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {

@@ -41,7 +41,12 @@
   </head>
   <body>
     <p id="startup-error" role="alert" hidden></p>
-    <input id="import" type="file" accept=".json,application/json" hidden />
+    <input
+      id="import"
+      type="file"
+      accept=".json,.tflite,application/json,application/octet-stream"
+      hidden
+    />
     <script type="module" src="main.js"></script>
   </body>
 </html>

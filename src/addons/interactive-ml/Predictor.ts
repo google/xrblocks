@@ -1,6 +1,6 @@
 import {HAND_FEATURE_ID, HAND_FEATURE_SIZE, poseFeatures} from './HandFeatures';
 import {probabilities} from './Learning';
-import {encodeTFLite} from './TFLite';
+import {decodeTFLite, encodeTFLite} from './TFLite';
 import {assertLabel, assertVector} from './Types';
 import type {HandFrame, ModelArtifact, Prediction} from './Types';
 
@@ -61,6 +61,10 @@ export class Predictor {
   private model: ModelArtifact | null;
   constructor(artifact: unknown) {
     this.model = validateModel(artifact);
+  }
+  /** Load a TFLite file exported by Interactive ML. */
+  static fromTFLite(bytes: Uint8Array): Predictor {
+    return new Predictor(decodeTFLite(bytes));
   }
   get kind() {
     return this.active.kind;

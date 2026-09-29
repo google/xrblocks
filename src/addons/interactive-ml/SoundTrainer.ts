@@ -48,13 +48,15 @@ export class SoundTrainer {
     assertLabel(label);
     return this.addFeatures(label, await this.extractor.extract(clip));
   }
-  private addFeatures(label: string, features: number[]) {
+  /** Add an embedding from this trainer's extractor without extracting twice. */
+  addFeatures(label: string, features: number[]) {
     assertLabel(label);
     assertVector(features, this.extractor.dimensions);
+    const counts = this.counts;
     if (
       this.examples.length >= 512 ||
-      (this.counts[label] ?? 0) >= 64 ||
-      (!(label in this.counts) && Object.keys(this.counts).length >= 32)
+      (counts[label] ?? 0) >= 64 ||
+      (!(label in counts) && Object.keys(counts).length >= 32)
     )
       throw new Error('Dataset limit reached. Remove examples first.');
     const id = crypto.randomUUID();
