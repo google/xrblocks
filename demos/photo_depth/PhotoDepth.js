@@ -310,6 +310,8 @@ export class PhotoDepth extends xb.Script {
 
     this.refreshButtons();
     void this.boot();
+    // Opened with ?tap=balls: no Tap-button press will load physics.
+    if (this.tapMode === 'balls') void this.loadPhysics();
   }
 
   update() {
@@ -423,19 +425,26 @@ export class PhotoDepth extends xb.Script {
       this.ink.end(controller);
     }
     this.refreshButtons();
-    if (this.tapMode === 'balls') {
-      try {
-        await this.ensurePhysics();
-      } catch (error) {
-        this.status(`Physics failed to load: ${describeError(error)}`);
-      }
-    }
+    if (this.tapMode === 'balls') await this.loadPhysics();
     if (this.shadowCatcher) {
       this.shadowCatcher.visible = this.tapMode === 'balls';
     }
   }
 
-  /** Loads Rapier and builds the world around the current mesh, once. */
+  /** {@link ensurePhysics}, reporting a failure on the panel. */
+  async loadPhysics() {
+    try {
+      await this.ensurePhysics();
+    } catch (error) {
+      console.error(error);
+      this.status(`Physics failed to load: ${describeError(error)}`);
+    }
+  }
+
+  /**
+   * Loads Rapier and builds the world around the current mesh, once (a
+   * failed load is retried on the next call).
+   */
   async ensurePhysics() {
     this.physicsLoading ??= (async () => {
       const {default: RAPIER} = await import('@dimforge/rapier3d-simd-compat');
@@ -450,7 +459,13 @@ export class PhotoDepth extends xb.Script {
       physics.setFloor(this.floorPlane ? this.photoFloorY : null);
       xb.core.renderer.shadowMap.enabled = true;
     })();
-    await this.physicsLoading;
+    const loading = this.physicsLoading;
+    try {
+      await loading;
+    } catch (error) {
+      if (this.physicsLoading === loading) this.physicsLoading = null;
+      throw error;
+    }
   }
 
   /**
@@ -1054,6 +1069,7 @@ export class PhotoDepth extends xb.Script {
     this.photoTexture?.dispose();
     this.depthTexture?.dispose();
     BLANK?.dispose();
+    BLANK = null;
     this.shooting.clear();
     this.ballShooter.dispose();
     this.pins.dispose();
