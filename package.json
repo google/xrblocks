@@ -60,6 +60,7 @@
     "@types/webxr": "^0.5.23",
     "@vitest/coverage-v8": "^4.1.11",
     "concurrently": "^10.0.3",
+    "flatbuffers": "^25.2.10",
     "glob": "^11.0.3",
     "http-server": "^14.1.1",
     "js-aruco2": "2.0.0",
