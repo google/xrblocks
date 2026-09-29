@@ -104,6 +104,7 @@ var SelectionManager = class extends xb.Script {
 		if (controller !== xb.core.input.mouseController) return;
 		if (this.transformGizmo?.hitTestActiveHandle(controller)) return;
 		this.raycaster.setFromXRController(controller);
+		this.raycaster.camera = xb.core.camera;
 		const hit = this.raycaster.intersectObjects(this.sceneManager.list().map((candidate) => candidate.object), true)[0];
 		let instance = hit ? this.sceneManager.getInstanceForObject(hit.object) : void 0;
 		if (instance && (instance.locked || !instance.object.visible)) instance = void 0;
