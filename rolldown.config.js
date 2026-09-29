@@ -170,6 +170,7 @@ const demoBuilds = globSync('demos/**/*.ts', {
   ignore: [
     'demos/**/node_modules/**',
     'demos/**/build/**',
+    'demos/**/*.d.ts',
     'demos/**/*.test.ts',
     // Projects with a custom build system.
   ],
@@ -190,7 +191,12 @@ const demoBuilds = globSync('demos/**/*.ts', {
 // Enable sample projects to use TypeScript and import it in their index.html
 // via by referencing, e.g. `./build/main.js`.
 const sampleBuilds = globSync('samples/**/*.ts', {
-  ignore: ['samples/**/node_modules/**', 'samples/**/build/**'],
+  ignore: [
+    'samples/**/node_modules/**',
+    'samples/**/build/**',
+    'samples/**/*.d.ts',
+    'samples/**/*.test.ts',
+  ],
 }).map((file) => ({
   input: file,
   external: () => true,
