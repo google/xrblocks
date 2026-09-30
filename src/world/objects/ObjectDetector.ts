@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {AI} from '../../ai/AI';
 import {AIOptions} from '../../ai/AIOptions';
 import {
+  detectDeviceCameraTarget,
   getCameraParametersSnapshot,
   type CameraParametersSnapshot,
 } from '../../camera/CameraUtils';
@@ -165,12 +166,8 @@ export class ObjectDetector extends Script {
     this.initialized = true;
     this.disposed = false;
 
-    if (
-      this.targetDevice === 'galaxyxr' &&
-      typeof navigator !== 'undefined' &&
-      /OculusBrowser|Quest/i.test(navigator.userAgent)
-    ) {
-      this.targetDevice = 'quest3';
+    if (this.targetDevice === 'galaxyxr') {
+      this.targetDevice = detectDeviceCameraTarget();
     }
 
     if (this.options.objects.showDebugVisualizations) {

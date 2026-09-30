@@ -30,6 +30,11 @@ export class SimulatorSettingsPanel
         sans-serif;
     }
 
+    button,
+    select {
+      font-family: inherit;
+    }
+
     .settings-btn {
       border: none;
       margin: 1rem;

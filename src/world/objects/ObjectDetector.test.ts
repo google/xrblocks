@@ -12,6 +12,7 @@ import {DetectedObject} from './DetectedObject';
 import {ObjectDetector} from './ObjectDetector';
 
 vi.mock('../../camera/CameraUtils', () => ({
+  detectDeviceCameraTarget: () => 'galaxyxr',
   getCameraParametersSnapshot: vi.fn(),
 }));
 

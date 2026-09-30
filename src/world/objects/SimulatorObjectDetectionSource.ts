@@ -18,7 +18,9 @@ export class SimulatorObjectDetectionSource implements ObjectDetectionSource {
     private camera: THREE.Camera,
     private scene: SimulatorScene,
     private objects: SimulatorObjects
-  ) {}
+  ) {
+    this.raycaster.camera = camera;
+  }
 
   detect(): SimulatorDetectedObjectInput[] {
     this.camera.updateWorldMatrix(true, false);
