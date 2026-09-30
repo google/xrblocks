@@ -485,27 +485,32 @@ export class EmbodiedControlExecutor {
   async reachTo(
     handIndex: number,
     target: THREE.Vector3 | [number, number, number] | THREE.Object3D,
-    options: {velocity?: number} = {}
+    options: {
+      velocity?: number;
+      anchor?: 'index-tip' | 'palm-center';
+    } = {}
   ): Promise<void> {
     return this.executeAction(async () => {
-      const {velocity} = options;
+      const {velocity, anchor = 'index-tip'} = options;
       const {camera, simulator, core} = this.dependencies;
       const targetWorldPos = new THREE.Vector3();
-      const fingertip =
-        core.input.hands[handIndex]?.joints?.['index-finger-tip'];
       const controller =
         handIndex === 0
           ? simulator.hands.leftController
           : simulator.hands.rightController;
-      const targetSource = new THREE.Vector3();
-      (fingertip ?? controller).getWorldPosition(targetSource);
-      this.getTargetWorldPosition(target, targetWorldPos, targetSource);
-      offsetTargetByIndexFingertip(
+      const controllerPosition = controller.getWorldPosition(
+        new THREE.Vector3()
+      );
+      const anchorPosition = getHandAnchorPosition(
         handIndex,
-        targetWorldPos,
-        simulator,
+        anchor,
         core.input.hands
       );
+      const targetSource = anchorPosition ?? controllerPosition;
+      this.getTargetWorldPosition(target, targetWorldPos, targetSource);
+      if (anchorPosition) {
+        targetWorldPos.sub(anchorPosition.sub(controllerPosition));
+      }
 
       const targetCamSpace = targetWorldPos
         .clone()
@@ -577,22 +582,27 @@ export class EmbodiedControlExecutor {
   }
 }
 
-function offsetTargetByIndexFingertip(
+function getHandAnchorPosition(
   handIndex: number,
-  targetWorldPosition: THREE.Vector3,
-  simulator: Simulator,
+  anchor: 'index-tip' | 'palm-center',
   hands: THREE.XRHandSpace[]
-): void {
-  const controller =
-    handIndex === 0
-      ? simulator.hands.leftController
-      : simulator.hands.rightController;
-  const fingertip = hands[handIndex]?.joints?.['index-finger-tip'];
-  if (!controller || !fingertip) return;
+): THREE.Vector3 | undefined {
+  const joints = hands[handIndex]?.joints;
+  if (!joints) return undefined;
 
-  const controllerPosition = new THREE.Vector3();
-  const fingertipPosition = new THREE.Vector3();
-  controller.getWorldPosition(controllerPosition);
-  fingertip.getWorldPosition(fingertipPosition);
-  targetWorldPosition.sub(fingertipPosition.sub(controllerPosition));
+  if (anchor === 'index-tip') {
+    const fingertip = joints['index-finger-tip'];
+    return fingertip?.getWorldPosition(new THREE.Vector3());
+  }
+
+  const wrist = joints.wrist;
+  const indexBase = joints['index-finger-metacarpal'];
+  const pinkyBase = joints['pinky-finger-metacarpal'];
+  if (!wrist || !indexBase || !pinkyBase) return undefined;
+
+  return wrist
+    .getWorldPosition(new THREE.Vector3())
+    .add(indexBase.getWorldPosition(new THREE.Vector3()))
+    .add(pinkyBase.getWorldPosition(new THREE.Vector3()))
+    .multiplyScalar(1 / 3);
 }

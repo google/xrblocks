@@ -42,7 +42,7 @@ export type {
   ModelViewerOrigin,
   PlayModelAnimationOptions,
 } from './model/ModelViewer';
-export {UIElement} from './UIElement';
+export {getUIPresentationObject, UIElement} from './UIElement';
 export type {
   UIColor,
   UIElementOptions,
