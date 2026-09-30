@@ -6,6 +6,7 @@ import type {WebGLOrWebGPURenderer} from '../RendererTypes';
 export enum WebXRSessionEventType {
   UNSUPPORTED = 'unsupported',
   READY = 'ready',
+  BEFORE_SESSION_START = 'beforesessionstart',
   SESSION_START = 'sessionstart',
   SESSION_END = 'sessionend',
   SESSION_ERROR = 'sessionerror',
@@ -14,6 +15,7 @@ export enum WebXRSessionEventType {
 export type WebXRSessionManagerEventMap = THREE.Object3DEventMap & {
   [WebXRSessionEventType.UNSUPPORTED]: object;
   [WebXRSessionEventType.READY]: {sessionOptions: XRSessionInit};
+  [WebXRSessionEventType.BEFORE_SESSION_START]: {session: XRSession};
   [WebXRSessionEventType.SESSION_START]: {session: XRSession};
   [WebXRSessionEventType.SESSION_END]: object;
   [WebXRSessionEventType.SESSION_ERROR]: {error: unknown};
@@ -170,6 +172,15 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     }
     session.addEventListener('end', this.onSessionEndedInternal);
     try {
+      this.dispatchEvent({
+        type: WebXRSessionEventType.BEFORE_SESSION_START,
+        session: session,
+      });
+      if (this.disposed) {
+        session.removeEventListener('end', this.onSessionEndedInternal);
+        await session.end();
+        return;
+      }
       await this.renderer.xr.setSession(session);
     } catch (error) {
       session.removeEventListener('end', this.onSessionEndedInternal);
