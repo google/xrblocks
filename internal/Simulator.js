@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 7451068
-* @builddate 2026-09-29T21:57:03.512Z
+* @commitid 999bf37
+* @builddate 2026-09-30T16:06:49.265Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -41,7 +41,7 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import { t as __exportAll } from "./rolldown-runtime.js";
-import { P as Script } from "./UICard.js";
+import { F as Script } from "./UICard.js";
 import { I as Input, M as callInitWithDependencyInjection, Nn as XRDeviceCamera, P as Physics, Rn as isWebGPURenderer, St as Options, U as Reticle, W as Depth, X as Registry, Y as WaitFrame, c as World, et as disposeObjectChildren, i as resolveSimulatorHandPoseRotations, n as SIMULATOR_HAND_POSE_ROTATIONS, r as applySimulatorHandPoseRotationConstraints, rt as Interaction, t as ModelLoader, tt as disposeObjectTree } from "./ModelLoader.js";
 import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, u as Keycodes } from "./HandPoses.js";
 import { SparkRendererHolder } from "../xrblocks.js";
@@ -2463,7 +2463,7 @@ var SimulatorEnvironmentManager = class {
 };
 //#endregion
 //#region src/world/objects/SimulatorObjectDetectionSource.ts
-const samplePoints = Array.from({ length: 9 }, () => new THREE.Vector3());
+const samplePoints = Array.from({ length: 15 }, () => new THREE.Vector3());
 /** Ground-truth object detection for the desktop simulator. */
 var SimulatorObjectDetectionSource = class {
 	constructor(camera, scene, objects) {
@@ -2502,9 +2502,15 @@ var SimulatorObjectDetectionSource = class {
 		return results;
 	}
 	fillSamples(box) {
-		box.getCenter(samplePoints[0]);
+		const center = box.getCenter(samplePoints[0]);
 		let index = 1;
 		for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) samplePoints[index++].set(x, y, z);
+		samplePoints[index++].set(box.min.x, center.y, center.z);
+		samplePoints[index++].set(box.max.x, center.y, center.z);
+		samplePoints[index++].set(center.x, box.min.y, center.z);
+		samplePoints[index++].set(center.x, box.max.y, center.z);
+		samplePoints[index++].set(center.x, center.y, box.min.z);
+		samplePoints[index].set(center.x, center.y, box.max.z);
 	}
 	isVisible(target, cameraPosition, points) {
 		const roots = this.scene.environmentRoot ? [this.scene.environmentRoot] : [];

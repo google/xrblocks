@@ -43,8 +43,10 @@ export declare class EmbodiedControl extends Script {
   pointTo(handIndex: number, target: THREE.Object3D | THREE.Vector3 | [number, number, number], options?: {
     velocity?: number;
   }): Promise<void>;
+  /** Moves the index fingertip or palm center to a world-space target. */
   reachTo(handIndex: number, target: THREE.Vector3 | [number, number, number] | THREE.Object3D, options?: {
     velocity?: number;
+    anchor?: 'index-tip' | 'palm-center';
   }): Promise<void>;
   click(handIndex?: number, options?: {
     durationMs?: number;

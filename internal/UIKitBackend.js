@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 7451068
-* @builddate 2026-09-29T21:57:03.512Z
+* @commitid 999bf37
+* @builddate 2026-09-30T16:06:49.265Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -41,7 +41,7 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import { t as __exportAll } from "./rolldown-runtime.js";
-import { C as isUIElement, E as TransformScript, S as getUIStructureRevision, T as DEFAULT_GRADIENT_PANEL_PROPS, b as getUIPresentationObject, f as normalizeManipulationConfig, k as getSemanticControl, m as ManipulationAction, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, v as getUIElementKind, w as registerUIPresentationObject, x as getUIRevision } from "./UICard.js";
+import { A as DEFAULT_GRADIENT_PANEL_PROPS, D as isUIElement, E as getUIStructureRevision, S as getUIElementKind, T as getUIRevision, f as normalizeManipulationConfig, h as getSemanticControl, j as TransformScript, k as registerUIPresentationObject, m as ManipulationAction, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, w as getUIPresentationObject } from "./UICard.js";
 import { a as UIOverlay, c as updateScrollViewLayout, i as UIText, n as bindTextInput, o as UIScrollView, r as normalizeTextInputValue, s as bindScrollView, t as UITextInput } from "./UITextInput.js";
 import * as THREE from "three";
 import { Component, Container, Custom, Image, Svg, Text, abortableEffect, reversePainterSortStable } from "@pmndrs/uikit";

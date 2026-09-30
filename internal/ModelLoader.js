@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 7451068
-* @builddate 2026-09-29T21:57:03.512Z
+* @commitid 999bf37
+* @builddate 2026-09-30T16:06:49.265Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,7 +40,7 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { A as isSemanticControl, C as isUIElement, D as resumeTransformScripts, N as MeshScript, O as suspendTransformScripts, P as Script, a as measureUICardMinContentWidth, d as isManipulationActionEnabled, f as normalizeManipulationConfig, i as measureUICardContentHeight, j as isSemanticControlDisabled, k as getSemanticControl, l as cloneScaleOptions, m as ManipulationAction, n as getResolvedUICardSize, p as normalizeRotationAxis, u as isHandleAction, v as getUIElementKind } from "./UICard.js";
+import { C as getUIPresentationBounds, D as isUIElement, F as Script, M as resumeTransformScripts, N as suspendTransformScripts, O as isUIPresentationObject, P as MeshScript, S as getUIElementKind, _ as isSemanticControlDisabled, a as measureUICardMinContentWidth, d as isManipulationActionEnabled, f as normalizeManipulationConfig, g as isSemanticControl, h as getSemanticControl, i as measureUICardContentHeight, l as cloneScaleOptions, m as ManipulationAction, n as getResolvedUICardSize, p as normalizeRotationAxis, u as isHandleAction, w as getUIPresentationObject } from "./UICard.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, n as DEFAULT_DEVICE_CAMERA_WIDTH, r as HAND_BONE_IDX_CONNECTION_MAP } from "./constants.js";
 import { h as deepMerge, l as SimulatorOptions, m as deepFreeze, p as HAND_JOINT_NAMES } from "./HandPoses.js";
 import * as THREE from "three";
@@ -4446,16 +4446,26 @@ function traverseUtil(node, callback) {
 * position. Falls back to the object's world position when it has no mesh
 * triangles. `closest` measures from `from`; `center` measures from the
 * object's world bounding-box center.
+* UI elements use the center of their rendered bounds.
 */
 function getObjectTargetPoint(object, from, out, mode = "closest") {
-	object.updateWorldMatrix(true, true);
-	const reference = mode === "center" ? new THREE.Box3().setFromObject(object, true).getCenter(new THREE.Vector3()) : from;
+	const presentation = getUIPresentationObject(object);
+	const renderedObject = presentation ?? object;
+	renderedObject.updateWorldMatrix(true, true);
+	if (presentation || isUIPresentationObject(object)) {
+		const bounds = new THREE.Box3();
+		const clippedBounds = getUIPresentationBounds(object, bounds);
+		if (clippedBounds === null) return renderedObject.getWorldPosition(out);
+		if (clippedBounds === void 0) bounds.setFromObject(renderedObject, true);
+		if (!bounds.isEmpty()) return bounds.getCenter(out);
+	}
+	const reference = mode === "center" ? new THREE.Box3().setFromObject(renderedObject, true).getCenter(new THREE.Vector3()) : from;
 	let closestDistanceSquared = Infinity;
 	const a = new THREE.Vector3();
 	const b = new THREE.Vector3();
 	const c = new THREE.Vector3();
 	const centroid = new THREE.Vector3();
-	object.traverse((child) => {
+	renderedObject.traverse((child) => {
 		if (!(child instanceof THREE.Mesh) || !child.visible) return;
 		const position = child.geometry.getAttribute("position");
 		if (!position) return;
@@ -10672,6 +10682,7 @@ var ObjectDetector = class extends Script {
 		this.currentDetectionPromise = null;
 		this.pendingDetectionPromise = null;
 		this.lastContinuousDetectionStartedAtMs = -Infinity;
+		this.initialized = false;
 		this.disposed = false;
 		this.detectedObjects = [];
 		this.targetDevice = "galaxyxr";
@@ -10699,6 +10710,7 @@ var ObjectDetector = class extends Script {
 		this.depth = depth;
 		this.camera = camera;
 		this.renderer = renderer;
+		this.initialized = true;
 		this.disposed = false;
 		if (this.targetDevice === "galaxyxr") this.targetDevice = detectDeviceCameraTarget();
 		if (this.options.objects.showDebugVisualizations) {
@@ -10709,13 +10721,12 @@ var ObjectDetector = class extends Script {
 	}
 	/**
 	* Starts continuous object detection for the given client.
-	* If this is the first client, starts the background detection loop.
+	* Detection starts on the next update after initialization.
 	* @param client - The client object requesting object detection.
 	*/
 	start(client) {
 		if (this.activeClients.has(client)) return;
 		this.activeClients.add(client);
-		if (this.activeClients.size === 1) this.runContinuousDetection();
 	}
 	/**
 	* Stops continuous object detection for the given client.
@@ -10730,7 +10741,7 @@ var ObjectDetector = class extends Script {
 	* ensures the continuous object detection is running.
 	*/
 	update() {
-		if (this.activeClients.size === 0 || this.currentDetectionPromise || this.pendingDetectionPromise) return;
+		if (!this.initialized || this.activeClients.size === 0 || this.currentDetectionPromise || this.pendingDetectionPromise) return;
 		const pollingIntervalMs = this.options.objects.pollingIntervalMs;
 		if (pollingIntervalMs > 0 && performance.now() - this.lastContinuousDetectionStartedAtMs < pollingIntervalMs) return;
 		this.runContinuousDetection();
@@ -10766,6 +10777,7 @@ var ObjectDetector = class extends Script {
 	*/
 	runDetection(options = {}) {
 		if (this.disposed) return Promise.reject(/* @__PURE__ */ new Error("ObjectDetector has been disposed."));
+		if (!this.initialized) return Promise.reject(/* @__PURE__ */ new Error("ObjectDetector is not initialized."));
 		if (options.backend !== void 0 || options.snapshot !== void 0) return this.runDetectionWithOverrides(options);
 		if (this.currentDetectionPromise) return this.currentDetectionPromise;
 		if (this.pendingDetectionPromise) return this.pendingDetectionPromise;
@@ -10929,6 +10941,7 @@ var ObjectDetector = class extends Script {
 		if (this._debugVisualsGroup) this._debugVisualsGroup.visible = visible;
 	}
 	dispose() {
+		this.initialized = false;
 		this.disposed = true;
 		this.activeClients.clear();
 		disposeObjectChildren(this);

@@ -23,7 +23,11 @@ async function runTimedMotion(options) {
 	const startedAt = performance.now();
 	while (elapsedMs < durationMs) {
 		await nextAnimationFrame();
-		advanceTo(Math.min(durationMs, Math.max(0, performance.now() - startedAt)));
+		const targetElapsedMs = Math.min(durationMs, Math.max(0, performance.now() - startedAt));
+		const currentTickMs = targetElapsedMs - elapsedMs;
+		if (currentTickMs <= 0) continue;
+		elapsedMs = targetElapsedMs;
+		applyTick(elapsedMs, currentTickMs, durationMs);
 	}
 }
 //#endregion

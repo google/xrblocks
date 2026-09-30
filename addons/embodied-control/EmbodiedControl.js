@@ -93,6 +93,7 @@ var EmbodiedControl = class extends Script {
 		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
 		return this.executor.pointTo(handIndex, target, options);
 	}
+	/** Moves the index fingertip or palm center to a world-space target. */
 	reachTo(handIndex, target, options) {
 		if (!this.executor) throw new Error("EmbodiedControl is not initialized.");
 		return this.executor.reachTo(handIndex, target, options);

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 7451068
-* @builddate 2026-09-29T21:57:03.512Z
+* @commitid 999bf37
+* @builddate 2026-09-30T16:06:49.265Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -250,22 +250,6 @@ var MeshScript = class extends ScriptMixinMeshScript {
 		super(geometry, material);
 	}
 };
-//#endregion
-//#region src/interaction/SemanticControl.ts
-const CONTROLS = /* @__PURE__ */ new WeakMap();
-/** Registers one built-in semantic control without exposing UI internals. */
-function registerSemanticControl(object, state) {
-	CONTROLS.set(object, state);
-}
-function isSemanticControl(object) {
-	return CONTROLS.has(object);
-}
-function isSemanticControlDisabled(object) {
-	return CONTROLS.get(object)?.isDisabled() ?? true;
-}
-function getSemanticControl(object) {
-	return CONTROLS.get(object);
-}
 //#endregion
 //#region src/placement/TransformScript.ts
 /** Base class for built-in scripts that continuously change their parent. */
@@ -518,6 +502,7 @@ const ENUM_VALUES = {
 };
 const states = /* @__PURE__ */ new WeakMap();
 const presentationObjects = /* @__PURE__ */ new WeakMap();
+const presentationOwners = /* @__PURE__ */ new WeakMap();
 const presentationBounds = /* @__PURE__ */ new WeakMap();
 const rootReferences = /* @__PURE__ */ new Set();
 var UIElement = class extends Script {
@@ -602,20 +587,27 @@ function getUIElementKind(element) {
 function getUIPresentationObject(element) {
 	return presentationObjects.get(element);
 }
+/** Returns whether an object renders a semantic UI element. */
+function isUIPresentationObject(object) {
+	return presentationOwners.has(object);
+}
 /** Registers one rendered object for world-space UI queries. */
 function registerUIPresentationObject(element, presentation, bounds) {
 	presentationObjects.set(element, presentation);
+	presentationOwners.set(presentation, element);
 	if (bounds) presentationBounds.set(element, bounds);
 	return () => {
 		if (presentationObjects.get(element) === presentation) {
 			presentationObjects.delete(element);
 			presentationBounds.delete(element);
 		}
+		if (presentationOwners.get(presentation) === element) presentationOwners.delete(presentation);
 	};
 }
 /** Undefined means no clipping-aware presentation is registered. */
 function getUIPresentationBounds(object, target) {
-	return presentationBounds.get(object)?.(target);
+	const element = presentationOwners.get(object) ?? object;
+	return presentationBounds.get(element)?.(target);
 }
 function getUIRevision(element) {
 	return states.get(element).revision;
@@ -803,6 +795,22 @@ function cloneStyleValue(value) {
 	if (Array.isArray(value)) return value.map(cloneStyleValue);
 	if (!value || typeof value !== "object") return value;
 	return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, cloneStyleValue(nested)]));
+}
+//#endregion
+//#region src/interaction/SemanticControl.ts
+const CONTROLS = /* @__PURE__ */ new WeakMap();
+/** Registers one built-in semantic control without exposing UI internals. */
+function registerSemanticControl(object, state) {
+	CONTROLS.set(object, state);
+}
+function isSemanticControl(object) {
+	return CONTROLS.has(object);
+}
+function isSemanticControlDisabled(object) {
+	return CONTROLS.get(object)?.isDisabled() ?? true;
+}
+function getSemanticControl(object) {
+	return CONTROLS.get(object);
 }
 //#endregion
 //#region src/interaction/manipulation/ManipulationTypes.ts
@@ -1065,6 +1073,6 @@ function validateAnchor(value, allowed, property) {
 	if (!allowed.includes(value)) throw new Error(`UICard ${property} has an invalid value.`);
 }
 //#endregion
-export { isSemanticControl as A, isUIElement as C, resumeTransformScripts as D, TransformScript as E, ScriptMixin as F, isDefaultScriptMethod as I, registerSemanticControl as M, MeshScript as N, suspendTransformScripts as O, Script as P, getUIStructureRevision as S, DEFAULT_GRADIENT_PANEL_PROPS as T, collectUIRoots as _, measureUICardMinContentWidth as a, getUIPresentationObject as b, validateUIAppearance as c, isManipulationActionEnabled as d, normalizeManipulationConfig as f, cloneUIStyle as g, UIElement as h, measureUICardContentHeight as i, isSemanticControlDisabled as j, getSemanticControl as k, cloneScaleOptions as l, ManipulationAction as m, getResolvedUICardSize as n, setResolvedUICardSize as o, normalizeRotationAxis as p, getUICardEdgeOptions as r, setUICardContentMeasurer as s, UICard as t, isHandleAction as u, getUIElementKind as v, registerUIPresentationObject as w, getUIRevision as x, getUIPresentationBounds as y };
+export { DEFAULT_GRADIENT_PANEL_PROPS as A, getUIPresentationBounds as C, isUIElement as D, getUIStructureRevision as E, Script as F, ScriptMixin as I, isDefaultScriptMethod as L, resumeTransformScripts as M, suspendTransformScripts as N, isUIPresentationObject as O, MeshScript as P, getUIElementKind as S, getUIRevision as T, isSemanticControlDisabled as _, measureUICardMinContentWidth as a, cloneUIStyle as b, validateUIAppearance as c, isManipulationActionEnabled as d, normalizeManipulationConfig as f, isSemanticControl as g, getSemanticControl as h, measureUICardContentHeight as i, TransformScript as j, registerUIPresentationObject as k, cloneScaleOptions as l, ManipulationAction as m, getResolvedUICardSize as n, setResolvedUICardSize as o, normalizeRotationAxis as p, getUICardEdgeOptions as r, setUICardContentMeasurer as s, UICard as t, isHandleAction as u, registerSemanticControl as v, getUIPresentationObject as w, collectUIRoots as x, UIElement as y };
 
 //# sourceMappingURL=UICard.js.map
