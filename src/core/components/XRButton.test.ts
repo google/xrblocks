@@ -387,4 +387,31 @@ describe('XR entry feedback', () => {
     expect(startSimulator).toHaveBeenCalledOnce();
     expect(button.domElement.isConnected).toBe(false);
   });
+
+  it('dispatches beforesessionstart with the session before renderer.xr.setSession', async () => {
+    const session = createSession();
+    requestSession.mockResolvedValue(session);
+    const events: string[] = [];
+
+    manager.addEventListener('beforesessionstart', (event) => {
+      expect(event.session).toBe(session);
+      events.push('beforesessionstart');
+    });
+    setSession.mockImplementation(async () => {
+      events.push('setSession');
+    });
+    manager.addEventListener('sessionstart', (event) => {
+      expect(event.session).toBe(session);
+      events.push('sessionstart');
+    });
+
+    manager.startSession();
+    await flushRequests();
+
+    expect(events).toEqual([
+      'beforesessionstart',
+      'setSession',
+      'sessionstart',
+    ]);
+  });
 });

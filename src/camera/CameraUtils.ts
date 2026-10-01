@@ -32,6 +32,20 @@ export const DEVICE_CAMERA_PARAMETERS: {[key: string]: DeviceCameraParameters} =
     },
   };
 
+/**
+ * The {@link DEVICE_CAMERA_PARAMETERS} profile for the running browser:
+ * `'quest3'` in the Meta Quest browser, `'galaxyxr'` otherwise. The two
+ * profiles share intrinsics but not the camera-to-eye extrinsics (the Quest
+ * camera is pitched ~15° down), so every consumer of the device-camera pose
+ * must resolve the same profile.
+ * @param userAgent - Defaults to `navigator.userAgent` when available.
+ */
+export function detectDeviceCameraTarget(
+  userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+): string {
+  return /OculusBrowser|Quest/i.test(userAgent) ? 'quest3' : 'galaxyxr';
+}
+
 type BoundingBoxCanvasResult = {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;

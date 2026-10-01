@@ -81,11 +81,11 @@ export interface Object3DDetectorOptions {
   detectBackend?: 'gemini' | 'mediapipe' | 'both';
   /**
    * Which segmentation mask backend to use for depth sampling.
-   * - `'slimsam'` — SlimSAM-77-uniform via `@huggingface/transformers` (tighter masks).
+   * - `'efficientsam_ti'` — EfficientSAM-Ti via `@litertjs/core` (tighter masks).
    * - `'mediapipe'` — MediaPipe `InteractiveSegmenter` (faster, no download).
-   * @defaultValue `'slimsam'`
+   * @defaultValue `'efficientsam_ti'`
    */
-  maskBackend?: 'slimsam' | 'mediapipe';
+  maskBackend?: 'efficientsam_ti' | 'mediapipe';
   /**
    * When `true`, accumulate OBBs across multiple `detect()` calls from
    * different angles. Each new call refines matching existing boxes via
@@ -128,6 +128,18 @@ export interface Object3DDetectorOptions {
    */
   cameraRotationOffset?: {yaw?: number; pitch?: number; roll?: number};
   /**
+   * Full 6-DOF correction to the SDK's estimated device-camera extrinsics,
+   * post-multiplied in the camera's own view frame (+x right, +y up, −z
+   * forward), applied after {@link cameraRotationOffset}: `worldFromView`
+   * becomes `worldFromView · T(translation) · R(rotation)`. Same shape and
+   * convention as the ArUco tracker's `calibration` option, so a
+   * calibration recovered by `ArucoTracker.getCalibration()` can be passed
+   * straight through (its `rangeScale` does not apply here — metric range
+   * comes from the depth mesh, not a monocular marker estimate).
+   * @defaultValue `undefined` (no correction)
+   */
+  cameraExtrinsicCorrection?: {rotation?: number[]; translation?: number[]};
+  /**
    * How fitted yaws are reconciled with the room. Defaults to
    * `{mode: 'roomFrame'}`, which estimates the room's own wall direction from
    * the depth mesh and falls back to it only when an object's own orientation
@@ -165,6 +177,12 @@ export interface Object3DDetectorDiagnostics {
   cameraAspect: number;
   /** Extra rotation applied on top of the SDK extrinsics, in degrees. */
   cameraRotationOffsetDeg: {yaw: number; pitch: number; roll: number};
+  /** Applied 6-DOF extrinsic correction (e.g. from an ArUco calibration
+   * session), or `null` when none is set. */
+  cameraExtrinsicCorrection: {
+    rotationDeg: number;
+    translationCm: number;
+  } | null;
   snapshotWidth: number;
   snapshotHeight: number;
   /** Whether the platform's view→depth-buffer UV remap is the identity. */
@@ -222,6 +240,33 @@ const _bvhReady: Promise<boolean> = enableAcceleratedRaycast().catch(
 );
 
 /**
+ * Post-multiplies the manual Euler offset, then a 6-DOF extrinsic
+ * correction matrix, onto `worldFromView` — both in the camera's own view
+ * space, on top of the SDK's estimated extrinsics:
+ * `worldFromView · R(offset) · extrinsic`. Exported as a pure function so
+ * the composition can be unit-tested without an XR session. Returns the
+ * input instance unchanged when both corrections are identity/absent.
+ */
+export function applyCameraPoseCorrections(
+  worldFromView: THREE.Matrix4,
+  offset: {yaw: number; pitch: number; roll: number},
+  extrinsic: THREE.Matrix4 | null
+): THREE.Matrix4 {
+  const hasEuler = offset.yaw !== 0 || offset.pitch !== 0 || offset.roll !== 0;
+  if (!hasEuler && !extrinsic) return worldFromView;
+  const out = worldFromView.clone();
+  if (hasEuler) {
+    out.multiply(
+      new THREE.Matrix4().makeRotationFromEuler(
+        new THREE.Euler(offset.pitch, offset.yaw, offset.roll, 'YXZ')
+      )
+    );
+  }
+  if (extrinsic) out.multiply(extrinsic);
+  return out;
+}
+
+/**
  * The 3-D object-detection pipeline as a reusable {@link Script}. See the
  * `objects_3d` demo for a worked integration. Attach it to the scene before
  * `xb.init()`, then
@@ -240,7 +285,10 @@ export class Object3DDetector extends Script {
   private readonly _opts: Required<
     Omit<
       Object3DDetectorOptions,
-      'sceneBounds' | 'cameraRotationOffset' | 'orientation'
+      | 'sceneBounds'
+      | 'cameraRotationOffset'
+      | 'cameraExtrinsicCorrection'
+      | 'orientation'
     >
   > & {
     sceneBounds: {maxXZ: number; minY: number; maxY: number};
@@ -256,6 +304,11 @@ export class Object3DDetector extends Script {
   private readonly _poseRing = new PoseRing(120);
   private readonly _roomFrame = new RoomFrameAccumulator();
   private _diagnostics: Object3DDetectorDiagnostics | null = null;
+  private _extrinsic: {
+    matrix: THREE.Matrix4;
+    rotationDeg: number;
+    translationCm: number;
+  } | null = null;
 
   /**
    * @param options - Configuration options.
@@ -264,7 +317,7 @@ export class Object3DDetector extends Script {
     super();
     this._opts = {
       detectBackend: options.detectBackend ?? 'gemini',
-      maskBackend: options.maskBackend ?? 'slimsam',
+      maskBackend: options.maskBackend ?? 'efficientsam_ti',
       fuseAcrossViews: options.fuseAcrossViews ?? true,
       showDebugBoxes: options.showDebugBoxes ?? false,
       maxRayDistance: options.maxRayDistance ?? 12,
@@ -288,6 +341,7 @@ export class Object3DDetector extends Script {
         minYawConfidence: options.orientation?.minYawConfidence ?? 0.35,
       },
     };
+    this.setCameraExtrinsicCorrection(options.cameraExtrinsicCorrection);
   }
 
   /**
@@ -359,6 +413,53 @@ export class Object3DDetector extends Script {
     current.yaw = offset.yaw ?? current.yaw;
     current.pitch = offset.pitch ?? current.pitch;
     current.roll = offset.roll ?? current.roll;
+  }
+
+  /** The currently applied 6-DOF extrinsic correction, or `null`. */
+  get cameraExtrinsicCorrection(): {
+    rotation: number[];
+    translation: number[];
+  } | null {
+    if (!this._extrinsic) return null;
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    this._extrinsic.matrix.decompose(position, quaternion, new THREE.Vector3());
+    return {rotation: quaternion.toArray(), translation: position.toArray()};
+  }
+
+  /**
+   * Set or clear the 6-DOF extrinsic correction (see
+   * {@link Object3DDetectorOptions.cameraExtrinsicCorrection}). Pass `null`
+   * or an object with neither field to clear it. Safe to call between
+   * `detect()` calls, so a calibration recovered on the fly (e.g. from an
+   * ArUco calibration session) can be applied mid-session.
+   */
+  setCameraExtrinsicCorrection(
+    correction: {rotation?: number[]; translation?: number[]} | null | undefined
+  ): void {
+    if (!correction || (!correction.rotation && !correction.translation)) {
+      this._extrinsic = null;
+      return;
+    }
+    const rotation =
+      correction.rotation?.length === 4
+        ? new THREE.Quaternion().fromArray(correction.rotation).normalize()
+        : new THREE.Quaternion();
+    const translation =
+      correction.translation?.length === 3
+        ? new THREE.Vector3().fromArray(correction.translation)
+        : new THREE.Vector3();
+    this._extrinsic = {
+      matrix: new THREE.Matrix4().compose(
+        translation,
+        rotation,
+        new THREE.Vector3(1, 1, 1)
+      ),
+      rotationDeg: THREE.MathUtils.radToDeg(
+        2 * Math.acos(THREE.MathUtils.clamp(Math.abs(rotation.w), -1, 1))
+      ),
+      translationCm: translation.length() * 100,
+    };
   }
 
   /** The orientation policy currently in force. */
@@ -459,6 +560,12 @@ export class Object3DDetector extends Script {
         pitch: THREE.MathUtils.radToDeg(this._opts.cameraRotationOffset.pitch),
         roll: THREE.MathUtils.radToDeg(this._opts.cameraRotationOffset.roll),
       },
+      cameraExtrinsicCorrection: this._extrinsic
+        ? {
+            rotationDeg: this._extrinsic.rotationDeg,
+            translationCm: this._extrinsic.translationCm,
+          }
+        : null,
       snapshotWidth: 0,
       snapshotHeight: 0,
       depthRemapIsIdentity: null,
@@ -609,7 +716,7 @@ export class Object3DDetector extends Script {
       let samPrep: Promise<
         Awaited<ReturnType<typeof samEncodeSnapshot>>
       > | null = null;
-      if (this._opts.maskBackend === 'slimsam') {
+      if (this._opts.maskBackend === 'efficientsam_ti') {
         samPrep = (async () => {
           await getSam();
           return samEncodeSnapshot(snapImageData!);
@@ -657,7 +764,7 @@ export class Object3DDetector extends Script {
         // Await the SAM encoder that ran in parallel with detection.
         let samState: Awaited<ReturnType<typeof samEncodeSnapshot>> | null =
           null;
-        if (this._opts.maskBackend === 'slimsam' && samPrep) {
+        if (this._opts.maskBackend === 'efficientsam_ti' && samPrep) {
           try {
             samState = await samPrep;
           } catch (e) {
@@ -686,7 +793,7 @@ export class Object3DDetector extends Script {
             let mask;
             try {
               mask =
-                this._opts.maskBackend === 'slimsam' && samState
+                this._opts.maskBackend === 'efficientsam_ti' && samState
                   ? await samMaskFromBbox(samState, box2d)
                   : await segmenterMaskFromSnapshot(snapshot!, box2d);
             } catch (e) {
@@ -931,18 +1038,11 @@ export class Object3DDetector extends Script {
           }
         }
       }
-      const off = this._opts.cameraRotationOffset;
-      if (off.yaw !== 0 || off.pitch !== 0 || off.roll !== 0) {
-        // Post-multiplying applies the correction in the camera's own view
-        // space, on top of the SDK's estimated extrinsics.
-        worldFromView = worldFromView
-          .clone()
-          .multiply(
-            new THREE.Matrix4().makeRotationFromEuler(
-              new THREE.Euler(off.pitch, off.yaw, off.roll, 'YXZ')
-            )
-          );
-      }
+      worldFromView = applyCameraPoseCorrections(
+        worldFromView,
+        this._opts.cameraRotationOffset,
+        this._extrinsic?.matrix ?? null
+      );
       return buildFrozenCamera({
         worldFromView,
         clipFromView: params.clipFromView,

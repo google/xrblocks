@@ -146,10 +146,14 @@ export class EmbodiedControl extends Script {
     return this.executor.pointTo(handIndex, target, options);
   }
 
+  /** Moves the index fingertip or palm center to a world-space target. */
   reachTo(
     handIndex: number,
     target: THREE.Vector3 | [number, number, number] | THREE.Object3D,
-    options?: {velocity?: number}
+    options?: {
+      velocity?: number;
+      anchor?: 'index-tip' | 'palm-center';
+    }
   ): Promise<void> {
     if (!this.executor) {
       throw new Error('EmbodiedControl is not initialized.');
