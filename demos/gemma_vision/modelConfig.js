@@ -79,6 +79,9 @@ export const MODELS = Object.freeze({
     imageBudgets: Object.freeze([70, 140, 280]),
     eosTokens: Object.freeze([1, 106, 50]),
     presets: Object.freeze(['describe', 'read', 'translate']),
+    presetPrompts: Object.freeze({}),
+    maxNewTokens: 128,
+    stopOnRepetition: false,
   }),
   lite: Object.freeze({
     key: 'lite',
@@ -104,6 +107,14 @@ export const MODELS = Object.freeze({
     imageBudgets: Object.freeze([64, 320]),
     eosTokens: Object.freeze([49279]),
     presets: Object.freeze(['describe', 'read']),
+    // Short questions keep SmolVLM2 answers brief; the long preset wording
+    // made it ramble or loop on real photos.
+    presetPrompts: Object.freeze({
+      describe: 'What is in this image? Answer in one sentence.',
+      read: 'What text is written in this image?',
+    }),
+    maxNewTokens: 64,
+    stopOnRepetition: true,
   }),
 });
 

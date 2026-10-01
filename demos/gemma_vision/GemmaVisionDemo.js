@@ -140,8 +140,14 @@ export class GemmaVisionDemo extends xb.Script {
     this.clearButton = button('Clear conversation', () =>
       this.clearConversation()
     );
-    this.presetButtons = PRESETS.map(({label, prompt}) =>
-      button(label, () => this.ask(prompt))
+    this.presetButtons = PRESETS.map(({id, label, prompt}) =>
+      button(label, () =>
+        this.ask(
+          (this.client.loaded &&
+            getModel(this.client.modelKey).presetPrompts[id]) ||
+            prompt
+        )
+      )
     );
     this.buttons = [
       ...this.modelButtons,
@@ -488,7 +494,9 @@ export class GemmaVisionDemo extends xb.Script {
         ? 'Interrupted. Partial reply is visible but not added to model history.'
         : result.truncated
           ? 'Output limit reached. The transcription or answer may be incomplete.'
-          : 'Ready. Ask a follow-up about the same captured image.';
+          : result.repetitionStopped
+            ? 'Ready. Stopped the answer where it began repeating.'
+            : 'Ready. Ask a follow-up about the same captured image.';
     } catch (error) {
       if (this.isCurrent(operation)) {
         response.state = 'failed';

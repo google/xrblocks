@@ -85,6 +85,21 @@ describe('vision model registry', () => {
     expect(MODELS.lite.presets).not.toContain('translate');
   });
 
+  it('keeps Gemma greedy defaults and gives Lite short, guarded answers', () => {
+    expect(MODELS.gemma.maxNewTokens).toBe(128);
+    expect(MODELS.gemma.stopOnRepetition).toBe(false);
+    expect(MODELS.gemma.presetPrompts).toEqual({});
+    expect(MODELS.lite.maxNewTokens).toBe(64);
+    expect(MODELS.lite.stopOnRepetition).toBe(true);
+    expect(MODELS.lite.presetPrompts).toEqual({
+      describe: 'What is in this image? Answer in one sentence.',
+      read: 'What text is written in this image?',
+    });
+    for (const id of Object.keys(MODELS.lite.presetPrompts)) {
+      expect(MODELS.lite.presets).toContain(id);
+    }
+  });
+
   it('rejects unknown model keys', () => {
     expect(getModel('lite')).toBe(MODELS.lite);
     for (const key of ['', 'toString', '__proto__', undefined, 3]) {

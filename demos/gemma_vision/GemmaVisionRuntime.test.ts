@@ -480,6 +480,81 @@ describe('GemmaVisionRuntime', () => {
     });
   });
 
+  it('stops a repeating Lite answer and keeps the first copy', async () => {
+    const f = fixture();
+    const sentence = 'The golden book of the year 934 is a gold record. ';
+    const deltas: string[] = [];
+    let stopping;
+    f.liteModel.generate.mockImplementationOnce(async (options) => {
+      stopping = options.stopping_criteria;
+      for (let i = 0; i < 4 && !stopping.interrupted; i++) {
+        options.streamer.options.token_callback_function([7n]);
+        options.streamer.options.callback_function(sentence);
+      }
+      return {
+        tolist: () => [Array(300).fill(0n).concat([7n, 7n])],
+        dispose: vi.fn(),
+      };
+    });
+    await f.call(1, 'load', {modelKey: 'lite'});
+    await f.capture();
+    await f.call(3, 'generate', {imageId: 1, question: 'Read this'});
+    for (const reply of f.replies) {
+      if (reply.type === 'delta' && reply.id === 3) {
+        deltas.push(reply.text as string);
+      }
+    }
+    expect(stopping.interrupted).toBe(true);
+    expect(deltas).toEqual([sentence]);
+    expect(f.liteModel.generate).toHaveBeenCalledWith(
+      expect.objectContaining({max_new_tokens: 64, do_sample: false})
+    );
+    expect(f.replies.at(-1)).toMatchObject({
+      type: 'result',
+      id: 3,
+      result: {
+        text: sentence.trim(),
+        interrupted: false,
+        truncated: false,
+        repetitionStopped: true,
+        generatedTokens: 2,
+      },
+    });
+    await f.call(4, 'generate', {imageId: 1, question: 'More?'});
+    expect(f.liteTemplate.mock.calls[1][0][1]).toEqual({
+      role: 'assistant',
+      content: [{type: 'text', text: sentence.trim()}],
+    });
+  });
+
+  it('leaves Gemma generation unguarded', async () => {
+    const f = fixture();
+    const sentence = 'The golden book of the year 934 is a gold record. ';
+    let stopping;
+    f.model.generate.mockImplementationOnce(async (options) => {
+      stopping = options.stopping_criteria;
+      for (let i = 0; i < 4; i++) {
+        options.streamer.options.token_callback_function([12n]);
+        options.streamer.options.callback_function(sentence);
+      }
+      return {
+        tolist: () => [Array(300).fill(0n).concat([12n, 1n])],
+        dispose: vi.fn(),
+      };
+    });
+    await f.call(1, 'load');
+    await f.capture();
+    await f.call(3, 'generate', {imageId: 1, question: 'Read this'});
+    expect(stopping.interrupted).toBe(false);
+    expect(f.model.generate).toHaveBeenCalledWith(
+      expect.objectContaining({max_new_tokens: 128})
+    );
+    expect(f.replies.at(-1)).toMatchObject({
+      type: 'result',
+      result: {text: 'A red chair.', repetitionStopped: false},
+    });
+  });
+
   it.each([
     [64, false],
     [320, true],

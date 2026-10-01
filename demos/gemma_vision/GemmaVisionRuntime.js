@@ -1,12 +1,9 @@
 import {CACHE_NAME, DEFAULT_MODEL, getModel} from './modelConfig.js';
 import * as modelStore from './modelStore.js';
-import {
-  assertContextBudget,
-  MAX_NEW_TOKENS,
-  validateQuestion,
-} from './conversation.js';
+import {assertContextBudget, validateQuestion} from './conversation.js';
 import {MAX_IMAGE_EDGE} from './image.js';
 import {ADAPTERS} from './modelAdapters.js';
+import {findRepetition} from './repetition.js';
 
 export async function checkCapabilities() {
   if (!globalThis.isSecureContext || !navigator.gpu) {
@@ -206,6 +203,8 @@ export class GemmaVisionRuntime {
     );
     let output;
     let text = '';
+    /** @type {string | undefined} Answer kept when it starts repeating. */
+    let repeatCut;
     let generatedTokens = 0;
     let firstToken = null;
     let lastToken = null;
@@ -225,8 +224,15 @@ export class GemmaVisionRuntime {
         skip_prompt: true,
         skip_special_tokens: true,
         callback_function: (chunk) => {
-          if (operation.interrupted || this.closing) return;
+          if (operation.interrupted || this.closing || repeatCut !== undefined)
+            return;
           text += chunk;
+          const cut = info.stopOnRepetition ? findRepetition(text) : -1;
+          if (cut >= 0) {
+            repeatCut = text.slice(0, cut).trim();
+            operation.stopping.interrupt();
+            return;
+          }
           this.post({type: 'delta', id: operation.id, text: chunk});
         },
         token_callback_function: (tokens) => {
@@ -243,15 +249,15 @@ export class GemmaVisionRuntime {
         ...inputs,
         do_sample: false,
         num_beams: 1,
-        max_new_tokens: MAX_NEW_TOKENS,
+        max_new_tokens: info.maxNewTokens,
         streamer,
         stopping_criteria: operation.stopping,
       });
       const tokens = output.tolist()[0].slice(inputTokens);
       if (!operation.interrupted) {
-        text = this.tokenizer
-          .decode(tokens, {skip_special_tokens: true})
-          .trim();
+        text =
+          repeatCut ??
+          this.tokenizer.decode(tokens, {skip_special_tokens: true}).trim();
         if (!text) throw new Error(`${info.name} returned no visible answer.`);
         this.history.push({question, answer: text});
       }
@@ -259,8 +265,10 @@ export class GemmaVisionRuntime {
         text,
         interrupted: operation.interrupted,
         truncated:
-          tokens.length >= MAX_NEW_TOKENS &&
+          repeatCut === undefined &&
+          tokens.length >= info.maxNewTokens &&
           !eosTokens.has(Number(tokens.at(-1))),
+        repetitionStopped: repeatCut !== undefined,
         generatedTokens,
         tokensPerSecond:
           generatedTokens > 1 && lastToken > firstToken

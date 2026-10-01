@@ -77,6 +77,7 @@ type GenerationResult = {
   text: string;
   interrupted?: boolean;
   truncated?: boolean;
+  repetitionStopped?: boolean;
   generatedTokens?: number;
   firstTextMs?: number;
   tokensPerSecond?: number;
@@ -1024,6 +1025,39 @@ describe('model chooser', () => {
       onText: expect.any(Function),
     });
     expect(scene.historyText.text).toContain('Lite\nA sign.');
+  });
+
+  it('asks presets with the loaded model wording', async () => {
+    const {scene, client} = await ready();
+    const read = PRESETS.findIndex(({id}) => id === 'read');
+    await scene.presetButtons[read].onClick();
+    expect(client.generate).toHaveBeenLastCalledWith(
+      PRESETS[read].prompt,
+      expect.anything()
+    );
+    client.modelKey = 'lite';
+    await scene.presetButtons[read].onClick();
+    expect(client.generate).toHaveBeenLastCalledWith(
+      MODELS.lite.presetPrompts.read,
+      {imageBudget: MODELS.lite.imageBudget, onText: expect.any(Function)}
+    );
+    expect(scene.historyText.text).toContain(
+      `You\n${MODELS.lite.presetPrompts.read}`
+    );
+  });
+
+  it('says when a repeating answer was cut short', async () => {
+    const {scene, client} = await ready();
+    client.generate.mockResolvedValueOnce({
+      text: 'A red book.',
+      repetitionStopped: true,
+    });
+    await scene.ask('Describe.');
+    expect(scene.historyText.text).toContain('A red book.');
+    expect(scene.historyText.text).not.toMatch(/output limit/i);
+    expect(scene.status.text).toBe(
+      'Ready. Stopped the answer where it began repeating.'
+    );
   });
 
   it('offers only the presets the loaded model handles', async () => {
