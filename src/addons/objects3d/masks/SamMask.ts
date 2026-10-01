@@ -1,37 +1,57 @@
 /**
- * SlimSAM-77-uniform mask backend via `@huggingface/transformers`.
+ * EfficientSAM-Ti mask backend via LiteRT.js (`@litertjs/core`).
  *
- * All heavy dependencies are loaded at runtime with dynamic `import()` so the
- * addon bundle stays external-free at build time.
+ * All heavy dependencies are loaded at runtime via the `litert` addon helpers
+ * so the `objects3d` addon bundle stays external-free at build time.
  */
 
-import {samDeviceCandidates, type SamGpuAdapterInfo} from './SamDevice';
+import type {CompiledModel} from '@litertjs/core';
 
-// @huggingface/transformers is an external peer-dep loaded via importmap at
-// runtime. Define opaque local types so TypeScript doesn't require the package
-// to be installed in node_modules.
-type SamModel = unknown;
-type AutoProcessor = unknown;
-type RawImage = unknown;
+import {
+  compileModel,
+  defaultNumThreads,
+  fetchCachedModel,
+  loadLiteRtRuntime,
+  runModel,
+  type LiteRtAccelerator,
+  type RunModelFn,
+} from '../../litert';
 
-/** Hugging Face model ID for SlimSAM-77-uniform. Apache-2 licensed, ~14 MB. */
-export const SAM_MODEL_ID = 'Xenova/slimsam-77-uniform';
+/** Hosted LiteRT `.tflite` encoder for EfficientSAM-Ti (512×512 input). */
+export const EFFICIENTSAM_TI_ENCODER_URL =
+  'https://rawcdn.githack.com/xrblocks/proprietary-assets/15e67828b08e0b05160cc8d497106bd600312517/tflite_models/efficientsam/efficientsam_ti_encoder.tflite';
 
-export {
-  SAM_ATTENTION_ELEMENTS,
-  samDeviceCandidates,
-  type SamGpuAdapterInfo,
-  type SamLoadOption,
-} from './SamDevice';
+/** Hosted LiteRT `.tflite` decoder for EfficientSAM-Ti (up to 6 prompt points). */
+export const EFFICIENTSAM_TI_DECODER_URL =
+  'https://rawcdn.githack.com/xrblocks/proprietary-assets/15e67828b08e0b05160cc8d497106bd600312517/tflite_models/efficientsam/efficientsam_ti_decoder.tflite';
+
+/** Encoder input spatial resolution (`512×512`). */
+export const SAM_IMG_SIZE = 512;
+
+/** Low-resolution mask logit grid output by the decoder (`128×128`). */
+export const SAM_MASK_LOW_RES = 128;
+
+/** Encoder output channel count (`[1, 256, 32, 32]`). */
+export const SAM_EMBED_DIM = 256;
+
+/** Encoder output spatial grid size (`512 / 16 = 32`). */
+export const SAM_EMBED_GRID = 32;
+
+/** Static prompt point capacity of the exported decoder (`[1, 6, 2]`). */
+export const SAM_MAX_POINTS = 6;
+
+/** Loaded EfficientSAM-Ti encoder and decoder handle. */
+export interface SamModels {
+  encoder: CompiledModel;
+  decoder: CompiledModel;
+  encoderAccelerator: LiteRtAccelerator;
+  decoderAccelerator: LiteRtAccelerator;
+}
 
 /** Encoded snapshot state reused across all per-detection mask calls. */
 export interface SamState {
-  /** The RawImage wrapper used by the processor. */
-  image: RawImage;
-  /** Raw processor inputs (cached for the decoder). */
-  image_inputs: object;
-  /** Image embeddings from the SAM encoder (reused per detection). */
-  image_embeddings: object;
+  /** Image embeddings `[1, 256, 32, 32]` from the EfficientSAM-Ti encoder. */
+  imageEmbeddings: Float32Array;
   /** Snapshot width in pixels. */
   width: number;
   /** Snapshot height in pixels. */
@@ -54,18 +74,16 @@ export interface SamMaskResult {
 // SAM singleton + serialisation queue
 // ---------------------------------------------------------------------------
 
-let _sam: SamModel | null = null;
-let _samProc: AutoProcessor | null = null;
-let _samPromise: Promise<{sam: SamModel; proc: AutoProcessor}> | null = null;
+let _samModels: SamModels | null = null;
+let _samPromise: Promise<SamModels> | null = null;
 
-// SAM's ONNX session is not re-entrant: a second call before the previous one
-// resolves trips "Session already started". Serialise every SAM invocation
-// behind a chained promise so ORT only ever sees one in-flight call.
+// Serialise every LiteRT invocation behind a chained promise so only one
+// inference is in flight at a time on the shared compiled models.
 let _samQueue: Promise<unknown> = Promise.resolve();
 
 /**
  * Enqueue `fn` behind the SAM serialisation queue. Ensures that at most one
- * SAM call is in flight at a time (the ONNX runtime is not re-entrant).
+ * SAM call is in flight at a time.
  *
  * @param fn - Async factory that performs one SAM operation.
  * @returns Promise resolving to `fn`'s return value.
@@ -77,48 +95,38 @@ export function samSerialize<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Lazily load SlimSAM-77-uniform model and processor, preferring WebGPU when
- * the adapter can actually run it and falling back through lower-precision and
- * CPU configurations of the same model.
+ * Lazily load and compile the EfficientSAM-Ti encoder and decoder via LiteRT,
+ * preferring WebGPU and automatically falling back to WASM.
  *
- * @returns Model and processor instances.
+ * @returns Compiled encoder and decoder models.
  */
-export function getSam(): Promise<{sam: SamModel; proc: AutoProcessor}> {
-  if (_sam && _samProc) return Promise.resolve({sam: _sam, proc: _samProc});
+export function getSam(): Promise<SamModels> {
+  if (_samModels) return Promise.resolve(_samModels);
   if (_samPromise) return _samPromise;
   const pending = (async () => {
-    const {
-      SamModel: SamModelCls,
-      AutoProcessor: AutoProcessorCls,
-      env,
-    } = await import('@huggingface/transformers');
-    env.allowLocalModels = false;
-    let adapter: SamGpuAdapterInfo | null = null;
-    try {
-      adapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null;
-    } catch (error) {
-      console.warn('[objects3d] WebGPU adapter probe failed', error);
-    }
-    let lastError: unknown = null;
-    for (const opts of samDeviceCandidates(adapter)) {
-      try {
-        _sam = (await SamModelCls.from_pretrained(
-          SAM_MODEL_ID,
-          opts
-        )) as SamModel;
-        _samProc = (await AutoProcessorCls.from_pretrained(
-          SAM_MODEL_ID
-        )) as AutoProcessor;
-        return {sam: _sam, proc: _samProc};
-      } catch (error) {
-        lastError = error;
-        console.warn(
-          `[objects3d] SAM load failed on ${opts.device}/${opts.dtype}`,
-          error
-        );
-      }
-    }
-    throw lastError ?? new Error('SAM could not be loaded');
+    const runtime = await loadLiteRtRuntime();
+    const [encBytes, decBytes] = await Promise.all([
+      fetchCachedModel(EFFICIENTSAM_TI_ENCODER_URL),
+      fetchCachedModel(EFFICIENTSAM_TI_DECODER_URL),
+    ]);
+    const cpuOptions = {numThreads: defaultNumThreads()};
+    const encHandle = await compileModel(encBytes, {
+      accelerator: runtime.accelerator,
+      fallbackToWasm: true,
+      cpuOptions,
+    });
+    const decHandle = await compileModel(decBytes, {
+      accelerator: runtime.accelerator,
+      fallbackToWasm: true,
+      cpuOptions,
+    });
+    _samModels = {
+      encoder: encHandle.model,
+      decoder: decHandle.model,
+      encoderAccelerator: encHandle.accelerator,
+      decoderAccelerator: decHandle.accelerator,
+    };
+    return _samModels;
   })();
   _samPromise = pending;
   // Never leave a rejected promise cached: getSam() hands back the cached
@@ -130,38 +138,259 @@ export function getSam(): Promise<{sam: SamModel; proc: AutoProcessor}> {
   return pending;
 }
 
+/** Test hook: reset the cached SAM models and pending promise. */
+export function resetSamForTesting(): void {
+  _samModels = null;
+  _samPromise = null;
+  _samQueue = Promise.resolve();
+}
+
 /**
- * Run the SAM encoder on a snapshot `ImageData` (once per detect press).
- * Subsequent per-detection mask requests reuse the returned `SamState`.
+ * Convert an RGBA snapshot into a planar `Float32Array` of shape
+ * `[1, 3, targetSize, targetSize]` normalized to `[0, 1]`. Uses bilinear
+ * sampling when the snapshot dimensions differ from `targetSize`.
+ *
+ * @param snapshot - Raw RGBA image buffer and dimensions.
+ * @param targetSize - Output square resolution (defaults to `512`).
+ * @returns Planar RGB `Float32Array` in `[0, 1]`.
+ */
+export function snapshotToPlanarFloat32(
+  snapshot: {
+    data: Uint8ClampedArray | Uint8Array;
+    width: number;
+    height: number;
+  },
+  targetSize = SAM_IMG_SIZE
+): Float32Array {
+  const {data, width: srcW, height: srcH} = snapshot;
+  const hw = targetSize * targetSize;
+  const out = new Float32Array(3 * hw);
+  const inv255 = 1.0 / 255.0;
+
+  if (srcW === targetSize && srcH === targetSize) {
+    for (let i = 0; i < hw; i++) {
+      const idx = i * 4;
+      out[i] = data[idx] * inv255;
+      out[hw + i] = data[idx + 1] * inv255;
+      out[2 * hw + i] = data[idx + 2] * inv255;
+    }
+    return out;
+  }
+
+  const scaleX = srcW / targetSize;
+  const scaleY = srcH / targetSize;
+  for (let y = 0; y < targetSize; y++) {
+    const sy = Math.max(0, (y + 0.5) * scaleY - 0.5);
+    const y0 = Math.min(srcH - 1, Math.floor(sy));
+    const y1 = Math.min(srcH - 1, y0 + 1);
+    const wy = sy - y0;
+    const row0 = y0 * srcW;
+    const row1 = y1 * srcW;
+    const dstRow = y * targetSize;
+
+    for (let x = 0; x < targetSize; x++) {
+      const sx = Math.max(0, (x + 0.5) * scaleX - 0.5);
+      const x0 = Math.min(srcW - 1, Math.floor(sx));
+      const x1 = Math.min(srcW - 1, x0 + 1);
+      const wx = sx - x0;
+
+      const i00 = (row0 + x0) * 4;
+      const i01 = (row0 + x1) * 4;
+      const i10 = (row1 + x0) * 4;
+      const i11 = (row1 + x1) * 4;
+
+      const w00 = (1 - wy) * (1 - wx) * inv255;
+      const w01 = (1 - wy) * wx * inv255;
+      const w10 = wy * (1 - wx) * inv255;
+      const w11 = wy * wx * inv255;
+
+      const dstIdx = dstRow + x;
+      out[dstIdx] =
+        data[i00] * w00 + data[i01] * w01 + data[i10] * w10 + data[i11] * w11;
+      out[hw + dstIdx] =
+        data[i00 + 1] * w00 +
+        data[i01 + 1] * w01 +
+        data[i10 + 1] * w10 +
+        data[i11 + 1] * w11;
+      out[2 * hw + dstIdx] =
+        data[i00 + 2] * w00 +
+        data[i01 + 2] * w01 +
+        data[i10 + 2] * w10 +
+        data[i11 + 2] * w11;
+    }
+  }
+  return out;
+}
+
+/**
+ * Build the `[1, maxPoints, 2]` point coordinates and `[1, maxPoints]` prompt
+ * labels for a normalised 2-D bounding box:
+ * - Slot 0: bbox centre `(cx, cy)` with label `1.0` (foreground point)
+ * - Slot 1: top-left `(x1, y1)` with label `2.0` (box top-left)
+ * - Slot 2: bottom-right `(x2, y2)` with label `3.0` (box bottom-right)
+ * - Remaining slots: `(-1, -1)` with label `-1.0` (padding)
+ *
+ * @param box2d - Normalised 2-D bounding box in `[0, 1]`.
+ * @param imgSize - Encoder image resolution (defaults to `512`).
+ * @param maxPoints - Prompt slot count (defaults to `6`).
+ * @returns `{points, labels}` Float32Arrays.
+ */
+export function buildBboxPrompt(
+  box2d: {min: {x: number; y: number}; max: {x: number; y: number}},
+  imgSize = SAM_IMG_SIZE,
+  maxPoints = SAM_MAX_POINTS
+): {points: Float32Array; labels: Float32Array} {
+  const x1 = box2d.min.x * imgSize;
+  const y1 = box2d.min.y * imgSize;
+  const x2 = box2d.max.x * imgSize;
+  const y2 = box2d.max.y * imgSize;
+  const cx = (x1 + x2) * 0.5;
+  const cy = (y1 + y2) * 0.5;
+
+  const points = new Float32Array(maxPoints * 2).fill(-1);
+  const labels = new Float32Array(maxPoints).fill(-1);
+
+  points[0] = cx;
+  points[1] = cy;
+  labels[0] = 1.0;
+
+  points[2] = x1;
+  points[3] = y1;
+  labels[1] = 2.0;
+
+  points[4] = x2;
+  points[5] = y2;
+  labels[2] = 3.0;
+
+  return {points, labels};
+}
+
+/**
+ * Select the highest-scoring candidate mask (`containment + 0.05 * iou`) and
+ * bilinearly upsample its `lowRes × lowRes` logits to `outWidth × outHeight`.
+ *
+ * @param masksLogits - Raw mask logits of shape `[1, C, lowRes, lowRes]`.
+ * @param ious - Predicted IoU scores of shape `[1, C]`.
+ * @param box2d - Normalised 2-D bounding box in `[0, 1]`.
+ * @param outWidth - Target mask width in pixels.
+ * @param outHeight - Target mask height in pixels.
+ * @param lowRes - Decoder logit spatial resolution (defaults to `128`).
+ * @returns `SamMaskResult` with foreground pixels set to `0` (`< 128`) and
+ *   background pixels set to `255`.
+ */
+export function decodeMaskLogits(
+  masksLogits: Float32Array,
+  ious: Float32Array | undefined,
+  box2d: {min: {x: number; y: number}; max: {x: number; y: number}},
+  outWidth: number,
+  outHeight: number,
+  lowRes = SAM_MASK_LOW_RES
+): SamMaskResult {
+  const planeStride = lowRes * lowRes;
+  const numChannels = Math.max(1, Math.floor(masksLogits.length / planeStride));
+  const bx1 = Math.max(0, Math.floor(box2d.min.x * lowRes));
+  const by1 = Math.max(0, Math.floor(box2d.min.y * lowRes));
+  const bx2 = Math.min(lowRes, Math.ceil(box2d.max.x * lowRes));
+  const by2 = Math.min(lowRes, Math.ceil(box2d.max.y * lowRes));
+
+  let best = 0;
+  let bestScore = -Infinity;
+  for (let c = 0; c < numChannels; c++) {
+    const off = c * planeStride;
+    let inside = 0;
+    let total = 0;
+    for (let y = 0; y < lowRes; y++) {
+      const row = off + y * lowRes;
+      const yIn = y >= by1 && y < by2;
+      for (let x = 0; x < lowRes; x++) {
+        if (masksLogits[row + x] >= 0.0) {
+          total++;
+          if (yIn && x >= bx1 && x < bx2) inside++;
+        }
+      }
+    }
+    if (total === 0) continue;
+    const containment = inside / total;
+    const iou = ious ? ious[c] : 0;
+    const score = containment + 0.05 * iou;
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+
+  const maskOffset = best * planeStride;
+  const buf = new Uint8Array(outWidth * outHeight);
+  const scaleX = lowRes / outWidth;
+  const scaleY = lowRes / outHeight;
+
+  for (let y = 0; y < outHeight; y++) {
+    const sy = (y + 0.5) * scaleY - 0.5;
+    const y0 = Math.max(0, Math.min(lowRes - 1, Math.floor(sy)));
+    const y1 = Math.max(0, Math.min(lowRes - 1, y0 + 1));
+    const wy = sy - y0;
+    const row0 = maskOffset + y0 * lowRes;
+    const row1 = maskOffset + y1 * lowRes;
+    const dstRow = y * outWidth;
+
+    for (let x = 0; x < outWidth; x++) {
+      const sx = (x + 0.5) * scaleX - 0.5;
+      const x0 = Math.max(0, Math.min(lowRes - 1, Math.floor(sx)));
+      const x1 = Math.max(0, Math.min(lowRes - 1, x0 + 1));
+      const wx = sx - x0;
+
+      const v00 = masksLogits[row0 + x0];
+      const v01 = masksLogits[row0 + x1];
+      const v10 = masksLogits[row1 + x0];
+      const v11 = masksLogits[row1 + x1];
+
+      const val =
+        (1 - wy) * ((1 - wx) * v00 + wx * v01) +
+        wy * ((1 - wx) * v10 + wx * v11);
+
+      buf[dstRow + x] = val >= 0.0 ? 0 : 255;
+    }
+  }
+
+  return {
+    width: outWidth,
+    height: outHeight,
+    getAsUint8Array: () => buf,
+    close: () => {},
+  };
+}
+
+/**
+ * Run the EfficientSAM-Ti encoder on a snapshot `ImageData` (once per detect
+ * press). Subsequent per-detection mask requests reuse the returned `SamState`.
  *
  * @param snapshot - Raw camera snapshot to encode.
- * @returns Encoder state containing the image embedding and dimensions.
+ * @param run - Optional `runModel` override for unit testing.
+ * @returns Encoder state containing the image embedding and snapshot dimensions.
  */
 export async function samEncodeSnapshot(
-  snapshot: ImageData
+  snapshot: ImageData,
+  run: RunModelFn = runModel
 ): Promise<SamState> {
   return samSerialize(async () => {
-    const {sam, proc} = await getSam();
-    const {RawImage: RawImageCls} = await import('@huggingface/transformers');
-    const canvas = document.createElement('canvas');
-    canvas.width = snapshot.width;
-    canvas.height = snapshot.height;
-    canvas.getContext('2d')!.putImageData(snapshot, 0, 0);
-    const image = (await RawImageCls.fromCanvas(canvas)) as RawImage;
-    const image_inputs = await (
-      proc as unknown as {
-        (img: RawImage): Promise<object>;
-      }
-    )(image);
-    const image_embeddings = await (
-      sam as unknown as {
-        get_image_embeddings(inputs: object): Promise<object>;
-      }
-    ).get_image_embeddings(image_inputs);
+    const {encoder} = await getSam();
+    const inputFloat32 = snapshotToPlanarFloat32(snapshot, SAM_IMG_SIZE);
+    const [embOut] = await run(encoder, [
+      {
+        data: inputFloat32,
+        shape: [1, 3, SAM_IMG_SIZE, SAM_IMG_SIZE],
+      },
+    ]);
+    const imageEmbeddings =
+      embOut instanceof Float32Array
+        ? new Float32Array(embOut)
+        : new Float32Array(
+            embOut.buffer,
+            embOut.byteOffset,
+            embOut.byteLength / 4
+          );
     return {
-      image,
-      image_inputs,
-      image_embeddings,
+      imageEmbeddings,
       width: snapshot.width,
       height: snapshot.height,
     };
@@ -169,125 +398,57 @@ export async function samEncodeSnapshot(
 }
 
 /**
- * Decode a single object mask from the SAM encoder state using a 2D bbox
- * prompt. Returns a mask in the same shape that
+ * Decode a single object mask from the EfficientSAM-Ti encoder state using a
+ * 2D bbox prompt. Returns a mask in the same shape that
  * {@link sampleDepthInMask} already accepts from the MediaPipe segmenter.
  *
  * @param samState - Encoder state from {@link samEncodeSnapshot}.
  * @param box2d - Normalised 2-D bounding box (`[0, 1]` range).
+ * @param run - Optional `runModel` override for unit testing.
  * @returns Mask with foreground pixels at value `< 128`.
  */
 export async function samMaskFromBbox(
   samState: SamState,
-  box2d: {min: {x: number; y: number}; max: {x: number; y: number}}
+  box2d: {min: {x: number; y: number}; max: {x: number; y: number}},
+  run: RunModelFn = runModel
 ): Promise<SamMaskResult> {
   return samSerialize(async () => {
-    const {sam, proc} = await getSam();
-    const {image, image_embeddings, width, height} = samState;
-    const x1 = box2d.min.x * width;
-    const y1 = box2d.min.y * height;
-    const x2 = box2d.max.x * width;
-    const y2 = box2d.max.y * height;
-    const cx = (x1 + x2) * 0.5;
-    const cy = (y1 + y2) * 0.5;
-    const prompt_inputs = await (
-      proc as unknown as {
-        (
-          img: RawImage,
-          opts: object
-        ): Promise<{
-          original_sizes: unknown;
-          reshaped_input_sizes: unknown;
-          [key: string]: unknown;
-        }>;
-      }
-    )(image, {
-      input_points: [
-        [
-          [
-            [cx, cy],
-            [x1, y1],
-            [x2, y2],
-          ],
-        ],
-      ],
-      input_labels: [[[1, 2, 3]]],
-    });
-    const out = await (
-      sam as unknown as {
-        (inputs: object): Promise<{
-          pred_masks: unknown;
-          iou_scores?: {data: Float32Array};
-        }>;
-      }
-    )({
-      ...prompt_inputs,
-      image_embeddings,
-    });
-    const masks = await (
-      proc as unknown as {
-        post_process_masks(
-          masks: unknown,
-          origSizes: unknown,
-          reshapedSizes: unknown
-        ): Promise<
-          Array<{
-            data: Uint8Array | Int32Array;
-            dims: number[];
-          }>
-        >;
-      }
-    ).post_process_masks(
-      out.pred_masks,
-      prompt_inputs.original_sizes,
-      prompt_inputs.reshaped_input_sizes
+    const {decoder} = await getSam();
+    const {points, labels} = buildBboxPrompt(
+      box2d,
+      SAM_IMG_SIZE,
+      SAM_MAX_POINTS
     );
-    const t = masks[0];
-    const dataBool = t.data;
-    const H = t.dims[t.dims.length - 2];
-    const W = t.dims[t.dims.length - 1];
-    const planeStride = H * W;
-    const numChannels = Math.max(1, Math.floor(dataBool.length / planeStride));
-    const ious = out.iou_scores?.data;
-    const bx1 = Math.max(0, Math.floor(x1 * (W / width)));
-    const by1 = Math.max(0, Math.floor(y1 * (H / height)));
-    const bx2 = Math.min(W, Math.ceil(x2 * (W / width)));
-    const by2 = Math.min(H, Math.ceil(y2 * (H / height)));
-    let best = 0;
-    let bestScore = -Infinity;
-    for (let c = 0; c < numChannels; c++) {
-      const off = c * planeStride;
-      let inside = 0;
-      let total = 0;
-      for (let y = 0; y < H; y++) {
-        const row = off + y * W;
-        const yIn = y >= by1 && y < by2;
-        for (let x = 0; x < W; x++) {
-          if (dataBool[row + x]) {
-            total++;
-            if (yIn && x >= bx1 && x < bx2) inside++;
-          }
-        }
-      }
-      if (total === 0) continue;
-      const containment = inside / total;
-      const iou = ious ? ious[c] : 0;
-      const score = containment + 0.05 * iou;
-      if (score > bestScore) {
-        bestScore = score;
-        best = c;
-      }
-    }
-    const offset = best * planeStride;
-    const buf = new Uint8Array(planeStride);
-    for (let i = 0; i < planeStride; i++) {
-      buf[i] = dataBool[offset + i] ? 0 : 255;
-    }
-    return {
-      width: W,
-      height: H,
-      getAsUint8Array: () => buf,
-      close: () => {},
-    };
+    const outputs = await run(decoder, [
+      {
+        data: samState.imageEmbeddings,
+        shape: [1, SAM_EMBED_DIM, SAM_EMBED_GRID, SAM_EMBED_GRID],
+      },
+      {
+        data: points,
+        shape: [1, SAM_MAX_POINTS, 2],
+      },
+      {
+        data: labels,
+        shape: [1, SAM_MAX_POINTS],
+      },
+    ]);
+    const asFloat32 = (arr: ArrayBufferView): Float32Array =>
+      arr instanceof Float32Array
+        ? arr
+        : new Float32Array(arr.buffer, arr.byteOffset, arr.byteLength / 4);
+    const out0 = asFloat32(outputs[0]);
+    const out1 = outputs[1] ? asFloat32(outputs[1]) : undefined;
+    const [masksLogits, ious] =
+      out1 && out0.length < out1.length ? [out1, out0] : [out0, out1];
+
+    return decodeMaskLogits(
+      masksLogits,
+      ious,
+      box2d,
+      samState.width,
+      samState.height,
+      SAM_MASK_LOW_RES
+    );
   });
 }
