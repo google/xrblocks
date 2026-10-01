@@ -18,7 +18,7 @@ Complete weights are stored in the Cache API. Use a persistent browser profile s
 
 Type a general question, use a scene preset, or open the optional panel keyboard. General questions are answered normally; presets ask about the selected object or compare the scene. Select or move objects with the normal XR Blocks interaction controls. Native and panel keyboards can conflict on some headsets, so the panel keyboard starts closed.
 
-Every **Send** attaches fresh optional metadata for the three demo objects: names, shapes, rounded coordinates, and the selected object inline. Internal IDs are omitted. Gemma uses this context when relevant, without keyword routing. The context summary appears after metadata is sent. Camera images, microphone audio, and viewer position are not included.
+Every **Send** attaches fresh optional metadata for the three demo objects: names, shapes, rounded coordinates, and the selected object inline. Internal IDs are omitted. Gemma uses this context when relevant, without keyword routing. The selected object glows in its own colour, and each prompt in the transcript is tagged with the object Gemma was told is selected, for example `[Amber cube]`. The context summary appears after metadata is sent. Camera images, microphone audio, and viewer position are not included.
 
 Chat uses greedy sampling, with one generation at a time, 2,000 characters per prompt, and 256 output tokens per reply. **New chat** clears the conversation while keeping the model loaded; it is also required near the context limit. **Stop** preserves the partial response and resets the model conversation before the next prompt. Chat history is not saved across reloads.
 

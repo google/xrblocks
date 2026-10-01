@@ -229,7 +229,12 @@ describe('GemmaScene', () => {
 
     scene.objects[0].onObjectSelectStart({stopPropagation: vi.fn()});
     expect(scene.selected).toBe(scene.objects[0]);
-    expect(scene.objects[0].material.emissive.getHex()).not.toBe(0);
+    expect(scene.objects[0].material.emissive.getHex()).toBe(
+      scene.objects[0].material.color.getHex()
+    );
+    expect(scene.objects[0].material.emissiveIntensity).toBeGreaterThanOrEqual(
+      0.5
+    );
     scene.objects[1].onObjectTouchStart({stopPropagation: vi.fn()});
     expect(scene.selected).toBe(scene.objects[1]);
     expect(scene.objects[0].material.emissive.getHex()).toBe(0);
@@ -493,6 +498,52 @@ describe('GemmaScene', () => {
     expect(scene.history.children).toEqual(originalChildren);
     expect(scene.historyText.text).toBe('');
     expect(scene.contextLabel.text).toBe('');
+  });
+
+  it('tags each user turn with the object Gemma was told is selected', async () => {
+    await ready();
+    scene.objects[2].onObjectSelectStart({stopPropagation: vi.fn()});
+    scene.composer.value = 'Describe the selected object';
+    await scene.send();
+    scene.objects[0].onObjectSelectStart({stopPropagation: vi.fn()});
+    scene.composer.value = 'what is selected?';
+    await scene.send();
+    expect(scene.historyText.text).toContain(
+      'You\n[Green cylinder] Describe the selected object'
+    );
+    expect(scene.historyText.text).toContain(
+      'You\n[Amber cube] what is selected?'
+    );
+    const [, second] = scene.client.send.mock.calls;
+    expect(second[0]).toBe('what is selected?');
+    expect(second[1].selectedId).toBe(`node-${scene.objects[0].id}`);
+  });
+
+  it('leaves the user turn untagged when nothing is selected', async () => {
+    await ready();
+    scene.composer.value = 'How can I be more productive?';
+    await scene.send();
+    expect(scene.historyText.text).toContain(
+      'You\nHow can I be more productive?'
+    );
+    expect(scene.historyText.text).not.toContain('[');
+  });
+
+  it('uses the selection current when the prompt is sent, not when Send was pressed', async () => {
+    await ready();
+    scene.objects[1].onObjectSelectStart({stopPropagation: vi.fn()});
+    context.scene.runContextDetection.mockImplementationOnce(async () => {
+      scene.objects[0].onObjectSelectStart({stopPropagation: vi.fn()});
+      return {semanticTree: snapshot([...scene.objects, scene.panel])};
+    });
+    scene.composer.value = 'what is selected?';
+    await scene.send();
+    const sent = scene.client.send.mock.calls[0][1];
+    expect(sent.selectedId).toBe(`node-${scene.objects[0].id}`);
+    expect(scene.historyText.text).toContain(
+      'You\n[Amber cube] what is selected?'
+    );
+    expect(scene.contextLabel.text).toContain('selected: Amber cube');
   });
 
   it('passes typed general questions unchanged with optional fresh metadata', async () => {

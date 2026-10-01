@@ -140,7 +140,10 @@ export class GemmaScene extends xb.Script {
       if (this.disposed) return;
       this.selected = object;
       for (const item of this.objects) {
-        item.material.emissive.set(item === object ? 0x554422 : 0x000000);
+        item.material.emissive.set(
+          item === object ? item.material.color : 0x000000
+        );
+        item.material.emissiveIntensity = item === object ? 0.6 : 1;
       }
       this.selectionLabel.text = `Selected: ${object.name}. Drag to move; selection does not send a prompt.`;
     };
@@ -474,8 +477,14 @@ export class GemmaScene extends xb.Script {
         this.objects,
         this.selected
       );
-      this.contextLabel.text = `Scene metadata, not camera vision: ${sceneContext.objects.length} objects; selected: ${sceneContext.objects.find((object) => object.id === sceneContext.selectedId)?.name ?? 'none'}. Positions and bounds are in meters.`;
-      this.appendMessage('You', prompt.trim());
+      const selectedName = sceneContext.objects.find(
+        (object) => object.id === sceneContext.selectedId
+      )?.name;
+      this.contextLabel.text = `Scene metadata, not camera vision: ${sceneContext.objects.length} objects; selected: ${selectedName ?? 'none'}. Positions and bounds are in meters.`;
+      this.appendMessage(
+        'You',
+        selectedName ? `[${selectedName}] ${prompt.trim()}` : prompt.trim()
+      );
       this.response = this.appendMessage('Gemma', '…');
       this.pendingText = undefined;
       this.lastTextUpdate = -Infinity;
