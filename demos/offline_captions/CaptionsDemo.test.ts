@@ -453,7 +453,7 @@ describe('CaptionsDemo', () => {
     const context = await ready();
     const {demo, translator, store} = context;
     expect(demo.languageButton.label).toBe('Translate: Off');
-    expect(demo.translateButton.label).toBe('Translation off');
+    expect(demo.translateButton.label).toBe('Choose a language');
     expect(demo.translateButton.disabled).toBe(true);
     await demo.startListening();
     await play(context, 0.5, 0);
@@ -537,6 +537,9 @@ describe('CaptionsDemo', () => {
     expect(demo.captionText.text).toBe(original);
     expect(demo.metrics.text).not.toMatch(/Translate/);
     expect(demo.status.text).toBe('Translation off. Captions only.');
+    expect(demo.languageButton.label).toBe('Translate: Off');
+    expect(demo.translateButton.label).toBe('Choose a language');
+    expect(demo.translateButton.disabled).toBe(true);
   });
 
   it('drops a translation that finishes after a language change or Clear', async () => {

@@ -27,7 +27,7 @@ function createScene() {
     language: null as null | string,
     translationCached: false,
     translationOperation: undefined as undefined | {language: string},
-    translateButton: {label: 'Translation off', disabled: true},
+    translateButton: {label: 'Choose a language', disabled: true},
     selectLanguage: vi.fn(async (code: string | null) => {
       scene.language = code;
       scene.translateButton = {

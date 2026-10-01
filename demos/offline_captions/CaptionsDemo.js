@@ -24,7 +24,7 @@ export const MIN_PARTIAL_SPEECH_MS = 400;
 const NOTE_STYLE = {fontSize: 18, color: '#cbd5e1'};
 const LEVEL_STEP = 3;
 const RELOAD = 'Load the model again to keep captioning.';
-const TRANSLATION_OFF = 'Translation off';
+const CHOOSE_LANGUAGE = 'Choose a language';
 /** Language button order: Off, then each language. */
 const LANGUAGE_CYCLE = [null, ...LANGUAGES.map(({code}) => code)];
 
@@ -197,7 +197,7 @@ export class CaptionsDemo extends xb.Script {
     this.listenButton = button('Start listening', () => this.toggleListening());
     this.clearButton = button('Clear', () => this.clearCaptions());
     this.languageButton = button('Translate: Off', () => this.cycleLanguage());
-    this.translateButton = button(TRANSLATION_OFF, () =>
+    this.translateButton = button(CHOOSE_LANGUAGE, () =>
       this.onTranslateButton()
     );
     this.buttons = [
@@ -796,7 +796,7 @@ export class CaptionsDemo extends xb.Script {
     this.languageButton.disabled = unavailable || !!this.translationOperation;
     const translating = !!this.translationOperation;
     const translateLabel = !language
-      ? TRANSLATION_OFF
+      ? CHOOSE_LANGUAGE
       : translating
         ? 'Cancel'
         : this.translationReady
