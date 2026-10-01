@@ -2,6 +2,17 @@ import {DEFAULT_MODEL, MODELS} from './modelConfig.js';
 
 export const MODEL_CHOICE_KEY = 'xrblocks-gemma-vision-model';
 const COMPACT_DEVICE = /Android|Mobile|iPhone|iPad|OculusBrowser|Quest/i;
+export const COMPACT_GEMMA_NOTE =
+  'Gemma 4 E2B is a 3.4 GB model and may run slowly on this device. Lite is faster.';
+
+/**
+ * Phones, headsets and devices that report less than 8 GB of memory.
+ * @param {{deviceMemory?: unknown, userAgent?: unknown}} hints
+ */
+export function isCompactDevice({deviceMemory, userAgent} = {}) {
+  if (typeof deviceMemory === 'number' && deviceMemory < 8) return true;
+  return typeof userAgent === 'string' && COMPACT_DEVICE.test(userAgent);
+}
 
 /**
  * Prefer a saved choice, then Lite for phones, headsets and devices that
@@ -13,11 +24,7 @@ export function pickDefaultModel({stored, deviceMemory, userAgent} = {}) {
   if (typeof stored === 'string' && Object.hasOwn(MODELS, stored)) {
     return /** @type {keyof typeof MODELS} */ (stored);
   }
-  if (typeof deviceMemory === 'number' && deviceMemory < 8) return 'lite';
-  if (typeof userAgent === 'string' && COMPACT_DEVICE.test(userAgent)) {
-    return 'lite';
-  }
-  return DEFAULT_MODEL;
+  return isCompactDevice({deviceMemory, userAgent}) ? 'lite' : DEFAULT_MODEL;
 }
 
 function pageStorage() {
@@ -56,12 +63,13 @@ export function createModelChoice({
   navigator = globalThis.navigator,
 } = {}) {
   const saved = safeStorage(storage);
+  const hints = {
+    deviceMemory: navigator?.deviceMemory,
+    userAgent: navigator?.userAgent,
+  };
   return {
-    initial: pickDefaultModel({
-      stored: saved.get(),
-      deviceMemory: navigator?.deviceMemory,
-      userAgent: navigator?.userAgent,
-    }),
+    initial: pickDefaultModel({stored: saved.get(), ...hints}),
+    compact: isCompactDevice(hints),
     save: (key) => saved.set(key),
   };
 }

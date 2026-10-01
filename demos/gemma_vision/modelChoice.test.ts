@@ -2,6 +2,7 @@ import {describe, expect, it, vi} from 'vitest';
 
 import {
   createModelChoice,
+  isCompactDevice,
   MODEL_CHOICE_KEY,
   pickDefaultModel,
 } from './modelChoice.js';
@@ -43,6 +44,36 @@ describe('default model choice', () => {
     expect(pickDefaultModel({stored: 'toString', userAgent: DESKTOP})).toBe(
       'gemma'
     );
+  });
+});
+
+describe('compact devices', () => {
+  it.each([
+    [{deviceMemory: 4, userAgent: DESKTOP}, true],
+    [
+      {
+        deviceMemory: 8,
+        userAgent:
+          'Mozilla/5.0 (Linux; Android 14; SM-I610) AppleWebKit/537.36 Chrome/154.0 XR Safari/537.36',
+      },
+      true,
+    ],
+    [{deviceMemory: 8, userAgent: DESKTOP}, false],
+    [{}, false],
+  ])('classifies %o as compact: %s', (hints, compact) => {
+    expect(isCompactDevice(hints)).toBe(compact);
+    expect(pickDefaultModel(hints)).toBe(compact ? 'lite' : 'gemma');
+  });
+
+  it('is exposed on the page choice', () => {
+    expect(
+      createModelChoice({storage: null, navigator: {userAgent: 'Android XR'}})
+        .compact
+    ).toBe(true);
+    expect(
+      createModelChoice({storage: null, navigator: {userAgent: DESKTOP}})
+        .compact
+    ).toBe(false);
   });
 });
 

@@ -5,7 +5,7 @@ import {GemmaVisionClient} from './GemmaVisionClient.js';
 import {MAX_PROMPT_LENGTH, PRESETS, validateQuestion} from './conversation.js';
 import {fitSnapshotSize, packSnapshot} from './image.js';
 import {markdownText} from './markdown.js';
-import {createModelChoice} from './modelChoice.js';
+import {COMPACT_GEMMA_NOTE, createModelChoice} from './modelChoice.js';
 import {getModel, MODELS} from './modelConfig.js';
 import * as modelStore from './modelStore.js';
 
@@ -223,12 +223,17 @@ export class GemmaVisionDemo extends xb.Script {
 
   choiceStatus() {
     const model = this.model;
+    let text;
     if (this.client.loaded && this.client.modelKey === model.key) {
-      return `${model.name} ready. Capture an image to ask a question.`;
+      text = `${model.name} ready. Capture an image to ask a question.`;
+    } else {
+      text = this.cached
+        ? `${model.name} cached. Choose ${model.cachedLabel} when ready.`
+        : `${model.name} not loaded. A download starts only when you choose Download.`;
     }
-    return this.cached
-      ? `${model.name} cached. Choose ${model.cachedLabel} when ready.`
-      : `${model.name} not loaded. A download starts only when you choose Download.`;
+    return this.choice.compact && model.key === 'gemma'
+      ? `${text} ${COMPACT_GEMMA_NOTE}`
+      : text;
   }
 
   /** Select a model for the next load; never downloads or loads by itself. */
