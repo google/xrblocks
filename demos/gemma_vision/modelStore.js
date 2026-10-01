@@ -1,13 +1,10 @@
-import {
-  CACHE_NAME,
-  MODEL_BASE,
-  MODEL_BYTES,
-  MODEL_FILES,
-  ORT_BASE,
-} from './modelConfig.js';
+import {CACHE_NAME, MODELS, ORT_BASE} from './modelConfig.js';
 
-const modelURLs = new Set(
-  Object.keys(MODEL_FILES).map((file) => MODEL_BASE + file)
+const modelURLs = new Map(
+  Object.values(MODELS).map((model) => [
+    model,
+    new Set(Object.keys(model.files).map((file) => model.base + file)),
+  ])
 );
 const runtimeURLs = new Set([
   `${ORT_BASE}ort-wasm-simd-threaded.asyncify.mjs`,
@@ -28,21 +25,21 @@ function matchesSize(response, bytes) {
 }
 
 /** Inspect headers only; never read multi-GB cached weight bodies. */
-export async function inspectCache() {
+export async function inspectCache(model = MODELS.gemma) {
   const cache = await openCache();
   let presentBytes = 0;
-  for (const [file, bytes] of Object.entries(MODEL_FILES)) {
-    const response = await cache.match(MODEL_BASE + file);
+  for (const [file, bytes] of Object.entries(model.files)) {
+    const response = await cache.match(model.base + file);
     if (!response) continue;
     if (matchesSize(response, bytes)) presentBytes += bytes;
     // A cache implementation may tee the body; do not wait for its other reader.
     void response.body?.cancel();
   }
   return {
-    complete: presentBytes === MODEL_BYTES,
-    missingBytes: MODEL_BYTES - presentBytes,
+    complete: presentBytes === model.bytes,
+    missingBytes: model.bytes - presentBytes,
     presentBytes,
-    totalBytes: MODEL_BYTES,
+    totalBytes: model.bytes,
   };
 }
 
@@ -104,10 +101,14 @@ export async function prepareStorage(missingBytes) {
 /**
  * Install on Transformers env.fetch, not globalThis.fetch. Cache-only loads
  * must be served by the loader's browser cache; model network fallback rejects.
+ * Only the selected model's pinned files are approved.
  * @param {boolean} allowDownload
+ * @param {(typeof MODELS)[keyof typeof MODELS]} model
  * @returns {typeof fetch}
  */
-export function createGuardedFetch(allowDownload) {
+export function createGuardedFetch(allowDownload, model = MODELS.gemma) {
+  const approved = modelURLs.get(model);
+  if (!approved) throw new Error('Unknown vision model.');
   const networkFetch = globalThis.fetch.bind(globalThis);
   return async (input, init) => {
     const url =
@@ -116,7 +117,7 @@ export function createGuardedFetch(allowDownload) {
         : input instanceof URL
           ? input.href
           : input.url;
-    const isModel = modelURLs.has(url);
+    const isModel = approved.has(url);
     if (!isModel && !runtimeURLs.has(url)) {
       throw new Error(`Unapproved model/runtime URL: ${url}`);
     }
@@ -130,26 +131,21 @@ export function createGuardedFetch(allowDownload) {
 }
 
 /**
- * Read only the four assets required by the public image-only processor.
+ * Read only the assets required by the model's public image-only processor.
  * Progress uses the runtime's per-file byte event shape, including cache reads.
- * @param {{allowDownload: boolean, onProgress?: (event: {status: string, file: string, loaded: number, total: number, progress: number}) => void}} options
+ * @param {{model?: (typeof MODELS)[keyof typeof MODELS], allowDownload: boolean, onProgress?: (event: {status: string, file: string, loaded: number, total: number, progress: number}) => void}} options
  */
 export async function loadProcessorAssets({
+  model = MODELS.gemma,
   allowDownload,
   onProgress = () => {},
 }) {
   const cache = await openCache();
-  const guardedFetch = createGuardedFetch(allowDownload);
+  const guardedFetch = createGuardedFetch(allowDownload, model);
   const assets = {};
-  const files = {
-    processorConfig: 'processor_config.json',
-    tokenizerJSON: 'tokenizer.json',
-    tokenizerConfig: 'tokenizer_config.json',
-    chatTemplate: 'chat_template.jinja',
-  };
-  for (const [key, file] of Object.entries(files)) {
-    const url = MODEL_BASE + file;
-    const expectedBytes = MODEL_FILES[file];
+  for (const [key, file] of Object.entries(model.processorFiles)) {
+    const url = model.base + file;
+    const expectedBytes = model.files[file];
     let response = await cache.match(url);
     if (response && !matchesSize(response, expectedBytes)) {
       void response.body?.cancel();
@@ -168,7 +164,7 @@ export async function loadProcessorAssets({
       );
     }
     const text = new TextDecoder().decode(bytes);
-    assets[key] = key === 'chatTemplate' ? text : JSON.parse(text);
+    assets[key] = file.endsWith('.json') ? JSON.parse(text) : text;
     if (!fromCache) {
       await cache.put(
         url,

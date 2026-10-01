@@ -8,6 +8,7 @@ import {
   MODEL_BYTES,
   MODEL_FILES,
   MODEL_ID,
+  MODELS,
   ORT_BASE,
   REVISION,
   RUNTIME_URL,
@@ -462,4 +463,66 @@ describe('createGuardedFetch', () => {
       expect(network).toHaveBeenCalledWith(url, undefined);
     }
   );
+});
+
+describe('Lite model storage', () => {
+  const lite = MODELS.lite;
+
+  it('inspects only Lite keys and ignores a complete Gemma cache', async () => {
+    fillCache();
+    match.mockClear();
+    expect(await inspectCache(lite)).toEqual({
+      complete: false,
+      missingBytes: lite.bytes,
+      presentBytes: 0,
+      totalBytes: lite.bytes,
+    });
+    expect(match.mock.calls.map(([url]) => url)).toEqual(
+      Object.keys(lite.files).map((file) => lite.base + file)
+    );
+    for (const [file, size] of Object.entries(lite.files)) {
+      entries.set(lite.base + file, cacheEntry(size));
+    }
+    expect((await inspectCache(lite)).complete).toBe(true);
+    expect(await inspectCache()).toMatchObject({complete: true});
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  it('approves only the selected model files', async () => {
+    network.mockResolvedValue(new Response('ok'));
+    const liteFetch = createGuardedFetch(true, lite);
+    await liteFetch(lite.base + 'onnx/vision_encoder_q4f16.onnx');
+    await expect(liteFetch(MODEL_BASE + 'config.json')).rejects.toThrow(
+      /Unapproved/
+    );
+    await expect(
+      createGuardedFetch(false, lite)(lite.base + 'config.json')
+    ).rejects.toThrow(/explicit Download/);
+    expect(network).toHaveBeenCalledOnce();
+  });
+
+  it('reads Lite processor files from cache and parses its JSON template', async () => {
+    for (const file of Object.values(lite.processorFiles)) {
+      const size = lite.files[file];
+      const json =
+        file === 'chat_template.json'
+          ? '{"chat_template":"lite"}'
+          : '{"fixture":true}';
+      entries.set(
+        lite.base + file,
+        new Response(json.padEnd(size), {
+          headers: {'Content-Length': String(size)},
+        })
+      );
+    }
+    const assets = await loadProcessorAssets({
+      model: lite,
+      allowDownload: false,
+    });
+    expect(assets.chatTemplate).toEqual({chat_template: 'lite'});
+    expect(assets.imageProcessorConfig).toEqual({fixture: true});
+    expect(Object.keys(assets)).toEqual(Object.keys(lite.processorFiles));
+    expect(network).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
 });
