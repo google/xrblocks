@@ -1,3 +1,5 @@
+import {MODELS} from './modelConfig.js';
+
 /** Bind the landing panel to the same scene and worker used inside XR. */
 export function bindPreload(scene, panel) {
   const model = panel.querySelector('#preload-model');
@@ -9,6 +11,10 @@ export function bindPreload(scene, panel) {
   let disposed = false;
   let loading = false;
   let stopping = false;
+  for (const option of model.options) {
+    const label = MODELS[option.value]?.choiceLabel;
+    if (label && option.textContent !== label) option.textContent = label;
+  }
 
   function refresh() {
     if (disposed || !scene.loadButton) return;

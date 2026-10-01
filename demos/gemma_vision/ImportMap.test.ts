@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {describe, expect, it} from 'vitest';
 
-import {MODEL_BASE, REVISION, RUNTIME_URL} from './modelConfig.js';
+import {MODEL_BASE, MODELS, REVISION, RUNTIME_URL} from './modelConfig.js';
 
 const read = (path: string) =>
   readFileSync(resolve(import.meta.dirname, path), 'utf8');
@@ -60,8 +60,13 @@ describe('Gemma vision browser entry', () => {
     const panel = page.getElementById('model-preload')!;
     const copy = panel.textContent!.replace(/\s+/g, ' ');
     expect(page.title).toContain('What am I looking at?');
-    expect(copy).toContain('~3.4 GB');
-    expect(copy).toContain('~360 MB');
+    expect(copy).toContain('3.4 GB');
+    expect(copy).toContain('360 MB');
+    const options = [...panel.querySelectorAll('#preload-model option')];
+    expect(options.map((option) => option.textContent)).toEqual([
+      MODELS.gemma.choiceLabel,
+      MODELS.lite.choiceLabel,
+    ]);
     expect(copy).toMatch(/Chrome with WebGPU/);
     expect(copy).toMatch(/describe it or read its text/i);
     expect(copy).toMatch(/Gemma 4 also translates/i);

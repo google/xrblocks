@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
+import {MODELS} from './modelConfig.js';
 import {bindPreload} from './preload.js';
 
 function deferred() {
@@ -244,6 +245,10 @@ describe('pre-XR model controls', () => {
     expect([...model.options].map((option) => option.value)).toEqual([
       'gemma',
       'lite',
+    ]);
+    expect([...model.options].map((option) => option.textContent)).toEqual([
+      MODELS.gemma.choiceLabel,
+      MODELS.lite.choiceLabel,
     ]);
     expect(model.value).toBe('gemma');
     model.value = 'lite';
