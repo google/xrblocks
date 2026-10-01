@@ -35,7 +35,7 @@ Capture the camera view, then ask an on-device vision model to describe it or re
 
 Use Chrome with WebGPU. Pick a model on the 2D page or the spatial card and press **Download Gemma 4 (~3.4 GB)** or **Download Lite (~360 MB)**, then choose **Continue in simulator** or enter XR. Each model is saved in the browser cache for later visits, and you can switch between cached models, even offline.
 
-Camera frames come from `deviceCamera.captureSnapshot({outputFormat: 'imageData', width, height})`. The worker uses Transformers.js 4.3.0 with pinned Gemma 4 E2B and SmolVLM2 500M ONNX models, and loads one model at a time. A single retained transcript text node receives batched updates rather than rebuilding the card for each streamed chunk.
+Camera frames come from `deviceCamera.captureSnapshot({outputFormat: 'imageData', width, height})`. The worker uses Transformers.js 4.3.0 with pinned Gemma 4 E2B and SmolVLM2 500M ONNX models, and loads one model at a time. Lite asks the presets as short questions, caps answers at 64 tokens, and stops an answer once it starts repeating. It reads large printed text but misses small words in real photos, where Gemma 4 does better. A single retained transcript text node receives batched updates rather than rebuilding the card for each streamed chunk.
 
 Camera images, questions, and answers stay on the device. Initial application, runtime, and model downloads use the network; subsequent questions work offline while the model remains loaded. See the [README device notes](https://github.com/google/xrblocks/tree/main/demos/gemma_vision#device-notes) for tested hardware and startup measurements.
 

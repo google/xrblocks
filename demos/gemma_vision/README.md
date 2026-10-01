@@ -43,7 +43,7 @@ The Lite model is [`HuggingFaceTB/SmolVLM2-500M-Video-Instruct`](https://hugging
 | Used processor, tokenizer, template, and configuration files |       3,581,881 |
 | Total model assets                                           | **361,220,143** |
 
-The worker builds `GPT2Tokenizer`, `Idefics3ImageProcessor`, and `Idefics3Processor` from the pinned files. Lite sees the capture as a single 512 px view (64 image tokens). A 320-token budget splits it into up to four 512 px tiles plus the overview; that reads small text more exactly but roughly doubles the time to first text and was weaker at describing whole scenes. The translation preset is offered only with Gemma 4, because Lite repeated the original text instead of translating it.
+The worker builds `GPT2Tokenizer`, `Idefics3ImageProcessor`, and `Idefics3Processor` from the pinned files. Lite sees the capture as a single 512 px view (64 image tokens). A 320-token budget splits it into up to four 512 px tiles plus the overview. On photos it did not read more text, it misread signs that the single view got right, and it took about 3.5 times as long to first text, so Lite keeps the single view. The translation preset is offered only with Gemma 4, because Lite repeated the original text instead of translating it.
 
 SmolVLM 500M (the original release) and SmolVLM 256M were also tried. On the same simulator captures, the 500M model hallucinated and looped on the read and describe presets, and the 256M model produced unusable output.
 
@@ -53,7 +53,7 @@ The worker constructs the processor from pinned metadata using public `GemmaToke
 
 Frames are captured through `xb.core.deviceCamera.captureSnapshot({outputFormat: 'imageData', width, height})`, preserving aspect ratio and limiting the longest side to 768 pixels. The worker uses the public processor constructor's **140-soft-token budget**; actual image token counts depend on aspect ratio. Simply reducing capture dimensions would not lower the default processor's patch budget.
 
-Generation is greedy for both models, with Gemma thinking disabled, a 128-token output cap, and a 4,096-token input-plus-output limit. Questions are limited to 2,000 characters. A capped answer is marked as truncated; long documents and tiny or blurry text may not be read completely or correctly. These are model-generated descriptions and translations, not safety-critical guidance.
+Generation is greedy for both models, with Gemma thinking disabled and a 4,096-token input-plus-output limit. Gemma 4 has a 128-token output cap. Lite has a 64-token cap, asks the presets as short questions (`What text is written in this image?` and `What is in this image? Answer in one sentence.`), and stops an answer once its end starts repeating an earlier span, keeping the first copy. Questions are limited to 2,000 characters. A capped answer is marked as truncated; long documents and tiny or blurry text may not be read completely or correctly. These are model-generated descriptions and translations, not safety-critical guidance.
 
 ## Performance
 
@@ -75,9 +75,26 @@ With the final spatial card attached, three warm runs of the **Read the text** p
 
 On the same Mac and card, Lite read a sign placed in the simulator room as `"Bonjour Le Chat Est Rouge"`, described the room and poster, and answered in 0.46-0.60 seconds to first text at 31-46 tokens/s. Frame p95 and maximum both stayed at 17.8 ms or below during Lite generation. Its 361 MB download took 9 seconds on a fast connection, and a cache-only load took 2-5 seconds. Lite sometimes repeats a phrase and is less reliable on follow-up questions; in one run it gave the wrong color for a shape. Switching Gemma 4 to Lite and back with the network disabled loaded both models with zero network requests.
 
+### Lite reading
+
+On a Galaxy Z Fold8 (Android Chrome), Lite took about 6.3 seconds to first text and decoded at about 4.7 tokens/s. With the original long preset prompts, **Read the text** on a red book cover printed `PLATFORM 9 3/4` and `TRAVEL JOURNAL` invented a title and repeated it until the 128-token cap, about half a minute of output.
+
+Transformers.js 4.3.0 accepts `repetition_penalty` and `no_repeat_ngram_size` for this model. Both were compared on the same images: a 1.1 penalty sometimes made loops longer and added invented words, and 3- or 4-gram blocking broke words apart without ending the answer. Short questions worked best, and every answer under them stopped on its own except one, which the repeat stop caught.
+
+On the test Mac, the real demo read photos placed in the simulator room before and after the change:
+
+| Photo                       | Read before                                           | Read after                                                             |
+| --------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| Book capture from the phone | `9.3.4.1.1.2.3.4.5.6...`, 128 tokens                  | `"9 3 4"`, 14 tokens                                                   |
+| Rendered angled book        | invented a "Golden Ratio" label, 128 tokens           | `Platform 9 3/4` and `TRAVEL JOURNAL`, 26 tokens                       |
+| Rendered tea box            | `ORGANIC GREEN TEA`, then kept describing, 128 tokens | misread `ORGANIC GREEN CAVE CAVE`, cut by the repeat stop at 26 tokens |
+| Rendered door sign          | `PLEASE KEEP THIS DOOR CLOSED`, 15 tokens             | the same plus a repeated `THIS DOOR CLOSED`, 29 tokens                 |
+
+Describe answers fell from 91-128 tokens to 12-63. Time to first text stayed at 0.29-0.44 seconds and decode at 58-72 tokens/s, with frame p95 at 18.7 ms or below. Lite still reads only the large numbers on the phone's book capture, not its smaller words; pick Gemma 4 for small text in real photos.
+
 ## Device notes
 
-Desktop simulator captures come from its virtual environment. The existing SDK snapshot API also supports ordinary device video and phone WebXR raw camera access. Pick Gemma 4 on desktops with 16 GB or more and for translation. Pick Lite on phones, Android XR headsets such as Galaxy XR, and devices with less than 8 GB of memory; its download is about a tenth the size, and the loaded model is far smaller too. Neither model has been qualified on phones or headsets yet. Quest camera input is not a supported target.
+Desktop simulator captures come from its virtual environment. The existing SDK snapshot API also supports ordinary device video and phone WebXR raw camera access. Pick Gemma 4 on desktops with 16 GB or more and for translation. Pick Lite on phones, Android XR headsets such as Galaxy XR, and devices with less than 8 GB of memory; its download is about a tenth the size, and the loaded model is far smaller too. Lite has been tried on a Galaxy Z Fold8 (Android Chrome); neither model has been qualified on headsets yet. Quest camera input is not a supported target.
 
 The first answer can take longer while GPU shaders compile, including after a cached reload. On the test Mac, a cache-only load took 8.5 seconds without model network requests; the first answer then took 8.1 seconds to first text, with a 319 ms maximum frame interval.
 
