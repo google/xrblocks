@@ -5,7 +5,8 @@ import {GemmaVisionClient} from './GemmaVisionClient.js';
 import {MAX_PROMPT_LENGTH, PRESETS, validateQuestion} from './conversation.js';
 import {fitSnapshotSize, packSnapshot} from './image.js';
 import {markdownText} from './markdown.js';
-import {IMAGE_BUDGET, MODEL_BYTES, MODEL_FILES} from './modelConfig.js';
+import {createModelChoice} from './modelChoice.js';
+import {getModel, MODELS} from './modelConfig.js';
 import * as modelStore from './modelStore.js';
 
 const EMPTY_IMAGE =
@@ -14,6 +15,7 @@ const UPDATE_MS = 100;
 const EMPTY_METRICS =
   'Time to first text: unavailable · Decode: unavailable · Generated: unavailable';
 const NOTE_STYLE = {fontSize: 18, color: '#cbd5e1'};
+const CHOICE_COLORS = {selected: '#2563eb', other: '#1e293b'};
 
 /** One retained camera/chat card and client shared with the preload interface. */
 export class GemmaVisionDemo extends xb.Script {
@@ -21,13 +23,17 @@ export class GemmaVisionDemo extends xb.Script {
     client = new GemmaVisionClient(),
     now = () => performance.now(),
     store = modelStore,
+    choice = createModelChoice(),
   } = {}) {
     super();
     this.name = 'Gemma vision demo';
     this.client = client;
     this.now = now;
     this.store = store;
-    this.cached = false;
+    this.choice = choice;
+    this.modelKey = getModel(choice.initial).key;
+    /** @type {Map<string, boolean>} Complete-cache state per model key. */
+    this.cacheState = new Map();
     this.busy = false;
     this.supported = false;
     this.disposed = false;
@@ -39,6 +45,20 @@ export class GemmaVisionDemo extends xb.Script {
     this.previousLoaded = client.loaded;
     this.createPanel();
     this.refreshControls();
+  }
+
+  /** The model selected in the chooser, which may differ from the loaded one. */
+  get model() {
+    return getModel(this.modelKey);
+  }
+
+  /** Whether the selected model is fully cached. */
+  get cached() {
+    return this.cacheState.get(this.modelKey) === true;
+  }
+
+  set cached(value) {
+    this.cacheState.set(this.modelKey, value === true);
   }
 
   createPanel() {
@@ -63,7 +83,7 @@ export class GemmaVisionDemo extends xb.Script {
         },
       });
     this.preview = image('Live camera preview');
-    this.thumbnail = image('Frozen image sent to Gemma');
+    this.thumbnail = image('Frozen image sent to the model');
     this.cameraStatus = new xb.UIText({
       text: 'Camera unavailable. Enter the simulator or a camera-enabled XR session.',
       style: NOTE_STYLE,
@@ -102,7 +122,16 @@ export class GemmaVisionDemo extends xb.Script {
       onSubmit: (value) => this.ask(value),
       onInput: () => this.refreshControls(),
     });
-    this.loadButton = button('Download Gemma 4 (~3.4 GB)', () =>
+    this.modelButtons = Object.values(MODELS).map((model) => {
+      const choice = new xb.UIButton({
+        label: model.choiceLabel,
+        onClick: () => this.selectModel(model.key),
+        style: {flexGrow: 1, flexBasis: 0, fontSize: 22, whiteSpace: 'nowrap'},
+      });
+      choice.modelKey = model.key;
+      return choice;
+    });
+    this.loadButton = button(this.model.downloadLabel, () =>
       this.loadModel({allowDownload: !this.cached})
     );
     this.captureButton = button('Capture', () => this.capture());
@@ -115,6 +144,7 @@ export class GemmaVisionDemo extends xb.Script {
       button(label, () => this.ask(prompt))
     );
     this.buttons = [
+      ...this.modelButtons,
       this.loadButton,
       this.captureButton,
       this.askButton,
@@ -129,13 +159,14 @@ export class GemmaVisionDemo extends xb.Script {
       style: {gap: 10, padding: 18, backgroundColor: '#101827ee'},
       children: [
         new xb.UIText({
-          text: 'GEMMA 4 · WHAT AM I LOOKING AT?',
+          text: 'ON-DEVICE VISION · WHAT AM I LOOKING AT?',
           style: {fontSize: 28, fontWeight: 'bold', color: '#f8fafc'},
         }),
         new xb.UIText({
-          text: '~3.4 GB model download · Desktop Chrome/WebGPU',
+          text: 'Pick a model: Gemma 4 for best quality, Lite for phones and headsets · Chrome/WebGPU',
           style: NOTE_STYLE,
         }),
+        row(this.modelButtons),
         this.loadButton,
         this.status,
         row([this.preview, this.thumbnail]),
@@ -175,12 +206,12 @@ export class GemmaVisionDemo extends xb.Script {
       await this.client.check();
       if (!this.isCurrent(operation)) return;
       this.supported = true;
-      const cached = await this.store.inspectCache();
-      if (!this.isCurrent(operation)) return;
-      this.cached = cached.complete === true;
-      this.status.text = this.cached
-        ? 'Model cached. Choose Load cached Gemma 4 when ready.'
-        : 'Model not loaded. A download starts only when you choose Download.';
+      for (const model of Object.values(MODELS)) {
+        const cached = await this.store.inspectCache(model);
+        if (!this.isCurrent(operation)) return;
+        this.cacheState.set(model.key, cached.complete === true);
+      }
+      this.status.text = this.choiceStatus();
     } catch (error) {
       if (this.isCurrent(operation)) {
         this.showError(error, this.supported ? 'Error' : 'Unsupported');
@@ -190,10 +221,37 @@ export class GemmaVisionDemo extends xb.Script {
     }
   }
 
+  choiceStatus() {
+    const model = this.model;
+    if (this.client.loaded && this.client.modelKey === model.key) {
+      return `${model.name} ready. Capture an image to ask a question.`;
+    }
+    return this.cached
+      ? `${model.name} cached. Choose ${model.cachedLabel} when ready.`
+      : `${model.name} not loaded. A download starts only when you choose Download.`;
+  }
+
+  /** Select a model for the next load; never downloads or loads by itself. */
+  selectModel(key) {
+    if (!this.canStart() || !Object.hasOwn(MODELS, key)) return;
+    if (key === this.modelKey) return;
+    this.modelKey = key;
+    this.choice.save(key);
+    if (this.supported) this.status.text = this.choiceStatus();
+    this.refreshControls();
+  }
+
   /** Download permission is captured at the user action, never inferred later. */
   async loadModel({allowDownload = false} = {}) {
-    if (!this.canStart() || !this.supported || this.client.loaded) return;
+    if (
+      !this.canStart() ||
+      !this.supported ||
+      (this.client.loaded && this.client.modelKey === this.modelKey)
+    )
+      return;
     const operation = this.begin('loading');
+    const model = this.model;
+    this.loadingModel = model;
     this.storageWarning = '';
     this.pendingProgress = undefined;
     this.progressBytes = new Map();
@@ -201,16 +259,16 @@ export class GemmaVisionDemo extends xb.Script {
     try {
       await this.client.check();
       if (!this.isCurrent(operation)) return;
-      const cached = await this.store.inspectCache();
+      const cached = await this.store.inspectCache(model);
       if (!this.isCurrent(operation)) return;
-      this.cached = cached.complete === true;
-      this.loadingCached = this.cached;
-      if (!this.cached && !allowDownload) {
+      this.cacheState.set(model.key, cached.complete === true);
+      this.loadingCached = cached.complete === true;
+      if (!this.loadingCached && !allowDownload) {
         throw new Error(
           'An explicit Download is required; the model cache is incomplete.'
         );
       }
-      if (!this.cached) {
+      if (!this.loadingCached) {
         const storage = await this.store.prepareStorage(cached.missingBytes);
         if (!this.isCurrent(operation)) return;
         this.storageWarning = storage.warning ?? '';
@@ -222,16 +280,22 @@ export class GemmaVisionDemo extends xb.Script {
       );
       this.lastProgressUpdate = this.now();
       const result = await this.client.load({
+        modelKey: model.key,
         allowDownload,
         onProgress: (event) => {
           if (this.isCurrent(operation)) this.recordProgress(event);
         },
       });
       if (!this.isCurrent(operation)) return;
-      this.cached = result.cached === true;
+      this.cacheState.set(model.key, result.cached === true);
+      this.clearDisplay();
       this.status.text = this.withStorageWarning(
-        this.cached
-          ? 'Ready. Model saved locally; capture an image to ask a question.'
+        result.cached === true
+          ? `Ready. ${model.name} saved locally; ${
+              this.client.imageId === null
+                ? 'capture an image to ask a question.'
+                : 'ask about the captured image.'
+            }`
           : `Loaded for this session; model was not fully saved. ${result.cacheWarning ?? 'Check browser storage.'}`
       );
     } catch (error) {
@@ -247,8 +311,9 @@ export class GemmaVisionDemo extends xb.Script {
   }
 
   recordProgress(event) {
-    const expected = Object.hasOwn(MODEL_FILES, event?.file)
-      ? MODEL_FILES[event.file]
+    const model = this.loadingModel;
+    const expected = Object.hasOwn(model.files, event?.file)
+      ? model.files[event.file]
       : undefined;
     if (!expected) return;
     const loaded =
@@ -262,11 +327,15 @@ export class GemmaVisionDemo extends xb.Script {
       Math.max(this.progressBytes.get(event.file) ?? 0, loaded)
     );
     const bytes = [...this.progressBytes.values()].reduce((a, b) => a + b, 0);
-    const percent = Math.floor((bytes / MODEL_BYTES) * 100);
+    const percent = Math.floor((bytes / model.bytes) * 100);
+    const size =
+      model.bytes >= 1e9
+        ? `${(model.bytes / 1e9).toFixed(2)} GB`
+        : `${Math.round(model.bytes / 1e6)} MB`;
     this.pendingProgress = this.withStorageWarning(
-      bytes === MODEL_BYTES
-        ? 'Model assets ready. Compiling and initializing Gemma…'
-        : `${this.loadingCached ? 'Loading cached assets' : 'Downloading/loading assets'}: ${percent}% of ${(MODEL_BYTES / 1e9).toFixed(2)} GB${this.loadingCached ? '' : ' (includes cache reads)'}`
+      bytes === model.bytes
+        ? `Model assets ready. Compiling and initializing ${model.name}…`
+        : `${this.loadingCached ? 'Loading cached assets' : 'Downloading/loading assets'}: ${percent}% of ${size}${this.loadingCached ? '' : ' (includes cache reads)'}`
     );
     this.flushProgress();
   }
@@ -350,7 +419,7 @@ export class GemmaVisionDemo extends xb.Script {
       this.clearDisplay();
       this.status.text = this.client.loaded
         ? 'Image captured. Ask a question or choose a preset.'
-        : 'Image captured. Load Gemma explicitly before asking a question.';
+        : 'Image captured. Load a model before asking a question.';
     } catch (error) {
       if (this.isCurrent(operation)) this.showError(error);
     } finally {
@@ -367,7 +436,7 @@ export class GemmaVisionDemo extends xb.Script {
       this.client.imageId === null
     ) {
       this.status.text =
-        'Load Gemma and capture an image before asking a question.';
+        'Load a model and capture an image before asking a question.';
       return;
     }
     try {
@@ -377,7 +446,13 @@ export class GemmaVisionDemo extends xb.Script {
       return;
     }
     const operation = this.begin('generating');
-    const response = {question, answer: '', state: 'generating'};
+    const model = getModel(this.client.modelKey);
+    const response = {
+      question,
+      answer: '',
+      state: 'generating',
+      speaker: model.name,
+    };
     this.messages.push(response);
     this.response = response;
     this.pendingText = undefined;
@@ -389,7 +464,7 @@ export class GemmaVisionDemo extends xb.Script {
     let acceptingText = true;
     try {
       const result = await this.client.generate(question, {
-        imageBudget: IMAGE_BUDGET,
+        imageBudget: model.imageBudget,
         onText: (text) => {
           if (acceptingText && this.isCurrent(operation))
             this.pendingText = text;
@@ -492,7 +567,7 @@ export class GemmaVisionDemo extends xb.Script {
       };
     }
     this.historyText.text = this.messages
-      .map(({question, answer, state}) => {
+      .map(({question, answer, state, speaker}) => {
         const display = markdownText(answer).replace(/^ +/gm, (spaces) =>
           '\u00a0'.repeat(spaces.length)
         );
@@ -502,7 +577,7 @@ export class GemmaVisionDemo extends xb.Script {
             truncated: '\n[Output limit reached]',
             failed: '\n[Failed; partial reply not added to model history]',
           }[state] ?? '';
-        return `You\n${question}\n\nGemma\n${display || (state === 'generating' ? '…' : '')}${suffix}`;
+        return `You\n${question}\n\n${speaker}\n${display || (state === 'generating' ? '…' : '')}${suffix}`;
       })
       .join('\n\n');
     this.lastTextUpdate = this.now();
@@ -548,11 +623,22 @@ export class GemmaVisionDemo extends xb.Script {
     const unavailable = this.disposed || !this.supported;
     const hasImage = this.client.imageId !== null;
     const canAsk = !unavailable && !busy && this.client.loaded && hasImage;
-    const label = this.cached
-      ? 'Load cached Gemma 4'
-      : 'Download Gemma 4 (~3.4 GB)';
+    const model = this.model;
+    const selectedLoaded =
+      this.client.loaded && this.client.modelKey === model.key;
+    const label = this.cached ? model.cachedLabel : model.downloadLabel;
     if (this.loadButton.label !== label) this.loadButton.label = label;
-    this.loadButton.disabled = unavailable || busy || this.client.loaded;
+    this.loadButton.disabled = unavailable || busy || selectedLoaded;
+    for (const choice of this.modelButtons) {
+      const selected = choice.modelKey === model.key;
+      const color = selected ? CHOICE_COLORS.selected : CHOICE_COLORS.other;
+      if (choice.style.backgroundColor !== color) {
+        choice.style.backgroundColor = color;
+      }
+      const ariaLabel = `${choice.label}${selected ? ', selected' : ''}`;
+      if (choice.ariaLabel !== ariaLabel) choice.ariaLabel = ariaLabel;
+      choice.disabled = this.disposed || busy;
+    }
     this.captureButton.disabled =
       unavailable || busy || this.camera?.state !== 'streaming';
     this.askButton.disabled =
@@ -563,7 +649,12 @@ export class GemmaVisionDemo extends xb.Script {
       this.composer.value.trim().length > MAX_PROMPT_LENGTH;
     this.composer.disabled = unavailable || busy;
     this.clearButton.disabled = unavailable || busy || !this.client.loaded;
-    for (const button of this.presetButtons) button.disabled = !canAsk;
+    const presets = this.client.loaded
+      ? getModel(this.client.modelKey).presets
+      : [];
+    PRESETS.forEach(({id}, index) => {
+      this.presetButtons[index].disabled = !canAsk || !presets.includes(id);
+    });
     this.stopButton.disabled =
       this.disposed ||
       !!this.stopping ||
@@ -575,7 +666,7 @@ export class GemmaVisionDemo extends xb.Script {
       const error = this.status.text.startsWith('Error:')
         ? this.status.text
         : 'Model unloaded.';
-      this.status.text = `${error} Load Gemma again and capture a new image.`;
+      this.status.text = `${error} Load a model again and capture a new image.`;
     }
     this.previousLoaded = this.client.loaded;
   }

@@ -42,7 +42,19 @@
         font: inherit;
         text-transform: none;
       }
-      #model-preload button:disabled {
+      #model-preload label {
+        margin-right: 8px;
+      }
+      #model-preload select {
+        padding: 8px 12px;
+        border: 1px solid #a9c7ec;
+        border-radius: 8px;
+        color: #fff;
+        background: #30445d;
+        font: inherit;
+      }
+      #model-preload button:disabled,
+      #model-preload select:disabled {
         opacity: 0.6;
         cursor: default;
       }
@@ -93,13 +105,19 @@
     <section id="model-preload" aria-labelledby="preload-title">
       <h2 id="preload-title">What am I looking at?</h2>
       <p>
-        Capture a camera image and ask Gemma 4 to describe it, read its text, or
-        translate it to English.
+        Capture a camera image and ask an on-device model to describe it or read
+        its text. Gemma 4 also translates it to English.
       </p>
       <p>
-        Use desktop Chrome with WebGPU. Download the ~3.4 GB model once, then
-        load it from the browser cache.
+        Use Chrome with WebGPU. Gemma 4 E2B gives the best answers; Lite is
+        sized for phones and headsets. Download a model once, then load it from
+        the browser cache.
       </p>
+      <label for="preload-model">Model</label>
+      <select id="preload-model">
+        <option value="gemma">Gemma 4 E2B (~3.4 GB)</option>
+        <option value="lite">Lite: SmolVLM2 500M (~360 MB)</option>
+      </select>
       <p>
         Camera images, questions, and answers stay on this device. Initial
         app/runtime/model downloads use the network. Offline questions work
@@ -112,9 +130,7 @@
       <p id="preload-ready" hidden>
         Model ready. Choose Continue in simulator, or ENTER XR when available.
       </p>
-      <button id="preload-load" type="button" disabled>
-        Download Gemma 4 (~3.4 GB)
-      </button>
+      <button id="preload-load" type="button" disabled>Download</button>
       <button id="preload-stop" type="button" hidden disabled>Stop</button>
       <button id="preload-continue" type="button" hidden>
         Continue in simulator

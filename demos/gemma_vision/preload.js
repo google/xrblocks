@@ -1,5 +1,6 @@
 /** Bind the landing panel to the same scene and worker used inside XR. */
 export function bindPreload(scene, panel) {
+  const model = panel.querySelector('#preload-model');
   const load = panel.querySelector('#preload-load');
   const stop = panel.querySelector('#preload-stop');
   const status = panel.querySelector('#startup');
@@ -18,8 +19,12 @@ export function bindPreload(scene, panel) {
     if (status.textContent !== scene.status.text) {
       status.textContent = scene.status.text;
     }
-    load.disabled =
-      loading || scene.busy || scene.client.loaded || scene.loadButton.disabled;
+    if (model.value !== scene.modelKey) model.value = scene.modelKey;
+    model.disabled =
+      loading ||
+      scene.busy ||
+      ['loading', 'generating'].includes(scene.client.state);
+    load.disabled = loading || scene.busy || scene.loadButton.disabled;
     stop.hidden = scene.stopButton.disabled;
     stop.disabled = stopping || scene.stopButton.disabled;
     const stopLabel =
@@ -53,6 +58,12 @@ export function bindPreload(scene, panel) {
     void run(() => scene.loadModel({allowDownload}), true);
   }
 
+  function chooseModel() {
+    if (disposed) return;
+    scene.selectModel(model.value);
+    refresh();
+  }
+
   function stopModel() {
     if (disposed || stop.disabled) return;
     void run(() => scene.stop(), false);
@@ -62,6 +73,7 @@ export function bindPreload(scene, panel) {
     if (!disposed && !continueButton.hidden) panel.hidden = true;
   }
 
+  model.addEventListener('change', chooseModel);
   load.addEventListener('click', loadModel);
   stop.addEventListener('click', stopModel);
   continueButton.addEventListener('click', continueInSimulator);
@@ -70,6 +82,7 @@ export function bindPreload(scene, panel) {
     refresh,
     dispose() {
       disposed = true;
+      model.removeEventListener('change', chooseModel);
       load.removeEventListener('click', loadModel);
       stop.removeEventListener('click', stopModel);
       continueButton.removeEventListener('click', continueInSimulator);

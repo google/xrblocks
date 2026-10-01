@@ -61,9 +61,10 @@ describe('Gemma vision browser entry', () => {
     const copy = panel.textContent!.replace(/\s+/g, ' ');
     expect(page.title).toContain('What am I looking at?');
     expect(copy).toContain('~3.4 GB');
-    expect(copy).toMatch(/desktop Chrome/);
-    expect(copy).toMatch(/WebGPU/);
-    expect(copy).toMatch(/describe it, read its text, or translate/i);
+    expect(copy).toContain('~360 MB');
+    expect(copy).toMatch(/Chrome with WebGPU/);
+    expect(copy).toMatch(/describe it or read its text/i);
+    expect(copy).toMatch(/Gemma 4 also translates/i);
     expect(copy).not.toMatch(/shader|compil|pause|safety-critical|unverified/i);
     expect(copy).toMatch(
       /Initial app\/runtime\/model downloads use the network/

@@ -63,6 +63,8 @@ try {
   panel.querySelector('#startup').textContent =
     `Could not start the scene: ${error.message}. Reload to try again.`;
   panel.querySelector('#preload-ready').hidden = true;
-  for (const button of panel.querySelectorAll('button')) button.disabled = true;
+  for (const control of panel.querySelectorAll('button, select')) {
+    control.disabled = true;
+  }
   panel.hidden = false;
 }

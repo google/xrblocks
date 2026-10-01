@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {GemmaVisionDemo} from './GemmaVisionDemo.js';
-import {IMAGE_BUDGET, MODEL_BYTES, MODEL_FILES} from './modelConfig.js';
+import {IMAGE_BUDGET, MODEL_BYTES, MODEL_FILES, MODELS} from './modelConfig.js';
 import {PRESETS} from './conversation.js';
 
 vi.mock('xrblocks', async () => {
@@ -110,6 +110,7 @@ class MockCanvas {
 function createClient() {
   const client = {
     loaded: false,
+    modelKey: 'gemma' as string | null,
     state: 'idle',
     imageId: null as number | null,
     check: vi.fn(async () => ({})),
@@ -144,18 +145,23 @@ let camera: MockCamera;
 let clock: number;
 let canvases: MockCanvas[];
 
-function setup({cached = false} = {}) {
+function setup({
+  cached = false,
+  liteCached = false,
+  initial = 'gemma',
+}: {cached?: boolean; liteCached?: boolean; initial?: string} = {}) {
   const client = createClient();
   const store = {
-    inspectCache: vi.fn(async () => ({
-      complete: cached,
-      missingBytes: cached ? 0 : MODEL_BYTES,
-    })),
+    inspectCache: vi.fn(async (model = MODELS.gemma) => {
+      const complete = model === MODELS.lite ? liteCached : cached;
+      return {complete, missingBytes: complete ? 0 : model.bytes};
+    }),
     prepareStorage: vi.fn(async (_bytes) => ({})),
   };
-  const scene = new GemmaVisionDemo({client, store, now: () => clock});
+  const choice = {initial, save: vi.fn()};
+  const scene = new GemmaVisionDemo({client, store, choice, now: () => clock});
   scenes.push(scene);
-  return {scene, client, store};
+  return {scene, client, store, choice};
 }
 
 async function ready() {
@@ -208,8 +214,9 @@ describe('Gemma vision retained UI and startup', () => {
     expect(store.inspectCache).not.toHaveBeenCalled();
     expect(scene.privacy.text).toContain('stay on this device');
     expect(scene.privacy.text).toContain('while the model remains loaded');
-    expect(scene.card.children[1].text).toContain('~3.4 GB model download');
-    expect(scene.card.children[1].text).toContain('Desktop Chrome/WebGPU');
+    expect(scene.card.children[1].text).toContain('Gemma 4');
+    expect(scene.card.children[1].text).toContain('Lite');
+    expect(scene.card.children[1].text).toContain('Chrome/WebGPU');
     expect(scene.card.children[1].text).not.toMatch(/shader|compil|pause/i);
     expect(scene.privacy.text).not.toMatch(/wrong|safety-critical/i);
   });
@@ -219,7 +226,10 @@ describe('Gemma vision retained UI and startup', () => {
     await scene.init();
     await scene.init();
     expect(client.check).toHaveBeenCalledTimes(1);
-    expect(store.inspectCache).toHaveBeenCalledTimes(1);
+    expect(store.inspectCache.mock.calls).toEqual([
+      [MODELS.gemma],
+      [MODELS.lite],
+    ]);
     expect(client.load).not.toHaveBeenCalled();
     expect(store.prepareStorage).not.toHaveBeenCalled();
     expect(scene.supported).toBe(true);
@@ -330,6 +340,7 @@ describe('explicit model loading', () => {
     await scene.init();
     await scene.loadButton.onClick();
     expect(client.load).toHaveBeenCalledWith({
+      modelKey: 'gemma',
       allowDownload: false,
       onProgress: expect.any(Function),
     });
@@ -879,5 +890,146 @@ describe('retained conversation and generation', () => {
     expect(scene.children).toHaveLength(0);
     expect(scene.askButton.disabled).toBe(true);
     expect(camera.stop).not.toHaveBeenCalled();
+  });
+});
+
+describe('model chooser', () => {
+  it('starts from the injected choice and labels both models on one retained row', async () => {
+    const {scene} = setup({initial: 'lite', liteCached: true});
+    expect(scene.modelKey).toBe('lite');
+    expect(scene.modelButtons.map((button) => button.label)).toEqual([
+      MODELS.gemma.choiceLabel,
+      MODELS.lite.choiceLabel,
+    ]);
+    expect(scene.card.children[2].children).toEqual(scene.modelButtons);
+    for (const button of scene.modelButtons) {
+      expect(button.style).toMatchObject({flexBasis: 0, whiteSpace: 'nowrap'});
+    }
+    expect(scene.modelButtons[1].ariaLabel).toContain('selected');
+    await scene.init();
+    expect(scene.cached).toBe(true);
+    expect(scene.loadButton.label).toBe('Load cached Lite');
+    expect(scene.status.text).toContain('Lite cached');
+  });
+
+  it('switches selection without loading, downloading or adding UI, and persists it', async () => {
+    const {scene, client, store, choice} = setup({cached: true});
+    await scene.init();
+    const nodes = [];
+    scene.traverse((node) => nodes.push(node));
+    expect(scene.loadButton.label).toBe('Load cached Gemma 4');
+    await scene.modelButtons[1].onClick();
+    expect(scene.modelKey).toBe('lite');
+    expect(choice.save).toHaveBeenCalledWith('lite');
+    expect(scene.loadButton.label).toBe('Download Lite (~360 MB)');
+    expect(scene.modelButtons[1].style.backgroundColor).not.toBe(
+      scene.modelButtons[0].style.backgroundColor
+    );
+    expect(client.load).not.toHaveBeenCalled();
+    expect(store.prepareStorage).not.toHaveBeenCalled();
+    const after = [];
+    scene.traverse((node) => after.push(node));
+    expect(after).toEqual(nodes);
+  });
+
+  it('downloads the selected model with its own size and progress', async () => {
+    const {scene, client, store} = setup({initial: 'lite'});
+    await scene.init();
+    let progress;
+    client.load.mockImplementationOnce(async (options) => {
+      progress = options.onProgress;
+      clock = 100;
+      progress({
+        status: 'progress',
+        file: 'onnx/decoder_model_merged_q4f16.onnx',
+        loaded: MODELS.lite.files['onnx/decoder_model_merged_q4f16.onnx'],
+      });
+      expect(scene.status.text).toContain('of 361 MB');
+      client.loaded = true;
+      client.modelKey = options.modelKey;
+      return {cached: true};
+    });
+    await scene.loadButton.onClick();
+    expect(store.prepareStorage).toHaveBeenCalledWith(MODELS.lite.bytes);
+    expect(client.load).toHaveBeenCalledWith(
+      expect.objectContaining({modelKey: 'lite', allowDownload: true})
+    );
+    expect(scene.status.text).toContain('Lite saved locally');
+  });
+
+  it('never downloads when loading a cached model that was evicted', async () => {
+    const {scene, client, store} = setup({initial: 'lite', liteCached: true});
+    await scene.init();
+    store.inspectCache.mockResolvedValueOnce({
+      complete: false,
+      missingBytes: 10,
+    });
+    await scene.loadButton.onClick();
+    expect(client.load).not.toHaveBeenCalled();
+    expect(store.prepareStorage).not.toHaveBeenCalled();
+    expect(scene.loadButton.label).toBe('Download Lite (~360 MB)');
+  });
+
+  it('switches the loaded model, clears the transcript and keeps the capture', async () => {
+    const {scene, client, store} = await ready();
+    await scene.ask('Describe');
+    expect(scene.historyText.text).toContain('Gemma 4\nA sign.');
+    store.inspectCache.mockResolvedValue({complete: true, missingBytes: 0});
+    scene.cacheState.set('lite', true);
+    scene.selectModel('lite');
+    expect(scene.loadButton.disabled).toBe(false);
+    client.load.mockImplementationOnce(async (options) => {
+      client.modelKey = options.modelKey;
+      return {cached: true};
+    });
+    await scene.loadButton.onClick();
+    expect(client.load).toHaveBeenLastCalledWith(
+      expect.objectContaining({modelKey: 'lite', allowDownload: false})
+    );
+    expect(scene.historyText.text).toBe('');
+    expect(scene.status.text).toBe(
+      'Ready. Lite saved locally; ask about the captured image.'
+    );
+    expect(scene.loadButton.disabled).toBe(true);
+    expect(client.imageId).toBe(1);
+    await scene.ask('Describe');
+    expect(client.generate).toHaveBeenLastCalledWith('Describe', {
+      imageBudget: MODELS.lite.imageBudget,
+      onText: expect.any(Function),
+    });
+    expect(scene.historyText.text).toContain('Lite\nA sign.');
+  });
+
+  it('offers only the presets the loaded model handles', async () => {
+    const {scene, client} = await ready();
+    const translate = PRESETS.findIndex(({id}) => id === 'translate');
+    expect(scene.presetButtons.every((button) => !button.disabled)).toBe(true);
+    client.modelKey = 'lite';
+    scene.refreshControls();
+    expect(scene.presetButtons[translate].disabled).toBe(true);
+    expect(
+      scene.presetButtons.filter((_, index) => index !== translate)
+    ).toSatisfy((buttons) => buttons.every((button) => !button.disabled));
+  });
+
+  it('locks the chooser while a model is loading', async () => {
+    const {scene, client, choice} = setup();
+    await scene.init();
+    const pending = deferred<{cached: boolean}>();
+    client.load.mockImplementationOnce(() => {
+      client.state = 'loading';
+      return pending.promise;
+    });
+    const loading = scene.loadModel({allowDownload: true});
+    await vi.waitFor(() => expect(client.load).toHaveBeenCalled());
+    expect(scene.modelButtons.every((button) => button.disabled)).toBe(true);
+    scene.selectModel('lite');
+    expect(scene.modelKey).toBe('gemma');
+    expect(choice.save).not.toHaveBeenCalled();
+    client.loaded = true;
+    client.state = 'ready';
+    pending.resolve({cached: true});
+    await loading;
+    expect(scene.modelButtons.every((button) => !button.disabled)).toBe(true);
   });
 });

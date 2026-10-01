@@ -21,6 +21,10 @@ function fakeScene() {
     status: {text: 'Model not loaded.'},
     busy: false,
     cached: false,
+    modelKey: 'gemma',
+    selectModel: vi.fn(function (this: {modelKey: string}, key: string) {
+      this.modelKey = key;
+    }),
     client: {loaded: false, state: 'idle'},
     loadModel: vi.fn(async (_options: {allowDownload: boolean}) => {}),
     stop: vi.fn(async () => {}),
@@ -229,9 +233,41 @@ describe('pre-XR model controls', () => {
     expect(scene.loadModel).not.toHaveBeenCalled();
     scene.busy = false;
     scene.client.loaded = true;
+    scene.loadButton.disabled = true;
     binding.refresh();
     load.click();
     expect(scene.loadModel).not.toHaveBeenCalled();
+  });
+
+  it('selects a model through the scene and mirrors its choice', () => {
+    const model = panel.querySelector('#preload-model') as HTMLSelectElement;
+    expect([...model.options].map((option) => option.value)).toEqual([
+      'gemma',
+      'lite',
+    ]);
+    expect(model.value).toBe('gemma');
+    model.value = 'lite';
+    model.dispatchEvent(new Event('change'));
+    expect(scene.selectModel).toHaveBeenCalledWith('lite');
+    expect(scene.modelKey).toBe('lite');
+    expect(scene.loadModel).not.toHaveBeenCalled();
+    scene.modelKey = 'gemma';
+    binding.refresh();
+    expect(model.value).toBe('gemma');
+    scene.busy = true;
+    binding.refresh();
+    expect(model.disabled).toBe(true);
+    scene.busy = false;
+    scene.client.state = 'generating';
+    binding.refresh();
+    expect(model.disabled).toBe(true);
+    scene.client.state = 'ready';
+    binding.refresh();
+    expect(model.disabled).toBe(false);
+    binding.dispose();
+    model.value = 'lite';
+    model.dispatchEvent(new Event('change'));
+    expect(scene.selectModel).toHaveBeenCalledOnce();
   });
 
   it('does not rewrite unchanged live status or interpret output as HTML', () => {
@@ -422,9 +458,9 @@ describe('landing panel script lifecycle', () => {
     expect(panel.querySelector('#startup')?.textContent).toContain(
       startupError.message
     );
-    for (const button of panel.querySelectorAll('button')) {
-      expect(button.disabled).toBe(true);
-      button.click();
+    for (const control of panel.querySelectorAll('button, select')) {
+      expect((control as HTMLButtonElement).disabled).toBe(true);
+      (control as HTMLElement).click();
     }
     expect(scene.loadModel).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(
