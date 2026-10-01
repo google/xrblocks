@@ -114,6 +114,7 @@ describe('preload panel', () => {
         ['es', 'Spanish'],
         ['fr', 'French'],
         ['de', 'German'],
+        ['zh', 'Mandarin'],
       ]
     );
     expect(select().disabled).toBe(false);

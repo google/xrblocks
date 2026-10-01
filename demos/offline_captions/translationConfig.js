@@ -123,6 +123,46 @@ const LANGUAGE_PINS = [
       ],
     ],
   },
+  {
+    code: 'zh',
+    label: 'Mandarin',
+    model: 'Xenova/opus-mt-en-zh',
+    revision: '046f55aec303cdee3e0318604406d4df20f1e8ea',
+    // en-zh is multi-target; this token selects Simplified Mandarin.
+    targetToken: '>>cmn_Hans<<',
+    files: [
+      [
+        'config.json',
+        1503,
+        '4727d1229a04f95bf6f39abf949d8080615433d99d6ebd85f81c09edd247d5fa',
+      ],
+      [
+        'generation_config.json',
+        293,
+        'b743baabb7da4c1a2f19fe558bd6b4c0c7c3b0762fcb5ca7a48fe5a2c2219803',
+      ],
+      [
+        'tokenizer.json',
+        6380952,
+        'd0c7da27056e8f42adce9e76d8e792e5daa64e15f5acd2e7aabf0121877dd4c1',
+      ],
+      [
+        'tokenizer_config.json',
+        282,
+        'a914596e6bff113a8428d4793b586da87cd0b95697a0e72aba90cc1d95858481',
+      ],
+      [
+        'onnx/encoder_model_quantized.onnx',
+        52899742,
+        'd3b7912bf6a9bd27e4c074c2df91d4ff3d5b4bc5f7f6c8d7cc9c805c98fbafee',
+      ],
+      [
+        'onnx/decoder_model_merged_quantized.onnx',
+        60212804,
+        '023be4f841f4c47cd65fffcbaa81c0d99d7f7e0138f7ba0e03fa220a4e688aff',
+      ],
+    ],
+  },
 ];
 
 export const LANGUAGES = Object.freeze(

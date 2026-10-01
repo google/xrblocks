@@ -461,6 +461,23 @@ describe('CaptionsDemo', () => {
     }
   });
 
+  it('cycles through every language, including Mandarin, then Off', async () => {
+    const {demo, translator} = await ready();
+    const labels = [];
+    for (let i = 0; i < 5; i++) {
+      await demo.cycleLanguage();
+      labels.push(demo.languageButton.label);
+    }
+    expect(labels).toEqual([
+      'Translate: Spanish',
+      'Translate: French',
+      'Translate: German',
+      'Translate: Mandarin',
+      'Translate: Off',
+    ]);
+    expect(translator.download).not.toHaveBeenCalled();
+  });
+
   it('starts with translation off and captions exactly as before', async () => {
     const context = await ready();
     const {demo, translator, store} = context;

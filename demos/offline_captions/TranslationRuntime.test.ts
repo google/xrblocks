@@ -2,16 +2,27 @@
 import {describe, expect, it, vi} from 'vitest';
 
 import {
+  MAX_INPUT_TOKENS,
   MAX_NEW_TOKENS,
   TranslationRuntime,
   maxNewTokens,
+  stripTargetTags,
 } from './TranslationRuntime.js';
 import {CACHE_NAME} from './modelConfig.js';
 import {TRANSLATION_DTYPE, getLanguage} from './translationConfig.js';
 
 type Message = Record<string, unknown>;
 
-function fakeTf() {
+class FakeTensor {
+  constructor(
+    public type: string,
+    public data: BigInt64Array,
+    public dims: number[]
+  ) {}
+  dispose = vi.fn();
+}
+
+function fakeTf({decoded = '  Hola mundo.  '} = {}) {
   const generate = vi.fn(async (options: Record<string, unknown>) => ({
     options,
     dispose: vi.fn(),
@@ -25,12 +36,22 @@ function fakeTf() {
       const tokenize = (...call: unknown[]) => {
         encoded.push(call);
         return {
-          input_ids: {dims: [1, 12], dispose: vi.fn()},
-          attention_mask: {dims: [1, 12], dispose: vi.fn()},
+          input_ids: new FakeTensor(
+            'int64',
+            BigInt64Array.from([7n, 8n, 0n]),
+            [1, 3]
+          ),
+          attention_mask: new FakeTensor(
+            'int64',
+            BigInt64Array.from([1n, 1n, 1n]),
+            [1, 3]
+          ),
         };
       };
       return Object.assign(tokenize, {
-        batch_decode: () => ['  Hola mundo.  '],
+        batch_decode: () => [decoded],
+        convert_tokens_to_ids: (tokens: string[]) =>
+          tokens.map((token) => (token === '>>cmn_Hans<<' ? 5 : 1)),
       });
     }
   }
@@ -39,14 +60,18 @@ function fakeTf() {
       backends: {onnx: {wasm: Record<string, unknown>}};
     },
     MarianTokenizer,
+    Tensor: FakeTensor,
     MarianMTModel: {from_pretrained: vi.fn(async () => model)},
   };
   return {tf, model, generate, tokenizerArgs, encoded};
 }
 
-function setup({complete = true} = {}) {
+function setup({
+  complete = true,
+  decoded = undefined as string | undefined,
+} = {}) {
   const messages: Message[] = [];
-  const fake = fakeTf();
+  const fake = fakeTf(decoded === undefined ? {} : {decoded});
   const store = {
     inspectCache: vi.fn(async () => ({complete, missingBytes: 0})),
     readCachedJSON: vi.fn(async (file: string) => ({file})),
@@ -147,11 +172,44 @@ describe('TranslationRuntime', () => {
       {truncation: true, max_length: 256},
     ]);
     expect(generate.mock.calls.at(-1)![0]).toMatchObject({
-      max_new_tokens: 34,
+      max_new_tokens: 16,
       do_sample: false,
       num_beams: 1,
     });
     expect(maxNewTokens(500)).toBe(MAX_NEW_TOKENS);
+  });
+
+  it('prepends the Simplified Mandarin target token and strips leaked tags', async () => {
+    const {runtime, messages, generate, encoded} = setup({
+      decoded: ' >>cmn_Hans<< 早上好 。 ',
+    });
+    await runtime.handle({id: 1, type: 'load', language: 'zh'});
+    await runtime.handle({id: 2, type: 'translate', text: 'Good morning.'});
+    expect(encoded.at(-1)).toEqual([
+      'Good morning.',
+      {truncation: true, max_length: MAX_INPUT_TOKENS - 1},
+    ]);
+    const inputs = generate.mock.calls.at(-1)![0] as unknown as {
+      input_ids: FakeTensor;
+      attention_mask: FakeTensor;
+      max_new_tokens: number;
+    };
+    expect([...inputs.input_ids.data]).toEqual([5n, 7n, 8n, 0n]);
+    expect(inputs.input_ids.dims).toEqual([1, 4]);
+    expect([...inputs.attention_mask.data]).toEqual([1n, 1n, 1n, 1n]);
+    expect(inputs.max_new_tokens).toBe(maxNewTokens(4));
+    expect(messages.at(-1)).toMatchObject({
+      type: 'result',
+      result: {text: '早上好。', language: 'zh'},
+    });
+  });
+
+  it('strips Marian target tags from model output', () => {
+    expect(stripTargetTags('>>cmn_Hans<< 你好')).toBe('你好');
+    expect(stripTargetTags('你好 >>yue<<世界 ，再见 。')).toBe(
+      '你好世界，再见。'
+    );
+    expect(stripTargetTags('Hola, mundo.')).toBe('Hola, mundo.');
   });
 
   it('validates text and requires a loaded model', async () => {

@@ -17,14 +17,20 @@ const MODEL_FILES = [
 ];
 
 describe('translation manifest', () => {
-  it('offers Spanish, French and German Opus-MT models', () => {
+  it('offers Spanish, French, German and Mandarin Opus-MT models', () => {
     expect(
       LANGUAGES.map(({code, label, model}) => [code, label, model])
     ).toEqual([
       ['es', 'Spanish', 'Xenova/opus-mt-en-es'],
       ['fr', 'French', 'Xenova/opus-mt-en-fr'],
       ['de', 'German', 'Xenova/opus-mt-en-de'],
+      ['zh', 'Mandarin', 'Xenova/opus-mt-en-zh'],
     ]);
+    // en-zh is multi-target; Simplified Mandarin needs its target token.
+    expect(getLanguage('zh').targetToken).toBe('>>cmn_Hans<<');
+    for (const code of ['es', 'fr', 'de']) {
+      expect(getLanguage(code).targetToken).toBeUndefined();
+    }
     expect(TRANSLATION_DTYPE).toBe('q8');
     expect(getLanguage('fr').label).toBe('French');
     expect(() => getLanguage('xx')).toThrow(/Unknown/);
@@ -62,6 +68,7 @@ describe('translation manifest', () => {
       'Download Spanish (~119 MB)',
       'Download French (~113 MB)',
       'Download German (~112 MB)',
+      'Download Mandarin (~119 MB)',
     ]);
     expect(getLanguage('de').cachedLabel).toBe('Load cached German');
     expect(getLanguage('de').loadedLabel).toBe('German ready');

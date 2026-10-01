@@ -5,6 +5,15 @@ export const MAX_TEXT_CHARS = 1000;
 export const MAX_INPUT_TOKENS = 256;
 export const MAX_NEW_TOKENS = 256;
 
+const CJK = '[\\p{Script=Han}\\u3000-\\u303f\\uff00-\\uffef]';
+const TARGET_TAG = />>\w+<<\s*/gu;
+const CJK_SPACE = new RegExp(`(?<=${CJK})\\s+|\\s+(?=${CJK})`, 'gu');
+
+/** Drop leaked Marian target tags and spaces around Chinese text. */
+export function stripTargetTags(text) {
+  return text.replace(TARGET_TAG, '').replace(CJK_SPACE, '').trim();
+}
+
 /** Bounded greedy output length, a little over twice the input length. */
 export function maxNewTokens(inputTokens) {
   return Math.min(MAX_NEW_TOKENS, 2 * inputTokens + 10);
@@ -96,11 +105,34 @@ export class TranslationRuntime extends CaptionsRuntime {
     };
   }
 
+  prepend(inputs, token) {
+    const [id] = this.tokenizer.convert_tokens_to_ids([token]);
+    const grow = (tensor, value) =>
+      new this.tf.Tensor(
+        tensor.type,
+        BigInt64Array.from([BigInt(value), ...tensor.data]),
+        [1, tensor.dims.at(-1) + 1]
+      );
+    try {
+      return {
+        input_ids: grow(inputs.input_ids, id),
+        attention_mask: grow(inputs.attention_mask, 1),
+      };
+    } finally {
+      inputs.input_ids.dispose?.();
+      inputs.attention_mask.dispose?.();
+    }
+  }
+
   async run(text) {
-    const inputs = this.tokenizer(text, {
+    const target = this.language.targetToken;
+    let inputs = this.tokenizer(text, {
       truncation: true,
-      max_length: MAX_INPUT_TOKENS,
+      max_length: target ? MAX_INPUT_TOKENS - 1 : MAX_INPUT_TOKENS,
     });
+    // Transformers.js 4.3.0 encodes a ">>tag<<" in the text as plain pieces,
+    // so the target token ID is prepended to the encoded input instead.
+    if (target) inputs = this.prepend(inputs, target);
     let output;
     try {
       output = await this.model.generate({
@@ -109,9 +141,9 @@ export class TranslationRuntime extends CaptionsRuntime {
         do_sample: false,
         num_beams: 1,
       });
-      return this.tokenizer
-        .batch_decode(output, {skip_special_tokens: true})[0]
-        .trim();
+      return stripTargetTags(
+        this.tokenizer.batch_decode(output, {skip_special_tokens: true})[0]
+      );
     } finally {
       output?.dispose?.();
       inputs.input_ids?.dispose?.();

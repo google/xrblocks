@@ -19,10 +19,10 @@ Speak into the microphone and live captions appear on a floating card. Press **D
 
 An AudioWorklet captures the microphone, the page resamples it to 16 kHz, and an energy-based voice activity detector splits speech into utterances. Moonshine base runs in a module worker through Transformers.js 4.3.0 and the ONNX Runtime WASM backend. The card shows an interim line while you talk and the final text after each pause, in one retained text node updated at most 10 times per second.
 
-To translate captions, choose Spanish, French or German with **Translate** on the card or the language menu on the 2D panel, and download that language once (about 112-119 MB). An Opus-MT model then translates each final line in a second worker, and the translation appears under the English line.
+To translate captions, choose Spanish, French, German or Mandarin (Simplified Chinese) with **Translate** on the card or the language menu on the 2D panel, and download that language once (about 112-119 MB). An Opus-MT model then translates each final line in a second worker, and the translation appears under the English line.
 
 Audio stays on this device. There is no cloud service or API key, and captioning and translation keep working offline once the models are loaded. The SDK's `SpeechRecognizer` uses the Web Speech API instead, which in Chrome sends audio to Google servers.
 
 ## Credits
 
-Moonshine by Useful Sensors is MIT-licensed, and the ONNX conversion is by onnx-community. The Opus-MT translation models are by Helsinki-NLP (English to Spanish and French are Apache-2.0, English to German is CC-BY-4.0), with ONNX conversions by Xenova. Transformers.js is Apache-2.0 and ONNX Runtime is MIT. Pins, byte sizes and measured latency are in the [demo README](https://github.com/google/xrblocks/tree/main/demos/offline_captions#measured-results).
+Moonshine by Useful Sensors is MIT-licensed, and the ONNX conversion is by onnx-community. The Opus-MT translation models are by Helsinki-NLP (English to Spanish, French and Chinese are Apache-2.0, English to German is CC-BY-4.0), with ONNX conversions by Xenova. Transformers.js is Apache-2.0 and ONNX Runtime is MIT. Pins, byte sizes and measured latency are in the [demo README](https://github.com/google/xrblocks/tree/main/demos/offline_captions#measured-results).
