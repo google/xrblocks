@@ -83,7 +83,7 @@ var Object3DDetector = class extends Script {
 		this._extrinsic = null;
 		this._opts = {
 			detectBackend: options.detectBackend ?? "gemini",
-			maskBackend: options.maskBackend ?? "slimsam",
+			maskBackend: options.maskBackend ?? "efficientsam_ti",
 			fuseAcrossViews: options.fuseAcrossViews ?? true,
 			showDebugBoxes: options.showDebugBoxes ?? false,
 			maxRayDistance: options.maxRayDistance ?? 12,
@@ -368,7 +368,7 @@ var Object3DDetector = class extends Script {
 				imageData: snapImageData
 			};
 			let samPrep = null;
-			if (this._opts.maskBackend === "slimsam") {
+			if (this._opts.maskBackend === "efficientsam_ti") {
 				samPrep = (async () => {
 					await getSam();
 					return samEncodeSnapshot(snapImageData);
@@ -404,7 +404,7 @@ var Object3DDetector = class extends Script {
 					return this._results;
 				}
 				let samState = null;
-				if (this._opts.maskBackend === "slimsam" && samPrep) try {
+				if (this._opts.maskBackend === "efficientsam_ti" && samPrep) try {
 					samState = await samPrep;
 				} catch (e) {
 					console.warn("[Object3DDetector] SAM encoder failed", e);
@@ -420,7 +420,7 @@ var Object3DDetector = class extends Script {
 						const box2d = obj.detection2DBoundingBox;
 						let mask;
 						try {
-							mask = this._opts.maskBackend === "slimsam" && samState ? await samMaskFromBbox(samState, box2d) : await segmenterMaskFromSnapshot(snapshot, box2d);
+							mask = this._opts.maskBackend === "efficientsam_ti" && samState ? await samMaskFromBbox(samState, box2d) : await segmenterMaskFromSnapshot(snapshot, box2d);
 						} catch (e) {
 							console.warn("[Object3DDetector] mask failed for", obj.label, e);
 							return null;

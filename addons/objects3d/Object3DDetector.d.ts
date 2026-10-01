@@ -16,11 +16,11 @@ export interface Object3DDetectorOptions {
   detectBackend?: 'gemini' | 'mediapipe' | 'both';
   /**
    * Which segmentation mask backend to use for depth sampling.
-   * - `'slimsam'` — SlimSAM-77-uniform via `@huggingface/transformers` (tighter masks).
+   * - `'efficientsam_ti'` — EfficientSAM-Ti via `@litertjs/core` (tighter masks).
    * - `'mediapipe'` — MediaPipe `InteractiveSegmenter` (faster, no download).
-   * @defaultValue `'slimsam'`
+   * @defaultValue `'efficientsam_ti'`
    */
-  maskBackend?: 'slimsam' | 'mediapipe';
+  maskBackend?: 'efficientsam_ti' | 'mediapipe';
   /**
    * When `true`, accumulate OBBs across multiple `detect()` calls from
    * different angles. Each new call refines matching existing boxes via
