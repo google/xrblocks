@@ -1,6 +1,6 @@
 import {validateQuestion} from './conversation.js';
 import {MAX_IMAGE_EDGE} from './image.js';
-import {IMAGE_BUDGET} from './modelConfig.js';
+import {DEFAULT_MODEL, getModel} from './modelConfig.js';
 
 /**
  * @typedef {'check' | 'load' | 'image' | 'generate' | 'clear' | 'stop' | 'dispose'} Command
@@ -45,6 +45,8 @@ export class GemmaVisionClient {
     /** @type {'idle' | 'loading' | 'ready' | 'generating' | 'disposed'} */
     this.state = 'idle';
     this.loaded = false;
+    /** @type {string | null} Key of the loaded model in MODELS. */
+    this.modelKey = null;
     /** @type {number | null} Last acknowledged capture, never an in-flight capture. */
     this.imageId = null;
     /** @type {Transport | null} */
@@ -70,19 +72,25 @@ export class GemmaVisionClient {
 
   /**
    * Resolve the worker's cached, cacheWarning and loadMs result.
-   * Downloads are never authorized implicitly.
-   * @param {{allowDownload?: boolean, onProgress?: (event: unknown) => void}} options
+   * Downloads are never authorized implicitly. Loading a different model
+   * replaces the current one inside the same worker.
+   * @param {{modelKey?: string, allowDownload?: boolean, onProgress?: (event: unknown) => void}} options
    */
-  async load({allowDownload = false, onProgress} = {}) {
+  async load({
+    modelKey = DEFAULT_MODEL,
+    allowDownload = false,
+    onProgress,
+  } = {}) {
     this._assertAvailable();
-    if (this.loaded) throw new Error('Gemma is already loaded.');
+    const model = getModel(modelKey);
+    if (this.loaded && this.modelKey === model.key) {
+      throw new Error(`${model.name} is already loaded.`);
+    }
     this.state = 'loading';
     return this._send(
       'load',
-      {allowDownload: allowDownload === true},
-      {
-        onProgress,
-      }
+      {modelKey: model.key, allowDownload: allowDownload === true},
+      {onProgress}
     ).promise;
   }
 
@@ -124,9 +132,9 @@ export class GemmaVisionClient {
    * @param {string} question
    * @param {{imageBudget?: number, onText?: (text: string) => void}} options
    */
-  async generate(question, {imageBudget = IMAGE_BUDGET, onText} = {}) {
+  async generate(question, {imageBudget, onText} = {}) {
     this._assertAvailable();
-    if (!this.loaded) throw new Error('Load Gemma before asking a question.');
+    if (!this.loaded) throw new Error('Load a model before asking a question.');
     if (this.imageId === null) {
       throw new Error('Capture an image before asking a question.');
     }
@@ -137,7 +145,7 @@ export class GemmaVisionClient {
       {
         question,
         imageId: this.imageId,
-        imageBudget,
+        imageBudget: imageBudget ?? getModel(this.modelKey).imageBudget,
       },
       {onText}
     ).promise;
@@ -157,7 +165,7 @@ export class GemmaVisionClient {
     const active = this._active;
     if (active?.type === 'load') {
       this._reset(
-        new Error('Model loading canceled. Reload Gemma to continue.')
+        new Error('Model loading canceled. Load a model to continue.')
       );
       return;
     }
@@ -165,7 +173,7 @@ export class GemmaVisionClient {
     const stopping = this._send('stop', {targetId: active.id}).promise;
     this._stopping = this._deadline(
       Promise.all([active.promise.catch(() => {}), stopping]),
-      'Stopping timed out. Worker reset; reload Gemma and capture a new image.'
+      'Stopping timed out. Worker reset; load a model and capture a new image.'
     )
       .then(() => {})
       .catch((error) => {
@@ -293,8 +301,16 @@ export class GemmaVisionClient {
     if (!pending) return;
     if (message.type === 'error') {
       const error = new Error(String(message.message));
-      if (message.fatal || pending.type === 'load') this._reset(error);
-      else this._finish(pending, error);
+      if (message.fatal) {
+        this._reset(error);
+      } else {
+        // A failed load or switch leaves the worker and its runtime usable.
+        if (pending.type === 'load') {
+          this.loaded = false;
+          this.modelKey = null;
+        }
+        this._finish(pending, error);
+      }
     } else if (message.type === 'delta' && typeof message.text === 'string') {
       if (pending.type !== 'generate') {
         throw new Error('Malformed vision worker text response.');
@@ -319,6 +335,7 @@ export class GemmaVisionClient {
         )
           throw new Error('Malformed vision worker load result.');
         this.loaded = true;
+        this.modelKey = pending.data.modelKey;
       }
       if (pending.type === 'image') {
         if (
@@ -369,6 +386,7 @@ export class GemmaVisionClient {
     this._pending.clear();
     this._active = null;
     this.loaded = false;
+    this.modelKey = null;
     this.imageId = null;
     this.state = this._closing ? 'disposed' : 'idle';
   }

@@ -1,14 +1,12 @@
-import {CACHE_NAME, IMAGE_BUDGET, MODEL_ID, REVISION} from './modelConfig.js';
+import {CACHE_NAME, DEFAULT_MODEL, getModel} from './modelConfig.js';
 import * as modelStore from './modelStore.js';
 import {
   assertContextBudget,
-  buildMessages,
   MAX_NEW_TOKENS,
   validateQuestion,
 } from './conversation.js';
 import {MAX_IMAGE_EDGE} from './image.js';
-
-const EOS_TOKENS = new Set([1, 106, 50]);
+import {ADAPTERS} from './modelAdapters.js';
 
 export async function checkCapabilities() {
   if (!globalThis.isSecureContext || !navigator.gpu) {
@@ -16,7 +14,7 @@ export async function checkCapabilities() {
   }
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter?.features.has('shader-f16')) {
-    throw new Error('Gemma q4f16 requires a WebGPU adapter with shader-f16.');
+    throw new Error('q4f16 models require a WebGPU adapter with shader-f16.');
   }
   if (
     typeof OffscreenCanvas === 'undefined' ||
@@ -41,6 +39,7 @@ export class GemmaVisionRuntime {
     this.store = store;
     this.now = now;
     this.model = null;
+    this.modelInfo = null;
     this.image = null;
     this.history = [];
     this.active = null;
@@ -72,7 +71,11 @@ export class GemmaVisionRuntime {
             await this.probe();
             return {};
           case 'load':
-            return this.load(message.allowDownload === true, operation);
+            return this.load(
+              message.modelKey ?? DEFAULT_MODEL,
+              message.allowDownload === true,
+              operation
+            );
           case 'image':
             return this.setImage(message);
           case 'generate':
@@ -94,47 +97,52 @@ export class GemmaVisionRuntime {
     return operation.promise;
   }
 
-  async load(allowDownload, operation) {
-    if (this.model) throw new Error('Gemma is already loaded.');
+  /**
+   * Load one model at a time. Switching disposes the previous model in this
+   * worker and reuses the imported runtime, so it also works offline.
+   */
+  async load(modelKey, allowDownload, operation) {
+    const info = getModel(modelKey);
+    if (this.model && this.modelInfo === info) {
+      throw new Error(`${info.name} is already loaded.`);
+    }
+    // Any failed switch leaves no model loaded, matching the client state.
+    await this.unloadModel();
     await this.probe();
-    const cached = await this.store.inspectCache();
+    const cached = await this.store.inspectCache(info);
     if (!cached.complete && !allowDownload) {
-      throw new Error('Download Gemma first; its cache is incomplete.');
+      throw new Error(`Download ${info.name} first; its cache is incomplete.`);
     }
     const started = this.now();
-    const tf = await this.loadRuntime();
-    this.tf = tf;
+    const tf = (this.tf ??= await this.loadRuntime());
     tf.env.cacheKey = CACHE_NAME;
     tf.env.useBrowserCache = true;
     tf.env.allowLocalModels = !allowDownload;
     tf.env.allowRemoteModels = allowDownload;
-    tf.env.fetch = this.store.createGuardedFetch(allowDownload);
+    tf.env.fetch = this.store.createGuardedFetch(allowDownload, info);
     tf.env.backends.onnx.wasm.proxy = false;
     tf.env.backends.onnx.wasm.numThreads = 1;
     const progress = (event) =>
       this.post({type: 'progress', id: operation.id, event});
     const assets = await this.store.loadProcessorAssets({
+      model: info,
       allowDownload,
       onProgress: progress,
     });
-    this.tokenizer = new tf.GemmaTokenizer(
-      assets.tokenizerJSON,
-      assets.tokenizerConfig
-    );
-    this.processorConfig = assets.processorConfig;
-    this.chatTemplate = assets.chatTemplate;
-    this.model = await tf.Gemma4ForConditionalGeneration.from_pretrained(
-      MODEL_ID,
-      {
-        revision: REVISION,
-        dtype: 'q4f16',
-        device: 'webgpu',
-        local_files_only: !allowDownload,
-        progress_callback: progress,
-      }
-    );
-    const saved = await this.store.inspectCache();
+    const adapter = ADAPTERS[info.family];
+    this.tokenizer = adapter.createTokenizer(tf, assets);
+    this.assets = assets;
+    this.model = await adapter.modelClass(tf).from_pretrained(info.modelId, {
+      revision: info.revision,
+      dtype: 'q4f16',
+      device: 'webgpu',
+      local_files_only: !allowDownload,
+      progress_callback: progress,
+    });
+    this.modelInfo = info;
+    const saved = await this.store.inspectCache(info);
     return {
+      modelKey: info.key,
       cached: saved.complete,
       cacheWarning: saved.complete
         ? ''
@@ -168,45 +176,33 @@ export class GemmaVisionRuntime {
     return {imageId};
   }
 
-  async generate({question, imageId, imageBudget = IMAGE_BUDGET}, operation) {
-    if (!this.model) throw new Error('Load Gemma before asking a question.');
+  async generate({question, imageId, imageBudget}, operation) {
+    if (!this.model) throw new Error('Load a model before asking a question.');
     if (!this.image || this.image.imageId !== imageId) {
       throw new Error('Capture an image before asking about it.');
     }
-    if (![70, 140, 280].includes(imageBudget)) {
+    const info = this.modelInfo;
+    imageBudget ??= info.imageBudget;
+    if (!info.imageBudgets.includes(imageBudget)) {
       throw new Error('Unsupported image-token budget.');
     }
     question = validateQuestion(question);
     const {tf} = this;
-    const config = {
-      ...this.processorConfig,
-      image_seq_length: imageBudget,
-      image_processor: {
-        ...this.processorConfig.image_processor,
-        image_seq_length: imageBudget,
-        max_soft_tokens: imageBudget,
-      },
-    };
-    const processor = new tf.Gemma4Processor(
-      config,
-      {
-        tokenizer: this.tokenizer,
-        image_processor: new tf.Gemma4ImageProcessor(config.image_processor),
-      },
-      this.chatTemplate
+    const adapter = ADAPTERS[info.family];
+    const eosTokens = new Set(info.eosTokens);
+    const processor = adapter.createProcessor(
+      tf,
+      {tokenizer: this.tokenizer, assets: this.assets},
+      imageBudget
     );
-    const prompt = processor.apply_chat_template(
-      buildMessages(this.history, question),
-      {tokenize: false, add_generation_prompt: true, enable_thinking: false}
-    );
+    const prompt = adapter.prompt(processor, this.history, question);
     operation.stopping = new tf.InterruptableStoppingCriteria();
     const {pixels, width, height} = this.image;
     const started = this.now();
-    const inputs = await processor(
+    const inputs = await adapter.process(
+      processor,
       prompt,
-      new tf.RawImage(pixels, width, height, 4),
-      null,
-      {add_special_tokens: false}
+      new tf.RawImage(pixels, width, height, 4)
     );
     let output;
     let text = '';
@@ -235,7 +231,7 @@ export class GemmaVisionRuntime {
         },
         token_callback_function: (tokens) => {
           for (const token of tokens) {
-            if (EOS_TOKENS.has(Number(token))) continue;
+            if (eosTokens.has(Number(token))) continue;
             generatedTokens++;
             lastToken = this.now();
             firstToken ??= lastToken;
@@ -256,7 +252,7 @@ export class GemmaVisionRuntime {
         text = this.tokenizer
           .decode(tokens, {skip_special_tokens: true})
           .trim();
-        if (!text) throw new Error('Gemma returned no visible answer.');
+        if (!text) throw new Error(`${info.name} returned no visible answer.`);
         this.history.push({question, answer: text});
       }
       return {
@@ -264,7 +260,7 @@ export class GemmaVisionRuntime {
         interrupted: operation.interrupted,
         truncated:
           tokens.length >= MAX_NEW_TOKENS &&
-          !EOS_TOKENS.has(Number(tokens.at(-1))),
+          !eosTokens.has(Number(tokens.at(-1))),
         generatedTokens,
         tokensPerSecond:
           generatedTokens > 1 && lastToken > firstToken
@@ -275,6 +271,7 @@ export class GemmaVisionRuntime {
         inputTokens,
         imageBudget,
         imageTokens: inputs.num_soft_tokens_per_image?.[0],
+        modelKey: info.key,
         pixelShape: inputs.pixel_values?.dims,
       };
     } finally {
@@ -305,15 +302,23 @@ export class GemmaVisionRuntime {
       await this.active.promise;
     }
     try {
-      await this.model?.dispose();
-      this.model = null;
+      await this.unloadModel();
       this.image = null;
-      this.history = [];
-      this.tokenizer = null;
       this.post({type: 'result', id, result: {}});
     } catch (error) {
       this.error(id, error);
     }
+  }
+
+  /** Release the loaded model and its per-model state; keep the capture. */
+  async unloadModel() {
+    const model = this.model;
+    this.model = null;
+    this.modelInfo = null;
+    this.tokenizer = null;
+    this.assets = null;
+    this.history = [];
+    await model?.dispose();
   }
 
   error(id, error) {

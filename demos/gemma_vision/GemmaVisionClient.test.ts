@@ -130,14 +130,48 @@ describe('GemmaVisionClient', () => {
     expect(worker.last('load')).toEqual({
       id: 2,
       type: 'load',
+      modelKey: 'gemma',
       allowDownload: false,
     });
     worker.result('load', loadResult);
     await expect(loading).resolves.toEqual(loadResult);
     expect(client.state).toBe('ready');
     expect(client.loaded).toBe(true);
+    expect(client.modelKey).toBe('gemma');
     expect(createWorker).toHaveBeenCalledOnce();
     await expect(client.load()).rejects.toThrow(/already loaded/i);
+  });
+
+  it('switches models inside the same worker and keeps the capture', async () => {
+    const {client, worker, createWorker} = await ready();
+    const switching = client.load({modelKey: 'lite'});
+    expect(worker.last('load')).toMatchObject({
+      modelKey: 'lite',
+      allowDownload: false,
+    });
+    worker.result('load', loadResult);
+    await switching;
+    expect(client.modelKey).toBe('lite');
+    expect(client.imageId).toBe(1);
+    const generating = client.generate('Describe');
+    expect(worker.last('generate').imageBudget).toBe(64);
+    worker.result('generate', generationResult);
+    await generating;
+    const back = client.load({modelKey: 'gemma'});
+    worker.result('load', loadResult);
+    await back;
+    expect(client.modelKey).toBe('gemma');
+    expect(createWorker).toHaveBeenCalledOnce();
+    expect(worker.terminate).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown models before contacting the worker', async () => {
+    const {client, createWorker} = fixture();
+    await expect(client.load({modelKey: 'huge'})).rejects.toThrow(
+      /unknown vision model/i
+    );
+    expect(createWorker).not.toHaveBeenCalled();
+    expect(client.state).toBe('idle');
   });
 
   it('forwards consent and raw progress without confusing cached and loaded', async () => {
@@ -154,28 +188,40 @@ describe('GemmaVisionClient', () => {
     expect(client.loaded).toBe(true);
   });
 
-  it('discards a failed load worker and its capture before an explicit retry', async () => {
+  it('keeps the worker and capture after a recoverable load failure', async () => {
+    const {client, worker, createWorker} = await ready();
+    const loading = client.load({modelKey: 'lite'});
+    worker.error('load', 'Download Lite first; its cache is incomplete.');
+    await expect(loading).rejects.toThrow(/cache is incomplete/);
+    expect(worker.terminate).not.toHaveBeenCalled();
+    expect(client.loaded).toBe(false);
+    expect(client.modelKey).toBeNull();
+    expect(client.imageId).toBe(1);
+    expect(client.state).toBe('idle');
+    const retry = client.load();
+    expect(createWorker).toHaveBeenCalledOnce();
+    expect(worker.last('load').allowDownload).toBe(false);
+    worker.result('load', loadResult);
+    await expect(retry).resolves.toEqual(loadResult);
+    expect(client.loaded).toBe(true);
+    expect(client.imageId).toBe(1);
+  });
+
+  it('discards the worker and its capture after a fatal load failure', async () => {
     const {client, worker, createWorker} = fixture();
     await capture(client, worker);
     const loading = client.load({allowDownload: true});
-    worker.error('load', 'Cache inspection failed after model initialization');
-    await expect(loading).rejects.toThrow(
-      'Cache inspection failed after model initialization'
-    );
+    worker.error('load', 'WebGPU device lost', true);
+    await expect(loading).rejects.toThrow('WebGPU device lost');
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(client.loaded).toBe(false);
     expect(client.imageId).toBeNull();
-    expect(client.state).toBe('idle');
-    expect(createWorker).toHaveBeenCalledOnce();
     const replacement = new FakeWorker();
     createWorker.mockReturnValue(replacement);
     const retry = client.load();
     expect(createWorker).toHaveBeenCalledTimes(2);
-    expect(replacement.last('load').allowDownload).toBe(false);
     replacement.result('load', loadResult);
     await expect(retry).resolves.toEqual(loadResult);
-    expect(client.loaded).toBe(true);
-    expect(client.imageId).toBeNull();
   });
 
   it('transfers captures before loading and changes imageId only on matching acknowledgement', async () => {

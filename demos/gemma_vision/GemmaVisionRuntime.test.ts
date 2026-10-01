@@ -1,6 +1,6 @@
 import {describe, expect, it, vi} from 'vitest';
 import {GemmaVisionRuntime} from './GemmaVisionRuntime.js';
-import {REVISION} from './modelConfig.js';
+import {MODELS, REVISION} from './modelConfig.js';
 
 function deferred() {
   let resolve!: () => void;
@@ -32,8 +32,42 @@ function fixture() {
       };
     }),
   };
+  const liteModel = {
+    dispose: vi.fn(),
+    generate: vi.fn(async (options) => {
+      options.streamer.options.token_callback_function([7n]);
+      options.streamer.options.callback_function('A sign.');
+      options.streamer.options.token_callback_function([49279n]);
+      return {
+        tolist: () => [Array(300).fill(0n).concat([7n, 49279n])],
+        dispose: vi.fn(),
+      };
+    }),
+  };
+  const liteTemplate = vi.fn(() => 'lite prompt');
+  const liteProcess = vi.fn(async () => ({
+    input_ids: {dims: [1, 300], dispose: vi.fn()},
+    pixel_values: {dims: [1, 5, 3, 512, 512], dispose: vi.fn()},
+  }));
+  const liteImageConfigs: Record<string, unknown>[] = [];
   const library = {
     env: {backends: {onnx: {wasm: {}}}},
+    Idefics3ForConditionalGeneration: {
+      from_pretrained: vi.fn(async () => liteModel),
+    },
+    GPT2Tokenizer: class {
+      decode() {
+        return 'A sign.';
+      }
+    },
+    Idefics3ImageProcessor: class {
+      constructor(config) {
+        liteImageConfigs.push(config);
+      }
+    },
+    Idefics3Processor: vi.fn(function () {
+      return Object.assign(liteProcess, {apply_chat_template: liteTemplate});
+    }),
     Gemma4ForConditionalGeneration: {
       from_pretrained: vi.fn(async () => model),
     },
@@ -73,17 +107,28 @@ function fixture() {
   };
   const store = {
     inspectCache: vi.fn(async () => ({complete: true, missingBytes: 0})),
-    loadProcessorAssets: vi.fn(async () => ({
-      processorConfig: {image_processor: {max_soft_tokens: 280}},
-      tokenizerJSON: {},
-      tokenizerConfig: {},
-      chatTemplate: 'template',
-    })),
+    loadProcessorAssets: vi.fn(async ({model = MODELS.gemma} = {}) =>
+      model === MODELS.lite
+        ? {
+            processorConfig: {image_seq_len: 64},
+            imageProcessorConfig: {do_image_splitting: true},
+            tokenizerJSON: {},
+            tokenizerConfig: {},
+            chatTemplate: {chat_template: 'lite template'},
+          }
+        : {
+            processorConfig: {image_processor: {max_soft_tokens: 280}},
+            tokenizerJSON: {},
+            tokenizerConfig: {},
+            chatTemplate: 'template',
+          }
+    ),
     createGuardedFetch: vi.fn(() => vi.fn()),
   };
   let clock = 0;
+  const loadRuntime = vi.fn(async () => library);
   const runtime = new GemmaVisionRuntime({
-    loadRuntime: async () => library,
+    loadRuntime,
     postMessage: (reply) => replies.push(reply),
     probe: vi.fn(async () => {}),
     store,
@@ -102,6 +147,11 @@ function fixture() {
     runtime,
     replies,
     model,
+    liteModel,
+    liteTemplate,
+    liteProcess,
+    liteImageConfigs,
+    loadRuntime,
     library,
     store,
     process,
@@ -148,7 +198,10 @@ describe('GemmaVisionRuntime', () => {
         local_files_only: true,
       })
     );
-    expect(f.store.createGuardedFetch).toHaveBeenCalledWith(false);
+    expect(f.store.createGuardedFetch).toHaveBeenCalledWith(
+      false,
+      MODELS.gemma
+    );
     expect(f.replies.at(-1)).toMatchObject({
       type: 'result',
       result: {cached: true},
@@ -366,5 +419,150 @@ describe('GemmaVisionRuntime', () => {
     expect(
       f.library.Gemma4ForConditionalGeneration.from_pretrained
     ).toHaveBeenCalledOnce();
+  });
+
+  it('loads Lite with its own pinned classes, files and prompt shape', async () => {
+    const f = fixture();
+    await f.call(1, 'load', {modelKey: 'lite'});
+    expect(
+      f.library.Idefics3ForConditionalGeneration.from_pretrained
+    ).toHaveBeenCalledWith(
+      MODELS.lite.modelId,
+      expect.objectContaining({
+        revision: MODELS.lite.revision,
+        dtype: 'q4f16',
+        device: 'webgpu',
+        local_files_only: true,
+      })
+    );
+    expect(
+      f.library.Gemma4ForConditionalGeneration.from_pretrained
+    ).not.toHaveBeenCalled();
+    expect(f.store.inspectCache).toHaveBeenCalledWith(MODELS.lite);
+    expect(f.store.createGuardedFetch).toHaveBeenCalledWith(false, MODELS.lite);
+    expect(f.replies.at(-1)).toMatchObject({
+      type: 'result',
+      result: {modelKey: 'lite', cached: true},
+    });
+    await f.capture();
+    await f.call(3, 'generate', {imageId: 1, question: 'Describe'});
+    await f.call(4, 'generate', {imageId: 1, question: 'What color?'});
+    expect(f.liteTemplate.mock.calls[1]).toEqual([
+      [
+        {
+          role: 'user',
+          content: [{type: 'image'}, {type: 'text', text: 'Describe'}],
+        },
+        {role: 'assistant', content: [{type: 'text', text: 'A sign.'}]},
+        {role: 'user', content: [{type: 'text', text: 'What color?'}]},
+      ],
+      {tokenize: false, add_generation_prompt: true},
+    ]);
+    expect(f.liteProcess).toHaveBeenCalledWith(
+      'lite prompt',
+      expect.objectContaining({width: 1, height: 1, channels: 4})
+    );
+    expect(f.library.Idefics3Processor).toHaveBeenCalledWith(
+      {image_seq_len: 64},
+      expect.anything(),
+      'lite template'
+    );
+    expect(f.replies.at(-1)).toMatchObject({
+      type: 'result',
+      id: 4,
+      result: {
+        text: 'A sign.',
+        generatedTokens: 1,
+        truncated: false,
+        imageBudget: 64,
+        modelKey: 'lite',
+      },
+    });
+  });
+
+  it.each([
+    [64, false],
+    [320, true],
+  ])('maps Lite budget %i to tiling %s', async (budget, tiled) => {
+    const f = fixture();
+    await f.call(1, 'load', {modelKey: 'lite'});
+    await f.capture();
+    await f.call(3, 'generate', {
+      imageId: 1,
+      question: 'Read this',
+      imageBudget: budget,
+    });
+    expect(f.liteImageConfigs).toEqual([
+      {do_image_splitting: tiled, size: {longest_edge: 1024}},
+    ]);
+  });
+
+  it('rejects Gemma budgets for Lite and unknown models', async () => {
+    const f = fixture();
+    await f.call(1, 'load', {modelKey: 'giant'});
+    expect(f.replies.at(-1)).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining('Unknown vision model'),
+      fatal: false,
+    });
+    await f.call(2, 'load', {modelKey: 'lite'});
+    await f.capture();
+    await f.call(3, 'generate', {imageId: 1, question: 'x', imageBudget: 140});
+    expect(f.replies.at(-1)).toMatchObject({type: 'error'});
+    expect(f.liteModel.generate).not.toHaveBeenCalled();
+  });
+
+  it('disposes the old model before switching and reuses the imported runtime', async () => {
+    const f = fixture();
+    const order: string[] = [];
+    f.model.dispose.mockImplementation(() => order.push('dispose gemma'));
+    f.library.Idefics3ForConditionalGeneration.from_pretrained.mockImplementation(
+      async () => {
+        order.push('load lite');
+        return f.liteModel;
+      }
+    );
+    await f.call(1, 'load');
+    await f.capture();
+    await f.call(3, 'generate', {imageId: 1, question: 'Describe'});
+    await f.call(4, 'load', {modelKey: 'lite'});
+    expect(order).toEqual(['dispose gemma', 'load lite']);
+    expect(f.loadRuntime).toHaveBeenCalledOnce();
+    expect(f.runtime.history).toEqual([]);
+    await f.call(5, 'generate', {imageId: 1, question: 'Describe'});
+    expect(f.replies.at(-1)).toMatchObject({type: 'result', id: 5});
+    await f.call(6, 'load', {modelKey: 'gemma'});
+    expect(f.liteModel.dispose).toHaveBeenCalledOnce();
+    expect(f.loadRuntime).toHaveBeenCalledOnce();
+    await f.call(7, 'load', {modelKey: 'gemma'});
+    expect(f.replies.at(-1)).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining('already loaded'),
+    });
+    expect(f.model.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('leaves no model loaded when a cache-only switch finds missing files', async () => {
+    const f = fixture();
+    await f.call(1, 'load');
+    await f.capture();
+    f.store.inspectCache.mockResolvedValueOnce({
+      complete: false,
+      missingBytes: 10,
+    });
+    await f.call(3, 'load', {modelKey: 'lite', allowDownload: false});
+    expect(f.replies.at(-1)).toMatchObject({type: 'error', fatal: false});
+    expect(
+      f.library.Idefics3ForConditionalGeneration.from_pretrained
+    ).not.toHaveBeenCalled();
+    expect(f.model.dispose).toHaveBeenCalledOnce();
+    await f.call(4, 'generate', {imageId: 1, question: 'Describe'});
+    expect(f.replies.at(-1)).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining('Load a model'),
+    });
+    await f.call(5, 'load');
+    await f.call(6, 'generate', {imageId: 1, question: 'Describe'});
+    expect(f.replies.at(-1)).toMatchObject({type: 'result', id: 6});
   });
 });
