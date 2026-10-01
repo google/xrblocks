@@ -286,6 +286,7 @@ const ENUM_VALUES: Partial<Record<keyof UIStyle, readonly unknown[]>> = {
 
 const states = new WeakMap<UIElement, UIElementState>();
 const presentationObjects = new WeakMap<UIElement, THREE.Object3D>();
+const presentationOwners = new WeakMap<THREE.Object3D, UIElement>();
 const presentationBounds = new WeakMap<
   UIElement,
   (target: THREE.Box3) => THREE.Box3 | null
@@ -413,6 +414,11 @@ export function getUIPresentationObject(
   return presentationObjects.get(element as UIElement);
 }
 
+/** Returns whether an object renders a semantic UI element. */
+export function isUIPresentationObject(object: THREE.Object3D): boolean {
+  return presentationOwners.has(object);
+}
+
 /** Registers one rendered object for world-space UI queries. */
 export function registerUIPresentationObject(
   element: UIElement,
@@ -420,11 +426,15 @@ export function registerUIPresentationObject(
   bounds?: (target: THREE.Box3) => THREE.Box3 | null
 ): () => void {
   presentationObjects.set(element, presentation);
+  presentationOwners.set(presentation, element);
   if (bounds) presentationBounds.set(element, bounds);
   return () => {
     if (presentationObjects.get(element) === presentation) {
       presentationObjects.delete(element);
       presentationBounds.delete(element);
+    }
+    if (presentationOwners.get(presentation) === element) {
+      presentationOwners.delete(presentation);
     }
   };
 }
@@ -434,7 +444,8 @@ export function getUIPresentationBounds(
   object: THREE.Object3D,
   target: THREE.Box3
 ): THREE.Box3 | null | undefined {
-  return presentationBounds.get(object as UIElement)?.(target);
+  const element = presentationOwners.get(object) ?? (object as UIElement);
+  return presentationBounds.get(element)?.(target);
 }
 
 export function getUIRevision(element: UIElement): number {
