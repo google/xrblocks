@@ -449,6 +449,18 @@ describe('CaptionsDemo', () => {
     }
   });
 
+  it('splits each button row evenly so labels stay on one line', async () => {
+    const {demo} = await ready();
+    for (const button of [
+      demo.listenButton,
+      demo.clearButton,
+      demo.languageButton,
+      demo.translateButton,
+    ]) {
+      expect(button.style).toMatchObject({flexGrow: 1, flexBasis: 0});
+    }
+  });
+
   it('starts with translation off and captions exactly as before', async () => {
     const context = await ready();
     const {demo, translator, store} = context;

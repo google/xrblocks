@@ -151,8 +151,15 @@ export class CaptionsDemo extends xb.Script {
   }
 
   createPanel(follow) {
-    const button = (label, onClick) =>
-      new xb.UIButton({label, onClick, style: {flexGrow: 1, fontSize: 22}});
+    const button = (label, onClick, style) =>
+      new xb.UIButton({
+        label,
+        onClick,
+        style: {flexGrow: 1, fontSize: 22, ...style},
+      });
+    // A zero basis splits a row evenly instead of by label length.
+    const rowButton = (label, onClick) =>
+      button(label, onClick, {flexBasis: 0});
     this.status = new xb.UIText({
       text: 'Checking this browser.',
       style: NOTE_STYLE,
@@ -194,10 +201,14 @@ export class CaptionsDemo extends xb.Script {
       children: [this.levelFill],
     });
     this.loadButton = button(DOWNLOAD_LABEL, () => this.onLoadButton());
-    this.listenButton = button('Start listening', () => this.toggleListening());
-    this.clearButton = button('Clear', () => this.clearCaptions());
-    this.languageButton = button('Translate: Off', () => this.cycleLanguage());
-    this.translateButton = button(CHOOSE_LANGUAGE, () =>
+    this.listenButton = rowButton('Start listening', () =>
+      this.toggleListening()
+    );
+    this.clearButton = rowButton('Clear', () => this.clearCaptions());
+    this.languageButton = rowButton('Translate: Off', () =>
+      this.cycleLanguage()
+    );
+    this.translateButton = rowButton(CHOOSE_LANGUAGE, () =>
       this.onTranslateButton()
     );
     this.buttons = [
