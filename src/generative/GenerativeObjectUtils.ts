@@ -2,6 +2,10 @@ import * as THREE from 'three';
 
 import {lookAtRotation} from '../utils/RotationUtils';
 
+// Reusable instances to avoid allocations in per-frame callers.
+const tempForward = new THREE.Vector3();
+const tempAwayFromCamera = new THREE.Vector3();
+
 /**
  * Computes an aspect-ratio-preserving plane size whose largest side equals
  * `maxSize`. Used to scale a generated image so it reads at a comfortable size
@@ -46,13 +50,12 @@ export function poseInFrontOfCamera(
   position = new THREE.Vector3(),
   quaternion = new THREE.Quaternion()
 ): {position: THREE.Vector3; quaternion: THREE.Quaternion} {
-  const forward = new THREE.Vector3();
-  camera.getWorldDirection(forward);
+  camera.getWorldDirection(tempForward);
   camera.getWorldPosition(position);
-  position.addScaledVector(forward, distance);
+  position.addScaledVector(tempForward, distance);
   // lookAtRotation orients local -Z along `forward` (into the scene), so the
   // plane's +Z normal faces back toward the user.
-  lookAtRotation(forward, undefined, quaternion);
+  lookAtRotation(tempForward, undefined, quaternion);
   return {position, quaternion};
 }
 
@@ -72,7 +75,7 @@ export function quaternionFacingCamera(
   cameraPosition: THREE.Vector3,
   target = new THREE.Quaternion()
 ): THREE.Quaternion {
-  const awayFromCamera = new THREE.Vector3().subVectors(
+  const awayFromCamera = tempAwayFromCamera.subVectors(
     objectPosition,
     cameraPosition
   );
