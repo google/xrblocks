@@ -263,16 +263,24 @@ void main() {
     }
 
     // ----------------------------------------------------
-    // 5. Final Composite: DropShadow -> Surface -> Stroke
+    // 5. Final Composite (Accurate Un-Premultiplied Over Composite)
     // ----------------------------------------------------
-    vec4 color = dropColor;
-    if (surfaceColor.a > 0.0) {
-        color.rgb = mix(color.rgb, surfaceColor.rgb, surfaceColor.a);
-        color.a = surfaceColor.a + color.a * (1.0 - surfaceColor.a);
+    vec4 color = vec4(0.0);
+
+    // Surface over DropShadow
+    float surfaceOverDropA = surfaceColor.a + dropColor.a * (1.0 - surfaceColor.a);
+    if (surfaceOverDropA > 0.0001) {
+        color.rgb = (surfaceColor.rgb * surfaceColor.a + dropColor.rgb * dropColor.a * (1.0 - surfaceColor.a)) / surfaceOverDropA;
+        color.a = surfaceOverDropA;
     }
-    if (strokeResult.a > 0.0) {
-        color.rgb = mix(color.rgb, strokeResult.rgb, strokeResult.a);
-        color.a = strokeResult.a + color.a * (1.0 - strokeResult.a);
+
+    // Stroke over Surface + DropShadow
+    if (strokeResult.a > 0.0001) {
+        float finalA = strokeResult.a + color.a * (1.0 - strokeResult.a);
+        if (finalA > 0.0001) {
+            color.rgb = (strokeResult.rgb * strokeResult.a + color.rgb * color.a * (1.0 - strokeResult.a)) / finalA;
+            color.a = finalA;
+        }
     }
 
     if (color.a < 0.001) discard;
