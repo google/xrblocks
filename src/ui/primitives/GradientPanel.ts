@@ -347,15 +347,14 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
 
     abortableEffect(() => {
       const level = nestingLevelSignal.value;
-      const baseZ = (level + 1) * 0.002;
+      // Physically separate sequential layers inside local Group Z-stack.
+      const baseZ = level * 0.01;
       if (this.backfaceLayer) {
-        this.backfaceLayer.position.z = -0.001;
-        this.backfaceLayer.renderOrder = (level + 1) * 2;
+        this.backfaceLayer.position.z = baseZ - 0.001;
       }
-      this.unifiedLayer.position.z = baseZ;
-      this.unifiedLayer.renderOrder = (level + 1) * 2 + 1;
+      this.unifiedLayer.position.z = baseZ + 0.0015;
 
-      const contentZ = baseZ + 0.002;
+      const contentZ = baseZ + 0.004;
       for (const child of this.children) {
         if (child === this.unifiedLayer || child === this.backfaceLayer) {
           continue;
@@ -377,7 +376,7 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     super.add(...objects);
     const level = this.nestingLevelSignal?.value ?? 0;
     const baseZ = level * 0.01;
-    const contentZ = baseZ + 0.002;
+    const contentZ = baseZ + 0.004;
 
     for (const obj of objects) {
       if (obj === this.unifiedLayer || obj === this.backfaceLayer) {

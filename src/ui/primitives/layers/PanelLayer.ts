@@ -65,8 +65,6 @@ export class PanelShaderMaterial extends THREE.ShaderMaterial {
       `,
       clipping: true,
       transparent: true,
-      depthWrite: false,
-      depthTest: false,
       side: THREE.FrontSide,
       forceSinglePass: true,
       dithering: true,

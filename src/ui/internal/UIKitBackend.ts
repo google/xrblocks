@@ -37,6 +37,7 @@ import {
 } from '../UIElement';
 import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
+import {normalizeAlphaHexColor} from '../utils/ColorUtils';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {UICardEdge} from './UICardEdge';
 import {
@@ -767,8 +768,8 @@ class UIKitNodeBinding {
       return {
         text: (this.element as UIText).text,
         color:
-          (style.color as THREE.ColorRepresentation | undefined) ??
-          context.theme.colors.text,
+          normalizeAlphaHexColor(style.color) ??
+          normalizeAlphaHexColor(context.theme.colors.text),
         ...style,
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
@@ -798,7 +799,9 @@ class UIKitNodeBinding {
     if (kind === 'scroll' || kind === 'input') {
       this.contentProperties = {
         ...resolvedStyle,
-        color: resolvedStyle.color ?? context.theme.colors.outline,
+        color:
+          normalizeAlphaHexColor(resolvedStyle.color) ??
+          normalizeAlphaHexColor(context.theme.colors.outline),
       };
       return panelDefaults(this.element, context.theme, {
         ...style,
@@ -844,11 +847,12 @@ class UIKitNodeBinding {
 
   private updateButtonContent(theme: UITheme): void {
     const button = this.element as UIButton;
-    const color =
+    const color = normalizeAlphaHexColor(
       (this.presentedProperties.color as
         | THREE.ColorRepresentation
         | undefined) ??
-      (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
+        (button.disabled ? theme.colors.disabledText : theme.colors.primaryText)
+    );
     if (button.icon) {
       const properties = {
         content: this.icons.get(
@@ -1111,21 +1115,29 @@ function isGradientPaint(value: unknown): boolean {
   return typeof value === 'object' && value !== null && 'gradientType' in value;
 }
 
+function paintVisible(color: unknown, width?: unknown): boolean {
+  if (isGradientPaint(color)) return true;
+  if (isTransparent(color)) return false;
+  if (color === undefined) return false;
+  return typeof width !== 'number' || width > 0;
+}
+
+/**
+ * Every surface with any visible paint renders through `GradientPanel`'s unified
+ * shader — the legacy, pixel-verified pipeline. Only fully invisible panels use
+ * uikit's instanced `Container` (a single shared draw that contributes no
+ * visible pixels), which keeps the draw-call reduction without changing output.
+ */
 function requiresGradientPanel(
   element: UIElement,
   properties: Record<string, unknown>
 ): boolean {
   if (element instanceof GradientPanel) return true;
-  if (
-    isGradientPaint(properties.fillColor) ||
-    isGradientPaint(properties.backgroundColor)
-  ) {
-    return true;
-  }
-  if (
-    isGradientPaint(properties.strokeColor) ||
-    isGradientPaint(properties.borderColor)
-  ) {
+  const fill = properties.fillColor ?? properties.backgroundColor;
+  if (paintVisible(fill)) return true;
+  const stroke = properties.strokeColor ?? properties.borderColor;
+  const strokeWidth = properties.strokeWidth ?? properties.borderWidth;
+  if (paintVisible(stroke, typeof strokeWidth === 'number' ? strokeWidth : 1)) {
     return true;
   }
   if (
@@ -1193,6 +1205,9 @@ function toContainerProperties(
   delete result.dropShadowFalloff;
   delete result.backfaceColor;
   delete result.strokeAlign;
+  for (const [key, value] of Object.entries(result)) {
+    result[key] = normalizeAlphaHexColor(value);
+  }
   return result;
 }
 
@@ -1454,10 +1469,12 @@ function createSliderContent(panel: Container): SliderContent {
       slider.max === slider.min
         ? 0
         : (slider.value - slider.min) / (slider.max - slider.min);
-    const color = slider.disabled
-      ? theme.colors.disabledText
-      : theme.colors.primary;
-    track.setProperties({backgroundColor: theme.colors.outline});
+    const color = normalizeAlphaHexColor(
+      slider.disabled ? theme.colors.disabledText : theme.colors.primary
+    );
+    track.setProperties({
+      backgroundColor: normalizeAlphaHexColor(theme.colors.outline),
+    });
     fill.setProperties({width: `${ratio * 100}%`, backgroundColor: color});
     thumb.setProperties({
       positionLeft: `${ratio * 100}%`,
@@ -1542,7 +1559,7 @@ function toUIKitStyle(style: UIStyle): Record<string, unknown> {
                             : key === 'columnGap'
                               ? 'gapColumn'
                               : key;
-    result[mapped] = value;
+    result[mapped] = normalizeAlphaHexColor(value);
   }
   return result;
 }
