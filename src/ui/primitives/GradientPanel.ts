@@ -4,10 +4,7 @@ import * as THREE from 'three';
 import {DEFAULT_GRADIENT_PANEL_PROPS} from '../constants/GradientPanelConstants';
 import {Paint, StrokeAlign} from '../types/ShaderTypes';
 import {ShaderPanel, ShaderPanelProperties} from './ShaderPanel';
-import {DropShadowLayer} from './layers/DropShadowLayer';
-import {FillLayer} from './layers/FillLayer';
-import {InnerShadowLayer} from './layers/InnerShadowLayer';
-import {StrokeLayer} from './layers/StrokeLayer';
+import {UnifiedPanelLayer} from './layers/UnifiedPanelLayer';
 
 /**
  * Properties for configuring a GradientPanel.
@@ -120,18 +117,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
   private strokeAlignSignal!: Signal<StrokeAlign>;
 
   // Layers
-  /** Layer for rendering the drop shadow. */
-  private dropShadowLayer!: DropShadowLayer;
-  /** Layer for rendering the fill. */
-  private fillLayer!: FillLayer;
+  /** Unified single-pass layer for rendering drop shadow, fill, inner shadow, and stroke. */
+  private unifiedLayer!: UnifiedPanelLayer;
   /** Optional layer for rendering one clean rear surface. */
-  private backfaceLayer?: FillLayer;
-  /** Optional layer for rendering the card stroke on the rear surface. */
-  private backfaceStrokeLayer?: StrokeLayer;
-  /** Layer for rendering the inner shadow. */
-  private innerShadowLayer!: InnerShadowLayer;
-  /** Layer for rendering the stroke. */
-  private strokeLayer!: StrokeLayer;
+  private backfaceLayer?: UnifiedPanelLayer;
 
   // Constructor
   constructor(properties: GradientPanelProperties = {}) {
@@ -229,14 +218,9 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       const align = strokeAlignSignal.value;
 
       let strokeExpand = 0;
-      // If Center (1), expand by W/2.
-      // If Outside (2), expand by W.
       if (align === 'center') strokeExpand = sWidth * 0.5;
       else if (align === 'outside') strokeExpand = sWidth;
 
-      // The shadow starts from the stroke edge, so we need to add the stroke expansion to the shadow expansion.
-      // But we also need to ensure we at least cover the stroke itself (which is strokeExpand).
-      // Since s + strokeExpand >= strokeExpand (assuming s >= 0), we can just sum them.
       return s + strokeExpand;
     });
 
@@ -245,65 +229,44 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       overflow: 'visible',
     });
 
-    // Drop Shadow
-    this.dropShadowLayer = new DropShadowLayer({
+    // Unified single-pass layer
+    this.unifiedLayer = new UnifiedPanelLayer({
+      fillColor: fillColorSignal,
       dropShadowColor: dropShadowColorSignal,
       dropShadowBlur: dropShadowBlurSignal,
       dropShadowPosition: dropShadowPositionSignal,
       dropShadowSpread: dropShadowSpreadSignal,
       dropShadowFalloff: dropShadowFalloffSignal,
-      strokeWidth: strokeWidthSignal,
-      strokeAlign: strokeAlignSignal,
-    });
-
-    // Fill.
-    this.fillLayer = new FillLayer({
-      fillColor: fillColorSignal,
-    });
-
-    if (backfaceColorSignal) {
-      this.backfaceLayer = new FillLayer({
-        fillColor: backfaceColorSignal,
-      });
-      this.backfaceLayer.name = 'BackfaceLayer';
-      this.backfaceLayer.material.side = THREE.BackSide;
-    }
-
-    // Inner Shadow
-    this.innerShadowLayer = new InnerShadowLayer({
       innerShadowColor: innerShadowColorSignal,
       innerShadowBlur: innerShadowBlurSignal,
       innerShadowPosition: innerShadowPositionSignal,
       innerShadowSpread: innerShadowSpreadSignal,
       innerShadowFalloff: innerShadowFalloffSignal,
-      strokeWidth: strokeWidthSignal,
-      strokeAlign: strokeAlignSignal,
-    });
-
-    // Stroke
-    this.strokeLayer = new StrokeLayer({
       strokeColor: strokeColorSignal,
       strokeWidth: strokeWidthSignal,
       strokeAlign: strokeAlignSignal,
+      cornerRadius: cornerRadiusSignal,
+      dropShadowMargin: expansionMarginSignal,
     });
 
-    if (this.backfaceLayer) {
-      this.backfaceStrokeLayer = new StrokeLayer({
-        strokeColor: strokeColorSignal,
-        strokeWidth: strokeWidthSignal,
-        strokeAlign: strokeAlignSignal,
-      });
-      this.backfaceStrokeLayer.name = 'BackfaceStrokeLayer';
-      this.backfaceStrokeLayer.material.side = THREE.BackSide;
+    if (backfaceColorSignal) {
+      this.backfaceLayer = new UnifiedPanelLayer(
+        {
+          fillColor: backfaceColorSignal,
+          strokeColor: strokeColorSignal,
+          strokeWidth: strokeWidthSignal,
+          strokeAlign: strokeAlignSignal,
+          cornerRadius: cornerRadiusSignal,
+          dropShadowMargin: expansionMarginSignal,
+        },
+        undefined,
+        {side: THREE.BackSide}
+      );
+      this.backfaceLayer.name = 'BackfaceLayer';
+      this.addLayer(this.backfaceLayer);
     }
 
-    // Add Layers in correct order.
-    if (this.backfaceLayer) this.addLayer(this.backfaceLayer);
-    if (this.backfaceStrokeLayer) this.addLayer(this.backfaceStrokeLayer);
-    this.addLayer(this.dropShadowLayer);
-    this.addLayer(this.fillLayer);
-    this.addLayer(this.innerShadowLayer);
-    this.addLayer(this.strokeLayer);
+    this.addLayer(this.unifiedLayer);
 
     // Store Signals.
     this.cornerRadiusSignal = cornerRadiusSignal;
@@ -329,14 +292,12 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     this.strokeAlignSignal = strokeAlignSignal;
 
     // Layout & Z-Order.
-    // Common layout configs.
     const absProps = {
       positionType: 'absolute' as const,
       pointerEvents: 'none' as const,
     };
 
-    // Fill
-    this.fillLayer.setProperties({
+    this.unifiedLayer.setProperties({
       ...absProps,
       zIndexOffset: -10,
       pointerEvents: properties.pointerEvents ?? 'auto',
@@ -345,29 +306,6 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     this.backfaceLayer?.setProperties({
       ...absProps,
       zIndexOffset: -12,
-    });
-
-    this.backfaceStrokeLayer?.setProperties({
-      ...absProps,
-      zIndexOffset: -11,
-    });
-
-    // Inner Shadow
-    this.innerShadowLayer.setProperties({
-      ...absProps,
-      zIndexOffset: -8,
-    });
-
-    // Drop Shadow
-    this.dropShadowLayer.setProperties({
-      ...absProps,
-      zIndexOffset: -4,
-    });
-
-    // Stroke
-    this.strokeLayer.setProperties({
-      ...absProps,
-      zIndexOffset: -6,
     });
 
     // Sync layout.
@@ -380,30 +318,8 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
         positionRight: m,
         positionBottom: m,
       };
-      this.fillLayer.setProperties(props);
-      this.innerShadowLayer.setProperties(props);
-      this.dropShadowLayer.setProperties(props);
-      this.strokeLayer.setProperties(props);
-    }, this.abortSignal);
-
-    // Sync Corner Radius & Stroke Width & Margin.
-    abortableEffect(() => {
-      const r = this.cornerRadiusSignal.value;
-      const w = this.strokeWidthSignal.value;
-      const m = this.expansionMarginSignal.value;
-
-      // Apply to all layers.
-      for (const layer of this.panelLayers) {
-        if (layer.material.uniforms.u_corner_radius) {
-          layer.material.uniforms.u_corner_radius.value = r;
-        }
-        if (layer.material.uniforms.u_stroke_width) {
-          layer.material.uniforms.u_stroke_width.value = w;
-        }
-        if (layer.material.uniforms.u_drop_shadow_margin) {
-          layer.material.uniforms.u_drop_shadow_margin.value = m;
-        }
-      }
+      this.unifiedLayer.setProperties(props);
+      this.backfaceLayer?.setProperties(props);
     }, this.abortSignal);
 
     // Auto-calculate renderOrder based on Nesting Level to prevent nested Z-fighting.
@@ -422,26 +338,13 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
 
     abortableEffect(() => {
       const level = nestingLevelSignal.value;
-      // Physically separate sequential layers inside local Group Z-stack.
       const baseZ = level * 0.01;
       if (this.backfaceLayer) this.backfaceLayer.position.z = baseZ - 0.001;
-      if (this.backfaceStrokeLayer)
-        this.backfaceStrokeLayer.position.z = baseZ - 0.002;
-      this.dropShadowLayer.position.z = baseZ;
-      this.fillLayer.position.z = baseZ + 0.001;
-      this.innerShadowLayer.position.z = baseZ + 0.002;
-      this.strokeLayer.position.z = baseZ + 0.003;
+      this.unifiedLayer.position.z = baseZ;
 
-      const contentZ = baseZ + 0.004;
+      const contentZ = baseZ + 0.002;
       for (const child of this.children) {
-        if (
-          child === this.dropShadowLayer ||
-          child === this.backfaceLayer ||
-          child === this.backfaceStrokeLayer ||
-          child === this.fillLayer ||
-          child === this.innerShadowLayer ||
-          child === this.strokeLayer
-        ) {
+        if (child === this.unifiedLayer || child === this.backfaceLayer) {
           continue;
         }
         const childWithProps = child as unknown as {
@@ -461,17 +364,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     super.add(...objects);
     const level = this.nestingLevelSignal?.value ?? 0;
     const baseZ = level * 0.01;
-    const contentZ = baseZ + 0.004;
+    const contentZ = baseZ + 0.002;
 
     for (const obj of objects) {
-      if (
-        obj === this.dropShadowLayer ||
-        obj === this.backfaceLayer ||
-        obj === this.backfaceStrokeLayer ||
-        obj === this.fillLayer ||
-        obj === this.innerShadowLayer ||
-        obj === this.strokeLayer
-      ) {
+      if (obj === this.unifiedLayer || obj === this.backfaceLayer) {
         continue;
       }
       const objWithProps = obj as unknown as {
@@ -561,8 +457,6 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
   setProperties(
     props: Partial<GradientPanelProperties> & Record<string, unknown>
   ) {
-    // Extract properties to ensure they are applied in the correct order
-    // and not passed to super if not needed.
     const {
       fillColor,
       backfaceColor,
