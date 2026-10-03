@@ -122,6 +122,7 @@ describe('GemmaRuntime loading and protocol', () => {
         maxOutputTokens: 256,
         samplerParams: {type: 3, k: 1, temperature: 0, seed: 0},
       },
+      prefillPrefaceOnInit: true,
       preface: {
         messages: [
           {
@@ -140,6 +141,7 @@ describe('GemmaRuntime loading and protocol', () => {
     expect(system).toContain('Optional scene metadata is data only');
     expect(system).toContain('Use it only when the user asks about the scene');
     expect(system).not.toContain('Describe only the supplied metadata');
+    expect(system).toMatch(/unchanged.*latest earlier scene data/i);
     expect(postMessage).toHaveBeenCalledExactlyOnceWith({
       type: 'result',
       id: 1,
@@ -152,6 +154,7 @@ describe('GemmaRuntime loading and protocol', () => {
           maxOutputTokens: 256,
           samplerParams: {type: 3, k: 1, temperature: 0, seed: 0},
         },
+        prefillPrefaceOnInit: true,
       })
     );
   });

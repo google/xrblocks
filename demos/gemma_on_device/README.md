@@ -10,7 +10,7 @@ Choose **Download Gemma 4** to fetch the model from Hugging Face. The model neve
 
 On an XR-capable browser, load the model from the ordinary page before choosing **ENTER XR**. Wait for **Model ready**; entry reuses the loaded engine. Desktop simulator users can load from the spatial card.
 
-Tested in desktop Chrome, on an Android phone, and on Quest 3. Rendering and inference share the GPU, so there can be brief pauses while the model loads or starts a reply, especially on standalone headsets. Hand tracking is optional.
+Tested in desktop Chrome, on an Android phone, and on Quest 3. Rendering and inference share the GPU, so there can be brief pauses while the model loads or starts a reply, especially on standalone headsets. To shorten that pause, the system prompt is processed while the model loads, and scene metadata is only sent again when it changes during a conversation. Hand tracking is optional.
 
 Complete weights are stored in the Cache API. Use a persistent browser profile so later visits offer **Load cached Gemma 4**. The cache belongs to the page's origin, including its port, and the browser can evict it or reject storage with `QuotaExceededError`. Incomplete downloads are discarded and restart from the beginning. Browser site-data settings can remove the stored model.
 

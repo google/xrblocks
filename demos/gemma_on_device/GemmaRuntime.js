@@ -5,6 +5,7 @@ const SYSTEM_MESSAGE =
   'Use it only when the user asks about the scene or its objects. ' +
   'For a selected-object question, use the Selected object line, not the other objects. ' +
   'Use the current message for selection and positions, not earlier messages. ' +
+  'Scene metadata marked unchanged means the latest earlier scene data still applies, with the selection named in the current message. ' +
   'You have no camera vision, tools or actions and cannot change the scene. ' +
   'Acknowledge missing information. Keep answers short and do not output thinking or reasoning traces.';
 
@@ -222,6 +223,8 @@ export class GemmaRuntime {
           seed: 0,
         },
       },
+      // Prefill the system prompt now, not inside the first reply's GPU stall.
+      prefillPrefaceOnInit: true,
       preface: {
         messages: [{role: 'system', content: SYSTEM_MESSAGE}],
         extra_context: {enable_thinking: false},

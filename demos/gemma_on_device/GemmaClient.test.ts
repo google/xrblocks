@@ -249,6 +249,167 @@ describe('GemmaClient generation', () => {
     }
   );
 
+  describe('scene metadata reuse within a conversation', () => {
+    const sphere = {
+      id: 'sphere',
+      name: 'Blue sphere',
+      type: 'sphere',
+      position: [1, 1, -2],
+      bounds: {center: [1, 1, -2], size: [0.5, 0.5, 0.5]},
+    };
+    const scene = {...context, objects: [...context.objects, sphere]};
+
+    async function sendAndFinish(
+      client: GemmaClient,
+      worker: FakeWorker,
+      prompt: string,
+      sceneContext: typeof scene,
+      result: unknown = finished
+    ) {
+      const sending = client.send(prompt, sceneContext);
+      await vi.waitFor(() => expect(worker.last().type).toBe('send'));
+      const {id, message} = worker.last();
+      worker.reply(id, result);
+      await sending;
+      return message!;
+    }
+
+    it('sends an unchanged scene once and then only names the selection', async () => {
+      const {client, worker} = await loaded();
+      const first = await sendAndFinish(client, worker, 'Describe it', scene);
+      expect(first).toContain('<scene-data>');
+      expect(first).toContain('Other objects:\n- Blue sphere');
+      const second = await sendAndFinish(client, worker, 'And now?', {
+        ...scene,
+        objects: scene.objects.map((object) => ({
+          ...object,
+          position: [...object.position],
+        })),
+      });
+      expect(second).not.toContain('<scene-data>');
+      expect(second).not.toContain('Blue sphere');
+      expect(second).toContain(
+        'Scene metadata: unchanged. Selected object: Amber cube.'
+      );
+      expect(second).toContain('User prompt:\nAnd now?');
+      expect(second.length).toBeLessThan(first.length / 2);
+    });
+
+    it('says when nothing is selected in an unchanged scene', async () => {
+      const {client, worker} = await loaded();
+      const none = {...scene, selectedId: null};
+      await sendAndFinish(client, worker, 'Hi', none);
+      expect(await sendAndFinish(client, worker, 'Again', none)).toContain(
+        'Scene metadata: unchanged. Selected object: none.'
+      );
+    });
+
+    it.each([
+      ['selection', {...scene, selectedId: 'sphere'}],
+      [
+        'position',
+        {
+          ...scene,
+          objects: [context.objects[0], {...sphere, position: [1, 1.2, -2]}],
+        },
+      ],
+      [
+        'size',
+        {
+          ...scene,
+          objects: [
+            context.objects[0],
+            {...sphere, bounds: {...sphere.bounds, size: [1, 1, 1]}},
+          ],
+        },
+      ],
+    ])('sends the full scene again after a %s change', async (_, changed) => {
+      const {client, worker} = await loaded();
+      await sendAndFinish(client, worker, 'First', scene);
+      const message = await sendAndFinish(client, worker, 'Next', changed);
+      expect(message).toContain('<scene-data>');
+      expect(message).toContain('Other objects:');
+    });
+
+    it('ignores movement below the two-decimal precision sent to Gemma', async () => {
+      const {client, worker} = await loaded();
+      await sendAndFinish(client, worker, 'First', scene);
+      const jittered = {
+        ...scene,
+        objects: [
+          context.objects[0],
+          {...sphere, position: [1.001, 0.999, -2]},
+        ],
+      };
+      expect(await sendAndFinish(client, worker, 'Next', jittered)).toContain(
+        'Scene metadata: unchanged.'
+      );
+    });
+
+    it('sends the full scene again after New chat', async () => {
+      const {client, worker} = await loaded();
+      await sendAndFinish(client, worker, 'First', scene);
+      const resetting = client.newChat();
+      await vi.waitFor(() => expect(worker.last().type).toBe('reset'));
+      worker.reply(worker.last().id, {contextTokens: 100});
+      await resetting;
+      expect(await sendAndFinish(client, worker, 'Next', scene)).toContain(
+        '<scene-data>'
+      );
+    });
+
+    it('sends the full scene again after an interrupted reply', async () => {
+      const {client, worker} = await loaded();
+      await sendAndFinish(client, worker, 'First', scene);
+      const sending = client.send('Long', scene);
+      await vi.waitFor(() => expect(worker.last().type).toBe('send'));
+      const {id} = worker.last();
+      client.stop();
+      worker.reply(id, {...finished, interrupted: true, contextTokens: 0});
+      await sending;
+      expect(await sendAndFinish(client, worker, 'Next', scene)).toContain(
+        '<scene-data>'
+      );
+    });
+
+    it('sends the full scene again after Stop crosses a completed reply', async () => {
+      const {client, worker} = await loaded();
+      await sendAndFinish(client, worker, 'First', scene);
+      const sending = client.send('Long', scene);
+      await vi.waitFor(() => expect(worker.last().type).toBe('send'));
+      const {id} = worker.last();
+      client.stop();
+      worker.reply(id, finished);
+      await vi.waitFor(() => expect(worker.last().type).toBe('reset'));
+      worker.reply(worker.last().id, {contextTokens: 100});
+      await sending;
+      expect(await sendAndFinish(client, worker, 'Next', scene)).toContain(
+        '<scene-data>'
+      );
+    });
+
+    it('does not reuse a scene whose send failed', async () => {
+      const {client, worker} = await loaded();
+      const sending = client.send('First', scene);
+      await vi.waitFor(() => expect(worker.last().type).toBe('send'));
+      worker.emit({
+        type: 'error',
+        id: worker.last().id,
+        name: 'Error',
+        message: 'Context capacity exceeded',
+        fatal: false,
+      });
+      await expect(sending).rejects.toThrow(/capacity/i);
+      const resetting = client.newChat();
+      await vi.waitFor(() => expect(worker.last().type).toBe('reset'));
+      worker.reply(worker.last().id, {contextTokens: 100});
+      await resetting;
+      expect(await sendAndFinish(client, worker, 'Next', scene)).toContain(
+        '<scene-data>'
+      );
+    });
+  });
+
   it('does not substitute another object when the selection is absent', async () => {
     const {client, worker} = await loaded();
     const sending = client.send('Describe selected', {
