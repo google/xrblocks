@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid c737bdf
-* @builddate 2026-10-01T01:48:01.927Z
+* @commitid 863004a
+* @builddate 2026-10-03T18:24:38.265Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5686,6 +5686,195 @@ function visualizeDepthMap(depthArray, width, height) {
 	link.click();
 }
 //#endregion
+//#region src/generative/BackgroundKeyer.ts
+const DEFAULT_TOLERANCE = 48;
+/**
+* Estimates the background color of an image by averaging its four corner
+* pixels. Generated images that place the subject on a plain, uniform
+* background (the generative_object demo instructs the model to do so) have
+* corners that are a reliable sample.
+* @param image - The source RGBA image.
+* @returns The estimated `[r, g, b]` background color (0-255).
+*/
+function estimateBackgroundColor(image) {
+	const { data, width, height } = image;
+	const corners = [
+		0,
+		(width - 1) * 4,
+		(height - 1) * width * 4,
+		((height - 1) * width + (width - 1)) * 4
+	];
+	let r = 0;
+	let g = 0;
+	let b = 0;
+	for (const offset of corners) {
+		r += data[offset];
+		g += data[offset + 1];
+		b += data[offset + 2];
+	}
+	return [
+		r / corners.length,
+		g / corners.length,
+		b / corners.length
+	];
+}
+/**
+* Makes background-colored pixels transparent, turning a subject-on-a-plain-
+* background image into a clean cutout. Operates on a copy; the input is not
+* mutated.
+* @param image - The source RGBA image.
+* @param options - Keying options.
+* @returns A new {@link RgbaImage} with background pixels set to alpha 0.
+*/
+function keyOutBackground(image, options = {}) {
+	const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
+	const [bgR, bgG, bgB] = estimateBackgroundColor(image);
+	const toleranceSquared = tolerance * tolerance;
+	const out = new Uint8ClampedArray(image.data);
+	for (let i = 0; i < out.length; i += 4) {
+		const dr = out[i] - bgR;
+		const dg = out[i + 1] - bgG;
+		const db = out[i + 2] - bgB;
+		if (dr * dr + dg * dg + db * db <= toleranceSquared) out[i + 3] = 0;
+	}
+	return {
+		data: out,
+		width: image.width,
+		height: image.height
+	};
+}
+/**
+* Builds a grayscale displacement map from a keyed image: background pixels
+* (alpha 0) become black (no displacement) and subject pixels become their
+* luminance. Masking by alpha keeps the transparent background from displacing
+* into stray geometry. The result is opaque RGBA.
+* @param image - A keyed RGBA image (background already at alpha 0).
+* @returns A new opaque {@link RgbaImage} usable as a displacement/bump map.
+*/
+function buildDisplacementMap(image) {
+	const { data, width, height } = image;
+	const out = new Uint8ClampedArray(data.length);
+	for (let i = 0; i < data.length; i += 4) {
+		const luminance = data[i + 3] === 0 ? 0 : Math.round(.2126 * data[i] + .7152 * data[i + 1] + .0722 * data[i + 2]);
+		out[i] = luminance;
+		out[i + 1] = luminance;
+		out[i + 2] = luminance;
+		out[i + 3] = 255;
+	}
+	return {
+		data: out,
+		width,
+		height
+	};
+}
+//#endregion
+//#region src/utils/RotationUtils.ts
+const euler = new THREE.Euler();
+const matrix4 = new THREE.Matrix4();
+const v1 = new THREE.Vector3();
+/**
+* Extracts only the yaw (Y-axis rotation) from a quaternion.
+* This is useful for making an object face a certain direction horizontally
+* without tilting up or down.
+*
+* @param rotation - The source quaternion from which to
+*     extract the yaw.
+* @param target - The target
+*     quaternion to store the result.
+* If not provided, a new quaternion will be created.
+* @returns The resulting quaternion containing only the yaw
+*     rotation.
+*/
+function extractYaw(rotation, target = new THREE.Quaternion()) {
+	euler.setFromQuaternion(rotation, "YXZ");
+	return target.setFromAxisAngle(UP, euler.y);
+}
+/**
+* Creates a rotation such that forward (0, 0, -1) points towards the forward
+* vector and the up direction is the normalized projection of the provided up
+* vector onto the plane orthogonal to the target.
+* @param forward - Forward vector
+* @param up - Up vector
+* @param target - Output
+* @returns
+*/
+function lookAtRotation(forward, up = UP, target = new THREE.Quaternion()) {
+	matrix4.lookAt(ZERO_VECTOR3, forward, up);
+	return target.setFromRotationMatrix(matrix4);
+}
+/**
+* Clamps the provided rotation's angle.
+* The rotation is modified in place.
+* @param rotation - The quaternion to clamp.
+* @param angle - The maximum allowed angle in radians.
+*/
+function clampRotationToAngle(rotation, angle) {
+	let currentAngle = 2 * Math.acos(rotation.w);
+	currentAngle = (currentAngle + Math.PI) % (2 * Math.PI) - Math.PI;
+	if (Math.abs(currentAngle) <= angle) return;
+	const axis = v1.set(rotation.x, rotation.y, rotation.z).multiplyScalar(1 / Math.sqrt(1 - rotation.w * rotation.w));
+	axis.normalize();
+	rotation.setFromAxisAngle(axis, angle * Math.sign(currentAngle));
+}
+//#endregion
+//#region src/generative/GenerativeObjectUtils.ts
+const tempForward = new THREE.Vector3();
+const tempAwayFromCamera = new THREE.Vector3();
+/**
+* Computes an aspect-ratio-preserving plane size whose largest side equals
+* `maxSize`. Used to scale a generated image so it reads at a comfortable size
+* regardless of the model's output resolution.
+* @param imageWidth - Source image width in pixels.
+* @param imageHeight - Source image height in pixels.
+* @param maxSize - Largest dimension of the resulting plane, in meters.
+* @param target - Optional output vector to write into.
+* @returns `target` set to the plane's [width, height] in meters.
+*/
+function computeBillboardScale(imageWidth, imageHeight, maxSize, target = new THREE.Vector2()) {
+	if (imageWidth <= 0 || imageHeight <= 0 || maxSize <= 0) return target.set(maxSize, maxSize);
+	const aspect = imageWidth / imageHeight;
+	if (aspect >= 1) return target.set(maxSize, maxSize / aspect);
+	return target.set(maxSize * aspect, maxSize);
+}
+/**
+* Computes a world-space pose `distance` meters in front of the camera,
+* oriented so its front face (+Z) points back toward the user. Copy the result
+* straight onto a direct child of the scene; for an object under a transformed
+* parent, convert it into the parent's space first.
+* @param camera - The user's camera.
+* @param distance - Distance in front of the camera, in meters.
+* @param position - Optional output world position.
+* @param quaternion - Optional output world orientation.
+* @returns The world position and orientation.
+*/
+function poseInFrontOfCamera(camera, distance, position = new THREE.Vector3(), quaternion = new THREE.Quaternion()) {
+	camera.getWorldDirection(tempForward);
+	camera.getWorldPosition(position);
+	position.addScaledVector(tempForward, distance);
+	lookAtRotation(tempForward, void 0, quaternion);
+	return {
+		position,
+		quaternion
+	};
+}
+/**
+* Computes a world-space orientation that turns a plane's front face (+Z)
+* toward the camera while keeping the object upright (yaw only). Used to
+* billboard a generated cutout so it faces the user like a standee, without
+* tilting. Apply it directly to a child of the scene; under a transformed
+* parent, convert it into the parent's space first.
+* @param objectPosition - World position of the object.
+* @param cameraPosition - World position of the camera.
+* @param target - Optional output world orientation.
+* @returns `target` oriented so +Z points toward the camera, staying upright.
+*/
+function quaternionFacingCamera(objectPosition, cameraPosition, target = new THREE.Quaternion()) {
+	const awayFromCamera = tempAwayFromCamera.subVectors(objectPosition, cameraPosition);
+	awayFromCamera.y = 0;
+	if (awayFromCamera.lengthSq() === 0) return target.identity();
+	return lookAtRotation(awayFromCamera, void 0, target);
+}
+//#endregion
 //#region src/layers/LayerCapability.ts
 /**
 * Works out how this platform can back a quad layer.
@@ -7788,55 +7977,6 @@ function asMaterials(material) {
 	return Array.isArray(material) ? material : [material];
 }
 //#endregion
-//#region src/utils/RotationUtils.ts
-const euler = new THREE.Euler();
-const matrix4 = new THREE.Matrix4();
-const v1 = new THREE.Vector3();
-/**
-* Extracts only the yaw (Y-axis rotation) from a quaternion.
-* This is useful for making an object face a certain direction horizontally
-* without tilting up or down.
-*
-* @param rotation - The source quaternion from which to
-*     extract the yaw.
-* @param target - The target
-*     quaternion to store the result.
-* If not provided, a new quaternion will be created.
-* @returns The resulting quaternion containing only the yaw
-*     rotation.
-*/
-function extractYaw(rotation, target = new THREE.Quaternion()) {
-	euler.setFromQuaternion(rotation, "YXZ");
-	return target.setFromAxisAngle(UP, euler.y);
-}
-/**
-* Creates a rotation such that forward (0, 0, -1) points towards the forward
-* vector and the up direction is the normalized projection of the provided up
-* vector onto the plane orthogonal to the target.
-* @param forward - Forward vector
-* @param up - Up vector
-* @param target - Output
-* @returns
-*/
-function lookAtRotation(forward, up = UP, target = new THREE.Quaternion()) {
-	matrix4.lookAt(ZERO_VECTOR3, forward, up);
-	return target.setFromRotationMatrix(matrix4);
-}
-/**
-* Clamps the provided rotation's angle.
-* The rotation is modified in place.
-* @param rotation - The quaternion to clamp.
-* @param angle - The maximum allowed angle in radians.
-*/
-function clampRotationToAngle(rotation, angle) {
-	let currentAngle = 2 * Math.acos(rotation.w);
-	currentAngle = (currentAngle + Math.PI) % (2 * Math.PI) - Math.PI;
-	if (Math.abs(currentAngle) <= angle) return;
-	const axis = v1.set(rotation.x, rotation.y, rotation.z).multiplyScalar(1 / Math.sqrt(1 - rotation.w * rotation.w));
-	axis.normalize();
-	rotation.setFromAxisAngle(axis, angle * Math.sign(currentAngle));
-}
-//#endregion
 //#region src/video/VideoFileStream.ts
 /**
 * VideoFileStream handles video playback from a file source.
@@ -8257,11 +8397,13 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	aspectRatioOf: () => aspectRatioOf,
 	assertWebGLRenderer: () => assertWebGLRenderer,
 	average: () => average,
+	buildDisplacementMap: () => buildDisplacementMap,
 	callInitWithDependencyInjection: () => callInitWithDependencyInjection,
 	camera: () => camera,
 	clamp: () => clamp,
 	clamp01: () => clamp01,
 	clampRotationToAngle: () => clampRotationToAngle,
+	computeBillboardScale: () => computeBillboardScale,
 	context: () => context,
 	core: () => core,
 	cropImage: () => cropImage,
@@ -8275,6 +8417,7 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	disposeObjectTree: () => disposeObjectTree,
 	disposeRenderableResources: () => disposeRenderableResources,
 	enableAcceleratedRaycast: () => enableAcceleratedRaycast,
+	estimateBackgroundColor: () => estimateBackgroundColor,
 	estimateHandScale: () => estimateHandScale,
 	extractYaw: () => extractYaw,
 	getAdjacentFingerSpreads: () => getAdjacentFingerSpreads,
@@ -8324,6 +8467,7 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	isDeviceCameraPoseAvailable: () => isDeviceCameraPoseAvailable,
 	isLayerCapable: () => isLayerCapable,
 	isWebGPURenderer: () => isWebGPURenderer,
+	keyOutBackground: () => keyOutBackground,
 	layerCapability: () => layerCapability,
 	lerp: () => lerp,
 	loadStereoImageAsTextures: () => loadStereoImageAsTextures,
@@ -8333,7 +8477,9 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	parseBase64DataURL: () => parseBase64DataURL,
 	parseSimulatorHandPoseRotations: () => parseSimulatorHandPoseRotations,
 	placeObjectAtIntersectionFacingTarget: () => placeObjectAtIntersectionFacingTarget,
+	poseInFrontOfCamera: () => poseInFrontOfCamera,
 	print: () => print,
+	quaternionFacingCamera: () => quaternionFacingCamera,
 	resolveSimulatorHandPoseRotations: () => resolveSimulatorHandPoseRotations,
 	resolveSimulatorRotationsFromKeypoints: () => resolveSimulatorRotationsFromKeypoints,
 	scene: () => scene,
@@ -8358,6 +8504,6 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	xrDeviceCameraUserOptions: () => xrDeviceCameraUserOptions
 }));
 //#endregion
-export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIIcon, UIImage, UIOverlay, UIPanel, UIScrollView, UISlider, UIText, UITextInput, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isWebGPURenderer, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, print, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIIcon, UIImage, UIOverlay, UIPanel, UIScrollView, UISlider, UIText, UITextInput, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 
 //# sourceMappingURL=xrblocks.js.map
