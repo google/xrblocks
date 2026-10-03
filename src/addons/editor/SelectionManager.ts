@@ -165,6 +165,7 @@ export class SelectionManager extends xb.Script {
     this.raycaster.setFromXRController(
       controller as unknown as THREE.XRTargetRaySpace
     );
+    this.raycaster.camera = xb.core.camera;
     const hit = this.raycaster.intersectObjects(
       this.sceneManager.list().map((candidate) => candidate.object),
       true

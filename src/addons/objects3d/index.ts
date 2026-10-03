@@ -70,4 +70,7 @@ export {
 } from './labels/Categories';
 export type {ObjectCategory} from './labels/Categories';
 export type {MaskLike} from './geometry/DepthSampling';
-export {SAM_MODEL_ID} from './masks/SamMask';
+export {
+  EFFICIENTSAM_TI_DECODER_URL,
+  EFFICIENTSAM_TI_ENCODER_URL,
+} from './masks/SamMask';

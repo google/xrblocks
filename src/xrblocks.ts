@@ -21,6 +21,7 @@ export * from './core/components/Registry';
 export * from './core/components/ScreenshotSynthesizer';
 export * from './core/components/ScriptsManager';
 export * from './core/components/WaitFrame';
+export * from './core/components/WebXRSessionManager';
 export * from './core/components/XRButton';
 export * from './core/components/XREffects';
 export * from './core/components/XRReferenceSpaceCache';
@@ -28,6 +29,7 @@ export * from './core/Core';
 export * from './core/Options';
 export {
   RENDERER_BACKENDS,
+  type FramebufferScaleFactor,
   type RendererBackend,
   type WebGPURendererOptions,
 } from './core/Options';
