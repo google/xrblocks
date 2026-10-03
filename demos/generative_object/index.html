@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Generative Object</title>
+    <meta charset="utf-8" />
+    <meta name="referrer" content="strict-origin" />
+    <script>
+      // Consume legacy URL input before loading resources. Its initial HTTP
+      // request has already reached the server; prefer the password field.
+      (() => {
+        const url = new URL(window.location.href);
+        window.generativeObjectUrlKey =
+          url.searchParams.get('key') || url.searchParams.get('geminiKey');
+        if (url.searchParams.has('key') || url.searchParams.has('geminiKey')) {
+          url.searchParams.delete('key');
+          url.searchParams.delete('geminiKey');
+          window.history.replaceState(window.history.state, '', url);
+        }
+      })();
+    </script>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link type="text/css" rel="stylesheet" href="../../samples/main.css" />
+    <style>
+      .key-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+        color: #eee;
+      }
+      .key-card {
+        background: #1a1a1a;
+        padding: 24px 28px;
+        border-radius: 12px;
+        max-width: 440px;
+        width: 90%;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      }
+      .key-card h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      .key-card p {
+        margin: 0 0 16px;
+        font-size: 13px;
+        color: #aaa;
+        line-height: 1.4;
+      }
+      .key-card a {
+        color: #4a90e2;
+      }
+      .key-card input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #555;
+        background: #111;
+        color: #eee;
+        font-size: 14px;
+        box-sizing: border-box;
+        margin-bottom: 12px;
+      }
+      .key-card button {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #4a90e2;
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "lit": "https://cdn.jsdelivr.net/gh/lit/dist@3/core/lit-core.min.js",
+          "lit/": "https://esm.run/lit@3/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../build/xrblocks.js",
+          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai@2.7.0/+esm"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="keyOverlay" class="key-overlay" style="display: none">
+      <div class="key-card">
+        <h2>Gemini API key</h2>
+        <p>
+          This demo needs a Gemini API key with image generation access. Get one
+          from
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener"
+            >aistudio.google.com</a
+          >. The key is saved in this browser's localStorage and passed directly
+          to the Gemini client, without reloading or adding it to the URL.
+        </p>
+        <p>
+          Summon and Speak both use this key: Summon asks Gemini for the image,
+          and Speak records what you say and sends it to Gemini to transcribe
+          before summoning it.
+        </p>
+        <p>
+          Local prototyping only. Production apps must proxy AI calls through a
+          server you control. Legacy <code>?key=</code> input is removed from
+          the address bar, but its initial request may already be in server
+          logs. Prefer entering your key here.
+        </p>
+        <input id="keyInput" type="password" placeholder="AIza..." />
+        <button id="keySave">save and start</button>
+      </div>
+    </div>
+
+    <div
+      id="status"
+      style="
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        max-width: 360px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: rgba(20, 20, 30, 0.7);
+        color: #eee;
+        font-family: sans-serif;
+        font-size: 13px;
+      "
+    >
+      starting...
+    </div>
+    <script type="module">
+      import {start} from './src/build/main.js';
+
+      start().catch((error) => {
+        console.error('[generative_object] startup failed', error);
+        document.getElementById('status').textContent =
+          'Could not start the demo. Check the console.';
+      });
+    </script>
+  </body>
+</html>
