@@ -308,13 +308,13 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
 
     this.unifiedLayer.setProperties({
       ...absProps,
-      zIndexOffset: -10,
+      transformTranslateZ: 0.001,
       pointerEvents: properties.pointerEvents ?? 'auto',
     });
 
     this.backfaceLayer?.setProperties({
       ...absProps,
-      zIndexOffset: -12,
+      transformTranslateZ: -0.001,
     });
 
     // Sync layout.
@@ -347,9 +347,13 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
 
     abortableEffect(() => {
       const level = nestingLevelSignal.value;
-      const baseZ = level * 0.01;
-      if (this.backfaceLayer) this.backfaceLayer.position.z = baseZ - 0.001;
+      const baseZ = (level + 1) * 0.002;
+      if (this.backfaceLayer) {
+        this.backfaceLayer.position.z = -0.001;
+        this.backfaceLayer.renderOrder = (level + 1) * 2;
+      }
       this.unifiedLayer.position.z = baseZ;
+      this.unifiedLayer.renderOrder = (level + 1) * 2 + 1;
 
       const contentZ = baseZ + 0.002;
       for (const child of this.children) {
