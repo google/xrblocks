@@ -2,8 +2,6 @@
 
 This sample showcases the full styling capabilities of XR Blocks' spatial UI panel system (`xb.UIPanel`, `xb.UICard`, and `GradientPanel`), including background gradients, multi-layer shadows, customizable borders, and real-time reactive property updates.
 
-![Panel Features Gallery](screenshot.png)
-
 ## Key Features
 
 - **Solid & Gradient Backgrounds**: Linear, radial, angular (conic sweep), and diamond gradients with multi-stop color configurations.
