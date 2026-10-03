@@ -3,7 +3,6 @@ import {
   Container,
   Image,
   type ImageOutProperties,
-  Svg,
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
@@ -39,6 +38,7 @@ import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
 import {normalizeAlphaHexColor} from '../utils/ColorUtils';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {MergedSvg} from '../primitives/MergedSvg';
 import {UICardEdge} from './UICardEdge';
 import {
   AdaptiveText,
@@ -455,7 +455,7 @@ interface CommitContext {
 type UIKitNode =
   | Container
   | Image<ImageOutProperties<unknown>>
-  | Svg
+  | MergedSvg
   | AdaptiveText
   | GradientPanel;
 
@@ -474,7 +474,7 @@ class UIKitNodeBinding {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
   };
   private edge?: UICardEdge;
-  private buttonIcon?: Svg;
+  private buttonIcon?: MergedSvg;
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
   private scrollView?: ScrollViewPresentation;
@@ -517,7 +517,7 @@ class UIKitNodeBinding {
         {loadTexture: false}
       );
     } else if (kind === 'icon') {
-      this.node = new Svg(properties);
+      this.node = new MergedSvg(properties);
     } else if (requiresGradientPanel(element, properties)) {
       this.node = new GradientPanel(properties);
     } else {
@@ -865,8 +865,9 @@ class UIKitNodeBinding {
         pointerEvents: 'none' as const,
       };
       if (!this.buttonIcon) {
-        this.buttonIcon = new Svg(properties);
-        this.node.add(this.buttonIcon);
+        const icon = new MergedSvg(properties);
+        this.buttonIcon = icon;
+        this.node.add(icon);
       } else {
         this.buttonIcon.setProperties(properties);
       }
