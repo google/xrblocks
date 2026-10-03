@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Vanilla UIKit on XR Blocks | Spatial UI</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <link rel="stylesheet" href="../../main.css" />
+    <script>
+      window.litDisableBundleWarning = true;
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../../build/xrblocks.js"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <script type="module">
+      import * as THREE from 'three';
+      import * as xb from 'xrblocks';
+      import {
+        Container,
+        Text,
+        Image,
+        Svg,
+        reversePainterSortStable,
+      } from '@pmndrs/uikit';
+      import {signal} from '@preact/signals-core';
+
+      const ICON_BASE =
+        'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/400/outlined/';
+      const ICON_NAMES = [
+        'explore',
+        'favorite',
+        'share',
+        'tune',
+        'palette',
+        'block',
+        'view_in_ar',
+        'open_with',
+        'aspect_ratio',
+        'widgets',
+        'restart_alt',
+      ];
+
+      const rawIconCache = new Map();
+      async function preloadIcons() {
+        await Promise.all(
+          ICON_NAMES.map(async (name) => {
+            try {
+              const res = await fetch(`${ICON_BASE}${name}.svg`);
+              const text = await res.text();
+              rawIconCache.set(name, text);
+            } catch (e) {
+              console.error(`Failed to load icon ${name}:`, e);
+            }
+          })
+        );
+      }
+
+      function getIconContent(name, color = '#ffffff') {
+        const raw = rawIconCache.get(name) || '<svg viewBox="0 0 24 24"></svg>';
+        return raw
+          .replace('<svg ', `<svg fill="${color}" `)
+          .replace('<path ', `<path fill="${color}" `);
+      }
+
+      function createCJKCanvasText(text, fontSize = 18, color = '#ffffff') {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.font = `${fontSize * 2}px sans-serif`;
+        ctx.fillStyle = color;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 0, 32);
+        return canvas.toDataURL();
+      }
+
+      // Theme definitions matching XR Blocks UITheme.ts
+      const THEMES = {
+        grayGlass: {
+          card: {
+            backgroundColor: 'rgba(32, 32, 38, 0.82)',
+            borderColor: 'rgba(255, 255, 255, 0.22)',
+            borderWidth: 1.5,
+          },
+          button: {
+            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+            borderColor: 'rgba(255, 255, 255, 0.18)',
+            borderWidth: 1.5,
+            color: '#ffffff',
+          },
+          buttonDisabled: {
+            backgroundColor: '#282c3466',
+            borderColor: 'rgba(255, 255, 255, 0.18)',
+            color: '#aab2c0',
+          },
+        },
+        colorful: {
+          card: {
+            backgroundColor: 'rgba(10, 17, 31, 0.96)',
+            borderColor: '#8ff0df',
+            borderWidth: 3,
+          },
+          button: {
+            backgroundColor: '#233653',
+            borderColor: '#8ff0df',
+            borderWidth: 2,
+            color: '#f8fafc',
+          },
+          buttonDisabled: {
+            backgroundColor: 'rgba(71, 85, 105, 0.45)',
+            borderColor: '#8ff0df',
+            color: '#94a3b8',
+          },
+        },
+      };
+
+      class VanillaSpatialUIScript extends xb.Script {
+        async init() {
+          try {
+            await preloadIcons();
+
+            // Configure transparent sort
+            xb.core.renderer.setTransparentSort(reversePainterSortStable);
+
+            // 1. Scene Lighting & Light Preview Sphere
+            this.light = new THREE.HemisphereLight(0xffffff, 0x666666, 2.6);
+            this.add(this.light);
+
+            const lightPreview = new THREE.Mesh(
+              new THREE.SphereGeometry(0.12, 32, 16),
+              new THREE.MeshStandardMaterial({color: 0x55ccff})
+            );
+            lightPreview.position.set(0, 0.75, -1.1);
+            this.add(lightPreview);
+
+            // 2. Reactive State Signals
+            const currentTheme = signal('grayGlass');
+            const activitySignal = signal('Choose an action.');
+            const lightPercentSignal = signal(65);
+            const isColorfulSignal = signal(false);
+
+            // Helpers
+            function createHeader(iconName, title, subtitle) {
+              const header = new Container({
+                width: '100%',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 14,
+              });
+              const icon = new Svg({
+                content: getIconContent(iconName, '#ffffff'),
+                width: 44,
+                height: 44,
+              });
+              const textCol = new Container({
+                flexGrow: 1,
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 4,
+              });
+              const titleText = new Text({
+                text: title,
+                fontSize: 28,
+                fontWeight: 'bold',
+                color: '#ffffff',
+              });
+              const subText = new Text({
+                text: subtitle,
+                fontSize: 15,
+                color: '#ffffff',
+                opacity: 0.72,
+              });
+              textCol.add(titleText, subText);
+              header.add(icon, textCol);
+              return header;
+            }
+
+            function createFeature(iconName, title, description) {
+              const feat = new Container({
+                width: '100%',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 14,
+                padding: 12,
+                backgroundColor: 'rgba(255, 255, 255, 0.07)',
+                borderRadius: 18,
+              });
+              const icon = new Svg({
+                content: getIconContent(iconName, '#ffffff'),
+                width: 34,
+                height: 34,
+              });
+              const textCol = new Container({
+                flexGrow: 1,
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 4,
+              });
+              const titleText = new Text({
+                text: title,
+                fontSize: 18,
+                fontWeight: 'bold',
+                color: '#ffffff',
+              });
+              const descText = new Text({
+                text: description,
+                fontSize: 14,
+                color: '#ffffff',
+                opacity: 0.72,
+              });
+              textCol.add(titleText, descText);
+              feat.add(icon, textCol);
+              return feat;
+            }
+
+            const registeredButtons = [];
+            function createButton(
+              iconName,
+              labelSignalOrText,
+              onClick = null,
+              disabled = false
+            ) {
+              const btnBg = signal(
+                disabled
+                  ? THEMES.grayGlass.buttonDisabled.backgroundColor
+                  : THEMES.grayGlass.button.backgroundColor
+              );
+              const btnBorder = signal(
+                disabled
+                  ? THEMES.grayGlass.buttonDisabled.borderColor
+                  : THEMES.grayGlass.button.borderColor
+              );
+              const btnColor = signal(
+                disabled
+                  ? THEMES.grayGlass.buttonDisabled.color
+                  : THEMES.grayGlass.button.color
+              );
+
+              const btnProps = {
+                height: 46,
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 10,
+                paddingLeft: 20,
+                paddingRight: 20,
+                backgroundColor: btnBg,
+                borderColor: btnBorder,
+                borderWidth: 1.5,
+                borderRadius: 23,
+                flexGrow: 1,
+              };
+
+              if (!disabled) {
+                btnProps.hover = {
+                  backgroundColor: 'rgba(255, 255, 255, 0.16)',
+                };
+                if (onClick) {
+                  btnProps.onClick = onClick;
+                }
+              }
+
+              const btn = new Container(btnProps);
+
+              let iconSvg = null;
+              if (iconName) {
+                const iconColor = disabled ? '#aab2c0' : '#ffffff';
+                iconSvg = new Svg({
+                  content: getIconContent(iconName, iconColor),
+                  width: 24,
+                  height: 24,
+                });
+                btn.add(iconSvg);
+              }
+
+              const labelVal =
+                typeof labelSignalOrText === 'string'
+                  ? signal(labelSignalOrText)
+                  : labelSignalOrText;
+              const text = new Text({
+                text: labelVal,
+                fontSize: 16,
+                color: btnColor,
+              });
+              btn.add(text);
+
+              registeredButtons.push({
+                disabled,
+                setTheme: (t) => {
+                  const conf = disabled
+                    ? THEMES[t].buttonDisabled
+                    : THEMES[t].button;
+                  btnBg.value = conf.backgroundColor;
+                  btnBorder.value = conf.borderColor;
+                  btnColor.value = conf.color;
+                  btn.borderWidth = conf.borderWidth;
+                  if (iconSvg && iconName) {
+                    iconSvg.content = getIconContent(iconName, conf.color);
+                  }
+                },
+              });
+
+              return btn;
+            }
+
+            // Card Base Styles (Reactive)
+            const cardBgSignal = signal(THEMES.grayGlass.card.backgroundColor);
+            const cardBorderSignal = signal(THEMES.grayGlass.card.borderColor);
+            const cardBorderWidthSignal = signal(
+              THEMES.grayGlass.card.borderWidth
+            );
+
+            const BASE_CARD_PROPS = {
+              pixelSize: 0.001,
+              width: 560,
+              padding: 24,
+              gap: 18,
+              borderRadius: 32,
+              backgroundColor: cardBgSignal,
+              borderColor: cardBorderSignal,
+              borderWidth: cardBorderWidthSignal,
+              flexDirection: 'column',
+              alignItems: 'stretch',
+            };
+
+            // -------------------------------------------------------------
+            // Card 1: Explore Card
+            // -------------------------------------------------------------
+            const exploreCard = new Container({
+              ...BASE_CARD_PROPS,
+              height: 620,
+              overflow: 'hidden',
+            });
+
+            const exploreHeader = createHeader(
+              'explore',
+              'Explore',
+              'Images, layout, and actions'
+            );
+
+            const exploreBody = new Container({
+              flexGrow: 1,
+              flexBasis: 0,
+              minHeight: 160,
+              gap: 14,
+              flexDirection: 'column',
+            });
+
+            const img = new Image({
+              src: 'https://picsum.photos/id/1018/900/600',
+              width: '100%',
+              height: 230,
+              alignSelf: 'center',
+              objectFit: 'cover',
+              borderRadius: 22,
+            });
+            const txt1 = new Text({
+              text: 'Build spatial interfaces from familiar flex layouts.',
+              fontSize: 18,
+              lineHeight: 1.35,
+              color: '#ffffff',
+            });
+
+            const emojiRow = new Container({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+            });
+            emojiRow.add(
+              new Text({text: 'Emojis ', fontSize: 18, color: '#ffffff'}),
+              new Image({
+                src: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f680.png',
+                width: 20,
+                height: 20,
+              }),
+              new Image({
+                src: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2728.png',
+                width: 20,
+                height: 20,
+              })
+            );
+
+            const cjkImg = new Image({
+              src: createCJKCanvasText('你好！', 18, '#ffffff'),
+              width: 60,
+              height: 22,
+            });
+
+            exploreBody.add(img, txt1, emojiRow, cjkImg);
+
+            const exploreActions = new Container({
+              width: '100%',
+              flexDirection: 'row',
+              gap: 12,
+            });
+            exploreActions.add(
+              createButton('favorite', 'Favorite', () => {
+                activitySignal.value = 'Saved to favorites.';
+              }),
+              createButton('share', 'Share', () => {
+                activitySignal.value = 'Share action selected.';
+              })
+            );
+
+            const activityText = new Text({
+              text: activitySignal,
+              fontSize: 16,
+              textAlign: 'center',
+              color: '#ffffff',
+              opacity: 0.72,
+              width: '100%',
+            });
+
+            exploreCard.add(
+              exploreHeader,
+              exploreBody,
+              exploreActions,
+              activityText
+            );
+
+            // -------------------------------------------------------------
+            // Card 2: Tune Card
+            // -------------------------------------------------------------
+            const tuneCard = new Container({
+              ...BASE_CARD_PROPS,
+            });
+
+            const tuneHeader = createHeader(
+              'tune',
+              'Tune',
+              'Live controls and theme state'
+            );
+
+            const lightRow = new Container({
+              width: '100%',
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 8,
+            });
+            const lightLabel = new Text({
+              text: 'Scene light',
+              fontSize: 20,
+              fontWeight: 'bold',
+              color: '#ffffff',
+            });
+            const lightValueText = new Text({
+              text: signal(`${lightPercentSignal.value}%`),
+              fontSize: 22,
+              fontWeight: 'bold',
+              color: '#ffffff',
+            });
+            lightRow.add(lightLabel, lightValueText);
+
+            // Interactive Slider
+            const sliderFillWidth = signal('65%');
+            const sliderThumbLeft = signal('65%');
+
+            const sliderTrack = new Container({
+              positionType: 'absolute',
+              positionLeft: 0,
+              positionRight: 0,
+              positionTop: '50%',
+              transformTranslateY: '-50%',
+              height: 10,
+              backgroundColor: 'rgba(255, 255, 255, 0.18)',
+              borderRadius: 5,
+            });
+            const sliderFill = new Container({
+              positionType: 'absolute',
+              positionLeft: 0,
+              positionTop: '50%',
+              transformTranslateY: '-50%',
+              height: 10,
+              width: sliderFillWidth,
+              backgroundColor: '#61dafb',
+              borderRadius: 5,
+            });
+            const sliderThumb = new Container({
+              positionType: 'absolute',
+              positionLeft: sliderThumbLeft,
+              positionTop: '50%',
+              transformTranslateX: '-50%',
+              transformTranslateY: '-50%',
+              width: 28,
+              height: 28,
+              backgroundColor: '#61dafb',
+              borderRadius: 14,
+            });
+
+            const updateSliderValue = (val) => {
+              const clamped = Math.max(
+                0,
+                Math.min(100, Math.round(val / 5) * 5)
+              );
+              lightPercentSignal.value = clamped;
+              sliderFillWidth.value = `${clamped}%`;
+              sliderThumbLeft.value = `${clamped}%`;
+              lightValueText.text = `${clamped}%`;
+              this.light.intensity = clamped * 0.04;
+            };
+
+            const sliderContainer = new Container({
+              width: '100%',
+              height: 48,
+              positionType: 'relative',
+              justifyContent: 'center',
+              onClick: (e) => {
+                if (e && e.point) {
+                  const box = new THREE.Box3().setFromObject(sliderContainer);
+                  const ratio = Math.max(
+                    0,
+                    Math.min(
+                      1,
+                      (e.point.x - box.min.x) / (box.max.x - box.min.x)
+                    )
+                  );
+                  updateSliderValue(ratio * 100);
+                }
+              },
+            });
+            sliderContainer.add(sliderTrack, sliderFill, sliderThumb);
+
+            const sliderDesc = new Text({
+              text: 'Drag the slider to update the scene immediately.',
+              fontSize: 16,
+              lineHeight: 1.4,
+              color: '#ffffff',
+              opacity: 0.72,
+            });
+
+            const themeBtnLabel = signal('Try colorful');
+            const toggleTheme = () => {
+              const next = !isColorfulSignal.value;
+              isColorfulSignal.value = next;
+              const themeName = next ? 'colorful' : 'grayGlass';
+              currentTheme.value = themeName;
+              themeBtnLabel.value = next ? 'Use glass' : 'Try colorful';
+
+              cardBgSignal.value = THEMES[themeName].card.backgroundColor;
+              cardBorderSignal.value = THEMES[themeName].card.borderColor;
+              cardBorderWidthSignal.value = THEMES[themeName].card.borderWidth;
+
+              registeredButtons.forEach((b) => b.setTheme(themeName));
+            };
+
+            const themeBtn = createButton(
+              'palette',
+              themeBtnLabel,
+              toggleTheme
+            );
+            const disabledBtn = createButton(
+              'block',
+              'Unavailable action',
+              null,
+              true
+            );
+
+            tuneCard.add(
+              tuneHeader,
+              lightRow,
+              sliderContainer,
+              sliderDesc,
+              themeBtn,
+              disabledBtn
+            );
+
+            // -------------------------------------------------------------
+            // Card 3: Spatial Card
+            // -------------------------------------------------------------
+            const spatialCard = new Container({
+              ...BASE_CARD_PROPS,
+            });
+
+            const spatialHeader = createHeader(
+              'view_in_ar',
+              'Spatial',
+              'Interaction built in'
+            );
+            const feat1 = createFeature(
+              'open_with',
+              'Move',
+              'Drag a panel from the outside edge.'
+            );
+            const feat2 = createFeature(
+              'aspect_ratio',
+              'Resize',
+              'Drag a corner of the panel to resize it.'
+            );
+            const feat3 = createFeature(
+              'widgets',
+              'Compose',
+              'Nest controls with flex layout.'
+            );
+            const spatialDesc = new Text({
+              text: 'Point, pinch, click, or use a controller.',
+              fontSize: 16,
+              textAlign: 'center',
+              color: '#ffffff',
+              opacity: 0.72,
+            });
+
+            const resetDemo = () => {
+              isColorfulSignal.value = false;
+              currentTheme.value = 'grayGlass';
+              themeBtnLabel.value = 'Try colorful';
+              cardBgSignal.value = THEMES.grayGlass.card.backgroundColor;
+              cardBorderSignal.value = THEMES.grayGlass.card.borderColor;
+              cardBorderWidthSignal.value = THEMES.grayGlass.card.borderWidth;
+              registeredButtons.forEach((b) => b.setTheme('grayGlass'));
+
+              activitySignal.value = 'Choose an action.';
+              updateSliderValue(65);
+
+              this.cards.forEach((card, index) => {
+                const init = card.userData.initialTransform;
+                card.position.copy(init.position);
+                card.quaternion.copy(init.quaternion);
+                card.scale.copy(init.scale);
+              });
+            };
+
+            const resetBtn = createButton(
+              'restart_alt',
+              'Reset demo',
+              resetDemo
+            );
+
+            spatialCard.add(
+              spatialHeader,
+              feat1,
+              feat2,
+              feat3,
+              spatialDesc,
+              resetBtn
+            );
+
+            // -------------------------------------------------------------
+            // Layout & Positioning
+            // -------------------------------------------------------------
+            this.cards = [exploreCard, tuneCard, spatialCard];
+            const positions = [-0.64, 0, 0.64];
+            const rotations = [0.18, 0, -0.18];
+
+            this.cards.forEach((card, index) => {
+              card.name = ['Explore card', 'Tune card', 'Features card'][index];
+              card.position.set(positions[index], 1.48, -1.2);
+              card.rotation.y = rotations[index];
+              card.userData.initialTransform = {
+                position: card.position.clone(),
+                quaternion: card.quaternion.clone(),
+                scale: card.scale.clone(),
+              };
+              this.add(card);
+            });
+          } catch (err) {
+            console.error('Init error:', err);
+            window.initError = {message: err.message, stack: err.stack};
+          }
+        }
+
+        update(delta) {
+          if (this.cards) {
+            this.cards.forEach((card) => card.update(delta * 1000));
+          }
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        const options = new xb.Options();
+        options.setAppTitle('Vanilla UIKit on XR Blocks');
+        xb.add(new VanillaSpatialUIScript());
+        xb.init(options);
+      });
+    </script>
+  </body>
+</html>

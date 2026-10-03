@@ -83,30 +83,12 @@ export const grayGlassTheme = createThemeSnapshot({
   borderRadius: 32,
   styles: {
     surface: {
-      backgroundColor: {
-        gradientType: 'linear',
-        rotation: 90,
-        stops: [
-          {position: 0, color: 'rgba(55, 55, 65, 0.75)'},
-          {position: 0.4, color: 'rgba(32, 32, 38, 0.80)'},
-          {position: 1, color: 'rgba(18, 18, 22, 0.85)'},
-        ],
-      },
-      borderColor: {
-        gradientType: 'linear',
-        rotation: 90,
-        stops: [
-          {position: 0, color: 'rgba(255, 255, 255, 0.42)'},
-          {position: 0.5, color: 'rgba(255, 255, 255, 0.14)'},
-          {position: 1, color: 'rgba(255, 255, 255, 0.22)'},
-        ],
-      },
+      backgroundColor: 'rgba(32, 32, 38, 0.82)',
+      borderColor: 'rgba(255, 255, 255, 0.22)',
       borderWidth: 1.5,
       borderRadius: 32,
       padding: 24,
       gap: 16,
-      innerShadowColor: 'rgba(150, 150, 150, 0.05)',
-      innerShadowBlur: 24,
     },
     button: {
       height: 46,
