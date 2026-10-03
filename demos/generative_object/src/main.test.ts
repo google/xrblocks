@@ -310,9 +310,6 @@ describe('GenerativeObjectDemo lifecycle', () => {
     expect(
       s.card.children.some((child) => child instanceof xb.FollowHead)
     ).toBe(true);
-    expect(
-      s.card.children.some((child) => child instanceof xb.FaceCamera)
-    ).toBe(true);
     s.buttons[0].click();
     expect(s.imagine).toHaveBeenCalledWith('a small friendly red dragon');
     s.demo.dispose();

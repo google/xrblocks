@@ -246,7 +246,7 @@ export class GenerativeObjectDemo extends xb.Script {
     const card = new xb.UICard({
       size: {width: 0.62, height: 0.24},
       manipulation: {
-        actions: {translate: {faceCamera: false}},
+        actions: {translate: {faceCamera: true}},
         handle: {action: 'translate'},
       },
       edge: true,
@@ -319,8 +319,7 @@ export class GenerativeObjectDemo extends xb.Script {
       new xb.FollowHead({
         offset: new THREE.Vector3(0, 0.3, -1.0),
         smoothing: 0.08,
-      }),
-      new xb.FaceCamera({mode: 'spherical', smoothing: 0.1})
+      })
     );
   }
 
