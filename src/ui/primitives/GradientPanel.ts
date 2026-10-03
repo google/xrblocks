@@ -124,15 +124,20 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
 
   // Constructor
   constructor(properties: GradientPanelProperties = {}) {
+    const rawProps = properties as Record<string, unknown>;
     // Corner Radius
     const cornerRadiusSignal = signal(
-      (properties.cornerRadius as number) ??
-        DEFAULT_GRADIENT_PANEL_PROPS.cornerRadius
+      rawProps.borderRadius !== undefined
+        ? (rawProps.borderRadius as number)
+        : ((properties.cornerRadius as number) ??
+            DEFAULT_GRADIENT_PANEL_PROPS.cornerRadius)
     );
 
     // Fill
     const fillColorSignal = signal(
-      properties.fillColor ?? DEFAULT_GRADIENT_PANEL_PROPS.fillColor
+      rawProps.backgroundColor !== undefined
+        ? (rawProps.backgroundColor as Paint)
+        : (properties.fillColor ?? DEFAULT_GRADIENT_PANEL_PROPS.fillColor)
     );
     const backfaceColorSignal =
       properties.backfaceColor === undefined
@@ -200,11 +205,15 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
 
     // Stroke
     const strokeColorSignal = signal(
-      properties.strokeColor ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeColor
+      rawProps.borderColor !== undefined
+        ? (rawProps.borderColor as Paint)
+        : (properties.strokeColor ?? DEFAULT_GRADIENT_PANEL_PROPS.strokeColor)
     );
     const strokeWidthSignal = signal(
-      (properties.strokeWidth as number) ??
-        DEFAULT_GRADIENT_PANEL_PROPS.strokeWidth
+      rawProps.borderWidth !== undefined
+        ? (rawProps.borderWidth as number)
+        : ((properties.strokeWidth as number) ??
+            DEFAULT_GRADIENT_PANEL_PROPS.strokeWidth)
     );
     const strokeAlignSignal = signal(
       (properties.strokeAlign as StrokeAlign) ??
@@ -458,7 +467,8 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     props: Partial<GradientPanelProperties> & Record<string, unknown>
   ) {
     const {
-      fillColor,
+      fillColor: rawFillColor,
+      backgroundColor,
       backfaceColor,
       innerShadowColor,
       innerShadowBlur,
@@ -470,12 +480,28 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       dropShadowPosition,
       dropShadowSpread,
       dropShadowFalloff,
-      strokeColor,
-      strokeWidth,
+      strokeColor: rawStrokeColor,
+      borderColor,
+      strokeWidth: rawStrokeWidth,
+      borderWidth,
       strokeAlign,
-      cornerRadius,
+      cornerRadius: rawCornerRadius,
+      borderRadius,
       ...superProps
     } = props;
+
+    const fillColor = (
+      backgroundColor !== undefined ? backgroundColor : rawFillColor
+    ) as Paint | undefined;
+    const strokeColor = (
+      borderColor !== undefined ? borderColor : rawStrokeColor
+    ) as Paint | undefined;
+    const strokeWidth = (
+      borderWidth !== undefined ? borderWidth : rawStrokeWidth
+    ) as number | undefined;
+    const cornerRadius = (
+      borderRadius !== undefined ? borderRadius : rawCornerRadius
+    ) as number | undefined;
 
     // Pass the rest to ShaderPanel.
     super.setProperties(superProps);
