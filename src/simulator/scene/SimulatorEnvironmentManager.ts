@@ -14,6 +14,7 @@ import {
   loadSimulatorSceneManifest,
   ResolvedSimulatorSceneManifest,
 } from './SimulatorEnvironmentManifest';
+import type {DayNightCycle} from '../lighting/DayNightCycle.js';
 import {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
 import {SimulatorObjectsManager} from './SimulatorObjects';
 import type {SimulatorPhysics} from './SimulatorPhysics';
@@ -35,6 +36,7 @@ export class SimulatorEnvironmentManager {
 
   private generation = 0;
   private roomPhysics?: RoomPhysics;
+  private dayNight?: DayNightCycle | null;
 
   constructor(
     private options: SimulatorOptions,
@@ -72,6 +74,8 @@ export class SimulatorEnvironmentManager {
   }
 
   async setEnvironment(environment: SimulatorEnvironment) {
+    this.dayNight?.dispose();
+    this.dayNight = undefined;
     const generation = ++this.generation;
     const manifest = await loadSimulatorSceneManifest(environment.manifestPath);
     const {root, objects: objectsGroup} =
@@ -170,6 +174,29 @@ export class SimulatorEnvironmentManager {
       this.activeEnvironment = environment;
       this.manifest = manifest;
 
+      if (manifest.lighting) {
+        try {
+          const {DayNightCycle} = await import('../lighting/DayNightCycle.js');
+          const dayNight = await DayNightCycle.create({
+            renderer: this.renderer,
+            root,
+            dayScene: gltf!.scene,
+            loader: new ModelLoader(),
+            lighting: manifest.lighting,
+          });
+          if (generation !== this.generation) {
+            dayNight?.dispose();
+          } else {
+            this.dayNight = dayNight;
+          }
+        } catch (error) {
+          console.warn(
+            'Simulator day/night lighting failed to initialize.',
+            error
+          );
+        }
+      }
+
       if (previousRoot) disposeObjectTree(previousRoot);
     } catch (error) {
       roomGeometry?.dispose();
@@ -232,7 +259,26 @@ export class SimulatorEnvironmentManager {
     this.refreshMeshes();
   }
 
+  /**
+   * Fetches the environment's night bake for day/night lighting ahead of
+   * first use. No-op when the manifest declares no day/night lighting.
+   */
+  async preloadDayNight() {
+    await this.dayNight?.preload();
+  }
+
+  /**
+   * Sets the time of day for the environment's day/night lighting (0 = day
+   * endpoint, 1 = night endpoint). No-op when the manifest declares no
+   * day/night lighting.
+   */
+  setTimeOfDay(t: number) {
+    this.dayNight?.setTimeOfDay(t);
+  }
+
   dispose() {
+    this.dayNight?.dispose();
+    this.dayNight = undefined;
     this.generation++;
     this.simulatorWorld.suspendSimulatorSensing();
     this.disposeRoomPhysics();

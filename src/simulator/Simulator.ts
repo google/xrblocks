@@ -295,6 +295,24 @@ export class Simulator extends Script {
     return this.environment?.manifest?.locations ?? {};
   }
 
+  /**
+   * Sets the time of day for the active environment's day/night lighting
+   * (0 = day endpoint, 1 = night endpoint). No-op when the active environment
+   * declares no day/night lighting.
+   */
+  setTimeOfDay(t: number) {
+    this.environment?.setTimeOfDay(t);
+  }
+
+  /**
+   * Fetches the active environment's night bake ahead of first use so the
+   * day/night lighting can start without a visible delay. No-op when the
+   * active environment declares no day/night lighting.
+   */
+  async preloadDayNight(): Promise<void> {
+    await this.environment?.preloadDayNight();
+  }
+
   physicsStep() {
     this.simulatorPhysics?.step();
     this.simulatorObjects.physicsStep();
