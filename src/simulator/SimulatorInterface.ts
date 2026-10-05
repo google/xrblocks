@@ -11,7 +11,23 @@ import type {
 } from './SimulatorOptions.js';
 import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.js';
 import {ShowSimulatorInstructionsEvent} from './events/SimulatorInstructionsEvents.js';
+import {
+  SetSimulatorDayNightEvent,
+  SetSimulatorTimeOfDayEvent,
+} from './events/SimulatorLightingEvents.js';
 import {SetSimulatorHandPhysicsEvent} from './events/SimulatorPhysicsEvents.js';
+
+/**
+ * Callbacks that gate the lazily-loaded day/night lighting behind the
+ * simulator settings UI: nothing loads until the user enables it.
+ */
+export interface SimulatorLightingBinding {
+  isAvailable: () => boolean;
+  isEnabled: () => boolean;
+  getTimeOfDay: () => number;
+  setEnabled: (enabled: boolean) => Promise<void> | void;
+  setTimeOfDay: (timeOfDay: number) => void;
+}
 
 type SimulatorElementsLoader = () => Promise<unknown>;
 
@@ -71,6 +87,8 @@ export class SimulatorInterface {
   private gamepadController?: GamepadController;
   private simulatorHands?: SimulatorHands;
   private elementsAvailable?: Promise<boolean>;
+  private settingsElement?: ISimulatorSettingsPanelElement;
+  private lighting?: SimulatorLightingBinding;
 
   constructor(
     private readonly simulatorElementsLoader: SimulatorElementsLoader = loadSimulatorElements
@@ -85,8 +103,10 @@ export class SimulatorInterface {
     simulatorHands: SimulatorHands,
     input?: Input,
     setEnvironment?: (environment: SimulatorEnvironment) => Promise<void>,
-    handPhysicsAvailable = false
+    handPhysicsAvailable = false,
+    lighting?: SimulatorLightingBinding
   ) {
+    this.lighting = lighting;
     if (!(await this.ensureElementsAvailable())) return;
 
     if (setEnvironment) {
@@ -94,7 +114,8 @@ export class SimulatorInterface {
         simulatorOptions,
         simulatorControls,
         setEnvironment,
-        handPhysicsAvailable
+        handPhysicsAvailable,
+        lighting
       );
     }
     this.showGeminiLivePanel(simulatorOptions);
@@ -128,7 +149,8 @@ export class SimulatorInterface {
     simulatorOptions: SimulatorOptions,
     simulatorControls: SimulatorControls,
     setEnvironment: (environment: SimulatorEnvironment) => Promise<void>,
-    handPhysicsAvailable: boolean
+    handPhysicsAvailable: boolean,
+    lighting?: SimulatorLightingBinding
   ) {
     if (simulatorOptions.simulatorSettingsPanel.enabled) {
       const settingsElement = document.createElement(
@@ -141,6 +163,8 @@ export class SimulatorInterface {
         simulatorOptions.instructions.enabled;
       settingsElement.handPhysicsAvailable = handPhysicsAvailable;
       settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
+      this.settingsElement = settingsElement;
+      this.syncLightingState();
       document.body.appendChild(settingsElement);
       simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
       settingsElement.addEventListener(
@@ -158,6 +182,26 @@ export class SimulatorInterface {
             void setEnvironment(environment).catch((error) => {
               console.error('Failed to switch simulator environment.', error);
             });
+          }
+        }
+      );
+      settingsElement.addEventListener(
+        SetSimulatorDayNightEvent.type,
+        (event: Event) => {
+          if (event instanceof SetSimulatorDayNightEvent && lighting) {
+            void Promise.resolve(lighting.setEnabled(event.enabled)).then(
+              () => {
+                this.syncLightingState();
+              }
+            );
+          }
+        }
+      );
+      settingsElement.addEventListener(
+        SetSimulatorTimeOfDayEvent.type,
+        (event: Event) => {
+          if (event instanceof SetSimulatorTimeOfDayEvent) {
+            lighting?.setTimeOfDay(event.timeOfDay);
           }
         }
       );
@@ -181,6 +225,21 @@ export class SimulatorInterface {
       );
       this.elements.push(settingsElement);
     }
+  }
+
+  /**
+   * Re-reads the day/night lighting binding into the settings panel. Called
+   * after environment switches (the environment may declare lighting or not),
+   * after enable/disable, and after API-driven changes so the slider can
+   * never show a time of day the simulator is not actually at.
+   */
+  syncLightingState() {
+    const element = this.settingsElement;
+    const lighting = this.lighting;
+    if (!element || !lighting) return;
+    element.dayNightAvailable = lighting.isAvailable();
+    element.dayNightEnabled = lighting.isEnabled();
+    element.timeOfDay = lighting.getTimeOfDay();
   }
 
   showInstructions(

@@ -137,6 +137,11 @@ const DEFAULT_MANIFESTS: SimulatorSceneManifest[] = [
     scenePath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5.glb`,
     scenePlanesPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_planes.json`,
     navMeshPath: `${SIMULATOR_SCENES_PATH}XREmulatorsceneV5_navmesh.glb`,
+    lighting: {
+      kind: 'dayNight',
+      nightScenePath: `${SIMULATOR_SCENES_PATH}XREmulatorscene_Dark.glb`,
+      pairing: 'bake-crossfade-v1',
+    },
     position: [-1.6, 0.3, 0],
     objects: [],
   },
