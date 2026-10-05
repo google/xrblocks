@@ -28,6 +28,26 @@ interface RestoreState {
 
 let warnedNonWebGL = false;
 
+/**
+ * Removes the hemisphere-light accumulation from three's `lights_fragment_begin`
+ * chunk so only directional lights (the rig's sun and window bounce) shade the
+ * additive overlay - scene lights are gathered per scene, so without this the
+ * simulator's own hemisphere fill washes over the additive layer. Returns null
+ * when the chunk does not have the expected shape (fail safe: the overlay then
+ * keeps the stock shader).
+ */
+export function stripHemisphereIrradiance(chunk: string): string | null {
+  const start = chunk.indexOf('#if ( NUM_HEMI_LIGHTS > 0 )');
+  if (start === -1) return null;
+  const end = chunk.indexOf('#endif', start);
+  if (end === -1) return null;
+  return chunk.slice(0, start) + chunk.slice(end + '#endif'.length);
+}
+
+const LIGHTS_BEGIN_WITHOUT_HEMISPHERE = stripHemisphereIrradiance(
+  THREE.ShaderChunk.lights_fragment_begin
+);
+
 export interface DayNightCycleOptions {
   renderer: unknown;
   root: THREE.Object3D;
@@ -76,7 +96,6 @@ export class DayNightCycle {
   private savedShadowMap?: {
     enabled: boolean;
     type: THREE.ShadowMapType;
-    autoUpdate: boolean;
   };
 
   private constructor(private options: DayNightCycleOptions) {}
@@ -89,7 +108,8 @@ export class DayNightCycle {
   static async create(
     options: DayNightCycleOptions
   ): Promise<DayNightCycle | null> {
-    if (!(options.renderer as {isWebGLRenderer?: boolean}).isWebGLRenderer) {
+    const renderer = options.renderer as {isWebGLRenderer?: boolean} | null;
+    if (!renderer?.isWebGLRenderer) {
       if (!warnedNonWebGL) {
         warnedNonWebGL = true;
         console.warn(
@@ -181,7 +201,6 @@ export class DayNightCycle {
     if (this.savedShadowMap) {
       shadowMap.enabled = this.savedShadowMap.enabled;
       shadowMap.type = this.savedShadowMap.type;
-      shadowMap.autoUpdate = this.savedShadowMap.autoUpdate;
       this.savedShadowMap = undefined;
     }
   }
@@ -359,16 +378,18 @@ export class DayNightCycle {
     // PCF (not PCFSoft) + radius: PCFSoft ignores shadow.radius; the plain PCF
     // kernel with a radius gives a real penumbra that absorbs the shadow map's
     // texel flips at thin window jambs (the hard-edged patch blinked there).
-    // autoUpdate=false: one shadow-map render per applied time of day.
+    // Per-light refresh: the sun's shadow map re-renders only when the time of
+    // day changes (see apply()). The global autoUpdate stays on so lights
+    // owned by the app keep updating their own shadows; the sun's caster set
+    // is the static room + blinds, so scrub-time refreshes are sufficient.
     const shadowMap = (this.options.renderer as THREE.WebGLRenderer).shadowMap;
     this.savedShadowMap = {
       enabled: shadowMap.enabled,
       type: shadowMap.type,
-      autoUpdate: shadowMap.autoUpdate,
     };
     shadowMap.enabled = true;
     shadowMap.type = THREE.PCFShadowMap;
-    shadowMap.autoUpdate = false;
+    sun.shadow.autoUpdate = false;
 
     this.built = true;
     this.apply();
@@ -454,6 +475,16 @@ export class DayNightCycle {
       transparent: true,
       depthWrite: false,
     });
+    // Lit only by the rig lights (see stripHemisphereIrradiance).
+    if (LIGHTS_BEGIN_WITHOUT_HEMISPHERE) {
+      material.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <lights_fragment_begin>',
+          LIGHTS_BEGIN_WITHOUT_HEMISPHERE
+        );
+      };
+      material.customProgramCacheKey = () => 'daynight-overlay';
+    }
     const overlay = new THREE.Mesh(geometry, material);
     overlay.castShadow = false;
     overlay.receiveShadow = true;
@@ -514,6 +545,15 @@ export class DayNightCycle {
       ) > 0.001;
     for (const overlay of this.overlays) {
       overlay.visible = overlayActive;
+      // Constant approximation of the spike's faint hemisphere sky-lift
+      // (hemisphere lighting is stripped from the overlay shader so the
+      // simulator's own fill light cannot wash over the additive layer).
+      const overlayMaterial = overlay.material as THREE.MeshPhongMaterial;
+      overlayMaterial.emissive.setRGB(
+        (values.skyFillColor[0] * values.skyFillIntensity) / Math.PI,
+        (values.skyFillColor[1] * values.skyFillIntensity) / Math.PI,
+        (values.skyFillColor[2] * values.skyFillIntensity) / Math.PI
+      );
     }
     // rolling blinds: hardware fades in just as the roll starts
     for (const s of this.shadeGroups) {
@@ -527,7 +567,7 @@ export class DayNightCycle {
       material.opacity = values.rugOpacity;
       mesh.visible = values.rugOpacity > 0.01;
     }
-    const shadowMap = (this.options.renderer as THREE.WebGLRenderer).shadowMap;
-    shadowMap.needsUpdate = true;
+    // Refresh the sun's shadow map for the new arc before the next render.
+    if (this.sun) this.sun.shadow.needsUpdate = true;
   }
 }

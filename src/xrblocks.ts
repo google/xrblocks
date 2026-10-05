@@ -106,6 +106,7 @@ export type {SimulatorControls} from './simulator/SimulatorControls';
 export type {SimulatorDepth} from './simulator/scene/SimulatorDepth';
 export type {SimulatorDepthMaterial} from './simulator/scene/SimulatorDepthMaterial';
 export type {
+  SimulatorDayNightLightingDefinition,
   SimulatorLocationDefinition,
   SimulatorLocations,
   SimulatorObjectDefinition,
