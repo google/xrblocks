@@ -380,6 +380,56 @@ describe('DayNightCycle', () => {
     expect(fixture.wall.geometry).toBe(fixture.wallOriginal.geometry);
     expect(fixture.rug.material).toBe(fixture.rugOriginalMaterial);
   });
+
+  it('keeps the baked material flags on the blend material', async () => {
+    const fixture = await createFixture();
+    // The real bake materials are DoubleSide (the sky dome is seen from
+    // inside); a fresh material would flip faces the moment the cycle turns
+    // on. Every authored flag must survive the swap.
+    const base = fixture.wall.material as THREE.MeshBasicMaterial;
+    base.side = THREE.DoubleSide;
+    base.toneMapped = false;
+    base.color.setHex(0xff8800);
+    await fixture.cycle.preload();
+    const blend = fixture.wall.material as THREE.MeshBasicMaterial;
+    expect(blend).not.toBe(base);
+    expect(blend.side).toBe(THREE.DoubleSide);
+    expect(blend.toneMapped).toBe(false);
+    expect(blend.color.getHex()).toBe(0xff8800);
+  });
+
+  it('crossfades a paired sky in place instead of a second sky sphere', async () => {
+    const fixture = await createFixture();
+    await fixture.cycle.preload();
+    const skyMaterial = fixture.sky.material as THREE.MeshBasicMaterial;
+    expect(skyMaterial.customProgramCacheKey?.()).toBe('daynight-blend');
+    // A sky clone would z-fight the original the moment the cycle turns on.
+    let clones = 0;
+    fixture.root.traverse((object) => {
+      const material = (object as THREE.Mesh).material as
+        | THREE.Material
+        | undefined;
+      if (material?.customProgramCacheKey?.() === 'daynight-sky') clones++;
+    });
+    expect(clones).toBe(0);
+  });
+
+  it('restores the node transforms on dispose', async () => {
+    const fixture = await createFixture();
+    const {wall} = fixture;
+    wall.position.set(0.5, 1, -2);
+    wall.rotation.set(0, 0.3, 0);
+    wall.scale.set(1, 2, 1);
+    await fixture.cycle.preload();
+    // The bake resets the node; the transform lives in the geometry now.
+    expect(wall.position.lengthSq()).toBe(0);
+    fixture.cycle.dispose();
+    // Restoring the original geometry without the node transform would leave
+    // every mesh scrambled.
+    expect(wall.position.toArray()).toEqual([0.5, 1, -2]);
+    expect(wall.scale.toArray()).toEqual([1, 2, 1]);
+    expect(wall.rotation.y).toBeCloseTo(0.3);
+  });
 });
 
 describe('stripHemisphereIrradiance', () => {

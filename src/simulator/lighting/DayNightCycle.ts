@@ -24,6 +24,9 @@ interface RestoreState {
   mesh: THREE.Mesh;
   geometry: THREE.BufferGeometry;
   material: THREE.Material | THREE.Material[];
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  scale: THREE.Vector3;
 }
 
 let warnedNonWebGL = false;
@@ -76,6 +79,8 @@ export class DayNightCycle {
   private nightScene?: THREE.Object3D;
   /** Day meshes whose material/geometry were replaced and must be restored. */
   private restores: RestoreState[] = [];
+  /** Day meshes that received a blend material (they already crossfade). */
+  private pairedDayMeshes = new Set<THREE.Mesh>();
   /** Baked clones + split/cluster geometries owned by this cycle. */
   private ownedGeometries = new Set<THREE.BufferGeometry>();
   /** Replaced day materials (blend + day-only clones) to dispose. */
@@ -186,6 +191,11 @@ export class DayNightCycle {
     for (const state of this.restores) {
       state.mesh.geometry = state.geometry;
       state.mesh.material = state.material;
+      // The bake reset the node TRS; put it back or the mesh keeps the baked
+      // geometry's transform with the original (unbaked) geometry.
+      state.mesh.position.copy(state.position);
+      state.mesh.quaternion.copy(state.quaternion);
+      state.mesh.scale.copy(state.scale);
     }
     for (const material of this.replacedMaterials) {
       material.dispose();
@@ -227,23 +237,28 @@ export class DayNightCycle {
 
     for (const {night, day} of pairs) {
       const dayMaterial = day.mesh.material as THREE.MeshBasicMaterial;
+      // Outdoor stays baked: no additive sun overlay, no shadow flags (the
+      // sky dome would shadow the whole room).
+      const isOutdoor = /outside|sky/i.test(dayMaterial.name);
       // MAIN BODY: day geometry + day/night blended texture. The day bake
       // carries no shade tris, so its geometry is exactly the wall/prop body.
       // Day and night bakes share UVs exactly; sample both at the same uv (an
       // earlier UV-offset experiment measured worse than zero).
       smoothNormalsByPosition(day.mesh.geometry);
-      day.mesh.castShadow = true;
-      day.mesh.receiveShadow = true;
+      if (!isOutdoor) {
+        day.mesh.castShadow = true;
+        day.mesh.receiveShadow = true;
+      }
       const mapDay = dayMaterial.map;
       const mapNight = (night.mesh.material as THREE.MeshBasicMaterial).map;
       if (mapDay && mapNight) {
-        const mat = this.buildBlendMaterial(mapDay, mapNight);
+        const mat = this.buildBlendMaterial(dayMaterial, mapDay, mapNight);
         mat.name = dayMaterial.name;
         day.mesh.material = mat;
         this.blendMaterials.push(mat);
         this.replacedMaterials.push(mat);
-        // Outdoor stays baked: no additive sun overlay.
-        if (/outside|sky/i.test(mat.name)) continue;
+        this.pairedDayMeshes.add(day.mesh);
+        if (isOutdoor) continue;
         this.addOverlay(day.mesh.geometry);
       }
 
@@ -307,9 +322,18 @@ export class DayNightCycle {
     const skyMapNight = skyN
       ? (skyN.mesh.material as THREE.MeshBasicMaterial).map
       : null;
-    if (skyN && skyD && skyMapDay && skyMapNight) {
-      // The night scene owns the sky geometry; render a clone so disposal of
-      // the night tree stays symmetric.
+    if (
+      skyN &&
+      skyD &&
+      skyMapDay &&
+      skyMapNight &&
+      !this.pairedDayMeshes.has(skyD.mesh)
+    ) {
+      // Fallback for an unpaired sky: the day sky has no blend material, so
+      // render a mixed clone. A paired sky already crossfades in place - and
+      // a second sky sphere would z-fight it (visible the moment the cycle
+      // turns on). The night scene owns the sky geometry; render a clone so
+      // disposal of the night tree stays symmetric.
       const sky = skyN.mesh.clone();
       const mat = (skyN.mesh.material as THREE.MeshBasicMaterial).clone();
       const skyMix = this.skyMix;
@@ -416,6 +440,9 @@ export class DayNightCycle {
         mesh,
         geometry: mesh.geometry,
         material: mesh.material,
+        position: mesh.position.clone(),
+        quaternion: mesh.quaternion.clone(),
+        scale: mesh.scale.clone(),
       });
       mesh.geometry = baked;
       mesh.position.set(0, 0, 0);
@@ -429,8 +456,17 @@ export class DayNightCycle {
    * layer on top is what moves; the base only crossfades the two bakes so the
    * endpoints stay pixel-faithful to the reference GLBs.
    */
-  private buildBlendMaterial(mapDay: THREE.Texture, mapNight: THREE.Texture) {
-    const material = new THREE.MeshBasicMaterial({map: mapDay});
+  private buildBlendMaterial(
+    base: THREE.MeshBasicMaterial,
+    mapDay: THREE.Texture,
+    mapNight: THREE.Texture
+  ) {
+    // Clone the bake material so every authored flag (double-sidedness, tone
+    // mapping, fog, color, transparency) survives the swap - the bake meshes
+    // are DoubleSide (the sky dome is seen from inside), and a fresh material
+    // would visibly change the scene the moment the cycle turns on.
+    const material = base.clone();
+    material.map = mapDay;
     material.userData.pendingMixU = 0;
     material.onBeforeCompile = (shader) => {
       shader.uniforms.mapNight = {value: mapNight};
