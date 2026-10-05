@@ -97,13 +97,15 @@ describe('SimulatorEnvironmentManager day/night lighting', () => {
     hoisted.loadGLTF = vi.fn(async () => ({scene: new THREE.Group()}));
   });
 
-  it('wires manifest lighting through the lazily imported cycle', async () => {
+  it('loads the night bake only once the user enables it', async () => {
     const {manager} = createManager();
     await manager.setEnvironment({manifestPath: manifestPath()});
 
-    // The day bake loads at environment set; the night bake stays lazy.
+    // The day bake loads at environment set; the DayNightCycle chunk and the
+    // night bake stay unloaded until enabled.
     expect(hoisted.loadGLTF).toHaveBeenCalledTimes(1);
     expect(hoisted.loadGLTF.mock.calls[0][0].url).toBe(DAY_URL);
+    expect(manager.dayNightEnabled).toBe(false);
     const lighting = manager.manifest
       ?.lighting as SimulatorDayNightLightingDefinition;
     expect(lighting).toEqual({
@@ -112,11 +114,28 @@ describe('SimulatorEnvironmentManager day/night lighting', () => {
       pairing: 'bake-crossfade-v1',
     });
 
-    await manager.preloadDayNight();
+    await manager.setDayNightEnabled(true);
+    expect(manager.dayNightEnabled).toBe(true);
     expect(hoisted.loadGLTF).toHaveBeenCalledTimes(2);
     expect(hoisted.loadGLTF.mock.calls[1][0].url).toBe(NIGHT_URL);
 
-    manager.setTimeOfDay(0.5);
+    await manager.setTimeOfDay(0.5);
+
+    await manager.setDayNightEnabled(false);
+    expect(manager.dayNightEnabled).toBe(false);
+    manager.dispose();
+  });
+
+  it('initializes the lighting lazily on first setTimeOfDay', async () => {
+    const {manager} = createManager();
+    await manager.setEnvironment({manifestPath: manifestPath()});
+    expect(manager.dayNightEnabled).toBe(false);
+
+    await manager.setTimeOfDay(0.25);
+    expect(manager.dayNightEnabled).toBe(true);
+    expect(hoisted.loadGLTF.mock.calls.map(([options]) => options.url)).toEqual(
+      [DAY_URL, NIGHT_URL]
+    );
     manager.dispose();
   });
 
@@ -128,7 +147,9 @@ describe('SimulatorEnvironmentManager day/night lighting', () => {
       )}`,
     });
     await manager.preloadDayNight();
-    manager.setTimeOfDay(0.5);
+    await manager.setTimeOfDay(0.5);
+    await manager.setDayNightEnabled(true);
+    expect(manager.dayNightEnabled).toBe(false);
     expect(manager.manifest?.lighting).toBeUndefined();
     expect(hoisted.loadGLTF).toHaveBeenCalledTimes(1);
     manager.dispose();
