@@ -24,6 +24,7 @@ import {SetSimulatorHandPhysicsEvent} from './events/SimulatorPhysicsEvents.js';
 export interface SimulatorLightingBinding {
   isAvailable: () => boolean;
   isEnabled: () => boolean;
+  getTimeOfDay: () => number;
   setEnabled: (enabled: boolean) => Promise<void> | void;
   setTimeOfDay: (timeOfDay: number) => void;
 }
@@ -163,7 +164,7 @@ export class SimulatorInterface {
       settingsElement.handPhysicsAvailable = handPhysicsAvailable;
       settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
       this.settingsElement = settingsElement;
-      this.syncLightingState(true);
+      this.syncLightingState();
       document.body.appendChild(settingsElement);
       simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
       settingsElement.addEventListener(
@@ -228,16 +229,17 @@ export class SimulatorInterface {
 
   /**
    * Re-reads the day/night lighting binding into the settings panel. Called
-   * after environment switches (the environment may declare lighting or not)
-   * and after enable/disable.
+   * after environment switches (the environment may declare lighting or not),
+   * after enable/disable, and after API-driven changes so the slider can
+   * never show a time of day the simulator is not actually at.
    */
-  syncLightingState(resetTimeOfDay = false) {
+  syncLightingState() {
     const element = this.settingsElement;
     const lighting = this.lighting;
     if (!element || !lighting) return;
     element.dayNightAvailable = lighting.isAvailable();
     element.dayNightEnabled = lighting.isEnabled();
-    if (resetTimeOfDay) element.timeOfDay = 0;
+    element.timeOfDay = lighting.getTimeOfDay();
   }
 
   showInstructions(

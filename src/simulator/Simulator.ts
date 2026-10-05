@@ -220,6 +220,7 @@ export class Simulator extends Script {
       {
         isAvailable: () => !!this.activeEnvironmentManifest?.lighting,
         isEnabled: () => this.dayNightEnabled,
+        getTimeOfDay: () => this.environment?.timeOfDay ?? 0,
         setEnabled: (enabled) => this.setDayNightEnabled(enabled),
         setTimeOfDay: (timeOfDay) => void this.setTimeOfDay(timeOfDay),
       }
@@ -286,7 +287,7 @@ export class Simulator extends Script {
       this.options.activeEnvironmentIndex = index;
     }
     await this.environment.setEnvironment(environment);
-    this.userInterface.syncLightingState(true);
+    this.userInterface.syncLightingState();
   }
 
   get activeEnvironment() {
@@ -310,6 +311,7 @@ export class Simulator extends Script {
    */
   async setTimeOfDay(t: number): Promise<void> {
     await this.environment?.setTimeOfDay(t);
+    this.userInterface.syncLightingState();
   }
 
   /**
@@ -329,6 +331,7 @@ export class Simulator extends Script {
    */
   async setDayNightEnabled(enabled: boolean): Promise<void> {
     await this.environment?.setDayNightEnabled(enabled);
+    this.userInterface.syncLightingState();
   }
 
   /** True when day/night lighting is enabled for the active environment. */

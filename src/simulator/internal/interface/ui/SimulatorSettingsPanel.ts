@@ -248,6 +248,11 @@ export class SimulatorSettingsPanel
   private _onDayNightChange(e: Event) {
     const input = e.target as HTMLInputElement;
     this.dayNightEnabled = input.checked;
+    if (!input.checked) {
+      // Disabling drops the cycle and the next enable starts at day; reset
+      // the slider now so it never shows a stale time of day.
+      this.timeOfDay = 0;
+    }
     this.dispatchEvent(new SetSimulatorDayNightEvent(this.dayNightEnabled));
   }
 

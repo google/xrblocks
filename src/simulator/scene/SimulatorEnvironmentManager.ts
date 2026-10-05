@@ -258,6 +258,11 @@ export class SimulatorEnvironmentManager {
     return !!this.dayNight;
   }
 
+  /** Current time of day (0 = day, 1 = night); 0 while lighting is off. */
+  get timeOfDay(): number {
+    return this.dayNight?.timeOfDay ?? 0;
+  }
+
   /**
    * Enables or disables day/night lighting for the active environment. The
    * DayNightCycle chunk and the night bake are only fetched on first enable,
