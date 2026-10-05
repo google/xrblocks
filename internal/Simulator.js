@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 7102711
-* @builddate 2026-10-05T22:45:48.506Z
+* @commitid 265c2ad
+* @builddate 2026-10-05T22:51:48.539Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,8 +42,9 @@ lego-styles.
 */
 import { t as __exportAll } from "./rolldown-runtime.js";
 import { F as Script } from "./UICard.js";
-import { I as Input, M as callInitWithDependencyInjection, Nn as XRDeviceCamera, P as Physics, Rn as isWebGPURenderer, St as Options, U as Reticle, W as Depth, X as Registry, Y as WaitFrame, c as World, et as disposeObjectChildren, i as resolveSimulatorHandPoseRotations, n as SIMULATOR_HAND_POSE_ROTATIONS, r as applySimulatorHandPoseRotationConstraints, rt as Interaction, t as ModelLoader, tt as disposeObjectTree } from "./ModelLoader.js";
+import { I as Input, M as callInitWithDependencyInjection, Nn as isWebGPURenderer, On as XRDeviceCamera, P as Physics, Q as Interaction, U as Reticle, W as Depth, X as Registry, Y as WaitFrame, _t as Options, c as World, i as resolveSimulatorHandPoseRotations, n as SIMULATOR_HAND_POSE_ROTATIONS, r as applySimulatorHandPoseRotationConstraints, t as ModelLoader } from "./ModelLoader.js";
 import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, u as Keycodes } from "./HandPoses.js";
+import { i as disposeObjectTree, r as disposeObjectChildren } from "./ThreeDisposal.js";
 import { SparkRendererHolder } from "../xrblocks.js";
 import * as THREE from "three";
 import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
@@ -1577,6 +1578,32 @@ var SimulatorHands = class {
 	}
 };
 //#endregion
+//#region src/simulator/events/SimulatorLightingEvents.ts
+var SetSimulatorTimeOfDayEvent = class SetSimulatorTimeOfDayEvent extends Event {
+	static {
+		this.type = "setSimulatorTimeOfDay";
+	}
+	constructor(timeOfDay) {
+		super(SetSimulatorTimeOfDayEvent.type, {
+			bubbles: true,
+			composed: true
+		});
+		this.timeOfDay = timeOfDay;
+	}
+};
+var SetSimulatorDayNightEvent = class SetSimulatorDayNightEvent extends Event {
+	static {
+		this.type = "setSimulatorDayNight";
+	}
+	constructor(enabled) {
+		super(SetSimulatorDayNightEvent.type, {
+			bubbles: true,
+			composed: true
+		});
+		this.enabled = enabled;
+	}
+};
+//#endregion
 //#region src/simulator/SimulatorInterface.ts
 function loadSimulatorElements() {
 	return import("./SimulatorElements.js");
@@ -1618,9 +1645,10 @@ var SimulatorInterface = class {
 	/**
 	* Initialize the simulator interface.
 	*/
-	async init(simulatorOptions, simulatorControls, simulatorHands, input, setEnvironment, handPhysicsAvailable = false) {
+	async init(simulatorOptions, simulatorControls, simulatorHands, input, setEnvironment, handPhysicsAvailable = false, lighting) {
+		this.lighting = lighting;
 		if (!await this.ensureElementsAvailable()) return;
-		if (setEnvironment) this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable);
+		if (setEnvironment) this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable, lighting);
 		this.showGeminiLivePanel(simulatorOptions);
 		this.createHandPosePanel(simulatorOptions, simulatorHands);
 		this.simulatorHands = simulatorHands;
@@ -1637,7 +1665,7 @@ var SimulatorInterface = class {
 		});
 		return this.elementsAvailable;
 	}
-	createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable) {
+	createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable, lighting) {
 		if (simulatorOptions.simulatorSettingsPanel.enabled) {
 			const settingsElement = document.createElement(simulatorOptions.simulatorSettingsPanel.element);
 			settingsElement.environments = simulatorOptions.environments;
@@ -1645,6 +1673,8 @@ var SimulatorInterface = class {
 			settingsElement.instructionsEnabled = simulatorOptions.instructions.enabled;
 			settingsElement.handPhysicsAvailable = handPhysicsAvailable;
 			settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
+			this.settingsElement = settingsElement;
+			this.syncLightingState();
 			document.body.appendChild(settingsElement);
 			simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
 			settingsElement.addEventListener(SetSimulatorEnvironmentEvent.type, (event) => {
@@ -1659,6 +1689,14 @@ var SimulatorInterface = class {
 					});
 				}
 			});
+			settingsElement.addEventListener(SetSimulatorDayNightEvent.type, (event) => {
+				if (event instanceof SetSimulatorDayNightEvent && lighting) Promise.resolve(lighting.setEnabled(event.enabled)).then(() => {
+					this.syncLightingState();
+				});
+			});
+			settingsElement.addEventListener(SetSimulatorTimeOfDayEvent.type, (event) => {
+				if (event instanceof SetSimulatorTimeOfDayEvent) lighting?.setTimeOfDay(event.timeOfDay);
+			});
 			settingsElement.addEventListener(ShowSimulatorInstructionsEvent.type, (event) => {
 				const mode = event instanceof ShowSimulatorInstructionsEvent ? event.simulatorMode : void 0;
 				this.showInstructions(simulatorOptions, mode);
@@ -1668,6 +1706,20 @@ var SimulatorInterface = class {
 			});
 			this.elements.push(settingsElement);
 		}
+	}
+	/**
+	* Re-reads the day/night lighting binding into the settings panel. Called
+	* after environment switches (the environment may declare lighting or not),
+	* after enable/disable, and after API-driven changes so the slider can
+	* never show a time of day the simulator is not actually at.
+	*/
+	syncLightingState() {
+		const element = this.settingsElement;
+		const lighting = this.lighting;
+		if (!element || !lighting) return;
+		element.dayNightAvailable = lighting.isAvailable();
+		element.dayNightEnabled = lighting.isEnabled();
+		element.timeOfDay = lighting.getTimeOfDay();
 	}
 	showInstructions(simulatorOptions, simulatorMode) {
 		if (simulatorOptions.instructions.enabled) {
@@ -2188,7 +2240,8 @@ const MANIFEST_KEYS = /* @__PURE__ */ new Set([
 	"quaternion",
 	"scale",
 	"locations",
-	"objects"
+	"objects",
+	"lighting"
 ]);
 const LOCATION_KEYS = /* @__PURE__ */ new Set(["description", "position"]);
 const OBJECT_KEYS = /* @__PURE__ */ new Set([
@@ -2202,6 +2255,11 @@ const OBJECT_KEYS = /* @__PURE__ */ new Set([
 	"label",
 	"data",
 	"physics"
+]);
+const LIGHTING_KEYS = /* @__PURE__ */ new Set([
+	"kind",
+	"nightScenePath",
+	"pairing"
 ]);
 function isRecord(value) {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -2280,6 +2338,21 @@ function parseObject(value, index, seenIds) {
 function resolveOptionalUrl(path, baseUrl) {
 	return path ? new URL(path, baseUrl).href : void 0;
 }
+function parseLighting(value, baseUrl) {
+	if (value === void 0) return void 0;
+	const location = "manifest.lighting";
+	if (!isRecord(value)) throw new Error(`${location}: expected an object.`);
+	assertKnownKeys(value, LIGHTING_KEYS, location);
+	if (value.kind !== "dayNight") throw new Error(`${location}.kind: expected 'dayNight'.`);
+	const nightScenePath = parseString(value.nightScenePath, `${location}.nightScenePath`);
+	if (!nightScenePath) throw new Error(`${location}: nightScenePath is required.`);
+	if (value.pairing !== "bake-crossfade-v1") throw new Error(`${location}.pairing: expected 'bake-crossfade-v1'.`);
+	return {
+		kind: "dayNight",
+		nightScenePath: resolveOptionalUrl(nightScenePath, baseUrl) ?? nightScenePath,
+		pairing: "bake-crossfade-v1"
+	};
+}
 function parseSimulatorSceneManifest(value, manifestUrl) {
 	if (!isRecord(value)) throw new Error(`Invalid simulator manifest at ${manifestUrl}: expected an object.`);
 	try {
@@ -2309,6 +2382,7 @@ function parseSimulatorSceneManifest(value, manifestUrl) {
 				...object,
 				assetPath: resolveOptionalUrl(object.assetPath, manifestUrl)
 			})),
+			lighting: parseLighting(value.lighting, manifestUrl),
 			manifestUrl
 		};
 	} catch (error) {
@@ -2354,6 +2428,8 @@ var SimulatorEnvironmentManager = class {
 		}));
 	}
 	async setEnvironment(environment) {
+		this.dayNight?.dispose();
+		this.dayNight = void 0;
 		const generation = ++this.generation;
 		const manifest = await loadSimulatorSceneManifest(environment.manifestPath);
 		const { root, objects: objectsGroup } = this.simulatorScene.createEnvironmentRoot(manifest);
@@ -2446,7 +2522,81 @@ var SimulatorEnvironmentManager = class {
 		this.simulatorWorld.restoreSimulatorPlanes();
 		this.refreshMeshes();
 	}
+	/**
+	* Fetches the environment's night bake for day/night lighting ahead of
+	* first use. No-op when the manifest declares no day/night lighting.
+	*/
+	async preloadDayNight() {
+		await (await this.ensureDayNight())?.preload();
+	}
+	/**
+	* Sets the time of day for the environment's day/night lighting (0 = day
+	* endpoint, 1 = night endpoint). Initializes the lighting lazily on first
+	* use. No-op when the manifest declares no day/night lighting.
+	*/
+	async setTimeOfDay(t) {
+		(await this.ensureDayNight())?.setTimeOfDay(t);
+	}
+	/** True when day/night lighting is initialized for the active environment. */
+	get dayNightEnabled() {
+		return !!this.dayNight;
+	}
+	/** Current time of day (0 = day, 1 = night); 0 while lighting is off. */
+	get timeOfDay() {
+		return this.dayNight?.timeOfDay ?? 0;
+	}
+	/**
+	* Enables or disables day/night lighting for the active environment. The
+	* DayNightCycle chunk and the night bake are only fetched on first enable,
+	* never at environment load; disabling restores the day-only render and
+	* frees the night resources. No-op when the manifest declares no day/night
+	* lighting.
+	*/
+	async setDayNightEnabled(enabled) {
+		if (enabled) await (await this.ensureDayNight())?.preload();
+		else if (this.dayNight) {
+			this.dayNight.dispose();
+			this.dayNight = void 0;
+		}
+	}
+	/**
+	* Lazily initializes the environment's day/night lighting. Returns the
+	* cached cycle, or null when the active environment declares no day/night
+	* lighting (or the backend cannot render it).
+	*/
+	async ensureDayNight() {
+		if (this.dayNight !== void 0) return this.dayNight;
+		const lighting = this.manifest?.lighting;
+		const root = this.simulatorScene.environmentRoot;
+		const dayScene = this.simulatorScene.gltf?.scene;
+		if (!lighting || !root || !dayScene) {
+			this.dayNight = null;
+			return null;
+		}
+		const generation = this.generation;
+		try {
+			const { DayNightCycle } = await import("./DayNightCycle.js");
+			const dayNight = await DayNightCycle.create({
+				renderer: this.renderer,
+				root,
+				dayScene,
+				loader: new ModelLoader(),
+				lighting
+			});
+			if (generation !== this.generation) {
+				dayNight?.dispose();
+				return null;
+			}
+			this.dayNight = dayNight ?? null;
+		} catch (error) {
+			console.warn("Simulator day/night lighting failed to initialize.", error);
+			this.dayNight = null;
+		}
+		return this.dayNight;
+	}
 	dispose() {
+		this.dayNight?.dispose();
+		this.dayNight = void 0;
 		this.generation++;
 		this.simulatorWorld.suspendSimulatorSensing();
 		this.disposeRoomPhysics();
@@ -3181,7 +3331,13 @@ var Simulator = class extends Script {
 		if (!initialEnvironment) throw new Error(`Simulator environment index ${this.options.activeEnvironmentIndex} does not exist.`);
 		await this.environment.setEnvironment(initialEnvironment);
 		await this.environment.resolveEnvironmentNames(this.options.environments);
-		await this.userInterface.init(simulatorOptions, this.controls, this.hands, input, this.activateEnvironment.bind(this), !!this.simulatorPhysics);
+		await this.userInterface.init(simulatorOptions, this.controls, this.hands, input, this.activateEnvironment.bind(this), !!this.simulatorPhysics, {
+			isAvailable: () => !!this.activeEnvironmentManifest?.lighting,
+			isEnabled: () => this.dayNightEnabled,
+			getTimeOfDay: () => this.environment?.timeOfDay ?? 0,
+			setEnabled: (enabled) => this.setDayNightEnabled(enabled),
+			setTimeOfDay: (timeOfDay) => void this.setTimeOfDay(timeOfDay)
+		});
 		this.useSimulatorObjectDetection = options.world.objects.enabled && options.world.objects.simulatorOverride;
 		if (this.useSimulatorObjectDetection && world.objects) {
 			this.objectDetectionSource = new SimulatorObjectDetectionSource(camera, this.simulatorScene, this.objects);
@@ -3220,6 +3376,7 @@ var Simulator = class extends Script {
 		const index = this.options.environments.findIndex((candidate) => candidate.manifestPath === environment.manifestPath);
 		if (index !== -1) this.options.activeEnvironmentIndex = index;
 		await this.environment.setEnvironment(environment);
+		this.userInterface.syncLightingState();
 	}
 	get activeEnvironment() {
 		return this.environment?.activeEnvironment;
@@ -3230,6 +3387,38 @@ var Simulator = class extends Script {
 	/** Returns the named world-space locations for the active environment. */
 	getLocations() {
 		return this.environment?.manifest?.locations ?? {};
+	}
+	/**
+	* Sets the time of day for the active environment's day/night lighting
+	* (0 = day endpoint, 1 = night endpoint). Initializes the lighting lazily
+	* on first use. No-op when the active environment declares no day/night
+	* lighting.
+	*/
+	async setTimeOfDay(t) {
+		await this.environment?.setTimeOfDay(t);
+		this.userInterface.syncLightingState();
+	}
+	/**
+	* Fetches the active environment's night bake ahead of first use so the
+	* day/night lighting can start without a visible delay. No-op when the
+	* active environment declares no day/night lighting.
+	*/
+	async preloadDayNight() {
+		await this.environment?.preloadDayNight();
+	}
+	/**
+	* Enables or disables day/night lighting for the active environment. The
+	* DayNightCycle chunk and the night bake are only fetched on first enable,
+	* never at environment load. No-op when the active environment declares no
+	* day/night lighting.
+	*/
+	async setDayNightEnabled(enabled) {
+		await this.environment?.setDayNightEnabled(enabled);
+		this.userInterface.syncLightingState();
+	}
+	/** True when day/night lighting is enabled for the active environment. */
+	get dayNightEnabled() {
+		return this.environment?.dayNightEnabled ?? false;
 	}
 	physicsStep() {
 		this.simulatorPhysics?.step();
@@ -3341,6 +3530,6 @@ var Simulator = class extends Script {
 	}
 };
 //#endregion
-export { Simulator, WebGLDirectCompositor as n, BaseSimulatorCompositor as r, Simulator_exports as t };
+export { Simulator, BaseSimulatorCompositor as a, WebGLDirectCompositor as i, SetSimulatorDayNightEvent as n, SetSimulatorTimeOfDayEvent as r, Simulator_exports as t };
 
 //# sourceMappingURL=Simulator.js.map

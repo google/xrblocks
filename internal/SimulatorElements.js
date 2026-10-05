@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 7102711
-* @builddate 2026-10-05T22:45:48.506Z
+* @commitid 265c2ad
+* @builddate 2026-10-05T22:51:48.539Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,6 +42,7 @@ lego-styles.
 */
 import { d as XR_BLOCKS_ASSETS_PATH } from "./constants.js";
 import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES } from "./HandPoses.js";
+import { n as SetSimulatorDayNightEvent, r as SetSimulatorTimeOfDayEvent } from "./Simulator.js";
 import { LitElement, css, html } from "lit";
 import { customElement } from "lit/decorators/custom-element.js";
 import { property } from "lit/decorators/property.js";
@@ -968,6 +969,9 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
 		this.instructionsEnabled = false;
 		this.handPhysicsAvailable = false;
 		this.handPhysicsEnabled = false;
+		this.dayNightAvailable = false;
+		this.dayNightEnabled = false;
+		this.timeOfDay = 0;
 		this._isOpen = false;
 	}
 	static {
@@ -1087,6 +1091,20 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
       cursor: inherit;
     }
 
+    input[type='range'] {
+      width: 100%;
+      margin: 0;
+      accent-color: #8ab4f8;
+      cursor: pointer;
+    }
+
+    .time-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #999;
+    }
+
     select {
       appearance: none;
       -webkit-appearance: none;
@@ -1161,6 +1179,17 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
 		this.handPhysicsEnabled = input.checked;
 		this.dispatchEvent(new SetSimulatorHandPhysicsEvent(this.handPhysicsEnabled));
 	}
+	_onDayNightChange(e) {
+		const input = e.target;
+		this.dayNightEnabled = input.checked;
+		if (!input.checked) this.timeOfDay = 0;
+		this.dispatchEvent(new SetSimulatorDayNightEvent(this.dayNightEnabled));
+	}
+	_onTimeOfDayChange(e) {
+		const input = e.target;
+		this.timeOfDay = parseFloat(input.value);
+		this.dispatchEvent(new SetSimulatorTimeOfDayEvent(this.timeOfDay));
+	}
 	_onShowInstructions() {
 		this._isOpen = false;
 		this.dispatchEvent(new ShowSimulatorInstructionsEvent(this.simulatorMode));
@@ -1231,6 +1260,35 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
           </select>
         </div>
 
+        ${this.dayNightAvailable ? html`
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <span>Day / Night Lighting</span>
+                  <input
+                    type="checkbox"
+                    .checked=${this.dayNightEnabled}
+                    @change=${this._onDayNightChange}
+                  />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Time of Day</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  .value=${String(this.timeOfDay)}
+                  ?disabled=${!this.dayNightEnabled}
+                  @input=${this._onTimeOfDayChange}
+                />
+                <div class="time-labels">
+                  <span>Day</span>
+                  <span>Night</span>
+                </div>
+              </div>
+            ` : ""}
+
         <div class="form-group">
           <label class="checkbox-label">
             <span>Hand Physics</span>
@@ -1263,6 +1321,9 @@ __decorate([property({ type: String })], SimulatorSettingsPanel.prototype, "simu
 __decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "instructionsEnabled", void 0);
 __decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "handPhysicsAvailable", void 0);
 __decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "handPhysicsEnabled", void 0);
+__decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "dayNightAvailable", void 0);
+__decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "dayNightEnabled", void 0);
+__decorate([property({ type: Number })], SimulatorSettingsPanel.prototype, "timeOfDay", void 0);
 __decorate([state()], SimulatorSettingsPanel.prototype, "_isOpen", void 0);
 SimulatorSettingsPanel = __decorate([customElement("xrblocks-simulator-settings")], SimulatorSettingsPanel);
 //#endregion

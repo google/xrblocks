@@ -40,50 +40,39 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import * as THREE from "three";
-import { float, positionView, vec4 } from "three/tsl";
-import { NodeMaterial } from "three/webgpu";
-//#region src/simulator/scene/SimulatorDepthWebGPURenderer.ts
-/**
-* Creates a WebGPU NodeMaterial for rendering linear view-space depth
-* (-positionView.z) into a float render target in the Simulator.
-*
-* @returns The configured NodeMaterial instance.
-*/
-function createSimulatorDepthNodeMaterial() {
-	const material = new NodeMaterial();
-	material.blending = THREE.NoBlending;
-	material.forceSinglePass = true;
-	material.fragmentNode = vec4(positionView.z.negate(), float(0), float(0), float(1));
-	return material;
+//#region src/utils/ThreeDisposal.ts
+function disposeMaterial(material, except = /* @__PURE__ */ new Set()) {
+	if (!material) return;
+	const materials = Array.isArray(material) ? material : [material];
+	for (const item of materials) if (!except.has(item)) item.dispose();
 }
-/**
-* WebGPU backend implementation for rendering and reading back Simulator depth buffers.
-*/
-var SimulatorDepthWebGPURenderer = class {
-	constructor(renderer) {
-		this.renderer = renderer;
-		this.depthMaterial = createSimulatorDepthNodeMaterial();
+function disposeMeshResources(mesh) {
+	disposeRenderableResources(mesh);
+}
+function disposeRenderableResources(object) {
+	const renderable = object;
+	renderable.geometry?.dispose?.();
+	disposeMaterial(renderable.material);
+}
+function hasRenderableResources(object) {
+	const renderable = object;
+	return !!(renderable.geometry || renderable.material);
+}
+function disposeObjectTree(object) {
+	for (const child of [...object.children]) {
+		disposeObjectTree(child);
+		object.remove(child);
 	}
-	readRenderTargetPixels(renderTarget, width, height) {
-		return this.renderer.readRenderTargetPixelsAsync(renderTarget, 0, 0, width, height);
+	if (hasRenderableResources(object)) disposeRenderableResources(object);
+	object.dispose?.();
+}
+function disposeObjectChildren(object) {
+	for (const child of [...object.children]) {
+		disposeObjectTree(child);
+		object.remove(child);
 	}
-	unpackDepthPixels(readbackResult, width, height, outputBuffer) {
-		const readbackBuffer = readbackResult;
-		const isWebGLFallback = "isWebGLBackend" in this.renderer.backend && this.renderer.backend.isWebGLBackend === true;
-		const expectedLength = width * height;
-		const rowStride = readbackBuffer.length > expectedLength ? Math.ceil(width * 4 / 256) * 256 / 4 : width;
-		for (let y = 0; y < height; ++y) {
-			const srcOffset = (isWebGLFallback ? height - 1 - y : y) * rowStride;
-			const dstOffset = y * width;
-			outputBuffer.set(readbackBuffer.subarray(srcOffset, srcOffset + width), dstOffset);
-		}
-	}
-	dispose() {
-		this.depthMaterial.dispose();
-	}
-};
+}
 //#endregion
-export { SimulatorDepthWebGPURenderer };
+export { disposeRenderableResources as a, disposeObjectTree as i, disposeMeshResources as n, disposeObjectChildren as r, disposeMaterial as t };
 
-//# sourceMappingURL=SimulatorDepthWebGPURenderer.js.map
+//# sourceMappingURL=ThreeDisposal.js.map
