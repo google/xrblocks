@@ -678,6 +678,10 @@ class UIKitNodeBinding {
       rawState.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
       rawState.cursorPointCount > 1 ? this.cursorPoints[1] : undefined
     );
+    this.enforceDepthPolicy(
+      this.node,
+      this.presentedProperties.renderOrder === undefined
+    );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);
   }
@@ -749,6 +753,37 @@ class UIKitNodeBinding {
     this.imageTexture = undefined;
     this.node.removeFromParent();
     this.node.dispose();
+  }
+
+  /**
+   * Enforces the depth policy on every mesh of a presentation subtree.
+   * Solid content must write and test depth in world space so occlusion
+   * resolves per pixel; soft layers only test; overlay subtrees do neither.
+   * This is belt-and-braces over the per-element style flags, catching
+   * renderers created by generated content (button labels, slider chrome)
+   * that never see propertiesFor's output.
+   */
+  private enforceDepthPolicy(root: THREE.Object3D, worldSpace: boolean): void {
+    const softName = /caret|selection|shadow|glow|backface/i;
+    const softClasses = new Set([
+      'UICardEdge',
+      'UnifiedPanelLayer',
+      'InstancedPanelMesh',
+    ]);
+    root.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const material = mesh.material as THREE.Material | THREE.Material[];
+      const list = Array.isArray(material) ? material : [material];
+      const soft =
+        softClasses.has(mesh.constructor.name) ||
+        softName.test(mesh.name) ||
+        list.every((entry) => entry.colorWrite === false);
+      for (const entry of list) {
+        entry.depthTest = worldSpace;
+        entry.depthWrite = worldSpace && !soft;
+      }
+    });
   }
 
   private propertiesFor(
@@ -872,6 +907,8 @@ class UIKitNodeBinding {
         width: 24,
         height: 24,
         color,
+        depthTest: this.presentedProperties.depthTest as boolean | undefined,
+        depthWrite: this.presentedProperties.depthWrite as boolean | undefined,
         pointerEvents: 'none' as const,
       };
       if (!this.buttonIcon) {
@@ -894,6 +931,8 @@ class UIKitNodeBinding {
           this.presentedProperties
             .whiteSpace as AdaptiveTextProperties['whiteSpace']
         ),
+        depthTest: this.presentedProperties.depthTest as boolean | undefined,
+        depthWrite: this.presentedProperties.depthWrite as boolean | undefined,
         pointerEvents: 'none' as const,
       };
       if (!this.buttonLabel) {

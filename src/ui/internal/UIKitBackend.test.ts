@@ -449,6 +449,49 @@ describe('world UI depth policy', () => {
     backend.dispose();
   });
 
+  it('enforces the policy on generated content such as button labels', () => {
+    const button = new UIButton({label: 'Try colorful', icon: 'palette'});
+    const card = new UICard({
+      size: {width: 1, height: 1},
+      children: [new UIPanel({children: [button]})],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+
+    const softClasses = new Set([
+      'UICardEdge',
+      'UnifiedPanelLayer',
+      'InstancedPanelMesh',
+    ]);
+    let checked = 0;
+    for (const mapping of mappings) {
+      if (mapping.logical !== card && mapping.logical !== button) continue;
+      mapping.physical.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const materials = Array.isArray(mesh.material)
+          ? mesh.material
+          : [mesh.material];
+        if (materials.every((entry) => entry.colorWrite === false)) return;
+        for (const material of materials) {
+          if (softClasses.has(mesh.constructor.name)) {
+            expect(material.depthWrite).toBe(false);
+            expect(material.depthTest).toBe(true);
+          } else {
+            expect(material.depthTest).toBe(true);
+            expect(material.depthWrite).toBe(true);
+          }
+          checked++;
+        }
+      });
+    }
+    expect(checked).toBeGreaterThan(0);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
   it('keeps overlay content out of the depth buffer', () => {
     const image = new UIImage({src: texture()});
     const overlay = new UIOverlay({children: [image]});
