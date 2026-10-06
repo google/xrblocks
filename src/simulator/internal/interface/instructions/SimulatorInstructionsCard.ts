@@ -17,9 +17,11 @@ export class SimulatorInstructionsCard extends LitElement {
       box-sizing: border-box;
       background: #ffffff;
       display: flex;
+      /* Size the popup to its content instead of forcing a tall fixed card;
+         scrolling remains only as a fallback for very short windows. */
+      height: fit-content;
       max-height: 100%;
       overflow-y: auto;
-      height: 40rem;
       width: min-content;
       min-width: 30rem;
       border-radius: 1.6rem;
@@ -28,24 +30,27 @@ export class SimulatorInstructionsCard extends LitElement {
         system-ui,
         -apple-system,
         sans-serif;
-      padding: 1.5rem;
+      font-size: 0.875rem;
+      line-height: 1.4;
+      padding: 1.25rem;
       flex-direction: column;
     }
 
     h1 {
       margin-top: 0px;
-      font-size: 1.375rem;
+      font-size: 1.25rem;
     }
 
     h2 {
       margin-top: 0px;
       margin-bottom: 0px;
-      font-size: 1.125rem;
+      font-size: 1rem;
     }
 
     ul {
-      margin-top: 0px;
+      margin-top: 0.25rem;
       margin-bottom: 0px;
+      padding-left: 1.25rem;
     }
 
     .image-div {
@@ -77,7 +82,10 @@ export class SimulatorInstructionsCard extends LitElement {
     }
 
     video {
-      max-width: 100%;
+      display: block;
+      height: auto;
+      margin: 0 auto;
+      max-width: 75%;
       aspect-ratio: 16/9;
     }
 
