@@ -2,7 +2,10 @@ import {abortableEffect} from '@pmndrs/uikit';
 import {computed, ReadonlySignal, signal, Signal} from '@preact/signals-core';
 import * as THREE from 'three';
 import {DEFAULT_GRADIENT_PANEL_PROPS} from '../constants/GradientPanelConstants';
-import {PANEL_BACKFACE_MARKER} from '../internal/PanelBackfaceVisibility';
+import {
+  PANEL_BACKFACE_MARKER,
+  PANEL_FRONT_MARKER,
+} from '../internal/PanelBackfaceVisibility';
 import {Paint, StrokeAlign} from '../types/ShaderTypes';
 import {ShaderPanel, ShaderPanelProperties} from './ShaderPanel';
 import {UnifiedPanelLayer} from './layers/UnifiedPanelLayer';
@@ -277,6 +280,7 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       this.addLayer(this.backfaceLayer);
     }
 
+    this.unifiedLayer.userData[PANEL_FRONT_MARKER] = true;
     this.addLayer(this.unifiedLayer);
 
     // Store Signals.

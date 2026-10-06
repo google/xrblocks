@@ -4,13 +4,17 @@ import {describe, expect, it} from 'vitest';
 import {
   isCameraFacingPanelFront,
   PANEL_BACKFACE_MARKER,
-  updatePanelBackfaceVisibility,
+  PANEL_FRONT_MARKER,
+  updatePanelFaceVisibility,
 } from './PanelBackfaceVisibility';
 
-function makePanel(matrix: THREE.Matrix4): THREE.Object3D {
+function makePanel(
+  matrix: THREE.Matrix4,
+  marker = PANEL_BACKFACE_MARKER
+): THREE.Object3D {
   const panel = new THREE.Object3D();
   panel.matrixWorld.copy(matrix);
-  panel.userData[PANEL_BACKFACE_MARKER] = true;
+  panel.userData[marker] = true;
   return panel;
 }
 
@@ -48,24 +52,36 @@ describe('isCameraFacingPanelFront', () => {
   });
 });
 
-describe('updatePanelBackfaceVisibility', () => {
-  it('hides marked layers only while the camera faces the panel front', () => {
+describe('updatePanelFaceVisibility', () => {
+  it('hides back-face layers only while the camera faces the panel front', () => {
     const root = new THREE.Object3D();
     const panel = makePanel(new THREE.Matrix4());
     root.add(panel);
 
-    updatePanelBackfaceVisibility(root, makeCamera(0, 0, 1));
+    updatePanelFaceVisibility(root, makeCamera(0, 0, 1));
     expect(panel.visible).toBe(false);
 
-    updatePanelBackfaceVisibility(root, makeCamera(0, 0, -1));
+    updatePanelFaceVisibility(root, makeCamera(0, 0, -1));
     expect(panel.visible).toBe(true);
+  });
+
+  it('hides front layers only while the camera is behind the panel', () => {
+    const root = new THREE.Object3D();
+    const panel = makePanel(new THREE.Matrix4(), PANEL_FRONT_MARKER);
+    root.add(panel);
+
+    updatePanelFaceVisibility(root, makeCamera(0, 0, 1));
+    expect(panel.visible).toBe(true);
+
+    updatePanelFaceVisibility(root, makeCamera(0, 0, -1));
+    expect(panel.visible).toBe(false);
   });
 
   it('leaves unmarked meshes alone', () => {
     const root = new THREE.Object3D();
     const other = new THREE.Object3D();
     root.add(other);
-    updatePanelBackfaceVisibility(root, makeCamera(0, 0, 1));
+    updatePanelFaceVisibility(root, makeCamera(0, 0, 1));
     expect(other.visible).toBe(true);
   });
 });

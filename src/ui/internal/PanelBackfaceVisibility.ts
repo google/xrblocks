@@ -1,8 +1,16 @@
 import * as THREE from 'three';
 
 /**
- * Marks a mesh as a panel back-face layer (rendered with `THREE.BackSide`) so
- * it can be skipped while the camera cannot see it. See `GradientPanel`.
+ * Marks a panel's front layer (the main `UnifiedPanelLayer`) so it can be
+ * skipped while the camera is behind the panel, where it is backface-culled.
+ * See `GradientPanel`.
+ */
+export const PANEL_FRONT_MARKER = 'xrblocksPanelFront';
+
+/**
+ * Marks a panel back-face layer (rendered with `THREE.BackSide`) so it can be
+ * skipped while the camera is in front of the panel, where it is
+ * backface-culled. See `GradientPanel`.
  */
 export const PANEL_BACKFACE_MARKER = 'xrblocksPanelBackface';
 
@@ -30,17 +38,21 @@ export function isCameraFacingPanelFront(
 }
 
 /**
- * Hides panel back-face layers while the camera is in front of their panel.
- * From the front they are backface-culled at raster time (0 px painted) but
- * still cost a draw call per view; from behind they draw as usual.
+ * Skips panel face draw calls the camera cannot see: the front layer while
+ * the camera is behind the panel and the back-face layer while it is in
+ * front. The culled-at-raster side paints 0 px but still cost a draw call
+ * per view; both sides draw as usual from their own side.
  */
-export function updatePanelBackfaceVisibility(
+export function updatePanelFaceVisibility(
   root: THREE.Object3D,
   camera: THREE.Object3D
 ): void {
   root.traverse((object) => {
-    if (object.userData[PANEL_BACKFACE_MARKER]) {
+    const userData = object.userData;
+    if (userData[PANEL_BACKFACE_MARKER]) {
       object.visible = !isCameraFacingPanelFront(object, camera);
+    } else if (userData[PANEL_FRONT_MARKER]) {
+      object.visible = isCameraFacingPanelFront(object, camera);
     }
   });
 }
