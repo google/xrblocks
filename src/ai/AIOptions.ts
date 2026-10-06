@@ -4,6 +4,17 @@ export const GEMINI_DEFAULT_FLASH_MODEL = 'gemini-3.8-flash';
 export const GEMINI_DEFAULT_LIVE_MODEL = 'gemini-3.1-flash-live-preview';
 export const GEMINI_DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image';
 
+/**
+ * Non-live configuration for the Gemini Interactions API
+ * (`client.interactions.create`). `model` and `input` come from each query
+ * and interactions always run statelessly (`store` is forced off), so
+ * history/state parameters are not accepted here.
+ */
+export type GeminiInteractionConfig = Omit<
+  GoogleGenAITypes.Interactions.CreateModelInteractionParamsNonStreaming,
+  'model' | 'input' | 'stream' | 'store' | 'previous_interaction_id'
+>;
+
 export class GeminiOptions {
   apiKey = '';
   urlParam = 'geminiKey';
@@ -11,7 +22,7 @@ export class GeminiOptions {
   enabled = false;
   model = GEMINI_DEFAULT_FLASH_MODEL;
   liveModel = GEMINI_DEFAULT_LIVE_MODEL;
-  config: GoogleGenAITypes.GenerateContentConfig = {};
+  config: GeminiInteractionConfig = {};
 }
 
 export class OpenAIOptions {
