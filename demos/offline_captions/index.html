@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Offline captions | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="../../samples/main.css" />
+    <style>
+      #model-preload {
+        box-sizing: border-box;
+        position: fixed;
+        inset: 24px auto auto 24px;
+        width: min(520px, calc(100% - 48px));
+        max-height: calc(100% - 48px);
+        overflow-y: auto;
+        padding: 20px;
+        border: 1px solid #576475;
+        border-radius: 12px;
+        color: #fff;
+        background: #202124;
+        text-align: left;
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+        z-index: 11;
+      }
+      #model-preload h2 {
+        margin: 0;
+        font-size: 22px;
+      }
+      #model-preload p {
+        margin: 12px 0;
+      }
+      #model-preload button {
+        padding: 12px 16px;
+        margin: 4px 4px 4px 0;
+        border: 1px solid #a9c7ec;
+        border-radius: 8px;
+        color: #fff;
+        background: #30445d;
+        font: inherit;
+        text-transform: none;
+      }
+      #model-preload select {
+        padding: 10px 12px;
+        margin: 4px 4px 4px 0;
+        border: 1px solid #a9c7ec;
+        border-radius: 8px;
+        color: #fff;
+        background: #30445d;
+        font: inherit;
+      }
+      #model-preload button:disabled,
+      #model-preload select:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #model-preload button:focus-visible {
+        outline: 3px solid #b9e8d3;
+        outline-offset: 3px;
+      }
+      #model-preload #preload-ready {
+        color: #b9e8d3;
+      }
+      #XRButtonWrapper:has(#model-preload) {
+        box-sizing: border-box;
+        padding: 24px;
+        gap: 16px;
+        overflow-y: auto;
+        justify-content: safe center;
+      }
+      #XRButtonWrapper:has(#model-preload) > * {
+        flex-shrink: 0;
+      }
+      #XRButtonWrapper #model-preload {
+        position: static;
+        width: min(520px, 100%);
+        max-height: none;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../build/xrblocks.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <section id="model-preload" aria-labelledby="preload-title">
+      <h2 id="preload-title">Offline captions</h2>
+      <p>
+        Speak and live captions appear on a floating card. Speech recognition
+        runs on this device with Moonshine.
+      </p>
+      <p>
+        Use Chrome with a microphone. Download the ~94 MB model once, then load
+        it from the browser cache.
+      </p>
+      <p>
+        Captions can also be translated into Spanish, French, German or Mandarin
+        with Opus-MT, on this device too. Each language is a separate download.
+      </p>
+      <p>Audio stays on this device. No cloud, no API key.</p>
+      <p id="startup" role="status" aria-live="polite" aria-atomic="true">
+        Preparing the scene.
+      </p>
+      <p id="preload-ready" hidden>
+        Model ready. Choose Continue in simulator, or ENTER XR when available.
+      </p>
+      <button id="preload-load" type="button" disabled>
+        Download captions model (~94 MB)
+      </button>
+      <button id="preload-stop" type="button" hidden disabled>Cancel</button>
+      <button id="preload-continue" type="button" hidden>
+        Continue in simulator
+      </button>
+      <p>
+        <label for="translate-language">Translate captions</label>
+        <select id="translate-language" disabled>
+          <option value="">Off</option>
+        </select>
+        <button id="translate-load" type="button" hidden disabled></button>
+      </p>
+    </section>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

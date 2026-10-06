@@ -27,6 +27,12 @@ export interface SimulatorObjectDefinition {
   physics?: SimulatorPhysicsMode;
 }
 
+export interface SimulatorDayNightLightingDefinition {
+  kind: 'dayNight';
+  nightScenePath: string;
+  pairing: 'bake-crossfade-v1';
+}
+
 export interface SimulatorSceneManifest {
   name?: string;
   scenePath?: string;
@@ -38,18 +44,25 @@ export interface SimulatorSceneManifest {
   scale?: SimulatorVector3Tuple;
   locations?: SimulatorLocations;
   objects?: SimulatorObjectDefinition[];
+  lighting?: SimulatorDayNightLightingDefinition;
 }
 
 export interface ResolvedSimulatorSceneManifest
   extends Omit<
     SimulatorSceneManifest,
-    'scenePath' | 'videoPath' | 'scenePlanesPath' | 'navMeshPath' | 'objects'
+    | 'scenePath'
+    | 'videoPath'
+    | 'scenePlanesPath'
+    | 'navMeshPath'
+    | 'objects'
+    | 'lighting'
   > {
   scenePath?: string;
   videoPath?: string;
   scenePlanesPath?: string;
   navMeshPath?: string;
   objects: SimulatorObjectDefinition[];
+  lighting?: SimulatorDayNightLightingDefinition;
   manifestUrl: string;
 }
 
@@ -64,6 +77,7 @@ const MANIFEST_KEYS = new Set([
   'scale',
   'locations',
   'objects',
+  'lighting',
 ]);
 const LOCATION_KEYS = new Set(['description', 'position']);
 const OBJECT_KEYS = new Set([
@@ -78,6 +92,7 @@ const OBJECT_KEYS = new Set([
   'data',
   'physics',
 ]);
+const LIGHTING_KEYS = new Set(['kind', 'nightScenePath', 'pairing']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -234,6 +249,37 @@ function resolveOptionalUrl(path: string | undefined, baseUrl: string) {
   return path ? new URL(path, baseUrl).href : undefined;
 }
 
+function parseLighting(
+  value: unknown,
+  baseUrl: string
+): SimulatorDayNightLightingDefinition | undefined {
+  if (value === undefined) return undefined;
+  const location = 'manifest.lighting';
+  if (!isRecord(value)) {
+    throw new Error(`${location}: expected an object.`);
+  }
+  assertKnownKeys(value, LIGHTING_KEYS, location);
+  if (value.kind !== 'dayNight') {
+    throw new Error(`${location}.kind: expected 'dayNight'.`);
+  }
+  const nightScenePath = parseString(
+    value.nightScenePath,
+    `${location}.nightScenePath`
+  );
+  if (!nightScenePath) {
+    throw new Error(`${location}: nightScenePath is required.`);
+  }
+  if (value.pairing !== 'bake-crossfade-v1') {
+    throw new Error(`${location}.pairing: expected 'bake-crossfade-v1'.`);
+  }
+  return {
+    kind: 'dayNight',
+    nightScenePath:
+      resolveOptionalUrl(nightScenePath, baseUrl) ?? nightScenePath,
+    pairing: 'bake-crossfade-v1',
+  };
+}
+
 export function parseSimulatorSceneManifest(
   value: unknown,
   manifestUrl: string
@@ -300,6 +346,7 @@ export function parseSimulatorSceneManifest(
         ...object,
         assetPath: resolveOptionalUrl(object.assetPath, manifestUrl),
       })),
+      lighting: parseLighting(value.lighting, manifestUrl),
       manifestUrl,
     };
   } catch (error) {

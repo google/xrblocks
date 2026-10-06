@@ -49,6 +49,8 @@ export * from './depth/DepthOptions';
 export * from './depth/DepthTextures';
 export * from './depth/occlusion/OcclusionPass';
 export * from './depth/occlusion/OcclusionUtils';
+export * from './generative/BackgroundKeyer';
+export * from './generative/GenerativeObjectUtils';
 export * from './input/components/HandJointNames';
 export * from './input/GamepadController';
 export * from './input/GamepadBindings';
@@ -104,6 +106,7 @@ export type {SimulatorControls} from './simulator/SimulatorControls';
 export type {SimulatorDepth} from './simulator/scene/SimulatorDepth';
 export type {SimulatorDepthMaterial} from './simulator/scene/SimulatorDepthMaterial';
 export type {
+  SimulatorDayNightLightingDefinition,
   SimulatorLocationDefinition,
   SimulatorLocations,
   SimulatorObjectDefinition,

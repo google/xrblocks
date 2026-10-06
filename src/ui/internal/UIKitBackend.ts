@@ -3,7 +3,6 @@ import {
   Container,
   Image,
   type ImageOutProperties,
-  Svg,
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
@@ -37,7 +36,9 @@ import {
 } from '../UIElement';
 import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
+import {normalizeAlphaHexColor} from '../utils/ColorUtils';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {MergedSvg} from '../primitives/MergedSvg';
 import {UICardEdge} from './UICardEdge';
 import {
   AdaptiveText,
@@ -288,7 +289,9 @@ class UIKitMount implements UIMount {
         if (overflowsAt(middle)) overflows = middle;
         else fits = middle;
       }
-      return fits;
+      const horizontalBorder =
+        yoga.getComputedBorder(0) + yoga.getComputedBorder(2);
+      return Math.max(0, fits - horizontalBorder);
     });
     if (width === undefined) return undefined;
     const measured = width * card.pixelSize;
@@ -452,7 +455,7 @@ interface CommitContext {
 type UIKitNode =
   | Container
   | Image<ImageOutProperties<unknown>>
-  | Svg
+  | MergedSvg
   | AdaptiveText
   | GradientPanel;
 
@@ -471,7 +474,7 @@ class UIKitNodeBinding {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
   };
   private edge?: UICardEdge;
-  private buttonIcon?: Svg;
+  private buttonIcon?: MergedSvg;
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
   private scrollView?: ScrollViewPresentation;
@@ -514,9 +517,11 @@ class UIKitNodeBinding {
         {loadTexture: false}
       );
     } else if (kind === 'icon') {
-      this.node = new Svg(properties);
-    } else {
+      this.node = new MergedSvg(properties);
+    } else if (requiresGradientPanel(element, properties)) {
       this.node = new GradientPanel(properties);
+    } else {
+      this.node = new Container(toContainerProperties(properties));
     }
     if (element instanceof UIScrollView && this.node instanceof Container) {
       this.scrollView = new ScrollViewPresentation(element, this.node);
@@ -763,8 +768,8 @@ class UIKitNodeBinding {
       return {
         text: (this.element as UIText).text,
         color:
-          (style.color as THREE.ColorRepresentation | undefined) ??
-          context.theme.colors.text,
+          normalizeAlphaHexColor(style.color) ??
+          normalizeAlphaHexColor(context.theme.colors.text),
         ...style,
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
@@ -794,7 +799,9 @@ class UIKitNodeBinding {
     if (kind === 'scroll' || kind === 'input') {
       this.contentProperties = {
         ...resolvedStyle,
-        color: resolvedStyle.color ?? context.theme.colors.outline,
+        color:
+          normalizeAlphaHexColor(resolvedStyle.color) ??
+          normalizeAlphaHexColor(context.theme.colors.outline),
       };
       return panelDefaults(this.element, context.theme, {
         ...style,
@@ -813,6 +820,11 @@ class UIKitNodeBinding {
     if (Object.keys(changed).length === 0) return;
     if (this.node instanceof AdaptiveText) {
       this.node.updateTextProperties(properties as AdaptiveTextProperties);
+    } else if (
+      this.node instanceof Container &&
+      !(this.node instanceof GradientPanel)
+    ) {
+      this.node.setProperties(toContainerProperties(changed));
     } else {
       this.node.setProperties(changed);
     }
@@ -824,7 +836,7 @@ class UIKitNodeBinding {
   }
 
   private ensurePrivateNodes(theme: UITheme): void {
-    if (!(this.node instanceof GradientPanel)) return;
+    if (!isContainerNode(this.node)) return;
     const kind = getUIElementKind(this.element);
     if (kind === 'button') this.updateButtonContent(theme);
     if (kind === 'slider') {
@@ -835,11 +847,12 @@ class UIKitNodeBinding {
 
   private updateButtonContent(theme: UITheme): void {
     const button = this.element as UIButton;
-    const color =
+    const color = normalizeAlphaHexColor(
       (this.presentedProperties.color as
         | THREE.ColorRepresentation
         | undefined) ??
-      (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
+        (button.disabled ? theme.colors.disabledText : theme.colors.primaryText)
+    );
     if (button.icon) {
       const properties = {
         content: this.icons.get(
@@ -852,8 +865,9 @@ class UIKitNodeBinding {
         pointerEvents: 'none' as const,
       };
       if (!this.buttonIcon) {
-        this.buttonIcon = new Svg(properties);
-        this.node.add(this.buttonIcon);
+        const icon = new MergedSvg(properties);
+        this.buttonIcon = icon;
+        this.node.add(icon);
       } else {
         this.buttonIcon.setProperties(properties);
       }
@@ -886,7 +900,7 @@ class UIKitNodeBinding {
   }
 
   private syncEdge(properties: Record<string, unknown>): boolean {
-    if (!(this.node instanceof GradientPanel)) return false;
+    if (!isContainerNode(this.node)) return false;
     const options =
       getUIElementKind(this.element) === 'card'
         ? getUICardEdgeOptions(this.element as UICard)
@@ -1096,6 +1110,106 @@ function isTransparent(color: unknown): boolean {
     /^#[0-9a-f]{6}00$/u.test(compact) ||
     /^(?:rgba|hsla)\([^)]*,0(?:\.0+)?\)$/u.test(compact)
   );
+}
+
+function isGradientPaint(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && 'gradientType' in value;
+}
+
+function paintVisible(color: unknown, width?: unknown): boolean {
+  if (isGradientPaint(color)) return true;
+  if (isTransparent(color)) return false;
+  if (color === undefined) return false;
+  return typeof width !== 'number' || width > 0;
+}
+
+/**
+ * Every surface with any visible paint renders through `GradientPanel`'s unified
+ * shader — the legacy, pixel-verified pipeline. Only fully invisible panels use
+ * uikit's instanced `Container` (a single shared draw that contributes no
+ * visible pixels), which keeps the draw-call reduction without changing output.
+ */
+function requiresGradientPanel(
+  element: UIElement,
+  properties: Record<string, unknown>
+): boolean {
+  if (element instanceof GradientPanel) return true;
+  const fill = properties.fillColor ?? properties.backgroundColor;
+  if (paintVisible(fill)) return true;
+  const stroke = properties.strokeColor ?? properties.borderColor;
+  const strokeWidth = properties.strokeWidth ?? properties.borderWidth;
+  if (paintVisible(stroke, typeof strokeWidth === 'number' ? strokeWidth : 1)) {
+    return true;
+  }
+  if (
+    typeof properties.innerShadowBlur === 'number' &&
+    properties.innerShadowBlur > 0
+  ) {
+    return true;
+  }
+  if (
+    typeof properties.innerShadowSpread === 'number' &&
+    properties.innerShadowSpread > 0
+  ) {
+    return true;
+  }
+  if (
+    typeof properties.dropShadowBlur === 'number' &&
+    properties.dropShadowBlur > 0
+  ) {
+    return true;
+  }
+  if (
+    typeof properties.dropShadowSpread === 'number' &&
+    properties.dropShadowSpread > 0
+  ) {
+    return true;
+  }
+  if (isGradientPaint(properties.backfaceColor)) {
+    return true;
+  }
+  if (properties.strokeAlign && properties.strokeAlign !== 'center') {
+    return true;
+  }
+  return false;
+}
+
+function toContainerProperties(
+  properties: Record<string, unknown>
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {...properties};
+  if (result.fillColor !== undefined) {
+    result.backgroundColor = result.fillColor;
+    delete result.fillColor;
+  }
+  if (result.strokeColor !== undefined) {
+    result.borderColor = result.strokeColor;
+    delete result.strokeColor;
+  }
+  if (result.strokeWidth !== undefined) {
+    result.borderWidth = result.strokeWidth;
+    delete result.strokeWidth;
+  }
+  if (result.cornerRadius !== undefined) {
+    result.borderRadius = result.cornerRadius;
+    delete result.cornerRadius;
+  }
+  delete result.innerShadowColor;
+  delete result.innerShadowBlur;
+  delete result.innerShadowPosition;
+  delete result.innerShadowSpread;
+  delete result.innerShadowFalloff;
+  delete result.dropShadowColor;
+  delete result.dropShadowBlur;
+  delete result.dropShadowPosition;
+  delete result.dropShadowSpread;
+  delete result.dropShadowFalloff;
+  delete result.backfaceColor;
+  delete result.strokeAlign;
+  for (const [key, value] of Object.entries(result)) {
+    result[key] = normalizeAlphaHexColor(value);
+  }
+  return result;
 }
 
 function panelDefaults(
@@ -1310,7 +1424,7 @@ interface SliderContent {
   dispose(): void;
 }
 
-function createSliderContent(panel: GradientPanel): SliderContent {
+function createSliderContent(panel: Container): SliderContent {
   const thumbSize = 28;
   const rail = new Container({
     positionType: 'absolute',
@@ -1321,34 +1435,34 @@ function createSliderContent(panel: GradientPanel): SliderContent {
     height: thumbSize,
     pointerEvents: 'none',
   });
-  const track = new GradientPanel({
+  const track = new Container({
     positionType: 'absolute',
     positionLeft: 0,
     positionRight: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
     height: 10,
-    fillColor: 'transparent',
-    cornerRadius: 5,
+    backgroundColor: 'transparent',
+    borderRadius: 5,
     pointerEvents: 'none',
   });
-  const fill = new GradientPanel({
+  const fill = new Container({
     positionType: 'absolute',
     positionLeft: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
     height: 10,
-    cornerRadius: 5,
+    borderRadius: 5,
     pointerEvents: 'none',
   });
-  const thumb = new GradientPanel({
+  const thumb = new Container({
     positionType: 'absolute',
     positionTop: '50%',
     transformTranslateX: '-50%',
     transformTranslateY: '-50%',
     width: thumbSize,
     height: thumbSize,
-    cornerRadius: thumbSize / 2,
+    borderRadius: thumbSize / 2,
     pointerEvents: 'none',
   });
   const update = (slider: UISlider, theme: UITheme) => {
@@ -1356,14 +1470,16 @@ function createSliderContent(panel: GradientPanel): SliderContent {
       slider.max === slider.min
         ? 0
         : (slider.value - slider.min) / (slider.max - slider.min);
-    const color = slider.disabled
-      ? theme.colors.disabledText
-      : theme.colors.primary;
-    track.setProperties({fillColor: theme.colors.outline});
-    fill.setProperties({width: `${ratio * 100}%`, fillColor: color});
+    const color = normalizeAlphaHexColor(
+      slider.disabled ? theme.colors.disabledText : theme.colors.primary
+    );
+    track.setProperties({
+      backgroundColor: normalizeAlphaHexColor(theme.colors.outline),
+    });
+    fill.setProperties({width: `${ratio * 100}%`, backgroundColor: color});
     thumb.setProperties({
       positionLeft: `${ratio * 100}%`,
-      fillColor: color,
+      backgroundColor: color,
     });
   };
   rail.add(track, fill, thumb);
@@ -1444,7 +1560,7 @@ function toUIKitStyle(style: UIStyle): Record<string, unknown> {
                             : key === 'columnGap'
                               ? 'gapColumn'
                               : key;
-    result[mapped] = value;
+    result[mapped] = normalizeAlphaHexColor(value);
   }
   return result;
 }
