@@ -43,16 +43,18 @@ function stubVoice() {
   vi.stubGlobal('MediaRecorder', TestRecorder);
   vi.stubGlobal('Blob', NodeBlob);
   const gemini = new xb.Gemini(new xb.GeminiOptions());
-  const generateContent = vi
+  const createInteraction = vi
     .fn()
-    .mockResolvedValue({text: '{"transcript":"a red chair"}'});
-  gemini.ai = {models: {generateContent}} as unknown as xb.Gemini['ai'];
+    .mockResolvedValue({output_text: '{"transcript":"a red chair"}'});
+  gemini.ai = {
+    interactions: {create: createInteraction},
+  } as unknown as xb.Gemini['ai'];
   const ai = new xb.AI();
   ai.options = new xb.AIOptions();
   ai.model = gemini;
   vi.spyOn(ai, 'isAvailable').mockReturnValue(true);
   xb.core.ai = ai;
-  return {track, getUserMedia, generateContent};
+  return {track, getUserMedia, createInteraction};
 }
 
 const status = () => document.getElementById('status')!.textContent;
@@ -95,7 +97,7 @@ describe('GenerativeObjectDemo lifecycle', () => {
     expect(xb.core.scene.children).toHaveLength(0);
     expect(s.clear).toHaveBeenCalledOnce();
     await Promise.resolve();
-    expect(voice.generateContent).not.toHaveBeenCalled();
+    expect(voice.createInteraction).not.toHaveBeenCalled();
   });
 
   it('records on Speak and summons what Gemini transcribes on the second tap', async () => {
@@ -107,14 +109,14 @@ describe('GenerativeObjectDemo lifecycle', () => {
       expect(status()).toBe("listening... tap speak again when you're done.")
     );
     expect(speak.textContent).toBe('🔴 Tap to send');
-    expect(voice.generateContent).not.toHaveBeenCalled();
+    expect(voice.createInteraction).not.toHaveBeenCalled();
 
     speak.click();
     expect(voice.track.stop).toHaveBeenCalledOnce();
     await vi.waitFor(() =>
       expect(s.imagine).toHaveBeenCalledWith('a red chair')
     );
-    expect(voice.generateContent).toHaveBeenCalledOnce();
+    expect(voice.createInteraction).toHaveBeenCalledOnce();
     expect(speak.textContent).toBe('🎙️ Speak');
     s.demo.dispose();
   });
@@ -171,15 +173,15 @@ describe('GenerativeObjectDemo lifecycle', () => {
     s.buttons[1].click();
     await vi.waitFor(() => expect(voice.getUserMedia).toHaveBeenCalledTimes(2));
     await new Promise((done) => setTimeout(done, 0));
-    expect(voice.generateContent).not.toHaveBeenCalled();
+    expect(voice.createInteraction).not.toHaveBeenCalled();
     expect(s.imagine).not.toHaveBeenCalled();
     s.demo.dispose();
   });
 
   it('discards a pending transcription on Clear', async () => {
     const voice = stubVoice();
-    let resolve!: (response: {text: string}) => void;
-    voice.generateContent.mockReturnValue(
+    let resolve!: (response: {output_text: string}) => void;
+    voice.createInteraction.mockReturnValue(
       new Promise((done) => {
         resolve = done;
       })
@@ -188,9 +190,9 @@ describe('GenerativeObjectDemo lifecycle', () => {
     s.buttons[1].click();
     await vi.waitFor(() => expect(status()).toContain('listening'));
     s.buttons[1].click();
-    await vi.waitFor(() => expect(voice.generateContent).toHaveBeenCalled());
+    await vi.waitFor(() => expect(voice.createInteraction).toHaveBeenCalled());
     s.buttons[3].click();
-    resolve({text: '{"transcript":"a late chair"}'});
+    resolve({output_text: '{"transcript":"a late chair"}'});
     await new Promise((done) => setTimeout(done, 0));
 
     expect(s.imagine).not.toHaveBeenCalled();
