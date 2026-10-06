@@ -6,6 +6,7 @@ import {GradientFillFragmentShader} from '../../shaders/GradientFill.frag';
 import {GradientStrokeFragmentShader} from '../../shaders/GradientStroke.frag';
 import {GradientDropShadowFragmentShader} from '../../shaders/GradientDropShadow.frag';
 import {GradientInnerShadowFragmentShader} from '../../shaders/GradientInnerShadow.frag';
+import {UnifiedGradientPanelFragmentShader} from '../../shaders/UnifiedGradientPanel.frag';
 
 describe('PanelShaderMaterial side', () => {
   it('renders visual layers on the front side by default', () => {
@@ -23,6 +24,7 @@ describe('PanelShaderMaterial side', () => {
       GradientStrokeFragmentShader,
       GradientDropShadowFragmentShader,
       GradientInnerShadowFragmentShader,
+      UnifiedGradientPanelFragmentShader,
     ]) {
       expect(fragment).toContain('#include <clipping_planes_pars_fragment>');
       expect(fragment).toContain('float clippingAlpha = panelClipAlpha()');

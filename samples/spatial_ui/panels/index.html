@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Panel Features Gallery | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <link rel="stylesheet" href="../../main.css" />
+    <script>
+      window.litDisableBundleWarning = true;
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../../build/xrblocks.js"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <script type="module">
+      import * as THREE from 'three';
+      import * as xb from 'xrblocks';
+
+      const GRADIENT_STOPS = [
+        {position: 0, color: '#4796E3'},
+        {position: 0.5, color: '#9177C7'},
+        {position: 1, color: '#CA6673'},
+      ];
+
+      function createPanelItem(label, panelProps, outRef = null) {
+        const panel = new xb.UIPanel({
+          style: {
+            width: 68,
+            height: 68,
+            borderRadius: 16,
+            ...panelProps,
+          },
+        });
+        if (outRef) outRef.panel = panel;
+
+        const text = new xb.UIText({
+          text: label,
+          style: {
+            color: 'white',
+            fontSize: 11,
+            textAlign: 'center',
+            lineHeight: 1.2,
+          },
+        });
+
+        return new xb.UIPanel({
+          style: {
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 4,
+            width: 104,
+            height: 98,
+          },
+          children: [panel, text],
+        });
+      }
+
+      function createSection(title, items) {
+        const titleText = new xb.UIText({
+          text: title,
+          style: {
+            color: 'white',
+            fontSize: 13,
+            fontWeight: 'bold',
+          },
+        });
+
+        const row = new xb.UIPanel({
+          style: {
+            width: '100%',
+            flexDirection: 'row',
+            justifyContent: 'flex-start',
+            alignItems: 'center',
+            gap: 6,
+          },
+          children: items,
+        });
+
+        return new xb.UIPanel({
+          style: {
+            width: '100%',
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+            alignItems: 'stretch',
+            backgroundColor: 'rgba(32, 32, 40, 0.75)',
+            borderColor: 'rgba(255, 255, 255, 0.18)',
+            borderWidth: 1.5,
+            borderRadius: 16,
+            padding: 10,
+            gap: 6,
+          },
+          children: [titleText, row],
+        });
+      }
+
+      class PanelGalleryScript extends xb.Script {
+        init() {
+          const light = new THREE.HemisphereLight(0xffffff, 0x666666, 2.6);
+          this.add(light);
+
+          const lightPreview = new THREE.Mesh(
+            new THREE.SphereGeometry(0.12, 32, 16),
+            new THREE.MeshStandardMaterial({color: 0x55ccff})
+          );
+          lightPreview.position.set(0, 0.75, -1.1);
+          this.add(lightPreview);
+
+          // Card 1: Static Panels
+          const card1Title = new xb.UIText({
+            text: 'Static Panel Features',
+            style: {
+              fontSize: 18,
+              fontWeight: 'bold',
+              color: '#ffffff',
+            },
+          });
+
+          const sectionColors = createSection(
+            'Panel Colors (Solid & Gradient)',
+            [
+              createPanelItem('Solid', {backgroundColor: '#4796E3'}),
+              createPanelItem('Linear 30°', {
+                backgroundColor: {
+                  gradientType: 'linear',
+                  rotation: 30,
+                  stops: GRADIENT_STOPS,
+                },
+              }),
+              createPanelItem('Radial', {
+                backgroundColor: {
+                  gradientType: 'radial',
+                  stops: GRADIENT_STOPS,
+                },
+              }),
+              createPanelItem('Angular 30°', {
+                backgroundColor: {
+                  gradientType: 'angular',
+                  rotation: 30,
+                  stops: GRADIENT_STOPS,
+                },
+              }),
+              createPanelItem('Diamond', {
+                backgroundColor: {
+                  gradientType: 'diamond',
+                  stops: GRADIENT_STOPS,
+                },
+              }),
+            ]
+          );
+
+          const sectionInnerShadows = createSection(
+            'Inner Shadows (Blur, Spread, Falloff, Pos, Gradient)',
+            [
+              createPanelItem('Solid 10px', {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: '#4796E3',
+                innerShadowBlur: 10,
+              }),
+              createPanelItem('Blur 30px', {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: '#4796E3',
+                innerShadowBlur: 30,
+              }),
+              createPanelItem('Spread 10px', {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: '#4796E3',
+                innerShadowBlur: 10,
+                innerShadowSpread: 10,
+              }),
+              createPanelItem('Falloff 2.0', {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: '#4796E3',
+                innerShadowBlur: 10,
+                innerShadowFalloff: 2.0,
+              }),
+              createPanelItem('Pos (8, -8)', {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: '#4796E3',
+                innerShadowBlur: 10,
+                innerShadowPosition: [8, -8],
+              }),
+              createPanelItem('Linear Grad', {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: {
+                  gradientType: 'linear',
+                  rotation: 30,
+                  stops: GRADIENT_STOPS,
+                },
+                innerShadowBlur: 10,
+              }),
+              createPanelItem('Radial Grad', {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: {
+                  gradientType: 'radial',
+                  stops: GRADIENT_STOPS,
+                },
+                innerShadowBlur: 10,
+              }),
+            ]
+          );
+
+          const sectionDropShadows = createSection(
+            'Drop Shadows (Blur, Spread, Falloff, Pos, Gradient)',
+            [
+              createPanelItem('Solid 10px', {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: '#4796E3',
+                dropShadowBlur: 10,
+              }),
+              createPanelItem('Blur 30px', {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: '#4796E3',
+                dropShadowBlur: 30,
+              }),
+              createPanelItem('Spread 10px', {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: '#4796E3',
+                dropShadowBlur: 10,
+                dropShadowSpread: 10,
+              }),
+              createPanelItem('Falloff 2.0', {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: '#4796E3',
+                dropShadowBlur: 10,
+                dropShadowFalloff: 2.0,
+              }),
+              createPanelItem('Pos (8, -8)', {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: '#4796E3',
+                dropShadowBlur: 10,
+                dropShadowPosition: [8, -8],
+              }),
+              createPanelItem('Linear Grad', {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: {
+                  gradientType: 'linear',
+                  rotation: 30,
+                  stops: GRADIENT_STOPS,
+                },
+                dropShadowBlur: 10,
+              }),
+              createPanelItem('Radial Grad', {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: {
+                  gradientType: 'radial',
+                  stops: GRADIENT_STOPS,
+                },
+                dropShadowBlur: 10,
+              }),
+            ]
+          );
+
+          const sectionStrokes = createSection(
+            'Strokes (Solid, Width, Align, Gradient)',
+            [
+              createPanelItem('Solid 3px', {
+                backgroundColor: '#1a1a1a',
+                borderColor: '#4796E3',
+                borderWidth: 3,
+              }),
+              createPanelItem('Wider 8px', {
+                backgroundColor: '#1a1a1a',
+                borderColor: '#4796E3',
+                borderWidth: 8,
+              }),
+              createPanelItem('Outside Align', {
+                backgroundColor: '#1a1a1a',
+                borderColor: '#4796E3',
+                borderWidth: 5,
+                borderAlign: 'outside',
+              }),
+              createPanelItem('Inside Align', {
+                backgroundColor: '#1a1a1a',
+                borderColor: '#4796E3',
+                borderWidth: 5,
+                borderAlign: 'inside',
+              }),
+              createPanelItem('Linear Grad', {
+                backgroundColor: '#1a1a1a',
+                borderWidth: 5,
+                borderColor: {
+                  gradientType: 'linear',
+                  rotation: 30,
+                  stops: GRADIENT_STOPS,
+                },
+              }),
+              createPanelItem('Angular Grad', {
+                backgroundColor: '#1a1a1a',
+                borderWidth: 5,
+                borderColor: {
+                  gradientType: 'angular',
+                  rotation: 30,
+                  stops: GRADIENT_STOPS,
+                },
+              }),
+            ]
+          );
+
+          const card1 = new xb.UICard({
+            size: {width: 0.9, height: 0.62},
+            style: {
+              flexDirection: 'column',
+              justifyContent: 'flex-start',
+              alignItems: 'stretch',
+              padding: 14,
+              gap: 8,
+              backgroundColor: 'rgba(24, 24, 30, 0.88)',
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              borderWidth: 1.5,
+              borderRadius: 24,
+            },
+            children: [
+              card1Title,
+              sectionColors,
+              sectionInnerShadows,
+              sectionDropShadows,
+              sectionStrokes,
+            ],
+          });
+          card1.position.set(-0.52, 1.48, -1.2);
+          card1.rotation.y = 0.14;
+          this.add(card1);
+
+          // Card 2: Dynamic Panels
+          const card2Title = new xb.UIText({
+            text: 'Dynamic Animated Panels',
+            style: {
+              fontSize: 18,
+              fontWeight: 'bold',
+              color: '#ffffff',
+            },
+          });
+
+          this.dyn1 = {};
+          this.dyn2 = {};
+          this.dyn3 = {};
+          this.dyn4 = {};
+          this.dyn5 = {};
+
+          const dynSection = createSection('Real-Time Property Animation', [
+            createPanelItem(
+              'Rotating Fill',
+              {
+                backgroundColor: {
+                  gradientType: 'linear',
+                  rotation: 0,
+                  stops: GRADIENT_STOPS,
+                },
+              },
+              this.dyn1
+            ),
+            createPanelItem(
+              'Corner Radius',
+              {
+                borderRadius: 0,
+                backgroundColor: '#1a1a1a',
+                borderWidth: 4,
+                borderColor: '#4796E3',
+              },
+              this.dyn2
+            ),
+            createPanelItem(
+              'Inner Blur',
+              {
+                backgroundColor: '#1a1a1a',
+                innerShadowColor: '#4796E3',
+                innerShadowBlur: 0,
+              },
+              this.dyn3
+            ),
+            createPanelItem(
+              'Drop Shadow Pos',
+              {
+                backgroundColor: '#1a1a1a',
+                dropShadowColor: '#4796E3',
+                dropShadowBlur: 10,
+                dropShadowPosition: [0, 0],
+              },
+              this.dyn4
+            ),
+            createPanelItem(
+              'Rotating Stroke',
+              {
+                borderRadius: 34,
+                backgroundColor: '#1a1a1a',
+                borderWidth: 5,
+                borderColor: {
+                  gradientType: 'angular',
+                  rotation: 0,
+                  stops: GRADIENT_STOPS,
+                },
+              },
+              this.dyn5
+            ),
+          ]);
+
+          const card2 = new xb.UICard({
+            size: {width: 0.68, height: 0.24},
+            style: {
+              flexDirection: 'column',
+              justifyContent: 'flex-start',
+              alignItems: 'stretch',
+              padding: 14,
+              gap: 8,
+              backgroundColor: 'rgba(24, 24, 30, 0.88)',
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              borderWidth: 1.5,
+              borderRadius: 24,
+            },
+            children: [card2Title, dynSection],
+          });
+          card2.position.set(0.48, 1.48, -1.2);
+          card2.rotation.y = -0.14;
+          this.add(card2);
+        }
+
+        update(delta) {
+          const time = performance.now() / 1000;
+
+          if (this.dyn1 && this.dyn1.panel) {
+            const rot = (time * 50) % 360;
+            this.dyn1.panel.style.backgroundColor = {
+              gradientType: 'linear',
+              rotation: rot,
+              stops: GRADIENT_STOPS,
+            };
+          }
+
+          if (this.dyn2 && this.dyn2.panel) {
+            const radius = 16 + Math.sin(time * 2) * 15;
+            this.dyn2.panel.style.borderRadius = radius;
+          }
+
+          if (this.dyn3 && this.dyn3.panel) {
+            const blur = 16 + Math.sin(time * 3) * 15;
+            this.dyn3.panel.style.innerShadowBlur = blur;
+          }
+
+          if (this.dyn4 && this.dyn4.panel) {
+            const x = Math.cos(time * 2) * 8;
+            const y = Math.sin(time * 2) * 8;
+            this.dyn4.panel.style.dropShadowPosition = [x, y];
+          }
+
+          if (this.dyn5 && this.dyn5.panel) {
+            const rot = (time * 90) % 360;
+            this.dyn5.panel.style.borderColor = {
+              gradientType: 'angular',
+              rotation: rot,
+              stops: GRADIENT_STOPS,
+            };
+          }
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        const options = new xb.Options();
+        options.setAppTitle('Panel Features Gallery');
+        xb.add(new PanelGalleryScript());
+        xb.init(options);
+      });
+    </script>
+  </body>
+</html>

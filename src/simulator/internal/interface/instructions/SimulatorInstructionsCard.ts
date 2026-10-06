@@ -24,6 +24,10 @@ export class SimulatorInstructionsCard extends LitElement {
       min-width: 30rem;
       border-radius: 1.6rem;
       color: #000000;
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
       padding: 1.5rem;
       flex-direction: column;
     }
@@ -60,6 +64,7 @@ export class SimulatorInstructionsCard extends LitElement {
     }
 
     button {
+      font-family: inherit;
       align-self: flex-end;
       width: min-content;
       height: min-content;

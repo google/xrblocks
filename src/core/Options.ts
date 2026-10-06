@@ -89,6 +89,8 @@ export type FormFactor = (typeof FORM_FACTORS)[number];
 export const RENDERER_BACKENDS = ['webgl', 'webgpu'] as const;
 export type RendererBackend = (typeof RENDERER_BACKENDS)[number];
 
+export type FramebufferScaleFactor = number | 'native';
+
 export interface WebGPURendererOptions {
   forceWebGL?: boolean;
 }
@@ -138,6 +140,13 @@ export class Options {
    * Optional configuration for WebGPU renderer.
    */
   webgpuOptions?: WebGPURendererOptions;
+
+  /**
+   * Optional WebXR framebuffer scale factor. Set to a number (e.g., `1.5`) or
+   * `'native'` to query `XRWebGLLayer.getNativeFramebufferScaleFactor(session)`
+   * before the XR session starts.
+   */
+  framebufferScaleFactor?: FramebufferScaleFactor;
 
   /**
    * Any additional required features when initializing webxr.
@@ -576,6 +585,17 @@ export class Options {
    */
   setAppDescription(description: string) {
     this.xrButton.appDescription = description;
+    return this;
+  }
+
+  /**
+   * Sets the WebXR framebuffer scale factor (a numeric multiplier or `'native'`
+   * to use `XRWebGLLayer.getNativeFramebufferScaleFactor(session)`).
+   * @param scaleFactor - Numeric scale factor or `'native'`.
+   * @returns The instance for chaining.
+   */
+  setFramebufferScaleFactor(scaleFactor: FramebufferScaleFactor) {
+    this.framebufferScaleFactor = scaleFactor;
     return this;
   }
 }

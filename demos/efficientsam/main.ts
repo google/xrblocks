@@ -338,7 +338,7 @@ export class XRCircleToSearchScript extends xb.Script {
       },
       children: [
         new xb.UIIcon({
-          icon: 'auto_awesome',
+          icon: 'crop_free',
           style: {fontSize: 16, color: '#38bdf8'},
         }),
         this.telemetryBadgeText,
@@ -350,7 +350,8 @@ export class XRCircleToSearchScript extends xb.Script {
   private ensureWorker(): Worker {
     if (!this.worker) {
       this.worker = new Worker(
-        new URL('./efficientsam_worker.js', import.meta.url)
+        new URL('./efficientsam_worker.js', import.meta.url),
+        {type: 'module'}
       );
       this.worker.addEventListener('message', (event: MessageEvent) => {
         const {id, ok, result, error} = event.data as {

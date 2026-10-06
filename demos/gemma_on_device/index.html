@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Gemma 4 On-Device | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="../../samples/main.css" />
+    <style>
+      #model-preload {
+        box-sizing: border-box;
+        position: fixed;
+        inset: 24px auto auto 24px;
+        width: min(480px, calc(100% - 48px));
+        padding: 16px;
+        color: white;
+        background: #202124;
+        border: 1px solid #576475;
+        border-radius: 12px;
+        text-align: left;
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+        z-index: 1;
+      }
+      #model-preload h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+      #model-preload p {
+        margin: 12px 0;
+      }
+      #model-preload button {
+        padding: 12px 16px;
+        border: 1px solid #a9c7ec;
+        border-radius: 8px;
+        color: #fff;
+        background: #30445d;
+        font: inherit;
+        text-transform: none;
+      }
+      #model-preload button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #model-preload button:focus-visible {
+        outline: 3px solid #b9e8d3;
+        outline-offset: 3px;
+      }
+      #preload-ready {
+        color: #b9e8d3;
+      }
+      #XRButtonWrapper {
+        box-sizing: border-box;
+        padding: 24px;
+        gap: 16px;
+        overflow-y: auto;
+        justify-content: safe center;
+      }
+      #XRButtonWrapper > * {
+        flex-shrink: 0;
+      }
+      #XRButtonWrapper #model-preload {
+        position: static;
+        width: min(480px, 100%);
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "marked": "https://esm.sh/marked@14.1.4",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <section id="model-preload" aria-labelledby="preload-title">
+      <h2 id="preload-title">Load Gemma before entering XR</h2>
+      <p>
+        Gemma 4 runs fully on this device. Ask anything. Presets use the scene.
+      </p>
+      <p>
+        Download or load the cached model here, then choose ENTER XR below. This
+        uses the same model as the spatial scene, without loading it again on
+        entry.
+      </p>
+      <p id="startup" role="status" aria-live="polite" aria-atomic="true">
+        Preparing scene controls. The ~2 GB model downloads only when you choose
+        Download.
+      </p>
+      <p id="preload-ready" hidden>
+        Model ready. Choose ENTER XR below when you are ready.
+      </p>
+      <button id="preload-load" type="button" disabled>
+        Download Gemma 4 (~2 GB)
+      </button>
+      <button id="preload-cancel" type="button" hidden disabled>
+        Cancel download
+      </button>
+      <p>Initialization cannot be canceled.</p>
+    </section>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

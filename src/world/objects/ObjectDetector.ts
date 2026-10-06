@@ -107,6 +107,7 @@ export class ObjectDetector extends Script {
   private pendingDetectionPromise: Promise<DetectedObject<unknown>[]> | null =
     null;
   private lastContinuousDetectionStartedAtMs = -Infinity;
+  private initialized = false;
   private disposed = false;
   private simulatorSource?: SimulatorObjectDetectionSource;
 
@@ -162,6 +163,7 @@ export class ObjectDetector extends Script {
     this.depth = depth;
     this.camera = camera;
     this.renderer = renderer;
+    this.initialized = true;
     this.disposed = false;
 
     if (this.targetDevice === 'galaxyxr') {
@@ -178,7 +180,7 @@ export class ObjectDetector extends Script {
 
   /**
    * Starts continuous object detection for the given client.
-   * If this is the first client, starts the background detection loop.
+   * Detection starts on the next update after initialization.
    * @param client - The client object requesting object detection.
    */
   start(client: object): void {
@@ -186,9 +188,6 @@ export class ObjectDetector extends Script {
       return;
     }
     this.activeClients.add(client);
-    if (this.activeClients.size === 1) {
-      this.runContinuousDetection();
-    }
   }
 
   /**
@@ -206,6 +205,7 @@ export class ObjectDetector extends Script {
    */
   override update() {
     if (
+      !this.initialized ||
       this.activeClients.size === 0 ||
       this.currentDetectionPromise ||
       this.pendingDetectionPromise
@@ -266,6 +266,9 @@ export class ObjectDetector extends Script {
   ): Promise<DetectedObject<T>[]> {
     if (this.disposed) {
       return Promise.reject(new Error('ObjectDetector has been disposed.'));
+    }
+    if (!this.initialized) {
+      return Promise.reject(new Error('ObjectDetector is not initialized.'));
     }
     if (options.backend !== undefined || options.snapshot !== undefined) {
       return this.runDetectionWithOverrides<T>(options);
@@ -547,6 +550,7 @@ export class ObjectDetector extends Script {
   }
 
   override dispose() {
+    this.initialized = false;
     this.disposed = true;
     this.activeClients.clear();
     disposeObjectChildren(this);

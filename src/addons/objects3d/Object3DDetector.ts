@@ -81,11 +81,11 @@ export interface Object3DDetectorOptions {
   detectBackend?: 'gemini' | 'mediapipe' | 'both';
   /**
    * Which segmentation mask backend to use for depth sampling.
-   * - `'slimsam'` — SlimSAM-77-uniform via `@huggingface/transformers` (tighter masks).
+   * - `'efficientsam_ti'` — EfficientSAM-Ti via `@litertjs/core` (tighter masks).
    * - `'mediapipe'` — MediaPipe `InteractiveSegmenter` (faster, no download).
-   * @defaultValue `'slimsam'`
+   * @defaultValue `'efficientsam_ti'`
    */
-  maskBackend?: 'slimsam' | 'mediapipe';
+  maskBackend?: 'efficientsam_ti' | 'mediapipe';
   /**
    * When `true`, accumulate OBBs across multiple `detect()` calls from
    * different angles. Each new call refines matching existing boxes via
@@ -317,7 +317,7 @@ export class Object3DDetector extends Script {
     super();
     this._opts = {
       detectBackend: options.detectBackend ?? 'gemini',
-      maskBackend: options.maskBackend ?? 'slimsam',
+      maskBackend: options.maskBackend ?? 'efficientsam_ti',
       fuseAcrossViews: options.fuseAcrossViews ?? true,
       showDebugBoxes: options.showDebugBoxes ?? false,
       maxRayDistance: options.maxRayDistance ?? 12,
@@ -716,7 +716,7 @@ export class Object3DDetector extends Script {
       let samPrep: Promise<
         Awaited<ReturnType<typeof samEncodeSnapshot>>
       > | null = null;
-      if (this._opts.maskBackend === 'slimsam') {
+      if (this._opts.maskBackend === 'efficientsam_ti') {
         samPrep = (async () => {
           await getSam();
           return samEncodeSnapshot(snapImageData!);
@@ -764,7 +764,7 @@ export class Object3DDetector extends Script {
         // Await the SAM encoder that ran in parallel with detection.
         let samState: Awaited<ReturnType<typeof samEncodeSnapshot>> | null =
           null;
-        if (this._opts.maskBackend === 'slimsam' && samPrep) {
+        if (this._opts.maskBackend === 'efficientsam_ti' && samPrep) {
           try {
             samState = await samPrep;
           } catch (e) {
@@ -793,7 +793,7 @@ export class Object3DDetector extends Script {
             let mask;
             try {
               mask =
-                this._opts.maskBackend === 'slimsam' && samState
+                this._opts.maskBackend === 'efficientsam_ti' && samState
                   ? await samMaskFromBbox(samState, box2d)
                   : await segmenterMaskFromSnapshot(snapshot!, box2d);
             } catch (e) {

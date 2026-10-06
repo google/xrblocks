@@ -1,6 +1,7 @@
-import type {ThinkingLevel} from '@google/genai';
+import type * as GoogleGenAITypes from '@google/genai';
 
 import {Gemini} from '../../../ai/Gemini';
+import {GeminiInteractionConfig} from '../../../ai/AIOptions';
 import {GeminiResponse} from '../../../ai/AITypes';
 import {parseBase64DataURL} from '../../../utils/utils';
 import {BaseDetectorBackend} from '../ObjectDetectorBackend';
@@ -25,21 +26,27 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     return {base64: base64Image};
   }
 
-  private buildGeminiConfig() {
+  private buildGeminiConfig(): GeminiInteractionConfig {
     const geminiOptions = this.context.options.objects.backendConfig.gemini;
     return {
       // Keep detection fast by asking for as little reasoning as possible.
-      // gemini-3.8-flash doesn't support MINIMAL, only LOW.
-      thinkingConfig: {
-        thinkingLevel: 'LOW' as ThinkingLevel,
-      },
-      responseMimeType: 'application/json',
-      responseSchema: geminiOptions.responseSchema,
-      systemInstruction: [{text: geminiOptions.systemInstruction}],
-      // Spread any caller-provided generation options (temperature, topP, topK,
-      // seed, etc.). Keys here take precedence over the defaults above when
-      // they overlap, letting demos pin temperature=0 for determinism.
-      ...(geminiOptions.generationConfig ?? {}),
+      // gemini-3.8-flash doesn't support 'minimal', only 'low'.
+      generation_config: {
+        thinking_level: 'low',
+        // Spread any caller-provided generation options (temperature, top_p,
+        // top_k, seed, etc. in the Interactions API's snake_case shape). Keys
+        // here take precedence over the defaults above when they overlap,
+        // letting demos pin temperature=0 for determinism.
+        ...(geminiOptions.generationConfig ?? {}),
+      } as GoogleGenAITypes.Interactions.GenerationConfig,
+      system_instruction: geminiOptions.systemInstruction,
+      response_format: [
+        {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: geminiOptions.responseSchema as {[key: string]: unknown},
+        },
+      ],
     };
   }
 

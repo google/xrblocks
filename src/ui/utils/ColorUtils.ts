@@ -26,13 +26,13 @@ export function parseColorWithAlpha(
     }
     // 1. Match rgb() or rgba() formats (e.g., rgba(255, 0, 0, 0.5)).
     const rgbaMatch = value.match(
-      /rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/
+      /rgba?\s*\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*(?:,\s*([\d.]+))?\s*\)/
     );
     if (rgbaMatch) {
       result.color.setRGB(
-        parseInt(rgbaMatch[1]) / 255,
-        parseInt(rgbaMatch[2]) / 255,
-        parseInt(rgbaMatch[3]) / 255
+        parseFloat(rgbaMatch[1]) / 255,
+        parseFloat(rgbaMatch[2]) / 255,
+        parseFloat(rgbaMatch[3]) / 255
       );
       if (rgbaMatch[4] !== undefined) {
         result.opacity = parseFloat(rgbaMatch[4]);
@@ -58,4 +58,30 @@ export function parseColorWithAlpha(
   // 3. Fallback: Parse standard 3/6-digit Hex, CSS names, or numbers.
   result.color.set(value as THREE.ColorRepresentation);
   return result;
+}
+
+const ALPHA_HEX_REGEX = /^#(?:[\da-f]{4}|[\da-f]{8})$/iu;
+
+/**
+ * Normalizes CSS hex colors that carry an alpha nibble/byte (`#RGBA`, `#RRGGBBAA`)
+ * into `rgba(r, g, b, a)` strings, because `THREE.Color` cannot parse alpha hex:
+ * consumers that delegate to it (e.g. `@pmndrs/uikit`'s color writer) silently
+ * fall back to white. The emitted channels are the parsed color's working-space
+ * (linearized) components, matching what {@link parseColorWithAlpha}'s hex
+ * branch feeds shader uniforms, so both the `GradientPanel` and uikit
+ * `Container` paths render the exact CSS color. Values that are not alpha-hex
+ * strings pass through unchanged.
+ *
+ * @param value - The color value to normalize.
+ * @returns The normalized `rgba()` string, or the original value.
+ */
+export function normalizeAlphaHexColor<T>(value: T): T {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!ALPHA_HEX_REGEX.test(trimmed)) return value;
+  const {color, opacity} = parseColorWithAlpha(trimmed);
+  const channel = (component: number) =>
+    Math.round(component * 255 * 10000) / 10000;
+  const alpha = Math.round(opacity * 10000) / 10000;
+  return `rgba(${channel(color.r)}, ${channel(color.g)}, ${channel(color.b)}, ${alpha})` as T;
 }

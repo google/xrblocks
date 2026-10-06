@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 
+import {
+  getUIPresentationBounds,
+  getUIPresentationObject,
+  isUIPresentationObject,
+} from '../ui/UIElement';
+
 /**
  * Checks if a given object is a descendant of another object in the scene
  * graph. This function is useful for determining if an interaction (like a
@@ -69,6 +75,7 @@ export function traverseUtil(
  * position. Falls back to the object's world position when it has no mesh
  * triangles. `closest` measures from `from`; `center` measures from the
  * object's world bounding-box center.
+ * UI elements use the center of their rendered bounds.
  */
 export function getObjectTargetPoint(
   object: THREE.Object3D,
@@ -76,11 +83,20 @@ export function getObjectTargetPoint(
   out: THREE.Vector3,
   mode: 'closest' | 'center' = 'closest'
 ): THREE.Vector3 {
-  object.updateWorldMatrix(true, true);
+  const presentation = getUIPresentationObject(object);
+  const renderedObject = presentation ?? object;
+  renderedObject.updateWorldMatrix(true, true);
+  if (presentation || isUIPresentationObject(object)) {
+    const bounds = new THREE.Box3();
+    const clippedBounds = getUIPresentationBounds(object, bounds);
+    if (clippedBounds === null) return renderedObject.getWorldPosition(out);
+    if (clippedBounds === undefined) bounds.setFromObject(renderedObject, true);
+    if (!bounds.isEmpty()) return bounds.getCenter(out);
+  }
   const reference =
     mode === 'center'
       ? new THREE.Box3()
-          .setFromObject(object, true)
+          .setFromObject(renderedObject, true)
           .getCenter(new THREE.Vector3())
       : from;
   let closestDistanceSquared = Infinity;
@@ -89,7 +105,7 @@ export function getObjectTargetPoint(
   const c = new THREE.Vector3();
   const centroid = new THREE.Vector3();
 
-  object.traverse((child) => {
+  renderedObject.traverse((child) => {
     if (!(child instanceof THREE.Mesh) || !child.visible) return;
     const position = child.geometry.getAttribute('position');
     if (!position) return;

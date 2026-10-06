@@ -2,23 +2,28 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import type {LiveConnectParameters, Session} from '@google/genai';
 
 import {AI} from './AI';
-import {GeminiOptions, OpenAIOptions} from './AIOptions';
+import {
+  GEMINI_DEFAULT_FLASH_MODEL,
+  GEMINI_DEFAULT_IMAGE_MODEL,
+  GeminiOptions,
+  OpenAIOptions,
+} from './AIOptions';
 import {Gemini} from './Gemini';
 import {OpenAI} from './OpenAI';
 
-const {connect} = vi.hoisted(() => ({
+const {connect, createInteraction} = vi.hoisted(() => ({
   connect: vi.fn<(params: LiveConnectParameters) => Promise<Session>>(),
+  createInteraction: vi.fn(),
 }));
 
 vi.mock('@google/genai', () => ({
   GoogleGenAI: class {
     live = {connect};
+    interactions = {create: createInteraction};
   },
   EndSensitivity: {},
   StartSensitivity: {},
   Modality: {AUDIO: 'AUDIO'},
-  createPartFromUri: vi.fn(),
-  createUserContent: vi.fn(),
 }));
 
 function createSession() {
@@ -370,5 +375,126 @@ describe('AI synchronous disposal', () => {
     expect(ai.dispose()).toBeUndefined();
     ai.model = new OpenAI(new OpenAIOptions());
     expect(ai.dispose()).toBeUndefined();
+  });
+});
+
+describe('Gemini interactions queries', () => {
+  function interaction(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'int_1',
+      status: 'completed',
+      steps: [],
+      output_text: 'hi',
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    createInteraction.mockReset();
+    // Mirrors the AI facade: availability is checked before querying, which
+    // is what creates the underlying client.
+    gemini.isAvailable();
+  });
+
+  it('sends prompts through the Interactions API statelessly', async () => {
+    createInteraction.mockResolvedValue(interaction());
+    const result = await gemini.query({prompt: 'Tell me a joke.'});
+    expect(result).toEqual({text: 'hi'});
+    expect(createInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: GEMINI_DEFAULT_FLASH_MODEL,
+        input: 'Tell me a joke.',
+        store: false,
+      })
+    );
+  });
+
+  it('maps image and part inputs to tagged content blocks', async () => {
+    createInteraction.mockResolvedValue(interaction());
+    await gemini.query({type: 'base64', base64: 'QUFB', mimeType: 'image/png'});
+    expect(createInteraction.mock.calls[0][0].input).toEqual([
+      {type: 'image', mime_type: 'image/png', data: 'QUFB'},
+    ]);
+
+    await gemini.query({
+      type: 'multiPart',
+      parts: [
+        {inlineData: {mimeType: 'image/jpeg', data: 'QkJC'}},
+        {text: 'What is this?'},
+      ],
+    });
+    expect(createInteraction.mock.calls[1][0].input).toEqual([
+      {type: 'image', mime_type: 'image/jpeg', data: 'QkJC'},
+      {type: 'text', text: 'What is this?'},
+    ]);
+  });
+
+  it('returns function call steps as tool calls', async () => {
+    createInteraction.mockResolvedValue(
+      interaction({
+        output_text: 'ignored while a tool call is pending',
+        steps: [
+          {type: 'model_output', content: [{type: 'text', text: 'thinking'}]},
+          {
+            type: 'function_call',
+            id: 'fc_1',
+            name: 'get_weather',
+            arguments: {location: 'Boston'},
+          },
+        ],
+      })
+    );
+    expect(await gemini.query({prompt: 'Weather?'})).toEqual({
+      toolCall: {name: 'get_weather', args: {location: 'Boston'}},
+    });
+  });
+
+  it('keeps caller configuration but forces store=false', async () => {
+    createInteraction.mockResolvedValue(interaction());
+    const options = new GeminiOptions();
+    options.config = {system_instruction: 'Be terse'};
+    gemini = new Gemini(options);
+    await gemini.init();
+    gemini.isAvailable();
+
+    await gemini.query({prompt: 'hi'});
+    expect(createInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({system_instruction: 'Be terse', store: false})
+    );
+  });
+
+  it('generates images from model output steps', async () => {
+    createInteraction.mockResolvedValue(
+      interaction({
+        steps: [
+          {
+            type: 'model_output',
+            content: [
+              {type: 'text', text: 'here'},
+              {type: 'image', data: 'QkJC', mime_type: 'image/png'},
+            ],
+          },
+        ],
+      })
+    );
+    const image = await gemini.generate('a red cube');
+    expect(image).toBe('data:image/png;base64,QkJC');
+    expect(createInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: GEMINI_DEFAULT_IMAGE_MODEL,
+        system_instruction: 'Generate an image',
+        response_format: [{type: 'image'}],
+        store: false,
+      })
+    );
+  });
+
+  it('keeps the image prompt parts in the request', async () => {
+    createInteraction.mockResolvedValue(interaction());
+    await gemini.generate(['data:image/png;base64,QUFB', 'a red cube']);
+    expect(createInteraction.mock.calls[0][0].input).toEqual([
+      {type: 'image', mime_type: 'image/png', data: 'QUFB'},
+      {type: 'text', text: 'a red cube'},
+    ]);
   });
 });

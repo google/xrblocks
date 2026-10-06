@@ -155,6 +155,17 @@ export class Core {
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
   private startingSimulator?: Promise<Simulator>;
+  private onBeforeWebXRSessionStart = (event: {session: XRSession}) => {
+    if (
+      this.options?.framebufferScaleFactor === 'native' &&
+      typeof XRWebGLLayer !== 'undefined'
+    ) {
+      const maxScale = XRWebGLLayer.getNativeFramebufferScaleFactor(
+        event.session
+      );
+      this.renderer.xr.setFramebufferScaleFactor(maxScale);
+    }
+  };
   private onWebXRSessionStarted = (event: {session: XRSession}) => {
     void this.onXRSessionStarted(event.session);
   };
@@ -410,6 +421,10 @@ export class Core {
     if (!manager) return;
     this.webXRSessionManager = undefined;
     manager.removeEventListener(
+      WebXRSessionEventType.BEFORE_SESSION_START,
+      this.onBeforeWebXRSessionStart
+    );
+    manager.removeEventListener(
       WebXRSessionEventType.SESSION_START,
       this.onWebXRSessionStarted
     );
@@ -554,6 +569,11 @@ export class Core {
     this.registry.register(new RendererHolder(this.renderer));
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
+    if (typeof options.framebufferScaleFactor === 'number') {
+      this.renderer.xr.setFramebufferScaleFactor(
+        options.framebufferScaleFactor
+      );
+    }
     // For desktop simulator:
     window.addEventListener('resize', this.onWindowResize);
 
@@ -696,6 +716,10 @@ export class Core {
       this.renderer,
       this.webXRSettings,
       options.xrSessionMode
+    );
+    this.webXRSessionManager.addEventListener(
+      WebXRSessionEventType.BEFORE_SESSION_START,
+      this.onBeforeWebXRSessionStart
     );
     this.webXRSessionManager.addEventListener(
       WebXRSessionEventType.SESSION_START,

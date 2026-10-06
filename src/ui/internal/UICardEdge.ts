@@ -88,6 +88,7 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       initialClasses,
       config
     );
+    this.visible = false;
 
     abortableEffect(() => {
       const signals = (
@@ -144,6 +145,9 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       );
     }
     if (visible) visible.value = uv ? 1 : 0;
+    this.visible = Boolean(
+      signals.u_show_glow?.value || signals.u_show_glow_2?.value
+    );
   }
 }
 

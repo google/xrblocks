@@ -34,17 +34,17 @@ ${ROTATION_JOINT_NAMES.join(', ')}
 `;
 
 const LOCAL_ROTATION_SCHEMA = {
-  type: 'OBJECT',
+  type: 'object',
   required: ROTATION_JOINT_NAMES,
   properties: Object.fromEntries(
     ROTATION_JOINT_NAMES.map((jointName) => [
       jointName,
       {
-        type: 'ARRAY',
+        type: 'array',
         minItems: 3,
         maxItems: 3,
         items: {
-          type: 'NUMBER',
+          type: 'number',
         },
       },
     ])
@@ -590,9 +590,14 @@ async function start() {
 
   createPromptBubble(async (description) => {
     xb.core.options.ai.gemini.config = {
-      responseMimeType: 'application/json',
-      responseSchema: LOCAL_ROTATION_SCHEMA,
-      systemInstruction: [{text: LOCAL_AUTHORING_PROMPT}],
+      system_instruction: LOCAL_AUTHORING_PROMPT,
+      response_format: [
+        {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: LOCAL_ROTATION_SCHEMA,
+        },
+      ],
     };
     const response = await xb.core.ai.query({
       prompt: JSON.stringify({description}),

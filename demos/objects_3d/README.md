@@ -55,7 +55,7 @@ extrinsics and the actual hardware. Also available as `?camYawDeg=-30` etc.
 | `matchDepth`   | `?matchDepthView=0` | **On by default.** Ask the platform for view-aligned depth instead of raw depth-sensor frames |
 | `fullResDepth` | `?fullResDepth=1`   | Rebuild the full-resolution depth mesh every frame (see below)                                |
 | `detector`     | `?backend=`         | `gemini` / `mediapipe` / `both`                                                               |
-| `mask`         | `?mask=`            | `slimsam` / `mediapipe`                                                                       |
+| `mask`         | `?mask=`            | `efficientsam_ti` / `mediapipe`                                                               |
 
 **Diagnostics**, refreshed after each detection (4 Hz in XR):
 

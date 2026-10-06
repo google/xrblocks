@@ -73,15 +73,20 @@ export class XRObjectManager extends xb.Script {
     this.holdIndicatorLocalPosition = new THREE.Vector3();
 
     this.userQueryConfig = {
-      systemInstruction: `You're an informative and helpful AI assistant specializing in identifying and describing objects within images. Your primary goal is to provide detailed yet concise answers to user questions, making a best effort to respond even if you're not entirely sure or the image quality is poor. When describing objects, strive for maximum detail without being verbose, focusing on key characteristics. Please ignore any hands or other human body parts present in the image. User queries will always be structured like this: {object: '...', question: '...'}`,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        required: ['answer'],
-        properties: {
-          answer: {type: 'STRING'},
+      system_instruction: `You're an informative and helpful AI assistant specializing in identifying and describing objects within images. Your primary goal is to provide detailed yet concise answers to user questions, making a best effort to respond even if you're not entirely sure or the image quality is poor. When describing objects, strive for maximum detail without being verbose, focusing on key characteristics. Please ignore any hands or other human body parts present in the image. User queries will always be structured like this: {object: '...', question: '...'}`,
+      response_format: [
+        {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: {
+            type: 'object',
+            required: ['answer'],
+            properties: {
+              answer: {type: 'string'},
+            },
+          },
         },
-      },
+      ],
     };
   }
 

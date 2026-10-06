@@ -4,10 +4,15 @@ import {GeminiResponse} from './AITypes';
 import {BaseAIModel} from './BaseAIModel';
 import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 
-let createPartFromUri: (uri: string, mimeType: string) => GoogleGenAITypes.Part;
-let createUserContent:
-  | ((partOrString: GoogleGenAITypes.PartListUnion) => GoogleGenAITypes.Content)
-  | undefined;
+type InteractionContent = GoogleGenAITypes.Interactions.Content;
+// Explicit `stream?: false` keeps create() overload resolution on the
+// non-streaming variant across @google/genai versions (2.27+ widened the
+// namespaced params type to include streaming).
+type InteractionParams =
+  GoogleGenAITypes.Interactions.CreateModelInteractionParamsNonStreaming & {
+    stream?: false;
+  };
+
 let GoogleGenAI: typeof GoogleGenAITypes.GoogleGenAI | undefined;
 let EndSensitivity: typeof GoogleGenAITypes.EndSensitivity | undefined;
 let StartSensitivity: typeof GoogleGenAITypes.StartSensitivity | undefined;
@@ -21,8 +26,6 @@ async function loadGoogleGenAIModule() {
   try {
     const genAIModule = await import('@google/genai');
     if (genAIModule && genAIModule.GoogleGenAI) {
-      createPartFromUri = genAIModule.createPartFromUri;
-      createUserContent = genAIModule.createUserContent;
       GoogleGenAI = genAIModule.GoogleGenAI;
       EndSensitivity = genAIModule.EndSensitivity;
       StartSensitivity = genAIModule.StartSensitivity;
@@ -38,6 +41,97 @@ async function loadGoogleGenAIModule() {
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
+}
+
+/** Maps an input media type onto the Interactions tagged content blocks. */
+function interactionMediaType(
+  mimeType: string
+): 'image' | 'audio' | 'video' | 'document' {
+  const prefix = mimeType.split('/')[0];
+  return prefix === 'image' || prefix === 'audio' || prefix === 'video'
+    ? prefix
+    : 'document';
+}
+
+/**
+ * Converts the SDK's Part-based payloads into the tagged content blocks the
+ * Interactions API accepts as `input`.
+ */
+function partToInteractionContent(
+  part: GoogleGenAITypes.Part
+): InteractionContent | null {
+  if (part.text !== undefined) {
+    return {type: 'text', text: part.text} as InteractionContent;
+  }
+  const inline = part.inlineData;
+  if (inline?.data !== undefined) {
+    const mimeType = inline.mimeType ?? 'application/octet-stream';
+    return {
+      type: interactionMediaType(mimeType),
+      mime_type: mimeType,
+      data: inline.data,
+    } as InteractionContent;
+  }
+  const file = part.fileData;
+  if (file?.fileUri !== undefined) {
+    const mimeType = file.mimeType ?? 'application/octet-stream';
+    return {
+      type: interactionMediaType(mimeType),
+      mime_type: mimeType,
+      uri: file.fileUri,
+    } as InteractionContent;
+  }
+  console.warn('Unsupported Gemini query part dropped from the input:', part);
+  return null;
+}
+
+function buildInteractionInput(
+  input: GeminiQueryInput | {prompt: string}
+): string | InteractionContent[] | null {
+  if (!('type' in input)) {
+    return input.prompt!;
+  }
+  switch (input.type) {
+    case 'text':
+      return input.text!;
+    case 'base64':
+      return [
+        {
+          type: 'image',
+          mime_type: input.mimeType ?? 'image/png',
+          data: input.base64,
+        } as InteractionContent,
+      ];
+    case 'uri':
+    case 'multiPart': {
+      const parts: GoogleGenAITypes.Part[] =
+        input.type === 'uri'
+          ? [
+              {
+                fileData: {fileUri: input.uri!, mimeType: input.mimeType!},
+              },
+              ...(input.text ? [{text: input.text}] : []),
+            ]
+          : (input.parts ?? []);
+      const blocks = parts
+        .map(partToInteractionContent)
+        .filter((block): block is InteractionContent => block !== null);
+      return blocks.length > 0 ? blocks : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function findFunctionCallStep(
+  interaction: GoogleGenAITypes.Interactions.Interaction
+): GoogleGenAITypes.Interactions.FunctionCallStep | undefined {
+  for (const step of interaction.steps ?? []) {
+    if (step.type === 'function_call') {
+      return step;
+    }
+  }
+  return undefined;
 }
 
 export interface GeminiQueryInput {
@@ -269,68 +363,25 @@ export class Gemini extends BaseAIModel {
       return null;
     }
 
-    const options = this.options;
-    const config: GoogleGenAITypes.GenerateContentConfig = options.config || {};
-
-    if (!('type' in input)) {
-      const response = await this.ai!.models.generateContent({
-        model: options.model,
-        contents: input.prompt!,
-        config: config,
-      });
-      return {text: response.text || null};
-    }
-
-    const model = this.ai!.models;
-    const modelParams: GoogleGenAITypes.GenerateContentParameters = {
-      model: this.options.model,
-      contents: [],
-      config: this.options.config || {},
-    };
-
-    let response = null;
-    switch (input.type) {
-      case 'text':
-        modelParams.contents = input.text!;
-        response = await model.generateContent(modelParams);
-        break;
-
-      case 'base64':
-        if (!input.mimeType) {
-          input.mimeType = 'image/png';
-        }
-        modelParams.contents = {
-          inlineData: {
-            mimeType: input.mimeType,
-            data: input.base64,
-          },
-        };
-        response = await model.generateContent(modelParams);
-        break;
-
-      case 'uri':
-        modelParams.contents = createUserContent!([
-          createPartFromUri(input.uri!, input.mimeType!),
-          input.text!,
-        ]);
-        response = await model.generateContent(modelParams);
-        break;
-
-      case 'multiPart':
-        modelParams.contents = [{role: 'user', parts: input.parts}];
-        response = await model.generateContent(modelParams);
-        break;
-    }
-
-    if (!response) {
+    const interactionInput = buildInteractionInput(input);
+    if (interactionInput === null) {
       return {text: null};
     }
 
-    const toolCall = response.functionCalls?.[0];
+    const params: InteractionParams = {
+      ...this.options.config,
+      model: this.options.model,
+      input: interactionInput,
+      // Stateless by design: never link interactions into server-side history.
+      store: false,
+    };
+    const interaction = await this.ai!.interactions.create(params);
+
+    const toolCall = findFunctionCallStep(interaction);
     if (toolCall && toolCall.name) {
-      return {toolCall: {name: toolCall.name, args: toolCall.args}};
+      return {toolCall: {name: toolCall.name, args: toolCall.arguments}};
     }
-    return {text: response.text || null};
+    return {text: interaction.output_text || null};
   }
 
   // Try to query multiple times with exponential backoff.
@@ -363,36 +414,48 @@ export class Gemini extends BaseAIModel {
   ) {
     if (!this.isAvailable()) return;
 
-    let contents: GoogleGenAITypes.ContentListUnion;
+    let contents: string | InteractionContent[];
 
     if (Array.isArray(prompt)) {
-      contents = prompt.map((item) => {
-        if (typeof item === 'string') {
-          if (item.startsWith('data:image/')) {
-            const [header, data] = item.split(',');
-            const mimeType = header.split(';')[0].split(':')[1];
-            return {inlineData: {mimeType, data}};
-          } else {
-            return {text: item};
+      contents = prompt
+        .map((item) => {
+          if (typeof item === 'string') {
+            if (item.startsWith('data:image/')) {
+              const [header, data] = item.split(',');
+              const mimeType = header.split(';')[0].split(':')[1];
+              return partToInteractionContent({inlineData: {mimeType, data}});
+            }
+            return partToInteractionContent({text: item});
           }
-        }
-        // Assumes other items are already valid Part objects
-        return item;
-      });
+          // Assumes other items are already valid Part objects
+          return partToInteractionContent(item);
+        })
+        .filter((block): block is InteractionContent => block !== null);
     } else {
       contents = prompt;
     }
 
-    const response = await this.ai!.models.generateContent({
+    const params: InteractionParams = {
       model: model,
-      contents: contents,
-      config: {systemInstruction},
-    });
-    if (response.candidates && response.candidates.length > 0) {
-      const firstCandidate = response.candidates[0];
-      for (const part of firstCandidate?.content?.parts || []) {
-        if (type === 'image' && part.inlineData) {
-          return 'data:image/png;base64,' + part.inlineData.data;
+      input: contents,
+      system_instruction: systemInstruction,
+      response_format: [{type: 'image'}],
+      // Stateless by design: never link interactions into server-side history.
+      store: false,
+    };
+    const interaction = await this.ai!.interactions.create(params);
+    if (type === 'image') {
+      for (const step of interaction.steps ?? []) {
+        if (step.type !== 'model_output') continue;
+        for (const block of step.content ?? []) {
+          if (block.type === 'image' && block.data) {
+            return (
+              'data:' +
+              (block.mime_type || 'image/png') +
+              ';base64,' +
+              block.data
+            );
+          }
         }
       }
     }

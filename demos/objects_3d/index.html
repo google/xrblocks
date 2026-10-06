@@ -29,7 +29,8 @@
           "xrblocks/addons/": "../../build/addons/",
           "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs",
           "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm",
-          "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0",
+          "@litertjs/core": "https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/dist/index.js",
+          "@litertjs/wasm-utils": "https://cdn.jsdelivr.net/npm/@litertjs/wasm-utils@2.5.3/dist/index.js",
           "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.10/build/index.module.js"
         }
       }
@@ -296,7 +297,7 @@
         <label
           >mask
           <select id="maskSelect">
-            <option value="slimsam">slimsam-77 (tight)</option>
+            <option value="efficientsam_ti">efficientsam-ti (tight)</option>
             <option value="mediapipe">mediapipe segmenter (loose)</option>
           </select></label
         >
@@ -354,7 +355,7 @@
         // Off by default; the dominant frame-rate cost. See README.
         fullResDepth: flag('fullResDepth'),
         detector: params.get('backend') ?? 'gemini',
-        mask: params.get('mask') ?? 'slimsam',
+        mask: params.get('mask') ?? 'efficientsam_ti',
         // Applies live via setOrientationMode, so unlike the depth toggles
         // this one never needs a reload.
         orient: params.get('orient') ?? 'roomFrame',
@@ -374,7 +375,8 @@
 
       const detector = new Object3DDetector({
         detectBackend: SETTINGS.detector,
-        maskBackend: SETTINGS.mask === 'mediapipe' ? 'mediapipe' : 'slimsam',
+        maskBackend:
+          SETTINGS.mask === 'mediapipe' ? 'mediapipe' : 'efficientsam_ti',
         showDebugBoxes: true,
         cameraRotationOffset: {
           yaw: THREE.MathUtils.degToRad(SETTINGS.yawDeg),
@@ -848,7 +850,7 @@
             this.cycleButton(
               'mask',
               SETTINGS.mask,
-              ['slimsam', 'mediapipe'],
+              ['efficientsam_ti', 'mediapipe'],
               (next) => reloadWith({mask: next})
             )
           );

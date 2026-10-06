@@ -626,4 +626,23 @@ describe('Core frame and simulator lifecycle', () => {
       }
     }
   );
+
+  it('applies native framebufferScaleFactor on beforesessionstart', () => {
+    const setFramebufferScaleFactor = vi.fn();
+    core.renderer.xr.setFramebufferScaleFactor = setFramebufferScaleFactor;
+    core.options.setFramebufferScaleFactor('native');
+    const getNativeFramebufferScaleFactor = vi.fn().mockReturnValue(1.75);
+    vi.stubGlobal('XRWebGLLayer', {
+      getNativeFramebufferScaleFactor,
+    });
+    try {
+      const session = {} as XRSession;
+      core['onBeforeWebXRSessionStart']({session});
+
+      expect(getNativeFramebufferScaleFactor).toHaveBeenCalledWith(session);
+      expect(setFramebufferScaleFactor).toHaveBeenCalledWith(1.75);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

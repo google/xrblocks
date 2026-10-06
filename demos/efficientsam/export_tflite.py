@@ -112,6 +112,31 @@ class ExportFriendlyEncoder(nn.Module):
         return x
 
 
+class ExportFriendlyGroupNorm1(nn.Module):
+    """4D WebGPU-compatible wrapper for nn.GroupNorm(num_groups=1, num_channels=C).
+
+    Avoids aten.native_group_norm lowering to unsupported GATHER_ND ops in LiteRT.
+    """
+
+    def __init__(self, gn: nn.GroupNorm):
+        super().__init__()
+        if gn.num_groups != 1:
+            raise ValueError(f"Expected num_groups=1, got {gn.num_groups}")
+        self.eps = gn.eps
+        self.register_buffer(
+            "weight", gn.weight.detach().clone().view(1, -1, 1, 1)
+        )
+        self.register_buffer(
+            "bias", gn.bias.detach().clone().view(1, -1, 1, 1)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        mean = x.mean(dim=(1, 2, 3), keepdim=True)
+        var = ((x - mean) ** 2).mean(dim=(1, 2, 3), keepdim=True)
+        x_norm = (x - mean) * torch.rsqrt(var + self.eps)
+        return x_norm * self.weight + self.bias
+
+
 class ExportFriendlyDecoder(nn.Module):
     """Static-shape 4D-only float32 wrapper around EfficientSAM PromptEncoder + MaskDecoder."""
 
@@ -133,6 +158,11 @@ class ExportFriendlyDecoder(nn.Module):
         self.register_buffer("dense_pe", dense_pe)
 
         self.mask_decoder = sam_model.mask_decoder
+        for upscaling_layer in self.mask_decoder.final_output_upscaling_layers:
+            if isinstance(upscaling_layer, nn.Sequential):
+                for idx, mod in enumerate(upscaling_layer):
+                    if isinstance(mod, nn.GroupNorm) and mod.num_groups == 1:
+                        upscaling_layer[idx] = ExportFriendlyGroupNorm1(mod)
 
     def RegisterPromptWeights(self, pe: nn.Module):
         self.register_buffer(
