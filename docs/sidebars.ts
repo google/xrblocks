@@ -104,6 +104,7 @@ const sidebars: SidebarsConfig = {
         'samples/Super-Resolution',
         'samples/Gemma-Vision',
         'samples/Offline-Captions',
+        'samples/Gemma-On-Device',
       ],
     },
     {
