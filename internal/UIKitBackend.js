@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid b093e9a
-* @builddate 2026-10-06T18:17:59.801Z
+* @commitid 051fd94
+* @builddate 2026-10-06T18:24:07.459Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,7 +42,7 @@ lego-styles.
 */
 import { t as __exportAll } from "./rolldown-runtime.js";
 import { A as DEFAULT_GRADIENT_PANEL_PROPS, D as isUIElement, E as getUIStructureRevision, S as getUIElementKind, T as getUIRevision, f as normalizeManipulationConfig, h as getSemanticControl, j as TransformScript, k as registerUIPresentationObject, m as ManipulationAction, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, w as getUIPresentationObject } from "./UICard.js";
-import { a as UIOverlay, c as updateScrollViewLayout, i as UIText, n as bindTextInput, o as UIScrollView, r as normalizeTextInputValue, s as bindScrollView, t as UITextInput } from "./UITextInput.js";
+import { a as UIOverlay, c as UIScrollView, i as UIText, l as bindScrollView, n as bindTextInput, o as PANEL_BACKFACE_MARKER, r as normalizeTextInputValue, t as UITextInput, u as updateScrollViewLayout } from "./UITextInput.js";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Component, Container, Content, Custom, Image, Text, abortableEffect, reversePainterSortStable } from "@pmndrs/uikit";
@@ -697,6 +697,7 @@ var GradientPanel = class extends ShaderPanel {
 				dropShadowMargin: expansionMarginSignal
 			}, void 0, { side: THREE.BackSide });
 			this.backfaceLayer.name = "BackfaceLayer";
+			this.backfaceLayer.userData[PANEL_BACKFACE_MARKER] = true;
 			this.addLayer(this.backfaceLayer);
 		}
 		this.addLayer(this.unifiedLayer);

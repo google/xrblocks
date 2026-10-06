@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid b093e9a
-* @builddate 2026-10-06T18:17:59.801Z
+* @commitid 051fd94
+* @builddate 2026-10-06T18:24:07.459Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -151,6 +151,40 @@ function updateScrollViewLayout(view, height, contentHeight) {
 }
 function validateOffset(offset) {
 	if (!Number.isFinite(offset)) throw new Error("UIScrollView offsets must be finite.");
+}
+//#endregion
+//#region src/ui/internal/PanelBackfaceVisibility.ts
+/**
+* Marks a mesh as a panel back-face layer (rendered with `THREE.BackSide`) so
+* it can be skipped while the camera cannot see it. See `GradientPanel`.
+*/
+const PANEL_BACKFACE_MARKER = "xrblocksPanelBackface";
+/**
+* Whether the camera is on the side of the panel's front face (the side its
+* local +z normal points toward).
+*
+* This matches three's culling exactly: a `FrontSide` plane draws when the
+* camera faces its normal and a `BackSide` plane draws when it does not,
+* including for mirrored (negative-determinant) `matrixWorld` — three flips
+* the rasterized front face to compensate for the mirrored winding.
+*/
+function isCameraFacingPanelFront(panel, camera) {
+	const panelMatrix = panel.matrixWorld.elements;
+	const cameraMatrix = camera.matrixWorld.elements;
+	const dx = cameraMatrix[12] - panelMatrix[12];
+	const dy = cameraMatrix[13] - panelMatrix[13];
+	const dz = cameraMatrix[14] - panelMatrix[14];
+	return panelMatrix[8] * dx + panelMatrix[9] * dy + panelMatrix[10] * dz > 0;
+}
+/**
+* Hides panel back-face layers while the camera is in front of their panel.
+* From the front they are backface-culled at raster time (0 px painted) but
+* still cost a draw call per view; from behind they draw as usual.
+*/
+function updatePanelBackfaceVisibility(root, camera) {
+	root.traverse((object) => {
+		if (object.userData["xrblocksPanelBackface"]) object.visible = !isCameraFacingPanelFront(object, camera);
+	});
 }
 //#endregion
 //#region src/ui/components/UIOverlay.ts
@@ -449,6 +483,6 @@ function validateMaxLength(value) {
 	if (!Number.isInteger(value) || value < 0) throw new Error("UITextInput maxLength must be a nonnegative integer or undefined.");
 }
 //#endregion
-export { UIOverlay as a, updateScrollViewLayout as c, UIText as i, bindTextInput as n, UIScrollView as o, normalizeTextInputValue as r, bindScrollView as s, UITextInput as t };
+export { UIOverlay as a, UIScrollView as c, UIText as i, bindScrollView as l, bindTextInput as n, PANEL_BACKFACE_MARKER as o, normalizeTextInputValue as r, updatePanelBackfaceVisibility as s, UITextInput as t, updateScrollViewLayout as u };
 
 //# sourceMappingURL=UITextInput.js.map
