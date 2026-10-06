@@ -64,6 +64,8 @@ export class EmojiText extends Container {
             transformTranslateY: -emojiSize * 0.08,
             marginRight: segment.trailingSpaceWidth,
             pointerEvents: 'none',
+            depthTest: properties.depthTest,
+            depthWrite: properties.depthWrite,
           })
         );
       } else {
@@ -77,6 +79,8 @@ export class EmojiText extends Container {
             whiteSpace: 'pre',
             marginRight: segment.trailingSpaceWidth,
             pointerEvents: 'none',
+            depthTest: properties.depthTest,
+            depthWrite: properties.depthWrite,
           })
         );
       }
@@ -105,6 +109,8 @@ function emojiContainerProperties(
           : 'flex-start',
     color: properties.color,
     fontSize: properties.fontSize,
+    depthTest: properties.depthTest,
+    depthWrite: properties.depthWrite,
     fontWeight: properties.fontWeight,
     lineHeight: properties.lineHeight,
     flexShrink: 0,

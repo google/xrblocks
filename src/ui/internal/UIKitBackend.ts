@@ -764,6 +764,16 @@ class UIKitNodeBinding {
       style.renderOrder = renderOrder;
     }
     const kind = getUIElementKind(this.element);
+    if (renderOrder === undefined) {
+      // World-space UI: occlusion must resolve per pixel. Solid content (text,
+      // images, icons) writes depth and depth-tests; soft layers (panel
+      // gradients, card edges, shadows) keep depthWrite off through their own
+      // materials so they still blend over whatever is behind them.
+      if (kind === 'text' || kind === 'image' || kind === 'icon') {
+        style.depthTest = true;
+        style.depthWrite = true;
+      }
+    }
     if (kind === 'text') {
       return {
         text: (this.element as UIText).text,
