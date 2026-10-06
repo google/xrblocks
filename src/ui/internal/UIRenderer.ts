@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
+import {updatePanelBackfaceVisibility} from './PanelBackfaceVisibility';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
@@ -271,6 +272,9 @@ export class UIRenderer {
         }
       }
       record.mount.update(deltaSeconds);
+      // Panel back faces are backface-culled (0 px) whenever the camera is in
+      // front of the panel; skip those draw calls entirely.
+      updatePanelBackfaceVisibility(record.mount.object, camera);
     }
   }
 
