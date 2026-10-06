@@ -5,8 +5,13 @@ import {BaseAIModel} from './BaseAIModel';
 import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 
 type InteractionContent = GoogleGenAITypes.Interactions.Content;
+// Explicit `stream?: false` keeps create() overload resolution on the
+// non-streaming variant across @google/genai versions (2.27+ widened the
+// namespaced params type to include streaming).
 type InteractionParams =
-  GoogleGenAITypes.Interactions.CreateModelInteractionParamsNonStreaming;
+  GoogleGenAITypes.Interactions.CreateModelInteractionParamsNonStreaming & {
+    stream?: false;
+  };
 
 let GoogleGenAI: typeof GoogleGenAITypes.GoogleGenAI | undefined;
 let EndSensitivity: typeof GoogleGenAITypes.EndSensitivity | undefined;
