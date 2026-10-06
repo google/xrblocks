@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 265c2ad
-* @builddate 2026-10-05T22:51:48.539Z
+* @commitid 869e320
+* @builddate 2026-10-06T05:38:15.675Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -496,8 +496,6 @@ var BaseAIModel = class {
 };
 //#endregion
 //#region src/ai/Gemini.ts
-let createPartFromUri;
-let createUserContent;
 let GoogleGenAI;
 let EndSensitivity;
 let StartSensitivity;
@@ -507,8 +505,6 @@ async function loadGoogleGenAIModule() {
 	try {
 		const genAIModule = await import("@google/genai");
 		if (genAIModule && genAIModule.GoogleGenAI) {
-			createPartFromUri = genAIModule.createPartFromUri;
-			createUserContent = genAIModule.createUserContent;
 			GoogleGenAI = genAIModule.GoogleGenAI;
 			EndSensitivity = genAIModule.EndSensitivity;
 			StartSensitivity = genAIModule.StartSensitivity;
@@ -520,6 +516,64 @@ async function loadGoogleGenAIModule() {
 		console.error(errorMessage);
 		throw new Error(errorMessage);
 	}
+}
+/** Maps an input media type onto the Interactions tagged content blocks. */
+function interactionMediaType(mimeType) {
+	const prefix = mimeType.split("/")[0];
+	return prefix === "image" || prefix === "audio" || prefix === "video" ? prefix : "document";
+}
+/**
+* Converts the SDK's Part-based payloads into the tagged content blocks the
+* Interactions API accepts as `input`.
+*/
+function partToInteractionContent(part) {
+	if (part.text !== void 0) return {
+		type: "text",
+		text: part.text
+	};
+	const inline = part.inlineData;
+	if (inline?.data !== void 0) {
+		const mimeType = inline.mimeType ?? "application/octet-stream";
+		return {
+			type: interactionMediaType(mimeType),
+			mime_type: mimeType,
+			data: inline.data
+		};
+	}
+	const file = part.fileData;
+	if (file?.fileUri !== void 0) {
+		const mimeType = file.mimeType ?? "application/octet-stream";
+		return {
+			type: interactionMediaType(mimeType),
+			mime_type: mimeType,
+			uri: file.fileUri
+		};
+	}
+	console.warn("Unsupported Gemini query part dropped from the input:", part);
+	return null;
+}
+function buildInteractionInput(input) {
+	if (!("type" in input)) return input.prompt;
+	switch (input.type) {
+		case "text": return input.text;
+		case "base64": return [{
+			type: "image",
+			mime_type: input.mimeType ?? "image/png",
+			data: input.base64
+		}];
+		case "uri":
+		case "multiPart": {
+			const blocks = (input.type === "uri" ? [{ fileData: {
+				fileUri: input.uri,
+				mimeType: input.mimeType
+			} }, ...input.text ? [{ text: input.text }] : []] : input.parts ?? []).map(partToInteractionContent).filter((block) => block !== null);
+			return blocks.length > 0 ? blocks : null;
+		}
+		default: return null;
+	}
+}
+function findFunctionCallStep(interaction) {
+	for (const step of interaction.steps ?? []) if (step.type === "function_call") return step;
 }
 var Gemini = class extends BaseAIModel {
 	constructor(options) {
@@ -670,51 +724,21 @@ var Gemini = class extends BaseAIModel {
 			console.warn("Gemini not inited.");
 			return null;
 		}
-		const options = this.options;
-		const config = options.config || {};
-		if (!("type" in input)) return { text: (await this.ai.models.generateContent({
-			model: options.model,
-			contents: input.prompt,
-			config
-		})).text || null };
-		const model = this.ai.models;
-		const modelParams = {
+		const interactionInput = buildInteractionInput(input);
+		if (interactionInput === null) return { text: null };
+		const params = {
+			...this.options.config,
 			model: this.options.model,
-			contents: [],
-			config: this.options.config || {}
+			input: interactionInput,
+			store: false
 		};
-		let response = null;
-		switch (input.type) {
-			case "text":
-				modelParams.contents = input.text;
-				response = await model.generateContent(modelParams);
-				break;
-			case "base64":
-				if (!input.mimeType) input.mimeType = "image/png";
-				modelParams.contents = { inlineData: {
-					mimeType: input.mimeType,
-					data: input.base64
-				} };
-				response = await model.generateContent(modelParams);
-				break;
-			case "uri":
-				modelParams.contents = createUserContent([createPartFromUri(input.uri, input.mimeType), input.text]);
-				response = await model.generateContent(modelParams);
-				break;
-			case "multiPart":
-				modelParams.contents = [{
-					role: "user",
-					parts: input.parts
-				}];
-				response = await model.generateContent(modelParams);
-		}
-		if (!response) return { text: null };
-		const toolCall = response.functionCalls?.[0];
+		const interaction = await this.ai.interactions.create(params);
+		const toolCall = findFunctionCallStep(interaction);
 		if (toolCall && toolCall.name) return { toolCall: {
 			name: toolCall.name,
-			args: toolCall.args
+			args: toolCall.arguments
 		} };
-		return { text: response.text || null };
+		return { text: interaction.output_text || null };
 	}
 	async queryWithExponentialFalloff(input) {
 		const delays = [
@@ -744,23 +768,28 @@ var Gemini = class extends BaseAIModel {
 			if (typeof item === "string") {
 				if (item.startsWith("data:image/")) {
 					const [header, data] = item.split(",");
-					return { inlineData: {
-						mimeType: header.split(";")[0].split(":")[1],
+					const mimeType = header.split(";")[0].split(":")[1];
+					return partToInteractionContent({ inlineData: {
+						mimeType,
 						data
-					} };
-				} else return { text: item };
+					} });
+				}
+				return partToInteractionContent({ text: item });
 			}
-			return item;
-		});
+			return partToInteractionContent(item);
+		}).filter((block) => block !== null);
 		else contents = prompt;
-		const response = await this.ai.models.generateContent({
+		const params = {
 			model,
-			contents,
-			config: { systemInstruction }
-		});
-		if (response.candidates && response.candidates.length > 0) {
-			const firstCandidate = response.candidates[0];
-			for (const part of firstCandidate?.content?.parts || []) if (type === "image" && part.inlineData) return "data:image/png;base64," + part.inlineData.data;
+			input: contents,
+			system_instruction: systemInstruction,
+			response_format: [{ type: "image" }],
+			store: false
+		};
+		const interaction = await this.ai.interactions.create(params);
+		if (type === "image") for (const step of interaction.steps ?? []) {
+			if (step.type !== "model_output") continue;
+			for (const block of step.content ?? []) if (block.type === "image" && block.data) return "data:" + (block.mime_type || "image/png") + ";base64," + block.data;
 		}
 	}
 	async hasApiKey() {
@@ -10501,11 +10530,16 @@ var GeminiDetectorBackend = class extends BaseDetectorBackend$1 {
 	buildGeminiConfig() {
 		const geminiOptions = this.context.options.objects.backendConfig.gemini;
 		return {
-			thinkingConfig: { thinkingLevel: "LOW" },
-			responseMimeType: "application/json",
-			responseSchema: geminiOptions.responseSchema,
-			systemInstruction: [{ text: geminiOptions.systemInstruction }],
-			...geminiOptions.generationConfig ?? {}
+			generation_config: {
+				thinking_level: "low",
+				...geminiOptions.generationConfig ?? {}
+			},
+			system_instruction: geminiOptions.systemInstruction,
+			response_format: [{
+				type: "text",
+				mime_type: "application/json",
+				schema: geminiOptions.responseSchema
+			}]
 		};
 	}
 	async detect(snapshot) {

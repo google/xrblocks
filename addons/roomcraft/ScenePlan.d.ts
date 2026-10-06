@@ -1,6 +1,6 @@
 import { MAX_SCENE_DISTANCE, MAX_SCENE_OBJECTS, MAX_SCENE_SCALE, MIN_SCENE_SCALE, SceneAssetDescription, SceneEnvironment, SceneLayout, SceneObject, ScenePlan, SceneRequest } from "./SceneTypes.js";
 //#region src/addons/roomcraft/ScenePlan.d.ts
-/** Optional Gemini `responseJsonSchema`; runtime validation is always applied. */
+/** Optional Gemini `response_format` schema; runtime validation is always applied. */
 export declare const SCENE_PLAN_SCHEMA: {
   type: string;
   additionalProperties: boolean;

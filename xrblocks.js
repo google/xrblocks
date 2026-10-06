@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid 265c2ad
-* @builddate 2026-10-05T22:51:48.539Z
+* @commitid 869e320
+* @builddate 2026-10-06T05:38:15.675Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -252,6 +252,21 @@ var Tool = class {
 		if (this.description) result.description = this.description;
 		if (this.parameters) result.parameters = this.parameters;
 		if (this.behavior) result.behavior = this.behavior;
+		return result;
+	}
+	/**
+	* Returns the function tool shape for the non-live Interactions API (a
+	* `tools` entry on a query). `behavior` is a Live API concept and has no
+	* Interactions equivalent.
+	* @returns A valid Interactions function tool.
+	*/
+	toInteractions() {
+		const result = {
+			type: "function",
+			name: this.name
+		};
+		if (this.description) result.description = this.description;
+		if (this.parameters) result.parameters = this.parameters;
 		return result;
 	}
 };
