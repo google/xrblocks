@@ -4,8 +4,9 @@ const WASM_URL = 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/wasm/';
 
 // Keep this a classic worker: the runtime's WASM loader uses importScripts.
 const runtime = import('./GemmaRuntime.js').then(
-  ({GemmaRuntime}) =>
-    new GemmaRuntime({
+  ({GemmaRuntime, installWebGpuTimeslicing}) => {
+    installWebGpuTimeslicing(self.navigator?.gpu);
+    return new GemmaRuntime({
       loadRuntime: () => {
         self.Module = {locateFile: (name) => new URL(name, WASM_URL).href};
         return import(RUNTIME_URL);
@@ -14,7 +15,8 @@ const runtime = import('./GemmaRuntime.js').then(
         (await import('./modelStore.js')).openCachedModel(),
       postMessage: (message) => self.postMessage(message),
       close: () => self.close(),
-    })
+    });
+  }
 );
 
 self.onmessage = ({data}) => {

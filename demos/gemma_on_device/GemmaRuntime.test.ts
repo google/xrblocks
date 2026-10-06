@@ -3,7 +3,11 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {readFileSync} from 'node:fs';
 
-import {GemmaRuntime} from './GemmaRuntime.js';
+import {
+  GemmaRuntime,
+  installWebGpuTimeslicing,
+  wrapWebGpuDevice,
+} from './GemmaRuntime.js';
 
 type Message = {
   content?: string | Array<{type: string; text?: string}>;
@@ -507,5 +511,248 @@ describe('GemmaRuntime disposal', () => {
       expect.objectContaining({type: 'error', id: 2, message: 'Delete failed'})
     );
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+function createMockWebGpuDevice() {
+  const events: string[] = [];
+  const encoders: Array<{
+    passes: Array<{
+      calls: Array<{type: string; args: unknown[]}>;
+      ended: boolean;
+    }>;
+    cmdBufId: number;
+  }> = [];
+  let nextCmdBufId = 1;
+
+  const queue = {
+    submit: vi.fn((cmdBufs: Array<{id: number}>) => {
+      events.push(`submit:${cmdBufs.map((b) => b.id).join(',')}`);
+    }),
+    writeBuffer: vi.fn((_buf: unknown, offset: number) => {
+      events.push(`writeBuffer:${offset}`);
+    }),
+    onSubmittedWorkDone: vi.fn(async () => {
+      events.push('onSubmittedWorkDone');
+    }),
+  };
+
+  const device = {
+    queue,
+    createCommandEncoder: vi.fn(() => {
+      const record = {
+        passes: [] as Array<{
+          calls: Array<{type: string; args: unknown[]}>;
+          ended: boolean;
+        }>,
+        cmdBufId: nextCmdBufId++,
+      };
+      encoders.push(record);
+      return {
+        beginComputePass: vi.fn(() => {
+          const pass = {
+            calls: [] as Array<{type: string; args: unknown[]}>,
+            ended: false,
+          };
+          record.passes.push(pass);
+          return {
+            setPipeline: vi.fn((pipeline: unknown) => {
+              pass.calls.push({type: 'setPipeline', args: [pipeline]});
+            }),
+            setBindGroup: vi.fn((...args: unknown[]) => {
+              const snapshot = args.map((arg) =>
+                arg instanceof Uint32Array ? Array.from(arg) : arg
+              );
+              pass.calls.push({type: 'setBindGroup', args: snapshot});
+            }),
+            dispatchWorkgroups: vi.fn((x = 1, y = 1, z = 1) => {
+              pass.calls.push({type: 'dispatch', args: [x, y, z]});
+            }),
+            dispatchWorkgroupsIndirect: vi.fn(
+              (buf: unknown, offset: number) => {
+                pass.calls.push({
+                  type: 'dispatchIndirect',
+                  args: [buf, offset],
+                });
+              }
+            ),
+            end: vi.fn(() => {
+              pass.ended = true;
+            }),
+          };
+        }),
+        copyBufferToBuffer: vi.fn((...args: unknown[]) => {
+          events.push(`copyBufferToBuffer:${args.length}`);
+        }),
+        finish: vi.fn(() => ({id: record.cmdBufId})),
+      };
+    }),
+    createBuffer: vi.fn((desc: {size: number; mappedAtCreation?: boolean}) => {
+      const buf = {
+        size: desc.size,
+        mapState: desc.mappedAtCreation ? 'mapped' : 'unmapped',
+        mapAsync: vi.fn(async () => {
+          events.push('mapAsync');
+          buf.mapState = 'mapped';
+        }),
+        unmap: vi.fn(() => {
+          buf.mapState = 'unmapped';
+        }),
+        destroy: vi.fn(() => {
+          events.push('destroyBuffer');
+        }),
+      };
+      return buf;
+    }),
+    createComputePipelineAsync: vi.fn(async (desc: unknown) => ({desc})),
+  };
+
+  return {device, queue, encoders, events};
+}
+
+describe('wrapWebGpuDevice and installWebGpuTimeslicing', () => {
+  it('splits a large compute pass across multiple command buffers and replays state with snapshotted dynamic offsets', async () => {
+    const {device, encoders, events} = createMockWebGpuDevice();
+    wrapWebGpuDevice(device);
+
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    pass.setPipeline('pipe-A');
+    const dynamicOffsets = new Uint32Array([128, 256, 512]);
+    pass.setBindGroup(0, 'group-0', dynamicOffsets, 1, 2);
+    // Mutate the typed array in place to simulate WASM stack reuse.
+    dynamicOffsets[1] = 9999;
+    dynamicOffsets[2] = 8888;
+
+    for (let i = 0; i < 70; i++) {
+      pass.dispatchWorkgroups(2, 1, 1);
+    }
+    pass.end();
+    const finished = enc.finish();
+
+    device.queue.submit([finished as {id: number}]);
+    await device.queue.onSubmittedWorkDone();
+
+    expect(encoders).toHaveLength(3);
+    expect(
+      encoders[0].passes[0].calls.filter((c) => c.type === 'dispatch')
+    ).toHaveLength(32);
+    expect(
+      encoders[1].passes[0].calls.filter((c) => c.type === 'dispatch')
+    ).toHaveLength(32);
+    expect(
+      encoders[2].passes[0].calls.filter((c) => c.type === 'dispatch')
+    ).toHaveLength(6);
+    expect(encoders[1].passes[0].calls[0]).toEqual({
+      type: 'setPipeline',
+      args: ['pipe-A'],
+    });
+    expect(encoders[1].passes[0].calls[1]).toEqual({
+      type: 'setBindGroup',
+      args: [0, 'group-0', [256, 512], 0, 2],
+    });
+    expect(events).toEqual([
+      'submit:1',
+      'submit:2',
+      'onSubmittedWorkDone',
+      'submit:3',
+      'onSubmittedWorkDone',
+    ]);
+  });
+
+  it('splits heavy prefill dispatches when workgroup count reaches threshold and preserves FIFO order for writeBuffer, destroy, and mapAsync', async () => {
+    const {device, encoders, events} = createMockWebGpuDevice();
+    wrapWebGpuDevice(device);
+
+    const readbackBuffer = device.createBuffer({size: 64});
+    const tempBuffer = device.createBuffer({size: 64});
+
+    device.queue.writeBuffer(tempBuffer, 0, new Uint8Array(16));
+
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    pass.setPipeline('prefill-matmul');
+    pass.setBindGroup(0, 'weights');
+    pass.dispatchWorkgroups(32768, 8, 1); // 262144 workgroups -> hits chunk & sync threshold after 1 dispatch
+    pass.dispatchWorkgroups(32768, 8, 1);
+    pass.end();
+    const cmdBuf = enc.finish();
+
+    device.queue.submit([cmdBuf as {id: number}]);
+    tempBuffer.destroy();
+
+    await readbackBuffer.mapAsync(1);
+
+    expect(encoders).toHaveLength(2);
+    expect(events).toEqual([
+      'writeBuffer:0',
+      'submit:1',
+      'onSubmittedWorkDone',
+      'submit:2',
+      'onSubmittedWorkDone',
+      'destroyBuffer',
+      'mapAsync',
+    ]);
+  });
+
+  it('adaptively increases sync interval on fast GPUs to reduce mid-token sync overhead', async () => {
+    const {device, events} = createMockWebGpuDevice();
+    wrapWebGpuDevice(device);
+
+    // First token: 160 dispatches (5 chunks of 32).
+    // Starts at 64 dispatches/sync -> syncs after chunk 2 (64 dispatches),
+    // scales up to 96 -> syncs after chunk 5? No, chunks 3..5 are 96 dispatches,
+    // and hasMoreSubmits() is false after chunk 5, so only 1 mid-token sync!
+    const enc = device.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    for (let i = 0; i < 160; i++) {
+      pass.dispatchWorkgroups(4, 1, 1);
+    }
+    pass.end();
+    const cmdBuf = enc.finish();
+
+    const readback = device.createBuffer({size: 16});
+    device.queue.submit([cmdBuf as {id: number}]);
+    await readback.mapAsync(1);
+
+    expect(events).toEqual([
+      'submit:1',
+      'submit:2',
+      'onSubmittedWorkDone',
+      'submit:3',
+      'submit:4',
+      'submit:5',
+      'mapAsync',
+    ]);
+  });
+
+  it('installs timeslicing on navigator.gpu idempotently', async () => {
+    const {device, encoders} = createMockWebGpuDevice();
+    const rawCreateCommandEncoder = device.createCommandEncoder;
+    const adapter = {
+      requestDevice: vi.fn(async () => device),
+    };
+    const gpu = {
+      requestAdapter: vi.fn(async () => adapter),
+    };
+
+    installWebGpuTimeslicing(gpu);
+    const wrappedRequestAdapter = gpu.requestAdapter;
+    installWebGpuTimeslicing(gpu);
+    expect(gpu.requestAdapter).toBe(wrappedRequestAdapter);
+
+    const requestedAdapter = await gpu.requestAdapter();
+    const requestedDevice = await requestedAdapter.requestDevice();
+    expect(requestedDevice).toBe(device);
+    expect(requestedDevice.createCommandEncoder).not.toBe(
+      rawCreateCommandEncoder
+    );
+
+    const enc = requestedDevice.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    for (let i = 0; i < 33; i++) pass.dispatchWorkgroups(1, 1, 1);
+    pass.end();
+    enc.finish();
+    expect(encoders).toHaveLength(2);
   });
 });

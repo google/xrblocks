@@ -596,6 +596,10 @@ export class GemmaScene extends xb.Script {
 
   flushText() {
     if (this.pendingText === undefined || !this.response) return;
+    if (this.pendingText === this.response.text) {
+      this.pendingText = undefined;
+      return;
+    }
     this.queueBottom();
     this.response.text = this.pendingText;
     this.response.display = displayReply(this.pendingText);
