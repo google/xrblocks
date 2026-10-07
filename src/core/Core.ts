@@ -19,6 +19,7 @@ import {Input} from '../input/Input';
 import {Interaction} from '../interaction/Interaction';
 import {ReticlePresenter} from '../interaction/ReticlePresenter';
 import {UIRenderer} from '../ui/internal/UIRenderer';
+import {STENCIL_CLEAR} from '../ui/internal/PanelLayerRegistry';
 import {isUIElement} from '../ui/UIElement';
 import {Lighting} from '../lighting/Lighting';
 import {Physics} from '../physics/Physics';
@@ -1027,6 +1028,18 @@ export class Core {
 
   private renderScene(cameraOverride?: THREE.Camera) {
     const camera = cameraOverride ?? this.camera;
+    // Panel layering (see PanelLayerRegistry) stamps panel coverage into the
+    // stencil buffer during the main-scene render; start each frame from
+    // 0x0f = "no panel behind, no content in front", so content outside every
+    // stamp (edge highlights, shadows, anything past the slab outline) draws
+    // normally and glass shells draw opaquely over the world.
+    if ('clearStencil' in this.renderer) {
+      const gl = (this.renderer as THREE.WebGLRenderer).getContext?.() as
+        | WebGL2RenderingContext
+        | undefined;
+      gl?.clearStencil?.(STENCIL_CLEAR);
+      this.renderer.clearStencil();
+    }
     if (this.renderSceneOverride) {
       this.renderSceneOverride(this.renderer, this.scene, camera);
     } else if (this.effects) {

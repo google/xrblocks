@@ -122,9 +122,12 @@ export class Options {
    */
   debugging = false;
   /**
-   * Whether to request a stencil buffer.
+   * Whether to request a stencil buffer. Enabled by default: world-space UI
+   * panel layering (see PanelLayerRegistry) needs it to resolve panel-over-
+   * panel occlusion at overlaps. Without a stencil buffer panels fall back to
+   * per-pixel depth testing and crossing (tilted) panels can interleave.
    */
-  stencil = false;
+  stencil = true;
   /**
    * Canvas element to use for rendering.
    * If not defined, a new element will be added to document body.

@@ -41,6 +41,12 @@ import {GradientPanel} from '../primitives/GradientPanel';
 import {MergedSvg} from '../primitives/MergedSvg';
 import {UICardEdge} from './UICardEdge';
 import {
+  applyContentStencil,
+  applyShellStencil,
+  panelLayers,
+  StencilMaterial,
+} from './PanelLayerRegistry';
+import {
   AdaptiveText,
   nativeTextWrapping,
   type AdaptiveTextProperties,
@@ -132,6 +138,12 @@ class UIKitMount implements UIMount {
           height: (width) => this.measureCardContentHeight(card, width),
           minWidth: () => this.measureCardMinContentWidth(card),
         });
+        if (!this.isOverlay) {
+          panelLayers.register(this.object, this.binding.node);
+          // The first present ran before registration existed; re-apply so
+          // the committed subtree picks up panel layering.
+          this.binding.refreshDepthPolicy();
+        }
       }
     }
 
@@ -158,6 +170,7 @@ class UIKitMount implements UIMount {
   }
 
   update(deltaSeconds: number): void {
+    panelLayers.update();
     this.rendered?.update(deltaSeconds * 1000);
     this.binding?.afterLayout(deltaSeconds);
     if (!(this.root instanceof UICard) || !this.binding) return;
@@ -226,6 +239,7 @@ class UIKitMount implements UIMount {
       setUICardContentMeasurer(this.root, undefined);
     }
     const binding = this.binding;
+    if (binding) panelLayers.unregister(binding.node);
     const rendered = this.rendered;
     binding?.dispose();
     if (rendered && rendered !== binding?.node) {
@@ -755,13 +769,22 @@ class UIKitNodeBinding {
     this.node.dispose();
   }
 
+  /** Re-applies the depth/layering policy (e.g. after panel registration). */
+  refreshDepthPolicy(): void {
+    this.enforceDepthPolicy(
+      this.node,
+      this.presentedProperties.renderOrder === undefined
+    );
+  }
+
   /**
    * Enforces the depth policy on every mesh of a presentation subtree.
    * Solid content must write and test depth in world space so occlusion
    * resolves per pixel; soft layers only test; overlay subtrees do neither.
-   * This is belt-and-braces over the per-element style flags, catching
-   * renderers created by generated content (button labels, slider chrome)
-   * that never see propertiesFor's output.
+   * Content inside a registered panel also stencil-tests against its slab
+   * level (see PanelLayerRegistry). This is belt-and-braces over the
+   * per-element style flags, catching renderers created by generated content
+   * (button labels, slider chrome) that never see propertiesFor's output.
    */
   private enforceDepthPolicy(root: THREE.Object3D, worldSpace: boolean): void {
     const softName = /caret|selection|shadow|glow|backface/i;
@@ -770,18 +793,40 @@ class UIKitNodeBinding {
       'UnifiedPanelLayer',
       'InstancedPanelMesh',
     ]);
+    // Panel layering: content inside a registered panel may only draw where
+    // its own slab is the front-most panel covering the pixel (see
+    // PanelLayerRegistry). Content outside any panel keeps plain depth.
+    let owner: THREE.Object3D | null = root;
+    while (owner && !panelLayers.has(owner)) owner = owner.parent;
+    const panelLevel = owner ? panelLayers.getLevel(owner) : undefined;
     root.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
+      if (panelLayers.isPanelLayerStamp(mesh)) return;
       const material = mesh.material as THREE.Material | THREE.Material[];
       const list = Array.isArray(material) ? material : [material];
+      const invisible = list.every((entry) => entry.colorWrite === false);
       const soft =
         softClasses.has(mesh.constructor.name) ||
         softName.test(mesh.name) ||
-        list.every((entry) => entry.colorWrite === false);
-      for (const entry of list) {
+        invisible;
+      for (const raw of list) {
+        const entry = raw as StencilMaterial;
         entry.depthTest = worldSpace;
         entry.depthWrite = worldSpace && !soft;
+        entry.stencilWrite = false;
+        if (worldSpace && panelLevel !== undefined && !invisible) {
+          // three gates the whole stencil unit on `stencilWrite`; content
+          // tests against the panel layering but never writes (mask 0).
+          // The glass shell stays opaque where no panel is behind it and
+          // steps aside where one is (see PanelLayerRegistry); solid content
+          // only draws where no panel in front has content.
+          if (owner && panelLayers.isGlassShell(owner, mesh)) {
+            applyShellStencil(entry, panelLevel);
+          } else {
+            applyContentStencil(entry, panelLevel);
+          }
+        }
       }
     });
   }

@@ -16,6 +16,7 @@ import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
 import {createUIBackend} from './UIKitBackend';
+import {panelLayers} from './PanelLayerRegistry';
 
 describe('UIKitMount retained updates', () => {
   it.each([
@@ -487,6 +488,58 @@ describe('world UI depth policy', () => {
       });
     }
     expect(checked).toBeGreaterThan(0);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('applies panel layering to card content and stamps its content', () => {
+    const text = new UIText({text: 'Tune'});
+    const card = new UICard({
+      size: {width: 1, height: 1},
+      children: [new UIPanel({children: [text]})],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    mount.update(1 / 60);
+
+    const stamps = panelLayers.stampMeshes();
+    expect(stamps.length).toBeGreaterThanOrEqual(1);
+    const stampMaterial = stamps[0].material as THREE.MeshBasicMaterial;
+    expect(stampMaterial.colorWrite).toBe(false);
+    expect(stampMaterial.depthTest).toBe(false);
+    expect(stampMaterial.stencilWrite).toBe(true);
+    expect(stampMaterial.stencilZPass).toBe(THREE.ReplaceStencilOp);
+
+    const materials = materialsFor(mappings, text);
+    expect(materials.length).toBeGreaterThan(0);
+    for (const material of materials) {
+      const stencil = material as THREE.MeshBasicMaterial;
+      expect(stencil.stencilWrite).toBe(true);
+      expect(stencil.stencilWriteMask).toBe(0);
+      expect(stencil.stencilFunc).toBe(THREE.GreaterEqualStencilFunc);
+      expect(stencil.stencilFuncMask).toBe(0x0f);
+      expect(stencil.stencilRef).toBe(stampMaterial.stencilRef);
+    }
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('leaves overlay content outside panel layering', () => {
+    const image = new UIImage({src: texture()});
+    const overlay = new UIOverlay({children: [image]});
+    const backend = createUIBackend();
+    const mount = backend.createMount(overlay);
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+
+    const materials = materialsFor(mappings, image);
+    expect(materials.length).toBeGreaterThan(0);
+    for (const material of materials) {
+      const stencil = material as THREE.MeshBasicMaterial;
+      expect(stencil.stencilWrite).toBe(false);
+    }
 
     mount.dispose();
     backend.dispose();
