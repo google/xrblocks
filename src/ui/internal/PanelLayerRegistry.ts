@@ -75,14 +75,15 @@ export type StencilMaterial = THREE.Material & {
   stencilZPass: number;
 };
 
-/** Content test: draws where no panel in front has content (low nibble). */
+/** Content test: draws where no panel in front has content (low nibble).
+ * GL compares `ref FUNC buffer`, so "buffer >= level" is `LessEqual`. */
 export function applyContentStencil(
   material: StencilMaterial,
   level: number
 ): void {
   material.stencilWrite = true;
   material.stencilWriteMask = 0;
-  material.stencilFunc = THREE.GreaterEqualStencilFunc;
+  material.stencilFunc = THREE.LessEqualStencilFunc;
   material.stencilFuncMask = 0x0f;
   material.stencilRef = Math.min(level, MAX_LEVEL);
   material.stencilFail = THREE.KeepStencilOp;
@@ -90,14 +91,15 @@ export function applyContentStencil(
   material.stencilZPass = THREE.KeepStencilOp;
 }
 
-/** Glass shell test: draws opaquely where no panel is behind (high nibble). */
+/** Glass shell test: draws opaquely where no panel is behind (high nibble).
+ * "buffer <= level" is `GreaterEqual` in GL's `ref FUNC buffer` order. */
 export function applyShellStencil(
   material: StencilMaterial,
   level: number
 ): void {
   material.stencilWrite = true;
   material.stencilWriteMask = 0;
-  material.stencilFunc = THREE.LessEqualStencilFunc;
+  material.stencilFunc = THREE.GreaterEqualStencilFunc;
   material.stencilFuncMask = 0xf0;
   material.stencilRef = Math.min(level, MAX_LEVEL) << 4;
   material.stencilFail = THREE.KeepStencilOp;
@@ -192,7 +194,7 @@ function createTintTwin(slab: THREE.Mesh, level: number): THREE.Mesh {
     depthTest: true,
     stencilWrite: true,
     stencilWriteMask: 0,
-    stencilFunc: THREE.GreaterEqualStencilFunc,
+    stencilFunc: THREE.LessEqualStencilFunc,
     stencilFuncMask: 0xf0,
     stencilRef: (Math.min(level, MAX_LEVEL) + 1) << 4,
     stencilFail: THREE.KeepStencilOp,

@@ -518,7 +518,8 @@ describe('world UI depth policy', () => {
       const stencil = material as THREE.MeshBasicMaterial;
       expect(stencil.stencilWrite).toBe(true);
       expect(stencil.stencilWriteMask).toBe(0);
-      expect(stencil.stencilFunc).toBe(THREE.GreaterEqualStencilFunc);
+      // GL tests `ref FUNC buffer`: draws where buffer >= level.
+      expect(stencil.stencilFunc).toBe(THREE.LessEqualStencilFunc);
       expect(stencil.stencilFuncMask).toBe(0x0f);
       expect(stencil.stencilRef).toBe(stampMaterial.stencilRef);
     }

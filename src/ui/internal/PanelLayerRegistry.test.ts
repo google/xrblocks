@@ -88,6 +88,10 @@ describe('PanelLayerRegistry', () => {
         .material as StencilMaterial;
       expect(tint.stencilWriteMask).toBe(0);
       expect(tint.stencilRef).toBe(0x20);
+      // GL tests `ref FUNC buffer`: the tint draws where buffer >= next
+      // level ("a panel behind covers this pixel").
+      expect(tint.stencilFunc).toBe(THREE.LessEqualStencilFunc);
+      expect(tint.stencilFuncMask).toBe(0xf0);
     } finally {
       panelLayers.unregister(p.root);
     }

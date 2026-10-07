@@ -1034,11 +1034,21 @@ export class Core {
     // stamp (edge highlights, shadows, anything past the slab outline) draws
     // normally and glass shells draw opaquely over the world.
     if ('clearStencil' in this.renderer) {
-      const gl = (this.renderer as THREE.WebGLRenderer).getContext?.() as
-        | WebGL2RenderingContext
-        | undefined;
-      gl?.clearStencil?.(STENCIL_CLEAR);
-      this.renderer.clearStencil();
+      const renderer = this.renderer as THREE.WebGLRenderer;
+      const state = renderer.state as unknown as {
+        buffers?: {
+          stencil?: {
+            setClear?: (value: number) => void;
+            setMask?: (mask: number) => void;
+          };
+        };
+      };
+      // gl.clear(STENCIL_BUFFER_BIT) honors the current stencil WRITE mask;
+      // the last drawn panel material leaves it at 0, which silently masks the
+      // clear out and freezes stale stencil values into every later frame.
+      state.buffers?.stencil?.setMask?.(0xffffffff);
+      state.buffers?.stencil?.setClear?.(STENCIL_CLEAR);
+      renderer.clearStencil();
     }
     if (this.renderSceneOverride) {
       this.renderSceneOverride(this.renderer, this.scene, camera);
