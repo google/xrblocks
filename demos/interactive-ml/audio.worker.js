@@ -10,8 +10,8 @@ self.onmessage = async ({data}) => {
       let accelerated = false;
       try {
         accelerated = await tf.setBackend('webgl');
-      } catch {          
-          console.error("Worker has no usable GPU context.");
+      } catch {
+        console.error('Worker has no usable GPU context.');
       }
       if (!accelerated) await tf.setBackend('cpu');
       await tf.ready();

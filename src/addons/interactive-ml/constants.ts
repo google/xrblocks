@@ -55,7 +55,7 @@ export const MIN_PALM_AXIS_LENGTH = 0.005;
 export const MAX_HAND_FRAMES = 300;
 export const MAX_HAND_CLIP_DURATION_MS = 10000;
 
-// YAMNet model 
+// YAMNet model
 export const YAMNET_URL = 'https://tfhub.dev/google/tfjs-model/yamnet/tfjs/1';
 export const YAMNET_FEATURE_ID = 'google-yamnet-tfjs-1:mono16k-mean-l2-v1';
 export const YAMNET_DIMENSIONS = 1024;
