@@ -21,6 +21,7 @@ export * from './core/components/Registry';
 export * from './core/components/ScreenshotSynthesizer';
 export * from './core/components/ScriptsManager';
 export * from './core/components/WaitFrame';
+export * from './core/components/WebXRSessionManager';
 export * from './core/components/XRButton';
 export * from './core/components/XREffects';
 export * from './core/components/XRReferenceSpaceCache';
@@ -28,6 +29,7 @@ export * from './core/Core';
 export * from './core/Options';
 export {
   RENDERER_BACKENDS,
+  type FramebufferScaleFactor,
   type RendererBackend,
   type WebGPURendererOptions,
 } from './core/Options';
@@ -47,6 +49,8 @@ export * from './depth/DepthOptions';
 export * from './depth/DepthTextures';
 export * from './depth/occlusion/OcclusionPass';
 export * from './depth/occlusion/OcclusionUtils';
+export * from './generative/BackgroundKeyer';
+export * from './generative/GenerativeObjectUtils';
 export * from './input/components/HandJointNames';
 export * from './input/GamepadController';
 export * from './input/GamepadBindings';
@@ -102,6 +106,7 @@ export type {SimulatorControls} from './simulator/SimulatorControls';
 export type {SimulatorDepth} from './simulator/scene/SimulatorDepth';
 export type {SimulatorDepthMaterial} from './simulator/scene/SimulatorDepthMaterial';
 export type {
+  SimulatorDayNightLightingDefinition,
   SimulatorLocationDefinition,
   SimulatorLocations,
   SimulatorObjectDefinition,

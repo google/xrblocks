@@ -1694,8 +1694,13 @@ export class RoomcraftConsole extends xb.Script {
       ai.options.model = 'gemini';
       ai.options.gemini.enabled = true;
       ai.options.gemini.config = {
-        responseMimeType: 'application/json',
-        responseJsonSchema: SCENE_PLAN_SCHEMA,
+        response_format: [
+          {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: SCENE_PLAN_SCHEMA,
+          },
+        ],
       };
       await ai.initializeModel(xb.Gemini, ai.options.gemini);
       if (this.disposed) return;
@@ -2496,8 +2501,13 @@ export function createRoomcraftOptions(virtual = false) {
   // No model request happens on load; the demo connects Gemini on demand.
   options.ai.gemini.enabled = false;
   options.ai.gemini.config = {
-    responseMimeType: 'application/json',
-    responseJsonSchema: SCENE_PLAN_SCHEMA,
+    response_format: [
+      {
+        type: 'text',
+        mime_type: 'application/json',
+        schema: SCENE_PLAN_SCHEMA,
+      },
+    ],
   };
   options.enablePlaneDetection();
   options.enableHands();

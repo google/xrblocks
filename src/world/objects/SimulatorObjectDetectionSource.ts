@@ -7,7 +7,7 @@ import type {
 import type {SimulatorObjects} from '../../simulator/scene/SimulatorObjects';
 import {SimulatorScene} from '../../simulator/scene/SimulatorScene';
 
-const samplePoints = Array.from({length: 9}, () => new THREE.Vector3());
+const samplePoints = Array.from({length: 15}, () => new THREE.Vector3());
 
 /** Ground-truth object detection for the desktop simulator. */
 export class SimulatorObjectDetectionSource implements ObjectDetectionSource {
@@ -61,7 +61,7 @@ export class SimulatorObjectDetectionSource implements ObjectDetectionSource {
   }
 
   private fillSamples(box: THREE.Box3) {
-    box.getCenter(samplePoints[0]);
+    const center = box.getCenter(samplePoints[0]);
     let index = 1;
     for (const x of [box.min.x, box.max.x]) {
       for (const y of [box.min.y, box.max.y]) {
@@ -70,6 +70,12 @@ export class SimulatorObjectDetectionSource implements ObjectDetectionSource {
         }
       }
     }
+    samplePoints[index++].set(box.min.x, center.y, center.z);
+    samplePoints[index++].set(box.max.x, center.y, center.z);
+    samplePoints[index++].set(center.x, box.min.y, center.z);
+    samplePoints[index++].set(center.x, box.max.y, center.z);
+    samplePoints[index++].set(center.x, center.y, box.min.z);
+    samplePoints[index].set(center.x, center.y, box.max.z);
   }
 
   private isVisible(

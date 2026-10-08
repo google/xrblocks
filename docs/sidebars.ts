@@ -102,6 +102,8 @@ const sidebars: SidebarsConfig = {
         'samples/Gemini-Icebreakers',
         'samples/Collaborative-Roomcraft',
         'samples/Super-Resolution',
+        'samples/Offline-Captions',
+        'samples/Gemma-On-Device',
       ],
     },
     {

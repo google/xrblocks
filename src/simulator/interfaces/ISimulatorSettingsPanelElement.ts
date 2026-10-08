@@ -7,4 +7,7 @@ export interface ISimulatorSettingsPanelElement extends HTMLElement {
   instructionsEnabled?: boolean;
   handPhysicsAvailable: boolean;
   handPhysicsEnabled: boolean;
+  dayNightAvailable: boolean;
+  dayNightEnabled: boolean;
+  timeOfDay: number;
 }
