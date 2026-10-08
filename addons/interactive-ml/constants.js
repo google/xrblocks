@@ -1,0 +1,94 @@
+//#region src/addons/interactive-ml/constants.ts
+const MAX_EXAMPLES = 512;
+const MAX_EXAMPLES_PER_CLASS = 64;
+const MIN_CLASSES = 2;
+const MAX_CLASSES = 32;
+const MAX_LABEL_LENGTH = 80;
+const MAX_FEATURE_ID_LENGTH = 512;
+const MAX_FEATURE_DIMENSIONS = 2048;
+const UNKNOWN_LABEL = "(unknown)";
+const RESERVED_LABELS = [
+	"__proto__",
+	"constructor",
+	"prototype",
+	UNKNOWN_LABEL
+];
+const DEFAULT_EPOCHS = 100;
+const MAX_EPOCHS = 500;
+const DEFAULT_THRESHOLD = .65;
+const MIN_FEATURE_SCALE = .01;
+const MIN_CLASS_RADIUS = 1;
+const CLASS_RADIUS_MULTIPLIER = 1.5;
+const LEARNING_RATE_FACTOR = .5;
+const WEIGHT_DECAY = .001;
+const PROGRESS_INTERVAL_EPOCHS = 5;
+const HAND_FEATURE_ID = "xr-hand-palm-v1";
+const HAND_JOINTS = [
+	"thumb-metacarpal",
+	"thumb-phalanx-proximal",
+	"thumb-phalanx-distal",
+	"thumb-tip",
+	...[
+		"index-finger",
+		"middle-finger",
+		"ring-finger",
+		"pinky-finger"
+	].flatMap((finger) => [
+		"phalanx-proximal",
+		"phalanx-intermediate",
+		"phalanx-distal",
+		"tip"
+	].map((part) => `${finger}-${part}`))
+];
+const HAND_FEATURE_SIZE = HAND_JOINTS.length * 3;
+const PALM_INDEX_JOINT = 4;
+const PALM_MIDDLE_JOINT = 8;
+const PALM_PINKY_JOINT = 16;
+const MIN_PALM_AXIS_LENGTH = .005;
+const MAX_HAND_FRAMES = 300;
+const MAX_HAND_CLIP_DURATION_MS = 1e4;
+const YAMNET_URL = "https://tfhub.dev/google/tfjs-model/yamnet/tfjs/1";
+const YAMNET_FEATURE_ID = "google-yamnet-tfjs-1:mono16k-mean-l2-v1";
+const YAMNET_DIMENSIONS = 1024;
+const YAMNET_SAMPLE_RATE = 16e3;
+const YAMNET_MIN_SAMPLES = 15600;
+const MIN_AUDIO_SAMPLE_RATE = 8e3;
+const MAX_AUDIO_SAMPLE_RATE = 192e3;
+const MIN_AUDIO_DURATION_SECONDS = .1;
+const MAX_AUDIO_DURATION_SECONDS = 10;
+const RESAMPLE_FILTER_RADIUS = 16;
+const SINC_EPSILON = 1e-8;
+const MODEL_FORMAT = "xrblocks-interactive-ml";
+const HAND_PROJECT_FORMAT = "xrblocks-interactive-ml-project";
+const SOUND_PROJECT_FORMAT = "xrblocks-interactive-ml-sound-project";
+const TFLITE_FORMAT = "xrblocks-interactive-ml-tflite";
+const ARTIFACT_VERSION = 1;
+const TFLITE_FLOAT32 = 0;
+const TFLITE_INT32 = 2;
+const TFLITE_BOOL = 6;
+const TFLITE_OPS = {
+	sub: [41, 28],
+	div: [42, 29],
+	dense: [9, 8],
+	softmax: [25, 9],
+	argmax: [56, 40],
+	gather: [36, 23],
+	max: [82, 27],
+	squaredDifference: [99, 76],
+	mean: [40, 27],
+	sqrt: [75, 0],
+	greaterEqual: [62, 45],
+	lessEqual: [63, 46],
+	and: [86, 62],
+	select: [64, 47]
+};
+const TFLITE_SCHEMA_VERSION = 3;
+const TFLITE_IDENTIFIER = "TFL3";
+const TFLITE_METADATA_NAME = MODEL_FORMAT;
+const TFLITE_GRAPH_NAME = "interactive_ml";
+const TFLITE_SIGNATURE_NAME = "serving_default";
+const MAX_TFLITE_FILE_BYTES = 20971520;
+const MAX_TFLITE_TABLES = 128;
+const TFLITE_BUILDER_CAPACITY = 4096;
+//#endregion
+export { ARTIFACT_VERSION, CLASS_RADIUS_MULTIPLIER, DEFAULT_EPOCHS, DEFAULT_THRESHOLD, HAND_FEATURE_ID, HAND_FEATURE_SIZE, HAND_JOINTS, HAND_PROJECT_FORMAT, LEARNING_RATE_FACTOR, MAX_AUDIO_DURATION_SECONDS, MAX_AUDIO_SAMPLE_RATE, MAX_CLASSES, MAX_EPOCHS, MAX_EXAMPLES, MAX_EXAMPLES_PER_CLASS, MAX_FEATURE_DIMENSIONS, MAX_FEATURE_ID_LENGTH, MAX_HAND_CLIP_DURATION_MS, MAX_HAND_FRAMES, MAX_LABEL_LENGTH, MAX_TFLITE_FILE_BYTES, MAX_TFLITE_TABLES, MIN_AUDIO_DURATION_SECONDS, MIN_AUDIO_SAMPLE_RATE, MIN_CLASSES, MIN_CLASS_RADIUS, MIN_FEATURE_SCALE, MIN_PALM_AXIS_LENGTH, MODEL_FORMAT, PALM_INDEX_JOINT, PALM_MIDDLE_JOINT, PALM_PINKY_JOINT, PROGRESS_INTERVAL_EPOCHS, RESAMPLE_FILTER_RADIUS, RESERVED_LABELS, SINC_EPSILON, SOUND_PROJECT_FORMAT, TFLITE_BOOL, TFLITE_BUILDER_CAPACITY, TFLITE_FLOAT32, TFLITE_FORMAT, TFLITE_GRAPH_NAME, TFLITE_IDENTIFIER, TFLITE_INT32, TFLITE_METADATA_NAME, TFLITE_OPS, TFLITE_SCHEMA_VERSION, TFLITE_SIGNATURE_NAME, UNKNOWN_LABEL, WEIGHT_DECAY, YAMNET_DIMENSIONS, YAMNET_FEATURE_ID, YAMNET_MIN_SAMPLES, YAMNET_SAMPLE_RATE, YAMNET_URL };

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid a9c28bc
-* @builddate 2026-10-06T20:54:16.388Z
+* @commitid ea6d5f3
+* @builddate 2026-10-08T03:45:22.596Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1151,6 +1151,7 @@ function createQuadMesh(name) {
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.name = name;
 	mesh.frustumCulled = false;
+	mesh.visible = false;
 	mesh.userData.color = new THREE.Color(16777215);
 	let capacity = 0;
 	let positions = new THREE.BufferAttribute(/* @__PURE__ */ new Float32Array(0), POSITION_COMPONENTS);
@@ -1167,6 +1168,7 @@ function createQuadMesh(name) {
 	return {
 		mesh,
 		write(quads, color, alpha, z) {
+			mesh.visible = quads.length > 0;
 			if (quads.length > capacity) allocate(quads.length);
 			if (capacity === 0) {
 				geometry.setDrawRange(0, 0);
@@ -1183,7 +1185,6 @@ function createQuadMesh(name) {
 			positions.needsUpdate = true;
 			colors.needsUpdate = true;
 			geometry.setDrawRange(0, quads.length * VERTICES_PER_QUAD);
-			mesh.visible = quads.length > 0;
 		},
 		dispose() {
 			geometry.dispose();
