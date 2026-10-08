@@ -107,31 +107,93 @@ export function applyShellStencil(
   material.stencilZPass = THREE.KeepStencilOp;
 }
 
-function isShellMesh(mesh: THREE.Mesh, slab: THREE.Mesh | undefined): boolean {
+function isShellMesh(
+  mesh: THREE.Mesh,
+  slab: THREE.Mesh | undefined,
+  sizedLayout = false
+): boolean {
   if (slab && mesh === slab) return true;
   const name = mesh.name || '';
-  return SHELL_NAMES.has(name) || shellName.test(name);
+  if (SHELL_NAMES.has(name) || shellName.test(name)) return true;
+  // Panel-background layers (uikit's GradientPanel and its anonymous
+  // gradient/border quads) span the whole slab: they are the glass, not
+  // content. Stamping them made a panel's background clip the panel behind
+  // it wherever the fan layout's tilted slabs project over a neighbour,
+  // which cut real text at the default layout. Only applied when the layout
+  // produced real per-element sizes (degenerate layouts leave every quad
+  // slab-sized and would misclassify all content).
+  return sizedLayout && slab ? isPanelBackground(mesh, slab) : false;
+}
+
+function worldAxes(mesh: THREE.Mesh): [number, number] {
+  // Footprint = geometry size scaled by the world basis: correct whether the
+  // size lives in the geometry (tests, hand-built meshes) or the matrix
+  // (uikit's unit quads).
+  const geometry = mesh.geometry;
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const gx = box ? box.max.x - box.min.x : 1;
+  const gy = box ? box.max.y - box.min.y : 1;
+  mesh.updateWorldMatrix(true, false);
+  const e = mesh.matrixWorld.elements;
+  return [gx * Math.hypot(e[0], e[1], e[2]), gy * Math.hypot(e[4], e[5], e[6])];
+}
+
+function isPanelBackground(mesh: THREE.Mesh, slab: THREE.Mesh): boolean {
+  mesh.updateWorldMatrix(true, false);
+  slab.updateWorldMatrix(true, false);
+  const [mx, my] = worldAxes(mesh);
+  const [sx, sy] = worldAxes(slab);
+  return mx >= 0.85 * sx && my >= 0.85 * sy;
 }
 
 function isStampEligible(
   source: THREE.Mesh,
-  slab: THREE.Mesh | undefined
+  slab: THREE.Mesh | undefined,
+  sizedLayout = false
 ): boolean {
-  return !!source.geometry && source.visible && !isShellMesh(source, slab);
+  return (
+    !!source.geometry &&
+    source.visible &&
+    !isShellMesh(source, slab, sizedLayout)
+  );
 }
 
 function findSlabMesh(root: THREE.Object3D): THREE.Mesh | undefined {
+  // The slab is the panel's own background quad: the largest mesh in the
+  // subtree (first-match broke whenever content came first in traversal).
   let slab: THREE.Mesh | undefined;
+  let slabArea = 0;
   root.traverse((object) => {
-    if (slab) return;
     const mesh = object as THREE.Mesh;
-    if (mesh.isMesh && !isShellMeshName(mesh.name)) slab = mesh;
+    if (!mesh.isMesh || isShellMeshName(mesh.name)) return;
+    const [w, h] = worldAxes(mesh);
+    const area = w * h;
+    if (!slab || area > slabArea) {
+      slab = mesh;
+      slabArea = area;
+    }
   });
   return slab;
 }
 
 function isShellMeshName(name: string): boolean {
   return SHELL_NAMES.has(name || '');
+}
+
+/** Whether the layout produced real per-element sizes (content smaller than
+ * the slab). Degenerate layouts leave every quad slab-sized, so the
+ * background-footprint rule must not run there. */
+function hasSizedLayout(root: THREE.Object3D, slab: THREE.Mesh): boolean {
+  const [sw, sh] = worldAxes(slab);
+  let sized = false;
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (sized || !mesh.isMesh || mesh === slab) return;
+    const [w, h] = worldAxes(mesh);
+    if (w < 0.8 * sw && h < 0.8 * sh) sized = true;
+  });
+  return sized;
 }
 
 function createStampMesh(source: THREE.Mesh, level: number): THREE.Mesh {
@@ -207,6 +269,7 @@ function createTintTwin(slab: THREE.Mesh, level: number): THREE.Mesh {
 
 interface PanelRecord {
   /** Object the masks ride on (a plain Group outside the panel's layout). */
+  sizedLayout: boolean;
   readonly container: THREE.Object3D;
   /** The panel's physical root, used for level lookups and content updates. */
   readonly root: THREE.Object3D;
@@ -244,6 +307,7 @@ class PanelLayerRegistry {
       tint,
       stamps: new Map(),
       level,
+      sizedLayout: hasSizedLayout(root, slab),
     });
   }
 
@@ -276,7 +340,8 @@ class PanelLayerRegistry {
 
   /** Whether a mesh of the registered panel is its translucent glass shell. */
   isGlassShell(root: THREE.Object3D, mesh: THREE.Mesh): boolean {
-    return isShellMesh(mesh, this.records.get(root)?.slab);
+    const record = this.records.get(root);
+    return isShellMesh(mesh, record?.slab, record?.sizedLayout);
   }
 
   /** Stack level of a registered panel (1 = front-most). Unregistered = 1. */
@@ -329,12 +394,18 @@ class PanelLayerRegistry {
       // discover stamp sources every frame; stale twins are pruned below.
       record.root.traverse((object) => {
         const mesh = object as THREE.Mesh;
-        if (mesh.isMesh && isStampEligible(mesh, record.slab)) {
+        if (
+          mesh.isMesh &&
+          isStampEligible(mesh, record.slab, record.sizedLayout)
+        ) {
           this.ensureStamp(record, mesh);
         }
       });
       for (const [source, stamp] of record.stamps) {
-        if (!source.parent || !isStampEligible(source, record.slab)) {
+        if (
+          !source.parent ||
+          !isStampEligible(source, record.slab, record.sizedLayout)
+        ) {
           stamp.removeFromParent();
           (stamp.material as THREE.Material).dispose();
           record.stamps.delete(source);
@@ -373,7 +444,11 @@ class PanelLayerRegistry {
           // Layered content runs the stencil unit with a zero write mask
           // (see UIKitNodeBinding.enforceDepthPolicy); track its level.
           if (entry.stencilWrite && entry.stencilWriteMask === 0) {
-            entry.stencilRef = isShellMesh(mesh, record.slab)
+            entry.stencilRef = isShellMesh(
+              mesh,
+              record.slab,
+              record.sizedLayout
+            )
               ? level << 4
               : level;
           }
