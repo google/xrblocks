@@ -1,3 +1,14 @@
+import {
+  MAX_EXAMPLES,
+  MAX_EXAMPLES_PER_CLASS,
+  MAX_CLASSES,
+  MAX_FEATURE_ID_LENGTH,
+  MAX_FEATURE_DIMENSIONS,
+  DEFAULT_THRESHOLD,
+  MODEL_FORMAT,
+  SOUND_PROJECT_FORMAT,
+  ARTIFACT_VERSION,
+} from './constants';
 import {trainClassifier} from './Learning';
 import {Predictor} from './Predictor';
 import {assertLabel, assertVector, evaluatePredictions} from './Types';
@@ -14,8 +25,8 @@ export interface SoundFeatureExtractor {
   extract(clip: AudioClip): Promise<number[]>;
 }
 export interface SoundProject {
-  format: 'xrblocks-interactive-ml-sound-project';
-  version: 1;
+  format: typeof SOUND_PROJECT_FORMAT;
+  version: typeof ARTIFACT_VERSION;
   featureId: string;
   dimensions: number;
   examples: {id: string; label: string; features: number[]}[];
@@ -26,10 +37,10 @@ export class SoundTrainer {
   constructor(readonly extractor: SoundFeatureExtractor) {
     if (
       !extractor.featureId ||
-      extractor.featureId.length > 512 ||
+      extractor.featureId.length > MAX_FEATURE_ID_LENGTH ||
       !Number.isInteger(extractor.dimensions) ||
       extractor.dimensions < 1 ||
-      extractor.dimensions > 2048
+      extractor.dimensions > MAX_FEATURE_DIMENSIONS
     )
       throw new Error('Invalid audio feature extractor.');
   }
@@ -50,9 +61,9 @@ export class SoundTrainer {
     assertVector(features, this.extractor.dimensions);
     const counts = this.counts;
     if (
-      this.examples.length >= 512 ||
-      (counts[label] ?? 0) >= 64 ||
-      (!(label in counts) && Object.keys(counts).length >= 32)
+      this.examples.length >= MAX_EXAMPLES ||
+      (counts[label] ?? 0) >= MAX_EXAMPLES_PER_CLASS ||
+      (!(label in counts) && Object.keys(counts).length >= MAX_CLASSES)
     )
       throw new Error('Dataset limit reached. Remove examples first.');
     const id = crypto.randomUUID();
@@ -69,9 +80,9 @@ export class SoundTrainer {
     if (example.label === label) return;
     const counts = this.counts;
     if (
-      (counts[label] ?? 0) >= 64 ||
+      (counts[label] ?? 0) >= MAX_EXAMPLES_PER_CLASS ||
       (!(label in counts) &&
-        Object.keys(counts).length >= 32 &&
+        Object.keys(counts).length >= MAX_CLASSES &&
         counts[example.label] > 1)
     )
       throw new Error('Class limit reached.');
@@ -83,11 +94,11 @@ export class SoundTrainer {
       options
     );
     return new Predictor({
-      format: 'xrblocks-interactive-ml',
-      version: 1,
+      format: MODEL_FORMAT,
+      version: ARTIFACT_VERSION,
       kind: 'sound',
       featureId: this.extractor.featureId,
-      threshold: options.threshold ?? 0.65,
+      threshold: options.threshold ?? DEFAULT_THRESHOLD,
       classifier,
     });
   }
@@ -116,8 +127,8 @@ export class SoundTrainer {
   }
   exportProject(): SoundProject {
     return structuredClone({
-      format: 'xrblocks-interactive-ml-sound-project',
-      version: 1,
+      format: SOUND_PROJECT_FORMAT,
+      version: ARTIFACT_VERSION,
       featureId: this.extractor.featureId,
       dimensions: this.extractor.dimensions,
       examples: this.examples,
@@ -127,12 +138,12 @@ export class SoundTrainer {
     const p = value as SoundProject;
     if (
       !p ||
-      p.format !== 'xrblocks-interactive-ml-sound-project' ||
-      p.version !== 1 ||
+      p.format !== SOUND_PROJECT_FORMAT ||
+      p.version !== ARTIFACT_VERSION ||
       p.featureId !== extractor.featureId ||
       p.dimensions !== extractor.dimensions ||
       !Array.isArray(p.examples) ||
-      p.examples.length > 512
+      p.examples.length > MAX_EXAMPLES
     )
       throw new Error('Incompatible sound project.');
     const trainer = new SoundTrainer(extractor);

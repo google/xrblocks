@@ -1,4 +1,5 @@
-export {captureHand, HAND_FEATURE_ID} from './HandFeatures';
+export {HAND_FEATURE_ID, YAMNET_FEATURE_ID, YAMNET_URL} from './constants';
+export {captureHand} from './HandFeatures';
 export {HandTrainer} from './HandTrainer';
 export type {HandExample, HandProject} from './HandTrainer';
 export {Predictor} from './Predictor';
@@ -8,12 +9,7 @@ export type {
   SoundFeatureExtractor,
   SoundProject,
 } from './SoundTrainer';
-export {
-  YamnetExtractor,
-  YAMNET_FEATURE_ID,
-  YAMNET_URL,
-  resampleAudio,
-} from './Yamnet';
+export {YamnetExtractor, resampleAudio} from './Yamnet';
 export type {YamnetRuntime} from './Yamnet';
 export type {
   HandFrame,

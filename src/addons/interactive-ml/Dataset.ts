@@ -1,3 +1,4 @@
+import {MAX_EXAMPLES, MAX_EXAMPLES_PER_CLASS, MAX_CLASSES} from './constants';
 import {assertLabel} from './Types';
 
 /** Shared dataset rules. Feature validation stays with each trainer. */
@@ -15,9 +16,9 @@ export class Dataset<T extends {id: string; label: string}> {
     assertLabel(example.label);
     const counts = this.counts;
     if (
-      this.examples.length >= 512 ||
-      (counts[example.label] ?? 0) >= 64 ||
-      (!(example.label in counts) && Object.keys(counts).length >= 32)
+      this.examples.length >= MAX_EXAMPLES ||
+      (counts[example.label] ?? 0) >= MAX_EXAMPLES_PER_CLASS ||
+      (!(example.label in counts) && Object.keys(counts).length >= MAX_CLASSES)
     ) {
       throw new Error('Dataset limit reached. Remove examples first.');
     }
@@ -42,9 +43,9 @@ export class Dataset<T extends {id: string; label: string}> {
     if (example.label === label) return;
     const counts = this.counts;
     if (
-      (counts[label] ?? 0) >= 64 ||
+      (counts[label] ?? 0) >= MAX_EXAMPLES_PER_CLASS ||
       (!(label in counts) &&
-        Object.keys(counts).length >= 32 &&
+        Object.keys(counts).length >= MAX_CLASSES &&
         counts[example.label] > 1)
     ) {
       throw new Error('Class limit reached.');

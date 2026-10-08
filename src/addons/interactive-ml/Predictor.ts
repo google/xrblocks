@@ -1,4 +1,14 @@
-import {HAND_FEATURE_ID, HAND_FEATURE_SIZE, poseFeatures} from './HandFeatures';
+import {
+  MIN_CLASSES,
+  MAX_CLASSES,
+  MAX_FEATURE_ID_LENGTH,
+  MAX_FEATURE_DIMENSIONS,
+  HAND_FEATURE_ID,
+  HAND_FEATURE_SIZE,
+  MODEL_FORMAT,
+  ARTIFACT_VERSION,
+} from './constants';
+import {poseFeatures} from './HandFeatures';
 import {probabilities} from './Learning';
 import {decodeTFLite, encodeTFLite} from './TFLite';
 import {assertLabel, assertVector} from './Types';
@@ -9,12 +19,12 @@ export function validateModel(value: unknown): ModelArtifact {
   if (!value || typeof value !== 'object') throw new Error('Invalid model.');
   const m = value as ModelArtifact;
   if (
-    m.format !== 'xrblocks-interactive-ml' ||
-    m.version !== 1 ||
+    m.format !== MODEL_FORMAT ||
+    m.version !== ARTIFACT_VERSION ||
     !['hand-pose', 'sound'].includes(m.kind) ||
     typeof m.featureId !== 'string' ||
     !m.featureId ||
-    m.featureId.length > 512 ||
+    m.featureId.length > MAX_FEATURE_ID_LENGTH ||
     !Number.isFinite(m.threshold) ||
     m.threshold < 0 ||
     m.threshold > 1
@@ -27,12 +37,12 @@ export function validateModel(value: unknown): ModelArtifact {
   if (
     !c ||
     !Array.isArray(c.labels) ||
-    c.labels.length < 2 ||
-    c.labels.length > 32 ||
+    c.labels.length < MIN_CLASSES ||
+    c.labels.length > MAX_CLASSES ||
     new Set(c.labels).size !== c.labels.length ||
     !Array.isArray(c.mean) ||
     c.mean.length < 1 ||
-    c.mean.length > 2048 ||
+    c.mean.length > MAX_FEATURE_DIMENSIONS ||
     (m.kind === 'hand-pose' && c.mean.length !== HAND_FEATURE_SIZE)
   )
     throw new Error('Invalid classifier.');

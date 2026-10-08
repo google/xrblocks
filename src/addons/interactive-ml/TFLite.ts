@@ -1,28 +1,29 @@
+import {
+  MIN_CLASSES,
+  MAX_CLASSES,
+  MAX_FEATURE_DIMENSIONS,
+  MODEL_FORMAT,
+  TFLITE_FORMAT,
+  ARTIFACT_VERSION,
+  TFLITE_FLOAT32,
+  TFLITE_INT32,
+  TFLITE_BOOL,
+  TFLITE_OPS,
+  TFLITE_SCHEMA_VERSION,
+  TFLITE_IDENTIFIER,
+  TFLITE_METADATA_NAME,
+  TFLITE_GRAPH_NAME,
+  TFLITE_SIGNATURE_NAME,
+  MAX_TFLITE_FILE_BYTES,
+  MAX_TFLITE_TABLES,
+  TFLITE_BUILDER_CAPACITY,
+} from './constants';
 import {Builder} from 'flatbuffers';
 import type {ModelArtifact} from './Types';
 
 // Field slots, operator IDs and option tags follow the TFLite v3 schema:
 // https://github.com/tensorflow/tensorflow/blob/v2.20.0/tensorflow/compiler/mlir/lite/schema/schema.fbs
 // Only the fixed classifier graph is supported; this is not a general converter.
-const FLOAT32 = 0;
-const INT32 = 2;
-const BOOL = 6;
-const ops = {
-  sub: [41, 28],
-  div: [42, 29],
-  dense: [9, 8],
-  softmax: [25, 9],
-  argmax: [56, 40],
-  gather: [36, 23],
-  max: [82, 27],
-  squaredDifference: [99, 76],
-  mean: [40, 27],
-  sqrt: [75, 0],
-  greaterEqual: [62, 45],
-  lessEqual: [63, 46],
-  and: [86, 62],
-  select: [64, 47],
-} as const;
 type Field = [
   slot: number,
   type: 'offset' | 'i32' | 'i8' | 'f32',
@@ -31,7 +32,7 @@ type Field = [
 
 /** Write a self-contained classifier with labels in custom JSON metadata. */
 export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
-  const b = new Builder(4096);
+  const b = new Builder(TFLITE_BUILDER_CAPACITY);
   function table(size: number, fields: Field[] = []) {
     b.startObject(size);
     for (const [slot, type, value] of fields) {
@@ -61,7 +62,7 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
   function tensor(
     name: string,
     shape: number[],
-    type = FLOAT32,
+    type = TFLITE_FLOAT32,
     values?: number[]
   ) {
     let bufferIndex = 0;
@@ -71,7 +72,7 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
       values.forEach((value, i) => {
         if (!Number.isFinite(Math.fround(value)))
           throw new Error('TFLite weights must fit in float32.');
-        if (type === INT32) view.setInt32(i * 4, value, true);
+        if (type === TFLITE_INT32) view.setInt32(i * 4, value, true);
         else view.setFloat32(i * 4, value, true);
       });
       bufferIndex = buffer(bytes);
@@ -89,12 +90,12 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
   const codes: number[] = [];
   const operators: number[] = [];
   function op(
-    name: keyof typeof ops,
+    name: keyof typeof TFLITE_OPS,
     inputs: number[],
     output: number,
     fields: Field[] = []
   ) {
-    const [code, tag] = ops[name];
+    const [code, tag] = TFLITE_OPS[name];
     // One code entry per operator keeps serialization independent of graph order.
     codes.push(
       table(4, [
@@ -124,25 +125,25 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
   )
     throw new Error('TFLite scale and radii must be positive in float32.');
   const input = tensor('features', [1, dimensions]);
-  const mean = tensor('mean', [dimensions], FLOAT32, c.mean);
-  const scale = tensor('scale', [dimensions], FLOAT32, c.scale);
+  const mean = tensor('mean', [dimensions], TFLITE_FLOAT32, c.mean);
+  const scale = tensor('scale', [dimensions], TFLITE_FLOAT32, c.scale);
   const weights = tensor(
     'weights',
     [classes, dimensions],
-    FLOAT32,
+    TFLITE_FLOAT32,
     c.weights.flat()
   );
-  const bias = tensor('bias', [classes], FLOAT32, c.bias);
+  const bias = tensor('bias', [classes], TFLITE_FLOAT32, c.bias);
   const centers = tensor(
     'centers',
     [classes, dimensions],
-    FLOAT32,
+    TFLITE_FLOAT32,
     c.centers.flat()
   );
-  const radii = tensor('radii', [classes], FLOAT32, c.radii);
-  const threshold = tensor('threshold', [1], FLOAT32, [model.threshold]);
-  const axis = tensor('axis', [], INT32, [1]);
-  const unknown = tensor('unknown', [1], INT32, [-1]);
+  const radii = tensor('radii', [classes], TFLITE_FLOAT32, c.radii);
+  const threshold = tensor('threshold', [1], TFLITE_FLOAT32, [model.threshold]);
+  const axis = tensor('axis', [], TFLITE_INT32, [1]);
+  const unknown = tensor('unknown', [1], TFLITE_INT32, [-1]);
   const centered = tensor('centered', [1, dimensions]);
   op('sub', [input, mean], centered);
   const normalized = tensor('normalized', [1, dimensions]);
@@ -151,8 +152,8 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
   op('dense', [normalized, weights, bias], logits);
   const scores = tensor('scores', [1, classes]);
   op('softmax', [logits], scores, [[0, 'f32', 1]]);
-  const best = tensor('best', [1], INT32);
-  op('argmax', [scores, axis], best, [[0, 'i8', INT32]]);
+  const best = tensor('best', [1], TFLITE_INT32);
+  op('argmax', [scores, axis], best, [[0, 'i8', TFLITE_INT32]]);
   const score = tensor('score', [1]);
   op('max', [scores, axis], score);
   const center = tensor('center', [1, dimensions]);
@@ -165,13 +166,13 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
   op('mean', [squared, axis], average);
   const distance = tensor('distance', [1]);
   op('sqrt', [average], distance);
-  const confident = tensor('confident', [1], BOOL);
+  const confident = tensor('confident', [1], TFLITE_BOOL);
   op('greaterEqual', [score, threshold], confident);
-  const nearby = tensor('nearby', [1], BOOL);
+  const nearby = tensor('nearby', [1], TFLITE_BOOL);
   op('lessEqual', [distance, radius], nearby);
-  const accepted = tensor('accepted', [1], BOOL);
+  const accepted = tensor('accepted', [1], TFLITE_BOOL);
   op('and', [confident, nearby], accepted);
-  const classIndex = tensor('class_index', [1], INT32);
+  const classIndex = tensor('class_index', [1], TFLITE_INT32);
   op('select', [accepted, best, unknown], classIndex);
 
   const outputs = [scores, score, classIndex];
@@ -180,7 +181,7 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
     [1, 'offset', vector([input])],
     [2, 'offset', vector(outputs)],
     [3, 'offset', vector(operators, true)],
-    [4, 'offset', b.createString('interactive_ml')],
+    [4, 'offset', b.createString(TFLITE_GRAPH_NAME)],
     [5, 'i32', -1],
   ]);
   const tensorMap = (name: string, index: number) =>
@@ -202,17 +203,17 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
         true
       ),
     ],
-    [2, 'offset', b.createString('serving_default')],
+    [2, 'offset', b.createString(TFLITE_SIGNATURE_NAME)],
   ]);
   const metadataIndex = buffer(
     new TextEncoder().encode(
       JSON.stringify({
-        format: 'xrblocks-interactive-ml-tflite',
-        version: 1,
+        format: TFLITE_FORMAT,
+        version: ARTIFACT_VERSION,
         kind: model.kind,
         featureId: model.featureId,
         labels: c.labels,
-        signature: 'serving_default',
+        signature: TFLITE_SIGNATURE_NAME,
         input: {name: 'features', dtype: 'float32', shape: [1, dimensions]},
         outputs: {
           scores: {dtype: 'float32', shape: [1, classes]},
@@ -224,11 +225,11 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
     )
   );
   const metadata = table(2, [
-    [0, 'offset', b.createString('xrblocks-interactive-ml')],
+    [0, 'offset', b.createString(TFLITE_METADATA_NAME)],
     [1, 'i32', metadataIndex],
   ]);
   const root = table(8, [
-    [0, 'i32', 3],
+    [0, 'i32', TFLITE_SCHEMA_VERSION],
     [1, 'offset', vector(codes, true)],
     [2, 'offset', vector([graph], true)],
     [3, 'offset', b.createString('XR Blocks pose/sound classifier')],
@@ -236,7 +237,7 @@ export function encodeTFLite(model: ModelArtifact): Uint8Array<ArrayBuffer> {
     [6, 'offset', vector([metadata], true)],
     [7, 'offset', vector([signature], true)],
   ]);
-  b.finish(root, 'TFL3');
+  b.finish(root, TFLITE_IDENTIFIER);
   return b.asUint8Array().slice();
 }
 
@@ -245,8 +246,8 @@ export function decodeTFLite(bytes: Uint8Array): ModelArtifact {
   const invalid = () => new Error('Invalid Interactive ML TFLite file.');
   if (
     bytes.length < 8 ||
-    bytes.length > 20 * 1024 * 1024 ||
-    new TextDecoder().decode(bytes.subarray(4, 8)) !== 'TFL3'
+    bytes.length > MAX_TFLITE_FILE_BYTES ||
+    new TextDecoder().decode(bytes.subarray(4, 8)) !== TFLITE_IDENTIFIER
   )
     throw invalid();
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -278,7 +279,7 @@ export function decodeTFLite(bytes: Uint8Array): ModelArtifact {
   }
   function tables(table: number, slot: number) {
     const {start, length} = vector(table, slot, 4);
-    if (length > 128) throw invalid();
+    if (length > MAX_TFLITE_TABLES) throw invalid();
     return Array.from({length}, (_, i) => start + i * 4 + u32(start + i * 4));
   }
   function data(table: number, slot: number) {
@@ -292,10 +293,10 @@ export function decodeTFLite(bytes: Uint8Array): ModelArtifact {
     return f ? u32(f) : 0;
   };
   const root = u32(0);
-  if (number(root, 0) !== 3) throw invalid();
+  if (number(root, 0) !== TFLITE_SCHEMA_VERSION) throw invalid();
   const buffers = tables(root, 4);
   const metadata = tables(root, 6).find(
-    (entry) => text(entry, 0) === 'xrblocks-interactive-ml'
+    (entry) => text(entry, 0) === TFLITE_METADATA_NAME
   );
   if (metadata === undefined) throw invalid();
   const metadataBuffer = buffers[number(metadata, 1)];
@@ -304,14 +305,14 @@ export function decodeTFLite(bytes: Uint8Array): ModelArtifact {
   const dimensions = info?.input?.shape?.[1];
   const classes = info?.labels?.length;
   if (
-    info?.format !== 'xrblocks-interactive-ml-tflite' ||
-    info.version !== 1 ||
+    info?.format !== TFLITE_FORMAT ||
+    info.version !== ARTIFACT_VERSION ||
     !Number.isInteger(dimensions) ||
     dimensions < 1 ||
-    dimensions > 2048 ||
+    dimensions > MAX_FEATURE_DIMENSIONS ||
     !Array.isArray(info.labels) ||
-    classes < 2 ||
-    classes > 32
+    classes < MIN_CLASSES ||
+    classes > MAX_CLASSES
   )
     throw invalid();
   const graphs = tables(root, 2);
@@ -328,7 +329,7 @@ export function decodeTFLite(bytes: Uint8Array): ModelArtifact {
     const type = field(tensor, 1);
     if (type) {
       check(type, 1);
-      if (view.getUint8(type) !== FLOAT32) throw invalid();
+      if (view.getUint8(type) !== TFLITE_FLOAT32) throw invalid();
     }
     const actual = vector(tensor, 0, 4);
     if (
@@ -352,8 +353,8 @@ export function decodeTFLite(bytes: Uint8Array): ModelArtifact {
     );
   };
   return {
-    format: 'xrblocks-interactive-ml',
-    version: 1,
+    format: MODEL_FORMAT,
+    version: ARTIFACT_VERSION,
     kind: info.kind,
     featureId: info.featureId,
     threshold: constant('threshold', [1])[0],

@@ -1,3 +1,15 @@
+import {
+  MIN_CLASSES,
+  MAX_CLASSES,
+  DEFAULT_EPOCHS,
+  MAX_EPOCHS,
+  MIN_FEATURE_SCALE,
+  MIN_CLASS_RADIUS,
+  CLASS_RADIUS_MULTIPLIER,
+  LEARNING_RATE_FACTOR,
+  WEIGHT_DECAY,
+  PROGRESS_INTERVAL_EPOCHS,
+} from './constants';
 import type {ClassifierData, TrainingOptions} from './Types';
 
 export function probabilities(features: number[], data: ClassifierData) {
@@ -16,12 +28,12 @@ export async function fitClassifier(
   samples: {label: string; features: number[]}[],
   options: TrainingOptions = {}
 ): Promise<ClassifierData> {
-  const epochs = options.epochs ?? 100;
-  if (!Number.isInteger(epochs) || epochs < 1 || epochs > 500)
-    throw new Error('Use 1–500 training epochs.');
+  const epochs = options.epochs ?? DEFAULT_EPOCHS;
+  if (!Number.isInteger(epochs) || epochs < 1 || epochs > MAX_EPOCHS)
+    throw new Error(`Use 1–${MAX_EPOCHS} training epochs.`);
   const labels = [...new Set(samples.map((s) => s.label))];
-  if (labels.length < 2 || labels.length > 32)
-    throw new Error('Training requires 2–32 classes.');
+  if (labels.length < MIN_CLASSES || labels.length > MAX_CLASSES)
+    throw new Error(`Training requires ${MIN_CLASSES}–${MAX_CLASSES} classes.`);
   const dimensions = samples[0].features.length;
   const mean = Array(dimensions).fill(0) as number[];
   const scale = Array(dimensions).fill(0) as number[];
@@ -32,7 +44,7 @@ export async function fitClassifier(
     for (let i = 0; i < dimensions; i++)
       scale[i] += (sample.features[i] - mean[i]) ** 2 / samples.length;
   for (let i = 0; i < dimensions; i++)
-    scale[i] = Math.max(Math.sqrt(scale[i]), 0.01);
+    scale[i] = Math.max(Math.sqrt(scale[i]), MIN_FEATURE_SCALE);
   const rows = samples.map((s) => ({
     target: labels.indexOf(s.label),
     x: s.features.map((v, i) => (v - mean[i]) / scale[i]),
@@ -46,13 +58,13 @@ export async function fitClassifier(
   for (const {x, target} of rows)
     for (let i = 0; i < dimensions; i++)
       centers[target][i] += x[i] / counts[target];
-  const radii = labels.map(() => 1);
+  const radii = labels.map(() => MIN_CLASS_RADIUS);
   for (const {x, target} of rows) {
     const distance = Math.sqrt(
       x.reduce((sum, v, i) => sum + (v - centers[target][i]) ** 2, 0) /
         dimensions
     );
-    radii[target] = Math.max(radii[target], distance * 1.5);
+    radii[target] = Math.max(radii[target], distance * CLASS_RADIUS_MULTIPLIER);
   }
   for (let epoch = 0; epoch < epochs; epoch++) {
     options.signal?.throwIfAborted();
@@ -73,13 +85,13 @@ export async function fitClassifier(
         for (let i = 0; i < dimensions; i++) gradient[k][i] += error * x[i];
       }
     }
-    const rate = 0.5 / Math.sqrt(dimensions);
+    const rate = LEARNING_RATE_FACTOR / Math.sqrt(dimensions);
     for (let k = 0; k < labels.length; k++) {
       bias[k] -= rate * biasGradient[k];
       for (let i = 0; i < dimensions; i++)
-        weights[k][i] -= rate * (gradient[k][i] + weights[k][i] * 0.001);
+        weights[k][i] -= rate * (gradient[k][i] + weights[k][i] * WEIGHT_DECAY);
     }
-    if (epoch % 5 === 0) {
+    if (epoch % PROGRESS_INTERVAL_EPOCHS === 0) {
       options.onProgress?.(epoch / epochs);
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }

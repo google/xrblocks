@@ -1,3 +1,16 @@
+import {
+  YAMNET_URL,
+  YAMNET_FEATURE_ID,
+  YAMNET_DIMENSIONS,
+  YAMNET_SAMPLE_RATE,
+  YAMNET_MIN_SAMPLES,
+  MIN_AUDIO_SAMPLE_RATE,
+  MAX_AUDIO_SAMPLE_RATE,
+  MIN_AUDIO_DURATION_SECONDS,
+  MAX_AUDIO_DURATION_SECONDS,
+  RESAMPLE_FILTER_RADIUS,
+  SINC_EPSILON,
+} from './constants';
 import type {AudioClip, SoundFeatureExtractor} from './SoundTrainer';
 
 /** Minimal TensorFlow.js surface. Pass the runtime explicitly; no core dependency. */
@@ -18,26 +31,25 @@ export interface YamnetRuntime {
   ): Promise<GraphModel>;
 }
 
-export const YAMNET_URL = 'https://tfhub.dev/google/tfjs-model/yamnet/tfjs/1';
-export const YAMNET_FEATURE_ID = 'google-yamnet-tfjs-1:mono16k-mean-l2-v1';
-
 /** Windowed-sinc resampling, including a low-pass filter when downsampling. */
 export function resampleAudio(clip: AudioClip): Float32Array {
   const {samples, sampleRate} = clip;
   if (
     !(samples instanceof Float32Array) ||
     !Number.isFinite(sampleRate) ||
-    sampleRate < 8000 ||
-    sampleRate > 192000 ||
-    samples.length < sampleRate * 0.1 ||
-    samples.length > sampleRate * 10 ||
+    sampleRate < MIN_AUDIO_SAMPLE_RATE ||
+    sampleRate > MAX_AUDIO_SAMPLE_RATE ||
+    samples.length < sampleRate * MIN_AUDIO_DURATION_SECONDS ||
+    samples.length > sampleRate * MAX_AUDIO_DURATION_SECONDS ||
     !samples.every((v) => Number.isFinite(v) && Math.abs(v) <= 1)
   )
-    throw new Error('Provide 0.1–10 seconds of finite mono PCM in [-1, 1].');
-  if (sampleRate === 16000) return samples.slice();
-  const ratio = sampleRate / 16000;
+    throw new Error(
+      `Provide ${MIN_AUDIO_DURATION_SECONDS}–${MAX_AUDIO_DURATION_SECONDS} seconds of finite mono PCM in [-1, 1].`
+    );
+  if (sampleRate === YAMNET_SAMPLE_RATE) return samples.slice();
+  const ratio = sampleRate / YAMNET_SAMPLE_RATE;
   const cutoff = Math.min(1, 1 / ratio);
-  const radius = Math.ceil(16 / cutoff);
+  const radius = Math.ceil(RESAMPLE_FILTER_RADIUS / cutoff);
   const output = new Float32Array(Math.round(samples.length / ratio));
   for (let i = 0; i < output.length; i++) {
     const center = i * ratio;
@@ -51,7 +63,7 @@ export function resampleAudio(clip: AudioClip): Float32Array {
       const distance = j - center;
       const phase = Math.PI * distance * cutoff;
       const weight =
-        (Math.abs(phase) < 1e-8 ? 1 : Math.sin(phase) / phase) *
+        (Math.abs(phase) < SINC_EPSILON ? 1 : Math.sin(phase) / phase) *
         (0.5 + 0.5 * Math.cos((Math.PI * distance) / radius));
       sum += samples[j] * weight;
       weights += weight;
@@ -65,7 +77,7 @@ export function resampleAudio(clip: AudioClip): Float32Array {
  * Model assets may be served locally; keep featureId tied to the exact weights.
  */
 export class YamnetExtractor implements SoundFeatureExtractor {
-  readonly dimensions = 1024;
+  readonly dimensions = YAMNET_DIMENSIONS;
   private closed = false;
   private busy = false;
   private constructor(
@@ -100,7 +112,9 @@ export class YamnetExtractor implements SoundFeatureExtractor {
     const samples = resampleAudio(clip);
     // Use at least one complete YAMNet window. Short clips are zero-padded.
     const waveform =
-      samples.length >= 15600 ? samples : new Float32Array(15600);
+      samples.length >= YAMNET_MIN_SAMPLES
+        ? samples
+        : new Float32Array(YAMNET_MIN_SAMPLES);
     if (waveform !== samples) waveform.set(samples);
     this.busy = true;
     let input: Tensor | undefined;
@@ -114,15 +128,17 @@ export class YamnetExtractor implements SoundFeatureExtractor {
           ? [result as Tensor]
           : Object.values(result);
       const embedding = outputs.find(
-        (t) => t.shape.length === 2 && t.shape[1] === 1024
+        (t) => t.shape.length === 2 && t.shape[1] === YAMNET_DIMENSIONS
       );
       if (!embedding || !embedding.shape[0])
-        throw new Error('YAMNet did not return 1024-dimensional embeddings.');
+        throw new Error(
+          `YAMNet did not return ${YAMNET_DIMENSIONS}-dimensional embeddings.`
+        );
       const values = await embedding.data();
-      const features = Array.from({length: 1024}, (_, i) => {
+      const features = Array.from({length: YAMNET_DIMENSIONS}, (_, i) => {
         let sum = 0;
         for (let row = 0; row < embedding.shape[0]; row++)
-          sum += values[row * 1024 + i];
+          sum += values[row * YAMNET_DIMENSIONS + i];
         return sum / embedding.shape[0];
       });
       const norm = Math.hypot(...features) || 1;

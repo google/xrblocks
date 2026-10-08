@@ -1,3 +1,10 @@
+import {
+  MAX_LABEL_LENGTH,
+  UNKNOWN_LABEL,
+  RESERVED_LABELS,
+  MODEL_FORMAT,
+  ARTIFACT_VERSION,
+} from './constants';
 export type HandLabel = 'left' | 'right';
 
 /** A copied hand pose with a timestamp in milliseconds. */
@@ -32,8 +39,8 @@ export interface ClassifierData {
 }
 
 export interface ModelArtifact {
-  format: 'xrblocks-interactive-ml';
-  version: 1;
+  format: typeof MODEL_FORMAT;
+  version: typeof ARTIFACT_VERSION;
   kind: 'hand-pose' | 'sound';
   featureId: string;
   threshold: number;
@@ -63,7 +70,7 @@ export function evaluatePredictions(
     if (prediction.label === label) result.correct++;
     if (prediction.label === null) result.unknown++;
     const row = (result.confusion[label] ??= Object.create(null));
-    const predicted = prediction.label ?? '(unknown)';
+    const predicted = prediction.label ?? UNKNOWN_LABEL;
     row[predicted] = (row[predicted] ?? 0) + 1;
   }
   result.accuracy = result.total ? result.correct / result.total : 0;
@@ -87,9 +94,11 @@ export function assertLabel(label: string) {
   if (
     typeof label !== 'string' ||
     !label.trim() ||
-    label.length > 80 ||
-    ['__proto__', 'constructor', 'prototype', '(unknown)'].includes(label)
+    label.length > MAX_LABEL_LENGTH ||
+    RESERVED_LABELS.includes(label)
   ) {
-    throw new Error('Use a non-empty label of at most 80 characters.');
+    throw new Error(
+      `Use a non-empty label of at most ${MAX_LABEL_LENGTH} characters.`
+    );
   }
 }

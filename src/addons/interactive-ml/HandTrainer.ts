@@ -1,5 +1,13 @@
+import {
+  MAX_EXAMPLES,
+  DEFAULT_THRESHOLD,
+  HAND_FEATURE_ID,
+  MODEL_FORMAT,
+  HAND_PROJECT_FORMAT,
+  ARTIFACT_VERSION,
+} from './constants';
 import {Dataset} from './Dataset';
-import {HAND_FEATURE_ID, poseFeatures, validateFrames} from './HandFeatures';
+import {poseFeatures, validateFrames} from './HandFeatures';
 import {trainClassifier} from './Learning';
 import {Predictor} from './Predictor';
 import {evaluatePredictions} from './Types';
@@ -12,8 +20,8 @@ export interface HandExample {
   frames: HandFrame[];
 }
 export interface HandProject {
-  format: 'xrblocks-interactive-ml-project';
-  version: 1;
+  format: typeof HAND_PROJECT_FORMAT;
+  version: typeof ARTIFACT_VERSION;
   kind: 'hand-pose';
   examples: HandExample[];
 }
@@ -27,8 +35,8 @@ export class HandTrainer extends Dataset<HandExample> {
   }
   exportProject(): HandProject {
     return structuredClone({
-      format: 'xrblocks-interactive-ml-project',
-      version: 1,
+      format: HAND_PROJECT_FORMAT,
+      version: ARTIFACT_VERSION,
       kind: this.kind,
       examples: this.examples,
     });
@@ -37,11 +45,11 @@ export class HandTrainer extends Dataset<HandExample> {
     const p = value as HandProject;
     if (
       !p ||
-      p.format !== 'xrblocks-interactive-ml-project' ||
-      p.version !== 1 ||
+      p.format !== HAND_PROJECT_FORMAT ||
+      p.version !== ARTIFACT_VERSION ||
       p.kind !== 'hand-pose' ||
       !Array.isArray(p.examples) ||
-      p.examples.length > 512
+      p.examples.length > MAX_EXAMPLES
     )
       throw new Error('Unsupported training project.');
     const trainer = new HandTrainer();
@@ -55,11 +63,11 @@ export class HandTrainer extends Dataset<HandExample> {
     const examples = structuredClone(this.examples);
     if (!examples.length) throw new Error('Record examples first.');
     const artifact: ModelArtifact = {
-      format: 'xrblocks-interactive-ml',
-      version: 1,
+      format: MODEL_FORMAT,
+      version: ARTIFACT_VERSION,
       kind: this.kind,
       featureId: HAND_FEATURE_ID,
-      threshold: options.threshold ?? 0.65,
+      threshold: options.threshold ?? DEFAULT_THRESHOLD,
       classifier: await trainClassifier(
         examples.map((e) => ({
           label: e.label,

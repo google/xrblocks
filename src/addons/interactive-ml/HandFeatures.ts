@@ -1,26 +1,20 @@
 import {Vector3} from 'three';
 import type {Hands, Handedness, JointName} from 'xrblocks';
+import {
+  HAND_JOINTS,
+  HAND_FEATURE_SIZE,
+  PALM_INDEX_JOINT,
+  PALM_MIDDLE_JOINT,
+  PALM_PINKY_JOINT,
+  MIN_PALM_AXIS_LENGTH,
+  MAX_HAND_FRAMES,
+  MAX_HAND_CLIP_DURATION_MS,
+} from './constants';
 import type {HandFrame} from './Types';
 import {assertVector} from './Types';
 
-export const HAND_FEATURE_ID = 'xr-hand-palm-v1';
-const joints: JointName[] = [
-  'thumb-metacarpal',
-  'thumb-phalanx-proximal',
-  'thumb-phalanx-distal',
-  'thumb-tip',
-  ...(
-    ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger'] as const
-  ).flatMap((finger) =>
-    ['phalanx-proximal', 'phalanx-intermediate', 'phalanx-distal', 'tip'].map(
-      (part) => `${finger}-${part}` as JointName
-    )
-  ),
-];
-export const HAND_FEATURE_SIZE = joints.length * 3;
-
 // Scratch values are private to synchronous capture; returned frames own their pose.
-const points = joints.map(() => new Vector3());
+const points = HAND_JOINTS.map(() => new Vector3());
 const wrist = new Vector3();
 const x = new Vector3();
 const y = new Vector3();
@@ -48,17 +42,17 @@ export function captureHand(
     );
   };
   if (!read('wrist', wrist)) return null;
-  for (let i = 0; i < joints.length; i++) {
-    if (!read(joints[i], points[i])) return null;
+  for (let i = 0; i < HAND_JOINTS.length; i++) {
+    if (!read(HAND_JOINTS[i], points[i])) return null;
   }
   // The proximal index, middle and pinky joints are already in the pose.
-  x.subVectors(points[4], points[16]);
+  x.subVectors(points[PALM_INDEX_JOINT], points[PALM_PINKY_JOINT]);
   const size = x.length();
-  if (size < 0.005) return null;
+  if (size < MIN_PALM_AXIS_LENGTH) return null;
   x.divideScalar(size);
-  y.subVectors(points[8], wrist);
+  y.subVectors(points[PALM_MIDDLE_JOINT], wrist);
   y.addScaledVector(x, -y.dot(x));
-  if (y.length() < 0.005) return null;
+  if (y.length() < MIN_PALM_AXIS_LENGTH) return null;
   y.normalize();
   z.crossVectors(x, y);
   // The cross product changes sign under reflection; correct it anatomically.
@@ -74,8 +68,12 @@ export function captureHand(
 }
 
 export function validateFrames(frames: HandFrame[]) {
-  if (!Array.isArray(frames) || frames.length < 1 || frames.length > 300) {
-    throw new Error('Record 1–300 pose frames.');
+  if (
+    !Array.isArray(frames) ||
+    frames.length < 1 ||
+    frames.length > MAX_HAND_FRAMES
+  ) {
+    throw new Error(`Record 1–${MAX_HAND_FRAMES} pose frames.`);
   }
   for (let i = 0; i < frames.length; i++) {
     const frame = frames[i];
@@ -90,8 +88,10 @@ export function validateFrames(frames: HandFrame[]) {
     }
     assertVector(frame.pose, HAND_FEATURE_SIZE);
   }
-  if (frames.at(-1)!.timeMs - frames[0].timeMs > 10000)
-    throw new Error('Clips must not exceed 10 seconds.');
+  if (frames.at(-1)!.timeMs - frames[0].timeMs > MAX_HAND_CLIP_DURATION_MS)
+    throw new Error(
+      `Clips must not exceed ${MAX_HAND_CLIP_DURATION_MS / 1000} seconds.`
+    );
 }
 
 export function poseFeatures(frames: HandFrame[]) {
