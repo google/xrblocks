@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid ea6d5f3
-* @builddate 2026-10-08T03:45:22.596Z
+* @commitid f636b84
+* @builddate 2026-10-08T17:16:15.418Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -3147,11 +3147,18 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 	syncImage() {
 		if (!(this.node instanceof Image)) return;
 		const source = this.element.src;
-		if (source === this.imageSource) return;
+		const sourceSize = textureSourceSize(source);
+		const fit = imageObjectFit(this.presentedProperties);
+		const sourceChanged = source !== this.imageSource;
+		const fitChanged = fit !== this.imageFit;
+		const sourceSizeChanged = sourceSize !== void 0 && (sourceSize[0] !== this.imageSourceSize?.[0] || sourceSize[1] !== this.imageSourceSize?.[1]);
+		if (!sourceChanged && !fitChanged && !sourceSizeChanged) return;
 		this.imageSource = source;
+		this.imageSourceSize = sourceSize;
+		this.imageFit = fit;
 		const request = ++this.imageRequest;
 		if (source instanceof THREE.Texture) {
-			this.replaceImageTexture(source, false);
+			this.replaceImageTexture(fitTexture(source, fit), fit !== "fill");
 			return;
 		}
 		imageTextureLoader.loadAsync(source).then((texture) => {
@@ -3190,6 +3197,59 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		setPhysicalHitEnabled(this.node, enabled);
 	}
 };
+const shimmedSourceImages = /* @__PURE__ */ new WeakSet();
+function imageObjectFit(properties) {
+	const fit = properties.objectFit;
+	return fit === "contain" || fit === "cover" ? fit : "fill";
+}
+/** Intrinsic size of a texture's source image, or undefined while unknown. */
+function textureSourceSize(source) {
+	if (!(source instanceof THREE.Texture)) return void 0;
+	const image = source.image;
+	if (!image) return void 0;
+	const width = image.videoWidth ?? image.naturalWidth ?? image.width;
+	const height = image.videoHeight ?? image.naturalHeight ?? image.height;
+	return width !== void 0 && height !== void 0 && width > 0 && height > 0 ? [width, height] : void 0;
+}
+/**
+* uikit derives its object-fit crop ratio from `source.data.width/.height`,
+* which stay 0 for video elements without width/height content attributes
+* (only videoWidth/videoHeight carry the frame size) — a 0/0 ratio poisons the
+* crop matrix with NaN. Shadow the two getters with the intrinsic frame size so
+* the crop math sees the real ratio, without touching the element's layout.
+*/
+function normalizeSourceImageSize(image) {
+	if (shimmedSourceImages.has(image)) return;
+	shimmedSourceImages.add(image);
+	const source = image;
+	if (!(source.videoWidth > 0) || !(source.videoHeight > 0)) return;
+	try {
+		Object.defineProperty(image, "width", {
+			configurable: true,
+			get: () => source.videoWidth
+		});
+		Object.defineProperty(image, "height", {
+			configurable: true,
+			get: () => source.videoHeight
+		});
+	} catch {}
+}
+/**
+* uikit writes its object-fit crop into `texture.matrix`, but three.js
+* re-derives that matrix from offset/repeat on every material refresh while
+* `matrixAutoUpdate` is true, silently discarding the crop. Hand out a clone
+* (sharing the same image source) with the matrix frozen so the crop survives,
+* and so uikit's matrix writes never touch textures shared with the engine.
+*/
+function fitTexture(source, fit) {
+	if (fit === "fill") return source;
+	const image = source.image;
+	if (image && typeof image === "object") normalizeSourceImageSize(image);
+	const clone = source.clone();
+	clone.matrixAutoUpdate = false;
+	clone.matrix.identity();
+	return clone;
+}
 function isContainerNode(node) {
 	return node instanceof Container || node instanceof GradientPanel;
 }
