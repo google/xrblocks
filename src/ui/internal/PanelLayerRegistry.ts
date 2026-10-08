@@ -179,17 +179,13 @@ function createSlabMask(slab: THREE.Mesh, level: number): THREE.Mesh {
 
 /** Translucent glass tint painted over the panel showing through this one. */
 function createTintTwin(slab: THREE.Mesh, level: number): THREE.Mesh {
-  const source = Array.isArray(slab.material)
-    ? slab.material[0]
-    : slab.material;
-  const color =
-    source && (source as THREE.MeshBasicMaterial).color
-      ? (source as THREE.MeshBasicMaterial).color.clone()
-      : new THREE.Color(0x111827);
+  // A dark neutral tint (like real tinted glass): the panel seen through this
+  // one is dimmed instead of washed lighter, which read as broken. The slab's
+  // own glass color was too light here and turned every see-through region milky.
   const material = new THREE.MeshBasicMaterial({
-    color,
+    color: new THREE.Color(0x0d1424),
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.42,
     depthWrite: false,
     depthTest: true,
     stencilWrite: true,
