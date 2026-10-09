@@ -2,6 +2,7 @@ import * as xb from 'xrblocks';
 
 const EMPTY_IMAGE =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+const CARD_WIDTH = 0.5;
 
 class CameraView extends xb.Script {
   init() {
@@ -56,8 +57,8 @@ class CameraView extends xb.Script {
         }),
       ],
     });
-    const card = new xb.UICard({
-      size: {width: 0.5, height: 0.6},
+    this.card = new xb.UICard({
+      size: {width: CARD_WIDTH, height: CARD_WIDTH * 0.75},
       manipulation: true,
       style: {
         justifyContent: 'flex-end',
@@ -67,15 +68,17 @@ class CameraView extends xb.Script {
       },
       children: [this.preview, controls],
     });
-    card.position.set(0, 1.45, -1.2);
-    this.add(card);
+    this.card.position.set(0, 1.45, -1.2);
+    this.add(this.card);
 
     this.camera = xb.core.deviceCamera;
     this.onStateChange = (event) => this.updateState(event);
     this.camera.addEventListener('statechange', this.onStateChange);
-    this.cameraLabel.text = this.camera.getCurrentDevice()?.label || 'Camera';
-    if (this.camera.state === 'streaming')
-      this.preview.src = this.camera.texture;
+    this.updateState({
+      state: this.camera.state,
+      aspectRatio: this.camera.aspectRatio,
+      device: this.camera.getCurrentDevice(),
+    });
   }
 
   updateState(event) {
@@ -87,6 +90,14 @@ class CameraView extends xb.Script {
     this.cameraLabel.text =
       event.device?.label || stateLabels[event.state] || 'Camera';
     if (event.state === 'streaming') this.preview.src = this.camera.texture;
+    this.resizeToFeed(event.aspectRatio ?? this.camera.aspectRatio);
+  }
+
+  resizeToFeed(aspectRatio) {
+    if (!(aspectRatio > 0)) return;
+    // Keep the panel's aspect matched to the camera feed so the preview shows
+    // undistorted at any feed ratio (4:3, 16:9, square, ...).
+    this.card.size.height = this.card.size.width / aspectRatio;
   }
 
   async cycleCamera(offset) {

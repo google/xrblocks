@@ -483,6 +483,8 @@ class UIKitNodeBinding {
   private imageTexture?: THREE.Texture;
   private ownsImageTexture = false;
   private imageSource?: string | THREE.Texture;
+  private imageSourceSize?: [number, number];
+  private imageFit?: UIStyle['objectFit'];
   private imageRequest = 0;
   private resourceRevision = 0;
   private appliedResourceRevision = -1;
@@ -932,11 +934,21 @@ class UIKitNodeBinding {
   private syncImage(): void {
     if (!(this.node instanceof Image)) return;
     const source = (this.element as UIImage).src;
-    if (source === this.imageSource) return;
+    const sourceSize = textureSourceSize(source);
+    const fit = imageObjectFit(this.presentedProperties);
+    const sourceChanged = source !== this.imageSource;
+    const fitChanged = fit !== this.imageFit;
+    const sourceSizeChanged =
+      sourceSize !== undefined &&
+      (sourceSize[0] !== this.imageSourceSize?.[0] ||
+        sourceSize[1] !== this.imageSourceSize?.[1]);
+    if (!sourceChanged && !fitChanged && !sourceSizeChanged) return;
     this.imageSource = source;
+    this.imageSourceSize = sourceSize;
+    this.imageFit = fit;
     const request = ++this.imageRequest;
     if (source instanceof THREE.Texture) {
-      this.replaceImageTexture(source, false);
+      this.replaceImageTexture(fitTexture(source, fit), fit !== 'fill');
       return;
     }
     void imageTextureLoader
@@ -992,6 +1004,84 @@ class UIKitNodeBinding {
     this.hitEnabled = enabled;
     setPhysicalHitEnabled(this.node, enabled);
   }
+}
+
+const shimmedSourceImages = new WeakSet<object>();
+
+function imageObjectFit(
+  properties: Record<string, unknown>
+): NonNullable<UIStyle['objectFit']> {
+  const fit = properties.objectFit;
+  return fit === 'contain' || fit === 'cover' ? fit : 'fill';
+}
+
+/** Intrinsic size of a texture's source image, or undefined while unknown. */
+function textureSourceSize(
+  source: string | THREE.Texture
+): [number, number] | undefined {
+  if (!(source instanceof THREE.Texture)) return undefined;
+  const image = source.image as
+    | {
+        width?: number;
+        height?: number;
+        naturalWidth?: number;
+        naturalHeight?: number;
+        videoWidth?: number;
+        videoHeight?: number;
+      }
+    | undefined;
+  if (!image) return undefined;
+  const width = image.videoWidth ?? image.naturalWidth ?? image.width;
+  const height = image.videoHeight ?? image.naturalHeight ?? image.height;
+  return width !== undefined && height !== undefined && width > 0 && height > 0
+    ? [width, height]
+    : undefined;
+}
+
+/**
+ * uikit derives its object-fit crop ratio from `source.data.width/.height`,
+ * which stay 0 for video elements without width/height content attributes
+ * (only videoWidth/videoHeight carry the frame size) — a 0/0 ratio poisons the
+ * crop matrix with NaN. Shadow the two getters with the intrinsic frame size so
+ * the crop math sees the real ratio, without touching the element's layout.
+ */
+function normalizeSourceImageSize(image: object): void {
+  if (shimmedSourceImages.has(image)) return;
+  shimmedSourceImages.add(image);
+  const source = image as {videoWidth?: number; videoHeight?: number};
+  if (!(source.videoWidth! > 0) || !(source.videoHeight! > 0)) return;
+  try {
+    Object.defineProperty(image, 'width', {
+      configurable: true,
+      get: () => source.videoWidth,
+    });
+    Object.defineProperty(image, 'height', {
+      configurable: true,
+      get: () => source.videoHeight,
+    });
+  } catch {
+    // Leave the source untouched when the platform refuses redefinition.
+  }
+}
+
+/**
+ * uikit writes its object-fit crop into `texture.matrix`, but three.js
+ * re-derives that matrix from offset/repeat on every material refresh while
+ * `matrixAutoUpdate` is true, silently discarding the crop. Hand out a clone
+ * (sharing the same image source) with the matrix frozen so the crop survives,
+ * and so uikit's matrix writes never touch textures shared with the engine.
+ */
+function fitTexture(
+  source: THREE.Texture,
+  fit: NonNullable<UIStyle['objectFit']>
+): THREE.Texture {
+  if (fit === 'fill') return source;
+  const image = source.image;
+  if (image && typeof image === 'object') normalizeSourceImageSize(image);
+  const clone = source.clone();
+  clone.matrixAutoUpdate = false;
+  clone.matrix.identity();
+  return clone;
 }
 
 function isContainerNode(node: UIKitNode): node is Container | GradientPanel {
