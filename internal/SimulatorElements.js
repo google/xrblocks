@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.21.1
-* @commitid f636b84
-* @builddate 2026-10-08T17:16:15.418Z
+* @commitid 095cd52
+* @builddate 2026-10-09T19:02:49.383Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -94,40 +94,46 @@ let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitEleme
       box-sizing: border-box;
       background: #ffffff;
       display: flex;
+      /* Fixed popup size shared by every instruction card, sized to fit the
+         tallest card's content without a scrollbar; scrolling remains only
+         as a fallback for very short windows. */
+      height: 36rem;
+      width: 30rem;
       max-height: 100%;
       overflow-y: auto;
-      height: 40rem;
-      width: min-content;
-      min-width: 30rem;
+      overflow-wrap: break-word;
       border-radius: 1.6rem;
       color: #000000;
       font-family:
         system-ui,
         -apple-system,
         sans-serif;
-      padding: 1.5rem;
+      font-size: 0.875rem;
+      line-height: 1.35;
+      padding: 1.25rem;
       flex-direction: column;
     }
 
     h1 {
       margin-top: 0px;
-      font-size: 1.375rem;
+      font-size: 1.25rem;
     }
 
     h2 {
       margin-top: 0px;
       margin-bottom: 0px;
-      font-size: 1.125rem;
+      font-size: 1rem;
     }
 
     ul {
-      margin-top: 0px;
+      margin-top: 0.2rem;
       margin-bottom: 0px;
+      padding-left: 1.25rem;
     }
 
     .image-div {
-      margin-top: 0.5rem;
-      margin-bottom: 0.5rem;
+      margin-top: 0.4rem;
+      margin-bottom: 0.4rem;
     }
 
     .description-div {
@@ -154,6 +160,11 @@ let SimulatorInstructionsCard = class SimulatorInstructionsCard extends LitEleme
     }
 
     video {
+      display: block;
+      /* Fixed demo-video size shared by every instruction card. */
+      width: 20.25rem;
+      height: auto;
+      margin: 0 auto;
       max-width: 100%;
       aspect-ratio: 16/9;
     }
