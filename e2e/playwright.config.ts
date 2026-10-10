@@ -37,8 +37,8 @@ export default defineConfig({
   },
   projects: [
     // The boot fixture picks the driver from the project name.
-    {name: 'sim-webgl', testIgnore: '**/xr-session.spec.ts'},
-    {name: 'sim-webgpu', testIgnore: '**/xr-session.spec.ts'},
-    {name: 'xr-iwer', testMatch: '**/xr-session.spec.ts'},
+    {name: 'sim-webgl', testIgnore: '**/xr-*.spec.ts'},
+    {name: 'sim-webgpu', testIgnore: '**/xr-*.spec.ts'},
+    {name: 'xr-iwer', testMatch: '**/xr-*.spec.ts'},
   ],
 });

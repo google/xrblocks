@@ -67,16 +67,28 @@ export class IwerDriver implements XRTestDriver {
       path: new URL('../../node_modules/iwer/build/iwer.js', import.meta.url)
         .pathname,
     });
+    // The Synthetic Environment Module emulates planes, meshes, hit-test,
+    // and depth; it attaches to the IWER namespace and needs IWER first.
+    await this.page.addInitScript({
+      path: new URL(
+        '../../node_modules/@iwer/sem/build/iwer-sem.js',
+        import.meta.url
+      ).pathname,
+    });
     await this.page.addInitScript(() => {
-      const iwer = (
-        globalThis as unknown as {
-          IWER: {
-            XRDevice: new (config: unknown) => unknown;
-            metaQuest3: unknown;
-          };
-        }
-      ).IWER;
-      const device = new iwer.XRDevice(iwer.metaQuest3);
+      type SemInstance = {
+        loadDefaultEnvironment(id: string): Promise<void>;
+      };
+      const globals = globalThis as unknown as {
+        IWER: {
+          XRDevice: new (config: unknown) => unknown;
+          metaQuest3: unknown;
+        };
+        IWER_SEM: {
+          SyntheticEnvironmentModule: new (device: unknown) => SemInstance;
+        };
+      };
+      const device = new globals.IWER.XRDevice(globals.IWER.metaQuest3);
       // forceInstall: 127.0.0.1 is a secure context, so Chromium exposes its
       // native navigator.xr (which reports no headset). The emulated runtime
       // must replace it.
@@ -85,7 +97,24 @@ export class IwerDriver implements XRTestDriver {
           installRuntime(options?: {forceInstall?: boolean}): void;
         }
       ).installRuntime({forceInstall: true});
+      // installSEM constructs the SEM and stores it for the device's frame
+      // loop; a subclass captures the instance for environment loading.
+      const holder: {sem?: SemInstance} = {};
+      class CapturedSem extends globals.IWER_SEM.SyntheticEnvironmentModule {
+        constructor(dev: unknown) {
+          super(dev);
+          holder.sem = this;
+        }
+      }
+      (
+        device as unknown as {
+          installSEM(ctor: new (device: unknown) => unknown): void;
+        }
+      ).installSEM(CapturedSem);
       (globalThis as Record<string, unknown>).__xrDevice = device;
+      (globalThis as Record<string, unknown>).__xrSem = holder.sem;
+      (globalThis as Record<string, unknown>).__xrSemReady =
+        holder.sem?.loadDefaultEnvironment('living_room');
     });
     // No xrAutomation: the simulator must stay out of the way.
     const separator = appPath.includes('?') ? '&' : '?';
@@ -123,6 +152,11 @@ export class IwerDriver implements XRTestDriver {
         ).xb?.core?.renderer?.xr?.isPresenting === true,
       undefined,
       {timeout: 20_000}
+    );
+    // Perception data only exists once the synthetic environment is loaded.
+    await this.page.evaluate(
+      () =>
+        (globalThis as Record<string, unknown>).__xrSemReady as Promise<unknown>
     );
   }
 

@@ -42,6 +42,16 @@ export type DriverState = {
   uiCardPresent: boolean;
   /** Whether the depth subsystem is enabled. */
   depthEnabled: boolean;
+  /** Whether the depth mesh was created from depth-sensing data. */
+  depthMeshPresent: boolean;
+  /** Plane meshes the SDK created from detected XR planes. */
+  worldPlanes: number;
+  /** Meshes the SDK created from detected XR scene meshes. */
+  worldMeshes: number;
+  /** Planes tracked by the emulated environment (emulator-side truth). */
+  semPlanes: number;
+  /** Meshes tracked by the emulated environment (emulator-side truth). */
+  semMeshes: number;
 };
 
 export type FrameStats = {

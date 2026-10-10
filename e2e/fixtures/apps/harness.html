@@ -132,6 +132,12 @@
       if (params.get('depth') === '1') {
         options.enableDepth();
       }
+      if (params.get('planes') === '1') {
+        options.world.enablePlaneDetection();
+      }
+      if (params.get('meshes') === '1') {
+        options.world.enableMeshDetection();
+      }
 
       // In XR mode the real XR frame loop drives time, so the embodied
       // control must not pause the core after initialization.
@@ -161,6 +167,11 @@
             grabbedByHand: grabbable.grabbedByHand,
             uiCardPresent: Boolean(core?.scene?.getObjectByName('E2E card')),
             depthEnabled: Boolean(core?.depth?.enabled),
+            depthMeshPresent: Boolean(core?.depth?.depthMesh),
+            worldPlanes: core?.world?.planes?.children?.length ?? 0,
+            worldMeshes: core?.world?.meshes?.children?.length ?? 0,
+            semPlanes: window.__xrSem?.trackedPlanes?.size ?? 0,
+            semMeshes: window.__xrSem?.trackedMeshes?.size ?? 0,
           };
         },
       };
