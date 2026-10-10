@@ -5,6 +5,7 @@ import {AI} from '../../ai/AI';
 import {AIOptions} from '../../ai/AIOptions';
 import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {RendererHolder} from '../../core/RendererTypes';
 import {Depth} from '../../depth/Depth';
 import {WorldOptions} from '../WorldOptions';
 
@@ -88,7 +89,7 @@ describe('ObjectDetector Multi-Client API', () => {
       deviceCamera,
       depth,
       camera,
-      renderer,
+      rendererHolder: new RendererHolder(renderer),
     });
 
     mockBackend = {

@@ -4,6 +4,7 @@ import {HumanRecognizer} from './HumanRecognizer';
 import {WorldOptions} from '../WorldOptions';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {Depth} from '../../depth/Depth';
+import {RendererHolder} from '../../core/RendererTypes';
 import {DetectedBodyPose} from './DetectedBodyPose';
 
 vi.mock('../../camera/CameraUtils', () => ({
@@ -50,7 +51,7 @@ describe('HumanRecognizer Multi-Client API', () => {
       deviceCamera,
       depth,
       camera,
-      renderer,
+      rendererHolder: new RendererHolder(renderer),
     });
 
     mockBackend = {

@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 
+import {
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import {Script} from '../../core/Script';
 import {disposeMaterial} from '../../utils/ThreeDisposal';
 import {WorldOptions} from '../WorldOptions';
@@ -12,7 +16,7 @@ import {SimulatorPlane} from './SimulatorPlane';
  * API. It creates, updates, and removes `Plane` mesh objects in the scene.
  */
 export class PlaneDetector extends Script {
-  static dependencies = {options: WorldOptions, renderer: THREE.WebGLRenderer};
+  static dependencies = {options: WorldOptions, rendererHolder: RendererHolder};
 
   /**
    * A map from the WebXR `XRPlane` object to our custom `DetectedPlane` mesh.
@@ -28,7 +32,7 @@ export class PlaneDetector extends Script {
    * The reference space used for poses.
    */
   private _xrRefSpace?: XRReferenceSpace;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
 
   private usingSimulatorPlanes = false;
 
@@ -37,12 +41,12 @@ export class PlaneDetector extends Script {
    */
   override init({
     options,
-    renderer,
+    rendererHolder,
   }: {
     options: WorldOptions;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }) {
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
     if (options.planes.showDebugVisualizations) {
       this._debugMaterial = new THREE.MeshBasicMaterial({
         color: 0xffff00,
