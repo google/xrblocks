@@ -150,3 +150,7 @@ build
 
 # Keys
 keys.json
+
+# Python (demos/read_aloud/server)
+.venv/
+__pycache__/

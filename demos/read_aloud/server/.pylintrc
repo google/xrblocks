@@ -1,0 +1,11 @@
+[MAIN]
+# Style check for the laptop server: pip install pylint && pylint *.py
+max-line-length=110
+
+[MESSAGES CONTROL]
+# The synthesis code is a numeric pipeline: many locals and branches per
+# stage are the readable shape for it.
+disable=too-many-locals,
+        too-many-branches,
+        too-many-instance-attributes,
+        too-few-public-methods
