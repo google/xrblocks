@@ -36,8 +36,9 @@ export default defineConfig({
     launchOptions: {args: gpuArgs()},
   },
   projects: [
-    // The boot fixture keys the `&webgpu=1` harness flag off the project name.
-    {name: 'sim-webgl'},
-    {name: 'sim-webgpu'},
+    // The boot fixture picks the driver from the project name.
+    {name: 'sim-webgl', testIgnore: '**/xr-session.spec.ts'},
+    {name: 'sim-webgpu', testIgnore: '**/xr-session.spec.ts'},
+    {name: 'xr-iwer', testMatch: '**/xr-session.spec.ts'},
   ],
 });

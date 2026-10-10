@@ -119,7 +119,13 @@
       const grabbable = new GrabbableScript();
       const ui = new UiScript();
 
+      const xrMode = params.get('xr') === '1';
+
       const options = new xb.Options();
+      if (xrMode) {
+        // Force the VR session mode for deterministic WebXR tests.
+        options.enableVR();
+      }
       if (params.get('webgpu') === '1') {
         options.enableWebGPU();
       }
@@ -127,7 +133,11 @@
         options.enableDepth();
       }
 
-      const embodied = new EmbodiedControl();
+      // In XR mode the real XR frame loop drives time, so the embodied
+      // control must not pause the core after initialization.
+      const embodied = new EmbodiedControl(
+        xrMode ? {autoPause: false} : undefined
+      );
       xb.add(embodied);
       xb.add(probe);
       xb.add(grabbable);
