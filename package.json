@@ -23,7 +23,8 @@
     "format:fix": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --write",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts"
   },
   "files": [
     "build",
@@ -51,6 +52,7 @@
     "@mediapipe/tasks-audio": "^0.10.35",
     "@mediapipe/tasks-vision": "^0.10.34",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@playwright/test": "^1.64.0",
     "@pmndrs/uikit": "^1.0.64",
     "@preact/signals-core": "^1.14.0",
     "@sparkjsdev/spark": "^2.1.0",
