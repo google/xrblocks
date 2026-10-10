@@ -3,6 +3,22 @@
   <head>
     <title>XR Blocks E2E Harness</title>
     <meta charset="utf-8" />
+    <style>
+      /* Match samples/main.css page setup: no default body margin (which
+         renders as white lines along the top/left borders), no scrollbars. */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #000;
+        overscroll-behavior: none;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
     <script type="importmap">
       {
         "imports": {
