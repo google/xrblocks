@@ -18,6 +18,8 @@ export interface AdaptiveTextProperties extends Record<string, unknown> {
   textAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   whiteSpace?: 'normal' | 'nowrap' | 'pre-line';
+  depthTest?: boolean;
+  depthWrite?: boolean;
 }
 
 /** Stable layout node that selects native or canvas glyph rendering internally. */
@@ -149,6 +151,8 @@ function glyphProperties(properties: AdaptiveTextProperties) {
     fontWeight: properties.fontWeight,
     lineHeight: properties.lineHeight,
     textAlign: properties.textAlign,
+    depthTest: properties.depthTest,
+    depthWrite: properties.depthWrite,
     flexShrink: 0,
     pointerEvents: 'none' as const,
   };

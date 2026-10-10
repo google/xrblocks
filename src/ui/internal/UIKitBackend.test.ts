@@ -451,6 +451,156 @@ describe('UIKitMount retained updates', () => {
   });
 });
 
+describe('world UI depth policy', () => {
+  const viewport = {width: 800, height: 600};
+
+  function materialsFor(
+    mappings: readonly {physical: THREE.Object3D; logical: object}[],
+    element: object
+  ): THREE.Material[] {
+    const materials: THREE.Material[] = [];
+    for (const mapping of mappings) {
+      if (mapping.logical !== element) continue;
+      mapping.physical.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        materials.push(
+          ...(Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+        );
+      });
+    }
+    return materials;
+  }
+
+  function namedMaterials(
+    mappings: readonly {physical: THREE.Object3D; logical: object}[],
+    element: object,
+    names: readonly string[]
+  ): THREE.Material[] {
+    const materials: THREE.Material[] = [];
+    for (const mapping of mappings) {
+      if (mapping.logical !== element) continue;
+      mapping.physical.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh || !names.includes(mesh.name)) return;
+        materials.push(
+          ...(Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+        );
+      });
+    }
+    return materials;
+  }
+
+  it('writes depth for image content in world space', () => {
+    const image = new UIImage({src: texture()});
+    const card = new UICard({
+      size: {width: 1, height: 1},
+      children: [new UIPanel({children: [image]})],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+
+    const materials = materialsFor(mappings, image);
+    expect(materials.length).toBeGreaterThan(0);
+    for (const material of materials) {
+      expect(material.depthTest).toBe(true);
+      expect(material.depthWrite).toBe(true);
+    }
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('enforces the policy on generated content such as button labels', () => {
+    const button = new UIButton({label: 'Try colorful', icon: 'palette'});
+    const card = new UICard({
+      size: {width: 1, height: 1},
+      children: [new UIPanel({children: [button]})],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+
+    const softClasses = new Set([
+      'UICardEdge',
+      'UnifiedPanelLayer',
+      'InstancedPanelMesh',
+    ]);
+    let checked = 0;
+    for (const mapping of mappings) {
+      if (mapping.logical !== card && mapping.logical !== button) continue;
+      mapping.physical.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const materials = Array.isArray(mesh.material)
+          ? mesh.material
+          : [mesh.material];
+        if (materials.every((entry) => entry.colorWrite === false)) return;
+        for (const material of materials) {
+          if (softClasses.has(mesh.constructor.name)) {
+            expect(material.depthWrite).toBe(false);
+            expect(material.depthTest).toBe(true);
+          } else {
+            expect(material.depthTest).toBe(true);
+            expect(material.depthWrite).toBe(true);
+          }
+          checked++;
+        }
+      });
+    }
+    expect(checked).toBeGreaterThan(0);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps overlay content out of the depth buffer', () => {
+    const image = new UIImage({src: texture()});
+    const overlay = new UIOverlay({children: [image]});
+    const backend = createUIBackend();
+    const mount = backend.createMount(overlay);
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+
+    const materials = materialsFor(mappings, image);
+    expect(materials.length).toBeGreaterThan(0);
+    for (const material of materials) {
+      expect(material.depthTest).toBe(false);
+      expect(material.depthWrite).toBe(false);
+    }
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps soft panel layers non-depth-writing while fills write depth', () => {
+    const card = new UICard({size: {width: 1, height: 1}});
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+
+    const soft = namedMaterials(mappings, card, [
+      'UICardEdge',
+      'UnifiedPanelLayer',
+    ]);
+    expect(soft.length).toBeGreaterThan(0);
+    for (const material of soft) {
+      expect(material.depthTest).toBe(true);
+      expect(material.depthWrite).toBe(false);
+    }
+
+    const fills = namedMaterials(mappings, card, ['GradientPanel']);
+    expect(fills.length).toBeGreaterThan(0);
+    for (const material of fills) {
+      expect(material.depthTest).toBe(true);
+      expect(material.depthWrite).toBe(true);
+    }
+
+    mount.dispose();
+    backend.dispose();
+  });
+});
+
 function texture(): THREE.DataTexture {
   return new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 }
