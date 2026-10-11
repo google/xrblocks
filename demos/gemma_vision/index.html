@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>What am I looking at? | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="../../samples/main.css" />
+    <style>
+      #model-preload {
+        box-sizing: border-box;
+        position: fixed;
+        inset: 24px auto auto 24px;
+        width: min(520px, calc(100% - 48px));
+        max-height: calc(100% - 48px);
+        overflow-y: auto;
+        padding: 20px;
+        border: 1px solid #576475;
+        border-radius: 12px;
+        color: #fff;
+        background: #202124;
+        text-align: left;
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+        z-index: 11;
+      }
+      #model-preload h2 {
+        margin: 0;
+        font-size: 22px;
+      }
+      #model-preload p {
+        margin: 12px 0;
+      }
+      #model-preload button {
+        padding: 12px 16px;
+        margin: 4px 4px 4px 0;
+        border: 1px solid #a9c7ec;
+        border-radius: 8px;
+        color: #fff;
+        background: #30445d;
+        font: inherit;
+        text-transform: none;
+      }
+      #model-preload label {
+        margin-right: 8px;
+      }
+      #model-preload select {
+        padding: 8px 12px;
+        border: 1px solid #a9c7ec;
+        border-radius: 8px;
+        color: #fff;
+        background: #30445d;
+        font: inherit;
+      }
+      #model-preload button:disabled,
+      #model-preload select:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      #model-preload button:focus-visible {
+        outline: 3px solid #b9e8d3;
+        outline-offset: 3px;
+      }
+      #model-preload #preload-ready {
+        color: #b9e8d3;
+      }
+      #XRButtonWrapper:has(#model-preload) {
+        box-sizing: border-box;
+        padding: 24px;
+        gap: 16px;
+        overflow-y: auto;
+        justify-content: safe center;
+      }
+      #XRButtonWrapper:has(#model-preload) > * {
+        flex-shrink: 0;
+      }
+      #XRButtonWrapper #model-preload {
+        position: static;
+        width: min(520px, 100%);
+        max-height: none;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "marked": "https://esm.sh/marked@14.1.4",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "@huggingface/transformers": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js",
+          "xrblocks": "../../build/xrblocks.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <section id="model-preload" aria-labelledby="preload-title">
+      <h2 id="preload-title">What am I looking at?</h2>
+      <p>
+        Capture a camera image and ask an on-device model to describe it or read
+        its text. Gemma 4 also translates it to English.
+      </p>
+      <p>
+        Use Chrome with WebGPU. Gemma 4 E2B gives the best answers; Lite is
+        sized for phones and headsets. Download a model once, then load it from
+        the browser cache.
+      </p>
+      <label for="preload-model">Model</label>
+      <select id="preload-model">
+        <option value="gemma">Gemma 4 E2B (3.4 GB)</option>
+        <option value="lite">Lite: SmolVLM2 (360 MB)</option>
+      </select>
+      <p>
+        Camera images, questions, and answers stay on this device. Initial
+        app/runtime/model downloads use the network. Offline questions work
+        while the model remains loaded.
+      </p>
+      <p id="startup" role="status" aria-live="polite" aria-atomic="true">
+        Preparing scene controls. The model downloads only when you choose
+        Download.
+      </p>
+      <p id="preload-ready" hidden>
+        Model ready. Choose Continue in simulator, or ENTER XR when available.
+      </p>
+      <button id="preload-load" type="button" disabled>Download</button>
+      <button id="preload-stop" type="button" hidden disabled>Stop</button>
+      <button id="preload-continue" type="button" hidden>
+        Continue in simulator
+      </button>
+    </section>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

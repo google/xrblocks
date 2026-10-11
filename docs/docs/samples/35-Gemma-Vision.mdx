@@ -1,0 +1,44 @@
+---
+title: Gemma Vision
+hide_title: true
+breadcrumbs: false
+pagination_next: null
+pagination_prev: null
+---
+
+import {SamplesIFrame} from './SamplesIFrame';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
+
+export function OpenDemo() {
+  const {siteConfig} = useDocusaurusContext();
+  return (
+    <a
+      href={`${siteConfig.customFields.xrblocksBaseUrl}demos/gemma_vision/`}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Open Gemma Vision in a new tab
+    </a>
+  );
+}
+
+<OpenDemo />
+
+<SamplesIFrame
+  demo="gemma_vision"
+  link="https://github.com/google/xrblocks/tree/main/demos/gemma_vision/"
+></SamplesIFrame>
+
+## What am I looking at?
+
+Capture the camera view, then ask an on-device vision model to describe it or read visible text. Choose **Gemma 4 E2B** for the best quality and translation to English, or **Lite** (SmolVLM2 500M) for phones and headsets with less memory. Typed follow-ups refer to the same frozen image. Image understanding and text generation run entirely on-device in a WebGPU worker, without an API key or cloud inference.
+
+Use Chrome with WebGPU. Pick a model on the 2D page or the spatial card and press **Download Gemma 4 (~3.4 GB)** or **Download Lite (~360 MB)**, then choose **Continue in simulator** or enter XR. Each model is saved in the browser cache for later visits, and you can switch between cached models, even offline.
+
+Camera frames come from `deviceCamera.captureSnapshot({outputFormat: 'imageData', width, height})`. The worker uses Transformers.js 4.3.0 with pinned Gemma 4 E2B and SmolVLM2 500M ONNX models, and loads one model at a time. A single retained transcript text node receives batched updates rather than rebuilding the card for each streamed chunk.
+
+Camera images, questions, and answers stay on the device. Initial application, runtime, and model downloads use the network; subsequent questions work offline while the model remains loaded. See the [README device notes](https://github.com/google/xrblocks/tree/main/demos/gemma_vision#device-notes) for tested hardware and startup measurements.
+
+## Credits
+
+Gemma 4 by Google and its onnx-community conversion are Apache-2.0. SmolVLM2 by Hugging Face is Apache-2.0. Transformers.js is Apache-2.0, ONNX Runtime and marked are MIT. Camera and retained-text UI patterns follow the XR Blocks super-resolution and Gemma on-device demos. Model provenance, byte sizes, and measured desktop results are in the demo README.
