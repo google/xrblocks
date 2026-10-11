@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
+import type {MeshBasicNodeMaterial} from 'three/webgpu';
 
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera.js';
+import {isWebGPURenderer, type WebGLOrWebGPURenderer} from '../RendererTypes';
 
 // Use a small canvas since a full size canvas can consume a lot of memory and
 // cause toDataUrl to be slow.
@@ -28,6 +30,14 @@ function flipBufferVertically(
   }
 }
 
+/**
+ * Writes `renderer.xr.isPresenting`. Both backends expose it, but the WebGPU
+ * renderer's type marks the accessor read-only.
+ */
+function setXrPresenting(renderer: WebGLOrWebGPURenderer, value: boolean) {
+  (renderer.xr as unknown as {isPresenting: boolean}).isPresenting = value;
+}
+
 class PendingScreenshotRequest {
   constructor(
     public resolve: (value: string) => void,
@@ -41,17 +51,21 @@ export class ScreenshotSynthesizer {
   private virtualCanvas?: HTMLCanvasElement;
   private virtualBuffer = new Uint8Array();
   // Smaller resolution render target than the main render target.
-  private virtualRenderTarget?: THREE.WebGLRenderTarget;
+  private virtualRenderTarget?: THREE.RenderTarget;
   private virtualRealCanvas?: HTMLCanvasElement;
   private virtualRealBuffer = new Uint8Array();
-  private virtualRealRenderTarget?: THREE.WebGLRenderTarget;
+  private virtualRealRenderTarget?: THREE.RenderTarget;
   private fullScreenQuad?: FullScreenQuad;
+  private webgpuQuad?: {
+    mesh: THREE.Mesh<THREE.PlaneGeometry, MeshBasicNodeMaterial>;
+    camera: THREE.Camera;
+  };
   private renderTargetWidth = DEFAULT_CANVAS_WIDTH;
   private virtualCaptureInFlight = false;
   private virtualRealCaptureInFlight = false;
 
   onAfterRender(
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     renderSceneFn: () => void,
     deviceCamera?: XRDeviceCamera
   ) {
@@ -103,7 +117,7 @@ export class ScreenshotSynthesizer {
   }
 
   private async createVirtualImageDataURL(
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     renderSceneFn: () => void
   ) {
     const mainRenderTarget = renderer.getRenderTarget();
@@ -127,21 +141,23 @@ export class ScreenshotSynthesizer {
       this.virtualRenderTarget.width != this.renderTargetWidth
     ) {
       this.virtualRenderTarget?.dispose();
-      this.virtualRenderTarget = new THREE.WebGLRenderTarget(
+      this.virtualRenderTarget = this.createRenderTarget(
+        renderer,
         this.renderTargetWidth,
-        scaledHeight,
-        {colorSpace: THREE.SRGBColorSpace}
+        scaledHeight
       );
     }
     const xrIsPresenting = renderer.xr.isPresenting;
-    renderer.xr.isPresenting = false;
+    setXrPresenting(renderer, false);
     const virtualRenderTarget = this.virtualRenderTarget;
-    renderer.setRenderTarget(virtualRenderTarget);
+    renderer.setRenderTarget(virtualRenderTarget as THREE.WebGLRenderTarget);
     renderer.clearColor();
     renderer.clearDepth();
     renderSceneFn();
-    renderer.setRenderTarget(mainRenderTarget);
-    renderer.xr.isPresenting = xrIsPresenting;
+    renderer.setRenderTarget(
+      mainRenderTarget as THREE.WebGLRenderTarget | null
+    );
+    setXrPresenting(renderer, xrIsPresenting);
 
     const expectedBufferLength =
       virtualRenderTarget.width * virtualRenderTarget.height * 4;
@@ -149,20 +165,7 @@ export class ScreenshotSynthesizer {
       this.virtualBuffer = new Uint8Array(expectedBufferLength);
     }
     const buffer = this.virtualBuffer;
-    await renderer.readRenderTargetPixelsAsync(
-      virtualRenderTarget,
-      0,
-      0,
-      virtualRenderTarget.width,
-      virtualRenderTarget.height,
-      buffer
-    );
-
-    flipBufferVertically(
-      buffer,
-      virtualRenderTarget.width,
-      virtualRenderTarget.height
-    );
+    await this.readRenderTargetInto(renderer, virtualRenderTarget, buffer);
     const canvas =
       this.virtualCanvas ||
       (this.virtualCanvas = document.createElement('canvas'));
@@ -208,7 +211,7 @@ export class ScreenshotSynthesizer {
   }
 
   private async createVirtualRealImageDataURL(
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     renderSceneFn: () => void,
     deviceCamera: XRDeviceCamera
   ) {
@@ -237,23 +240,31 @@ export class ScreenshotSynthesizer {
       this.virtualRealRenderTarget.height != scaledHeight
     ) {
       this.virtualRealRenderTarget?.dispose();
-      this.virtualRealRenderTarget = new THREE.WebGLRenderTarget(
+      this.virtualRealRenderTarget = this.createRenderTarget(
+        renderer,
         this.renderTargetWidth,
-        scaledHeight,
-        {colorSpace: THREE.SRGBColorSpace}
+        scaledHeight
       );
     }
 
     const renderTarget = this.virtualRealRenderTarget;
-    renderer.setRenderTarget(renderTarget);
+    renderer.setRenderTarget(renderTarget as THREE.WebGLRenderTarget);
     const xrIsPresenting = renderer.xr.isPresenting;
-    renderer.xr.isPresenting = false;
-    const quad = this.getFullScreenQuad();
-    (quad.material as THREE.MeshBasicMaterial).map = deviceCamera.texture;
-    quad.render(renderer);
+    setXrPresenting(renderer, false);
+    if (isWebGPURenderer(renderer)) {
+      const quad = await this.getWebGPUQuad();
+      quad.mesh.material.map = deviceCamera.texture;
+      renderer.render(quad.mesh, quad.camera);
+    } else {
+      const quad = this.getFullScreenQuad();
+      (quad.material as THREE.MeshBasicMaterial).map = deviceCamera.texture;
+      quad.render(renderer);
+    }
     renderSceneFn();
-    renderer.xr.isPresenting = xrIsPresenting;
-    renderer.setRenderTarget(mainRenderTarget);
+    setXrPresenting(renderer, xrIsPresenting);
+    renderer.setRenderTarget(
+      mainRenderTarget as THREE.WebGLRenderTarget | null
+    );
 
     if (
       this.virtualRealBuffer.length !=
@@ -264,16 +275,7 @@ export class ScreenshotSynthesizer {
       );
     }
     const buffer = this.virtualRealBuffer;
-    await renderer.readRenderTargetPixelsAsync(
-      renderTarget,
-      0,
-      0,
-      renderTarget.width,
-      renderTarget.height,
-      buffer
-    );
-
-    flipBufferVertically(buffer, renderTarget.width, renderTarget.height);
+    await this.readRenderTargetInto(renderer, renderTarget, buffer);
     const canvas =
       this.virtualRealCanvas ||
       (this.virtualRealCanvas = document.createElement('canvas'));
@@ -316,6 +318,87 @@ export class ScreenshotSynthesizer {
       }
     }
     this.pendingScreenshotRequests.length = remainingRequests;
+  }
+
+  private createRenderTarget(
+    renderer: WebGLOrWebGPURenderer,
+    width: number,
+    height: number
+  ): THREE.RenderTarget {
+    // WebGLRenderer wants a WebGLRenderTarget; WebGPURenderer renders into the
+    // base class.
+    return isWebGPURenderer(renderer)
+      ? new THREE.RenderTarget(width, height, {
+          colorSpace: THREE.SRGBColorSpace,
+        })
+      : new THREE.WebGLRenderTarget(width, height, {
+          colorSpace: THREE.SRGBColorSpace,
+        });
+  }
+
+  /**
+   * Reads `target` into `buffer` as top-down RGBA8. WebGL readbacks are
+   * bottom-up, native WebGPU readbacks are top-down but row-padded to 256
+   * bytes, and the WebGPU renderer's WebGL2 fallback is bottom-up again (the
+   * same conventions as SimulatorDepthWebGPURenderer).
+   */
+  private async readRenderTargetInto(
+    renderer: WebGLOrWebGPURenderer,
+    target: THREE.RenderTarget,
+    buffer: Uint8Array
+  ): Promise<void> {
+    const width = target.width;
+    const height = target.height;
+    if (!isWebGPURenderer(renderer)) {
+      await renderer.readRenderTargetPixelsAsync(
+        target as THREE.WebGLRenderTarget,
+        0,
+        0,
+        width,
+        height,
+        buffer
+      );
+      flipBufferVertically(buffer, width, height);
+      return;
+    }
+    const readback = (await renderer.readRenderTargetPixelsAsync(
+      target,
+      0,
+      0,
+      width,
+      height
+    )) as Uint8Array;
+    const rowBytes = width * 4;
+    const srcStride =
+      readback.length > buffer.length
+        ? Math.ceil(rowBytes / 256) * 256
+        : rowBytes;
+    const isWebGLFallback =
+      'isWebGLBackend' in renderer.backend &&
+      renderer.backend.isWebGLBackend === true;
+    for (let y = 0; y < height; y++) {
+      const srcRow = isWebGLFallback ? height - 1 - y : y;
+      const srcOffset = srcRow * srcStride;
+      buffer.set(
+        readback.subarray(srcOffset, srcOffset + rowBytes),
+        y * rowBytes
+      );
+    }
+  }
+
+  /** Full-screen textured quad for the WebGPU device-camera overlay path. */
+  private async getWebGPUQuad() {
+    if (!this.webgpuQuad) {
+      const {MeshBasicNodeMaterial} = await import('three/webgpu');
+      this.webgpuQuad = {
+        mesh: new THREE.Mesh(
+          new THREE.PlaneGeometry(2, 2),
+          new MeshBasicNodeMaterial({transparent: true})
+        ),
+        camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+      };
+    }
+    return this.webgpuQuad;
   }
 
   private getFullScreenQuad() {

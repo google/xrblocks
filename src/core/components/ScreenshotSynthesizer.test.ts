@@ -244,3 +244,135 @@ describe('ScreenshotSynthesizer null render target fallback', () => {
     expect(request.rejected).not.toHaveBeenCalled();
   });
 });
+
+describe('ScreenshotSynthesizer on WebGPURenderer', () => {
+  // 2x2 pixels: rows [A,B] (top) and [C,D] (bottom), RGBA8.
+  const A = [10, 20, 30, 40];
+  const B = [50, 60, 70, 80];
+  const C = [90, 100, 110, 120];
+  const D = [130, 140, 150, 160];
+
+  function createWebGPUFixture({isWebGLFallback = false} = {}) {
+    const synthesizer = new ScreenshotSynthesizer();
+    (synthesizer as unknown as {renderTargetWidth: number}).renderTargetWidth =
+      2;
+    const renderScene = vi.fn();
+    const readPixels = vi
+      .fn<(target: unknown) => Promise<Uint8Array>>()
+      .mockResolvedValue(new Uint8Array());
+    const renderer = {
+      isWebGPURenderer: true,
+      backend: isWebGLFallback
+        ? {isWebGLBackend: true}
+        : {isWebGPUBackend: true},
+      xr: {isPresenting: false},
+      getRenderTarget: vi.fn(() => new THREE.WebGLRenderTarget(2, 2)),
+      getSize: vi.fn((target: THREE.Vector2) => target.set(2, 2)),
+      setRenderTarget: vi.fn(),
+      clearColor: vi.fn(),
+      clearDepth: vi.fn(),
+      render: vi.fn(),
+      readRenderTargetPixelsAsync: readPixels,
+    };
+    const camera = {
+      loaded: true,
+      texture: new THREE.Texture(),
+    } as XRDeviceCamera;
+    const captured: Uint8ClampedArray[] = [];
+    vi.stubGlobal(
+      'ImageData',
+      class {
+        constructor(
+          public data: Uint8ClampedArray,
+          public width: number,
+          public height: number
+        ) {
+          captured.push(data);
+        }
+      }
+    );
+
+    function renderFrame(deviceCamera?: XRDeviceCamera) {
+      synthesizer.onAfterRender(
+        renderer as never,
+        renderScene,
+        deviceCamera as XRDeviceCamera | undefined
+      );
+    }
+
+    return {
+      synthesizer,
+      renderer,
+      renderScene,
+      readPixels,
+      renderFrame,
+      captured,
+      camera,
+    };
+  }
+
+  it('keeps native WebGPU readbacks top-down and strips row padding', async () => {
+    const {synthesizer, renderFrame, readPixels, captured} =
+      createWebGPUFixture();
+    // Native WebGPU: rows top-down, each row padded to 256 bytes.
+    const readback = new Uint8Array(264);
+    readback.set(A, 0);
+    readback.set(B, 4);
+    readback.set(C, 256);
+    readback.set(D, 260);
+    readPixels.mockResolvedValue(readback);
+
+    const request = observeRequest(synthesizer.getScreenshot(false));
+    renderFrame();
+    await flushMicrotasks();
+
+    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
+    expect(request.rejected).not.toHaveBeenCalled();
+    expect(Array.from(captured[0].subarray(0, 8))).toEqual([...A, ...B]);
+    expect(Array.from(captured[0].subarray(8, 16))).toEqual([...C, ...D]);
+  });
+
+  it('flips WebGL-fallback readbacks bottom-up like the WebGL path', async () => {
+    const {synthesizer, renderFrame, readPixels, captured} =
+      createWebGPUFixture({
+        isWebGLFallback: true,
+      });
+    // WebGL-style fallback: bottom-up rows without padding.
+    const readback = new Uint8Array(16);
+    readback.set(C, 0);
+    readback.set(D, 4);
+    readback.set(A, 8);
+    readback.set(B, 12);
+    readPixels.mockResolvedValue(readback);
+
+    const request = observeRequest(synthesizer.getScreenshot(false));
+    renderFrame();
+    await flushMicrotasks();
+
+    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
+    expect(request.rejected).not.toHaveBeenCalled();
+    expect(Array.from(captured[0].subarray(0, 8))).toEqual([...A, ...B]);
+    expect(Array.from(captured[0].subarray(8, 16))).toEqual([...C, ...D]);
+  });
+
+  it('renders the device-camera overlay through a node-material quad', async () => {
+    const {synthesizer, renderer, renderFrame, camera} = createWebGPUFixture();
+    const request = observeRequest(synthesizer.getScreenshot(true));
+    renderFrame(camera);
+    // The overlay path dynamically imports the node materials.
+    await vi.waitFor(() => {
+      expect(request.resolved).toHaveBeenCalled();
+    });
+
+    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
+    expect(request.rejected).not.toHaveBeenCalled();
+    expect(renderer.render).toHaveBeenCalledOnce();
+    const [mesh, quadCamera] = vi.mocked(renderer.render).mock.calls[0];
+    expect((mesh as THREE.Mesh).isMesh).toBe(true);
+    expect((quadCamera as THREE.Camera).isCamera).toBe(true);
+    expect((mesh as THREE.Mesh).material).toHaveProperty(
+      'isNodeMaterial',
+      true
+    );
+  });
+});

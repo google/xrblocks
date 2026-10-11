@@ -877,13 +877,11 @@ export class Core {
     this.uiRenderer.present();
 
     this.renderSimulatorAndScene();
-    if (this.renderer instanceof THREE.WebGLRenderer) {
-      this.screenshotSynthesizer.onAfterRender(
-        this.renderer,
-        this.renderSceneCallback,
-        this.deviceCamera
-      );
-    }
+    this.screenshotSynthesizer.onAfterRender(
+      this.renderer,
+      this.renderSceneCallback,
+      this.deviceCamera
+    );
   };
 
   /**

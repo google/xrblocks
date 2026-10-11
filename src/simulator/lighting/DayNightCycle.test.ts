@@ -20,6 +20,7 @@ const LIGHTING: SimulatorDayNightLightingDefinition = {
 
 interface FakeRenderer {
   isWebGLRenderer: boolean;
+  isWebGPURenderer?: boolean;
   autoClear: boolean;
   shadowMap: {
     enabled: boolean;
@@ -32,6 +33,20 @@ interface FakeRenderer {
 function createRenderer(): FakeRenderer {
   return {
     isWebGLRenderer: true,
+    autoClear: true,
+    shadowMap: {
+      enabled: false,
+      type: THREE.BasicShadowMap,
+      autoUpdate: true,
+      needsUpdate: false,
+    },
+  };
+}
+
+function createWebGPURenderer(): FakeRenderer {
+  return {
+    isWebGLRenderer: false,
+    isWebGPURenderer: true,
     autoClear: true,
     shadowMap: {
       enabled: false,
@@ -98,7 +113,9 @@ interface Fixture {
  * whose night bake carries extra window-shade triangles, a day-only rug, an
  * outdoor mesh, and the biggest-box sky.
  */
-async function createFixture(): Promise<Fixture> {
+async function createFixture(
+  renderer: FakeRenderer = createRenderer()
+): Promise<Fixture> {
   const root = new THREE.Group();
   const dayScene = new THREE.Group();
   root.add(dayScene);
@@ -184,7 +201,6 @@ async function createFixture(): Promise<Fixture> {
     )
   );
 
-  const renderer = createRenderer();
   const loadGLTF = vi.fn(async () => ({scene: nightScene}));
   const cycle = await DayNightCycle.create({
     renderer,
@@ -193,7 +209,7 @@ async function createFixture(): Promise<Fixture> {
     loader: {loadGLTF} as unknown as ModelLoader,
     lighting: LIGHTING,
   });
-  if (!cycle) throw new Error('expected a DayNightCycle for a WebGL renderer');
+  if (!cycle) throw new Error('expected a DayNightCycle for this renderer');
   return {
     root,
     wall,
@@ -230,7 +246,7 @@ function findSun(root: THREE.Object3D): THREE.DirectionalLight {
 }
 
 describe('DayNightCycle.create', () => {
-  it('returns null for non-WebGL renderers without loading anything', async () => {
+  it('returns null for unrecognized renderers without loading anything', async () => {
     const loadGLTF = vi.fn();
     const cycle = await DayNightCycle.create({
       renderer: {isWebGLRenderer: false},
@@ -240,6 +256,19 @@ describe('DayNightCycle.create', () => {
       lighting: LIGHTING,
     });
     expect(cycle).toBeNull();
+    expect(loadGLTF).not.toHaveBeenCalled();
+  });
+
+  it('returns a cycle for WebGPURenderer and defers loading', async () => {
+    const loadGLTF = vi.fn();
+    const cycle = await DayNightCycle.create({
+      renderer: createWebGPURenderer(),
+      root: new THREE.Group(),
+      dayScene: new THREE.Group(),
+      loader: {loadGLTF} as unknown as ModelLoader,
+      lighting: LIGHTING,
+    });
+    expect(cycle).not.toBeNull();
     expect(loadGLTF).not.toHaveBeenCalled();
   });
 });
@@ -429,6 +458,107 @@ describe('DayNightCycle', () => {
     expect(wall.position.toArray()).toEqual([0.5, 1, -2]);
     expect(wall.scale.toArray()).toEqual([1, 2, 1]);
     expect(wall.rotation.y).toBeCloseTo(0.3);
+  });
+});
+
+describe('DayNightCycle on WebGPU', () => {
+  function createWebGPUFixture() {
+    return createFixture(createWebGPURenderer());
+  }
+
+  function nodeMixU(cycle: DayNightCycle): number {
+    const rig = (cycle as unknown as {webgpuRig: {mixU: {value: number}}})
+      .webgpuRig;
+    return rig.mixU.value;
+  }
+
+  function findNodeOverlays(root: THREE.Object3D): THREE.Mesh[] {
+    const out: THREE.Mesh[] = [];
+    root.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const material = mesh.material as THREE.Material & {
+        lightsNode?: unknown;
+      };
+      if (material.lightsNode) out.push(mesh);
+    });
+    return out;
+  }
+
+  it('blends paired bodies with node materials and drives the shared mix uniform', async () => {
+    const fixture = await createWebGPUFixture();
+    await fixture.cycle.preload();
+    const blend = fixture.wall.material as THREE.MeshBasicMaterial & {
+      isNodeMaterial?: boolean;
+    };
+    expect(blend.isNodeMaterial).toBe(true);
+    expect(blend.map).toBe(fixture.wallOriginal.material.map);
+
+    const values = dayNightSchedule(0.5);
+    fixture.cycle.setTimeOfDay(0.5);
+    expect(nodeMixU(fixture.cycle)).toBeCloseTo(values.mixU);
+
+    // Day-only rug fade is shared state, not a shader patch.
+    const rugMaterial = fixture.rug.material as THREE.MeshBasicMaterial;
+    expect(rugMaterial.opacity).toBeCloseTo(values.rugOpacity);
+    fixture.cycle.setTimeOfDay(1);
+    expect(rugMaterial.opacity).toBeCloseTo(0);
+  });
+
+  it('keeps the baked material flags on the node blend material', async () => {
+    const fixture = await createWebGPUFixture();
+    const base = fixture.wall.material as THREE.MeshBasicMaterial;
+    base.side = THREE.DoubleSide;
+    base.toneMapped = false;
+    base.color.setHex(0xff8800);
+    await fixture.cycle.preload();
+    const blend = fixture.wall.material as THREE.MeshBasicMaterial;
+    expect(blend).not.toBe(base);
+    expect(blend.side).toBe(THREE.DoubleSide);
+    expect(blend.toneMapped).toBe(false);
+    expect(blend.color.getHex()).toBe(0xff8800);
+  });
+
+  it('lights the additive overlays with the rig lights only', async () => {
+    const fixture = await createWebGPUFixture();
+    await fixture.cycle.preload();
+    const overlays = findNodeOverlays(fixture.root);
+    // One shared-geometry overlay per sunlit body plus one per blind.
+    expect(overlays).toHaveLength(2);
+
+    const material = overlays[0].material as THREE.MeshPhongMaterial & {
+      lightsNode?: unknown;
+    };
+    expect(material.blending).toBe(THREE.AdditiveBlending);
+    expect(material.depthWrite).toBe(false);
+    // Pinned to the rig's sun and window bounce: the node-material stand-in
+    // for stripHemisphereIrradiance.
+    expect(material.lightsNode).toBeTruthy();
+
+    fixture.cycle.setTimeOfDay(0);
+    expect(overlays.every((overlay) => !overlay.visible)).toBe(true);
+    fixture.cycle.setTimeOfDay(1);
+    expect(overlays.every((overlay) => !overlay.visible)).toBe(true);
+    fixture.cycle.setTimeOfDay(0.5);
+    expect(overlays.every((overlay) => overlay.visible)).toBe(true);
+    // Emissive constant approximates the hemisphere sky lift, as on WebGL.
+    const values = dayNightSchedule(0.5);
+    expect(material.emissive.r).toBeCloseTo(
+      (values.skyFillColor[0] * values.skyFillIntensity) / Math.PI
+    );
+  });
+
+  it('refreshes the sun shadow map per scrub and restores renderer state', async () => {
+    const fixture = await createWebGPUFixture();
+    await fixture.cycle.preload();
+    const {renderer, root} = fixture;
+    const sun = findSun(root);
+    expect(renderer.shadowMap.enabled).toBe(true);
+    expect(renderer.shadowMap.type).toBe(THREE.PCFShadowMap);
+    expect(sun.shadow.autoUpdate).toBe(false);
+    fixture.cycle.dispose();
+    expect(renderer.shadowMap.enabled).toBe(false);
+    expect(renderer.shadowMap.type).toBe(THREE.BasicShadowMap);
   });
 });
 
