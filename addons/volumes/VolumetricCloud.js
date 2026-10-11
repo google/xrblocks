@@ -3,20 +3,46 @@ import * as THREE from "three";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 //#region src/addons/volumes/VolumetricCloud.ts
 /**
+* Mirrors `core/RendererTypes.isWebGPURenderer`. Kept local (with a type-only
+* `xrblocks` import) so this standalone addon never imports the SDK bundle at
+* runtime.
+*/
+function isWebGPURenderer(renderer) {
+	return renderer != null && typeof renderer === "object" && renderer.isWebGPURenderer === true;
+}
+/**
 * VolumetricCloud class for creating a 3D volumetric cloud effect in a scene.
 */
 var VolumetricCloud = class extends THREE.Object3D {
 	/**
 	* Constructor for the VolumetricCloud class.
+	*
+	* @param renderer - The active renderer, when known. On `THREE.WebGPURenderer`
+	*   the GLSL raymarch cannot run (`RawShaderMaterial` is unsupported by that
+	*   backend), so a TSL port of the same shader is swapped in asynchronously;
+	*   the mesh stays invisible until it loads. Without a renderer the original
+	*   GLSL material is used.
 	*/
-	constructor() {
+	constructor(renderer) {
 		super();
+		this.worldToLocal = new THREE.Matrix4();
 		this.size = 128;
 		this.cloudScale = .05;
 		this.texture = this.createTexture();
 		this.vertexShader = VolumetricCloudShader.vertexShader;
 		this.fragmentShader = VolumetricCloudShader.fragmentShader;
-		this.material = this.createMaterial();
+		if (isWebGPURenderer(renderer)) {
+			this.material = new THREE.MeshBasicMaterial({
+				transparent: true,
+				opacity: 0,
+				depthWrite: false
+			});
+			import("./VolumetricCloudWebGPU.js").then(({ createCloudNodeMaterial }) => {
+				this.nodeRig = createCloudNodeMaterial(new THREE.Color(5201006), this.texture);
+				this.material = this.nodeRig.material;
+				this.mesh.material = this.material;
+			});
+		} else this.material = this.createMaterial();
 		this.geometry = new THREE.BoxGeometry(1, 1, 1);
 		this.mesh = new THREE.Mesh(this.geometry, this.material);
 		this.mesh.position.set(0, 8, 0);
@@ -73,9 +99,17 @@ var VolumetricCloud = class extends THREE.Object3D {
 	* position and to animate the cloud's rotation.
 	*/
 	update(camera) {
-		this.mesh.material.uniforms.cameraPos.value.copy(camera.position);
 		this.mesh.rotation.y = -performance.now() / 7500;
-		this.mesh.material.uniforms.frame.value++;
+		if (this.nodeRig) {
+			this.mesh.updateMatrixWorld();
+			this.worldToLocal.copy(this.mesh.matrixWorld).invert();
+			this.nodeRig.originUniform.value.copy(camera.position).applyMatrix4(this.worldToLocal);
+			this.nodeRig.frameUniform.value++;
+		} else if (this.material.isRawShaderMaterial) {
+			const uniforms = this.material.uniforms;
+			uniforms.cameraPos.value.copy(camera.position);
+			uniforms.frame.value++;
+		}
 	}
 };
 //#endregion

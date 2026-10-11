@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 98b9729
-* @builddate 2026-10-11T03:11:06.312Z
+* @commitid cb6ce16
+* @builddate 2026-10-11T05:19:49.302Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,7 +40,7 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { i as disposeObjectTree } from "./ThreeDisposal.js";
+import { c as isWebGPURenderer, i as disposeObjectTree } from "./ThreeDisposal.js";
 import * as THREE from "three";
 //#region src/simulator/lighting/bakePairing.ts
 /**
@@ -353,7 +353,7 @@ function dayNightSchedule(tRaw) {
 }
 //#endregion
 //#region src/simulator/lighting/DayNightCycle.ts
-let warnedNonWebGL = false;
+let warnedUnsupported = false;
 /**
 * Removes the hemisphere-light accumulation from three's `lights_fragment_begin`
 * chunk so only directional lights (the rig's sun and window bounce) shade the
@@ -381,8 +381,9 @@ const LIGHTS_BEGIN_WITHOUT_HEMISPHERE = stripHemisphereIrradiance(THREE.ShaderCh
 * first {@link DayNightCycle.setTimeOfDay}) runs.
 */
 var DayNightCycle = class DayNightCycle {
-	constructor(options) {
+	constructor(options, webgpuRig) {
 		this.options = options;
+		this.webgpuRig = webgpuRig;
 		this.timeOfDayValue = 0;
 		this.built = false;
 		this.disposed = false;
@@ -400,15 +401,20 @@ var DayNightCycle = class DayNightCycle {
 		this.skyMix = { value: 0 };
 	}
 	/**
-	* Creates a cycle for a WebGL renderer. Returns null (day-only, no overhead)
-	* on WebGPU: the blend shader uses onBeforeCompile, which the WebGPU
-	* backend does not support.
+	* Creates a cycle for a WebGL or WebGPU renderer. Returns null (day-only,
+	* no overhead) for anything else. The WebGL blend shader uses
+	* `onBeforeCompile`, which the WebGPU backend cannot run, so on WebGPU the
+	* same crossfade is built from node materials (see {@link DayNightWebGPURig}).
 	*/
 	static async create(options) {
+		if (isWebGPURenderer(options.renderer)) {
+			const { DayNightWebGPURig } = await import("./DayNightCycleWebGPU.js");
+			return new DayNightCycle(options, new DayNightWebGPURig());
+		}
 		if (!options.renderer?.isWebGLRenderer) {
-			if (!warnedNonWebGL) {
-				warnedNonWebGL = true;
-				console.warn("DayNightCycle: day/night lighting requires a WebGL renderer; this environment stays day-only.");
+			if (!warnedUnsupported) {
+				warnedUnsupported = true;
+				console.warn("DayNightCycle: day/night lighting requires a WebGL or WebGPU renderer; this environment stays day-only.");
 			}
 			return null;
 		}
@@ -557,19 +563,26 @@ var DayNightCycle = class DayNightCycle {
 		const skyMapNight = skyN ? skyN.mesh.material.map : null;
 		if (skyN && skyD && skyMapDay && skyMapNight && !this.pairedDayMeshes.has(skyD.mesh)) {
 			const sky = skyN.mesh.clone();
-			const mat = skyN.mesh.material.clone();
-			const skyMix = this.skyMix;
-			mat.onBeforeCompile = (shader) => {
-				shader.uniforms.mapDay = { value: skyMapDay };
-				shader.uniforms.uMix = skyMix;
-				shader.fragmentShader = "uniform sampler2D mapDay;\nuniform float uMix;\n" + shader.fragmentShader.replace("#include <map_fragment>", `
+			const skyBase = skyN.mesh.material;
+			let mat;
+			if (this.webgpuRig) {
+				mat = this.webgpuRig.buildBlendMaterial(skyBase, skyMapDay, skyMapNight);
+				sky.material = mat;
+			} else {
+				mat = skyBase.clone();
+				const skyMix = this.skyMix;
+				mat.onBeforeCompile = (shader) => {
+					shader.uniforms.mapDay = { value: skyMapDay };
+					shader.uniforms.uMix = skyMix;
+					shader.fragmentShader = "uniform sampler2D mapDay;\nuniform float uMix;\n" + shader.fragmentShader.replace("#include <map_fragment>", `
             vec4 texelDay = texture2D( mapDay, vMapUv );
             vec4 texelNight = texture2D( map, vMapUv );
             diffuseColor *= mix( texelDay, texelNight, uMix );
             `);
-			};
-			mat.customProgramCacheKey = () => "daynight-sky";
-			sky.material = mat;
+				};
+				mat.customProgramCacheKey = () => "daynight-sky";
+				sky.material = mat;
+			}
 			sky.castShadow = false;
 			sky.receiveShadow = false;
 			root.add(sky);
@@ -606,6 +619,7 @@ var DayNightCycle = class DayNightCycle {
 		const skyFill = new THREE.HemisphereLight(8893951, 3813160, .6);
 		root.add(skyFill);
 		this.skyFill = skyFill;
+		if (this.webgpuRig) this.webgpuRig.restrictOverlayLights(this.overlays.map((overlay) => overlay.material), [sun, bounce]);
 		const shadowMap = this.options.renderer.shadowMap;
 		this.savedShadowMap = {
 			enabled: shadowMap.enabled,
@@ -651,6 +665,7 @@ var DayNightCycle = class DayNightCycle {
 	* endpoints stay pixel-faithful to the reference GLBs.
 	*/
 	buildBlendMaterial(base, mapDay, mapNight) {
+		if (this.webgpuRig) return this.webgpuRig.buildBlendMaterial(base, mapDay, mapNight);
 		const material = base.clone();
 		material.map = mapDay;
 		material.userData.pendingMixU = 0;
@@ -676,19 +691,23 @@ var DayNightCycle = class DayNightCycle {
 	* renders exactly the raw bake.
 	*/
 	addOverlay(geometry, parent = this.options.root) {
-		const material = new THREE.MeshPhongMaterial({
-			color: 16777215,
-			specular: 0,
-			shininess: 0,
-			blending: THREE.AdditiveBlending,
-			transparent: true,
-			depthWrite: false
-		});
-		if (LIGHTS_BEGIN_WITHOUT_HEMISPHERE) {
-			material.onBeforeCompile = (shader) => {
-				shader.fragmentShader = shader.fragmentShader.replace("#include <lights_fragment_begin>", LIGHTS_BEGIN_WITHOUT_HEMISPHERE);
-			};
-			material.customProgramCacheKey = () => "daynight-overlay";
+		let material;
+		if (this.webgpuRig) material = this.webgpuRig.buildOverlayMaterial();
+		else {
+			material = new THREE.MeshPhongMaterial({
+				color: 16777215,
+				specular: 0,
+				shininess: 0,
+				blending: THREE.AdditiveBlending,
+				transparent: true,
+				depthWrite: false
+			});
+			if (LIGHTS_BEGIN_WITHOUT_HEMISPHERE) {
+				material.onBeforeCompile = (shader) => {
+					shader.fragmentShader = shader.fragmentShader.replace("#include <lights_fragment_begin>", LIGHTS_BEGIN_WITHOUT_HEMISPHERE);
+				};
+				material.customProgramCacheKey = () => "daynight-overlay";
+			}
 		}
 		const overlay = new THREE.Mesh(geometry, material);
 		overlay.castShadow = false;
@@ -724,6 +743,7 @@ var DayNightCycle = class DayNightCycle {
 			if (shader) shader.uniforms.mixU.value = values.mixU;
 			material.userData.pendingMixU = values.mixU;
 		}
+		if (this.webgpuRig) this.webgpuRig.mixU.value = values.mixU;
 		this.skyMix.value = values.mixU;
 		this.sun?.position.set(...values.sunPosition);
 		if (this.sun) {

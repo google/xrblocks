@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 98b9729
-* @builddate 2026-10-11T03:11:06.312Z
+* @commitid cb6ce16
+* @builddate 2026-10-11T05:19:49.302Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,6 +40,37 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
+//#region src/core/RendererTypes.ts
+/**
+* Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
+*
+* @param renderer - The renderer instance to test.
+* @returns True if the renderer is a WebGPURenderer, false otherwise.
+*/
+function isWebGPURenderer(renderer) {
+	return renderer != null && typeof renderer === "object" && "isWebGPURenderer" in renderer && renderer.isWebGPURenderer === true;
+}
+/**
+* Asserts that the provided renderer is a THREE.WebGLRenderer.
+*
+* @param renderer - The renderer instance to check.
+* @param consumerName - The name of the subsystem or feature requiring WebGLRenderer.
+* @throws Error if the renderer is a WebGPURenderer.
+*/
+function assertWebGLRenderer(renderer, consumerName) {
+	if (isWebGPURenderer(renderer)) throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
+}
+/**
+* Dependency injection holder for the active Three.js renderer (`WebGLRenderer`
+* or `WebGPURenderer`), allowing scripts to request the renderer via `Registry`
+* in O(1) time without statically importing `three/webgpu`.
+*/
+var RendererHolder = class {
+	constructor(renderer) {
+		this.renderer = renderer;
+	}
+};
+//#endregion
 //#region src/utils/ThreeDisposal.ts
 function disposeMaterial(material, except = /* @__PURE__ */ new Set()) {
 	if (!material) return;
@@ -73,6 +104,6 @@ function disposeObjectChildren(object) {
 	}
 }
 //#endregion
-export { disposeRenderableResources as a, disposeObjectTree as i, disposeMeshResources as n, disposeObjectChildren as r, disposeMaterial as t };
+export { disposeRenderableResources as a, isWebGPURenderer as c, disposeObjectTree as i, disposeMeshResources as n, RendererHolder as o, disposeObjectChildren as r, assertWebGLRenderer as s, disposeMaterial as t };
 
 //# sourceMappingURL=ThreeDisposal.js.map

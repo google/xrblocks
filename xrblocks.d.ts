@@ -5703,16 +5703,27 @@ export declare class ScreenshotSynthesizer {
   private virtualRealBuffer;
   private virtualRealRenderTarget?;
   private fullScreenQuad?;
+  private webgpuQuad?;
   private renderTargetWidth;
   private virtualCaptureInFlight;
   private virtualRealCaptureInFlight;
-  onAfterRender(renderer: THREE.WebGLRenderer, renderSceneFn: () => void, deviceCamera?: XRDeviceCamera): void;
+  onAfterRender(renderer: WebGLOrWebGPURenderer, renderSceneFn: () => void, deviceCamera?: XRDeviceCamera): void;
   private createVirtualImageDataURL;
   private resolveVirtualOnlyRequests;
   private rejectVirtualOnlyRequests;
   private createVirtualRealImageDataURL;
   private resolveVirtualRealRequests;
   private rejectVirtualRealRequests;
+  private createRenderTarget;
+  /**
+   * Reads `target` into `buffer` as top-down RGBA8. WebGL readbacks are
+   * bottom-up, native WebGPU readbacks are top-down but row-padded to 256
+   * bytes, and the WebGPU renderer's WebGL2 fallback is bottom-up again (the
+   * same conventions as SimulatorDepthWebGPURenderer).
+   */
+  private readRenderTargetInto;
+  /** Full-screen textured quad for the WebGPU device-camera overlay path. */
+  private getWebGPUQuad;
   private getFullScreenQuad;
   /**
    * Requests a screenshot from the scene as a DataURL.
@@ -7403,7 +7414,7 @@ export declare class ObjectDetector extends Script {
     deviceCamera: typeof XRDeviceCamera;
     depth: typeof Depth;
     camera: typeof THREE.Camera;
-    renderer: typeof THREE.WebGLRenderer;
+    rendererHolder: typeof RendererHolder;
   };
   /**
    * A map from the object's UUID to our custom `DetectedObject` instance.
@@ -7440,14 +7451,14 @@ export declare class ObjectDetector extends Script {
    * Initializes the ObjectDetector.
    * @override
    */
-  init({ options, ai, aiOptions, deviceCamera, depth, camera, renderer }: {
+  init({ options, ai, aiOptions, deviceCamera, depth, camera, rendererHolder }: {
     options: WorldOptions;
     ai: AI;
     aiOptions: AIOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }): void;
   /**
    * Starts continuous object detection for the given client.
@@ -7552,7 +7563,7 @@ export declare class DetectedPlane extends THREE.Mesh {
 export declare class PlaneDetector extends Script {
   static dependencies: {
     options: typeof WorldOptions;
-    renderer: typeof THREE.WebGLRenderer;
+    rendererHolder: typeof RendererHolder;
   };
   /**
    * A map from the WebXR `XRPlane` object to our custom `DetectedPlane` mesh.
@@ -7571,9 +7582,9 @@ export declare class PlaneDetector extends Script {
   /**
    * Initializes the PlaneDetector.
    */
-  init({ options, renderer }: {
+  init({ options, rendererHolder }: {
     options: WorldOptions;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }): void;
   /**
    * Processes the XRFrame to update plane information.
@@ -7832,7 +7843,7 @@ export declare class AnchorManager extends Script {
   private readonly injectedStore?;
   static dependencies: {
     options: typeof WorldOptions;
-    renderer: typeof THREE.WebGLRenderer;
+    rendererHolder: typeof RendererHolder;
     xrReferenceSpaceCache: typeof XRReferenceSpaceCache;
   };
   /** What the current platform supports; refreshed each frame. */
@@ -7863,9 +7874,9 @@ export declare class AnchorManager extends Script {
    *     the anchor settings, and the renderer supplying the reference space
    *     that anchor poses are expressed against.
    */
-  init({ options, renderer, xrReferenceSpaceCache }: {
+  init({ options, rendererHolder, xrReferenceSpaceCache }: {
     options: WorldOptions;
-    renderer?: THREE.WebGLRenderer;
+    rendererHolder?: RendererHolder;
     xrReferenceSpaceCache?: XRReferenceSpaceCache;
   }): void;
   /**
@@ -8092,7 +8103,7 @@ export declare class AnchorManager extends Script {
 export declare class MeshDetector extends Script {
   static readonly dependencies: {
     options: typeof MeshDetectionOptions;
-    renderer: typeof THREE.WebGLRenderer;
+    rendererHolder: typeof RendererHolder;
   };
   private debugMaterials;
   private fallbackDebugMaterial;
@@ -8111,9 +8122,9 @@ export declare class MeshDetector extends Script {
   private readonly kFOVCosThreshold;
   private lastCleanupTime;
   private frameCount;
-  init({ options, renderer }: {
+  init({ options, rendererHolder }: {
     options: MeshDetectionOptions;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }): void;
   initPhysics(physics: Physics): void;
   updateMeshes(_timestamp: number, frame?: XRFrame): void;
@@ -8342,7 +8353,7 @@ export declare class HumanRecognizer extends Script {
     deviceCamera: typeof XRDeviceCamera;
     depth: typeof Depth;
     camera: typeof THREE.Camera;
-    renderer: typeof THREE.WebGLRenderer;
+    rendererHolder: typeof RendererHolder;
   };
   private detectorBackends;
   private activeClients;
@@ -8359,12 +8370,12 @@ export declare class HumanRecognizer extends Script {
   private camera;
   private renderer;
   targetDevice: string;
-  init({ options, deviceCamera, depth, camera, renderer }: {
+  init({ options, deviceCamera, depth, camera, rendererHolder }: {
     options: WorldOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }): void;
   /**
    * Starts continuous pose detection for the given client.
@@ -8529,7 +8540,7 @@ export declare class FaceRecognizer extends Script {
     deviceCamera: typeof XRDeviceCamera;
     depth: typeof Depth;
     camera: typeof THREE.Camera;
-    renderer: typeof THREE.WebGLRenderer;
+    rendererHolder: typeof RendererHolder;
   };
   private _detectorBackends;
   private activeClients;
@@ -8546,12 +8557,12 @@ export declare class FaceRecognizer extends Script {
   private camera;
   private renderer;
   targetDevice: string;
-  init({ options, deviceCamera, depth, camera, renderer }: {
+  init({ options, deviceCamera, depth, camera, rendererHolder }: {
     options: WorldOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }): void;
   /**
    * Starts continuous face detection for the given client.
@@ -9070,7 +9081,7 @@ declare class XRTransition extends MeshScript<THREE.SphereGeometry, THREE.MeshBa
     pointerEvents: 'none';
   };
   static dependencies: {
-    renderer: typeof THREE.WebGLRenderer;
+    rendererHolder: typeof RendererHolder;
     camera: typeof THREE.Camera;
     timer: typeof THREE.Timer;
     scene: typeof THREE.Scene;
@@ -9087,8 +9098,8 @@ declare class XRTransition extends MeshScript<THREE.SphereGeometry, THREE.MeshBa
   private targetAlpha;
   private defaultBackgroundColor;
   constructor();
-  init({ renderer, camera, timer, scene, options }: {
-    renderer: THREE.WebGLRenderer;
+  init({ rendererHolder, camera, timer, scene, options }: {
+    rendererHolder: RendererHolder;
     camera: THREE.Camera;
     timer: THREE.Timer;
     scene: THREE.Scene;

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 98b9729
-* @builddate 2026-10-11T03:11:06.312Z
+* @commitid cb6ce16
+* @builddate 2026-10-11T05:19:49.302Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,11 +42,11 @@ lego-styles.
 */
 import { t as __exportAll } from "./internal/rolldown-runtime.js";
 import { C as getUIPresentationBounds, D as isUIElement, F as Script, I as ScriptMixin, L as isDefaultScriptMethod, P as MeshScript, S as getUIElementKind, b as cloneUIStyle, f as normalizeManipulationConfig, h as getSemanticControl, j as TransformScript, m as ManipulationAction, n as getResolvedUICardSize, t as UICard, v as registerSemanticControl, w as getUIPresentationObject, x as collectUIRoots, y as UIElement } from "./internal/UICard.js";
-import { $n as AIOptions, $t as getFingerJoint, A as DetectedObject, An as VideoStream, At as SoundOptions, B as GazeController, Bn as getDeviceCameraWorldFromView, Bt as WebXRHandContext, C as AnchorManager, Cn as xrDepthMeshVisualizationOptions, Ct as defaultAnchorStorageKey, D as PlaneDetector, Dn as SceneVisibilityOptions, Dt as PlanesOptions, E as anchorCapability, En as SceneSetOfMarkOptions, Et as HumansOptions, F as ActiveControllers, Fn as cropImage, Ft as StrokeRecognitionOptions, G as OcclusionUtils, Gn as DeviceCameraOptions, Gt as average, H as GamepadBindings, Hn as transformRgbUvToWorld, Ht as HAND_INDEX_TO_LABEL, I as Input, In as detectDeviceCameraTarget, It as OneDollarUnistrokeRecognizer, J as XRReferenceSpaceCache, Jn as xrDeviceCameraUserContinuousOptions, Jt as getAdjacentFingerSpreads, K as OcclusionPass, Kn as xrDeviceCameraEnvironmentContinuousOptions, Kt as clamp01, L as Reticles, Ln as getCameraParametersSnapshot, Lt as HeadGestureRecognitionOptions, M as callInitWithDependencyInjection, Mn as assertWebGLRenderer, Mt as SpeechSynthesizerOptions, N as AudioListener, Nn as isWebGPURenderer, Nt as PhysicsOptions, O as DetectedPlane, On as XRDeviceCamera, Ot as ObjectsOptions, P as Physics, Pn as DEVICE_CAMERA_PARAMETERS, Pt as LightingOptions, Q as Interaction, Qn as Gemini, Qt as getFingerDirection, R as MouseController, Rn as getDeviceCameraClipFromView, Rt as HeuristicHeadGestureRecognizer, S as DetectedMesh, Sn as xrDepthMeshPhysicsOptions, St as AnchorsOptions, T as LocalStorageAnchorStore, Tn as SceneOptions, Tt as FacesOptions, Un as intrinsicsToProjectionMatrix, Ut as HeuristicGestureRecognizer, V as GamepadController, Vn as isDeviceCameraPoseAvailable, Vt as WebXRHandPoseEstimator, W as Depth, Wn as DEFAULT_RGB_TO_DEPTH_PARAMS, Wt as FINGER_ORDER, X as Registry, Xn as AI, Xt as getFingerBendAngles, Y as WaitFrame, Yn as xrDeviceCameraUserOptions, Yt as getBoneVectors, Z as DepthMesh, Zn as OpenAI, Zt as getFingerCurl, _ as isBVHReady, _n as LayersOptions, _t as Options, a as resolveSimulatorRotationsFromKeypoints, an as getPalmNormal, ar as clamp, at as FORWARD, b as PoseJointName, bn as DepthOptions, bt as XRTransitionOptions, c as World, cn as getPalmUp, cr as getUrlParamFloat, ct as UP, d as DetectedFace, dn as getThumbBendAngles, dr as getVec4ByColorString, dt as getInteractionSource, en as getFingerPalmAlignment, er as GEMINI_DEFAULT_FLASH_MODEL, f as FaceLandmarkName, fn as getThumbCurl, fr as lerp, ft as getObjectTargetPoint, g as enableAcceleratedRaycast, gn as getThumbVerticalDirection, gt as InteractionOptions, h as disposeBVH, hn as getThumbStraightness, hr as urlParams, ht as InputOptions, i as resolveSimulatorHandPoseRotations, in as getFingertipPalmDistance, ir as OpenAIOptions, it as DOWN, j as placeObjectAtIntersectionFacingTarget, jn as RendererHolder, jt as SpeechRecognizerOptions, k as ObjectDetector, kn as StreamState, kt as MeshDetectionOptions, l as Segmenter, ln as getPalmWidth, lr as getUrlParamInt, lt as ZERO_VECTOR3, m as applyBVH, mn as getThumbOpposition, mr as print, mt as traverseUtil, n as SIMULATOR_HAND_POSE_ROTATIONS, nn as getFingerStraightness, nr as GEMINI_DEFAULT_LIVE_MODEL, nt as faceCameraSlerpAlpha, o as SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, on as getPalmPose, or as getColorHex, ot as LEFT, p as _getBvhImportStatus, pn as getThumbDirection, pr as parseBase64DataURL, pt as objectIsDescendantOf, q as DepthTextures, qn as xrDeviceCameraEnvironmentOptions, qt as estimateHandScale, r as applySimulatorHandPoseRotationConstraints, rn as getFingertipDistance, rr as GeminiOptions, rt as BACK, s as parseSimulatorHandPoseRotations, sn as getPalmRight, sr as getUrlParamBool, st as RIGHT, t as ModelLoader, tn as getFingerSpread, tr as GEMINI_DEFAULT_IMAGE_MODEL, tt as faceCameraQuaternion, u as FaceRecognizer, un as getRelativeBoneAngles, ur as getUrlParameter, ut as ReticlePresenter, v as HumanRecognizer, vn as HandsOptions, vt as RENDERER_BACKENDS, w as SimulatorAnchor, wn as ContextOptions, wt as SegmentationOptions, x as MeshDetector, xn as xrDepthMeshOptions, xt as WorldOptions, y as DetectedBodyPose, yn as DepthMeshOptions, yt as ReticleOptions, z as HeadGestureRecognition, zn as getDeviceCameraWorldFromClip, zt as GestureRecognitionOptions } from "./internal/ModelLoader.js";
+import { $n as GEMINI_DEFAULT_LIVE_MODEL, $t as getFingerJoint, A as DetectedObject, An as VideoStream, At as SoundOptions, B as GazeController, Bn as intrinsicsToProjectionMatrix, Bt as WebXRHandContext, C as AnchorManager, Cn as xrDepthMeshVisualizationOptions, Ct as defaultAnchorStorageKey, D as PlaneDetector, Dn as SceneVisibilityOptions, Dt as PlanesOptions, E as anchorCapability, En as SceneSetOfMarkOptions, Et as HumansOptions, F as ActiveControllers, Fn as getDeviceCameraClipFromView, Ft as StrokeRecognitionOptions, G as OcclusionUtils, Gn as xrDeviceCameraUserContinuousOptions, Gt as average, H as GamepadBindings, Hn as DeviceCameraOptions, Ht as HAND_INDEX_TO_LABEL, I as Input, In as getDeviceCameraWorldFromClip, It as OneDollarUnistrokeRecognizer, J as XRReferenceSpaceCache, Jn as OpenAI, Jt as getAdjacentFingerSpreads, K as OcclusionPass, Kn as xrDeviceCameraUserOptions, Kt as clamp01, L as Reticles, Ln as getDeviceCameraWorldFromView, Lt as HeadGestureRecognitionOptions, M as callInitWithDependencyInjection, Mn as cropImage, Mt as SpeechSynthesizerOptions, N as AudioListener, Nn as detectDeviceCameraTarget, Nt as PhysicsOptions, O as DetectedPlane, On as XRDeviceCamera, Ot as ObjectsOptions, P as Physics, Pn as getCameraParametersSnapshot, Pt as LightingOptions, Q as Interaction, Qn as GEMINI_DEFAULT_IMAGE_MODEL, Qt as getFingerDirection, R as MouseController, Rn as isDeviceCameraPoseAvailable, Rt as HeuristicHeadGestureRecognizer, S as DetectedMesh, Sn as xrDepthMeshPhysicsOptions, St as AnchorsOptions, T as LocalStorageAnchorStore, Tn as SceneOptions, Tt as FacesOptions, Un as xrDeviceCameraEnvironmentContinuousOptions, Ut as HeuristicGestureRecognizer, V as GamepadController, Vn as DEFAULT_RGB_TO_DEPTH_PARAMS, Vt as WebXRHandPoseEstimator, W as Depth, Wn as xrDeviceCameraEnvironmentOptions, Wt as FINGER_ORDER, X as Registry, Xn as AIOptions, Xt as getFingerBendAngles, Y as WaitFrame, Yn as Gemini, Yt as getBoneVectors, Z as DepthMesh, Zn as GEMINI_DEFAULT_FLASH_MODEL, Zt as getFingerCurl, _ as isBVHReady, _n as LayersOptions, _t as Options, a as resolveSimulatorRotationsFromKeypoints, an as getPalmNormal, ar as getUrlParamFloat, at as FORWARD, b as PoseJointName, bn as DepthOptions, bt as XRTransitionOptions, c as World, cn as getPalmUp, cr as getVec4ByColorString, ct as UP, d as DetectedFace, dn as getThumbBendAngles, dr as print, dt as getInteractionSource, en as getFingerPalmAlignment, er as GeminiOptions, f as FaceLandmarkName, fn as getThumbCurl, fr as urlParams, ft as getObjectTargetPoint, g as enableAcceleratedRaycast, gn as getThumbVerticalDirection, gt as InteractionOptions, h as disposeBVH, hn as getThumbStraightness, ht as InputOptions, i as resolveSimulatorHandPoseRotations, in as getFingertipPalmDistance, ir as getUrlParamBool, it as DOWN, j as placeObjectAtIntersectionFacingTarget, jn as DEVICE_CAMERA_PARAMETERS, jt as SpeechRecognizerOptions, k as ObjectDetector, kn as StreamState, kt as MeshDetectionOptions, l as Segmenter, ln as getPalmWidth, lr as lerp, lt as ZERO_VECTOR3, m as applyBVH, mn as getThumbOpposition, mt as traverseUtil, n as SIMULATOR_HAND_POSE_ROTATIONS, nn as getFingerStraightness, nr as clamp, nt as faceCameraSlerpAlpha, o as SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, on as getPalmPose, or as getUrlParamInt, ot as LEFT, p as _getBvhImportStatus, pn as getThumbDirection, pt as objectIsDescendantOf, q as DepthTextures, qn as AI, qt as estimateHandScale, r as applySimulatorHandPoseRotationConstraints, rn as getFingertipDistance, rr as getColorHex, rt as BACK, s as parseSimulatorHandPoseRotations, sn as getPalmRight, sr as getUrlParameter, st as RIGHT, t as ModelLoader, tn as getFingerSpread, tr as OpenAIOptions, tt as faceCameraQuaternion, u as FaceRecognizer, un as getRelativeBoneAngles, ur as parseBase64DataURL, ut as ReticlePresenter, v as HumanRecognizer, vn as HandsOptions, vt as RENDERER_BACKENDS, w as SimulatorAnchor, wn as ContextOptions, wt as SegmentationOptions, x as MeshDetector, xn as xrDepthMeshOptions, xt as WorldOptions, y as DetectedBodyPose, yn as DepthMeshOptions, yt as ReticleOptions, z as HeadGestureRecognition, zn as transformRgbUvToWorld, zt as GestureRecognitionOptions } from "./internal/ModelLoader.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, c as OCCLUDABLE_ITEMS_LAYER, d as XR_BLOCKS_ASSETS_PATH, i as HAND_JOINT_COUNT, l as RIGHT_VIEW_ONLY_LAYER, n as DEFAULT_DEVICE_CAMERA_WIDTH, o as LEFT_VIEW_ONLY_LAYER, r as HAND_BONE_IDX_CONNECTION_MAP, s as NUM_HANDS, t as DEFAULT_DEVICE_CAMERA_HEIGHT, u as VIEW_DEPTH_GAP } from "./internal/constants.js";
 import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as Hands, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES, u as Keycodes } from "./internal/HandPoses.js";
+import { a as disposeRenderableResources, c as isWebGPURenderer, i as disposeObjectTree, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./internal/ThreeDisposal.js";
 import { a as UIOverlay, c as UIScrollView, i as UIText, s as updatePanelBackfaceVisibility, t as UITextInput } from "./internal/UITextInput.js";
-import { a as disposeRenderableResources, i as disposeObjectTree, n as disposeMeshResources, r as disposeObjectChildren, t as disposeMaterial } from "./internal/ThreeDisposal.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { XREstimatedLight } from "three/addons/webxr/XREstimatedLight.js";
@@ -603,6 +603,13 @@ function flipBufferVertically(buffer, width, height) {
 		buffer.set(tempRow, bottomRowOffset);
 	}
 }
+/**
+* Writes `renderer.xr.isPresenting`. Both backends expose it, but the WebGPU
+* renderer's type marks the accessor read-only.
+*/
+function setXrPresenting(renderer, value) {
+	renderer.xr.isPresenting = value;
+}
 var PendingScreenshotRequest = class {
 	constructor(resolve, reject, overlayOnCamera) {
 		this.resolve = resolve;
@@ -653,22 +660,21 @@ var ScreenshotSynthesizer = class {
 		const scaledHeight = Math.round(mainRenderTargetSize.y * (this.renderTargetWidth / mainRenderTargetSingleViewWidth));
 		if (!this.virtualRenderTarget || this.virtualRenderTarget.width != this.renderTargetWidth) {
 			this.virtualRenderTarget?.dispose();
-			this.virtualRenderTarget = new THREE.WebGLRenderTarget(this.renderTargetWidth, scaledHeight, { colorSpace: THREE.SRGBColorSpace });
+			this.virtualRenderTarget = this.createRenderTarget(renderer, this.renderTargetWidth, scaledHeight);
 		}
 		const xrIsPresenting = renderer.xr.isPresenting;
-		renderer.xr.isPresenting = false;
+		setXrPresenting(renderer, false);
 		const virtualRenderTarget = this.virtualRenderTarget;
 		renderer.setRenderTarget(virtualRenderTarget);
 		renderer.clearColor();
 		renderer.clearDepth();
 		renderSceneFn();
 		renderer.setRenderTarget(mainRenderTarget);
-		renderer.xr.isPresenting = xrIsPresenting;
+		setXrPresenting(renderer, xrIsPresenting);
 		const expectedBufferLength = virtualRenderTarget.width * virtualRenderTarget.height * 4;
 		if (this.virtualBuffer.length != expectedBufferLength) this.virtualBuffer = new Uint8Array(expectedBufferLength);
 		const buffer = this.virtualBuffer;
-		await renderer.readRenderTargetPixelsAsync(virtualRenderTarget, 0, 0, virtualRenderTarget.width, virtualRenderTarget.height, buffer);
-		flipBufferVertically(buffer, virtualRenderTarget.width, virtualRenderTarget.height);
+		await this.readRenderTargetInto(renderer, virtualRenderTarget, buffer);
 		const canvas = this.virtualCanvas || (this.virtualCanvas = document.createElement("canvas"));
 		canvas.width = virtualRenderTarget.width;
 		canvas.height = virtualRenderTarget.height;
@@ -710,22 +716,27 @@ var ScreenshotSynthesizer = class {
 		const scaledHeight = Math.round(mainRenderTargetSize.y * (this.renderTargetWidth / mainRenderTargetSingleViewWidth));
 		if (!this.virtualRealRenderTarget || this.virtualRealRenderTarget.height != scaledHeight) {
 			this.virtualRealRenderTarget?.dispose();
-			this.virtualRealRenderTarget = new THREE.WebGLRenderTarget(this.renderTargetWidth, scaledHeight, { colorSpace: THREE.SRGBColorSpace });
+			this.virtualRealRenderTarget = this.createRenderTarget(renderer, this.renderTargetWidth, scaledHeight);
 		}
 		const renderTarget = this.virtualRealRenderTarget;
 		renderer.setRenderTarget(renderTarget);
 		const xrIsPresenting = renderer.xr.isPresenting;
-		renderer.xr.isPresenting = false;
-		const quad = this.getFullScreenQuad();
-		quad.material.map = deviceCamera.texture;
-		quad.render(renderer);
+		setXrPresenting(renderer, false);
+		if (isWebGPURenderer(renderer)) {
+			const quad = await this.getWebGPUQuad();
+			quad.mesh.material.map = deviceCamera.texture;
+			renderer.render(quad.mesh, quad.camera);
+		} else {
+			const quad = this.getFullScreenQuad();
+			quad.material.map = deviceCamera.texture;
+			quad.render(renderer);
+		}
 		renderSceneFn();
-		renderer.xr.isPresenting = xrIsPresenting;
+		setXrPresenting(renderer, xrIsPresenting);
 		renderer.setRenderTarget(mainRenderTarget);
 		if (this.virtualRealBuffer.length != renderTarget.width * renderTarget.height * 4) this.virtualRealBuffer = new Uint8Array(renderTarget.width * renderTarget.height * 4);
 		const buffer = this.virtualRealBuffer;
-		await renderer.readRenderTargetPixelsAsync(renderTarget, 0, 0, renderTarget.width, renderTarget.height, buffer);
-		flipBufferVertically(buffer, renderTarget.width, renderTarget.height);
+		await this.readRenderTargetInto(renderer, renderTarget, buffer);
 		const canvas = this.virtualRealCanvas || (this.virtualRealCanvas = document.createElement("canvas"));
 		canvas.width = renderTarget.width;
 		canvas.height = renderTarget.height;
@@ -752,6 +763,43 @@ var ScreenshotSynthesizer = class {
 			else this.pendingScreenshotRequests[remainingRequests++] = request;
 		}
 		this.pendingScreenshotRequests.length = remainingRequests;
+	}
+	createRenderTarget(renderer, width, height) {
+		return isWebGPURenderer(renderer) ? new THREE.RenderTarget(width, height, { colorSpace: THREE.SRGBColorSpace }) : new THREE.WebGLRenderTarget(width, height, { colorSpace: THREE.SRGBColorSpace });
+	}
+	/**
+	* Reads `target` into `buffer` as top-down RGBA8. WebGL readbacks are
+	* bottom-up, native WebGPU readbacks are top-down but row-padded to 256
+	* bytes, and the WebGPU renderer's WebGL2 fallback is bottom-up again (the
+	* same conventions as SimulatorDepthWebGPURenderer).
+	*/
+	async readRenderTargetInto(renderer, target, buffer) {
+		const width = target.width;
+		const height = target.height;
+		if (!isWebGPURenderer(renderer)) {
+			await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, buffer);
+			flipBufferVertically(buffer, width, height);
+			return;
+		}
+		const readback = await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height);
+		const rowBytes = width * 4;
+		const srcStride = readback.length > buffer.length ? Math.ceil(rowBytes / 256) * 256 : rowBytes;
+		const isWebGLFallback = "isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true;
+		for (let y = 0; y < height; y++) {
+			const srcOffset = (isWebGLFallback ? height - 1 - y : y) * srcStride;
+			buffer.set(readback.subarray(srcOffset, srcOffset + rowBytes), y * rowBytes);
+		}
+	}
+	/** Full-screen textured quad for the WebGPU device-camera overlay path. */
+	async getWebGPUQuad() {
+		if (!this.webgpuQuad) {
+			const { MeshBasicNodeMaterial } = await import("three/webgpu");
+			this.webgpuQuad = {
+				mesh: new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new MeshBasicNodeMaterial({ transparent: true })),
+				camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+			};
+		}
+		return this.webgpuQuad;
 	}
 	getFullScreenQuad() {
 		if (!this.fullScreenQuad) this.fullScreenQuad = new FullScreenQuad(new THREE.MeshBasicMaterial({ transparent: true }));
@@ -4667,7 +4715,7 @@ const loadingSpinnerManager = new LoadingSpinnerManager();
 var XRTransition = class extends MeshScript {
 	static {
 		this.dependencies = {
-			renderer: THREE.WebGLRenderer,
+			rendererHolder: RendererHolder,
 			camera: THREE.Camera,
 			timer: THREE.Timer,
 			scene: THREE.Scene,
@@ -4691,8 +4739,8 @@ var XRTransition = class extends MeshScript {
 		this.defaultBackgroundColor = new THREE.Color(16777215);
 		this.renderOrder = -Infinity;
 	}
-	init({ renderer, camera, timer, scene, options }) {
-		this.renderer = renderer;
+	init({ rendererHolder, camera, timer, scene, options }) {
+		this.renderer = rendererHolder.renderer;
 		this.sceneCamera = camera;
 		this.timer = timer;
 		this.scene = scene;
@@ -5060,7 +5108,7 @@ var Core = class Core {
 			this.interaction.update(this.input.getFrame(), deltaSeconds);
 			this.uiRenderer.present();
 			this.renderSimulatorAndScene();
-			if (this.renderer instanceof THREE.WebGLRenderer) this.screenshotSynthesizer.onAfterRender(this.renderer, this.renderSceneCallback, this.deviceCamera);
+			this.screenshotSynthesizer.onAfterRender(this.renderer, this.renderSceneCallback, this.deviceCamera);
 		};
 		this.physicsStep = () => {
 			if (this._isPaused && !this.isSteppingFrame) return;

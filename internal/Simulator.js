@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 98b9729
-* @builddate 2026-10-11T03:11:06.312Z
+* @commitid cb6ce16
+* @builddate 2026-10-11T05:19:49.302Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,9 +42,9 @@ lego-styles.
 */
 import { t as __exportAll } from "./rolldown-runtime.js";
 import { F as Script } from "./UICard.js";
-import { I as Input, M as callInitWithDependencyInjection, Nn as isWebGPURenderer, On as XRDeviceCamera, P as Physics, Q as Interaction, U as Reticle, W as Depth, X as Registry, Y as WaitFrame, _t as Options, c as World, i as resolveSimulatorHandPoseRotations, n as SIMULATOR_HAND_POSE_ROTATIONS, r as applySimulatorHandPoseRotationConstraints, t as ModelLoader } from "./ModelLoader.js";
+import { I as Input, M as callInitWithDependencyInjection, On as XRDeviceCamera, P as Physics, Q as Interaction, U as Reticle, W as Depth, X as Registry, Y as WaitFrame, _t as Options, c as World, i as resolveSimulatorHandPoseRotations, n as SIMULATOR_HAND_POSE_ROTATIONS, r as applySimulatorHandPoseRotationConstraints, t as ModelLoader } from "./ModelLoader.js";
 import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, u as Keycodes } from "./HandPoses.js";
-import { i as disposeObjectTree, r as disposeObjectChildren } from "./ThreeDisposal.js";
+import { c as isWebGPURenderer, i as disposeObjectTree, r as disposeObjectChildren } from "./ThreeDisposal.js";
 import { SparkRendererHolder } from "../xrblocks.js";
 import * as THREE from "three";
 import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
