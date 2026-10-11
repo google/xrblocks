@@ -10,7 +10,7 @@ import {
 
 const options = new xb.Options();
 options.enableHands();
-options.simulator.defaultMode = xb.SimulatorMode.POSE;
+options.simulator.defaultMode = xb.SimulatorMode.CONTROLLER;
 options.setAppTitle('Session Replay');
 
 // Add the player first so other scripts see replayed poses in the same frame.
@@ -28,7 +28,7 @@ class ToggleCube extends xb.Script {
     this.add(
       new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), this.material)
     );
-    this.position.set(x, 1.15, -0.9);
+    this.position.set(x, 1.4, -0.9);
   }
 
   onObjectSelectStart(event) {
@@ -45,7 +45,7 @@ class ToggleCube extends xb.Script {
 class SessionReplayPanel extends xb.Script {
   init() {
     this.status = new xb.UIText({
-      text: 'Record yourself pinching the cubes, then replay it.',
+      text: 'Pinch the cubes while recording, then replay it.',
       style: {fontSize: 18, opacity: 0.75, textAlign: 'center'},
     });
     this.recordButton = new xb.UIButton({
@@ -57,14 +57,12 @@ class SessionReplayPanel extends xb.Script {
     this.replayButton = new xb.UIButton({
       label: 'Replay',
       icon: 'replay',
-      disabled: true,
       style: {flexGrow: 1},
       onClick: () => this.replay(),
     });
     this.saveButton = new xb.UIButton({
       label: 'Save',
       icon: 'download',
-      disabled: true,
       style: {flexGrow: 1},
       onClick: () => downloadSessionRecording(recording),
     });
@@ -84,10 +82,36 @@ class SessionReplayPanel extends xb.Script {
         this.status,
       ],
     });
-    card.position.set(0, 1.5, -0.95);
+    card.position.set(0, 1.75, -1.1);
     this.add(card);
     this.add(new THREE.HemisphereLight(0xffffff, 0x606060, 3));
-    this.addLoadButton();
+    this.addDesktopToolbar();
+    this.render();
+  }
+
+  render() {
+    const isRecording = recorder.isRecording;
+    const canReplay =
+      !isRecording && !player.isPlaying && !!recording?.frames.length;
+    this.recordButton.label = isRecording ? 'Stop' : 'Record';
+    this.recordButton.icon = isRecording ? 'stop' : 'radio_button_checked';
+    // Replayed pinches can land on this panel, so lock it during playback.
+    this.recordButton.disabled = player.isPlaying;
+    this.replayButton.disabled = !canReplay;
+    this.saveButton.disabled = isRecording || !recording;
+    if (this.dom) {
+      this.dom.record.textContent = this.recordButton.label;
+      this.dom.record.disabled = this.recordButton.disabled;
+      this.dom.replay.disabled = this.replayButton.disabled;
+      this.dom.save.disabled = this.saveButton.disabled;
+      this.dom.load.disabled = isRecording || player.isPlaying;
+      this.dom.status.textContent = this.status.text;
+    }
+  }
+
+  setStatus(text) {
+    this.status.text = text;
+    this.render();
   }
 
   toggleRecording() {
@@ -96,65 +120,81 @@ class SessionReplayPanel extends xb.Script {
       return;
     }
     recorder.start();
-    this.recordButton.label = 'Stop';
-    this.recordButton.icon = 'stop';
-    this.replayButton.disabled = true;
-    this.saveButton.disabled = true;
-    this.status.text = 'Recording...';
+    this.setStatus('Recording...');
   }
 
   setRecording(next) {
     recording = next;
     const seconds = (getSessionRecordingDuration(recording) / 1000).toFixed(1);
-    this.recordButton.label = 'Record';
-    this.recordButton.icon = 'radio_button_checked';
-    this.replayButton.disabled = recording.frames.length === 0;
-    this.saveButton.disabled = false;
-    this.status.text = `${recording.frames.length} frames, ${seconds}s from ${recording.source}.`;
+    this.setStatus(
+      `${recording.frames.length} frames, ${seconds}s from ${recording.source}.`
+    );
   }
 
   async replay() {
     if (!xb.core.simulatorRunning) {
-      this.status.text =
-        'Replay runs in the desktop simulator. Save this recording and load it there.';
+      this.setStatus(
+        'Replay runs in the desktop simulator. Save this recording and load it there.'
+      );
       return;
     }
-    // Replayed pinches can land on this panel, so lock it during playback.
-    this.recordButton.disabled = true;
-    this.replayButton.disabled = true;
-    this.status.text = 'Replaying...';
+    const finished = player.play(recording);
+    this.setStatus('Replaying...');
     try {
-      await player.play(recording);
-      this.status.text = 'Replay finished.';
+      await finished;
+      this.setStatus('Replay finished.');
     } catch (error) {
-      this.status.text = error.message;
-    } finally {
-      this.recordButton.disabled = false;
-      this.replayButton.disabled = false;
+      this.setStatus(error.message);
     }
   }
 
-  addLoadButton() {
+  async load(file) {
+    try {
+      this.setRecording(parseSessionRecording(await file.text()));
+    } catch (error) {
+      this.setStatus(error.message);
+    }
+  }
+
+  // Desktop mouse clicks don't press the 3D panel while driving the simulated
+  // hands, so mirror its buttons in the page.
+  addDesktopToolbar() {
+    const bar = document.createElement('div');
+    bar.style.cssText =
+      'position:fixed;top:12px;right:12px;z-index:10;display:flex;gap:6px;align-items:center;font:13px sans-serif;';
+    const status = document.createElement('span');
+    status.style.cssText =
+      'color:#fff;background:#0008;padding:6px 10px;border-radius:6px;';
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'application/json,.json';
     input.hidden = true;
-    input.addEventListener('change', async () => {
+    input.addEventListener('change', () => {
       const file = input.files?.[0];
       input.value = '';
-      if (!file) return;
-      try {
-        this.setRecording(parseSessionRecording(await file.text()));
-      } catch (error) {
-        this.status.text = error.message;
-      }
+      if (file) this.load(file);
     });
-    const button = document.createElement('button');
-    button.textContent = 'Load recording';
-    button.style.cssText =
-      'position:fixed;top:12px;right:12px;z-index:10;padding:8px 12px;';
-    button.addEventListener('click', () => input.click());
-    document.body.append(input, button);
+    const button = (label, onClick) => {
+      const element = document.createElement('button');
+      element.textContent = label;
+      element.style.cssText = 'padding:6px 12px;';
+      element.addEventListener('click', () => {
+        // Keep focus off the button so Space pinches instead of clicking it.
+        element.blur();
+        onClick();
+      });
+      return element;
+    };
+    this.dom = {
+      status,
+      record: button('Record', () => this.toggleRecording()),
+      replay: button('Replay', () => this.replay()),
+      save: button('Save', () => downloadSessionRecording(recording)),
+      load: button('Load', () => input.click()),
+    };
+    const {record, replay, save, load} = this.dom;
+    bar.append(status, record, replay, save, load, input);
+    document.body.append(bar);
   }
 }
 
