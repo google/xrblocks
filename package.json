@@ -23,7 +23,8 @@
     "format:fix": "prettier \"**/*.{cjs,html,js,json,md,mdx,ts,css}\" --write",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts"
   },
   "files": [
     "build",
@@ -47,10 +48,12 @@
     "@emnapi/core": "^1.11.1",
     "@emnapi/runtime": "^1.11.1",
     "@google/genai": "^2.27.0",
+    "@iwer/sem": "^2.5.0",
     "@litertjs/core": "^2.5.3",
     "@mediapipe/tasks-audio": "^0.10.35",
     "@mediapipe/tasks-vision": "^0.10.34",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@playwright/test": "^1.64.0",
     "@pmndrs/uikit": "^1.0.64",
     "@preact/signals-core": "^1.14.0",
     "@sparkjsdev/spark": "^2.1.0",
@@ -63,6 +66,7 @@
     "flatbuffers": "25.9.23",
     "glob": "^11.0.3",
     "http-server": "^14.1.1",
+    "iwer": "^2.5.0",
     "js-aruco2": "2.0.0",
     "jsdom": "^27.0.1",
     "lit": "^3.3.1",
