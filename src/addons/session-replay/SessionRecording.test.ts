@@ -60,6 +60,13 @@ describe('parseSessionRecording', () => {
     expect(parseSessionRecording(JSON.stringify(original))).toEqual(original);
   });
 
+  it('keeps app state through JSON', () => {
+    const original = {...recording([frame(0)]), state: {cubes: [1, 0, 2]}};
+    expect(parseSessionRecording(JSON.stringify(original)).state).toEqual({
+      cubes: [1, 0, 2],
+    });
+  });
+
   it('accepts an empty recording', () => {
     expect(parseSessionRecording(recording([])).frames).toEqual([]);
   });

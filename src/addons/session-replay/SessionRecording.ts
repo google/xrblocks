@@ -34,6 +34,12 @@ export type SessionRecording = {
   source: 'xr' | 'simulator' | 'desktop';
   jointNames: string[];
   frames: SessionFrame[];
+  /**
+   * App state passed to `SessionRecorder.start()`. Replay only drives input,
+   * so restore this before `SessionPlayer.play()` to start the scene where the
+   * recording did.
+   */
+  state?: unknown;
 };
 
 export const POSE_LENGTH = 7;

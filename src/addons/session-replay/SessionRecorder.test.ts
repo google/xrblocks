@@ -161,6 +161,17 @@ describe('SessionRecorder', () => {
     expect(() => recorder.stop()).toThrow(/not recording/);
   });
 
+  it('stores a copy of the app state passed to start', () => {
+    const {recorder} = createRecorder();
+    const state = {cubes: [1, 0, 2]};
+    recorder.start({state});
+    state.cubes[0] = 3;
+    expect(recorder.stop().state).toEqual({cubes: [1, 0, 2]});
+
+    recorder.start();
+    expect(recorder.stop()).not.toHaveProperty('state');
+  });
+
   it('requires initialization before start', () => {
     expect(() => new SessionRecorder().start()).toThrow(/initialized/);
   });

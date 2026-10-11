@@ -100,8 +100,12 @@ export class SessionRecorder extends Script {
     return this.recording !== undefined;
   }
 
-  /** Starts a new recording. The first frame is captured on the next update. */
-  start() {
+  /**
+   * Starts a new recording. The first frame is captured on the next update.
+   * @param options.state - Optional JSON-serializable app state to store with
+   * the recording, copied now so later changes don't affect it.
+   */
+  start({state}: {state?: unknown} = {}) {
     if (!this.core || !this.camera) {
       throw new Error(
         'SessionRecorder must be added with xb.add() and initialized before start().'
@@ -118,6 +122,9 @@ export class SessionRecorder extends Script {
       jointNames: [...HAND_JOINT_NAMES],
       frames: [],
     };
+    if (state !== undefined) {
+      this.recording.state = JSON.parse(JSON.stringify(state));
+    }
     this.startTime = undefined;
     this.lastSampleTime = -Infinity;
     this.lastSelected = [false, false];

@@ -252,4 +252,4 @@ const recording = recorder.stop();
 await player.play(recording);
 ```
 
-Recordings are JSON, so a session captured on a headset can be saved and replayed on a desktop. Add the player before other scripts so they see replayed poses in the same frame. Replay drives the simulator only; in a real XR session `play()` rejects. See `demos/session_replay` and the addon README for the format and limitations.
+Recordings are JSON, so a session captured on a headset can be saved and replayed on a desktop. Replay drives input, not scene state, so pass your app's starting state as `recorder.start({state})` and restore `recording.state` before `play()`. Add the player before other scripts so they see replayed poses in the same frame. Replay drives the simulator only; in a real XR session `play()` rejects. See `demos/session_replay` and the addon README for the format and limitations.

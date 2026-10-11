@@ -40,6 +40,20 @@ await player.play(recording);
 
 `play()` resolves when the recording finishes or `player.stop()` is called. Stopping early releases any held selection so scripts do not see a stuck pinch.
 
+### Starting from the same scene
+
+A recording drives input, not the scene. If replaying a pinch toggles something, it toggles it again from wherever the scene is now. Pass your own starting state to `start()` and restore it before playing:
+
+```ts
+recorder.start({state: {cubeColors: cubes.map((cube) => cube.colorIndex)}});
+// ...
+const {cubeColors} = recording.state as {cubeColors: number[]};
+cubeColors.forEach((color, i) => cubes[i].setColor(color));
+await player.play(recording);
+```
+
+`state` can be any JSON value. It is copied when recording starts and saved with the file. The addon never reads it.
+
 To load a saved file, pass its text to `parseSessionRecording()`. It validates the format and reports the first bad frame by index.
 
 ```ts
@@ -60,6 +74,7 @@ A recording is plain JSON, so it can be saved, diffed, and checked into a reposi
   format: 'xrblocks-session',
   version: 1,
   source: 'xr' | 'simulator' | 'desktop',
+  state?: unknown, // whatever was passed to start()
   frames: [
     {
       t: 0, // milliseconds since start()
@@ -92,6 +107,6 @@ Controllers are matched to the left and right slots by `inputSource.handedness`.
 - Replay runs only in the desktop simulator. In a real XR session the device overwrites the camera and controller poses every frame, so `play()` rejects when the simulator is not running.
 - Only select is recorded. Squeeze, mouse, and gamepad input are not part of version 1.
 - `SessionPlayer` applies the replayed pose in its `update()`. Scripts added before it see the previous frame, so add the player first. Direct-touch interaction can lag the replay by one frame.
-- Recordings store poses, not scene state. Replay reproduces the input, and the scene responds to it the same way only if it starts in the same state.
+- Recordings store poses, not scene state. Replay reproduces the input, and the scene responds to it the same way only if it starts in the same state. Use `state` to save what your app needs to restore.
 
 See `demos/session_replay` for a working example with record, replay, save, and load buttons.

@@ -31,9 +31,13 @@ class ToggleCube extends xb.Script {
     this.position.set(x, 1.4, -0.9);
   }
 
+  setColor(index) {
+    this.colorIndex = index;
+    this.material.color.setHex(COLORS[index]);
+  }
+
   onObjectSelectStart(event) {
-    this.colorIndex = (this.colorIndex + 1) % COLORS.length;
-    this.material.color.setHex(COLORS[this.colorIndex]);
+    this.setColor((this.colorIndex + 1) % COLORS.length);
     event.stopPropagation();
   }
 
@@ -119,7 +123,8 @@ class SessionReplayPanel extends xb.Script {
       this.setRecording(recorder.stop());
       return;
     }
-    recorder.start();
+    // Replay only drives input, so store the cube colors to restore later.
+    recorder.start({state: cubes.map((cube) => cube.colorIndex)});
     this.setStatus('Recording...');
   }
 
@@ -137,6 +142,11 @@ class SessionReplayPanel extends xb.Script {
         'Replay runs in the desktop simulator. Save this recording and load it there.'
       );
       return;
+    }
+    if (Array.isArray(recording.state)) {
+      recording.state.forEach((index, i) => {
+        if (COLORS[index] !== undefined) cubes[i]?.setColor(index);
+      });
     }
     const finished = player.play(recording);
     this.setStatus('Replaying...');
@@ -201,7 +211,8 @@ class SessionReplayPanel extends xb.Script {
 xb.add(player);
 xb.add(recorder);
 xb.add(new SessionReplayPanel());
-for (const x of [-0.3, 0, 0.3]) {
-  xb.add(new ToggleCube(x));
+const cubes = [-0.3, 0, 0.3].map((x) => new ToggleCube(x));
+for (const cube of cubes) {
+  xb.add(cube);
 }
 xb.init(options);
