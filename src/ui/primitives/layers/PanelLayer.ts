@@ -133,7 +133,10 @@ export abstract class PanelLayer<
     abortableEffect(() => {
       const size = this.size.value;
       if (size) {
-        this.material.uniforms.u_resolution.value.set(size[0], size[1]);
+        (this.material.uniforms.u_resolution.value as THREE.Vector2).set(
+          size[0],
+          size[1]
+        );
       }
     }, this.abortSignal);
 

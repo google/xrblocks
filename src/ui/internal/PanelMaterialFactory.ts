@@ -4,9 +4,8 @@ import {PanelShaderMaterial} from '../primitives/layers/PanelLayer';
 import {UICardEdgeFragmentShader} from '../shaders/UICardEdge.frag';
 import {UnifiedGradientPanelFragmentShader} from '../shaders/UnifiedGradientPanel.frag';
 
-/* oxlint-disable no-explicit-any */
 /** A shader uniform entry: a `{value}` holder like THREE.ShaderMaterial uses. */
-export type PanelUniformEntry = {value: any} & Record<string, any>;
+export type PanelUniformEntry = {value: unknown};
 
 /** The flat uniform map shared by the GLSL and TSL panel materials. */
 export type PanelUniforms = Record<string, PanelUniformEntry>;
@@ -37,10 +36,34 @@ export interface WebGPUUIHandler {
 }
 
 let webgpuUIHandler: WebGPUUIHandler | undefined;
+let webgpuMaterialLoader: (() => Promise<unknown>) | undefined;
+let webgpuMaterialsPromise: Promise<void> | undefined;
 
 /** Installs (or clears) the WebGPU material handler. */
 export function setWebGPUUIHandler(handler?: WebGPUUIHandler) {
   webgpuUIHandler = handler;
+}
+
+/**
+ * Registers the loader for the TSL material module (called on WebGPURenderer
+ * init). The module itself is only fetched when UI is actually used.
+ */
+export function setWebGPUUIMaterialLoader(
+  loader: () => Promise<unknown>
+): void {
+  webgpuMaterialLoader = loader;
+}
+
+/**
+ * Loads (at most once) and registers the TSL materials. Awaited before any
+ * UI material is created, so callers must not create panel materials until it
+ * settles.
+ */
+export function ensureWebGPUUIMaterials(): Promise<void> {
+  if (webgpuUIHandler) return Promise.resolve();
+  if (!webgpuMaterialLoader) return Promise.resolve();
+  webgpuMaterialsPromise ??= webgpuMaterialLoader().then(() => undefined);
+  return webgpuMaterialsPromise;
 }
 
 function mergeDefaultUniforms(uniforms: PanelUniforms): PanelUniforms {

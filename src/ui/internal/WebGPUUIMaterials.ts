@@ -8,29 +8,8 @@
  * (`{value}` entries, mutated in place by `GradientPanelUtils` and friends).
  */
 import * as THREE from 'three';
-import {MeshBasicNodeMaterial} from 'three/webgpu';
-import * as TSL from 'three/tsl';
-
+import {MeshBasicNodeMaterial, type Node} from 'three/webgpu';
 import {
-  type PanelMaterial,
-  type PanelMaterialOptions,
-  type PanelUniformEntry,
-  type PanelUniforms,
-  type WebGPUUIHandler,
-  setWebGPUUIHandler,
-} from './PanelMaterialFactory';
-import {
-  MAX_RESIZE_CORNER_FRACTION,
-  RESIZE_CORNER_SIDE_MARGINS,
-  RESIZE_CORNER_EDGE_WIDTH_SCALE,
-} from '../constants/UICardEdgeConstants';
-
-/* oxlint-disable no-explicit-any */
-// Mechanical GLSL->TSL port: TSL's node expression types are invariant
-// generics in three's d.ts (array element nodes and vec constructors in
-// particular do not unify), so the port binds the TSL surface loosely. The
-// uniform plumbing around it stays strictly typed.
-const {
   Discard,
   Fn,
   If,
@@ -55,12 +34,32 @@ const {
   vec2,
   vec3,
   vec4,
-}: any = TSL;
+} from 'three/tsl';
 
-type Num = any;
-type V2 = any;
-type V4 = any;
-type Arr = any;
+import {
+  type PanelMaterial,
+  type PanelMaterialOptions,
+  type PanelUniformEntry,
+  type PanelUniforms,
+  type WebGPUUIHandler,
+  setWebGPUUIHandler,
+} from './PanelMaterialFactory';
+import {
+  MAX_RESIZE_CORNER_FRACTION,
+  RESIZE_CORNER_SIDE_MARGINS,
+  RESIZE_CORNER_EDGE_WIDTH_SCALE,
+} from '../constants/UICardEdgeConstants';
+
+// Mechanical GLSL->TSL port. TSL's node generics are invariant in three's
+// d.ts (array element nodes and mixed vec constructors do not unify), so the
+// few stubborn expressions go through `as never` / `as unknown as ...` casts
+// rather than loose typing.
+type Num = Node<'float'>;
+type V2 = Node<'vec2'>;
+type V3 = Node<'vec3'>;
+
+type V4 = Node<'vec4'>;
+type Arr = ReturnType<typeof uniformArray>;
 
 const PI = Math.PI;
 const PAINT_TYPE_SOLID = 0;
@@ -89,48 +88,65 @@ function bindUniformNodes(uniforms: PanelUniforms) {
 
 // SDF for a rounded box in 2D (port of CommonFunctions.glsl.ts).
 const sdRoundedBox = Fn(([p, b, r]: [V2, V2, Num]) => {
-  const d = abs(p).sub(b.sub(r));
+  const d = abs(p).sub(b.sub(r)) as unknown as V2;
   return length(max(d, 0))
     .add(min(max(d.x, d.y), 0))
     .sub(r);
 });
 
+/**
+ * The GLSL panel shaders write `gl_FragColor` raw (no `<colorspace_fragment>`)
+ * and blend in byte space; WebGPU blends inside an sRGB framebuffer, i.e. in
+ * linear space. Decoding the output with the exact sRGB EOTF makes the covered
+ * fraction match exactly (EOTF then OETF is identity) and approximates the
+ * byte-space blend well where the fill is close to what it covers — the common
+ * glass-over-panel case. Over a very different backdrop the two blend spaces
+ * still differ slightly; that residual is a WebGPU platform difference.
+ */
+const rawOutput = (c: V3): V3 => {
+  const decode = (x: Num): Num =>
+    mix(
+      x.div(12.92),
+      pow(x.add(0.055).div(1.055), 2.4),
+      float(x.greaterThanEqual(0.04045))
+    ) as unknown as Num;
+  return vec3(decode(c.x), decode(c.y), decode(c.z)) as unknown as V3;
+};
+
 // Port of GradientFunctions.glsl.ts.
 const mixGradientStops = Fn(
   ([t, numStops, stops, colors]: [Num, Num, Arr, Arr]) => {
-    const finalT = clamp(t, 0, 1);
+    const stop = (i: number | Num): Num => stops.element(i) as unknown as Num;
+    const colorOf = (i: number | Num): V4 => colors.element(i) as unknown as V4;
+    const finalT = clamp(t, 0, 1) as unknown as Num;
     const color = vec4(0, 0, 0, 0).toVar();
     If(numStops.greaterThanEqual(1), () => {
-      color.assign(colors.element(0));
+      color.assign(colorOf(0) as never);
       If(numStops.greaterThanEqual(2), () => {
         const matched = float(0).toVar();
         for (let i = 0; i < 3; i++) {
           If(
             matched
               .equal(0)
-              .and(finalT.greaterThanEqual(stops.element(i)))
-              .and(finalT.lessThanEqual(stops.element(i + 1))),
+              .and(finalT.greaterThanEqual(stop(i)))
+              .and(finalT.lessThanEqual(stop(i + 1))),
             () => {
-              const range = stops.element(i + 1).sub(stops.element(i));
-              const localT = finalT
-                .sub(stops.element(i))
-                .div(max(0.0001, range));
-              color.assign(
-                mix(colors.element(i), colors.element(i + 1), localT)
-              );
+              const range = stop(i + 1).sub(stop(i));
+              const localT = finalT.sub(stop(i)).div(max(0.0001, range));
+              color.assign(mix(colorOf(i), colorOf(i + 1), localT) as never);
               matched.assign(1);
             }
           );
         }
-        If(finalT.lessThan(stops.element(0)), () => {
-          color.assign(colors.element(0));
+        If(finalT.lessThan(stop(0)), () => {
+          color.assign(colorOf(0) as never);
         });
-        If(finalT.greaterThan(stops.element(numStops.sub(1))), () => {
-          color.assign(colors.element(numStops.sub(1)));
+        If(finalT.greaterThan(stop(numStops.sub(1))), () => {
+          color.assign(colorOf(numStops.sub(1)) as never);
         });
       });
     });
-    return color;
+    return color as unknown as V4;
   }
 );
 
@@ -156,7 +172,7 @@ const getGradientColor = Fn(
     // GLSL mat2(c, -s, s, c) is column-major.
     const px = c.mul(p.x).add(s.mul(p.y));
     const py = s.mul(p.x).negate().add(c.mul(p.y));
-    p.assign(vec2(px, py));
+    p.assign(vec2(px as never, py as never) as never);
 
     const sx = float(0.001).toVar();
     If(abs(scaleValue.x).greaterThan(0.001), () => {
@@ -191,7 +207,7 @@ const getGradientColor = Fn(
       numStops,
       stops,
       colors
-    ) as ReturnType<typeof vec4>;
+    ) as unknown as V4;
   }
 );
 
@@ -213,7 +229,7 @@ function paintColor(
   prefix: string,
   pos: V2,
   radialScale: Num
-): ReturnType<typeof vec4> {
+): V4 {
   const result = vec4(0, 0, 0, 0).toVar();
   const paintType = asNum(uniforms[`${prefix}paintType`]);
   If(paintType.equal(PAINT_TYPE_SOLID), () => {
@@ -243,7 +259,7 @@ function paintColor(
           asNum(uniforms[`${prefix}numStops`]),
           asArr(uniforms[`${prefix}gradientStops`]),
           asArr(uniforms[`${prefix}gradientColors`])
-        ) as ReturnType<typeof vec4>
+        ) as unknown as V4
       );
     });
   });
@@ -481,7 +497,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
     If(color.a.lessThan(0.001), () => {
       Discard();
     });
-    return color;
+    return vec4(rawOutput(color.rgb), color.a) as unknown as V4;
   });
 }
 
@@ -726,18 +742,18 @@ function buildCardEdgeMain(uniforms: PanelUniforms) {
 
     If(uDebug.greaterThan(0.5), () => {
       accumColor.assign(
-        mix(accumColor, debugColor, debugColor.a) as ReturnType<typeof vec4>
+        mix(accumColor, debugColor, debugColor.a) as unknown as V4
       );
       accumColor.assign(vec4(accumColor.rgb, max(accumColor.a, debugColor.a)));
     });
 
     accumColor.assign(vec4(accumColor.rgb, accumColor.a.mul(uOpacity)));
-    return accumColor;
+    return vec4(rawOutput(accumColor.rgb), accumColor.a) as unknown as V4;
   });
 }
 
 function createNodeMaterial(
-  main: ReturnType<typeof Fn>,
+  main: unknown,
   options: PanelMaterialOptions
 ): PanelMaterial {
   const material = new MeshBasicNodeMaterial({
@@ -771,6 +787,53 @@ export const webgpuUIHandler: WebGPUUIHandler = {
     return createNodeMaterial(buildCardEdgeMain(options.uniforms)(), options);
   },
 };
+
+/**
+ * The uikit WebGPU registry's panel conversion treats `material.colorNode` as
+ * the diffuse *source*, and uikit's Image component re-runs `applyPanelMaterial`
+ * whenever its texture updates. On that second pass the source is the previous
+ * conversion's own `res.rgb` — a vec3 swizzle without alpha — so the texture's
+ * alpha is lost and transparent canvas textures render as solid black bars.
+ * Re-running with the map as the source restores the alpha. Installed here so
+ * any app that enables WebGPU UI gets the fix; harmless without the registry.
+ */
+interface UikitWebGPURegistry {
+  getWebGPUHandlers?: () => Record<string, unknown> | undefined;
+  setWebGPUHandlers?: (handlers: Record<string, unknown>) => void;
+}
+
+interface ConvertiblePanelMaterial {
+  colorNode?: unknown;
+  __xbTslPanelApplied?: boolean;
+}
+
+try {
+  const registrySpecifier = '@pmndrs/uikit/webgpu';
+  const registry = (await import(
+    /* @vite-ignore */ registrySpecifier
+  )) as UikitWebGPURegistry;
+  const current = registry.getWebGPUHandlers?.();
+  const applyPanelMaterial = current?.applyPanelMaterial as
+    | ((material: ConvertiblePanelMaterial, info: unknown) => void)
+    | undefined;
+  if (registry.setWebGPUHandlers && applyPanelMaterial) {
+    registry.setWebGPUHandlers({
+      ...current,
+      applyPanelMaterial: (
+        material: ConvertiblePanelMaterial,
+        info: unknown
+      ): void => {
+        if (material.__xbTslPanelApplied) {
+          material.colorNode = undefined;
+        }
+        applyPanelMaterial(material, info);
+        material.__xbTslPanelApplied = true;
+      },
+    });
+  }
+} catch {
+  // uikit without the WebGPU registry: nothing to fix.
+}
 
 // Importing this module enables the TSL materials (mirrors the
 // `@david18284/uikit/webgpu` enable-module pattern).

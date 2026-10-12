@@ -7,7 +7,6 @@ import {
   reversePainterSortStable,
 } from '@pmndrs/uikit';
 import * as THREE from 'three';
-
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {UIButton} from '../components/UIButton';
@@ -56,6 +55,14 @@ import type {
   UIPresentationState,
   UIPresentationStateFor,
 } from './UIBackend';
+
+import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
+
+// On WebGPURenderer, register the TSL panel materials before any UI
+// material is created. Top-level await keeps this chunk pending until
+// registration completes (UIRenderer awaits the module on the first UI
+// element — the only load path, so UI-less apps never fetch it).
+await ensureWebGPUUIMaterials();
 
 const ICON_BASE =
   'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/';

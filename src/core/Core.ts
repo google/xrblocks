@@ -557,10 +557,17 @@ export class Core {
       );
       this.assertInitializing();
       this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
-      // Registers the TSL panel materials (import side effect). Dynamic so the
-      // base bundle never statically loads three/tsl or three/webgpu.
-      await import('../ui/internal/WebGPUUIMaterials');
+      // The TSL panel materials are only fetched when the app actually uses
+      // UI (UIKitBackend awaits this loader), so the base bundle never
+      // statically loads three/tsl or three/webgpu and UI-less apps never
+      // load them at all.
+      const {setWebGPUUIMaterialLoader} = await import(
+        '../ui/internal/PanelMaterialFactory'
+      );
       this.assertInitializing();
+      setWebGPUUIMaterialLoader(
+        () => import('../ui/internal/WebGPUUIMaterials')
+      );
     }
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
