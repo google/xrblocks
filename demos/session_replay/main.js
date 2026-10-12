@@ -37,8 +37,10 @@ class ToggleCube extends xb.Script {
   }
 
   onObjectSelectStart(event) {
-    this.setColor((this.colorIndex + 1) % COLORS.length);
     event.stopPropagation();
+    // Only hands are recorded, so a mouse toggle would not replay.
+    if (event.source.controller === xb.core.input.mouseController) return;
+    this.setColor((this.colorIndex + 1) % COLORS.length);
   }
 
   update(time) {
@@ -90,6 +92,7 @@ class SessionReplayPanel extends xb.Script {
     this.add(card);
     this.add(new THREE.HemisphereLight(0xffffff, 0x606060, 3));
     this.addDesktopToolbar();
+    this.addPanelMouseClicks();
     this.render();
   }
 
@@ -166,8 +169,35 @@ class SessionReplayPanel extends xb.Script {
     }
   }
 
-  // Desktop mouse clicks don't press the 3D panel while driving the simulated
-  // hands, so mirror its buttons in the page.
+  // The simulator only routes mouse clicks to the scene in User mode, which
+  // hides the hands. In the other modes, turn a plain click (no drag) into a
+  // brief mouse select so the panel buttons still respond.
+  addPanelMouseClicks() {
+    const canvas = xb.core.renderer.domElement;
+    const mouse = xb.core.input.mouseController;
+    const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
+    let down;
+    canvas.addEventListener('pointerdown', (event) => {
+      down = event.button === 0 ? {x: event.clientX, y: event.clientY} : null;
+    });
+    canvas.addEventListener('pointerup', async (event) => {
+      if (!down || mouse.userData.connected) return;
+      const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+      down = null;
+      if (moved > 4) return;
+      mouse.connect();
+      mouse.updateMousePositionFromEvent(event);
+      mouse.callSelectStart();
+      await nextFrame();
+      await nextFrame();
+      mouse.callSelectEnd();
+      await nextFrame();
+      await nextFrame();
+      mouse.disconnect();
+    });
+  }
+
+  // Mirror the panel buttons in the page for desktop use.
   addDesktopToolbar() {
     const bar = document.createElement('div');
     bar.style.cssText =
