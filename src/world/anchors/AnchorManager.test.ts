@@ -1,6 +1,7 @@
 import {beforeEach, describe, expect, it, vi, afterEach} from 'vitest';
 
 import {XRReferenceSpaceCache} from '../../core/components/XRReferenceSpaceCache';
+import {RendererHolder} from '../../core/RendererTypes';
 import {WorldOptions} from '../WorldOptions';
 
 import {AnchorManager} from './AnchorManager';
@@ -154,7 +155,11 @@ function makeManager(store = memoryStore(), renderer = fakeRenderer()) {
       refSpace
     );
   }
-  manager.init({options, renderer, xrReferenceSpaceCache: cache});
+  manager.init({
+    options,
+    rendererHolder: new RendererHolder(renderer),
+    xrReferenceSpaceCache: cache,
+  });
   return {manager, store, options};
 }
 
@@ -537,7 +542,7 @@ describe('AnchorManager reference space', () => {
     };
     manager.init({
       options: new WorldOptions(),
-      renderer: fakeRenderer(),
+      rendererHolder: new RendererHolder(fakeRenderer()),
       xrReferenceSpaceCache: mockCache as unknown as XRReferenceSpaceCache,
     });
     manager.update(0, env.frame);
@@ -930,7 +935,7 @@ describe('AnchorManager simulated handles', () => {
     options.anchors.enablePersistence();
     options.anchors.simulatorFallback = true;
     const manager = new AnchorManager(store);
-    manager.init({options, renderer: fakeRenderer()});
+    manager.init({options, rendererHolder: new RendererHolder(fakeRenderer())});
     manager.update(0, undefined);
     return manager;
   }
@@ -1128,7 +1133,11 @@ function strictEnv(opts: {cached?: XRReferenceSpaceType[]} = {}) {
       const options = new WorldOptions();
       options.anchors.enablePersistence();
       const manager = new AnchorManager(store);
-      manager.init({options, renderer, xrReferenceSpaceCache: cache});
+      manager.init({
+        options,
+        rendererHolder: new RendererHolder(renderer),
+        xrReferenceSpaceCache: cache,
+      });
       return manager;
     },
     /** Runs one animation frame, during which a frame is live. */
@@ -1203,7 +1212,7 @@ describe('AnchorManager anchor space fallback', () => {
     const env = strictEnv();
     const options = new WorldOptions();
     const manager = new AnchorManager(memoryStore());
-    manager.init({options, renderer: env.renderer});
+    manager.init({options, rendererHolder: new RendererHolder(env.renderer)});
     env.tick(manager);
 
     const promise = manager.create(POSE, 'sofa');

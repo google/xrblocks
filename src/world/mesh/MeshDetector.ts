@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 
+import {
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import {Script} from '../../core/Script';
 import {DetectedMesh} from './DetectedMesh';
 import {MeshDetectionOptions} from './MeshDetectionOptions';
@@ -14,13 +18,13 @@ const SEMANTIC_COLORS = [0x00ff00, 0xffff00, 0x0000ff];
 export class MeshDetector extends Script {
   static readonly dependencies = {
     options: MeshDetectionOptions,
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
   };
   private debugMaterials = new Map<string, THREE.Material>();
   private fallbackDebugMaterial: THREE.Material | null = null;
   xrMeshToThreeMesh = new Map<XRMesh | SimulatorMesh, DetectedMesh>();
   threeMeshToXrMesh = new Map<DetectedMesh, XRMesh | SimulatorMesh>();
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
   private physics?: Physics;
   // When true, meshes are injected by the simulator and the WebXR
   // detectedMeshes path is skipped (mirrors PlaneDetector.usingSimulatorPlanes).
@@ -51,12 +55,12 @@ export class MeshDetector extends Script {
 
   override init({
     options,
-    renderer,
+    rendererHolder,
   }: {
     options: MeshDetectionOptions;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }) {
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
     if (options.showDebugVisualizations) {
       this.fallbackDebugMaterial = new THREE.MeshBasicMaterial({
         color: 0x000000,

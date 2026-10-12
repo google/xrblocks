@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import type {GLTF} from 'three/addons/loaders/GLTFLoader.js';
 
-import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
+import {
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import type {ModelLoader} from '../../utils/ModelLoader';
 import {disposeObjectTree} from '../../utils/ThreeDisposal';
 import type {SimulatorDayNightLightingDefinition} from '../scene/SimulatorEnvironmentManifest';
@@ -14,6 +17,7 @@ import {
   smoothNormalsByPosition,
   splitNightStateMesh,
 } from './bakePairing';
+import type {DayNightWebGPURig} from './DayNightCycleWebGPU.js';
 import {dayNightSchedule} from './dayNightSchedule';
 
 interface BlendShader {
@@ -29,7 +33,7 @@ interface RestoreState {
   scale: THREE.Vector3;
 }
 
-let warnedNonWebGL = false;
+let warnedUnsupported = false;
 
 /**
  * Removes the hemisphere-light accumulation from three's `lights_fragment_begin`
@@ -85,7 +89,7 @@ export class DayNightCycle {
   private ownedGeometries = new Set<THREE.BufferGeometry>();
   /** Replaced day materials (blend + day-only clones) to dispose. */
   private replacedMaterials: THREE.Material[] = [];
-  private blendMaterials: THREE.MeshBasicMaterial[] = [];
+  private blendMaterials: THREE.Material[] = [];
   private overlays: THREE.Mesh[] = [];
   private shadeGroups: {mesh: THREE.Mesh; topY: number}[] = [];
   private dayOnlyMeshes: THREE.Mesh[] = [];
@@ -103,23 +107,31 @@ export class DayNightCycle {
     type: THREE.ShadowMapType;
   };
 
-  private constructor(private options: DayNightCycleOptions) {}
+  private constructor(
+    private options: DayNightCycleOptions,
+    private readonly webgpuRig?: DayNightWebGPURig
+  ) {}
 
   /**
-   * Creates a cycle for a WebGL renderer. Returns null (day-only, no overhead)
-   * on WebGPU: the blend shader uses onBeforeCompile, which the WebGPU
-   * backend does not support.
+   * Creates a cycle for a WebGL or WebGPU renderer. Returns null (day-only,
+   * no overhead) for anything else. The WebGL blend shader uses
+   * `onBeforeCompile`, which the WebGPU backend cannot run, so on WebGPU the
+   * same crossfade is built from node materials (see {@link DayNightWebGPURig}).
    */
   static async create(
     options: DayNightCycleOptions
   ): Promise<DayNightCycle | null> {
+    if (isWebGPURenderer(options.renderer)) {
+      const {DayNightWebGPURig} = await import('./DayNightCycleWebGPU.js');
+      return new DayNightCycle(options, new DayNightWebGPURig());
+    }
     const renderer = options.renderer as {isWebGLRenderer?: boolean} | null;
     if (!renderer?.isWebGLRenderer) {
-      if (!warnedNonWebGL) {
-        warnedNonWebGL = true;
+      if (!warnedUnsupported) {
+        warnedUnsupported = true;
         console.warn(
-          'DayNightCycle: day/night lighting requires a WebGL renderer; ' +
-            'this environment stays day-only.'
+          'DayNightCycle: day/night lighting requires a WebGL or WebGPU ' +
+            'renderer; this environment stays day-only.'
         );
       }
       return null;
@@ -207,7 +219,8 @@ export class DayNightCycle {
       disposeObjectTree(this.nightScene);
       this.nightScene = undefined;
     }
-    const shadowMap = (this.options.renderer as THREE.WebGLRenderer).shadowMap;
+    const shadowMap = (this.options.renderer as WebGLOrWebGPURenderer)
+      .shadowMap;
     if (this.savedShadowMap) {
       shadowMap.enabled = this.savedShadowMap.enabled;
       shadowMap.type = this.savedShadowMap.type;
@@ -335,26 +348,37 @@ export class DayNightCycle {
       // turns on). The night scene owns the sky geometry; render a clone so
       // disposal of the night tree stays symmetric.
       const sky = skyN.mesh.clone();
-      const mat = (skyN.mesh.material as THREE.MeshBasicMaterial).clone();
-      const skyMix = this.skyMix;
-      mat.onBeforeCompile = (shader) => {
-        shader.uniforms.mapDay = {value: skyMapDay};
-        shader.uniforms.uMix = skyMix;
-        shader.fragmentShader =
-          'uniform sampler2D mapDay;\nuniform float uMix;\n' +
-          shader.fragmentShader.replace(
-            '#include <map_fragment>',
-            `
+      const skyBase = skyN.mesh.material as THREE.MeshBasicMaterial;
+      let mat: THREE.Material;
+      if (this.webgpuRig) {
+        mat = this.webgpuRig.buildBlendMaterial(
+          skyBase,
+          skyMapDay,
+          skyMapNight
+        );
+        sky.material = mat;
+      } else {
+        mat = skyBase.clone();
+        const skyMix = this.skyMix;
+        mat.onBeforeCompile = (shader) => {
+          shader.uniforms.mapDay = {value: skyMapDay};
+          shader.uniforms.uMix = skyMix;
+          shader.fragmentShader =
+            'uniform sampler2D mapDay;\nuniform float uMix;\n' +
+            shader.fragmentShader.replace(
+              '#include <map_fragment>',
+              `
             vec4 texelDay = texture2D( mapDay, vMapUv );
             vec4 texelNight = texture2D( map, vMapUv );
             diffuseColor *= mix( texelDay, texelNight, uMix );
             `
-          );
-      };
-      // The sky patch is a different shader patch than the plain mapped
-      // materials it shares parameters with; keep its program to itself.
-      mat.customProgramCacheKey = () => 'daynight-sky';
-      sky.material = mat;
+            );
+        };
+        // The sky patch is a different shader patch than the plain mapped
+        // materials it shares parameters with; keep its program to itself.
+        mat.customProgramCacheKey = () => 'daynight-sky';
+        sky.material = mat;
+      }
       sky.castShadow = false;
       sky.receiveShadow = false;
       root.add(sky);
@@ -399,6 +423,16 @@ export class DayNightCycle {
     root.add(skyFill);
     this.skyFill = skyFill;
 
+    // On WebGPU the additive overlay is pinned to the rig lights (the sun and
+    // window bounce only) once they exist - the node-material equivalent of
+    // stripHemisphereIrradiance, which needs the lights in scope.
+    if (this.webgpuRig) {
+      this.webgpuRig.restrictOverlayLights(
+        this.overlays.map((overlay) => overlay.material as THREE.Material),
+        [sun, bounce]
+      );
+    }
+
     // PCF (not PCFSoft) + radius: PCFSoft ignores shadow.radius; the plain PCF
     // kernel with a radius gives a real penumbra that absorbs the shadow map's
     // texel flips at thin window jambs (the hard-edged patch blinked there).
@@ -406,7 +440,8 @@ export class DayNightCycle {
     // day changes (see apply()). The global autoUpdate stays on so lights
     // owned by the app keep updating their own shadows; the sun's caster set
     // is the static room + blinds, so scrub-time refreshes are sufficient.
-    const shadowMap = (this.options.renderer as THREE.WebGLRenderer).shadowMap;
+    const shadowMap = (this.options.renderer as WebGLOrWebGPURenderer)
+      .shadowMap;
     this.savedShadowMap = {
       enabled: shadowMap.enabled,
       type: shadowMap.type,
@@ -460,7 +495,10 @@ export class DayNightCycle {
     base: THREE.MeshBasicMaterial,
     mapDay: THREE.Texture,
     mapNight: THREE.Texture
-  ) {
+  ): THREE.Material {
+    if (this.webgpuRig) {
+      return this.webgpuRig.buildBlendMaterial(base, mapDay, mapNight);
+    }
     // Clone the bake material so every authored flag (double-sidedness, tone
     // mapping, fog, color, transparency) survives the swap - the bake meshes
     // are DoubleSide (the sky dome is seen from inside), and a fresh material
@@ -503,23 +541,31 @@ export class DayNightCycle {
     geometry: THREE.BufferGeometry,
     parent: THREE.Object3D = this.options.root
   ) {
-    const material = new THREE.MeshPhongMaterial({
-      color: 0xffffff,
-      specular: 0x000000,
-      shininess: 0,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      depthWrite: false,
-    });
-    // Lit only by the rig lights (see stripHemisphereIrradiance).
-    if (LIGHTS_BEGIN_WITHOUT_HEMISPHERE) {
-      material.onBeforeCompile = (shader) => {
-        shader.fragmentShader = shader.fragmentShader.replace(
-          '#include <lights_fragment_begin>',
-          LIGHTS_BEGIN_WITHOUT_HEMISPHERE
-        );
-      };
-      material.customProgramCacheKey = () => 'daynight-overlay';
+    let material: THREE.Material;
+    if (this.webgpuRig) {
+      // Node materials cannot patch built-in GLSL chunks; the overlay is
+      // pinned to the rig's directional lights in restrictOverlayLights
+      // instead (the same effect as stripHemisphereIrradiance).
+      material = this.webgpuRig.buildOverlayMaterial();
+    } else {
+      material = new THREE.MeshPhongMaterial({
+        color: 0xffffff,
+        specular: 0x000000,
+        shininess: 0,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        depthWrite: false,
+      });
+      // Lit only by the rig lights (see stripHemisphereIrradiance).
+      if (LIGHTS_BEGIN_WITHOUT_HEMISPHERE) {
+        material.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <lights_fragment_begin>',
+            LIGHTS_BEGIN_WITHOUT_HEMISPHERE
+          );
+        };
+        material.customProgramCacheKey = () => 'daynight-overlay';
+      }
     }
     const overlay = new THREE.Mesh(geometry, material);
     overlay.castShadow = false;
@@ -558,6 +604,7 @@ export class DayNightCycle {
       if (shader) shader.uniforms.mixU.value = values.mixU;
       material.userData.pendingMixU = values.mixU;
     }
+    if (this.webgpuRig) this.webgpuRig.mixU.value = values.mixU;
     this.skyMix.value = values.mixU;
     this.sun?.position.set(...values.sunPosition);
     if (this.sun) {

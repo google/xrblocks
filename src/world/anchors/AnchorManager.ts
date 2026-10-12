@@ -1,6 +1,8 @@
-import * as THREE from 'three';
-
 import {XRReferenceSpaceCache} from '../../core/components/XRReferenceSpaceCache';
+import {
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import {Script} from '../../core/Script';
 import {WorldOptions} from '../WorldOptions';
 
@@ -58,7 +60,7 @@ function simulatedHandle(): string {
 export class AnchorManager extends Script {
   static dependencies = {
     options: WorldOptions,
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
     xrReferenceSpaceCache: XRReferenceSpaceCache,
   };
 
@@ -76,7 +78,7 @@ export class AnchorManager extends Script {
   private readonly anchors = new Map<string, TrackedAnchor>();
   private store?: AnchorStore;
   private options!: WorldOptions;
-  private renderer?: THREE.WebGLRenderer;
+  private renderer?: WebGLOrWebGPURenderer;
   private referenceSpaceCache?: XRReferenceSpaceCache;
   private warnedUnsupported = false;
   private warnedSpaceDowngrade = false;
@@ -105,15 +107,15 @@ export class AnchorManager extends Script {
    */
   override init({
     options,
-    renderer,
+    rendererHolder,
     xrReferenceSpaceCache,
   }: {
     options: WorldOptions;
-    renderer?: THREE.WebGLRenderer;
+    rendererHolder?: RendererHolder;
     xrReferenceSpaceCache?: XRReferenceSpaceCache;
   }) {
     this.options = options;
-    this.renderer = renderer;
+    this.renderer = rendererHolder?.renderer;
     this.referenceSpaceCache = xrReferenceSpaceCache;
     this.store =
       this.injectedStore ??
