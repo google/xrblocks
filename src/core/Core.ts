@@ -557,6 +557,10 @@ export class Core {
       );
       this.assertInitializing();
       this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
+      // Registers the TSL panel materials (import side effect). Dynamic so the
+      // base bundle never statically loads three/tsl or three/webgpu.
+      await import('../ui/internal/WebGPUUIMaterials');
+      this.assertInitializing();
     }
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);

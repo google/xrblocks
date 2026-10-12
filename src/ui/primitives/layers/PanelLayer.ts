@@ -8,6 +8,7 @@ import {
 } from '@pmndrs/uikit';
 import {ReadonlySignal, Signal} from '@preact/signals-core';
 import * as THREE from 'three';
+import type {PanelMaterial} from '../../internal/PanelMaterialFactory';
 import {PanelVertexShader} from '../../shaders/Panel.vert';
 
 /**
@@ -94,8 +95,8 @@ export class PanelShaderMaterial extends THREE.ShaderMaterial {
 export abstract class PanelLayer<
   TProps extends PanelLayerProperties,
 > extends Custom<TProps> {
-  /** The underlying ShaderMaterial instance managed by this layer. */
-  public material: PanelShaderMaterial;
+  /** The underlying material managed by this layer (GLSL or TSL). */
+  public material: PanelMaterial;
 
   /**
    * @param material - The PanelShaderMaterial instance to use for rendering.
@@ -104,7 +105,7 @@ export abstract class PanelLayer<
    * @param config - Optional configuration settings for the layer lifecycle.
    */
   constructor(
-    material: PanelShaderMaterial,
+    material: PanelMaterial,
     inputProperties?: InProperties<TProps>,
     initialClasses?: Array<InProperties<TProps> | string>,
     config?: {
