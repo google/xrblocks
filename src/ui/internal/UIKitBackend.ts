@@ -984,7 +984,17 @@ class UIKitNodeBinding {
     const previousOwned = this.ownsImageTexture;
     this.imageTexture = texture;
     this.ownsImageTexture = ownsTexture;
-    (this.node as Image).texture.value = texture;
+    const node = this.node as Image;
+    // uikit's Image rebuilds its material's TSL conversion when this texture
+    // signal fires, but the conversion prefers an existing colorNode over the
+    // map — so a stale colorNode (from before the async texture arrived) would
+    // shadow the image and render black. Clear it; the signal handler rebuilds
+    // it from the now-present map. No-op on the GLSL path.
+    const material = node.material as {colorNode?: unknown} | undefined;
+    if (material && 'colorNode' in material) {
+      material.colorNode = undefined;
+    }
+    node.texture.value = texture;
     if (previousOwned && previous && previous !== texture) previous.dispose();
   }
 

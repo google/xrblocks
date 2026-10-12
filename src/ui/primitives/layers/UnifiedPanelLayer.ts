@@ -5,7 +5,6 @@ import {
   WithSignal,
 } from '@pmndrs/uikit';
 import * as THREE from 'three';
-import {UnifiedGradientPanelFragmentShader} from '../../shaders/UnifiedGradientPanel.frag';
 import {Paint, StrokeAlign} from '../../types/ShaderTypes';
 import {
   createPaintUniforms,
@@ -15,12 +14,8 @@ import {
   updateShadowUniforms,
   updateStrokeUniforms,
 } from '../../utils/GradientPanelUtils';
-import {
-  PanelLayer,
-  PanelLayerProperties,
-  PanelShaderMaterial,
-  SignalProperties,
-} from './PanelLayer';
+import {createUnifiedPanelMaterial} from '../../internal/PanelMaterialFactory';
+import {PanelLayer, PanelLayerProperties, SignalProperties} from './PanelLayer';
 
 export type UnifiedPanelLayerProperties = PanelLayerProperties & {
   fillColor?: Paint;
@@ -56,8 +51,7 @@ export class UnifiedPanelLayer extends PanelLayer<UnifiedPanelLayerProperties> {
       side?: THREE.Side;
     } = {}
   ) {
-    const material = new PanelShaderMaterial({
-      fragmentShader: UnifiedGradientPanelFragmentShader,
+    const material = createUnifiedPanelMaterial({
       side: config.side ?? THREE.FrontSide,
       uniforms: {
         // Fill
