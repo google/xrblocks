@@ -6,6 +6,7 @@ import {
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
+import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import * as THREE from 'three';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
@@ -349,17 +350,19 @@ class UIKitMount implements UIMount {
 
 class UIKitBackend implements UIBackend {
   private readonly icons = new IconCache();
-  private renderer?: THREE.WebGLRenderer;
+  private renderer?: WebGLOrWebGPURenderer;
   private previousLocalClippingEnabled = false;
   private releaseFocusGuard?: () => void;
 
-  configureRenderer(renderer: THREE.WebGLRenderer): void {
+  configureRenderer(renderer: WebGLOrWebGPURenderer): void {
     if (this.renderer === renderer) return;
     this.restoreRenderer();
     this.renderer = renderer;
     this.releaseFocusGuard = TextInputEditor.guardCanvas(renderer.domElement);
-    this.previousLocalClippingEnabled = renderer.localClippingEnabled;
-    renderer.localClippingEnabled = true;
+    if ('localClippingEnabled' in renderer) {
+      this.previousLocalClippingEnabled = renderer.localClippingEnabled;
+      renderer.localClippingEnabled = true;
+    }
     renderer.setTransparentSort(reversePainterSortStable);
   }
 
@@ -380,7 +383,9 @@ class UIKitBackend implements UIBackend {
     this.releaseFocusGuard?.();
     this.releaseFocusGuard = undefined;
     if (!this.renderer) return;
-    this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
+    if ('localClippingEnabled' in this.renderer) {
+      this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
+    }
     this.renderer = undefined;
   }
 }
