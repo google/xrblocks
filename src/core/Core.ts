@@ -538,6 +538,7 @@ export class Core {
         alpha: true,
         forceWebGL: options.webgpuOptions?.forceWebGL,
       });
+      this.renderer.xr.enabled = true;
       await this.renderer.init();
       this.assertInitializing();
     } else {
@@ -548,6 +549,7 @@ export class Core {
         alpha: true,
         logarithmicDepthBuffer: options.logarithmicDepthBuffer,
       });
+      this.renderer.xr.enabled = true;
     }
     if (isWebGPURenderer(this.renderer)) {
       const {applyWebGPUReticleMaterial} = await import(
@@ -558,7 +560,6 @@ export class Core {
     }
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.xr.enabled = true;
     // disable built-in occlusion
     if ('getDepthSensingMesh' in this.renderer.xr) {
       this.renderer.xr.getDepthSensingMesh = function () {
@@ -621,6 +622,12 @@ export class Core {
     // webxrOptionalFeatures itself would otherwise drop it and fail to start.
     if (!webXROptionalFeatures.includes(options.referenceSpaceType)) {
       webXROptionalFeatures.push(options.referenceSpaceType);
+    }
+    if (
+      options.rendererBackend === 'webgpu' &&
+      !webXROptionalFeatures.includes('webgpu')
+    ) {
+      webXROptionalFeatures.push('webgpu');
     }
     // Use camera-access when the browser supports it.
     if (options.deviceCamera?.enabled) {
@@ -904,6 +911,12 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    const sessionWithFeatures = session as XRSession & {
+      enabledFeatures?: string[];
+    };
+    if (sessionWithFeatures.enabledFeatures?.includes('webgpu')) {
+      console.debug('WebXR session is using WebGPU');
+    }
     this.xrReferenceSpaceCache.onXRSessionStart(session);
     if (this.options.deviceCamera?.enabled) {
       await this.deviceCamera!.init();
