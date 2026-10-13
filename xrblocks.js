@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid cb6ce16
-* @builddate 2026-10-11T05:19:49.302Z
+* @commitid b97fa6f
+* @builddate 2026-10-13T05:34:06.825Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5341,15 +5341,19 @@ var Core = class Core {
 				alpha: true,
 				forceWebGL: options.webgpuOptions?.forceWebGL
 			});
+			this.renderer.xr.enabled = true;
 			await this.renderer.init();
 			this.assertInitializing();
-		} else this.renderer = new THREE.WebGLRenderer({
-			canvas: options.canvas,
-			antialias: options.antialias,
-			stencil: options.stencil,
-			alpha: true,
-			logarithmicDepthBuffer: options.logarithmicDepthBuffer
-		});
+		} else {
+			this.renderer = new THREE.WebGLRenderer({
+				canvas: options.canvas,
+				antialias: options.antialias,
+				stencil: options.stencil,
+				alpha: true,
+				logarithmicDepthBuffer: options.logarithmicDepthBuffer
+			});
+			this.renderer.xr.enabled = true;
+		}
 		if (isWebGPURenderer(this.renderer)) {
 			const { applyWebGPUReticleMaterial } = await import("./internal/ReticleWebGPUMaterial.js");
 			this.assertInitializing();
@@ -5357,7 +5361,6 @@ var Core = class Core {
 		}
 		this.renderer.setPixelRatio(window.devicePixelRatio);
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
-		this.renderer.xr.enabled = true;
 		if ("getDepthSensingMesh" in this.renderer.xr) this.renderer.xr.getDepthSensingMesh = function() {
 			return null;
 		};
@@ -5398,6 +5401,7 @@ var Core = class Core {
 		const webXRRequiredFeatures = options.webxrRequiredFeatures;
 		const webXROptionalFeatures = options.webxrOptionalFeatures;
 		if (!webXROptionalFeatures.includes(options.referenceSpaceType)) webXROptionalFeatures.push(options.referenceSpaceType);
+		if (options.rendererBackend === "webgpu" && !webXROptionalFeatures.includes("webgpu")) webXROptionalFeatures.push("webgpu");
 		if (options.deviceCamera?.enabled) webXROptionalFeatures.push("camera-access");
 		this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
 		this.webXRSettings.optionalFeatures = webXROptionalFeatures;
@@ -5485,6 +5489,7 @@ var Core = class Core {
 	*/
 	async onXRSessionStarted(session) {
 		if (!this.isLifecycleActive()) return;
+		if (session.enabledFeatures?.includes("webgpu")) console.debug("WebXR session is using WebGPU");
 		this.xrReferenceSpaceCache.onXRSessionStart(session);
 		if (this.options.deviceCamera?.enabled) {
 			await this.deviceCamera.init();
