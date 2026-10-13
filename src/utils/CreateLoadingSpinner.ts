@@ -1,4 +1,8 @@
-class LoadingSpinner extends HTMLElement {
+const BaseHTMLElement = (
+  typeof HTMLElement !== 'undefined' ? HTMLElement : class {}
+) as typeof HTMLElement;
+
+class LoadingSpinner extends BaseHTMLElement {
   private static style = `
     /* Styles for the wrapper that covers the screen */
     .wrapper {
@@ -46,12 +50,19 @@ class LoadingSpinner extends HTMLElement {
   }
 }
 // Prevents errors in headless environments where the spinner isn't actually used.
-if (!customElements.get('xb-blocks-loading-spinner')) {
+if (
+  typeof HTMLElement !== 'undefined' &&
+  typeof customElements !== 'undefined' &&
+  !customElements.get('xb-blocks-loading-spinner')
+) {
   customElements.define('xb-blocks-loading-spinner', LoadingSpinner);
 }
 
 // Creates a new Loading spinner and attaches it to document.body.
 export function createLoadingSpinner() {
+  if (typeof document === 'undefined' || !document.body) {
+    return undefined;
+  }
   return document.body.appendChild(
     document.createElement('xb-blocks-loading-spinner')
   );

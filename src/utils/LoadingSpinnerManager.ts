@@ -51,16 +51,18 @@ export class LoadingSpinnerManager {
      */
     THREE.DefaultLoadingManager.onStart = (_url, itemsLoaded, itemsTotal) => {
       this.isLoading = true;
-      window.parent.postMessage(
-        {
-          type: 'XR_LOADING_PROGRESS',
-          payload: {
-            progress: itemsLoaded / itemsTotal,
-            message: 'Loading assets...',
+      if (typeof window !== 'undefined') {
+        window.parent?.postMessage(
+          {
+            type: 'XR_LOADING_PROGRESS',
+            payload: {
+              progress: itemsLoaded / itemsTotal,
+              message: 'Loading assets...',
+            },
           },
-        },
-        '*'
-      );
+          '*'
+        );
+      }
     };
 
     /**
@@ -76,16 +78,18 @@ export class LoadingSpinnerManager {
       itemsLoaded,
       itemsTotal
     ) => {
-      window.parent.postMessage(
-        {
-          type: 'XR_LOADING_PROGRESS',
-          payload: {
-            progress: itemsLoaded / itemsTotal,
-            message: `Loading ${Math.round((itemsLoaded / itemsTotal) * 100)}%`,
+      if (typeof window !== 'undefined') {
+        window.parent?.postMessage(
+          {
+            type: 'XR_LOADING_PROGRESS',
+            payload: {
+              progress: itemsLoaded / itemsTotal,
+              message: `Loading ${Math.round((itemsLoaded / itemsTotal) * 100)}%`,
+            },
           },
-        },
-        '*'
-      );
+          '*'
+        );
+      }
     };
 
     /**
@@ -96,7 +100,9 @@ export class LoadingSpinnerManager {
     THREE.DefaultLoadingManager.onLoad = () => {
       this.isLoading = false;
       this.hideSpinner();
-      window.parent.postMessage({type: 'XR_LOADING_COMPLETE'}, '*');
+      if (typeof window !== 'undefined') {
+        window.parent?.postMessage({type: 'XR_LOADING_COMPLETE'}, '*');
+      }
     };
 
     /**
@@ -109,13 +115,15 @@ export class LoadingSpinnerManager {
       this.isLoading = false;
       console.warn('XRBlocks: Error loading: ' + url);
       this.hideSpinner();
-      window.parent.postMessage(
-        {
-          type: 'XR_LOADING_ERROR',
-          payload: {url, message: 'Failed to load assets.'},
-        },
-        '*'
-      );
+      if (typeof window !== 'undefined') {
+        window.parent?.postMessage(
+          {
+            type: 'XR_LOADING_ERROR',
+            payload: {url, message: 'Failed to load assets.'},
+          },
+          '*'
+        );
+      }
     };
   }
 }

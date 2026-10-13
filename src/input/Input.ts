@@ -4,7 +4,7 @@ import {XRHandModelFactory} from 'three/addons/webxr/XRHandModelFactory.js';
 
 import {NUM_HANDS} from '../constants';
 import {Options} from '../core/Options.js';
-import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
+import type {SupportedRenderer} from '../core/RendererTypes';
 import {KeyEvent} from '../core/Script';
 import type {
   DirectTouchInput,
@@ -84,7 +84,7 @@ export class Input {
   }: {
     systemsGroup: XRSystems;
     options: Options;
-    renderer: WebGLOrWebGPURenderer;
+    renderer: SupportedRenderer;
   }) {
     systemsGroup.add(this.activeControllers, this.reticles);
 
@@ -421,23 +421,31 @@ export class Input {
   bindKeyDown(event: (event: KeyEvent) => void) {
     if (this.keyDownListeners.has(event)) return;
     this.keyDownListeners.add(event);
-    window.addEventListener('keydown', event);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', event);
+    }
   }
 
   bindKeyUp(event: (event: KeyEvent) => void) {
     if (this.keyUpListeners.has(event)) return;
     this.keyUpListeners.add(event);
-    window.addEventListener('keyup', event);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keyup', event);
+    }
   }
 
   unbindKeyDown(event: (event: KeyEvent) => void) {
     this.keyDownListeners.delete(event);
-    window.removeEventListener('keydown', event);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('keydown', event);
+    }
   }
 
   unbindKeyUp(event: (event: KeyEvent) => void) {
     this.keyUpListeners.delete(event);
-    window.removeEventListener('keyup', event);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('keyup', event);
+    }
   }
 
   /** Samples current controller, button, and direct-touch state. */
@@ -480,6 +488,14 @@ export class Input {
           .set(0, 0, -1)
           .applyQuaternion(orientation)
           .normalize();
+        const lastIntersection = controller.userData.lastIntersection as
+          | THREE.Intersection
+          | null
+          | undefined;
+        input.intersections =
+          lastIntersection && lastIntersection.object && lastIntersection.point
+            ? [lastIntersection]
+            : undefined;
         input.selected = controller.userData.selected === true;
         input.released = this.releasedControllers.delete(controller);
         this.raySourceInputs.push(input);
@@ -579,11 +595,13 @@ export class Input {
   }
 
   dispose() {
-    for (const listener of this.keyDownListeners) {
-      window.removeEventListener('keydown', listener);
-    }
-    for (const listener of this.keyUpListeners) {
-      window.removeEventListener('keyup', listener);
+    if (typeof window !== 'undefined') {
+      for (const listener of this.keyDownListeners) {
+        window.removeEventListener('keydown', listener);
+      }
+      for (const listener of this.keyUpListeners) {
+        window.removeEventListener('keyup', listener);
+      }
     }
     this.keyDownListeners.clear();
     this.keyUpListeners.clear();
