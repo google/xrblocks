@@ -41,13 +41,16 @@
       import * as THREE from 'three';
       import * as xb from 'xrblocks';
 
+      // This sample demonstrates the WebGPU path: default to it unless the
+      // URL explicitly selects another renderer (?rendererBackend=webgl).
+      const useWebGPU =
+        new URLSearchParams(location.search).get('rendererBackend') !== 'webgl';
+
       // pmndrs/uikit has no WebGPURenderer support; this sample uses
       // @david18284/uikit (drop-in replacement via the importmap). Its WebGPU
       // panel/glyph materials are enabled by importing the /webgpu subpath,
       // which must happen before any UI is created.
-      if (
-        new URLSearchParams(location.search).get('rendererBackend') === 'webgpu'
-      ) {
+      if (useWebGPU) {
         await import('@pmndrs/uikit/webgpu');
       }
 
@@ -352,6 +355,7 @@
       // enable-import above makes this module async — a DOMContentLoaded
       // listener registered here could miss the event entirely. Init directly.
       const options = new xb.Options();
+      if (useWebGPU) options.enableWebGPU();
       options.setAppTitle('Spatial UI');
       xb.add(new MainScript());
       xb.init(options);
