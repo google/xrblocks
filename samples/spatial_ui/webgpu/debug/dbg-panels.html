@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Panel material A/B harness (GLSL vs TSL)</title>
+    <meta charset="utf-8" />
+    <!--
+      Controlled side-by-side of XR Blocks' panel materials: the GLSL
+      PanelShaderMaterial vs the TSL port, with identical uniform maps.
+
+      Serve the REPO ROOT (so /build resolves), e.g.:
+        npm run build:sdk && npx http-server -p 51191 .
+      then open:
+        http://127.0.0.1:51191/samples/spatial_ui/webgpu/debug/dbg-panels.html
+
+      URL params:
+        ?rendererBackend=webgpu   use the TSL port (default: GLSL)
+        ?fill=solid|gradient      paint under test (default: solid)
+        ?alpha=0.8                fill alpha (default: 0.8)
+        ?bg=gray|black            background (default: gray 150)
+
+      Read the quad's center pixels and compare across backends. Findings
+      from this harness are summarized in README.md next to this file.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.webgpu.js",
+          "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.tsl.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@david18284/uikit@1.0.76-dli.1/dist/index.min.js",
+          "@pmndrs/uikit/webgpu": "https://cdn.jsdelivr.net/npm/@david18284/uikit@1.0.76-dli.1/dist/webgpu/index.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.76/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.76/dist/index.min.js",
+          "@pmndrs/msdfonts/inter": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.76/dist/inter.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "zod": "https://cdn.jsdelivr.net/npm/zod@4.4.3/+esm"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script>
+      window.__errors = [];
+      window.addEventListener('error', (e) =>
+        window.__errors.push(String(e.error?.stack || e.message))
+      );
+      window.addEventListener('unhandledrejection', (e) =>
+        window.__errors.push('REJ ' + String(e.reason?.stack || e.reason))
+      );
+    </script>
+    <canvas id="c" width="400" height="200"></canvas>
+    <script type="module">
+      import * as THREE from 'three';
+
+      const params = new URLSearchParams(location.search);
+      const webgpu = params.get('rendererBackend') === 'webgpu';
+      const fillAlpha = parseFloat(params.get('alpha') || '0.8');
+      const useGradient = params.get('fill') === 'gradient';
+      const grayBg = params.get('bg') !== 'black';
+
+      // Full uniform map, same shape as UnifiedPanelLayer's.
+      const V2 = () => new THREE.Vector2();
+      const V4 = () => new THREE.Vector4(0, 0, 0, 1);
+      function paintUniforms(prefix) {
+        return {
+          [`${prefix}paintType`]: {value: 0},
+          [`${prefix}solidColor`]: {value: V4()},
+          [`${prefix}gradientType`]: {value: 0},
+          [`${prefix}center`]: {value: new THREE.Vector2(0.5, 0.5)},
+          [`${prefix}scale`]: {value: new THREE.Vector2(1, 1)},
+          [`${prefix}rotation`]: {value: 0},
+          [`${prefix}gradientStops`]: {value: [0, 0, 0, 0]},
+          [`${prefix}gradientColors`]: {value: [V4(), V4(), V4(), V4()]},
+          [`${prefix}numStops`]: {value: 0},
+        };
+      }
+      function shadowUniforms(prefix) {
+        return {
+          [`${prefix}blur`]: {value: 0},
+          [`${prefix}position`]: {value: V2()},
+          [`${prefix}spread`]: {value: 0},
+          [`${prefix}falloff`]: {value: 1},
+        };
+      }
+      const uniforms = {
+        u_time: {value: 0},
+        u_resolution: {value: new THREE.Vector2(400, 200)},
+        u_opacity: {value: 1},
+        u_has_fill: {value: 1},
+        ...paintUniforms('u_fill_'),
+        u_has_drop_shadow: {value: 0},
+        ...paintUniforms('u_drop_'),
+        ...shadowUniforms('u_drop_'),
+        u_has_inner_shadow: {value: 0},
+        ...paintUniforms('u_inner_'),
+        ...shadowUniforms('u_inner_'),
+        u_has_stroke: {value: 0},
+        ...paintUniforms('u_stroke_'),
+        u_stroke_width: {value: 0},
+        u_stroke_align: {value: 0},
+        u_corner_radius: {value: 0},
+        u_drop_shadow_margin: {value: 0},
+      };
+
+      if (useGradient) {
+        // The spatial-UI cards' body gradient: linear, rotated pi/2, 3 stops.
+        uniforms.u_fill_paintType.value = 1;
+        uniforms.u_fill_gradientType.value = 0;
+        uniforms.u_fill_rotation.value = Math.PI / 2;
+        uniforms.u_fill_numStops.value = 3;
+        uniforms.u_fill_gradientStops.value.splice(0, 4, 0, 0.4, 1, 0);
+        uniforms.u_fill_gradientColors.value[0].set(0.216, 0.216, 0.255, 0.75);
+        uniforms.u_fill_gradientColors.value[1].set(0.125, 0.125, 0.149, 0.8);
+        uniforms.u_fill_gradientColors.value[2].set(0.071, 0.071, 0.086, 0.85);
+      } else {
+        uniforms.u_fill_solidColor.value.set(0.125, 0.125, 0.149, fillAlpha);
+      }
+
+      let material;
+      if (params.get('mat') === 'plain') {
+        // Control: a stock material (tests the platform's blend semantics).
+        material = new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: fillAlpha,
+        });
+        material.color.setStyle('rgb(85, 82, 81)');
+      } else {
+        if (webgpu) {
+          await import('/build/internal/WebGPUUIMaterials.js');
+        }
+        const factory = await import('/build/internal/PanelMaterialFactory.js');
+        const createUnifiedPanelMaterial =
+          factory.createUnifiedPanelMaterial || factory.n; // build minifies exports
+        material = createUnifiedPanelMaterial({uniforms});
+      }
+
+      const canvas = document.getElementById('c');
+      const renderer = webgpu
+        ? await (async () => {
+            const {WebGPURenderer} = await import('three/webgpu');
+            const r = new WebGPURenderer({canvas});
+            await r.init();
+            return r;
+          })()
+        : new THREE.WebGLRenderer({canvas});
+      renderer.setSize(400, 200, false);
+
+      const scene = new THREE.Scene();
+      scene.background = grayBg
+        ? new THREE.Color().setStyle('rgb(150, 150, 150)')
+        : new THREE.Color(0x000000);
+      const camera = new THREE.PerspectiveCamera(50, 2, 0.1, 100);
+      camera.position.set(0, 0, 2.2);
+      scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+
+      renderer.render(scene, camera);
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      renderer.render(scene, camera);
+      window.__ready = {
+        mode: webgpu ? 'webgpu' : 'webgl',
+        mat: material.type,
+        fill: useGradient ? 'gradient' : params.get('mat') === 'plain' ? 'plain' : 'solid',
+        alpha: params.get('mat') === 'plain' ? fillAlpha : uniforms.u_fill_solidColor.value.w,
+      };
+    </script>
+  </body>
+</html>
