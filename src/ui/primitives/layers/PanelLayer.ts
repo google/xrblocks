@@ -61,10 +61,13 @@ export class PanelShaderMaterial extends THREE.ShaderMaterial {
           vec4 diffuseColor = vec4(1.0, 0.0, 1.0, 1.0);
           #include <clipping_planes_fragment>
           gl_FragColor = diffuseColor;
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }
       `,
       clipping: true,
       transparent: true,
+      toneMapped: false,
       side: THREE.FrontSide,
       forceSinglePass: true,
       dithering: true,

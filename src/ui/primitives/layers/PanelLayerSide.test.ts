@@ -29,6 +29,8 @@ describe('PanelShaderMaterial side', () => {
       expect(fragment).toContain('#include <clipping_planes_pars_fragment>');
       expect(fragment).toContain('float clippingAlpha = panelClipAlpha()');
       expect(fragment).toContain('gl_FragColor.a *= clippingAlpha');
+      expect(fragment).toContain('#include <tonemapping_fragment>');
+      expect(fragment).toContain('#include <colorspace_fragment>');
     }
     material.dispose();
   });
