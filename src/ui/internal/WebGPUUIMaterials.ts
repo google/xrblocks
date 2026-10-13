@@ -804,8 +804,12 @@ interface UikitWebGPURegistry {
 
 interface ConvertiblePanelMaterial {
   colorNode?: unknown;
+  customProgramCacheKey?: () => string;
   __xbTslPanelApplied?: boolean;
+  __xbTslCacheSalt?: number;
 }
+
+let cacheSalt = 0;
 
 try {
   const registrySpecifier = '@pmndrs/uikit/webgpu';
@@ -823,10 +827,23 @@ try {
         material: ConvertiblePanelMaterial,
         info: unknown
       ): void => {
-        if (material.__xbTslPanelApplied) {
-          material.colorNode = undefined;
-        }
+        // Always rebuild from the current map/gradient: the builder treats
+        // material.colorNode as its diffuse *source*, so feeding it the
+        // previous conversion's output loses the texture alpha.
+        material.colorNode = undefined;
+        // The image panels all share one customProgramCacheKey (their
+        // onBeforeCompile source), which lets the WebGPU pipeline cache
+        // reuse another panel's built bindings — textures then render as
+        // whichever panel compiled first. The fork's builder pattern-matches
+        // on that key, so show it the pristine value and salt the key that
+        // the renderer caches by afterwards.
+        const originalKey = material.customProgramCacheKey?.bind(material);
+        if (originalKey) material.customProgramCacheKey = originalKey;
         applyPanelMaterial(material, info);
+        const key = originalKey ? originalKey() : '';
+        material.__xbTslCacheSalt ??= ++cacheSalt;
+        material.customProgramCacheKey = () =>
+          `${key}|xbTsl#${material.__xbTslCacheSalt}`;
         material.__xbTslPanelApplied = true;
       },
     });
