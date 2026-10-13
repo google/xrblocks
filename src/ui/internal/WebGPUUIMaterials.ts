@@ -28,6 +28,7 @@ import {
   pow,
   sin,
   smoothstep,
+  materialReference,
   uniform,
   uniformArray,
   uv,
@@ -67,12 +68,44 @@ const PAINT_TYPE_GRADIENT = 1;
 const GRADIENT_TYPE_RADIAL = 1;
 
 /**
- * Rewrites `{value}` uniform entries in place as TSL uniform nodes bound to the
- * same value objects, so existing uniform-update code keeps working: scalar
- * assignments write `node.value`, vectors mutate `node.value`, arrays are
- * mutated in place and re-uploaded every render (`UniformArrayNode`).
+ * Maps a raw uniform value to its WGSL uniform type, mirroring what
+ * `uniform(value)` infers, so `materialReference` can declare the same type.
  */
-function bindUniformNodes(uniforms: PanelUniforms) {
+function inferUniformType(value: unknown): string {
+  const v = value as {
+    isVector2?: boolean;
+    isVector3?: boolean;
+    isVector4?: boolean;
+    isColor?: boolean;
+    isMatrix4?: boolean;
+    isEuler?: boolean;
+  };
+  if (typeof value === 'boolean') return 'bool';
+  if (typeof value === 'number') return 'float';
+  if (v?.isVector2) return 'vec2';
+  if (v?.isVector4) return 'vec4';
+  if (v?.isColor) return 'vec3';
+  if (v?.isVector3) return 'vec3';
+  if (v?.isEuler) return 'vec3';
+  if (v?.isMatrix4) return 'mat4';
+  return 'float';
+}
+
+/**
+ * Builds the per-material uniform bindings and returns the *graph* nodes to
+ * feed the shader, without touching the source `{value}` entries on
+ * `material.uniforms` (so `GradientPanelUtils` keeps mutating them in place).
+ *
+ * Scalars/vectors go through `materialReference('uniforms.<name>.value', …)`,
+ * which re-reads `state.material.uniforms[name].value` on every render. That is
+ * what makes structurally identical materials safe to share one node-builder
+ * state (one shader build): each still draws its own values. A plain
+ * `uniform(value)` node holds a single value slot, so when the build is shared
+ * every material reads whichever material compiled first — the value bleed.
+ * Arrays stay on `UniformArrayNode` (mutated in place, re-uploaded per render).
+ */
+function bindUniformNodes(uniforms: PanelUniforms): PanelUniforms {
+  const nodes: PanelUniforms = {};
   for (const [name, entry] of Object.entries(uniforms)) {
     const value = entry.value;
     if (Array.isArray(value)) {
@@ -80,10 +113,51 @@ function bindUniformNodes(uniforms: PanelUniforms) {
       // Alias for the {value} contract used by GradientPanelUtils.
       node.value = value;
       uniforms[name] = node;
+      nodes[name] = node;
     } else {
-      uniforms[name] = uniform(value as never) as unknown as PanelUniformEntry;
+      nodes[name] = materialReference(
+        'uniforms.' + name + '.value',
+        inferUniformType(value)
+      ) as unknown as PanelUniformEntry;
     }
   }
+  return nodes;
+}
+
+/**
+ * three's `Node.customCacheKey()` returns `this.id`, so every distinct node
+ * instance forks `material.customProgramCacheKey()`'s graph hash. Two
+ * structurally identical panel materials therefore each trigger a full
+ * node-graph -> WGSL build (~0.9 s each — 58 builds / 20 s in the UI sample).
+ * Only nodes without a meaningful `customCacheKey` override use the id default
+ * (PropertyNode/ToneMappingNode/LightsNode/RotateNode carry structural keys);
+ * the graph structure is already hashed recursively by `Node.getCacheKey()`,
+ * so those per-instance ids are pure noise. Rewriting them to a constant makes
+ * structurally identical materials share one node-builder state (one build),
+ * while named nodes keep their discriminating keys. Per-material uniform
+ * values still live in each material's own uniform buffer, which three binds
+ * per render object (see `objectGroup`).
+ */
+function structuralizeNodeKeys(root: unknown): void {
+  const seen = new Set<unknown>();
+  const isDefaultKey = (fn: unknown): boolean =>
+    typeof fn === 'function' && String(fn).includes('this.id');
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== 'object' || seen.has(node)) return;
+    seen.add(node);
+    const n = node as {
+      customCacheKey?: unknown;
+      _getChildren?: (ignores: Set<unknown>) => Array<{childNode: unknown}>;
+    };
+    if (isDefaultKey(n.customCacheKey)) n.customCacheKey = () => '';
+    let children: Array<{childNode: unknown}> = [];
+    if (typeof n._getChildren === 'function') {
+      children = n._getChildren(new Set()) ?? [];
+    }
+    for (const {childNode} of children) walk(childNode);
+  };
+  walk(root);
+  (root as {getCacheKey?: (force?: boolean) => unknown}).getCacheKey?.(true);
 }
 
 // SDF for a rounded box in 2D (port of CommonFunctions.glsl.ts).
@@ -762,6 +836,7 @@ function createNodeMaterial(
     side: options.side ?? THREE.FrontSide,
   });
   material.colorNode = main as never;
+  structuralizeNodeKeys(main);
   // `clipping` exists on THREE.Material at runtime; the node material d.ts
   // omits it.
   (material as unknown as {clipping: boolean}).clipping = true;
@@ -776,16 +851,13 @@ function createNodeMaterial(
 
 export const webgpuUIHandler: WebGPUUIHandler = {
   createUnifiedPanelMaterial(options) {
-    bindUniformNodes(options.uniforms);
+    const nodes = bindUniformNodes(options.uniforms);
     // Fn(...) returns a factory; invoke it to build the node graph.
-    return createNodeMaterial(
-      buildUnifiedPanelMain(options.uniforms)(),
-      options
-    );
+    return createNodeMaterial(buildUnifiedPanelMain(nodes)(), options);
   },
   createCardEdgeMaterial(options) {
-    bindUniformNodes(options.uniforms);
-    return createNodeMaterial(buildCardEdgeMain(options.uniforms)(), options);
+    const nodes = bindUniformNodes(options.uniforms);
+    return createNodeMaterial(buildCardEdgeMain(nodes)(), options);
   },
 };
 
@@ -842,9 +914,15 @@ try {
         if (originalKey) material.customProgramCacheKey = originalKey;
         applyPanelMaterial(material, info);
         const key = originalKey ? originalKey() : '';
-        material.__xbTslCacheSalt ??= ++cacheSalt;
-        material.customProgramCacheKey = () =>
-          `${key}|xbTsl#${material.__xbTslCacheSalt}`;
+        // Textured panels keep a per-material cache-key salt: three's
+        // material key fingerprints textures by sampler params only, so two
+        // images with equal sampler settings would otherwise share bindings
+        // and sample whichever texture compiled first.
+        if ((material as {map?: unknown}).map) {
+          material.__xbTslCacheSalt ??= ++cacheSalt;
+          material.customProgramCacheKey = () =>
+            `${key}|xbTsl#${material.__xbTslCacheSalt}`;
+        }
         material.__xbTslPanelApplied = true;
       },
     });
