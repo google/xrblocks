@@ -42,6 +42,9 @@ let webgpuMaterialsPromise: Promise<void> | undefined;
 /** Installs (or clears) the WebGPU material handler. */
 export function setWebGPUUIHandler(handler?: WebGPUUIHandler) {
   webgpuUIHandler = handler;
+  if (!handler) {
+    webgpuMaterialsPromise = undefined;
+  }
 }
 
 /**
@@ -49,9 +52,10 @@ export function setWebGPUUIHandler(handler?: WebGPUUIHandler) {
  * init). The module itself is only fetched when UI is actually used.
  */
 export function setWebGPUUIMaterialLoader(
-  loader: () => Promise<unknown>
+  loader?: () => Promise<unknown>
 ): void {
   webgpuMaterialLoader = loader;
+  webgpuMaterialsPromise = undefined;
 }
 
 /**

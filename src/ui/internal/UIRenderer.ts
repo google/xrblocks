@@ -5,6 +5,7 @@ import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {updatePanelBackfaceVisibility} from './PanelBackfaceVisibility';
+import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
@@ -418,5 +419,6 @@ function syncRootTransform(
 }
 
 async function defaultLoader(): Promise<UIBackendModule> {
+  await ensureWebGPUUIMaterials();
   return import('./UIKitBackend.js');
 }

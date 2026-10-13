@@ -29,7 +29,6 @@ import {
   sin,
   smoothstep,
   materialReference,
-  uniformArray,
   uv,
   vec2,
   vec3,
@@ -39,7 +38,6 @@ import {
 import {
   type PanelMaterial,
   type PanelMaterialOptions,
-  type PanelUniformEntry,
   type PanelUniforms,
   type WebGPUUIHandler,
   setWebGPUUIHandler,
@@ -59,7 +57,8 @@ type V2 = Node<'vec2'>;
 type V3 = Node<'vec3'>;
 
 type V4 = Node<'vec4'>;
-type Arr = ReturnType<typeof uniformArray>;
+type PanelUniformNode = Num | V2 | V3 | V4 | Num[] | V4[];
+type PanelUniformNodes = Record<string, PanelUniformNode>;
 
 const PI = Math.PI;
 const PAINT_TYPE_SOLID = 0;
@@ -95,29 +94,30 @@ function inferUniformType(value: unknown): string {
  * feed the shader, without touching the source `{value}` entries on
  * `material.uniforms` (so `GradientPanelUtils` keeps mutating them in place).
  *
- * Scalars/vectors go through `materialReference('uniforms.<name>.value', …)`,
- * which re-reads `state.material.uniforms[name].value` on every render. That is
- * what makes structurally identical materials safe to share one node-builder
- * state (one shader build): each still draws its own values. A plain
- * `uniform(value)` node holds a single value slot, so when the build is shared
- * every material reads whichever material compiled first — the value bleed.
- * Arrays stay on `UniformArrayNode` (mutated in place, re-uploaded per render).
+ * All scalars, vectors, and fixed-length gradient stop/color array elements go
+ * through `materialReference('uniforms.<name>.value...', …)`, which re-reads
+ * `state.material.uniforms[name].value` on every object render. That is what
+ * makes structurally identical materials safe to share one node-builder state
+ * (one shader build): each still draws its own values without bleeding across
+ * panels.
  */
-function bindUniformNodes(uniforms: PanelUniforms): PanelUniforms {
-  const nodes: PanelUniforms = {};
+function bindUniformNodes(uniforms: PanelUniforms): PanelUniformNodes {
+  const nodes: PanelUniformNodes = {};
   for (const [name, entry] of Object.entries(uniforms)) {
     const value = entry.value;
     if (Array.isArray(value)) {
-      const node = uniformArray(value as never) as unknown as PanelUniformEntry;
-      // Alias for the {value} contract used by GradientPanelUtils.
-      node.value = value;
-      uniforms[name] = node;
-      nodes[name] = node;
+      nodes[name] = value.map(
+        (item, index) =>
+          materialReference(
+            `uniforms.${name}.value.${index}`,
+            inferUniformType(item)
+          ) as unknown as Num & V4
+      );
     } else {
       nodes[name] = materialReference(
         'uniforms.' + name + '.value',
         inferUniformType(value)
-      ) as unknown as PanelUniformEntry;
+      ) as unknown as PanelUniformNode;
     }
   }
   return nodes;
@@ -167,142 +167,128 @@ const sdRoundedBox = Fn(([p, b, r]: [V2, V2, Num]) => {
     .sub(r);
 });
 
-/**
- * The GLSL panel shaders write `gl_FragColor` raw (no `<colorspace_fragment>`)
- * and blend in byte space; WebGPU blends inside an sRGB framebuffer, i.e. in
- * linear space. Decoding the output with the exact sRGB EOTF makes the covered
- * fraction match exactly (EOTF then OETF is identity) and approximates the
- * byte-space blend well where the fill is close to what it covers — the common
- * glass-over-panel case. Over a very different backdrop the two blend spaces
- * still differ slightly; that residual is a WebGPU platform difference.
- */
-const rawOutput = (c: V3): V3 => {
-  const decode = (x: Num): Num =>
-    mix(
-      x.div(12.92),
-      pow(x.add(0.055).div(1.055), 2.4),
-      float(x.greaterThanEqual(0.04045))
-    ) as unknown as Num;
-  return vec3(decode(c.x), decode(c.y), decode(c.z)) as unknown as V3;
-};
-
 // Port of GradientFunctions.glsl.ts.
-const mixGradientStops = Fn(
-  ([t, numStops, stops, colors]: [Num, Num, Arr, Arr]) => {
-    const stop = (i: number | Num): Num => stops.element(i) as unknown as Num;
-    const colorOf = (i: number | Num): V4 => colors.element(i) as unknown as V4;
-    const finalT = clamp(t, 0, 1) as unknown as Num;
-    const color = vec4(0, 0, 0, 0).toVar();
-    If(numStops.greaterThanEqual(1), () => {
-      color.assign(colorOf(0) as never);
-      If(numStops.greaterThanEqual(2), () => {
-        const matched = float(0).toVar();
-        for (let i = 0; i < 3; i++) {
-          If(
-            matched
-              .equal(0)
-              .and(finalT.greaterThanEqual(stop(i)))
-              .and(finalT.lessThanEqual(stop(i + 1))),
-            () => {
-              const range = stop(i + 1).sub(stop(i));
-              const localT = finalT.sub(stop(i)).div(max(0.0001, range));
-              color.assign(mix(colorOf(i), colorOf(i + 1), localT) as never);
-              matched.assign(1);
-            }
-          );
-        }
-        If(finalT.lessThan(stop(0)), () => {
-          color.assign(colorOf(0) as never);
-        });
-        If(finalT.greaterThan(stop(numStops.sub(1))), () => {
-          color.assign(colorOf(numStops.sub(1)) as never);
-        });
+function mixGradientStops(
+  t: Num,
+  numStops: Num,
+  stops: Num[],
+  colors: V4[]
+): V4 {
+  const finalT = clamp(t, 0, 1) as unknown as Num;
+  const color = vec4(0, 0, 0, 0).toVar();
+  If(numStops.greaterThanEqual(1), () => {
+    color.assign(colors[0] as never);
+    If(numStops.greaterThanEqual(2), () => {
+      const matched = float(0).toVar();
+      for (let i = 0; i < stops.length - 1; i++) {
+        If(
+          matched
+            .equal(0)
+            .and(float(i).lessThan(numStops.sub(1)))
+            .and(finalT.greaterThanEqual(stops[i]))
+            .and(finalT.lessThanEqual(stops[i + 1])),
+          () => {
+            const range = stops[i + 1].sub(stops[i]);
+            const localT = finalT.sub(stops[i]).div(max(0.0001, range));
+            color.assign(mix(colors[i], colors[i + 1], localT) as never);
+            matched.assign(1);
+          }
+        );
+      }
+      If(finalT.lessThan(stops[0]), () => {
+        color.assign(colors[0] as never);
       });
+      for (let i = 1; i < stops.length; i++) {
+        If(numStops.equal(i + 1).and(finalT.greaterThan(stops[i])), () => {
+          color.assign(colors[i] as never);
+        });
+      }
     });
-    return color as unknown as V4;
-  }
-);
+  });
+  return color as unknown as V4;
+}
 
-const getGradientColor = Fn(
-  ([uvValue, type, center, scaleValue, rotation, numStops, stops, colors]: [
-    V2,
-    Num,
-    V2,
-    V2,
-    Num,
-    Num,
-    Arr,
-    Arr,
-  ]) => {
-    // NOTE: the GLSL early-returns (numStops < 1 / < 2) are folded into
-    // mixGradientStops, which returns the same values for those cases.
-    // A `return` inside `If()` in an inline Fn() is dropped by three's
-    // codegen (THREE.TSL warning), so the flow must stay assignment-based.
+function getGradientColor(
+  uvValue: V2,
+  type: Num,
+  center: V2,
+  scaleValue: V2,
+  rotation: Num,
+  numStops: Num,
+  stops: Num[],
+  colors: V4[]
+): V4 {
+  // NOTE: the GLSL early-returns (numStops < 1 / < 2) are folded into
+  // mixGradientStops, which returns the same values for those cases.
+  // A `return` inside `If()` in an inline Fn() is dropped by three's
+  // codegen (THREE.TSL warning), so the flow must stay assignment-based.
 
-    // Transform UV: center to origin, rotate, then scale.
-    const p = uvValue.sub(center).toVar();
-    const c = cos(rotation.negate());
-    const s = sin(rotation.negate());
-    // GLSL mat2(c, -s, s, c) is column-major.
-    const px = c.mul(p.x).add(s.mul(p.y));
-    const py = s.mul(p.x).negate().add(c.mul(p.y));
-    p.assign(vec2(px as never, py as never) as never);
+  // Transform UV: center to origin, rotate, then scale.
+  const p = uvValue.sub(center).toVar();
+  const c = cos(rotation.negate());
+  const s = sin(rotation.negate());
+  // GLSL mat2(c, -s, s, c) is column-major.
+  const px = c.mul(p.x).add(s.mul(p.y));
+  const py = s.mul(p.x).negate().add(c.mul(p.y));
+  p.assign(vec2(px as never, py as never) as never);
 
-    const sx = float(0.001).toVar();
-    If(abs(scaleValue.x).greaterThan(0.001), () => {
-      sx.assign(scaleValue.x);
-    });
-    const sy = float(0.001).toVar();
-    If(abs(scaleValue.y).greaterThan(0.001), () => {
-      sy.assign(scaleValue.y);
-    });
-    p.assign(p.div(vec2(sx, sy)));
+  const sx = float(0.001).toVar();
+  If(abs(scaleValue.x).greaterThan(0.001), () => {
+    sx.assign(scaleValue.x);
+  });
+  const sy = float(0.001).toVar();
+  If(abs(scaleValue.y).greaterThan(0.001), () => {
+    sy.assign(scaleValue.y);
+  });
+  p.assign(p.div(vec2(sx, sy)));
 
-    const t = float(0).toVar();
-    If(type.equal(0), () => {
-      t.assign(p.x.add(0.5));
-    });
-    If(type.equal(1), () => {
-      t.assign(length(p).mul(2));
-    });
-    If(type.equal(2), () => {
-      t.assign(
-        atan(p.y.negate(), p.x)
-          .div(2 * PI)
-          .add(0.5)
-      );
-    });
-    If(type.equal(3), () => {
-      t.assign(abs(p.x).add(abs(p.y)).mul(2));
-    });
+  const t = float(0).toVar();
+  If(type.equal(0), () => {
+    t.assign(p.x.add(0.5));
+  });
+  If(type.equal(1), () => {
+    t.assign(length(p).mul(2));
+  });
+  If(type.equal(2), () => {
+    t.assign(
+      atan(p.y.negate(), p.x)
+        .div(2 * PI)
+        .add(0.5)
+    );
+  });
+  If(type.equal(3), () => {
+    t.assign(abs(p.x).add(abs(p.y)).mul(2));
+  });
 
-    return mixGradientStops(
-      clamp(t, 0, 1),
-      numStops,
-      stops,
-      colors
-    ) as unknown as V4;
-  }
-);
+  return mixGradientStops(
+    clamp(t, 0, 1) as unknown as Num,
+    numStops,
+    stops,
+    colors
+  );
+}
 
-function asNum(entry: PanelUniformEntry): Num {
+function asNum(entry: PanelUniformNode): Num {
   return entry as unknown as Num;
 }
-function asV2(entry: PanelUniformEntry): V2 {
+function asV2(entry: PanelUniformNode): V2 {
   return entry as unknown as V2;
 }
-function asV4(entry: PanelUniformEntry): V4 {
+function asV4(entry: PanelUniformNode): V4 {
   return entry as unknown as V4;
 }
-function asArr(entry: PanelUniformEntry): Arr {
-  return entry as unknown as Arr;
+function asNumArr(entry: PanelUniformNode): Num[] {
+  return entry as unknown as Num[];
+}
+function asV4Arr(entry: PanelUniformNode): V4[] {
+  return entry as unknown as V4[];
 }
 
 function paintColor(
-  uniforms: PanelUniforms,
+  uniforms: PanelUniformNodes,
   prefix: string,
   uvValue: V2,
-  radialScale: Num
+  radialScale?: Num
 ): V4 {
   const result = vec4(0, 0, 0, 0).toVar();
   const paintType = asNum(uniforms[`${prefix}paintType`]);
@@ -311,18 +297,33 @@ function paintColor(
   });
   If(paintType.equal(PAINT_TYPE_GRADIENT), () => {
     const gradientType = asNum(uniforms[`${prefix}gradientType`]);
-    If(gradientType.equal(GRADIENT_TYPE_RADIAL), () => {
-      const t = clamp(radialScale, 0, 1);
-      result.assign(
-        mixGradientStops(
-          t,
-          asNum(uniforms[`${prefix}numStops`]),
-          asArr(uniforms[`${prefix}gradientStops`]),
-          asArr(uniforms[`${prefix}gradientColors`])
-        )
-      );
-    });
-    If(gradientType.notEqual(GRADIENT_TYPE_RADIAL), () => {
+    if (radialScale !== undefined) {
+      If(gradientType.equal(GRADIENT_TYPE_RADIAL), () => {
+        const t = clamp(radialScale, 0, 1) as unknown as Num;
+        result.assign(
+          mixGradientStops(
+            t,
+            asNum(uniforms[`${prefix}numStops`]),
+            asNumArr(uniforms[`${prefix}gradientStops`]),
+            asV4Arr(uniforms[`${prefix}gradientColors`])
+          )
+        );
+      });
+      If(gradientType.notEqual(GRADIENT_TYPE_RADIAL), () => {
+        result.assign(
+          getGradientColor(
+            uvValue,
+            gradientType,
+            asV2(uniforms[`${prefix}center`]),
+            asV2(uniforms[`${prefix}scale`]),
+            asNum(uniforms[`${prefix}rotation`]),
+            asNum(uniforms[`${prefix}numStops`]),
+            asNumArr(uniforms[`${prefix}gradientStops`]),
+            asV4Arr(uniforms[`${prefix}gradientColors`])
+          )
+        );
+      });
+    } else {
       result.assign(
         getGradientColor(
           uvValue,
@@ -331,11 +332,11 @@ function paintColor(
           asV2(uniforms[`${prefix}scale`]),
           asNum(uniforms[`${prefix}rotation`]),
           asNum(uniforms[`${prefix}numStops`]),
-          asArr(uniforms[`${prefix}gradientStops`]),
-          asArr(uniforms[`${prefix}gradientColors`])
-        ) as unknown as V4
+          asNumArr(uniforms[`${prefix}gradientStops`]),
+          asV4Arr(uniforms[`${prefix}gradientColors`])
+        )
       );
-    });
+    }
   });
   return result;
 }
@@ -344,7 +345,7 @@ function paintColor(
  * Port of `UnifiedGradientPanel.frag.ts`: drop shadow, fill with inner shadow,
  * stroke, and the un-premultiplied over composite.
  */
-function buildUnifiedPanelMain(uniforms: PanelUniforms) {
+function buildUnifiedPanelMain(uniforms: PanelUniformNodes) {
   const resolution = asV2(uniforms.u_resolution);
   const uOpacity = asNum(uniforms.u_opacity);
   const cornerRadius = asNum(uniforms.u_corner_radius);
@@ -408,7 +409,6 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
           uniforms,
           'u_drop_',
           uv(),
-
           (
             sdRoundedBox(
               p.sub(asV2(uniforms.u_drop_position)),
@@ -431,7 +431,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
       smoothstep(aa.mul(-0.5), aa.mul(0.5), dist)
     );
     If(fillAlphaMask.greaterThan(0.001).and(hasFill.notEqual(0)), () => {
-      const fillColor = paintColor(uniforms, 'u_fill_', uv(), float(0)).toVar();
+      const fillColor = paintColor(uniforms, 'u_fill_', uv()).toVar();
 
       If(hasInner.notEqual(0), () => {
         const strokeInset = float(0).toVar();
@@ -489,7 +489,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
               .div(max(0.001, asNum(uniforms.u_inner_blur))),
             0,
             1
-          );
+          ) as unknown as Num;
           const innerColor = paintColor(
             uniforms,
             'u_inner_',
@@ -525,7 +525,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
         smoothstep(strokeAA.mul(-0.5), strokeAA.mul(0.5), strokeDist)
       );
       If(strokeMask.greaterThan(0.001), () => {
-        const strokeColor = paintColor(uniforms, 'u_stroke_', uv(), float(0));
+        const strokeColor = paintColor(uniforms, 'u_stroke_', uv());
         strokeResult.assign(
           vec4(strokeColor.rgb, strokeColor.a.mul(strokeMask).mul(uOpacity))
         );
@@ -571,14 +571,14 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
     If(color.a.lessThan(0.001), () => {
       Discard();
     });
-    return vec4(rawOutput(color.rgb), color.a) as unknown as V4;
+    return color as unknown as V4;
   });
 }
 
 /**
  * Port of `UICardEdge.frag.ts`: the hover-lit manipulation edge around a card.
  */
-function buildCardEdgeMain(uniforms: PanelUniforms) {
+function buildCardEdgeMain(uniforms: PanelUniformNodes) {
   const resolution = asV2(uniforms.u_resolution);
   const uOpacity = asNum(uniforms.u_opacity);
   const cardCornerRadius = asNum(uniforms.u_card_corner_radius);
@@ -822,7 +822,7 @@ function buildCardEdgeMain(uniforms: PanelUniforms) {
     });
 
     accumColor.assign(vec4(accumColor.rgb, accumColor.a.mul(uOpacity)));
-    return vec4(rawOutput(accumColor.rgb), accumColor.a) as unknown as V4;
+    return accumColor as unknown as V4;
   });
 }
 
