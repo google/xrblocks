@@ -227,7 +227,7 @@ function asArr(entry: PanelUniformEntry): Arr {
 function paintColor(
   uniforms: PanelUniforms,
   prefix: string,
-  pos: V2,
+  uvValue: V2,
   radialScale: Num
 ): V4 {
   const result = vec4(0, 0, 0, 0).toVar();
@@ -251,7 +251,7 @@ function paintColor(
     If(gradientType.notEqual(GRADIENT_TYPE_RADIAL), () => {
       result.assign(
         getGradientColor(
-          pos,
+          uvValue,
           gradientType,
           asV2(uniforms[`${prefix}center`]),
           asV2(uniforms[`${prefix}scale`]),
@@ -333,7 +333,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
         const dc = paintColor(
           uniforms,
           'u_drop_',
-          pos,
+          uv(),
 
           (
             sdRoundedBox(
@@ -357,7 +357,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
       smoothstep(aa.mul(-0.5), aa.mul(0.5), dist)
     );
     If(fillAlphaMask.greaterThan(0.001).and(hasFill.notEqual(0)), () => {
-      const fillColor = paintColor(uniforms, 'u_fill_', pos, float(0)).toVar();
+      const fillColor = paintColor(uniforms, 'u_fill_', uv(), float(0)).toVar();
 
       If(hasInner.notEqual(0), () => {
         const strokeInset = float(0).toVar();
@@ -419,7 +419,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
           const innerColor = paintColor(
             uniforms,
             'u_inner_',
-            pos,
+            uv(),
             innerRadialT
           );
 
@@ -451,7 +451,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniforms) {
         smoothstep(strokeAA.mul(-0.5), strokeAA.mul(0.5), strokeDist)
       );
       If(strokeMask.greaterThan(0.001), () => {
-        const strokeColor = paintColor(uniforms, 'u_stroke_', pos, float(0));
+        const strokeColor = paintColor(uniforms, 'u_stroke_', uv(), float(0));
         strokeResult.assign(
           vec4(strokeColor.rgb, strokeColor.a.mul(strokeMask).mul(uOpacity))
         );
