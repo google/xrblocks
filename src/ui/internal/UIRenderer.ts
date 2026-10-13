@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 
+import {isWebGPURenderer} from '../../core/RendererTypes';
 import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {updatePanelBackfaceVisibility} from './PanelBackfaceVisibility';
+import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
@@ -193,7 +195,13 @@ export class UIRenderer {
         throw STALE_UI_LOAD;
       }
       try {
-        if (this.renderer instanceof THREE.WebGLRenderer) {
+        // Both backends: configureRenderer installs uikit's deterministic
+        // transparent sort (reversePainterSortStable + orderInfo); without it
+        // coplanar panel/text layers flicker in z-order as panels move.
+        if (
+          this.renderer instanceof THREE.WebGLRenderer ||
+          isWebGPURenderer(this.renderer)
+        ) {
           backend.configureRenderer?.(this.renderer);
         }
       } catch (error) {
@@ -411,5 +419,6 @@ function syncRootTransform(
 }
 
 async function defaultLoader(): Promise<UIBackendModule> {
+  await ensureWebGPUUIMaterials();
   return import('./UIKitBackend.js');
 }
