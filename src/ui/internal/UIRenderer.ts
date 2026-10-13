@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 
-import {isWebGPURenderer} from '../../core/RendererTypes';
-import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
+import {
+  isWebGPURenderer,
+  type SupportedRenderer,
+} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {updatePanelBackfaceVisibility} from './PanelBackfaceVisibility';
@@ -51,7 +53,7 @@ export class UIRenderer {
   private readonly connectedRoots = new Set<UIElement>();
   private readonly viewport = {width: 0, height: 0};
   private backendState: BackendState = {kind: 'idle'};
-  private renderer?: WebGLOrWebGPURenderer;
+  private renderer?: SupportedRenderer;
   private publicScene?: THREE.Scene;
 
   constructor(
@@ -71,7 +73,7 @@ export class UIRenderer {
   /** Mounts UI roots already connected when Core initializes. */
   async initialize(
     scene: THREE.Scene,
-    renderer: WebGLOrWebGPURenderer
+    renderer: SupportedRenderer
   ): Promise<void> {
     this.publicScene = scene;
     this.renderer = renderer;

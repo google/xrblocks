@@ -31,13 +31,21 @@ export {
   RENDERER_BACKENDS,
   type FramebufferScaleFactor,
   type RendererBackend,
+  type SerializerRendererFactory,
   type WebGPURendererOptions,
 } from './core/Options';
 export {
   assertWebGLRenderer,
   isWebGPURenderer,
+  type SupportedRenderer,
   type WebGLOrWebGPURenderer,
 } from './core/RendererTypes';
+export {resolveSerializerRenderer} from './core/SerializerSupport';
+export {
+  isSerializerRenderer,
+  type SerializerRenderer,
+  type SerializerXRManager,
+} from './core/SerializerTypes';
 export * from './core/Script';
 export * from './core/User';
 export * from './StylizedFace';

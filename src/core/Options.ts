@@ -1,3 +1,4 @@
+import './SerializerSupport';
 import {AIOptions} from '../ai/AIOptions';
 import {
   DeviceCameraOptions,
@@ -20,6 +21,12 @@ import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {WorldOptions} from '../world/WorldOptions';
 import {getUrlParamBool, getUrlParameter} from '../utils/utils';
 import {Handedness} from '../input/Hands';
+import type {
+  SerializerRenderer,
+  SerializerRendererFactory,
+} from './SerializerTypes';
+
+export type {SerializerRendererFactory};
 
 const OPTIONAL_REFERENCE_SPACES = [
   'local-floor', // Height/floor tracking relative to user
@@ -86,7 +93,7 @@ export class XRTransitionOptions {
 const FORM_FACTORS = ['auto', 'xr', 'hud', 'vr', 'desktop', 'mobile'] as const;
 export type FormFactor = (typeof FORM_FACTORS)[number];
 
-export const RENDERER_BACKENDS = ['webgl', 'webgpu'] as const;
+export const RENDERER_BACKENDS = ['webgl', 'webgpu', 'serializer'] as const;
 export type RendererBackend = (typeof RENDERER_BACKENDS)[number];
 
 export type FramebufferScaleFactor = number | 'native';
@@ -140,6 +147,12 @@ export class Options {
    * Optional configuration for WebGPU renderer.
    */
   webgpuOptions?: WebGPURendererOptions;
+
+  /**
+   * Optional Split Engine serializer instance or factory function used when
+   * `rendererBackend` is `'serializer'`.
+   */
+  serializer?: SerializerRenderer | SerializerRendererFactory;
 
   /**
    * Optional WebXR framebuffer scale factor. Set to a number (e.g., `1.5`) or
@@ -296,6 +309,32 @@ export class Options {
     this.rendererBackend = 'webgpu';
     this.webgpuOptions = options;
     return this;
+  }
+
+  /**
+   * Configures Core to use a SplitEngineSerializer renderer backend instead of
+   * THREE.WebGLRenderer.
+   * @param serializer - Optional SplitEngineSerializer instance or factory function.
+   */
+  enableSerializer(
+    serializer?: SerializerRenderer | SerializerRendererFactory
+  ): this {
+    this.rendererBackend = 'serializer';
+    if (serializer !== undefined) {
+      this.serializer = serializer;
+    }
+    return this;
+  }
+
+  /**
+   * Alias for `enableSerializer` that configures Core to use a
+   * SplitEngineSerializer renderer backend.
+   * @param serializer - Optional SplitEngineSerializer instance or factory function.
+   */
+  useSerializer(
+    serializer?: SerializerRenderer | SerializerRendererFactory
+  ): this {
+    return this.enableSerializer(serializer);
   }
 
   /**

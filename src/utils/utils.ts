@@ -22,7 +22,9 @@ export function print(...args: unknown[]) {
 }
 
 // Parses URL parameters using the URLSearchParams API.
-export const urlParams = new URLSearchParams(window.location.search);
+export const urlParams = new URLSearchParams(
+  typeof window !== 'undefined' ? window.location.search : ''
+);
 
 /**
  * Function to get the value of a URL parameter.
@@ -30,7 +32,9 @@ export const urlParams = new URLSearchParams(window.location.search);
  * @returns The value of the URL parameter or null if not found.
  */
 export function getUrlParameter(name: string) {
-  const urlParams = new URLSearchParams(window.location.search);
+  const urlParams = new URLSearchParams(
+    typeof window !== 'undefined' ? window.location.search : ''
+  );
   return urlParams.get(name);
 }
 
@@ -44,7 +48,9 @@ export function getUrlParameter(name: string) {
  * @returns The boolean value of the URL parameter.
  */
 export function getUrlParamBool(name: string, defaultBool = false) {
-  const inputString = new URLSearchParams(window.location.search)
+  const inputString = new URLSearchParams(
+    typeof window !== 'undefined' ? window.location.search : ''
+  )
     .get(name)
     ?.toLowerCase();
   // Convert the parameter value to a boolean. Returns true for 'true' or '1'.
