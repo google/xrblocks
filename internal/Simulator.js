@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 9ad8f3a
-* @builddate 2026-10-13T18:39:38.368Z
+* @commitid 0ab8a54
+* @builddate 2026-10-13T22:14:49.212Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,12 +40,12 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { t as __exportAll } from "./rolldown-runtime.js";
 import { F as Script } from "./UICard.js";
 import { I as Input, M as callInitWithDependencyInjection, On as XRDeviceCamera, P as Physics, Q as Interaction, U as Reticle, W as Depth, X as Registry, Y as WaitFrame, _t as Options, c as World, i as resolveSimulatorHandPoseRotations, n as SIMULATOR_HAND_POSE_ROTATIONS, r as applySimulatorHandPoseRotationConstraints, t as ModelLoader } from "./ModelLoader.js";
 import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, u as Keycodes } from "./HandPoses.js";
 import { c as isWebGPURenderer, i as disposeObjectTree, r as disposeObjectChildren } from "./ThreeDisposal.js";
-import { SparkRendererHolder } from "../xrblocks.js";
+import { n as BaseSimulatorCompositor, t as WebGLDirectCompositor } from "./WebGLDirectCompositor.js";
+import { n as SetSimulatorTimeOfDayEvent, t as SetSimulatorDayNightEvent } from "./SimulatorLightingEvents.js";
 import * as THREE from "three";
 import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -91,73 +91,6 @@ var SimulatorBackgroundVideo = class {
 	*/
 	dispose() {
 		this.setPath(void 0);
-	}
-};
-//#endregion
-//#region src/simulator/internal/compositing/BaseSimulatorCompositor.ts
-/**
-* Abstract base compositor providing shared simulator scene pass, background video quad,
-* and SparkRenderer linear encoding state management.
-*/
-var BaseSimulatorCompositor = class {
-	constructor(deps) {
-		this.deps = deps;
-		this.renderSimulatorSceneToCanvasBound = this.renderSimulatorSceneToCanvas.bind(this);
-		this.previousAutoClearColor = deps.renderer.autoClearColor;
-		deps.renderer.autoClearColor = false;
-	}
-	setSparkEncodeLinear(value) {
-		this.sparkRenderer ??= this.deps.registry.get(SparkRendererHolder)?.renderer;
-		if (this.sparkRenderer) this.sparkRenderer.encodeLinear = value;
-	}
-	setBackgroundVideo(videoTexture) {
-		if (this.backgroundVideoQuad) {
-			this.backgroundVideoQuad.material.dispose();
-			if ("dispose" in this.backgroundVideoQuad) this.backgroundVideoQuad.dispose();
-			this.backgroundVideoQuad = void 0;
-		}
-		if (videoTexture) this.backgroundVideoQuad = this.createBackgroundVideoQuad(videoTexture);
-	}
-	createBackgroundVideoQuad(videoTexture) {
-		return new FullScreenQuad(new THREE.MeshBasicMaterial({ map: videoTexture }));
-	}
-	renderSimulatorScenePass(renderCamera, mainCamera) {
-		this.deps.simulatorCamera?.onBeforeSimulatorSceneRender(mainCamera, this.renderSimulatorSceneToCanvasBound);
-		this.renderSimulatorSceneToCanvas(renderCamera);
-		this.deps.simulatorCamera?.onSimulatorSceneRendered();
-	}
-	renderSimulatorSceneToCanvas(camera) {
-		const { renderer, simulatorScene } = this.deps;
-		this.setSparkEncodeLinear(false);
-		renderer.setRenderTarget(null);
-		if (this.backgroundVideoQuad) this.backgroundVideoQuad.render(renderer);
-		this.clearBeforeSimulatorScene();
-		renderer.render(simulatorScene, camera);
-		renderer.clearDepth();
-	}
-	clearBeforeSimulatorScene() {}
-	dispose() {
-		this.setBackgroundVideo(void 0);
-		this.deps.renderer.autoClearColor = this.previousAutoClearColor;
-	}
-};
-//#endregion
-//#region src/simulator/internal/compositing/WebGLDirectCompositor.ts
-/**
-* Compositor that renders the simulator scene directly to the canvas
-* followed by the main scene without an intermediate offscreen render target.
-*/
-var WebGLDirectCompositor = class extends BaseSimulatorCompositor {
-	renderFrame(renderCamera, mainCamera) {
-		this.renderSimulatorScenePass(renderCamera, mainCamera);
-		const { renderer } = this.deps;
-		const prevAutoClear = renderer.autoClear;
-		renderer.autoClear = false;
-		try {
-			this.deps.renderMainScene(renderCamera);
-		} finally {
-			renderer.autoClear = prevAutoClear;
-		}
 	}
 };
 //#endregion
@@ -1575,32 +1508,6 @@ var SimulatorHands = class {
 		this.simulatorControllerState.currentControllerIndex = (this.simulatorControllerState.currentControllerIndex + 1) % 2;
 		this.updateHandPosePanel();
 		this.onHandednessChanged?.(this.simulatorControllerState.currentControllerIndex === 0 ? "left" : "right");
-	}
-};
-//#endregion
-//#region src/simulator/events/SimulatorLightingEvents.ts
-var SetSimulatorTimeOfDayEvent = class SetSimulatorTimeOfDayEvent extends Event {
-	static {
-		this.type = "setSimulatorTimeOfDay";
-	}
-	constructor(timeOfDay) {
-		super(SetSimulatorTimeOfDayEvent.type, {
-			bubbles: true,
-			composed: true
-		});
-		this.timeOfDay = timeOfDay;
-	}
-};
-var SetSimulatorDayNightEvent = class SetSimulatorDayNightEvent extends Event {
-	static {
-		this.type = "setSimulatorDayNight";
-	}
-	constructor(enabled) {
-		super(SetSimulatorDayNightEvent.type, {
-			bubbles: true,
-			composed: true
-		});
-		this.enabled = enabled;
 	}
 };
 //#endregion
@@ -3242,7 +3149,6 @@ var SimulatorWorld = class {
 };
 //#endregion
 //#region src/simulator/Simulator.ts
-var Simulator_exports = /* @__PURE__ */ __exportAll({ Simulator: () => Simulator });
 var Simulator = class extends Script {
 	static {
 		this.dependencies = {
@@ -3530,6 +3436,6 @@ var Simulator = class extends Script {
 	}
 };
 //#endregion
-export { Simulator, BaseSimulatorCompositor as a, WebGLDirectCompositor as i, SetSimulatorDayNightEvent as n, SetSimulatorTimeOfDayEvent as r, Simulator_exports as t };
+export { Simulator };
 
 //# sourceMappingURL=Simulator.js.map

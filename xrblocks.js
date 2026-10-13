@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 9ad8f3a
-* @builddate 2026-10-13T18:39:38.368Z
+* @commitid 0ab8a54
+* @builddate 2026-10-13T22:14:49.212Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -47,6 +47,8 @@ import { a as HAND_JOINT_IDX_CONNECTION_MAP, c as OCCLUDABLE_ITEMS_LAYER, d as X
 import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as Hands, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES, u as Keycodes } from "./internal/HandPoses.js";
 import { a as disposeRenderableResources, c as isWebGPURenderer, i as disposeObjectTree, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./internal/ThreeDisposal.js";
 import { a as UIOverlay, c as UIScrollView, i as UIText, s as updatePanelBackfaceVisibility, t as UITextInput } from "./internal/UITextInput.js";
+import { r as ensureWebGPUUIMaterials } from "./internal/PanelMaterialFactory.js";
+import { t as SparkRendererHolder } from "./internal/SparkRendererHolder.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { XREstimatedLight } from "three/addons/webxr/XREstimatedLight.js";
@@ -3409,7 +3411,7 @@ var UIRenderer = class {
 				throw STALE_UI_LOAD;
 			}
 			try {
-				if (this.renderer instanceof THREE.WebGLRenderer) backend.configureRenderer?.(this.renderer);
+				if (this.renderer instanceof THREE.WebGLRenderer || isWebGPURenderer(this.renderer)) backend.configureRenderer?.(this.renderer);
 			} catch (error) {
 				backend.dispose();
 				throw error;
@@ -3537,7 +3539,8 @@ function syncRootTransform(root, renderRoot, camera) {
 	renderRoot.matrixWorldNeedsUpdate = true;
 }
 async function defaultLoader() {
-	return import("./internal/UIKitBackend.js").then((n) => n.t);
+	await ensureWebGPUUIMaterials();
+	return import("./internal/UIKitBackend.js");
 }
 //#endregion
 //#region src/lighting/Lighting.ts
@@ -4972,7 +4975,7 @@ var PermissionsManager = class {
 //#region src/core/Core.ts
 const EPSILON$1 = 1e-9;
 function loadSimulatorModule() {
-	return import("./internal/Simulator.js").then((n) => n.t);
+	return import("./internal/Simulator.js");
 }
 /**
 * Core is the central engine of the XR Blocks framework, acting as a
@@ -5358,6 +5361,9 @@ var Core = class Core {
 			const { applyWebGPUReticleMaterial } = await import("./internal/ReticleWebGPUMaterial.js");
 			this.assertInitializing();
 			this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
+			const { setWebGPUUIMaterialLoader } = await import("./internal/PanelMaterialFactory2.js");
+			this.assertInitializing();
+			setWebGPUUIMaterialLoader(() => import("./internal/WebGPUUIMaterials.js"));
 		}
 		this.renderer.setPixelRatio(window.devicePixelRatio);
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -7561,13 +7567,6 @@ function getGroupBoundingBox(objects) {
 	for (const [child, parent] of parentReferences.entries()) parent.add(child);
 	return bbox;
 }
-//#endregion
-//#region src/utils/SparkRendererHolder.ts
-var SparkRendererHolder = class {
-	constructor(renderer) {
-		this.renderer = renderer;
-	}
-};
 //#endregion
 //#region src/ui/model/ModelViewerPlatform.ts
 const CORNER_RADIUS = .03;

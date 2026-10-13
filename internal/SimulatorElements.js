@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 9ad8f3a
-* @builddate 2026-10-13T18:39:38.368Z
+* @commitid 0ab8a54
+* @builddate 2026-10-13T22:14:49.212Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,7 +42,7 @@ lego-styles.
 */
 import { d as XR_BLOCKS_ASSETS_PATH } from "./constants.js";
 import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES } from "./HandPoses.js";
-import { n as SetSimulatorDayNightEvent, r as SetSimulatorTimeOfDayEvent } from "./Simulator.js";
+import { n as SetSimulatorTimeOfDayEvent, t as SetSimulatorDayNightEvent } from "./SimulatorLightingEvents.js";
 import { LitElement, css, html } from "lit";
 import { customElement } from "lit/decorators/custom-element.js";
 import { property } from "lit/decorators/property.js";
