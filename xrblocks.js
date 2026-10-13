@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 0ab8a54
-* @builddate 2026-10-13T22:14:49.212Z
+* @commitid b59947e
+* @builddate 2026-10-13T23:01:22.497Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -45,7 +45,7 @@ import { C as getUIPresentationBounds, D as isUIElement, F as Script, I as Scrip
 import { $n as GEMINI_DEFAULT_LIVE_MODEL, $t as getFingerJoint, A as DetectedObject, An as VideoStream, At as SoundOptions, B as GazeController, Bn as intrinsicsToProjectionMatrix, Bt as WebXRHandContext, C as AnchorManager, Cn as xrDepthMeshVisualizationOptions, Ct as defaultAnchorStorageKey, D as PlaneDetector, Dn as SceneVisibilityOptions, Dt as PlanesOptions, E as anchorCapability, En as SceneSetOfMarkOptions, Et as HumansOptions, F as ActiveControllers, Fn as getDeviceCameraClipFromView, Ft as StrokeRecognitionOptions, G as OcclusionUtils, Gn as xrDeviceCameraUserContinuousOptions, Gt as average, H as GamepadBindings, Hn as DeviceCameraOptions, Ht as HAND_INDEX_TO_LABEL, I as Input, In as getDeviceCameraWorldFromClip, It as OneDollarUnistrokeRecognizer, J as XRReferenceSpaceCache, Jn as OpenAI, Jt as getAdjacentFingerSpreads, K as OcclusionPass, Kn as xrDeviceCameraUserOptions, Kt as clamp01, L as Reticles, Ln as getDeviceCameraWorldFromView, Lt as HeadGestureRecognitionOptions, M as callInitWithDependencyInjection, Mn as cropImage, Mt as SpeechSynthesizerOptions, N as AudioListener, Nn as detectDeviceCameraTarget, Nt as PhysicsOptions, O as DetectedPlane, On as XRDeviceCamera, Ot as ObjectsOptions, P as Physics, Pn as getCameraParametersSnapshot, Pt as LightingOptions, Q as Interaction, Qn as GEMINI_DEFAULT_IMAGE_MODEL, Qt as getFingerDirection, R as MouseController, Rn as isDeviceCameraPoseAvailable, Rt as HeuristicHeadGestureRecognizer, S as DetectedMesh, Sn as xrDepthMeshPhysicsOptions, St as AnchorsOptions, T as LocalStorageAnchorStore, Tn as SceneOptions, Tt as FacesOptions, Un as xrDeviceCameraEnvironmentContinuousOptions, Ut as HeuristicGestureRecognizer, V as GamepadController, Vn as DEFAULT_RGB_TO_DEPTH_PARAMS, Vt as WebXRHandPoseEstimator, W as Depth, Wn as xrDeviceCameraEnvironmentOptions, Wt as FINGER_ORDER, X as Registry, Xn as AIOptions, Xt as getFingerBendAngles, Y as WaitFrame, Yn as Gemini, Yt as getBoneVectors, Z as DepthMesh, Zn as GEMINI_DEFAULT_FLASH_MODEL, Zt as getFingerCurl, _ as isBVHReady, _n as LayersOptions, _t as Options, a as resolveSimulatorRotationsFromKeypoints, an as getPalmNormal, ar as getUrlParamFloat, at as FORWARD, b as PoseJointName, bn as DepthOptions, bt as XRTransitionOptions, c as World, cn as getPalmUp, cr as getVec4ByColorString, ct as UP, d as DetectedFace, dn as getThumbBendAngles, dr as print, dt as getInteractionSource, en as getFingerPalmAlignment, er as GeminiOptions, f as FaceLandmarkName, fn as getThumbCurl, fr as urlParams, ft as getObjectTargetPoint, g as enableAcceleratedRaycast, gn as getThumbVerticalDirection, gt as InteractionOptions, h as disposeBVH, hn as getThumbStraightness, ht as InputOptions, i as resolveSimulatorHandPoseRotations, in as getFingertipPalmDistance, ir as getUrlParamBool, it as DOWN, j as placeObjectAtIntersectionFacingTarget, jn as DEVICE_CAMERA_PARAMETERS, jt as SpeechRecognizerOptions, k as ObjectDetector, kn as StreamState, kt as MeshDetectionOptions, l as Segmenter, ln as getPalmWidth, lr as lerp, lt as ZERO_VECTOR3, m as applyBVH, mn as getThumbOpposition, mt as traverseUtil, n as SIMULATOR_HAND_POSE_ROTATIONS, nn as getFingerStraightness, nr as clamp, nt as faceCameraSlerpAlpha, o as SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, on as getPalmPose, or as getUrlParamInt, ot as LEFT, p as _getBvhImportStatus, pn as getThumbDirection, pt as objectIsDescendantOf, q as DepthTextures, qn as AI, qt as estimateHandScale, r as applySimulatorHandPoseRotationConstraints, rn as getFingertipDistance, rr as getColorHex, rt as BACK, s as parseSimulatorHandPoseRotations, sn as getPalmRight, sr as getUrlParameter, st as RIGHT, t as ModelLoader, tn as getFingerSpread, tr as OpenAIOptions, tt as faceCameraQuaternion, u as FaceRecognizer, un as getRelativeBoneAngles, ur as parseBase64DataURL, ut as ReticlePresenter, v as HumanRecognizer, vn as HandsOptions, vt as RENDERER_BACKENDS, w as SimulatorAnchor, wn as ContextOptions, wt as SegmentationOptions, x as MeshDetector, xn as xrDepthMeshOptions, xt as WorldOptions, y as DetectedBodyPose, yn as DepthMeshOptions, yt as ReticleOptions, z as HeadGestureRecognition, zn as transformRgbUvToWorld, zt as GestureRecognitionOptions } from "./internal/ModelLoader.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, c as OCCLUDABLE_ITEMS_LAYER, d as XR_BLOCKS_ASSETS_PATH, i as HAND_JOINT_COUNT, l as RIGHT_VIEW_ONLY_LAYER, n as DEFAULT_DEVICE_CAMERA_WIDTH, o as LEFT_VIEW_ONLY_LAYER, r as HAND_BONE_IDX_CONNECTION_MAP, s as NUM_HANDS, t as DEFAULT_DEVICE_CAMERA_HEIGHT, u as VIEW_DEPTH_GAP } from "./internal/constants.js";
 import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as Hands, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES, u as Keycodes } from "./internal/HandPoses.js";
-import { a as disposeRenderableResources, c as isWebGPURenderer, i as disposeObjectTree, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./internal/ThreeDisposal.js";
+import { a as disposeRenderableResources, c as isWebGPURenderer, i as disposeObjectTree, l as isSerializerRenderer, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./internal/ThreeDisposal.js";
 import { a as UIOverlay, c as UIScrollView, i as UIText, s as updatePanelBackfaceVisibility, t as UITextInput } from "./internal/UITextInput.js";
 import { r as ensureWebGPUUIMaterials } from "./internal/PanelMaterialFactory.js";
 import { t as SparkRendererHolder } from "./internal/SparkRendererHolder.js";
@@ -843,6 +843,20 @@ var SimulationTimer = class {
 		this.previousFrameTimeMs = void 0;
 	}
 };
+//#endregion
+//#region src/core/SerializerSupport.ts
+/**
+* Resolves a `SerializerRenderer` from `Options.serializer` or from the global
+* `ThreeSplitEngine.SplitEngineSerializer` runtime entrypoint.
+*/
+async function resolveSerializerRenderer(serializer) {
+	if (typeof serializer === "function") return await serializer();
+	if (serializer != null) return serializer;
+	const globalScope = globalThis;
+	if (globalScope.__splitEngineSerializer) return globalScope.__splitEngineSerializer;
+	if (typeof globalScope.ThreeSplitEngine?.SplitEngineSerializer === "function") return new globalScope.ThreeSplitEngine.SplitEngineSerializer();
+	throw new Error("Options.rendererBackend is \"serializer\", but no serializer instance or factory was provided in Options.serializer and globalThis.ThreeSplitEngine.SplitEngineSerializer is unavailable.");
+}
 //#endregion
 //#region src/context/shared/ContextNumberUtils.ts
 const CONTEXT_NUMBER_SCALE = 1e4;
@@ -4563,7 +4577,8 @@ var CoreSound = class extends Script {
 };
 //#endregion
 //#region src/utils/CreateLoadingSpinner.ts
-var LoadingSpinner = class LoadingSpinner extends HTMLElement {
+const BaseHTMLElement = typeof HTMLElement !== "undefined" ? HTMLElement : class {};
+var LoadingSpinner = class LoadingSpinner extends BaseHTMLElement {
 	static {
 		this.style = `
     /* Styles for the wrapper that covers the screen */
@@ -4613,8 +4628,9 @@ var LoadingSpinner = class LoadingSpinner extends HTMLElement {
 		shadowRoot.innerHTML = LoadingSpinner.innerHTML;
 	}
 };
-if (!customElements.get("xb-blocks-loading-spinner")) customElements.define("xb-blocks-loading-spinner", LoadingSpinner);
+if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined" && !customElements.get("xb-blocks-loading-spinner")) customElements.define("xb-blocks-loading-spinner", LoadingSpinner);
 function createLoadingSpinner() {
+	if (typeof document === "undefined" || !document.body) return;
 	return document.body.appendChild(document.createElement("xb-blocks-loading-spinner"));
 }
 //#endregion
@@ -4653,7 +4669,7 @@ var LoadingSpinnerManager = class {
 		*/
 		THREE.DefaultLoadingManager.onStart = (_url, itemsLoaded, itemsTotal) => {
 			this.isLoading = true;
-			window.parent.postMessage({
+			if (typeof window !== "undefined") window.parent?.postMessage({
 				type: "XR_LOADING_PROGRESS",
 				payload: {
 					progress: itemsLoaded / itemsTotal,
@@ -4670,7 +4686,7 @@ var LoadingSpinnerManager = class {
 		* @param itemsTotal - The total number of items to load.
 		*/
 		THREE.DefaultLoadingManager.onProgress = (_url, itemsLoaded, itemsTotal) => {
-			window.parent.postMessage({
+			if (typeof window !== "undefined") window.parent?.postMessage({
 				type: "XR_LOADING_PROGRESS",
 				payload: {
 					progress: itemsLoaded / itemsTotal,
@@ -4686,7 +4702,7 @@ var LoadingSpinnerManager = class {
 		THREE.DefaultLoadingManager.onLoad = () => {
 			this.isLoading = false;
 			this.hideSpinner();
-			window.parent.postMessage({ type: "XR_LOADING_COMPLETE" }, "*");
+			if (typeof window !== "undefined") window.parent?.postMessage({ type: "XR_LOADING_COMPLETE" }, "*");
 		};
 		/**
 		* Callback function for when a loading item encounters an error.
@@ -4698,7 +4714,7 @@ var LoadingSpinnerManager = class {
 			this.isLoading = false;
 			console.warn("XRBlocks: Error loading: " + url);
 			this.hideSpinner();
-			window.parent.postMessage({
+			if (typeof window !== "undefined") window.parent?.postMessage({
 				type: "XR_LOADING_ERROR",
 				payload: {
 					url,
@@ -4985,11 +5001,11 @@ function loadSimulatorModule() {
 */
 var Core = class Core {
 	get currentFrame() {
-		return this._renderer?.xr.getFrame();
+		return this._renderer?.xr.getFrame?.();
 	}
 	/**
-	* The WebGL or WebGPU renderer, created during {@link Core.init}. Reading it
-	* before `init()` has run returns `undefined` and logs a one-time warning.
+	* The WebGL, WebGPU, or Serializer renderer, created during {@link Core.init}.
+	* Reading it before `init()` has run returns `undefined` and logs a one-time warning.
 	*/
 	get renderer() {
 		if (!this._renderer) console.warn("xb.core.renderer is not available until xb.init() creates it. Access it in or after your Script's init() method.");
@@ -5111,7 +5127,7 @@ var Core = class Core {
 			this.interaction.update(this.input.getFrame(), deltaSeconds);
 			this.uiRenderer.present();
 			this.renderSimulatorAndScene();
-			this.screenshotSynthesizer.onAfterRender(this.renderer, this.renderSceneCallback, this.deviceCamera);
+			if (!isSerializerRenderer(this.renderer)) this.screenshotSynthesizer.onAfterRender(this.renderer, this.renderSceneCallback, this.deviceCamera);
 		};
 		this.physicsStep = () => {
 			if (this._isPaused && !this.isSteppingFrame) return;
@@ -5219,7 +5235,9 @@ var Core = class Core {
 			() => {
 				if (typeof this._renderer?.setAnimationLoop === "function") this._renderer.setAnimationLoop(null);
 			},
-			() => window.removeEventListener("resize", this.onWindowResize),
+			() => {
+				if (typeof window !== "undefined") window.removeEventListener("resize", this.onWindowResize);
+			},
 			() => {
 				const button = this.xrButton;
 				this.xrButton = void 0;
@@ -5331,10 +5349,15 @@ var Core = class Core {
 			this.user.add(this.transition);
 			this.registry.register(this.transition);
 		}
-		this.camera.copy(new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, options.camera.near, options.camera.far));
+		const aspect = typeof window !== "undefined" && window.innerHeight > 0 ? window.innerWidth / window.innerHeight : 1;
+		this.camera.copy(new THREE.PerspectiveCamera(90, aspect, options.camera.near, options.camera.far));
 		this.registry.register(this.camera, THREE.Camera);
 		this.registry.register(this.camera, THREE.PerspectiveCamera);
-		if (options.rendererBackend === "webgpu") {
+		if (options.rendererBackend === "serializer") {
+			this.renderer = await resolveSerializerRenderer(options.serializer);
+			this.assertInitializing();
+			this.renderer.xr.enabled = true;
+		} else if (options.rendererBackend === "webgpu") {
 			const { WebGPURenderer } = await import("three/webgpu");
 			this.assertInitializing();
 			this.renderer = new WebGPURenderer({
@@ -5357,7 +5380,7 @@ var Core = class Core {
 			});
 			this.renderer.xr.enabled = true;
 		}
-		if (isWebGPURenderer(this.renderer)) {
+		if (isWebGPURenderer(this.renderer) || isSerializerRenderer(this.renderer)) {
 			const { applyWebGPUReticleMaterial } = await import("./internal/ReticleWebGPUMaterial.js");
 			this.assertInitializing();
 			this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
@@ -5365,8 +5388,10 @@ var Core = class Core {
 			this.assertInitializing();
 			setWebGPUUIMaterialLoader(() => import("./internal/WebGPUUIMaterials.js"));
 		}
-		this.renderer.setPixelRatio(window.devicePixelRatio);
-		this.renderer.setSize(window.innerWidth, window.innerHeight);
+		if (typeof window !== "undefined") {
+			this.renderer.setPixelRatio(window.devicePixelRatio);
+			this.renderer.setSize(window.innerWidth, window.innerHeight);
+		}
 		if ("getDepthSensingMesh" in this.renderer.xr) this.renderer.xr.getDepthSensingMesh = function() {
 			return null;
 		};
@@ -5374,8 +5399,8 @@ var Core = class Core {
 		this.registry.register(new RendererHolder(this.renderer));
 		this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
 		if (typeof options.framebufferScaleFactor === "number") this.renderer.xr.setFramebufferScaleFactor(options.framebufferScaleFactor);
-		window.addEventListener("resize", this.onWindowResize);
-		if (!options.canvas) {
+		if (typeof window !== "undefined") window.addEventListener("resize", this.onWindowResize);
+		if (!options.canvas && this.renderer.domElement && typeof document !== "undefined") {
 			this.rendererContainer = document.createElement("div");
 			document.body.appendChild(this.rendererContainer);
 			this.rendererContainer.appendChild(this.renderer.domElement);
@@ -5398,7 +5423,7 @@ var Core = class Core {
 			this.input.bindKeyDown(this.scriptsManager.callKeyDown);
 			this.input.bindKeyUp(this.scriptsManager.callKeyUp);
 		}
-		if (options.deviceCamera?.enabled) {
+		if (options.deviceCamera?.enabled && !isSerializerRenderer(this.renderer)) {
 			this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
 			this.deviceCamera.setRenderer(this.renderer);
 			this.registry.register(this.deviceCamera);
@@ -5411,7 +5436,7 @@ var Core = class Core {
 		if (options.deviceCamera?.enabled) webXROptionalFeatures.push("camera-access");
 		this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
 		this.webXRSettings.optionalFeatures = webXROptionalFeatures;
-		if (options.depth.enabled) {
+		if (options.depth.enabled && !isSerializerRenderer(this.renderer)) {
 			webXRRequiredFeatures.push("depth-sensing");
 			webXRRequiredFeatures.push("local-floor");
 			this.webXRSettings.depthSensing = {
@@ -5456,19 +5481,21 @@ var Core = class Core {
 			this.assertInitializing();
 			if (options.depth.enabled) this.depth.depthMesh?.initRapierPhysics(this.physics.RAPIER, this.physics.blendedWorld);
 		}
-		this.webXRSessionManager = new WebXRSessionManager(this.renderer, this.webXRSettings, options.xrSessionMode);
-		this.webXRSessionManager.addEventListener("beforesessionstart", this.onBeforeWebXRSessionStart);
-		this.webXRSessionManager.addEventListener("sessionstart", this.onWebXRSessionStarted);
-		this.webXRSessionManager.addEventListener("sessionend", this.onXRSessionEnded);
 		this.shouldAutostartSimulator = this.options.xrButton.alwaysAutostartSimulator;
-		if (!this.shouldAutostartSimulator && options.xrButton.enabled) {
-			this.xrButton = new XRButton(this.webXRSessionManager, this.permissionsManager, options.xrButton?.appTitle, options.xrButton?.appDescription, options.xrButton?.startText, options.xrButton?.endText, options.xrButton?.invalidText, options.xrButton?.startSimulatorText, options.xrButton?.showEnterSimulatorButton, this.startSimulator, options.permissions);
-			document.body.appendChild(this.xrButton.domElement);
+		if (!isSerializerRenderer(this.renderer)) {
+			this.webXRSessionManager = new WebXRSessionManager(this.renderer, this.webXRSettings, options.xrSessionMode);
+			this.webXRSessionManager.addEventListener("beforesessionstart", this.onBeforeWebXRSessionStart);
+			this.webXRSessionManager.addEventListener("sessionstart", this.onWebXRSessionStarted);
+			this.webXRSessionManager.addEventListener("sessionend", this.onXRSessionEnded);
+			if (!this.shouldAutostartSimulator && options.xrButton.enabled) {
+				this.xrButton = new XRButton(this.webXRSessionManager, this.permissionsManager, options.xrButton?.appTitle, options.xrButton?.appDescription, options.xrButton?.startText, options.xrButton?.endText, options.xrButton?.invalidText, options.xrButton?.startSimulatorText, options.xrButton?.showEnterSimulatorButton, this.startSimulator, options.permissions);
+				document.body.appendChild(this.xrButton.domElement);
+			}
+			this.webXRSessionManager.addEventListener("unsupported", this.onWebXRUnsupported);
+			await this.webXRSessionManager.initialize();
+			this.assertInitializing();
 		}
-		this.webXRSessionManager.addEventListener("unsupported", this.onWebXRUnsupported);
-		await this.webXRSessionManager.initialize();
-		this.assertInitializing();
-		if (options.usePostprocessing) this.effects = new XREffects(this.renderer, this.scene, this.timer);
+		if (options.usePostprocessing && !isSerializerRenderer(this.renderer)) this.effects = new XREffects(this.renderer, this.scene, this.timer);
 		if (options.ai.enabled) {
 			this.registry.register(this.ai);
 			this.xrSystemsGroup.add(this.ai);
@@ -5477,6 +5504,7 @@ var Core = class Core {
 		}
 		await Promise.all([this.uiRenderer.initialize(this.scene, this.renderer), this.scriptsManager.syncScriptsWithScene(this.scene)]);
 		this.assertInitializing();
+		if (isSerializerRenderer(this.renderer) && this.renderer.xr.isPresenting) this.scriptsManager.onXRSessionStarted(this.renderer.xr.getSession?.() ?? void 0);
 		this.uiRenderer.reconcile(0, this.camera);
 		this.uiRenderer.present();
 		this.renderer.setAnimationLoop(this.update);
@@ -8535,6 +8563,7 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	isBVHReady: () => isBVHReady,
 	isDeviceCameraPoseAvailable: () => isDeviceCameraPoseAvailable,
 	isLayerCapable: () => isLayerCapable,
+	isSerializerRenderer: () => isSerializerRenderer,
 	isWebGPURenderer: () => isWebGPURenderer,
 	keyOutBackground: () => keyOutBackground,
 	layerCapability: () => layerCapability,
@@ -8549,6 +8578,7 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	poseInFrontOfCamera: () => poseInFrontOfCamera,
 	print: () => print,
 	quaternionFacingCamera: () => quaternionFacingCamera,
+	resolveSerializerRenderer: () => resolveSerializerRenderer,
 	resolveSimulatorHandPoseRotations: () => resolveSimulatorHandPoseRotations,
 	resolveSimulatorRotationsFromKeypoints: () => resolveSimulatorRotationsFromKeypoints,
 	scene: () => scene,
@@ -8573,6 +8603,6 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	xrDeviceCameraUserOptions: () => xrDeviceCameraUserOptions
 }));
 //#endregion
-export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIIcon, UIImage, UIOverlay, UIPanel, UIScrollView, UISlider, UIText, UITextInput, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIIcon, UIImage, UIOverlay, UIPanel, UIScrollView, UISlider, UIText, UITextInput, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 
 //# sourceMappingURL=xrblocks.js.map

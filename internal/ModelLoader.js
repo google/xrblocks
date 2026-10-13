@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 0ab8a54
-* @builddate 2026-10-13T22:14:49.212Z
+* @commitid b59947e
+* @builddate 2026-10-13T23:01:22.497Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -77,14 +77,14 @@ function lerp(x, y, t) {
 function print(...args) {
 	console.log("*", ...args);
 }
-const urlParams = new URLSearchParams(window.location.search);
+const urlParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
 /**
 * Function to get the value of a URL parameter.
 * @param name - The name of the URL parameter.
 * @returns The value of the URL parameter or null if not found.
 */
 function getUrlParameter(name) {
-	return new URLSearchParams(window.location.search).get(name);
+	return new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get(name);
 }
 /**
 * Retrieves a boolean URL parameter. Returns true for 'true' or '1', false for
@@ -96,7 +96,7 @@ function getUrlParameter(name) {
 * @returns The boolean value of the URL parameter.
 */
 function getUrlParamBool(name, defaultBool = false) {
-	const inputString = new URLSearchParams(window.location.search).get(name)?.toLowerCase();
+	const inputString = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get(name)?.toLowerCase();
 	if (inputString === "true" || inputString === "1") return true;
 	if (inputString === "false" || inputString === "0") return false;
 	return defaultBool;
@@ -4052,7 +4052,11 @@ const FORM_FACTORS = [
 	"desktop",
 	"mobile"
 ];
-const RENDERER_BACKENDS = ["webgl", "webgpu"];
+const RENDERER_BACKENDS = [
+	"webgl",
+	"webgpu",
+	"serializer"
+];
 /**
 * A central configuration class for the entire XR Blocks system. It aggregates
 * all settings and provides chainable methods for enabling common features.
@@ -4151,6 +4155,24 @@ var Options = class {
 		this.rendererBackend = "webgpu";
 		this.webgpuOptions = options;
 		return this;
+	}
+	/**
+	* Configures Core to use a SplitEngineSerializer renderer backend instead of
+	* THREE.WebGLRenderer.
+	* @param serializer - Optional SplitEngineSerializer instance or factory function.
+	*/
+	enableSerializer(serializer) {
+		this.rendererBackend = "serializer";
+		if (serializer !== void 0) this.serializer = serializer;
+		return this;
+	}
+	/**
+	* Alias for `enableSerializer` that configures Core to use a
+	* SplitEngineSerializer renderer backend.
+	* @param serializer - Optional SplitEngineSerializer instance or factory function.
+	*/
+	useSerializer(serializer) {
+		return this.enableSerializer(serializer);
 	}
 	/**
 	* Sets the session mode to VR and disables the simulator passthrough scene.
@@ -9892,20 +9914,20 @@ var Input = class {
 	bindKeyDown(event) {
 		if (this.keyDownListeners.has(event)) return;
 		this.keyDownListeners.add(event);
-		window.addEventListener("keydown", event);
+		if (typeof window !== "undefined") window.addEventListener("keydown", event);
 	}
 	bindKeyUp(event) {
 		if (this.keyUpListeners.has(event)) return;
 		this.keyUpListeners.add(event);
-		window.addEventListener("keyup", event);
+		if (typeof window !== "undefined") window.addEventListener("keyup", event);
 	}
 	unbindKeyDown(event) {
 		this.keyDownListeners.delete(event);
-		window.removeEventListener("keydown", event);
+		if (typeof window !== "undefined") window.removeEventListener("keydown", event);
 	}
 	unbindKeyUp(event) {
 		this.keyUpListeners.delete(event);
-		window.removeEventListener("keyup", event);
+		if (typeof window !== "undefined") window.removeEventListener("keyup", event);
 	}
 	/** Samples current controller, button, and direct-touch state. */
 	sampleSources() {
@@ -9940,6 +9962,8 @@ var Input = class {
 			input.sourceType = this.getRaySourceType(controller);
 			input.ray.origin.copy(position);
 			input.ray.direction.set(0, 0, -1).applyQuaternion(orientation).normalize();
+			const lastIntersection = controller.userData.lastIntersection;
+			input.intersections = lastIntersection && lastIntersection.object && lastIntersection.point ? [lastIntersection] : void 0;
 			input.selected = controller.userData.selected === true;
 			input.released = this.releasedControllers.delete(controller);
 			this.raySourceInputs.push(input);
@@ -10020,8 +10044,10 @@ var Input = class {
 		this.controllersEnabled = true;
 	}
 	dispose() {
-		for (const listener of this.keyDownListeners) window.removeEventListener("keydown", listener);
-		for (const listener of this.keyUpListeners) window.removeEventListener("keyup", listener);
+		if (typeof window !== "undefined") {
+			for (const listener of this.keyDownListeners) window.removeEventListener("keydown", listener);
+			for (const listener of this.keyUpListeners) window.removeEventListener("keyup", listener);
+		}
 		this.keyDownListeners.clear();
 		this.keyUpListeners.clear();
 		this.pinchFilter.dispose(this.controllers);

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 0ab8a54
-* @builddate 2026-10-13T22:14:49.212Z
+* @commitid b59947e
+* @builddate 2026-10-13T23:01:22.497Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,6 +40,18 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
+//#region src/core/SerializerTypes.ts
+/**
+* Type guard to determine if a renderer instance is a SplitEngineSerializer
+* (`SerializerRenderer`).
+*
+* @param renderer - The renderer instance to test.
+* @returns True if the renderer is a SerializerRenderer, false otherwise.
+*/
+function isSerializerRenderer(renderer) {
+	return renderer != null && typeof renderer === "object" && "isSplitEngineSerializer" in renderer && renderer.isSplitEngineSerializer === true;
+}
+//#endregion
 //#region src/core/RendererTypes.ts
 /**
 * Type guard to determine if a renderer instance is a THREE.WebGPURenderer.
@@ -59,11 +71,12 @@ function isWebGPURenderer(renderer) {
 */
 function assertWebGLRenderer(renderer, consumerName) {
 	if (isWebGPURenderer(renderer)) throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.`);
+	if (isSerializerRenderer(renderer)) throw new Error(`${consumerName} requires THREE.WebGLRenderer, but Core is configured with SerializerRenderer.`);
 }
 /**
-* Dependency injection holder for the active Three.js renderer (`WebGLRenderer`
-* or `WebGPURenderer`), allowing scripts to request the renderer via `Registry`
-* in O(1) time without statically importing `three/webgpu`.
+* Dependency injection holder for the active Three.js renderer (`WebGLRenderer`,
+* `WebGPURenderer`, or `SerializerRenderer`), allowing scripts to request the
+* renderer via `Registry` in O(1) time without statically importing `three/webgpu`.
 */
 var RendererHolder = class {
 	constructor(renderer) {
@@ -104,6 +117,6 @@ function disposeObjectChildren(object) {
 	}
 }
 //#endregion
-export { disposeRenderableResources as a, isWebGPURenderer as c, disposeObjectTree as i, disposeMeshResources as n, RendererHolder as o, disposeObjectChildren as r, assertWebGLRenderer as s, disposeMaterial as t };
+export { disposeRenderableResources as a, isWebGPURenderer as c, disposeObjectTree as i, isSerializerRenderer as l, disposeMeshResources as n, RendererHolder as o, disposeObjectChildren as r, assertWebGLRenderer as s, disposeMaterial as t };
 
 //# sourceMappingURL=ThreeDisposal.js.map
