@@ -4,9 +4,7 @@ import {normalizeAlphaHexColor, parseColorWithAlpha} from './ColorUtils';
 
 describe('normalizeAlphaHexColor', () => {
   it('converts #RRGGBBAA to an equivalent rgba()', () => {
-    expect(normalizeAlphaHexColor('#282c3466')).toBe(
-      'rgba(5.4108, 6.4226, 8.7567, 0.4)'
-    );
+    expect(normalizeAlphaHexColor('#282c3466')).toBe('rgba(40, 44, 52, 0.4)');
   });
 
   it('converts #RGBA to an equivalent rgba()', () => {
@@ -40,5 +38,14 @@ describe('normalizeAlphaHexColor', () => {
       expect(b.color.b).toBeCloseTo(a.color.b, 3);
       expect(b.opacity).toBeCloseTo(a.opacity, 4);
     }
+  });
+
+  it('parses rgba() and hex strings into matching linear working-space colors', () => {
+    const fromRgba = parseColorWithAlpha('rgba(18, 18, 22, 1.0)');
+    const fromHex = parseColorWithAlpha('#121216');
+    expect(fromRgba.color.r).toBeCloseTo(fromHex.color.r, 5);
+    expect(fromRgba.color.g).toBeCloseTo(fromHex.color.g, 5);
+    expect(fromRgba.color.b).toBeCloseTo(fromHex.color.b, 5);
+    expect(fromRgba.opacity).toBe(1.0);
   });
 });
