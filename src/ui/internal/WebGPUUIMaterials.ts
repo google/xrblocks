@@ -29,7 +29,6 @@ import {
   sin,
   smoothstep,
   materialReference,
-  uniform,
   uniformArray,
   uv,
   vec2,
