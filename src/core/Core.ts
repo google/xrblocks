@@ -911,6 +911,12 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    const sessionWithFeatures = session as XRSession & {
+      enabledFeatures?: string[];
+    };
+    if (sessionWithFeatures.enabledFeatures?.includes('webgpu')) {
+      console.debug('WebXR session is using WebGPU');
+    }
     this.xrReferenceSpaceCache.onXRSessionStart(session);
     if (this.options.deviceCamera?.enabled) {
       await this.deviceCamera!.init();
