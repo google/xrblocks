@@ -42,6 +42,24 @@ describe('Core with WebGPURenderer', () => {
     expect(core.renderer).toBeInstanceOf(THREE.WebGLRenderer);
   });
 
+  it('requests webgpu as optional feature when rendererBackend is webgpu', async () => {
+    const core = new Core();
+    const options = new Options().enableWebGPU();
+    await core.init(options);
+
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.optionalFeatures).toContain('webgpu');
+  });
+
+  it('does not request webgpu in optional features when rendererBackend is webgl', async () => {
+    const core = new Core();
+    const options = new Options();
+    await core.init(options);
+
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.optionalFeatures).not.toContain('webgpu');
+  });
+
   it.each(['webgl', 'webgpu'] as const)(
     'requests enabled hand tracking as optional with %s',
     async (backend) => {
