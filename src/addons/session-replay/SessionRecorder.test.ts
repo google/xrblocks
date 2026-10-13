@@ -14,7 +14,13 @@ import {parseSessionRecording} from './SessionRecording';
 
 type FakeController = THREE.Group & {inputSource?: {handedness: string}};
 
-function createFakeCore({presenting = true} = {}) {
+function createFakeCore({
+  presenting = true,
+  activeEnvironment,
+}: {
+  presenting?: boolean;
+  activeEnvironment?: {name?: string; manifestPath: string};
+} = {}) {
   const controllers: FakeController[] = [new THREE.Group(), new THREE.Group()];
   const hands = [new THREE.Group(), new THREE.Group()].map((hand) => {
     const joints: Record<string, THREE.Group> = {};
@@ -30,6 +36,7 @@ function createFakeCore({presenting = true} = {}) {
     input: {controllers, hands},
     renderer: {xr: {isPresenting: presenting}},
     simulatorRunning: !presenting,
+    simulator: {activeEnvironment},
   };
   return {core, controllers, hands};
 }
@@ -39,7 +46,10 @@ function connect(controller: FakeController, handedness?: string) {
   if (handedness) controller.inputSource = {handedness};
 }
 
-function createRecorder(options = {}, coreOptions = {}) {
+function createRecorder(
+  options = {},
+  coreOptions: Parameters<typeof createFakeCore>[0] = {}
+) {
   const fake = createFakeCore(coreOptions);
   const camera = new THREE.PerspectiveCamera();
   const recorder = new SessionRecorder(options);
@@ -170,6 +180,32 @@ describe('SessionRecorder', () => {
 
     recorder.start();
     expect(recorder.stop()).not.toHaveProperty('state');
+  });
+
+  it('stores the simulator room with simulator recordings', () => {
+    const office = {name: 'Office', manifestPath: 'rooms/office.json'};
+    const {recorder} = createRecorder(
+      {},
+      {presenting: false, activeEnvironment: office}
+    );
+    recorder.start();
+    expect(recorder.stop().environment).toEqual(office);
+
+    const unnamed = createRecorder(
+      {},
+      {presenting: false, activeEnvironment: {manifestPath: 'room.json'}}
+    ).recorder;
+    unnamed.start();
+    expect(unnamed.stop().environment).toEqual({manifestPath: 'room.json'});
+  });
+
+  it('stores no room for headset recordings', () => {
+    const {recorder} = createRecorder(
+      {},
+      {activeEnvironment: {manifestPath: 'room.json'}}
+    );
+    recorder.start();
+    expect(recorder.stop()).not.toHaveProperty('environment');
   });
 
   it('requires initialization before start', () => {

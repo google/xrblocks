@@ -67,6 +67,14 @@ describe('parseSessionRecording', () => {
     });
   });
 
+  it('keeps the simulator room through JSON', () => {
+    const environment = {name: 'Office', manifestPath: 'rooms/office.json'};
+    const original = {...recording([frame(0)]), environment};
+    expect(parseSessionRecording(JSON.stringify(original)).environment).toEqual(
+      environment
+    );
+  });
+
   it('accepts an empty recording', () => {
     expect(parseSessionRecording(recording([])).frames).toEqual([]);
   });
@@ -80,6 +88,16 @@ describe('parseSessionRecording', () => {
       'reordered joint names',
       {...recording([]), jointNames: [...HAND_JOINT_NAMES].reverse()},
       /jointNames/,
+    ],
+    [
+      'a room without a manifest',
+      {...recording([]), environment: {name: 'Office'}},
+      /environment must/,
+    ],
+    [
+      'a room with a non-string name',
+      {...recording([]), environment: {name: 3, manifestPath: 'a.json'}},
+      /environment must/,
     ],
     ['missing frames', {...recording([]), frames: undefined}, /frames must/],
     [

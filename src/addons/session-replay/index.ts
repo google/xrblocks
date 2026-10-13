@@ -11,6 +11,7 @@ export {
 } from './SessionRecording';
 export type {
   SessionControllerFrame,
+  SessionEnvironment,
   SessionFrame,
   SessionPose,
   SessionRecording,

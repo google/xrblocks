@@ -122,6 +122,14 @@ export class SessionRecorder extends Script {
       jointNames: [...HAND_JOINT_NAMES],
       frames: [],
     };
+    const environment = this.core.simulatorRunning
+      ? this.core.simulator?.activeEnvironment
+      : undefined;
+    if (environment && this.recording.source === 'simulator') {
+      const {name, manifestPath} = environment;
+      this.recording.environment =
+        name === undefined ? {manifestPath} : {name, manifestPath};
+    }
     if (state !== undefined) {
       this.recording.state = JSON.parse(JSON.stringify(state));
     }

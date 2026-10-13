@@ -1,5 +1,6 @@
 import {test, expect} from '@playwright/test';
 import {
+  activeRoom,
   bootDemoInSimulator,
   clickPanelButton,
   cubeCenters,
@@ -9,6 +10,7 @@ import {
   panelButtonCenter,
   pinch,
   saveRecording,
+  switchRoom,
   toolbar,
 } from '../fixtures/session-replay';
 
@@ -178,4 +180,40 @@ test('disables replay for a recording with no frames', async ({page}) => {
   await expect(ui.status).toHaveText('0 frames, 0.0s from xr.');
   await expect(ui.replay).toBeDisabled();
   await expect(ui.save).toBeEnabled();
+});
+
+test('replays in the room it was recorded in', async ({page}) => {
+  const ui = toolbar(page);
+  const recordedIn = await activeRoom(page);
+  await ui.record.click();
+  await pinch(page);
+  await ui.record.click();
+  const saved = await saveRecording(page);
+  expect(JSON.parse(saved.text).environment.name).toBe(recordedIn);
+
+  const other = recordedIn === 'Office' ? 'Living Room' : 'Office';
+  await switchRoom(page, other);
+  expect(await activeRoom(page)).toBe(other);
+  await loadRecording(page, saved.name, saved.text);
+  await ui.replay.click();
+  await expect(ui.status).toHaveText('Replay finished.', {timeout: 30_000});
+  expect(await activeRoom(page)).toBe(recordedIn);
+});
+
+test('names a custom room that cannot be loaded', async ({page}) => {
+  const ui = toolbar(page);
+  const roomBefore = await activeRoom(page);
+  await ui.record.click();
+  await pinch(page);
+  await ui.record.click();
+  const saved = JSON.parse((await saveRecording(page)).text);
+  saved.environment = {name: 'My loft', manifestPath: 'missing/loft.json'};
+
+  await loadRecording(page, 'loft.json', JSON.stringify(saved));
+  await ui.replay.click();
+  await expect(ui.status).toHaveText(
+    /^Could not load the recorded simulator room "My loft": .*404.* Pass \{environment: false\}/
+  );
+  await expect(ui.replay).toBeEnabled();
+  expect(await activeRoom(page)).toBe(roomBefore);
 });

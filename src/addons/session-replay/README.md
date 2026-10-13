@@ -42,7 +42,17 @@ await player.play(recording);
 
 ### Starting from the same scene
 
-A recording drives input, not the scene. If replaying a pinch toggles something, it toggles it again from wherever the scene is now. Pass your own starting state to `start()` and restore it before playing:
+A recording drives input, not the scene. If replaying a pinch toggles something, it toggles it again from wherever the scene is now. Two things decide where the replay starts: the simulator room and your app's own objects.
+
+**The simulator room is restored automatically.** A simulator recording stores the room it was made in as a `{name, manifestPath}` reference, and `play()` loads that room before replaying. Built-in rooms embed their manifest in `manifestPath`, so they work anywhere. A custom room is loaded again from its manifest URL, so that URL must be reachable from the page that replays it. If the room cannot be loaded, `play()` rejects with an error that names it. Pass `{environment: false}` to replay in the current room instead:
+
+```ts
+await player.play(recording, {environment: false});
+```
+
+Headset recordings store no room, because the room was the real one. They replay in whichever simulator room is loaded.
+
+**Your app's objects are yours to save.** Pass their starting state to `start()` and restore it before playing:
 
 ```ts
 recorder.start({state: {cubeColors: cubes.map((cube) => cube.colorIndex)}});
@@ -52,7 +62,14 @@ cubeColors.forEach((color, i) => cubes[i].setColor(color));
 await player.play(recording);
 ```
 
-`state` can be any JSON value. It is copied when recording starts and saved with the file. The addon never reads it.
+`state` can be any JSON value. It is copied when recording starts and saved with the file. The addon never reads it. Apps that already serialize their scene can pass that snapshot directly. For example, a Roomcraft scene stores its objects, transforms, and recipes as `room.layout`:
+
+```ts
+recorder.start({state: room.layout});
+// ...
+await room.applyLayout(recording.state);
+await player.play(recording);
+```
 
 To load a saved file, pass its text to `parseSessionRecording()`. It validates the format and reports the first bad frame by index.
 
@@ -74,6 +91,7 @@ A recording is plain JSON, so it can be saved, diffed, and checked into a reposi
   format: 'xrblocks-session',
   version: 1,
   source: 'xr' | 'simulator' | 'desktop',
+  environment?: {name?: string, manifestPath: string}, // simulator room
   state?: unknown, // whatever was passed to start()
   frames: [
     {
@@ -107,6 +125,6 @@ Controllers are matched to the left and right slots by `inputSource.handedness`.
 - Replay runs only in the desktop simulator. In a real XR session the device overwrites the camera and controller poses every frame, so `play()` rejects when the simulator is not running.
 - Only select is recorded. Squeeze, mouse, and gamepad input are not part of version 1.
 - `SessionPlayer` applies the replayed pose in its `update()`. Scripts added before it see the previous frame, so add the player first. Direct-touch interaction can lag the replay by one frame.
-- Recordings store poses, not scene state. Replay reproduces the input, and the scene responds to it the same way only if it starts in the same state. Use `state` to save what your app needs to restore.
+- Recordings store input, a reference to the simulator room, and optional app `state`. They do not store meshes, physics, animation progress, or responses from AI calls the app makes during the session, so anything nondeterministic can play out differently.
 
 See `demos/session_replay` for a working example with record, replay, save, and load buttons.

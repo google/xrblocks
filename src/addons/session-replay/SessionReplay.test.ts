@@ -1,4 +1,4 @@
-import {afterAll, beforeAll, describe, expect, it} from 'vitest';
+import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 // TestRunner installs the headless WebGL/WebAudio mocks; import it first.
 import {TestRunner} from '../testing/TestRunner';
 import * as THREE from 'three';
@@ -59,6 +59,10 @@ describe('session record and replay', () => {
 
   afterAll(async () => {
     await runner.destroy();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('records head, hand, and selection changes from the simulator', async () => {
@@ -185,6 +189,63 @@ describe('session record and replay', () => {
 
     expect(target.starts).toEqual([1]);
     expect(target.ends).toEqual([1]);
+  });
+
+  it('switches to the recorded room before replaying', async () => {
+    let roomLoaded!: () => void;
+    const setEnvironment = vi
+      .spyOn(runner.core.simulator!, 'setEnvironment')
+      .mockReturnValue(new Promise((resolve) => (roomLoaded = resolve)));
+    const finished = player.play({
+      ...recording,
+      environment: {name: 'Office', manifestPath: 'rooms/office.json'},
+    });
+    expect(setEnvironment).toHaveBeenCalledWith('Office', 'rooms/office.json');
+    expect(player.isPlaying).toBe(true);
+    await runner.actions.step({durationMs: 100});
+    expect(player.currentTimeMs).toBe(0);
+
+    roomLoaded();
+    // Let play() see the loaded room before stepping frames again.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await runner.actions.step({
+      durationMs: getSessionRecordingDuration(recording) + 100,
+    });
+    await finished;
+    expect(player.isPlaying).toBe(false);
+  });
+
+  it('keeps the current room when it already matches or is opted out', async () => {
+    const simulator = runner.core.simulator!;
+    vi.spyOn(simulator, 'activeEnvironment', 'get').mockReturnValue({
+      manifestPath: 'rooms/office.json',
+    });
+    const setEnvironment = vi.spyOn(simulator, 'setEnvironment');
+    const short = {...recording, frames: recording.frames.slice(0, 2)};
+    for (const [environment, options] of [
+      [{manifestPath: 'rooms/office.json'}, {}],
+      [{manifestPath: 'rooms/other.json'}, {environment: false}],
+    ] as const) {
+      const finished = player.play({...short, environment}, options);
+      await runner.actions.step({durationMs: 200});
+      await finished;
+    }
+    expect(setEnvironment).not.toHaveBeenCalled();
+  });
+
+  it('rejects with the room name when the room cannot load', async () => {
+    vi.spyOn(runner.core.simulator!, 'setEnvironment').mockRejectedValue(
+      new Error('404 Not Found.')
+    );
+    await expect(
+      player.play({
+        ...recording,
+        environment: {name: 'Custom loft', manifestPath: 'loft.json'},
+      })
+    ).rejects.toThrow(
+      /Could not load the recorded simulator room "Custom loft": 404 Not Found\. Pass \{environment: false\}/
+    );
+    expect(player.isPlaying).toBe(false);
   });
 
   it('rejects an empty recording', async () => {

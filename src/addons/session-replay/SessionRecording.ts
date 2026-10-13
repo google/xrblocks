@@ -27,6 +27,11 @@ export type SessionFrame = {
   hands: SessionSides<number[] | null>;
 };
 
+export type SessionEnvironment = {
+  name?: string;
+  manifestPath: string;
+};
+
 export type SessionRecording = {
   format: typeof SESSION_RECORDING_FORMAT;
   version: typeof SESSION_RECORDING_VERSION;
@@ -34,6 +39,11 @@ export type SessionRecording = {
   source: 'xr' | 'simulator' | 'desktop';
   jointNames: string[];
   frames: SessionFrame[];
+  /**
+   * Simulator room the recording was made in. `SessionPlayer.play()` switches
+   * to it first. Absent for headset recordings, whose room was the real one.
+   */
+  environment?: SessionEnvironment;
   /**
    * App state passed to `SessionRecorder.start()`. Replay only drives input,
    * so restore this before `SessionPlayer.play()` to start the scene where the
@@ -116,6 +126,17 @@ export function parseSessionRecording(input: unknown): SessionRecording {
     recording.jointNames.some((name, i) => name !== HAND_JOINT_NAMES[i])
   ) {
     fail('jointNames must match HAND_JOINT_NAMES.');
+  }
+  if (recording.environment !== undefined) {
+    const environment = recording.environment as Partial<SessionEnvironment>;
+    if (
+      typeof environment !== 'object' ||
+      environment === null ||
+      typeof environment.manifestPath !== 'string' ||
+      (environment.name !== undefined && typeof environment.name !== 'string')
+    ) {
+      fail('environment must have a string manifestPath and optional name.');
+    }
   }
   if (!Array.isArray(recording.frames)) {
     fail('frames must be an array.');

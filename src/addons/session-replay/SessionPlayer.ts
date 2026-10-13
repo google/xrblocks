@@ -11,6 +11,7 @@ import {
   POSE_LENGTH,
   getSessionRecordingDuration,
   sampleSessionRecording,
+  type SessionEnvironment,
   type SessionFrame,
   type SessionRecording,
 } from './SessionRecording';
@@ -96,6 +97,7 @@ export class SessionPlayer extends Script {
   private selected = [false, false];
   private savedHandVisibility?: boolean[];
   private resolvePlayback?: () => void;
+  private loadingRoomFor?: SessionRecording;
 
   init({core, camera}: {core: Core; camera: THREE.Camera}) {
     this.core = core;
@@ -112,10 +114,17 @@ export class SessionPlayer extends Script {
   }
 
   /**
-   * Starts replaying a recording, stopping any current playback.
-   * @returns A promise that resolves when playback finishes or is stopped.
+   * Starts replaying a recording, stopping any current playback. A simulator
+   * recording first switches to the room it was made in.
+   * @param options.environment - Set to `false` to replay in the current
+   * simulator room instead of the recorded one.
+   * @returns A promise that resolves when playback finishes or is stopped,
+   * and rejects if the recorded room cannot be loaded.
    */
-  async play(recording: SessionRecording): Promise<void> {
+  async play(
+    recording: SessionRecording,
+    {environment = true}: {environment?: boolean} = {}
+  ): Promise<void> {
     if (!this.core || !this.camera) {
       throw new Error(
         'SessionPlayer must be added with xb.add() and initialized before play().'
@@ -138,9 +147,42 @@ export class SessionPlayer extends Script {
     this.startTime = undefined;
     this.elapsed = 0;
     this.nextFrameIndex = 0;
-    return new Promise((resolve) => {
+    const finished = new Promise<void>((resolve) => {
       this.resolvePlayback = resolve;
     });
+    const room = recording.environment;
+    if (
+      environment &&
+      room &&
+      this.core.simulator.activeEnvironment?.manifestPath !== room.manifestPath
+    ) {
+      // Playback starts on the first update after the room has loaded.
+      this.loadingRoomFor = recording;
+      try {
+        await this.loadEnvironment(room);
+      } catch (error) {
+        if (this.recording === recording) this.stop();
+        throw error;
+      } finally {
+        if (this.loadingRoomFor === recording) this.loadingRoomFor = undefined;
+      }
+    }
+    return finished;
+  }
+
+  private async loadEnvironment({name, manifestPath}: SessionEnvironment) {
+    const simulator = this.core!.simulator!;
+    try {
+      await (name === undefined
+        ? simulator.setEnvironment(manifestPath)
+        : simulator.setEnvironment(name, manifestPath));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Could not load the recorded simulator room "${name ?? manifestPath}": ${reason} ` +
+          'Pass {environment: false} to play() to replay in the current room.'
+      );
+    }
   }
 
   /**
@@ -164,7 +206,7 @@ export class SessionPlayer extends Script {
   }
 
   override update(time = performance.now()) {
-    if (!this.recording) return;
+    if (!this.recording || this.loadingRoomFor === this.recording) return;
     this.startTime ??= time;
     this.elapsed = Math.min(time - this.startTime, this.duration);
     this.applyFrame(sampleSessionRecording(this.recording, this.elapsed));

@@ -11,6 +11,11 @@ type DemoWindow = {
       camera: {position: {clone(): unknown}};
       renderer: {domElement: HTMLCanvasElement};
       input: {mouseController: {userData: {connected: boolean}}};
+      simulator: {
+        options: {environments: {name?: string; manifestPath: string}[]};
+        activeEnvironment?: {name?: string};
+        setEnvironment(name: string, manifestPath: string): Promise<void>;
+      };
     };
   };
 };
@@ -169,4 +174,23 @@ export function loadRecording(page: Page, name: string, text: string) {
     mimeType: 'application/json',
     buffer: Buffer.from(text),
   });
+}
+
+/** Name of the simulator room that is currently loaded. */
+export function activeRoom(page: Page): Promise<string | undefined> {
+  return page.evaluate(
+    () =>
+      (window as unknown as DemoWindow).xb.core.simulator.activeEnvironment
+        ?.name
+  );
+}
+
+/** Switches the simulator to one of its configured rooms, by name. */
+export function switchRoom(page: Page, name: string): Promise<void> {
+  return page.evaluate(async (name) => {
+    const {simulator} = (window as unknown as DemoWindow).xb.core;
+    const room = simulator.options.environments.find((e) => e.name === name);
+    if (!room) throw new Error(`No simulator room named ${name}.`);
+    await simulator.setEnvironment(name, room.manifestPath);
+  }, name);
 }
