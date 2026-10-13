@@ -161,9 +161,10 @@ const getGradientColor = Fn(
     Arr,
     Arr,
   ]) => {
-    If(numStops.lessThan(1), () => {
-      return vec4(0, 0, 0, 0);
-    });
+    // NOTE: the GLSL early-returns (numStops < 1 / < 2) are folded into
+    // mixGradientStops, which returns the same values for those cases.
+    // A `return` inside `If()` in an inline Fn() is dropped by three's
+    // codegen (THREE.TSL warning), so the flow must stay assignment-based.
 
     // Transform UV: center to origin, rotate, then scale.
     const p = uvValue.sub(center).toVar();
