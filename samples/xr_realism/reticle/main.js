@@ -9,31 +9,11 @@ class ReticleVisualizer extends xb.Script {
     super();
     this.activeMeasurements = new Map();
     this.depth = null;
-    this.xrSession = null;
   }
 
   init({depth}) {
     this.depth = depth;
     this.add(this.createInstructions());
-  }
-
-  onXRSessionStarted(session) {
-    this.xrSession = session;
-  }
-
-  onXRSessionEnded() {
-    this.xrSession = null;
-  }
-
-  async closeApp() {
-    const session =
-      this.xrSession || this.depth?.core?.renderer?.xr?.getSession?.();
-    if (!session) return;
-    try {
-      await session.end();
-    } catch {
-      // Ignore errors when ending the XR session.
-    }
   }
 
   onSelectStart(event) {
