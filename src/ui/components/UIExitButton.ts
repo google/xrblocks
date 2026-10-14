@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 
+import {WebXRSessionManager} from '../../core/components/WebXRSessionManager';
 import type {UIStyle} from '../UIElement';
 import {UIButton, type UIButtonOptions} from './UIButton';
 
@@ -7,10 +8,10 @@ export interface UIExitButtonOptions
   extends Omit<UIButtonOptions, 'label' | 'ariaLabel'> {
   label?: string;
   ariaLabel?: string;
-  /** Custom exit handler. If omitted, attempts to call `closeApp()` or end the active XRSession. */
+  /** Custom exit handler. If omitted, ends the active WebXR session via the injected WebXRSessionManager. */
   onExit?: () => void | Promise<void>;
-  /** Optional reference or getter for the active WebXR session. */
-  session?: XRSession | null | (() => XRSession | null | undefined);
+  /** Optional explicit session manager instance (useful for testing or manual injection). */
+  sessionManager?: WebXRSessionManager;
 }
 
 export const DEFAULT_EXIT_BUTTON_STYLE: UIStyle = Object.freeze({
@@ -32,14 +33,18 @@ export const DEFAULT_EXIT_BUTTON_STYLE: UIStyle = Object.freeze({
 
 /**
  * A standard circular exit button for XR overlays and cards.
- * Clicking it calls `onExit`/`onClick`, invokes a parent `closeApp()`,
- * or automatically finds and ends the active WebXR session.
+ * Uses dependency injection to resolve the active `WebXRSessionManager`
+ * and cleanly end the session when clicked.
  */
 export class UIExitButton<
   TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
 > extends UIButton<TEventMap> {
+  static readonly dependencies = {
+    sessionManager: WebXRSessionManager,
+  };
+
   override name = 'UIExitButton';
-  private readonly _sessionGetter?: () => XRSession | null | undefined;
+  private sessionManager?: WebXRSessionManager;
   private readonly _onExit?: () => void | Promise<void>;
 
   constructor({
@@ -49,16 +54,9 @@ export class UIExitButton<
     style,
     onClick,
     onExit,
-    session,
+    sessionManager,
     ...rest
   }: UIExitButtonOptions = {}) {
-    const sessionGetter =
-      typeof session === 'function'
-        ? session
-        : session !== undefined
-          ? () => session
-          : undefined;
-
     const mergedStyle: UIStyle = {...DEFAULT_EXIT_BUTTON_STYLE, ...style};
 
     super({
@@ -72,8 +70,14 @@ export class UIExitButton<
       ...rest,
     });
 
-    this._sessionGetter = sessionGetter;
+    this.sessionManager = sessionManager;
     this._onExit = onExit;
+  }
+
+  init(dependencies: {sessionManager?: WebXRSessionManager} = {}): void {
+    if (dependencies.sessionManager) {
+      this.sessionManager = dependencies.sessionManager;
+    }
   }
 
   async handleExit(customOnClick?: () => void): Promise<void> {
@@ -85,64 +89,12 @@ export class UIExitButton<
       customOnClick();
       return;
     }
-    let curr: THREE.Object3D | null = this.parent;
-    while (curr) {
-      const candidate = curr as {
-        closeApp?: () => void | Promise<void>;
-      };
-      if (typeof candidate.closeApp === 'function') {
-        await candidate.closeApp();
-        return;
-      }
-      curr = curr.parent;
-    }
-    const activeSession = this.resolveActiveSession();
-    if (activeSession) {
+    if (this.sessionManager) {
       try {
-        await activeSession.end();
+        await this.sessionManager.endSession();
       } catch {
-        // Ignore session ending error.
+        // Ignore session ending error if no session is active.
       }
     }
-  }
-
-  resolveActiveSession(): XRSession | null | undefined {
-    if (this._sessionGetter) {
-      const s = this._sessionGetter();
-      if (s) return s;
-    }
-    const globalCore = (
-      globalThis as {
-        xb?: {
-          core?: {renderer?: {xr?: {getSession?: () => XRSession | null}}};
-        };
-      }
-    ).xb?.core;
-    if (globalCore?.renderer?.xr?.getSession) {
-      const s = globalCore.renderer.xr.getSession();
-      if (s) return s;
-    }
-    let curr: THREE.Object3D | null = this.parent;
-    while (curr) {
-      const candidate = curr as {
-        xrSession?: XRSession | null;
-        renderer?: {xr?: {getSession?: () => XRSession | null}};
-        core?: {
-          renderer?: {xr?: {getSession?: () => XRSession | null}};
-          webXRSessionManager?: {endSession?: () => Promise<void>};
-        };
-      };
-      if (candidate.xrSession) return candidate.xrSession;
-      if (candidate.renderer?.xr?.getSession) {
-        const s = candidate.renderer.xr.getSession();
-        if (s) return s;
-      }
-      if (candidate.core?.renderer?.xr?.getSession) {
-        const s = candidate.core.renderer.xr.getSession();
-        if (s) return s;
-      }
-      curr = curr.parent;
-    }
-    return undefined;
   }
 }

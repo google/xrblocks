@@ -1,9 +1,9 @@
-import * as THREE from 'three';
 import {describe, expect, it, vi} from 'vitest';
 
-import {UICard} from './UICard';
+import {Registry} from '../../core/components/Registry';
+import {WebXRSessionManager} from '../../core/components/WebXRSessionManager';
+import {callInitWithDependencyInjection} from '../../utils/DependencyInjection';
 import {DEFAULT_EXIT_BUTTON_STYLE, UIExitButton} from './UIExitButton';
-import {UIOverlay} from './UIOverlay';
 
 describe('UIExitButton', () => {
   it('initializes with default label, ariaLabel, and style', () => {
@@ -41,6 +41,12 @@ describe('UIExitButton', () => {
     expect(button.style.borderRadius).toBe(18); // Preserves non-overridden defaults
   });
 
+  it('declares WebXRSessionManager dependency', () => {
+    expect(UIExitButton.dependencies).toEqual({
+      sessionManager: WebXRSessionManager,
+    });
+  });
+
   it('invokes custom onClick callback', async () => {
     const onClick = vi.fn();
     const button = new UIExitButton({onClick});
@@ -57,97 +63,49 @@ describe('UIExitButton', () => {
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 
-  it('invokes parent closeApp method if available', async () => {
-    const closeApp = vi.fn();
-    const parent = new THREE.Object3D() as THREE.Object3D & {
-      closeApp: () => void;
-    };
-    parent.closeApp = closeApp;
+  it('ends active session via constructor-injected sessionManager', async () => {
+    const mockManager = {
+      endSession: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebXRSessionManager;
 
-    const overlay = new UIOverlay({exitButton: true});
-    parent.add(overlay);
-
-    await overlay.exitButton!.handleExit();
-    expect(closeApp).toHaveBeenCalledTimes(1);
-  });
-
-  it('ends active session from session getter or parent', async () => {
-    const mockSession = {
-      end: vi.fn().mockResolvedValue(undefined),
-    } as unknown as XRSession;
-
-    const button = new UIExitButton({session: mockSession});
+    const button = new UIExitButton({sessionManager: mockManager});
     await button.handleExit();
-    expect(mockSession.end).toHaveBeenCalledTimes(1);
+    expect(mockManager.endSession).toHaveBeenCalledTimes(1);
   });
 
-  it('ends active session from scene graph xrSession property', async () => {
-    const mockSession = {
-      end: vi.fn().mockResolvedValue(undefined),
-    } as unknown as XRSession;
+  it('ends active session via init({sessionManager}) dependency injection', async () => {
+    const mockManager = {
+      endSession: vi.fn().mockResolvedValue(undefined),
+    } as unknown as WebXRSessionManager;
 
-    const parent = new THREE.Object3D() as THREE.Object3D & {
-      xrSession: XRSession;
-    };
-    parent.xrSession = mockSession;
-
-    const overlay = new UIOverlay({exitButton: true});
-    parent.add(overlay);
-
-    await overlay.exitButton!.handleExit();
-    expect(mockSession.end).toHaveBeenCalledTimes(1);
+    const button = new UIExitButton();
+    button.init({sessionManager: mockManager});
+    await button.handleExit();
+    expect(mockManager.endSession).toHaveBeenCalledTimes(1);
   });
 
-  it('ends active session from global xb.core.renderer.xr if present', async () => {
-    const mockSession = {
-      end: vi.fn().mockResolvedValue(undefined),
-    } as unknown as XRSession;
+  it('integrates with callInitWithDependencyInjection and Registry', async () => {
+    const registry = new Registry();
+    const mockManager = Object.create(
+      WebXRSessionManager.prototype
+    ) as WebXRSessionManager;
+    mockManager.endSession = vi.fn().mockResolvedValue(undefined);
 
-    (globalThis as unknown as {xb: unknown}).xb = {
-      core: {
-        renderer: {
-          xr: {
-            getSession: () => mockSession,
-          },
-        },
-      },
-    };
+    registry.register(mockManager, WebXRSessionManager);
 
-    try {
-      const button = new UIExitButton();
-      await button.handleExit();
-      expect(mockSession.end).toHaveBeenCalledTimes(1);
-    } finally {
-      delete (globalThis as unknown as {xb?: unknown}).xb;
-    }
+    const button = new UIExitButton();
+    await callInitWithDependencyInjection(button, registry, undefined);
+
+    await button.handleExit();
+    expect(mockManager.endSession).toHaveBeenCalledTimes(1);
   });
 
-  it('creates exit button on UIOverlay when exitButton option is true', () => {
-    const overlay = new UIOverlay({exitButton: true});
+  it('handles session end failure gracefully', async () => {
+    const mockManager = {
+      endSession: vi.fn().mockRejectedValue(new Error('Session error')),
+    } as unknown as WebXRSessionManager;
 
-    expect(overlay.exitButton).toBeDefined();
-    expect(overlay.exitButton).toBeInstanceOf(UIExitButton);
-    expect(overlay.children[0]).toBe(overlay.exitButton);
-  });
-
-  it('configures custom exitButton on UIOverlay', () => {
-    const onExit = vi.fn();
-    const overlay = new UIOverlay({
-      exitButton: {onExit, label: 'Quit'},
-    });
-
-    expect(overlay.exitButton).toBeDefined();
-    expect(overlay.exitButton?.label).toBe('Quit');
-  });
-
-  it('creates exit button on UICard when exitButton option is true', () => {
-    const card = new UICard({
-      size: {width: 500, height: 300},
-      exitButton: true,
-    });
-
-    expect(card.exitButton).toBeDefined();
-    expect(card.exitButton).toBeInstanceOf(UIExitButton);
-    expect(card.children[0]).toBe(card.exitButton);
+    const button = new UIExitButton({sessionManager: mockManager});
+    await expect(button.handleExit()).resolves.not.toThrow();
   });
 });

@@ -4,7 +4,6 @@ import type {ManipulationOptions} from '../../interaction/manipulation/Manipulat
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {type UIAppearance, validateUIAppearance} from '../UIAppearance';
 import {UIElement, type UIElementOptions} from '../UIElement';
-import {UIExitButton, type UIExitButtonOptions} from './UIExitButton';
 
 export interface UISize {
   width: number;
@@ -31,7 +30,6 @@ export interface UICardOptions extends UIElementOptions {
   appearance?: UIAppearance;
   manipulation?: boolean | ManipulationOptions;
   edge?: boolean | UICardEdgeOptions;
-  exitButton?: boolean | UIExitButtonOptions;
 }
 
 /** The only world-transform root in a spatial UI tree. */
@@ -43,7 +41,6 @@ export class UICard<
   readonly anchorX: UICardAnchorX;
   readonly anchorY: UICardAnchorY;
   readonly appearance: UIAppearance;
-  readonly exitButton?: UIExitButton;
   private readonly sizeTarget: UISize;
   private readonly sizeProxy: UISize;
   private readonly edgeTarget: Required<UICardEdgeOptions> = {
@@ -60,8 +57,6 @@ export class UICard<
     appearance = 'surface',
     manipulation,
     edge = false,
-    exitButton,
-    children,
     ...options
   }: UICardOptions) {
     validateSize(size);
@@ -69,15 +64,7 @@ export class UICard<
     validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
     validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
     validateUIAppearance(appearance);
-    let resolvedExitButton: UIExitButton | undefined;
-    const finalChildren = [...(children ?? [])];
-    if (exitButton) {
-      const exitOptions = typeof exitButton === 'boolean' ? {} : exitButton;
-      resolvedExitButton = new UIExitButton(exitOptions);
-      finalChildren.unshift(resolvedExitButton);
-    }
-    super('card', {...options, children: finalChildren});
-    this.exitButton = resolvedExitButton;
+    super('card', options);
     this.pixelSize = pixelSize;
     this.anchorX = anchorX;
     this.anchorY = anchorY;
