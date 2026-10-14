@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 4d7bfff
-* @builddate 2026-10-14T21:17:26.270Z
+* @commitid 80e61fe
+* @builddate 2026-10-14T22:06:33.666Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -41,7 +41,6 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import * as THREE from "three";
-import { Custom, abortableEffect } from "@pmndrs/uikit";
 //#region src/ui/shaders/Panel.vert.ts
 const PanelVertexShader = `
 #include <clipping_planes_pars_vertex>
@@ -53,98 +52,6 @@ void main() {
     #include <clipping_planes_vertex>
 }
 `;
-//#endregion
-//#region src/ui/primitives/layers/PanelLayer.ts
-/**
-* Base ShaderMaterial for Panels.
-*
-* Provides default uniforms safe for general use:
-* - `u_time`: 0.0 (safe default for animated shaders)
-* - `u_resolution`: 1x1 (updated automatically by PanelLayer)
-* - `u_opacity`: 1.0 (updated automatically from the UI opacity property)
-*
-* Subclasses should extend this and add their own specific uniforms.
-*/
-var PanelShaderMaterial = class extends THREE.ShaderMaterial {
-	constructor(parameters) {
-		super({
-			vertexShader: PanelVertexShader,
-			fragmentShader: `
-        #include <clipping_planes_pars_fragment>
-        void main() {
-          vec4 diffuseColor = vec4(1.0, 0.0, 1.0, 1.0);
-          #include <clipping_planes_fragment>
-          gl_FragColor = diffuseColor;
-          #include <tonemapping_fragment>
-          #include <colorspace_fragment>
-        }
-      `,
-			clipping: true,
-			transparent: true,
-			toneMapped: false,
-			side: THREE.FrontSide,
-			forceSinglePass: true,
-			dithering: true,
-			...parameters,
-			uniforms: {
-				u_time: { value: 0 },
-				u_resolution: { value: new THREE.Vector2(1, 1) },
-				u_opacity: { value: 1 },
-				...parameters?.uniforms
-			}
-		});
-	}
-};
-/**
-* A Custom component that wraps a PanelShaderMaterial.
-*
-* It automatically handles:
-* - Rendering Order (forces `elementType: 0` to render before content)
-* - Resolution Syncing (updates `u_resolution` uniform on resize)
-*
-* It is designed to be added to a `ShaderPanel` via `addLayer()`.
-*/
-var PanelLayer = class extends Custom {
-	/**
-	* @param material - The PanelShaderMaterial instance to use for rendering.
-	* @param inputProperties - Properties provided by the consumer component.
-	* @param initialClasses - Array of classes or styles to apply.
-	* @param config - Optional configuration settings for the layer lifecycle.
-	*/
-	constructor(material, inputProperties, initialClasses, config) {
-		super(inputProperties, initialClasses, {
-			material,
-			...config
-		});
-		this.material = material;
-		abortableEffect(() => {
-			const orderInfo = this.orderInfo.value;
-			if (orderInfo && orderInfo.elementType !== 0) this.orderInfo.value = {
-				...orderInfo,
-				elementType: 0
-			};
-		}, this.abortSignal);
-		abortableEffect(() => {
-			const size = this.size.value;
-			if (size) this.material.uniforms.u_resolution.value.set(size[0], size[1]);
-		}, this.abortSignal);
-		abortableEffect(() => {
-			const opacity = this.properties.signal.opacity?.value;
-			this.material.uniforms.u_opacity.value = typeof opacity === "string" ? Number.parseFloat(opacity) / 100 : opacity ?? 1;
-		}, this.abortSignal);
-	}
-	/**
-	* Helper method to update a shader uniform safely if it exists.
-	* @param name - The name of the uniform to update.
-	* @param value - The new value for the uniform.
-	*/
-	updateUniform(name, value) {
-		if (this.material.uniforms[name]) {
-			const u = this.material.uniforms[name];
-			if (u) u.value = value;
-		}
-	}
-};
 //#endregion
 //#region src/ui/constants/UICardEdgeConstants.ts
 /**
@@ -377,6 +284,46 @@ void main() {
 const UnifiedGradientPanelFragmentShader = CommonFunctionsShader + "\nfloat rand(vec2 n) {\n	return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);\n}\n\n#include <dithering_pars_fragment>\n#define MAX_GRADIENT_STOPS 4\n#define PI 3.14159265359\n\n// Paint Types.\n#define PAINT_TYPE_SOLID 0\n#define PAINT_TYPE_GRADIENT 1\n\n// Gradient Types.\n#define GRADIENT_TYPE_LINEAR 0\n#define GRADIENT_TYPE_RADIAL 1\n#define GRADIENT_TYPE_ANGULAR 2\n#define GRADIENT_TYPE_DIAMOND 3\n\n// Interpolate color stops across a 1D scalar index range [0..1].\n// Shared by both fill meshes and radius/distance edge blended vectors (like Shadows).\nvec4 mixGradientStops(\n    float t,\n    int numStops,\n    float stops[MAX_GRADIENT_STOPS],\n    vec4 colors[MAX_GRADIENT_STOPS]\n) {\n    if (numStops < 1) return vec4(0.0);\n    if (numStops < 2) return colors[0];\n\n    float finalT = clamp(t, 0.0, 1.0);\n    vec4 color = colors[0];\n\n    for (int i = 0; i < MAX_GRADIENT_STOPS - 1; i++) {\n        if (i >= numStops - 1) break;\n\n        float t0 = stops[i];\n        float t1 = stops[i+1];\n\n        if (finalT >= t0 && finalT <= t1) {\n            float range = t1 - t0;\n            float localT = (finalT - t0) / max(0.0001, range);\n            color = mix(colors[i], colors[i+1], localT);\n            break;\n        }\n    }\n\n    // Boundary checks.\n    if (finalT < stops[0]) color = colors[0];\n    if (finalT > stops[numStops-1]) color = colors[numStops-1];\n\n    return color;\n}\n\nvec4 getGradientColor(\n    vec2 uv,\n    vec2 resolution,\n    int type,\n    vec2 center,\n    vec2 scale,\n    float rotation,\n    int numStops,\n    float stops[MAX_GRADIENT_STOPS],\n    vec4 colors[MAX_GRADIENT_STOPS]\n) {\n    if (numStops < 1) return vec4(0.0);\n    if (numStops < 2) return colors[0];\n\n    // 1. Transform UV.\n    // Center logic: user provided center (default 0.5, 0.5).\n    // We shift UV so that center is at (0,0).\n    vec2 p = uv - center;\n\n    // Rotation.\n    float c = cos(-rotation);\n    float s = sin(-rotation);\n    mat2 rot = mat2(c, -s, s, c);\n    p = rot * p;\n\n    // Scale.\n    // Expand feature = Divide coord.\n    vec2 safeScale = vec2(\n        abs(scale.x) < 0.001 ? 0.001 : scale.x,\n        abs(scale.y) < 0.001 ? 0.001 : scale.y\n    );\n    p = p / safeScale;\n\n    // 2. Calculate t (0 to 1 position in gradient).\n    float t = 0.0;\n\n    if (type == GRADIENT_TYPE_LINEAR) {\n        // Defined along X axis (after rotation).\n        // Maps x range [-0.5, 0.5] to [0.0, 1.0].\n        t = p.x + 0.5;\n    }\n    else if (type == GRADIENT_TYPE_RADIAL) {\n        // Distance from center.\n        // t=0 at center. t=1 at radius 0.5.\n        t = length(p) * 2.0;\n    }\n    else if (type == GRADIENT_TYPE_ANGULAR) {\n        // Conic gradient.\n        // atan(y, x). range -PI to PI.\n        // Standard math angle (0 = Right, CCW).\n        float angle = atan(-p.y, p.x);\n        // Map to 0..1.\n        t = (angle / (2.0 * PI)) + 0.5;\n    }\n    else if (type == GRADIENT_TYPE_DIAMOND) {\n        // |x| + |y| (Manhattan distance).\n        // Edge at 0.5 => |0.5| + |0| = 0.5.\n        // t = (abs x + abs y) * 2.\n        t = (abs(p.x) + abs(p.y)) * 2.0;\n    }\n\n    // Clamp t.\n    t = clamp(t, 0.0, 1.0);\n\n    return mixGradientStops(t, numStops, stops, colors);\n}\n\nvarying vec2 vUv;\n\nuniform vec2 u_resolution;\nuniform float u_opacity;\nuniform float u_corner_radius;\nuniform float u_drop_shadow_margin;\n\n// 1. Fill Uniforms\nuniform int u_has_fill;\nuniform int u_fill_gradientType;\nuniform int u_fill_paintType;\nuniform vec4 u_fill_solidColor;\nuniform float u_fill_rotation;\nuniform vec2 u_fill_center;\nuniform vec2 u_fill_scale;\nuniform float u_fill_gradientStops[MAX_GRADIENT_STOPS];\nuniform vec4 u_fill_gradientColors[MAX_GRADIENT_STOPS];\nuniform int u_fill_numStops;\n\n// 2. Stroke Uniforms\nuniform int u_has_stroke;\nuniform int u_stroke_gradientType;\nuniform int u_stroke_paintType;\nuniform vec4 u_stroke_solidColor;\nuniform float u_stroke_rotation;\nuniform vec2 u_stroke_center;\nuniform vec2 u_stroke_scale;\nuniform float u_stroke_gradientStops[MAX_GRADIENT_STOPS];\nuniform vec4 u_stroke_gradientColors[MAX_GRADIENT_STOPS];\nuniform int u_stroke_numStops;\nuniform float u_stroke_width;\nuniform float u_stroke_align; // Offset from edge (-1=inside, 0=center, 1=outside)\n\n// 3. Inner Shadow Uniforms\nuniform int u_has_inner_shadow;\nuniform int u_inner_gradientType;\nuniform int u_inner_paintType;\nuniform vec4 u_inner_solidColor;\nuniform float u_inner_rotation;\nuniform vec2 u_inner_center;\nuniform vec2 u_inner_scale;\nuniform float u_inner_gradientStops[MAX_GRADIENT_STOPS];\nuniform vec4 u_inner_gradientColors[MAX_GRADIENT_STOPS];\nuniform int u_inner_numStops;\nuniform float u_inner_blur;\nuniform vec2 u_inner_position;\nuniform float u_inner_spread;\nuniform float u_inner_falloff;\n\n// 4. Drop Shadow Uniforms\nuniform int u_has_drop_shadow;\nuniform int u_drop_gradientType;\nuniform int u_drop_paintType;\nuniform vec4 u_drop_solidColor;\nuniform float u_drop_rotation;\nuniform vec2 u_drop_center;\nuniform vec2 u_drop_scale;\nuniform float u_drop_gradientStops[MAX_GRADIENT_STOPS];\nuniform vec4 u_drop_gradientColors[MAX_GRADIENT_STOPS];\nuniform int u_drop_numStops;\nuniform float u_drop_blur;\nuniform vec2 u_drop_position;\nuniform float u_drop_spread;\nuniform float u_drop_falloff;\n\nvoid main() {\n    float clippingAlpha = panelClipAlpha();\n\n    // Setup Coordinates\n    vec2 pos = vUv * u_resolution;\n    vec2 size = u_resolution;\n    vec2 p = pos - (size * 0.5);\n\n    // Content box is size minus drop shadow margin\n    vec2 contentSize = size - (u_drop_shadow_margin * 2.0);\n    vec2 contentHalfSize = contentSize * 0.5;\n\n    // Stroke shift for caster sizing\n    float strokeShift = 0.0;\n    if (u_has_stroke != 0 && u_stroke_width > 0.001) {\n        if (u_stroke_align > 0.0) strokeShift = u_stroke_width; // Outside\n        else if (u_stroke_align > -0.5) strokeShift = u_stroke_width * 0.5; // Center\n    }\n\n    vec2 casterHalfSize = contentHalfSize + vec2(strokeShift);\n    float baseEffR = min(u_corner_radius, min(contentHalfSize.x, contentHalfSize.y));\n    float casterEffR = baseEffR + strokeShift;\n\n    // ----------------------------------------------------\n    // 1. Drop Shadow Pass\n    // ----------------------------------------------------\n    vec4 dropColor = vec4(0.0);\n    if (u_has_drop_shadow != 0) {\n        float casterDist = sdRoundedBox(p, casterHalfSize, casterEffR);\n        float casterAA = fwidth(casterDist);\n        float cutoutAlpha = smoothstep(-0.5 * casterAA, 0.5 * casterAA, casterDist);\n\n        if (cutoutAlpha > 0.001) {\n            vec2 shadowPos = p - u_drop_position;\n            float shadowDist = sdRoundedBox(shadowPos, casterHalfSize, casterEffR) - u_drop_spread;\n            float blur = max(1.0, u_drop_blur);\n            float shadowAlpha = 1.0 - smoothstep(0.0, blur, shadowDist);\n            shadowAlpha = pow(max(0.0, shadowAlpha), max(0.001, u_drop_falloff));\n\n            if (u_drop_paintType == PAINT_TYPE_SOLID) {\n                dropColor = u_drop_solidColor;\n            } else if (u_drop_paintType == PAINT_TYPE_GRADIENT) {\n                if (u_drop_gradientType == GRADIENT_TYPE_RADIAL) {\n                    float d = sdRoundedBox(p - u_drop_position, casterHalfSize, casterEffR);\n                    float t = clamp(d / max(0.001, u_drop_blur), 0.0, 1.0);\n                    dropColor = mixGradientStops(\n                        t,\n                        u_drop_numStops,\n                        u_drop_gradientStops,\n                        u_drop_gradientColors\n                    );\n                } else {\n                    dropColor = getGradientColor(\n                        vUv, u_resolution,\n                        u_drop_gradientType,\n                        u_drop_center,\n                        u_drop_scale,\n                        u_drop_rotation,\n                        u_drop_numStops,\n                        u_drop_gradientStops,\n                        u_drop_gradientColors\n                    );\n                }\n            }\n            dropColor.a *= shadowAlpha * cutoutAlpha * u_opacity;\n        }\n    }\n\n    // ----------------------------------------------------\n    // 2. Base Fill Pass\n    // ----------------------------------------------------\n    vec4 surfaceColor = vec4(0.0);\n    float dist = sdRoundedBox(p, contentHalfSize, baseEffR);\n    float aa = fwidth(dist);\n    float fillAlphaMask = 1.0 - smoothstep(-0.5 * aa, 0.5 * aa, dist);\n\n    if (fillAlphaMask > 0.001 && u_has_fill != 0) {\n        vec4 fillColor = vec4(0.0);\n        if (u_fill_paintType == PAINT_TYPE_SOLID) {\n            fillColor = u_fill_solidColor;\n        } else if (u_fill_paintType == PAINT_TYPE_GRADIENT) {\n            fillColor = getGradientColor(\n                vUv, u_resolution,\n                u_fill_gradientType,\n                u_fill_center,\n                u_fill_scale,\n                u_fill_rotation,\n                u_fill_numStops,\n                u_fill_gradientStops,\n                u_fill_gradientColors\n            );\n        }\n\n        // ------------------------------------------------\n        // 3. Inner Shadow Composite (onto Base Fill)\n        // ------------------------------------------------\n        if (u_has_inner_shadow != 0) {\n            float strokeInset = 0.0;\n            if (u_has_stroke != 0 && u_stroke_width > 0.001 && u_stroke_align < 0.5) {\n                if (u_stroke_align < -0.5) strokeInset = u_stroke_width; // Inside\n                else strokeInset = u_stroke_width * 0.5; // Center\n            }\n\n            vec2 shadowZoneHalfSize = max(vec2(0.0), contentHalfSize - vec2(strokeInset));\n            float innerEffR = max(0.0, u_corner_radius - strokeInset);\n            innerEffR = min(innerEffR, min(shadowZoneHalfSize.x, shadowZoneHalfSize.y));\n\n            float innerDist = sdRoundedBox(p, shadowZoneHalfSize, innerEffR);\n            float innerAA = fwidth(innerDist);\n            float innerAlphaMask = 1.0 - smoothstep(-0.5 * innerAA, 0.5 * innerAA, innerDist);\n\n            if (innerAlphaMask > 0.001) {\n                vec4 innerColor = vec4(0.0);\n                if (u_inner_paintType == PAINT_TYPE_SOLID) {\n                    innerColor = u_inner_solidColor;\n                } else if (u_inner_paintType == PAINT_TYPE_GRADIENT) {\n                    if (u_inner_gradientType == GRADIENT_TYPE_RADIAL) {\n                        float d = sdRoundedBox(p - u_inner_position, contentHalfSize, baseEffR);\n                        float t = clamp(-d / max(0.001, u_inner_blur), 0.0, 1.0);\n                        innerColor = mixGradientStops(\n                            t,\n                            u_inner_numStops,\n                            u_inner_gradientStops,\n                            u_inner_gradientColors\n                        );\n                    } else {\n                        innerColor = getGradientColor(\n                            vUv, u_resolution,\n                            u_inner_gradientType,\n                            u_inner_center,\n                            u_inner_scale,\n                            u_inner_rotation,\n                            u_inner_numStops,\n                            u_inner_gradientStops,\n                            u_inner_gradientColors\n                        );\n                    }\n                }\n\n                float blur = max(0.001, u_inner_blur);\n                float totalInset = u_inner_spread + blur;\n                vec2 bSmall = shadowZoneHalfSize - totalInset;\n                float rSmall = max(0.0, innerEffR - totalInset);\n\n                vec2 p_rel = p - u_inner_position;\n                float dSmall = sdRoundedBox(p_rel, bSmall, rSmall);\n                float shadowVal = smoothstep(0.0, blur, dSmall);\n                float shadowStrength = pow(clamp(shadowVal, 0.0, 1.0), max(0.001, u_inner_falloff));\n                float innerFinalA = innerColor.a * shadowStrength * innerAlphaMask;\n\n                // Composite inner shadow over fill\n                fillColor.rgb = mix(fillColor.rgb, innerColor.rgb, innerFinalA);\n                fillColor.a = max(fillColor.a, innerFinalA);\n            }\n        }\n\n        surfaceColor = vec4(fillColor.rgb, fillColor.a * fillAlphaMask * u_opacity);\n    }\n\n    // ----------------------------------------------------\n    // 4. Stroke Pass\n    // ----------------------------------------------------\n    vec4 strokeResult = vec4(0.0);\n    if (u_has_stroke != 0 && u_stroke_width > 0.001) {\n        float shift = u_stroke_align * (u_stroke_width * 0.5);\n        float dStroke = dist - shift;\n        float halfWidth = u_stroke_width * 0.5;\n        float strokeDist = abs(dStroke) - halfWidth;\n\n        float strokeAA = fwidth(dist);\n        float strokeMask = 1.0 - smoothstep(-0.5 * strokeAA, 0.5 * strokeAA, strokeDist);\n\n        if (strokeMask > 0.001) {\n            vec4 strokeColor = vec4(0.0);\n            if (u_stroke_paintType == PAINT_TYPE_SOLID) {\n                strokeColor = u_stroke_solidColor;\n            } else if (u_stroke_paintType == PAINT_TYPE_GRADIENT) {\n                strokeColor = getGradientColor(\n                    vUv, u_resolution,\n                    u_stroke_gradientType,\n                    u_stroke_center,\n                    u_stroke_scale,\n                    u_stroke_rotation,\n                    u_stroke_numStops,\n                    u_stroke_gradientStops,\n                    u_stroke_gradientColors\n                );\n            }\n            strokeResult = vec4(strokeColor.rgb, strokeColor.a * strokeMask * u_opacity);\n        }\n    }\n\n    // ----------------------------------------------------\n    // 5. Final Composite (Accurate Un-Premultiplied Over Composite)\n    // ----------------------------------------------------\n    vec4 color = vec4(0.0);\n\n    // Surface over DropShadow\n    float surfaceOverDropA = surfaceColor.a + dropColor.a * (1.0 - surfaceColor.a);\n    if (surfaceOverDropA > 0.0001) {\n        color.rgb = (surfaceColor.rgb * surfaceColor.a + dropColor.rgb * dropColor.a * (1.0 - surfaceColor.a)) / surfaceOverDropA;\n        color.a = surfaceOverDropA;\n    }\n\n    // Stroke over Surface + DropShadow\n    if (strokeResult.a > 0.0001) {\n        float finalA = strokeResult.a + color.a * (1.0 - strokeResult.a);\n        if (finalA > 0.0001) {\n            color.rgb = (strokeResult.rgb * strokeResult.a + color.rgb * color.a * (1.0 - strokeResult.a)) / finalA;\n            color.a = finalA;\n        }\n    }\n\n    if (color.a < 0.001) discard;\n\n    gl_FragColor = color;\n    gl_FragColor.a *= clippingAlpha;\n\n    #include <tonemapping_fragment>\n    #include <colorspace_fragment>\n    #include <dithering_fragment>\n}\n";
 //#endregion
 //#region src/ui/internal/PanelMaterialFactory.ts
+/**
+* Base ShaderMaterial for Panels.
+*
+* Provides default uniforms safe for general use:
+* - `u_time`: 0.0 (safe default for animated shaders)
+* - `u_resolution`: 1x1 (updated automatically by PanelLayer)
+* - `u_opacity`: 1.0 (updated automatically from the UI opacity property)
+*
+* Subclasses should extend this and add their own specific uniforms.
+*/
+var PanelShaderMaterial = class extends THREE.ShaderMaterial {
+	constructor(parameters) {
+		super({
+			vertexShader: PanelVertexShader,
+			fragmentShader: `
+        #include <clipping_planes_pars_fragment>
+        void main() {
+          vec4 diffuseColor = vec4(1.0, 0.0, 1.0, 1.0);
+          #include <clipping_planes_fragment>
+          gl_FragColor = diffuseColor;
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+			clipping: true,
+			transparent: true,
+			toneMapped: false,
+			side: THREE.FrontSide,
+			forceSinglePass: true,
+			dithering: true,
+			...parameters,
+			uniforms: {
+				u_time: { value: 0 },
+				u_resolution: { value: new THREE.Vector2(1, 1) },
+				u_opacity: { value: 1 },
+				...parameters?.uniforms
+			}
+		});
+	}
+};
 let webgpuUIHandler;
 let webgpuMaterialLoader;
 let webgpuMaterialsPromise;
@@ -440,6 +387,6 @@ function createCardEdgeMaterial(options) {
 	});
 }
 //#endregion
-export { setWebGPUUIMaterialLoader as a, setWebGPUUIHandler as i, createUnifiedPanelMaterial as n, MAX_RESIZE_CORNER_FRACTION as o, ensureWebGPUUIMaterials as r, PanelLayer as s, createCardEdgeMaterial as t };
+export { setWebGPUUIHandler as a, ensureWebGPUUIMaterials as i, createCardEdgeMaterial as n, setWebGPUUIMaterialLoader as o, createUnifiedPanelMaterial as r, MAX_RESIZE_CORNER_FRACTION as s, PanelShaderMaterial as t };
 
 //# sourceMappingURL=PanelMaterialFactory.js.map

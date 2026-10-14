@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 4d7bfff
-* @builddate 2026-10-14T21:17:26.270Z
+* @commitid 80e61fe
+* @builddate 2026-10-14T22:06:33.666Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,7 +40,7 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { i as setWebGPUUIHandler, o as MAX_RESIZE_CORNER_FRACTION } from "./PanelMaterialFactory.js";
+import { a as setWebGPUUIHandler, s as MAX_RESIZE_CORNER_FRACTION } from "./PanelMaterialFactory.js";
 import * as THREE from "three";
 import { Discard, Fn, If, abs, atan, clamp, cos, distance, exp, float, fwidth, length, materialReference, max, min, mix, pow, sin, smoothstep, uv, vec2, vec3, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";

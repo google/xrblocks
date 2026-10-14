@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.22.0
-* @commitid 4d7bfff
-* @builddate 2026-10-14T21:17:26.270Z
+* @commitid 80e61fe
+* @builddate 2026-10-14T22:06:33.666Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,11 +42,11 @@ lego-styles.
 */
 import { A as DEFAULT_GRADIENT_PANEL_PROPS, D as isUIElement, E as getUIStructureRevision, S as getUIElementKind, T as getUIRevision, f as normalizeManipulationConfig, h as getSemanticControl, j as TransformScript, k as registerUIPresentationObject, m as ManipulationAction, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, w as getUIPresentationObject } from "./UICard.js";
 import { a as UIOverlay, c as UIScrollView, i as UIText, l as bindScrollView, n as bindTextInput, o as PANEL_BACKFACE_MARKER, r as normalizeTextInputValue, t as UITextInput, u as updateScrollViewLayout } from "./UITextInput.js";
-import { n as createUnifiedPanelMaterial, r as ensureWebGPUUIMaterials, s as PanelLayer, t as createCardEdgeMaterial } from "./PanelMaterialFactory.js";
+import { i as ensureWebGPUUIMaterials, n as createCardEdgeMaterial, r as createUnifiedPanelMaterial } from "./PanelMaterialFactory.js";
 import { a as resolveLineHeight, i as graphemes, n as fontShorthand, o as resolveRasterScale, s as DEFAULT_TEXT_LINE_HEIGHT, t as cssColor } from "./CanvasTextStyle.js";
 import * as THREE from "three";
-import { Component, Container, Content, Image, Text, abortableEffect, reversePainterSortStable } from "@pmndrs/uikit";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { Component, Container, Content, Custom, Image, Text, abortableEffect, reversePainterSortStable } from "@pmndrs/uikit";
 import { computed, effect, signal } from "@preact/signals-core";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 //#region src/ui/utils/ColorUtils.ts
@@ -366,6 +366,58 @@ function updateStrokeUniforms(uniforms, properties) {
 		uniforms.u_stroke_align.value = shaderAlign;
 	}
 }
+//#endregion
+//#region src/ui/primitives/layers/PanelLayer.ts
+/**
+* A Custom component that wraps a PanelShaderMaterial.
+*
+* It automatically handles:
+* - Rendering Order (forces `elementType: 0` to render before content)
+* - Resolution Syncing (updates `u_resolution` uniform on resize)
+*
+* It is designed to be added to a `ShaderPanel` via `addLayer()`.
+*/
+var PanelLayer = class extends Custom {
+	/**
+	* @param material - The PanelShaderMaterial instance to use for rendering.
+	* @param inputProperties - Properties provided by the consumer component.
+	* @param initialClasses - Array of classes or styles to apply.
+	* @param config - Optional configuration settings for the layer lifecycle.
+	*/
+	constructor(material, inputProperties, initialClasses, config) {
+		super(inputProperties, initialClasses, {
+			material,
+			...config
+		});
+		this.material = material;
+		abortableEffect(() => {
+			const orderInfo = this.orderInfo.value;
+			if (orderInfo && orderInfo.elementType !== 0) this.orderInfo.value = {
+				...orderInfo,
+				elementType: 0
+			};
+		}, this.abortSignal);
+		abortableEffect(() => {
+			const size = this.size.value;
+			if (size) this.material.uniforms.u_resolution.value.set(size[0], size[1]);
+		}, this.abortSignal);
+		abortableEffect(() => {
+			const opacity = this.properties.signal.opacity?.value;
+			this.material.uniforms.u_opacity.value = typeof opacity === "string" ? Number.parseFloat(opacity) / 100 : opacity ?? 1;
+		}, this.abortSignal);
+	}
+	/**
+	* Helper method to update a shader uniform safely if it exists.
+	* @param name - The name of the uniform to update.
+	* @param value - The new value for the uniform.
+	*/
+	updateUniform(name, value) {
+		if (this.material.uniforms[name]) {
+			const u = this.material.uniforms[name];
+			if (u) u.value = value;
+		}
+	}
+};
 //#endregion
 //#region src/ui/primitives/layers/UnifiedPanelLayer.ts
 var UnifiedPanelLayer = class extends PanelLayer {
