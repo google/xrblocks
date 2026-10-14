@@ -427,6 +427,7 @@ export class Core {
     const manager = this.webXRSessionManager;
     if (!manager) return;
     this.webXRSessionManager = undefined;
+    this.registry.unregister(WebXRSessionManager);
     manager.removeEventListener(
       WebXRSessionEventType.BEFORE_SESSION_START,
       this.onBeforeWebXRSessionStart
@@ -766,6 +767,7 @@ export class Core {
         this.webXRSettings,
         options.xrSessionMode
       );
+      this.registry.register(this.webXRSessionManager, WebXRSessionManager);
       this.webXRSessionManager.addEventListener(
         WebXRSessionEventType.BEFORE_SESSION_START,
         this.onBeforeWebXRSessionStart

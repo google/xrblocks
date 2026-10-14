@@ -221,7 +221,6 @@ class WalkthroughManager extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
       style: {
         width: 680,
         position: 'absolute',
@@ -230,6 +229,7 @@ class WalkthroughManager extends xb.Script {
         transform: {translateX: '-50%'},
       },
       children: [
+        new xb.UIExitButton(),
         new xb.UIPanel({
           pointerEvents: 'none',
           style: {
