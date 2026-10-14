@@ -91,29 +91,6 @@ class ReticleVisualizer extends xb.Script {
   }
 
   createInstructions() {
-    const closeButton = new xb.UIButton({
-      label: 'X',
-      ariaLabel: 'Exit XR',
-      pointerEvents: 'auto',
-      style: {
-        position: 'absolute',
-        top: -48,
-        left: 0,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: 'rgba(30, 30, 36, 0.92)',
-        borderColor: 'rgba(255, 255, 255, 0.25)',
-        borderWidth: 1.5,
-        color: '#ffffff',
-        fontSize: 16,
-        fontWeight: 'bold',
-        justifyContent: 'center',
-        alignItems: 'center',
-      },
-      onClick: () => this.closeApp(),
-    });
-
     const overlay = new xb.UIOverlay({
       style: {
         width: 680,
@@ -123,7 +100,7 @@ class ReticleVisualizer extends xb.Script {
         transform: {translateX: '-50%'},
       },
       children: [
-        closeButton,
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'DEPTH RETICLE',
           pointerEvents: 'none',
