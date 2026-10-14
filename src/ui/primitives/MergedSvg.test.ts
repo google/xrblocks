@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 
 import {parseMergedSvg} from './MergedSvg';
 
@@ -18,8 +18,11 @@ const MULTICOLOR_ICON = `
 </svg>`;
 
 describe('parseMergedSvg', () => {
-  it('merges all same-fill shapes into a single mesh', () => {
+  it('merges all same-fill shapes into a single mesh without deprecation warnings', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const {meshes} = parseMergedSvg(MONOCHROME_ICON);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
     expect(meshes).toHaveLength(1);
 
     const singleSquare = parseMergedSvg(
