@@ -100,6 +100,7 @@ export class GameRps extends xb.Script {
         alignItems: 'center',
       },
       children: [
+        createExitXRButton(),
         new xb.UIText({
           text: 'ROCK - PAPER - SCISSORS',
           style: {
@@ -261,4 +262,37 @@ export class GameRps extends xb.Script {
     for (const timer of this.timers) window.clearTimeout(timer);
     this.timers.clear();
   }
+}
+
+function createExitXRButton() {
+  return new xb.UIButton({
+    label: 'X',
+    ariaLabel: 'Exit XR',
+    pointerEvents: 'auto',
+    style: {
+      position: 'absolute',
+      top: -48,
+      left: 0,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(30, 30, 36, 0.92)',
+      borderColor: 'rgba(255, 255, 255, 0.25)',
+      borderWidth: 1.5,
+      color: '#ffffff',
+      fontSize: 16,
+      fontWeight: 'bold',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    onClick: async () => {
+      const session = xb.core?.renderer?.xr?.getSession?.();
+      if (!session) return;
+      try {
+        await session.end();
+      } catch {
+        // Ignore errors when ending the XR session.
+      }
+    },
+  });
 }

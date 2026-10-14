@@ -26,6 +26,7 @@ class VRMLabUI extends xb.Script {
       manipulation: true,
       edge: {scale: true},
       children: [
+        createExitXRButton(),
         new xb.UIText({
           text: 'VRM companion',
           style: {
@@ -95,3 +96,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   );
   await xb.init(options);
 });
+
+function createExitXRButton() {
+  return new xb.UIButton({
+    label: 'X',
+    ariaLabel: 'Exit XR',
+    pointerEvents: 'auto',
+    style: {
+      position: 'absolute',
+      top: -48,
+      left: 0,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: 'rgba(30, 30, 36, 0.92)',
+      borderColor: 'rgba(255, 255, 255, 0.25)',
+      borderWidth: 1.5,
+      color: '#ffffff',
+      fontSize: 16,
+      fontWeight: 'bold',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    onClick: async () => {
+      const session = xb.core?.renderer?.xr?.getSession?.();
+      if (!session) return;
+      try {
+        await session.end();
+      } catch {
+        // Ignore errors when ending the XR session.
+      }
+    },
+  });
+}

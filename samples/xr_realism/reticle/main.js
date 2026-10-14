@@ -9,11 +9,31 @@ class ReticleVisualizer extends xb.Script {
     super();
     this.activeMeasurements = new Map();
     this.depth = null;
+    this.xrSession = null;
   }
 
   init({depth}) {
     this.depth = depth;
     this.add(this.createInstructions());
+  }
+
+  onXRSessionStarted(session) {
+    this.xrSession = session;
+  }
+
+  onXRSessionEnded() {
+    this.xrSession = null;
+  }
+
+  async closeApp() {
+    const session =
+      this.xrSession || this.depth?.core?.renderer?.xr?.getSession?.();
+    if (!session) return;
+    try {
+      await session.end();
+    } catch {
+      // Ignore errors when ending the XR session.
+    }
   }
 
   onSelectStart(event) {
@@ -71,8 +91,30 @@ class ReticleVisualizer extends xb.Script {
   }
 
   createInstructions() {
+    const closeButton = new xb.UIButton({
+      label: 'X',
+      ariaLabel: 'Exit XR',
+      pointerEvents: 'auto',
+      style: {
+        position: 'absolute',
+        top: -48,
+        left: 0,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(30, 30, 36, 0.92)',
+        borderColor: 'rgba(255, 255, 255, 0.25)',
+        borderWidth: 1.5,
+        color: '#ffffff',
+        fontSize: 16,
+        fontWeight: 'bold',
+        justifyContent: 'center',
+        alignItems: 'center',
+      },
+      onClick: () => this.closeApp(),
+    });
+
     const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
       style: {
         width: 680,
         position: 'absolute',
@@ -81,6 +123,7 @@ class ReticleVisualizer extends xb.Script {
         transform: {translateX: '-50%'},
       },
       children: [
+        closeButton,
         new xb.UIText({
           text: 'DEPTH RETICLE',
           pointerEvents: 'none',
