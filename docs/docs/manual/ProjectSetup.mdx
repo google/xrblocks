@@ -1,0 +1,175 @@
+---
+sidebar_position: 1.1
+title: Project Setup
+---
+
+import {CodeSearchLink} from './components/CodeSearchLink.jsx';
+import {CDNUrls} from './components/CDNUrls.jsx';
+
+# Project Setup
+
+This guide walks through setting up an XR Blocks project for local development. You can get started immediately with zero build tooling using an import map, or install XR Blocks via `npm` to build with TypeScript and a bundler like Vite.
+
+## Installation & Import Options
+
+XR Blocks can be imported directly into a webpage using an import map, or installed via `npm` and bundled.
+
+### Option A: Using an Import Map (No Build Step)
+
+This is the fastest way to get started. You can use an import map to load XR Blocks and three.js directly from a CDN.
+
+For a starter template, see <CodeSearchLink path="templates/00_basic/index.html"/> (note that while templates in the repository use relative paths for local development, your project should use the CDN URLs below).
+
+To use an import map, add the following script tag to your `index.html` page. This minimal
+map supports the core engine. Feature templates include the extra mappings they require.
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+      "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
+      "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/"
+    }
+  }
+</script>
+```
+
+:::tip
+Using `xrblocks@build` loads the latest development version of XR Blocks every time your web app loads.
+To pin a build of XR Blocks, replace `build` with an SHA from the [build branch](https://github.com/google/xrblocks/commits/build/) or load a version from the [xrblocks npm package](https://www.npmjs.com/package/xrblocks?activeTab=versions) using a URL such as https://cdn.jsdelivr.net/npm/xrblocks@0.1.0/build/xrblocks.js.
+
+<CDNUrls />
+:::
+
+### Option B: Using npm & a Bundler
+
+Install XR Blocks and its required peer dependencies with:
+
+```bash
+npm install xrblocks three @pmndrs/uikit @preact/signals-core
+```
+
+For a pre-configured template using TypeScript and Vite, check out <CodeSearchLink path="templates/13_typescript_vite/src/main.ts"/> (and its associated <CodeSearchLink path="templates/13_typescript_vite/package.json"/> and <CodeSearchLink path="templates/13_typescript_vite/tsconfig.json"/>).
+
+#### Handling Optional Dependencies
+
+XR Blocks keeps large providers external so applications can select the features they use.
+The built-in spatial UI uses `@pmndrs/uikit` and `@preact/signals-core`; it is not a
+separate XR Blocks add-on. Lit supplies the optional simulator browser interface.
+
+If you want to install **all** optional dependencies at once (for example, to simplify TypeScript compilation or enable all features), run:
+
+```bash
+npm install @dimforge/rapier3d @google/genai openai lit @pmndrs/uikit @preact/signals-core @mediapipe/tasks-vision @mediapipe/tasks-audio @sparkjsdev/spark three-mesh-bvh
+```
+
+Otherwise, manage dependencies based on your tooling:
+
+- **TypeScript**: Because `xrblocks` declaration files import types from optional dependencies (like `@google/genai` or `lit`), the TypeScript compiler will complain about missing types. You can handle this in two ways:
+  - **Set `"skipLibCheck": true` (Recommended)**: Adding `"skipLibCheck": true` to the `compilerOptions` section of your `tsconfig.json` tells the compiler to skip type checking of declaration files (`.d.ts` files) inside `node_modules/`. This is the easiest way to use `xrblocks` without installing any unused optional dependencies.
+  - **Install Dev Dependencies**: Alternatively, you can install the types/packages for the specific features you are using, or install all of them as devDependencies.
+- **Bundler Configuration (Rollup, Vite, Webpack)**:
+  If you are not using certain features and do not want to install their corresponding optional dependencies, you should configure your bundler to mark them as `external` so it skips trying to resolve them:
+
+  ```javascript
+  // rollup.config.js / vite.config.js
+  export default {
+    external: [
+      '@google/genai',
+      '@mediapipe/tasks-vision',
+      '@pmndrs/uikit',
+      'rapier3d',
+      // Add other unused optional dependencies here
+    ],
+  };
+  ```
+
+#### List of Optional Dependencies
+
+- **AI Integration**: `@google/genai` (Gemini), `openai` (OpenAI)
+- **Physics**: `@dimforge/rapier3d`
+- **Built-in spatial UI**: `@pmndrs/uikit`, `@preact/signals-core`
+- **Simulator browser interface**: `lit`
+- **Gaussian Splatting**: `@sparkjsdev/spark`
+- **Vision & Audio (MediaPipe)**: `@mediapipe/tasks-vision` (Hands/Face/Objects), `@mediapipe/tasks-audio` (Audio classification)
+- **Performance & Utilities**: `three-mesh-bvh` (Accelerated raycasting)
+
+#### Deploy the complete build
+
+XR Blocks uses private lazy-loaded chunks for features such as the built-in UI and simulator.
+Copy and serve the complete package `build/` directory:
+
+```text
+build/
+├── xrblocks.js
+├── xrblocks.min.js
+├── internal/
+└── addons/
+```
+
+Do not deploy only `xrblocks.js`, and do not import files from `build/internal/` directly.
+Those filenames are implementation details.
+
+---
+
+## Creating an Interactive Scene
+
+XR Blocks uses a singleton engine driven by a script lifecycle. Rather than managing the renderer and canvas yourself, you write your app as one or more `xb.Script` subclasses and register them.
+
+Upon importing, XR Blocks automatically creates the core singleton which manages the lifecycle, camera, and renderer.
+
+Here is a complete, interactive example of a script-based scene:
+
+```javascript
+import * as THREE from 'three';
+import * as xb from 'xrblocks';
+
+class InteractiveScene extends xb.Script {
+  init() {
+    // Runs once after registration; can be asynchronous.
+
+    // Add lighting to the scene
+    this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
+
+    // Create an interactive cube
+    this.cube = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.3, 0.3),
+      new THREE.MeshStandardMaterial({color: 0x4285f4})
+    );
+
+    // Place the cube in front of the user (using user-physical context)
+    this.cube.position.set(0, xb.user.height - 0.3, -xb.user.objectDistance);
+    this.add(this.cube);
+  }
+
+  update(time, frame) {
+    // Runs on every animation frame.
+    this.cube.rotation.y += xb.getDeltaTime();
+  }
+
+  onSelectEnd() {
+    // Fired on a desktop click or a WebXR controller pinch/trigger release.
+    // Randomize the cube's color when selected.
+    this.cube.material.color.set(Math.random() * 0xffffff);
+  }
+
+  dispose() {
+    // Clean up three.js resources to prevent GPU memory leaks
+    this.cube.geometry.dispose();
+    this.cube.material.dispose();
+  }
+}
+
+// Bootstrap the application when the DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  xb.add(new InteractiveScene());
+  xb.init(new xb.Options());
+});
+```
+
+- **`init()`**: Sets up your lights, cameras, models, and UI. This is where you construct your 3D objects.
+- **`update()`**: Updates positions, rotations, animations, and runs any per-frame logic.
+- **`onSelectEnd()`**: Handles user clicks (desktop) and pinch/select releases (WebXR).
+- **`dispose()`**: Disposes of geometries, materials, and textures to prevent memory leaks on the GPU when the script is removed from the scene.
