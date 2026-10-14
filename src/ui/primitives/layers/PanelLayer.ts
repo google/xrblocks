@@ -8,8 +8,12 @@ import {
 } from '@pmndrs/uikit';
 import {ReadonlySignal, Signal} from '@preact/signals-core';
 import * as THREE from 'three';
-import type {PanelMaterial} from '../../internal/PanelMaterialFactory';
-import {PanelVertexShader} from '../../shaders/Panel.vert';
+import {
+  type PanelMaterial,
+  PanelShaderMaterial,
+} from '../../internal/PanelMaterialFactory';
+
+export {PanelShaderMaterial};
 
 /**
  * A constraint type for PanelLayer properties.
@@ -35,53 +39,11 @@ export type SignalProperties<T> = {
 
 /**
  * Helper to extract Writable Signal types for layer properties.
- * Maps every property `P` in `T` to a `Signal<T[P] | undefined>`.
+ * Maps every property `P` in `T` to a `Signal<T[K] | undefined>`.
  */
 export type WritableSignalProperties<T> = {
   [K in keyof T]: Signal<T[K] | undefined>;
 };
-
-/**
- * Base ShaderMaterial for Panels.
- *
- * Provides default uniforms safe for general use:
- * - `u_time`: 0.0 (safe default for animated shaders)
- * - `u_resolution`: 1x1 (updated automatically by PanelLayer)
- * - `u_opacity`: 1.0 (updated automatically from the UI opacity property)
- *
- * Subclasses should extend this and add their own specific uniforms.
- */
-export class PanelShaderMaterial extends THREE.ShaderMaterial {
-  constructor(parameters?: THREE.ShaderMaterialParameters) {
-    super({
-      vertexShader: PanelVertexShader,
-      // Default to pink to indicate "Missing Shader" - Subclasses must override
-      fragmentShader: `
-        #include <clipping_planes_pars_fragment>
-        void main() {
-          vec4 diffuseColor = vec4(1.0, 0.0, 1.0, 1.0);
-          #include <clipping_planes_fragment>
-          gl_FragColor = diffuseColor;
-          #include <tonemapping_fragment>
-          #include <colorspace_fragment>
-        }
-      `,
-      clipping: true,
-      transparent: true,
-      toneMapped: false,
-      side: THREE.FrontSide,
-      forceSinglePass: true,
-      dithering: true,
-      ...parameters,
-      uniforms: {
-        u_time: {value: 0},
-        u_resolution: {value: new THREE.Vector2(1, 1)},
-        u_opacity: {value: 1},
-        ...parameters?.uniforms,
-      },
-    });
-  }
-}
 
 /**
  * A Custom component that wraps a PanelShaderMaterial.
