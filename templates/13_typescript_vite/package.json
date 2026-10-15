@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "three": "^0.186.0",
-    "xrblocks": "0.22.0"
+    "xrblocks": "0.23.0"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",
