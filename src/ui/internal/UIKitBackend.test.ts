@@ -374,6 +374,69 @@ describe('UIKitMount retained updates', () => {
     backend.dispose();
   });
 
+  it('clones caller textures for non-fill objectFit and freezes the crop matrix', () => {
+    const source = texture();
+    const image = new UIImage({src: source, style: {objectFit: 'cover'}});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [image],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const physical = mappings.find((mapping) => mapping.logical === image)!
+      .physical as Image;
+    const fitted = physical.texture.value as THREE.Texture;
+
+    expect(fitted).not.toBe(source);
+    expect(fitted.source).toBe(source.source);
+    expect(fitted.matrixAutoUpdate).toBe(false);
+    // The caller's texture is shared with the rest of the engine: uikit's crop
+    // matrix writes must not reach it, and its auto matrix update stays on.
+    expect(source.matrixAutoUpdate).toBe(true);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('exposes video frame size to the fit crop and refits when it changes', () => {
+    const video = {videoWidth: 640, videoHeight: 480, width: 0, height: 0};
+    const source = new THREE.Texture(video as unknown as HTMLVideoElement);
+    const image = new UIImage({src: source, style: {objectFit: 'cover'}});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [image],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const physical = mappings.find((mapping) => mapping.logical === image)!
+      .physical as Image;
+    const first = physical.texture.value as THREE.Texture;
+
+    // uikit's crop ratio reads source.data.width/.height, which must report the
+    // frame size even though a video element's width/height attributes are 0.
+    const data = first.source.data as {width: number; height: number};
+    expect(data.width).toBe(640);
+    expect(data.height).toBe(480);
+
+    // A camera switch feeding new dimensions into the same texture refits.
+    video.videoWidth = 1280;
+    video.videoHeight = 720;
+    expect(data.width).toBe(1280);
+    expect(data.height).toBe(720);
+    mount.commit(ui.theme, viewport, 0);
+    const second = physical.texture.value as THREE.Texture;
+    expect(second).not.toBe(first);
+    expect(second.source).toBe(source.source);
+    expect(second.matrixAutoUpdate).toBe(false);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
   it('reports changed hit mappings when overlay stack order changes', () => {
     const overlay = new UIOverlay({style: {width: 200, height: 100}});
     const backend = createUIBackend();

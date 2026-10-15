@@ -1,6 +1,13 @@
 import '../addons/testing/setup';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
+import {AnchorManager} from '../world/anchors/AnchorManager';
+import {FaceRecognizer} from '../world/faces/FaceRecognizer';
+import {HumanRecognizer} from '../world/humans/HumanRecognizer';
+import {MeshDetector} from '../world/mesh/MeshDetector';
+import {ObjectDetector} from '../world/objects/ObjectDetector';
+import {PlaneDetector} from '../world/planes/PlaneDetector';
+import {XRTransition} from './components/XRTransition';
 import {Core} from './Core';
 import {Options} from './Options';
 import {isWebGPURenderer} from './RendererTypes';
@@ -102,6 +109,28 @@ describe('Core with WebGPURenderer', () => {
     await expect(core.scriptsManager.initScript(script)).rejects.toThrow(
       'Dependency not found for key: WebGLRenderer'
     );
+  });
+
+  it('initializes world sensors and XRTransition via RendererHolder when WebGPU is enabled', async () => {
+    const core = new Core();
+    const options = new Options()
+      .enableWebGPU()
+      .enablePlaneDetection()
+      .enableObjectDetection()
+      .enableHumanDetection()
+      .enableFaceDetection()
+      .enableXRTransitions();
+    options.world.enableMeshDetection();
+    options.world.enableAnchors();
+    await core.init(options);
+
+    expect(core.world.planes).toBeInstanceOf(PlaneDetector);
+    expect(core.world.meshes).toBeInstanceOf(MeshDetector);
+    expect(core.world.anchors).toBeInstanceOf(AnchorManager);
+    expect(core.world.objects).toBeInstanceOf(ObjectDetector);
+    expect(core.world.humans).toBeInstanceOf(HumanRecognizer);
+    expect(core.world.faces).toBeInstanceOf(FaceRecognizer);
+    expect(core.transition).toBeInstanceOf(XRTransition);
   });
 
   it('initializes WebGPUOcclusionPass when depth occlusion is enabled with WebGPU', async () => {

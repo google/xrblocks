@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>XR Blocks E2E Harness</title>
+    <meta charset="utf-8" />
+    <style>
+      /* Match samples/main.css page setup: no default body margin (which
+         renders as white lines along the top/left borders), no scrollbars. */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #000;
+        overscroll-behavior: none;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "xrblocks": "/build/xrblocks.js",
+          "xrblocks/addons/": "/build/addons/"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <script type="module">
+      import * as THREE from 'three';
+      import * as xb from 'xrblocks';
+      import {EmbodiedControl} from 'xrblocks/addons/embodied-control/index.js';
+
+      const params = new URLSearchParams(location.search);
+
+      // Counts frame-loop ticks and rotates so tests can prove time advances.
+      class ProbeScript extends xb.Script {
+        frames = 0;
+        init() {
+          this.name = 'E2E probe';
+          const box = new THREE.Mesh(
+            new THREE.BoxGeometry(0.25, 0.25, 0.25),
+            new THREE.MeshBasicMaterial({color: 0x44aa66})
+          );
+          box.name = 'probe box';
+          this.add(box);
+          this.position.set(-0.6, 1.4, -1.2);
+        }
+        update() {
+          this.frames += 1;
+          this.rotation.y += 0.05;
+        }
+      }
+
+      // Raycast target for hover/select scenarios (mirrors the
+      // embodied-control example's grabbable script).
+      class GrabbableScript extends xb.Script {
+        grabbedByHand = null;
+        hovered = false;
+        init() {
+          this.name = 'E2E grabbable';
+          const box = new THREE.Mesh(
+            new THREE.BoxGeometry(0.2, 0.2, 0.2),
+            new THREE.MeshBasicMaterial({color: 0xcc7733})
+          );
+          box.name = 'grabbable box';
+          this.add(box);
+          this.position.set(0.6, 1.4, -1.2);
+        }
+        onHoverEnter() {
+          this.hovered = true;
+        }
+        onHoverExit() {
+          this.hovered = false;
+        }
+        onObjectSelectStart(event) {
+          this.grabbedByHand = event.source.controller.userData.id;
+          event.stopPropagation();
+        }
+        onObjectSelectEnd() {
+          this.grabbedByHand = null;
+        }
+      }
+
+      // Minimal spatial UI card so UI specs have a real uikit subtree.
+      class UiScript extends xb.Script {
+        init() {
+          this.name = 'E2E ui';
+          const card = new xb.UICard({
+            size: {width: 0.56, height: 'auto'},
+            children: [
+              new xb.UIText({
+                text: 'E2E Card',
+                style: {fontSize: 22, color: '#ffffff'},
+              }),
+            ],
+          });
+          card.name = 'E2E card';
+          card.position.set(0, 1.5, -1.2);
+          this.add(card);
+        }
+      }
+
+      const probe = new ProbeScript();
+      const grabbable = new GrabbableScript();
+      const ui = new UiScript();
+
+      const xrMode = params.get('xr') === '1';
+
+      const options = new xb.Options();
+      if (xrMode) {
+        // Force the VR session mode for deterministic WebXR tests.
+        options.enableVR();
+      }
+      if (params.get('webgpu') === '1') {
+        options.enableWebGPU();
+      }
+      if (params.get('depth') === '1') {
+        options.enableDepth();
+      }
+      if (params.get('planes') === '1') {
+        options.world.enablePlaneDetection();
+      }
+      if (params.get('meshes') === '1') {
+        options.world.enableMeshDetection();
+      }
+
+      // In XR mode the real XR frame loop drives time, so the embodied
+      // control must not pause the core after initialization.
+      const embodied = new EmbodiedControl(
+        xrMode ? {autoPause: false} : undefined
+      );
+      xb.add(embodied);
+      xb.add(probe);
+      xb.add(grabbable);
+      xb.add(ui);
+
+      window.__e2e = {
+        embodied,
+        objects: {probe, grabbable, ui},
+        state() {
+          const core = window.xb?.core;
+          return {
+            lifecycle: core?.lifecycle ?? null,
+            frames: probe.frames,
+            probeRotationY: probe.rotation.y,
+            sceneObjects: [probe.name, grabbable.name, ui.name],
+            canvasSize: {
+              width: core?.renderer?.domElement?.width ?? 0,
+              height: core?.renderer?.domElement?.height ?? 0,
+            },
+            hovered: grabbable.hovered,
+            grabbedByHand: grabbable.grabbedByHand,
+            uiCardPresent: Boolean(core?.scene?.getObjectByName('E2E card')),
+            depthEnabled: Boolean(core?.depth?.enabled),
+            depthMeshPresent: Boolean(core?.depth?.depthMesh),
+            worldPlanes: core?.world?.planes?.children?.length ?? 0,
+            worldMeshes: core?.world?.meshes?.children?.length ?? 0,
+            semPlanes: window.__xrSem?.trackedPlanes?.size ?? 0,
+            semMeshes: window.__xrSem?.trackedMeshes?.size ?? 0,
+          };
+        },
+      };
+
+      window.__e2e.ready = (async () => {
+        await xb.init(options);
+        await embodied.ready;
+      })();
+      await window.__e2e.ready;
+    </script>
+  </body>
+</html>

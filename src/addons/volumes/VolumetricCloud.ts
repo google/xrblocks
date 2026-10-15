@@ -1,7 +1,22 @@
 import * as THREE from 'three';
 import {ImprovedNoise} from 'three/addons/math/ImprovedNoise.js';
+import type {WebGLOrWebGPURenderer} from 'xrblocks';
 
 import {VolumetricCloudShader} from './VolumetricCloud.glsl';
+import type {CloudNodeRig} from './VolumetricCloudWebGPU';
+
+/**
+ * Mirrors `core/RendererTypes.isWebGPURenderer`. Kept local (with a type-only
+ * `xrblocks` import) so this standalone addon never imports the SDK bundle at
+ * runtime.
+ */
+function isWebGPURenderer(renderer?: unknown): boolean {
+  return (
+    renderer != null &&
+    typeof renderer === 'object' &&
+    (renderer as {isWebGPURenderer?: boolean}).isWebGPURenderer === true
+  );
+}
 
 /**
  * VolumetricCloud class for creating a 3D volumetric cloud effect in a scene.
@@ -12,14 +27,23 @@ export class VolumetricCloud extends THREE.Object3D {
   private texture: THREE.Data3DTexture;
   private vertexShader: string;
   private fragmentShader: string;
-  private material: THREE.RawShaderMaterial;
+  private material: THREE.Material;
   private geometry: THREE.BoxGeometry;
-  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.RawShaderMaterial>;
+  private readonly worldToLocal = new THREE.Matrix4();
+  /** TSL shader rig when running on WebGPURenderer; set once it finishes loading. */
+  nodeRig?: CloudNodeRig;
+  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
 
   /**
    * Constructor for the VolumetricCloud class.
+   *
+   * @param renderer - The active renderer, when known. On `THREE.WebGPURenderer`
+   *   the GLSL raymarch cannot run (`RawShaderMaterial` is unsupported by that
+   *   backend), so a TSL port of the same shader is swapped in asynchronously;
+   *   the mesh stays invisible until it loads. Without a renderer the original
+   *   GLSL material is used.
    */
-  constructor() {
+  constructor(renderer?: WebGLOrWebGPURenderer) {
     super();
     this.size = 128;
     this.cloudScale = 0.05;
@@ -32,7 +56,25 @@ export class VolumetricCloud extends THREE.Object3D {
     this.fragmentShader = VolumetricCloudShader.fragmentShader;
 
     // Initializes the material for cloud rendering.
-    this.material = this.createMaterial();
+    if (isWebGPURenderer(renderer)) {
+      this.material = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      void import('./VolumetricCloudWebGPU.js').then(
+        ({createCloudNodeMaterial}) => {
+          this.nodeRig = createCloudNodeMaterial(
+            new THREE.Color(0x4f5c6e),
+            this.texture
+          );
+          this.material = this.nodeRig.material;
+          this.mesh.material = this.material;
+        }
+      );
+    } else {
+      this.material = this.createMaterial();
+    }
 
     // Sets up geometry and mesh.
     this.geometry = new THREE.BoxGeometry(1, 1, 1);
@@ -128,13 +170,25 @@ export class VolumetricCloud extends THREE.Object3D {
    * position and to animate the cloud's rotation.
    */
   update(camera: THREE.Camera) {
-    // Synchronizes the camera position with the shader's uniform.
-    this.mesh.material.uniforms.cameraPos.value.copy(camera.position);
-
     // Applies a continuous rotation to the cloud mesh.
     this.mesh.rotation.y = -performance.now() / 7500;
 
-    // Increments the frame uniform for time-based shader calculations.
-    this.mesh.material.uniforms.frame.value++;
+    if (this.nodeRig) {
+      // The TSL port raymarches in mesh-local space and reads the camera
+      // origin as a uniform, so it is transformed here instead of per-vertex.
+      this.mesh.updateMatrixWorld();
+      this.worldToLocal.copy(this.mesh.matrixWorld).invert();
+      this.nodeRig.originUniform.value
+        .copy(camera.position)
+        .applyMatrix4(this.worldToLocal);
+      this.nodeRig.frameUniform.value++;
+    } else if ((this.material as THREE.RawShaderMaterial).isRawShaderMaterial) {
+      const uniforms = (this.material as THREE.RawShaderMaterial).uniforms;
+      // Synchronizes the camera position with the shader's uniform.
+      uniforms.cameraPos.value.copy(camera.position);
+      // Increments the frame uniform for time-based shader calculations.
+      uniforms.frame.value++;
+    }
+    // While the WebGPU node material is still loading, nothing to sync yet.
   }
 }
