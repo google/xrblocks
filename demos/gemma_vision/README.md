@@ -94,7 +94,11 @@ Describe answers fell from 91-128 tokens to 12-63. Time to first text stayed at 
 
 ## Device notes
 
-Desktop simulator captures come from its virtual environment. The existing SDK snapshot API also supports ordinary device video and phone WebXR raw camera access. Pick Gemma 4 on desktops with 16 GB or more and for translation. Pick Lite on phones, Android XR headsets such as Galaxy XR, and devices with less than 8 GB of memory; its download is about a tenth the size, and the loaded model is far smaller too. Lite has been tried on a Galaxy Z Fold8 (Android Chrome); neither model has been qualified on headsets yet. Quest camera input is not a supported target.
+Desktop simulator captures come from its virtual environment. The existing SDK snapshot API also supports ordinary device video and phone WebXR raw camera access. Pick Gemma 4 on desktops with 16 GB or more and for translation. Pick Lite on phones, Android XR headsets such as Galaxy XR, and devices with less than 8 GB of memory; its download is about a tenth the size, and the loaded model is far smaller too. Lite has been tried on a Galaxy Z Fold8 (Android Chrome). Quest camera input is not a supported target.
+
+Gemma 4 needs far more memory than its download. In desktop Chrome on the test Mac, loading it raised the page's process to 5.3-8.2 GB at its peak and left the GPU process holding 5.4 GB; Lite peaked at 1.3-1.7 GB and added 0.3-0.45 GB to the GPU process. On a Galaxy XR, the tab crashed while Gemma 4 was loading. Loading its four weight files one at a time did not lower these peaks, so use Lite on headsets.
+
+On phones, headsets, and devices that report less than 8 GB of memory, the worker splits model GPU work into short batches with the timeslicing helper from the on-device Gemma demo, so page and XR frames keep getting GPU time during inference. Without it, the runtime queued up to 143-185 ms of GPU work at once on the test Mac; with it, no submission waited longer than 18-42 ms. Phone and headset GPUs run the same work many times slower. Batching costs decode speed (on the Mac, Lite dropped from 59 to 42 tokens/s and Gemma 4 from 30 to 18), so desktops skip it. Before this change, Lite stalled XR rendering on a Galaxy XR; the batched worker has not been tried on a headset yet.
 
 The first answer can take longer while GPU shaders compile, including after a cached reload. On the test Mac, a cache-only load took 8.5 seconds without model network requests; the first answer then took 8.1 seconds to first text, with a 319 ms maximum frame interval.
 
