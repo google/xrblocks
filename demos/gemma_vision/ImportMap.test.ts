@@ -89,17 +89,26 @@ describe('Gemma vision browser entry', () => {
   });
 
   it('does not depend on LiteRT, keyboard addons or the other Gemma demo', () => {
-    const files = [
-      'index.html',
-      'main.js',
-      'preload.js',
-      'gemmaVisionWorker.js',
-    ];
+    const files = ['index.html', 'main.js', 'preload.js'];
     for (const file of files) {
       expect(read(file)).not.toMatch(
         /gemma_on_device|litert|addons\/keyboard/i
       );
     }
     expect(Object.keys(imports)).not.toContain('xrblocks/addons/');
+  });
+
+  it('borrows only the import-free WebGPU timeslicing from the other Gemma demo', () => {
+    const worker = read('gemmaVisionWorker.js');
+    expect(worker).not.toMatch(/litert|addons\/keyboard/i);
+    expect(worker.match(/gemma_on_device[^'"]*/g)).toEqual([
+      'gemma_on_device/GemmaRuntime.js',
+    ]);
+    expect(worker).toContain(
+      "import {installWebGpuTimeslicing} from '../gemma_on_device/GemmaRuntime.js';"
+    );
+    expect(read('../gemma_on_device/GemmaRuntime.js')).not.toMatch(
+      /^\s*import\b|\bimport\(/m
+    );
   });
 });
