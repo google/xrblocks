@@ -250,9 +250,13 @@ export class GemmaVisionDemo extends xb.Script {
     if (this.client.loaded && this.client.modelKey === model.key) {
       return `${model.name} ready. Capture an image to ask a question.`;
     }
-    return this.cached
+    const next = this.cached
       ? `${model.name} cached. Choose ${model.cachedLabel} when ready.`
       : `${model.name} not loaded. A download starts only when you choose Download.`;
+    // Questions keep going to the loaded model until the selected one loads.
+    return this.client.loaded
+      ? `${getModel(this.client.modelKey).name} answers until you switch. ${next}`
+      : next;
   }
 
   /** Select a model for the next load; never downloads or loads by itself. */

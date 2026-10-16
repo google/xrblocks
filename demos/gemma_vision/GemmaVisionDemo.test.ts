@@ -959,6 +959,18 @@ describe('model chooser', () => {
     expect(scene.status.text).toContain('Lite cached');
   });
 
+  it('names the loaded model while another one is selected', async () => {
+    const {scene, client} = setup({cached: true});
+    await scene.init();
+    await scene.loadModel({allowDownload: false});
+    expect(client.loaded).toBe(true);
+    await scene.modelButtons[1].onClick();
+    expect(scene.modelKey).toBe('lite');
+    expect(scene.status.text).toBe(
+      'Gemma 4 answers until you switch. Lite not loaded. A download starts only when you choose Download.'
+    );
+  });
+
   it('switches selection without loading, downloading or adding UI, and persists it', async () => {
     const {scene, client, store, choice} = setup({cached: true});
     await scene.init();
