@@ -5,7 +5,7 @@ import {GemmaVisionClient} from './GemmaVisionClient.js';
 import {MAX_PROMPT_LENGTH, PRESETS, validateQuestion} from './conversation.js';
 import {fitSnapshotSize, packSnapshot} from './image.js';
 import {markdownText} from './markdown.js';
-import {COMPACT_GEMMA_NOTE, createModelChoice} from './modelChoice.js';
+import {createModelChoice} from './modelChoice.js';
 import {getModel, MODELS} from './modelConfig.js';
 import * as modelStore from './modelStore.js';
 
@@ -62,8 +62,12 @@ export class GemmaVisionDemo extends xb.Script {
   }
 
   createPanel() {
-    const button = (label, onClick) =>
-      new xb.UIButton({label, onClick, style: {flexGrow: 1, fontSize: 22}});
+    const button = (label, onClick, style = {}) =>
+      new xb.UIButton({
+        label,
+        onClick,
+        style: {flexGrow: 1, fontSize: 22, ...style},
+      });
     const row = (children) =>
       new xb.UIPanel({
         style: {flexDirection: 'row', gap: 8, justifyContent: 'center'},
@@ -122,7 +126,11 @@ export class GemmaVisionDemo extends xb.Script {
       onSubmit: (value) => this.ask(value),
       onInput: () => this.refreshControls(),
     });
-    this.modelButtons = Object.values(MODELS).map((model) => {
+    const offered = Object.values(MODELS).filter((model) =>
+      this.choice.models.includes(model.key)
+    );
+    // With a single offered model there is nothing to choose between.
+    this.modelButtons = (offered.length > 1 ? offered : []).map((model) => {
       const choice = new xb.UIButton({
         label: model.choiceLabel,
         onClick: () => this.selectModel(model.key),
@@ -140,15 +148,22 @@ export class GemmaVisionDemo extends xb.Script {
     this.clearButton = button('Clear conversation', () =>
       this.clearConversation()
     );
-    this.presetButtons = PRESETS.map(({id, label, prompt}) =>
-      button(label, () =>
-        this.ask(
-          (this.client.loaded &&
-            getModel(this.client.modelKey).presetPrompts[id]) ||
-            prompt
-        )
-      )
-    );
+    this.presetButtons = PRESETS.filter(({id}) =>
+      offered.some((model) => model.presets.includes(id))
+    ).map(({id, label, prompt}) => {
+      const preset = button(
+        label,
+        () =>
+          this.ask(
+            (this.client.loaded &&
+              getModel(this.client.modelKey).presetPrompts[id]) ||
+              prompt
+          ),
+        {whiteSpace: 'nowrap'}
+      );
+      preset.presetId = id;
+      return preset;
+    });
     this.buttons = [
       ...this.modelButtons,
       this.loadButton,
@@ -169,10 +184,13 @@ export class GemmaVisionDemo extends xb.Script {
           style: {fontSize: 28, fontWeight: 'bold', color: '#f8fafc'},
         }),
         new xb.UIText({
-          text: 'Pick a model: Gemma 4 for best quality, Lite for phones and headsets · Chrome/WebGPU',
+          text:
+            offered.length > 1
+              ? 'Pick a model: Gemma 4 for best quality, Lite for phones and headsets · Chrome/WebGPU'
+              : 'Lite: SmolVLM2, sized for phones and headsets · Chrome/WebGPU',
           style: NOTE_STYLE,
         }),
-        row(this.modelButtons),
+        ...(this.modelButtons.length ? [row(this.modelButtons)] : []),
         this.loadButton,
         this.status,
         row([this.preview, this.thumbnail]),
@@ -229,22 +247,17 @@ export class GemmaVisionDemo extends xb.Script {
 
   choiceStatus() {
     const model = this.model;
-    let text;
     if (this.client.loaded && this.client.modelKey === model.key) {
-      text = `${model.name} ready. Capture an image to ask a question.`;
-    } else {
-      text = this.cached
-        ? `${model.name} cached. Choose ${model.cachedLabel} when ready.`
-        : `${model.name} not loaded. A download starts only when you choose Download.`;
+      return `${model.name} ready. Capture an image to ask a question.`;
     }
-    return this.choice.compact && model.key === 'gemma'
-      ? `${text} ${COMPACT_GEMMA_NOTE}`
-      : text;
+    return this.cached
+      ? `${model.name} cached. Choose ${model.cachedLabel} when ready.`
+      : `${model.name} not loaded. A download starts only when you choose Download.`;
   }
 
   /** Select a model for the next load; never downloads or loads by itself. */
   selectModel(key) {
-    if (!this.canStart() || !Object.hasOwn(MODELS, key)) return;
+    if (!this.canStart() || !this.choice.models.includes(key)) return;
     if (key === this.modelKey) return;
     this.modelKey = key;
     this.choice.save(key);
@@ -665,9 +678,9 @@ export class GemmaVisionDemo extends xb.Script {
     const presets = this.client.loaded
       ? getModel(this.client.modelKey).presets
       : [];
-    PRESETS.forEach(({id}, index) => {
-      this.presetButtons[index].disabled = !canAsk || !presets.includes(id);
-    });
+    for (const preset of this.presetButtons) {
+      preset.disabled = !canAsk || !presets.includes(preset.presetId);
+    }
     this.stopButton.disabled =
       this.disposed ||
       !!this.stopping ||

@@ -5,7 +5,6 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {GemmaVisionDemo} from './GemmaVisionDemo.js';
 import {IMAGE_BUDGET, MODEL_BYTES, MODEL_FILES, MODELS} from './modelConfig.js';
 import {PRESETS} from './conversation.js';
-import {COMPACT_GEMMA_NOTE} from './modelChoice.js';
 
 vi.mock('xrblocks', async () => {
   const {Object3D} = await import('three');
@@ -151,12 +150,12 @@ function setup({
   cached = false,
   liteCached = false,
   initial = 'gemma',
-  compact = false,
+  models = ['gemma', 'lite'],
 }: {
   cached?: boolean;
   liteCached?: boolean;
   initial?: string;
-  compact?: boolean;
+  models?: string[];
 } = {}) {
   const client = createClient();
   const store = {
@@ -166,7 +165,7 @@ function setup({
     }),
     prepareStorage: vi.fn(async (_bytes) => ({})),
   };
-  const choice = {initial, compact, save: vi.fn()};
+  const choice = {initial, models, save: vi.fn()};
   const scene = new GemmaVisionDemo({client, store, choice, now: () => clock});
   scenes.push(scene);
   return {scene, client, store, choice};
@@ -902,23 +901,44 @@ describe('retained conversation and generation', () => {
 });
 
 describe('model chooser', () => {
-  it('notes the Gemma size only when Gemma is selected on a compact device', async () => {
-    const {scene} = setup({initial: 'lite', compact: true});
+  it('offers only Lite, with no chooser or Translate, where Gemma does not fit', async () => {
+    const {scene, choice} = setup({
+      initial: 'lite',
+      models: ['lite'],
+      liteCached: true,
+    });
     await scene.init();
-    expect(scene.status.text).not.toContain(COMPACT_GEMMA_NOTE);
-    expect(scene.modelButtons[0].disabled).toBe(false);
-    await scene.modelButtons[0].onClick();
-    expect(scene.status.text).toContain(COMPACT_GEMMA_NOTE);
-    expect(scene.loadButton.disabled).toBe(false);
-    await scene.modelButtons[1].onClick();
-    expect(scene.status.text).not.toContain(COMPACT_GEMMA_NOTE);
+    expect(scene.modelButtons).toEqual([]);
+    expect(scene.presetButtons.map((button) => button.presetId)).toEqual([
+      'describe',
+      'read',
+    ]);
+    for (const preset of scene.presetButtons) {
+      expect(preset.style).toMatchObject({whiteSpace: 'nowrap'});
+    }
+    expect(scene.loadButton.label).toBe('Load cached Lite');
+    expect(scene.status.text).not.toMatch(/Gemma/);
+    const nodes = [];
+    scene.traverse((node) => nodes.push(node));
+    scene.selectModel('gemma');
+    expect(scene.modelKey).toBe('lite');
+    expect(choice.save).not.toHaveBeenCalled();
+    const after = [];
+    scene.traverse((node) => after.push(node));
+    expect(after).toEqual(nodes);
   });
 
-  it('keeps the note off desktops', async () => {
+  it('offers both models and every preset on desktops', async () => {
     const {scene} = setup({cached: true});
     await scene.init();
     expect(scene.modelKey).toBe('gemma');
-    expect(scene.status.text).not.toContain(COMPACT_GEMMA_NOTE);
+    expect(scene.modelButtons.map((button) => button.modelKey)).toEqual([
+      'gemma',
+      'lite',
+    ]);
+    expect(scene.presetButtons.map((button) => button.presetId)).toEqual(
+      PRESETS.map(({id}) => id)
+    );
   });
 
   it('starts from the injected choice and labels both models on one retained row', async () => {

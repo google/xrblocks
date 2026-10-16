@@ -4,6 +4,7 @@ import {
   createModelChoice,
   isCompactDevice,
   MODEL_CHOICE_KEY,
+  offeredModels,
   pickDefaultModel,
 } from './modelChoice.js';
 import {toSmolVLMMessages} from './modelAdapters.js';
@@ -34,9 +35,9 @@ describe('default model choice', () => {
   });
 
   it('prefers a valid saved choice and ignores unknown ones', () => {
-    expect(
-      pickDefaultModel({stored: 'gemma', deviceMemory: 2, userAgent: 'Android'})
-    ).toBe('gemma');
+    expect(pickDefaultModel({stored: 'gemma', userAgent: DESKTOP})).toBe(
+      'gemma'
+    );
     expect(pickDefaultModel({stored: 'lite', userAgent: DESKTOP})).toBe('lite');
     expect(pickDefaultModel({stored: 'huge', userAgent: DESKTOP})).toBe(
       'gemma'
@@ -44,6 +45,12 @@ describe('default model choice', () => {
     expect(pickDefaultModel({stored: 'toString', userAgent: DESKTOP})).toBe(
       'gemma'
     );
+  });
+
+  it('ignores a saved Gemma choice where only Lite is offered', () => {
+    expect(
+      pickDefaultModel({stored: 'gemma', deviceMemory: 2, userAgent: 'Android'})
+    ).toBe('lite');
   });
 });
 
@@ -65,15 +72,22 @@ describe('compact devices', () => {
     expect(pickDefaultModel(hints)).toBe(compact ? 'lite' : 'gemma');
   });
 
-  it('is exposed on the page choice', () => {
+  it('offers only Lite on phones, headsets and low-memory devices', () => {
+    expect(offeredModels({userAgent: 'Android XR'})).toEqual(['lite']);
+    expect(offeredModels({deviceMemory: 4, userAgent: DESKTOP})).toEqual([
+      'lite',
+    ]);
+    expect(offeredModels({deviceMemory: 8, userAgent: DESKTOP})).toEqual([
+      'gemma',
+      'lite',
+    ]);
     expect(
       createModelChoice({storage: null, navigator: {userAgent: 'Android XR'}})
-        .compact
-    ).toBe(true);
+        .models
+    ).toEqual(['lite']);
     expect(
-      createModelChoice({storage: null, navigator: {userAgent: DESKTOP}})
-        .compact
-    ).toBe(false);
+      createModelChoice({storage: null, navigator: {userAgent: DESKTOP}}).models
+    ).toEqual(['gemma', 'lite']);
   });
 });
 

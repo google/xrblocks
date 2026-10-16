@@ -2,8 +2,6 @@ import {DEFAULT_MODEL, MODELS} from './modelConfig.js';
 
 export const MODEL_CHOICE_KEY = 'xrblocks-gemma-vision-model';
 const COMPACT_DEVICE = /Android|Mobile|iPhone|iPad|OculusBrowser|Quest/i;
-export const COMPACT_GEMMA_NOTE =
-  'Gemma 4 E2B is a 3.4 GB model and may run slowly on this device. Lite is faster.';
 
 /**
  * Phones, headsets and devices that report less than 8 GB of memory.
@@ -15,16 +13,30 @@ export function isCompactDevice({deviceMemory, userAgent} = {}) {
 }
 
 /**
- * Prefer a saved choice, then Lite for phones, headsets and devices that
- * report less than 8 GB of memory, otherwise Gemma.
+ * Models offered on this device. Gemma 4 needs several GB beyond its download
+ * and crashed Galaxy XR and Quest 3 tabs while loading, so compact devices get
+ * only Lite.
+ * @param {{deviceMemory?: unknown, userAgent?: unknown}} hints
+ * @returns {Array<keyof typeof MODELS>}
+ */
+export function offeredModels(hints = {}) {
+  return isCompactDevice(hints)
+    ? ['lite']
+    : /** @type {Array<keyof typeof MODELS>} */ (Object.keys(MODELS));
+}
+
+/**
+ * Prefer a saved choice the device is offered, then Gemma where it is offered,
+ * otherwise Lite.
  * @param {{stored?: unknown, deviceMemory?: unknown, userAgent?: unknown}} hints
  * @returns {keyof typeof MODELS}
  */
 export function pickDefaultModel({stored, deviceMemory, userAgent} = {}) {
-  if (typeof stored === 'string' && Object.hasOwn(MODELS, stored)) {
+  const offered = offeredModels({deviceMemory, userAgent});
+  if (typeof stored === 'string' && offered.some((key) => key === stored)) {
     return /** @type {keyof typeof MODELS} */ (stored);
   }
-  return isCompactDevice({deviceMemory, userAgent}) ? 'lite' : DEFAULT_MODEL;
+  return offered.includes(DEFAULT_MODEL) ? DEFAULT_MODEL : offered[0];
 }
 
 function pageStorage() {
@@ -69,7 +81,7 @@ export function createModelChoice({
   };
   return {
     initial: pickDefaultModel({stored: saved.get(), ...hints}),
-    compact: isCompactDevice(hints),
+    models: offeredModels(hints),
     save: (key) => saved.set(key),
   };
 }

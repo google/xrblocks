@@ -11,10 +11,18 @@ export function bindPreload(scene, panel) {
   let disposed = false;
   let loading = false;
   let stopping = false;
-  for (const option of model.options) {
+  for (const option of [...model.options]) {
+    if (!scene.choice.models.includes(option.value)) {
+      option.remove();
+      continue;
+    }
     const label = MODELS[option.value]?.choiceLabel;
     if (label && option.textContent !== label) option.textContent = label;
   }
+  const single = model.options.length < 2;
+  model.hidden = single;
+  const modelLabel = panel.querySelector('label[for="preload-model"]');
+  if (modelLabel) modelLabel.hidden = single;
 
   function refresh() {
     if (disposed || !scene.loadButton) return;

@@ -23,6 +23,7 @@ function fakeScene() {
     busy: false,
     cached: false,
     modelKey: 'gemma',
+    choice: {models: ['gemma', 'lite']},
     selectModel: vi.fn(function (this: {modelKey: string}, key: string) {
       this.modelKey = key;
     }),
@@ -273,6 +274,25 @@ describe('pre-XR model controls', () => {
     model.value = 'lite';
     model.dispatchEvent(new Event('change'));
     expect(scene.selectModel).toHaveBeenCalledOnce();
+  });
+
+  it('hides the model picker where only Lite is offered', () => {
+    binding.dispose();
+    scene = {
+      ...fakeScene(),
+      modelKey: 'lite',
+      choice: {models: ['lite']},
+      loadButton: {label: 'Download Lite (~360 MB)', disabled: false},
+    };
+    binding = bindPreload(scene, panel);
+    binding.refresh();
+    const model = panel.querySelector('#preload-model') as HTMLSelectElement;
+    const label = panel.querySelector('label[for="preload-model"]')!;
+    expect([...model.options].map((option) => option.value)).toEqual(['lite']);
+    expect(model.value).toBe('lite');
+    expect(model.hidden).toBe(true);
+    expect((label as HTMLElement).hidden).toBe(true);
+    expect(load.textContent).toBe('Download Lite (~360 MB)');
   });
 
   it('does not rewrite unchanged live status or interpret output as HTML', () => {
