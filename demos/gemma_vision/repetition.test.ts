@@ -16,12 +16,19 @@ describe('findRepetition', () => {
   });
 
   it('stops short spans after three copies', () => {
-    const unit = '3 4 5 6 7 8 9 1 2 ';
-    expect(cut('9 ' + unit + unit)).toBeNull();
-    expect(cut('9 ' + unit + unit + unit)).toBe('9 3 4 5 6 7 8 9 1 2');
     expect(cut('The text reads: "' + 'The text reads: "'.repeat(3))).toBe(
       'The text reads: "'
     );
+    const words = 'gold record ';
+    expect(cut('A ' + words + words)).toBeNull();
+    expect(cut('A ' + words + words + words)).toBe('A gold record');
+  });
+
+  it('needs a fourth copy before stopping text without letters', () => {
+    expect(findRepetition('Serial: 123456781234567812345678')).toBe(-1);
+    const unit = '3 4 5 6 7 8 9 1 2 ';
+    expect(cut('9 ' + unit + unit + unit)).toBeNull();
+    expect(cut('9 ' + unit + unit + unit + unit)).toBe('9 3 4 5 6 7 8 9 1 2');
   });
 
   it('leaves normal answers, short emphasis and punctuation alone', () => {
