@@ -119,5 +119,5 @@ Private/incognito browser storage may be too small for this model. Use a regular
 - [SmolVLM2](https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct) by Hugging Face, including its ONNX weights, is Apache-2.0.
 - [Transformers.js](https://github.com/huggingface/transformers.js) is Apache-2.0; [ONNX Runtime](https://github.com/microsoft/onnxruntime) is MIT.
 - Markdown tokenization uses MIT-licensed [`marked@14.1.4`](https://github.com/markedjs/marked).
-- Camera capture follows the XR Blocks super-resolution demo. The preload, worker lifecycle, and text-only markdown approach build on the Apache-2.0 Gemma on-device demo in [#634](https://github.com/google/xrblocks/pull/634), without importing its unmerged files.
+- Camera capture follows the XR Blocks super-resolution demo. The preload, worker lifecycle, and text-only markdown approach build on the Apache-2.0 Gemma on-device demo in [#634](https://github.com/google/xrblocks/pull/634), and the worker reuses its `installWebGpuTimeslicing` helper.
 - Created for [#629](https://github.com/google/xrblocks/issues/629), the call for on-device machine learning demos.
