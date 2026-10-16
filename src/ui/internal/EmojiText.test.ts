@@ -33,4 +33,23 @@ describe('emoji microphone labels', () => {
     expect(layouts.every((value) => value.flexWrap === 'no-wrap')).toBe(true);
     label.dispose();
   });
+
+  it('forwards depth flags to emoji and text segment renderers', () => {
+    properties.mockClear();
+    const label = new EmojiText({
+      text: 'Go \u{1f680} now',
+      depthTest: true,
+      depthWrite: true,
+    });
+    const segments = properties.mock.calls
+      .map(([value]) => value)
+      .filter((value) => 'src' in value || 'fontSize' in value);
+    expect(segments.length).toBeGreaterThan(0);
+    expect(
+      segments.every(
+        (value) => value.depthTest === true && value.depthWrite === true
+      )
+    ).toBe(true);
+    label.dispose();
+  });
 });

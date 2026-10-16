@@ -142,7 +142,7 @@ export class MergedSvg<
     super(inputProperties, initialClasses, {
       ...inputConfig,
       remeasureOnChildrenChange: false,
-      depthWriteDefault: false,
+      depthWriteDefault: true,
       supportFillProperty: true,
       boundingBox,
     });
