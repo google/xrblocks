@@ -69,7 +69,7 @@ describe('Gemma vision browser entry', () => {
     ]);
     expect(copy).toMatch(/Chrome with WebGPU/);
     expect(copy).toMatch(/describe it or read its text/i);
-    expect(copy).toMatch(/Gemma 4 also translates/i);
+    expect(copy).toMatch(/On desktops, Gemma 4 also translates/i);
     expect(copy).not.toMatch(/shader|compil|pause|safety-critical|unverified/i);
     expect(copy).toMatch(
       /Initial app\/runtime\/model downloads use the network/

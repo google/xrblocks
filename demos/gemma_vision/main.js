@@ -48,7 +48,7 @@ const options = new xb.Options().enableCamera();
 options.xrButton.showEnterSimulatorButton = true;
 options.xrButton.appTitle = 'What am I looking at?';
 options.xrButton.appDescription =
-  'Capture an image and ask Gemma 4 about it. On-device inference, no API key.';
+  'Capture an image and ask an on-device vision model about it. No API key.';
 
 xb.add(scene, new PreloadPanel());
 try {
