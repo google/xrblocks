@@ -1,6 +1,6 @@
 {
   "name": "xrblocks",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "XR Blocks SDK",
   "main": "build/xrblocks.js",
   "types": "build/xrblocks.d.ts",
@@ -16,6 +16,7 @@
     "serve": "http-server --cors -c-1 -a 127.0.0.1 -p 8080",
     "build": "echo \"Building xrblocks.js...\" && rolldown -c",
     "build:sdk": "XRBLOCKS_BUILD=sdk rolldown -c",
+    "build:check-imports": "node tools/check-bundle-imports.js",
     "prepare": "npm run build",
     "lint": "oxlint src tools",
     "format": "npm run format:fix",

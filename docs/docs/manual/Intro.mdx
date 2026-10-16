@@ -3,176 +3,68 @@ slug: /
 sidebar_position: 1
 ---
 
-import {CodeSearchLink} from './components/CodeSearchLink.jsx';
-import {CDNUrls} from './components/CDNUrls.jsx';
-
 # Getting Started
 
 XR Blocks is a lightweight, cross-platform library for rapidly prototyping
 advanced XR and AI experiences. Built upon [three.js](https://threejs.org), it
-targets Chrome v136+ with WebXR support on Android XR. XR Blocks supports XR
-and desktop platforms, emphasizing a user-centric, developer-friendly SDK.
+targets Chrome v136+ with WebXR support on Android XR (such as Samsung Galaxy XR
+and XREAL Aura) and includes a desktop simulator for rapid development on standard
+desktop browsers.
 
-## Installation & Import Options
+XR Blocks supports two primary development workflows:
 
-XR Blocks can be imported directly into a webpage using an import map, or installed via `npm` and bundled.
-
-### Option A: Using an Import Map (No Build Step)
-
-This is the fastest way to get started. You can use an import map to load XR Blocks and three.js directly from a CDN.
-
-For a starter template, see <CodeSearchLink path="templates/00_basic/index.html"/> (note that while templates in the repository use relative paths for local development, your project should use the CDN URLs below).
-
-To use an import map, add the following script tag to your `index.html` page. This minimal
-map supports the core engine. Feature templates include the extra mappings they require.
-
-```html
-<script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
-      "xrblocks": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/xrblocks.js",
-      "xrblocks/addons/": "https://cdn.jsdelivr.net/gh/google/xrblocks@build/addons/"
-    }
-  }
-</script>
-```
-
-:::tip
-Using `xrblocks@build` loads the latest development version of XR Blocks every time your web app loads.
-To pin a build of XR Blocks, replace `build` with an SHA from the [build branch](https://github.com/google/xrblocks/commits/build/) or load a version from the [xrblocks npm package](https://www.npmjs.com/package/xrblocks?activeTab=versions) using a URL such as https://cdn.jsdelivr.net/npm/xrblocks@0.1.0/build/xrblocks.js.
-
-<CDNUrls />
-:::
-
-### Option B: Using npm & a Bundler
-
-Install XR Blocks and its required peer dependencies with:
-
-```bash
-npm install xrblocks three @pmndrs/uikit @preact/signals-core
-```
-
-For a pre-configured template using TypeScript and Vite, check out <CodeSearchLink path="templates/13_typescript_vite/src/main.ts"/> (and its associated <CodeSearchLink path="templates/13_typescript_vite/package.json"/> and <CodeSearchLink path="templates/13_typescript_vite/tsconfig.json"/>).
-
-#### Handling Optional Dependencies
-
-XR Blocks keeps large providers external so applications can select the features they use.
-The built-in spatial UI uses `@pmndrs/uikit` and `@preact/signals-core`; it is not a
-separate XR Blocks add-on. Lit supplies the optional simulator browser interface.
-
-If you want to install **all** optional dependencies at once (for example, to simplify TypeScript compilation or enable all features), run:
-
-```bash
-npm install @dimforge/rapier3d @google/genai openai lit @pmndrs/uikit @preact/signals-core @mediapipe/tasks-vision @mediapipe/tasks-audio @sparkjsdev/spark three-mesh-bvh
-```
-
-Otherwise, manage dependencies based on your tooling:
-
-- **TypeScript**: Because `xrblocks` declaration files import types from optional dependencies (like `@google/genai` or `lit`), the TypeScript compiler will complain about missing types. You can handle this in two ways:
-  - **Set `"skipLibCheck": true` (Recommended)**: Adding `"skipLibCheck": true` to the `compilerOptions` section of your `tsconfig.json` tells the compiler to skip type checking of declaration files (`.d.ts` files) inside `node_modules/`. This is the easiest way to use `xrblocks` without installing any unused optional dependencies.
-  - **Install Dev Dependencies**: Alternatively, you can install the types/packages for the specific features you are using, or install all of them as devDependencies.
-- **Bundler Configuration (Rollup, Vite, Webpack)**:
-  If you are not using certain features and do not want to install their corresponding optional dependencies, you should configure your bundler to mark them as `external` so it skips trying to resolve them:
-
-  ```javascript
-  // rollup.config.js / vite.config.js
-  export default {
-    external: [
-      '@google/genai',
-      '@mediapipe/tasks-vision',
-      '@pmndrs/uikit',
-      'rapier3d',
-      // Add other unused optional dependencies here
-    ],
-  };
-  ```
-
-#### List of Optional Dependencies
-
-- **AI Integration**: `@google/genai` (Gemini), `openai` (OpenAI)
-- **Physics**: `@dimforge/rapier3d`
-- **Built-in spatial UI**: `@pmndrs/uikit`, `@preact/signals-core`
-- **Simulator browser interface**: `lit`
-- **Gaussian Splatting**: `@sparkjsdev/spark`
-- **Vision & Audio (MediaPipe)**: `@mediapipe/tasks-vision` (Hands/Face/Objects), `@mediapipe/tasks-audio` (Audio classification)
-- **Performance & Utilities**: `three-mesh-bvh` (Accelerated raycasting)
-
-#### Deploy the complete build
-
-XR Blocks uses private lazy-loaded chunks for features such as the built-in UI and simulator.
-Copy and serve the complete package `build/` directory:
-
-```text
-build/
-├── xrblocks.js
-├── xrblocks.min.js
-├── internal/
-└── addons/
-```
-
-Do not deploy only `xrblocks.js`, and do not import files from `build/internal/` directly.
-Those filenames are implementation details.
+- **[Develop Online](#develop-online)**: Fast, zero-setup prototyping using generative AI in the browser.
+- **[Develop Locally](#develop-locally)**: Full development workflow with local web servers, development tools, and the built-in desktop simulator.
 
 ---
 
-## Creating an Interactive Scene
+## Develop Online
 
-XR Blocks uses a singleton engine driven by a script lifecycle. Rather than managing the renderer and canvas yourself, you write your app as one or more `xb.Script` subclasses and register them.
+For the fastest way to explore ideas and build spatial prototypes without configuring a local development environment, you can develop directly online using Google AI tools:
 
-Upon importing, XR Blocks automatically creates the core singleton which manages the lifecycle, camera, and renderer.
+### Google AI Studio
 
-Here is a complete, interactive example of a script-based scene:
+**[Google AI Studio](https://goo.gle/BuildXR)** serves as an online IDE for rapid spatial computing and AI development. You can build, iterate on, and run applications directly inside of it without installing any local developer tooling.
 
-```javascript
-import * as THREE from 'three';
-import * as xb from 'xrblocks';
+- **Online IDE**: Build, preview, and run complete XR Blocks apps directly inside the browser environment.
+- **Framework Selection**: Navigating to **[goo.gle/BuildXR](https://goo.gle/BuildXR)** automatically selects **"XR Blocks"** as the framework and configures the environment. You can also select "XR Blocks" manually within the AI Studio settings.
+- **Gemini Models & Prompts**: Prototype multimodal prompts, test system instructions, and experiment with real-time features such as Gemini Live.
+- **API Keys**: Manage and obtain API keys to power generative AI features (like multimodal scene queries and speech interaction) in your XR Blocks projects.
 
-class InteractiveScene extends xb.Script {
-  init() {
-    // Runs once after registration; can be asynchronous.
+### Gemini Canvas with XR Blocks Gem
 
-    // Add lighting to the scene
-    this.add(new THREE.HemisphereLight(0xffffff, 0x666666, 3));
+The **[XR Blocks Gem](https://xrblocks.github.io/gem)** leverages Gemini with Canvas to enable "vibe coding" for spatial computing. You can describe your scene, interactions, 3D models, and spatial UI in plain English, and the Gem will:
 
-    // Create an interactive cube
-    this.cube = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, 0.3, 0.3),
-      new THREE.MeshStandardMaterial({color: 0x4285f4})
-    );
+- Generate complete, runnable XR Blocks code.
+- Provide live, interactive previews in the browser.
+- Support conversational iteration—simply ask the Gem to modify lighting, add animations, adjust physics, or insert generative AI features.
 
-    // Place the cube in front of the user (using user-physical context)
-    this.cube.position.set(0, xb.user.height - 0.3, -xb.user.objectDistance);
-    this.add(this.cube);
-  }
+To learn more about vibe coding with XR Blocks:
 
-  update(time, frame) {
-    // Runs on every animation frame.
-    this.cube.rotation.y += xb.getDeltaTime();
-  }
+- Try the **[XR Blocks Gem](https://xrblocks.github.io/gem)** directly in Gemini.
+- Read the Google Research blog post: **[Vibe Coding XR: Accelerating AI + XR Prototyping with XR Blocks and Gemini](https://research.google/blog/vibe-coding-xr-accelerating-ai-xr-prototyping-with-xr-blocks-and-gemini)**.
+- Watch the **[video demonstration](https://www.youtube.com/watch?v=nknCzIxHHzw)** to see the end-to-end workflow in action.
 
-  onSelectEnd() {
-    // Fired on a desktop click or a WebXR controller pinch/trigger release.
-    // Randomize the cube's color when selected.
-    this.cube.material.color.set(Math.random() * 0xffffff);
-  }
+---
 
-  dispose() {
-    // Clean up three.js resources to prevent GPU memory leaks
-    this.cube.geometry.dispose();
-    this.cube.material.dispose();
-  }
-}
+## Develop Locally
 
-// Bootstrap the application when the DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  xb.add(new InteractiveScene());
-  xb.init(new xb.Options());
-});
-```
+Developing locally gives you full control over your project structure, version control, build pipeline, and custom assets.
 
-- **`init()`**: Sets up your lights, cameras, models, and UI. This is where you construct your 3D objects.
-- **`update()`**: Updates positions, rotations, animations, and runs any per-frame logic.
-- **`onSelectEnd()`**: Handles user clicks (desktop) and pinch/select releases (WebXR).
-- **`dispose()`**: Disposes of geometries, materials, and textures to prevent memory leaks on the GPU when the script is removed from the scene.
+### Basic Requirements
+
+Before setting up a local XR Blocks project, ensure your environment meets the following requirements:
+
+1. **Supported Browser & Platform**:
+   - **Android XR**: An Android XR headset (such as Samsung Galaxy XR or XREAL Aura) running Chrome v136+ with WebXR enabled.
+   - **Desktop (Simulator)**: Google Chrome on macOS, Windows, or Linux. XR Blocks includes a built-in desktop simulator, so an XR headset is **not required** to build and test applications.
+2. **Local Web Server**:
+   - WebXR APIs and modern JavaScript ES modules cannot be loaded directly from local files (`file://`). You must serve your project files over HTTP/HTTPS using any local web server (for example, `npx http-server`, `npx serve`, or the Vite dev server).
+3. **Headset Remote Debugging (Optional)**:
+   - When deploying to an Android XR headset, you can connect the headset to your computer via USB or Wi-Fi and use Chrome Remote Debugging (`chrome://inspect`) with port forwarding, or serve over an HTTPS tunnel (such as ngrok or cloudflared).
+4. **Node.js & npm (Optional)**:
+   - Node.js (v20+ recommended) is required if you want to use npm packages, TypeScript, or a bundler like Vite or Rollup. If you choose to use CDN import maps, no Node.js installation or build step is needed.
+
+### Project Setup
+
+To install XR Blocks, configure your import map or bundler, and start writing your first interactive scene, proceed to the **[Project Setup](./ProjectSetup.mdx)** guide.

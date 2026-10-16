@@ -11,15 +11,18 @@ import {
   MAX_RESIZE_CORNER_FRACTION,
   RESIZE_CORNER_SIDE_MARGINS,
 } from '../constants/UICardEdgeConstants';
-import {UICardEdgeFragmentShader} from '../shaders/UICardEdge.frag';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import {
   PanelLayer,
   type PanelLayerProperties,
-  PanelShaderMaterial,
   type SignalProperties,
   type WritableSignalProperties,
 } from '../primitives/layers/PanelLayer';
+import {
+  createCardEdgeMaterial,
+  type PanelMaterial,
+  type PanelUniforms,
+} from './PanelMaterialFactory';
 
 const DEFAULT_EDGE_PROPERTIES = {
   margin: 50,
@@ -78,8 +81,7 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
     } = {}
   ) {
     super(
-      new PanelShaderMaterial({
-        fragmentShader: UICardEdgeFragmentShader,
+      createCardEdgeMaterial({
         depthWrite: false,
         side: THREE.DoubleSide,
         uniforms: createUniforms(),
@@ -324,7 +326,7 @@ export class UICardEdge extends UICardEdgeLayer {
   }
 }
 
-function createUniforms(): Record<string, THREE.IUniform> {
+function createUniforms(): PanelUniforms {
   return {
     u_edge_margin: {value: 0},
     u_card_corner_radius: {value: 0},
@@ -342,7 +344,7 @@ function createUniforms(): Record<string, THREE.IUniform> {
 }
 
 function setNumber(
-  material: THREE.ShaderMaterial,
+  material: PanelMaterial,
   name: string,
   value: number | undefined
 ): void {
@@ -350,21 +352,27 @@ function setNumber(
 }
 
 function setColor(
-  material: THREE.ShaderMaterial,
+  material: PanelMaterial,
   name: string,
   value: THREE.ColorRepresentation | undefined
 ): void {
   if (value === undefined) return;
   const {color, opacity} = parseColorWithAlpha(value);
-  material.uniforms[name].value.set(color.r, color.g, color.b, opacity);
+  (material.uniforms[name].value as THREE.Vector4).set(
+    color.r,
+    color.g,
+    color.b,
+    opacity
+  );
 }
 
 function setVector2(
-  material: THREE.ShaderMaterial,
+  material: PanelMaterial,
   name: string,
   value: THREE.Vector2 | undefined
 ): void {
-  if (value !== undefined) material.uniforms[name].value.copy(value);
+  if (value !== undefined)
+    (material.uniforms[name].value as THREE.Vector2).copy(value);
 }
 
 export function isOuterEdgeHit(

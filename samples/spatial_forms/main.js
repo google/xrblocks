@@ -61,6 +61,7 @@ class SpatialForms extends xb.Script {
     });
 
     const children = [
+      new xb.UIExitButton(),
       new xb.UIText({text: 'Spatial forms', style: {fontSize: 32}}),
       this.title,
       this.history,

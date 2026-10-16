@@ -42,7 +42,7 @@ export function parseMergedSvg(content: string): MergedSvgResult {
   const result = svgLoader.parse(content);
   const groups = new Map<string, {color: THREE.Color; shapes: THREE.Shape[]}>();
   for (const path of result.paths) {
-    const shapes = SVGLoader.createShapes(path);
+    const shapes = path.toShapes();
     if (shapes.length === 0) continue;
     const key = `${path.color.r} ${path.color.g} ${path.color.b}`;
     const group = groups.get(key);

@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 
-import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
+import {
+  isWebGPURenderer,
+  type SupportedRenderer,
+} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {updatePanelBackfaceVisibility} from './PanelBackfaceVisibility';
+import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
@@ -49,7 +53,7 @@ export class UIRenderer {
   private readonly connectedRoots = new Set<UIElement>();
   private readonly viewport = {width: 0, height: 0};
   private backendState: BackendState = {kind: 'idle'};
-  private renderer?: WebGLOrWebGPURenderer;
+  private renderer?: SupportedRenderer;
   private publicScene?: THREE.Scene;
 
   constructor(
@@ -69,7 +73,7 @@ export class UIRenderer {
   /** Mounts UI roots already connected when Core initializes. */
   async initialize(
     scene: THREE.Scene,
-    renderer: WebGLOrWebGPURenderer
+    renderer: SupportedRenderer
   ): Promise<void> {
     this.publicScene = scene;
     this.renderer = renderer;
@@ -193,7 +197,13 @@ export class UIRenderer {
         throw STALE_UI_LOAD;
       }
       try {
-        if (this.renderer instanceof THREE.WebGLRenderer) {
+        // Both backends: configureRenderer installs uikit's deterministic
+        // transparent sort (reversePainterSortStable + orderInfo); without it
+        // coplanar panel/text layers flicker in z-order as panels move.
+        if (
+          this.renderer instanceof THREE.WebGLRenderer ||
+          isWebGPURenderer(this.renderer)
+        ) {
           backend.configureRenderer?.(this.renderer);
         }
       } catch (error) {
@@ -411,5 +421,6 @@ function syncRootTransform(
 }
 
 async function defaultLoader(): Promise<UIBackendModule> {
+  await ensureWebGPUUIMaterials();
   return import('./UIKitBackend.js');
 }

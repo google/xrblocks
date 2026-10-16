@@ -100,6 +100,7 @@ export class GameRps extends xb.Script {
         alignItems: 'center',
       },
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'ROCK - PAPER - SCISSORS',
           style: {

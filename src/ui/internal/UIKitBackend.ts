@@ -6,8 +6,8 @@ import {
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
+import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import * as THREE from 'three';
-
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {UIButton} from '../components/UIButton';
@@ -56,6 +56,14 @@ import type {
   UIPresentationState,
   UIPresentationStateFor,
 } from './UIBackend';
+
+import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
+
+// On WebGPURenderer, register the TSL panel materials before any UI
+// material is created. Top-level await keeps this chunk pending until
+// registration completes (UIRenderer awaits the module on the first UI
+// element — the only load path, so UI-less apps never fetch it).
+await ensureWebGPUUIMaterials();
 
 const ICON_BASE =
   'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/';
@@ -342,17 +350,19 @@ class UIKitMount implements UIMount {
 
 class UIKitBackend implements UIBackend {
   private readonly icons = new IconCache();
-  private renderer?: THREE.WebGLRenderer;
+  private renderer?: WebGLOrWebGPURenderer;
   private previousLocalClippingEnabled = false;
   private releaseFocusGuard?: () => void;
 
-  configureRenderer(renderer: THREE.WebGLRenderer): void {
+  configureRenderer(renderer: WebGLOrWebGPURenderer): void {
     if (this.renderer === renderer) return;
     this.restoreRenderer();
     this.renderer = renderer;
     this.releaseFocusGuard = TextInputEditor.guardCanvas(renderer.domElement);
-    this.previousLocalClippingEnabled = renderer.localClippingEnabled;
-    renderer.localClippingEnabled = true;
+    if ('localClippingEnabled' in renderer) {
+      this.previousLocalClippingEnabled = renderer.localClippingEnabled;
+      renderer.localClippingEnabled = true;
+    }
     renderer.setTransparentSort(reversePainterSortStable);
   }
 
@@ -373,7 +383,9 @@ class UIKitBackend implements UIBackend {
     this.releaseFocusGuard?.();
     this.releaseFocusGuard = undefined;
     if (!this.renderer) return;
-    this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
+    if ('localClippingEnabled' in this.renderer) {
+      this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
+    }
     this.renderer = undefined;
   }
 }
@@ -984,7 +996,17 @@ class UIKitNodeBinding {
     const previousOwned = this.ownsImageTexture;
     this.imageTexture = texture;
     this.ownsImageTexture = ownsTexture;
-    (this.node as Image).texture.value = texture;
+    const node = this.node as Image;
+    // uikit's Image rebuilds its material's TSL conversion when this texture
+    // signal fires, but the conversion prefers an existing colorNode over the
+    // map — so a stale colorNode (from before the async texture arrived) would
+    // shadow the image and render black. Clear it; the signal handler rebuilds
+    // it from the now-present map. No-op on the GLSL path.
+    const material = node.material as {colorNode?: unknown} | undefined;
+    if (material && 'colorNode' in material) {
+      material.colorNode = undefined;
+    }
+    node.texture.value = texture;
     if (previousOwned && previous && previous !== texture) previous.dispose();
   }
 
