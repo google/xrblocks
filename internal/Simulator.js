@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 7c29e0e
-* @builddate 2026-10-15T17:49:45.565Z
+* @commitid b0b524a
+* @builddate 2026-10-17T02:45:21.525Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -773,10 +773,12 @@ var SimulatorControls = class {
 		this.#enabled = true;
 		this.onPointerMove = (event) => {
 			if (!this.enabled) return;
+			if (this.pointerDown || event.buttons > 0 || this.renderer?.domElement && document.pointerLockElement === this.renderer.domElement) this.userInterface.notifyUserInteraction?.();
 			this.simulatorModeControls.onPointerMove(event);
 		};
 		this.onPointerDown = (event) => {
 			if (!this.enabled) return;
+			this.userInterface.notifyUserInteraction?.();
 			this.simulatorModeControls.onPointerDown(event);
 			this.pointerDown = true;
 			this.activePointerId = event.pointerId;
@@ -798,7 +800,10 @@ var SimulatorControls = class {
 		};
 		this.onWheel = (event) => {
 			if (!this.enabled) return;
-			if (this.simulatorModeControls.onWheel(event)) event.preventDefault();
+			if (this.simulatorModeControls.onWheel(event)) {
+				this.userInterface.notifyUserInteraction?.();
+				event.preventDefault();
+			}
 		};
 		this.onKeyDown = (event) => {
 			if (!this.enabled) return;
@@ -810,6 +815,7 @@ var SimulatorControls = class {
 				this.downKeys.clear();
 				return;
 			}
+			this.userInterface.notifyUserInteraction?.();
 			this.downKeys.add(event.code);
 			if (this.simulatorOptions?.modeToggle.enabled && event.code === this.simulatorOptions.modeToggle.toggleKey) this.setSimulatorMode(this.simulatorOptions.modeToggle.toggleOrder[this.simulatorMode]);
 			this.simulatorModeControls.onKeyDown(event);
@@ -912,6 +918,7 @@ var SimulatorControls = class {
 		this.simulatorModeControls = this.simulatorModes[this.simulatorMode];
 		this.simulatorModeControls.onModeActivated();
 		if (this.simulatorSettingsPanelElement) this.simulatorSettingsPanelElement.simulatorMode = mode;
+		this.userInterface.setSimulatorMode?.(mode);
 	}
 	setSimulatorSettingsPanelElement(element) {
 		this.simulatorSettingsPanelElement?.removeEventListener("setSimulatorMode", this.onSetSimulatorMode);
@@ -1542,6 +1549,7 @@ var SimulatorInterface = class {
 		this.simulatorElementsLoader = simulatorElementsLoader;
 		this.elements = [];
 		this.interfaceVisible = true;
+		this.hasUserInteracted = false;
 		this.onGamepadConnected = () => {
 			const gp = this.gamepadController;
 			if (!gp || gp.hasShownToast) return;
@@ -1554,10 +1562,14 @@ var SimulatorInterface = class {
 	*/
 	async init(simulatorOptions, simulatorControls, simulatorHands, input, setEnvironment, handPhysicsAvailable = false, lighting) {
 		this.lighting = lighting;
+		this.simulatorOptions = simulatorOptions;
+		this.hasUserInteracted = false;
+		this.clearOverlayTimers();
 		if (!await this.ensureElementsAvailable()) return;
 		if (setEnvironment) this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable, lighting);
 		this.showGeminiLivePanel(simulatorOptions);
 		this.createHandPosePanel(simulatorOptions, simulatorHands);
+		this.createOverlayInstructions(simulatorOptions, simulatorControls.simulatorMode);
 		this.simulatorHands = simulatorHands;
 		simulatorHands.onHandednessChanged = (handedness) => {
 			this._ensureGamepadToast().flash(`Active Hand: ${handedness === "left" ? "Left" : "Right"}`);
@@ -1653,6 +1665,69 @@ var SimulatorInterface = class {
 			this.elements.push(handsPanelElement);
 		}
 	}
+	createOverlayInstructions(simulatorOptions, simulatorMode) {
+		if (simulatorOptions.instructions.enabled && simulatorOptions.instructions.overlayEnabled) {
+			this.overlayInstructionsElement?.remove();
+			const element = document.createElement(simulatorOptions.instructions.overlayElement);
+			element.simulatorMode = simulatorMode;
+			element.visible = false;
+			document.body.appendChild(element);
+			this.overlayInstructionsElement = element;
+			this.elements.push(element);
+		}
+	}
+	/**
+	* Starts the 5-second idle timer after the simulator finishes initializing.
+	* If no user interaction occurs before the timer expires, the overlay
+	* instructions fade in.
+	*/
+	startOverlayInstructionsTimer(simulatorOptions = this.simulatorOptions, simulatorMode) {
+		if (!simulatorOptions?.instructions.enabled || !simulatorOptions.instructions.overlayEnabled || this.hasUserInteracted) return;
+		this.simulatorOptions = simulatorOptions;
+		if (simulatorMode && this.overlayInstructionsElement) this.overlayInstructionsElement.simulatorMode = simulatorMode;
+		this.clearOverlayTimers();
+		this.overlayFadeInTimer = setTimeout(() => {
+			this.overlayFadeInTimer = void 0;
+			if (!this.hasUserInteracted && this.overlayInstructionsElement) this.overlayInstructionsElement.visible = true;
+		}, simulatorOptions.instructions.fadeInDelayMs);
+	}
+	/**
+	* Notifies the interface that the user has interacted with the simulator.
+	* Cancels the fade-in timer if the overlay has not yet appeared, or fades
+	* the overlay out immediately.
+	*/
+	notifyUserInteraction() {
+		if (this.hasUserInteracted) return;
+		this.hasUserInteracted = true;
+		if (this.overlayFadeInTimer !== void 0) {
+			clearTimeout(this.overlayFadeInTimer);
+			this.overlayFadeInTimer = void 0;
+			this.overlayInstructionsElement?.remove();
+			this.overlayInstructionsElement = void 0;
+			return;
+		}
+		if (this.overlayInstructionsElement) {
+			this.overlayInstructionsElement.visible = false;
+			this.overlayRemoveTimer = setTimeout(() => {
+				this.overlayRemoveTimer = void 0;
+				this.overlayInstructionsElement?.remove();
+				this.overlayInstructionsElement = void 0;
+			}, 500);
+		}
+	}
+	setSimulatorMode(mode) {
+		if (this.overlayInstructionsElement) this.overlayInstructionsElement.simulatorMode = mode;
+	}
+	clearOverlayTimers() {
+		if (this.overlayFadeInTimer !== void 0) {
+			clearTimeout(this.overlayFadeInTimer);
+			this.overlayFadeInTimer = void 0;
+		}
+		if (this.overlayRemoveTimer !== void 0) {
+			clearTimeout(this.overlayRemoveTimer);
+			this.overlayRemoveTimer = void 0;
+		}
+	}
 	hideUiElements() {
 		this.elements = this.elements.filter((el) => el.isConnected);
 		for (const element of this.elements) element.style.display = "none";
@@ -1678,6 +1753,11 @@ var SimulatorInterface = class {
 		gp.onOpenSettings = () => this.toggleGamepadSettings(gp);
 	}
 	dispose() {
+		this.clearOverlayTimers();
+		this.overlayInstructionsElement?.remove();
+		this.overlayInstructionsElement = void 0;
+		this.simulatorOptions = void 0;
+		this.hasUserInteracted = false;
 		if (this.gamepadController) {
 			this.gamepadController.removeEventListener("connected", this.onGamepadConnected);
 			this.gamepadController.onOpenSettings = void 0;
@@ -3270,6 +3350,7 @@ var Simulator = class extends Script {
 		scene.add(camera);
 		if (this.options.stereo.enabled) this.setupStereoCameras(camera);
 		this.initialized = true;
+		this.userInterface.startOverlayInstructionsTimer(this.options, this.controls.simulatorMode);
 	}
 	async setEnvironment(nameOrPath, manifestPath) {
 		await this.activateEnvironment(manifestPath ? {

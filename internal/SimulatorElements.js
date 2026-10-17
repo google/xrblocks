@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 7c29e0e
-* @builddate 2026-10-15T17:49:45.565Z
+* @commitid b0b524a
+* @builddate 2026-10-17T02:45:21.525Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -406,6 +406,192 @@ __decorate([property()], SimulatorInstructions.prototype, "simulatorMode", void 
 __decorate([property()], SimulatorInstructions.prototype, "customInstructions", void 0);
 __decorate([property()], SimulatorInstructions.prototype, "step", void 0);
 SimulatorInstructions = __decorate([customElement("xrblocks-simulator-instructions")], SimulatorInstructions);
+//#endregion
+//#region src/simulator/internal/interface/instructions/SimulatorOverlayInstructions.ts
+function getOverlayInstructionsForMode(mode) {
+	switch (mode) {
+		case "Navigation": return [[{
+			keys: [
+				"W",
+				"A",
+				"S",
+				"D"
+			],
+			label: "Move"
+		}], [{
+			keys: ["Mouse"],
+			label: "Click and drag to look around"
+		}]];
+		case "PointerLock": return [[{
+			keys: [
+				"W",
+				"A",
+				"S",
+				"D"
+			],
+			label: "Move"
+		}], [{
+			keys: ["Mouse"],
+			label: "Click the screen, then move the mouse to look around"
+		}]];
+		case "Hands": return [
+			[{
+				keys: [
+					"W",
+					"A",
+					"S",
+					"D"
+				],
+				label: "Move hand"
+			}, {
+				keys: [
+					"Shift",
+					"W",
+					"A",
+					"S",
+					"D"
+				],
+				label: "Move"
+			}],
+			[{
+				keys: ["Right Click"],
+				label: "Look"
+			}, {
+				keys: ["Left Click"],
+				label: "Rotate hand"
+			}],
+			[{
+				keys: ["Space"],
+				label: "Pinch"
+			}, {
+				keys: ["T"],
+				label: "Switch hand"
+			}]
+		];
+		default: return [[{
+			keys: [
+				"W",
+				"A",
+				"S",
+				"D"
+			],
+			label: "Move"
+		}], [{
+			keys: ["Right Click"],
+			label: "Drag to look around"
+		}, {
+			keys: ["Left Click"],
+			label: "Select"
+		}]];
+	}
+}
+let SimulatorOverlayInstructions = class SimulatorOverlayInstructions extends LitElement {
+	constructor(..._args) {
+		super(..._args);
+		this.simulatorMode = "User";
+		this.visible = false;
+	}
+	static {
+		this.styles = css`
+    :host {
+      position: fixed;
+      bottom: 4.75rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      pointer-events: none;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.65rem;
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    :host([visible]) {
+      opacity: 1;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+    }
+
+    .group {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .keys {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .key {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      min-width: 2rem;
+      height: 2rem;
+      padding: 0 0.55rem;
+      border-radius: 0.45rem;
+      border: 1.5px solid rgba(255, 255, 255, 0.85);
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(4px);
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .label {
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+      white-space: nowrap;
+    }
+  `;
+	}
+	renderGroup(item) {
+		return html`
+      <div class="group">
+        <div class="keys">
+          ${item.keys.map((key) => html`<kbd class="key">${key}</kbd>`)}
+        </div>
+        <span class="label">${item.label}</span>
+      </div>
+    `;
+	}
+	render() {
+		const rows = getOverlayInstructionsForMode(this.simulatorMode);
+		return html`
+      ${rows.map((row) => html`<div class="row">
+            ${row.map((item) => this.renderGroup(item))}
+          </div>`)}
+    `;
+	}
+};
+__decorate([property({ type: String })], SimulatorOverlayInstructions.prototype, "simulatorMode", void 0);
+__decorate([property({
+	type: Boolean,
+	reflect: true
+})], SimulatorOverlayInstructions.prototype, "visible", void 0);
+SimulatorOverlayInstructions = __decorate([customElement("xrblocks-simulator-overlay-instructions")], SimulatorOverlayInstructions);
 //#endregion
 //#region src/simulator/internal/interface/ui/GamepadToast.ts
 const BUTTON_NAMES = {

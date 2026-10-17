@@ -2466,6 +2466,9 @@ export declare class SimulatorOptions {
     enabled: boolean;
     showAutomatically: boolean;
     element: string;
+    overlayEnabled: boolean;
+    overlayElement: string;
+    fadeInDelayMs: number;
     customInstructions: SimulatorCustomInstruction[];
   };
   handPosePanel: {
@@ -7030,6 +7033,11 @@ declare class SimulatorInterface {
   private elementsAvailable?;
   private settingsElement?;
   private lighting?;
+  private overlayInstructionsElement?;
+  private overlayFadeInTimer?;
+  private overlayRemoveTimer?;
+  private hasUserInteracted;
+  private simulatorOptions?;
   constructor(simulatorElementsLoader?: SimulatorElementsLoader);
   /**
    * Initialize the simulator interface.
@@ -7047,6 +7055,21 @@ declare class SimulatorInterface {
   showInstructions(simulatorOptions: SimulatorOptions, simulatorMode?: SimulatorMode): void;
   showGeminiLivePanel(simulatorOptions: SimulatorOptions): void;
   createHandPosePanel(simulatorOptions: SimulatorOptions, simulatorHands: SimulatorHands): void;
+  createOverlayInstructions(simulatorOptions: SimulatorOptions, simulatorMode: SimulatorMode): void;
+  /**
+   * Starts the 5-second idle timer after the simulator finishes initializing.
+   * If no user interaction occurs before the timer expires, the overlay
+   * instructions fade in.
+   */
+  startOverlayInstructionsTimer(simulatorOptions?: SimulatorOptions, simulatorMode?: SimulatorMode): void;
+  /**
+   * Notifies the interface that the user has interacted with the simulator.
+   * Cancels the fade-in timer if the overlay has not yet appeared, or fades
+   * the overlay out immediately.
+   */
+  notifyUserInteraction(): void;
+  setSimulatorMode(mode: SimulatorMode): void;
+  private clearOverlayTimers;
   hideUiElements(): void;
   showUiElements(): void;
   getInterfaceVisible(): boolean;
