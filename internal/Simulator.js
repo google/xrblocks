@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid b0b524a
-* @builddate 2026-10-17T02:45:21.525Z
+* @commitid 0ec7190
+* @builddate 2026-10-17T02:53:47.375Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1261,6 +1261,8 @@ var SimulatorHands = class {
 			if (this.simulatorControllerState.currentControllerIndex === 0) this.setLeftHandLerpPose(handPoseChangeEvent.pose);
 			else this.setRightHandLerpPose(handPoseChangeEvent.pose);
 		};
+		this.leftController.visible = false;
+		this.rightController.visible = false;
 	}
 	/**
 	* Initialize Simulator Hands.
