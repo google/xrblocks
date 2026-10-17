@@ -17,16 +17,12 @@ import {
 } from './internal/compositing/SimulatorCompositor';
 import {SimulatorCamera} from './SimulatorCamera';
 import {
-  ANGLE_DOUBLING_FACTOR,
   AVERAGE_IPD_METERS,
   DEFAULT_SIMULATOR_ASPECT_RATIO,
-  DEGREES_TO_RADIANS,
   MAX_DISPLAY_DIAGONAL_FOV_DEGREES,
   MIN_DISPLAY_DIAGONAL_FOV_DEGREES,
   MIN_SIMULATOR_CAMERA_ASPECT_RATIO,
-  RADIANS_TO_DEGREES,
   SimulatorRenderMode,
-  UNIT_VERTICAL_ASPECT_COMPONENT,
 } from './SimulatorConstants';
 import {SimulatorControllerState} from './SimulatorControllerState';
 import {SimulatorControls} from './SimulatorControls';
@@ -516,10 +512,11 @@ export class Simulator extends Script {
           ? aspect
           : DEFAULT_SIMULATOR_ASPECT_RATIO;
       const verticalTangent =
-        Math.tan((diagonalFov * DEGREES_TO_RADIANS) / ANGLE_DOUBLING_FACTOR) /
-        Math.hypot(aspectForDiagonal, UNIT_VERTICAL_ASPECT_COMPONENT);
-      this.mainCamera.fov =
-        ANGLE_DOUBLING_FACTOR * Math.atan(verticalTangent) * RADIANS_TO_DEGREES;
+        Math.tan(THREE.MathUtils.degToRad(diagonalFov / 2)) /
+        Math.hypot(aspectForDiagonal, DEFAULT_SIMULATOR_ASPECT_RATIO);
+      this.mainCamera.fov = THREE.MathUtils.radToDeg(
+        2 * Math.atan(verticalTangent)
+      );
     }
     this.mainCamera.updateProjectionMatrix();
     this.appliedDisplayDiagonalFov = diagonalFov;

@@ -3,11 +3,8 @@ import * as THREE from 'three';
 
 import {Simulator} from './Simulator';
 import {
-  ANGLE_DOUBLING_FACTOR,
-  DEGREES_TO_RADIANS,
   MAX_DISPLAY_DIAGONAL_FOV_DEGREES,
   MIN_DISPLAY_DIAGONAL_FOV_DEGREES,
-  RADIANS_TO_DEGREES,
 } from './SimulatorConstants';
 import {SimulatorOptions} from './SimulatorOptions';
 
@@ -21,13 +18,9 @@ const STEREO_CAMERA_ASPECT_RATIO = 1.25;
 const FOV_ASSERTION_PRECISION = 5;
 
 function diagonalFov(camera: THREE.PerspectiveCamera): number {
-  const verticalTangent = Math.tan(
-    (camera.fov * DEGREES_TO_RADIANS) / ANGLE_DOUBLING_FACTOR
-  );
-  return (
-    ANGLE_DOUBLING_FACTOR *
-    Math.atan(Math.hypot(camera.aspect * verticalTangent, verticalTangent)) *
-    RADIANS_TO_DEGREES
+  const verticalTangent = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  return THREE.MathUtils.radToDeg(
+    2 * Math.atan(Math.hypot(camera.aspect * verticalTangent, verticalTangent))
   );
 }
 

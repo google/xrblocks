@@ -28,7 +28,7 @@ import {
 import {WebXRSessionManager} from './components/WebXRSessionManager';
 import {XRButton} from './components/XRButton';
 import {ui} from '../ui/UI';
-import {colorfulTheme} from '../ui/UITheme';
+import {additiveTheme, colorfulTheme} from '../ui/UITheme';
 
 function scripts(core: Core): ScriptsManager {
   return (core as unknown as {scriptsManager: ScriptsManager}).scriptsManager;
@@ -273,15 +273,7 @@ describe('Core frame and simulator lifecycle', () => {
       await core['onXRSessionStarted'](session);
 
       expect(core.environmentBlendMode).toBe('additive');
-      expect(ui.theme.colors).toEqual(
-        expect.objectContaining({
-          surface: '#173a3a',
-          text: '#ffffff',
-          primary: '#7ffff0',
-        })
-      );
-      expect(ui.theme.styles?.surface?.backgroundColor).toBe('#173a3a');
-      expect(ui.theme.styles?.button?.backgroundColor).toBe('#006b62');
+      expect(ui.theme).toBe(additiveTheme);
 
       core['onXRSessionEnded']();
       expect(core.environmentBlendMode).toBeUndefined();
@@ -357,9 +349,7 @@ describe('Core frame and simulator lifecycle', () => {
       await core['onXRSessionStarted'](createSession());
 
       expect(core.environmentBlendMode).toBe('additive');
-      expect(ui.theme.colors).toEqual(
-        expect.objectContaining({surface: '#173a3a'})
-      );
+      expect(ui.theme).toBe(additiveTheme);
       core['onXRSessionEnded']();
       expect(ui.theme.colors).toEqual(colorfulTheme.colors);
     } finally {
