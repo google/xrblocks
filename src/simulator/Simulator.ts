@@ -108,6 +108,7 @@ export class Simulator extends Script {
   private defaultCameraFov?: number;
   private appliedDisplayDiagonalFov?: number;
   private appliedDisplayAspect?: number;
+  private appliedCameraFov?: number;
 
   constructor(
     private renderMainScene: (cameraOverride?: THREE.Camera) => void,
@@ -497,7 +498,9 @@ export class Simulator extends Script {
     }
 
     if (diagonalFov === undefined) {
-      this.mainCamera.fov = this.defaultCameraFov;
+      this.restoreDisplayFov();
+      this.syncStereoCameraProjection();
+      return;
     } else {
       if (
         !Number.isFinite(diagonalFov) ||
@@ -522,6 +525,7 @@ export class Simulator extends Script {
     this.mainCamera.updateProjectionMatrix();
     this.appliedDisplayDiagonalFov = diagonalFov;
     this.appliedDisplayAspect = aspect;
+    this.appliedCameraFov = this.mainCamera.fov;
     this.syncStereoCameraProjection();
   }
 
@@ -543,17 +547,20 @@ export class Simulator extends Script {
   }
 
   private restoreDisplayFov(): void {
-    if (
-      !(this.mainCamera instanceof THREE.PerspectiveCamera) ||
-      this.defaultCameraFov === undefined ||
-      this.appliedDisplayDiagonalFov === undefined
-    ) {
-      return;
-    }
-    this.mainCamera.fov = this.defaultCameraFov;
-    this.mainCamera.updateProjectionMatrix();
+    const appliedCameraFov = this.appliedCameraFov;
+    const shouldRestore =
+      this.mainCamera instanceof THREE.PerspectiveCamera &&
+      this.defaultCameraFov !== undefined &&
+      appliedCameraFov !== undefined &&
+      this.mainCamera.fov === appliedCameraFov;
+
+    this.appliedCameraFov = undefined;
     this.appliedDisplayDiagonalFov = undefined;
     this.appliedDisplayAspect = undefined;
+    if (!shouldRestore) return;
+
+    this.mainCamera.fov = this.defaultCameraFov;
+    this.mainCamera.updateProjectionMatrix();
     this.syncStereoCameraProjection();
   }
 

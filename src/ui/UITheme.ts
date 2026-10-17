@@ -268,7 +268,7 @@ const ADDITIVE_THEME_COLORS = Object.freeze({
   sliderTrack: '#4f8f89',
   buttonSurface: '#006b62',
   buttonHover: '#007b70',
-  buttonActive: '#00524b',
+  buttonActive: '#008579',
   text: '#ffffff',
   secondaryText: '#d5ffff',
   disabledSurface: '#315858',
