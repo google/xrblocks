@@ -71,7 +71,7 @@ export class HandPosePanel extends LitElement {
   // Default to the first hand pose
   @property({type: String})
   handPose: SimulatorHandPose = Object.values(SimulatorHandPose)[0];
-  @property({type: Boolean}) visible = true;
+  @property({type: Boolean}) visible = false;
 
   override update(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('handPose')) {
