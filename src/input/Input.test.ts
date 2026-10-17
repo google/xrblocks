@@ -9,6 +9,8 @@ import {Interaction} from '../interaction/Interaction';
 import {Reticle} from '../interaction/reticle/Reticle';
 import {UIButton} from '../ui/components/UIButton';
 import {SimulatorPointerLockController} from '../simulator/SimulatorPointerLockController';
+import {SimulatorControllerState} from '../simulator/SimulatorControllerState';
+import {SimulatorHands} from '../simulator/SimulatorHands';
 import {Input} from './Input';
 import {Controller} from './Controller';
 import {Handedness, Hands} from './Hands';
@@ -253,6 +255,139 @@ describe('Input direct touch', () => {
     expect(input.getFrame().directTouches).toMatchObject([
       {controller, handIndex: 0, hand: wrist},
     ]);
+    input.dispose();
+  });
+
+  it.each([
+    {handedness: 'right', slot: 0, handIndex: 1, reconnectSlot: 3},
+    {handedness: 'left', slot: 1, handIndex: 0, reconnectSlot: 2},
+  ] as const)(
+    'maps a lone $handedness hand from slot $slot and remaps it after reconnect',
+    ({handedness, slot, handIndex, reconnectSlot}) => {
+      const input = new Input();
+      const spaces = Array.from({length: 4}, () => new WebXRController());
+      const options = new Options().enableHands();
+      options.controllers.visualization = false;
+      options.controllers.visualizeRays = false;
+      options.hands.visualization = false;
+      const renderer = {
+        xr: {
+          getController: (index: number) => spaces[index].getTargetRaySpace(),
+          getHand: (index: number) => spaces[index].getHandSpace(),
+        },
+      } as unknown as THREE.WebGLRenderer;
+      input.init({systemsGroup: new XRSystems(), options, renderer});
+
+      expect(input.hands).toHaveLength(2);
+      expect(input.hands[0]).toBeUndefined();
+      expect(input.hands[1]).toBeUndefined();
+
+      const source = {
+        hand: new Map(),
+        handedness,
+        targetRayMode: 'tracked-pointer',
+      } as unknown as XRInputSource;
+      const controller = input.controllers[slot];
+      controller.dispatchEvent({type: 'connected', data: source});
+
+      const otherSlot = slot === 0 ? 1 : 0;
+      input.controllers[otherSlot].dispatchEvent({
+        type: 'connected',
+        data: {handedness, targetRayMode: 'tracked-pointer'},
+      });
+
+      expect(input.hands[handIndex]).toBe(spaces[slot].getHandSpace());
+      expect(input.hands[1 - handIndex]).toBeUndefined();
+
+      controller.dispatchEvent({type: 'disconnected', data: source});
+      expect(input.hands[handIndex]).toBeUndefined();
+      expect(input.hands).toHaveLength(2);
+
+      const reconnectSource = {...source, hand: new Map()};
+      input.controllers[reconnectSlot].dispatchEvent({
+        type: 'connected',
+        data: reconnectSource,
+      });
+      expect(input.hands[handIndex]).toBe(spaces[reconnectSlot].getHandSpace());
+      expect(input.hands[1 - handIndex]).toBeUndefined();
+      input.dispose();
+    }
+  );
+
+  it('clears an old handedness alias when a controller slot is reused', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController: (index: number) => spaces[index].getTargetRaySpace(),
+        getHand: (index: number) => spaces[index].getHandSpace(),
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+
+    const controller = input.controllers[0];
+    const hand = spaces[0].getHandSpace();
+    controller.dispatchEvent({
+      type: 'connected',
+      data: {
+        hand: new Map(),
+        handedness: 'left',
+      } as unknown as XRInputSource,
+    });
+    expect(input.hands[0]).toBe(hand);
+
+    controller.dispatchEvent({
+      type: 'connected',
+      data: {
+        hand: new Map(),
+        handedness: 'right',
+      } as unknown as XRInputSource,
+    });
+
+    expect(input.hands[0]).toBeUndefined();
+    expect(input.hands[1]).toBe(hand);
+    input.dispose();
+  });
+
+  it('lets the simulator show and hide hands after XR sources disconnect', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController: (index: number) => spaces[index].getTargetRaySpace(),
+        getHand: (index: number) => spaces[index].getHandSpace(),
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+    const source = {
+      hand: new Map(),
+      handedness: 'right',
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+    input.controllers[0].dispatchEvent({type: 'connected', data: source});
+    input.controllers[0].dispatchEvent({type: 'disconnected', data: source});
+
+    const simulatorHands = new SimulatorHands(
+      new SimulatorControllerState(),
+      new THREE.Scene()
+    );
+    simulatorHands.input = input;
+
+    expect(input.hands).toHaveLength(2);
+    expect(input.hands[0]).toBeUndefined();
+    expect(input.hands[1]).toBeUndefined();
+    expect(() => simulatorHands.showHands()).not.toThrow();
+    expect(() => simulatorHands.hideHands()).not.toThrow();
+
+    simulatorHands.dispose();
     input.dispose();
   });
 

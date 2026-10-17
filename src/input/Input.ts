@@ -136,10 +136,12 @@ export class Input {
 
       // TODO: Separate logic to XR Hands.
       if (options.hands.enabled) {
+        // Keep the public array's logical [left, right] shape, but leave both
+        // entries empty until a connected hand source claims them.
+        this.hands.length = NUM_HANDS;
         for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
           const hand = renderer.xr.getHand(i);
           this.controllerHands.push(hand);
-          if (i < NUM_HANDS) this.hands.push(hand);
           this.activeControllers.add(hand);
         }
 
@@ -300,7 +302,7 @@ export class Input {
     const handIndex = this.getHandIndex(event.data?.handedness);
     const hand = this.controllerHands[controller.userData.id];
     if (event.data?.hand && handIndex !== undefined && hand) {
-      this.hands[handIndex] = hand;
+      this.setHandAlias(handIndex, hand);
     }
     switch (event.data?.handedness) {
       case 'left':
@@ -338,14 +340,12 @@ export class Input {
     }
     const handIndex = this.getHandIndex(inputSource?.handedness);
     const hand = this.controllerHands[controller.userData.id];
-    if (
-      inputSource?.hand &&
-      handIndex !== undefined &&
-      this.hands[handIndex] === hand
-    ) {
-      const replacement = this.findConnectedHand(handIndex, controller);
-      if (replacement) this.hands[handIndex] = replacement;
-      else delete this.hands[handIndex];
+    if (inputSource?.hand && hand) {
+      this.clearHandAliases(hand);
+      if (handIndex !== undefined) {
+        const replacement = this.findConnectedHand(handIndex, controller);
+        if (replacement) this.setHandAlias(handIndex, replacement);
+      }
     }
   }
 
@@ -611,6 +611,17 @@ export class Input {
     }
   }
 
+  private setHandAlias(handIndex: number, hand: THREE.XRHandSpace) {
+    this.clearHandAliases(hand);
+    this.hands[handIndex] = hand;
+  }
+
+  private clearHandAliases(hand: THREE.XRHandSpace) {
+    for (let handIndex = 0; handIndex < NUM_HANDS; handIndex++) {
+      if (this.hands[handIndex] === hand) delete this.hands[handIndex];
+    }
+  }
+
   private findConnectedController(
     handedness: 'left' | 'right',
     exclude: Controller
@@ -628,7 +639,13 @@ export class Input {
     exclude: Controller
   ): THREE.XRHandSpace | undefined {
     const handedness = handIndex === 0 ? 'left' : 'right';
-    const controller = this.findConnectedController(handedness, exclude);
+    const controller = this.controllers.find(
+      (candidate) =>
+        candidate !== exclude &&
+        candidate.userData.connected === true &&
+        Boolean(candidate.inputSource?.hand) &&
+        candidate.inputSource?.handedness === handedness
+    );
     return controller
       ? this.controllerHands[controller.userData.id]
       : undefined;

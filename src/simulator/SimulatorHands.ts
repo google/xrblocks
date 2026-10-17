@@ -534,8 +534,8 @@ export class SimulatorHands {
   showHands() {
     this.leftController.visible = true;
     this.rightController.visible = true;
-    for (let i = 0; i < this.input.hands.length; i++) {
-      this.input.hands[i].visible = true;
+    for (const hand of this.input.hands) {
+      if (hand) hand.visible = true;
     }
     this.updateHandPosePanel();
   }
@@ -543,8 +543,8 @@ export class SimulatorHands {
   hideHands() {
     this.leftController.visible = false;
     this.rightController.visible = false;
-    for (let i = 0; i < this.input.hands.length; i++) {
-      this.input.hands[i].visible = false;
+    for (const hand of this.input.hands) {
+      if (hand) hand.visible = false;
     }
     this.updateHandPosePanel();
   }

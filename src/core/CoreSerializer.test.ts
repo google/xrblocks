@@ -23,18 +23,17 @@ function createMockSerializer(): SerializerRenderer & {
     {length: 4},
     () => new THREE.Group() as unknown as THREE.XRTargetRaySpace
   );
-  const grips: THREE.XRGripSpace[] = [
-    new THREE.Group() as unknown as THREE.XRGripSpace,
-    new THREE.Group() as unknown as THREE.XRGripSpace,
-  ];
-  const hands: THREE.XRHandSpace[] = [
-    Object.assign(new THREE.Group(), {
-      joints: {},
-    }) as unknown as THREE.XRHandSpace,
-    Object.assign(new THREE.Group(), {
-      joints: {},
-    }) as unknown as THREE.XRHandSpace,
-  ];
+  const grips: THREE.XRGripSpace[] = Array.from(
+    {length: 4},
+    () => new THREE.Group() as unknown as THREE.XRGripSpace
+  );
+  const hands: THREE.XRHandSpace[] = Array.from(
+    {length: 4},
+    () =>
+      Object.assign(new THREE.Group(), {
+        joints: {},
+      }) as unknown as THREE.XRHandSpace
+  );
   const xrCamera = new THREE.ArrayCamera([
     new THREE.PerspectiveCamera(),
     new THREE.PerspectiveCamera(),
