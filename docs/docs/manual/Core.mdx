@@ -65,14 +65,17 @@ options.foveationLevel = 0.5; // 0 = none, 1 = maximum
 await xb.init(options);
 ```
 
-XR Blocks requests the target rate only when the active session advertises it
-through `supportedFrameRates` and implements `updateTargetFrameRate()`. Fixed
-foveation is applied through three.js's `renderer.xr.setFoveation()`; devices or
-browsers without the corresponding support are left unchanged. Both settings
-are optional and have no effect outside a supported XR session.
-Browser support varies: Quest Browser exposes frame-rate control, Android XR
-Chrome may require its frame-rate flag, and Safari on visionOS exposes neither
-control.
+XR Blocks requests the target rate only when the active session provides
+`supportedFrameRates`, the requested rate is in that list, and the session
+implements `updateTargetFrameRate()`. Unsupported requested rates are reported
+in the console. Browser support varies: Quest Browser exposes frame-rate
+control, Android XR Chrome exposes it behind **Experimental Web Platform
+features**, and Safari on visionOS does not expose it.
+
+Fixed foveation is applied through three.js's `renderer.xr.setFoveation()` when
+you provide a finite level; XR Blocks clamps it to 0–1. If `foveationLevel` is
+unset, XR Blocks leaves three.js's default level of 1 (maximum foveation)
+unchanged. Browsers or renderers without foveation support are left unchanged.
 
 Use the feature's manual page for exact prerequisites. There is no general rule
 that every subsystem has an `enable*()` method. For example, Rapier is assigned

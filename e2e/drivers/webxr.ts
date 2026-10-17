@@ -31,6 +31,9 @@ declare global {
       };
       objects: Record<string, unknown>;
       state(): DriverState;
+      xrSessionFrameRate():
+        | {frameRate: number; supportedFrameRates: number[]}
+        | undefined;
     };
     __xrDevice: {
       controllers: {left?: IwerController; right?: IwerController};

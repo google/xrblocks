@@ -961,7 +961,7 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
-    await this.applyXRSessionRenderingOptions(session);
+    this.applyXRSessionRenderingOptions(session);
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
@@ -976,36 +976,44 @@ export class Core {
     this.scriptsManager.onXRSessionStarted(session);
   }
 
-  private async applyXRSessionRenderingOptions(session: XRSession) {
+  private applyXRSessionRenderingOptions(session: XRSession) {
     const {foveationLevel, targetFrameRate} = this.options;
-    if (foveationLevel !== undefined) {
+    if (foveationLevel !== undefined && Number.isFinite(foveationLevel)) {
       const xrManager = this.renderer.xr as {
         setFoveation?: (level: number) => void;
       };
-      xrManager.setFoveation?.(foveationLevel);
+      xrManager.setFoveation?.(Math.max(0, Math.min(1, foveationLevel)));
     }
 
     if (targetFrameRate === undefined) return;
 
     const sessionWithFrameRate = session as XRSession & {
-      supportedFrameRates?: ArrayLike<number>;
+      supportedFrameRates?: ArrayLike<number> | null;
       updateTargetFrameRate?: (rate: number) => Promise<void>;
     };
-    if (typeof sessionWithFrameRate.updateTargetFrameRate !== 'function')
-      return;
-    if (
-      sessionWithFrameRate.supportedFrameRates &&
-      !Array.from(sessionWithFrameRate.supportedFrameRates).includes(
-        targetFrameRate
-      )
-    ) {
+    const {supportedFrameRates, updateTargetFrameRate} = sessionWithFrameRate;
+    if (!supportedFrameRates) return;
+
+    const supportedRates = Array.from(supportedFrameRates);
+    const normalizedFrameRate = Math.fround(targetFrameRate);
+    if (!supportedRates.includes(normalizedFrameRate)) {
+      console.warn(
+        `Requested WebXR target frame rate ${targetFrameRate} is not supported. ` +
+          `Supported frame rates: ${supportedRates.join(', ')}.`
+      );
       return;
     }
+    if (typeof updateTargetFrameRate !== 'function') return;
 
-    try {
-      await sessionWithFrameRate.updateTargetFrameRate(targetFrameRate);
-    } catch (error) {
+    const warnOnFrameRateError = (error: unknown) => {
       console.warn('Unable to set the WebXR session target frame rate.', error);
+    };
+    try {
+      void updateTargetFrameRate
+        .call(session, normalizedFrameRate)
+        .catch(warnOnFrameRateError);
+    } catch (error) {
+      warnOnFrameRateError(error);
     }
   }
 

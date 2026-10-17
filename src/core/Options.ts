@@ -163,13 +163,16 @@ export class Options {
 
   /**
    * Optional target WebXR session frame rate in frames per second. The browser
-   * applies this only when the active session supports the requested rate.
+   * applies this only when the active session advertises the rate in
+   * `supportedFrameRates` and supports `updateTargetFrameRate()`.
    */
   targetFrameRate?: number;
 
   /**
    * Optional fixed foveation level from 0 (none) to 1 (maximum), applied by
-   * the three.js XR manager when supported by the renderer and device.
+   * the three.js XR manager when supported by the renderer and device. Finite
+   * values are clamped to this range; unset values leave three.js's default
+   * foveation level of 1 unchanged.
    */
   foveationLevel?: number;
 

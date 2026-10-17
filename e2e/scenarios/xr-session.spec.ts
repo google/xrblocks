@@ -19,6 +19,21 @@ test('enters an immersive session and presents', async ({driver, page}) => {
   expect(state.lifecycle).not.toBe('disposed');
 });
 
+test('applies a supported target frame rate to the IWER session', async ({
+  driver,
+  page,
+}) => {
+  await driver.getState();
+  await page.waitForFunction(() => {
+    const session = (
+      window as unknown as {__e2e: Window['__e2e']}
+    ).__e2e.xrSessionFrameRate();
+    return (
+      session?.supportedFrameRates.includes(72) && session.frameRate === 72
+    );
+  });
+});
+
 test('frame loop advances under the XR session', async ({driver}) => {
   const before = await driver.getState();
   await driver.step(300);
