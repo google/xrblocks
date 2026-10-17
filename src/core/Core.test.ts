@@ -645,4 +645,67 @@ describe('Core frame and simulator lifecycle', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('applies supported frame rate and foveation options to a WebXR session', async () => {
+    const setFoveation = vi.fn();
+    const updateTargetFrameRate = vi.fn().mockResolvedValue(undefined);
+    (
+      core.renderer.xr as unknown as {
+        setFoveation: (level: number) => void;
+      }
+    ).setFoveation = setFoveation;
+    core.options.targetFrameRate = 72;
+    core.options.foveationLevel = 0.5;
+    const session = {
+      supportedFrameRates: new Float32Array([72, 90]),
+      updateTargetFrameRate,
+    } as unknown as XRSession;
+
+    await core['applyXRSessionRenderingOptions'](session);
+
+    expect(setFoveation).toHaveBeenCalledWith(0.5);
+    expect(updateTargetFrameRate).toHaveBeenCalledWith(72);
+  });
+
+  it('does nothing for unsupported frame-rate and foveation APIs', async () => {
+    core.options.targetFrameRate = 72;
+    core.options.foveationLevel = 0.5;
+    const session = {} as XRSession;
+
+    await core['applyXRSessionRenderingOptions'](session);
+
+    expect(
+      (core.renderer.xr as unknown as {setFoveation?: unknown}).setFoveation
+    ).toBeUndefined();
+  });
+
+  it('does not request a frame rate the session does not advertise', async () => {
+    const updateTargetFrameRate = vi.fn().mockResolvedValue(undefined);
+    core.options.targetFrameRate = 72;
+    const session = {
+      supportedFrameRates: new Float32Array([90]),
+      updateTargetFrameRate,
+    } as unknown as XRSession;
+
+    await core['applyXRSessionRenderingOptions'](session);
+
+    expect(updateTargetFrameRate).not.toHaveBeenCalled();
+  });
+
+  it('continues when the browser rejects a target frame rate', async () => {
+    const updateTargetFrameRate = vi
+      .fn()
+      .mockRejectedValue(new Error('unsupported frame rate'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    core.options.targetFrameRate = 72;
+    const session = {
+      supportedFrameRates: new Float32Array([72]),
+      updateTargetFrameRate,
+    } as unknown as XRSession;
+
+    await core['applyXRSessionRenderingOptions'](session);
+
+    expect(updateTargetFrameRate).toHaveBeenCalledWith(72);
+    expect(warn).toHaveBeenCalledOnce();
+  });
 });

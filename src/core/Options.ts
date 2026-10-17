@@ -162,6 +162,18 @@ export class Options {
   framebufferScaleFactor?: FramebufferScaleFactor;
 
   /**
+   * Optional target WebXR session frame rate in frames per second. The browser
+   * applies this only when the active session supports the requested rate.
+   */
+  targetFrameRate?: number;
+
+  /**
+   * Optional fixed foveation level from 0 (none) to 1 (maximum), applied by
+   * the three.js XR manager when supported by the renderer and device.
+   */
+  foveationLevel?: number;
+
+  /**
    * Any additional required features when initializing webxr.
    */
   webxrRequiredFeatures: string[] = [];

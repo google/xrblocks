@@ -961,6 +961,7 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    await this.applyXRSessionRenderingOptions(session);
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
@@ -973,6 +974,39 @@ export class Core {
       if (!this.isLifecycleActive()) return;
     }
     this.scriptsManager.onXRSessionStarted(session);
+  }
+
+  private async applyXRSessionRenderingOptions(session: XRSession) {
+    const {foveationLevel, targetFrameRate} = this.options;
+    if (foveationLevel !== undefined) {
+      const xrManager = this.renderer.xr as {
+        setFoveation?: (level: number) => void;
+      };
+      xrManager.setFoveation?.(foveationLevel);
+    }
+
+    if (targetFrameRate === undefined) return;
+
+    const sessionWithFrameRate = session as XRSession & {
+      supportedFrameRates?: ArrayLike<number>;
+      updateTargetFrameRate?: (rate: number) => Promise<void>;
+    };
+    if (typeof sessionWithFrameRate.updateTargetFrameRate !== 'function')
+      return;
+    if (
+      sessionWithFrameRate.supportedFrameRates &&
+      !Array.from(sessionWithFrameRate.supportedFrameRates).includes(
+        targetFrameRate
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await sessionWithFrameRate.updateTargetFrameRate(targetFrameRate);
+    } catch (error) {
+      console.warn('Unable to set the WebXR session target frame rate.', error);
+    }
   }
 
   startSimulator = async (): Promise<Simulator> => {

@@ -54,6 +54,26 @@ Configure optional dependencies, permissions, WebXR session features, and
 subsystem options before `xb.init(options)`. Changing a configuration object
 after initialization does not reconstruct the runtime automatically.
 
+For devices that expose WebXR frame-rate control, request a supported target
+rate and fixed foveation level before initialization:
+
+```js
+const options = new xb.Options();
+options.targetFrameRate = 72;
+options.foveationLevel = 0.5; // 0 = none, 1 = maximum
+
+await xb.init(options);
+```
+
+XR Blocks requests the target rate only when the active session advertises it
+through `supportedFrameRates` and implements `updateTargetFrameRate()`. Fixed
+foveation is applied through three.js's `renderer.xr.setFoveation()`; devices or
+browsers without the corresponding support are left unchanged. Both settings
+are optional and have no effect outside a supported XR session.
+Browser support varies: Quest Browser exposes frame-rate control, Android XR
+Chrome may require its frame-rate flag, and Safari on visionOS exposes neither
+control.
+
 Use the feature's manual page for exact prerequisites. There is no general rule
 that every subsystem has an `enable*()` method. For example, Rapier is assigned
 to `options.physics.RAPIER`, while built-in UI starts automatically when a UI
