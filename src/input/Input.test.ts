@@ -275,7 +275,7 @@ describe('Input PinchFilter mobile and hand tracking compatibility', () => {
     expect(selectStartSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('filters native select events on hand tracking when button value is around 0.7', () => {
+  it('forwards native select events for a controller with a partial trigger press', () => {
     const input = new Input();
     const mockController = new THREE.Object3D() as unknown as Controller;
     mockController.userData = {connected: true};
@@ -291,6 +291,41 @@ describe('Input PinchFilter mobile and hand tracking compatibility', () => {
     input.bindListener('selectstart', selectStartSpy);
 
     mockController.dispatchEvent({type: 'selectstart', target: mockController});
+    expect(selectStartSpy).toHaveBeenCalledOnce();
+  });
+
+  it('filters native select events and synthesizes selection only for hand pinch sources', () => {
+    const input = new Input();
+    const mockController = new THREE.Object3D() as unknown as Controller;
+    mockController.userData = {connected: true};
+    mockController.gamepad = {
+      buttons: [{value: 0.7, pressed: true}],
+    } as unknown as Gamepad;
+    mockController.inputSource = {
+      hand: {} as XRHand,
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+
+    const selectStartSpy = vi.fn();
+    const selectSpy = vi.fn();
+    const selectEndSpy = vi.fn();
+    input.controllers.push(mockController);
+    input.bindSelectStart(selectStartSpy);
+    input.bindSelect(selectSpy);
+    input.bindSelectEnd(selectEndSpy);
+
+    mockController.dispatchEvent({type: 'selectstart', target: mockController});
+    input.sampleSources();
     expect(selectStartSpy).not.toHaveBeenCalled();
+
+    mockController.gamepad.buttons[0].value = 1;
+    input.sampleSources();
+    expect(selectStartSpy).toHaveBeenCalledOnce();
+    expect(selectStartSpy.mock.calls[0][0]).toMatchObject({isCustom: true});
+
+    mockController.gamepad.buttons[0].value = 0;
+    input.sampleSources();
+    expect(selectSpy).toHaveBeenCalledOnce();
+    expect(selectEndSpy).toHaveBeenCalledOnce();
   });
 });
