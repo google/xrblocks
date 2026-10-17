@@ -26,7 +26,9 @@ const field = new xb.UITextInput({
 // Add field to your mounted UICard/UIOverlay.
 xb.add(phone);
 const link = phone.pairingURL('https://your-app.example/phone.html');
-// Render link as a QR locally and/or provide a clickable link.
+const code = phone.pairing.code;
+// Show code inside the headset; users type it on your phone page.
+// The link can also be a QR on a desktop or mirrored screen.
 xb.init();
 ```
 
@@ -47,17 +49,25 @@ not a tracked 6-DoF phone pose.
 ## Phone page
 
 ```js
-import {PhoneControllerPage} from 'xrblocks/addons/phone-companion/phone.js';
+import {
+  PhoneControllerPage,
+  phonePairingFromCode,
+} from 'xrblocks/addons/phone-companion/phone.js';
 
-const page = new PhoneControllerPage(document.body);
+// Called after the user submits your pairing-code form:
+const page = new PhoneControllerPage(document.body, {
+  pairing: phonePairingFromCode(codeEnteredByUser),
+});
 await page.connect();
 // page.dispose() when removing the controller from a single-page application.
 ```
 
 This separate entry needs no XR Blocks engine, three.js, renderer, or WebXR on the
-phone. It reads the pairing room and token from the URL fragment. The
-[executable sample](../../../samples/phone_companion/) includes both pages and
-local QR generation, including a QR in the headset's spatial card.
+phone. Omitting `pairing` reads a code or legacy room/token from the URL fragment
+for QR/link entry. The [executable sample](../../../samples/phone_companion/)
+includes a phone landing page with code entry, a code inside the headset, and an
+optional desktop QR. A phone cannot scan a QR visible only inside a headset;
+use code entry on Quest, Galaxy XR, Aura, or other headsets.
 
 ## Connection and lifecycle
 
@@ -71,19 +81,25 @@ local QR generation, including a QR in the headset's spatial card.
   on **both** pages. Connection configuration is not encoded into the QR.
 - WebRTC uses netblocks' best-effort public PeerJS broker by default. Some
   networks require TURN. Use HTTPS pages reachable by both devices.
-- The generated room and token are random. The link grants control: share it only
-  with the intended phone. A fresh `PhoneCompanion` creates fresh credentials.
+- Default pairing uses a cryptographically random four-character alphanumeric
+  code such as `K7Q2` (20 bits; ambiguous `0/O` and `1/I` are excluded).
+  Both pages derive the dedicated room and token
+  from that code; it is a bearer credential, like the QR/link. Keep it private.
+  `phonePairingFromCode()` accepts lowercase, spaces and hyphens. A fresh
+  `PhoneCompanion` creates a fresh code. Custom room/token pairings remain supported.
+  Short codes prioritize headset entry over resistance to guessing; use custom,
+  longer room/token credentials when that is required.
 - The host locks to the **first paired phone instance** for its lifetime using an
   additional random identity that is never included in the QR. A dropped phone
   can reconnect while its page remains alive; another holder of the link cannot
   take its place, even if the WebRTC broker reuses that phone's slot ID. Reloading
-  the phone page creates a new instance: reload the host and scan its new QR to
+  the phone page creates a new instance: reload the host and enter its new code to
   pair again. The link can still be claimed by anyone who possesses it before
   the first successful pairing.
 - Cancel, backgrounding the phone, peer leave and five seconds of missed
   heartbeats cancel held selections. Transport loss releases keyboard suppression.
   Discovery can re-pair the same phone instance after a transient peer loss.
-  Reload both pages and scan the new QR after a closed/failed transport;
+  Reload both pages and enter the new code after a closed/failed transport;
   instances are single-use. Dispose the Script to release transport,
   timers, pointer capture state, native-keyboard suppression and the owned reticle.
 - While paired and visible, the phone requests a screen wake lock. Backgrounding,

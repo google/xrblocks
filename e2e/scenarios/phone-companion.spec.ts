@@ -1,7 +1,7 @@
 import {test, expect, type Page, type CDPSession} from '@playwright/test';
 
 // Both pages must share a BrowserContext: BroadcastChannel is partitioned by it.
-test('phone pairs, points, selects, drags a slider and resumes pointing after native typing', async ({
+test('phone pairs by headset code, points, selects, drags a slider and resumes pointing after native typing', async ({
   page: host,
   context,
 }, testInfo) => {
@@ -26,19 +26,43 @@ test('phone pairs, points, selects, drags a slider and resumes pointing after na
     const xb = (window as any).xb;
     return (
       xb?.ui.validate().ready &&
+      xb.core.input.controllers.some(
+        (source: any) => source.name === 'Phone pointer'
+      ) &&
       !xb.ui
         .validate()
         .issues.some((issue: any) => issue.code === 'invalid-layout')
     );
   });
+  // Like the simulator driver, step the real engine deterministically. Leaving
+  // a second software-rendered window spinning can starve phone input in CI.
+  await host.evaluate(() => {
+    const core = (window as any).xb.core;
+    core.pause();
+    (window as any).__phoneTestStep = () => {
+      core.stepFrame();
+      core.stepFrame();
+    };
+  });
   const popup = context.waitForEvent('page');
   await host.evaluate(
     (url) => window.open(url, 'phone-controller', 'popup,width=390,height=844'),
-    (await host.locator('#link').getAttribute('href'))!
+    (await host.locator('#phone-page').getAttribute('href'))!
   );
   const phone = await popup;
   phone.on('pageerror', (error) => errors.push(error.message));
   await phone.setViewportSize({width: 390, height: 844});
+  await phone
+    .getByRole('textbox', {name: 'Pairing code', exact: true})
+    .fill('bad');
+  await phone.getByRole('button', {name: 'Connect', exact: true}).click();
+  await expect(phone.getByRole('alert')).toContainText(
+    '4-character pairing code'
+  );
+  await phone
+    .getByRole('textbox', {name: 'Pairing code', exact: true})
+    .fill((await host.locator('#pairing-code').textContent())!);
+  await phone.getByRole('button', {name: 'Connect', exact: true}).click();
   await expect(
     phone.getByText('Connected to headset', {exact: true})
   ).toBeVisible();
@@ -49,6 +73,7 @@ test('phone pairs, points, selects, drags a slider and resumes pointing after na
   await expect
     .poll(() =>
       host.evaluate(() => {
+        (window as any).__phoneTestStep();
         let label = '';
         (window as any).xb.core.scene.traverse((o: any) => {
           if (o.label?.startsWith('Tap me:')) label = o.label;
@@ -85,6 +110,16 @@ test('phone pairs, points, selects, drags a slider and resumes pointing after na
 
   await pointAt(host, phone, touch, 'input');
   await tapPad(phone, touch);
+  await expect
+    .poll(() =>
+      host.evaluate(() => {
+        (window as any).__phoneTestStep();
+        return !!(window as any).xb.core.scene.getObjectByName(
+          'Phone Companion'
+        ).input?.focused;
+      })
+    )
+    .toBe(true);
   await expect(
     phone.getByRole('button', {name: 'Type: Message'})
   ).toBeVisible();
@@ -93,6 +128,7 @@ test('phone pairs, points, selects, drags a slider and resumes pointing after na
   await expect
     .poll(() =>
       host.evaluate(() => {
+        (window as any).__phoneTestStep();
         let value = '';
         (window as any).xb.core.scene.traverse((o: any) => {
           if (o.ariaLabel === 'Message') value = o.value;
@@ -115,6 +151,7 @@ test('phone pairs, points, selects, drags a slider and resumes pointing after na
   await expect
     .poll(() =>
       host.evaluate(() => {
+        (window as any).__phoneTestStep();
         let label = '';
         (window as any).xb.core.scene.traverse((o: any) => {
           if (o.label?.startsWith('Tap me:')) label = o.label;
@@ -145,6 +182,7 @@ async function pointAt(
       const THREE = await import('three');
       const xb = (window as any).xb;
       const core = xb.core;
+      (window as any).__phoneTestStep();
       let target: any;
       core.scene.traverse((o: any) => {
         if (
@@ -189,6 +227,12 @@ async function pointAt(
     type: 'touchStart',
     touchPoints: [...others, start],
   });
+  // A tiny aiming correction must still be a move, not an accidental tap.
+  if (!held)
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{...start, y: start.y + 12}],
+    });
   for (let i = 1; i <= 8; i++) {
     await touch.send('Input.dispatchTouchEvent', {
       type: 'touchMove',
@@ -212,6 +256,7 @@ async function pointAt(
   await expect
     .poll(() =>
       host.evaluate((kind) => {
+        (window as any).__phoneTestStep();
         const core = (window as any).xb.core;
         const target = core.interaction.getResolvedRay(
           core.scene.getObjectByName('Phone Companion').controller
@@ -241,6 +286,7 @@ async function tapPad(phone: Page, touch: CDPSession) {
 
 async function sliderValue(host: Page) {
   return host.evaluate(() => {
+    (window as any).__phoneTestStep();
     let value = 0;
     (window as any).xb.core.scene.traverse((o: any) => {
       if (o.ariaLabel === 'Phone slider') value = o.value;
@@ -251,6 +297,7 @@ async function sliderValue(host: Page) {
 
 async function cardPose(host: Page) {
   return host.evaluate(() => {
+    (window as any).__phoneTestStep();
     let pose: number[] = [];
     (window as any).xb.core.scene.traverse((o: any) => {
       if (o.ariaLabel === 'Phone slider')

@@ -33,7 +33,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
-    launchOptions: {args: gpuArgs()},
+    launchOptions: {args: gpuArgs(), channel: process.env.E2E_CHANNEL},
   },
   projects: [
     // The boot fixture picks the driver from the project name.

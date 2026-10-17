@@ -8,6 +8,8 @@ import {validMessage, type PhoneMessage} from './protocol.js';
 export interface PhonePairing {
   roomId: string;
   token: string;
+  /** Human-readable code for headset pairing, when created by this addon. */
+  code?: string;
 }
 
 export interface PhoneConnectionOptions {
@@ -17,8 +19,29 @@ export interface PhoneConnectionOptions {
   onError?: (error: Error) => void;
 }
 
-export function createPhonePairing(): PhonePairing {
-  return {roomId: crypto.randomUUID(), token: crypto.randomUUID()};
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** Creates a four-character session code, readable in a headset. */
+export function createPhonePairing(): PhonePairing & {code: string} {
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  return phonePairingFromCode(
+    Array.from(bytes, (byte) => CODE_ALPHABET[byte & 31]).join('')
+  );
+}
+
+/** Both devices derive the same dedicated room from a typed pairing code. */
+export function phonePairingFromCode(
+  input: string
+): PhonePairing & {code: string} {
+  const value = input.toUpperCase().replace(/[\s-]/g, '');
+  if (!/^[A-HJ-NP-Z2-9]{4}$/.test(value)) {
+    throw new Error('Enter the 4-character pairing code shown in the headset.');
+  }
+  return {
+    roomId: `phone-${value}`,
+    token: `phone-code-${value}`,
+    code: value,
+  };
 }
 
 /** Pairing credentials live in the fragment, not a server query or QR service. */
@@ -27,15 +50,27 @@ export function phonePairingURL(
   pairing: PhonePairing
 ): string {
   const url = new URL(page, globalThis.location?.href);
-  url.hash = new URLSearchParams({
-    room: pairing.roomId,
-    token: pairing.token,
-  }).toString();
+  if (pairing.code) {
+    const expected = phonePairingFromCode(pairing.code);
+    if (
+      expected.roomId !== pairing.roomId ||
+      expected.token !== pairing.token
+    ) {
+      throw new Error('Pairing code does not match the room credentials.');
+    }
+    url.hash = new URLSearchParams({code: expected.code}).toString();
+  } else {
+    url.hash = new URLSearchParams({
+      room: pairing.roomId,
+      token: pairing.token,
+    }).toString();
+  }
   return url.href;
 }
 
 export function readPhonePairing(url: string | URL): PhonePairing {
   const params = new URLSearchParams(new URL(url).hash.slice(1));
+  if (params.has('code')) return phonePairingFromCode(params.get('code')!);
   const roomId = params.get('room');
   const token = params.get('token');
   if (!roomId || !token || roomId.length > 200 || token.length > 200) {

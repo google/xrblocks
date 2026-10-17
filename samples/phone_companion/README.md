@@ -1,8 +1,20 @@
 # Phone companion
 
 Build with `npm run build`, serve the repository, and open
-`/samples/phone_companion/` on the headset or desktop. Scan the QR with your phone
-before entering XR, or scan the copy shown in the spatial card. Both pages must
+`/samples/phone_companion/` on the headset or desktop. On your phone, open
+`/samples/phone_companion/phone.html` on the same site and enter the code shown
+in the headset. This works without scanning the headset's display. Bookmark
+the phone page to reuse it across sessions.
+
+The phone link is relative to this sample's `main.js`, so it follows the domain
+and any deployment prefix. The docs publishing workflow copies `samples/` and
+`build/` together; its phone page is
+`https://xrblocks.github.io/samples/phone_companion/phone.html` after deployment.
+Custom deployments should preserve those relative paths or configure their own
+phone page URL when integrating the addon.
+
+The desktop page also provides an optional QR for a simulator or mirrored screen.
+Both pages must
 be reachable from their devices; for a headset use an HTTPS deployment or HTTPS
 development tunnel, rather than a localhost URL that resolves to the phone itself.
 
@@ -16,7 +28,7 @@ development tunnel, rather than a localhost URL that resolves to the phone itsel
 
 The phone requests a screen wake lock while paired and visible. Each host session
 locks to its first phone page instance. If you reload the phone or change devices,
-reload the host too and scan its new QR.
+reload the host too and enter its new code (or scan its new QR).
 
 Default transport: netblocks WebRTC with its public PeerJS broker. Allow a few
 seconds for discovery. Networks requiring TURN need a configured transport on

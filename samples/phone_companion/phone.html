@@ -17,10 +17,69 @@
         padding: 16px;
         font: 18px system-ui;
       }
+      #pair-panel {
+        max-width: 500px;
+        margin: 32px auto;
+        padding: 20px;
+        font: 18px system-ui;
+      }
+      #pair-form {
+        display: grid;
+        gap: 16px;
+      }
+      #pair-form input,
+      button {
+        min-height: 48px;
+        font: inherit;
+        border-radius: 12px;
+        padding: 12px;
+      }
+      #pair-form input {
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 26px;
+        text-transform: uppercase;
+      }
+      button {
+        border: 0;
+        background: #a7c7ff;
+        color: #10213b;
+      }
+      #change-code {
+        display: block;
+        margin: 12px auto;
+        font: 16px system-ui;
+      }
+      [hidden] {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
+    <main id="pair-panel">
+      <h1>Pair with your headset</h1>
+      <p>
+        Read the pairing code in the headset and enter it here. No QR scan
+        needed.
+      </p>
+      <form id="pair-form">
+        <label for="code">Pairing code</label>
+        <input
+          id="code"
+          name="code"
+          placeholder="K7Q2"
+          maxlength="8"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          required
+        />
+        <button type="submit">Connect</button>
+      </form>
+    </main>
     <p id="error" role="alert" hidden></p>
+    <div id="controller"></div>
+    <button id="change-code" hidden>Enter another code</button>
     <script type="module" src="phone.js"></script>
   </body>
 </html>

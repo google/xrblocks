@@ -3,4 +3,9 @@ export {
   PhoneControllerPage,
   type PhoneControllerPageOptions,
 } from './PhoneControllerPage.js';
-export {readPhonePairing, type PhonePairing} from './PhoneLink.js';
+export {
+  readPhonePairing,
+  phonePairingFromCode,
+  phonePairingURL,
+  type PhonePairing,
+} from './PhoneLink.js';

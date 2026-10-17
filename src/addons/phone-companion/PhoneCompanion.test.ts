@@ -26,6 +26,7 @@ import {
   PhoneCompanion,
   createPhonePairing,
   phonePairingURL,
+  phonePairingFromCode,
   readPhonePairing,
 } from './index';
 import {PhoneControllerPage} from './phone';
@@ -477,6 +478,27 @@ describe('Phone companion production input seam', () => {
 });
 
 describe('Pairing protocol', () => {
+  it('derives the same pairing from a typed code and preserves custom room/token links', () => {
+    const pairing = phonePairingFromCode('k7 q2');
+    expect(pairing.code).toBe('K7Q2');
+    expect(phonePairingFromCode('K7-Q2')).toEqual(pairing);
+    expect(createPhonePairing().code).toMatch(/^[A-HJ-NP-Z2-9]{4}$/);
+    for (const code of ['', 'ABC', 'ABCD1', 'ABC1', 'ABCI', 'ABC!']) {
+      expect(() => phonePairingFromCode(code)).toThrow('4-character');
+    }
+    const custom = {roomId: 'custom-room', token: 'custom-token'};
+    expect(
+      readPhonePairing(
+        phonePairingURL('https://example.com/phone.html', custom)
+      )
+    ).toEqual(custom);
+    expect(() =>
+      phonePairingURL('https://example.com/phone.html', {
+        ...custom,
+        code: pairing.code,
+      })
+    ).toThrow('does not match');
+  });
   it('locks to the first phone instance even when another holder of the URL reuses its transport slot', async () => {
     const s = await setup();
     const originalIdentity = s.phoneWire.identity;

@@ -2,13 +2,14 @@ import * as THREE from 'three';
 import * as xb from 'xrblocks';
 import {PhoneCompanion} from 'xrblocks/addons/phone-companion/index.js';
 import {BroadcastChannelTransport} from 'xrblocks/addons/netblocks/src/core/transport/BroadcastChannelTransport.js';
-import qrcode from 'qrcode-generator';
 
 const local = new URLSearchParams(location.search).has('local');
 
 class PhoneDemo extends xb.Script {
   init() {
-    const status = new xb.UIText({text: 'Scan the QR to pair your phone.'});
+    const status = new xb.UIText({
+      text: 'Enter the pairing code on your phone.',
+    });
     const setStatus = (text) => {
       status.text = text;
       document.querySelector('#status').textContent = text;
@@ -21,16 +22,27 @@ class PhoneDemo extends xb.Script {
         ),
       onError: (error) => setStatus(`Connection error: ${error.message}`),
     });
-    const phonePage = new URL('phone.html', location.href);
+    const phonePage = new URL('phone.html', import.meta.url);
     if (local) phonePage.searchParams.set('local', '1');
     const url = this.phone.pairingURL(phonePage);
     document.querySelector('#link').href = url;
-    // Generate the QR locally: the pairing credential is never sent to an image service.
-    const qr = qrcode(0, 'M');
-    qr.addData(url);
-    qr.make();
-    const qrURL = qr.createDataURL(6, 24);
-    document.querySelector('#qr').src = qrURL;
+    document.querySelector('#pairing-code').textContent =
+      this.phone.pairing.code;
+    const phoneLanding = document.querySelector('#phone-page');
+    phoneLanding.href = phonePage.href;
+    phoneLanding.textContent = phonePage.href;
+    // The optional QR must not block headset code pairing. Generate it locally;
+    // the pairing credential is never sent to an image service.
+    void import('qrcode-generator')
+      .then(({default: qrcode}) => {
+        const qr = qrcode(0, 'M');
+        qr.addData(url);
+        qr.make();
+        document.querySelector('#qr').src = qr.createDataURL(6, 24);
+      })
+      .catch(() => {
+        document.querySelector('#qr').hidden = true;
+      });
     let count = 0;
     const counter = new xb.UIButton({
       label: 'Tap me: 0',
@@ -62,10 +74,13 @@ class PhoneDemo extends xb.Script {
         new xb.UIExitButton(),
         new xb.UIText({text: 'Phone companion', style: {fontSize: 32}}),
         status,
-        new xb.UIImage({
-          src: qrURL,
-          ariaLabel: 'Phone pairing QR',
-          style: {width: 200, height: 200},
+        new xb.UIText({
+          text: this.phone.pairing.code,
+          style: {fontSize: 36, fontWeight: 'bold'},
+        }),
+        new xb.UIText({
+          text: `On your phone, open:\n${phonePage.href}\nThen enter the code above.`,
+          style: {fontSize: 16, whiteSpace: 'pre-line'},
         }),
         counter,
         field,
@@ -90,7 +105,7 @@ class PhoneDemo extends xb.Script {
     setStatus(
       local
         ? 'Local two-tab mode · open the controller link'
-        : 'Scan the QR to pair your phone.'
+        : 'Enter the pairing code on your phone.'
     );
   }
 }

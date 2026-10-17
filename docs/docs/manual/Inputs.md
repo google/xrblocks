@@ -49,7 +49,8 @@ XR Blocks currently includes the following controllers:
 
 ## Phone companion controller and keyboard
 
-The optional `phone-companion` addon pairs a phone web page over netblocks WebRTC.
+The optional `phone-companion` addon pairs a phone web page over netblocks WebRTC
+using a code shown in the headset, or an optional QR on a separate screen.
 It supplies a touchpad-controlled, head-relative pointer, tap/hold selection,
 pinch-to-zoom, two-finger scrolling, native phone keyboard and best-effort phone vibration.
 It does not require a gamepad or hand tracking, making it a fallback for WebXR
@@ -62,14 +63,19 @@ import {PhoneCompanion} from 'xrblocks/addons/phone-companion/index.js';
 const phone = new PhoneCompanion({onConnectionChange: console.log});
 xb.add(phone); // Before xb.init(); normal controllers/reticles stay enabled.
 const url = phone.pairingURL('https://your-app.example/phone.html');
-// Display url as a locally generated QR code.
+const code = phone.pairing.code;
+// Display code in the headset. Optionally display url as a QR on a separate screen.
 ```
 
-On the phone page, mount `PhoneControllerPage` from
-`xrblocks/addons/phone-companion/phone.js` and call `await page.connect()`.
+On the phone page, import `PhoneControllerPage` and `phonePairingFromCode` from
+`xrblocks/addons/phone-companion/phone.js`. Pass
+`{pairing: phonePairingFromCode(codeEnteredByUser)}` to the page constructor,
+then call `await page.connect()`. Omitting `pairing` reads a QR/link's URL fragment.
 This DOM-only entry does not need three.js or an XR session. The
-[phone companion sample](pathname:///samples/phone_companion/) includes the QR,
-headset scene, and phone page. Use an HTTPS URL reachable by both devices.
+[phone companion sample](pathname:///samples/phone_companion/) includes a pairing
+code inside the headset, a phone code-entry page, and an optional desktop QR.
+Users of Quest, Galaxy XR, Aura and other headsets can enter the code without
+trying to scan the headset's display. Use an HTTPS URL reachable by both devices.
 
 For native typing, assign `phone.input = field` in each `UITextInput`'s `onFocus`.
 The user selects the field in XR, then taps the phone's keyboard button. Native
@@ -97,7 +103,7 @@ out after five seconds. Script disposal closes its connection and unregisters th
 controller. The phone requests a screen wake lock while paired and visible,
 releasing it on background, disconnect or disposal. Unsupported/denied wake locks
 are optional. The host is locked to the first phone page instance: if that page
-is reloaded or a different phone is needed, reload the host and scan the new QR.
+is reloaded or a different phone is needed, reload the host and enter its new code.
 Keep the pairing URL private. For networks needing TURN or a custom
 broker, supply configured netblocks `WebRTCTransport` instances to both sides.
 See the [addon setup and lifecycle contract](https://github.com/google/xrblocks/tree/main/src/addons/phone-companion).
