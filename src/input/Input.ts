@@ -556,6 +556,10 @@ export class Input {
     if (this.controllers.includes(controller)) return;
     this.controllers.push(controller);
 
+    if (!controller.reticle && this.options?.reticles.enabled) {
+      controller.reticle = new Reticle();
+      this.ownedReticles.add(controller.reticle);
+    }
     if (controller.reticle) {
       controller.reticle.visible = false;
       this.reticles.add(controller.reticle);
@@ -576,6 +580,28 @@ export class Input {
   disableController(controller: Controller) {
     (controller as unknown as {disconnect?: () => void}).disconnect?.();
     this.activeControllers.remove(controller as unknown as THREE.Object3D);
+  }
+
+  /** Permanently unregisters an addon controller; its capture ends next frame. */
+  removeController(controller: Controller) {
+    this.disableController(controller);
+    controller.userData.connected = false;
+    controller.userData.selected = false;
+    for (const type of this.listeners.keys()) {
+      this.pinchFilter.removeControllerForType(controller, type);
+    }
+    const index = this.controllers.indexOf(controller);
+    if (index !== -1) this.controllers.splice(index, 1);
+    this.releasedControllers.delete(controller);
+    this.raySourceSlots.delete(controller);
+    if (controller.reticle) {
+      controller.reticle.visible = false;
+      controller.reticle.removeFromParent();
+      if (this.ownedReticles.delete(controller.reticle)) {
+        controller.reticle.dispose();
+        controller.reticle = undefined;
+      }
+    }
   }
 
   disableControllers() {

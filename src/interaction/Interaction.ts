@@ -209,7 +209,7 @@ export class Interaction {
       if (snapshot) snapshots.push(snapshot);
     }
     for (const [controller, factor] of this.scaleIntents) {
-      this.applyScaleIntent(controller, factor);
+      this.applyScaleIntent(controller, factor, true);
     }
     this.scaleIntents.clear();
     for (const [controller, delta] of this.wheelIntents) {
@@ -426,6 +426,7 @@ export class Interaction {
     return this.manipulation.isManipulating(object);
   }
 
+  /** Explicit zoom also reaches a UI control's manipulable ancestor. */
   queueScaleIntent(controller: Controller, factor: number): boolean {
     if (!Number.isFinite(factor) || factor <= 0) return false;
     this.scaleIntents.set(
@@ -464,10 +465,32 @@ export class Interaction {
       this.applyScaleIntent(controller, Math.exp(-delta * WHEEL_SCALE_SPEED));
   }
 
-  private applyScaleIntent(controller: Controller, factor: number): boolean {
+  private applyScaleIntent(
+    controller: Controller,
+    factor: number,
+    includeUIAncestor = false
+  ): boolean {
     const snapshot = this.sourceStates.get(controller);
     const resolved = this.resolvedRays.get(controller);
     if (!snapshot || !resolved?.target) return false;
+    let scalingTarget = resolved;
+    if (
+      includeUIAncestor &&
+      !resolved.manipulation &&
+      resolved.semanticControl
+    ) {
+      const barrier = resolved.objectPath.findIndex(
+        (object) => object.xb?.interactionEnabled === false
+      );
+      const path =
+        barrier < 0
+          ? resolved.objectPath
+          : resolved.objectPath.slice(0, barrier);
+      scalingTarget = {
+        ...resolved,
+        manipulation: this.manipulation.resolve(path),
+      };
+    }
     const source = getInteractionSource(controller, 'simulator');
     const intentSnapshot = new InteractionSourceState(controller).copyFrom(
       snapshot
@@ -475,7 +498,7 @@ export class Interaction {
     intentSnapshot.source = source;
     intentSnapshot.sourceType = 'simulator';
     return this.manipulation.applyScaleIntent(
-      this.createSelection(controller, resolved),
+      this.createSelection(controller, scalingTarget),
       intentSnapshot,
       factor
     );
@@ -555,6 +578,7 @@ export class Interaction {
       input.selected ||
       previousSelected ||
       input.released === true ||
+      this.scaleIntents.has(input.controller) ||
       this.wheelIntents.has(input.controller);
     if (!shouldRaycast || !this.scene) {
       intersections.length = 0;

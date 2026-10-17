@@ -46,6 +46,64 @@ describe('Input head gestures', () => {
   });
 });
 
+describe('Input addon controller ownership', () => {
+  it('configures late reticles and unregisters sources, event forwarding and owned resources', () => {
+    const input = new Input();
+    input.options = new Options();
+    const configure = vi.fn();
+    input.setReticleConfigurer(configure);
+    const selected = vi.fn();
+    input.bindSelectStart(selected);
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData.connected = true;
+    input.enableController(controller);
+    input.enableController(controller);
+    const reticle = controller.reticle!;
+    expect(configure).toHaveBeenCalledWith(reticle);
+    expect(reticle.parent).toBe(input.reticles);
+    expect(
+      input.controllers.filter((value) => value === controller)
+    ).toHaveLength(1);
+    expect(
+      input.getFrame().raySources.map((source) => source.controller)
+    ).toContain(controller);
+    controller.dispatchEvent({type: 'selectstart', target: controller});
+    expect(selected).toHaveBeenCalledOnce();
+    const dispose = vi.spyOn(reticle, 'dispose');
+    input.removeController(controller);
+    controller.dispatchEvent({type: 'selectstart', target: controller});
+    expect(selected).toHaveBeenCalledOnce();
+    expect(input.controllers).not.toContain(controller);
+    expect(input.getFrame().raySources).toHaveLength(0);
+    expect(controller.parent).toBeNull();
+    expect(controller.reticle).toBeUndefined();
+    expect(reticle.parent).toBeNull();
+    input.removeController(controller);
+    input.dispose();
+    expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it('preserves borrowed reticle resources and respects disabled reticles', () => {
+    const input = new Input();
+    input.options = new Options();
+    input.options.reticles.enabled = false;
+    const plain = new THREE.Object3D() as Controller;
+    input.enableController(plain);
+    expect(plain.reticle).toBeUndefined();
+    const borrowed = new THREE.Object3D() as Controller;
+    const reticle = new Reticle();
+    borrowed.reticle = reticle;
+    const dispose = vi.spyOn(reticle, 'dispose');
+    input.enableController(borrowed);
+    input.removeController(borrowed);
+    expect(borrowed.reticle).toBe(reticle);
+    expect(reticle.parent).toBeNull();
+    input.dispose();
+    expect(dispose).not.toHaveBeenCalled();
+    reticle.dispose();
+  });
+});
+
 describe('Input direct touch', () => {
   it.each(['tracked-pointer', 'screen'] as const)(
     'keeps %s selection working when enabled hands have no granted tracking data',

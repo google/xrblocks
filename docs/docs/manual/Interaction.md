@@ -102,6 +102,25 @@ Read the hit from the interaction event or `xb.user.getRayIntersection()`. The
 projection option changes where the reticle is drawn when depth is available;
 it does not create or store a separate intersection contract.
 
+## Addon input sources
+
+Addon controllers can implement the public `Controller` / `ControllerEventMap`
+types and register through `input.enableController(controller)`. Set
+`controller.userData.connected` and `selected`, and provide `updatePose()` when
+the pose needs sampling each frame. Late-registered sources receive an
+engine-owned reticle when reticles are enabled, including the current renderer's
+reticle configuration. A supplied reticle remains caller-owned.
+
+Use `input.removeController(controller)` for permanent teardown. It removes the
+source, event forwarding, frame state and attached reticle, disposing only an
+engine-owned reticle. Its active interaction is cancelled on the next frame;
+`interaction.removeSource(controller)` can cancel it immediately when needed.
+
+`interaction.queueScaleIntent(controller, factor)` represents explicit pinch/zoom.
+It raycasts even in `select` raycast mode and can scale the manipulable ancestor
+of a UI control, honoring disabled boundaries and scale limits. Wheel intents
+retain scroll-container ownership and their existing fallback behavior.
+
 ## Propagation and default behavior
 
 These controls solve different problems:
