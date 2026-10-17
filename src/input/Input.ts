@@ -312,11 +312,11 @@ export class Input {
   defaultOnDisconnected(event: ControllerEvent) {
     const controller = event.target;
     const wasSelected = controller.userData.selected === true;
-    if (
-      wasSelected &&
+    const shouldKeepTransientPointer =
+      (wasSelected || this.releasedControllers.has(controller)) &&
       (event.data?.targetRayMode ?? controller.inputSource?.targetRayMode) ===
-        'transient-pointer'
-    ) {
+        'transient-pointer';
+    if (shouldKeepTransientPointer) {
       const lastIntersection = controller.userData.lastIntersection as
         | THREE.Intersection
         | null
@@ -363,7 +363,9 @@ export class Input {
     if (controller.reticle) {
       controller.reticle.visible = false;
     }
-    this.releasedControllers.delete(controller);
+    if (!shouldKeepTransientPointer) {
+      this.releasedControllers.delete(controller);
+    }
     delete controller?.gamepad;
     switch (event.data?.handedness) {
       case 'left':

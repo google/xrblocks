@@ -247,6 +247,31 @@ describe('Input transient-pointer disconnects', () => {
     expect(input.getFrame().raySources).toHaveLength(0);
   });
 
+  it('keeps a transient pointer for one frame when selectend precedes disconnect', () => {
+    const input = new Input();
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData = {connected: true, selected: true};
+    controller.inputSource = {targetRayMode: 'transient-pointer'};
+    input.controllers.push(controller);
+
+    input.defaultOnSelectEnd({type: 'selectend', target: controller});
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: controller,
+      data: controller.inputSource,
+    });
+
+    const graceFrame = input.getFrame();
+    expect(graceFrame.raySources).toHaveLength(1);
+    expect(graceFrame.raySources[0]).toMatchObject({
+      controller,
+      sourceType: 'controller-ray',
+      selected: false,
+      released: true,
+    });
+    expect(input.getFrame().raySources).toHaveLength(0);
+  });
+
   it('does not retain a disconnected normal controller', () => {
     const input = new Input();
     const controller = new THREE.Object3D() as Controller;
