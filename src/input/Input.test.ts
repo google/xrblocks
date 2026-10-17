@@ -279,8 +279,10 @@ describe('Input direct touch', () => {
       input.init({systemsGroup: new XRSystems(), options, renderer});
 
       expect(input.hands).toHaveLength(2);
-      expect(input.hands[0]).toBeUndefined();
-      expect(input.hands[1]).toBeUndefined();
+      const placeholders = [...input.hands];
+      expect(placeholders.every(Boolean)).toBe(true);
+      expect(input.hands[0]).not.toBe(spaces[0].getHandSpace());
+      expect(input.hands[1]).not.toBe(spaces[1].getHandSpace());
 
       const source = {
         hand: new Map(),
@@ -297,10 +299,10 @@ describe('Input direct touch', () => {
       });
 
       expect(input.hands[handIndex]).toBe(spaces[slot].getHandSpace());
-      expect(input.hands[1 - handIndex]).toBeUndefined();
+      expect(input.hands[1 - handIndex]).toBe(placeholders[1 - handIndex]);
 
       controller.dispatchEvent({type: 'disconnected', data: source});
-      expect(input.hands[handIndex]).toBeUndefined();
+      expect(input.hands[handIndex]).toBe(placeholders[handIndex]);
       expect(input.hands).toHaveLength(2);
 
       const reconnectSource = {...source, hand: new Map()};
@@ -309,7 +311,7 @@ describe('Input direct touch', () => {
         data: reconnectSource,
       });
       expect(input.hands[handIndex]).toBe(spaces[reconnectSlot].getHandSpace());
-      expect(input.hands[1 - handIndex]).toBeUndefined();
+      expect(input.hands[1 - handIndex]).toBe(placeholders[1 - handIndex]);
       input.dispose();
     }
   );
@@ -348,8 +350,39 @@ describe('Input direct touch', () => {
       } as unknown as XRInputSource,
     });
 
-    expect(input.hands[0]).toBeUndefined();
+    expect(input.hands[0]).not.toBe(hand);
     expect(input.hands[1]).toBe(hand);
+    input.dispose();
+  });
+
+  it('clears the old controller alias when a source changes handedness', () => {
+    const input = new Input();
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData = {connected: false, selected: false};
+    input.controllers.push(controller);
+
+    input.defaultOnConnected({
+      type: 'connected',
+      target: controller,
+      data: {handedness: 'left'},
+    });
+    expect(input.leftController).toBe(controller);
+
+    input.defaultOnConnected({
+      type: 'connected',
+      target: controller,
+      data: {handedness: 'right'},
+    });
+    expect(input.leftController).toBeUndefined();
+    expect(input.rightController).toBe(controller);
+
+    input.defaultOnConnected({
+      type: 'connected',
+      target: controller,
+      data: {handedness: 'none'},
+    });
+    expect(input.leftController).toBeUndefined();
+    expect(input.rightController).toBeUndefined();
     input.dispose();
   });
 
@@ -380,12 +413,26 @@ describe('Input direct touch', () => {
       new THREE.Scene()
     );
     simulatorHands.input = input;
+    simulatorHands.leftHandBones = Array.from(
+      {length: 25},
+      () => new THREE.Group()
+    );
+    simulatorHands.rightHandBones = Array.from(
+      {length: 25},
+      () => new THREE.Group()
+    );
 
     expect(input.hands).toHaveLength(2);
-    expect(input.hands[0]).toBeUndefined();
-    expect(input.hands[1]).toBeUndefined();
-    expect(() => simulatorHands.showHands()).not.toThrow();
-    expect(() => simulatorHands.hideHands()).not.toThrow();
+    expect(input.hands[0]).toBeDefined();
+    expect(input.hands[1]).toBeDefined();
+    simulatorHands.showHands();
+    simulatorHands.syncHandJoints();
+    expect(input.hands.map((hand) => Object.keys(hand.joints).length)).toEqual([
+      25, 25,
+    ]);
+    expect(input.hands.every((hand) => hand.visible)).toBe(true);
+    simulatorHands.hideHands();
+    expect(input.hands.every((hand) => !hand.visible)).toBe(true);
 
     simulatorHands.dispose();
     input.dispose();

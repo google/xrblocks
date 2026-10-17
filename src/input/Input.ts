@@ -48,6 +48,7 @@ export class Input {
   controllerGrips: THREE.Group[] = [];
   hands: THREE.XRHandSpace[] = [];
   private controllerHands: THREE.XRHandSpace[] = [];
+  private placeholderHands: THREE.XRHandSpace[] = [];
   /** Completed head gestures, when enabled before initialization. */
   headGestures?: HeadGestureRecognition;
   pivotsEnabled = false;
@@ -137,8 +138,17 @@ export class Input {
       // TODO: Separate logic to XR Hands.
       if (options.hands.enabled) {
         // Keep the public array's logical [left, right] shape, but leave both
-        // entries empty until a connected hand source claims them.
-        this.hands.length = NUM_HANDS;
+        // entries on independent placeholder spaces until a connected hand
+        // source claims them. The simulator uses these when XR is inactive.
+        for (let i = 0; i < NUM_HANDS; ++i) {
+          const placeholder = Object.assign(new THREE.Group(), {
+            joints: {},
+            inputState: {pinching: false},
+          }) as THREE.XRHandSpace;
+          placeholder.visible = false;
+          this.placeholderHands.push(placeholder);
+          this.hands.push(placeholder);
+        }
         for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
           const hand = renderer.xr.getHand(i);
           this.controllerHands.push(hand);
@@ -303,6 +313,18 @@ export class Input {
     const hand = this.controllerHands[controller.userData.id];
     if (event.data?.hand && handIndex !== undefined && hand) {
       this.setHandAlias(handIndex, hand);
+    }
+    if (
+      event.data?.handedness !== 'left' &&
+      this.leftController === controller
+    ) {
+      this.leftController = this.findConnectedController('left', controller);
+    }
+    if (
+      event.data?.handedness !== 'right' &&
+      this.rightController === controller
+    ) {
+      this.rightController = this.findConnectedController('right', controller);
     }
     switch (event.data?.handedness) {
       case 'left':
@@ -618,7 +640,9 @@ export class Input {
 
   private clearHandAliases(hand: THREE.XRHandSpace) {
     for (let handIndex = 0; handIndex < NUM_HANDS; handIndex++) {
-      if (this.hands[handIndex] === hand) delete this.hands[handIndex];
+      if (this.hands[handIndex] === hand) {
+        this.hands[handIndex] = this.placeholderHands[handIndex];
+      }
     }
   }
 
