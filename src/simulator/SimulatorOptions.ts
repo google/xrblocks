@@ -60,6 +60,9 @@ export class SimulatorOptions {
     enabled: true,
     showAutomatically: false,
     element: 'xrblocks-simulator-instructions',
+    overlayEnabled: true,
+    overlayElement: 'xrblocks-simulator-overlay-instructions',
+    fadeInDelayMs: 5000,
     customInstructions: [] as SimulatorCustomInstruction[],
   };
   handPosePanel = {

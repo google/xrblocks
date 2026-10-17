@@ -377,6 +377,7 @@ export class Options {
     if (hideSimulatorUi) {
       this.simulator.simulatorSettingsPanel.enabled = false;
       this.simulator.instructions.enabled = false;
+      this.simulator.instructions.overlayEnabled = false;
       this.simulator.handPosePanel.enabled = false;
     }
 

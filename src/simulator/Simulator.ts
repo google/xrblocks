@@ -261,6 +261,10 @@ export class Simulator extends Script {
     }
 
     this.initialized = true;
+    this.userInterface.startOverlayInstructionsTimer(
+      this.options,
+      this.controls.simulatorMode
+    );
   }
 
   /**
