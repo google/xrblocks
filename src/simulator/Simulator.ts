@@ -23,7 +23,7 @@ import {SimulatorDepth} from './scene/SimulatorDepth';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
 import {SimulatorNavMesh} from './internal/navmesh/SimulatorNavMesh';
-import {SIMULATOR_DISPLAY_PRESETS, SimulatorOptions} from './SimulatorOptions';
+import {SimulatorOptions} from './SimulatorOptions';
 import type {SimulatorEnvironment} from './SimulatorOptions';
 import {SimulatorScene} from './scene/SimulatorScene';
 import {SimulatorUser} from './SimulatorUser';
@@ -99,7 +99,7 @@ export class Simulator extends Script {
   private deviceCamera?: XRDeviceCamera;
   private useSimulatorObjectDetection = false;
   private defaultCameraFov?: number;
-  private appliedDisplayPreset?: SimulatorOptions['displayPreset'];
+  private appliedDisplayDiagonalFov?: number;
   private appliedDisplayAspect?: number;
 
   constructor(
@@ -164,7 +164,7 @@ export class Simulator extends Script {
     this.mainCamera = camera;
     if (camera instanceof THREE.PerspectiveCamera) {
       this.defaultCameraFov = camera.fov;
-      this.applyDisplayPreset();
+      this.applyDisplayFov();
     }
     this.mainScene = scene;
     this.registry = registry;
@@ -467,30 +467,38 @@ export class Simulator extends Script {
    */
   renderFrame() {
     if (!this.initialized || !this.compositor) return;
-    this.applyDisplayPreset();
+    this.applyDisplayFov();
     this.compositor.renderFrame(this.getRenderCamera(), this.mainCamera);
   }
 
-  private applyDisplayPreset(): void {
+  private applyDisplayFov(): void {
     if (
       !(this.mainCamera instanceof THREE.PerspectiveCamera) ||
       this.defaultCameraFov === undefined
     ) {
       return;
     }
-    const preset = this.options.displayPreset;
+    const diagonalFov = this.options.displayDiagonalFov;
     const aspect = this.mainCamera.aspect;
     if (
-      preset === this.appliedDisplayPreset &&
-      (preset === 'default' || aspect === this.appliedDisplayAspect)
+      diagonalFov === this.appliedDisplayDiagonalFov &&
+      (diagonalFov === undefined || aspect === this.appliedDisplayAspect)
     ) {
       return;
     }
 
-    if (preset === 'default') {
+    if (diagonalFov === undefined) {
       this.mainCamera.fov = this.defaultCameraFov;
     } else {
-      const diagonalFov = SIMULATOR_DISPLAY_PRESETS[preset].diagonalFov;
+      if (
+        !Number.isFinite(diagonalFov) ||
+        diagonalFov <= 0 ||
+        diagonalFov >= 180
+      ) {
+        throw new RangeError(
+          'Simulator displayDiagonalFov must be greater than 0 and less than 180 degrees.'
+        );
+      }
       const aspectForDiagonal = aspect > 0 ? aspect : 1;
       const verticalTangent =
         Math.tan((diagonalFov * Math.PI) / 360) /
@@ -498,7 +506,7 @@ export class Simulator extends Script {
       this.mainCamera.fov = (2 * Math.atan(verticalTangent) * 180) / Math.PI;
     }
     this.mainCamera.updateProjectionMatrix();
-    this.appliedDisplayPreset = preset;
+    this.appliedDisplayDiagonalFov = diagonalFov;
     this.appliedDisplayAspect = aspect;
   }
 

@@ -32,14 +32,6 @@ export interface SimulatorEnvironment {
   manifestPath: string;
 }
 
-export type SimulatorDisplayPreset = 'default' | 'spectacles' | 'aura';
-
-/** Approximate diagonal field of view for optical see-through glasses. */
-export const SIMULATOR_DISPLAY_PRESETS = Object.freeze({
-  spectacles: Object.freeze({diagonalFov: 46}),
-  aura: Object.freeze({diagonalFov: 70}),
-});
-
 export interface SimulatorHandPhysicsOptions {
   enabled: boolean;
   radius: number;
@@ -103,8 +95,8 @@ export class SimulatorOptions {
   renderToRenderTexture = true;
   // Blending mode when rendering the virtual scene.
   blendingMode: 'normal' | 'screen' = 'normal';
-  /** Approximate the diagonal field of view of a target glasses display. */
-  displayPreset: SimulatorDisplayPreset = 'default';
+  /** Optional diagonal field of view in degrees for a glasses display. */
+  displayDiagonalFov?: number;
   /** Shoulder/chest origin of the left hand in local camera space. */
   leftHandOrigin = {x: -0.2, y: -0.2, z: 0};
   /** Shoulder/chest origin of the right hand in local camera space. */
