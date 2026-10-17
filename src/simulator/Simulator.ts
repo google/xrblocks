@@ -547,20 +547,24 @@ export class Simulator extends Script {
   }
 
   private restoreDisplayFov(): void {
+    const camera = this.mainCamera;
+    const defaultCameraFov = this.defaultCameraFov;
     const appliedCameraFov = this.appliedCameraFov;
-    const shouldRestore =
-      this.mainCamera instanceof THREE.PerspectiveCamera &&
-      this.defaultCameraFov !== undefined &&
-      appliedCameraFov !== undefined &&
-      this.mainCamera.fov === appliedCameraFov;
 
     this.appliedCameraFov = undefined;
     this.appliedDisplayDiagonalFov = undefined;
     this.appliedDisplayAspect = undefined;
-    if (!shouldRestore) return;
+    if (
+      !(camera instanceof THREE.PerspectiveCamera) ||
+      defaultCameraFov === undefined ||
+      appliedCameraFov === undefined ||
+      camera.fov !== appliedCameraFov
+    ) {
+      return;
+    }
 
-    this.mainCamera.fov = this.defaultCameraFov;
-    this.mainCamera.updateProjectionMatrix();
+    camera.fov = defaultCameraFov;
+    camera.updateProjectionMatrix();
     this.syncStereoCameraProjection();
   }
 
