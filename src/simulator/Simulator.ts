@@ -16,7 +16,18 @@ import {
   type SimulatorCompositor,
 } from './internal/compositing/SimulatorCompositor';
 import {SimulatorCamera} from './SimulatorCamera';
-import {AVERAGE_IPD_METERS, SimulatorRenderMode} from './SimulatorConstants';
+import {
+  ANGLE_DOUBLING_FACTOR,
+  AVERAGE_IPD_METERS,
+  DEFAULT_SIMULATOR_ASPECT_RATIO,
+  DEGREES_TO_RADIANS,
+  MAX_DISPLAY_DIAGONAL_FOV_DEGREES,
+  MIN_DISPLAY_DIAGONAL_FOV_DEGREES,
+  MIN_SIMULATOR_CAMERA_ASPECT_RATIO,
+  RADIANS_TO_DEGREES,
+  SimulatorRenderMode,
+  UNIT_VERTICAL_ASPECT_COMPONENT,
+} from './SimulatorConstants';
 import {SimulatorControllerState} from './SimulatorControllerState';
 import {SimulatorControls} from './SimulatorControls';
 import {SimulatorDepth} from './scene/SimulatorDepth';
@@ -493,18 +504,22 @@ export class Simulator extends Script {
     } else {
       if (
         !Number.isFinite(diagonalFov) ||
-        diagonalFov <= 0 ||
-        diagonalFov >= 180
+        diagonalFov <= MIN_DISPLAY_DIAGONAL_FOV_DEGREES ||
+        diagonalFov >= MAX_DISPLAY_DIAGONAL_FOV_DEGREES
       ) {
         throw new RangeError(
-          'Simulator displayDiagonalFov must be greater than 0 and less than 180 degrees.'
+          `Simulator displayDiagonalFov must be greater than ${MIN_DISPLAY_DIAGONAL_FOV_DEGREES} and less than ${MAX_DISPLAY_DIAGONAL_FOV_DEGREES} degrees.`
         );
       }
-      const aspectForDiagonal = aspect > 0 ? aspect : 1;
+      const aspectForDiagonal =
+        aspect > MIN_SIMULATOR_CAMERA_ASPECT_RATIO
+          ? aspect
+          : DEFAULT_SIMULATOR_ASPECT_RATIO;
       const verticalTangent =
-        Math.tan((diagonalFov * Math.PI) / 360) /
-        Math.sqrt(aspectForDiagonal ** 2 + 1);
-      this.mainCamera.fov = (2 * Math.atan(verticalTangent) * 180) / Math.PI;
+        Math.tan((diagonalFov * DEGREES_TO_RADIANS) / ANGLE_DOUBLING_FACTOR) /
+        Math.hypot(aspectForDiagonal, UNIT_VERTICAL_ASPECT_COMPONENT);
+      this.mainCamera.fov =
+        ANGLE_DOUBLING_FACTOR * Math.atan(verticalTangent) * RADIANS_TO_DEGREES;
     }
     this.mainCamera.updateProjectionMatrix();
     this.appliedDisplayDiagonalFov = diagonalFov;
