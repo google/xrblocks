@@ -381,6 +381,7 @@ export class Simulator extends Script {
   override dispose() {
     let firstError: unknown;
     const cleanups = [
+      () => this.restoreDisplayFov(),
       () => this.controls.dispose(),
       () => this.userInterface.dispose(),
       () => this.hands.dispose(),
@@ -539,6 +540,21 @@ export class Simulator extends Script {
       camera.aspect = this.mainCamera.aspect;
       camera.updateProjectionMatrix();
     }
+  }
+
+  private restoreDisplayFov(): void {
+    if (
+      !(this.mainCamera instanceof THREE.PerspectiveCamera) ||
+      this.defaultCameraFov === undefined ||
+      this.appliedDisplayDiagonalFov === undefined
+    ) {
+      return;
+    }
+    this.mainCamera.fov = this.defaultCameraFov;
+    this.mainCamera.updateProjectionMatrix();
+    this.appliedDisplayDiagonalFov = undefined;
+    this.appliedDisplayAspect = undefined;
+    this.syncStereoCameraProjection();
   }
 
   private setVideoPath(path?: string) {

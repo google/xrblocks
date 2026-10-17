@@ -13,6 +13,8 @@ export interface UIThemeColors {
   readonly text: string;
   readonly secondaryText: string;
   readonly outline: string;
+  /** Unfilled slider track; falls back to outline when omitted. */
+  readonly sliderTrack?: string;
   readonly disabledSurface: string;
   readonly disabledText: string;
 }
@@ -55,7 +57,13 @@ const COLOR_PROPERTIES = [
   'disabledText',
 ] as const satisfies readonly (keyof UIThemeColors)[];
 
-const COLOR_PROPERTY_SET = new Set<string>(COLOR_PROPERTIES);
+const OPTIONAL_COLOR_PROPERTIES = [
+  'sliderTrack',
+] as const satisfies readonly (keyof UIThemeColors)[];
+const COLOR_PROPERTY_SET = new Set<string>([
+  ...COLOR_PROPERTIES,
+  ...OPTIONAL_COLOR_PROPERTIES,
+]);
 const THEME_PROPERTIES = new Set(['colors', 'borderRadius', 'styles']);
 const UI_THEME_STYLE_ROLES = new Set<UIThemeStyleRole>([
   'surface',
@@ -257,7 +265,10 @@ const ADDITIVE_THEME_COLORS = Object.freeze({
   surface: '#173a3a',
   raisedSurface: '#245252',
   accent: '#7ffff0',
+  sliderTrack: '#4f8f89',
   buttonSurface: '#006b62',
+  buttonHover: '#007b70',
+  buttonActive: '#00524b',
   text: '#ffffff',
   secondaryText: '#d5ffff',
   disabledSurface: '#315858',
@@ -287,6 +298,7 @@ export const additiveTheme = createThemeSnapshot({
     text: ADDITIVE_THEME_COLORS.text,
     secondaryText: ADDITIVE_THEME_COLORS.secondaryText,
     outline: ADDITIVE_THEME_COLORS.accent,
+    sliderTrack: ADDITIVE_THEME_COLORS.sliderTrack,
     disabledSurface: ADDITIVE_THEME_COLORS.disabledSurface,
     disabledText: ADDITIVE_THEME_COLORS.disabledText,
   },
@@ -313,6 +325,12 @@ export const additiveTheme = createThemeSnapshot({
       borderColor: ADDITIVE_THEME_COLORS.buttonOutline,
       borderWidth: ADDITIVE_THEME_LAYOUT.buttonBorderWidth,
       borderRadius: ADDITIVE_THEME_LAYOUT.buttonBorderRadius,
+      ':hover': {
+        backgroundColor: ADDITIVE_THEME_COLORS.buttonHover,
+      },
+      ':active': {
+        backgroundColor: ADDITIVE_THEME_COLORS.buttonActive,
+      },
       ':disabled': {
         backgroundColor: ADDITIVE_THEME_COLORS.disabledSurface,
         color: ADDITIVE_THEME_COLORS.disabledText,
