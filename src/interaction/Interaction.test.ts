@@ -10,6 +10,7 @@ import {
 } from '../core/Script';
 import {ScriptsManager} from '../core/components/ScriptsManager';
 import type {Controller} from '../input/Controller';
+import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
 import {UISlider} from '../ui/components/UISlider';
@@ -124,6 +125,132 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [ray(primary, false, hit(button))]);
     expect(clicked).toHaveBeenCalledOnce();
     expect(button.ends.at(-1)?.completed).toBe(true);
+  });
+
+  it('ends a normal controller selection as source-lost when it disappears', async () => {
+    const button = new RecordingButton({label: 'Normal controller'});
+    await activateScripts(callbacks, button);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'tracked-pointer'};
+    const input = new Input();
+    input.controllers.push(source);
+
+    const initialFrame = input.getFrame();
+    initialFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(initialFrame);
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    const selectedFrame = input.getFrame();
+    selectedFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(selectedFrame);
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    interaction.update(input.getFrame());
+
+    expect(button.ends.at(-1)).toMatchObject({
+      completed: false,
+      reason: 'source-lost',
+    });
+  });
+
+  it('completes a transient-pointer button click on its disconnect grace frame', async () => {
+    const clicked = vi.fn();
+    const button = new RecordingButton({
+      label: 'Transient pointer',
+      onClick: clicked,
+    });
+    await activateScripts(callbacks, button);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'transient-pointer'};
+    const input = new Input();
+    input.controllers.push(source);
+
+    const initialFrame = input.getFrame();
+    initialFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(initialFrame);
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    const selectedFrame = input.getFrame();
+    selectedFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(selectedFrame);
+
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    const graceFrame = input.getFrame();
+    expect(graceFrame.raySources[0].selected).toBe(false);
+    graceFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(graceFrame);
+
+    expect(clicked).toHaveBeenCalledOnce();
+    expect(button.ends.at(-1)).toMatchObject({
+      completed: true,
+      reason: 'released',
+    });
+
+    interaction.update(input.getFrame());
+    expect(button.ends).toHaveLength(1);
+    expect(clicked).toHaveBeenCalledOnce();
+  });
+
+  it('uses the disconnected pose and target before a reused slot starts a new pinch', async () => {
+    const clickedA = vi.fn();
+    const clickedB = vi.fn();
+    const buttonA = new RecordingButton({label: 'A', onClick: clickedA});
+    const buttonB = new RecordingButton({label: 'B', onClick: clickedB});
+    await activateScripts(callbacks, buttonA, buttonB);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'transient-pointer'};
+    source.userData.lastIntersection = hit(buttonA);
+    const input = new Input();
+    input.controllers.push(source);
+
+    interaction.update(input.getFrame());
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    interaction.update(input.getFrame());
+
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    source.position.set(2, 0, 0);
+    source.userData.lastIntersection = hit(buttonB);
+    input.defaultOnConnected({
+      type: 'connected',
+      target: source,
+      data: {targetRayMode: 'transient-pointer'},
+    });
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+
+    const graceFrame = input.getFrame();
+    expect(graceFrame.raySources[0]).toMatchObject({
+      selected: false,
+      position: {x: 0, y: 0, z: 0},
+      intersections: [{object: buttonA}],
+    });
+    interaction.update(graceFrame);
+
+    expect(clickedA).toHaveBeenCalledOnce();
+    expect(buttonA.ends).toHaveLength(1);
+    expect(clickedB).not.toHaveBeenCalled();
+    expect(buttonB.starts).toHaveLength(0);
+
+    const nextFrame = input.getFrame();
+    expect(nextFrame.raySources[0]).toMatchObject({
+      selected: true,
+      position: {x: 2, y: 0, z: 0},
+      intersections: [{object: buttonB}],
+    });
+    interaction.update(nextFrame);
+
+    expect(buttonB.starts).toHaveLength(1);
+    expect(buttonB.ends).toHaveLength(0);
+    expect(clickedA).toHaveBeenCalledOnce();
+    expect(clickedB).not.toHaveBeenCalled();
   });
 
   it('owns raycast policy and includes registered detached surfaces', () => {

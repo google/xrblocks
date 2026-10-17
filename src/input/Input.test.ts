@@ -223,6 +223,63 @@ describe('Input direct touch', () => {
   );
 });
 
+describe('Input transient-pointer disconnects', () => {
+  it('keeps a disconnected transient pointer for one frame, released', () => {
+    const input = new Input();
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData = {connected: true, selected: true};
+    controller.inputSource = {targetRayMode: 'transient-pointer'};
+    input.controllers.push(controller);
+
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: controller,
+      data: controller.inputSource,
+    });
+
+    const graceFrame = input.getFrame();
+    expect(graceFrame.raySources).toHaveLength(1);
+    expect(graceFrame.raySources[0]).toMatchObject({
+      controller,
+      sourceType: 'controller-ray',
+      selected: false,
+    });
+    expect(input.getFrame().raySources).toHaveLength(0);
+  });
+
+  it('does not retain a disconnected normal controller', () => {
+    const input = new Input();
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData = {connected: true, selected: true};
+    controller.inputSource = {targetRayMode: 'tracked-pointer'};
+    input.controllers.push(controller);
+
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: controller,
+      data: controller.inputSource,
+    });
+
+    expect(input.getFrame().raySources).toHaveLength(0);
+  });
+
+  it('does not retain an unselected transient pointer', () => {
+    const input = new Input();
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData = {connected: true, selected: false};
+    controller.inputSource = {targetRayMode: 'transient-pointer'};
+    input.controllers.push(controller);
+
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: controller,
+      data: controller.inputSource,
+    });
+
+    expect(input.getFrame().raySources).toHaveLength(0);
+  });
+});
+
 describe('Input events', () => {
   it('reports disconnection and stops forwarding controller events after dispose', () => {
     const input = new Input();
