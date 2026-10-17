@@ -30,6 +30,7 @@ declare global {
         ): Promise<void>;
       };
       objects: Record<string, unknown>;
+      buttonClicks(): {a: number; b: number};
       state(): DriverState;
     };
     __xrDevice: {
@@ -243,6 +244,203 @@ export class IwerDriver implements XRTestDriver {
       [HAND[hand], press ? 1 : 0] as const
     );
     await this.page.waitForTimeout(120);
+  }
+
+  /** Click a UI button with native select events before the source vanishes. */
+  async pinchTransientButton(buttonName: 'buttonA' | 'buttonB'): Promise<void> {
+    await this.prepareTransientPointer(buttonName);
+    await this.page.evaluate(() => {
+      const state = (
+        globalThis as unknown as {
+          __transientPointer: {source: object; remove(): void};
+        }
+      ).__transientPointer;
+      const controller = (
+        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
+      ).xb.core.input.controllers[1];
+      controller.dispatchEvent({type: 'selectstart', data: state.source});
+    });
+    await this.page.waitForTimeout(120);
+    await this.page.evaluate(() => {
+      const state = (
+        globalThis as unknown as {
+          __transientPointer: {source: object; remove(): void};
+        }
+      ).__transientPointer;
+      const controller = (
+        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
+      ).xb.core.input.controllers[1];
+      controller.dispatchEvent({type: 'select', data: state.source});
+      controller.dispatchEvent({type: 'selectend', data: state.source});
+      state.remove();
+    });
+    await this.page.waitForTimeout(120);
+  }
+
+  /** Release A while immediately reusing its WebXR controller slot for B. */
+  async pinchTransientButtonsWithSlotReuse(): Promise<{
+    afterReuse: {
+      clicks: {a: number; b: number};
+      buttonBSelecting: boolean;
+    };
+    afterButtonBRelease: {a: number; b: number};
+  }> {
+    await this.prepareTransientPointer('buttonA');
+    await this.page.evaluate(() => {
+      const globals = globalThis as unknown as {
+        __transientPointer: {
+          source: Record<string, unknown>;
+          remove(): void;
+          replace(): Record<string, unknown>;
+          aim(buttonName: string): void;
+        };
+      };
+      const state = globals.__transientPointer;
+      const controller = (
+        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
+      ).xb.core.input.controllers[1];
+
+      controller.dispatchEvent({type: 'selectstart', data: state.source});
+    });
+    await this.page.waitForTimeout(120);
+    await this.page.evaluate(() => {
+      const globals = globalThis as unknown as {
+        __transientPointer: {
+          source: Record<string, unknown>;
+          remove(): void;
+          replace(): Record<string, unknown>;
+          aim(buttonName: string): void;
+        };
+      };
+      const state = globals.__transientPointer;
+      const controller = (
+        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
+      ).xb.core.input.controllers[1];
+      controller.dispatchEvent({type: 'select', data: state.source});
+      controller.dispatchEvent({type: 'selectend', data: state.source});
+      state.remove();
+      state.aim('buttonB');
+      const nextSource = state.replace();
+      controller.dispatchEvent({type: 'selectstart', data: nextSource});
+    });
+    // Let the first frame consume A's saved release and the next frame begin B.
+    await this.page.waitForTimeout(120);
+    const afterReuse = await this.page.evaluate(() => {
+      const core = (
+        window as unknown as {
+          xb: {
+            core: {
+              interaction: {isSelectingAt(target: unknown): boolean};
+            };
+          };
+        }
+      ).xb.core;
+      return {
+        clicks: window.__e2e.buttonClicks(),
+        buttonBSelecting: core.interaction.isSelectingAt(
+          window.__e2e.objects.buttonB
+        ),
+      };
+    });
+    await this.page.evaluate(() => {
+      const state = (
+        globalThis as unknown as {
+          __transientPointer: {source: object; remove(): void};
+        }
+      ).__transientPointer;
+      const controller = (
+        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
+      ).xb.core.input.controllers[1];
+      controller.dispatchEvent({type: 'select', data: state.source});
+      controller.dispatchEvent({type: 'selectend', data: state.source});
+      state.remove();
+    });
+    await this.page.waitForTimeout(120);
+    return {
+      afterReuse,
+      afterButtonBRelease: await this.page.evaluate(() =>
+        window.__e2e.buttonClicks()
+      ),
+    };
+  }
+
+  private async prepareTransientPointer(
+    buttonName: 'buttonA' | 'buttonB'
+  ): Promise<void> {
+    await this.page.evaluate((name) => {
+      const globals = globalThis as unknown as {
+        __transientPointer?: {
+          source: Record<string, unknown>;
+          remove(): void;
+          replace(): Record<string, unknown>;
+          aim(buttonName: string): void;
+        };
+        __xrDevice: {
+          controllers: Record<
+            string,
+            {
+              position: {set(x: number, y: number, z: number): unknown};
+              quaternion: {
+                set(x: number, y: number, z: number, w: number): unknown;
+              };
+            }
+          >;
+        };
+      };
+      const core = (window as unknown as {xb: {core: any}}).xb.core;
+      const session = core.renderer.xr.getSession();
+      const original = Array.from(session.inputSources).find(
+        (source: any) => source.handedness === 'right'
+      ) as any;
+      if (!original) throw new Error('IWER has no right-hand input source.');
+
+      const transientSource = () => ({
+        handedness: 'none',
+        targetRayMode: 'transient-pointer',
+        profiles: original.profiles,
+        targetRaySpace: original.targetRaySpace,
+        gripSpace: original.gripSpace,
+        // A transient pointer has no controller gamepad and completes through
+        // its own native select/selectend events.
+        gamepad: undefined,
+        hand: null,
+      });
+      let source = transientSource();
+      const sourceChange = (added: object[], removed: object[]) => {
+        const event = new Event('inputsourceschange');
+        Object.defineProperties(event, {
+          added: {value: added},
+          removed: {value: removed},
+        });
+        session.dispatchEvent(event);
+      };
+      const aim = (targetName: string) => {
+        const object = (window as any).__e2e.objects[targetName];
+        if (!object) throw new Error(`No object named ${targetName}.`);
+        object.updateWorldMatrix(true, false);
+        const {elements} = object.matrixWorld;
+        const controller = globals.__xrDevice.controllers.right;
+        controller.position.set(elements[12], elements[13], elements[14] + 0.3);
+        controller.quaternion.set(0, 0, 0, 1);
+      };
+      const remove = () => sourceChange([], [source]);
+      const replace = () => {
+        source = transientSource();
+        sourceChange([source], []);
+        return source;
+      };
+
+      // Free the right controller's Three.js slot, then reconnect a synthetic
+      // transient-pointer source using IWER's real target-ray space.
+      aim(name as string);
+      sourceChange([source], [original]);
+      globals.__transientPointer = {source, remove, replace, aim};
+    }, buttonName);
+    await this.page.waitForTimeout(120);
+    await this.page.waitForFunction((name) => {
+      const core = (window as any).xb.core;
+      return core.interaction.isPointingAt((window as any).__e2e.objects[name]);
+    }, buttonName);
   }
 
   captureFrame(): Promise<FrameStats> {
