@@ -874,11 +874,15 @@ export class Core {
     if (this.shouldAutostartSimulator) {
       try {
         await this.startSimulator();
-        this.assertInitializing();
       } catch (error) {
-        this.xrButton?.showSimulatorError(error);
-        console.error('Failed to start the desktop simulator', error);
+        if (this.xrButton?.domElement.isConnected) {
+          this.xrButton.showSimulatorError(error);
+          console.error('Failed to start the desktop simulator', error);
+        } else {
+          throw error;
+        }
       }
+      this.assertInitializing();
     }
 
     if (!loadingSpinnerManager.isLoading) {

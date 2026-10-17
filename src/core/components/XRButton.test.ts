@@ -98,6 +98,27 @@ describe('XR entry feedback', () => {
     );
   });
 
+  it('adds an enabled simulator retry button when automatic startup has no simulator button', () => {
+    const retryButton = new XRButton(
+      manager,
+      permissions,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false
+    );
+    document.body.appendChild(retryButton.domElement);
+
+    retryButton.showSimulatorError(new Error('simulator failed'));
+
+    expect(retryButton.simulatorButtonElement.isConnected).toBe(true);
+    expect(retryButton.simulatorButtonElement.disabled).toBe(false);
+    retryButton.dispose();
+  });
+
   it('shows pending entry and prevents duplicate requests while the browser is responding', async () => {
     const pending = Promise.withResolvers<XRSession>();
     requestSession.mockReturnValue(pending.promise);

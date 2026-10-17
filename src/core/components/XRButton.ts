@@ -14,6 +14,7 @@ export class XRButton {
   private errorElement = document.createElement('p');
   private disposed = false;
   private startingSimulator = false;
+  private simulatorButtonCreated = false;
 
   constructor(
     private sessionManager: WebXRSessionManager,
@@ -97,6 +98,8 @@ export class XRButton {
   }
 
   private createSimulatorButton() {
+    if (this.simulatorButtonCreated) return;
+    this.simulatorButtonCreated = true;
     this.simulatorButtonElement.classList.add(XRBUTTON_CLASS);
     this.simulatorButtonElement.innerText = this.startSimulatorText;
     this.simulatorButtonElement.onclick = async () => {
@@ -211,6 +214,7 @@ export class XRButton {
   /** Restores the entry UI and displays a failed automatic simulator start. */
   showSimulatorError(error: unknown) {
     if (this.disposed) return;
+    this.createSimulatorButton();
     this.setSimulatorStarting(false);
     this.showError(error, 'Simulator');
   }

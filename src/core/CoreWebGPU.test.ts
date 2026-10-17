@@ -77,6 +77,18 @@ describe('Core with WebGPURenderer', () => {
     expect(options.resolvedXRSessionMode).toBe('immersive-vr');
   });
 
+  it('rejects initialization when desktop simulator autostart fails without an XR button', async () => {
+    const error = new Error('simulator load failed');
+    const core = new Core(async () => {
+      throw error;
+    });
+    const options = new Options();
+    options.formFactor = 'desktop';
+
+    await expect(core.init(options)).rejects.toThrow('simulator load failed');
+    expect(core.lifecycle).toBe('disposed');
+  });
+
   it('leaves the resolved session mode unset when neither immersive mode is supported', async () => {
     vi.stubGlobal('navigator', {
       ...navigator,

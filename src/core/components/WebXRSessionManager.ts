@@ -139,15 +139,15 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
         try {
           offer = navigator.xr!.offerSession!(this.mode, this.sessionOptions);
         } catch (error) {
-          this.onSessionRequestFailed(error, attemptId);
+          this.onSessionRequestFailed(error, attemptId, true);
           return;
         }
         void offer.then(
           (session) =>
             this.onSessionStartedInternal(session, attemptId).catch((error) =>
-              this.onSessionStartFailed(error, attemptId)
+              this.onSessionStartFailed(error, attemptId, true)
             ),
-          (error) => this.onSessionRequestFailed(error, attemptId)
+          (error) => this.onSessionRequestFailed(error, attemptId, true)
         );
       }
     } else {
@@ -282,8 +282,34 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     }
   };
 
-  private onSessionRequestFailed = (error: unknown, attemptId: number) => {
+  private clearWaitingForAttempt(attemptId: number) {
+    if (attemptId === this.sessionAttemptId) {
+      this.waitingForXRSession = false;
+    }
+  }
+
+  private onSessionRequestFailed = (
+    error: unknown,
+    attemptId: number,
+    passiveOffer = false
+  ) => {
     if (this.disposed || attemptId !== this.sessionAttemptId) return;
+    this.clearWaitingForAttempt(attemptId);
+    const notSupportedError =
+      typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      error.name === 'NotSupportedError';
+    if (this.didFallbackToVR && notSupportedError) {
+      console.error('VR fallback session mode is unsupported', error);
+      this.xrModeSupported = false;
+      this.dispatchEvent({type: WebXRSessionEventType.UNSUPPORTED});
+      return;
+    }
+    if (passiveOffer) {
+      console.warn(error);
+      return;
+    }
     console.error(
       'Error requesting session',
       error,
@@ -292,22 +318,20 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       'sessionOptions:',
       this.sessionOptions
     );
-    if (
-      this.didFallbackToVR &&
-      typeof error === 'object' &&
-      error !== null &&
-      'name' in error &&
-      error.name === 'NotSupportedError'
-    ) {
-      this.xrModeSupported = false;
-      this.dispatchEvent({type: WebXRSessionEventType.UNSUPPORTED});
-      return;
-    }
     this.dispatchEvent({type: WebXRSessionEventType.SESSION_ERROR, error});
   };
 
-  private onSessionStartFailed = (error: unknown, attemptId: number) => {
+  private onSessionStartFailed = (
+    error: unknown,
+    attemptId: number,
+    passiveOffer = false
+  ) => {
     if (this.disposed || attemptId !== this.sessionAttemptId) return;
+    this.clearWaitingForAttempt(attemptId);
+    if (passiveOffer) {
+      console.warn(error);
+      return;
+    }
     console.error('Error starting WebXR session', error, 'mode:', this.mode);
     this.dispatchEvent({type: WebXRSessionEventType.SESSION_ERROR, error});
   };

@@ -23,12 +23,13 @@ describe('WebXRSessionManager mode selection', () => {
     sessionInit: XRSessionInit = {},
     setSession = vi
       .fn<THREE.WebGLRenderer['xr']['setSession']>()
-      .mockResolvedValue(undefined)
+      .mockResolvedValue(undefined),
+    mode: XRSessionMode = 'immersive-ar'
   ) {
     manager = new WebXRSessionManager(
       {xr: {setSession}} as unknown as THREE.WebGLRenderer,
       sessionInit,
-      'immersive-ar',
+      mode,
       fallbackToVR
     );
     return manager;
@@ -224,37 +225,66 @@ describe('WebXRSessionManager mode selection', () => {
     expect(sessionManager.isXRSupported()).toBe(true);
   });
 
-  it('keeps a dismissed current offerSession prompt retryable', async () => {
+  it('clears the request guard before dispatching SESSION_ERROR so listeners can retry', async () => {
     const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
       async (mode) => mode === 'immersive-vr'
     );
-    const offerSession = vi
-      .fn<NonNullable<XRSystem['offerSession']>>()
-      .mockRejectedValue(
-        new DOMException('offer dismissed', 'NotAllowedError')
-      );
-    vi.stubGlobal('navigator', {
-      xr: {isSessionSupported, requestSession: vi.fn(), offerSession},
-    });
+    const requestSession = vi
+      .fn<XRSystem['requestSession']>()
+      .mockRejectedValueOnce(
+        new DOMException('permission denied', 'NotAllowedError')
+      )
+      .mockResolvedValueOnce(createSession());
+    vi.stubGlobal('navigator', {xr: {isSessionSupported, requestSession}});
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const sessionManager = createManager();
-    const unsupported = vi.fn();
-    const sessionError = vi.fn();
-    sessionManager.addEventListener(
-      WebXRSessionEventType.UNSUPPORTED,
-      unsupported
-    );
-    sessionManager.addEventListener(
-      WebXRSessionEventType.SESSION_ERROR,
-      sessionError
-    );
+    let retryError: unknown;
+    sessionManager.addEventListener(WebXRSessionEventType.SESSION_ERROR, () => {
+      try {
+        sessionManager.startSession();
+      } catch (error) {
+        retryError = error;
+      }
+    });
 
     await sessionManager.initialize();
-    await vi.waitFor(() => expect(sessionError).toHaveBeenCalledOnce());
+    sessionManager.startSession();
+    await vi.waitFor(() => expect(sessionManager.currentSession).toBeDefined());
 
-    expect(unsupported).not.toHaveBeenCalled();
-    expect(sessionManager.isXRSupported()).toBe(true);
+    expect(requestSession).toHaveBeenCalledTimes(2);
+    expect(retryError).toBeUndefined();
   });
+
+  it.each(['immersive-vr', 'immersive-ar'] as const)(
+    'only warns when a passive %s offerSession is dismissed',
+    async (mode) => {
+      const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+        async (supportedMode) => supportedMode === mode
+      );
+      const offerSession = vi
+        .fn<NonNullable<XRSystem['offerSession']>>()
+        .mockRejectedValue(
+          new DOMException('offer dismissed', 'NotAllowedError')
+        );
+      vi.stubGlobal('navigator', {
+        xr: {isSessionSupported, requestSession: vi.fn(), offerSession},
+      });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const sessionManager = createManager(false, {}, undefined, mode);
+      const sessionError = vi.fn();
+      sessionManager.addEventListener(
+        WebXRSessionEventType.SESSION_ERROR,
+        sessionError
+      );
+
+      await sessionManager.initialize();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      expect(warn).toHaveBeenCalledOnce();
+      expect(sessionError).not.toHaveBeenCalled();
+      expect(sessionManager.isXRSupported()).toBe(true);
+    }
+  );
 
   it('keeps renderer setup errors retryable even when they are NotSupportedError', async () => {
     const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
