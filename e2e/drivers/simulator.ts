@@ -23,6 +23,11 @@ declare global {
         ): Promise<void>;
       };
       objects: Record<string, unknown>;
+      displayState(): {
+        environmentBlendMode: string | null;
+        surface: string;
+      };
+      endSession(): Promise<void>;
       state(): DriverState;
     };
   }

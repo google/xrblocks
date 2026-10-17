@@ -14,6 +14,14 @@ type IwerController = {
   updateButtonValue(id: string, value: number): void;
 };
 
+export type IwerDriverOptions = {
+  sessionMode?: 'immersive-vr' | 'immersive-ar';
+  /** Overrides Quest 3's immersive-ar blend mode for this test. */
+  environmentBlendMode?: 'opaque' | 'additive' | 'alpha-blend';
+  autoAdditiveTheme?: boolean;
+  initialTheme?: string;
+};
+
 declare global {
   interface Window {
     __e2e: {
@@ -30,6 +38,11 @@ declare global {
         ): Promise<void>;
       };
       objects: Record<string, unknown>;
+      displayState(): {
+        environmentBlendMode: string | null;
+        surface: string;
+      };
+      endSession(): Promise<void>;
       state(): DriverState;
     };
     __xrDevice: {
@@ -54,7 +67,10 @@ export class IwerDriver implements XRTestDriver {
   /** Not used by this driver; kept for interface symmetry. */
   webgpu = false;
 
-  constructor(private readonly page: Page) {}
+  constructor(
+    private readonly page: Page,
+    private readonly options: IwerDriverOptions = {}
+  ) {}
 
   async boot(appPath: string): Promise<void> {
     const base = process.env.E2E_BASE_URL;
@@ -75,20 +91,33 @@ export class IwerDriver implements XRTestDriver {
         import.meta.url
       ).pathname,
     });
-    await this.page.addInitScript(() => {
+    await this.page.addInitScript((environmentBlendMode) => {
       type SemInstance = {
         loadDefaultEnvironment(id: string): Promise<void>;
       };
       const globals = globalThis as unknown as {
         IWER: {
           XRDevice: new (config: unknown) => unknown;
-          metaQuest3: unknown;
+          metaQuest3: {
+            environmentBlendModes: Record<string, string>;
+          };
         };
         IWER_SEM: {
           SyntheticEnvironmentModule: new (device: unknown) => SemInstance;
         };
       };
-      const device = new globals.IWER.XRDevice(globals.IWER.metaQuest3);
+      const metaQuest3 = globals.IWER.metaQuest3;
+      const deviceConfig =
+        environmentBlendMode === null
+          ? metaQuest3
+          : {
+              ...metaQuest3,
+              environmentBlendModes: {
+                ...metaQuest3.environmentBlendModes,
+                'immersive-ar': environmentBlendMode,
+              },
+            };
+      const device = new globals.IWER.XRDevice(deviceConfig);
       // forceInstall: 127.0.0.1 is a secure context, so Chromium exposes its
       // native navigator.xr (which reports no headset). The emulated runtime
       // must replace it.
@@ -115,10 +144,13 @@ export class IwerDriver implements XRTestDriver {
       (globalThis as Record<string, unknown>).__xrSem = holder.sem;
       (globalThis as Record<string, unknown>).__xrSemReady =
         holder.sem?.loadDefaultEnvironment('living_room');
-    });
+    }, this.options.environmentBlendMode ?? null);
     // No xrAutomation: the simulator must stay out of the way.
     const separator = appPath.includes('?') ? '&' : '?';
-    await this.page.goto(`${base}/${appPath}${separator}debug=1&xr=1`);
+    const sessionMode = this.options.sessionMode ?? 'immersive-vr';
+    await this.page.goto(
+      `${base}/${appPath}${separator}debug=1&xr=1&sessionMode=${sessionMode}`
+    );
     await this.page.waitForFunction(
       () =>
         typeof window !== 'undefined' &&
@@ -128,7 +160,22 @@ export class IwerDriver implements XRTestDriver {
       {timeout: 30_000}
     );
     await this.page.evaluate(() => window.__e2e.ready);
-    // Enter immersive VR through the SDK's own session manager.
+    await this.page.evaluate((options) => {
+      const xb = (
+        window as unknown as {
+          xb: {
+            ui: {theme: string; autoAdditiveTheme: boolean};
+          };
+        }
+      ).xb;
+      if (options.initialTheme !== undefined) {
+        xb.ui.theme = options.initialTheme;
+      }
+      if (options.autoAdditiveTheme !== undefined) {
+        xb.ui.autoAdditiveTheme = options.autoAdditiveTheme;
+      }
+    }, this.options);
+    // Enter the selected immersive session through the SDK's session manager.
     await this.page.evaluate(async () =>
       (
         window as unknown as {
