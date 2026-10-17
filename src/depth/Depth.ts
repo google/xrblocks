@@ -527,7 +527,24 @@ export class Depth {
     const session = frame.session;
     // Depth sensing is optional in some session modes. In particular, a
     // fallback VR session may not grant the requested depth-sensing feature.
-    if (!session.enabledFeatures?.includes('depth-sensing')) return;
+    const enabledFeatures = session.enabledFeatures;
+    let depthUsage: XRDepthUsage | undefined;
+    try {
+      if (enabledFeatures !== undefined) {
+        if (!enabledFeatures.includes('depth-sensing')) {
+          this.depthMesh?.setDepthAvailable(false);
+          return;
+        }
+      }
+      depthUsage = session.depthUsage;
+    } catch {
+      this.depthMesh?.setDepthAvailable(false);
+      return;
+    }
+    if (!depthUsage) {
+      this.depthMesh?.setDepthAvailable(false);
+      return;
+    }
 
     const binding = this.renderer.xr.getBinding();
 
@@ -553,17 +570,19 @@ export class Depth {
           const view = pose.views[viewId];
           this.view[viewId] = view;
 
-          if (session.depthUsage === 'gpu-optimized') {
+          if (depthUsage === 'gpu-optimized') {
             const depthData = binding?.getDepthInformation(view);
             if (!depthData) {
               return;
             }
+            this.depthMesh?.setDepthAvailable(true);
             this.updateGPUDepthData(depthData, viewId);
           } else if (this.shouldUpdateView(viewId)) {
             const depthData = frame.getDepthInformation(view);
             if (!depthData) {
               return;
             }
+            this.depthMesh?.setDepthAvailable(true);
             this.updateCPUDepthData(
               depthData,
               viewId,

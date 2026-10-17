@@ -357,11 +357,14 @@ describe('Depth', () => {
 
     it('skips depth updates when the session did not grant depth sensing', () => {
       const depth = setupDepthForLocalUpdate();
+      const setDepthAvailable = vi.fn();
+      (
+        depth as unknown as {depthMesh: {setDepthAvailable: typeof vi.fn}}
+      ).depthMesh = {setDepthAvailable};
       const getViewerPose = vi.fn(() => ({views: [{} as XRView]}));
       const getDepthInformation = vi.fn();
       const frame = {
         session: {
-          enabledFeatures: [],
           get depthUsage(): never {
             throw new Error('depthUsage is unavailable without depth sensing');
           },
@@ -371,8 +374,22 @@ describe('Depth', () => {
       } as unknown as XRFrame;
 
       expect(() => depth.updateLocalDepth(frame)).not.toThrow();
+      expect(setDepthAvailable).toHaveBeenCalledWith(false);
       expect(getViewerPose).not.toHaveBeenCalled();
       expect(getDepthInformation).not.toHaveBeenCalled();
+    });
+
+    it('uses depthUsage when enabledFeatures is not exposed', () => {
+      const depth = setupDepthForLocalUpdate();
+      const views = [{} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+      delete (frame.session as XRSession & {enabledFeatures?: string[]})
+        .enabledFeatures;
+
+      depth.updateLocalDepth(frame);
+
+      expect(getDepthInformation).toHaveBeenCalledOnce();
+      expect(depth.cpuDepthData[0]).toBeDefined();
     });
 
     it('processes viewId > 0 when options.updateAllViews is true', () => {

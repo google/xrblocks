@@ -175,7 +175,16 @@ export class Core {
   private onWebXRUnsupported = () => {
     if (!this.options.enableSimulator) return;
     this.xrButton?.domElement.remove();
-    this.shouldAutostartSimulator = true;
+    if (this.lifecycleState === 'initializing') {
+      this.shouldAutostartSimulator = true;
+    } else {
+      void this.startSimulator().catch((error) => {
+        console.error(
+          'Failed to start simulator after WebXR became unsupported',
+          error
+        );
+      });
+    }
   };
 
   private _isPaused = false;
@@ -744,6 +753,12 @@ export class Core {
       );
     }
 
+    if (options.depth.enabled) {
+      // Do not expose an empty depth plane or collider before the session
+      // provides its first depth frame.
+      this.depth.depthMesh?.setDepthAvailable(false);
+    }
+
     // Sets up physics.
     if (options.physics && options.physics.RAPIER) {
       this.physics = new Physics();
@@ -807,6 +822,7 @@ export class Core {
 
       await this.webXRSessionManager.initialize();
       this.assertInitializing();
+      options.resolvedXRSessionMode = this.webXRSessionManager.getSessionMode();
     }
 
     // Sets up postprocessing effects.

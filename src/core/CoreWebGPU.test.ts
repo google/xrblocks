@@ -60,6 +60,23 @@ describe('Core with WebGPURenderer', () => {
     expect(session.optionalFeatures).not.toContain('webgpu');
   });
 
+  it('exposes the resolved WebXR session mode after falling back to VR', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {isSessionSupported, requestSession: vi.fn()},
+    });
+    const core = new Core();
+    const options = new Options();
+
+    await core.init(options);
+
+    expect(options.xrSessionMode).toBe('immersive-ar');
+    expect(options.resolvedXRSessionMode).toBe('immersive-vr');
+  });
+
   it.each(['webgl', 'webgpu'] as const)(
     'requests enabled hand tracking as optional with %s',
     async (backend) => {

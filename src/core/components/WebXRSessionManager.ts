@@ -43,6 +43,11 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     super(); // Initialize the EventDispatcher
   }
 
+  /** Returns the selected mode, including any AR-to-VR fallback. */
+  public getSessionMode(): XRSessionMode {
+    return this.mode;
+  }
+
   /**
    * Checks for WebXR support and availability of the requested session mode.
    * This should be called to initialize the manager and trigger the first
@@ -60,7 +65,15 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     try {
       modeSupported =
         (await navigator.xr!.isSessionSupported(this.mode)) || false;
-      if (!modeSupported && this.mode === 'immersive-ar' && this.fallbackToVR) {
+      const requiresCameraAccess = (
+        this.sessionInit.requiredFeatures ?? []
+      ).includes('camera-access');
+      if (
+        !modeSupported &&
+        this.mode === 'immersive-ar' &&
+        this.fallbackToVR &&
+        !requiresCameraAccess
+      ) {
         modeSupported =
           (await navigator.xr!.isSessionSupported('immersive-vr')) || false;
         if (modeSupported) {
@@ -70,6 +83,15 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
           this.mode = 'immersive-vr';
           this.didFallbackToVR = true;
         }
+      } else if (
+        !modeSupported &&
+        this.mode === 'immersive-ar' &&
+        this.fallbackToVR &&
+        requiresCameraAccess
+      ) {
+        console.info(
+          'Skipping immersive-vr fallback because camera-access is required'
+        );
       }
     } catch (e) {
       if (this.disposed) return;
@@ -113,9 +135,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       if (navigator.xr!.offerSession !== undefined) {
         navigator.xr!.offerSession!(this.mode, this.sessionOptions)
           .then(this.onSessionStartedInternal)
-          .catch((err) => {
-            console.warn(err);
-          });
+          .catch(this.onSessionRequestFailed);
       }
     } else {
       console.log(`${this.mode} not supported`);
@@ -146,22 +166,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       .finally(() => {
         this.waitingForXRSession = false;
       })
-      .catch((err) => {
-        console.error(
-          'Error requesting session',
-          err,
-          'mode:',
-          this.mode,
-          'sesionOptions:',
-          this.sessionOptions
-        );
-        if (!this.disposed) {
-          this.dispatchEvent({
-            type: WebXRSessionEventType.SESSION_ERROR,
-            error: err,
-          });
-        }
-      });
+      .catch(this.onSessionRequestFailed);
   }
 
   /**
@@ -243,6 +248,27 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     this.currentSession = undefined;
     if (!this.disposed) {
       this.dispatchEvent({type: WebXRSessionEventType.SESSION_END});
+    }
+  };
+
+  private onSessionRequestFailed = (error: unknown) => {
+    console.error(
+      'Error requesting session',
+      error,
+      'mode:',
+      this.mode,
+      'sessionOptions:',
+      this.sessionOptions
+    );
+    if (this.disposed) return;
+
+    this.dispatchEvent({
+      type: WebXRSessionEventType.SESSION_ERROR,
+      error,
+    });
+    if (this.didFallbackToVR) {
+      this.xrModeSupported = false;
+      this.dispatchEvent({type: WebXRSessionEventType.UNSUPPORTED});
     }
   };
 

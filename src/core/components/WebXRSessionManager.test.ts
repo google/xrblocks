@@ -90,6 +90,7 @@ describe('WebXRSessionManager mode selection', () => {
       'immersive-ar',
       'immersive-vr',
     ]);
+    expect(sessionManager.getSessionMode()).toBe('immersive-vr');
     expect(ready).toHaveBeenCalledOnce();
     expect(unsupported).not.toHaveBeenCalled();
     expect(requestSession).toHaveBeenCalledWith(
@@ -133,5 +134,52 @@ describe('WebXRSessionManager mode selection', () => {
     expect(isSessionSupported).toHaveBeenCalledOnce();
     expect(isSessionSupported).toHaveBeenCalledWith('immersive-ar');
     expect(unsupported).toHaveBeenCalledOnce();
+  });
+
+  it('does not fall back when camera-access is required', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    vi.stubGlobal('navigator', {xr: {isSessionSupported}});
+    const sessionManager = createManager(true, {
+      requiredFeatures: ['camera-access'],
+    });
+    const unsupported = vi.fn();
+    sessionManager.addEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      unsupported
+    );
+
+    await sessionManager.initialize();
+
+    expect(isSessionSupported).toHaveBeenCalledOnce();
+    expect(isSessionSupported).toHaveBeenCalledWith('immersive-ar');
+    expect(sessionManager.getSessionMode()).toBe('immersive-ar');
+    expect(unsupported).toHaveBeenCalledOnce();
+  });
+
+  it('reports a failed VR fallback as unsupported', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    const requestSession = vi
+      .fn<XRSystem['requestSession']>()
+      .mockRejectedValue(
+        new DOMException('unsupported features', 'NotSupportedError')
+      );
+    vi.stubGlobal('navigator', {xr: {isSessionSupported, requestSession}});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sessionManager = createManager();
+    const unsupported = vi.fn();
+    sessionManager.addEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      unsupported
+    );
+
+    await sessionManager.initialize();
+    sessionManager.startSession();
+    await vi.waitFor(() => expect(unsupported).toHaveBeenCalledOnce());
+
+    expect(sessionManager.isXRSupported()).toBe(false);
   });
 });

@@ -239,6 +239,9 @@ export class Options {
 
   xrSessionMode: XRSessionMode = 'immersive-ar';
 
+  /** The WebXR mode selected after support checks complete. */
+  resolvedXRSessionMode?: XRSessionMode;
+
   /** Fall back to immersive VR when immersive AR is unavailable. */
   fallbackToVR = true;
 

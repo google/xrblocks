@@ -627,6 +627,21 @@ describe('Core frame and simulator lifecycle', () => {
     }
   );
 
+  it('starts the simulator if a VR fallback fails after initialization', () => {
+    core.options.enableSimulator = true;
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+    const startSimulator = vi
+      .spyOn(core, 'startSimulator')
+      .mockResolvedValue({} as never);
+    const onWebXRUnsupported = (
+      core as unknown as {onWebXRUnsupported: () => void}
+    ).onWebXRUnsupported;
+
+    onWebXRUnsupported();
+
+    expect(startSimulator).toHaveBeenCalledOnce();
+  });
+
   it('applies native framebufferScaleFactor on beforesessionstart', () => {
     const setFramebufferScaleFactor = vi.fn();
     core.renderer.xr.setFramebufferScaleFactor = setFramebufferScaleFactor;
