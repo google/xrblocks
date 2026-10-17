@@ -40,7 +40,8 @@ export type UIThemePresetName =
   | 'glimmer'
   | 'glimmerOpaque'
   | 'glimmerAmber'
-  | 'glimmerGreen';
+  | 'glimmerGreen'
+  | 'additive';
 
 const COLOR_PROPERTIES = [
   'surface',
@@ -252,6 +253,53 @@ export const glimmerGreenTheme = createGlimmerTheme({
   buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
 });
 
+/** High-contrast surfaces for optical see-through displays. */
+export const additiveTheme = createThemeSnapshot({
+  colors: {
+    surface: '#173a3a',
+    raisedSurface: '#245252',
+    primary: '#006b62',
+    primaryText: '#ffffff',
+    text: '#ffffff',
+    secondaryText: '#d5ffff',
+    outline: '#7ffff0',
+    disabledSurface: '#315858',
+    disabledText: '#c2d7d7',
+  },
+  borderRadius: 20,
+  styles: {
+    surface: {
+      backgroundColor: '#173a3a',
+      borderColor: '#7ffff0',
+      borderWidth: 2,
+      borderRadius: 20,
+      padding: 24,
+      gap: 16,
+    },
+    button: {
+      height: 48,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 10,
+      paddingLeft: 20,
+      paddingRight: 20,
+      backgroundColor: '#006b62',
+      color: '#ffffff',
+      borderColor: '#a2fff4',
+      borderWidth: 2,
+      borderRadius: 16,
+      ':disabled': {
+        backgroundColor: '#315858',
+        color: '#c2d7d7',
+      },
+    },
+    text: {
+      color: '#ffffff',
+    },
+  },
+});
+
 export const uiThemePresets: Readonly<Record<UIThemePresetName, UITheme>> =
   Object.freeze({
     grayGlass: grayGlassTheme,
@@ -260,6 +308,7 @@ export const uiThemePresets: Readonly<Record<UIThemePresetName, UITheme>> =
     glimmerOpaque: glimmerOpaqueTheme,
     glimmerAmber: glimmerAmberTheme,
     glimmerGreen: glimmerGreenTheme,
+    additive: additiveTheme,
   });
 
 export const defaultTheme: UITheme = grayGlassTheme;

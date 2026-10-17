@@ -64,6 +64,22 @@ options.simulator.instructions.enabled = false;
 options.simulator.handPosePanel.enabled = false;
 ```
 
+### Glasses display presets
+
+The simulator can narrow its perspective camera to approximate the diagonal
+field of view of optical see-through glasses. Spectacles is approximately 46°
+diagonal; Aura is approximately 70°:
+
+```js
+options.simulator.displayPreset = 'spectacles'; // or 'aura'
+options.simulator.blendingMode = 'screen';
+```
+
+The default preset leaves the camera field of view unchanged. `screen` blending
+approximates black-as-transparent compositing over the simulator environment,
+which is useful for checking bright-on-dark additive UI. It is not a display or
+optics emulator; verify contrast, text size, and target size on-device.
+
 ## Control modes
 
 XR Blocks supplies five simulator modes:

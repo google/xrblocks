@@ -27,6 +27,8 @@ import {
 } from './components/ScriptsManager';
 import {WebXRSessionManager} from './components/WebXRSessionManager';
 import {XRButton} from './components/XRButton';
+import {ui} from '../ui/UI';
+import {colorfulTheme} from '../ui/UITheme';
 
 function scripts(core: Core): ScriptsManager {
   return (core as unknown as {scriptsManager: ScriptsManager}).scriptsManager;
@@ -256,6 +258,59 @@ describe('Core frame and simulator lifecycle', () => {
     expect(core.depth.depthMesh).toBe(mesh);
     expect(mesh?.parent).toBe(core.scene);
     expect(core.lifecycle).toBe('running');
+  });
+
+  it('switches to the additive UI theme for additive XR sessions', async () => {
+    const originalTheme = ui.theme;
+    ui.theme = 'colorful';
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+    const session = Object.assign(new EventTarget(), {
+      environmentBlendMode: 'additive',
+      requestReferenceSpace: vi.fn().mockResolvedValue({}),
+    }) as unknown as XRSession;
+
+    try {
+      await core['onXRSessionStarted'](session);
+
+      expect(core.environmentBlendMode).toBe('additive');
+      expect(ui.theme.colors).toEqual(
+        expect.objectContaining({surface: '#173a3a', text: '#ffffff'})
+      );
+      expect(ui.theme.styles?.surface?.backgroundColor).toBe('#173a3a');
+
+      core['onXRSessionEnded']();
+      expect(core.environmentBlendMode).toBeUndefined();
+      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
+    } finally {
+      core['onXRSessionEnded']();
+      ui.theme = originalTheme;
+    }
+  });
+
+  it('keeps the app theme when automatic additive theming is disabled', async () => {
+    const originalTheme = ui.theme;
+    const originalAutoAdditiveTheme = ui.autoAdditiveTheme;
+    ui.theme = 'colorful';
+    ui.autoAdditiveTheme = false;
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+    const session = Object.assign(new EventTarget(), {
+      environmentBlendMode: 'additive',
+      requestReferenceSpace: vi.fn().mockResolvedValue({}),
+    }) as unknown as XRSession;
+
+    try {
+      await core['onXRSessionStarted'](session);
+
+      expect(core.environmentBlendMode).toBe('additive');
+      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
+
+      core['onXRSessionEnded']();
+      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
+    } finally {
+      core['onXRSessionEnded']();
+      ui.autoAdditiveTheme = originalAutoAdditiveTheme;
+      ui.theme = originalTheme;
+    }
   });
 
   it('runs script callbacks and renders through one Core frame', async () => {
