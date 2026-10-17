@@ -87,7 +87,8 @@ export class WebGPUOcclusionPass implements OcclusionPassBackend {
     private camera: THREE.PerspectiveCamera,
     useFloatDepth = true,
     public renderToScreen = false,
-    private occludableItemsLayer = OCCLUDABLE_ITEMS_LAYER
+    private occludableItemsLayer = OCCLUDABLE_ITEMS_LAYER,
+    public resolutionScale = 0.5
   ) {
     this.placeholderDepthTexture = new THREE.DataTexture(
       new Float32Array([0]),
@@ -410,7 +411,7 @@ export class WebGPUOcclusionPass implements OcclusionPassBackend {
     );
 
     this.scene.overrideMaterial = this.occlusionMeshMaterial;
-    renderer.getDrawingBufferSize(dimensions);
+    this.getScaledDimensions(renderer, dimensions);
     this.resizeOcclusionMap(dimensions);
     renderer.setRenderTarget(this.occlusionMapTexture);
     renderer.clear();
@@ -433,7 +434,7 @@ export class WebGPUOcclusionPass implements OcclusionPassBackend {
     this.readBufferDepthTextureNode.value =
       this.depthTextures[viewId] ?? this.placeholderDepthTexture;
 
-    renderer.getDrawingBufferSize(dimensions);
+    this.getScaledDimensions(renderer, dimensions);
     this.resizeOcclusionMap(dimensions);
     renderer.setRenderTarget(this.occlusionMapTexture);
     this.occlusionMapQuad.render(renderer);
@@ -444,16 +445,17 @@ export class WebGPUOcclusionPass implements OcclusionPassBackend {
     dimensions: THREE.Vector2
   ) {
     this.resizeKawaseBlur(dimensions);
+    const scale = this.resolutionScale;
     for (let i = 0; i < 3; i++) {
       this.kawaseBlurPasses[i].uTexelSize.value.set(
-        1 / (dimensions.x / 2 ** i),
-        1 / (dimensions.y / 2 ** i)
+        scale / (dimensions.x / 2 ** i),
+        scale / (dimensions.y / 2 ** i)
       );
       this.kawaseBlurPasses[
         this.kawaseBlurPasses.length - 1 - i
       ].uTexelSize.value.set(
-        1 / (dimensions.x / 2 ** (i - 1)),
-        1 / (dimensions.y / 2 ** (i - 1))
+        scale / (dimensions.x / 2 ** (i - 1)),
+        scale / (dimensions.y / 2 ** (i - 1))
       );
     }
 
@@ -469,6 +471,17 @@ export class WebGPUOcclusionPass implements OcclusionPassBackend {
     this.kawaseBlurPasses[4].quad.render(renderer);
     renderer.setRenderTarget(this.occlusionMapTexture);
     this.kawaseBlurPasses[5].quad.render(renderer);
+  }
+
+  private getScaledDimensions(
+    renderer: WebGPURenderer,
+    dimensions: THREE.Vector2
+  ) {
+    renderer.getDrawingBufferSize(dimensions);
+    dimensions.set(
+      Math.max(1, Math.floor(dimensions.x * this.resolutionScale)),
+      Math.max(1, Math.floor(dimensions.y * this.resolutionScale))
+    );
   }
 
   private resizeOcclusionMap(dimensions: THREE.Vector2) {
@@ -492,8 +505,8 @@ export class WebGPUOcclusionPass implements OcclusionPassBackend {
     this.lastKawaseBlurSize.copy(dimensions);
     for (let i = 0; i < 3; i++) {
       this.kawaseBlurTargets[i].setSize(
-        dimensions.x / 2 ** i,
-        dimensions.y / 2 ** i
+        Math.max(1, Math.floor(dimensions.x / 2 ** (i + 1))),
+        Math.max(1, Math.floor(dimensions.y / 2 ** (i + 1)))
       );
     }
   }

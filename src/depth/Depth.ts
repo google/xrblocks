@@ -78,6 +78,9 @@ export class Depth {
   /** Timestamp of the last depth mesh geometry update. */
   private lastDepthMeshUpdateTime = 0;
 
+  /** Whether an app has requested depth data or textures for viewId > 0. */
+  private requestedSecondaryViews = false;
+
   /**
    * Depth is a lightweight manager based on three.js to simply prototyping
    * with Depth in WebXR.
@@ -120,6 +123,7 @@ export class Depth {
     const asyncTasks: Promise<void>[] = [];
 
     if (this.options.occlusion.enabled) {
+      const resolutionScale = this.options.occlusion.resolutionScale ?? 0.5;
       if (isWebGPU) {
         asyncTasks.push(
           Promise.all([
@@ -130,13 +134,17 @@ export class Depth {
               OcclusionUtils.setWebGPUMaterialHandler(
                 addWebGPUOcclusionToMaterial
               );
-              this.occlusionPass = new WebGPUOcclusionPass(scene, camera);
+              const pass = new WebGPUOcclusionPass(scene, camera);
+              pass.resolutionScale = resolutionScale;
+              this.occlusionPass = pass;
             }
           })
         );
       } else {
         OcclusionUtils.setWebGPUMaterialHandler(undefined);
-        this.occlusionPass = new OcclusionPass(scene, camera);
+        const pass = new OcclusionPass(scene, camera);
+        pass.resolutionScale = resolutionScale;
+        this.occlusionPass = pass;
       }
     }
 
@@ -189,12 +197,21 @@ export class Depth {
    * @param u - Normalized horizontal coordinate, origin at bottom left.
    * @param v - Normalized vertical coordinate, origin at bottom left.
    * @param target - Vector that receives the result.
+   * @param viewId - View index (default 0).
    * @returns The normalized depth buffer coordinates.
    */
-  private normDepthBufferCoords(u: number, v: number, target: THREE.Vector3) {
+  private normDepthBufferCoords(
+    u: number,
+    v: number,
+    target: THREE.Vector3,
+    viewId = 0
+  ) {
     target.set(u, 1.0 - v, 0);
-    if (this.normDepthBufferFromNormViewMatrices.length > 0) {
-      target.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
+    const matrix =
+      this.normDepthBufferFromNormViewMatrices[viewId] ??
+      this.normDepthBufferFromNormViewMatrices[0];
+    if (matrix) {
+      target.applyMatrix4(matrix);
     }
     return target;
   }
@@ -206,16 +223,21 @@ export class Depth {
    * the view, growing right.
    * @param v - Normalized vertical coordinate, origin at the bottom left of
    * the view, growing up.
+   * @param viewId - View index to query (default 0). Requesting viewId > 0 enables secondary view updates.
    * @returns Depth value at the specified coordinates.
    */
-  getDepth(u: number, v: number) {
-    if (!this.depthArray[0]) return 0.0;
-    const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+  getDepth(u: number, v: number, viewId = 0) {
+    if (viewId > 0) {
+      this.requestedSecondaryViews = true;
+    }
+    const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+    if (!depthArray) return 0.0;
+    const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
     const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
     const depthY = Math.round(
       clamp(coords.y * this.height, 0, this.height - 1)
     );
-    const rawDepth = this.depthArray[0][depthY * this.width + depthX];
+    const rawDepth = depthArray[depthY * this.width + depthX];
     return this.rawValueToMeters * rawDepth;
   }
 
@@ -223,31 +245,45 @@ export class Depth {
    * Projects the given world position to depth camera's clip space and then
    * to the depth camera's view space using the depth.
    * @param position - The world position to project.
+   * @param target - Optional target vector.
+   * @param viewId - View index to query (default 0).
    * @returns The depth camera view space position.
    */
   getProjectedDepthViewPositionFromWorldPosition(
     position: THREE.Vector3,
-    target = new THREE.Vector3()
+    target = new THREE.Vector3(),
+    viewId = 0
   ) {
+    if (viewId > 0) {
+      this.requestedSecondaryViews = true;
+    }
+    const viewMatrix =
+      this.depthViewMatrices[viewId] ?? this.depthViewMatrices[0];
+    const projMatrix =
+      this.depthProjectionMatrices[viewId] ?? this.depthProjectionMatrices[0];
+    const projInvMatrix =
+      this.depthProjectionInverseMatrices[viewId] ??
+      this.depthProjectionInverseMatrices[0];
     clipSpacePosition
       .copy(position)
-      .applyMatrix4(this.depthViewMatrices[0])
-      .applyMatrix4(this.depthProjectionMatrices[0]);
+      .applyMatrix4(viewMatrix)
+      .applyMatrix4(projMatrix);
     const u = 0.5 * (clipSpacePosition.x + 1.0);
     const v = 0.5 * (clipSpacePosition.y + 1.0);
 
     let depth = 0.0;
-    if (this.depthArray[0]) {
+    const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+    if (depthArray) {
       const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
       const depthY = Math.round(
         clamp((1.0 - v) * this.height, 0, this.height - 1)
       );
-      const rawDepth = this.depthArray[0][depthY * this.width + depthX];
+      const rawDepth = depthArray[depthY * this.width + depthX];
       depth = this.rawValueToMeters * rawDepth;
     }
 
     target.set(2.0 * (u - 0.5), 2.0 * (v - 0.5), -1);
-    target.applyMatrix4(this.depthProjectionInverseMatrices[0]);
+    target.applyMatrix4(projInvMatrix);
     target.multiplyScalar(-depth / target.z);
     return target;
   }
@@ -259,17 +295,22 @@ export class Depth {
    * the view, growing right.
    * @param v - Normalized vertical coordinate, origin at the bottom left of
    * the view, growing up.
+   * @param viewId - View index to query (default 0). Requesting viewId > 0 enables secondary view updates.
    * @returns Vertex at (u, v)
    */
-  getVertex(u: number, v: number) {
-    if (!this.depthArray[0]) return null;
+  getVertex(u: number, v: number, viewId = 0) {
+    if (viewId > 0) {
+      this.requestedSecondaryViews = true;
+    }
+    const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+    if (!depthArray) return null;
 
-    const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+    const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
     const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
     const depthY = Math.round(
       clamp(coords.y * this.height, 0, this.height - 1)
     );
-    const rawDepth = this.depthArray[0][depthY * this.width + depthX];
+    const rawDepth = depthArray[depthY * this.width + depthX];
     const depth = this.rawValueToMeters * rawDepth;
     // depthProjectionInverseMatrices belongs to the depth camera, so the clip
     // space point has to come from the depth buffer coordinates. Buffer V
@@ -279,7 +320,10 @@ export class Depth {
       2.0 * (0.5 - coords.y),
       -1
     );
-    vertexPosition.applyMatrix4(this.depthProjectionInverseMatrices[0]);
+    const projInvMatrix =
+      this.depthProjectionInverseMatrices[viewId] ??
+      this.depthProjectionInverseMatrices[0];
+    vertexPosition.applyMatrix4(projInvMatrix);
     vertexPosition.multiplyScalar(-depth / vertexPosition.z);
     return vertexPosition;
   }
@@ -386,7 +430,8 @@ export class Depth {
     // nothing looks at.
     // For now, assume that we need cpu depth only if depth mesh is enabled.
     // In the future, add a separate option.
-    const needCpuDepth = this.options.depthMesh.enabled && viewId === 0;
+    const needCpuDepth =
+      this.options.depthMesh.enabled && this.shouldUpdateView(viewId);
     const cpuDepth =
       needCpuDepth && this.gpuDepthConverter
         ? this.gpuDepthConverter.convertGPUToCPU(depthData)
@@ -445,9 +490,27 @@ export class Depth {
     return true;
   }
 
+  /**
+   * Returns whether CPU depth data and textures should be extracted for the
+   * given view index. By default only view 0 is processed since DepthMesh and
+   * OcclusionPass only consume view 0, unless `options.updateAllViews`,
+   * `options.matchDepthView`, or a runtime `viewId > 0` request is active.
+   */
+  private shouldUpdateView(viewId: number): boolean {
+    return (
+      viewId === 0 ||
+      Boolean(this.options.updateAllViews) ||
+      Boolean(this.options.matchDepthView) ||
+      this.requestedSecondaryViews
+    );
+  }
+
   getTexture(viewId: number) {
     if (!this.options.depthTexture.enabled) return undefined;
-    return this.depthTextures?.get(viewId);
+    if (viewId > 0) {
+      this.requestedSecondaryViews = true;
+    }
+    return this.depthTextures?.get(viewId) ?? this.depthTextures?.get(0);
   }
 
   update(frame?: XRFrame) {
@@ -492,7 +555,7 @@ export class Depth {
               return;
             }
             this.updateGPUDepthData(depthData, viewId);
-          } else {
+          } else if (this.shouldUpdateView(viewId)) {
             const depthData = frame.getDepthInformation(view);
             if (!depthData) {
               return;
@@ -618,6 +681,7 @@ export class Depth {
 
     this.gpuDepthConverter = undefined;
     this.registry = undefined;
+    this.requestedSecondaryViews = false;
     this.view.length = 0;
     this.cpuDepthData.length = 0;
     this.gpuDepthData.length = 0;

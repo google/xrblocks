@@ -255,6 +255,138 @@ describe('Depth', () => {
 
       expect(depth.gpuDepthData[1]).toBe(fakeDepthData);
     });
+
+    it('reads back the second view when updateAllViews is enabled', () => {
+      const convert = vi.fn(() => ({
+        width: 2,
+        height: 2,
+        data: new Float32Array([1, 2, 3, 4]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert);
+      depth.options.updateAllViews = true;
+
+      depth.updateGPUDepthData(fakeDepthData, 1);
+
+      expect(convert).toHaveBeenCalledTimes(1);
+      expect(depth.depthArray[1]).toBeInstanceOf(Float32Array);
+    });
+  });
+
+  describe('updateLocalDepth stereo view handling', () => {
+    function createStereoFrame(views: XRView[]) {
+      const getDepthInformation = vi.fn((view: XRView) => ({
+        width: 2,
+        height: 2,
+        rawValueToMeters: 1,
+        data: new Float32Array(view === views[0] ? [1, 2, 3, 4] : [5, 6, 7, 8])
+          .buffer,
+      }));
+      const frame = {
+        session: {
+          depthUsage: 'cpu-optimized',
+          depthDataFormat: 'float32',
+        },
+        getViewerPose: () => ({views}),
+        getDepthInformation,
+      } as unknown as XRFrame;
+      return {frame, getDepthInformation};
+    }
+
+    function setupDepthForLocalUpdate() {
+      const depth = createDepth();
+      depth.options.enabled = true;
+      depth.options.depthTexture.enabled = true;
+      (
+        depth as unknown as {
+          camera: THREE.PerspectiveCamera;
+          renderer: {
+            xr: {
+              getBinding: () => undefined;
+              getReferenceSpace: () => object;
+              getCamera: () => {cameras: never[]};
+            };
+          };
+        }
+      ).camera = new THREE.PerspectiveCamera();
+      (
+        depth as unknown as {
+          renderer: {
+            xr: {
+              getBinding: () => undefined;
+              getReferenceSpace: () => object;
+              getCamera: () => {cameras: never[]};
+            };
+          };
+        }
+      ).renderer = {
+        xr: {
+          getBinding: () => undefined,
+          getReferenceSpace: () => ({}),
+          getCamera: () => ({cameras: []}),
+        },
+      };
+      (
+        depth as unknown as {
+          depthTextures: {
+            updateData: ReturnType<typeof vi.fn>;
+            get: (id: number) => THREE.Texture | undefined;
+          };
+        }
+      ).depthTextures = {
+        updateData: vi.fn(),
+        get: (id: number) =>
+          id === 0 ? ({isView0: true} as unknown as THREE.Texture) : undefined,
+      };
+      return depth;
+    }
+
+    it('skips viewId > 0 CPU depth extraction and texture upload by default', () => {
+      const depth = setupDepthForLocalUpdate();
+      const views = [{} as XRView, {} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      depth.updateLocalDepth(frame);
+
+      expect(getDepthInformation).toHaveBeenCalledTimes(1);
+      expect(getDepthInformation).toHaveBeenCalledWith(views[0]);
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      expect(depth.cpuDepthData[1]).toBeUndefined();
+      expect(depth['depthTextures']!.updateData).toHaveBeenCalledTimes(1);
+    });
+
+    it('processes viewId > 0 when options.updateAllViews is true', () => {
+      const depth = setupDepthForLocalUpdate();
+      depth.options.updateAllViews = true;
+      const views = [{} as XRView, {} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      depth.updateLocalDepth(frame);
+
+      expect(getDepthInformation).toHaveBeenCalledTimes(2);
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      expect(depth.cpuDepthData[1]).toBeDefined();
+      expect(depth['depthTextures']!.updateData).toHaveBeenCalledTimes(2);
+    });
+
+    it('enables viewId > 0 updates on subsequent frames when an app requests view 1', () => {
+      const depth = setupDepthForLocalUpdate();
+      const views = [{} as XRView, {} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      // Frame 1: only view 0 is processed.
+      depth.updateLocalDepth(frame);
+      expect(getDepthInformation).toHaveBeenCalledTimes(1);
+
+      // App requests view 1 texture (falls back to view 0 on the initial call).
+      const tex1 = depth.getTexture(1);
+      expect(tex1).toEqual({isView0: true});
+
+      // Frame 2: both views are now processed.
+      depth.updateLocalDepth(frame);
+      expect(getDepthInformation).toHaveBeenCalledTimes(3);
+      expect(depth.cpuDepthData[1]).toBeDefined();
+      expect(depth.getDepth(0, 1, 1)).toBeCloseTo(5);
+    });
   });
 
   describe('Depth vs WebXR spec oracle', () => {
