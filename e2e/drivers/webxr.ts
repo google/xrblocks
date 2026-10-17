@@ -44,6 +44,16 @@ const HAND: Record<Hand, 'left' | 'right'> = {
   rightHand: 'right',
 };
 
+type TransientPointerState = {
+  source: Record<string, unknown>;
+  controller: {
+    dispatchEvent(event: {type: string; data?: unknown}): void;
+  };
+  remove(): void;
+  replace(): Record<string, unknown>;
+  aim(buttonName: string): void;
+};
+
 /**
  * Drives the REAL WebXR code path through Meta's IWER (Immersive Web
  * Emulation Runtime): `navigator.xr` is replaced by an emulated headset
@@ -251,25 +261,17 @@ export class IwerDriver implements XRTestDriver {
     await this.prepareTransientPointer(buttonName);
     await this.page.evaluate(() => {
       const state = (
-        globalThis as unknown as {
-          __transientPointer: {source: object; remove(): void};
-        }
+        globalThis as unknown as {__transientPointer: TransientPointerState}
       ).__transientPointer;
-      const controller = (
-        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
-      ).xb.core.input.controllers[1];
+      const {controller} = state;
       controller.dispatchEvent({type: 'selectstart', data: state.source});
     });
     await this.page.waitForTimeout(120);
     await this.page.evaluate(() => {
       const state = (
-        globalThis as unknown as {
-          __transientPointer: {source: object; remove(): void};
-        }
+        globalThis as unknown as {__transientPointer: TransientPointerState}
       ).__transientPointer;
-      const controller = (
-        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
-      ).xb.core.input.controllers[1];
+      const {controller} = state;
       controller.dispatchEvent({type: 'select', data: state.source});
       controller.dispatchEvent({type: 'selectend', data: state.source});
       state.remove();
@@ -287,35 +289,19 @@ export class IwerDriver implements XRTestDriver {
   }> {
     await this.prepareTransientPointer('buttonA');
     await this.page.evaluate(() => {
-      const globals = globalThis as unknown as {
-        __transientPointer: {
-          source: Record<string, unknown>;
-          remove(): void;
-          replace(): Record<string, unknown>;
-          aim(buttonName: string): void;
-        };
-      };
-      const state = globals.__transientPointer;
-      const controller = (
-        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
-      ).xb.core.input.controllers[1];
+      const state = (
+        globalThis as unknown as {__transientPointer: TransientPointerState}
+      ).__transientPointer;
+      const {controller} = state;
 
       controller.dispatchEvent({type: 'selectstart', data: state.source});
     });
     await this.page.waitForTimeout(120);
     await this.page.evaluate(() => {
-      const globals = globalThis as unknown as {
-        __transientPointer: {
-          source: Record<string, unknown>;
-          remove(): void;
-          replace(): Record<string, unknown>;
-          aim(buttonName: string): void;
-        };
-      };
-      const state = globals.__transientPointer;
-      const controller = (
-        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
-      ).xb.core.input.controllers[1];
+      const state = (
+        globalThis as unknown as {__transientPointer: TransientPointerState}
+      ).__transientPointer;
+      const {controller} = state;
       controller.dispatchEvent({type: 'select', data: state.source});
       controller.dispatchEvent({type: 'selectend', data: state.source});
       state.remove();
@@ -344,13 +330,9 @@ export class IwerDriver implements XRTestDriver {
     });
     await this.page.evaluate(() => {
       const state = (
-        globalThis as unknown as {
-          __transientPointer: {source: object; remove(): void};
-        }
+        globalThis as unknown as {__transientPointer: TransientPointerState}
       ).__transientPointer;
-      const controller = (
-        window as unknown as {xb: {core: {input: {controllers: any[]}}}}
-      ).xb.core.input.controllers[1];
+      const {controller} = state;
       controller.dispatchEvent({type: 'select', data: state.source});
       controller.dispatchEvent({type: 'selectend', data: state.source});
       state.remove();
@@ -367,14 +349,22 @@ export class IwerDriver implements XRTestDriver {
   private async prepareTransientPointer(
     buttonName: 'buttonA' | 'buttonB'
   ): Promise<void> {
+    await this.page.waitForFunction(() => {
+      const core = (window as any).xb?.core;
+      const session = core?.renderer?.xr?.getSession();
+      if (!session) return false;
+      const source = Array.from(session.inputSources).find(
+        (inputSource: any) => inputSource.handedness === 'right'
+      );
+      return Boolean(
+        source &&
+          core.input.controllers.some(
+            (controller: any) => controller.inputSource === source
+          )
+      );
+    });
     await this.page.evaluate((name) => {
       const globals = globalThis as unknown as {
-        __transientPointer?: {
-          source: Record<string, unknown>;
-          remove(): void;
-          replace(): Record<string, unknown>;
-          aim(buttonName: string): void;
-        };
         __xrDevice: {
           controllers: Record<
             string,
@@ -393,6 +383,14 @@ export class IwerDriver implements XRTestDriver {
         (source: any) => source.handedness === 'right'
       ) as any;
       if (!original) throw new Error('IWER has no right-hand input source.');
+      const controller = core.input.controllers.find(
+        (candidate: any) => candidate.inputSource === original
+      );
+      if (!controller) {
+        throw new Error(
+          'No XR Blocks controller is connected to the IWER source.'
+        );
+      }
 
       const transientSource = () => ({
         handedness: 'none',
@@ -434,7 +432,13 @@ export class IwerDriver implements XRTestDriver {
       // transient-pointer source using IWER's real target-ray space.
       aim(name as string);
       sourceChange([source], [original]);
-      globals.__transientPointer = {source, remove, replace, aim};
+      (globalThis as Record<string, unknown>).__transientPointer = {
+        source,
+        controller,
+        remove,
+        replace,
+        aim,
+      };
     }, buttonName);
     await this.page.waitForTimeout(120);
     await this.page.waitForFunction((name) => {
