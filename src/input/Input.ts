@@ -26,6 +26,9 @@ import {MouseController} from './MouseController';
 import {XRSystems} from '../core/components/XRSystems';
 import {PinchFilter} from './PinchFilter';
 
+// Two tracked hands plus room for transient-pointer input sources.
+const NUM_CONTROLLER_SLOTS = NUM_HANDS * 2;
+
 export class ActiveControllers extends THREE.Group {
   type = 'ActiveControllers';
   name = 'Active Controllers';
@@ -104,14 +107,17 @@ export class Input {
     const controllers = this.controllers;
     const controllerGrips = this.controllerGrips;
 
-    for (let i = 0; i < NUM_HANDS; ++i) {
+    for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
       controllers.push(renderer.xr.getController(i));
       controllers[i].userData.id = i;
       this.activeControllers.add(this.controllers[i]);
     }
+    this.gazeController.userData.id = controllers.length;
     controllers.push(this.gazeController);
+    this.mouseController.userData.id = controllers.length;
     controllers.push(this.mouseController);
     this.activeControllers.add(this.mouseController);
+    this.gamepadController.userData.id = controllers.length;
     controllers.push(this.gamepadController);
     this.activeControllers.add(this.gamepadController);
 
@@ -164,7 +170,7 @@ export class Input {
     }
 
     if (options.controllers.visualizeRays) {
-      for (let i = 0; i < NUM_HANDS; ++i) {
+      for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
         controllers[i].add(new ControllerRayVisual());
       }
     }

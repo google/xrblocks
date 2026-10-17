@@ -62,7 +62,7 @@ vi.mock('three', async (importOriginal) => {
       has: () => false,
       get: () => null,
     };
-    const controllers = [new original.Group(), new original.Group()];
+    const controllers = Array.from({length: 4}, () => new original.Group());
     const controllerGrips = [new original.Group(), new original.Group()];
     const hands = [new original.Group(), new original.Group()];
     hands.forEach((hand) => {

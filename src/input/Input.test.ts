@@ -51,7 +51,7 @@ describe('Input direct touch', () => {
     'keeps %s selection working when enabled hands have no granted tracking data',
     async (targetRayMode) => {
       const input = new Input();
-      const spaces = [new WebXRController(), new WebXRController()];
+      const spaces = Array.from({length: 4}, () => new WebXRController());
       const options = new Options().enableHands();
       options.controllers.visualization = false;
       options.controllers.visualizeRays = false;
@@ -110,6 +110,55 @@ describe('Input direct touch', () => {
       }
     }
   );
+
+  it('reserves controller slots for transient pointers when hands are enabled', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const getController = vi.fn((index: number) =>
+      spaces[index].getTargetRaySpace()
+    );
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController,
+        getHand: (index: number) => spaces[index].getHandSpace(),
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+
+    const leftController = input.controllers[0];
+    leftController.dispatchEvent({
+      type: 'connected',
+      data: {handedness: 'left'} as XRInputSource,
+    });
+    const transientPointer = input.controllers[2];
+    const source = {
+      handedness: 'none',
+      targetRayMode: 'transient-pointer',
+    } as XRInputSource;
+    const selectedTargets: Controller[] = [];
+    const selectStart = vi.fn((event: {target: Controller}) =>
+      selectedTargets.push(event.target)
+    );
+    input.bindSelectStart(selectStart);
+
+    transientPointer.dispatchEvent({type: 'connected', data: source});
+    transientPointer.dispatchEvent({type: 'selectstart', data: source});
+
+    expect(getController).toHaveBeenCalledTimes(4);
+    expect(input.controllers.slice(0, 4)).toHaveLength(4);
+    expect(input.controllers.map(({userData}) => userData.id)).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
+    expect(selectStart).toHaveBeenCalledOnce();
+    expect(selectedTargets).toEqual([transientPointer]);
+    expect(input.leftController).toBe(leftController);
+    expect(input.rightController).toBeUndefined();
+    input.dispose();
+  });
 
   it('reports the contact point, selection, and wrist without scanning the scene', () => {
     const input = new Input();
