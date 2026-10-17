@@ -35,11 +35,13 @@ export class DepthOptions {
     applyKawaseBlur: false,
   };
   // Occlusion pass.
-  occlusion = {enabled: false};
+  occlusion = {enabled: false, resolutionScale: 0.5};
   usagePreference: XRDepthUsage[] = [];
   dataFormatPreference: XRDepthDataFormat[] = ['float32', 'luminance-alpha'];
   depthTypeRequest: XRDepthType[] = ['raw'];
   matchDepthView = false;
+  /** Whether to extract and upload CPU depth for all stereo views instead of only view 0. */
+  updateAllViews = false;
 
   constructor(options?: DeepReadonly<DeepPartial<DepthOptions>>) {
     deepMerge(this, options);

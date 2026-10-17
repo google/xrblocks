@@ -119,4 +119,41 @@ describe('DepthMesh disposal', () => {
     expect(() => mesh.disposeResources()).toThrow('geometry disposal failed');
     expect(materialDispose).toHaveBeenCalledOnce();
   });
+
+  it('only bumps full-resolution geometry position version when updateFullResolutionGeometry is enabled', () => {
+    const mesh = new DepthMesh(
+      new DepthOptions({
+        depthMesh: {
+          useDownsampledGeometry: true,
+          updateFullResolutionGeometry: false,
+        },
+      }),
+      2,
+      2
+    );
+    const fullPosAttr = mesh.geometry.attributes.position as unknown as {
+      version: number;
+    };
+    const downsampledPosAttr = mesh.downsampledGeometry!.attributes
+      .position as unknown as {version: number};
+    const initialFullVersion = fullPosAttr.version;
+    const initialDownsampledVersion = downsampledPosAttr.version;
+
+    const depthData = {
+      width: 2,
+      height: 2,
+      rawValueToMeters: 1,
+      data: new Float32Array([1, 1, 1, 1]).buffer,
+    } as XRCPUDepthInformation;
+
+    mesh.updateDepth(depthData, new THREE.Matrix4(), 'float32');
+    expect(fullPosAttr.version).toBe(initialFullVersion);
+    expect(downsampledPosAttr.version).toBeGreaterThan(
+      initialDownsampledVersion
+    );
+
+    mesh.updateFullResolutionGeometry(depthData, 'float32');
+    expect(fullPosAttr.version).toBeGreaterThan(initialFullVersion);
+    mesh.disposeResources();
+  });
 });

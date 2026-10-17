@@ -258,4 +258,53 @@ describe('OcclusionPass', () => {
 
     occlusionPass.dispose();
   });
+
+  it('allocates occlusionMapTexture at scaled resolution while preserving original UV blur texel sizes', () => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera();
+    const occlusionPass = new OcclusionPass(scene, camera);
+
+    const fakeRenderer = {
+      isWebGLRenderer: true,
+      getRenderTarget: () => null,
+      setRenderTarget: () => {},
+      getDrawingBufferSize: (vec: THREE.Vector2) => vec.set(320, 160),
+      render: () => {},
+      xr: {
+        getCamera: () => ({cameras: []}),
+      },
+    } as unknown as THREE.WebGLRenderer;
+
+    for (const quad of occlusionPass['kawaseBlurQuads']) {
+      vi.spyOn(quad, 'render').mockImplementation(() => {});
+    }
+
+    occlusionPass.render(fakeRenderer, undefined, undefined, 0);
+
+    // Default resolutionScale = 0.5 -> 160x80 occlusionMapTexture
+    expect(occlusionPass['occlusionMapTexture'].width).toBe(160);
+    expect(occlusionPass['occlusionMapTexture'].height).toBe(80);
+    // Kawase pyramid targets at 1/2, 1/4, 1/8 of scaled 160x80 -> 80x40, 40x20, 20x10
+    expect(occlusionPass['kawaseBlurTargets'][0].width).toBe(80);
+    expect(occlusionPass['kawaseBlurTargets'][0].height).toBe(40);
+    expect(occlusionPass['kawaseBlurTargets'][1].width).toBe(40);
+    expect(occlusionPass['kawaseBlurTargets'][1].height).toBe(20);
+    expect(occlusionPass['kawaseBlurTargets'][2].width).toBe(20);
+    expect(occlusionPass['kawaseBlurTargets'][2].height).toBe(10);
+
+    // UV texel sizes match the original unscaled 320x160 blur radius
+    const down0Texel = (
+      occlusionPass['kawaseBlurQuads'][0].material as THREE.ShaderMaterial
+    ).uniforms.uTexelSize.value as THREE.Vector2;
+    expect(down0Texel.x).toBeCloseTo(1 / 320);
+    expect(down0Texel.y).toBeCloseTo(1 / 160);
+
+    const upFinalTexel = (
+      occlusionPass['kawaseBlurQuads'][5].material as THREE.ShaderMaterial
+    ).uniforms.uTexelSize.value as THREE.Vector2;
+    expect(upFinalTexel.x).toBeCloseTo(1 / 640);
+    expect(upFinalTexel.y).toBeCloseTo(1 / 320);
+
+    occlusionPass.dispose();
+  });
 });

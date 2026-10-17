@@ -194,7 +194,6 @@ export class DepthMesh extends MeshScript {
 
     this.minDepthPrev = this.minDepth;
     this.maxDepthPrev = this.maxDepth;
-    this.geometry.attributes.position.needsUpdate = true;
 
     const depthTextureLeft = this.depthTextures?.get(0);
     if (depthTextureLeft && this.depthTextureMaterialUniforms) {
@@ -259,6 +258,7 @@ export class DepthMesh extends MeshScript {
     depthDataFormat: XRDepthDataFormat
   ) {
     this.updateGeometry(depthData, this.geometry, depthDataFormat);
+    this.geometry.attributes.position.needsUpdate = true;
   }
 
   /**
