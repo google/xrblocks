@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 0ec7190
-* @builddate 2026-10-17T02:53:47.375Z
+* @commitid ca9123a
+* @builddate 2026-10-17T18:19:39.023Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2154,11 +2154,15 @@ var DepthOptions = class {
 			applyGaussianBlur: false,
 			applyKawaseBlur: false
 		};
-		this.occlusion = { enabled: false };
+		this.occlusion = {
+			enabled: false,
+			resolutionScale: .5
+		};
 		this.usagePreference = [];
 		this.dataFormatPreference = ["float32", "luminance-alpha"];
 		this.depthTypeRequest = ["raw"];
 		this.matchDepthView = false;
+		this.updateAllViews = false;
 		deepMerge(this, options);
 	}
 };
@@ -7305,7 +7309,6 @@ var DepthMesh = class extends MeshScript {
 		}
 		this.minDepthPrev = this.minDepth;
 		this.maxDepthPrev = this.maxDepth;
-		this.geometry.attributes.position.needsUpdate = true;
 		const depthTextureLeft = this.depthTextures?.get(0);
 		if (depthTextureLeft && this.depthTextureMaterialUniforms) {
 			this.depthTextureMaterialUniforms.uUsingFloatDepth.value = depthDataFormat === "float32";
@@ -7339,6 +7342,7 @@ var DepthMesh = class extends MeshScript {
 	*/
 	updateFullResolutionGeometry(depthData, depthDataFormat) {
 		this.updateGeometry(depthData, this.geometry, depthDataFormat);
+		this.geometry.attributes.position.needsUpdate = true;
 	}
 	/**
 	* Internal method to update the geometry of the depth mesh.
@@ -7624,13 +7628,13 @@ var DepthTextures = class {
 	createDataDepthTextures(depthData, viewId, depthDataFormat) {
 		if (this.dataTextures[viewId]) this.dataTextures[viewId].dispose();
 		if (depthDataFormat === "float32") {
-			const typedArray = new Float32Array(depthData.width * depthData.height);
+			const typedArray = new Float32Array(depthData.data);
 			const format = THREE.RedFormat;
 			const type = THREE.FloatType;
 			this.float32Arrays[viewId] = typedArray;
 			this.dataTextures[viewId] = new THREE.DataTexture(typedArray, depthData.width, depthData.height, format, type);
 		} else {
-			const typedArray = new Uint8Array(depthData.width * depthData.height * 2);
+			const typedArray = new Uint8Array(depthData.data);
 			const format = THREE.RGFormat;
 			const type = THREE.UnsignedByteType;
 			this.uint8Arrays[viewId] = typedArray;
@@ -7639,8 +7643,15 @@ var DepthTextures = class {
 	}
 	updateData(depthData, viewId, depthDataFormat) {
 		if (this.dataTextures.length < viewId + 1 || this.dataTextures[viewId].image.width !== depthData.width || this.dataTextures[viewId].image.height !== depthData.height) this.createDataDepthTextures(depthData, viewId, depthDataFormat);
-		if (depthDataFormat === "float32") this.float32Arrays[viewId].set(new Float32Array(depthData.data));
-		else this.uint8Arrays[viewId].set(new Uint8Array(depthData.data));
+		else if (depthDataFormat === "float32") {
+			const view = new Float32Array(depthData.data);
+			this.float32Arrays[viewId] = view;
+			this.dataTextures[viewId].image.data = view;
+		} else {
+			const view = new Uint8Array(depthData.data);
+			this.uint8Arrays[viewId] = view;
+			this.dataTextures[viewId].image.data = view;
+		}
 		this.dataTextures[viewId].needsUpdate = true;
 		this.depthData[viewId] = depthData;
 	}
@@ -8105,12 +8116,13 @@ var OcclusionMapMeshMaterial = class extends THREE.MeshBasicMaterial {
 * 3. (Mode B only) Apply the occlusion map to the rendered frame.
 */
 var OcclusionPass = class extends Pass {
-	constructor(scene, camera, useFloatDepth = true, renderToScreen = false, occludableItemsLayer = 3) {
+	constructor(scene, camera, useFloatDepth = true, renderToScreen = false, occludableItemsLayer = 3, resolutionScale = .5) {
 		super();
 		this.scene = scene;
 		this.camera = camera;
 		this.renderToScreen = renderToScreen;
 		this.occludableItemsLayer = occludableItemsLayer;
+		this.resolutionScale = resolutionScale;
 		this.depthTextures = [];
 		this.depthNear = [];
 		this.depthViewMatrices = [];
@@ -8220,7 +8232,7 @@ var OcclusionPass = class extends Pass {
 		this.occlusionMeshMaterial.uniforms.uDepthViewMatrix.value = this.depthViewMatrices[viewId] || camera.matrixWorldInverse;
 		this.occlusionMeshMaterial.uniforms.uDepthProjectionMatrix.value = this.depthProjectionMatrices[viewId] || camera.projectionMatrix;
 		this.scene.overrideMaterial = this.occlusionMeshMaterial;
-		renderer.getDrawingBufferSize(dimensions);
+		this.getScaledDimensions(renderer, dimensions);
 		this.resizeOcclusionMap(dimensions);
 		const renderTarget = this.occlusionMapTexture;
 		renderer.setRenderTarget(renderTarget);
@@ -8239,16 +8251,17 @@ var OcclusionPass = class extends Pass {
 		this.occlusionMapUniforms.uViewId.value = viewId;
 		if (isTextureArray) this.occlusionMapUniforms.uDepthTextureArray.value = texture;
 		else this.occlusionMapUniforms.uDepthTexture.value = texture;
-		renderer.getDrawingBufferSize(dimensions);
+		this.getScaledDimensions(renderer, dimensions);
 		this.resizeOcclusionMap(dimensions);
 		renderer.setRenderTarget(this.occlusionMapTexture);
 		this.occlusionMapQuad.render(renderer);
 	}
 	blurOcclusionMap(renderer, dimensions) {
 		this.resizeKawaseBlur(dimensions);
+		const scale = this.resolutionScale;
 		for (let i = 0; i < 3; i++) {
-			this.kawaseBlurQuads[i].material.uniforms.uTexelSize.value.set(1 / (dimensions.x / 2 ** i), 1 / (dimensions.y / 2 ** i));
-			this.kawaseBlurQuads[this.kawaseBlurQuads.length - 1 - i].material.uniforms.uTexelSize.value.set(1 / (dimensions.x / 2 ** (i - 1)), 1 / (dimensions.y / 2 ** (i - 1)));
+			this.kawaseBlurQuads[i].material.uniforms.uTexelSize.value.set(scale / (dimensions.x / 2 ** i), scale / (dimensions.y / 2 ** i));
+			this.kawaseBlurQuads[this.kawaseBlurQuads.length - 1 - i].material.uniforms.uTexelSize.value.set(scale / (dimensions.x / 2 ** (i - 1)), scale / (dimensions.y / 2 ** (i - 1)));
 		}
 		renderer.setRenderTarget(this.kawaseBlurTargets[0]);
 		this.kawaseBlurQuads[0].render(renderer);
@@ -8263,6 +8276,10 @@ var OcclusionPass = class extends Pass {
 		renderer.setRenderTarget(this.occlusionMapTexture);
 		this.kawaseBlurQuads[5].render(renderer);
 	}
+	getScaledDimensions(renderer, dimensions) {
+		renderer.getDrawingBufferSize(dimensions);
+		dimensions.set(Math.max(1, Math.floor(dimensions.x * this.resolutionScale)), Math.max(1, Math.floor(dimensions.y * this.resolutionScale)));
+	}
 	resizeOcclusionMap(dimensions) {
 		if (this.lastOcclusionMapSize.x === dimensions.x && this.lastOcclusionMapSize.y === dimensions.y) return;
 		this.lastOcclusionMapSize.copy(dimensions);
@@ -8271,7 +8288,7 @@ var OcclusionPass = class extends Pass {
 	resizeKawaseBlur(dimensions) {
 		if (this.lastKawaseBlurSize.x === dimensions.x && this.lastKawaseBlurSize.y === dimensions.y) return;
 		this.lastKawaseBlurSize.copy(dimensions);
-		for (let i = 0; i < 3; i++) this.kawaseBlurTargets[i].setSize(dimensions.x / 2 ** i, dimensions.y / 2 ** i);
+		for (let i = 0; i < 3; i++) this.kawaseBlurTargets[i].setSize(Math.max(1, Math.floor(dimensions.x / 2 ** (i + 1))), Math.max(1, Math.floor(dimensions.y / 2 ** (i + 1))));
 	}
 	applyOcclusionMapToRenderedImage(renderer, readBuffer, writeBuffer) {
 		if (readBuffer && (this.renderToScreen || writeBuffer)) {
@@ -8445,6 +8462,7 @@ var Depth = class Depth {
 		this.depthCameraRotations = [];
 		this.normDepthBufferFromNormViewMatrices = [];
 		this.lastDepthMeshUpdateTime = 0;
+		this.requestedSecondaryViews = false;
 		if (Depth.instance) return Depth.instance;
 		Depth.instance = this;
 	}
@@ -8466,15 +8484,20 @@ var Depth = class Depth {
 		}
 		const asyncTasks = [];
 		if (this.options.occlusion.enabled) {
+			const resolutionScale = this.options.occlusion.resolutionScale ?? .5;
 			if (isWebGPU) asyncTasks.push(Promise.all([import("./WebGPUOcclusionPass.js"), import("./WebGPUOcclusionUtils.js")]).then(([{ WebGPUOcclusionPass }, { addWebGPUOcclusionToMaterial }]) => {
 				if (!this.disposed) {
 					OcclusionUtils.setWebGPUMaterialHandler(addWebGPUOcclusionToMaterial);
-					this.occlusionPass = new WebGPUOcclusionPass(scene, camera);
+					const pass = new WebGPUOcclusionPass(scene, camera);
+					pass.resolutionScale = resolutionScale;
+					this.occlusionPass = pass;
 				}
 			}));
 			else {
 				OcclusionUtils.setWebGPUMaterialHandler(void 0);
-				this.occlusionPass = new OcclusionPass(scene, camera);
+				const pass = new OcclusionPass(scene, camera);
+				pass.resolutionScale = resolutionScale;
+				this.occlusionPass = pass;
 			}
 		}
 		if (this.options.depthMesh.enabled) {
@@ -8506,11 +8529,13 @@ var Depth = class Depth {
 	* @param u - Normalized horizontal coordinate, origin at bottom left.
 	* @param v - Normalized vertical coordinate, origin at bottom left.
 	* @param target - Vector that receives the result.
+	* @param viewId - View index (default 0).
 	* @returns The normalized depth buffer coordinates.
 	*/
-	normDepthBufferCoords(u, v, target) {
+	normDepthBufferCoords(u, v, target, viewId = 0) {
 		target.set(u, 1 - v, 0);
-		if (this.normDepthBufferFromNormViewMatrices.length > 0) target.applyMatrix4(this.normDepthBufferFromNormViewMatrices[0]);
+		const matrix = this.normDepthBufferFromNormViewMatrices[viewId] ?? this.normDepthBufferFromNormViewMatrices[0];
+		if (matrix) target.applyMatrix4(matrix);
 		return target;
 	}
 	/**
@@ -8520,35 +8545,43 @@ var Depth = class Depth {
 	* the view, growing right.
 	* @param v - Normalized vertical coordinate, origin at the bottom left of
 	* the view, growing up.
+	* @param viewId - View index to query (default 0). Requesting viewId > 0 enables secondary view updates.
 	* @returns Depth value at the specified coordinates.
 	*/
-	getDepth(u, v) {
-		if (!this.depthArray[0]) return 0;
-		const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+	getDepth(u, v, viewId = 0) {
+		if (viewId > 0) this.requestedSecondaryViews = true;
+		const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+		if (!depthArray) return 0;
+		const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
 		const depthX = Math.round(clamp$1(coords.x * this.width, 0, this.width - 1));
-		const depthY = Math.round(clamp$1(coords.y * this.height, 0, this.height - 1));
-		const rawDepth = this.depthArray[0][depthY * this.width + depthX];
+		const rawDepth = depthArray[Math.round(clamp$1(coords.y * this.height, 0, this.height - 1)) * this.width + depthX];
 		return this.rawValueToMeters * rawDepth;
 	}
 	/**
 	* Projects the given world position to depth camera's clip space and then
 	* to the depth camera's view space using the depth.
 	* @param position - The world position to project.
+	* @param target - Optional target vector.
+	* @param viewId - View index to query (default 0).
 	* @returns The depth camera view space position.
 	*/
-	getProjectedDepthViewPositionFromWorldPosition(position, target = new THREE.Vector3()) {
-		clipSpacePosition.copy(position).applyMatrix4(this.depthViewMatrices[0]).applyMatrix4(this.depthProjectionMatrices[0]);
+	getProjectedDepthViewPositionFromWorldPosition(position, target = new THREE.Vector3(), viewId = 0) {
+		if (viewId > 0) this.requestedSecondaryViews = true;
+		const viewMatrix = this.depthViewMatrices[viewId] ?? this.depthViewMatrices[0];
+		const projMatrix = this.depthProjectionMatrices[viewId] ?? this.depthProjectionMatrices[0];
+		const projInvMatrix = this.depthProjectionInverseMatrices[viewId] ?? this.depthProjectionInverseMatrices[0];
+		clipSpacePosition.copy(position).applyMatrix4(viewMatrix).applyMatrix4(projMatrix);
 		const u = .5 * (clipSpacePosition.x + 1);
 		const v = .5 * (clipSpacePosition.y + 1);
 		let depth = 0;
-		if (this.depthArray[0]) {
+		const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+		if (depthArray) {
 			const depthX = Math.round(clamp$1(u * this.width, 0, this.width - 1));
-			const depthY = Math.round(clamp$1((1 - v) * this.height, 0, this.height - 1));
-			const rawDepth = this.depthArray[0][depthY * this.width + depthX];
+			const rawDepth = depthArray[Math.round(clamp$1((1 - v) * this.height, 0, this.height - 1)) * this.width + depthX];
 			depth = this.rawValueToMeters * rawDepth;
 		}
 		target.set(2 * (u - .5), 2 * (v - .5), -1);
-		target.applyMatrix4(this.depthProjectionInverseMatrices[0]);
+		target.applyMatrix4(projInvMatrix);
 		target.multiplyScalar(-depth / target.z);
 		return target;
 	}
@@ -8559,17 +8592,20 @@ var Depth = class Depth {
 	* the view, growing right.
 	* @param v - Normalized vertical coordinate, origin at the bottom left of
 	* the view, growing up.
+	* @param viewId - View index to query (default 0). Requesting viewId > 0 enables secondary view updates.
 	* @returns Vertex at (u, v)
 	*/
-	getVertex(u, v) {
-		if (!this.depthArray[0]) return null;
-		const coords = this.normDepthBufferCoords(u, v, normViewCoord);
+	getVertex(u, v, viewId = 0) {
+		if (viewId > 0) this.requestedSecondaryViews = true;
+		const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+		if (!depthArray) return null;
+		const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
 		const depthX = Math.round(clamp$1(coords.x * this.width, 0, this.width - 1));
-		const depthY = Math.round(clamp$1(coords.y * this.height, 0, this.height - 1));
-		const rawDepth = this.depthArray[0][depthY * this.width + depthX];
+		const rawDepth = depthArray[Math.round(clamp$1(coords.y * this.height, 0, this.height - 1)) * this.width + depthX];
 		const depth = this.rawValueToMeters * rawDepth;
 		const vertexPosition = new THREE.Vector3(2 * (coords.x - .5), 2 * (.5 - coords.y), -1);
-		vertexPosition.applyMatrix4(this.depthProjectionInverseMatrices[0]);
+		const projInvMatrix = this.depthProjectionInverseMatrices[viewId] ?? this.depthProjectionInverseMatrices[0];
+		vertexPosition.applyMatrix4(projInvMatrix);
 		vertexPosition.multiplyScalar(-depth / vertexPosition.z);
 		return vertexPosition;
 	}
@@ -8617,7 +8653,7 @@ var Depth = class Depth {
 		assertWebGLRenderer(this.renderer, "WebXR GPU depth");
 		this.gpuDepthData[viewId] = depthData;
 		this.updateDepthMatrices(depthData, viewId);
-		const cpuDepth = this.options.depthMesh.enabled && viewId === 0 && this.gpuDepthConverter ? this.gpuDepthConverter.convertGPUToCPU(depthData) : null;
+		const cpuDepth = this.options.depthMesh.enabled && this.shouldUpdateView(viewId) && this.gpuDepthConverter ? this.gpuDepthConverter.convertGPUToCPU(depthData) : null;
 		if (cpuDepth) {
 			this.cpuDepthData[viewId] = cpuDepth;
 			this.depthDataFormat = "float32";
@@ -8648,9 +8684,19 @@ var Depth = class Depth {
 		this.lastDepthMeshUpdateTime = now;
 		return true;
 	}
+	/**
+	* Returns whether CPU depth data and textures should be extracted for the
+	* given view index. By default only view 0 is processed since DepthMesh and
+	* OcclusionPass only consume view 0, unless `options.updateAllViews`,
+	* `options.matchDepthView`, or a runtime `viewId > 0` request is active.
+	*/
+	shouldUpdateView(viewId) {
+		return viewId === 0 || Boolean(this.options.updateAllViews) || Boolean(this.options.matchDepthView) || this.requestedSecondaryViews;
+	}
 	getTexture(viewId) {
 		if (!this.options.depthTexture.enabled) return void 0;
-		return this.depthTextures?.get(viewId);
+		if (viewId > 0) this.requestedSecondaryViews = true;
+		return this.depthTextures?.get(viewId) ?? this.depthTextures?.get(0);
 	}
 	update(frame) {
 		if (this.disposed || !this.options.enabled) return;
@@ -8676,7 +8722,7 @@ var Depth = class Depth {
 					const depthData = binding?.getDepthInformation(view);
 					if (!depthData) return;
 					this.updateGPUDepthData(depthData, viewId);
-				} else {
+				} else if (this.shouldUpdateView(viewId)) {
 					const depthData = frame.getDepthInformation(view);
 					if (!depthData) return;
 					this.updateCPUDepthData(depthData, viewId, session.depthDataFormat ?? "luminance-alpha");
@@ -8749,6 +8795,7 @@ var Depth = class Depth {
 		}
 		this.gpuDepthConverter = void 0;
 		this.registry = void 0;
+		this.requestedSecondaryViews = false;
 		this.view.length = 0;
 		this.cpuDepthData.length = 0;
 		this.gpuDepthData.length = 0;

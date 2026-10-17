@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 0ec7190
-* @builddate 2026-10-17T02:53:47.375Z
+* @commitid ca9123a
+* @builddate 2026-10-17T18:19:39.023Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -50,11 +50,12 @@ import { NodeMaterial, QuadMesh } from "three/webgpu";
 * and TSL shader nodes (`three/webgpu` and `three/tsl`).
 */
 var WebGPUOcclusionPass = class {
-	constructor(scene, camera, useFloatDepth = true, renderToScreen = false, occludableItemsLayer = 3) {
+	constructor(scene, camera, useFloatDepth = true, renderToScreen = false, occludableItemsLayer = 3, resolutionScale = .5) {
 		this.scene = scene;
 		this.camera = camera;
 		this.renderToScreen = renderToScreen;
 		this.occludableItemsLayer = occludableItemsLayer;
+		this.resolutionScale = resolutionScale;
 		this.depthTextures = [];
 		this.depthNear = [];
 		this.depthViewMatrices = [];
@@ -213,7 +214,7 @@ var WebGPUOcclusionPass = class {
 		this.uDepthViewMatrix.value.copy(this.depthViewMatrices[viewId] || camera.matrixWorldInverse);
 		this.uDepthProjectionMatrix.value.copy(this.depthProjectionMatrices[viewId] || camera.projectionMatrix);
 		this.scene.overrideMaterial = this.occlusionMeshMaterial;
-		renderer.getDrawingBufferSize(dimensions);
+		this.getScaledDimensions(renderer, dimensions);
 		this.resizeOcclusionMap(dimensions);
 		renderer.setRenderTarget(this.occlusionMapTexture);
 		renderer.clear();
@@ -227,16 +228,17 @@ var WebGPUOcclusionPass = class {
 		this.readBufferDiffuseNode.value = readBuffer.texture;
 		this.readBufferVirtualDepthNode.value = readBuffer.depthTexture ?? this.placeholderDepthTexture;
 		this.readBufferDepthTextureNode.value = this.depthTextures[viewId] ?? this.placeholderDepthTexture;
-		renderer.getDrawingBufferSize(dimensions);
+		this.getScaledDimensions(renderer, dimensions);
 		this.resizeOcclusionMap(dimensions);
 		renderer.setRenderTarget(this.occlusionMapTexture);
 		this.occlusionMapQuad.render(renderer);
 	}
 	blurOcclusionMap(renderer, dimensions) {
 		this.resizeKawaseBlur(dimensions);
+		const scale = this.resolutionScale;
 		for (let i = 0; i < 3; i++) {
-			this.kawaseBlurPasses[i].uTexelSize.value.set(1 / (dimensions.x / 2 ** i), 1 / (dimensions.y / 2 ** i));
-			this.kawaseBlurPasses[this.kawaseBlurPasses.length - 1 - i].uTexelSize.value.set(1 / (dimensions.x / 2 ** (i - 1)), 1 / (dimensions.y / 2 ** (i - 1)));
+			this.kawaseBlurPasses[i].uTexelSize.value.set(scale / (dimensions.x / 2 ** i), scale / (dimensions.y / 2 ** i));
+			this.kawaseBlurPasses[this.kawaseBlurPasses.length - 1 - i].uTexelSize.value.set(scale / (dimensions.x / 2 ** (i - 1)), scale / (dimensions.y / 2 ** (i - 1)));
 		}
 		renderer.setRenderTarget(this.kawaseBlurTargets[0]);
 		this.kawaseBlurPasses[0].quad.render(renderer);
@@ -251,6 +253,10 @@ var WebGPUOcclusionPass = class {
 		renderer.setRenderTarget(this.occlusionMapTexture);
 		this.kawaseBlurPasses[5].quad.render(renderer);
 	}
+	getScaledDimensions(renderer, dimensions) {
+		renderer.getDrawingBufferSize(dimensions);
+		dimensions.set(Math.max(1, Math.floor(dimensions.x * this.resolutionScale)), Math.max(1, Math.floor(dimensions.y * this.resolutionScale)));
+	}
 	resizeOcclusionMap(dimensions) {
 		if (this.lastOcclusionMapSize.x === dimensions.x && this.lastOcclusionMapSize.y === dimensions.y) return;
 		this.lastOcclusionMapSize.copy(dimensions);
@@ -259,7 +265,7 @@ var WebGPUOcclusionPass = class {
 	resizeKawaseBlur(dimensions) {
 		if (this.lastKawaseBlurSize.x === dimensions.x && this.lastKawaseBlurSize.y === dimensions.y) return;
 		this.lastKawaseBlurSize.copy(dimensions);
-		for (let i = 0; i < 3; i++) this.kawaseBlurTargets[i].setSize(dimensions.x / 2 ** i, dimensions.y / 2 ** i);
+		for (let i = 0; i < 3; i++) this.kawaseBlurTargets[i].setSize(Math.max(1, Math.floor(dimensions.x / 2 ** (i + 1))), Math.max(1, Math.floor(dimensions.y / 2 ** (i + 1))));
 	}
 	applyOcclusionMapToRenderedImage(renderer, readBuffer, writeBuffer) {
 		if (readBuffer && (this.renderToScreen || writeBuffer)) {

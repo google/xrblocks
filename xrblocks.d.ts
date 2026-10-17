@@ -1002,11 +1002,14 @@ export declare class DepthOptions {
   };
   occlusion: {
     enabled: boolean;
+    resolutionScale: number;
   };
   usagePreference: XRDepthUsage[];
   dataFormatPreference: XRDepthDataFormat[];
   depthTypeRequest: XRDepthType[];
   matchDepthView: boolean;
+  /** Whether to extract and upload CPU depth for all stereo views instead of only view 0. */
+  updateAllViews: boolean;
   constructor(options?: DeepReadonly<DeepPartial<DepthOptions>>);
 }
 export declare const xrDepthMeshOptions: {
@@ -1038,11 +1041,13 @@ export declare const xrDepthMeshOptions: {
   };
   readonly occlusion: {
     enabled: boolean;
+    resolutionScale: number;
   };
   readonly usagePreference: readonly XRDepthUsage[];
   readonly dataFormatPreference: readonly XRDepthDataFormat[];
   readonly depthTypeRequest: readonly XRDepthType[];
   readonly matchDepthView: boolean;
+  readonly updateAllViews: boolean;
 };
 export declare const xrDepthMeshVisualizationOptions: {
   readonly debugging: boolean;
@@ -1073,11 +1078,13 @@ export declare const xrDepthMeshVisualizationOptions: {
   };
   readonly occlusion: {
     enabled: boolean;
+    resolutionScale: number;
   };
   readonly usagePreference: readonly XRDepthUsage[];
   readonly dataFormatPreference: readonly XRDepthDataFormat[];
   readonly depthTypeRequest: readonly XRDepthType[];
   readonly matchDepthView: boolean;
+  readonly updateAllViews: boolean;
 };
 export declare const xrDepthMeshPhysicsOptions: {
   readonly debugging: boolean;
@@ -1108,11 +1115,13 @@ export declare const xrDepthMeshPhysicsOptions: {
   };
   readonly occlusion: {
     enabled: boolean;
+    resolutionScale: number;
   };
   readonly usagePreference: readonly XRDepthUsage[];
   readonly dataFormatPreference: readonly XRDepthDataFormat[];
   readonly depthTypeRequest: readonly XRDepthType[];
   readonly matchDepthView: boolean;
+  readonly updateAllViews: boolean;
 };
 //#endregion
 //#region src/input/HandsOptions.d.ts
@@ -6613,6 +6622,8 @@ export declare class Depth {
   normDepthBufferFromNormViewMatrices: THREE.Matrix4[];
   /** Timestamp of the last depth mesh geometry update. */
   private lastDepthMeshUpdateTime;
+  /** Whether an app has requested depth data or textures for viewId > 0. */
+  private requestedSecondaryViews;
   /**
    * Depth is a lightweight manager based on three.js to simply prototyping
    * with Depth in WebXR.
@@ -6634,6 +6645,7 @@ export declare class Depth {
    * @param u - Normalized horizontal coordinate, origin at bottom left.
    * @param v - Normalized vertical coordinate, origin at bottom left.
    * @param target - Vector that receives the result.
+   * @param viewId - View index (default 0).
    * @returns The normalized depth buffer coordinates.
    */
   private normDepthBufferCoords;
@@ -6644,16 +6656,19 @@ export declare class Depth {
    * the view, growing right.
    * @param v - Normalized vertical coordinate, origin at the bottom left of
    * the view, growing up.
+   * @param viewId - View index to query (default 0). Requesting viewId > 0 enables secondary view updates.
    * @returns Depth value at the specified coordinates.
    */
-  getDepth(u: number, v: number): number;
+  getDepth(u: number, v: number, viewId?: number): number;
   /**
    * Projects the given world position to depth camera's clip space and then
    * to the depth camera's view space using the depth.
    * @param position - The world position to project.
+   * @param target - Optional target vector.
+   * @param viewId - View index to query (default 0).
    * @returns The depth camera view space position.
    */
-  getProjectedDepthViewPositionFromWorldPosition(position: THREE.Vector3, target?: THREE.Vector3): THREE.Vector3;
+  getProjectedDepthViewPositionFromWorldPosition(position: THREE.Vector3, target?: THREE.Vector3, viewId?: number): THREE.Vector3;
   /**
    * Retrieves the depth at normalized coordinates (u, v).
    * Note: The UV coordinates are with respect to the user's view, not the depth camera view.
@@ -6661,9 +6676,10 @@ export declare class Depth {
    * the view, growing right.
    * @param v - Normalized vertical coordinate, origin at the bottom left of
    * the view, growing up.
+   * @param viewId - View index to query (default 0). Requesting viewId > 0 enables secondary view updates.
    * @returns Vertex at (u, v)
    */
-  getVertex(u: number, v: number): THREE.Vector3 | null;
+  getVertex(u: number, v: number, viewId?: number): THREE.Vector3 | null;
   private updateDepthMatrices;
   updateCPUDepthData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
   updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number): void;
@@ -6674,6 +6690,13 @@ export declare class Depth {
    * expensive geometry rebuild can be throttled.
    */
   private shouldUpdateDepthMesh;
+  /**
+   * Returns whether CPU depth data and textures should be extracted for the
+   * given view index. By default only view 0 is processed since DepthMesh and
+   * OcclusionPass only consume view 0, unless `options.updateAllViews`,
+   * `options.matchDepthView`, or a runtime `viewId > 0` request is active.
+   */
+  private shouldUpdateView;
   getTexture(viewId: number): THREE.DataTexture | THREE.ExternalTexture | undefined;
   update(frame?: XRFrame): void;
   updateLocalDepth(frame: XRFrame): void;
@@ -9549,6 +9572,7 @@ export declare class OcclusionPass extends Pass implements OcclusionPassBackend 
   private camera;
   renderToScreen: boolean;
   private occludableItemsLayer;
+  resolutionScale: number;
   private depthTextures;
   private occlusionMeshMaterial;
   private occlusionMapUniforms;
@@ -9565,7 +9589,7 @@ export declare class OcclusionPass extends Pass implements OcclusionPassBackend 
   private lastKawaseBlurSize;
   private readonly renderDimensions;
   private disposed;
-  constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, useFloatDepth?: boolean, renderToScreen?: boolean, occludableItemsLayer?: number);
+  constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, useFloatDepth?: boolean, renderToScreen?: boolean, occludableItemsLayer?: number, resolutionScale?: number);
   private setupKawaseBlur;
   setDepthTexture(depthTexture: THREE.Texture, rawValueToMeters: number, viewId: number, depthNear?: number, depthViewMatrix?: THREE.Matrix4, depthProjectionMatrix?: THREE.Matrix4): void;
   /**
@@ -9579,6 +9603,7 @@ export declare class OcclusionPass extends Pass implements OcclusionPassBackend 
   renderOcclusionMapFromScene(renderer: THREE.WebGLRenderer, dimensions: THREE.Vector2, viewId: number): void;
   renderOcclusionMapFromReadBuffer(renderer: THREE.WebGLRenderer, readBuffer: THREE.RenderTarget, dimensions: THREE.Vector2, viewId: number): void;
   blurOcclusionMap(renderer: THREE.WebGLRenderer, dimensions: THREE.Vector2): void;
+  private getScaledDimensions;
   private resizeOcclusionMap;
   private resizeKawaseBlur;
   applyOcclusionMapToRenderedImage(renderer: THREE.WebGLRenderer, readBuffer?: THREE.WebGLRenderTarget, writeBuffer?: THREE.WebGLRenderTarget): void;
