@@ -8,9 +8,10 @@ import {XRSystems} from '../core/components/XRSystems';
 import {Interaction} from '../interaction/Interaction';
 import {Reticle} from '../interaction/reticle/Reticle';
 import {UIButton} from '../ui/components/UIButton';
+import {SimulatorPointerLockController} from '../simulator/SimulatorPointerLockController';
 import {Input} from './Input';
 import {Controller} from './Controller';
-import {Hands} from './Hands';
+import {Handedness, Hands} from './Hands';
 
 function updateInput(input: Input) {
   input.sampleSources();
@@ -117,14 +118,19 @@ describe('Input direct touch', () => {
     const getController = vi.fn((index: number) =>
       spaces[index].getTargetRaySpace()
     );
+    const getControllerGrip = vi.fn((index: number) =>
+      spaces[index].getGripSpace()
+    );
+    const getHand = vi.fn((index: number) => spaces[index].getHandSpace());
     const options = new Options().enableHands();
-    options.controllers.visualization = false;
+    options.controllers.visualization = true;
     options.controllers.visualizeRays = false;
     options.hands.visualization = false;
     const renderer = {
       xr: {
         getController,
-        getHand: (index: number) => spaces[index].getHandSpace(),
+        getControllerGrip,
+        getHand,
       },
     } as unknown as THREE.WebGLRenderer;
     input.init({systemsGroup: new XRSystems(), options, renderer});
@@ -149,6 +155,8 @@ describe('Input direct touch', () => {
     transientPointer.dispatchEvent({type: 'selectstart', data: source});
 
     expect(getController).toHaveBeenCalledTimes(4);
+    expect(getControllerGrip).toHaveBeenCalledTimes(4);
+    expect(getHand).toHaveBeenCalledTimes(4);
     expect(input.controllers.slice(0, 4)).toHaveLength(4);
     expect(input.controllers.map(({userData}) => userData.id)).toEqual([
       0, 1, 2, 3, 4, 5, 6,
@@ -157,6 +165,94 @@ describe('Input direct touch', () => {
     expect(selectedTargets).toEqual([transientPointer]);
     expect(input.leftController).toBe(leftController);
     expect(input.rightController).toBeUndefined();
+
+    const pointerLockController = new SimulatorPointerLockController();
+    input.enableController(pointerLockController);
+    const ids = input.controllers.map(({userData}) => userData.id);
+    expect(pointerLockController.userData.id).toBe(7);
+    expect(new Set(ids).size).toBe(ids.length);
+    input.dispose();
+  });
+
+  it.each(['left', 'right'] as const)(
+    'keeps the %s controller alias when another same-handed source disconnects',
+    (handedness) => {
+      const input = new Input();
+      const first = new THREE.Object3D() as Controller;
+      const second = new THREE.Object3D() as Controller;
+      first.userData = {connected: false, selected: false};
+      second.userData = {connected: false, selected: false};
+      const firstSource = {handedness} as XRInputSource;
+      const secondSource = {handedness} as XRInputSource;
+      const getAlias = () =>
+        handedness === 'left' ? input.leftController : input.rightController;
+      input.controllers.push(first, second);
+
+      input.defaultOnConnected({
+        type: 'connected',
+        target: first,
+        data: firstSource,
+      });
+      input.defaultOnConnected({
+        type: 'connected',
+        target: second,
+        data: secondSource,
+      });
+      input.defaultOnDisconnected({
+        type: 'disconnected',
+        target: second,
+        data: secondSource,
+      });
+
+      expect(getAlias()).toBe(first);
+
+      input.defaultOnDisconnected({
+        type: 'disconnected',
+        target: first,
+        data: firstSource,
+      });
+      expect(getAlias()).toBeUndefined();
+      input.dispose();
+    }
+  );
+
+  it('keeps hand joints and direct touch available when a hand uses slot two', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController: (index: number) => spaces[index].getTargetRaySpace(),
+        getHand: (index: number) => spaces[index].getHandSpace(),
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+
+    const controller = input.controllers[2];
+    const hand = spaces[2].getHandSpace();
+    const indexTip = Object.assign(new THREE.Group(), {jointRadius: 0.01});
+    const wrist = Object.assign(new THREE.Group(), {jointRadius: 0.01});
+    hand.joints['index-finger-tip'] = indexTip;
+    hand.joints.wrist = wrist;
+    hand.add(indexTip, wrist);
+    hand.visible = true;
+    const source = {
+      hand: new Map(),
+      handedness: 'left',
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+    controller.dispatchEvent({type: 'connected', data: source});
+
+    updateInput(input);
+
+    expect(input.hands[0]).toBe(hand);
+    expect(new Hands(input.hands).getIndexTip(Handedness.LEFT)).toBe(indexTip);
+    expect(input.getFrame().directTouches).toMatchObject([
+      {controller, handIndex: 0, hand: wrist},
+    ]);
     input.dispose();
   });
 

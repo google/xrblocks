@@ -47,6 +47,7 @@ export class Input {
   controllers: Controller[] = [];
   controllerGrips: THREE.Group[] = [];
   hands: THREE.XRHandSpace[] = [];
+  private controllerHands: THREE.XRHandSpace[] = [];
   /** Completed head gestures, when enabled before initialization. */
   headGestures?: HeadGestureRecognition;
   pivotsEnabled = false;
@@ -124,7 +125,7 @@ export class Input {
     if (options.controllers.enabled) {
       if (options.controllers.visualization) {
         const controllerModelFactory = new XRControllerModelFactory();
-        for (let i = 0; i < NUM_HANDS; ++i) {
+        for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
           controllerGrips.push(renderer.xr.getControllerGrip(i));
           controllerGrips[i].add(
             controllerModelFactory.createControllerModel(controllerGrips[i])
@@ -135,34 +136,36 @@ export class Input {
 
       // TODO: Separate logic to XR Hands.
       if (options.hands.enabled) {
-        for (let i = 0; i < NUM_HANDS; ++i) {
-          this.hands.push(renderer.xr.getHand(i));
-          this.activeControllers.add(this.hands[i]);
+        for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
+          const hand = renderer.xr.getHand(i);
+          this.controllerHands.push(hand);
+          if (i < NUM_HANDS) this.hands.push(hand);
+          this.activeControllers.add(hand);
         }
 
         if (options.hands.visualization) {
           if (options.hands.visualizeJoints) {
             console.log('Visualize hand joints.');
             const handModelFactory = new XRHandModelFactory();
-            for (let i = 0; i < NUM_HANDS; ++i) {
+            for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
               const handModel = handModelFactory.createHandModel(
-                this.hands[i],
+                this.controllerHands[i],
                 'boxes'
               );
               handModel.xb = {...handModel.xb, pointerEvents: 'none'};
-              this.hands[i].add(handModel);
+              this.controllerHands[i].add(handModel);
             }
           }
           if (options.hands.visualizeMeshes) {
             console.log('Visualize hand meshes.');
             const handModelFactory = new XRHandModelFactory();
-            for (let i = 0; i < NUM_HANDS; ++i) {
+            for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
               const handModel = handModelFactory.createHandModel(
-                this.hands[i],
+                this.controllerHands[i],
                 'mesh'
               );
               handModel.xb = {...handModel.xb, pointerEvents: 'none'};
-              this.hands[i].add(handModel);
+              this.controllerHands[i].add(handModel);
             }
           }
         }
@@ -294,6 +297,11 @@ export class Input {
     controller.userData.connected = true;
     controller.gamepad = event.data?.gamepad;
     controller.inputSource = event.data;
+    const handIndex = this.getHandIndex(event.data?.handedness);
+    const hand = this.controllerHands[controller.userData.id];
+    if (event.data?.hand && handIndex !== undefined && hand) {
+      this.hands[handIndex] = hand;
+    }
     switch (event.data?.handedness) {
       case 'left':
         this.leftController = controller;
@@ -306,6 +314,7 @@ export class Input {
 
   defaultOnDisconnected(event: ControllerEvent) {
     const controller = event.target;
+    const inputSource = event.data ?? controller.inputSource;
     controller.userData.connected = false;
     if (controller.userData.selected) {
       controller.userData.selected = false;
@@ -321,13 +330,22 @@ export class Input {
     }
     this.releasedControllers.delete(controller);
     delete controller?.gamepad;
-    switch (event.data?.handedness) {
-      case 'left':
-        this.leftController = undefined;
-        break;
-      case 'right':
-        this.rightController = undefined;
-        break;
+    if (this.leftController === controller) {
+      this.leftController = this.findConnectedController('left', controller);
+    }
+    if (this.rightController === controller) {
+      this.rightController = this.findConnectedController('right', controller);
+    }
+    const handIndex = this.getHandIndex(inputSource?.handedness);
+    const hand = this.controllerHands[controller.userData.id];
+    if (
+      inputSource?.hand &&
+      handIndex !== undefined &&
+      this.hands[handIndex] === hand
+    ) {
+      const replacement = this.findConnectedHand(handIndex, controller);
+      if (replacement) this.hands[handIndex] = replacement;
+      else delete this.hands[handIndex];
     }
   }
 
@@ -521,14 +539,21 @@ export class Input {
 
   private updateDirectTouchInputs() {
     this.directTouchInputs.length = 0;
-    for (let handIndex = 0; handIndex < NUM_HANDS; handIndex++) {
-      const controller = this.controllers[handIndex];
-      const hand = this.hands[handIndex];
+    for (
+      let controllerSlot = 0;
+      controllerSlot < NUM_CONTROLLER_SLOTS;
+      controllerSlot++
+    ) {
+      const controller = this.controllers[controllerSlot];
+      const hand =
+        this.controllerHands[controllerSlot] ?? this.hands[controllerSlot];
       const indexTip = hand?.joints?.['index-finger-tip'];
       // Three.js retains joint poses after tracking is lost. A stale touch
       // would keep suppressing the controller's ray and reticle.
       if (!controller || !hand?.visible || !indexTip?.visible) continue;
-      let input = this.directTouchSlots[handIndex];
+      const handIndex =
+        this.getHandIndex(controller.inputSource?.handedness) ?? controllerSlot;
+      let input = this.directTouchSlots[controllerSlot];
       if (!input) {
         input = {
           controller,
@@ -537,9 +562,10 @@ export class Input {
           orientation: new THREE.Quaternion(),
           selected: false,
         };
-        this.directTouchSlots[handIndex] = input;
+        this.directTouchSlots[controllerSlot] = input;
       }
       input.controller = controller;
+      input.handIndex = handIndex;
       input.hand = hand.joints?.wrist;
       indexTip.getWorldPosition(input.point);
       controller.getWorldQuaternion(input.orientation!);
@@ -560,6 +586,7 @@ export class Input {
 
   private registerController(controller: Controller) {
     if (this.controllers.includes(controller)) return;
+    controller.userData.id = this.controllers.length;
     this.controllers.push(controller);
 
     if (controller.reticle) {
@@ -571,6 +598,40 @@ export class Input {
     }
 
     this.pinchFilter.setupController(controller, this.listeners.keys());
+  }
+
+  private getHandIndex(handedness?: string): number | undefined {
+    switch (handedness) {
+      case 'left':
+        return 0;
+      case 'right':
+        return 1;
+      default:
+        return undefined;
+    }
+  }
+
+  private findConnectedController(
+    handedness: 'left' | 'right',
+    exclude: Controller
+  ): Controller | undefined {
+    return this.controllers.find(
+      (controller) =>
+        controller !== exclude &&
+        controller.userData.connected === true &&
+        controller.inputSource?.handedness === handedness
+    );
+  }
+
+  private findConnectedHand(
+    handIndex: number,
+    exclude: Controller
+  ): THREE.XRHandSpace | undefined {
+    const handedness = handIndex === 0 ? 'left' : 'right';
+    const controller = this.findConnectedController(handedness, exclude);
+    return controller
+      ? this.controllerHands[controller.userData.id]
+      : undefined;
   }
 
   enableController(controller: Controller) {
