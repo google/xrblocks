@@ -274,9 +274,14 @@ describe('Core frame and simulator lifecycle', () => {
 
       expect(core.environmentBlendMode).toBe('additive');
       expect(ui.theme.colors).toEqual(
-        expect.objectContaining({surface: '#173a3a', text: '#ffffff'})
+        expect.objectContaining({
+          surface: '#173a3a',
+          text: '#ffffff',
+          primary: '#7ffff0',
+        })
       );
       expect(ui.theme.styles?.surface?.backgroundColor).toBe('#173a3a');
+      expect(ui.theme.styles?.button?.backgroundColor).toBe('#006b62');
 
       core['onXRSessionEnded']();
       expect(core.environmentBlendMode).toBeUndefined();
@@ -309,6 +314,71 @@ describe('Core frame and simulator lifecycle', () => {
     } finally {
       core['onXRSessionEnded']();
       ui.autoAdditiveTheme = originalAutoAdditiveTheme;
+      ui.theme = originalTheme;
+    }
+  });
+
+  it('keeps an app theme change made during an additive session after it ends', async () => {
+    const originalTheme = ui.theme;
+    ui.theme = 'colorful';
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+    const session = Object.assign(new EventTarget(), {
+      environmentBlendMode: 'additive',
+      requestReferenceSpace: vi.fn().mockResolvedValue({}),
+    }) as unknown as XRSession;
+
+    try {
+      await core['onXRSessionStarted'](session);
+      ui.theme = 'glimmerAmber';
+      const appTheme = ui.theme;
+
+      core['onXRSessionEnded']();
+
+      expect(ui.theme.colors).toEqual(appTheme.colors);
+      expect(ui.theme.styles).toEqual(appTheme.styles);
+    } finally {
+      core['onXRSessionEnded']();
+      ui.theme = originalTheme;
+    }
+  });
+
+  it('restores the app theme before a second session starts without an end', async () => {
+    const originalTheme = ui.theme;
+    ui.theme = 'colorful';
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+    const createSession = (): XRSession =>
+      Object.assign(new EventTarget(), {
+        environmentBlendMode: 'additive',
+        requestReferenceSpace: vi.fn().mockResolvedValue({}),
+      }) as unknown as XRSession;
+
+    try {
+      await core['onXRSessionStarted'](createSession());
+      await core['onXRSessionStarted'](createSession());
+
+      expect(core.environmentBlendMode).toBe('additive');
+      expect(ui.theme.colors).toEqual(
+        expect.objectContaining({surface: '#173a3a'})
+      );
+      core['onXRSessionEnded']();
+      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
+    } finally {
+      core['onXRSessionEnded']();
+      ui.theme = originalTheme;
+    }
+  });
+
+  it('handles an XR session end without a preceding start', () => {
+    const originalTheme = ui.theme;
+    ui.theme = 'colorful';
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+
+    try {
+      core['onXRSessionEnded']();
+
+      expect(core.environmentBlendMode).toBeUndefined();
+      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
+    } finally {
       ui.theme = originalTheme;
     }
   });

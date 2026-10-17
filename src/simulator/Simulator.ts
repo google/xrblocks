@@ -484,6 +484,7 @@ export class Simulator extends Script {
       diagonalFov === this.appliedDisplayDiagonalFov &&
       (diagonalFov === undefined || aspect === this.appliedDisplayAspect)
     ) {
+      this.syncStereoCameraProjection();
       return;
     }
 
@@ -508,6 +509,24 @@ export class Simulator extends Script {
     this.mainCamera.updateProjectionMatrix();
     this.appliedDisplayDiagonalFov = diagonalFov;
     this.appliedDisplayAspect = aspect;
+    this.syncStereoCameraProjection();
+  }
+
+  private syncStereoCameraProjection(): void {
+    if (!(this.mainCamera instanceof THREE.PerspectiveCamera)) return;
+
+    for (const camera of this.stereoCameras) {
+      if (!(camera instanceof THREE.PerspectiveCamera)) continue;
+      if (
+        camera.fov === this.mainCamera.fov &&
+        camera.aspect === this.mainCamera.aspect
+      ) {
+        continue;
+      }
+      camera.fov = this.mainCamera.fov;
+      camera.aspect = this.mainCamera.aspect;
+      camera.updateProjectionMatrix();
+    }
   }
 
   private setVideoPath(path?: string) {

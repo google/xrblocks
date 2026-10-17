@@ -50,4 +50,29 @@ describe('Simulator glasses diagonal FOV', () => {
       /displayDiagonalFov must be greater than 0/
     );
   });
+
+  it('syncs both stereo camera projections when FOV or aspect changes', () => {
+    const simulator = new Simulator(() => {});
+    const camera = new THREE.PerspectiveCamera(50, 16 / 9);
+    simulator.mainCamera = camera;
+    simulator.options = new SimulatorOptions({
+      displayDiagonalFov: 70,
+      stereo: {enabled: true},
+    });
+    simulator['defaultCameraFov'] = camera.fov;
+    simulator['applyDisplayFov']();
+    simulator.setupStereoCameras(camera);
+
+    camera.aspect = 1.25;
+    simulator['applyDisplayFov']();
+    for (const eyeCamera of simulator.stereoCameras) {
+      expect(eyeCamera).toMatchObject({fov: camera.fov, aspect: camera.aspect});
+    }
+
+    simulator.options.displayDiagonalFov = 88;
+    simulator['applyDisplayFov']();
+    for (const eyeCamera of simulator.stereoCameras) {
+      expect(eyeCamera).toMatchObject({fov: camera.fov, aspect: camera.aspect});
+    }
+  });
 });

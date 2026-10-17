@@ -258,7 +258,7 @@ export const additiveTheme = createThemeSnapshot({
   colors: {
     surface: '#173a3a',
     raisedSurface: '#245252',
-    primary: '#006b62',
+    primary: '#7ffff0',
     primaryText: '#ffffff',
     text: '#ffffff',
     secondaryText: '#d5ffff',
