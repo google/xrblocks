@@ -245,14 +245,13 @@ describe('Input direct touch', () => {
 });
 
 describe('Input transient-pointer disconnects', () => {
-  it('keeps a native-select grace frame stable until the next source sample', () => {
+  it('keeps the grace frame through reads until the second source sample', () => {
     const {input, controller} = createInitializedInput();
     controller.userData = {connected: true, selected: true};
     controller.inputSource = {targetRayMode: 'transient-pointer'};
     controller.gamepad = {
       buttons: [{value: 1, pressed: true}],
     } as unknown as Gamepad;
-    // Record a native completion before the transient source disconnects.
     controller.dispatchEvent({type: 'select', target: controller});
     controller.dispatchEvent({
       type: 'disconnected',
@@ -260,22 +259,17 @@ describe('Input transient-pointer disconnects', () => {
       data: controller.inputSource,
     });
 
-    const firstRead = input.getFrame();
-    expect(firstRead.raySources).toHaveLength(1);
-    expect(firstRead.raySources[0]).toMatchObject({
-      controller,
-      sourceType: 'controller-ray',
-      selected: false,
-    });
-    const secondRead = input.getFrame();
-    expect(secondRead.raySources).toHaveLength(1);
-    expect(secondRead.raySources[0]).toMatchObject({
-      controller,
-      sourceType: 'controller-ray',
-      selected: false,
-      released: true,
-    });
-
+    // Debug/event code can read input before Core samples the next frame.
+    expect(input.getFrame().raySources).toHaveLength(1);
+    input.sampleSources();
+    expect(input.getFrame().raySources).toMatchObject([
+      {
+        controller,
+        sourceType: 'controller-ray',
+        selected: false,
+        released: true,
+      },
+    ]);
     input.sampleSources();
     expect(input.getFrame().raySources).toHaveLength(0);
     input.dispose();
@@ -296,6 +290,31 @@ describe('Input transient-pointer disconnects', () => {
     });
 
     expect(input.getFrame().raySources).toHaveLength(0);
+  });
+
+  it('keeps capturing native select after its public listener is unbound', () => {
+    const {input, controller} = createInitializedInput();
+    controller.userData = {connected: true, selected: true};
+    controller.inputSource = {targetRayMode: 'transient-pointer'};
+    controller.gamepad = {
+      buttons: [{value: 1, pressed: true}],
+    } as unknown as Gamepad;
+    const selectListener = vi.fn();
+    input.bindSelect(selectListener);
+    input.unbindListener('select', selectListener);
+
+    controller.dispatchEvent({type: 'select', target: controller});
+    controller.dispatchEvent({type: 'selectend', target: controller});
+    controller.dispatchEvent({
+      type: 'disconnected',
+      target: controller,
+      data: controller.inputSource,
+    });
+
+    expect(input.getFrame().raySources).toMatchObject([
+      {controller, selected: false, released: true},
+    ]);
+    input.dispose();
   });
 
   it('keeps a grace frame when native select then selectend precede disconnect', () => {

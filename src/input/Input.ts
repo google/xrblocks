@@ -61,7 +61,7 @@ export class Input {
   controllersEnabled = true;
   listeners = new Map();
   private dispatchControllerEvent = (event: ControllerEvent) =>
-    this.forwardControllerEvent(event);
+    this.dispatchEvent(event);
   private pinchFilter = new PinchFilter(this.dispatchControllerEvent);
   private releasedControllers = new Set<Controller>();
   private nativeSelectControllers = new Set<Controller>();
@@ -183,7 +183,7 @@ export class Input {
     }
 
     for (const controller of controllers) {
-      this.pinchFilter.setupControllerForType(controller, 'select');
+      this.setupNativeSelectTracking(controller);
     }
     this.bindSelectStart(this.defaultOnSelectStart.bind(this));
     this.bindSelectEnd(this.defaultOnSelectEnd.bind(this));
@@ -385,15 +385,28 @@ export class Input {
     }
   }
 
-  private forwardControllerEvent(event: ControllerEvent) {
-    const nativeEvent = event as ControllerEvent & {isCustom?: boolean};
+  private captureNativeSelectEvent = (event: ControllerEvent) => {
     if (event.type === 'selectstart') {
       this.nativeSelectControllers.delete(event.target);
-    } else if (event.type === 'select' && !nativeEvent.isCustom) {
-      // Capture native completion before dispatchEvent applies PinchFilter.
+    } else if (
+      event.type === 'select' &&
+      !(event as ControllerEvent & {isCustom?: boolean}).isCustom
+    ) {
       this.nativeSelectControllers.add(event.target);
     }
-    this.dispatchEvent(event);
+  };
+
+  private setupNativeSelectTracking(controller: Controller) {
+    controller.addEventListener('selectstart', this.captureNativeSelectEvent);
+    controller.addEventListener('select', this.captureNativeSelectEvent);
+  }
+
+  private removeNativeSelectTracking(controller: Controller) {
+    controller.removeEventListener(
+      'selectstart',
+      this.captureNativeSelectEvent
+    );
+    controller.removeEventListener('select', this.captureNativeSelectEvent);
   }
 
   /**
@@ -406,6 +419,7 @@ export class Input {
     listener: (event: ControllerEvent) => void
   ) {
     for (const controller of this.controllers) {
+      this.setupNativeSelectTracking(controller);
       this.pinchFilter.setupControllerForType(controller, listenerName);
     }
     if (!this.listeners.has(listenerName)) {
@@ -523,9 +537,12 @@ export class Input {
   sampleSources() {
     for (const [controller, graceFrame] of this
       .disconnectedTransientPointerControllers) {
-      if (!graceFrame.sampled) continue;
-      this.disconnectedTransientPointerControllers.delete(controller);
-      this.releasedControllers.delete(controller);
+      if (graceFrame.sampled) {
+        this.disconnectedTransientPointerControllers.delete(controller);
+        this.releasedControllers.delete(controller);
+      } else {
+        graceFrame.sampled = true;
+      }
     }
 
     if (this.controllersEnabled) {
@@ -598,9 +615,6 @@ export class Input {
         }
         input.selected =
           !transientPointerGraceFrame && controller.userData.selected === true;
-        if (transientPointerGraceFrame) {
-          transientPointerGraceFrame.sampled = true;
-        }
         input.released = transientPointerGraceFrame
           ? this.releasedControllers.has(controller)
           : this.releasedControllers.delete(controller);
@@ -670,8 +684,8 @@ export class Input {
       }
     }
 
+    this.setupNativeSelectTracking(controller);
     this.pinchFilter.setupController(controller, this.listeners.keys());
-    this.pinchFilter.setupControllerForType(controller, 'select');
   }
 
   enableController(controller: Controller) {
@@ -715,6 +729,9 @@ export class Input {
     this.keyDownListeners.clear();
     this.keyUpListeners.clear();
     this.pinchFilter.dispose(this.controllers);
+    for (const controller of this.controllers) {
+      this.removeNativeSelectTracking(controller);
+    }
     this.listeners.clear();
     for (const controller of new Set([
       ...this.controllers,

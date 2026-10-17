@@ -182,6 +182,7 @@ describe('Interaction public behavior', () => {
       target: source,
       data: source.inputSource,
     });
+    input.sampleSources();
     const graceFrame = input.getFrame();
     expect(graceFrame.raySources[0].selected).toBe(false);
     graceFrame.raySources[0].intersections = [hit(button)];
@@ -266,6 +267,7 @@ describe('Interaction public behavior', () => {
     });
     input.defaultOnSelectStart({type: 'selectstart', target: source});
 
+    input.sampleSources();
     const graceFrame = input.getFrame();
     expect(graceFrame.raySources[0]).toMatchObject({
       selected: false,
