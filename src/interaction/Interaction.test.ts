@@ -175,6 +175,8 @@ describe('Interaction public behavior', () => {
     selectedFrame.raySources[0].intersections = [hit(button)];
     interaction.update(selectedFrame);
 
+    input.bindSelect(vi.fn());
+    source.dispatchEvent({type: 'select', target: source});
     input.defaultOnDisconnected({
       type: 'disconnected',
       target: source,
@@ -191,9 +193,45 @@ describe('Interaction public behavior', () => {
       reason: 'released',
     });
 
+    input.sampleSources();
     interaction.update(input.getFrame());
     expect(button.ends).toHaveLength(1);
     expect(clicked).toHaveBeenCalledOnce();
+  });
+
+  it('ends a cancelled transient-pointer selection as source-lost', async () => {
+    const clicked = vi.fn();
+    const button = new RecordingButton({
+      label: 'Cancelled pinch',
+      onClick: clicked,
+    });
+    await activateScripts(callbacks, button);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'transient-pointer'};
+    const input = new Input();
+    input.controllers.push(source);
+
+    const initialFrame = input.getFrame();
+    initialFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(initialFrame);
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    const selectedFrame = input.getFrame();
+    selectedFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(selectedFrame);
+
+    input.defaultOnSelectEnd({type: 'selectend', target: source});
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    interaction.update(input.getFrame());
+
+    expect(clicked).not.toHaveBeenCalled();
+    expect(button.ends.at(-1)).toMatchObject({
+      completed: false,
+      reason: 'source-lost',
+    });
   });
 
   it('uses the disconnected pose and target before a reused slot starts a new pinch', async () => {
@@ -212,6 +250,8 @@ describe('Interaction public behavior', () => {
     input.defaultOnSelectStart({type: 'selectstart', target: source});
     interaction.update(input.getFrame());
 
+    input.bindSelect(vi.fn());
+    source.dispatchEvent({type: 'select', target: source});
     input.defaultOnDisconnected({
       type: 'disconnected',
       target: source,
@@ -239,6 +279,7 @@ describe('Interaction public behavior', () => {
     expect(clickedB).not.toHaveBeenCalled();
     expect(buttonB.starts).toHaveLength(0);
 
+    input.sampleSources();
     const nextFrame = input.getFrame();
     expect(nextFrame.raySources[0]).toMatchObject({
       selected: true,

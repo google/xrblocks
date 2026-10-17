@@ -40,6 +40,7 @@ interface TransientPointerGraceFrame {
   position: THREE.Vector3;
   orientation: THREE.Quaternion;
   sourceType: RaySourceInput['sourceType'];
+  sampled: boolean;
   intersection?: THREE.Intersection;
 }
 
@@ -60,9 +61,10 @@ export class Input {
   controllersEnabled = true;
   listeners = new Map();
   private dispatchControllerEvent = (event: ControllerEvent) =>
-    this.dispatchEvent(event);
+    this.forwardControllerEvent(event);
   private pinchFilter = new PinchFilter(this.dispatchControllerEvent);
   private releasedControllers = new Set<Controller>();
+  private nativeSelectControllers = new Set<Controller>();
   private disconnectedTransientPointerControllers = new Map<
     Controller,
     TransientPointerGraceFrame
@@ -180,6 +182,9 @@ export class Input {
       }
     }
 
+    for (const controller of controllers) {
+      this.pinchFilter.setupControllerForType(controller, 'select');
+    }
     this.bindSelectStart(this.defaultOnSelectStart.bind(this));
     this.bindSelectEnd(this.defaultOnSelectEnd.bind(this));
     this.bindSqueezeStart(this.defaultOnSqueezeStart.bind(this));
@@ -312,7 +317,9 @@ export class Input {
   defaultOnDisconnected(event: ControllerEvent) {
     const controller = event.target;
     const wasSelected = controller.userData.selected === true;
+    const nativeSelectArrived = this.nativeSelectControllers.delete(controller);
     const shouldKeepTransientPointer =
+      nativeSelectArrived &&
       (wasSelected || this.releasedControllers.has(controller)) &&
       (event.data?.targetRayMode ?? controller.inputSource?.targetRayMode) ===
         'transient-pointer';
@@ -325,6 +332,7 @@ export class Input {
         position: controller.getWorldPosition(new THREE.Vector3()),
         orientation: controller.getWorldQuaternion(new THREE.Quaternion()),
         sourceType: this.getRaySourceType(controller),
+        sampled: false,
         ...(lastIntersection?.object && lastIntersection.point
           ? {
               intersection: {
@@ -375,6 +383,17 @@ export class Input {
         this.rightController = undefined;
         break;
     }
+  }
+
+  private forwardControllerEvent(event: ControllerEvent) {
+    const nativeEvent = event as ControllerEvent & {isCustom?: boolean};
+    if (event.type === 'selectstart') {
+      this.nativeSelectControllers.delete(event.target);
+    } else if (event.type === 'select' && !nativeEvent.isCustom) {
+      // Capture native completion before dispatchEvent applies PinchFilter.
+      this.nativeSelectControllers.add(event.target);
+    }
+    this.dispatchEvent(event);
   }
 
   /**
@@ -502,6 +521,13 @@ export class Input {
 
   /** Samples current controller, button, and direct-touch state. */
   sampleSources() {
+    for (const [controller, graceFrame] of this
+      .disconnectedTransientPointerControllers) {
+      if (!graceFrame.sampled) continue;
+      this.disconnectedTransientPointerControllers.delete(controller);
+      this.releasedControllers.delete(controller);
+    }
+
     if (this.controllersEnabled) {
       for (const controller of this.controllers) {
         if (controller.userData.connected !== true) continue;
@@ -519,9 +545,6 @@ export class Input {
       for (const controller of this.controllers) {
         const transientPointerGraceFrame =
           this.disconnectedTransientPointerControllers.get(controller);
-        if (transientPointerGraceFrame) {
-          this.disconnectedTransientPointerControllers.delete(controller);
-        }
         if (
           controller.userData.connected !== true &&
           !transientPointerGraceFrame
@@ -575,11 +598,15 @@ export class Input {
         }
         input.selected =
           !transientPointerGraceFrame && controller.userData.selected === true;
-        input.released = this.releasedControllers.delete(controller);
+        if (transientPointerGraceFrame) {
+          transientPointerGraceFrame.sampled = true;
+        }
+        input.released = transientPointerGraceFrame
+          ? this.releasedControllers.has(controller)
+          : this.releasedControllers.delete(controller);
         this.raySourceInputs.push(input);
       }
     }
-    this.disconnectedTransientPointerControllers.clear();
     return this.interactionFrame;
   }
 
@@ -644,6 +671,7 @@ export class Input {
     }
 
     this.pinchFilter.setupController(controller, this.listeners.keys());
+    this.pinchFilter.setupControllerForType(controller, 'select');
   }
 
   enableController(controller: Controller) {
@@ -659,6 +687,7 @@ export class Input {
 
   disableControllers() {
     this.controllersEnabled = false;
+    this.nativeSelectControllers.clear();
     this.disconnectedTransientPointerControllers.clear();
     for (const controller of this.controllers) {
       controller.userData.selected = false;
@@ -700,6 +729,7 @@ export class Input {
     this.reticles.clear();
     this.raySourceInputs.length = 0;
     this.raySourceSlots.clear();
+    this.nativeSelectControllers.clear();
     this.disconnectedTransientPointerControllers.clear();
     this.directTouchInputs.length = 0;
     this.directTouchSlots.length = 0;

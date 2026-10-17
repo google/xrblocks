@@ -16,6 +16,24 @@ function updateInput(input: Input) {
   input.sampleSources();
 }
 
+function createInitializedInput() {
+  const input = new Input();
+  const spaces = [new WebXRController(), new WebXRController()];
+  const options = new Options();
+  options.controllers.visualization = false;
+  options.controllers.visualizeRays = false;
+  input.init({
+    systemsGroup: new XRSystems(),
+    options,
+    renderer: {
+      xr: {
+        getController: (index: number) => spaces[index].getTargetRaySpace(),
+      },
+    } as unknown as THREE.WebGLRenderer,
+  });
+  return {input, controller: input.controllers[0]};
+}
+
 function trackedHand() {
   const hand = new WebXRController().getHandSpace();
   const indexTip = Object.assign(new THREE.Group(), {jointRadius: 0.01});
@@ -224,30 +242,47 @@ describe('Input direct touch', () => {
 });
 
 describe('Input transient-pointer disconnects', () => {
-  it('keeps a disconnected transient pointer for one frame, released', () => {
-    const input = new Input();
-    const controller = new THREE.Object3D() as Controller;
+  it('keeps a native-select grace frame stable until the next source sample', () => {
+    const {input, controller} = createInitializedInput();
     controller.userData = {connected: true, selected: true};
     controller.inputSource = {targetRayMode: 'transient-pointer'};
-    input.controllers.push(controller);
+    controller.gamepad = {
+      buttons: [{value: 1, pressed: true}],
+    } as unknown as Gamepad;
+    const selectSpy = vi.fn();
+    input.bindSelect(selectSpy);
 
-    input.defaultOnDisconnected({
+    // PinchFilter drops this native event, but Input must record it first.
+    controller.dispatchEvent({type: 'select', target: controller});
+    expect(selectSpy).not.toHaveBeenCalled();
+    controller.dispatchEvent({
       type: 'disconnected',
       target: controller,
       data: controller.inputSource,
     });
 
-    const graceFrame = input.getFrame();
-    expect(graceFrame.raySources).toHaveLength(1);
-    expect(graceFrame.raySources[0]).toMatchObject({
+    const firstRead = input.getFrame();
+    expect(firstRead.raySources).toHaveLength(1);
+    expect(firstRead.raySources[0]).toMatchObject({
       controller,
       sourceType: 'controller-ray',
       selected: false,
     });
+    const secondRead = input.getFrame();
+    expect(secondRead.raySources).toHaveLength(1);
+    expect(secondRead.raySources[0]).toMatchObject({
+      controller,
+      sourceType: 'controller-ray',
+      selected: false,
+      released: true,
+    });
+
+    input.sampleSources();
     expect(input.getFrame().raySources).toHaveLength(0);
+    input.dispose();
   });
 
-  it('keeps a transient pointer for one frame when selectend precedes disconnect', () => {
+  it('does not complete a cancelled transient pointer when selectend precedes disconnect', () => {
     const input = new Input();
     const controller = new THREE.Object3D() as Controller;
     controller.userData = {connected: true, selected: true};
@@ -261,15 +296,31 @@ describe('Input transient-pointer disconnects', () => {
       data: controller.inputSource,
     });
 
-    const graceFrame = input.getFrame();
-    expect(graceFrame.raySources).toHaveLength(1);
-    expect(graceFrame.raySources[0]).toMatchObject({
-      controller,
-      sourceType: 'controller-ray',
-      selected: false,
-      released: true,
-    });
     expect(input.getFrame().raySources).toHaveLength(0);
+  });
+
+  it('keeps a grace frame when native select then selectend precede disconnect', () => {
+    const {input, controller} = createInitializedInput();
+    controller.userData = {connected: true, selected: true};
+    controller.inputSource = {targetRayMode: 'transient-pointer'};
+    controller.gamepad = {
+      buttons: [{value: 1, pressed: true}],
+    } as unknown as Gamepad;
+
+    // Both native events are filtered, but the native select is tracked before
+    // PinchFilter drops it.
+    controller.dispatchEvent({type: 'select', target: controller});
+    controller.dispatchEvent({type: 'selectend', target: controller});
+    controller.dispatchEvent({
+      type: 'disconnected',
+      target: controller,
+      data: controller.inputSource,
+    });
+
+    expect(input.getFrame().raySources).toMatchObject([
+      {controller, selected: false, released: true},
+    ]);
+    input.dispose();
   });
 
   it('does not retain a disconnected normal controller', () => {
