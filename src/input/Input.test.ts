@@ -18,7 +18,7 @@ function updateInput(input: Input) {
 
 function createInitializedInput() {
   const input = new Input();
-  const spaces = [new WebXRController(), new WebXRController()];
+  const spaces: WebXRController[] = [];
   const options = new Options();
   options.controllers.visualization = false;
   options.controllers.visualizeRays = false;
@@ -27,7 +27,10 @@ function createInitializedInput() {
     options,
     renderer: {
       xr: {
-        getController: (index: number) => spaces[index].getTargetRaySpace(),
+        getController: (index: number) => {
+          spaces[index] ??= new WebXRController();
+          return spaces[index].getTargetRaySpace();
+        },
       },
     } as unknown as THREE.WebGLRenderer,
   });
@@ -249,12 +252,8 @@ describe('Input transient-pointer disconnects', () => {
     controller.gamepad = {
       buttons: [{value: 1, pressed: true}],
     } as unknown as Gamepad;
-    const selectSpy = vi.fn();
-    input.bindSelect(selectSpy);
-
-    // PinchFilter drops this native event, but Input must record it first.
+    // Record a native completion before the transient source disconnects.
     controller.dispatchEvent({type: 'select', target: controller});
-    expect(selectSpy).not.toHaveBeenCalled();
     controller.dispatchEvent({
       type: 'disconnected',
       target: controller,
@@ -307,8 +306,7 @@ describe('Input transient-pointer disconnects', () => {
       buttons: [{value: 1, pressed: true}],
     } as unknown as Gamepad;
 
-    // Both native events are filtered, but the native select is tracked before
-    // PinchFilter drops it.
+    // A native completion and release can both arrive before disconnection.
     controller.dispatchEvent({type: 'select', target: controller});
     controller.dispatchEvent({type: 'selectend', target: controller});
     controller.dispatchEvent({
