@@ -221,11 +221,20 @@ export class SimulatorControls {
 
   onPointerMove = (event: MouseEvent) => {
     if (!this.enabled) return;
+    if (
+      this.pointerDown ||
+      event.buttons > 0 ||
+      (this.renderer?.domElement &&
+        document.pointerLockElement === this.renderer.domElement)
+    ) {
+      this.userInterface.notifyUserInteraction?.();
+    }
     this.simulatorModeControls.onPointerMove(event);
   };
 
   onPointerDown = (event: PointerEvent) => {
     if (!this.enabled) return;
+    this.userInterface.notifyUserInteraction?.();
     this.simulatorModeControls.onPointerDown(event);
     this.pointerDown = true;
     this.activePointerId = event.pointerId;
@@ -254,6 +263,7 @@ export class SimulatorControls {
   onWheel = (event: WheelEvent) => {
     if (!this.enabled) return;
     if (this.simulatorModeControls.onWheel(event)) {
+      this.userInterface.notifyUserInteraction?.();
       event.preventDefault();
     }
   };
@@ -274,6 +284,7 @@ export class SimulatorControls {
       this.downKeys.clear();
       return;
     }
+    this.userInterface.notifyUserInteraction?.();
     this.downKeys.add(event.code as Keycodes);
     if (
       this.simulatorOptions?.modeToggle.enabled &&
@@ -308,6 +319,7 @@ export class SimulatorControls {
     if (this.simulatorSettingsPanelElement) {
       this.simulatorSettingsPanelElement.simulatorMode = mode;
     }
+    this.userInterface.setSimulatorMode?.(mode);
   }
 
   setSimulatorSettingsPanelElement(element: ISimulatorSettingsPanelElement) {
