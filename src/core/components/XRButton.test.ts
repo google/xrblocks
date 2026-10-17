@@ -87,6 +87,17 @@ describe('XR entry feedback', () => {
     expect(button.xrButtonElement.disabled).toBe(false);
   });
 
+  it('keeps the entry UI and shows a simulator error after automatic startup fails', () => {
+    const error = new Error('simulator failed');
+
+    button.showSimulatorError(error);
+
+    expect(document.body.contains(button.domElement)).toBe(true);
+    expect(button.domElement.querySelector('[role="alert"]')?.textContent).toBe(
+      'Simulator could not start. Error: simulator failed'
+    );
+  });
+
   it('shows pending entry and prevents duplicate requests while the browser is responding', async () => {
     const pending = Promise.withResolvers<XRSession>();
     requestSession.mockReturnValue(pending.promise);

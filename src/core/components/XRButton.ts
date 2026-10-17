@@ -208,6 +208,13 @@ export class XRButton {
       starting || this.sessionManager.isXRSupported() !== true;
   }
 
+  /** Restores the entry UI and displays a failed automatic simulator start. */
+  showSimulatorError(error: unknown) {
+    if (this.disposed) return;
+    this.setSimulatorStarting(false);
+    this.showError(error, 'Simulator');
+  }
+
   dispose() {
     if (this.disposed) return;
     this.disposed = true;

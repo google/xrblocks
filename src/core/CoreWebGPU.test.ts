@@ -77,6 +77,23 @@ describe('Core with WebGPURenderer', () => {
     expect(options.resolvedXRSessionMode).toBe('immersive-vr');
   });
 
+  it('leaves the resolved session mode unset when neither immersive mode is supported', async () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {
+        isSessionSupported: vi.fn().mockResolvedValue(false),
+        requestSession: vi.fn(),
+      },
+    });
+    const core = new Core();
+    const options = new Options();
+    options.formFactor = 'xr';
+
+    await core.init(options);
+
+    expect(options.resolvedXRSessionMode).toBeUndefined();
+  });
+
   it.each(['webgl', 'webgpu'] as const)(
     'requests enabled hand tracking as optional with %s',
     async (backend) => {

@@ -18,9 +18,13 @@ describe('WebXRSessionManager mode selection', () => {
     vi.unstubAllGlobals();
   });
 
-  function createManager(fallbackToVR = true, sessionInit: XRSessionInit = {}) {
-    const setSession = vi.fn<THREE.WebGLRenderer['xr']['setSession']>();
-    setSession.mockResolvedValue(undefined);
+  function createManager(
+    fallbackToVR = true,
+    sessionInit: XRSessionInit = {},
+    setSession = vi
+      .fn<THREE.WebGLRenderer['xr']['setSession']>()
+      .mockResolvedValue(undefined)
+  ) {
     manager = new WebXRSessionManager(
       {xr: {setSession}} as unknown as THREE.WebGLRenderer,
       sessionInit,
@@ -171,9 +175,14 @@ describe('WebXRSessionManager mode selection', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const sessionManager = createManager();
     const unsupported = vi.fn();
+    const sessionError = vi.fn();
     sessionManager.addEventListener(
       WebXRSessionEventType.UNSUPPORTED,
       unsupported
+    );
+    sessionManager.addEventListener(
+      WebXRSessionEventType.SESSION_ERROR,
+      sessionError
     );
 
     await sessionManager.initialize();
@@ -181,5 +190,141 @@ describe('WebXRSessionManager mode selection', () => {
     await vi.waitFor(() => expect(unsupported).toHaveBeenCalledOnce());
 
     expect(sessionManager.isXRSupported()).toBe(false);
+    expect(sessionError).not.toHaveBeenCalled();
+  });
+
+  it('keeps non-NotSupported request failures retryable', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    const requestSession = vi
+      .fn<XRSystem['requestSession']>()
+      .mockRejectedValue(
+        new DOMException('permission denied', 'NotAllowedError')
+      );
+    vi.stubGlobal('navigator', {xr: {isSessionSupported, requestSession}});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sessionManager = createManager();
+    const unsupported = vi.fn();
+    const sessionError = vi.fn();
+    sessionManager.addEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      unsupported
+    );
+    sessionManager.addEventListener(
+      WebXRSessionEventType.SESSION_ERROR,
+      sessionError
+    );
+
+    await sessionManager.initialize();
+    sessionManager.startSession();
+    await vi.waitFor(() => expect(sessionError).toHaveBeenCalledOnce());
+
+    expect(unsupported).not.toHaveBeenCalled();
+    expect(sessionManager.isXRSupported()).toBe(true);
+  });
+
+  it('keeps a dismissed current offerSession prompt retryable', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    const offerSession = vi
+      .fn<NonNullable<XRSystem['offerSession']>>()
+      .mockRejectedValue(
+        new DOMException('offer dismissed', 'NotAllowedError')
+      );
+    vi.stubGlobal('navigator', {
+      xr: {isSessionSupported, requestSession: vi.fn(), offerSession},
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sessionManager = createManager();
+    const unsupported = vi.fn();
+    const sessionError = vi.fn();
+    sessionManager.addEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      unsupported
+    );
+    sessionManager.addEventListener(
+      WebXRSessionEventType.SESSION_ERROR,
+      sessionError
+    );
+
+    await sessionManager.initialize();
+    await vi.waitFor(() => expect(sessionError).toHaveBeenCalledOnce());
+
+    expect(unsupported).not.toHaveBeenCalled();
+    expect(sessionManager.isXRSupported()).toBe(true);
+  });
+
+  it('keeps renderer setup errors retryable even when they are NotSupportedError', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    const requestSession = vi
+      .fn<XRSystem['requestSession']>()
+      .mockResolvedValue(createSession());
+    const setSession = vi
+      .fn<THREE.WebGLRenderer['xr']['setSession']>()
+      .mockRejectedValue(
+        new DOMException('renderer failed', 'NotSupportedError')
+      );
+    vi.stubGlobal('navigator', {xr: {isSessionSupported, requestSession}});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sessionManager = createManager(true, {}, setSession);
+    const unsupported = vi.fn();
+    const sessionError = vi.fn();
+    sessionManager.addEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      unsupported
+    );
+    sessionManager.addEventListener(
+      WebXRSessionEventType.SESSION_ERROR,
+      sessionError
+    );
+
+    await sessionManager.initialize();
+    sessionManager.startSession();
+    await vi.waitFor(() => expect(sessionError).toHaveBeenCalledOnce());
+
+    expect(unsupported).not.toHaveBeenCalled();
+    expect(sessionManager.isXRSupported()).toBe(true);
+  });
+
+  it('ignores a late offerSession rejection after a newer session starts', async () => {
+    const offer = Promise.withResolvers<XRSession>();
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    const requestSession = vi
+      .fn<XRSystem['requestSession']>()
+      .mockResolvedValue(createSession());
+    vi.stubGlobal('navigator', {
+      xr: {
+        isSessionSupported,
+        requestSession,
+        offerSession: vi.fn(() => offer.promise),
+      },
+    });
+    const sessionManager = createManager();
+    const unsupported = vi.fn();
+    const sessionError = vi.fn();
+    sessionManager.addEventListener(
+      WebXRSessionEventType.UNSUPPORTED,
+      unsupported
+    );
+    sessionManager.addEventListener(
+      WebXRSessionEventType.SESSION_ERROR,
+      sessionError
+    );
+
+    await sessionManager.initialize();
+    sessionManager.startSession();
+    await vi.waitFor(() => expect(sessionManager.currentSession).toBeDefined());
+    offer.reject(new DOMException('offer dismissed', 'NotAllowedError'));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(sessionManager.currentSession).toBeDefined();
+    expect(unsupported).not.toHaveBeenCalled();
+    expect(sessionError).not.toHaveBeenCalled();
   });
 });

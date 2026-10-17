@@ -629,6 +629,7 @@ describe('Core frame and simulator lifecycle', () => {
 
   it('starts the simulator if a VR fallback fails after initialization', () => {
     core.options.enableSimulator = true;
+    core.options.resolvedXRSessionMode = 'immersive-vr';
     (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
     const startSimulator = vi
       .spyOn(core, 'startSimulator')
@@ -640,6 +641,35 @@ describe('Core frame and simulator lifecycle', () => {
     onWebXRUnsupported();
 
     expect(startSimulator).toHaveBeenCalledOnce();
+    expect(core.options.resolvedXRSessionMode).toBeUndefined();
+  });
+
+  it('keeps the XR entry UI and shows an error if automatic simulator startup fails', async () => {
+    core.options.enableSimulator = true;
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+    const domElement = document.createElement('div');
+    document.body.appendChild(domElement);
+    const showSimulatorError = vi.fn();
+    (core as unknown as {xrButton: unknown}).xrButton = {
+      domElement,
+      showSimulatorError,
+      setSimulatorStarting: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const error = new Error('simulator failed');
+    vi.spyOn(core, 'startSimulator').mockRejectedValue(error);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onWebXRUnsupported = (
+      core as unknown as {onWebXRUnsupported: () => void}
+    ).onWebXRUnsupported;
+
+    onWebXRUnsupported();
+    await vi.waitFor(() =>
+      expect(showSimulatorError).toHaveBeenCalledWith(error)
+    );
+
+    expect(domElement.isConnected).toBe(true);
+    domElement.remove();
   });
 
   it('applies native framebufferScaleFactor on beforesessionstart', () => {

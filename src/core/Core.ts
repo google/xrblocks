@@ -173,12 +173,13 @@ export class Core {
     void this.onXRSessionStarted(event.session);
   };
   private onWebXRUnsupported = () => {
+    this.options.resolvedXRSessionMode = undefined;
     if (!this.options.enableSimulator) return;
-    this.xrButton?.domElement.remove();
     if (this.lifecycleState === 'initializing') {
       this.shouldAutostartSimulator = true;
     } else {
       void this.startSimulator().catch((error) => {
+        this.xrButton?.showSimulatorError(error);
         console.error(
           'Failed to start simulator after WebXR became unsupported',
           error
@@ -822,7 +823,10 @@ export class Core {
 
       await this.webXRSessionManager.initialize();
       this.assertInitializing();
-      options.resolvedXRSessionMode = this.webXRSessionManager.getSessionMode();
+      options.resolvedXRSessionMode =
+        this.webXRSessionManager.isXRSupported() === true
+          ? this.webXRSessionManager.getSessionMode()
+          : undefined;
     }
 
     // Sets up postprocessing effects.
@@ -868,8 +872,13 @@ export class Core {
     }
 
     if (this.shouldAutostartSimulator) {
-      await this.startSimulator();
-      this.assertInitializing();
+      try {
+        await this.startSimulator();
+        this.assertInitializing();
+      } catch (error) {
+        this.xrButton?.showSimulatorError(error);
+        console.error('Failed to start the desktop simulator', error);
+      }
     }
 
     if (!loadingSpinnerManager.isLoading) {
