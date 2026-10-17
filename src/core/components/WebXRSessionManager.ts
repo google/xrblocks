@@ -29,6 +29,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   public currentSession?: XRSession;
   private sessionOptions?: XRSessionInit;
   private xrModeSupported?: boolean;
+  private didFallbackToVR = false;
   private waitingForXRSession = false;
   private disposed = false;
   private disposalPromise?: Promise<void>;
@@ -36,7 +37,8 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   constructor(
     private renderer: WebGLOrWebGPURenderer,
     private sessionInit: XRSessionInit,
-    private mode: XRSessionMode
+    private mode: XRSessionMode,
+    private fallbackToVR = true
   ) {
     super(); // Initialize the EventDispatcher
   }
@@ -58,6 +60,17 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     try {
       modeSupported =
         (await navigator.xr!.isSessionSupported(this.mode)) || false;
+      if (!modeSupported && this.mode === 'immersive-ar' && this.fallbackToVR) {
+        modeSupported =
+          (await navigator.xr!.isSessionSupported('immersive-vr')) || false;
+        if (modeSupported) {
+          console.info(
+            'immersive-ar not supported; falling back to immersive-vr'
+          );
+          this.mode = 'immersive-vr';
+          this.didFallbackToVR = true;
+        }
+      }
     } catch (e) {
       if (this.disposed) return;
       console.error('Error getting isSessionSupported', e);
@@ -69,10 +82,25 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     if (this.disposed) return;
 
     if (modeSupported) {
+      console.info(`WebXR session mode selected: ${this.mode}`);
       this.xrModeSupported = true;
+      const requiredFeatures = this.sessionInit.requiredFeatures ?? [];
+      const optionalFeatures = [...(this.sessionInit.optionalFeatures ?? [])];
+      if (this.didFallbackToVR && requiredFeatures.includes('depth-sensing')) {
+        if (!optionalFeatures.includes('depth-sensing')) {
+          optionalFeatures.push('depth-sensing');
+        }
+      }
       this.sessionOptions = {
         ...this.sessionInit,
-        optionalFeatures: this.sessionInit.optionalFeatures || [],
+        ...(this.didFallbackToVR && requiredFeatures.includes('depth-sensing')
+          ? {
+              requiredFeatures: requiredFeatures.filter(
+                (feature) => feature !== 'depth-sensing'
+              ),
+            }
+          : {}),
+        optionalFeatures,
       };
 
       // Fire the 'ready' event with the sessionOptions in the data payload

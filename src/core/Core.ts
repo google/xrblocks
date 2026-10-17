@@ -765,7 +765,8 @@ export class Core {
       this.webXRSessionManager = new WebXRSessionManager(
         this.renderer,
         this.webXRSettings,
-        options.xrSessionMode
+        options.xrSessionMode,
+        options.fallbackToVR
       );
       this.registry.register(this.webXRSessionManager, WebXRSessionManager);
       this.webXRSessionManager.addEventListener(

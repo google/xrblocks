@@ -239,6 +239,9 @@ export class Options {
 
   xrSessionMode: XRSessionMode = 'immersive-ar';
 
+  /** Fall back to immersive VR when immersive AR is unavailable. */
+  fallbackToVR = true;
+
   private _formFactor: FormFactor = 'auto';
 
   get formFactor() {

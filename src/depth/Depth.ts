@@ -525,6 +525,10 @@ export class Depth {
 
   updateLocalDepth(frame: XRFrame) {
     const session = frame.session;
+    // Depth sensing is optional in some session modes. In particular, a
+    // fallback VR session may not grant the requested depth-sensing feature.
+    if (!session.enabledFeatures?.includes('depth-sensing')) return;
+
     const binding = this.renderer.xr.getBinding();
 
     // Enable or disable depth based on the number of clients.

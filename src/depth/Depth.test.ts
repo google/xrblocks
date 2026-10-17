@@ -283,6 +283,7 @@ describe('Depth', () => {
       }));
       const frame = {
         session: {
+          enabledFeatures: ['depth-sensing'],
           depthUsage: 'cpu-optimized',
           depthDataFormat: 'float32',
         },
@@ -352,6 +353,26 @@ describe('Depth', () => {
       expect(depth.cpuDepthData[0]).toBeDefined();
       expect(depth.cpuDepthData[1]).toBeUndefined();
       expect(depth['depthTextures']!.updateData).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips depth updates when the session did not grant depth sensing', () => {
+      const depth = setupDepthForLocalUpdate();
+      const getViewerPose = vi.fn(() => ({views: [{} as XRView]}));
+      const getDepthInformation = vi.fn();
+      const frame = {
+        session: {
+          enabledFeatures: [],
+          get depthUsage(): never {
+            throw new Error('depthUsage is unavailable without depth sensing');
+          },
+        },
+        getViewerPose,
+        getDepthInformation,
+      } as unknown as XRFrame;
+
+      expect(() => depth.updateLocalDepth(frame)).not.toThrow();
+      expect(getViewerPose).not.toHaveBeenCalled();
+      expect(getDepthInformation).not.toHaveBeenCalled();
     });
 
     it('processes viewId > 0 when options.updateAllViews is true', () => {
