@@ -328,4 +328,64 @@ describe('Input PinchFilter mobile and hand tracking compatibility', () => {
     expect(selectSpy).toHaveBeenCalledOnce();
     expect(selectEndSpy).toHaveBeenCalledOnce();
   });
+
+  it('applies the hand pinch workaround to generic-hand-select without XRHand', () => {
+    const input = new Input();
+    const mockController = new THREE.Object3D() as unknown as Controller;
+    mockController.userData = {connected: true};
+    mockController.gamepad = {
+      buttons: [{value: 0.7, pressed: true}],
+    } as unknown as Gamepad;
+    mockController.inputSource = {
+      profiles: ['generic-hand-select'],
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+
+    const selectStartSpy = vi.fn();
+    const selectSpy = vi.fn();
+    const selectEndSpy = vi.fn();
+    input.controllers.push(mockController);
+    input.bindSelectStart(selectStartSpy);
+    input.bindSelect(selectSpy);
+    input.bindSelectEnd(selectEndSpy);
+
+    mockController.dispatchEvent({type: 'selectstart', target: mockController});
+    input.sampleSources();
+    expect(selectStartSpy).not.toHaveBeenCalled();
+
+    mockController.gamepad.buttons[0].value = 1;
+    input.sampleSources();
+    expect(selectStartSpy).toHaveBeenCalledOnce();
+    expect(selectStartSpy.mock.calls[0][0]).toMatchObject({isCustom: true});
+
+    mockController.gamepad.buttons[0].value = 0;
+    input.sampleSources();
+    expect(selectSpy).toHaveBeenCalledOnce();
+    expect(selectEndSpy).toHaveBeenCalledOnce();
+  });
+
+  it('does not filter transient-pointer sources with a hand profile', () => {
+    const input = new Input();
+    const mockController = new THREE.Object3D() as unknown as Controller;
+    mockController.userData = {connected: true};
+    mockController.gamepad = {
+      buttons: [{value: 1, pressed: true}],
+    } as unknown as Gamepad;
+    mockController.inputSource = {
+      profiles: ['generic-hand-select'],
+      targetRayMode: 'transient-pointer',
+    } as unknown as XRInputSource;
+
+    const selectStartSpy = vi.fn();
+    input.controllers.push(mockController);
+    input.bindSelectStart(selectStartSpy);
+
+    mockController.dispatchEvent({type: 'selectstart', target: mockController});
+    input.sampleSources();
+
+    expect(selectStartSpy).toHaveBeenCalledOnce();
+    expect(selectStartSpy.mock.calls[0][0]).not.toMatchObject({
+      isCustom: true,
+    });
+  });
 });

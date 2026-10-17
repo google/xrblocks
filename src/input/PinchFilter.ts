@@ -64,6 +64,15 @@ export class PinchFilter {
     this.forwardingListeners.clear();
   }
 
+  private isHandInputSource(controller: Controller): boolean {
+    const inputSource = controller.inputSource;
+    return (
+      inputSource?.targetRayMode === 'tracked-pointer' &&
+      (inputSource.hand != null ||
+        inputSource.profiles?.includes('generic-hand-select') === true)
+    );
+  }
+
   shouldFilterEvent(event: FilterableControllerEvent): boolean {
     const controller = event.target;
     if (
@@ -73,8 +82,7 @@ export class PinchFilter {
     ) {
       if (
         controller.gamepad?.buttons[0] !== undefined &&
-        controller.inputSource?.hand &&
-        controller.inputSource?.targetRayMode !== 'screen' &&
+        this.isHandInputSource(controller) &&
         !event.isCustom
       ) {
         return true;
@@ -87,8 +95,7 @@ export class PinchFilter {
     if (
       controller.gamepad &&
       controller.gamepad.buttons[0] !== undefined &&
-      controller.inputSource?.hand &&
-      controller.inputSource?.targetRayMode !== 'screen'
+      this.isHandInputSource(controller)
     ) {
       const pinchValue = controller.gamepad.buttons[0].value;
       const isPinching = pinchValue >= 1.0;
