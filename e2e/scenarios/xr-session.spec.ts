@@ -61,6 +61,27 @@ test('XR controller select drives the app', async ({driver}) => {
   expect(released.grabbedByHand).toBeNull();
 });
 
+test('XR controller select accepts a partial trigger press', async ({
+  driver,
+  page,
+}) => {
+  await driver.pointTo('rightHand', 'grabbable');
+  await page.evaluate(() =>
+    window.__xrDevice.controllers.right?.updateButtonValue('trigger', 0.8)
+  );
+  await driver.step(150);
+
+  const grabbed = await driver.getState();
+  expect(grabbed.grabbedByHand).toBe(1);
+
+  await page.evaluate(() =>
+    window.__xrDevice.controllers.right?.updateButtonValue('trigger', 0)
+  );
+  await driver.step(150);
+  const released = await driver.getState();
+  expect(released.grabbedByHand).toBeNull();
+});
+
 test('disposal ends the XR session cleanly', async ({driver, page}) => {
   await driver.step(100);
   await driver.destroy();
