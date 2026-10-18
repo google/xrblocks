@@ -58,6 +58,14 @@ export class Input {
   gazeController = new GazeController();
   mouseController = new MouseController();
   gamepadController = new GamepadController();
+  private readonly builtInControllers = new Set<Controller>([
+    this.gazeController,
+    this.mouseController,
+    this.gamepadController,
+  ]);
+  private readonly addonControllers = new Set<Controller>();
+  private readonly removingControllers = new Map<Controller, Set<string>>();
+  private nextControllerId = 0;
   controllersEnabled = true;
   listeners = new Map();
   private dispatchControllerEvent = (event: ControllerEvent) =>
@@ -120,6 +128,7 @@ export class Input {
     for (let i = 0; i < NUM_HANDS; ++i) {
       controllers.push(renderer.xr.getController(i));
       controllers[i].userData.id = i;
+      this.builtInControllers.add(controllers[i]);
       this.activeControllers.add(this.controllers[i]);
     }
     controllers.push(this.gazeController);
@@ -196,10 +205,10 @@ export class Input {
   /**
    * Retrieves the controller object by its ID.
    * @param id - The ID of the controller.
-   * @returns The controller with the specified ID.
+   * @returns The controller with the specified ID, or undefined after removal.
    */
-  get(id: number): THREE.Object3D {
-    return this.controllers[id];
+  get(id: number): Controller | undefined {
+    return this.controllers.find((controller) => controller.userData.id === id);
   }
 
   /**
@@ -375,14 +384,8 @@ export class Input {
       this.releasedControllers.delete(controller);
     }
     delete controller?.gamepad;
-    switch (event.data?.handedness) {
-      case 'left':
-        this.leftController = undefined;
-        break;
-      case 'right':
-        this.rightController = undefined;
-        break;
-    }
+    if (this.leftController === controller) this.leftController = undefined;
+    if (this.rightController === controller) this.rightController = undefined;
   }
 
   private captureNativeSelectEvent = (event: ControllerEvent) => {
@@ -447,7 +450,15 @@ export class Input {
   }
 
   dispatchEvent(event: ControllerEvent) {
-    if (this.pinchFilter.shouldFilterEvent(event)) {
+    const removal = this.removingControllers.get(event.target);
+    const terminal =
+      removal && (event.type === 'selectend' || event.type === 'disconnected');
+    if (terminal) {
+      // A disconnect hook may emit these itself, and defaultOnDisconnected may
+      // synthesize selectend. Input observers still receive each exactly once.
+      if (removal.has(event.type)) return;
+      removal.add(event.type);
+    } else if (this.pinchFilter.shouldFilterEvent(event)) {
       return;
     }
     if (this.listeners.has(event.type)) {
@@ -674,8 +685,23 @@ export class Input {
 
   private registerController(controller: Controller) {
     if (this.controllers.includes(controller)) return;
+    // Native slots/built-ins may grow independently (e.g. transient XR slots).
+    // Never recycle an addon's ID when a previous source is removed.
+    for (const existing of [...this.builtInControllers, ...this.controllers]) {
+      const id = existing.userData.id;
+      if (Number.isSafeInteger(id) && id >= 0) {
+        this.nextControllerId = Math.max(this.nextControllerId, id + 1);
+      }
+    }
+    controller.userData.id = this.nextControllerId++;
     this.controllers.push(controller);
+    if (!this.builtInControllers.has(controller))
+      this.addonControllers.add(controller);
 
+    if (!controller.reticle && this.options?.reticles.enabled) {
+      controller.reticle = new Reticle();
+      this.ownedReticles.add(controller.reticle);
+    }
     if (controller.reticle) {
       controller.reticle.visible = false;
       this.reticles.add(controller.reticle);
@@ -689,6 +715,7 @@ export class Input {
   }
 
   enableController(controller: Controller) {
+    if (this.removingControllers.has(controller)) return;
     this.registerController(controller);
     this.activeControllers.add(controller as unknown as THREE.Object3D);
     (controller as unknown as {connect?: () => void}).connect?.();
@@ -697,6 +724,84 @@ export class Input {
   disableController(controller: Controller) {
     (controller as unknown as {disconnect?: () => void}).disconnect?.();
     this.activeControllers.remove(controller as unknown as THREE.Object3D);
+  }
+
+  /**
+   * Permanently unregisters a source added through enableController. Built-ins
+   * and already-removed sources are ignored. Capture is cancelled as source-lost
+   * next frame; terminal selectend/disconnected notifications are sent once.
+   */
+  removeController(controller: Controller) {
+    if (
+      this.builtInControllers.has(controller) ||
+      !this.addonControllers.delete(controller)
+    )
+      return;
+    const index = this.controllers.indexOf(controller);
+    if (index !== -1) this.controllers.splice(index, 1);
+
+    this.removeNativeSelectTracking(controller);
+    this.nativeSelectControllers.delete(controller);
+    this.disconnectedTransientPointerControllers.delete(controller);
+    this.removingControllers.set(controller, new Set());
+    const seen = new Set<string>();
+    const observeEnd = () => {
+      seen.add('selectend');
+    };
+    const observeDisconnect = () => {
+      seen.add('disconnected');
+    };
+    controller.addEventListener('selectend', observeEnd);
+    controller.addEventListener('disconnected', observeDisconnect);
+    this.pinchFilter.setupController(controller, ['selectend', 'disconnected']);
+    try {
+      (controller as unknown as {disconnect?: () => void}).disconnect?.();
+    } finally {
+      try {
+        try {
+          if (!seen.has('selectend'))
+            controller.dispatchEvent({type: 'selectend', target: controller});
+        } finally {
+          if (!seen.has('disconnected'))
+            controller.dispatchEvent({
+              type: 'disconnected',
+              target: controller,
+            });
+        }
+      } finally {
+        controller.removeEventListener('selectend', observeEnd);
+        controller.removeEventListener('disconnected', observeDisconnect);
+        for (const type of new Set([
+          ...this.listeners.keys(),
+          'selectend',
+          'disconnected',
+        ])) {
+          this.pinchFilter.removeControllerForType(controller, type);
+        }
+        this.removingControllers.delete(controller);
+        this.activeControllers.remove(controller);
+        controller.userData.connected = false;
+        controller.userData.selected = false;
+        controller.userData.squeezing = false;
+        delete controller.gamepad;
+        if (this.leftController === controller) this.leftController = undefined;
+        if (this.rightController === controller)
+          this.rightController = undefined;
+        this.releasedControllers.delete(controller);
+        this.nativeSelectControllers.delete(controller);
+        this.disconnectedTransientPointerControllers.delete(controller);
+        this.raySourceSlots.delete(controller);
+        if (controller.reticle) {
+          controller.reticle.visible = false;
+          controller.reticle.targetObject = undefined;
+          controller.reticle.removeFromParent();
+          if (this.ownedReticles.delete(controller.reticle)) {
+            controller.reticle.dispose();
+            controller.reticle = undefined;
+          }
+        }
+      }
+    }
   }
 
   disableControllers() {
@@ -729,6 +834,8 @@ export class Input {
     this.keyDownListeners.clear();
     this.keyUpListeners.clear();
     this.pinchFilter.dispose(this.controllers);
+    this.addonControllers.clear();
+    this.removingControllers.clear();
     for (const controller of this.controllers) {
       this.removeNativeSelectTracking(controller);
     }

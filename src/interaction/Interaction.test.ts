@@ -75,6 +75,51 @@ describe('Interaction public behavior', () => {
     interaction = new Interaction({callbacks});
   });
 
+  it.each(['controller-ray', 'hand-ray', 'mouse'] as const)(
+    'preserves %s for explicit zoom while wheel scaling reports simulator',
+    async (sourceType) => {
+      const events: ManipulationEvent[] = [];
+      class Card extends UICard {
+        onObjectManipulate(event: ManipulationEvent) {
+          events.push(event);
+        }
+      }
+      const card = new Card({size: {width: 1, height: 1}, manipulation: true});
+      new THREE.Scene().add(card);
+      await activateScripts(callbacks, card);
+      const source = controller(7);
+      source.inputSource = {handedness: 'left'};
+      interaction.queueScaleIntent(source, 1.5);
+      updateRays(interaction, [ray(source, false, hit(card), sourceType)]);
+      expect(events.map((event) => event.phase)).toEqual([
+        'start',
+        'update',
+        'end',
+      ]);
+      for (const event of events) {
+        expect(event.source).toMatchObject({
+          type: sourceType,
+          handedness: 'left',
+          controller: source,
+        });
+        expect(event.sources).toEqual([event.source]);
+      }
+      events.length = 0;
+      interaction.queueWheelIntent(source, -100);
+      updateRays(interaction, [ray(source, false, hit(card), sourceType)]);
+      expect(events.map((event) => event.source.type)).toEqual([
+        'simulator',
+        'simulator',
+        'simulator',
+      ]);
+      expect(interaction.getSourceSnapshot(source)?.source.type).toBe(
+        sourceType
+      );
+      interaction.clear();
+      card.dispose();
+    }
+  );
+
   it('keeps one semantic capture inside a manipulable card and cancels invalid releases', async () => {
     const clicked = vi.fn();
     const card = new UICard({

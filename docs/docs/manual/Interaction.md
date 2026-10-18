@@ -102,6 +102,33 @@ Read the hit from the interaction event or `xb.user.getRayIntersection()`. The
 projection option changes where the reticle is drawn when depth is available;
 it does not create or store a separate intersection contract.
 
+## Addon input sources
+
+Addon controllers can implement the public `Controller` / `ControllerEventMap`
+types and register through `input.enableController(controller)`. Set
+`controller.userData.connected` and `selected`, and provide `updatePose()` when
+the pose needs sampling each frame. Late-registered sources receive an
+engine-owned reticle when reticles are enabled, including the current renderer's
+reticle configuration. A supplied reticle remains caller-owned.
+
+Use `input.removeController(controller)` for permanent teardown. It removes the
+source, event forwarding, frame state and attached reticle, disposing only an
+engine-owned reticle. Only addon controllers registered through `enableController`
+can be removed; built-in XR/simulator sources and repeated removals are no-ops.
+Removal sends `selectend` and `disconnected` once, including for sources without
+a `disconnect()` hook, and clears handedness aliases that reference that source.
+Addon IDs are monotonically allocated; use `input.get(id)` rather than array
+indices to look them up after removals. Its active interaction is cancelled as
+`source-lost` on the next frame;
+`interaction.removeSource(controller)` can cancel it immediately when needed.
+
+`interaction.queueScaleIntent(controller, factor)` represents explicit pinch/zoom.
+It raycasts even in `select` raycast mode and can scale the manipulable ancestor
+of a UI control, honoring disabled boundaries and scale limits. Wheel intents
+retain scroll-container ownership and their existing fallback behavior. Explicit
+scale events preserve the actual input modality; only wheel scaling reports
+`simulator` as its source type.
+
 ## Propagation and default behavior
 
 These controls solve different problems:
