@@ -10,6 +10,10 @@ import {
 
 const options = new xb.Options();
 options.enableHands();
+// Show hands and their rays so pinches can be aimed in passthrough.
+options.hands.enableHandsVisualization();
+options.hands.visualizeMeshes = true;
+options.enableHandRays();
 options.simulator.defaultMode = xb.SimulatorMode.CONTROLLER;
 options.setAppTitle('Session Replay');
 
