@@ -3,6 +3,7 @@ import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
 import {describe, expect, it, vi} from 'vitest';
 
 import {Options} from '../core/Options';
+import type {User} from '../core/User';
 import {ScriptsManager} from '../core/components/ScriptsManager';
 import {XRSystems} from '../core/components/XRSystems';
 import {Interaction} from '../interaction/Interaction';
@@ -14,6 +15,7 @@ import {SimulatorHands} from '../simulator/SimulatorHands';
 import {Input} from './Input';
 import {Controller} from './Controller';
 import {Handedness, Hands} from './Hands';
+import {WebXRHandPoseEstimator} from './gestures/poseEstimators/WebXRHandPoseEstimator';
 
 function updateInput(input: Input) {
   input.sampleSources();
@@ -421,6 +423,10 @@ describe('Input direct touch', () => {
       {length: 25},
       () => new THREE.Group()
     );
+    const userHands = new Hands(input.hands);
+    const poseEstimator = new WebXRHandPoseEstimator({
+      hands: userHands,
+    } as User);
 
     expect(input.hands).toHaveLength(2);
     expect(input.hands[0]).toBeDefined();
@@ -430,8 +436,28 @@ describe('Input direct touch', () => {
     expect(input.hands.map((hand) => Object.keys(hand.joints).length)).toEqual([
       25, 25,
     ]);
+    input.sampleSources();
+    expect(input.getFrame().directTouches).toMatchObject([
+      {controller: input.controllers[0], handIndex: 0},
+      {controller: input.controllers[1], handIndex: 1},
+    ]);
+    expect(userHands.getIndexTip(Handedness.LEFT)).toBeDefined();
+    expect(userHands.getIndexTip(Handedness.RIGHT)).toBeDefined();
+    expect(poseEstimator.getHandContext(Handedness.LEFT)).not.toBeNull();
+    expect(poseEstimator.getHandContext(Handedness.RIGHT)).not.toBeNull();
     expect(input.hands.every((hand) => hand.visible)).toBe(true);
     simulatorHands.hideHands();
+    input.sampleSources();
+    expect(input.getFrame().directTouches).toHaveLength(0);
+    expect(userHands.getIndexTip(Handedness.LEFT)).toBeUndefined();
+    expect(userHands.getIndexTip(Handedness.RIGHT)).toBeUndefined();
+    expect(userHands.isValid(Handedness.LEFT)).toBe(false);
+    expect(userHands.isValid(Handedness.RIGHT)).toBe(false);
+    expect(
+      userHands.toPositionQuaternionArray().every((value) => value === 0)
+    ).toBe(true);
+    expect(poseEstimator.getHandContext(Handedness.LEFT)).toBeNull();
+    expect(poseEstimator.getHandContext(Handedness.RIGHT)).toBeNull();
     expect(input.hands.every((hand) => !hand.visible)).toBe(true);
 
     simulatorHands.dispose();

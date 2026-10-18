@@ -48,7 +48,7 @@ export class Hands {
     }
 
     const hand = this.hands[resolvedHandednessEnum];
-    if (!hand) {
+    if (!hand?.visible) {
       console.log('no hand');
       return undefined;
     }
@@ -139,7 +139,7 @@ export class Hands {
     orderedHandedness.forEach((handedness) => {
       const hand = this.hands[handedness];
 
-      if (!hand || !hand.joints) {
+      if (!hand?.visible || !hand.joints) {
         s += `${handedness} Hand: Data unavailable\n`;
         return; // Continue to the next handedness
       }
@@ -184,7 +184,7 @@ export class Hands {
       const hand = this.hands[handedness];
 
       // Check if hand and joints data exist for this handedness
-      const handDataAvailable = hand && hand.joints;
+      const handDataAvailable = hand?.visible && hand.joints;
 
       HAND_JOINT_NAMES.forEach((jointName) => {
         const joint = handDataAvailable ? hand.joints[jointName] : null;
@@ -243,9 +243,12 @@ export class Hands {
     }
 
     if (handIndex === 0 || handIndex === 1) {
-      return !!this.hands[handIndex];
+      return !!this.hands[handIndex]?.visible;
     }
 
-    return !!this.hands[Handedness.LEFT] && !!this.hands[Handedness.RIGHT];
+    return (
+      !!this.hands[Handedness.LEFT]?.visible &&
+      !!this.hands[Handedness.RIGHT]?.visible
+    );
   }
 }

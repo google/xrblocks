@@ -561,20 +561,23 @@ export class Input {
 
   private updateDirectTouchInputs() {
     this.directTouchInputs.length = 0;
-    for (
-      let controllerSlot = 0;
-      controllerSlot < NUM_CONTROLLER_SLOTS;
-      controllerSlot++
-    ) {
+    for (let handIndex = 0; handIndex < NUM_HANDS; handIndex++) {
+      const hand = this.hands[handIndex];
+      if (!hand) continue;
+      const placeholderSlot =
+        hand === this.placeholderHands[handIndex] ? handIndex : -1;
+      const physicalSlot = this.controllerHands.indexOf(hand);
+      const controllerSlot =
+        placeholderSlot >= 0
+          ? placeholderSlot
+          : physicalSlot >= 0
+            ? physicalSlot
+            : handIndex;
       const controller = this.controllers[controllerSlot];
-      const hand =
-        this.controllerHands[controllerSlot] ?? this.hands[controllerSlot];
       const indexTip = hand?.joints?.['index-finger-tip'];
       // Three.js retains joint poses after tracking is lost. A stale touch
       // would keep suppressing the controller's ray and reticle.
       if (!controller || !hand?.visible || !indexTip?.visible) continue;
-      const handIndex =
-        this.getHandIndex(controller.inputSource?.handedness) ?? controllerSlot;
       let input = this.directTouchSlots[controllerSlot];
       if (!input) {
         input = {

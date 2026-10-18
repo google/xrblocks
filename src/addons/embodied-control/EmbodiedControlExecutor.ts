@@ -587,7 +587,8 @@ function getHandAnchorPosition(
   anchor: 'index-tip' | 'palm-center',
   hands: THREE.XRHandSpace[]
 ): THREE.Vector3 | undefined {
-  const joints = hands[handIndex]?.joints;
+  const hand = hands[handIndex];
+  const joints = hand?.visible ? hand.joints : undefined;
   if (!joints) return undefined;
 
   if (anchor === 'index-tip') {
