@@ -118,6 +118,7 @@ export class PhoneLink {
   private transport: Transport;
   private readonly transportFactory?: () => Transport;
   private foreground = true;
+  private deferredDiscovery = false;
   private needsRecovery = false;
   private recovering?: Promise<void>;
   private retryAt = 0;
@@ -286,6 +287,11 @@ export class PhoneLink {
     if (returning && this.needsRecovery) {
       this.retryAt = 0;
       void this.recoverTransport();
+    }
+    if (returning && this.deferredDiscovery) {
+      this.deferredDiscovery = false;
+      if (this.transport instanceof WebRTCTransport)
+        this.transport.discoverPeers();
     }
   }
 
@@ -812,6 +818,7 @@ export class PhoneLink {
   }
 
   private knock(peer: string): void {
+    if (this.role === 'phone' && !this.foreground) return;
     if (!text(peer) || peer !== this.hostPeer) return;
     if (this.session) {
       let pending = this.resumeChallenges.get(peer);
@@ -1320,6 +1327,7 @@ export class PhoneLink {
     } else if (this.role === 'phone' && packet.type === 'resume-challenge') {
       const pending = this.resumeChallenges.get(peer);
       if (
+        !this.foreground ||
         !this.session ||
         this.peer ||
         packet.id !== this.session.crypto.id ||
@@ -1341,7 +1349,12 @@ export class PhoneLink {
       ]);
       pending.hostNonce = packet.hostNonce;
       const proof = await this.session.crypto.prove(transcript);
-      if (!current() || this.resumeChallenges.get(peer) !== pending) return;
+      if (
+        !this.foreground ||
+        !current() ||
+        this.resumeChallenges.get(peer) !== pending
+      )
+        return;
       this.write(
         {
           type: 'resume-proof',
@@ -1400,6 +1413,7 @@ export class PhoneLink {
       const session = this.session;
       const pending = this.resumeChallenges.get(peer);
       if (
+        !this.foreground ||
         !session ||
         this.peer ||
         !pending ||
@@ -1421,6 +1435,7 @@ export class PhoneLink {
       ]);
       if (
         (await session.crypto.verify(`accepted:${transcript}`, packet.proof)) &&
+        this.foreground &&
         current() &&
         this.session === session &&
         this.resumeChallenges.get(peer) === pending
@@ -1713,8 +1728,11 @@ export class PhoneLink {
       lostCounterpart &&
       this.transportFactory &&
       this.transport instanceof WebRTCTransport
-    )
-      this.transport.discoverPeers();
+    ) {
+      if (this.role === 'phone' && !this.foreground)
+        this.deferredDiscovery = true;
+      else this.transport.discoverPeers();
+    }
     if (this.needsRecovery) void this.recoverTransport();
   };
   private onClose = (): void => {

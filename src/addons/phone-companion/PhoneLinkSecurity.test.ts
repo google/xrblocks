@@ -420,6 +420,93 @@ describe('Membership-scoped recovery budgets', () => {
 });
 
 describe('Third-pass recovery boundaries', () => {
+  it('defers an in-flight resume challenge when the phone becomes hidden', async () => {
+    const s = await pair({factory: false});
+    const phone = s.phone as PhoneLink;
+    let challenge: Record<string, unknown> | undefined;
+    s.network.block = (from, bytes) => {
+      const packet = JSON.parse(new TextDecoder().decode(bytes));
+      if (from === s.hostWire && packet.type === 'resume-challenge') {
+        challenge = packet;
+        return true;
+      }
+      return false;
+    };
+    s.hostWire.leave(s.phoneWire);
+    s.phoneWire.leave(s.hostWire);
+    s.phoneWire.join(s.hostWire);
+    s.hostWire.join(s.phoneWire);
+    await settle(() => expect(challenge).toBeDefined());
+    phone.setForeground(false);
+    s.network.block = undefined;
+    s.hostWire.raw(s.phoneWire.localPeerId, challenge!);
+    await delivered(phone);
+    expect(s.phoneWire.packets('resume-proof')).toHaveLength(0);
+    expect(s.host.connected || phone.connected).toBe(false);
+    phone.setForeground(true);
+    (phone as unknown as {tick(): void}).tick();
+    await settle(() => expect(s.host.connected && phone.connected).toBe(true));
+  });
+
+  it.each([false, true])(
+    'disconnects once during 40 seconds hidden and resumes only after foregrounding (host discovers=%s)',
+    async (hostDiscovers) => {
+      vi.useFakeTimers({toFake: ['Date', 'setInterval', 'clearInterval']});
+      const s = await pair({signaling: true});
+      const phone = s.phone as PhoneLink;
+      const hostTransport = s.hostTransport as SignalingWire;
+      const phoneTransport = s.phoneTransport as SignalingWire;
+      const discover = () =>
+        queueMicrotask(() => {
+          if (!s.phoneWire.remotePeerIds.has(s.hostWire.localPeerId))
+            s.phoneWire.join(s.hostWire);
+          if (!s.hostWire.remotePeerIds.has(s.phoneWire.localPeerId))
+            s.hostWire.join(s.phoneWire);
+        });
+      hostTransport.discoverPeers.mockImplementation(
+        hostDiscovers ? discover : () => {}
+      );
+      phoneTransport.discoverPeers.mockImplementation(discover);
+      hostTransport.dropPeer.mockImplementation(() => {
+        s.hostWire.leave(s.phoneWire);
+        s.phoneWire.leave(s.hostWire);
+      });
+      s.hostStates.length = 0;
+      s.phoneWire.sent.length = 0;
+      phone.setForeground(false);
+      const start = Date.now();
+      const tick = () => {
+        (s.host as unknown as {tick(): void}).tick();
+        (phone as unknown as {tick(): void}).tick();
+      };
+      for (let seconds = 1; seconds <= 40; seconds++) {
+        vi.setSystemTime(start + seconds * 1000);
+        tick();
+        // Let real Web Crypto finish while the simulated page stays running.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(
+        s.hostStates.filter((state) => state.type === 'reconnecting')
+      ).toHaveLength(1);
+      expect(
+        s.hostStates.filter((state) => state.type === 'connected')
+      ).toHaveLength(0);
+      expect(phoneTransport.discoverPeers).not.toHaveBeenCalled();
+      expect(s.phoneWire.packets('resume')).toHaveLength(0);
+      expect(s.host.connected).toBe(false);
+      phone.setForeground(true);
+      tick();
+      await vi.waitFor(
+        () => expect(s.host.connected && phone.connected).toBe(true),
+        {timeout: 3000, interval: 10}
+      );
+      expect(phoneTransport.discoverPeers).toHaveBeenCalledOnce();
+      expect(
+        s.hostStates.filter((state) => state.type === 'connected')
+      ).toHaveLength(1);
+    }
+  );
+
   it.each(['phone', 'headset'] as const)(
     'drops a same-ID impostor after a bounded re-authentication wait on the %s',
     async (side) => {

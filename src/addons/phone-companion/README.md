@@ -194,6 +194,9 @@ protectOpenPeers: true, ...})`. PhoneLink enables both options on its default
   discovery again, even if broker-level open-peer protection is enabled. Only
   successful session authentication clears the wait for that membership;
   unauthenticated traffic and duplicate join events cannot extend it.
+  While the phone page is hidden, it defers departure-triggered discovery and
+  session resume until it returns to the foreground, preventing background
+  timeout/reconnect cycles on the headset.
   Dispose closes network
   listeners, timers, key references, input registration and owned reticles.
 - A screen wake lock is requested only while paired and visible, released on
