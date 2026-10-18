@@ -224,11 +224,27 @@ export class PhoneControllerPage {
       {signal}
     );
     window.addEventListener('blur', () => this.cancel(), {signal});
-    window.addEventListener('pagehide', () => this.dispose(), {signal});
+    window.addEventListener(
+      'pagehide',
+      (event) => {
+        if (event.persisted) {
+          this.cancel();
+          this.link.setForeground(false);
+          this.wakeLock.setActive(false);
+        } else this.dispose();
+      },
+      {signal}
+    );
+    window.addEventListener(
+      'pageshow',
+      () => this.link.setForeground(!document.hidden),
+      {signal}
+    );
     document.addEventListener(
       'visibilitychange',
       () => {
         if (document.hidden) this.cancel();
+        this.link.setForeground(!document.hidden);
         this.wakeLock.setActive(this.connected && !document.hidden);
       },
       {signal}

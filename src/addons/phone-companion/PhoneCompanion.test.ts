@@ -67,6 +67,9 @@ class Wire extends Transport {
     data: Uint8Array;
   }> = [];
   dropNextReliable = false;
+  loseSignaling() {
+    this.emitError(new Error('Signaling channel closed.'));
+  }
   allowBroadcast = false;
   constructor(private network: Network) {
     super();
@@ -201,12 +204,17 @@ async function setup(
     ? new PhoneControllerPage(root, {
         pairing: phonePairingFromCode(invitation.code!),
         transport: phoneWire,
+        transportFactory: () => network.create(),
         onStatus: (status) => statuses.push(status),
       })
     : new PhoneLink(
         'phone',
         phonePairingFromCode(invitation.code!),
-        {transport: phoneWire, onStatus: (status) => statuses.push(status)},
+        {
+          transport: phoneWire,
+          transportFactory: () => network.create(),
+          onStatus: (status) => statuses.push(status),
+        },
         (message) => messages.push(message),
         () => {}
       );
@@ -277,6 +285,133 @@ function pointer(
 }
 
 describe('Approved phone sessions', () => {
+  it('recovers repeated background signaling losses using the same approved session after invitation expiry', async () => {
+    const s = await setup(true);
+    let hidden = false;
+    const visibility = vi
+      .spyOn(document, 'hidden', 'get')
+      .mockImplementation(() => hidden);
+    cleanup.push(() => visibility.mockRestore());
+    vi.useFakeTimers({toFake: ['Date']});
+    await settle(() =>
+      expect(s.hostWire.packets.some((p) => p.packet.type === 'data')).toBe(
+        true
+      )
+    );
+    const sessionId = s.hostWire.packets.find((p) => p.packet.type === 'data')!
+      .packet.id;
+    let previous = s.phoneWire;
+    for (let cycle = 0; cycle < 3; cycle++) {
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      previous.loseSignaling();
+      expect(s.phone.connected).toBe(false);
+      expect(s.statuses.at(-1)).toBe('Reconnecting to headset…');
+      vi.setSystemTime(Date.now() + 120000);
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      await settle(() =>
+        expect(s.phone.connected && s.host.connected).toBe(true)
+      );
+      const current = s.network.nodes.at(-1)!;
+      expect(current).not.toBe(previous);
+      expect(previous.isOpen).toBe(false);
+      expect(s.host.pendingPhone).toBeUndefined();
+      expect(
+        current.packets.some((p) => p.packet.type === 'resume-proof')
+      ).toBe(true);
+      expect(
+        current.packets.some(
+          (p) => p.packet.type === 'knock' || p.packet.type === 'claim'
+        )
+      ).toBe(false);
+      const resumed = s.hostWire.packets.findLast(
+        (p) => p.target === current.localPeerId && p.packet.type === 'resumed'
+      );
+      expect(resumed!.packet.id).toBe(sessionId);
+      // Exercise the new session past the reported second-drop interval,
+      // then cause another live signaling failure without a visibility event.
+      vi.setSystemTime(Date.now() + 30000);
+      previous = current;
+    }
+    previous.loseSignaling();
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+    expect(s.network.nodes.at(-1)).not.toBe(previous);
+    expect(
+      s.statuses.some((status) => status.includes('Signaling channel closed'))
+    ).toBe(false);
+  });
+
+  it('cancels foreground recovery when the phone page is disposed', async () => {
+    const s = await setup(true);
+    const created = s.network.nodes.length;
+    s.phoneWire.loseSignaling();
+    (s.phone as PhoneControllerPage).dispose();
+    await drain();
+    expect(s.network.nodes.length).toBe(created);
+    expect(s.host.connected).toBe(false);
+  });
+
+  it('does not renew an unapproved invitation during foreground recovery', async () => {
+    const s = await setup(true, false);
+    vi.useFakeTimers({toFake: ['Date']});
+    const nodes = s.network.nodes.length;
+    vi.setSystemTime(Date.now() + PAIRING_WINDOW_MS + 1);
+    s.phoneWire.loseSignaling();
+    await drain();
+    expect(s.statuses.at(-1)).toContain('Invitation timed out');
+    expect(s.network.nodes.length).toBe(nodes);
+    expect(s.phone.connected).toBe(false);
+  });
+
+  it('retries a failed signaling reopen without consuming another invitation', async () => {
+    const s = await setup(true);
+    const create = s.network.create.bind(s.network);
+    const factory = vi
+      .spyOn(s.network, 'create')
+      .mockImplementationOnce(() => {
+        const wire = create();
+        wire.connect = async () => {
+          throw new Error('Broker temporarily unreachable');
+        };
+        return wire;
+      })
+      .mockImplementation(create);
+    cleanup.push(() => factory.mockRestore());
+    s.phoneWire.loseSignaling();
+    await settle(() => expect(factory).toHaveBeenCalledTimes(1));
+    expect(s.statuses.at(-1)).toBe('Reconnecting to headset…');
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(s.host.pendingPhone).toBeUndefined();
+    expect(
+      s.network.nodes
+        .at(-1)!
+        .packets.some((p) => p.packet.type === 'resume-proof')
+    ).toBe(true);
+  });
+
+  it('keeps an approved session through a persisted pagehide/pageshow cycle', async () => {
+    const s = await setup(true);
+    window.dispatchEvent(
+      new PageTransitionEvent('pagehide', {persisted: true})
+    );
+    expect(s.root.firstElementChild).not.toBeNull();
+    window.dispatchEvent(
+      new PageTransitionEvent('pageshow', {persisted: true})
+    );
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+    expect(s.network.nodes.at(-1)).not.toBe(s.phoneWire);
+    expect(s.host.pendingPhone).toBeUndefined();
+  });
+
   it.each([false, true])(
     'keeps two phone pages host-only with a separate multiplayer session=%s',
     async (multiplayer) => {

@@ -24,8 +24,8 @@ async function connect(pairing) {
     document.querySelector('#controller'),
     {
       pairing,
-      transport: new URLSearchParams(location.search).has('local')
-        ? new BroadcastChannelTransport()
+      transportFactory: new URLSearchParams(location.search).has('local')
+        ? () => new BroadcastChannelTransport()
         : undefined,
       onError: showError,
     }

@@ -132,8 +132,10 @@ Phone URLs follow the sample's deployment path, including the docs site.
   a button held. Old/out-of-order lossy packets are discarded.
 - For custom signaling/STUN/TURN, pass a **fresh-instance** `transportFactory`
   to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true, ...})`.
-  Pass a similarly configured `transport` to each phone page. Replacement uses
-  the factory. BroadcastChannel supports local tests; transports without an
+  Pass a similarly configured `transportFactory` to each phone page. Replacement
+  and background recovery use fresh instances from the factory. A custom
+  single `transport` alone cannot be recreated automatically. BroadcastChannel
+  supports local tests; transports without an
   unreliable lane are rejected rather than silently routing motion reliably.
 - The default PeerJS broker is best-effort; some networks need TURN. Use HTTPS.
 - Backgrounding, cancellation or peer loss releases held input. Missing
@@ -141,6 +143,12 @@ Phone URLs follow the sample's deployment path, including the docs site.
   listeners, timers, key references, input registration and owned reticles.
 - A screen wake lock is requested only while paired and visible, released on
   background/disconnect/disposal, and reacquired on return where supported.
+- Returning from the background reopens the phone's dedicated signaling transport
+  and authenticates a fresh epoch with the existing session secret, even after
+  the invitation expires. Network failures show **Reconnecting to headset…**
+  and retry with bounded backoff while visible. Repeated background cycles and
+  persisted page restores retain the session; explicit disposal/reload revokes
+  its in-memory key. The headset's multiplayer transport is independent.
 
 ## Keyboard privacy and haptics
 

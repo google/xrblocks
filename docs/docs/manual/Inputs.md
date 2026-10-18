@@ -125,6 +125,13 @@ are optional. If the phone reloads or a different phone is needed, use the
 headset's Replace phone / New code action. It revokes the old session without
 reloading the headset app.
 
+Returning to the phone page after screen-off or switching apps recreates its
+dedicated signaling transport and resumes with the approved session secret.
+Transient failures show “Reconnecting to headset…” and retry while visible.
+For custom transports, supply `transportFactory` to the phone page as well as
+the host so each reconnect gets a fresh instance. Explicitly reloading the
+phone page still requires Replace phone / New code.
+
 Motion is coalesced per frame onto a separate unordered WebRTC channel with zero
 retransmissions. Buttons and text stay reliable. Encrypted, sequenced messages
 have per-type rate and size limits. For custom signaling/TURN, provide a host

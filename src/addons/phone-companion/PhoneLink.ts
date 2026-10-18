@@ -42,8 +42,9 @@ export interface PhonePairingRequest {
 }
 
 export interface PhoneConnectionOptions {
-  /** Fresh, exclusively owned instance. Hosts needing replacement should use transportFactory. */
+  /** Fresh, exclusively owned instance. Supply transportFactory for automatic reconnection. */
   transport?: Transport;
+  /** Returns a fresh exclusively owned transport for replacement/background recovery. */
   transportFactory?: () => Transport;
   onConnectionChange?: (connected: boolean) => void;
   onPairingRequest?: (request: PhonePairingRequest | null) => void;
@@ -81,7 +82,13 @@ const nonce = (value: unknown): value is string =>
 
 /** Approved, encrypted one-to-one channel. Invitation credentials never appear on the wire. */
 export class PhoneLink {
-  private readonly transport: Transport;
+  private transport: Transport;
+  private readonly transportFactory?: () => Transport;
+  private foreground = true;
+  private needsRecovery = false;
+  private recovering?: Promise<void>;
+  private retryAt = 0;
+  private recoveryAttempts = 0;
   private readonly roomCode?: string;
   private readonly roomId: string;
   private announced = new Set<string>();
@@ -151,10 +158,12 @@ export class PhoneLink {
     if (pairing.token && !/^[A-Za-z0-9_-]{32,128}$/.test(pairing.token))
       throw new Error('QR pairing requires a long random token.');
     this.pairing = {...pairing, code: manual?.code};
-    this.transport =
-      options.transport ??
-      options.transportFactory?.() ??
-      new WebRTCTransport({unreliableChannel: true});
+    this.transportFactory =
+      options.transportFactory ??
+      (options.transport
+        ? undefined
+        : () => new WebRTCTransport({unreliableChannel: true}));
+    this.transport = options.transport ?? this.transportFactory!();
     this.roomCode = manual?.code;
     this.roomId = pairing.roomId;
   }
@@ -194,11 +203,7 @@ export class PhoneLink {
         'Phone control requires an unreliable transport lane. Enable WebRTCTransport.unreliableChannel.'
       );
     this.started = true;
-    this.transport.on('message', this.onMessage);
-    this.transport.on('peer-join', this.onJoin);
-    this.transport.on('peer-leave', this.onLeave);
-    this.transport.on('close', this.onClose);
-    this.transport.on('error', this.onError);
+    this.listen(this.transport);
     try {
       await this.transport.connect({roomId: this.pairing.roomId});
       if (this.closed) {
@@ -217,6 +222,112 @@ export class PhoneLink {
       this.close();
       throw error;
     }
+  }
+
+  /** The page stays alive while hidden; only explicit disposal revokes its session key. */
+  setForeground(visible: boolean): void {
+    const returning = !this.foreground && visible;
+    this.foreground = visible;
+    if (this.closed || this.role !== 'phone' || !this.started) return;
+    if (returning && this.transportFactory) this.needsRecovery = true;
+    if (visible && this.needsRecovery) {
+      this.retryAt = 0;
+      void this.recoverTransport();
+    }
+  }
+
+  private listen(transport: Transport): void {
+    transport.on('message', this.onMessage);
+    transport.on('peer-join', this.onJoin);
+    transport.on('peer-leave', this.onLeave);
+    transport.on('close', this.onClose);
+    transport.on('error', this.onError);
+  }
+
+  private unlisten(transport: Transport): void {
+    transport.off('message', this.onMessage);
+    transport.off('peer-join', this.onJoin);
+    transport.off('peer-leave', this.onLeave);
+    transport.off('close', this.onClose);
+    transport.off('error', this.onError);
+  }
+
+  private recoverTransport(): Promise<void> {
+    if (this.recovering) return this.recovering;
+    if (
+      this.closed ||
+      !this.foreground ||
+      !this.needsRecovery ||
+      Date.now() < this.retryAt
+    )
+      return Promise.resolve();
+    if (!this.transportFactory) {
+      this.options.onStatus?.(
+        'Reconnecting… Custom transports need transportFactory to reopen signaling.'
+      );
+      return Promise.resolve();
+    }
+    if (!this.session && Date.now() >= this.deadline) {
+      this.needsRecovery = false;
+      this.deadline = 0;
+      this.candidate = undefined;
+      this.clientKeys.clear();
+      this.options.onStatus?.(
+        'Invitation timed out. Choose New code on the headset.'
+      );
+      return Promise.resolve();
+    }
+    this.drop();
+    this.options.onStatus?.('Reconnecting to headset…');
+    this.generation++;
+    const previous = this.transport;
+    this.unlisten(previous);
+    previous.close();
+    this.hostPeer = undefined;
+    this.memberships.clear();
+    this.clientKeys.clear();
+    this.preparingKeys.clear();
+    this.resumeChallenges.clear();
+    this.candidate = undefined;
+    // Defer creation until recovering is assigned, including transports whose
+    // connect/events are synchronous. Only one recovery may own signaling.
+    this.recovering = Promise.resolve()
+      .then(async () => {
+        if (this.closed) return;
+        try {
+          const next = this.transportFactory!();
+          if (next === previous)
+            throw new Error('transportFactory must return a fresh transport.');
+          this.transport = next;
+          if (!next.supportsUnreliable)
+            throw new Error('An unreliable transport lane is required.');
+          this.needsRecovery = false;
+          this.listen(next);
+          await next.connect({roomId: this.roomId});
+          if (this.closed) {
+            next.close();
+            return;
+          }
+          if (this.needsRecovery)
+            throw new Error('Signaling disconnected during recovery.');
+          for (const peer of next.remotePeerIds)
+            if (!this.memberships.has(peer))
+              this.memberships.set(peer, ++this.membershipCounter);
+          this.retryAt = 0;
+          this.recoveryAttempts = 0;
+        } catch {
+          this.unlisten(this.transport);
+          this.transport.close();
+          this.needsRecovery = true;
+          this.retryAt =
+            Date.now() + Math.min(1000 * 2 ** this.recoveryAttempts++, 10000);
+          if (!this.closed) this.options.onStatus?.('Reconnecting to headset…');
+        }
+      })
+      .finally(() => {
+        this.recovering = undefined;
+      });
+    return this.recovering;
   }
 
   /** Explicit headset decision, bound to this exchange and its comparison digits. */
@@ -340,11 +451,7 @@ export class PhoneLink {
     this.generation++;
     clearInterval(this.timer);
     this.cancelMotionFrame?.();
-    this.transport.off('message', this.onMessage);
-    this.transport.off('peer-join', this.onJoin);
-    this.transport.off('peer-leave', this.onLeave);
-    this.transport.off('close', this.onClose);
-    this.transport.off('error', this.onError);
+    this.unlisten(this.transport);
     this.transport.close();
     this.drop();
     this.session = undefined;
@@ -367,6 +474,12 @@ export class PhoneLink {
   }
 
   private tick(): void {
+    if (this.closed) return;
+    if (this.role === 'phone' && !this.foreground) return;
+    if (this.role === 'phone' && this.needsRecovery) {
+      void this.recoverTransport();
+      return;
+    }
     if (this.peer && Date.now() - this.lastSeen > 5000) this.drop();
     if (this.peer) {
       this.send({type: 'ping'});
@@ -497,7 +610,10 @@ export class PhoneLink {
     membership: number
   ): Promise<void> {
     const current = () =>
-      !this.closed && this.memberships.get(peer) === membership;
+      !this.closed &&
+      !this.needsRecovery &&
+      this.transport.isOpen &&
+      this.memberships.get(peer) === membership;
     if (!current()) return;
     if (packet.type === 'data') {
       await this.receiveEncrypted(packet, peer, lane);
@@ -1099,9 +1215,17 @@ export class PhoneLink {
     if (peer === this.peer) this.drop();
   };
   private onClose = (): void => {
-    this.close();
+    if (this.role === 'phone' && !this.closed) this.connectionLost();
+    else this.close();
   };
+  private connectionLost(): void {
+    this.needsRecovery = true;
+    this.drop();
+    this.options.onStatus?.('Reconnecting to headset…');
+    if (this.foreground) void this.recoverTransport();
+  }
   private onError = (event: CustomEvent<{error: Error}>): void => {
-    this.options.onError?.(event.detail.error);
+    if (this.role === 'phone' && !this.closed) this.connectionLost();
+    else this.options.onError?.(event.detail.error);
   };
 }
