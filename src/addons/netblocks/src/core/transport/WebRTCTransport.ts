@@ -85,6 +85,8 @@ export class WebRTCTransport extends Transport {
   private _discoveryTimer?: ReturnType<typeof setTimeout>;
   private _discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
   private _heartbeatTimer?: ReturnType<typeof setInterval>;
+  private _signalingReconnect?: Promise<void>;
+  private _lastRecoveryDiscovery = -Infinity;
   constructor(opts: WebRTCTransportOptions = {}) {
     super();
     this._opts = opts;
@@ -175,6 +177,38 @@ export class WebRTCTransport extends Transport {
         }
       }
     }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  /**
+   * Explicitly reopen the broker registration without replacing live peer
+   * connections or changing our peer ID. A taken slot rejects for caller retry.
+   */
+  reconnectSignaling(): Promise<void> {
+    if (this._closed || !this._isOpen)
+      return Promise.reject(new Error('WebRTCTransport is not open.'));
+    if (this._signalingReconnect) return this._signalingReconnect;
+    this._signalingReconnect = Promise.resolve()
+      .then(async () => {
+        if (this._closed) return;
+        if (this._signaling?.readyState !== WebSocket.OPEN) {
+          await this._tryClaimSlot(
+            this._opts.signalingUrl ?? this._defaultBrokerUrl(),
+            this._localPeerId
+          );
+          if (this._closed) return;
+          this._signaling?.send(JSON.stringify({type: 'HEARTBEAT'}));
+          this._lastRecoveryDiscovery = -Infinity;
+        }
+        if (Date.now() - this._lastRecoveryDiscovery >= DISCOVERY_INTERVAL_MS) {
+          this._lastRecoveryDiscovery = Date.now();
+          this._discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
+          this._discover(this._hashRoom(this._roomId));
+        }
+      })
+      .finally(() => {
+        this._signalingReconnect = undefined;
+      });
+    return this._signalingReconnect;
   }
 
   close(): void {
@@ -289,7 +323,7 @@ export class WebRTCTransport extends Transport {
           this._signaling = ws;
           ws.addEventListener('message', (e) => this._handleSignal(e));
           ws.addEventListener('close', () => {
-            if (this._isOpen)
+            if (this._isOpen && this._signaling === ws)
               this.emitError(new Error('Signaling channel closed.'));
           });
           resolve();

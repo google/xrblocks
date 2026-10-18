@@ -247,6 +247,15 @@ new WebRTCTransport({
 });
 ```
 
+#### Signaling recovery
+
+`WebRTCTransport.reconnectSignaling()` explicitly reopens a closed broker
+registration using the same local peer ID, without replacing live data channels.
+Concurrent calls share one attempt; a taken slot or unreachable broker rejects
+for caller-managed retry. It also prompts discovery when the data peer is gone.
+This does not opt multiplayer sessions into automatic recovery or change the
+room's full-mesh policy.
+
 #### Optional unreliable lane
 
 For latency-sensitive direct transport messages, opt into
