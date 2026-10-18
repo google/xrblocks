@@ -357,17 +357,15 @@ describe('WebRTC unreliable negotiation', () => {
     ];
     const before = Peer.instances.length;
     for (const src of invalid)
-      Broker.clients
-        .get(s.first.localPeerId)!
-        .dispatchEvent(
-          new MessageEvent('message', {
-            data: JSON.stringify({
-              type: 'OFFER',
-              src,
-              payload: {sdp: {type: 'offer', sdp: 'malformed'}},
-            }),
-          })
-        );
+      Broker.clients.get(s.first.localPeerId)!.dispatchEvent(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            type: 'OFFER',
+            src,
+            payload: {sdp: {type: 'offer', sdp: 'malformed'}},
+          }),
+        })
+      );
     await Promise.resolve();
     await Promise.resolve();
     expect(Peer.instances).toHaveLength(before);
