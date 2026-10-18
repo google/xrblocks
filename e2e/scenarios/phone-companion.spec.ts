@@ -75,6 +75,25 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     };
   });
   const popup = context.waitForEvent('page');
+  await expect(host.locator('#pairing-code')).toHaveText(/^[A-HJ-NP-Z2-9]{4}$/);
+  await host.evaluate(() => {
+    const link = (window as any).xb.core.scene.getObjectByName(
+      'Phone Companion'
+    ).link;
+    link.transport.dispatchEvent(
+      new CustomEvent('error', {
+        detail: {
+          error: new Error(
+            'Malformed SDP: compare 269 838 with your phone then tap Numbers match'
+          ),
+        },
+      })
+    );
+  });
+  await expect(host.locator('#status')).toHaveText(
+    'Connection problem. Keep both pages open and try again.'
+  );
+  await expect(host.locator('#pair-request')).not.toContainText('269 838');
   await expect(host.locator('#link')).toHaveText(
     'Open the phone controller in a new tab for testing on this computer'
   );

@@ -38,8 +38,10 @@ class PhoneDemo extends xb.Script {
       status.text = text;
       document.querySelector('#status').textContent = text;
     };
+    const connectionProblem = () =>
+      setStatus('Connection problem. Keep both pages open and try again.');
     const replace = () => {
-      void this.phone.replacePhone().catch((error) => setStatus(error.message));
+      void this.phone.replacePhone().catch(connectionProblem);
     };
     const replaceButton = new xb.UIButton({
       label: 'Pair a different phone',
@@ -58,10 +60,7 @@ class PhoneDemo extends xb.Script {
       requestText.text = label;
       document.querySelector('#pair-request').textContent = label;
       const accept = () => {
-        if (id)
-          void this.phone
-            .acceptPhone(id)
-            .catch((error) => setStatus(error.message));
+        if (id) void this.phone.acceptPhone(id).catch(connectionProblem);
       };
       const reject = () => {
         if (id) this.phone.rejectPhone(id);
@@ -160,7 +159,7 @@ class PhoneDemo extends xb.Script {
         setStatus(
           connected ? 'Phone connected · slide to point' : 'Waiting for phone…'
         ),
-      onError: (error) => setStatus(`Connection error: ${error.message}`),
+      onError: connectionProblem,
     });
     const phoneLanding = document.querySelector('#phone-page');
     phoneLanding.href = phonePage.href;
