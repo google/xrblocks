@@ -120,6 +120,15 @@ for (const screen of screens) {
       page.getByRole('button', {name: 'Disconnect', exact: true})
     );
     await capture('verification');
+    await withinViewport(
+      page,
+      page.getByRole('button', {name: 'Numbers match', exact: true})
+    );
+    await page.getByRole('button', {name: 'Numbers match', exact: true}).tap();
+    await expect(page.getByLabel('Pointer touchpad')).toBeHidden();
+    await expect
+      .poll(() => page.evaluate(() => !!(window as any).__uiHost.pendingPhone))
+      .toBe(true);
     await page.evaluate(() => {
       const host = (window as any).__uiHost;
       return host.accept(host.pendingPhone.id);
@@ -290,6 +299,10 @@ test('fold and unfold keep the approved session and pointer offset', async ({
   await page.getByLabel('Pairing code', {exact: true}).fill(code);
   await page.getByRole('button', {name: 'Connect', exact: true}).click();
   await expect(page.getByLabel('Verification number')).toBeVisible();
+  await page.getByRole('button', {name: 'Numbers match', exact: true}).tap();
+  await expect
+    .poll(() => page.evaluate(() => !!(window as any).__uiHost.pendingPhone))
+    .toBe(true);
   await page.evaluate(() => {
     const host = (window as any).__uiHost;
     return host.accept(host.pendingPhone.id);

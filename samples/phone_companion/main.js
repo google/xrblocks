@@ -49,9 +49,11 @@ class PhoneDemo extends xb.Script {
       style: {flexDirection: 'row', gap: 8},
     });
     const showRequest = (request) => {
-      const id = request?.id;
+      const id = request?.accepted ? undefined : request?.id;
       const label = request
-        ? `Compare ${request.comparison} with your phone, then accept.`
+        ? request.accepted
+          ? `Headset accepted. Compare ${request.comparison}, then tap Numbers match on your phone.`
+          : `Compare ${request.comparison} with your phone, tap Numbers match there, then choose Accept phone here.`
         : 'New phones require approval here.';
       requestText.text = label;
       document.querySelector('#pair-request').textContent = label;

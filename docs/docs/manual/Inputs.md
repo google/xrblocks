@@ -79,8 +79,10 @@ code inside the headset, a phone code-entry page, and an optional desktop QR.
 Users of Quest, Galaxy XR, Aura and other headsets can enter the code without
 trying to scan the headset's display. Use an HTTPS URL reachable by both devices.
 
-Every new phone requires **headset acceptance after comparing six verification
-digits**. Invitations expire after 90 seconds and allow five handshake attempts.
+Every new phone requires **Numbers match on the phone and Accept phone in the
+headset after comparing six verification digits**. The decisions can be made in
+either order; neither side activates until both are complete. Invitations expire
+after 90 seconds and allow five handshake attempts.
 Acceptance consumes and rotates the invitation. The QR uses a separate 256-bit
 token; the phone clears URL credentials after reading them. All invitation,
 approval and session state is per headset. Hosts that discover a code collision
@@ -127,10 +129,13 @@ are optional. If the phone reloads or a different phone is needed, use the
 headset's **Pair a different phone** action. It revokes the old session without
 reloading the headset app.
 
-Returning to the phone page after screen-off or switching apps recreates its
-dedicated signaling transport and resumes with the approved session secret.
+Broker failures repair signaling without dropping a healthy data channel. A
+lost peer/data link resumes with the approved session secret and fresh nonces
+from both endpoints. Returning after screen-off does not replace an in-progress
+pairing or ignore an approval received while hidden.
 Transient failures dim the pad and show “Connection lost. Trying to reconnect…”.
-A prolonged failure gives new-pairing instructions; successful recovery briefly
+A prolonged visible failure gives new-pairing instructions; the 20-second UI
+timeout pauses while hidden and restarts on return. Successful recovery briefly
 shows “Reconnected”. The phone's **Disconnect** action asks for confirmation and
 clears the pairing code.
 For custom transports, supply `transportFactory` to the phone page as well as

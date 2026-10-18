@@ -3,8 +3,10 @@
 Build with `npm run build`, serve the repository, and open
 `/samples/phone_companion/` on the headset or desktop. On the phone open
 `/samples/phone_companion/phone.html` on the same site and enter the headset code.
-Compare the six verification digits on both devices, then choose **Accept phone**
-in the headset. The desktop QR is optional; it uses a long random token.
+Compare the six verification digits on both devices. Tap **Numbers match** on
+the phone and choose **Accept phone** in the headset, in either order. Both are
+required before control or editing is enabled. The desktop QR is optional; it
+uses a long random token.
 
 The explicitly labelled same-computer test link opens the paired controller in
 a new tab. It is hidden on XR-capable devices and during immersive sessions;
@@ -36,5 +38,6 @@ motion channel. The public PeerJS broker is best-effort; configure signaling/TUR
 on both sides if needed. See the [addon README](../../src/addons/phone-companion/README.md).
 
 For a same-browser test, open `/samples/phone_companion/?local=1`, open the phone
-page in the same browser context, enter the code and approve it. This uses
+page in the same browser context, enter the code, tap Numbers match on the phone
+and choose Accept phone on the headset page. This uses
 BroadcastChannel and the same authenticated pairing, input and editing flow.

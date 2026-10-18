@@ -158,6 +158,7 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     );
     const connect = PhoneControllerPage.prototype.connect;
     PhoneControllerPage.prototype.connect = function () {
+      (window as any).__phoneTestLink = this.link;
       const events: unknown[] = [];
       for (const type of [
         'pointerdown',
@@ -227,6 +228,8 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   await host.bringToFront();
   await host.locator('#accept-phone').click();
   await phone.bringToFront();
+  await expect(phone.getByLabel('Pointer touchpad')).toBeHidden();
+  await phone.getByRole('button', {name: 'Numbers match', exact: true}).click();
   await expect(
     phone.getByText('Connected to headset', {exact: true})
   ).toBeVisible();
@@ -351,26 +354,33 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
         (window as any).xb.core.scene.getObjectByName('Phone Companion').link
           .peer
     );
-    await phone.evaluate(() => {
+    await phone.evaluate((cycle) => {
       Object.defineProperty(document, 'hidden', {
         configurable: true,
         get: () => true,
       });
       document.dispatchEvent(new Event('visibilitychange'));
+      if (cycle === 1) (window as any).__phoneTestLink.transport.close();
       Object.defineProperty(document, 'hidden', {
         configurable: true,
         get: () => false,
       });
       document.dispatchEvent(new Event('visibilitychange'));
-    });
+    }, cycle);
     await expect
       .poll(() =>
-        host.evaluate((oldPeer) => {
-          const link = (window as any).xb.core.scene.getObjectByName(
-            'Phone Companion'
-          ).link;
-          return link.connected && link.peer !== oldPeer;
-        }, previousPeer)
+        host.evaluate(
+          ({oldPeer, cycle}) => {
+            const link = (window as any).xb.core.scene.getObjectByName(
+              'Phone Companion'
+            ).link;
+            return (
+              link.connected &&
+              (cycle === 0 ? link.peer === oldPeer : link.peer !== oldPeer)
+            );
+          },
+          {oldPeer: previousPeer, cycle}
+        )
       )
       .toBe(true);
     await expect(phone.getByRole('status')).toHaveText('Connected to headset');
