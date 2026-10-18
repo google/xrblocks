@@ -261,6 +261,85 @@ async function delivered(phone: PhoneLink) {
     .reliable;
 }
 
+describe('Membership-scoped recovery budgets', () => {
+  it.each(['headset', 'phone'] as const)(
+    're-authenticates a new %s peer ID while another peer floods the receiver',
+    async (moving) => {
+      const s = await pair({
+        factory: moving === 'headset',
+        phoneFactory: moving === 'phone',
+      });
+      const attacker = s.network.create();
+      await attacker.connect({roomId: s.hostWire.roomId});
+      const receiver = moving === 'headset' ? s.phoneWire : s.hostWire;
+      const oldSender = moving === 'headset' ? s.hostWire : s.phoneWire;
+      const id = (s.host as unknown as {session: {crypto: {id: string}}})
+        .session.crypto.id;
+      const junk = new TextEncoder().encode(
+        JSON.stringify(
+          moving === 'headset'
+            ? {
+                v: 2,
+                type: 'host-presence',
+                id,
+                nonce: 'A'.repeat(43),
+                resumeProof: 'A'.repeat(43),
+              }
+            : {v: 2, type: 'resume', id, phoneNonce: 'A'.repeat(43)}
+        )
+      );
+      let flooded = 0;
+      s.network.block = (from) => {
+        if (from !== receiver && from !== attacker) {
+          for (let i = 0; i < 100; i++)
+            receiver.inject(attacker.localPeerId, junk);
+          flooded++;
+        }
+        return false;
+      };
+      oldSender.close();
+      await settle(() =>
+        expect(s.phone.connected && s.host.connected).toBe(true)
+      );
+      const link = (moving === 'headset' ? s.host : s.phone) as unknown as {
+        transport: Wire;
+      };
+      expect(link.transport.localPeerId).not.toBe(oldSender.localPeerId);
+      expect(flooded).toBeGreaterThan(0);
+    }
+  );
+
+  it('bounds membership budgets and retires them on leave rather than retaining peer-ID history', async () => {
+    const s = await pair({factory: false});
+    const junk = new TextEncoder().encode(
+      JSON.stringify({v: 2, type: 'garbage'})
+    );
+    const peers: Wire[] = [];
+    for (let i = 0; i < 40; i++) {
+      const peer = s.network.create();
+      peers.push(peer);
+      await peer.connect({roomId: s.hostWire.roomId});
+      s.hostWire.inject(peer.localPeerId, junk);
+    }
+    const state = s.host as unknown as {
+      memberships: Map<string, number>;
+      peerBudgets: Map<number, unknown>;
+    };
+    expect(state.peerBudgets).toBeInstanceOf(Map);
+    expect(state.peerBudgets.size).toBeLessThanOrEqual(32);
+    const oldMembership = state.memberships.get(peers[0].localPeerId)!;
+    expect(state.peerBudgets.has(oldMembership)).toBe(true);
+    s.hostWire.leave(peers[0]);
+    expect(state.peerBudgets.has(oldMembership)).toBe(false);
+    s.hostWire.join(peers[0]);
+    s.hostWire.inject(peers[0].localPeerId, junk);
+    const nextMembership = state.memberships.get(peers[0].localPeerId)!;
+    expect(nextMembership).not.toBe(oldMembership);
+    expect(state.peerBudgets.has(nextMembership)).toBe(true);
+    expect(state.peerBudgets.size).toBeLessThanOrEqual(32);
+  });
+});
+
 describe('Third-pass recovery boundaries', () => {
   it('resumes with the chosen headset while other room peers continuously spend their own budget', async () => {
     const s = await pair({factory: false});

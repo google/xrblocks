@@ -167,7 +167,11 @@ or reset pointer offsets.
   100 KB cap requires an existing session, or local phone confirmation plus a
   timely approval. Packets still queue behind acknowledgment verification before
   being applied. The selected/session-known counterpart has its own wire and
-  handshake budgets; other peers' announcements use a small separate budget.
+  handshake budgets. Other peers get small independent budgets keyed by their
+  membership, so a newly addressed counterpart can re-authenticate while another
+  peer floods the room. The budget map is capped at 32 entries, is cleared on
+  transport replacement, and retires entries on peer departure. Discovery work
+  has bounded per-peer queues separate from the selected counterpart's queue.
 - For custom signaling/STUN/TURN, pass a **fresh-instance** `transportFactory`
   to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true, ...})`.
   Pass a similarly configured `transportFactory` to each phone page. Replacement

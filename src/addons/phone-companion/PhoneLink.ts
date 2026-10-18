@@ -90,8 +90,15 @@ type Standby = {
   transport: Transport;
   ready: boolean;
   packets: Map<string, TransportMessageEventDetail>;
+  memberships: Map<string, number>;
   cleanup: () => void;
 };
+type PeerBudget = {
+  limits: MessageLimits;
+  inbound: Record<Lane, Promise<void>>;
+  pending: Record<Lane, number>;
+};
+const MAX_PEER_BUDGETS = 32;
 const CONFIRMATION_WINDOW_MS = 30000;
 const SESSION_ANNOUNCE_INTERVAL_MS = 3000;
 const EMPTY_MOTION = (): MotionState => ({
@@ -150,6 +157,8 @@ export class PhoneLink {
   private wireLimits = new MessageLimits();
   private selectedPeer?: string;
   private selectedLimits = new MessageLimits();
+  private peerBudgets = new Map<number, PeerBudget>();
+  private untrustedPending = 0;
   private sendSequence = {reliable: 0, unreliable: 0};
   private receiveSequence = {reliable: 0, unreliable: 0};
   private outbound: Record<Lane, Promise<void>> = {
@@ -352,6 +361,7 @@ export class PhoneLink {
             transport,
             ready: false,
             packets: new Map<string, TransportMessageEventDetail>(),
+            memberships: new Map<string, number>(),
             cleanup: () => {},
           };
           attempt = standby;
@@ -361,8 +371,19 @@ export class PhoneLink {
             if (
               data.byteLength > 2048 ||
               this.ownsPeer(peerId) ||
-              !transport.remotePeerIds.has(peerId) ||
-              !(selected ?? this.wireLimits).allow(
+              !transport.remotePeerIds.has(peerId)
+            )
+              return;
+            let membership = standby.memberships.get(peerId);
+            if (membership === undefined) {
+              if (standby.memberships.size >= MAX_PEER_BUDGETS) return;
+              membership = ++this.membershipCounter;
+              standby.memberships.set(peerId, membership);
+            }
+            const limits =
+              selected ?? this.membershipBudget(membership)?.limits;
+            if (
+              !limits?.allow(
                 'standby-wire',
                 selected ? 20 : 4,
                 selected ? 30 : 8
@@ -371,6 +392,12 @@ export class PhoneLink {
               return;
             if (standby.packets.has(peerId) || standby.packets.size < 12)
               standby.packets.set(peerId, event.detail);
+          };
+          const leave = (event: CustomEvent<{peerId: string}>) => {
+            const membership = standby.memberships.get(event.detail.peerId);
+            if (membership !== undefined) this.peerBudgets.delete(membership);
+            standby.memberships.delete(event.detail.peerId);
+            standby.packets.delete(event.detail.peerId);
           };
           const failed = () => {
             if (this.standby !== standby) return;
@@ -389,11 +416,16 @@ export class PhoneLink {
             transport.off('message', buffer);
             transport.off('close', failed);
             transport.off('error', error);
+            transport.off('peer-leave', leave);
+            for (const membership of standby.memberships.values())
+              this.peerBudgets.delete(membership);
+            standby.memberships.clear();
           };
           this.standby = standby;
           transport.on('message', buffer);
           transport.on('close', failed);
           transport.on('error', error);
+          transport.on('peer-leave', leave);
           await transport.connect({roomId: this.roomId});
           if (this.closed || this.standby !== standby) {
             standby.cleanup();
@@ -440,6 +472,21 @@ export class PhoneLink {
     return this.selectedLimits;
   }
 
+  private membershipBudget(membership: number): PeerBudget | undefined {
+    let budget = this.peerBudgets.get(membership);
+    if (!budget) {
+      // Fail closed at capacity. Never evict a live member to reset its quota.
+      if (this.peerBudgets.size >= MAX_PEER_BUDGETS) return;
+      budget = {
+        limits: new MessageLimits(),
+        inbound: {reliable: Promise.resolve(), unreliable: Promise.resolve()},
+        pending: {reliable: 0, unreliable: 0},
+      };
+      this.peerBudgets.set(membership, budget);
+    }
+    return budget;
+  }
+
   private approvalDeadline(candidate = this.candidate): number {
     return (
       this.deadline +
@@ -470,6 +517,7 @@ export class PhoneLink {
     this.generation++;
     this.hostPeer = undefined;
     this.memberships.clear();
+    this.peerBudgets.clear();
     this.announced.clear();
     this.resumeChallenges.clear();
     this.needsRecovery = false;
@@ -671,6 +719,7 @@ export class PhoneLink {
     this.resumeChallenges.clear();
     this.offerOpen = false;
     this.memberships.clear();
+    this.peerBudgets.clear();
     this.options.onPairingRequest?.(null);
   }
 
@@ -843,7 +892,8 @@ export class PhoneLink {
     packet: Record<string, unknown>,
     peer: string,
     lane: Lane,
-    membership: number
+    membership: number,
+    peerLimits: MessageLimits
   ): Promise<void> {
     const current = () =>
       !this.closed &&
@@ -858,10 +908,10 @@ export class PhoneLink {
     const announcementsOnly = this.role === 'phone' && !selected;
     if (
       lane !== 'reliable' ||
-      !(selected ?? this.wireLimits).allow(
+      !(selected ?? peerLimits).allow(
         announcementsOnly ? 'announcement-handshake' : 'handshake',
-        announcementsOnly ? 4 : 10,
-        announcementsOnly ? 8 : 15
+        selected ? 10 : 4,
+        selected ? 15 : 8
       )
     )
       return;
@@ -1197,7 +1247,7 @@ export class PhoneLink {
         this.peer ||
         packet.id !== this.session.crypto.id ||
         !nonce(packet.phoneNonce) ||
-        !(this.selectedBudget(peer) ?? this.wireLimits).allow('resume', 2, 4)
+        !(this.selectedBudget(peer) ?? peerLimits).allow('resume', 2, 4)
       )
         return;
       const existing = this.resumeChallenges.get(peer);
@@ -1514,16 +1564,21 @@ export class PhoneLink {
         (this.peer !== undefined || !this.session))
     )
       return;
+    const lane = event.detail.delivery ?? 'reliable';
+    if (!selected && lane !== 'reliable') return;
+    const member = selected ? undefined : this.membershipBudget(membership);
+    const peerLimits = selected ?? member?.limits;
+    if (!peerLimits) return;
     // Unidentified senders spend their budget before UTF-8 decode/JSON.parse.
     if (
-      !(selected ?? this.wireLimits).allow(
+      !peerLimits.allow(
         selected
           ? 'selected-wire'
           : this.role === 'phone'
             ? 'announcement-wire'
             : 'untrusted-wire',
-        trustedPeer ? 200 : selected ? 20 : this.role === 'phone' ? 4 : 20,
-        trustedPeer ? 250 : selected ? 30 : this.role === 'phone' ? 8 : 30
+        trustedPeer ? 200 : selected ? 20 : 4,
+        trustedPeer ? 250 : selected ? 30 : 8
       )
     )
       return;
@@ -1540,18 +1595,28 @@ export class PhoneLink {
       packet.type !== 'host-presence'
     )
       return;
-    const lane = event.detail.delivery ?? 'reliable';
-    if (this.pending[lane] >= (lane === 'unreliable' ? 2 : 32)) return;
-    this.pending[lane]++;
-    this.inbound[lane] = this.inbound[lane]
+    // Discovery work cannot occupy the selected counterpart's ordered queue.
+    const pending = member?.pending ?? this.pending;
+    const inbound = member?.inbound ?? this.inbound;
+    if (
+      pending[lane] >= (selected && lane === 'reliable' ? 32 : 2) ||
+      (!selected && this.untrustedPending >= 64)
+    )
+      return;
+    pending[lane]++;
+    if (!selected) this.untrustedPending++;
+    inbound[lane] = inbound[lane]
       .then(() =>
-        this.closed ? undefined : this.handle(packet, peerId, lane, membership)
+        this.closed
+          ? undefined
+          : this.handle(packet, peerId, lane, membership, peerLimits)
       )
       .catch(() => {
         // Invalid proofs/ciphertexts are unauthenticated input, not app errors.
       })
       .finally(() => {
-        this.pending[lane]--;
+        pending[lane]--;
+        if (!selected) this.untrustedPending--;
       });
   };
 
@@ -1581,6 +1646,8 @@ export class PhoneLink {
         (peer === this.session.peer &&
           this.memberships.get(peer) === this.session.membership));
     if (this.hostPeer === peer) this.hostPeer = undefined;
+    const membership = this.memberships.get(peer);
+    if (membership !== undefined) this.peerBudgets.delete(membership);
     this.clientKeys.delete(peer);
     this.memberships.delete(peer);
     this.announced.delete(peer);
