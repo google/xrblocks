@@ -18,10 +18,10 @@ describe('Depth', () => {
     return depth;
   }
 
-  it('starts without depth availability until a source provides depth', () => {
+  it('starts with depth available outside XR', () => {
     Depth.instance = undefined;
     const depth = new Depth();
-    expect(depth.isDepthDataAvailable).toBe(false);
+    expect(depth.isDepthDataAvailable).toBe(true);
   });
 
   /**
@@ -444,7 +444,7 @@ describe('Depth', () => {
       expect(shader.uniforms.occlusionEnabled.value).toBe(true);
     });
 
-    it('marks depth stale on XR session end and restores it from simulator CPU data', () => {
+    it('resets to the non-XR default on session end and accepts simulator CPU data', () => {
       const depth = setupDepthForLocalUpdate();
       depth.options.occlusion.enabled = true;
       const shader = {
@@ -455,18 +455,22 @@ describe('Depth', () => {
       depth.occludableShaders.add(shader);
       const renderOcclusionPass = vi.spyOn(depth, 'renderOcclusionPass');
       const {frame} = createStereoFrame([{} as XRView]);
+
+      depth.onXRSessionStarted();
+      expect(depth.isDepthDataAvailable).toBe(false);
       depth.update(frame);
+      expect(depth.isDepthDataAvailable).toBe(true);
       expect(depth.cpuDepthData).toHaveLength(1);
       const cachedCpuDepth = depth.cpuDepthData[0];
       const cachedDepthArray = depth.depthArray[0];
 
       depth.onXRSessionEnded();
 
-      expect(depth.isDepthDataAvailable).toBe(false);
+      expect(depth.isDepthDataAvailable).toBe(true);
       expect(depth.cpuDepthData[0]).toBe(cachedCpuDepth);
       expect(depth.depthArray[0]).toBe(cachedDepthArray);
-      expect(shader.uniforms.occlusionEnabled.value).toBe(false);
-      expect(depth.getDepth(0.5, 0.5)).toBe(0);
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+      expect(depth.getDepth(0.5, 0.5)).toBeGreaterThan(0);
 
       depth.updateCPUDepthData(
         {

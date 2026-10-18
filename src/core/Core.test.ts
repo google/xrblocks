@@ -251,6 +251,7 @@ describe('Core frame and simulator lifecycle', () => {
     expect(core.depth.isDepthDataAvailable).toBe(false);
     firstSession.dispatchEvent(new Event('end'));
     core['onXRSessionEnded']();
+    expect(core.depth.isDepthDataAvailable).toBe(true);
     await core['onXRSessionStarted'](secondSession);
     expect(core.depth.isDepthDataAvailable).toBe(false);
 

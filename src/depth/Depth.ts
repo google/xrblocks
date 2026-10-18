@@ -47,9 +47,9 @@ export class Depth {
   private gpuDepthConverter?: GPUDepthConverter;
   private registry?: Registry;
   private disposed = false;
-  private depthDataAvailable = false;
+  private depthDataAvailable = true;
 
-  /** Whether the current session has produced usable depth data. */
+  /** Whether depth should be consumed; defaults to available outside XR. */
   get isDepthDataAvailable() {
     return this.depthDataAvailable;
   }
@@ -576,9 +576,9 @@ export class Depth {
     if (uniform) uniform.value = enabled;
   }
 
-  /** Clears depth from the ended XR session before the next session starts. */
+  /** Restores the default non-XR depth state after a session ends. */
   onXRSessionEnded() {
-    this.setDepthDataAvailable(false);
+    this.setDepthDataAvailable(true);
   }
 
   /** Resets depth availability at the start of every XR session. */
