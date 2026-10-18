@@ -325,6 +325,116 @@ async function reliableWorks(a: WebRTCTransport, b: WebRTCTransport) {
 }
 
 describe('WebRTC unreliable negotiation', () => {
+  it('locally drops one protected peer and permits discovery to reconnect it', async () => {
+    const s = await pair(true, true, true);
+    const left = vi.fn();
+    s.second.on('peer-leave', left);
+    s.second.dropPeer(s.first.localPeerId);
+    s.second.dropPeer(s.first.localPeerId);
+    expect(left).toHaveBeenCalledOnce();
+    expect(s.second.remotePeerIds.size).toBe(0);
+    expect(s.second.isSignalingOpen).toBe(true);
+    s.second.discoverPeers();
+    await vi.waitFor(() =>
+      expect(s.second.remotePeerIds.has(s.first.localPeerId)).toBe(true)
+    );
+    await reliableWorks(s.first, s.second);
+  });
+  it('rejects off-room, noncanonical and self offers before allocating a protected peer', async () => {
+    const s = await pair(true, true, true);
+    const prefix = s.first.localPeerId.slice(
+      0,
+      s.first.localPeerId.lastIndexOf('_') + 1
+    );
+    const invalid = [
+      ...Array.from({length: 32}, (_, index) => `outsider-${index}`),
+      `${prefix}12`,
+      `${prefix}01`,
+      `${prefix}-1`,
+      `${prefix}1x`,
+      'xrbnet_other-room_1',
+      s.first.localPeerId,
+    ];
+    const before = Peer.instances.length;
+    for (const src of invalid)
+      Broker.clients
+        .get(s.first.localPeerId)!
+        .dispatchEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({
+              type: 'OFFER',
+              src,
+              payload: {sdp: {type: 'offer', sdp: 'malformed'}},
+            }),
+          })
+        );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(Peer.instances).toHaveLength(before);
+    expect(s.errors).not.toHaveBeenCalled();
+    await reliableWorks(s.first, s.second);
+  });
+
+  it.each([false, true])(
+    'keeps arbitrary broker IDs compatible when protection=%s',
+    async (protectedPeers) => {
+      const s = await pair(false, false, protectedPeers);
+      const outside = new Broker('ws://localhost/?id=external-client');
+      await Promise.resolve();
+      const remote = new Peer();
+      remote.createDataChannel('netblocks', {ordered: true});
+      outside.addEventListener('message', (event) => {
+        const message = JSON.parse((event as MessageEvent).data) as Signal;
+        if (message.type === 'ANSWER')
+          void remote.setRemoteDescription(message.payload!.sdp!);
+      });
+      const count = Peer.instances.length;
+      outside.send(
+        JSON.stringify({
+          type: 'OFFER',
+          dst: s.first.localPeerId,
+          payload: {sdp: await remote.createOffer()},
+        })
+      );
+      if (protectedPeers) {
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(Peer.instances).toHaveLength(count);
+      } else
+        await vi.waitFor(() =>
+          expect(s.first.remotePeerIds.has('external-client')).toBe(true)
+        );
+      outside.close();
+    }
+  );
+
+  it('accepts the last canonical room slot with protection enabled', async () => {
+    const s = await pair(false, false, true);
+    const prefix = s.first.localPeerId.slice(
+      0,
+      s.first.localPeerId.lastIndexOf('_') + 1
+    );
+    const outside = new Broker(`ws://localhost/?id=${prefix}11`);
+    await Promise.resolve();
+    const remote = new Peer();
+    remote.createDataChannel('netblocks', {ordered: true});
+    outside.addEventListener('message', (event) => {
+      const message = JSON.parse((event as MessageEvent).data) as Signal;
+      if (message.type === 'ANSWER')
+        void remote.setRemoteDescription(message.payload!.sdp!);
+    });
+    outside.send(
+      JSON.stringify({
+        type: 'OFFER',
+        dst: s.first.localPeerId,
+        payload: {sdp: await remote.createOffer()},
+      })
+    );
+    await vi.waitFor(() =>
+      expect(s.first.remotePeerIds.has(`${prefix}11`)).toBe(true)
+    );
+    outside.close();
+  });
   it('allows replacement after local transport failure when open-peer protection is enabled', async () => {
     const s = await pair(true, true, true);
     const offer = Broker.signals.find((signal) => signal.type === 'OFFER')!;

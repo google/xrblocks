@@ -248,6 +248,11 @@ export class WebRTCTransport extends Transport {
     });
   }
 
+  /** Locally close one peer, including a protected connection. Discovery remains caller-controlled. */
+  dropPeer(peerId: string): void {
+    this._teardown(peerId);
+  }
+
   close(): void {
     if (this._closed) return;
     this._closed = true;
@@ -507,7 +512,12 @@ export class WebRTCTransport extends Transport {
       if (!occupied || this._closed) return;
       // An incoming handshake may have claimed this slot while the probe waited.
       if (this._entries.has(candidateId)) return;
-      await this._initiate(candidateId);
+      // _initiate creates its entry synchronously. That entry now reserves the
+      // slot; do not retain the probe reservation across native SDP promises,
+      // which Chrome may never settle after the connection is closed.
+      void this._initiate(candidateId).catch((error) => {
+        if (!this._closed) this.emitError(error as Error);
+      });
     } catch (error) {
       if (!this._closed) this.emitError(error as Error);
     } finally {
@@ -566,6 +576,8 @@ export class WebRTCTransport extends Transport {
           this._teardown(msg.dst);
         break;
       case 'OFFER':
+        if (this._opts.protectOpenPeers && (!src || !this._isRoomPeer(src)))
+          return;
         if (src && msg.payload?.sdp)
           await this._handleOffer(
             src,
@@ -645,6 +657,15 @@ export class WebRTCTransport extends Transport {
       !!entry &&
       (entry.ready || entry.dc?.readyState === 'open')
     );
+  }
+
+  private _isRoomPeer(remote: string): boolean {
+    if (!this._isOpen || remote === this._localPeerId) return false;
+    const prefix = `${ROOM_PREFIX}_${this._hashRoom(this._roomId)}_`;
+    for (let slot = 0; slot < MAX_SLOTS; slot++) {
+      if (remote === `${prefix}${slot}`) return true;
+    }
+    return false;
   }
 
   private _attachChannel(

@@ -266,6 +266,14 @@ before replacement; a transient `disconnected` state alone does not revoke it.
 The default is **false**: a different offer from a reused slot replaces the open
 connection, preserving the normal reload behavior. The phone companion enables
 this protection for its default WebRTC transport.
+With protection enabled, inbound offers must also name one of the room's 12
+canonical slot IDs (excluding our own); off-room and arbitrary broker IDs are
+rejected before allocating a peer connection.
+
+`dropPeer(peerId)` locally closes just that peer, even with protection enabled,
+and emits the usual departure event for an open channel. This lets an application
+discard a connection that fails application-level authentication. It leaves the
+broker and other peers intact; call `discoverPeers()` explicitly for a prompt retry.
 
 `discoverPeers()` is an explicit, one-off discovery request for callers that need
 to react promptly to a departed peer. Same-turn duplicate requests are coalesced;
@@ -275,8 +283,10 @@ multiplayer sessions do not opt into this automatically; the phone companion
 requests it only for an authenticated counterpart's departure when its recovery
 factory is enabled.
 Regular and explicit discovery share an in-flight probe reservation per slot;
-overlapping scans cannot start duplicate probes or offers. Probe completion,
-timeout, failure and transport disposal release the reservation.
+overlapping scans cannot start duplicate probes or offers. The reservation covers
+only the broker probe: it is released on completion, timeout, failure or disposal.
+Once initiation creates an entry, that entry prevents duplicate connections;
+unsettled native SDP promises never retain the probe reservation after teardown.
 
 #### Optional unreliable lane
 
