@@ -74,19 +74,49 @@ afterEach(() => {
   Broker.pending = false;
   Peer.instances = [];
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
-async function connect() {
+async function connect(open = true) {
   vi.stubGlobal('WebSocket', Broker);
   vi.stubGlobal('RTCPeerConnection', Peer);
   transport = new WebRTCTransport();
   await transport.connect({roomId: 'signaling-recovery'});
   await vi.waitFor(() => expect(Peer.instances).toHaveLength(1));
   const peer = Peer.instances[0];
-  peer.channel.open();
+  if (open) peer.channel.open();
   return peer;
 }
 describe('WebRTC signaling-only recovery', () => {
+  for (const method of ['createOffer', 'setLocalDescription'] as const) {
+    it.each(['LEAVE', 'EXPIRE'])(
+      `releases the probe if ${method} never settles after a broker %s closes the pending connection`,
+      async (type) => {
+        const stalled = vi
+          .spyOn(Peer.prototype, method)
+          .mockImplementationOnce(() => new Promise<never>(() => {}));
+        const peer = await connect(false);
+        await vi.waitFor(() => expect(stalled).toHaveBeenCalledOnce());
+        const remote = transport.localPeerId.replace(/_1$/, '_0');
+        const broker = Broker.instances.find(
+          (socket) =>
+            socket.id === transport.localPeerId && socket.readyState === 1
+        )!;
+        broker.dispatchEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify(
+              type === 'LEAVE' ? {type, src: remote} : {type, dst: remote}
+            ),
+          })
+        );
+        expect(peer.close).toHaveBeenCalledOnce();
+        transport.discoverPeers();
+        await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
+        await vi.waitFor(() => expect(stalled).toHaveBeenCalledTimes(2));
+        stalled.mockRestore();
+      }
+    );
+  }
   it('releases a timed-out probe reservation and cancels a later pending probe on close', async () => {
     vi.useFakeTimers({
       toFake: [
