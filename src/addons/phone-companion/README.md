@@ -14,9 +14,12 @@ Gamepad API, hand tracking or phone motion sensors.
    in either order. Neither endpoint activates until both decisions are complete.
    If the numbers differ, reject the request. A peer knowing the short code cannot
    activate the phone or show editable fields merely by sending an approval.
-   An approval arriving after the phone's invitation deadline is ignored. After
-   a timely approval, the phone has **30 seconds** to take the Numbers match tap;
-   repeated approval packets cannot extend that window.
+   An approval arriving after the phone's invitation deadline is ignored unless
+   the phone already confirmed while the invitation was valid. In that case a
+   frozen phone can finish processing approval during the **30-second grace
+   after the invitation deadline**. Otherwise, after a timely approval, the
+   phone has **30 seconds** to take the Numbers match tap. Duplicate packets
+   cannot extend either window.
 
 Each invitation lasts **90 seconds** from signaling startup and permits at most
 **five handshake attempts**, shared across all peer IDs for that invitation.
@@ -159,9 +162,12 @@ or reset pointer offsets.
   sequence gap or control-rate violation cancels the source rather than leaving
   a button held. Old/out-of-order lossy packets are discarded.
   Unidentified peers are size-checked and rate-limited before UTF-8 decoding or
-  JSON parsing; their handshake packets are capped at 2 KiB. The chosen headset
-  gets the normal 100 KB cap while its final acknowledgment is being verified;
-  those packets queue behind verification before being applied.
+  JSON parsing; their handshake packets are capped at 2 KiB. Knowing the pairing
+  code or being chosen as headset does not unlock larger packets. The normal
+  100 KB cap requires an existing session, or local phone confirmation plus a
+  timely approval. Packets still queue behind acknowledgment verification before
+  being applied. The selected/session-known counterpart has its own wire and
+  handshake budgets; other peers' announcements use a small separate budget.
 - For custom signaling/STUN/TURN, pass a **fresh-instance** `transportFactory`
   to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true, ...})`.
   Pass a similarly configured `transportFactory` to each phone page. Replacement
@@ -194,6 +200,9 @@ or reset pointer offsets.
 - A disconnected session can authenticate a headset at a new peer ID using its
   session key. Disconnected headsets re-announce every three seconds. Recovery
   on the original transport closes any unused standby and clears recovery state.
+  With automatic recovery enabled, an authenticated peer departure requests one
+  WebRTC discovery pass without resetting idle backoff. Failed connection attempts
+  always release their own standby, even if the session changed during connect.
 
 ## Keyboard privacy and haptics
 

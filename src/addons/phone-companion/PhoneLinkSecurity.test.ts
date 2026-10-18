@@ -130,6 +130,7 @@ class SignalingWire extends WebRTCTransport {
     return true;
   }
   override reconnectSignaling = vi.fn(async () => {});
+  override discoverPeers = vi.fn(() => {});
   override connect(options: TransportConnectOptions) {
     return this.wire.connect(options);
   }
@@ -259,6 +260,154 @@ async function delivered(phone: PhoneLink) {
   await (phone as unknown as {inbound: {reliable: Promise<void>}}).inbound
     .reliable;
 }
+
+describe('Third-pass recovery boundaries', () => {
+  it('resumes with the chosen headset while other room peers continuously spend their own budget', async () => {
+    const s = await pair({factory: false});
+    const attacker = s.network.create();
+    await attacker.connect({roomId: s.hostWire.roomId});
+    const junk = new TextEncoder().encode(
+      JSON.stringify({
+        v: 2,
+        type: 'host-presence',
+        id: 'wrong-session',
+        nonce: 'A'.repeat(43),
+        resumeProof: 'A'.repeat(43),
+      })
+    );
+    let floods = 0;
+    s.network.block = (from) => {
+      if (from === s.hostWire) {
+        for (let i = 0; i < 100; i++)
+          s.phoneWire.inject(attacker.localPeerId, junk);
+        floods++;
+      }
+      return false;
+    };
+    s.hostWire.leave(s.phoneWire);
+    s.phoneWire.leave(s.hostWire);
+    s.hostWire.join(s.phoneWire);
+    s.phoneWire.join(s.hostWire);
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+    expect(floods).toBeGreaterThanOrEqual(3);
+  });
+
+  it('does not decode large packets from a code-knowing chosen headset before local confirmation', async () => {
+    const s = await pair({factory: false, approve: false});
+    const junk = new TextEncoder().encode(
+      JSON.stringify({v: 2, type: 'garbage', padding: 'x'.repeat(90000)})
+    );
+    const before = vi.spyOn(TextDecoder.prototype, 'decode');
+    s.phoneWire.inject(s.hostWire.localPeerId, junk);
+    expect(before).not.toHaveBeenCalled();
+    before.mockRestore();
+    await s.host.accept(s.request.id);
+    await delivered(s.phone as PhoneLink);
+    const after = vi.spyOn(TextDecoder.prototype, 'decode');
+    s.phoneWire.inject(s.hostWire.localPeerId, junk);
+    expect(after).not.toHaveBeenCalled();
+    expect(s.phone.connected).toBe(false);
+  });
+
+  it('finishes a timely phone confirmation when a frozen phone processes approval within the 30-second grace', async () => {
+    const s = await pair({factory: false, approve: false});
+    await s.confirm();
+    (s.phone as PhoneLink).setForeground(false);
+    s.network.block = (from, bytes) =>
+      from === s.hostWire &&
+      JSON.parse(new TextDecoder().decode(bytes)).type === 'approved';
+    await s.host.accept(s.request.id);
+    const approved = s.hostWire.packets('approved').at(-1)!;
+    vi.useFakeTimers({toFake: ['Date']});
+    vi.setSystemTime(Date.now() + 91000);
+    (s.phone as PhoneLink).setForeground(true);
+    (s.phone as unknown as {tick(): void}).tick();
+    s.network.block = undefined;
+    s.hostWire.raw(s.phoneWire.localPeerId, approved);
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+  });
+
+  it('does not extend that frozen-phone grace beyond 30 seconds after the invitation deadline', async () => {
+    const s = await pair({factory: false, approve: false});
+    await s.confirm();
+    s.network.block = (from, bytes) =>
+      from === s.hostWire &&
+      JSON.parse(new TextDecoder().decode(bytes)).type === 'approved';
+    await s.host.accept(s.request.id);
+    const approved = s.hostWire.packets('approved').at(-1)!;
+    vi.useFakeTimers({toFake: ['Date']});
+    vi.setSystemTime(Date.now() + 121000);
+    s.network.block = undefined;
+    s.hostWire.raw(s.phoneWire.localPeerId, approved);
+    await delivered(s.phone as PhoneLink);
+    expect(s.phone.connected).toBe(false);
+    (s.phone as unknown as {tick(): void}).tick();
+    expect(s.states.at(-1)).toEqual({type: 'failed', reason: 'expired'});
+  });
+
+  it('requests one opt-in discovery pass for an authenticated peer departure, not unrelated peers or retry ticks', async () => {
+    const s = await pair({signaling: true});
+    const other = s.network.create();
+    await other.connect({roomId: s.hostWire.roomId});
+    s.phoneWire.leave(other);
+    expect(
+      (s.phoneTransport as SignalingWire).discoverPeers
+    ).not.toHaveBeenCalled();
+    s.network.block = () => true;
+    s.phoneWire.leave(s.hostWire);
+    s.hostWire.leave(s.phoneWire);
+    expect(
+      (s.phoneTransport as SignalingWire).discoverPeers
+    ).toHaveBeenCalledOnce();
+    expect(
+      (s.hostTransport as SignalingWire).discoverPeers
+    ).toHaveBeenCalledOnce();
+    for (let i = 0; i < 10; i++) (s.phone as unknown as {tick(): void}).tick();
+    expect(
+      (s.phoneTransport as SignalingWire).discoverPeers
+    ).toHaveBeenCalledOnce();
+    expect(
+      (s.phoneTransport as SignalingWire).reconnectSignaling
+    ).not.toHaveBeenCalled();
+  });
+
+  it('cleans its own failed standby even if data loss changed the generation during connect', async () => {
+    const s = await pair({factory: false, phoneFactory: true});
+    const create = s.network.create;
+    let reject!: (error: Error) => void;
+    const factory = vi
+      .spyOn(s.network, 'create')
+      .mockImplementationOnce(() => {
+        const wire = create();
+        wire.connect = () =>
+          new Promise<void>((_resolve, fail) => {
+            reject = fail;
+          });
+        return wire;
+      })
+      .mockImplementation(create);
+    s.phoneWire.error('Signaling channel closed.');
+    await settle(() => expect(reject).toBeDefined());
+    const failed = s.network.nodes.at(-1)!;
+    s.hostWire.leave(s.phoneWire);
+    s.phoneWire.leave(s.hostWire);
+    reject(new Error('Old attempt failed after peer departure'));
+    await settle(() =>
+      expect(
+        (s.phone as unknown as {standby?: unknown}).standby
+      ).toBeUndefined()
+    );
+    expect(failed.isOpen).toBe(false);
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+    expect(factory).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('Second-pass security and recovery regressions', () => {
   it('wraps remote transport text in a fixed error while retaining its diagnostic cause', async () => {
