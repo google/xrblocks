@@ -172,6 +172,8 @@ or reset pointer offsets.
   peer floods the room. The budget map is capped at 32 entries, is cleared on
   transport replacement, and retires entries on peer departure. Discovery work
   has bounded per-peer queues separate from the selected counterpart's queue.
+  Peers beyond the cap share a small overflow quota (4 packets/second, burst 8)
+  and a two-packet queue, so a full map alone does not block new pairing/recovery.
 - For custom signaling/STUN/TURN, pass a **fresh-instance** `transportFactory`
   to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true,
 protectOpenPeers: true, ...})`. PhoneLink enables both options on its default
@@ -186,7 +188,13 @@ protectOpenPeers: true, ...})`. PhoneLink enables both options on its default
   unreliable lane are rejected rather than silently routing motion reliably.
 - The default PeerJS broker is best-effort; some networks need TURN. Use HTTPS.
 - Backgrounding, cancellation or peer loss releases held input. Missing
-  authenticated traffic times out after five seconds. Dispose closes network
+  authenticated traffic times out after five seconds. A WebRTC connection under
+  the saved counterpart's ID has ten seconds to re-authenticate once recovery
+  observes it. Otherwise the companion drops that peer locally and requests
+  discovery again, even if broker-level open-peer protection is enabled. Only
+  successful session authentication clears the wait for that membership;
+  unauthenticated traffic and duplicate join events cannot extend it.
+  Dispose closes network
   listeners, timers, key references, input registration and owned reticles.
 - A screen wake lock is requested only while paired and visible, released on
   background/disconnect/disposal, and reacquired on return where supported.

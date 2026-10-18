@@ -158,6 +158,12 @@ export class PhoneLink {
   private selectedPeer?: string;
   private selectedLimits = new MessageLimits();
   private peerBudgets = new Map<number, PeerBudget>();
+  private overflowBudget: PeerBudget = {
+    limits: new MessageLimits(),
+    inbound: {reliable: Promise.resolve(), unreliable: Promise.resolve()},
+    pending: {reliable: 0, unreliable: 0},
+  };
+  private reauthentication?: {membership: number; deadline: number};
   private untrustedPending = 0;
   private sendSequence = {reliable: 0, unreliable: 0};
   private receiveSequence = {reliable: 0, unreliable: 0};
@@ -379,13 +385,19 @@ export class PhoneLink {
             )
               return;
             let membership = standby.memberships.get(peerId);
-            if (membership === undefined) {
-              if (standby.memberships.size >= MAX_PEER_BUDGETS) return;
+            if (
+              membership === undefined &&
+              standby.memberships.size < MAX_PEER_BUDGETS
+            ) {
               membership = ++this.membershipCounter;
               standby.memberships.set(peerId, membership);
             }
             const limits =
-              selected ?? this.membershipBudget(membership)?.limits;
+              selected ??
+              (membership === undefined
+                ? this.overflowBudget
+                : this.membershipBudget(membership)
+              ).limits;
             if (
               !limits?.allow(
                 'standby-wire',
@@ -476,11 +488,12 @@ export class PhoneLink {
     return this.selectedLimits;
   }
 
-  private membershipBudget(membership: number): PeerBudget | undefined {
+  private membershipBudget(membership: number): PeerBudget {
     let budget = this.peerBudgets.get(membership);
     if (!budget) {
-      // Fail closed at capacity. Never evict a live member to reset its quota.
-      if (this.peerBudgets.size >= MAX_PEER_BUDGETS) return;
+      // Overflow shares one small quota and queue. Never evict a live member
+      // to reset its quota, or lock out every new peer when the map is full.
+      if (this.peerBudgets.size >= MAX_PEER_BUDGETS) return this.overflowBudget;
       budget = {
         limits: new MessageLimits(),
         inbound: {reliable: Promise.resolve(), unreliable: Promise.resolve()},
@@ -739,6 +752,7 @@ export class PhoneLink {
     if (this.closed || !this.initialReady) return;
     if (this.role === 'phone' && !this.foreground) return;
     if (this.peer && Date.now() - this.lastSeen > 5000) this.drop();
+    this.checkReauthentication();
     if (this.needsRecovery) void this.recoverTransport();
     if (this.peer) {
       this.send({type: 'ping'});
@@ -771,6 +785,30 @@ export class PhoneLink {
     if (this.candidate || this.challenges.size) return;
     if (this.hostPeer && this.transport.remotePeerIds.has(this.hostPeer))
       this.knock(this.hostPeer);
+  }
+
+  private checkReauthentication(): void {
+    const peer = this.session?.peer;
+    const membership =
+      peer === undefined ? undefined : this.memberships.get(peer);
+    if (
+      this.peer ||
+      peer === undefined ||
+      membership === undefined ||
+      !(this.transport instanceof WebRTCTransport) ||
+      !this.transport.isOpen
+    ) {
+      this.reauthentication = undefined;
+      return;
+    }
+    if (this.reauthentication?.membership !== membership)
+      this.reauthentication = {membership, deadline: Date.now() + 10000};
+    if (Date.now() < this.reauthentication.deadline) return;
+    // A broker-ID owner is not necessarily the session owner. Release an open
+    // but unauthenticated channel locally so protection cannot pin an impostor.
+    this.reauthentication = undefined;
+    this.transport.dropPeer(peer);
+    this.transport.discoverPeers();
   }
 
   private knock(peer: string): void {
@@ -1408,6 +1446,7 @@ export class PhoneLink {
   }
 
   private activate(peer: string, epoch: string): void {
+    this.reauthentication = undefined;
     if (!this.session || this.closed) return;
     this.needsRecovery = false;
     this.retryAt = 0;

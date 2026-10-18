@@ -131,6 +131,12 @@ class SignalingWire extends WebRTCTransport {
   }
   override reconnectSignaling = vi.fn(async () => {});
   override discoverPeers = vi.fn(() => {});
+  override dropPeer = vi.fn((peerId: string) => {
+    if (this.wire.remotePeerIds.delete(peerId))
+      this.wire.dispatchEvent(
+        new CustomEvent('peer-leave', {detail: {peerId}})
+      );
+  });
   override connect(options: TransportConnectOptions) {
     return this.wire.connect(options);
   }
@@ -163,6 +169,7 @@ async function pair({
   phoneFactory = factory,
   approve = true,
   signaling = false,
+  crowded = false,
   activationMessages = [] as PhoneMessage[],
 } = {}) {
   const network = new Network();
@@ -218,6 +225,18 @@ async function pair({
     root.remove();
   });
   await host.connect();
+  if (crowded) {
+    for (let i = 0; i < 40; i++) {
+      const idle = network.create();
+      await idle.connect({roomId: hostWire.roomId});
+      if (i < 32)
+        hostWire.inject(
+          idle.localPeerId,
+          new TextEncoder().encode('{"v":2,"type":"garbage"}')
+        );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   await phone.connect();
   await settle(() => expect(host.pendingPhone).toBeDefined());
   const request = host.pendingPhone!;
@@ -262,6 +281,66 @@ async function delivered(phone: PhoneLink) {
 }
 
 describe('Membership-scoped recovery budgets', () => {
+  it('pairs beyond a full budget map using the shared overflow allowance', async () => {
+    const s = await pair({factory: false, crowded: true});
+    expect(s.host.connected && s.phone.connected).toBe(true);
+    expect(
+      (s.host as unknown as {peerBudgets: Map<number, unknown>}).peerBudgets
+        .size
+    ).toBe(32);
+  });
+
+  it.each(['headset', 'phone'] as const)(
+    'recovers a new %s ID beyond a full budget map',
+    async (moving) => {
+      const s = await pair({
+        factory: moving === 'headset',
+        phoneFactory: moving === 'phone',
+      });
+      const receiver = moving === 'headset' ? s.phoneWire : s.hostWire;
+      if (moving === 'headset') (s.phone as unknown as {drop(): void}).drop();
+      for (let i = 0; i < 40; i++) {
+        const idle = s.network.create();
+        await idle.connect({roomId: s.hostWire.roomId});
+        receiver.inject(
+          idle.localPeerId,
+          new TextEncoder().encode('{"v":2,"type":"garbage"}')
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(
+        (
+          (moving === 'headset' ? s.phone : s.host) as unknown as {
+            peerBudgets: Map<number, unknown>;
+          }
+        ).peerBudgets.size
+      ).toBe(32);
+      const idle = s.network.nodes.at(-1)!;
+      s.network.block = (from) => {
+        if (from !== receiver && from !== idle)
+          receiver.inject(
+            idle.localPeerId,
+            new TextEncoder().encode('{"v":2,"type":"garbage"}')
+          );
+        return false;
+      };
+      (moving === 'headset' ? s.hostWire : s.phoneWire).close();
+      await settle(() =>
+        expect(s.phone.connected && s.host.connected).toBe(true)
+      );
+    }
+  );
+
+  it('shares a small pre-decode allowance across overflow peers', async () => {
+    const s = await pair({factory: false, crowded: true});
+    const overflow = s.network.nodes.slice(-8);
+    const decode = vi.spyOn(TextDecoder.prototype, 'decode');
+    const junk = new TextEncoder().encode('{"v":2,"type":"garbage"}');
+    for (const peer of overflow)
+      for (let i = 0; i < 100; i++) s.hostWire.inject(peer.localPeerId, junk);
+    expect(decode.mock.calls.length).toBeLessThanOrEqual(8);
+    expect(decode.mock.calls.length).toBeGreaterThan(0);
+  });
   it.each(['headset', 'phone'] as const)(
     're-authenticates a new %s peer ID while another peer floods the receiver',
     async (moving) => {
@@ -341,6 +420,65 @@ describe('Membership-scoped recovery budgets', () => {
 });
 
 describe('Third-pass recovery boundaries', () => {
+  it.each(['phone', 'headset'] as const)(
+    'drops a same-ID impostor after a bounded re-authentication wait on the %s',
+    async (side) => {
+      const s = await pair({signaling: true});
+      const wire = side === 'phone' ? s.phoneWire : s.hostWire;
+      const other = side === 'phone' ? s.hostWire : s.phoneWire;
+      const transport = (
+        side === 'phone' ? s.phoneTransport : s.hostTransport
+      ) as SignalingWire;
+      const link = (side === 'phone' ? s.phone : s.host) as PhoneLink;
+      const tick = () => (link as unknown as {tick(): void}).tick();
+      s.network.block = () => true;
+      wire.leave(other);
+      other.leave(wire);
+      wire.join(other);
+      other.join(wire);
+      const unrelated = s.network.create();
+      await unrelated.connect({roomId: wire.roomId});
+      vi.useFakeTimers({toFake: ['Date']});
+      const start = Date.now();
+      tick();
+      vi.setSystemTime(start + 9999);
+      tick();
+      expect(transport.dropPeer).not.toHaveBeenCalled();
+      // Repeated joins or unauthenticated traffic must not extend the deadline.
+      wire.join(other);
+      wire.inject(
+        other.localPeerId,
+        new TextEncoder().encode('{"v":2,"type":"garbage"}')
+      );
+      vi.setSystemTime(start + 10001);
+      tick();
+      expect(transport.dropPeer).toHaveBeenCalledExactlyOnceWith(
+        other.localPeerId
+      );
+      expect(wire.remotePeerIds.has(unrelated.localPeerId)).toBe(true);
+      expect(transport.discoverPeers).toHaveBeenCalled();
+      s.network.block = undefined;
+      wire.join(other);
+      other.leave(wire);
+      other.join(wire);
+      await settle(() =>
+        expect(s.phone.connected && s.host.connected).toBe(true)
+      );
+      transport.dropPeer.mockClear();
+      // An authenticated membership must not inherit the expired timeout.
+      vi.setSystemTime(start + 20002);
+      s.host.send({type: 'ping'});
+      (s.phone as PhoneLink).send({type: 'ping'});
+      await settle(() =>
+        expect(
+          (link as unknown as {lastSeen: number}).lastSeen
+        ).toBeGreaterThanOrEqual(start + 20002)
+      );
+      tick();
+      expect(transport.dropPeer).not.toHaveBeenCalled();
+      expect(link.connected).toBe(true);
+    }
+  );
   it('resumes with the chosen headset while other room peers continuously spend their own budget', async () => {
     const s = await pair({factory: false});
     const attacker = s.network.create();
