@@ -10,7 +10,11 @@ import * as THREE from 'three';
 import {HAND_JOINT_NAMES, type Core} from 'xrblocks';
 
 import {SessionRecorder} from './SessionRecorder';
-import {parseSessionRecording} from './SessionRecording';
+import {
+  getSessionRecordingDuration,
+  parseSessionRecording,
+  sampleSessionRecording,
+} from './SessionRecording';
 
 type FakeController = THREE.Group & {inputSource?: {handedness: string}};
 
@@ -206,6 +210,105 @@ describe('SessionRecorder', () => {
     );
     recorder.start();
     expect(recorder.stop()).not.toHaveProperty('environment');
+  });
+
+  it('restarts a page recording as a headset one when XR starts', () => {
+    const {recorder, core, camera} = createRecorder(
+      {},
+      {presenting: false, activeEnvironment: {manifestPath: 'room.json'}}
+    );
+    core.simulatorRunning = false;
+    recorder.start({state: [1, 2]});
+    recorder.update(0);
+    recorder.update(100);
+    expect(recorder.isRecording).toBe(true);
+
+    core.renderer.xr.isPresenting = true;
+    recorder.onXRSessionStarted();
+    camera.position.set(0, 1.6, 0);
+    recorder.update(5000);
+    const recording = recorder.stop();
+
+    expect(recording.source).toBe('xr');
+    expect(recording.state).toEqual([1, 2]);
+    expect(recording).not.toHaveProperty('environment');
+    expect(recording.frames.map((frame) => frame.t)).toEqual([0]);
+    expect(recording.frames[0].head[1]).toBe(1.6);
+    expect(() => parseSessionRecording(recording)).not.toThrow();
+  });
+
+  it('keeps a headset recording going when XR starts again', () => {
+    const {recorder} = createRecorder();
+    recorder.start();
+    recorder.update(0);
+    recorder.onXRSessionStarted();
+    recorder.update(100);
+    expect(recorder.stop().frames).toHaveLength(2);
+  });
+
+  it('stops adding frames when the XR session ends', () => {
+    const {recorder, core} = createRecorder();
+    recorder.start();
+    recorder.update(0);
+    recorder.update(100);
+    core.renderer.xr.isPresenting = false;
+    recorder.onXRSessionEnded();
+    recorder.update(200);
+    // A later session has a new origin, so it stays out of this recording.
+    core.renderer.xr.isPresenting = true;
+    recorder.onXRSessionStarted();
+    recorder.update(300);
+
+    expect(recorder.isRecording).toBe(true);
+    const recording = recorder.stop();
+    expect(recording.frames.map((frame) => frame.t)).toEqual([0, 100]);
+
+    // The next recording starts fresh.
+    recorder.start();
+    recorder.update(400);
+    expect(recorder.stop().frames).toHaveLength(1);
+  });
+
+  it('ignores the XR session ending during a simulator recording', () => {
+    const {recorder} = createRecorder({}, {presenting: false});
+    recorder.start();
+    recorder.update(0);
+    recorder.onXRSessionEnded();
+    recorder.update(100);
+    expect(recorder.stop().frames).toHaveLength(2);
+  });
+
+  it('cuts pauses out of the timeline so replay jumps across them', () => {
+    const {recorder, camera} = createRecorder({sampleIntervalMs: 100});
+    recorder.start();
+    recorder.update(1000);
+    camera.position.set(1, 0, 0);
+    recorder.update(1100);
+    recorder.update(1150);
+    // Headset off for 10 seconds, back on somewhere else.
+    camera.position.set(2, 0, 0);
+    recorder.update(11150);
+    recorder.update(11250);
+    const recording = recorder.stop();
+
+    // The first frame after the pause takes the last recorded frame's time,
+    // so the move happens instantly on replay.
+    expect(recording.frames.map((frame) => frame.t)).toEqual([
+      0, 100, 100, 200,
+    ]);
+    expect(sampleSessionRecording(recording, 50).head[0]).toBeCloseTo(0.5, 5);
+    expect(sampleSessionRecording(recording, 99).head[0]).toBeCloseTo(0.99, 5);
+    expect(sampleSessionRecording(recording, 100).head[0]).toBe(2);
+    expect(getSessionRecordingDuration(recording)).toBe(200);
+    expect(() => parseSessionRecording(recording)).not.toThrow();
+  });
+
+  it('keeps short frame hitches in the timeline', () => {
+    const {recorder} = createRecorder({sampleIntervalMs: 100});
+    recorder.start();
+    recorder.update(0);
+    recorder.update(400);
+    expect(recorder.stop().frames.map((frame) => frame.t)).toEqual([0, 400]);
   });
 
   it('requires initialization before start', () => {

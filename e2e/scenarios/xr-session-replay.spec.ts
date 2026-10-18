@@ -20,7 +20,7 @@ type IwerWindow = {
   xb: {
     core: {
       webXRSessionManager: {startSession(): Promise<void>};
-      renderer: {xr: {isPresenting: boolean}};
+      renderer: {xr: {isPresenting: boolean; getSession(): XRSession | null}};
       camera: {matrixWorld: {elements: number[]}};
     };
   };
@@ -45,20 +45,33 @@ type SavedFrame = {
   hands: (number[] | null)[];
 };
 
-async function bootDemoInXR(page: Page) {
+async function bootDemoWithHeadset(page: Page) {
   await installEmulatedHeadset(page);
   await page.goto(demoUrl());
   await expect(toolbar(page).record).toBeVisible({timeout: 30_000});
-  await page.evaluate(() =>
-    (window as unknown as IwerWindow).xb.core.webXRSessionManager.startSession()
-  );
+}
+
+async function setPresenting(page: Page, presenting: boolean) {
+  await page.evaluate(async (presenting) => {
+    const {core} = (window as unknown as IwerWindow).xb;
+    if (presenting) {
+      await core.webXRSessionManager.startSession();
+    } else {
+      await core.renderer.xr.getSession()?.end();
+    }
+  }, presenting);
   await page.waitForFunction(
-    () =>
+    (presenting) =>
       (window as unknown as IwerWindow).xb.core.renderer.xr.isPresenting ===
-      true,
-    undefined,
+      presenting,
+    presenting,
     {timeout: 20_000}
   );
+}
+
+async function bootDemoInXR(page: Page) {
+  await bootDemoWithHeadset(page);
+  await setPresenting(page, true);
 }
 
 /** Points the right controller straight ahead (-z) from `position`. */
@@ -208,4 +221,34 @@ test('a recording saved in XR replays in the desktop simulator', async ({
     )
   );
   camera.forEach((value, i) => expect(value).toBeCloseTo(lastHead[i], 3));
+});
+
+test('a recording started on the page keeps only the XR session', async ({
+  page,
+}) => {
+  // On a headset the page toolbar is usable before entering XR.
+  await bootDemoWithHeadset(page);
+  const start = await cubeColors(page);
+  const ui = toolbar(page);
+  await ui.record.dispatchEvent('click');
+  await expect(ui.status).toHaveText('Recording...');
+  await page.waitForTimeout(500);
+
+  await setPresenting(page, true);
+  await moveRightController(page, [0.1, 1.4, -0.4]);
+  await moveRightController(page, [0.3, 1.4, -0.4]);
+  await pressRightTrigger(page);
+  // Leaving XR without pressing Stop finishes the recording.
+  await setPresenting(page, false);
+  await expect(ui.status).toHaveText(/^\d+ frames, [\d.]+s from xr\.$/);
+  await expect(ui.record).toHaveText('Record');
+
+  const recording = JSON.parse((await saveRecording(page)).text);
+  expect(recording).toMatchObject({source: 'xr', state: start});
+  expect(recording).not.toHaveProperty('environment');
+  const frames = recording.frames as SavedFrame[];
+  expect(frames[0].t).toBe(0);
+  // No page frames: the headset's controller is tracked from the first frame.
+  expect(frames.every((frame) => frame.controllers[1] !== null)).toBe(true);
+  expect(frames.some((frame) => frame.controllers[1]!.selected)).toBe(true);
 });

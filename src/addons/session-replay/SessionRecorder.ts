@@ -21,6 +21,8 @@ export type SessionRecorderOptions = {
 };
 
 const SIDES = ['left', 'right'] as const;
+/** Longer gaps between updates are cut from the recording's timeline. */
+const MAX_PAUSE_MS = 500;
 const position = new THREE.Vector3();
 const quaternion = new THREE.Quaternion();
 const scale = new THREE.Vector3();
@@ -81,7 +83,9 @@ export class SessionRecorder extends Script {
   private recording?: SessionRecording;
   private startTime?: number;
   private lastSampleTime = -Infinity;
+  private lastUpdateTime?: number;
   private lastSelected = [false, false];
+  private sessionEnded = false;
 
   constructor({sampleIntervalMs = 1000 / 30}: SessionRecorderOptions = {}) {
     super();
@@ -133,9 +137,35 @@ export class SessionRecorder extends Script {
     if (state !== undefined) {
       this.recording.state = JSON.parse(JSON.stringify(state));
     }
+    this.resetTimeline();
+  }
+
+  private resetTimeline() {
     this.startTime = undefined;
     this.lastSampleTime = -Infinity;
+    this.lastUpdateTime = undefined;
     this.lastSelected = [false, false];
+    this.sessionEnded = false;
+  }
+
+  /**
+   * Entering XR while recording on the page restarts the recording as a
+   * headset one, keeping its state. The page frames are in a different space.
+   */
+  override onXRSessionStarted() {
+    if (!this.recording || this.recording.source === 'xr') return;
+    this.recording.source = 'xr';
+    this.recording.frames = [];
+    delete this.recording.environment;
+    this.resetTimeline();
+  }
+
+  /**
+   * Leaving XR ends a headset recording's frames. `stop()` still returns
+   * everything captured during the session.
+   */
+  override onXRSessionEnded() {
+    if (this.recording?.source === 'xr') this.sessionEnded = true;
   }
 
   /**
@@ -152,8 +182,17 @@ export class SessionRecorder extends Script {
   }
 
   override update(time = performance.now()) {
-    if (!this.recording || !this.core || !this.camera) return;
+    if (!this.recording || !this.core || !this.camera || this.sessionEnded) {
+      return;
+    }
     this.startTime ??= time;
+    // Frames stop while the headset is off or the tab is hidden. Cut the pause
+    // so replay jumps across it instead of gliding the hands for its length.
+    const paused =
+      this.lastUpdateTime !== undefined &&
+      time - this.lastUpdateTime > MAX_PAUSE_MS;
+    if (paused) this.startTime = time - this.lastSampleTime;
+    this.lastUpdateTime = time;
     const t = time - this.startTime;
 
     const input = this.core.input;
@@ -164,7 +203,11 @@ export class SessionRecorder extends Script {
     const selectionChanged = selected.some(
       (value, side) => value !== this.lastSelected[side]
     );
-    if (t - this.lastSampleTime < this.sampleIntervalMs && !selectionChanged) {
+    if (
+      t - this.lastSampleTime < this.sampleIntervalMs &&
+      !selectionChanged &&
+      !paused
+    ) {
       return;
     }
     this.lastSampleTime = t;

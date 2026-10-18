@@ -121,6 +121,11 @@ class SessionReplayPanel extends xb.Script {
     this.render();
   }
 
+  // The recorder adds no frames after XR ends, so finish the recording.
+  onXRSessionEnded() {
+    if (recorder.isRecording) this.toggleRecording();
+  }
+
   toggleRecording() {
     if (recorder.isRecording) {
       this.setRecording(recorder.stop());

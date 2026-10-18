@@ -40,6 +40,8 @@ await player.play(recording);
 
 `play()` resolves when the recording finishes or `player.stop()` is called. Stopping early releases any held selection so scripts do not see a stuck pinch.
 
+A recording covers one session. If XR starts while recording on the page, the recording starts over as a headset recording and keeps its `state`. When XR ends, the recorder adds no more frames, and `stop()` still returns what it captured. Pauses longer than half a second, such as taking the headset off or switching tabs, are cut from the timeline, so replay jumps to where tracking resumed instead of sliding the hands across the gap.
+
 ### Starting from the same scene
 
 A recording drives input, not the scene. If replaying a pinch toggles something, it toggles it again from wherever the scene is now. Two things decide where the replay starts: the simulator room and your app's own objects.
@@ -51,6 +53,8 @@ await player.play(recording, {environment: false});
 ```
 
 Headset recordings store no room, because the room was the real one. They replay in whichever simulator room is loaded.
+
+This matters most for AR (passthrough) apps, which is the xrblocks default. A recording does not include the real room or anything the headset detected in it. During replay, planes, depth, meshes, and detected objects come from the simulator room, so anything the app placed relative to the real room should be saved in `state`. Poses are relative to the session's reference space. With the default `local-floor` they line up with the simulator floor. With `local`, the origin is at the user's starting head position, so the replayed head ends up near the simulator floor.
 
 **Your app's objects are yours to save.** Pass their starting state to `start()` and restore it before playing:
 
@@ -95,7 +99,7 @@ A recording is plain JSON, so it can be saved, diffed, and checked into a reposi
   state?: unknown, // whatever was passed to start()
   frames: [
     {
-      t: 0, // milliseconds since start()
+      t: 0, // milliseconds since start(), with pauses cut
       head: [x, y, z, qx, qy, qz, qw],
       controllers: [left | null, right | null], // {pose, selected}
       hands: [left | null, right | null], // 25 joint poses, WebXR joint order
