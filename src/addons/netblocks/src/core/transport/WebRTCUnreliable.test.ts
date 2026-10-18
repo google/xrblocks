@@ -39,6 +39,9 @@ class Channel extends EventTarget {
   get maxRetransmits() {
     return this.options.maxRetransmits ?? null;
   }
+  get maxPacketLifeTime() {
+    return this.options.maxPacketLifeTime ?? null;
+  }
   send = vi.fn((data: ArrayBuffer | Uint8Array) => {
     // Browser delivery creates a buffer in the receiving realm (TextEncoder
     // in jsdom can produce Node-realm buffers).
@@ -74,6 +77,8 @@ class Peer extends EventTarget {
   static instances: Peer[] = [];
   static failUnreliable = false;
   static deferReliableOpen = false;
+  static beforeReliable?: RTCDataChannelInit;
+  static wrongSideMain = false;
   readonly id = `peer-${Peer.instances.length}`;
   readonly owner = Broker.deliveringTo ?? Broker.latestOpened;
   readonly created: Channel[] = [];
@@ -102,6 +107,13 @@ class Peer extends EventTarget {
   }
   createDataChannel(label: string, options: RTCDataChannelInit) {
     this.createCalls.push(label);
+    if (label === 'netblocks' && Peer.wrongSideMain) {
+      const unsolicited = new Channel('netblocks', {ordered: true});
+      this.channels.push(unsolicited);
+      this.dispatchEvent(
+        Object.assign(new Event('datachannel'), {channel: unsolicited})
+      );
+    }
     if (
       label === 'netblocks-unreliable' &&
       !this.other?.channels.some((channel) => channel.label === 'netblocks')
@@ -148,6 +160,13 @@ class Peer extends EventTarget {
     channel.other = remote;
     remote.other = channel;
     this.other.channels.push(remote);
+    if (channel.label === 'netblocks' && Peer.beforeReliable) {
+      const lossy = new Channel('netblocks', Peer.beforeReliable);
+      this.other.channels.push(lossy);
+      this.other.dispatchEvent(
+        Object.assign(new Event('datachannel'), {channel: lossy})
+      );
+    }
     this.other.dispatchEvent(
       Object.assign(new Event('datachannel'), {channel: remote})
     );
@@ -233,6 +252,8 @@ afterEach(() => {
   Peer.instances = [];
   Peer.failUnreliable = false;
   Peer.deferReliableOpen = false;
+  Peer.beforeReliable = undefined;
+  Peer.wrongSideMain = false;
   Broker.instances = [];
   Broker.clients.clear();
   Broker.signals = [];
@@ -240,6 +261,7 @@ afterEach(() => {
   Broker.deliveringTo = undefined;
   Broker.latestOpened = '';
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 async function pair(firstEnabled: boolean, secondEnabled: boolean) {
@@ -293,6 +315,134 @@ async function reliableWorks(a: WebRTCTransport, b: WebRTCTransport) {
 }
 
 describe('WebRTC unreliable negotiation', () => {
+  it.each([
+    {ordered: false},
+    {ordered: true, maxRetransmits: 0},
+    {ordered: true, maxPacketLifeTime: 1},
+  ])(
+    'rejects a lossy netblocks channel arriving before the reliable one: %j',
+    async (options) => {
+      Peer.beforeReliable = options;
+      const s = await pair(true, true);
+      const rejected = s.firstPeer.channels.find(
+        (channel) => channel.options === options
+      )!;
+      expect(rejected.readyState).toBe('closed');
+      expect(s.firstPeer.channels[0].readyState).toBe('open');
+      await reliableWorks(s.first, s.second);
+    }
+  );
+
+  it('rejects a main channel created by the answerer even when it is reliable and arrives first', async () => {
+    Peer.wrongSideMain = true;
+    const s = await pair(false, false);
+    expect(s.secondPeer.channels[0].readyState).toBe('closed');
+    expect(s.secondPeer.created[0].readyState).toBe('open');
+    await reliableWorks(s.first, s.second);
+  });
+
+  it.each([false, true])(
+    'replaces an open connection when a reloaded peer reclaims its slot (opt-in=%s)',
+    async (enabled) => {
+      const s = await pair(true, true);
+      const oldMain = s.firstPeer.channels.find(
+        (channel) => channel.label === 'netblocks'
+      )!;
+      const originalOffer = Broker.signals.find(
+        (signal) => signal.type === 'OFFER'
+      )!;
+      const joined = vi.fn();
+      const left = vi.fn();
+      const received = vi.fn();
+      s.first.on('peer-join', joined);
+      s.first.on('peer-leave', left);
+      s.first.on('message', received);
+      // A duplicate offer must leave the current connection intact.
+      Broker.clients
+        .get(s.first.localPeerId)!
+        .dispatchEvent(
+          new MessageEvent('message', {data: JSON.stringify(originalOffer)})
+        );
+      await reliableWorks(s.first, s.second);
+      expect(Peer.instances).toHaveLength(2);
+      expect(left).not.toHaveBeenCalled();
+      received.mockClear();
+      // Release only the broker registration, like a reload whose old SCTP
+      // channel has not reported closure yet.
+      Broker.clients.get(s.second.localPeerId)!.close();
+      s.errors.mockClear();
+      expect(oldMain.readyState).toBe('open');
+      const replacement = new WebRTCTransport({unreliableChannel: enabled});
+      transports.push(replacement);
+      replacement.on('error', s.errors);
+      await replacement.connect({roomId: 'negotiation'});
+      expect(replacement.localPeerId).toBe(s.second.localPeerId);
+      await vi.waitFor(() =>
+        expect(replacement.remotePeerIds.has(s.first.localPeerId)).toBe(true)
+      );
+      expect(oldMain.readyState).toBe('closed');
+      expect(left).toHaveBeenCalledOnce();
+      expect(joined).toHaveBeenCalledOnce();
+      // Queued events belonging to the old PC must not affect its replacement.
+      oldMain.dispatchEvent(new Event('close'));
+      oldMain.dispatchEvent(new Event('open'));
+      oldMain.dispatchEvent(
+        new MessageEvent('message', {data: new ArrayBuffer(1)})
+      );
+      s.firstPeer.dispatchEvent(new Event('connectionstatechange'));
+      const staleChannel = new Channel('netblocks', {ordered: true});
+      s.firstPeer.dispatchEvent(
+        Object.assign(new Event('datachannel'), {channel: staleChannel})
+      );
+      expect(staleChannel.readyState).toBe('closed');
+      expect(received).not.toHaveBeenCalled();
+      expect(left).toHaveBeenCalledOnce();
+      expect(joined).toHaveBeenCalledOnce();
+      await reliableWorks(s.first, replacement);
+      expect(
+        s.first.sendUnreliable(new Uint8Array([1]), replacement.localPeerId)
+      ).toBe(enabled);
+      expect(s.errors).not.toHaveBeenCalled();
+    }
+  );
+
+  it('ignores a superseded pending handshake failure after a same-slot reload', async () => {
+    vi.stubGlobal('WebSocket', Broker);
+    vi.stubGlobal('RTCPeerConnection', Peer);
+    const original = Peer.prototype.setRemoteDescription;
+    let rejectOld!: (error: Error) => void;
+    let paused = false;
+    vi.spyOn(Peer.prototype, 'setRemoteDescription').mockImplementation(
+      async function (description) {
+        await original.call(this, description);
+        if (description.type === 'offer' && !paused) {
+          paused = true;
+          await new Promise<void>((_resolve, reject) => {
+            rejectOld = reject;
+          });
+        }
+      }
+    );
+    const host = new WebRTCTransport();
+    const old = new WebRTCTransport();
+    const replacement = new WebRTCTransport();
+    transports.push(host, old, replacement);
+    const errors = vi.fn();
+    host.on('error', errors);
+    await host.connect({roomId: 'pending-reload'});
+    await old.connect({roomId: 'pending-reload'});
+    await vi.waitFor(() => expect(paused).toBe(true));
+    Broker.clients.get(old.localPeerId)!.close();
+    await replacement.connect({roomId: 'pending-reload'});
+    expect(replacement.localPeerId).toBe(old.localPeerId);
+    await vi.waitFor(() =>
+      expect(replacement.remotePeerIds.has(host.localPeerId)).toBe(true)
+    );
+    rejectOld(new Error('Old PC closed during setRemoteDescription'));
+    await reliableWorks(host, replacement);
+    expect(errors).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])(
     'negotiates a bidirectional lane with reliable open deferred=%s',
     async (deferred) => {

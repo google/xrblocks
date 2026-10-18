@@ -258,6 +258,11 @@ metadata and peers with the option off keep a reliable-only connection.
 Unexpected unreliable channels are closed; optional-channel creation failures
 leave the reliable connection usable.
 
+The main `netblocks` channel must be created by the offerer, ordered, and fully
+reliable (no retransmission or packet-lifetime limit). Exact duplicate offers
+are ignored; a different offer from a reused broker slot replaces the old
+connection so reloads can reconnect before its old channel reports closure.
+
 Call `transport.sendUnreliable(bytes, peerId)`. **True means queued, not
 delivered**; packets may be lost or arrive out of order. It returns false when
 the lane is unavailable, the send fails, or the message exceeds a limit:

@@ -53,6 +53,7 @@ interface PeerEntry {
   unreliableAttempted: boolean;
   initiator: boolean;
   remoteDescriptionReceived: boolean;
+  offerSdp?: string;
   ready: boolean;
   pendingIce: RTCIceCandidateInit[];
   handshakeTimer?: ReturnType<typeof setTimeout>;
@@ -522,13 +523,12 @@ export class WebRTCTransport extends Transport {
     };
     // Reap stalled handshakes so empty slots don't leak RTCPeerConnections.
     entry.handshakeTimer = setTimeout(() => {
-      const e = this._entries.get(remote);
-      if (e && !e.ready) this._teardown(remote);
+      if (!entry.ready) this._teardown(remote, entry);
     }, HANDSHAKE_TIMEOUT_MS);
     this._entries.set(remote, entry);
 
     pc.addEventListener('icecandidate', (ev) => {
-      if (ev.candidate) {
+      if (ev.candidate && this._entries.get(remote) === entry) {
         this._send({
           type: 'CANDIDATE',
           dst: remote,
@@ -542,12 +542,13 @@ export class WebRTCTransport extends Transport {
     });
     pc.addEventListener('connectionstatechange', () => {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        this._teardown(remote);
+        this._teardown(remote, entry);
       }
     });
-    pc.addEventListener('datachannel', (ev) =>
-      this._attachChannel(remote, ev.channel)
-    );
+    pc.addEventListener('datachannel', (ev) => {
+      if (this._entries.get(remote) !== entry) closeChannel(ev.channel);
+      else this._attachChannel(remote, ev.channel);
+    });
     return entry;
   }
 
@@ -592,7 +593,14 @@ export class WebRTCTransport extends Transport {
       });
       return;
     }
-    if (dc.label !== 'netblocks' || (entry.dc && entry.dc !== dc)) {
+    if (
+      dc.label !== 'netblocks' ||
+      locallyCreated !== entry.initiator ||
+      dc.ordered !== true ||
+      dc.maxRetransmits !== null ||
+      dc.maxPacketLifeTime !== null ||
+      (entry.dc && entry.dc !== dc)
+    ) {
       closeChannel(dc);
       return;
     }
@@ -600,6 +608,7 @@ export class WebRTCTransport extends Transport {
     entry.dc = dc;
     dc.binaryType = 'arraybuffer';
     dc.addEventListener('open', () => {
+      if (this._entries.get(remote) !== entry || this._closed) return;
       entry.ready = true;
       if (entry.handshakeTimer) {
         clearTimeout(entry.handshakeTimer);
@@ -622,8 +631,9 @@ export class WebRTCTransport extends Transport {
         this.emitPeerJoin(remote);
       }
     });
-    dc.addEventListener('close', () => this._teardown(remote));
+    dc.addEventListener('close', () => this._teardown(remote, entry));
     dc.addEventListener('message', (ev) => {
+      if (this._entries.get(remote) !== entry || this._closed) return;
       const data = ev.data;
       let bytes: Uint8Array;
       if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
@@ -640,9 +650,11 @@ export class WebRTCTransport extends Transport {
     entry.initiator = true;
     try {
       const dc = entry.pc.createDataChannel('netblocks', {ordered: true});
-      this._attachChannel(remote, dc);
+      this._attachChannel(remote, dc, true);
       const offer = await entry.pc.createOffer();
+      if (this._closed || this._entries.get(remote) !== entry) return;
       await entry.pc.setLocalDescription(offer);
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this._send({
         type: 'OFFER',
         dst: remote,
@@ -663,8 +675,9 @@ export class WebRTCTransport extends Transport {
         },
       });
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
-      this._teardown(remote);
+      this._teardown(remote, entry);
     }
   }
 
@@ -674,11 +687,21 @@ export class WebRTCTransport extends Transport {
     remoteUnreliable: boolean
   ): Promise<void> {
     if (!desc?.sdp || this._closed) return;
-    const entry = this._ensureEntry(remote);
-    if (entry.initiator || entry.remoteDescriptionReceived) return;
+    let entry = this._ensureEntry(remote);
+    if (entry.initiator || entry.offerSdp === desc.sdp) return;
+    // A reload may reclaim its broker slot before the old SCTP connection
+    // closes. Only identical offers are duplicates; a new SDP is a new peer
+    // connection, with its own channels and capability negotiation.
+    if (entry.offerSdp !== undefined) {
+      this._teardown(remote, entry);
+      if (this._closed) return;
+      entry = this._ensureEntry(remote);
+    }
+    entry.offerSdp = desc.sdp;
     entry.remoteDescriptionReceived = true;
     try {
       await entry.pc.setRemoteDescription({type: 'offer', sdp: desc.sdp});
+      if (this._closed || this._entries.get(remote) !== entry) return;
       for (const c of entry.pendingIce) {
         try {
           await entry.pc.addIceCandidate(c);
@@ -687,7 +710,9 @@ export class WebRTCTransport extends Transport {
         }
       }
       entry.pendingIce = [];
+      if (this._closed || this._entries.get(remote) !== entry) return;
       const answer = await entry.pc.createAnswer();
+      if (this._closed || this._entries.get(remote) !== entry) return;
       await entry.pc.setLocalDescription(answer);
       if (this._closed || this._entries.get(remote) !== entry) return;
       const accepted =
@@ -704,8 +729,9 @@ export class WebRTCTransport extends Transport {
       });
       entry.unreliableNegotiated = accepted;
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
-      this._teardown(remote);
+      this._teardown(remote, entry);
     }
   }
 
@@ -739,8 +765,9 @@ export class WebRTCTransport extends Transport {
         entry.localUnreliable && this.supportsUnreliable && remoteUnreliable;
       this._createUnreliableChannel(remote, entry);
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
-      this._teardown(remote);
+      this._teardown(remote, entry);
     }
   }
 
@@ -800,13 +827,14 @@ export class WebRTCTransport extends Transport {
     try {
       await entry.pc.addIceCandidate(candidate);
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
     }
   }
 
-  private _teardown(remote: string): void {
+  private _teardown(remote: string, expected?: PeerEntry): void {
     const entry = this._entries.get(remote);
-    if (!entry) return;
+    if (!entry || (expected && entry !== expected)) return;
     this._entries.delete(remote);
     if (entry.handshakeTimer) clearTimeout(entry.handshakeTimer);
     try {
