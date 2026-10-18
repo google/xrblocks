@@ -43,7 +43,7 @@ export type UIThemePresetName =
   | 'glimmerOpaque'
   | 'glimmerAmber'
   | 'glimmerGreen'
-  | 'additive';
+  | 'highContrast';
 
 const COLOR_PROPERTIES = [
   'surface',
@@ -261,7 +261,7 @@ export const glimmerGreenTheme = createGlimmerTheme({
   buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
 });
 
-const ADDITIVE_THEME_COLORS = Object.freeze({
+const HIGH_CONTRAST_THEME_COLORS = Object.freeze({
   surface: '#173a3a',
   raisedSurface: '#245252',
   accent: '#7ffff0',
@@ -276,7 +276,7 @@ const ADDITIVE_THEME_COLORS = Object.freeze({
   buttonOutline: '#a2fff4',
 });
 
-const ADDITIVE_THEME_LAYOUT = Object.freeze({
+const HIGH_CONTRAST_THEME_LAYOUT = Object.freeze({
   borderRadius: 20,
   surfaceBorderWidth: 2,
   surfacePadding: 24,
@@ -289,55 +289,55 @@ const ADDITIVE_THEME_LAYOUT = Object.freeze({
 });
 
 /** High-contrast surfaces for optical see-through displays. */
-export const additiveTheme = createThemeSnapshot({
+export const highContrastTheme = createThemeSnapshot({
   colors: {
-    surface: ADDITIVE_THEME_COLORS.surface,
-    raisedSurface: ADDITIVE_THEME_COLORS.raisedSurface,
-    primary: ADDITIVE_THEME_COLORS.accent,
-    primaryText: ADDITIVE_THEME_COLORS.text,
-    text: ADDITIVE_THEME_COLORS.text,
-    secondaryText: ADDITIVE_THEME_COLORS.secondaryText,
-    outline: ADDITIVE_THEME_COLORS.accent,
-    sliderTrack: ADDITIVE_THEME_COLORS.sliderTrack,
-    disabledSurface: ADDITIVE_THEME_COLORS.disabledSurface,
-    disabledText: ADDITIVE_THEME_COLORS.disabledText,
+    surface: HIGH_CONTRAST_THEME_COLORS.surface,
+    raisedSurface: HIGH_CONTRAST_THEME_COLORS.raisedSurface,
+    primary: HIGH_CONTRAST_THEME_COLORS.accent,
+    primaryText: HIGH_CONTRAST_THEME_COLORS.text,
+    text: HIGH_CONTRAST_THEME_COLORS.text,
+    secondaryText: HIGH_CONTRAST_THEME_COLORS.secondaryText,
+    outline: HIGH_CONTRAST_THEME_COLORS.accent,
+    sliderTrack: HIGH_CONTRAST_THEME_COLORS.sliderTrack,
+    disabledSurface: HIGH_CONTRAST_THEME_COLORS.disabledSurface,
+    disabledText: HIGH_CONTRAST_THEME_COLORS.disabledText,
   },
-  borderRadius: ADDITIVE_THEME_LAYOUT.borderRadius,
+  borderRadius: HIGH_CONTRAST_THEME_LAYOUT.borderRadius,
   styles: {
     surface: {
-      backgroundColor: ADDITIVE_THEME_COLORS.surface,
-      borderColor: ADDITIVE_THEME_COLORS.accent,
-      borderWidth: ADDITIVE_THEME_LAYOUT.surfaceBorderWidth,
-      borderRadius: ADDITIVE_THEME_LAYOUT.borderRadius,
-      padding: ADDITIVE_THEME_LAYOUT.surfacePadding,
-      gap: ADDITIVE_THEME_LAYOUT.surfaceGap,
+      backgroundColor: HIGH_CONTRAST_THEME_COLORS.surface,
+      borderColor: HIGH_CONTRAST_THEME_COLORS.accent,
+      borderWidth: HIGH_CONTRAST_THEME_LAYOUT.surfaceBorderWidth,
+      borderRadius: HIGH_CONTRAST_THEME_LAYOUT.borderRadius,
+      padding: HIGH_CONTRAST_THEME_LAYOUT.surfacePadding,
+      gap: HIGH_CONTRAST_THEME_LAYOUT.surfaceGap,
     },
     button: {
-      height: ADDITIVE_THEME_LAYOUT.buttonHeight,
+      height: HIGH_CONTRAST_THEME_LAYOUT.buttonHeight,
       flexDirection: 'row',
       justifyContent: 'center',
       alignItems: 'center',
-      gap: ADDITIVE_THEME_LAYOUT.buttonGap,
-      paddingLeft: ADDITIVE_THEME_LAYOUT.buttonHorizontalPadding,
-      paddingRight: ADDITIVE_THEME_LAYOUT.buttonHorizontalPadding,
-      backgroundColor: ADDITIVE_THEME_COLORS.buttonSurface,
-      color: ADDITIVE_THEME_COLORS.text,
-      borderColor: ADDITIVE_THEME_COLORS.buttonOutline,
-      borderWidth: ADDITIVE_THEME_LAYOUT.buttonBorderWidth,
-      borderRadius: ADDITIVE_THEME_LAYOUT.buttonBorderRadius,
+      gap: HIGH_CONTRAST_THEME_LAYOUT.buttonGap,
+      paddingLeft: HIGH_CONTRAST_THEME_LAYOUT.buttonHorizontalPadding,
+      paddingRight: HIGH_CONTRAST_THEME_LAYOUT.buttonHorizontalPadding,
+      backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonSurface,
+      color: HIGH_CONTRAST_THEME_COLORS.text,
+      borderColor: HIGH_CONTRAST_THEME_COLORS.buttonOutline,
+      borderWidth: HIGH_CONTRAST_THEME_LAYOUT.buttonBorderWidth,
+      borderRadius: HIGH_CONTRAST_THEME_LAYOUT.buttonBorderRadius,
       ':hover': {
-        backgroundColor: ADDITIVE_THEME_COLORS.buttonHover,
+        backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonHover,
       },
       ':active': {
-        backgroundColor: ADDITIVE_THEME_COLORS.buttonActive,
+        backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonActive,
       },
       ':disabled': {
-        backgroundColor: ADDITIVE_THEME_COLORS.disabledSurface,
-        color: ADDITIVE_THEME_COLORS.disabledText,
+        backgroundColor: HIGH_CONTRAST_THEME_COLORS.disabledSurface,
+        color: HIGH_CONTRAST_THEME_COLORS.disabledText,
       },
     },
     text: {
-      color: ADDITIVE_THEME_COLORS.text,
+      color: HIGH_CONTRAST_THEME_COLORS.text,
     },
   },
 });
@@ -350,7 +350,7 @@ export const uiThemePresets: Readonly<Record<UIThemePresetName, UITheme>> =
     glimmerOpaque: glimmerOpaqueTheme,
     glimmerAmber: glimmerAmberTheme,
     glimmerGreen: glimmerGreenTheme,
-    additive: additiveTheme,
+    highContrast: highContrastTheme,
   });
 
 export const defaultTheme: UITheme = grayGlassTheme;

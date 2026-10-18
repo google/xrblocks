@@ -1,6 +1,10 @@
 import {describe, expect, it} from 'vitest';
 import {UIPanel} from './components/UIPanel';
-import {additiveTheme, createThemeSnapshot, grayGlassTheme} from './UITheme';
+import {
+  createThemeSnapshot,
+  grayGlassTheme,
+  highContrastTheme,
+} from './UITheme';
 
 const MINIMUM_TEXT_CONTRAST_RATIO = 4.5;
 const MINIMUM_STATE_CONTRAST_RATIO = 1.5;
@@ -76,16 +80,16 @@ describe('Editable UI theme roles', () => {
     expect(theme.styles?.scroll?.padding).toBe(8);
   });
 
-  it('keeps additive slider and button states visually distinct', () => {
-    expect(additiveTheme.colors.sliderTrack).not.toBe(
-      additiveTheme.colors.primary
+  it('keeps high-contrast slider and button states visually distinct', () => {
+    expect(highContrastTheme.colors.sliderTrack).not.toBe(
+      highContrastTheme.colors.primary
     );
-    const surface = additiveTheme.colors.surface;
-    const text = additiveTheme.colors.primaryText;
-    const normal = additiveTheme.styles?.button?.backgroundColor as string;
-    const hover = additiveTheme.styles?.button?.[':hover']
+    const surface = highContrastTheme.colors.surface;
+    const text = highContrastTheme.colors.primaryText;
+    const normal = highContrastTheme.styles?.button?.backgroundColor as string;
+    const hover = highContrastTheme.styles?.button?.[':hover']
       ?.backgroundColor as string;
-    const active = additiveTheme.styles?.button?.[':active']
+    const active = highContrastTheme.styles?.button?.[':active']
       ?.backgroundColor as string;
 
     const normalContrast = contrastRatio(normal, surface);

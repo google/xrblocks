@@ -353,7 +353,7 @@ Select a built-in preset:
 
 ```js
 xb.ui.theme = 'grayGlass';
-// Also: colorful, glimmer, glimmerOpaque, glimmerAmber, glimmerGreen, additive
+// Also: colorful, glimmer, glimmerOpaque, glimmerAmber, glimmerGreen, highContrast
 ```
 
 A theme contains colors, a shared border radius, and optional style roles for
@@ -367,14 +367,14 @@ intentional exceptions. Theme snapshots are validated and detached from the
 object passed by the application.
 
 On optical see-through displays, black contributes little or no visible light.
-The `additive` preset provides bright text, colored controls, and a solid
+The `highContrast` preset provides bright text, colored controls, and a solid
 dark-color backplate instead of a black or translucent surface. The built-in UI
 panels are shader-based and unlit. XR Blocks exposes the active blend mode but
 does not change the app's theme automatically:
 
 ```js
 if (xb.core.environmentBlendMode === 'additive') {
-  xb.ui.theme = 'additive';
+  xb.ui.theme = 'highContrast';
 }
 ```
 
@@ -391,7 +391,7 @@ opt in before initialization:
 const options = new xb.Options();
 options.simulateAdditiveDisplay = true;
 options.simulatedDimming = 0; // 0 = pure additive; 1 = block passthrough
-xb.ui.theme = 'additive'; // Theme selection remains explicit.
+xb.ui.theme = 'highContrast'; // Theme selection remains explicit.
 await xb.init(options);
 ```
 
