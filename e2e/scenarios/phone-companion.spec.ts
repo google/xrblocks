@@ -158,6 +158,23 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     );
     const connect = PhoneControllerPage.prototype.connect;
     PhoneControllerPage.prototype.connect = function () {
+      const events: unknown[] = [];
+      for (const type of [
+        'pointerdown',
+        'pointerup',
+        'pointercancel',
+        'lostpointercapture',
+        'click',
+      ]) {
+        this.shadow.addEventListener(type, (event: PointerEvent) => {
+          events.push({
+            type,
+            pointer: event.pointerId,
+            target: (event.composedPath()[0] as HTMLElement).id,
+          });
+          if (events.length > 20) events.shift();
+        });
+      }
       (window as any).__phoneDiagnostics = () => ({
         motion: {...this.link.motion},
         generation: this.link.generation,
@@ -165,6 +182,9 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
         foreground: this.link.foreground,
         dragMode: this.dragMode,
         hidden: document.hidden,
+        pointers: [...this.pointers.keys()],
+        multiTouch: this.multiTouch,
+        events,
       });
       return connect.call(this);
     };
@@ -230,6 +250,9 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   await pointAt(host, phone, touch, 'slider', 0.25);
   const before = await cardPose(host);
   await tapButton(phone, 'Drag');
+  await expect
+    .poll(() => phone.evaluate(() => (window as any).__phoneDiagnostics()))
+    .toMatchObject({dragMode: 'toggle', multiTouch: false});
   await expect(
     phone.getByRole('button', {name: 'Drop', exact: true})
   ).toHaveAttribute('aria-pressed', 'true');
@@ -475,6 +498,9 @@ async function pointAt(
     type: 'touchEnd',
     touchPoints: [],
   });
+  await expect
+    .poll(() => phone.evaluate(() => (window as any).__phoneDiagnostics()))
+    .toMatchObject({pointers: [], multiTouch: false});
   try {
     await expect
       .poll(() =>
@@ -537,6 +563,9 @@ async function tapPad(phone: Page, touch: CDPSession) {
     type: 'touchEnd',
     touchPoints: [],
   });
+  await expect
+    .poll(() => phone.evaluate(() => (window as any).__phoneDiagnostics()))
+    .toMatchObject({pointers: [], multiTouch: false});
 }
 
 async function tapButton(phone: Page, name: string) {
