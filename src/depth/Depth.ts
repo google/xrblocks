@@ -3,8 +3,9 @@ import * as THREE from 'three';
 import {Registry} from '../core/components/Registry';
 import {
   assertWebGLRenderer,
+  isSerializerRenderer,
   isWebGPURenderer,
-  type WebGLOrWebGPURenderer,
+  type SupportedRenderer,
 } from '../core/RendererTypes';
 import type {Shader} from '../utils/Types';
 import {clamp} from '../utils/utils';
@@ -31,7 +32,7 @@ export class Depth {
 
   // The main camera.
   private camera!: THREE.Camera;
-  private renderer!: WebGLOrWebGPURenderer;
+  private renderer!: SupportedRenderer;
   private gpuDepthConverter?: GPUDepthConverter;
   private registry?: Registry;
   private disposed = false;
@@ -116,7 +117,7 @@ export class Depth {
   init(
     camera: THREE.PerspectiveCamera,
     options: DepthOptions,
-    renderer: WebGLOrWebGPURenderer,
+    renderer: SupportedRenderer,
     registry: Registry,
     scene: THREE.Scene
   ): void | Promise<void> {
@@ -129,9 +130,9 @@ export class Depth {
     this.registry = registry;
     this.enabled = options.enabled;
     const isWebGPU = isWebGPURenderer(renderer);
-    this.gpuDepthConverter = isWebGPU
-      ? undefined
-      : new GPUDepthConverter(renderer);
+    const isSerializer = isSerializerRenderer(renderer);
+    this.gpuDepthConverter =
+      isWebGPU || isSerializer ? undefined : new GPUDepthConverter(renderer);
 
     if (this.options.depthTexture.enabled) {
       this.depthTextures = new DepthTextures(options);
@@ -158,7 +159,7 @@ export class Depth {
             }
           })
         );
-      } else {
+      } else if (!isSerializer) {
         OcclusionUtils.setWebGPUMaterialHandler(undefined);
         const pass = new OcclusionPass(scene, camera);
         pass.resolutionScale = resolutionScale;
@@ -174,7 +175,7 @@ export class Depth {
         this.depthTextures
       );
       registry.register(this.depthMesh);
-      if (this.options.depthMesh.renderShadow) {
+      if (this.options.depthMesh.renderShadow && this.renderer.shadowMap) {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
       }
@@ -529,6 +530,19 @@ export class Depth {
     return this.depthTextures?.get(viewId) ?? this.depthTextures?.get(0);
   }
 
+  /**
+   * Updates the shadow opacity on the depth mesh material when active.
+   */
+  setShadowOpacity(opacity: number) {
+    if (
+      this.options.enabled &&
+      this.options.depthMesh.enabled &&
+      this.depthMesh?.material instanceof THREE.ShadowMaterial
+    ) {
+      this.depthMesh.material.opacity = opacity;
+    }
+  }
+
   update(frame?: XRFrame) {
     if (this.disposed || !this.options.enabled) return;
     if (frame) {
@@ -541,7 +555,7 @@ export class Depth {
 
   updateLocalDepth(frame: XRFrame) {
     const session = frame.session;
-    const binding = this.renderer.xr.getBinding();
+    const binding = this.renderer.xr.getBinding?.() ?? null;
 
     // Enable or disable depth based on the number of clients.
     const pausingDepthSupported = session.depthActive !== undefined;
@@ -552,12 +566,12 @@ export class Depth {
       } else if (!session.depthActive && needsDepth) {
         session.resumeDepthSensing?.();
       }
-      if (this.depthClients.size == 0) {
+      if (this.depthClients.size === 0) {
         return;
       }
     }
 
-    const xrRefSpace = this.renderer.xr.getReferenceSpace();
+    const xrRefSpace = this.renderer.xr.getReferenceSpace?.() ?? null;
     if (xrRefSpace) {
       const pose = frame.getViewerPose(xrRefSpace);
       if (pose) {
@@ -590,7 +604,7 @@ export class Depth {
   }
 
   renderOcclusionPass() {
-    if (!this.occlusionPass) return;
+    if (!this.occlusionPass || isSerializerRenderer(this.renderer)) return;
     const leftDepthTexture = this.getTexture(0);
     if (leftDepthTexture) {
       this.occlusionPass.setDepthTexture(
