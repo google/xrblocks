@@ -20,7 +20,12 @@ type IwerWindow = {
   xb: {
     core: {
       webXRSessionManager: {startSession(): Promise<void>};
-      renderer: {xr: {isPresenting: boolean; getSession(): XRSession | null}};
+      renderer: {
+        xr: {
+          isPresenting: boolean;
+          getSession(): {end(): Promise<void>} | null;
+        };
+      };
       camera: {matrixWorld: {elements: number[]}};
     };
   };

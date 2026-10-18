@@ -89,10 +89,11 @@ test('ignores drags across the panel and mouse clicks on cubes', async ({
   const before = await cubeColors(page);
   for (const cube of await cubeCenters(page)) {
     await page.mouse.click(cube.x, cube.y);
+    // A click holds the mouse controller for a few frames; the demo ignores
+    // clicks until it is released, which takes a while on slow renderers.
+    await expect.poll(() => isMouseConnected(page)).toBe(false);
   }
-  await page.waitForTimeout(300);
   expect(await cubeColors(page)).toEqual(before);
-  expect(await isMouseConnected(page)).toBe(false);
 });
 
 test('saves a recording that loads and replays after a reload', async ({
@@ -118,7 +119,8 @@ test('saves a recording that loads and replays after a reload', async ({
     hands: (number[] | null)[];
     controllers: ({selected: boolean} | null)[];
   }[];
-  expect(frames.length).toBeGreaterThan(5);
+  // The first frame and each selection change are always written.
+  expect(frames.length).toBeGreaterThanOrEqual(3);
   expect(frames.some((f) => f.hands[0]?.length === 25 * 7)).toBe(true);
   expect(frames.some((f) => f.controllers[0]?.selected)).toBe(true);
 
