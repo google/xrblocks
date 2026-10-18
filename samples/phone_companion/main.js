@@ -42,7 +42,7 @@ class PhoneDemo extends xb.Script {
       void this.phone.replacePhone().catch((error) => setStatus(error.message));
     };
     const replaceButton = new xb.UIButton({
-      label: 'Replace phone / New code',
+      label: 'Pair a different phone',
       onClick: replace,
     });
     const approvalActions = new xb.UIPanel({
@@ -71,11 +71,31 @@ class PhoneDemo extends xb.Script {
         new xb.UIButton({
           label: 'Accept phone',
           disabled: !id,
+          style: id
+            ? {
+                backgroundColor: '#166534',
+                color: '#ffffff',
+                borderColor: '#86efac',
+                borderWidth: 2,
+                ':hover': {backgroundColor: '#14532d', color: '#ffffff'},
+                ':active': {backgroundColor: '#052e16', color: '#ffffff'},
+              }
+            : undefined,
           onClick: accept,
         }),
         new xb.UIButton({
           label: 'Reject phone',
           disabled: !id,
+          style: id
+            ? {
+                backgroundColor: '#991b1b',
+                color: '#ffffff',
+                borderColor: '#fca5a5',
+                borderWidth: 2,
+                ':hover': {backgroundColor: '#7f1d1d', color: '#ffffff'},
+                ':active': {backgroundColor: '#450a0a', color: '#ffffff'},
+              }
+            : undefined,
           onClick: reject,
         }),
         replaceButton
@@ -124,7 +144,7 @@ class PhoneDemo extends xb.Script {
       } else {
         link.removeAttribute('href');
         setStatus(
-          'Invitation closed. Use Replace phone / New code to pair another phone.'
+          'Invitation closed. Choose Pair a different phone for a new pairing code.'
         );
       }
     };

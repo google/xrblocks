@@ -12,11 +12,12 @@ on a headset, open the displayed landing-page URL on your phone instead.
 
 Invitations last 90 seconds, permit five handshake attempts, and are consumed
 once. Each headset owns its state and automatically rerolls a colliding code.
-Use **Replace phone / New code** for a reloaded or different phone; it revokes the
+Use **Pair a different phone** for a reloaded or different phone; it revokes the
 old session without reloading the headset. Do not accept mismatched digits.
 
 - Slide to point and tap to select.
-- Hold **Hold to move** while sliding another finger to drag objects/sliders.
+- Hold on the touchpad, then slide to drag; release to drop. Alternatively, tap
+  **Drag**, slide with one finger, then tap **Drop**.
 - Pinch to zoom the targeted panel/object; swipe two fingers to scroll.
 - Select a field, then tap its keyboard button on the phone. No field value is
   shared before that tap. **Submit** invokes the app callback; **Done** returns

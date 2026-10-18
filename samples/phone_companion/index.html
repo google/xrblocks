@@ -5,6 +5,50 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="../main.css" />
+    <style>
+      #pairing button {
+        min-height: 44px;
+        padding: 8px 12px;
+        margin: 4px 0;
+        border: 2px solid #94a3b8;
+        border-radius: 8px;
+        font: inherit;
+        background: #334155;
+        color: #f1f5f9;
+      }
+      #accept-phone:enabled {
+        background: #166534;
+        color: #fff;
+        border-color: #86efac;
+      }
+      #accept-phone:enabled:hover {
+        background: #14532d;
+      }
+      #accept-phone:enabled:active {
+        background: #052e16;
+      }
+      #reject-phone:enabled {
+        background: #991b1b;
+        color: #fff;
+        border-color: #fca5a5;
+      }
+      #reject-phone:enabled:hover {
+        background: #7f1d1d;
+      }
+      #reject-phone:enabled:active {
+        background: #450a0a;
+      }
+      #pairing button:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 3px;
+      }
+      #pairing button:disabled {
+        background: #263348;
+        color: #aab8cd;
+        border-color: #62748e;
+        cursor: not-allowed;
+      }
+    </style>
     <script type="importmap">
       {
         "imports": {
@@ -46,7 +90,7 @@
       <p id="pair-request" role="status"></p>
       <button id="accept-phone" disabled>Accept phone</button>
       <button id="reject-phone" disabled>Reject phone</button>
-      <button id="replace-phone">Replace phone / New code</button>
+      <button id="replace-phone">Pair a different phone</button>
       <p>
         On your phone, open
         <a id="phone-page" style="color: #a7c7ff; overflow-wrap: anywhere"></a>

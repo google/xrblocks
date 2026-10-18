@@ -68,10 +68,50 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     .fill((await host.locator('#pairing-code').textContent())!);
   await phone.getByRole('button', {name: 'Connect', exact: true}).click();
   await expect(host.locator('#accept-phone')).toBeEnabled();
+  for (const id of ['accept-phone', 'reject-phone']) {
+    const button = host.locator(`#${id}`);
+    for (const hover of [false, true]) {
+      if (hover) await button.hover();
+      const contrast = await button.evaluate((element) => {
+        const luminance = (color: string) => {
+          const rgb = color
+            .match(/[\d.]+/g)!
+            .slice(0, 3)
+            .map(Number)
+            .map((value) => {
+              const s = value / 255;
+              return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+            });
+          return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+        };
+        const ratio = (a: string, b: string) => {
+          const x = luminance(a),
+            y = luminance(b);
+          return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+        };
+        const style = getComputedStyle(element);
+        return {
+          text: ratio(style.color, style.backgroundColor),
+          border: ratio(
+            style.borderTopColor,
+            getComputedStyle(element.parentElement!).backgroundColor
+          ),
+        };
+      });
+      expect(contrast.text).toBeGreaterThanOrEqual(4.5);
+      expect(contrast.border).toBeGreaterThanOrEqual(3);
+    }
+  }
   const comparison = (await host.locator('#pair-request').textContent())!.match(
     /\d{6}/
   )![0];
-  await expect(phone.getByRole('status')).toContainText(comparison);
+  await expect(phone.getByLabel('Verification number')).toHaveText(
+    `${comparison.slice(0, 3)} ${comparison.slice(3)}`
+  );
+  await expect(phone.getByLabel('Pointer touchpad')).toBeHidden();
+  await expect(
+    phone.getByText('Check the number', {exact: true})
+  ).toBeVisible();
   // A stale press must stay bound to its original request, not whichever phone
   // arrives next. Reload before approval so this invitation remains unused.
   const oldRequest = await host.evaluate(() => {
@@ -109,8 +149,11 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
           .pendingPhone?.id
     )
   ).toBe(currentRequest);
-  await expect(phone.getByRole('status')).toContainText(
-    (await host.locator('#pair-request').textContent())!.match(/\d{6}/)![0]
+  const nextComparison = (await host
+    .locator('#pair-request')
+    .textContent())!.match(/\d{6}/)![0];
+  await expect(phone.getByLabel('Verification number')).toHaveText(
+    `${nextComparison.slice(0, 3)} ${nextComparison.slice(3)}`
   );
   await host.locator('#accept-phone').click();
   await expect(
@@ -135,25 +178,11 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
 
   await pointAt(host, phone, touch, 'slider', 0.25);
   const before = await cardPose(host);
-  const hold = await phone
-    .getByRole('button', {name: 'Hold to move'})
-    .boundingBox();
-  const held = {
-    id: 2,
-    x: hold!.x + hold!.width / 2,
-    y: hold!.y + hold!.height / 2,
-  };
-  await touch.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [held],
-  });
+  await tapButton(phone, touch, 'Drag');
   await expect.poll(() => sliderValue(host)).toBeLessThan(40);
-  await pointAt(host, phone, touch, 'slider', 0.75, held);
+  await pointAt(host, phone, touch, 'slider', 0.75);
   await expect.poll(() => sliderValue(host)).toBeGreaterThan(60);
-  await touch.send('Input.dispatchTouchEvent', {
-    type: 'touchEnd',
-    touchPoints: [],
-  });
+  await tapButton(phone, touch, 'Drop');
   (await cardPose(host)).forEach((value, index) =>
     expect(value).toBeCloseTo(before[index], 6)
   );
@@ -185,10 +214,10 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     )
     .toBe(true);
   await expect(
-    phone.getByRole('button', {name: 'Type: Message'})
+    phone.getByRole('button', {name: 'Open keyboard: Message'})
   ).toBeVisible();
   await expect(phone.locator('textarea')).toHaveValue('');
-  await tapButton(phone, touch, 'Type: Message');
+  await tapButton(phone, touch, 'Open keyboard: Message');
   await expect(phone.getByRole('textbox', {name: 'Message'})).toHaveValue(
     'Existing value above the limit'
   );
@@ -277,6 +306,18 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
       .parent.onXRSessionStarted();
   });
   await expect(host.locator('#local-test')).toBeHidden();
+  await phone.getByRole('button', {name: 'Disconnect', exact: true}).click();
+  await expect(phone.getByRole('dialog')).toBeVisible();
+  await phone.getByRole('button', {name: 'Cancel', exact: true}).click();
+  await expect(phone.getByLabel('Pointer touchpad')).toBeVisible();
+  await phone.getByRole('button', {name: 'Disconnect', exact: true}).click();
+  await phone
+    .getByRole('dialog')
+    .getByRole('button', {name: 'Disconnect', exact: true})
+    .click();
+  await expect(
+    phone.getByRole('textbox', {name: 'Pairing code', exact: true})
+  ).toHaveValue('');
   await phone.close();
   await expect(host.locator('#status')).toHaveText('Waiting for phone…');
 });

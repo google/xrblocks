@@ -4,69 +4,225 @@
     <meta charset="utf-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
+    <meta name="theme-color" content="#0b1220" />
     <title>Phone Controller | XR Blocks</title>
     <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
       body {
         margin: 0;
+        height: 100%;
         background: #0b1220;
-        color: white;
+        color: #f4f6fa;
+        font:
+          16px system-ui,
+          sans-serif;
+        overscroll-behavior: none;
       }
-      #error {
-        padding: 16px;
-        font: 18px system-ui;
+      body {
+        height: 100dvh;
+      }
+      h1 {
+        margin: 0 0 20px;
+        font-size: 28px;
+      }
+      p {
+        line-height: 1.4;
+      }
+      .brand {
+        color: #9aaecb;
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
       }
       #pair-panel {
         max-width: 500px;
-        margin: 32px auto;
-        padding: 20px;
-        font: 18px system-ui;
+        margin: auto;
+        padding: max(24px, env(safe-area-inset-top))
+          max(20px, env(safe-area-inset-right))
+          max(20px, env(safe-area-inset-bottom))
+          max(20px, env(safe-area-inset-left));
+      }
+      ol {
+        padding-left: 24px;
+        margin: 0 0 24px;
+        color: #c4d0e2;
+        line-height: 1.5;
+      }
+      li + li {
+        margin-top: 8px;
       }
       #pair-form {
         display: grid;
-        gap: 16px;
+        gap: 10px;
       }
-      #pair-form input,
+      label {
+        font-weight: 600;
+      }
+      input,
       button {
         min-height: 48px;
         font: inherit;
         border-radius: 12px;
         padding: 12px;
       }
-      #pair-form input {
+      #code {
         width: 100%;
-        box-sizing: border-box;
-        font-size: 26px;
+        font:
+          600 28px ui-monospace,
+          monospace;
+        letter-spacing: 0.15em;
         text-transform: uppercase;
+        border: 2px solid #839bbc;
+        background: #fff;
+        color: #111;
+      }
+      #code[aria-invalid='true'] {
+        border-color: #ffb1ae;
+      }
+      #error {
+        color: #ffb1ae;
+        margin: 0;
+        font-size: 14px;
       }
       button {
         border: 0;
         background: #a7c7ff;
         color: #10213b;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      button.secondary {
+        background: #23334c;
+        color: #d3e1f6;
+      }
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid white;
+        outline-offset: 2px;
+      }
+      #pair-note {
+        color: #9eafc7;
+        font-size: 13px;
+        margin-bottom: 0;
+      }
+      #controller-shell {
+        height: 100dvh;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        overflow: hidden;
+      }
+      #controller {
+        min-height: 0;
+        overflow: hidden;
+      }
+      footer {
+        padding: 4px max(16px, env(safe-area-inset-right))
+          max(8px, env(safe-area-inset-bottom))
+          max(16px, env(safe-area-inset-left));
+        text-align: center;
       }
       #change-code {
-        display: block;
-        margin: 12px auto;
-        font: 16px system-ui;
+        min-height: 44px;
+        padding: 8px 24px;
+        font-size: 14px;
+      }
+      dialog {
+        border: 1px solid #526d94;
+        border-radius: 20px;
+        background: #142035;
+        color: white;
+        max-width: 440px;
+        width: calc(100% - 32px);
+        padding: 24px;
+      }
+      dialog::backdrop {
+        background: #020711bb;
+      }
+      dialog h2 {
+        margin-top: 0;
+        font-size: 22px;
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+      }
+      .actions button {
+        flex: 1;
       }
       [hidden] {
         display: none !important;
+      }
+      @media (max-height: 480px) and (min-width: 500px) {
+        #pair-panel {
+          max-width: 900px;
+          padding: 12px max(20px, env(safe-area-inset-right)) 12px
+            max(20px, env(safe-area-inset-left));
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px 28px;
+          align-items: center;
+        }
+        #pair-intro .brand {
+          margin: 0 0 6px;
+        }
+        h1 {
+          font-size: 23px;
+          margin-bottom: 12px;
+        }
+        ol {
+          margin: 0;
+          font-size: 14px;
+        }
+        li + li {
+          margin-top: 4px;
+        }
+        #pair-note {
+          grid-column: 1 / -1;
+          margin: 0;
+        }
+        #pair-form {
+          gap: 6px;
+        }
+        #code {
+          font-size: 24px;
+        }
+        input,
+        button {
+          min-height: 44px;
+          padding: 8px 12px;
+        }
+        footer {
+          padding-top: 0;
+          padding-bottom: max(4px, env(safe-area-inset-bottom));
+        }
+        dialog {
+          padding: 16px;
+        }
       }
     </style>
   </head>
   <body>
     <main id="pair-panel">
-      <h1>Pair with your headset</h1>
-      <p>
-        Reloaded this phone? Choose Replace phone / New code in the headset
-        first.
-      </p>
-      <p>
-        Read the pairing code in the headset and enter it here. No QR scan
-        needed.
-      </p>
-      <form id="pair-form">
+      <div id="pair-intro">
+        <p class="brand">XR Blocks · Phone controller</p>
+        <h1>Pair with your headset</h1>
+        <ol>
+          <li>
+            Find the <strong>4-character pairing code</strong> in the headset.
+          </li>
+          <li>Enter the pairing code below.</li>
+          <li>
+            Check the number on both screens, then choose
+            <strong>Accept phone</strong> in the headset.
+          </li>
+        </ol>
+      </div>
+      <form id="pair-form" novalidate>
         <label for="code">Pairing code</label>
         <input
           id="code"
@@ -76,14 +232,34 @@
           autocomplete="off"
           autocapitalize="characters"
           spellcheck="false"
+          aria-describedby="error"
           required
         />
+        <p id="error" role="alert" hidden></p>
         <button type="submit">Connect</button>
       </form>
+      <p id="pair-note">
+        Paired before? Choose <strong>Pair a different phone</strong> in the
+        headset for a new pairing code.
+      </p>
     </main>
-    <p id="error" role="alert" hidden></p>
-    <div id="controller"></div>
-    <button id="change-code" hidden>Enter another code</button>
+    <div id="controller-shell" hidden>
+      <div id="controller"></div>
+      <footer>
+        <button id="change-code" class="secondary">Disconnect</button>
+      </footer>
+    </div>
+    <dialog id="disconnect-dialog" aria-labelledby="disconnect-title">
+      <h2 id="disconnect-title">Disconnect this phone?</h2>
+      <p>
+        This ends this phone session. To pair again, choose
+        <strong>Pair a different phone</strong> in the headset.
+      </p>
+      <div class="actions">
+        <button id="keep-connected" class="secondary" autofocus>Cancel</button>
+        <button id="confirm-disconnect">Disconnect</button>
+      </div>
+    </dialog>
     <script type="module" src="phone.js"></script>
   </body>
 </html>

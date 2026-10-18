@@ -113,24 +113,29 @@ Safari. No phone orientation permission is requested.
 On the touchpad, **pinch to zoom** the pointed-at scalable object or containing
 panel (including over its UI controls). Spread to enlarge and pinch to shrink;
 configured manipulation scale limits apply. Swipe two fingers together to scroll.
-Hold **Hold to move** with one finger while sliding another on the pad to move
-the panel or drag objects/sliders. The pinch gesture hint and
-text-field prompt are plain text; the keyboard button appears when a field is ready.
+Hold on the pad, then slide with that finger to drag the panel or objects/sliders;
+release to drop. Alternatively tap **Drag**, slide, then tap **Drop**. The pad
+shows feedback while dragging, scrolling or zooming. **Open keyboard** appears
+with the focused field's label. Typing collapses the pad on narrow/short screens;
+on unfolded screens it sits beside the labelled editor and its buttons.
 
 Backgrounding or disconnecting the phone cancels held input; a silent peer times
 out after five seconds. Script disposal closes its connection and unregisters the
 controller. The phone requests a screen wake lock while paired and visible,
 releasing it on background, disconnect or disposal. Unsupported/denied wake locks
 are optional. If the phone reloads or a different phone is needed, use the
-headset's Replace phone / New code action. It revokes the old session without
+headset's **Pair a different phone** action. It revokes the old session without
 reloading the headset app.
 
 Returning to the phone page after screen-off or switching apps recreates its
 dedicated signaling transport and resumes with the approved session secret.
-Transient failures show “Reconnecting to headset…” and retry while visible.
+Transient failures dim the pad and show “Connection lost. Trying to reconnect…”.
+A prolonged failure gives new-pairing instructions; successful recovery briefly
+shows “Reconnected”. The phone's **Disconnect** action asks for confirmation and
+clears the pairing code.
 For custom transports, supply `transportFactory` to the phone page as well as
 the host so each reconnect gets a fresh instance. Explicitly reloading the
-phone page still requires Replace phone / New code.
+phone page still requires **Pair a different phone**.
 
 Motion is coalesced per frame onto a separate unordered WebRTC channel with zero
 retransmissions. Buttons and text stay reliable. Encrypted, sequenced messages

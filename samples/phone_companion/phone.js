@@ -5,21 +5,36 @@ import {
 } from '../../build/addons/phone-companion/phone.js';
 import {BroadcastChannelTransport} from '../../build/addons/netblocks/src/core/transport/BroadcastChannelTransport.js';
 
-const showError = (error) => {
-  const element = document.querySelector('#error');
-  element.hidden = false;
-  element.textContent = error.message;
-};
 const panel = document.querySelector('#pair-panel');
-const change = document.querySelector('#change-code');
+const shell = document.querySelector('#controller-shell');
+const code = document.querySelector('#code');
+const error = document.querySelector('#error');
+const dialog = document.querySelector('#disconnect-dialog');
 let phone;
+
+function clearError() {
+  error.hidden = true;
+  error.textContent = '';
+  code.removeAttribute('aria-invalid');
+}
+function showCodeError(message) {
+  error.hidden = false;
+  error.textContent = message;
+  code.setAttribute('aria-invalid', 'true');
+  code.focus();
+}
+function clearURL() {
+  const url = new URL(location.href);
+  url.hash = '';
+  history.replaceState(null, '', url);
+}
 
 async function connect(pairing) {
   phone?.dispose();
-  document.querySelector('#error').hidden = true;
-  document.querySelector('#code').blur();
+  clearError();
+  code.blur();
   panel.hidden = true;
-  change.hidden = false;
+  shell.hidden = false;
   const client = new PhoneControllerPage(
     document.querySelector('#controller'),
     {
@@ -27,50 +42,57 @@ async function connect(pairing) {
       transportFactory: new URLSearchParams(location.search).has('local')
         ? () => new BroadcastChannelTransport()
         : undefined,
-      onError: showError,
     }
   );
   phone = client;
   try {
     await client.connect();
-  } catch (error) {
-    client.dispose();
-    if (phone !== client) return;
-    phone = undefined;
-    panel.hidden = false;
-    showError(error);
+  } catch {
+    // The controller owns the plain-language failure screen and next steps.
+    // Keep it visible until the user explicitly disconnects.
   }
 }
 
+code.addEventListener('input', clearError);
 document.querySelector('#pair-form').addEventListener('submit', (event) => {
   event.preventDefault();
+  let pairing;
   try {
-    const pairing = phonePairingFromCode(document.querySelector('#code').value);
-    const url = new URL(location.href);
-    url.hash = '';
-    history.replaceState(null, '', url);
-    void connect(pairing);
-  } catch (error) {
-    showError(error);
+    pairing = phonePairingFromCode(code.value);
+  } catch {
+    showCodeError('Enter the 4-character pairing code shown in the headset.');
+    return;
   }
+  clearURL();
+  void connect(pairing);
 });
 
-change.addEventListener('click', () => {
+document
+  .querySelector('#change-code')
+  .addEventListener('click', () => dialog.showModal());
+document
+  .querySelector('#keep-connected')
+  .addEventListener('click', () => dialog.close());
+document.querySelector('#confirm-disconnect').addEventListener('click', () => {
+  dialog.close();
   phone?.dispose();
   phone = undefined;
+  shell.hidden = true;
   panel.hidden = false;
-  change.hidden = true;
-  document.querySelector('#error').hidden = true;
-  const url = new URL(location.href);
-  url.hash = '';
-  history.replaceState(null, '', url);
-  document.querySelector('#code').focus();
+  code.value = '';
+  clearError();
+  clearURL();
+  code.focus();
 });
 
 if (location.hash) {
   try {
     await connect(readPhonePairing(location.href));
-  } catch (error) {
-    showError(error);
+  } catch {
+    shell.hidden = true;
+    panel.hidden = false;
+    showCodeError(
+      'That pairing link could not be opened. Enter a new pairing code from the headset.'
+    );
   }
 }
