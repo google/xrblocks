@@ -390,6 +390,7 @@ opt in before initialization:
 ```js
 const options = new xb.Options();
 options.simulateAdditiveDisplay = true;
+options.simulatedDimming = 0; // 0 = pure additive; 1 = block passthrough
 xb.ui.theme = 'additive'; // Theme selection remains explicit.
 await xb.init(options);
 ```
@@ -400,6 +401,11 @@ zero alpha, approximating black-as-transparent additive output. It does not run
 in opaque or native additive sessions and does not emulate display brightness,
 optics, or field of view. The technique has been validated with a premultiplied
 projection layer in Quest Browser 152 on Quest 3.
+
+`simulatedDimming` is read every frame, so an app can adjust it at runtime. It
+must remain between `0` and `1`, inclusive. The default `0` writes zero alpha
+for pure additive-style composition; `1` writes full alpha and completely dims
+the passthrough behind the virtual scene.
 
 ## Model and placement composition
 

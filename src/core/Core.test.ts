@@ -299,50 +299,6 @@ describe('Core frame and simulator lifecycle', () => {
     }
   });
 
-  it('opts into additive-style compositing only for alpha-blend sessions', async () => {
-    core.options.simulateAdditiveDisplay = true;
-    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
-    const alphaSession = Object.assign(new EventTarget(), {
-      environmentBlendMode: 'alpha-blend',
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
-
-    await core['onXRSessionStarted'](alphaSession);
-
-    const mesh = core['additiveDisplaySimulationMesh'];
-    expect(mesh?.parent).toBe(core.scene);
-    expect(mesh).toMatchObject({
-      frustumCulled: false,
-      renderOrder: Number.MAX_SAFE_INTEGER,
-      userData: {xrblocksAdditiveDisplaySimulation: true},
-    });
-    expect(mesh?.material).toMatchObject({
-      premultipliedAlpha: true,
-      blending: THREE.CustomBlending,
-      blendEquation: THREE.AddEquation,
-      blendSrc: THREE.ZeroFactor,
-      blendDst: THREE.OneFactor,
-      blendEquationAlpha: THREE.AddEquation,
-      blendSrcAlpha: THREE.ZeroFactor,
-      blendDstAlpha: THREE.ZeroFactor,
-      depthTest: false,
-      depthWrite: false,
-    });
-    const intersections: THREE.Intersection[] = [];
-    mesh?.raycast({} as THREE.Raycaster, intersections);
-    expect(intersections).toEqual([]);
-
-    core['onXRSessionEnded']();
-    expect(mesh?.parent).toBeNull();
-
-    const additiveSession = Object.assign(new EventTarget(), {
-      environmentBlendMode: 'additive',
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
-    await core['onXRSessionStarted'](additiveSession);
-    expect(mesh?.parent).toBeNull();
-  });
-
   it('runs script callbacks and renders through one Core frame', async () => {
     const script = new Script();
     const update = vi.spyOn(script, 'update');

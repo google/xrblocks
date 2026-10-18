@@ -169,6 +169,12 @@ export class Options {
   simulateAdditiveDisplay = false;
 
   /**
+   * Constant alpha written by additive display simulation. `0` preserves all
+   * passthrough; `1` fully dims it. Read every frame while simulation is active.
+   */
+  simulatedDimming = 0;
+
+  /**
    * Any additional required features when initializing webxr.
    */
   webxrRequiredFeatures: string[] = [];
