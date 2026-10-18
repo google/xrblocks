@@ -13,11 +13,15 @@ const DEFAULT_TEST_VERTICAL_FOV_DEGREES = 50;
 const SPECTACLES_2027_DIAGONAL_FOV_DEGREES = 51;
 const AURA_DIAGONAL_FOV_DEGREES = 70;
 const UPDATED_DIAGONAL_FOV_DEGREES = 88;
-const APP_OVERRIDE_VERTICAL_FOV_DEGREES = 62;
-const SECOND_APP_OVERRIDE_VERTICAL_FOV_DEGREES = 64;
 const INITIAL_CAMERA_ASPECT_RATIO = 16 / 9;
 const RESIZED_CAMERA_ASPECT_RATIO = 1.2;
 const STEREO_CAMERA_ASPECT_RATIO = 1.25;
+const APP_CAMERA_ASPECT_RATIO = 1.4;
+const APP_CAMERA_NEAR = 0.2;
+const APP_CAMERA_FAR = 900;
+const APP_CAMERA_ZOOM = 1.1;
+const PROJECTION_HORIZONTAL_OFFSET_INDEX = 8;
+const STEREO_PROJECTION_HORIZONTAL_OFFSET = 0.01;
 const FOV_ASSERTION_PRECISION = 5;
 const LEFT_EYE_OFFSET = new THREE.Vector3(-AVERAGE_IPD_METERS / 2, 0, 0);
 const RIGHT_EYE_OFFSET = new THREE.Vector3(AVERAGE_IPD_METERS / 2, 0, 0);
@@ -173,7 +177,7 @@ describe('Simulator glasses diagonal FOV', () => {
     expect(camera.projectionMatrix.equals(originalProjection)).toBe(true);
   });
 
-  it('preserves an app FOV override and clears restore tracking on dispose', () => {
+  it('preserves app-owned stereo projections and clears restore tracking on dispose', () => {
     const simulator = new Simulator(() => {});
     const camera = new THREE.PerspectiveCamera(
       DEFAULT_TEST_VERTICAL_FOV_DEGREES,
@@ -182,22 +186,45 @@ describe('Simulator glasses diagonal FOV', () => {
     simulator.mainCamera = camera;
     simulator.options = new SimulatorOptions({
       displayDiagonalFov: AURA_DIAGONAL_FOV_DEGREES,
+      stereo: {enabled: true},
     });
     simulator['defaultCameraFov'] = camera.fov;
     simulator['applyDisplayFov']();
+    simulator.setupStereoCameras(camera);
+    const [leftCamera, rightCamera] =
+      simulator.stereoCameras as THREE.PerspectiveCamera[];
+    const appliedFov = camera.fov;
 
-    camera.fov = APP_OVERRIDE_VERTICAL_FOV_DEGREES;
+    camera.aspect = APP_CAMERA_ASPECT_RATIO;
+    camera.near = APP_CAMERA_NEAR;
+    camera.far = APP_CAMERA_FAR;
+    camera.zoom = APP_CAMERA_ZOOM;
     camera.updateProjectionMatrix();
+    leftCamera.projectionMatrix.copy(camera.projectionMatrix);
+    rightCamera.projectionMatrix.copy(camera.projectionMatrix);
+    leftCamera.projectionMatrix.elements[PROJECTION_HORIZONTAL_OFFSET_INDEX] =
+      -STEREO_PROJECTION_HORIZONTAL_OFFSET;
+    rightCamera.projectionMatrix.elements[PROJECTION_HORIZONTAL_OFFSET_INDEX] =
+      STEREO_PROJECTION_HORIZONTAL_OFFSET;
     const appProjection = camera.projectionMatrix.clone();
-    simulator.dispose();
-    expect(camera.fov).toBe(APP_OVERRIDE_VERTICAL_FOV_DEGREES);
-    expect(camera.projectionMatrix.equals(appProjection)).toBe(true);
+    const leftAppProjection = leftCamera.projectionMatrix.clone();
+    const rightAppProjection = rightCamera.projectionMatrix.clone();
 
-    camera.fov = SECOND_APP_OVERRIDE_VERTICAL_FOV_DEGREES;
-    camera.updateProjectionMatrix();
-    const secondAppProjection = camera.projectionMatrix.clone();
+    const expectAppProjectionPreserved = () => {
+      expect(camera.fov).toBe(appliedFov);
+      expect(camera.projectionMatrix.equals(appProjection)).toBe(true);
+      expect(leftCamera.projectionMatrix.equals(leftAppProjection)).toBe(true);
+      expect(rightCamera.projectionMatrix.equals(rightAppProjection)).toBe(
+        true
+      );
+      expect(leftCamera.position).toEqual(LEFT_EYE_OFFSET);
+      expect(rightCamera.position).toEqual(RIGHT_EYE_OFFSET);
+    };
+
     simulator.dispose();
-    expect(camera.fov).toBe(SECOND_APP_OVERRIDE_VERTICAL_FOV_DEGREES);
-    expect(camera.projectionMatrix.equals(secondAppProjection)).toBe(true);
+    expectAppProjectionPreserved();
+
+    simulator.dispose();
+    expectAppProjectionPreserved();
   });
 });
