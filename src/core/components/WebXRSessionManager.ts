@@ -126,6 +126,10 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
         optionalFeatures,
       };
 
+      const offerSession = navigator.xr!.offerSession;
+      const offerAttemptId =
+        offerSession !== undefined ? ++this.sessionAttemptId : undefined;
+
       // Fire the 'ready' event with the sessionOptions in the data payload
       this.dispatchEvent({
         type: WebXRSessionEventType.READY,
@@ -133,21 +137,26 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       });
 
       // Automatically start session if 'offerSession' is available
-      if (navigator.xr!.offerSession !== undefined) {
-        const attemptId = ++this.sessionAttemptId;
+      if (
+        !this.disposed &&
+        offerSession !== undefined &&
+        offerAttemptId === this.sessionAttemptId &&
+        !this.waitingForXRSession &&
+        !this.currentSession
+      ) {
         let offer: Promise<XRSession>;
         try {
-          offer = navigator.xr!.offerSession!(this.mode, this.sessionOptions);
+          offer = offerSession(this.mode, this.sessionOptions);
         } catch (error) {
-          this.onSessionRequestFailed(error, attemptId, true);
+          this.onSessionRequestFailed(error, offerAttemptId, true);
           return;
         }
         void offer.then(
           (session) =>
-            this.onSessionStartedInternal(session, attemptId).catch((error) =>
-              this.onSessionStartFailed(error, attemptId, true)
+            this.onSessionStartedInternal(session, offerAttemptId).catch(
+              (error) => this.onSessionStartFailed(error, offerAttemptId, true)
             ),
-          (error) => this.onSessionRequestFailed(error, attemptId, true)
+          (error) => this.onSessionRequestFailed(error, offerAttemptId, true)
         );
       }
     } else {

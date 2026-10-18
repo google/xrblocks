@@ -330,11 +330,13 @@ describe('Depth', () => {
         depth as unknown as {
           depthTextures: {
             updateData: ReturnType<typeof vi.fn>;
+            clear: ReturnType<typeof vi.fn>;
             get: (id: number) => THREE.Texture | undefined;
           };
         }
       ).depthTextures = {
         updateData: vi.fn(),
+        clear: vi.fn(),
         get: (id: number) =>
           id === 0 ? ({isView0: true} as unknown as THREE.Texture) : undefined,
       };
@@ -390,6 +392,39 @@ describe('Depth', () => {
 
       expect(getDepthInformation).toHaveBeenCalledOnce();
       expect(depth.cpuDepthData[0]).toBeDefined();
+    });
+
+    it('disables occlusion without depth, clears stale data, and restores it on the next depth frame', () => {
+      const depth = setupDepthForLocalUpdate();
+      depth.options.occlusion.enabled = true;
+      const shader = {
+        uniforms: {occlusionEnabled: {value: true}},
+        vertexShader: '',
+        fragmentShader: '',
+      };
+      depth.occludableShaders.add(shader);
+      const renderOcclusionPass = vi.spyOn(depth, 'renderOcclusionPass');
+      const views = [{} as XRView];
+      const {frame: depthFrame} = createStereoFrame(views);
+
+      depth.update(depthFrame);
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      renderOcclusionPass.mockClear();
+
+      depth.update({session: {enabledFeatures: []}} as unknown as XRFrame);
+
+      expect(renderOcclusionPass).not.toHaveBeenCalled();
+      expect(shader.uniforms.occlusionEnabled.value).toBe(false);
+      expect(depth.cpuDepthData).toHaveLength(0);
+      expect(depth.gpuDepthData).toHaveLength(0);
+      expect(depth.depthArray).toHaveLength(0);
+      expect(depth['depthTextures']!.clear).toHaveBeenCalledOnce();
+
+      depth.update(depthFrame);
+
+      expect(renderOcclusionPass).toHaveBeenCalledOnce();
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
     });
 
     it('processes viewId > 0 when options.updateAllViews is true', () => {

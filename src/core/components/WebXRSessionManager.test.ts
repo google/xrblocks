@@ -107,6 +107,31 @@ describe('WebXRSessionManager mode selection', () => {
     );
   });
 
+  it('does not start a passive offer after a READY listener starts a session', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    const requestSession = vi
+      .fn<XRSystem['requestSession']>()
+      .mockResolvedValue(createSession());
+    const offerSession = vi
+      .fn<NonNullable<XRSystem['offerSession']>>()
+      .mockResolvedValue(createSession());
+    vi.stubGlobal('navigator', {
+      xr: {isSessionSupported, requestSession, offerSession},
+    });
+    const sessionManager = createManager();
+    sessionManager.addEventListener(WebXRSessionEventType.READY, () => {
+      sessionManager.startSession();
+    });
+
+    await sessionManager.initialize();
+    await vi.waitFor(() => expect(sessionManager.currentSession).toBeDefined());
+
+    expect(requestSession).toHaveBeenCalledOnce();
+    expect(offerSession).not.toHaveBeenCalled();
+  });
+
   it('reports unsupported when WebXR is unavailable', async () => {
     vi.stubGlobal('navigator', {});
     const sessionManager = createManager();

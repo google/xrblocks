@@ -109,6 +109,20 @@ export class DepthTextures {
     return this.nativeTextures[viewId];
   }
 
+  /** Drops cached depth from a session that did not provide depth data. */
+  clear() {
+    for (const texture of this.dataTextures.splice(0)) {
+      texture.dispose();
+    }
+    for (const texture of this.nativeTextures.splice(0)) {
+      texture.sourceTexture = null;
+      this.renderer?.properties.remove(texture);
+    }
+    this.float32Arrays.length = 0;
+    this.uint8Arrays.length = 0;
+    this.depthData.length = 0;
+  }
+
   dispose() {
     let firstError: unknown;
     for (const texture of this.dataTextures.splice(0)) {

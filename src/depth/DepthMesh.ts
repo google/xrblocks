@@ -266,6 +266,12 @@ export class DepthMesh extends MeshScript {
     }
     this.colliders.length = 0;
     this.colliderId = 0;
+    if (this.depthTextureMaterialUniforms) {
+      this.depthTextureMaterialUniforms.uDepthTexture.value = null;
+      this.depthTextureMaterialUniforms.uDepthTextureArray.value = null;
+      this.depthTextureMaterialUniforms.uMinDepth.value = 0;
+      this.depthTextureMaterialUniforms.uMaxDepth.value = 0;
+    }
   }
 
   /**
