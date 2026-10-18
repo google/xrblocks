@@ -19,6 +19,19 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     )
       errors.push(message.text());
   });
+  // These windows stand in for two independently foregrounded devices. CI
+  // switching focus between them must not suspend/re-pair the phone. The
+  // background-recovery checks below still dispatch explicit hidden states.
+  await context.addInitScript(() => {
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      get: () => false,
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+  });
   await host.goto(
     `${process.env.E2E_BASE_URL}/samples/phone_companion/index.html?local=1&debug=1`
   );
@@ -68,6 +81,7 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     .fill((await host.locator('#pairing-code').textContent())!);
   await phone.getByRole('button', {name: 'Connect', exact: true}).click();
   await expect(host.locator('#accept-phone')).toBeEnabled();
+  await host.bringToFront();
   for (const id of ['accept-phone', 'reject-phone']) {
     const button = host.locator(`#${id}`);
     for (const hover of [false, true]) {
@@ -119,6 +133,7 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     return (window as any).xb.core.scene.getObjectByName('Phone Companion')
       .pendingPhone.id;
   });
+  await phone.bringToFront();
   await phone.reload();
   expect(new URL(phone.url()).hash).toBe('');
   await phone
@@ -155,7 +170,9 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   await expect(phone.getByLabel('Verification number')).toHaveText(
     `${nextComparison.slice(0, 3)} ${nextComparison.slice(3)}`
   );
+  await host.bringToFront();
   await host.locator('#accept-phone').click();
+  await phone.bringToFront();
   await expect(
     phone.getByText('Connected to headset', {exact: true})
   ).toBeVisible();
@@ -322,16 +339,43 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   await expect(host.locator('#status')).toHaveText('Waiting for phone…');
 });
 
-type TouchPoint = {id: number; x: number; y: number};
-
 async function pointAt(
   host: Page,
   phone: Page,
   touch: CDPSession,
   kind: 'button' | 'slider' | 'input',
-  ratio = 0.5,
-  held?: TouchPoint
+  ratio = 0.5
 ) {
+  await phone.bringToFront();
+  const pad = (await phone.getByLabel('Pointer touchpad').boundingBox())!;
+  const start = {id: 1, x: pad.x + pad.width / 2, y: pad.y + pad.height / 2};
+  const previousSample = await host.evaluate(
+    () =>
+      (window as any).xb.core.scene.getObjectByName('Phone Companion').motion
+        .sample
+  );
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [start],
+  });
+  // Cross Chromium's native touch slop before measuring the remaining aim.
+  // The old 12px nudge and tiny first correction could be swallowed entirely.
+  const moving = {...start, y: start.y + 32};
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [moving],
+  });
+  await expect
+    .poll(() =>
+      host.evaluate((sample) => {
+        (window as any).__phoneTestStep();
+        return (
+          (window as any).xb.core.scene.getObjectByName('Phone Companion')
+            .motion.sample > sample
+        );
+      }, previousSample)
+    )
+    .toBe(true);
   // Read rendered geometry to calculate a touchpad stroke; all input itself goes
   // through real browser touch events, the phone page and BroadcastChannel.
   const offset = await host.evaluate(
@@ -373,43 +417,22 @@ async function pointAt(
     },
     {kind, ratio}
   );
-  const pad = await phone.getByLabel('Pointer touchpad').boundingBox();
-  const start = {
-    id: 1,
-    x: pad!.x + pad!.width / 2,
-    y: pad!.y + pad!.height / 2,
-  };
-  const others = held ? [held] : [];
-  await touch.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [...others, start],
-  });
-  // A tiny aiming correction must still be a move, not an accidental tap.
-  if (!held)
-    await touch.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: [{...start, y: start.y + 12}],
-    });
   for (let i = 1; i <= 8; i++) {
     await touch.send('Input.dispatchTouchEvent', {
       type: 'touchMove',
       touchPoints: [
-        ...others,
         {
-          ...start,
-          x: start.x + (offset.x * pad!.width * i) / 8,
-          y: start.y + (offset.y * pad!.height * i) / 8,
+          ...moving,
+          x: moving.x + (offset.x * pad.width * i) / 8,
+          y: moving.y + (offset.y * pad.height * i) / 8,
         },
       ],
     });
   }
-  // CDP touchEnd releases every active contact. Keep both contacts down during
-  // a held drag; the caller releases them after observing the slider update.
-  if (!held)
-    await touch.send('Input.dispatchTouchEvent', {
-      type: 'touchEnd',
-      touchPoints: [],
-    });
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  });
   await expect
     .poll(() =>
       host.evaluate((kind) => {
@@ -428,6 +451,7 @@ async function pointAt(
 }
 
 async function tapPad(phone: Page, touch: CDPSession) {
+  await phone.bringToFront();
   const pad = await phone.getByLabel('Pointer touchpad').boundingBox();
   await touch.send('Input.dispatchTouchEvent', {
     type: 'touchStart',
@@ -442,6 +466,7 @@ async function tapPad(phone: Page, touch: CDPSession) {
 }
 
 async function tapButton(phone: Page, touch: CDPSession, name: string) {
+  await phone.bringToFront();
   const button = phone.getByRole('button', {name, exact: true});
   await button.scrollIntoViewIfNeeded();
   const box = await button.boundingBox();
