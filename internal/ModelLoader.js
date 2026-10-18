@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 306c761
-* @builddate 2026-10-18T08:47:47.180Z
+* @commitid ae74389
+* @builddate 2026-10-18T11:31:51.032Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -7400,20 +7400,20 @@ var DepthMesh = class extends MeshScript {
 			this.lastColliderUpdateTime = performance.now();
 		}
 	}
-	initRapierPhysics(RAPIER, blendedWorld) {
+	initRapierPhysics(rapier, blendedWorld) {
 		this.getWorldPosition(this.worldPosition);
 		this.getWorldQuaternion(this.worldQuaternion);
-		const desc = RAPIER.RigidBodyDesc.fixed().setTranslation(this.worldPosition.x, this.worldPosition.y, this.worldPosition.z).setRotation(this.worldQuaternion);
+		const desc = rapier.RigidBodyDesc.fixed().setTranslation(this.worldPosition.x, this.worldPosition.y, this.worldPosition.z).setRotation(this.worldQuaternion);
 		this.rigidBody = blendedWorld.createRigidBody(desc);
 		const vertices = this.geometry.attributes.position.array;
 		const indices = this.geometry.getIndex().array;
-		const shape = RAPIER.ColliderDesc.trimesh(vertices, indices);
+		const shape = rapier.ColliderDesc.trimesh(vertices, indices);
 		if (this.options.useDualCollider) {
 			this.colliders = [];
 			this.colliders.push(blendedWorld.createCollider(shape, this.rigidBody), blendedWorld.createCollider(shape, this.rigidBody));
 			this.colliderId = 0;
 		} else this.collider = blendedWorld.createCollider(shape, this.rigidBody);
-		this.RAPIER = RAPIER;
+		this.RAPIER = rapier;
 		this.blendedWorld = blendedWorld;
 		this.lastColliderUpdateTime = performance.now();
 	}
@@ -12231,14 +12231,14 @@ var DetectedMesh = class extends THREE.Mesh {
 		this.lastChangedTime = "lastChangedTime" in mesh ? mesh.lastChangedTime : 0;
 		this.semanticLabel = mesh.semanticLabel;
 	}
-	initRapierPhysics(RAPIER, blendedWorld) {
-		this.RAPIER = RAPIER;
+	initRapierPhysics(rapier, blendedWorld) {
+		this.RAPIER = rapier;
 		this.blendedWorld = blendedWorld;
-		const desc = RAPIER.RigidBodyDesc.fixed().setTranslation(this.position.x, this.position.y, this.position.z).setRotation(this.quaternion);
+		const desc = rapier.RigidBodyDesc.fixed().setTranslation(this.position.x, this.position.y, this.position.z).setRotation(this.quaternion);
 		this.rigidBody = blendedWorld.createRigidBody(desc);
 		const vertices = this.geometry.attributes.position.array;
 		const indices = this.geometry.getIndex().array;
-		const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices);
+		const colliderDesc = rapier.ColliderDesc.trimesh(vertices, indices);
 		this.collider = blendedWorld.createCollider(colliderDesc, this.rigidBody);
 	}
 	updateVertices(mesh) {

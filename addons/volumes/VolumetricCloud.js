@@ -25,7 +25,7 @@ var VolumetricCloud = class extends THREE.Object3D {
 	*/
 	constructor(renderer) {
 		super();
-		this.worldToLocal = new THREE.Matrix4();
+		this.worldToLocalMatrix = new THREE.Matrix4();
 		this.size = 128;
 		this.cloudScale = .05;
 		this.texture = this.createTexture();
@@ -102,8 +102,8 @@ var VolumetricCloud = class extends THREE.Object3D {
 		this.mesh.rotation.y = -performance.now() / 7500;
 		if (this.nodeRig) {
 			this.mesh.updateMatrixWorld();
-			this.worldToLocal.copy(this.mesh.matrixWorld).invert();
-			this.nodeRig.originUniform.value.copy(camera.position).applyMatrix4(this.worldToLocal);
+			this.worldToLocalMatrix.copy(this.mesh.matrixWorld).invert();
+			this.nodeRig.originUniform.value.copy(camera.position).applyMatrix4(this.worldToLocalMatrix);
 			this.nodeRig.frameUniform.value++;
 		} else if (this.material.isRawShaderMaterial) {
 			const uniforms = this.material.uniforms;

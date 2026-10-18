@@ -5,7 +5,6 @@ import { GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { WebGPURenderer } from "three/webgpu";
 import { effect } from "@preact/signals-core";
 import * as GoogleGenAITypes from "@google/genai";
-import RAPIER from "rapier3d";
 import OpenAIType from "openai";
 import { SparkRenderer } from "@sparkjsdev/spark";
 //#region node_modules/@pmndrs/uikit/dist/events.d.ts
@@ -2333,10 +2332,90 @@ export declare class LightingOptions {
   constructor(options?: DeepReadonly<DeepPartial<LightingOptions>>);
 }
 //#endregion
+//#region src/physics/RapierTypes.d.ts
+/** Structural Rapier contracts shared by the standard, compat and SIMD builds.
+ * Only the API used by the SDK is required; no package-private classes cross
+ * this boundary. Applications retain their chosen module for additional APIs.
+ */
+interface RapierVector {
+  x: number;
+  y: number;
+  z: number;
+}
+interface RapierRotation extends RapierVector {
+  w: number;
+}
+interface RapierRigidBodyDesc {
+  setTranslation(x: number, y: number, z: number): RapierRigidBodyDesc;
+  setRotation(rotation: RapierRotation): RapierRigidBodyDesc;
+  setCcdEnabled(enabled: boolean): RapierRigidBodyDesc;
+}
+interface RapierColliderDesc {
+  setDensity(density: number): RapierColliderDesc;
+  setFriction(friction: number): RapierColliderDesc;
+  setRestitution(restitution: number): RapierColliderDesc;
+}
+interface RapierRigidBody {
+  translation(): RapierVector;
+  rotation(): RapierRotation;
+  setTranslation(translation: RapierVector, wakeUp: boolean): void;
+  setRotation(rotation: RapierRotation, wakeUp: boolean): void;
+  setEnabled(enabled: boolean): void;
+}
+interface RapierCollider {
+  readonly handle: number;
+}
+interface RapierCharacterController {
+  computeColliderMovement(collider: RapierCollider, movement: RapierVector): void;
+  computedMovement(): RapierVector;
+  setSlideEnabled(enabled: boolean): void;
+  setApplyImpulsesToDynamicBodies(enabled: boolean): void;
+  setCharacterMass(mass: number): void;
+}
+interface RapierEventQueue {
+  free(): void;
+  drainCollisionEvents(callback: (handle1: number, handle2: number, started: boolean) => void): void;
+}
+interface RapierShape {
+  readonly type: number;
+}
+interface RapierWorld {
+  timestep: number;
+  step(eventQueue?: RapierEventQueue): void;
+  free(): void;
+  createRigidBody(desc: RapierRigidBodyDesc): RapierRigidBody;
+  removeRigidBody(body: RapierRigidBody): void;
+  createCollider(desc: RapierColliderDesc, parent?: RapierRigidBody): RapierCollider;
+  removeCollider(collider: RapierCollider, wakeUp: boolean): void;
+  createCharacterController(offset: number): RapierCharacterController;
+  removeCharacterController(controller: RapierCharacterController): void;
+  castShape(position: RapierVector, rotation: RapierRotation, velocity: RapierVector, shape: RapierShape, targetDistance: number, maxToi: number, stopAtPenetration: boolean, filterFlags?: number): {
+    time_of_impact: number;
+  } | null;
+}
+/** The module supplied by an application through options.physics.RAPIER. */
+interface RAPIERCompat {
+  init?(): Promise<void>;
+  World: new (gravity: RapierVector) => RapierWorld;
+  EventQueue: new (autoDrain: boolean) => RapierEventQueue;
+  Ball: new (radius: number) => RapierShape;
+  RigidBodyDesc: {
+    fixed(): RapierRigidBodyDesc;
+    dynamic(): RapierRigidBodyDesc;
+    kinematicPositionBased(): RapierRigidBodyDesc;
+  };
+  ColliderDesc: {
+    ball(radius: number): RapierColliderDesc;
+    cuboid(hx: number, hy: number, hz: number): RapierColliderDesc;
+    convexHull(vertices: Float32Array): RapierColliderDesc | null;
+    trimesh(vertices: Float32Array, indices: Uint32Array): RapierColliderDesc;
+  };
+  QueryFilterFlags: {
+    ONLY_FIXED: number;
+  };
+}
+//#endregion
 //#region src/physics/PhysicsOptions.d.ts
-export type RAPIERCompat = typeof RAPIER & {
-  init?: () => Promise<void>;
-};
 export declare class PhysicsOptions {
   /**
    * The target frames per second for the physics simulation loop.
@@ -3588,8 +3667,8 @@ export declare class Physics {
   options?: PhysicsOptions;
   RAPIER: RAPIERCompat;
   fps: number;
-  blendedWorld: RAPIER.World;
-  eventQueue: RAPIER.EventQueue;
+  blendedWorld: RapierWorld;
+  eventQueue: RapierEventQueue;
   get timestep(): number;
   /**
    * Asynchronously initializes the RAPIER physics engine and creates the
@@ -5084,6 +5163,57 @@ export declare class SpatialAudio extends Script {
    */
   updateAllVolumes(): void;
   destroy(): void;
+}
+//#endregion
+//#region src/sound/SpeechRecognitionTypes.d.ts
+type SpeechRecognitionErrorCode = 'aborted' | 'audio-capture' | 'bad-grammar' | 'language-not-supported' | 'network' | 'no-speech' | 'not-allowed' | 'service-not-allowed' | 'phrases-not-supported';
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEvent extends Event {
+  readonly error: SpeechRecognitionErrorCode;
+  readonly message: string;
+}
+interface SpeechRecognitionEventMap {
+  audioend: Event;
+  audiostart: Event;
+  end: Event;
+  error: SpeechRecognitionErrorEvent;
+  nomatch: SpeechRecognitionEvent;
+  result: SpeechRecognitionEvent;
+  soundend: Event;
+  soundstart: Event;
+  speechend: Event;
+  speechstart: Event;
+  start: Event;
+}
+type SpeechRecognitionEventHandlers = { [K in keyof SpeechRecognitionEventMap as `on${K}`]: ((this: SpeechRecognition, event: SpeechRecognitionEventMap[K]) => void) | null; };
+interface SpeechGrammar {
+  src: string;
+  weight: number;
+}
+interface SpeechGrammarList {
+  readonly length: number;
+  addFromString(grammar: string, weight?: number): void;
+  addFromURI(src: string, weight?: number): void;
+  item(index: number): SpeechGrammar;
+  [index: number]: SpeechGrammar;
+}
+/** Browser speech recognizer returned by SpeechRecognizer.recognition. */
+interface SpeechRecognition extends EventTarget, SpeechRecognitionEventHandlers {
+  continuous: boolean;
+  grammars: SpeechGrammarList;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  abort(): void;
+  start(audioTrack?: MediaStreamTrack): void;
+  stop(): void;
+  addEventListener<K extends keyof SpeechRecognitionEventMap>(type: K, listener: (this: SpeechRecognition, event: SpeechRecognitionEventMap[K]) => void, options?: boolean | AddEventListenerOptions): void;
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
+  removeEventListener<K extends keyof SpeechRecognitionEventMap>(type: K, listener: (this: SpeechRecognition, event: SpeechRecognitionEventMap[K]) => void, options?: boolean | EventListenerOptions): void;
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
 }
 //#endregion
 //#region src/sound/SpeechRecognizer.d.ts
@@ -6587,7 +6717,7 @@ export declare class DepthMesh extends MeshScript {
    * Optimizes collider updates to run periodically based on the specified FPS.
    */
   private updateColliderIfNeeded;
-  initRapierPhysics(RAPIER: typeof RAPIER, blendedWorld: RAPIER.World): void;
+  initRapierPhysics(rapier: RAPIERCompat, blendedWorld: RapierWorld): void;
   /**
    * Customizes raycasting to compute normals for intersections.
    * @param raycaster - The raycaster object.
@@ -6595,7 +6725,7 @@ export declare class DepthMesh extends MeshScript {
    * @returns - True if intersections are found.
    */
   raycast(raycaster: THREE.Raycaster, intersects: THREE.Intersection[]): boolean;
-  getColliderFromHandle(handle: RAPIER.ColliderHandle): RAPIER.Collider | undefined;
+  getColliderFromHandle(handle: number): RapierCollider | undefined;
   /** Called by Depth at terminal teardown, not on Script disconnection. */
   disposeResources(): void;
 }
@@ -6844,7 +6974,7 @@ export declare const SIMULATOR_HAND_POSE_NAMES: Readonly<Record<SimulatorHandPos
 declare class SimulatorPhysics {
   private handOptions;
   readonly RAPIER: RAPIERCompat;
-  readonly world: RAPIER.World;
+  readonly world: RapierWorld;
   private hands;
   constructor(physics: Physics, handOptions: SimulatorHandPhysicsOptions);
   constrainHand(index: number, position: THREE.Vector3, enabled: boolean, handOrigin?: THREE.Vector3): void;
@@ -7378,9 +7508,9 @@ export declare class DetectedMesh extends THREE.Mesh {
   private blendedWorld?;
   private lastChangedTime;
   semanticLabel?: string;
-  get getRigidBody(): RAPIER.RigidBody | undefined;
+  get getRigidBody(): RapierRigidBody | undefined;
   constructor(mesh: XRMesh | SimulatorMesh, material: THREE.Material);
-  initRapierPhysics(RAPIER: typeof RAPIER, blendedWorld: RAPIER.World): void;
+  initRapierPhysics(rapier: RAPIERCompat, blendedWorld: RapierWorld): void;
   updateVertices(mesh: XRMesh): void;
   dispose(): void;
 }
@@ -7407,7 +7537,7 @@ interface SimulatorObjectUpdate {
 }
 /** @internal */
 interface SimulatorObjectRecord extends SimulatorObject {
-  rigidBody?: RAPIER.RigidBody;
+  rigidBody?: RapierRigidBody;
   detectedMesh?: DetectedMesh;
   physicsGeometry?: THREE.BufferGeometry;
   ownsObject: boolean;
@@ -7483,6 +7613,21 @@ export interface SimulatorPlane {
    * Since +Y is normal, these points lie on the flat surface.
    */
   polygon: THREE.Vector2[];
+}
+//#endregion
+//#region src/utils/TemporalPolyfill.d.ts
+/** Duration fields accepted by placement timeouts, including native Temporal.Duration objects. */
+interface DurationLike {
+  years?: number;
+  months?: number;
+  weeks?: number;
+  days?: number;
+  hours?: number;
+  minutes?: number;
+  seconds?: number;
+  milliseconds?: number;
+  microseconds?: number;
+  nanoseconds?: number;
 }
 //#endregion
 //#region src/world/objects/DetectedObject.d.ts
@@ -8976,7 +9121,7 @@ export declare class World extends Script {
    * @param gridSteps - Optional number of steps along each axis for grid sampling candidate positions (defaults to 5).
    * @returns A promise resolving to true if successfully placed, false otherwise.
    */
-  placeOnHorizontalSurface(objectToPlace: THREE.Object3D, timeout?: Temporal.Duration | Temporal.DurationLike, gridSteps?: number): Promise<boolean>;
+  placeOnHorizontalSurface(objectToPlace: THREE.Object3D, timeout?: DurationLike, gridSteps?: number): Promise<boolean>;
   /**
    * Toggles the visibility of all debug visualizations for world features.
    * @param visible - Whether the visualizations should be visible.
@@ -11816,7 +11961,7 @@ export declare class LocalStorageAnchorStore implements AnchorStore {
   private write;
 }
 declare namespace xrblocks_d_exports {
-  export { AI, AIModel, AIOptions, ActiveControllers, Agent, AgentLifecycleCallbacks, AnchorCapability, AnchorManager, AnchorRecord, AnchorRestoreResult, AnchorRestoreStatus, AnchorStorageLike, AnchorStore, AnchoredObjectFactory, AnchoredObjects, AnchorsOptions, AudioListener, AudioListenerOptions, AudioPlayer, AudioPlayerOptions, AutomationModeOptions, BACK, BackgroundKeyOptions, BackgroundMusic, BaseManipulationEvent, CameraParametersSnapshot, CameraSnapshot, CategoryVolumes, ColorStop, Constructor, Context, ContextOptions, Controller, ControllerEventMap, Core, CoreLifecycleState, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, DeepPartial, DeepReadonly, Depth, DepthArray, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DeviceCameraParameters, DigitName, FINGER_ORDER, FORWARD, FaceBlendshape, FaceCamera, FaceCameraMode, FaceCameraOptions, FaceLandmark, FaceLandmarkName, FaceRecognizer, FacesOptions, FingerName, FollowHead, FollowHeadOptions, FollowObject, FollowObjectMode, FollowObjectOptions, FormFactor, FramebufferScaleFactor, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadAction, GamepadBindings, GamepadController, GazeController, Gemini, GeminiInteractionConfig, GeminiOptions, GeminiQueryInput, GenerateSkyboxTool, GestureConfiguration, GestureDetectionResult, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureRecognition, GestureRecognitionOptions, GestureRecognizer, GestureScoreMap, GetWeatherArgs, GetWeatherTool, GradientPaint, GradientType, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, HandContext, HandLabel, Handedness, Hands, HandsOptions, HeadGestureConfiguration, HeadGestureContext, HeadGestureDetectionResult, HeadGestureEvent, HeadGestureEventDetail, HeadGestureEventMap, HeadGestureRecognition, HeadGestureRecognitionOptions, HeadGestureRecognizer, HeadGestureScoreMap, HeadPoseSample, HeuristicGestureDetector, HeuristicGestureRecognizer, HeuristicHeadGestureDetector, HeuristicHeadGestureRecognizer, HeuristicHeadGestureRecognizerOptions, HitSurfaceOptions, HoverEvent, HumanRecognizer, HumansOptions, Injectable, InjectableConstructor, Input, InputOptions, Interaction, InteractionOptions, InteractionSource, InteractionSourceType, JointName, JointPositions, KeyEvent, Keycodes, KeysJson, LEFT, LEFT_VIEW_ONLY_LAYER, LayerCapability, LayerManager, LayersOptions, Lighting, LightingOptions, LipMetrics, LiveSessionState, LoadingSpinnerManager, LocalStorageAnchorStore, LongSelectEvent, ManipulationAction, ManipulationEvent, ManipulationHandleOptions, ManipulationOptions, ManipulationPhase, MediaOrSimulatorMediaDeviceInfo, MediaPipeHandContext, MediaPipeHandLandmark, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelClass, ModelLoader, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, ModelSource, ModelViewer, ModelViewerOptions, ModelViewerOrigin, MouseController, NUM_HANDS, NormalizedDetectedObject, OCCLUDABLE_ITEMS_LAYER, ObjectDetectionOptions, ObjectDetector, ObjectGrabEvent, ObjectTouchEvent, ObjectTouchStartEvent, ObjectsOptions, OcclusionPass, OcclusionPassBackend, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, OrbitDirection, OrbitFrame, OrbitOptions, OrbitPath, Paint, PalmPose, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PlayModelAnimationOptions, PlaySoundOptions, PointerEvents, PoseEstimator, PoseJointName, PoseLandmark, PushPullOptions, QuatTuple, RAPIERCompat, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, RaycastMode, Registry, RendererBackend, ResizeManipulationEvent, ResizeOptions, ResizeSize, ResolvedSimulatorSceneManifest, ReticleMode, ReticleOptions, Reticles, RgbToDepthParams, RgbaImage, RotateManipulationEvent, RotateOptions, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScaleManipulationEvent, ScaleOptions, SceneContextDetectionOptions, SceneContextDetectionResult, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventMap, ScriptsManagerEventType, SegmentCategory, SegmentationMask, SegmentationOptions, Segmenter, SelectEndEvent, SelectEvent, SelectionEndReason, SemanticBounds, SemanticMetadata, SemanticNode, SemanticScrollInfo, SemanticSource, SemanticTree, SemanticViewData, SerializerRenderer, SerializerRendererFactory, SerializerXRManager, SetOfMark, SetOfMarkContext, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, Shader, ShaderUniforms, ShowSimulatorInstructionsEvent, Simulator, SimulatorAnchor, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorCustomInstruction, SimulatorDayNightLightingDefinition, SimulatorDepth, SimulatorDepthMaterial, SimulatorDetectedObjectInput, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPhysicsOptions, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorHands, SimulatorLocationDefinition, SimulatorLocations, SimulatorMediaDeviceInfo, SimulatorMesh, SimulatorMode, SimulatorObject, SimulatorObjectDefinition, SimulatorObjectDetectionSource, SimulatorObjectUpdate, SimulatorObjects, SimulatorOptions, SimulatorPhysicsMode, SimulatorPlane, SimulatorPlaneType, SimulatorPointerLockController, SimulatorQuaternionTuple, SimulatorScene, SimulatorSceneManifest, SimulatorUser, SimulatorUserPath, SimulatorVector3Tuple, SkyboxAgent, SolidPaint, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StorablePose, StreamState, StrokeEventMap, StrokeRecognizer, StylizedFace, StylizedFaceOptions, SupportedRenderer, TensorFlowHandPoseEstimator, Tool, ToolCall, ToolOptions, ToolResult, ToolSchema, TrackedAnchor, TrackedAnchorLike, TransformScript, TranslateManipulationEvent, TranslateOptions, UIAppearance, UIButton, UIButtonOptions, UICard, UICardAnchorX, UICardAnchorY, UICardEdgeOptions, UICardOptions, UIColor, UIElement, UIElementOptions, UIExitButton, UIExitButtonOptions, UIIcon, UIIconOptions, UIIconVariant, UIIconWeight, UIImage, UIImageOptions, UILineHeight, UIOverlay, UIOverlayOptions, UIPanel, UIPanelOptions, UIPosition, UIResolvedSize, UIScrollView, UIScrollViewOptions, UISize, UISlider, UISliderOptions, UIStateStyle, UIStyle, UIText, UITextInput, UITextInputKeyModifiers, UITextInputOptions, UITextInputSelection, UITextInputSelectionDirection, UITextOptions, UITheme, UIThemeColors, UIThemePresetName, UIThemeStyleRole, UIThemeStyles, UIThemeUpdate, UITransform, UIUnit, UIValidationBounds, UIValidationCode, UIValidationIssue, UIValidationReport, UIVector2, UP, User, VIEW_DEPTH_GAP, Vec2Tuple, Vec3Tuple, VideoFileStream, VideoFileStreamOptions, VideoFrameMetadata, VideoLayer, VideoLayerPath, VideoLayerPlacement, VideoLayerState, VideoStream, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VisemeWeights, VisibilityTransition, VisibilityTransitionOptions, VisibleObjectsContext, VolumeCategory, WaitFrame, WeatherData, WebGLOrWebGPURenderer, WebGPURendererOptions, WebXRHandContext, WebXRHandPoseEstimator, WebXRJointRotations, WebXRSessionEventType, WebXRSessionManager, WebXRSessionManagerEventMap, World, WorldOptions, XBObjectOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai$1 as ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera$1 as camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth$1 as depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input$1 as input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene$1 as scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer$1 as timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user$1 as user, visualizeDepth, visualizeDepthMap, world$1 as world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+  export { AI, AIModel, AIOptions, ActiveControllers, Agent, AgentLifecycleCallbacks, AnchorCapability, AnchorManager, AnchorRecord, AnchorRestoreResult, AnchorRestoreStatus, AnchorStorageLike, AnchorStore, AnchoredObjectFactory, AnchoredObjects, AnchorsOptions, AudioListener, AudioListenerOptions, AudioPlayer, AudioPlayerOptions, AutomationModeOptions, BACK, BackgroundKeyOptions, BackgroundMusic, BaseManipulationEvent, CameraParametersSnapshot, CameraSnapshot, CategoryVolumes, ColorStop, Constructor, Context, ContextOptions, Controller, ControllerEventMap, Core, CoreLifecycleState, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, DeepPartial, DeepReadonly, Depth, DepthArray, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DeviceCameraParameters, DigitName, DurationLike, FINGER_ORDER, FORWARD, FaceBlendshape, FaceCamera, FaceCameraMode, FaceCameraOptions, FaceLandmark, FaceLandmarkName, FaceRecognizer, FacesOptions, FingerName, FollowHead, FollowHeadOptions, FollowObject, FollowObjectMode, FollowObjectOptions, FormFactor, FramebufferScaleFactor, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadAction, GamepadBindings, GamepadController, GazeController, Gemini, GeminiInteractionConfig, GeminiOptions, GeminiQueryInput, GenerateSkyboxTool, GestureConfiguration, GestureDetectionResult, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureRecognition, GestureRecognitionOptions, GestureRecognizer, GestureScoreMap, GetWeatherArgs, GetWeatherTool, GradientPaint, GradientType, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, HandContext, HandLabel, Handedness, Hands, HandsOptions, HeadGestureConfiguration, HeadGestureContext, HeadGestureDetectionResult, HeadGestureEvent, HeadGestureEventDetail, HeadGestureEventMap, HeadGestureRecognition, HeadGestureRecognitionOptions, HeadGestureRecognizer, HeadGestureScoreMap, HeadPoseSample, HeuristicGestureDetector, HeuristicGestureRecognizer, HeuristicHeadGestureDetector, HeuristicHeadGestureRecognizer, HeuristicHeadGestureRecognizerOptions, HitSurfaceOptions, HoverEvent, HumanRecognizer, HumansOptions, Injectable, InjectableConstructor, Input, InputOptions, Interaction, InteractionOptions, InteractionSource, InteractionSourceType, JointName, JointPositions, KeyEvent, Keycodes, KeysJson, LEFT, LEFT_VIEW_ONLY_LAYER, LayerCapability, LayerManager, LayersOptions, Lighting, LightingOptions, LipMetrics, LiveSessionState, LoadingSpinnerManager, LocalStorageAnchorStore, LongSelectEvent, ManipulationAction, ManipulationEvent, ManipulationHandleOptions, ManipulationOptions, ManipulationPhase, MediaOrSimulatorMediaDeviceInfo, MediaPipeHandContext, MediaPipeHandLandmark, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelClass, ModelLoader, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, ModelSource, ModelViewer, ModelViewerOptions, ModelViewerOrigin, MouseController, NUM_HANDS, NormalizedDetectedObject, OCCLUDABLE_ITEMS_LAYER, ObjectDetectionOptions, ObjectDetector, ObjectGrabEvent, ObjectTouchEvent, ObjectTouchStartEvent, ObjectsOptions, OcclusionPass, OcclusionPassBackend, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, OrbitDirection, OrbitFrame, OrbitOptions, OrbitPath, Paint, PalmPose, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PlayModelAnimationOptions, PlaySoundOptions, PointerEvents, PoseEstimator, PoseJointName, PoseLandmark, PushPullOptions, QuatTuple, RAPIERCompat, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, RapierCharacterController, RapierCollider, RapierColliderDesc, RapierEventQueue, RapierRigidBody, RapierRigidBodyDesc, RapierRotation, RapierShape, RapierVector, RapierWorld, RaycastMode, Registry, RendererBackend, ResizeManipulationEvent, ResizeOptions, ResizeSize, ResolvedSimulatorSceneManifest, ReticleMode, ReticleOptions, Reticles, RgbToDepthParams, RgbaImage, RotateManipulationEvent, RotateOptions, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScaleManipulationEvent, ScaleOptions, SceneContextDetectionOptions, SceneContextDetectionResult, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventMap, ScriptsManagerEventType, SegmentCategory, SegmentationMask, SegmentationOptions, Segmenter, SelectEndEvent, SelectEvent, SelectionEndReason, SemanticBounds, SemanticMetadata, SemanticNode, SemanticScrollInfo, SemanticSource, SemanticTree, SemanticViewData, SerializerRenderer, SerializerRendererFactory, SerializerXRManager, SetOfMark, SetOfMarkContext, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, Shader, ShaderUniforms, ShowSimulatorInstructionsEvent, Simulator, SimulatorAnchor, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorCustomInstruction, SimulatorDayNightLightingDefinition, SimulatorDepth, SimulatorDepthMaterial, SimulatorDetectedObjectInput, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPhysicsOptions, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorHands, SimulatorLocationDefinition, SimulatorLocations, SimulatorMediaDeviceInfo, SimulatorMesh, SimulatorMode, SimulatorObject, SimulatorObjectDefinition, SimulatorObjectDetectionSource, SimulatorObjectUpdate, SimulatorObjects, SimulatorOptions, SimulatorPhysicsMode, SimulatorPlane, SimulatorPlaneType, SimulatorPointerLockController, SimulatorQuaternionTuple, SimulatorScene, SimulatorSceneManifest, SimulatorUser, SimulatorUserPath, SimulatorVector3Tuple, SkyboxAgent, SolidPaint, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognition, SpeechRecognitionErrorCode, SpeechRecognitionErrorEvent, SpeechRecognitionEvent, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StorablePose, StreamState, StrokeEventMap, StrokeRecognizer, StylizedFace, StylizedFaceOptions, SupportedRenderer, TensorFlowHandPoseEstimator, Tool, ToolCall, ToolOptions, ToolResult, ToolSchema, TrackedAnchor, TrackedAnchorLike, TransformScript, TranslateManipulationEvent, TranslateOptions, UIAppearance, UIButton, UIButtonOptions, UICard, UICardAnchorX, UICardAnchorY, UICardEdgeOptions, UICardOptions, UIColor, UIElement, UIElementOptions, UIExitButton, UIExitButtonOptions, UIIcon, UIIconOptions, UIIconVariant, UIIconWeight, UIImage, UIImageOptions, UILineHeight, UIOverlay, UIOverlayOptions, UIPanel, UIPanelOptions, UIPosition, UIResolvedSize, UIScrollView, UIScrollViewOptions, UISize, UISlider, UISliderOptions, UIStateStyle, UIStyle, UIText, UITextInput, UITextInputKeyModifiers, UITextInputOptions, UITextInputSelection, UITextInputSelectionDirection, UITextOptions, UITheme, UIThemeColors, UIThemePresetName, UIThemeStyleRole, UIThemeStyles, UIThemeUpdate, UITransform, UIUnit, UIValidationBounds, UIValidationCode, UIValidationIssue, UIValidationReport, UIVector2, UP, User, VIEW_DEPTH_GAP, Vec2Tuple, Vec3Tuple, VideoFileStream, VideoFileStreamOptions, VideoFrameMetadata, VideoLayer, VideoLayerPath, VideoLayerPlacement, VideoLayerState, VideoStream, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VisemeWeights, VisibilityTransition, VisibilityTransitionOptions, VisibleObjectsContext, VolumeCategory, WaitFrame, WeatherData, WebGLOrWebGPURenderer, WebGPURendererOptions, WebXRHandContext, WebXRHandPoseEstimator, WebXRJointRotations, WebXRSessionEventType, WebXRSessionManager, WebXRSessionManagerEventMap, World, WorldOptions, XBObjectOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai$1 as ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera$1 as camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth$1 as depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input$1 as input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene$1 as scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer$1 as timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user$1 as user, visualizeDepth, visualizeDepthMap, world$1 as world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 }
 //#endregion
 //#region src/entry.d.ts
@@ -11827,5 +11972,5 @@ declare global {
   }
 }
 //#endregion
-export { BackgroundMusic, type ColorStop, type Controller, type ControllerEventMap, type FaceCameraMode, type GradientPaint, type GradientType, type HeuristicHeadGestureRecognizerOptions, type HitSurfaceOptions, type InteractionSource, type InteractionSourceType, type ModelSource, type ModelViewerOptions, type ModelViewerOrigin, type Paint, type PlayModelAnimationOptions, type PointerEvents, type ResolvedSimulatorSceneManifest, type ReticleMode, type SerializerRenderer, type SerializerRendererFactory, type SerializerXRManager, type Simulator, type SimulatorCamera, type SimulatorControlMode, type SimulatorControllerState, type SimulatorControls, type SimulatorDayNightLightingDefinition, type SimulatorDepth, type SimulatorDepthMaterial, type SimulatorHands, type SimulatorLocationDefinition, type SimulatorLocations, type SimulatorMediaDeviceInfo, type SimulatorObject, type SimulatorObjectDefinition, type SimulatorObjectUpdate, type SimulatorObjects, type SimulatorPhysicsMode, type SimulatorPointerLockController, type SimulatorQuaternionTuple, type SimulatorScene, type SimulatorSceneManifest, type SimulatorUser, type SimulatorUserPath, type SimulatorVector3Tuple, type SolidPaint, type SupportedRenderer, type UIAppearance, type UIButtonOptions, type UICardAnchorX, type UICardAnchorY, type UICardEdgeOptions, type UICardOptions, type UIColor, type UIElementOptions, type UIExitButtonOptions, type UIIconOptions, type UIIconVariant, type UIIconWeight, type UIImageOptions, type UILineHeight, type UIOverlayOptions, type UIPanelOptions, type UIPosition, type UIResolvedSize, type UIScrollViewOptions, type UISize, type UISliderOptions, type UIStateStyle, type UIStyle, type UITextInputKeyModifiers, type UITextInputOptions, type UITextInputSelection, type UITextInputSelectionDirection, type UITextOptions, type UITheme, type UIThemeColors, type UIThemePresetName, type UIThemeStyleRole, type UIThemeStyles, type UIThemeUpdate, type UITransform, type UIUnit, type UIValidationBounds, type UIValidationCode, type UIValidationIssue, type UIValidationReport, type UIVector2, type WebGLOrWebGPURenderer, type XBObjectOptions, ai$1 as ai, camera$1 as camera, depth$1 as depth, input$1 as input, scene$1 as scene, timer$1 as timer, user$1 as user, world$1 as world };
+export { BackgroundMusic, type ColorStop, type Controller, type ControllerEventMap, type DurationLike, type FaceCameraMode, type GradientPaint, type GradientType, type HeuristicHeadGestureRecognizerOptions, type HitSurfaceOptions, type InteractionSource, type InteractionSourceType, type ModelSource, type ModelViewerOptions, type ModelViewerOrigin, type Paint, type PlayModelAnimationOptions, type PointerEvents, type RAPIERCompat, type RapierCharacterController, type RapierCollider, type RapierColliderDesc, type RapierEventQueue, type RapierRigidBody, type RapierRigidBodyDesc, type RapierRotation, type RapierShape, type RapierVector, type RapierWorld, type ResolvedSimulatorSceneManifest, type ReticleMode, type SerializerRenderer, type SerializerRendererFactory, type SerializerXRManager, type Simulator, type SimulatorCamera, type SimulatorControlMode, type SimulatorControllerState, type SimulatorControls, type SimulatorDayNightLightingDefinition, type SimulatorDepth, type SimulatorDepthMaterial, type SimulatorHands, type SimulatorLocationDefinition, type SimulatorLocations, type SimulatorMediaDeviceInfo, type SimulatorObject, type SimulatorObjectDefinition, type SimulatorObjectUpdate, type SimulatorObjects, type SimulatorPhysicsMode, type SimulatorPointerLockController, type SimulatorQuaternionTuple, type SimulatorScene, type SimulatorSceneManifest, type SimulatorUser, type SimulatorUserPath, type SimulatorVector3Tuple, type SolidPaint, type SpeechRecognition, type SpeechRecognitionErrorCode, type SpeechRecognitionErrorEvent, type SpeechRecognitionEvent, type SupportedRenderer, type UIAppearance, type UIButtonOptions, type UICardAnchorX, type UICardAnchorY, type UICardEdgeOptions, type UICardOptions, type UIColor, type UIElementOptions, type UIExitButtonOptions, type UIIconOptions, type UIIconVariant, type UIIconWeight, type UIImageOptions, type UILineHeight, type UIOverlayOptions, type UIPanelOptions, type UIPosition, type UIResolvedSize, type UIScrollViewOptions, type UISize, type UISliderOptions, type UIStateStyle, type UIStyle, type UITextInputKeyModifiers, type UITextInputOptions, type UITextInputSelection, type UITextInputSelectionDirection, type UITextOptions, type UITheme, type UIThemeColors, type UIThemePresetName, type UIThemeStyleRole, type UIThemeStyles, type UIThemeUpdate, type UITransform, type UIUnit, type UIValidationBounds, type UIValidationCode, type UIValidationIssue, type UIValidationReport, type UIVector2, type WebGLOrWebGPURenderer, type XBObjectOptions, ai$1 as ai, camera$1 as camera, depth$1 as depth, input$1 as input, scene$1 as scene, timer$1 as timer, user$1 as user, world$1 as world };
 //# sourceMappingURL=xrblocks.d.ts.map

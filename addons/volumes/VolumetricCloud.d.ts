@@ -13,7 +13,7 @@ export declare class VolumetricCloud extends THREE.Object3D {
   private fragmentShader;
   private material;
   private geometry;
-  private readonly worldToLocal;
+  private readonly worldToLocalMatrix;
   /** TSL shader rig when running on WebGPURenderer; set once it finishes loading. */
   nodeRig?: CloudNodeRig;
   mesh: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
