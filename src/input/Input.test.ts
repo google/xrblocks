@@ -716,7 +716,7 @@ describe('Input direct touch', () => {
     input.dispose();
   });
 
-  it('lets the simulator show and hide hands after XR sources disconnect', () => {
+  it('restores both simulator hands after XR sources disconnect from odd slots', () => {
     const input = new Input();
     const spaces = Array.from({length: 4}, () => new WebXRController());
     const options = new Options().enableHands();
@@ -730,13 +730,27 @@ describe('Input direct touch', () => {
       },
     } as unknown as THREE.WebGLRenderer;
     input.init({systemsGroup: new XRSystems(), options, renderer});
-    const source = {
+    const placeholders = [...input.hands];
+    const rightSource = {
       hand: new Map(),
       handedness: 'right',
       targetRayMode: 'tracked-pointer',
     } as unknown as XRInputSource;
-    input.controllers[0].dispatchEvent({type: 'connected', data: source});
-    input.controllers[0].dispatchEvent({type: 'disconnected', data: source});
+    const leftSource = {
+      hand: new Map(),
+      handedness: 'left',
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+    const leftController = input.controllers[1];
+    const rightController = input.controllers[3];
+    rightController.dispatchEvent({type: 'connected', data: rightSource});
+    leftController.dispatchEvent({type: 'connected', data: leftSource});
+    expect(input.hands[0]).toBe(spaces[1].getHandSpace());
+    expect(input.hands[1]).toBe(spaces[3].getHandSpace());
+    leftController.dispatchEvent({type: 'disconnected', data: leftSource});
+    rightController.dispatchEvent({type: 'disconnected', data: rightSource});
+    expect(input.hands[0]).toBe(placeholders[0]);
+    expect(input.hands[1]).toBe(placeholders[1]);
 
     const simulatorHands = new SimulatorHands(
       new SimulatorControllerState(),
@@ -774,6 +788,11 @@ describe('Input direct touch', () => {
     expect(poseEstimator.getHandContext(Handedness.LEFT)).not.toBeNull();
     expect(poseEstimator.getHandContext(Handedness.RIGHT)).not.toBeNull();
     expect(input.hands.every((hand) => hand.visible)).toBe(true);
+    input.sampleSources();
+    expect(input.getFrame().directTouches).toMatchObject([
+      {controller: input.controllers[0], handIndex: 0},
+      {controller: input.controllers[1], handIndex: 1},
+    ]);
     simulatorHands.hideHands();
     input.sampleSources();
     expect(input.getFrame().directTouches).toHaveLength(0);
