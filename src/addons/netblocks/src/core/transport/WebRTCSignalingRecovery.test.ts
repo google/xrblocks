@@ -86,6 +86,15 @@ async function connect() {
   return peer;
 }
 describe('WebRTC signaling-only recovery', () => {
+  it('leaves ordinary discovery/backoff alone while signaling is open even if a data peer is gone', async () => {
+    const peer = await connect();
+    peer.channel.close();
+    const sockets = Broker.instances.length;
+    expect(transport.isSignalingOpen).toBe(true);
+    for (let i = 0; i < 20; i++) await transport.reconnectSignaling();
+    expect(Broker.instances).toHaveLength(sockets);
+    expect(Peer.instances).toHaveLength(1);
+  });
   it('coalesces repeated broker repairs without closing/recreating healthy data channels', async () => {
     const peer = await connect();
     const id = transport.localPeerId;
