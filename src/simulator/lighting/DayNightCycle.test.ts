@@ -401,6 +401,23 @@ describe('DayNightCycle', () => {
     expect(renderer.shadowMap.type).toBe(THREE.BasicShadowMap);
   });
 
+  it.each([
+    ['WebGL', createRenderer],
+    ['WebGPU', createWebGPURenderer],
+  ])('disposes the sun shadow once on %s', async (_, rendererFactory) => {
+    const fixture = await createFixture(rendererFactory());
+    await fixture.cycle.preload();
+    const sun = findSun(fixture.root);
+    const disposeShadow = vi.spyOn(sun.shadow, 'dispose');
+
+    fixture.cycle.dispose();
+    expect(disposeShadow).toHaveBeenCalledTimes(1);
+    expect(sun.parent).toBeNull();
+
+    fixture.cycle.dispose();
+    expect(disposeShadow).toHaveBeenCalledTimes(1);
+  });
+
   it('restores the replaced day materials and geometries on dispose', async () => {
     const fixture = await createFixture();
     await fixture.cycle.preload();
