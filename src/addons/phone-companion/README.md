@@ -123,6 +123,9 @@ loss dims the controls, prolonged failures explain how to pair again, and recove
 briefly shows **Reconnected**. `onStateChange` exposes structured connection states
 for custom shells; `onStatus` remains available for diagnostic/status callbacks.
 The sample asks before **Disconnect** and clears the pairing code afterward.
+During connection loss, connected-only hints are hidden. Failed-reconnect
+instructions appear beneath the status with a primary **Disconnect** action;
+`onDisconnectRequest` lets an embedding page open its existing confirmation.
 Typing collapses the pad on phones/cover screens and uses a side-by-side layout
 on unfolded screens. These are CSS layouts; resizing does not replace the session
 or reset pointer offsets.

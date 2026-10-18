@@ -39,6 +39,7 @@ async function connect(pairing) {
     document.querySelector('#controller'),
     {
       pairing,
+      onDisconnectRequest: () => dialog.showModal(),
       transportFactory: new URLSearchParams(location.search).has('local')
         ? () => new BroadcastChannelTransport()
         : undefined,

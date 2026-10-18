@@ -14,6 +14,8 @@ import {ScreenWakeLock} from './ScreenWakeLock.js';
 
 export interface PhoneControllerPageOptions extends PhoneConnectionOptions {
   pairing?: PhonePairing;
+  /** Opens the embedding page's disconnect confirmation from the recovery action. */
+  onDisconnectRequest?: () => void;
 }
 
 /** A DOM-only phone controller. No XR session, renderer, or gamepad is required. */
@@ -52,8 +54,10 @@ export class PhoneControllerPage {
   private pointers = new Map<number, {x: number; y: number}>();
   private tap?: {x: number; y: number; time: number};
   private disposed = false;
+  private readonly requestDisconnect?: () => void;
 
   constructor(root: HTMLElement, options: PhoneControllerPageOptions = {}) {
+    this.requestDisconnect = options.onDisconnectRequest;
     const pairing = options.pairing ?? readPhonePairing(location.href);
     this.shadow.innerHTML = `
       <style>
@@ -79,6 +83,8 @@ export class PhoneControllerPage {
         #pad[data-gesture="scroll"], #pad[data-gesture="zoom"] { border-color:#d2b1ff; }
         #feedback { position:absolute; bottom:12px; left:12px; right:12px; font-size:14px; color:#b6f1d4; }
         #gesture-help, #keyboard-hint { font-size:13px; color:#a9b9d1; text-align:center; }
+        main:not([data-state="connected"]) #gesture-help,
+        main:not([data-state="connected"]) #keyboard-hint { display:none; }
         .row { display:flex; gap:10px; }
         button { flex:1; min-height:48px; border:0; border-radius:12px; padding:10px 14px;
           background:#a7c7ff; color:#10213b; font:inherit; touch-action:manipulation; }
@@ -92,7 +98,9 @@ export class PhoneControllerPage {
           border-radius:12px; padding:12px; background:#fff; color:#111; }
         main.typing #pointer-panel, main.typing #keyboard, main.typing #keyboard-hint { display:none; }
         main.typing #keyboard-panel { flex:1; }
-        #recovery-help { font-size:14px; color:#c4d0e2; }
+        #recovery-help { font-size:16px; color:#e3ecfa; }
+        main[data-state="failed"] #recovery-help { padding:12px; border:1px solid #596d8b; border-radius:12px; background:#17243b; }
+        #recovery-disconnect { flex:0 0 auto; width:100%; }
         [hidden] { display:none !important; }
         @media (min-width:640px) and (min-height:480px) {
           main.typing { max-width:1100px; }
@@ -113,6 +121,8 @@ export class PhoneControllerPage {
       </style>
       <main>
         <header><div><p class="brand">XR Blocks</p><h1>Phone controller</h1></div><p id="status" role="status">Connecting to headset…</p></header>
+        <p id="recovery-help" hidden></p>
+        <button id="recovery-disconnect" hidden>Disconnect</button>
         <section id="pairing-stage" aria-labelledby="stage-title">
           <h2 id="stage-title">Connecting to headset</h2>
           <p id="verification" aria-label="Verification number" hidden></p>
@@ -134,7 +144,6 @@ export class PhoneControllerPage {
             </div>
           </section>
         </div>
-        <p id="recovery-help" hidden></p>
       </main>`;
     root.append(this.container);
     this.status = this.find('status');
@@ -166,6 +175,11 @@ export class PhoneControllerPage {
       }
     );
     const signal = this.abort.signal;
+    this.find('recovery-disconnect').addEventListener(
+      'click',
+      () => this.requestDisconnect?.(),
+      {signal}
+    );
     this.pad.addEventListener('pointerdown', this.padDown, {signal});
     this.pad.addEventListener('pointermove', this.padMove, {signal});
     this.pad.addEventListener('pointerup', this.padUp, {signal});
@@ -331,6 +345,10 @@ export class PhoneControllerPage {
     const main = this.shadow.querySelector('main')!;
     main.dataset.state = state.type;
     const connected = state.type === 'connected';
+    const recoveryAction =
+      state.type === 'failed' && this.everConnected && !!this.requestDisconnect;
+    this.find('recovery-disconnect').hidden = !recoveryAction;
+    this.container.toggleAttribute('data-recovery-action', recoveryAction);
     const stage = this.find('pairing-stage');
     stage.hidden = connected || this.everConnected;
     this.find('controls').hidden = !connected && !this.everConnected;
