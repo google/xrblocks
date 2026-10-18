@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 79c07d8
-* @builddate 2026-10-18T08:18:35.959Z
+* @commitid 306c761
+* @builddate 2026-10-18T08:47:47.180Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -468,6 +468,7 @@ var DayNightCycle = class DayNightCycle {
 		for (const material of this.createdMaterials) material.dispose();
 		this.sunTarget?.removeFromParent();
 		this.sun?.removeFromParent();
+		this.sun?.dispose();
 		this.bounceTarget?.removeFromParent();
 		this.bounce?.removeFromParent();
 		this.skyFill?.removeFromParent();
