@@ -25,6 +25,9 @@ export default defineConfig({
   expect: {timeout: 15_000},
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // Shared CI CPUs render through SwiftShader. Concurrent GPU-heavy cases can
+  // stall real-time multi-page transports beyond their liveness windows.
+  workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI
     ? [['list'], ['html', {open: 'never', outputFolder: 'playwright-report'}]]
     : [['list']],

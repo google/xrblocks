@@ -1,5 +1,7 @@
 import {test, expect, type Page, type CDPSession} from '@playwright/test';
 
+test.use({hasTouch: true});
+
 // Both pages must share a BrowserContext: BroadcastChannel is partitioned by it.
 test('phone pairs by headset code, points, selects, drags a slider and resumes pointing after native typing', async ({
   page: host,
@@ -31,6 +33,16 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
       configurable: true,
       get: () => 'visible',
     });
+    window.addEventListener(
+      'blur',
+      (event) => {
+        // Focusing the headset window is not a phone interruption on two real
+        // devices. Explicit hidden-state transitions below still cancel input.
+        if (event.target === window && !document.hidden)
+          event.stopImmediatePropagation();
+      },
+      true
+    );
   });
   await host.goto(
     `${process.env.E2E_BASE_URL}/samples/phone_companion/index.html?local=1&debug=1`
@@ -217,11 +229,14 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
 
   await pointAt(host, phone, touch, 'slider', 0.25);
   const before = await cardPose(host);
-  await tapButton(phone, touch, 'Drag');
+  await tapButton(phone, 'Drag');
+  await expect(
+    phone.getByRole('button', {name: 'Drop', exact: true})
+  ).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => sliderValue(host)).toBeLessThan(40);
   await pointAt(host, phone, touch, 'slider', 0.75);
   await expect.poll(() => sliderValue(host)).toBeGreaterThan(60);
-  await tapButton(phone, touch, 'Drop');
+  await tapButton(phone, 'Drop');
   (await cardPose(host)).forEach((value, index) =>
     expect(value).toBeCloseTo(before[index], 6)
   );
@@ -256,7 +271,7 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     phone.getByRole('button', {name: 'Open keyboard: Message'})
   ).toBeVisible();
   await expect(phone.locator('textarea')).toHaveValue('');
-  await tapButton(phone, touch, 'Open keyboard: Message');
+  await tapButton(phone, 'Open keyboard: Message');
   await expect(phone.getByRole('textbox', {name: 'Message'})).toHaveValue(
     'Existing value above the limit'
   );
@@ -284,7 +299,7 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
       })
     )
     .toBe('Phone says 你好🙂');
-  await tapButton(phone, touch, 'Done');
+  await tapButton(phone, 'Done');
   await expect(
     phone.getByText('Select a text field in the headset to type.', {
       exact: true,
@@ -493,12 +508,10 @@ async function pointAt(
           .toArray(),
         target: resolved?.target?.name,
         label: resolved?.target?.label,
-        rays: core.input
-          .getFrame()
-          .raySources.map((source: any) => ({
-            origin: source.ray?.origin?.toArray(),
-            direction: source.ray?.direction?.toArray(),
-          })),
+        rays: core.input.getFrame().raySources.map((source: any) => ({
+          origin: source.ray?.origin?.toArray(),
+          direction: source.ray?.direction?.toArray(),
+        })),
         ui: (window as any).xb.ui.validate(),
       };
     });
@@ -526,21 +539,10 @@ async function tapPad(phone: Page, touch: CDPSession) {
   });
 }
 
-async function tapButton(phone: Page, touch: CDPSession, name: string) {
+async function tapButton(phone: Page, name: string) {
   await phone.bringToFront();
   const button = phone.getByRole('button', {name, exact: true});
-  await button.scrollIntoViewIfNeeded();
-  const box = await button.boundingBox();
-  await touch.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [
-      {id: 1, x: box!.x + box!.width / 2, y: box!.y + box!.height / 2},
-    ],
-  });
-  await touch.send('Input.dispatchTouchEvent', {
-    type: 'touchEnd',
-    touchPoints: [],
-  });
+  await button.tap();
 }
 
 async function sliderValue(host: Page) {
