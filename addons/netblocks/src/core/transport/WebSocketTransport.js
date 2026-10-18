@@ -1,4 +1,4 @@
-import { base64ToBytes, bytesToBase64 } from "../codec/PoseCodec.js";
+import { base64ToBytes, bytesToBase64 } from "../codec/Base64.js";
 import { makeId } from "../utils/IdUtils.js";
 import { Transport } from "./Transport.js";
 //#region src/addons/netblocks/src/core/transport/WebSocketTransport.ts

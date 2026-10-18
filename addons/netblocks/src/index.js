@@ -1,7 +1,8 @@
 import { LocalUser, Peers } from "./core/Peers.js";
 import { DEFAULT_ICE_SERVERS, DEFAULT_NETOBJECT_HZ, DEFAULT_NETOBJECT_INTERP_RATE, DEFAULT_PEERJS_BROKER, DEFAULT_PRESENCE_HZ, DEFAULT_ROOM_ID, KEEPALIVE_HZ, MAX_MESSAGE_BYTES, NET_PROTOCOL_VERSION, PEER_TIMEOUT_SECONDS, PRESENCE_RENDER_DELAY_MS } from "./core/constants/NetConstants.js";
 import { decodeMessage, encodeMessage, makeHello } from "./core/codec/MessageCodec.js";
-import { base64ToBytes, bytesToBase64, decodePose, encodePose } from "./core/codec/PoseCodec.js";
+import { base64ToBytes, bytesToBase64 } from "./core/codec/Base64.js";
+import { decodePose, encodePose } from "./core/codec/PoseCodec.js";
 import { hashStringToHue, hashStringToIndex, makeId } from "./core/utils/IdUtils.js";
 import { NetObject } from "./core/objects/NetObject.js";
 import { NetObjectRegistry } from "./core/objects/NetObjectRegistry.js";

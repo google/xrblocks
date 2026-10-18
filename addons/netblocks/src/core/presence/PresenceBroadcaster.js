@@ -1,5 +1,6 @@
 import "../constants/NetConstants.js";
-import { bytesToBase64, encodePose } from "../codec/PoseCodec.js";
+import { bytesToBase64 } from "../codec/Base64.js";
+import { encodePose } from "../codec/PoseCodec.js";
 import * as THREE from "three";
 import * as xb from "xrblocks";
 //#region src/addons/netblocks/src/core/presence/PresenceBroadcaster.ts

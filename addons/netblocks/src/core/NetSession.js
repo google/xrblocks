@@ -1,6 +1,7 @@
 import "./constants/NetConstants.js";
 import { decodeMessage, encodeMessage } from "./codec/MessageCodec.js";
-import { base64ToBytes, decodePose } from "./codec/PoseCodec.js";
+import { base64ToBytes } from "./codec/Base64.js";
+import { decodePose } from "./codec/PoseCodec.js";
 import { NetObject } from "./objects/NetObject.js";
 import { NetObjectRegistry } from "./objects/NetObjectRegistry.js";
 import { NetUser } from "./NetUser.js";

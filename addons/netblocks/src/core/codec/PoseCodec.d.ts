@@ -1,3 +1,4 @@
+import { base64ToBytes, bytesToBase64 } from "./Base64.js";
 import * as THREE from "three";
 //#region src/addons/netblocks/src/core/codec/PoseCodec.d.ts
 export interface HandPose {
@@ -23,7 +24,5 @@ export interface PoseSnapshot {
 export declare function encodePose(snapshot: PoseSnapshot): Uint8Array;
 /** Read a PoseSnapshot from bytes. */
 export declare function decodePose(bytes: Uint8Array): PoseSnapshot;
-/** Browser-safe base64 encode for Uint8Array. */
-export declare function bytesToBase64(bytes: Uint8Array): string;
-export declare function base64ToBytes(b64: string): Uint8Array;
 //#endregion
+export { base64ToBytes, bytesToBase64 };
