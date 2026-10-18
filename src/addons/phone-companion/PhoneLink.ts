@@ -201,7 +201,11 @@ export class PhoneLink {
       options.transportFactory ??
       (options.transport
         ? undefined
-        : () => new WebRTCTransport({unreliableChannel: true}));
+        : () =>
+            new WebRTCTransport({
+              unreliableChannel: true,
+              protectOpenPeers: true,
+            }));
     this.transport = options.transport ?? this.transportFactory!();
     this.roomCode = manual?.code;
     this.roomId = pairing.roomId;

@@ -173,7 +173,9 @@ or reset pointer offsets.
   transport replacement, and retires entries on peer departure. Discovery work
   has bounded per-peer queues separate from the selected counterpart's queue.
 - For custom signaling/STUN/TURN, pass a **fresh-instance** `transportFactory`
-  to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true, ...})`.
+  to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true,
+protectOpenPeers: true, ...})`. PhoneLink enables both options on its default
+  WebRTC transport; custom WebRTC factories should enable them too.
   Pass a similarly configured `transportFactory` to each phone page. Replacement
   uses the factory. WebRTC signaling-only repair preserves the existing peer ID
   and data channels on both endpoints. For other transports, a standby is opened

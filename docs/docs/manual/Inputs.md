@@ -146,6 +146,6 @@ Motion is coalesced per frame onto a separate unordered WebRTC channel with zero
 retransmissions. Buttons and text stay reliable. Encrypted, sequenced messages
 have per-type rate and size limits. For custom signaling/TURN, provide a host
 `transportFactory` that returns a fresh `WebRTCTransport({unreliableChannel: true,
-...})`, and a similarly configured phone transport. Configuration is not sent
+protectOpenPeers: true, ...})`, and a similarly configured phone transport. Configuration is not sent
 in the QR or code.
 See the [addon setup and lifecycle contract](https://github.com/google/xrblocks/tree/main/src/addons/phone-companion).
