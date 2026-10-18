@@ -98,6 +98,9 @@
 
       // Minimal spatial UI card so UI specs have a real uikit subtree.
       class UiScript extends xb.Script {
+        buttonClicks = {a: 0, b: 0};
+        buttonA;
+        buttonB;
         init() {
           this.name = 'E2E ui';
           const card = new xb.UICard({
@@ -112,6 +115,34 @@
           card.name = 'E2E card';
           card.position.set(0, 1.5, -1.2);
           this.add(card);
+
+          this.buttonA = new xb.UICard({
+            size: {width: 0.4, height: 0.3},
+            children: [
+              new xb.UIButton({
+                label: 'A',
+                style: {width: '100%', height: '100%'},
+                onClick: () => (this.buttonClicks.a += 1),
+              }),
+            ],
+          });
+          this.buttonA.name = 'E2E button A';
+          this.buttonA.position.set(-0.35, 1.1, -1.2);
+          this.add(this.buttonA);
+
+          this.buttonB = new xb.UICard({
+            size: {width: 0.4, height: 0.3},
+            children: [
+              new xb.UIButton({
+                label: 'B',
+                style: {width: '100%', height: '100%'},
+                onClick: () => (this.buttonClicks.b += 1),
+              }),
+            ],
+          });
+          this.buttonB.name = 'E2E button B';
+          this.buttonB.position.set(0.35, 1.1, -1.2);
+          this.add(this.buttonB);
         }
       }
 
@@ -151,7 +182,18 @@
 
       window.__e2e = {
         embodied,
-        objects: {probe, grabbable, ui},
+        objects: {
+          probe,
+          grabbable,
+          ui,
+          get buttonA() {
+            return ui.buttonA.children[0];
+          },
+          get buttonB() {
+            return ui.buttonB.children[0];
+          },
+        },
+        buttonClicks: () => ({...ui.buttonClicks}),
         state() {
           const core = window.xb?.core;
           return {
