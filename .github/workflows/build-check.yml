@@ -51,3 +51,6 @@ jobs:
 
       - name: Check bundle static imports
         run: npm run build:check-imports
+
+      - name: Check published consumer types
+        run: npm run build:check-types

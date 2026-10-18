@@ -1,18 +1,23 @@
 import * as THREE from 'three';
-import type RAPIER_NS from 'rapier3d';
+import type {
+  RAPIERCompat,
+  RapierCollider,
+  RapierWorld,
+  RapierRigidBody,
+} from '../../physics/RapierTypes';
 
 import {SimulatorMesh} from './SimulatorMesh';
 
 export class DetectedMesh extends THREE.Mesh {
-  private RAPIER?: typeof RAPIER_NS;
-  private rigidBody?: RAPIER_NS.RigidBody;
-  private collider?: RAPIER_NS.Collider;
-  private blendedWorld?: RAPIER_NS.World;
+  private RAPIER?: RAPIERCompat;
+  private rigidBody?: RapierRigidBody;
+  private collider?: RapierCollider;
+  private blendedWorld?: RapierWorld;
   private lastChangedTime = 0;
   semanticLabel?: string;
 
   // Expose rigidBody for pose updates
-  get getRigidBody(): RAPIER_NS.RigidBody | undefined {
+  get getRigidBody(): RapierRigidBody | undefined {
     return this.rigidBody;
   }
 
@@ -29,16 +34,16 @@ export class DetectedMesh extends THREE.Mesh {
     this.semanticLabel = mesh.semanticLabel;
   }
 
-  initRapierPhysics(RAPIER: typeof RAPIER_NS, blendedWorld: RAPIER_NS.World) {
-    this.RAPIER = RAPIER;
+  initRapierPhysics(rapier: RAPIERCompat, blendedWorld: RapierWorld) {
+    this.RAPIER = rapier;
     this.blendedWorld = blendedWorld;
-    const desc = RAPIER.RigidBodyDesc.fixed()
+    const desc = rapier.RigidBodyDesc.fixed()
       .setTranslation(this.position.x, this.position.y, this.position.z)
       .setRotation(this.quaternion);
     this.rigidBody = blendedWorld.createRigidBody(desc);
     const vertices = this.geometry.attributes.position.array as Float32Array;
     const indices = this.geometry.getIndex()!.array as Uint32Array;
-    const colliderDesc = RAPIER.ColliderDesc.trimesh(vertices, indices);
+    const colliderDesc = rapier.ColliderDesc.trimesh(vertices, indices);
     this.collider = blendedWorld.createCollider(colliderDesc, this.rigidBody);
   }
 
