@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type {GLTF} from 'three/addons/loaders/GLTFLoader.js';
-import type RAPIER from 'rapier3d';
+import type {RapierRigidBody} from '../../physics/RapierTypes';
 
 import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import {disposeObjectTree} from '../../utils/ThreeDisposal';
@@ -23,7 +23,7 @@ import {SimulatorWorld} from './SimulatorWorld';
 import type {SimulatorEnvironment, SimulatorOptions} from '../SimulatorOptions';
 
 interface RoomPhysics {
-  rigidBody: RAPIER.RigidBody;
+  rigidBody: RapierRigidBody;
 }
 
 function getManifestFallbackName(manifestUrl: string) {
