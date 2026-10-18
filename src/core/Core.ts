@@ -154,6 +154,7 @@ export class Core {
 
   private webXRSettings: XRSessionInit = {};
   private shouldAutostartSimulator = false;
+  private hasWarnedAboutInvalidFoveationLevel = false;
 
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
@@ -983,7 +984,11 @@ export class Core {
         setFoveation?: (level: number) => void;
       };
       xrManager.setFoveation?.(Math.max(0, Math.min(1, foveationLevel)));
-    } else if (foveationLevel !== undefined) {
+    } else if (
+      foveationLevel !== undefined &&
+      !this.hasWarnedAboutInvalidFoveationLevel
+    ) {
+      this.hasWarnedAboutInvalidFoveationLevel = true;
       console.warn('Ignoring non-finite WebXR foveation level.');
     }
 
