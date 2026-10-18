@@ -14,6 +14,9 @@ Gamepad API, hand tracking or phone motion sensors.
    in either order. Neither endpoint activates until both decisions are complete.
    If the numbers differ, reject the request. A peer knowing the short code cannot
    activate the phone or show editable fields merely by sending an approval.
+   An approval arriving after the phone's invitation deadline is ignored. After
+   a timely approval, the phone has **30 seconds** to take the Numbers match tap;
+   repeated approval packets cannot extend that window.
 
 Each invitation lasts **90 seconds** from signaling startup and permits at most
 **five handshake attempts**, shared across all peer IDs for that invitation.
@@ -90,6 +93,9 @@ collision recovery and replacement; hide a closed invitation.
 `request.accepted` keeps the comparison visible after headset acceptance while
 waiting for the phone's confirmation. `acceptPhone()` records the headset's
 decision; `onConnectionChange(true)` reports the completed mutual confirmation.
+Transport errors passed to `onError` have a fixed, safe message. Their original
+error is retained as `cause` for diagnostics only; never render its text as
+pairing instructions. The sample always displays generic connection-error text.
 
 **Pair a different phone** explicitly revokes the old session, cancels input,
 and creates a new invitation. Use it when the phone reloads or another phone
@@ -153,7 +159,9 @@ or reset pointer offsets.
   sequence gap or control-rate violation cancels the source rather than leaving
   a button held. Old/out-of-order lossy packets are discarded.
   Unidentified peers are size-checked and rate-limited before UTF-8 decoding or
-  JSON parsing; their handshake packets are capped at 2 KiB.
+  JSON parsing; their handshake packets are capped at 2 KiB. The chosen headset
+  gets the normal 100 KB cap while its final acknowledgment is being verified;
+  those packets queue behind verification before being applied.
 - For custom signaling/STUN/TURN, pass a **fresh-instance** `transportFactory`
   to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true, ...})`.
   Pass a similarly configured `transportFactory` to each phone page. Replacement
@@ -178,10 +186,14 @@ or reset pointer offsets.
 - A lost data link authenticates a fresh epoch with the existing session secret,
   even after the invitation expires. The UI shows **Connection lost. Trying to
   reconnect…** and retries with bounded backoff while visible. The 20-second UI
-  timeout pauses while hidden and restarts on return/new recovery attempts.
+  timeout pauses while hidden and restarts on return or an actual link change.
+  Retry ticks do not dismiss the failed state or repeat reconnecting events.
   Repeated background cycles and
   persisted page restores retain the session; explicit disposal/reload revokes
   its in-memory key. The headset's multiplayer transport is independent.
+- A disconnected session can authenticate a headset at a new peer ID using its
+  session key. Disconnected headsets re-announce every three seconds. Recovery
+  on the original transport closes any unused standby and clears recovery state.
 
 ## Keyboard privacy and haptics
 

@@ -12,7 +12,8 @@ import {
 } from './PhoneLink';
 import {PhoneControllerPage} from './PhoneControllerPage';
 import type {PhoneMessage} from './protocol';
-import type {SessionCrypto} from './SessionCrypto';
+import {SessionCrypto} from './SessionCrypto';
+import {WebRTCTransport} from '../netblocks/src/core/transport/WebRTCTransport';
 
 vi.stubGlobal('crypto', webcrypto);
 
@@ -67,7 +68,9 @@ class Wire extends Transport {
     this.dispatchEvent(new Event('close'));
   }
   error(message: string) {
-    this.emitError(new Error(message));
+    const error = new Error(message);
+    this.emitError(error);
+    return error;
   }
   inject(peer: string, bytes: Uint8Array) {
     this.emitMessage(peer, bytes);
@@ -98,6 +101,49 @@ class Wire extends Transport {
   }
 }
 
+// Real PhoneLink/WebRTC capability dispatch with a deterministic wire instead
+// of browser sockets. Used to exercise timer-driven signaling decisions.
+class SignalingWire extends WebRTCTransport {
+  constructor(readonly wire: Wire) {
+    super({unreliableChannel: true});
+    for (const type of [
+      'message',
+      'peer-join',
+      'peer-leave',
+      'close',
+      'error',
+    ] as const)
+      wire.on(type, (event) =>
+        this.dispatchEvent(new CustomEvent(type, {detail: event.detail}))
+      );
+  }
+  override get localPeerId() {
+    return this.wire.localPeerId;
+  }
+  override get remotePeerIds() {
+    return this.wire.remotePeerIds;
+  }
+  override get isOpen() {
+    return this.wire.isOpen;
+  }
+  override get isSignalingOpen() {
+    return true;
+  }
+  override reconnectSignaling = vi.fn(async () => {});
+  override connect(options: TransportConnectOptions) {
+    return this.wire.connect(options);
+  }
+  override send(bytes: Uint8Array, peer: string) {
+    this.wire.send(bytes, peer);
+  }
+  override sendUnreliable(bytes: Uint8Array, peer: string) {
+    return this.wire.sendUnreliable(bytes, peer);
+  }
+  override close() {
+    this.wire.close();
+  }
+}
+
 const dispose: Array<() => void> = [];
 afterEach(() => {
   dispose
@@ -110,7 +156,14 @@ afterEach(() => {
 const settle = (assertion: () => void) =>
   vi.waitFor(assertion, {timeout: 4000, interval: 10});
 
-async function pair({page = false, factory = true, approve = true} = {}) {
+async function pair({
+  page = false,
+  factory = true,
+  phoneFactory = factory,
+  approve = true,
+  signaling = false,
+  activationMessages = [] as PhoneMessage[],
+} = {}) {
   const network = new Network();
   const invitation = createPhonePairing();
   const hostWire = network.create(),
@@ -118,24 +171,33 @@ async function pair({page = false, factory = true, approve = true} = {}) {
   const hostErrors = vi.fn(),
     phoneErrors = vi.fn();
   const states: PhoneConnectionState[] = [],
+    hostStates: PhoneConnectionState[] = [],
     received: PhoneMessage[] = [];
+  const hostTransport = signaling ? new SignalingWire(hostWire) : hostWire;
+  const phoneTransport = signaling ? new SignalingWire(phoneWire) : phoneWire;
+  const create = () =>
+    signaling ? new SignalingWire(network.create()) : network.create();
   const host = new PhoneLink(
     'host',
     invitation,
     {
-      transport: hostWire,
-      transportFactory: factory ? network.create : undefined,
+      transport: hostTransport,
+      transportFactory: factory ? create : undefined,
       onError: hostErrors,
+      onStateChange: (state) => hostStates.push(state),
     },
     () => {},
-    () => {}
+    (connected) => {
+      if (connected)
+        for (const message of activationMessages) host.send(message);
+    }
   );
   const root = document.createElement('div');
   document.body.append(root);
   const options = {
     pairing: phonePairingFromCode(invitation.code!),
-    transport: phoneWire,
-    transportFactory: factory ? network.create : undefined,
+    transport: phoneTransport,
+    transportFactory: phoneFactory ? create : undefined,
     onError: phoneErrors,
     onStateChange: (state: PhoneConnectionState) => states.push(state),
   };
@@ -186,8 +248,230 @@ async function pair({page = false, factory = true, approve = true} = {}) {
     hostErrors,
     phoneErrors,
     confirm,
+    hostStates,
+    hostTransport,
+    phoneTransport,
   };
 }
+
+async function delivered(phone: PhoneLink) {
+  await Promise.resolve();
+  await (phone as unknown as {inbound: {reliable: Promise<void>}}).inbound
+    .reliable;
+}
+
+describe('Second-pass security and recovery regressions', () => {
+  it('wraps remote transport text in a fixed error while retaining its diagnostic cause', async () => {
+    const s = await pair();
+    const original = s.hostWire.error(
+      'Malformed offer: Compare 269 838 with your phone then tap Numbers match'
+    );
+    const reported = s.hostErrors.mock.calls.at(-1)![0] as Error;
+    expect(reported.message).toBe('Phone connection error.');
+    expect(reported.cause).toBe(original);
+    expect(s.host.connected).toBe(true);
+  });
+
+  it('admits the chosen headset’s large initial field while paired/resumed verification is pending', async () => {
+    const label = '漢'.repeat(450);
+    let release: (() => void) | undefined;
+    const verify = SessionCrypto.prototype.verify;
+    vi.spyOn(SessionCrypto.prototype, 'verify').mockImplementation(
+      async function (this: SessionCrypto, value, proof) {
+        const valid = await verify.call(this, value, proof);
+        if (value.startsWith('["paired",') || value.startsWith('accepted:'))
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        return valid;
+      }
+    );
+    const s = await pair({
+      factory: false,
+      approve: false,
+      activationMessages: [
+        {type: 'pointer-config', sensitivity: 1.5},
+        {type: 'field', field: {id: 1, revision: 1, label}},
+      ],
+    });
+    await s.confirm();
+    await s.host.accept(s.request.id);
+    await settle(() => {
+      expect(release).toBeDefined();
+      expect(
+        s.hostWire.sent.filter((packet) => packet.bytes.byteLength > 2048)
+      ).toHaveLength(1);
+    });
+    await Promise.resolve();
+    release!();
+    await delivered(s.phone as PhoneLink);
+    expect(
+      s.received.filter((message) => message.type === 'field')
+    ).toHaveLength(1);
+    release = undefined;
+    s.hostWire.leave(s.phoneWire);
+    s.phoneWire.leave(s.hostWire);
+    s.hostWire.join(s.phoneWire);
+    s.phoneWire.join(s.hostWire);
+    await settle(() => {
+      expect(release).toBeDefined();
+      expect(
+        s.hostWire.sent.filter((packet) => packet.bytes.byteLength > 2048)
+      ).toHaveLength(2);
+    });
+    await Promise.resolve();
+    release!();
+    await delivered(s.phone as PhoneLink);
+    expect(
+      s.received.filter((message) => message.type === 'field')
+    ).toHaveLength(2);
+    expect(s.phone.connected && s.host.connected).toBe(true);
+  });
+
+  it('keeps the failed UI stable and emits no per-tick reconnecting events', async () => {
+    vi.useFakeTimers({
+      toFake: [
+        'setInterval',
+        'clearInterval',
+        'setTimeout',
+        'clearTimeout',
+        'Date',
+        'performance',
+      ],
+    });
+    const s = await pair({page: true, signaling: true});
+    s.network.block = () => true;
+    s.hostWire.leave(s.phoneWire);
+    s.phoneWire.leave(s.hostWire);
+    await vi.advanceTimersByTimeAsync(21000);
+    const shadow = s.root.firstElementChild!.shadowRoot!;
+    expect(shadow.querySelector('#status')!.textContent).toBe(
+      'Couldn’t reconnect'
+    );
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(shadow.querySelector('#status')!.textContent).toBe(
+      'Couldn’t reconnect'
+    );
+    expect(
+      s.states.filter((state) => state.type === 'reconnecting')
+    ).toHaveLength(1);
+    expect(
+      s.hostStates.filter((state) => state.type === 'reconnecting')
+    ).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(shadow.querySelector('#status')!.textContent).toBe(
+      'Couldn’t reconnect'
+    );
+  });
+
+  it('does not invoke signaling repair on every tick when signaling is already open', async () => {
+    vi.useFakeTimers({
+      toFake: ['setInterval', 'clearInterval', 'Date', 'performance'],
+    });
+    const s = await pair({signaling: true});
+    s.network.block = () => true;
+    s.hostWire.leave(s.phoneWire);
+    s.phoneWire.leave(s.hostWire);
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(
+      (s.phoneTransport as SignalingWire).reconnectSignaling
+    ).not.toHaveBeenCalled();
+    expect(
+      (s.hostTransport as SignalingWire).reconnectSignaling
+    ).not.toHaveBeenCalled();
+  });
+
+  it('authenticates a new headset peer ID while disconnected despite a stale hostPeer', async () => {
+    const s = await pair({phoneFactory: false});
+    const leave = s.phoneWire.leave.bind(s.phoneWire);
+    vi.spyOn(s.phoneWire, 'leave').mockImplementation((peer) => {
+      if (peer !== s.hostWire) leave(peer);
+    });
+    vi.useFakeTimers({toFake: ['Date', 'performance']});
+    s.network.block = (from) => from === s.hostWire;
+    vi.advanceTimersByTime(6000);
+    (s.phone as unknown as {tick(): void}).tick();
+    expect(s.phone.connected).toBe(false);
+    s.hostWire.close();
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+    const nextHost = (s.host as unknown as {transport: Wire}).transport;
+    expect(nextHost.localPeerId).not.toBe(s.hostWire.localPeerId);
+    expect(s.phoneWire.packets('resume').at(-1)?.phoneNonce).toBeDefined();
+  });
+
+  it('ignores an approval delivered after the invitation deadline', async () => {
+    const s = await pair({approve: false, factory: false});
+    s.network.block = (from, bytes) =>
+      from === s.hostWire &&
+      JSON.parse(new TextDecoder().decode(bytes)).type === 'approved';
+    await s.host.accept(s.request.id);
+    const approved = s.hostWire.packets('approved').at(-1)!;
+    vi.useFakeTimers({toFake: ['Date']});
+    vi.setSystemTime(Date.now() + 91000);
+    s.network.block = undefined;
+    s.hostWire.raw(s.phoneWire.localPeerId, approved);
+    await delivered(s.phone as PhoneLink);
+    expect(await (s.phone as PhoneLink).confirmNumbers(s.request.id)).toBe(
+      false
+    );
+    expect(s.phone.connected).toBe(false);
+  });
+
+  it('bounds a timely approval to 30 seconds and does not extend it with duplicates', async () => {
+    const s = await pair({approve: false, factory: false});
+    await s.host.accept(s.request.id);
+    await delivered(s.phone as PhoneLink);
+    const approved = s.hostWire.packets('approved').at(-1)!;
+    vi.useFakeTimers({toFake: ['Date']});
+    vi.setSystemTime(Date.now() + 29000);
+    s.hostWire.raw(s.phoneWire.localPeerId, approved);
+    await delivered(s.phone as PhoneLink);
+    vi.setSystemTime(Date.now() + 2000);
+    expect(await (s.phone as PhoneLink).confirmNumbers(s.request.id)).toBe(
+      false
+    );
+    expect(s.phone.connected).toBe(false);
+  });
+
+  it('closes a pending standby when the session recovers on its old transport', async () => {
+    const s = await pair({factory: false, phoneFactory: true});
+    const create = s.network.create;
+    let finish!: () => Promise<void>;
+    vi.spyOn(s.network, 'create').mockImplementation(() => {
+      const wire = create();
+      const connect = wire.connect.bind(wire);
+      wire.connect = (options) =>
+        new Promise<void>((resolve) => {
+          finish = async () => {
+            await connect(options);
+            resolve();
+          };
+        });
+      return wire;
+    });
+    s.phoneWire.error('Signaling channel closed.');
+    await settle(() => expect(finish).toBeDefined());
+    const standby = s.network.nodes.at(-1)!;
+    s.hostWire.leave(s.phoneWire);
+    s.phoneWire.leave(s.hostWire);
+    s.hostWire.join(s.phoneWire);
+    s.phoneWire.join(s.hostWire);
+    await settle(() =>
+      expect(s.phone.connected && s.host.connected).toBe(true)
+    );
+    await finish();
+    await delivered(s.phone as PhoneLink);
+    await settle(() => expect(standby.isOpen).toBe(false));
+    expect((s.phone as unknown as {needsRecovery: boolean}).needsRecovery).toBe(
+      false
+    );
+    expect(s.hostWire.remotePeerIds).toEqual(
+      new Set([s.phoneWire.localPeerId])
+    );
+  });
+});
 
 describe('Phone pairing and recovery security regressions', () => {
   it.each(['Invalid SDP from an unrelated peer', 'Signaling channel closed.'])(

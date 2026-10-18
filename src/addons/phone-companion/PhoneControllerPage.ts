@@ -306,6 +306,7 @@ export class PhoneControllerPage {
   }
 
   private updateForeground(visible: boolean): void {
+    if (this.foreground === visible) return;
     this.foreground = visible;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;

@@ -77,8 +77,11 @@ type Candidate = {
   confirmed?: boolean;
   accepting?: boolean;
   approval?: {epoch: string; crypto: SessionCrypto};
+  confirmationDeadline?: number;
 };
 type Session = {crypto: SessionCrypto; peer: string; epoch: string};
+const CONFIRMATION_WINDOW_MS = 30000;
+const SESSION_ANNOUNCE_INTERVAL_MS = 3000;
 const EMPTY_MOTION = (): MotionState => ({
   sample: 0,
   x: 0,
@@ -109,7 +112,7 @@ export class PhoneLink {
   };
   private readonly roomCode?: string;
   private readonly roomId: string;
-  private announced = new Set<string>();
+  private announced = new Map<string, number>();
   private memberships = new Map<string, number>();
   private membershipCounter = 0;
   private peer?: string;
@@ -241,7 +244,7 @@ export class PhoneLink {
     } catch (error) {
       this.close();
       this.options.onStateChange?.({type: 'failed', reason: 'connection'});
-      throw error;
+      throw new Error('Phone connection error.', {cause: error});
     }
   }
 
@@ -252,7 +255,7 @@ export class PhoneLink {
     if (this.closed || this.role !== 'phone' || !this.initialReady) return;
     if (returning && this.session && !this.peer)
       this.options.onStateChange?.({type: 'reconnecting'});
-    if (visible && this.needsRecovery) {
+    if (returning && this.needsRecovery) {
       this.retryAt = 0;
       void this.recoverTransport();
     }
@@ -289,29 +292,33 @@ export class PhoneLink {
       this.promoteStandby();
       return Promise.resolve();
     }
-    if (!this.peer && this.session) {
-      this.options.onStatus?.('Reconnecting to headset…');
-      this.options.onStateChange?.({type: 'reconnecting'});
-    }
+    const generation = this.generation;
     // A broker repair gets a standby connection. The approved data path and
     // pending verification stay live until they actually disconnect/expire.
     this.recovering = Promise.resolve()
       .then(async () => {
-        if (this.closed) return;
+        if (this.closed || generation !== this.generation) return;
         if (
           this.transport instanceof WebRTCTransport &&
           this.transport.isOpen
         ) {
+          if (this.transport.isSignalingOpen) {
+            // Data-peer discovery has its own backoff. A lost peer is not a
+            // reason to repeatedly reopen an already healthy broker socket.
+            this.needsRecovery = false;
+            return;
+          }
           try {
             // Reclaiming the same slot with a *new* RTCPeerConnection would
             // replace the remote's healthy channel. Repair only signaling.
             await this.transport.reconnectSignaling();
-            this.needsRecovery = !!this.session && !this.peer;
+            if (this.closed || generation !== this.generation) return;
+            this.needsRecovery = false;
             this.retryAt = 0;
             this.recoveryAttempts = 0;
             return;
           } catch {
-            if (this.closed) return;
+            if (this.closed || generation !== this.generation) return;
             if (
               this.peer ||
               this.candidate ||
@@ -360,7 +367,7 @@ export class PhoneLink {
           const error = (event: CustomEvent<{error: Error}>) => {
             if (event.detail.error.message === 'Signaling channel closed.')
               failed();
-            else this.options.onError?.(event.detail.error);
+            else this.reportError(event.detail.error);
           };
           standby.cleanup = () => {
             transport.off('message', buffer);
@@ -382,6 +389,7 @@ export class PhoneLink {
           this.recoveryAttempts = 0;
           this.promoteStandby();
         } catch {
+          if (this.closed || generation !== this.generation) return;
           this.standby?.cleanup();
           this.standby?.transport.close();
           this.standby = undefined;
@@ -425,6 +433,7 @@ export class PhoneLink {
     this.announced.clear();
     this.resumeChallenges.clear();
     this.needsRecovery = false;
+    if (this.session) this.options.onStateChange?.({type: 'reconnecting'});
     this.listen(this.transport);
     for (const peer of this.transport.remotePeerIds)
       if (!this.ownsPeer(peer) && peer !== previous.localPeerId)
@@ -488,7 +497,7 @@ export class PhoneLink {
       this.role !== 'phone' ||
       !candidate ||
       candidate.id !== id ||
-      (!candidate.approval && Date.now() >= this.deadline)
+      Date.now() >= (candidate.confirmationDeadline ?? this.deadline)
     )
       return false;
     candidate.confirmed = true;
@@ -651,9 +660,9 @@ export class PhoneLink {
     }
     if (
       !this.session &&
-      !this.candidate?.approval &&
+      !(this.candidate?.approval && this.candidate.confirmed) &&
       this.deadline > 0 &&
-      Date.now() >= this.deadline
+      Date.now() >= (this.candidate?.confirmationDeadline ?? this.deadline)
     ) {
       this.deadline = 0;
       this.candidate = undefined;
@@ -710,20 +719,25 @@ export class PhoneLink {
           peer
         );
       })()
-        .catch((error) => this.options.onError?.(error))
+        .catch((error) => this.reportError(error))
         .finally(() => this.preparingKeys.delete(peer));
     }
   }
 
   private async announce(peer: string): Promise<void> {
+    const last = this.announced.get(peer);
     if (
       this.closed ||
       this.ownsPeer(peer) ||
       !text(peer) ||
-      this.announced.has(peer)
+      (last !== undefined &&
+        (!this.session ||
+          this.peer ||
+          Date.now() - last < SESSION_ANNOUNCE_INTERVAL_MS))
     )
       return;
-    this.announced.add(peer);
+    this.announced.set(peer, Date.now());
+    const membership = this.memberships.get(peer);
     const value = randomSecret();
     const session = this.session;
     const transcript = JSON.stringify([
@@ -750,7 +764,7 @@ export class PhoneLink {
           )
         : undefined,
     ]);
-    if (this.session === session)
+    if (this.session === session && this.memberships.get(peer) === membership)
       this.write(
         {
           type: 'host-presence',
@@ -842,6 +856,7 @@ export class PhoneLink {
       }
       if (!current() || this.session !== session || this.candidate || this.peer)
         return;
+      if (this.hostPeer !== peer) this.resumeChallenges.clear();
       this.hostPeer = peer;
       this.knock(peer);
     } else if (this.role === 'host' && packet.type === 'host-presence') {
@@ -1031,8 +1046,11 @@ export class PhoneLink {
       });
     } else if (this.role === 'phone' && packet.type === 'approved') {
       const candidate = this.candidate;
+      const receivedAt = Date.now();
       if (
         !candidate ||
+        candidate.approval ||
+        receivedAt >= this.deadline ||
         peer !== candidate.peer ||
         packet.id !== candidate.crypto.id ||
         !nonce(packet.epoch) ||
@@ -1048,8 +1066,14 @@ export class PhoneLink {
       )
         return;
       const activeCrypto = await candidate.crypto.establish(packet.epoch);
-      if (!current() || this.candidate !== candidate) return;
+      if (
+        !current() ||
+        this.candidate !== candidate ||
+        Date.now() >= receivedAt + CONFIRMATION_WINDOW_MS
+      )
+        return;
       candidate.approval = {crypto: activeCrypto, epoch: packet.epoch};
+      candidate.confirmationDeadline = receivedAt + CONFIRMATION_WINDOW_MS;
       await this.confirmApproval(candidate);
     } else if (this.role === 'host' && packet.type === 'phone-confirmed') {
       const candidate = this.candidate;
@@ -1278,6 +1302,14 @@ export class PhoneLink {
 
   private activate(peer: string, epoch: string): void {
     if (!this.session || this.closed) return;
+    this.needsRecovery = false;
+    this.retryAt = 0;
+    this.recoveryAttempts = 0;
+    this.resumeChallenges.clear();
+    const standby = this.standby;
+    this.standby = undefined;
+    standby?.cleanup();
+    standby?.transport.close();
     this.session.peer = peer;
     this.session.epoch = epoch;
     this.peer = peer;
@@ -1336,7 +1368,7 @@ export class PhoneLink {
         if (lane === 'unreliable') this.transport.sendUnreliable(data, peer);
         else this.transport.send(data, peer);
       })
-      .catch((error) => this.options.onError?.(error))
+      .catch((error) => this.reportError(error))
       .finally(() => {
         this.sending[lane]--;
       });
@@ -1409,15 +1441,17 @@ export class PhoneLink {
   ): void => {
     const {peerId, data} = event.detail;
     const trustedPeer = peerId === this.peer;
+    const chosenHeadset = this.role === 'phone' && peerId === this.hostPeer;
     const membership = this.memberships.get(peerId);
     if (
       this.closed ||
       this.ownsPeer(peerId) ||
       membership === undefined ||
-      data.byteLength > (trustedPeer ? 100000 : 2048) ||
+      data.byteLength > (trustedPeer || chosenHeadset ? 100000 : 2048) ||
       (this.role === 'phone' &&
         this.hostPeer !== undefined &&
-        peerId !== this.hostPeer)
+        peerId !== this.hostPeer &&
+        (this.peer !== undefined || !this.session))
     )
       return;
     // Unidentified senders spend their budget before UTF-8 decode/JSON.parse.
@@ -1438,7 +1472,7 @@ export class PhoneLink {
     if (!packet || packet.v !== 2 || !text(packet.type, 32)) return;
     if (
       this.role === 'phone' &&
-      !this.hostPeer &&
+      peerId !== this.hostPeer &&
       packet.type !== 'host-presence'
     )
       return;
@@ -1514,6 +1548,10 @@ export class PhoneLink {
     ) {
       this.needsRecovery = true;
       void this.recoverTransport();
-    } else this.options.onError?.(event.detail.error);
+    } else this.reportError(event.detail.error);
   };
+
+  private reportError(cause: unknown): void {
+    this.options.onError?.(new Error('Phone connection error.', {cause}));
+  }
 }
