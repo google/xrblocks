@@ -146,6 +146,12 @@ export * from './sound/SoundOptions';
 export * from './sound/SoundSynthesizer';
 export * from './sound/SpatialAudio';
 export * from './sound/SpeechRecognizer';
+export type {
+  SpeechRecognition,
+  SpeechRecognitionEvent,
+  SpeechRecognitionErrorEvent,
+} from './sound/SpeechRecognitionTypes';
+export type {DurationLike} from './utils/TemporalPolyfill';
 export * from './sound/SpeechSynthesizer';
 export * from './stereo/utils';
 export * from './placement/FaceCamera';

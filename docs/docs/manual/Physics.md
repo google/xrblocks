@@ -30,18 +30,16 @@ The browser import map must also map
 `templates/10_environment_physics/index.html` for an aligned example. Do not
 load a second Rapier variant through another URL.
 
-For TypeScript, map the virtual `rapier3d` type import to the installed Rapier
-package:
+XR Blocks declarations import physics types from `@dimforge/rapier3d`. Install
+that package for TypeScript declaration checking, even if your application
+supplies a compatible runtime variant:
 
-```json
-{
-  "compilerOptions": {
-    "paths": {
-      "rapier3d": ["./node_modules/@dimforge/rapier3d-simd-compat/rapier"]
-    }
-  }
-}
+```bash
+npm install --save-dev @dimforge/rapier3d
 ```
+
+No `paths` alias is needed. These are type-only imports; the runtime still uses
+the module supplied through `options.physics.RAPIER`.
 
 ## Use the script lifecycle
 

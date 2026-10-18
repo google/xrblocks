@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type RAPIER from 'rapier3d';
+import type RAPIER from '@dimforge/rapier3d';
 
 import type {Physics} from '../../physics/Physics';
 import type {RAPIERCompat} from '../../physics/PhysicsOptions';

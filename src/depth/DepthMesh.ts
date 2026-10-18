@@ -1,4 +1,4 @@
-import type RAPIER_NS from 'rapier3d';
+import type RAPIER_NS from '@dimforge/rapier3d';
 import * as THREE from 'three';
 
 import {MeshScript} from '../core/Script';
@@ -331,10 +331,10 @@ export class DepthMesh extends MeshScript {
     }
   }
 
-  initRapierPhysics(RAPIER: typeof RAPIER_NS, blendedWorld: RAPIER_NS.World) {
+  initRapierPhysics(rapier: typeof RAPIER_NS, blendedWorld: RAPIER_NS.World) {
     this.getWorldPosition(this.worldPosition);
     this.getWorldQuaternion(this.worldQuaternion);
-    const desc = RAPIER.RigidBodyDesc.fixed()
+    const desc = rapier.RigidBodyDesc.fixed()
       .setTranslation(
         this.worldPosition.x,
         this.worldPosition.y,
@@ -344,7 +344,7 @@ export class DepthMesh extends MeshScript {
     this.rigidBody = blendedWorld.createRigidBody(desc);
     const vertices = this.geometry.attributes.position.array as Float32Array;
     const indices = this.geometry.getIndex()!.array as Uint32Array;
-    const shape = RAPIER.ColliderDesc.trimesh(vertices, indices);
+    const shape = rapier.ColliderDesc.trimesh(vertices, indices);
 
     if (this.options.useDualCollider) {
       this.colliders = [];
@@ -357,7 +357,7 @@ export class DepthMesh extends MeshScript {
       this.collider = blendedWorld.createCollider(shape, this.rigidBody);
     }
 
-    this.RAPIER = RAPIER;
+    this.RAPIER = rapier;
     this.blendedWorld = blendedWorld;
     this.lastColliderUpdateTime = performance.now();
   }

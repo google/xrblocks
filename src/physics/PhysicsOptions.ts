@@ -1,4 +1,4 @@
-import type RAPIER from 'rapier3d';
+import type RAPIER from '@dimforge/rapier3d';
 
 export type RAPIERCompat = typeof RAPIER & {
   init?: () => Promise<void>;

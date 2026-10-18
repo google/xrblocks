@@ -4,12 +4,16 @@ import {Script} from '../core/Script.js';
 
 import {SoundOptions, SpeechRecognizerOptions} from './SoundOptions.js';
 import {SoundSynthesizer} from './SoundSynthesizer.js';
+import type {
+  SpeechRecognition,
+  SpeechRecognitionEvent,
+  SpeechRecognitionErrorEvent,
+} from './SpeechRecognitionTypes.js';
 
-type WindowWithSpeechRecognition = Window &
-  typeof globalThis & {
-    SpeechRecognition?: SpeechRecognition;
-    webkitSpeechRecognition?: SpeechRecognition;
-  };
+type WindowWithSpeechRecognition = Window & {
+  SpeechRecognition?: new () => SpeechRecognition;
+  webkitSpeechRecognition?: new () => SpeechRecognition;
+};
 
 interface SpeechRecognizerEventMap extends THREE.Object3DEventMap {
   start: object;

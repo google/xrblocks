@@ -17,6 +17,7 @@
     "build": "echo \"Building xrblocks.js...\" && rolldown -c",
     "build:sdk": "XRBLOCKS_BUILD=sdk rolldown -c",
     "build:check-imports": "node tools/check-bundle-imports.js",
+    "build:check-types": "node tools/check-consumer-types.js",
     "prepare": "npm run build",
     "lint": "oxlint src tools",
     "format": "npm run format:fix",
