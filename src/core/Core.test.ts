@@ -28,7 +28,7 @@ import {
 import {WebXRSessionManager} from './components/WebXRSessionManager';
 import {XRButton} from './components/XRButton';
 import {ui} from '../ui/UI';
-import {additiveTheme, colorfulTheme} from '../ui/UITheme';
+import {colorfulTheme} from '../ui/UITheme';
 
 function scripts(core: Core): ScriptsManager {
   return (core as unknown as {scriptsManager: ScriptsManager}).scriptsManager;
@@ -260,7 +260,7 @@ describe('Core frame and simulator lifecycle', () => {
     expect(core.lifecycle).toBe('running');
   });
 
-  it('switches to the additive UI theme for additive XR sessions', async () => {
+  it('exposes additive blend mode without changing the app theme', async () => {
     const originalTheme = ui.theme;
     ui.theme = 'colorful';
     (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
@@ -273,85 +273,11 @@ describe('Core frame and simulator lifecycle', () => {
       await core['onXRSessionStarted'](session);
 
       expect(core.environmentBlendMode).toBe('additive');
-      expect(ui.theme).toBe(additiveTheme);
+      expect(ui.theme).toBe(colorfulTheme);
 
       core['onXRSessionEnded']();
       expect(core.environmentBlendMode).toBeUndefined();
-      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
-    } finally {
-      core['onXRSessionEnded']();
-      ui.theme = originalTheme;
-    }
-  });
-
-  it('keeps the app theme when automatic additive theming is disabled', async () => {
-    const originalTheme = ui.theme;
-    const originalAutoAdditiveTheme = ui.autoAdditiveTheme;
-    ui.theme = 'colorful';
-    ui.autoAdditiveTheme = false;
-    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
-    const session = Object.assign(new EventTarget(), {
-      environmentBlendMode: 'additive',
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
-
-    try {
-      await core['onXRSessionStarted'](session);
-
-      expect(core.environmentBlendMode).toBe('additive');
-      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
-
-      core['onXRSessionEnded']();
-      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
-    } finally {
-      core['onXRSessionEnded']();
-      ui.autoAdditiveTheme = originalAutoAdditiveTheme;
-      ui.theme = originalTheme;
-    }
-  });
-
-  it('keeps an app theme change made during an additive session after it ends', async () => {
-    const originalTheme = ui.theme;
-    ui.theme = 'colorful';
-    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
-    const session = Object.assign(new EventTarget(), {
-      environmentBlendMode: 'additive',
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
-
-    try {
-      await core['onXRSessionStarted'](session);
-      ui.theme = 'glimmerAmber';
-      const appTheme = ui.theme;
-
-      core['onXRSessionEnded']();
-
-      expect(ui.theme.colors).toEqual(appTheme.colors);
-      expect(ui.theme.styles).toEqual(appTheme.styles);
-    } finally {
-      core['onXRSessionEnded']();
-      ui.theme = originalTheme;
-    }
-  });
-
-  it('restores the app theme before a second session starts without an end', async () => {
-    const originalTheme = ui.theme;
-    ui.theme = 'colorful';
-    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
-    const createSession = (): XRSession =>
-      Object.assign(new EventTarget(), {
-        environmentBlendMode: 'additive',
-        requestReferenceSpace: vi.fn().mockResolvedValue({}),
-      }) as unknown as XRSession;
-
-    try {
-      await core['onXRSessionStarted'](createSession());
-      await core['onXRSessionStarted'](createSession());
-
-      expect(core.environmentBlendMode).toBe('additive');
-      expect(ui.theme).toBe(additiveTheme);
-      core['onXRSessionEnded']();
-      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
+      expect(ui.theme).toBe(colorfulTheme);
     } finally {
       core['onXRSessionEnded']();
       ui.theme = originalTheme;
@@ -367,7 +293,7 @@ describe('Core frame and simulator lifecycle', () => {
       core['onXRSessionEnded']();
 
       expect(core.environmentBlendMode).toBeUndefined();
-      expect(ui.theme.colors).toEqual(colorfulTheme.colors);
+      expect(ui.theme).toBe(colorfulTheme);
     } finally {
       ui.theme = originalTheme;
     }

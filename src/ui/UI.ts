@@ -21,9 +21,6 @@ export class UI {
   private themeSnapshot = defaultTheme;
   private themeRevision = 0;
 
-  /** Automatically use the additive-display theme in additive XR sessions. */
-  autoAdditiveTheme = true;
-
   get theme(): UITheme {
     return this.themeSnapshot;
   }

@@ -20,8 +20,6 @@ import {Input} from '../input/Input';
 import {Interaction} from '../interaction/Interaction';
 import {ReticlePresenter} from '../interaction/ReticlePresenter';
 import {UIRenderer} from '../ui/internal/UIRenderer';
-import {ui} from '../ui/UI';
-import type {UITheme} from '../ui/UITheme';
 import {isUIElement} from '../ui/UIElement';
 import {Lighting} from '../lighting/Lighting';
 import {Physics} from '../physics/Physics';
@@ -156,8 +154,6 @@ export class Core {
 
   private webXRSettings: XRSessionInit = {};
   private _environmentBlendMode?: XRSession['environmentBlendMode'];
-  private additiveSessionTheme?: UITheme;
-  private additiveThemeRevision?: number;
   private shouldAutostartSimulator = false;
 
   /** Whether the XR simulator is currently active. */
@@ -359,7 +355,6 @@ export class Core {
     const cleanups: Array<() => void | Promise<void>> = [
       () => {
         this._environmentBlendMode = undefined;
-        this.restoreAdditiveSessionTheme();
       },
       () => {
         if (this.physicsInterval === undefined) return;
@@ -975,13 +970,7 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
-    this.restoreAdditiveSessionTheme();
     this._environmentBlendMode = session.environmentBlendMode;
-    if (session.environmentBlendMode === 'additive' && ui.autoAdditiveTheme) {
-      this.additiveSessionTheme = ui.theme;
-      ui.theme = 'additive';
-      this.additiveThemeRevision = ui.revision;
-    }
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
@@ -1050,22 +1039,10 @@ export class Core {
    */
   private onXRSessionEnded = () => {
     this._environmentBlendMode = undefined;
-    this.restoreAdditiveSessionTheme();
     if (!this.isLifecycleActive()) return;
     this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();
   };
-
-  private restoreAdditiveSessionTheme(): void {
-    if (
-      this.additiveSessionTheme &&
-      ui.revision === this.additiveThemeRevision
-    ) {
-      ui.theme = this.additiveSessionTheme;
-    }
-    this.additiveSessionTheme = undefined;
-    this.additiveThemeRevision = undefined;
-  }
 
   private isLifecycleActive(): boolean {
     return (

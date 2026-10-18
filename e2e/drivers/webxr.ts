@@ -18,7 +18,6 @@ export type IwerDriverOptions = {
   sessionMode?: 'immersive-vr' | 'immersive-ar';
   /** Overrides Quest 3's immersive-ar blend mode for this test. */
   environmentBlendMode?: 'opaque' | 'additive' | 'alpha-blend';
-  autoAdditiveTheme?: boolean;
   initialTheme?: string;
 };
 
@@ -175,15 +174,12 @@ export class IwerDriver implements XRTestDriver {
       const xb = (
         window as unknown as {
           xb: {
-            ui: {theme: string; autoAdditiveTheme: boolean};
+            ui: {theme: string};
           };
         }
       ).xb;
       if (options.initialTheme !== undefined) {
         xb.ui.theme = options.initialTheme;
-      }
-      if (options.autoAdditiveTheme !== undefined) {
-        xb.ui.autoAdditiveTheme = options.autoAdditiveTheme;
       }
     }, this.options);
     // Enter the selected immersive session through the SDK's session manager.

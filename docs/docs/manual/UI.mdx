@@ -367,30 +367,22 @@ intentional exceptions. Theme snapshots are validated and detached from the
 object passed by the application.
 
 On optical see-through displays, black contributes little or no visible light.
-When a WebXR session reports `environmentBlendMode === 'additive'`, XR Blocks
-automatically applies the `additive` theme: bright text, colored controls, and a
-solid dark-color backplate instead of a black or translucent surface. The built-in
-UI panels are shader-based and unlit. Apps can also inspect the active mode and
-adjust their own content:
+The `additive` preset provides bright text, colored controls, and a solid
+dark-color backplate instead of a black or translucent surface. The built-in UI
+panels are shader-based and unlit. XR Blocks exposes the active blend mode but
+does not change the app's theme automatically:
 
 ```js
 if (xb.core.environmentBlendMode === 'additive') {
-  // Prefer bright text on a colored backplate; avoid pure-black surfaces.
+  xb.ui.theme = 'additive';
 }
 ```
 
-Automatic theme switching can be disabled when an app manages its own theme:
-
-```js
-xb.ui.autoAdditiveTheme = false;
-```
-
-`core.environmentBlendMode` is `undefined` outside an active XR session. The
-automatic theme is restored when that session ends unless the app changes the
-theme during the session. Explicit element styles still take precedence over
-theme styles. Keep text, controls, and hit targets generous; as a practical
-starting point for narrow glasses, target controls at least about 2 degrees
-wide (roughly 3.5 cm at 1 m).
+`core.environmentBlendMode` is `undefined` outside an active XR session. Theme
+selection remains app-owned across session start and end. Explicit element
+styles still take precedence over theme styles. Keep text, controls, and hit
+targets generous; as a practical starting point for narrow glasses, target
+controls at least about 2 degrees wide (roughly 3.5 cm at 1 m).
 
 ## Model and placement composition
 
