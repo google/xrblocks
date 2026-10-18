@@ -258,12 +258,14 @@ are no-ops and do not reset the normal discovery backoff.
 This does not opt multiplayer sessions into automatic recovery or change the
 room's full-mesh policy.
 
-A broker registration is not authority over an established DTLS connection.
-Once its reliable data channel opens, routed LEAVE/OFFER/ANSWER/CANDIDATE messages
-and stale EXPIRE notifications cannot mutate or tear down that entry, even if
-another client reclaims its broker ID. Native channel closure or ICE/DTLS failure
-must end the old connection before the slot can be replaced. A transient
-`disconnected` state alone does not revoke it.
+`protectOpenPeers: true` opts into protecting established DTLS connections from
+broker-ID reuse. Once the reliable data channel opens, routed
+LEAVE/OFFER/ANSWER/CANDIDATE messages and stale EXPIRE notifications cannot mutate
+or tear down that entry. Native channel closure or ICE/DTLS failure must end it
+before replacement; a transient `disconnected` state alone does not revoke it.
+The default is **false**: a different offer from a reused slot replaces the open
+connection, preserving the normal reload behavior. The phone companion enables
+this protection for its default WebRTC transport.
 
 `discoverPeers()` is an explicit, one-off discovery request for callers that need
 to react promptly to a departed peer. Same-turn duplicate requests are coalesced;
@@ -289,9 +291,10 @@ leave the reliable connection usable.
 
 The main `netblocks` channel must be created by the offerer, ordered, and fully
 reliable (no retransmission or packet-lifetime limit). Exact duplicate offers
-are ignored; a different offer may replace a pending handshake, but not an open
-data connection. Reloads must close their old connection cleanly or wait for its
-native transport failure before reusing that slot.
+are ignored. By default a different offer replaces the slot's connection,
+including an open one. With `protectOpenPeers: true`, it can replace only a
+pending handshake; reloads must close their old connection cleanly or wait for
+native transport failure. In-flight probe deduplication is always enabled.
 
 Call `transport.sendUnreliable(bytes, peerId)`. **True means queued, not
 delivered**; packets may be lost or arrive out of order. It returns false when

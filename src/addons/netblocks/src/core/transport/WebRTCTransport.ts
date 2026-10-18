@@ -42,6 +42,8 @@ export interface WebRTCTransportOptions {
   brokerKey?: string;
   /** Opt in to a separate unordered, zero-retransmission lane, negotiated with each peer. */
   unreliableChannel?: boolean;
+  /** Opt in to rejecting broker changes to an open data connection. Default false. */
+  protectOpenPeers?: boolean;
 }
 
 interface PeerEntry {
@@ -545,13 +547,13 @@ export class WebRTCTransport extends Transport {
     }
     if (!msg || !msg.type) return;
     const src = msg.src;
-    // Broker IDs can be reclaimed after signaling loss. Once DTLS has opened
-    // a data channel, the broker is no longer authority to mutate that entry.
+    // Broker IDs can be reclaimed after signaling loss. Opted-in connections
+    // stop trusting broker mutations once their DTLS data channel opens.
     // Native channel/ICE/DTLS failure owns its teardown, not routed messages.
     if (
       src &&
       ['LEAVE', 'OFFER', 'ANSWER', 'CANDIDATE'].includes(msg.type) &&
-      this._hasOpenDataEntry(src)
+      this._protectsOpenPeer(src)
     )
       return;
     switch (msg.type) {
@@ -560,7 +562,7 @@ export class WebRTCTransport extends Transport {
         break;
       case 'EXPIRE':
         // Broker couldn't deliver to dst. Reap the dead handshake.
-        if (msg.dst && !this._hasOpenDataEntry(msg.dst))
+        if (msg.dst && !this._protectsOpenPeer(msg.dst))
           this._teardown(msg.dst);
         break;
       case 'OFFER':
@@ -636,9 +638,13 @@ export class WebRTCTransport extends Transport {
     return entry;
   }
 
-  private _hasOpenDataEntry(remote: string): boolean {
+  private _protectsOpenPeer(remote: string): boolean {
     const entry = this._entries.get(remote);
-    return !!entry && (entry.ready || entry.dc?.readyState === 'open');
+    return (
+      this._opts.protectOpenPeers === true &&
+      !!entry &&
+      (entry.ready || entry.dc?.readyState === 'open')
+    );
   }
 
   private _attachChannel(

@@ -264,11 +264,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function pair(firstEnabled: boolean, secondEnabled: boolean) {
+async function pair(
+  firstEnabled: boolean,
+  secondEnabled: boolean,
+  protectOpenPeers?: boolean
+) {
   vi.stubGlobal('WebSocket', Broker);
   vi.stubGlobal('RTCPeerConnection', Peer);
-  const first = new WebRTCTransport({unreliableChannel: firstEnabled});
-  const second = new WebRTCTransport({unreliableChannel: secondEnabled});
+  const first = new WebRTCTransport({
+    unreliableChannel: firstEnabled,
+    protectOpenPeers,
+  });
+  const second = new WebRTCTransport({
+    unreliableChannel: secondEnabled,
+    protectOpenPeers,
+  });
   transports.push(first, second);
   const errors = vi.fn();
   first.on('error', errors);
@@ -315,11 +325,42 @@ async function reliableWorks(a: WebRTCTransport, b: WebRTCTransport) {
 }
 
 describe('WebRTC unreliable negotiation', () => {
+  it('allows replacement after local transport failure when open-peer protection is enabled', async () => {
+    const s = await pair(true, true, true);
+    const offer = Broker.signals.find((signal) => signal.type === 'OFFER')!;
+    Broker.clients.get(s.second.localPeerId)!.close();
+    const replacement = new WebRTCTransport({
+      unreliableChannel: true,
+      protectOpenPeers: true,
+    });
+    transports.push(replacement);
+    await replacement.connect({roomId: 'negotiation'});
+    await vi.waitFor(() =>
+      expect(
+        Broker.signals.filter((signal) => signal.type === 'OFFER')
+      ).toHaveLength(2)
+    );
+    await reliableWorks(s.first, s.second);
+    expect(replacement.remotePeerIds.size).toBe(0);
+    const retry = Broker.signals.findLast((signal) => signal.type === 'OFFER')!;
+    expect(retry.payload?.sdp?.sdp).not.toBe(offer.payload?.sdp?.sdp);
+    s.firstPeer.connectionState = 'failed';
+    s.firstPeer.dispatchEvent(new Event('connectionstatechange'));
+    Broker.clients
+      .get(s.first.localPeerId)!
+      .dispatchEvent(
+        new MessageEvent('message', {data: JSON.stringify(retry)})
+      );
+    await vi.waitFor(() =>
+      expect(replacement.remotePeerIds.has(s.first.localPeerId)).toBe(true)
+    );
+    await reliableWorks(s.first, replacement);
+  });
   for (const victimSide of ['offerer', 'answerer'] as const) {
     it.each(['LEAVE', 'OFFER', 'ANSWER', 'CANDIDATE', 'EXPIRE'])(
       `protects the ${victimSide}'s open channel from broker-ID takeover via %s`,
       async (type) => {
-        const s = await pair(true, true);
+        const s = await pair(true, true, true);
         const victim = victimSide === 'offerer' ? s.second : s.first;
         const source = victimSide === 'offerer' ? s.first : s.second;
         const victimPeer =
@@ -390,7 +431,7 @@ describe('WebRTC unreliable negotiation', () => {
   });
 
   it.each([false, true])(
-    'replaces a failed connection when a reloaded peer reclaims its slot (opt-in=%s)',
+    'replaces an open connection when a reloaded peer reclaims its slot (opt-in=%s)',
     async (enabled) => {
       const s = await pair(true, true);
       const oldMain = s.firstPeer.channels.find(
@@ -415,14 +456,11 @@ describe('WebRTC unreliable negotiation', () => {
       expect(Peer.instances).toHaveLength(2);
       expect(left).not.toHaveBeenCalled();
       received.mockClear();
-      // Losing the broker registration does not revoke an open DTLS channel.
-      // Only a local transport failure makes this slot replaceable.
+      // Release only the broker registration, like a reload whose old SCTP
+      // channel has not reported closure yet.
       Broker.clients.get(s.second.localPeerId)!.close();
       s.errors.mockClear();
       expect(oldMain.readyState).toBe('open');
-      s.firstPeer.connectionState = 'failed';
-      s.firstPeer.dispatchEvent(new Event('connectionstatechange'));
-      expect(oldMain.readyState).toBe('closed');
       const replacement = new WebRTCTransport({unreliableChannel: enabled});
       transports.push(replacement);
       replacement.on('error', s.errors);
