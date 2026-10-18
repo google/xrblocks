@@ -258,6 +258,14 @@ are no-ops and do not reset the normal discovery backoff.
 This does not opt multiplayer sessions into automatic recovery or change the
 room's full-mesh policy.
 
+`discoverPeers()` is an explicit, one-off discovery request for callers that need
+to react promptly to a departed peer. Same-turn duplicate requests are coalesced;
+a later real departure is not delayed by a cooldown. It does not reschedule or
+reset the normal discovery backoff. Ordinary
+multiplayer sessions do not opt into this automatically; the phone companion
+requests it only for an authenticated counterpart's departure when its recovery
+factory is enabled.
+
 #### Optional unreliable lane
 
 For latency-sensitive direct transport messages, opt into
