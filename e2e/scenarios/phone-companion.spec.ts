@@ -52,6 +52,11 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   await host.evaluate(() => {
     const core = (window as any).xb.core;
     core.pause();
+    // This checks interaction geometry, not headset render resolution. A full
+    // room rendered at 1280x720 in Linux SwiftShader can block a manual step
+    // for seconds and starve the independent phone's heartbeat. Keep the CSS
+    // viewport/camera unchanged while reducing only the GPU drawing buffer.
+    core.renderer.setPixelRatio(0.25);
     (window as any).__phoneTestStep = () => {
       core.stepFrame();
       core.stepFrame();
@@ -135,6 +140,23 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   });
   await phone.bringToFront();
   await phone.reload();
+  await phone.evaluate(async () => {
+    const {PhoneControllerPage} = await import(
+      '/build/addons/phone-companion/PhoneControllerPage.js'
+    );
+    const connect = PhoneControllerPage.prototype.connect;
+    PhoneControllerPage.prototype.connect = function () {
+      (window as any).__phoneDiagnostics = () => ({
+        motion: {...this.link.motion},
+        generation: this.link.generation,
+        connected: this.link.connected,
+        foreground: this.link.foreground,
+        dragMode: this.dragMode,
+        hidden: document.hidden,
+      });
+      return connect.call(this);
+    };
+  });
   expect(new URL(phone.url()).hash).toBe('');
   await phone
     .getByRole('textbox', {name: 'Pairing code', exact: true})
@@ -395,6 +417,11 @@ async function pointAt(
       });
       const physical = core.interaction.registry.find(target).physical;
       const point = physical.localToWorld(new THREE.Vector3(ratio - 0.5, 0, 0));
+      (window as any).__phoneExpectedAim = {
+        kind,
+        point: point.toArray(),
+        physical: physical.matrixWorld.toArray(),
+      };
       const cameraRotation = core.camera.getWorldQuaternion(
         new THREE.Quaternion()
       );
@@ -433,21 +460,55 @@ async function pointAt(
     type: 'touchEnd',
     touchPoints: [],
   });
-  await expect
-    .poll(() =>
-      host.evaluate((kind) => {
-        (window as any).__phoneTestStep();
-        const core = (window as any).xb.core;
-        const target = core.interaction.getResolvedRay(
-          core.scene.getObjectByName('Phone Companion').controller
-        )?.target;
-        return kind === 'button'
-          ? target?.label?.startsWith('Tap me:')
-          : target?.ariaLabel ===
-              (kind === 'slider' ? 'Phone slider' : 'Message');
-      }, kind)
-    )
-    .toBe(true);
+  try {
+    await expect
+      .poll(() =>
+        host.evaluate((kind) => {
+          (window as any).__phoneTestStep();
+          const core = (window as any).xb.core;
+          const target = core.interaction.getResolvedRay(
+            core.scene.getObjectByName('Phone Companion').controller
+          )?.target;
+          return kind === 'button'
+            ? target?.label?.startsWith('Tap me:')
+            : target?.ariaLabel ===
+                (kind === 'slider' ? 'Phone slider' : 'Message');
+        }, kind)
+      )
+      .toBe(true);
+  } catch (error) {
+    const actual = await host.evaluate(() => {
+      const core = (window as any).xb.core;
+      const companion = core.scene.getObjectByName('Phone Companion');
+      const resolved = core.interaction.getResolvedRay(companion.controller);
+      return {
+        expected: (window as any).__phoneExpectedAim,
+        motion: companion.motion,
+        yaw: companion.yaw,
+        pitch: companion.pitch,
+        connected: companion.connected,
+        generation: companion.link.generation,
+        quaternion: companion.controller
+          .getWorldQuaternion(companion.controller.quaternion.clone())
+          .toArray(),
+        target: resolved?.target?.name,
+        label: resolved?.target?.label,
+        rays: core.input
+          .getFrame()
+          .raySources.map((source: any) => ({
+            origin: source.ray?.origin?.toArray(),
+            direction: source.ray?.direction?.toArray(),
+          })),
+        ui: (window as any).xb.ui.validate(),
+      };
+    });
+    const phoneState = await phone.evaluate(() =>
+      (window as any).__phoneDiagnostics?.()
+    );
+    throw new Error(
+      `${error}\nPhone aim diagnostics: ${JSON.stringify({actual, phoneState})}`
+    );
+  }
 }
 
 async function tapPad(phone: Page, touch: CDPSession) {
