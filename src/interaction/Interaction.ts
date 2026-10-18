@@ -209,7 +209,7 @@ export class Interaction {
       if (snapshot) snapshots.push(snapshot);
     }
     for (const [controller, factor] of this.scaleIntents) {
-      this.applyScaleIntent(controller, factor, true);
+      this.applyScaleIntent(controller, factor, 'scale');
     }
     this.scaleIntents.clear();
     for (const [controller, delta] of this.wheelIntents) {
@@ -462,20 +462,24 @@ export class Interaction {
       if (moved) return;
     }
     if (!owned)
-      this.applyScaleIntent(controller, Math.exp(-delta * WHEEL_SCALE_SPEED));
+      this.applyScaleIntent(
+        controller,
+        Math.exp(-delta * WHEEL_SCALE_SPEED),
+        'wheel'
+      );
   }
 
   private applyScaleIntent(
     controller: Controller,
     factor: number,
-    includeUIAncestor = false
+    intent: 'scale' | 'wheel'
   ): boolean {
     const snapshot = this.sourceStates.get(controller);
     const resolved = this.resolvedRays.get(controller);
     if (!snapshot || !resolved?.target) return false;
     let scalingTarget = resolved;
     if (
-      includeUIAncestor &&
+      intent === 'scale' &&
       !resolved.manipulation &&
       resolved.semanticControl
     ) {
@@ -491,12 +495,13 @@ export class Interaction {
         manipulation: this.manipulation.resolve(path),
       };
     }
-    const source = getInteractionSource(controller, 'simulator');
     const intentSnapshot = new InteractionSourceState(controller).copyFrom(
       snapshot
     );
-    intentSnapshot.source = source;
-    intentSnapshot.sourceType = 'simulator';
+    if (intent === 'wheel') {
+      intentSnapshot.source = getInteractionSource(controller, 'simulator');
+      intentSnapshot.sourceType = 'simulator';
+    }
     return this.manipulation.applyScaleIntent(
       this.createSelection(controller, scalingTarget),
       intentSnapshot,

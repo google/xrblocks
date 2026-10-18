@@ -113,13 +113,21 @@ reticle configuration. A supplied reticle remains caller-owned.
 
 Use `input.removeController(controller)` for permanent teardown. It removes the
 source, event forwarding, frame state and attached reticle, disposing only an
-engine-owned reticle. Its active interaction is cancelled on the next frame;
+engine-owned reticle. Only addon controllers registered through `enableController`
+can be removed; built-in XR/simulator sources and repeated removals are no-ops.
+Removal sends `selectend` and `disconnected` once, including for sources without
+a `disconnect()` hook, and clears handedness aliases that reference that source.
+Addon IDs are monotonically allocated; use `input.get(id)` rather than array
+indices to look them up after removals. Its active interaction is cancelled as
+`source-lost` on the next frame;
 `interaction.removeSource(controller)` can cancel it immediately when needed.
 
 `interaction.queueScaleIntent(controller, factor)` represents explicit pinch/zoom.
 It raycasts even in `select` raycast mode and can scale the manipulable ancestor
 of a UI control, honoring disabled boundaries and scale limits. Wheel intents
-retain scroll-container ownership and their existing fallback behavior.
+retain scroll-container ownership and their existing fallback behavior. Explicit
+scale events preserve the actual input modality; only wheel scaling reports
+`simulator` as its source type.
 
 ## Propagation and default behavior
 

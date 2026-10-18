@@ -3,11 +3,15 @@ import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
 import {describe, expect, it, vi} from 'vitest';
 
 import {Options} from '../core/Options';
+import {Script, type SelectEndEvent} from '../core/Script';
 import {ScriptsManager} from '../core/components/ScriptsManager';
 import {XRSystems} from '../core/components/XRSystems';
 import {Interaction} from '../interaction/Interaction';
 import {Reticle} from '../interaction/reticle/Reticle';
 import {UIButton} from '../ui/components/UIButton';
+import {UISlider} from '../ui/components/UISlider';
+import {UICard} from '../ui/components/UICard';
+import type {ManipulationEvent} from '../interaction/manipulation/ManipulationTypes';
 import {Input} from './Input';
 import {Controller} from './Controller';
 import {Hands} from './Hands';
@@ -68,6 +72,251 @@ describe('Input head gestures', () => {
 });
 
 describe('Input addon controller ownership', () => {
+  it('protects built-in slots and allocates monotonically increasing addon IDs', () => {
+    const {input} = createInitializedInput();
+    const builtins = [...input.controllers];
+    for (const source of builtins) {
+      input.enableController(source);
+      input.removeController(source);
+    }
+    expect(input.controllers).toEqual(builtins);
+    const first = new THREE.Object3D() as Controller;
+    const second = new THREE.Object3D() as Controller;
+    input.enableController(first);
+    input.enableController(second);
+    const firstId = first.userData.id;
+    const secondId = second.userData.id;
+    input.removeController(first);
+    const third = new THREE.Object3D() as Controller;
+    input.enableController(third);
+    expect(third.userData.id).toBeGreaterThan(secondId);
+    expect(input.get(firstId)).toBeUndefined();
+    for (const source of input.controllers)
+      expect(input.get(source.userData.id)).toBe(source);
+    expect(
+      new Set(input.controllers.map((source) => source.userData.id)).size
+    ).toBe(input.controllers.length);
+    input.enableController(first);
+    expect(first.userData.id).toBeGreaterThan(third.userData.id);
+    const unmanaged = new THREE.Object3D() as Controller;
+    input.controllers.push(unmanaged);
+    input.enableController(unmanaged);
+    input.removeController(unmanaged);
+    expect(input.controllers).toContain(unmanaged);
+    input.dispose();
+  });
+
+  it.each(['absent', 'silent', 'disconnected', 'both'] as const)(
+    'emits terminal events exactly once with a %s disconnect hook and clears aliases by identity',
+    (hook) => {
+      const {input} = createInitializedInput();
+      const source = new THREE.Object3D() as Controller;
+      source.userData = {connected: true, selected: true};
+      const data = {handedness: 'right'} as XRInputSource;
+      const disconnect = vi.fn(() => {
+        input.removeController(source); // A hook may reenter removal.
+        if (hook === 'both')
+          source.dispatchEvent({type: 'selectend', target: source, data});
+        if (hook === 'both' || hook === 'disconnected')
+          source.dispatchEvent({type: 'disconnected', target: source, data});
+      });
+      if (hook !== 'absent') Object.assign(source, {disconnect});
+      input.enableController(source);
+      input.leftController = source;
+      const other = input.controllers[0];
+      input.rightController = other;
+      const end = vi.fn();
+      const disconnected = vi.fn();
+      const nativeEnd = vi.fn();
+      const nativeDisconnected = vi.fn();
+      input.bindSelectEnd(end);
+      input.bindListener('disconnected', disconnected);
+      source.addEventListener('selectend', nativeEnd);
+      source.addEventListener('disconnected', nativeDisconnected);
+      input.removeController(source);
+      input.removeController(source);
+      expect(end).toHaveBeenCalledOnce();
+      expect(disconnected).toHaveBeenCalledOnce();
+      expect(nativeEnd).toHaveBeenCalledOnce();
+      expect(nativeDisconnected).toHaveBeenCalledOnce();
+      expect(disconnect).toHaveBeenCalledTimes(hook === 'absent' ? 0 : 1);
+      expect(input.leftController).toBeUndefined();
+      expect(input.rightController).toBe(other);
+      expect(source.userData).toMatchObject({
+        connected: false,
+        selected: false,
+      });
+      input.dispose();
+    }
+  );
+
+  it.each(['native select', 'disconnect grace'] as const)(
+    'removes native listeners and pending %s state before re-registration',
+    (pending) => {
+      const {input} = createInitializedInput();
+      const source = new THREE.Object3D() as Controller;
+      const added = vi.spyOn(source, 'addEventListener');
+      input.enableController(source);
+      const installed = [...added.mock.calls];
+      const data = {targetRayMode: 'transient-pointer'} as XRInputSource;
+      source.dispatchEvent({type: 'connected', target: source, data});
+      source.dispatchEvent({type: 'selectstart', target: source, data});
+      source.dispatchEvent({type: 'select', target: source, data});
+      if (pending === 'disconnect grace') {
+        source.dispatchEvent({type: 'selectend', target: source, data});
+        source.dispatchEvent({type: 'disconnected', target: source, data});
+      }
+      input.removeController(source);
+      for (const [type, listener] of installed)
+        expect(source.hasEventListener(type, listener)).toBe(false);
+      input.enableController(source);
+      expect(
+        input.getFrame().raySources.some((ray) => ray.controller === source)
+      ).toBe(false);
+      source.userData.connected = true;
+      source.userData.selected = true;
+      // No new native select: a stale completion must not produce a grace frame.
+      source.dispatchEvent({type: 'disconnected', target: source, data});
+      input.sampleSources();
+      expect(
+        input.getFrame().raySources.some((ray) => ray.controller === source)
+      ).toBe(false);
+      input.dispose();
+    }
+  );
+
+  it('cancels a held slider and grab as source-lost, exits hover and releases manipulation on the next frame', async () => {
+    class Slider extends UISlider {
+      ends: SelectEndEvent[] = [];
+      exits = 0;
+      onObjectSelectEnd(event: SelectEndEvent) {
+        this.ends.push(event);
+        event.stopPropagation();
+      }
+      onHoverExit() {
+        this.exits++;
+      }
+    }
+    class Grab extends Script {
+      ends: SelectEndEvent[] = [];
+      phases: ManipulationEvent[] = [];
+      exits = 0;
+      onObjectSelectEnd(event: SelectEndEvent) {
+        this.ends.push(event);
+      }
+      onObjectManipulate(event: ManipulationEvent) {
+        this.phases.push(event);
+      }
+      onHoverExit() {
+        this.exits++;
+      }
+    }
+    const {input} = createInitializedInput();
+    const callbacks = new ScriptsManager(async () => {});
+    const scene = new THREE.Scene();
+    const interaction = new Interaction({
+      callbacks,
+      scene,
+      camera: new THREE.PerspectiveCamera(),
+    });
+    const onChange = vi.fn();
+    const slider = new Slider({
+      ariaLabel: 'Held slider',
+      min: 0,
+      max: 100,
+      value: 20,
+      onChange,
+    });
+    const card = new UICard({
+      size: {width: 1, height: 0.4},
+      children: [slider],
+    });
+    const surface = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 0.2),
+      new THREE.MeshBasicMaterial()
+    );
+    surface.position.set(-1, 0, -1);
+    const grab = new Grab();
+    grab.xb = {manipulation: true};
+    grab.position.set(1, 0, -1);
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.3, 0.3),
+      new THREE.MeshBasicMaterial()
+    );
+    grab.add(box);
+    scene.add(card, surface, grab);
+    await callbacks.initScript(card);
+    await callbacks.initScript(slider);
+    await callbacks.initScript(grab);
+    const unregister = interaction.registerHitSurface(surface, slider);
+    const sources = [-1, 1].map((x) => {
+      const source = new THREE.Object3D() as Controller;
+      source.position.x = x;
+      source.userData.connected = true;
+      const disconnect = vi.fn(() =>
+        source.dispatchEvent({type: 'disconnected', target: source})
+      );
+      Object.assign(source, {disconnect});
+      input.enableController(source);
+      return {source, disconnect};
+    });
+    const step = () => {
+      scene.updateMatrixWorld(true);
+      input.sampleSources();
+      interaction.update(input.getFrame(), 1 / 60);
+    };
+    try {
+      step();
+      for (const {source} of sources)
+        source.dispatchEvent({type: 'selectstart', target: source});
+      step();
+      expect(slider.value).toBeCloseTo(50);
+      expect(interaction.isSelectingAt(slider)).toBe(true);
+      expect(interaction.isManipulating(grab)).toBe(true);
+      sources[1].source.position.x += 0.1;
+      step();
+      expect(grab.position.x).toBeGreaterThan(1);
+      for (const {source} of sources) {
+        input.removeController(source);
+        input.removeController(source);
+      }
+      step();
+      step();
+      expect(slider.ends).toHaveLength(1);
+      expect(grab.ends).toHaveLength(1);
+      for (const target of [slider, grab]) {
+        expect(target.ends[0]).toMatchObject({
+          completed: false,
+          reason: 'source-lost',
+        });
+        expect(target.exits).toBe(1);
+        expect(interaction.isSelectingAt(target)).toBe(false);
+        expect(interaction.isHovered(target)).toBe(false);
+      }
+      expect(slider.value).toBe(20);
+      expect(onChange).not.toHaveBeenCalled();
+      expect(interaction.isManipulating(grab)).toBe(false);
+      expect(
+        grab.phases.filter((event) => event.phase === 'cancel')
+      ).toHaveLength(1);
+      for (const {source, disconnect} of sources) {
+        expect(disconnect).toHaveBeenCalledOnce();
+        expect(interaction.getSourceSnapshot(source)).toBeUndefined();
+      }
+    } finally {
+      interaction.clear();
+      input.dispose();
+      unregister();
+      slider.dispose();
+      card.dispose();
+      grab.dispose();
+      surface.geometry.dispose();
+      surface.material.dispose();
+      box.geometry.dispose();
+      box.material.dispose();
+    }
+  });
+
   it('configures late reticles and unregisters sources, event forwarding and owned resources', () => {
     const input = new Input();
     input.options = new Options();
