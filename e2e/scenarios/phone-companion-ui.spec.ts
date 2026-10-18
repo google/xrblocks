@@ -141,6 +141,16 @@ for (const screen of screens) {
         (await page.locator('#controller').locator('main').boundingBox())!.width
       ).toBeLessThanOrEqual(620);
     await capture('connected');
+    const gestureHint = page.getByText(
+      'Hold, then slide to drag · Two fingers to scroll or pinch',
+      {exact: true}
+    );
+    const keyboardHint = page.getByText(
+      'Select a text field in the headset to type.',
+      {exact: true}
+    );
+    await expect(gestureHint).toBeVisible();
+    await expect(keyboardHint).toBeVisible();
     // Inject presentation states for geometry/screenshots. Protocol-driven
     // loss, timeout and resume are covered by the companion unit regressions.
     for (const state of [
@@ -158,6 +168,53 @@ for (const screen of screens) {
         page.getByRole('button', {name: 'Disconnect', exact: true})
       );
       await withinViewport(page, pad);
+      if (state.type === 'connected') {
+        await expect(gestureHint).toBeVisible();
+        await expect(keyboardHint).toBeVisible();
+        await expect(page.locator('#recovery-disconnect')).toBeHidden();
+      } else {
+        await expect(gestureHint).toBeHidden();
+        await expect(keyboardHint).toBeHidden();
+        await expect(
+          page.getByRole('button', {name: 'Drag', exact: true})
+        ).toBeDisabled();
+        if (state.type === 'failed') {
+          const instructions = page.locator('#recovery-help');
+          const disconnect = page.getByRole('button', {
+            name: 'Disconnect',
+            exact: true,
+          });
+          await expect(instructions).toContainText('Pair a different phone');
+          await withinViewport(page, instructions);
+          expect(
+            await instructions.evaluate((element) =>
+              parseFloat(getComputedStyle(element).fontSize)
+            )
+          ).toBeGreaterThanOrEqual(16);
+          const statusBox = (await page.getByRole('status').boundingBox())!;
+          const helpBox = (await instructions.boundingBox())!;
+          const actionBox = (await disconnect.boundingBox())!;
+          const padBox = (await pad.boundingBox())!;
+          expect(helpBox.y).toBeGreaterThanOrEqual(
+            statusBox.y + statusBox.height
+          );
+          expect(actionBox.y).toBeGreaterThanOrEqual(
+            helpBox.y + helpBox.height
+          );
+          expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(padBox.y);
+          await expect(disconnect).toHaveCSS(
+            'background-color',
+            'rgb(167, 199, 255)'
+          );
+          await expect(page.locator('#change-code')).toBeHidden();
+          await disconnect.click();
+          await expect(page.getByRole('dialog')).toBeVisible();
+          await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+          await expect(page.getByRole('status')).toHaveText(
+            'Couldn’t reconnect'
+          );
+        }
+      }
       await capture(state.type === 'connected' ? 'reconnected' : state.type);
     }
     await page.getByRole('button', {name: 'Drag', exact: true}).tap();
