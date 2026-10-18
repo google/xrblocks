@@ -171,9 +171,12 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     .poll(() =>
       host.evaluate(() => {
         (window as any).__phoneTestStep();
-        return !!(window as any).xb.core.scene.getObjectByName(
+        const companion = (window as any).xb.core.scene.getObjectByName(
           'Phone Companion'
-        ).input?.focused;
+        );
+        return (
+          !!companion.input?.focused && !companion.controller.userData.selected
+        );
       })
     )
     .toBe(true);
@@ -181,7 +184,7 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     phone.getByRole('button', {name: 'Type: Message'})
   ).toBeVisible();
   await expect(phone.locator('textarea')).toHaveValue('');
-  await phone.getByRole('button', {name: 'Type: Message'}).click();
+  await tapButton(phone, touch, 'Type: Message');
   await expect(phone.getByRole('textbox', {name: 'Message'})).toHaveValue(
     'Existing value above the limit'
   );
@@ -209,7 +212,7 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
       })
     )
     .toBe('Phone says 你好🙂');
-  await phone.getByRole('button', {name: 'Done', exact: true}).click();
+  await tapButton(phone, touch, 'Done');
   await expect(
     phone.getByText('Select a text field in the headset to type.', {
       exact: true,
@@ -348,6 +351,22 @@ async function tapPad(phone: Page, touch: CDPSession) {
     type: 'touchStart',
     touchPoints: [
       {id: 1, x: pad!.x + pad!.width / 2, y: pad!.y + pad!.height / 2},
+    ],
+  });
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  });
+}
+
+async function tapButton(phone: Page, touch: CDPSession, name: string) {
+  const button = phone.getByRole('button', {name, exact: true});
+  await button.scrollIntoViewIfNeeded();
+  const box = await button.boundingBox();
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [
+      {id: 1, x: box!.x + box!.width / 2, y: box!.y + box!.height / 2},
     ],
   });
   await touch.send('Input.dispatchTouchEvent', {
