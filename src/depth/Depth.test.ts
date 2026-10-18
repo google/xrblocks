@@ -420,11 +420,55 @@ describe('Depth', () => {
       expect(depth.gpuDepthData).toHaveLength(0);
       expect(depth.depthArray).toHaveLength(0);
       expect(depth['depthTextures']!.clear).toHaveBeenCalledOnce();
+      const lateShader = {
+        uniforms: {occlusionEnabled: {value: true}},
+        vertexShader: '',
+        fragmentShader: '',
+      };
+      depth.occludableShaders.add(lateShader);
+      expect(lateShader.uniforms.occlusionEnabled.value).toBe(false);
 
       depth.update(depthFrame);
 
       expect(renderOcclusionPass).toHaveBeenCalledOnce();
       expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+    });
+
+    it('resets depth on XR session end and restores it from simulator CPU data', () => {
+      const depth = setupDepthForLocalUpdate();
+      depth.options.occlusion.enabled = true;
+      const shader = {
+        uniforms: {occlusionEnabled: {value: true}},
+        vertexShader: '',
+        fragmentShader: '',
+      };
+      depth.occludableShaders.add(shader);
+      const renderOcclusionPass = vi.spyOn(depth, 'renderOcclusionPass');
+      const {frame} = createStereoFrame([{} as XRView]);
+      depth.update(frame);
+      expect(depth.cpuDepthData).toHaveLength(1);
+
+      depth.onXRSessionEnded();
+
+      expect(depth.cpuDepthData).toHaveLength(0);
+      expect(depth.depthArray).toHaveLength(0);
+      expect(shader.uniforms.occlusionEnabled.value).toBe(false);
+      expect(depth['depthTextures']!.clear).toHaveBeenCalledOnce();
+
+      depth.updateCPUDepthData(
+        {
+          width: 2,
+          height: 2,
+          rawValueToMeters: 1,
+          data: new Float32Array([1, 2, 3, 4]).buffer,
+        } as XRCPUDepthInformation,
+        0,
+        'float32'
+      );
+      depth.update();
+
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+      expect(renderOcclusionPass).toHaveBeenCalled();
     });
 
     it('processes viewId > 0 when options.updateAllViews is true', () => {

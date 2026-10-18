@@ -8,8 +8,10 @@ test('depth is off by default', async ({driver}) => {
 test.describe('with ?depth=1', () => {
   test('enables the depth subsystem', async ({driver}) => {
     await driver.boot('e2e/fixtures/apps/harness.html?depth=1');
+    await driver.step(100);
     const state = await driver.getState();
     expect(state.depthEnabled).toBe(true);
+    expect(state.depthMeshVisible).toBe(true);
   });
 
   test('still steps and renders frames', async ({driver}) => {

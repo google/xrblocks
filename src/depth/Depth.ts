@@ -26,6 +26,18 @@ const normViewCoord = new THREE.Vector3();
 
 export type DepthArray = Float32Array | Uint16Array;
 
+class OccludableShaderSet extends Set<Shader> {
+  constructor(private onAdd: (shader: Shader) => void) {
+    super();
+  }
+
+  override add(shader: Shader): this {
+    super.add(shader);
+    this.onAdd(shader);
+    return this;
+  }
+}
+
 export class Depth {
   static instance?: Depth;
 
@@ -35,7 +47,7 @@ export class Depth {
   private gpuDepthConverter?: GPUDepthConverter;
   private registry?: Registry;
   private disposed = false;
-  private depthDataAvailable = false;
+  private depthDataAvailable = true;
 
   enabled = false;
   view: XRView[] = [];
@@ -56,7 +68,7 @@ export class Depth {
     }
     return 0;
   }
-  occludableShaders = new Set<Shader>();
+  occludableShaders!: Set<Shader>;
   private occlusionPass?: OcclusionPassBackend;
 
   // Whether we're counting the number of depth clients.
@@ -91,6 +103,12 @@ export class Depth {
       return Depth.instance;
     }
     Depth.instance = this;
+    this.occludableShaders = new OccludableShaderSet((shader) => {
+      this.setOcclusionShaderEnabled(
+        shader,
+        Boolean(this.options.occlusion?.enabled && this.depthDataAvailable)
+      );
+    });
   }
 
   /**
@@ -388,6 +406,7 @@ export class Depth {
     viewId: number,
     depthDataFormat: XRDepthDataFormat
   ) {
+    this.setDepthDataAvailable(true);
     this.cpuDepthData[viewId] = depthData;
     this.depthDataFormat = depthDataFormat;
     this.updateDepthMatrices(depthData, viewId);
@@ -421,6 +440,7 @@ export class Depth {
   }
 
   updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number) {
+    this.setDepthDataAvailable(true);
     assertWebGLRenderer(this.renderer, 'WebXR GPU depth');
     this.gpuDepthData[viewId] = depthData;
     this.updateDepthMatrices(depthData, viewId);
@@ -520,7 +540,7 @@ export class Depth {
       this.updateLocalDepth(frame);
     }
     this.setOcclusionMaterialsEnabled(
-      this.options.occlusion.enabled && this.depthDataAvailable
+      Boolean(this.options.occlusion?.enabled && this.depthDataAvailable)
     );
     if (this.options.occlusion.enabled && this.depthDataAvailable) {
       this.renderOcclusionPass();
@@ -532,7 +552,7 @@ export class Depth {
     this.depthDataAvailable = available;
     this.depthMesh?.setDepthAvailable(available);
     this.setOcclusionMaterialsEnabled(
-      this.options.occlusion.enabled && available
+      Boolean(this.options.occlusion?.enabled && available)
     );
     if (wasAvailable && !available) {
       this.cpuDepthData.length = 0;
@@ -546,9 +566,18 @@ export class Depth {
 
   private setOcclusionMaterialsEnabled(enabled: boolean) {
     for (const shader of this.occludableShaders) {
-      const uniform = shader.uniforms.occlusionEnabled;
-      if (uniform) uniform.value = enabled;
+      this.setOcclusionShaderEnabled(shader, enabled);
     }
+  }
+
+  private setOcclusionShaderEnabled(shader: Shader, enabled: boolean) {
+    const uniform = shader.uniforms.occlusionEnabled;
+    if (uniform) uniform.value = enabled;
+  }
+
+  /** Clears depth from the ended XR session before the next session starts. */
+  onXRSessionEnded() {
+    this.setDepthDataAvailable(false);
   }
 
   updateLocalDepth(frame: XRFrame) {
