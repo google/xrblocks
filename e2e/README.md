@@ -34,7 +34,8 @@ Useful knobs:
 - `npm run test:e2e -- --project=sim-webgl` — one backend.
 - `E2E_GL=swiftshader npm run test:e2e -- --project=sim-webgl phone-companion.spec.ts`
   — the real sample plus a second phone page in the same BrowserContext, paired
-  by entering the headset code over BroadcastChannel. Exercises touchpad pointing, button selection, slider
+  by entering the headset code over BroadcastChannel and accepting matching
+  verification digits. Exercises touchpad pointing, button selection, slider
   dragging, native text editing and pointer recovery after Done, without a broker.
 
 ## How the simulator driver works

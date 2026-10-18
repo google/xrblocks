@@ -27,6 +27,10 @@ export class PhoneControllerPage {
   private readonly editor: HTMLTextAreaElement;
   private readonly keyboard: HTMLButtonElement;
   private text: PhoneTextState | null = null;
+  private field: {id: number; revision: number; label: string} | null = null;
+  private keyboardRequested = false;
+  private applyingRemote = false;
+  private lastEdit = '';
   private composing = false;
   private selectPointer?: number;
   private gestureFrame?: number;
@@ -83,12 +87,18 @@ export class PhoneControllerPage {
     this.link = new PhoneLink(
       'phone',
       pairing,
-      options,
+      {
+        ...options,
+        onStatus: (message) => {
+          this.status.textContent = message;
+          options.onStatus?.(message);
+        },
+      },
       (message) => this.receive(message),
       (connected) => {
         this.wakeLock.setActive(connected && !document.hidden);
         this.cancel();
-        this.applyText(null);
+        this.applyField(null);
         this.status.textContent = connected
           ? 'Connected to headset'
           : 'Waiting for headset…';
@@ -153,9 +163,13 @@ export class PhoneControllerPage {
       'click',
       () => {
         // Native software keyboards require a local user gesture, not an RPC.
+        if (!this.field) return;
         this.cancel();
+        this.keyboardRequested = true;
+        this.editor.disabled = false;
         this.editor.hidden = false;
         this.editor.focus();
+        this.link.send({type: 'open-keyboard', fieldId: this.field.id});
       },
       {signal}
     );
@@ -202,6 +216,8 @@ export class PhoneControllerPage {
           this.link.send({type: 'done', revision: this.text.revision});
         this.editor.blur();
         this.editor.hidden = true;
+        this.keyboardRequested = false;
+        this.text = null;
         this.cancel();
         this.container.scrollIntoView({block: 'start'});
       },
@@ -251,6 +267,7 @@ export class PhoneControllerPage {
   }
 
   private receive(message: PhoneMessage): void {
+    if (message.type === 'field') this.applyField(message.field);
     if (message.type === 'text') this.applyText(message.state);
     if (message.type === 'haptic' && !document.hidden) {
       try {
@@ -261,36 +278,75 @@ export class PhoneControllerPage {
     }
   }
 
-  private applyText(state: PhoneTextState | null): void {
-    this.text = state;
-    this.composing = false;
-    this.keyboard.disabled = !state;
-    this.keyboard.hidden = !state;
-    this.find('keyboard-hint').hidden = !!state;
-    this.find('text-actions').hidden = !state;
-    this.editor.disabled = !state;
-    this.find<HTMLButtonElement>('submit').disabled = !state;
-    this.find<HTMLButtonElement>('done').disabled = !state;
-    if (!state) {
+  private applyField(
+    field: {id: number; revision: number; label: string} | null
+  ): void {
+    if (!field || field.id !== this.field?.id) {
+      this.keyboardRequested = false;
+      this.text = null;
       this.editor.blur();
       this.editor.hidden = true;
       this.editor.value = '';
-      this.keyboard.textContent = 'Open keyboard';
+    }
+    this.field = field;
+    if (this.text?.revision !== field?.revision) this.text = null;
+    this.keyboard.disabled = !field;
+    this.keyboard.hidden = !field;
+    this.find('keyboard-hint').hidden = !!field;
+    this.find('text-actions').hidden = !this.keyboardRequested;
+    this.editor.disabled = !field;
+    this.keyboard.textContent = field
+      ? `Type: ${field.label}`
+      : 'Open keyboard';
+  }
+
+  private applyText(state: PhoneTextState | null): void {
+    if (!state) {
+      this.text = null;
       return;
     }
+    if (!this.keyboardRequested || state.revision !== this.field?.revision)
+      return;
+    this.text = state;
+    this.composing = false;
+    this.applyingRemote = true;
+    this.find('text-actions').hidden = false;
+    this.find<HTMLButtonElement>('submit').disabled = false;
+    this.find<HTMLButtonElement>('done').disabled = false;
     this.keyboard.textContent = `Type: ${state.label}`;
-    this.editor.setAttribute('aria-label', state.label);
-    this.editor.maxLength = state.maxLength;
-    this.editor.value = state.value;
-    this.editor.setSelectionRange(state.start, state.end);
+    try {
+      this.editor.setAttribute('aria-label', state.label);
+      this.editor.maxLength = state.maxLength;
+      this.editor.value = state.value;
+      this.editor.setSelectionRange(state.start, state.end);
+      this.lastEdit = JSON.stringify([
+        state.value,
+        this.editor.selectionStart,
+        this.editor.selectionEnd,
+      ]);
+    } finally {
+      this.applyingRemote = false;
+    }
   }
 
   private sendEdit(): void {
-    if (!this.text || this.composing || !this.connected) return;
-    const value = this.editor.value.slice(
-      0,
-      Math.min(this.text.maxLength, MAX_TEXT_LENGTH)
-    );
+    if (
+      !this.text ||
+      !this.keyboardRequested ||
+      this.applyingRemote ||
+      this.composing ||
+      !this.connected
+    )
+      return;
+    const value = this.editor.value;
+    if (value.length > MAX_TEXT_LENGTH) return;
+    const snapshot = JSON.stringify([
+      value,
+      this.editor.selectionStart,
+      this.editor.selectionEnd,
+    ]);
+    if (snapshot === this.lastEdit) return;
+    this.lastEdit = snapshot;
     this.link.send({
       type: 'edit',
       revision: this.text.revision,

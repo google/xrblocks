@@ -1,7 +1,6 @@
 import {
   PhoneControllerPage,
   phonePairingFromCode,
-  phonePairingURL,
   readPhonePairing,
 } from '../../build/addons/phone-companion/phone.js';
 import {BroadcastChannelTransport} from '../../build/addons/netblocks/src/core/transport/BroadcastChannelTransport.js';
@@ -47,7 +46,9 @@ document.querySelector('#pair-form').addEventListener('submit', (event) => {
   event.preventDefault();
   try {
     const pairing = phonePairingFromCode(document.querySelector('#code').value);
-    history.replaceState(null, '', phonePairingURL(location.href, pairing));
+    const url = new URL(location.href);
+    url.hash = '';
+    history.replaceState(null, '', url);
     void connect(pairing);
   } catch (error) {
     showError(error);

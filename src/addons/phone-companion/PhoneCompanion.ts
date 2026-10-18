@@ -6,17 +6,23 @@ import {
   phonePairingURL,
   type PhoneConnectionOptions,
   type PhonePairing,
+  type PhonePairingRequest,
 } from './PhoneLink.js';
 import {
   MAX_TEXT_LENGTH,
   type PhoneMessage,
   type PhoneTextState,
+  type MotionState,
 } from './protocol.js';
 
-export interface PhoneCompanionOptions extends PhoneConnectionOptions {
+export interface PhoneCompanionOptions
+  extends Omit<PhoneConnectionOptions, 'transport'> {
+  /** Initial rendezvous override. Each host still generates its own fresh QR token. */
   pairing?: PhonePairing;
   /** Radians per touchpad width/height. Default 1.5. */
   sensitivity?: number;
+  /** Return false for passwords or other fields that must never leave the host. */
+  allowTextInput?: (field: xb.UITextInput) => boolean;
 }
 
 interface Dependencies {
@@ -32,25 +38,31 @@ export class PhoneCompanion extends xb.Script {
     interaction: xb.Interaction,
     camera: THREE.Camera,
   };
-  readonly pairing: PhonePairing;
   readonly controller: xb.Controller =
     new THREE.Object3D<xb.ControllerEventMap>();
-  private readonly link: PhoneLink;
+  private link: PhoneLink;
   private readonly sensitivity: number;
   private dependencies?: Dependencies;
-  private buttons: boolean[] = [];
+  private buttons: Array<{
+    down: boolean;
+    pose?: MotionState;
+    sampled?: boolean;
+  }> = [];
+  private motion: MotionState = {sample: 0, x: 0, y: 0, scroll: 0, zoom: 0};
   private yaw = 0;
   private pitch = 0;
-  private pointerMoved = false;
   private readonly offset = new THREE.Quaternion();
   private readonly parentRotation = new THREE.Quaternion();
   private readonly euler = new THREE.Euler(0, 0, 0, 'YXZ');
   private field?: xb.UITextInput;
+  private fieldId = 0;
   private releaseKeyboard?: () => void;
   private revision = 0;
   private textSnapshot = '';
   private textState: PhoneTextState | null = null;
+  private textRequested = false;
   private disposed = false;
+  private collisionRetries = 0;
 
   constructor(private readonly options: PhoneCompanionOptions = {}) {
     super();
@@ -59,31 +71,69 @@ export class PhoneCompanion extends xb.Script {
     if (!Number.isFinite(this.sensitivity) || this.sensitivity <= 0) {
       throw new Error('Phone sensitivity must be positive and finite.');
     }
-    this.pairing = options.pairing ?? createPhonePairing();
     this.controller.name = 'Phone pointer';
     this.controller.userData = {connected: false, selected: false};
     this.controller.updatePose = () => this.samplePointer();
-    this.link = new PhoneLink(
+    const initial = createPhonePairing();
+    this.link = this.createLink(
+      options.pairing ? {...options.pairing, token: initial.token} : initial
+    );
+  }
+
+  private createLink(pairing: PhonePairing): PhoneLink {
+    const link = new PhoneLink(
       'host',
-      this.pairing,
-      options,
+      pairing,
+      {
+        transportFactory: this.options.transportFactory,
+        onConnectionChange: this.options.onConnectionChange,
+        onPairingRequest: this.options.onPairingRequest,
+        onPairingChange: this.options.onPairingChange,
+        onError: this.options.onError,
+        onRoomCollision: () => {
+          if (this.disposed || this.link !== link) return;
+          if (++this.collisionRetries > 5) {
+            link.close();
+            this.options.onError?.(
+              new Error(
+                'Pairing room repeatedly occupied. Choose New code to retry.'
+              )
+            );
+            return;
+          }
+          void this.replacePairing().catch((error) =>
+            this.options.onError?.(error)
+          );
+        },
+      },
       (message) => this.receive(message),
       (connected) => {
         if (!connected) this.cancelPointer();
+        this.textRequested = false;
+        this.motion = {sample: 0, x: 0, y: 0, scroll: 0, zoom: 0};
+        this.yaw = this.pitch = 0;
         this.controller.userData.connected = connected;
+        if (connected)
+          this.link.send({
+            type: 'pointer-config',
+            sensitivity: this.sensitivity,
+          });
         this.textSnapshot = '';
         this.syncText();
       }
     );
+    return link;
   }
 
   /** Resolves once signaling is open; pairing itself is reported by connected. */
   async init(dependencies: Dependencies): Promise<void> {
     this.dependencies = dependencies;
     dependencies.input.enableController(this.controller);
+    const startingLink = this.link;
     try {
-      await this.link.connect();
+      await startingLink.connect();
     } catch (error) {
+      if (this.disposed || this.link !== startingLink) return;
       dependencies.input.removeController(this.controller);
       this.options.onError?.(
         error instanceof Error ? error : new Error(String(error))
@@ -96,8 +146,40 @@ export class PhoneCompanion extends xb.Script {
     return this.link.connected;
   }
 
+  get pairing(): PhonePairing {
+    return this.link.pairing;
+  }
+  get pairingOpen(): boolean {
+    return this.link.pairingOpen;
+  }
+  get pendingPhone(): PhonePairingRequest | undefined {
+    return this.link.pendingPhone;
+  }
+  acceptPhone(id: string): Promise<boolean> {
+    return this.link.accept(id);
+  }
+  rejectPhone(id: string): void {
+    this.link.reject(id);
+  }
+
+  /** Revokes the old session and opens a fresh invitation, including after phone reload. */
+  async replacePhone(): Promise<void> {
+    this.collisionRetries = 0;
+    await this.replacePairing();
+  }
+
+  private async replacePairing(): Promise<void> {
+    if (this.disposed || !this.dependencies)
+      throw new Error('Mount the companion before replacing its phone.');
+    this.link.close();
+    this.link = this.createLink(createPhonePairing());
+    await this.link.connect();
+  }
+
   /** Encode this URL as a QR locally, or present it as a clickable link. */
   pairingURL(phonePage: string | URL): string {
+    if (!this.link.canSharePairing)
+      throw new Error('Use Replace Phone to create a new invitation.');
     return phonePairingURL(phonePage, this.pairing);
   }
 
@@ -110,6 +192,8 @@ export class PhoneCompanion extends xb.Script {
     this.releaseKeyboard?.();
     this.releaseKeyboard = undefined;
     this.field = field;
+    this.fieldId++;
+    this.textRequested = false;
     this.textSnapshot = '';
     this.syncText();
   }
@@ -151,16 +235,19 @@ export class PhoneCompanion extends xb.Script {
     // Preserve short taps even when down and up arrive between XR frames.
     // Deliver the last held pose before releasing. Motion and button-up can
     // arrive together between XR frames on a network connection.
+    const edge = this.buttons[0];
     const deferRelease =
-      this.buttons[0] === false &&
+      edge?.down === false &&
       this.controller.userData.selected &&
-      this.pointerMoved;
-    const down = deferRelease ? undefined : this.buttons.shift();
-    this.pointerMoved = false;
-    if (down !== undefined) this.controller.userData.selected = down;
+      !edge.sampled;
+    if (deferRelease) edge.sampled = true;
+    else if (edge) this.buttons.shift();
+    if (edge && !deferRelease) this.controller.userData.selected = edge.down;
     camera.getWorldPosition(this.controller.position);
     camera.getWorldQuaternion(this.controller.quaternion);
-    this.offset.setFromEuler(this.euler.set(this.pitch, this.yaw, 0));
+    this.offset.setFromEuler(
+      this.euler.set(edge?.pose?.y ?? this.pitch, edge?.pose?.x ?? this.yaw, 0)
+    );
     this.controller.quaternion.multiply(this.offset);
     const parent = this.controller.parent;
     if (parent) {
@@ -173,7 +260,6 @@ export class PhoneCompanion extends xb.Script {
 
   private cancelPointer(): void {
     this.buttons.length = 0;
-    this.pointerMoved = false;
     this.controller.userData.selected = false;
     this.dependencies?.interaction.removeSource(
       this.controller,
@@ -183,51 +269,38 @@ export class PhoneCompanion extends xb.Script {
 
   private receive(message: PhoneMessage): void {
     switch (message.type) {
-      case 'hello':
-        // The phone may have timed out while this side still considered it paired.
-        this.textSnapshot = '';
-        this.syncText();
-        break;
-      case 'move':
-        this.pointerMoved = true;
-        this.yaw = THREE.MathUtils.clamp(
-          this.yaw - message.x * this.sensitivity,
-          -1.2,
-          1.2
-        );
-        this.pitch = THREE.MathUtils.clamp(
-          this.pitch - message.y * this.sensitivity,
-          -1.2,
-          1.2
-        );
+      case 'motion':
+        this.applyMotion(message.state);
         break;
       case 'button': {
+        if (message.motion) this.applyMotion(message.motion);
         const previous =
-          this.buttons.at(-1) ?? this.controller.userData.selected;
+          this.buttons.at(-1)?.down ?? this.controller.userData.selected;
         if (previous !== message.down) {
           if (this.buttons.length >= 32) this.cancelPointer();
-          else this.buttons.push(message.down);
+          else this.buttons.push({down: message.down, pose: message.motion});
         }
         break;
       }
       case 'cancel':
+        if (message.motion && message.motion.sample > this.motion.sample) {
+          this.motion = message.motion;
+          this.yaw = message.motion.x;
+          this.pitch = message.motion.y;
+        }
         this.cancelPointer();
         break;
       case 'center':
-        this.pointerMoved = true;
+        if (message.motion) this.applyMotion(message.motion);
         this.yaw = this.pitch = 0;
         break;
-      case 'scroll':
-        this.dependencies?.interaction.queueWheelIntent(
-          this.controller,
-          message.delta
-        );
-        break;
-      case 'zoom':
-        this.dependencies?.interaction.queueScaleIntent(
-          this.controller,
-          message.factor
-        );
+      case 'open-keyboard':
+        this.syncText();
+        if (this.textState && message.fieldId === this.fieldId) {
+          this.textRequested = true;
+          this.syncText();
+          this.link.send({type: 'text', state: this.textState});
+        }
         break;
       case 'edit':
       case 'submit':
@@ -235,6 +308,30 @@ export class PhoneCompanion extends xb.Script {
         this.edit(message);
         break;
     }
+  }
+
+  private applyMotion(state: MotionState): void {
+    if (state.sample <= this.motion.sample) return;
+    const scroll = THREE.MathUtils.clamp(
+      state.scroll - this.motion.scroll,
+      -1000,
+      1000
+    );
+    const zoom = THREE.MathUtils.clamp(
+      state.zoom - this.motion.zoom,
+      -Math.log(4),
+      Math.log(4)
+    );
+    this.motion = state;
+    this.yaw = state.x;
+    this.pitch = state.y;
+    if (scroll)
+      this.dependencies?.interaction.queueWheelIntent(this.controller, scroll);
+    if (zoom)
+      this.dependencies?.interaction.queueScaleIntent(
+        this.controller,
+        Math.exp(zoom)
+      );
   }
 
   private fieldState(): Omit<PhoneTextState, 'revision'> | null {
@@ -245,6 +342,7 @@ export class PhoneCompanion extends xb.Script {
       !field.focused ||
       field.disabled ||
       field.readOnly ||
+      this.options.allowTextInput?.(field) === false ||
       field.value.length > MAX_TEXT_LENGTH
     )
       return null;
@@ -260,9 +358,10 @@ export class PhoneCompanion extends xb.Script {
 
   private syncText(): void {
     const state = this.fieldState();
-    if (state && !this.releaseKeyboard)
+    if (state && this.textRequested && !this.releaseKeyboard)
       this.releaseKeyboard = this.field!.suppressNativeKeyboard();
-    if (!state) {
+    if (!state || !this.textRequested) {
+      if (!state) this.textRequested = false;
       this.releaseKeyboard?.();
       this.releaseKeyboard = undefined;
     }
@@ -271,7 +370,14 @@ export class PhoneCompanion extends xb.Script {
     this.textSnapshot = snapshot;
     this.revision++;
     this.textState = state ? {...state, revision: this.revision} : null;
-    this.link.send({type: 'text', state: this.textState});
+    this.link.send({
+      type: 'field',
+      field: state
+        ? {id: this.fieldId, revision: this.revision, label: state.label}
+        : null,
+    });
+    if (this.textRequested || !state)
+      this.link.send({type: 'text', state: this.textState});
   }
 
   private edit(
@@ -280,7 +386,13 @@ export class PhoneCompanion extends xb.Script {
     // Catch external edits/focus changes even between engine frames.
     this.syncText();
     const field = this.field;
-    if (!field || !this.textState || message.revision !== this.revision) return;
+    if (
+      !field ||
+      !this.textState ||
+      !this.textRequested ||
+      message.revision !== this.revision
+    )
+      return;
     if (message.type === 'done') {
       field.blur();
       this.syncText();
@@ -291,8 +403,28 @@ export class PhoneCompanion extends xb.Script {
       return;
     }
     if (message.value !== field.value) {
-      field.setSelectionRange(0, field.value.length);
-      field.insertText(message.value);
+      // Preserve untouched text, including a pre-existing value above maxLength.
+      // A deletion from such a value must not turn into a truncated full replace.
+      const previous = field.value;
+      let start = 0;
+      while (
+        start < previous.length &&
+        start < message.value.length &&
+        previous[start] === message.value[start]
+      )
+        start++;
+      let suffix = 0;
+      while (
+        suffix < previous.length - start &&
+        suffix < message.value.length - start &&
+        previous[previous.length - suffix - 1] ===
+          message.value[message.value.length - suffix - 1]
+      )
+        suffix++;
+      field.setSelectionRange(start, previous.length - suffix);
+      field.insertText(
+        message.value.slice(start, message.value.length - suffix)
+      );
     }
     // An onInput callback may switch the active field.
     if (this.field !== field) return;

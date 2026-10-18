@@ -1,39 +1,35 @@
 # Phone companion
 
 Build with `npm run build`, serve the repository, and open
-`/samples/phone_companion/` on the headset or desktop. On your phone, open
-`/samples/phone_companion/phone.html` on the same site and enter the code shown
-in the headset. This works without scanning the headset's display. Bookmark
-the phone page to reuse it across sessions.
+`/samples/phone_companion/` on the headset or desktop. On the phone open
+`/samples/phone_companion/phone.html` on the same site and enter the headset code.
+Compare the six verification digits on both devices, then choose **Accept phone**
+in the headset. The desktop QR is optional; it uses a long random token.
 
-The phone link is relative to this sample's `main.js`, so it follows the domain
-and any deployment prefix. The docs publishing workflow copies `samples/` and
-`build/` together; its phone page is
+Invitations last 90 seconds, permit five handshake attempts, and are consumed
+once. Each headset owns its state and automatically rerolls a colliding code.
+Use **Replace phone / New code** for a reloaded or different phone; it revokes the
+old session without reloading the headset. Do not accept mismatched digits.
+
+- Slide to point and tap to select.
+- Hold **Hold to move** while sliding another finger to drag objects/sliders.
+- Pinch to zoom the targeted panel/object; swipe two fingers to scroll.
+- Select a field, then tap its keyboard button on the phone. No field value is
+  shared before that tap. **Submit** invokes the app callback; **Done** returns
+  to the touchpad.
+- Selections request optional vibration; a wake lock keeps the paired phone
+  screen on while visible where supported.
+
+The phone link is relative to the sample's `main.js`. The docs deployment copies
+`samples/` and `build/` together; its phone page is
 `https://xrblocks.github.io/samples/phone_companion/phone.html` after deployment.
-Custom deployments should preserve those relative paths or configure their own
-phone page URL when integrating the addon.
+Other hosts should preserve this layout or configure their own phone-page URL.
+Use HTTPS URLs reachable by both devices, rather than a phone-local localhost URL.
 
-The desktop page also provides an optional QR for a simulator or mirrored screen.
-Both pages must
-be reachable from their devices; for a headset use an HTTPS deployment or HTTPS
-development tunnel, rather than a localhost URL that resolves to the phone itself.
+Default transport: netblocks WebRTC, with a separate unordered zero-retransmission
+motion channel. The public PeerJS broker is best-effort; configure signaling/TURN
+on both sides if needed. See the [addon README](../../src/addons/phone-companion/README.md).
 
-- Slide to adjust a head-relative pointer; tap to select.
-- **Pinch to zoom** the pointed-at panel or scalable object, including over its UI controls.
-- Hold **Hold to move** while sliding another finger on the pad to move the panel or drag objects/sliders.
-- Swipe with two fingers to scroll. **Recenter** resets the pointer to gaze.
-- Select the message field, then tap **Type: Message** on the phone to open its
-  native keyboard. **Submit** sends the text; **Done** blurs the headset field.
-- Successful selections request a short phone vibration where supported.
-
-The phone requests a screen wake lock while paired and visible. Each host session
-locks to its first phone page instance. If you reload the phone or change devices,
-reload the host too and enter its new code (or scan its new QR).
-
-Default transport: netblocks WebRTC with its public PeerJS broker. Allow a few
-seconds for discovery. Networks requiring TURN need a configured transport on
-both pages; see the [addon README](../../src/addons/phone-companion/README.md).
-
-For a same-browser two-tab check, open `/samples/phone_companion/?local=1` and
-click **Open phone controller**. This uses BroadcastChannel instead of WebRTC.
-It exercises the same input and text protocol without signaling infrastructure.
+For a same-browser test, open `/samples/phone_companion/?local=1`, open the phone
+page in the same browser context, enter the code and approve it. This uses
+BroadcastChannel and the same authenticated pairing, input and editing flow.

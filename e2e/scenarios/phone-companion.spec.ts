@@ -63,6 +63,52 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     .getByRole('textbox', {name: 'Pairing code', exact: true})
     .fill((await host.locator('#pairing-code').textContent())!);
   await phone.getByRole('button', {name: 'Connect', exact: true}).click();
+  await expect(host.locator('#accept-phone')).toBeEnabled();
+  const comparison = (await host.locator('#pair-request').textContent())!.match(
+    /\d{6}/
+  )![0];
+  await expect(phone.getByRole('status')).toContainText(comparison);
+  // A stale press must stay bound to its original request, not whichever phone
+  // arrives next. Reload before approval so this invitation remains unused.
+  const oldRequest = await host.evaluate(() => {
+    (window as any).__oldAccept = document.querySelector('#accept-phone');
+    return (window as any).xb.core.scene.getObjectByName('Phone Companion')
+      .pendingPhone.id;
+  });
+  await phone.reload();
+  expect(new URL(phone.url()).hash).toBe('');
+  await phone
+    .getByRole('textbox', {name: 'Pairing code', exact: true})
+    .fill((await host.locator('#pairing-code').textContent())!);
+  await phone.getByRole('button', {name: 'Connect', exact: true}).click();
+  await expect
+    .poll(() =>
+      host.evaluate((oldId) => {
+        const id = (window as any).xb.core.scene.getObjectByName(
+          'Phone Companion'
+        ).pendingPhone?.id;
+        return id !== undefined && id !== oldId;
+      }, oldRequest)
+    )
+    .toBe(true);
+  await expect(host.locator('#accept-phone')).toBeEnabled();
+  const currentRequest = await host.evaluate(
+    () =>
+      (window as any).xb.core.scene.getObjectByName('Phone Companion')
+        .pendingPhone.id
+  );
+  await host.evaluate(() => (window as any).__oldAccept.click());
+  expect(
+    await host.evaluate(
+      () =>
+        (window as any).xb.core.scene.getObjectByName('Phone Companion')
+          .pendingPhone?.id
+    )
+  ).toBe(currentRequest);
+  await expect(phone.getByRole('status')).toContainText(
+    (await host.locator('#pair-request').textContent())!.match(/\d{6}/)![0]
+  );
+  await host.locator('#accept-phone').click();
   await expect(
     phone.getByText('Connected to headset', {exact: true})
   ).toBeVisible();
@@ -108,6 +154,17 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     expect(value).toBeCloseTo(before[index], 6)
   );
 
+  await host.evaluate(() => {
+    (window as any).__phoneInputEvents = 0;
+    (window as any).xb.core.scene.traverse((object: any) => {
+      if (object.ariaLabel !== 'Message') return;
+      object.value = 'Existing value above the limit';
+      object.maxLength = 4;
+      object.onInput = () => {
+        (window as any).__phoneInputEvents++;
+      };
+    });
+  });
   await pointAt(host, phone, touch, 'input');
   await tapPad(phone, touch);
   await expect
@@ -123,7 +180,22 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   await expect(
     phone.getByRole('button', {name: 'Type: Message'})
   ).toBeVisible();
+  await expect(phone.locator('textarea')).toHaveValue('');
   await phone.getByRole('button', {name: 'Type: Message'}).click();
+  await expect(phone.getByRole('textbox', {name: 'Message'})).toHaveValue(
+    'Existing value above the limit'
+  );
+  expect(await host.evaluate(() => (window as any).__phoneInputEvents)).toBe(0);
+  await host.evaluate(() => {
+    (window as any).xb.core.scene.traverse((object: any) => {
+      if (object.ariaLabel === 'Message') object.maxLength = undefined;
+    });
+    (window as any).__phoneTestStep();
+  });
+  await expect(phone.getByRole('textbox', {name: 'Message'})).toHaveAttribute(
+    'maxlength',
+    '16000'
+  );
   await phone.getByRole('textbox', {name: 'Message'}).fill('Phone says 你好🙂');
   await expect
     .poll(() =>

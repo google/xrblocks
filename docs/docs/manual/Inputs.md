@@ -65,6 +65,8 @@ xb.add(phone); // Before xb.init(); normal controllers/reticles stay enabled.
 const url = phone.pairingURL('https://your-app.example/phone.html');
 const code = phone.pairing.code;
 // Display code in the headset. Optionally display url as a QR on a separate screen.
+// Render phone.pendingPhone's comparison digits and call
+// phone.acceptPhone(request.id) only after matching them with the phone.
 ```
 
 On the phone page, import `PhoneControllerPage` and `phonePairingFromCode` from
@@ -77,12 +79,29 @@ code inside the headset, a phone code-entry page, and an optional desktop QR.
 Users of Quest, Galaxy XR, Aura and other headsets can enter the code without
 trying to scan the headset's display. Use an HTTPS URL reachable by both devices.
 
+Every new phone requires **headset acceptance after comparing six verification
+digits**. Invitations expire after 90 seconds and allow five handshake attempts.
+Acceptance consumes and rotates the invitation. The QR uses a separate 256-bit
+token; the phone clears URL credentials after reading them. All invitation,
+approval and session state is per headset. Hosts that discover a code collision
+roll fresh codes; an approved session is not displaced.
+
+The short code is not sufficient authentication. Matching-digit approval binds
+an ephemeral ECDH exchange; accepted sessions use derived, direction-separated
+encryption keys and fresh challenge proofs on reconnect. UUIDs and previous
+invitations cannot reconnect. Use `phone.rejectPhone(request.id)` to reject and
+`await phone.replacePhone()` to revoke the old phone and display a new invitation.
+Use `onPairingRequest` and `onPairingChange` to update your headset UI.
+
 For native typing, assign `phone.input = field` in each `UITextInput`'s `onFocus`.
 The user selects the field in XR, then taps the phone's keyboard button. Native
 IME, dictation and autocorrect edits update the field through its ordinary editing
 API. **Submit** invokes the field's submit callback and **Done** blurs it.
 Only the bound, focused editable field is shared; the limit is 16,000 UTF-16 code
-units. Phone edits from an old field revision are discarded.
+units. Before Open keyboard is tapped, only its label/revision is sent. Switching
+fields or disconnecting resets this permission. `allowTextInput` can deny
+passwords/sensitive fields entirely. Applying remote state never emits edits,
+and unchanged values above `maxLength` are preserved. Stale revisions are rejected.
 
 The addon owns a dedicated transport and uses the normal Interaction pipeline,
 so existing buttons, sliders and draggable objects work. Identify events with
@@ -102,8 +121,14 @@ Backgrounding or disconnecting the phone cancels held input; a silent peer times
 out after five seconds. Script disposal closes its connection and unregisters the
 controller. The phone requests a screen wake lock while paired and visible,
 releasing it on background, disconnect or disposal. Unsupported/denied wake locks
-are optional. The host is locked to the first phone page instance: if that page
-is reloaded or a different phone is needed, reload the host and enter its new code.
-Keep the pairing URL private. For networks needing TURN or a custom
-broker, supply configured netblocks `WebRTCTransport` instances to both sides.
+are optional. If the phone reloads or a different phone is needed, use the
+headset's Replace phone / New code action. It revokes the old session without
+reloading the headset app.
+
+Motion is coalesced per frame onto a separate unordered WebRTC channel with zero
+retransmissions. Buttons and text stay reliable. Encrypted, sequenced messages
+have per-type rate and size limits. For custom signaling/TURN, provide a host
+`transportFactory` that returns a fresh `WebRTCTransport({unreliableChannel: true,
+...})`, and a similarly configured phone transport. Configuration is not sent
+in the QR or code.
 See the [addon setup and lifecycle contract](https://github.com/google/xrblocks/tree/main/src/addons/phone-companion).

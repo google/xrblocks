@@ -7,42 +7,125 @@ const local = new URLSearchParams(location.search).has('local');
 
 class PhoneDemo extends xb.Script {
   init() {
-    const status = new xb.UIText({
-      text: 'Enter the pairing code on your phone.',
+    const phonePage = new URL('phone.html', import.meta.url);
+    if (local) phonePage.searchParams.set('local', '1');
+    const status = new xb.UIText({text: 'Connecting to signaling…'});
+    const requestText = new xb.UIText({
+      text: 'New phones require approval here.',
+    });
+    const codeText = new xb.UIText({
+      text: 'Connecting…',
+      style: {fontSize: 36, fontWeight: 'bold'},
     });
     const setStatus = (text) => {
       status.text = text;
       document.querySelector('#status').textContent = text;
     };
+    const replace = () => {
+      void this.phone.replacePhone().catch((error) => setStatus(error.message));
+    };
+    const replaceButton = new xb.UIButton({
+      label: 'Replace phone / New code',
+      onClick: replace,
+    });
+    const approvalActions = new xb.UIPanel({
+      style: {flexDirection: 'row', gap: 8},
+    });
+    const showRequest = (request) => {
+      const id = request?.id;
+      const label = request
+        ? `Compare ${request.comparison} with your phone, then accept.`
+        : 'New phones require approval here.';
+      requestText.text = label;
+      document.querySelector('#pair-request').textContent = label;
+      const accept = () => {
+        if (id)
+          void this.phone
+            .acceptPhone(id)
+            .catch((error) => setStatus(error.message));
+      };
+      const reject = () => {
+        if (id) this.phone.rejectPhone(id);
+      };
+      // Replace the controls, not just their callbacks. An in-flight press for
+      // an old request must never approve a newly arrived phone.
+      approvalActions.clear();
+      approvalActions.add(
+        new xb.UIButton({
+          label: 'Accept phone',
+          disabled: !id,
+          onClick: accept,
+        }),
+        new xb.UIButton({
+          label: 'Reject phone',
+          disabled: !id,
+          onClick: reject,
+        }),
+        replaceButton
+      );
+      for (const [selector, action] of [
+        ['#accept-phone', accept],
+        ['#reject-phone', reject],
+      ]) {
+        const previous = document.querySelector(selector);
+        const button = previous.cloneNode(true);
+        button.disabled = !id;
+        button.onclick = action;
+        previous.replaceWith(button);
+      }
+    };
+    showRequest(null);
+    document.querySelector('#replace-phone').onclick = replace;
+    const pairingChanged = () => {
+      const open = this.phone.pairingOpen;
+      codeText.text = open ? this.phone.pairing.code : 'Invitation closed';
+      document.querySelector('#pairing-code').textContent = codeText.text;
+      document.querySelector('#qr').hidden = !open;
+      const link = document.querySelector('#link');
+      if (open) {
+        const url = this.phone.pairingURL(phonePage);
+        link.href = url;
+        setStatus(
+          'Single-use, 90-second invitation. Compare the phone’s six digits before accepting.'
+        );
+        // The optional QR is local and never blocks manual pairing.
+        void import('qrcode-generator')
+          .then(({default: qrcode}) => {
+            if (
+              !this.phone.pairingOpen ||
+              this.phone.pairingURL(phonePage) !== url
+            )
+              return;
+            const qr = qrcode(0, 'M');
+            qr.addData(url);
+            qr.make();
+            document.querySelector('#qr').src = qr.createDataURL(6, 24);
+          })
+          .catch(() => {
+            document.querySelector('#qr').hidden = true;
+          });
+      } else {
+        link.removeAttribute('href');
+        setStatus(
+          'Invitation closed. Use Replace phone / New code to pair another phone.'
+        );
+      }
+    };
     this.phone = new PhoneCompanion({
-      transport: local ? new BroadcastChannelTransport() : undefined,
+      transportFactory: local
+        ? () => new BroadcastChannelTransport()
+        : undefined,
+      onPairingChange: pairingChanged,
+      onPairingRequest: showRequest,
       onConnectionChange: (connected) =>
         setStatus(
           connected ? 'Phone connected · slide to point' : 'Waiting for phone…'
         ),
       onError: (error) => setStatus(`Connection error: ${error.message}`),
     });
-    const phonePage = new URL('phone.html', import.meta.url);
-    if (local) phonePage.searchParams.set('local', '1');
-    const url = this.phone.pairingURL(phonePage);
-    document.querySelector('#link').href = url;
-    document.querySelector('#pairing-code').textContent =
-      this.phone.pairing.code;
     const phoneLanding = document.querySelector('#phone-page');
     phoneLanding.href = phonePage.href;
     phoneLanding.textContent = phonePage.href;
-    // The optional QR must not block headset code pairing. Generate it locally;
-    // the pairing credential is never sent to an image service.
-    void import('qrcode-generator')
-      .then(({default: qrcode}) => {
-        const qr = qrcode(0, 'M');
-        qr.addData(url);
-        qr.make();
-        document.querySelector('#qr').src = qr.createDataURL(6, 24);
-      })
-      .catch(() => {
-        document.querySelector('#qr').hidden = true;
-      });
     let count = 0;
     const counter = new xb.UIButton({
       label: 'Tap me: 0',
@@ -74,10 +157,9 @@ class PhoneDemo extends xb.Script {
         new xb.UIExitButton(),
         new xb.UIText({text: 'Phone companion', style: {fontSize: 32}}),
         status,
-        new xb.UIText({
-          text: this.phone.pairing.code,
-          style: {fontSize: 36, fontWeight: 'bold'},
-        }),
+        codeText,
+        requestText,
+        approvalActions,
         new xb.UIText({
           text: `On your phone, open:\n${phonePage.href}\nThen enter the code above.`,
           style: {fontSize: 16, whiteSpace: 'pre-line'},
@@ -102,11 +184,6 @@ class PhoneDemo extends xb.Script {
       new xb.FaceCamera({mode: 'spherical', smoothing: 1})
     );
     this.add(card, this.phone);
-    setStatus(
-      local
-        ? 'Local two-tab mode · open the controller link'
-        : 'Enter the pairing code on your phone.'
-    );
   }
 }
 
