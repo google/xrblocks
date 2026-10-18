@@ -28,6 +28,7 @@ declare global {
         surface: string;
       };
       endSession(): Promise<void>;
+      buttonClicks(): {a: number; b: number};
       state(): DriverState;
     };
   }

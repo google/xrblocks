@@ -20,6 +20,9 @@ const APP_CAMERA_ASPECT_RATIO = 1.4;
 const APP_CAMERA_NEAR = 0.2;
 const APP_CAMERA_FAR = 900;
 const APP_CAMERA_ZOOM = 1.1;
+const UPDATED_CAMERA_NEAR = 0.15;
+const UPDATED_CAMERA_FAR = 750;
+const UPDATED_CAMERA_ZOOM = 1.25;
 const PROJECTION_HORIZONTAL_OFFSET_INDEX = 8;
 const STEREO_PROJECTION_HORIZONTAL_OFFSET = 0.01;
 const FOV_ASSERTION_PRECISION = 5;
@@ -120,13 +123,26 @@ describe('Simulator glasses diagonal FOV', () => {
     expect(rightCamera.position).toEqual(RIGHT_EYE_OFFSET);
 
     const resizedProjection = leftCamera.projectionMatrix.clone();
+    camera.near = UPDATED_CAMERA_NEAR;
+    camera.far = UPDATED_CAMERA_FAR;
+    camera.zoom = UPDATED_CAMERA_ZOOM;
+    camera.updateProjectionMatrix();
     simulator.options.displayDiagonalFov = UPDATED_DIAGONAL_FOV_DEGREES;
     simulator['applyDisplayFov']();
     for (const eyeCamera of [leftCamera, rightCamera]) {
-      expect(eyeCamera).toMatchObject({fov: camera.fov, aspect: camera.aspect});
+      expect(eyeCamera).toMatchObject({
+        fov: camera.fov,
+        aspect: camera.aspect,
+        near: camera.near,
+        far: camera.far,
+        zoom: camera.zoom,
+      });
       expect(eyeCamera.projectionMatrix.equals(camera.projectionMatrix)).toBe(
         true
       );
+      expect(
+        eyeCamera.projectionMatrixInverse.equals(camera.projectionMatrixInverse)
+      ).toBe(true);
       expect(eyeCamera.projectionMatrix.equals(resizedProjection)).toBe(false);
     }
     expect(leftCamera.position).toEqual(LEFT_EYE_OFFSET);

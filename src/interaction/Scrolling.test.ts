@@ -111,6 +111,41 @@ async function setup() {
 }
 
 describe('Scrolling through the shared interaction pipeline', () => {
+  it('explicit pinch scaling raycasts in select mode and reaches the card through scroll content', async () => {
+    const s = await setup();
+    try {
+      s.interaction.setRaycastMode('select');
+      s.interaction.queueScaleIntent(s.source, 1.5);
+      s.frame(s.point, false);
+      expect(s.card.scale.x).toBeCloseTo(1.5);
+      expect(s.view.scrollTop).toBe(0);
+      expect(s.click).not.toHaveBeenCalled();
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('honors scale limits and disabled ancestors for explicit zoom over UI', async () => {
+    const s = await setup();
+    try {
+      s.card.xb!.manipulation = {
+        actions: {scale: {minScale: 0.5, maxScale: 1.5}},
+      };
+      s.interaction.queueScaleIntent(s.source, 10);
+      s.frame(s.point, false);
+      expect(s.card.scale.x).toBe(1.5);
+      s.interaction.queueScaleIntent(s.source, 0.01);
+      s.frame(s.point, false);
+      expect(s.card.scale.x).toBe(0.5);
+      s.card.xb!.interactionEnabled = false;
+      s.interaction.queueScaleIntent(s.source, 2);
+      s.frame(s.point, false);
+      expect(s.card.scale.x).toBe(0.5);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('keeps taps clickable but cancels a button once its parent owns a drag', async () => {
     const s = await setup();
     s.frame(s.point, false);

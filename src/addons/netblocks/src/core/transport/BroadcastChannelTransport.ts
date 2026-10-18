@@ -13,7 +13,7 @@
  * `__bye__` is sent on close (and on the `pagehide` lifecycle event).
  */
 import {makeId} from '../utils/IdUtils';
-import {bytesToBase64, base64ToBytes} from '../codec/PoseCodec';
+import {bytesToBase64, base64ToBytes} from '../codec/Base64';
 import {
   Transport,
   TransportConnectOptions,

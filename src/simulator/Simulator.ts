@@ -536,15 +536,15 @@ export class Simulator extends Script {
 
     for (const camera of this.stereoCameras) {
       if (!(camera instanceof THREE.PerspectiveCamera)) continue;
-      if (
-        camera.fov === this.mainCamera.fov &&
-        camera.aspect === this.mainCamera.aspect
-      ) {
-        continue;
-      }
       camera.fov = this.mainCamera.fov;
       camera.aspect = this.mainCamera.aspect;
-      camera.updateProjectionMatrix();
+      camera.near = this.mainCamera.near;
+      camera.far = this.mainCamera.far;
+      camera.zoom = this.mainCamera.zoom;
+      camera.projectionMatrix.copy(this.mainCamera.projectionMatrix);
+      camera.projectionMatrixInverse.copy(
+        this.mainCamera.projectionMatrixInverse
+      );
     }
   }
 
