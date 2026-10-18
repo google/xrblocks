@@ -269,13 +269,33 @@ factory is enabled.
 #### Optional unreliable lane
 
 For latency-sensitive direct transport messages, opt into
-`new WebRTCTransport({unreliableChannel: true})` on both endpoints. This creates a
-separate `ordered: false, maxRetransmits: 0` data channel. Call
-`transport.sendUnreliable(bytes, peerId)`; it returns false if unavailable or
-backpressured and never falls back to the reliable channel. Received messages
-carry `event.detail.delivery === 'unreliable'`. Ordinary `send()` and NetSession
-traffic stay reliable and ordered. `supportsUnreliable` reports the capability;
-BroadcastChannel provides a local test equivalent, while WebSocket does not.
+`new WebRTCTransport({unreliableChannel: true})` on both endpoints. Support is
+negotiated per peer through offer/answer metadata. Only after both agree and the
+reliable channel opens does the offerer create a separate
+`ordered: false, maxRetransmits: 0` data channel. Older peers without this
+metadata and peers with the option off keep a reliable-only connection.
+Unexpected unreliable channels are closed; optional-channel creation failures
+leave the reliable connection usable.
+
+The main `netblocks` channel must be created by the offerer, ordered, and fully
+reliable (no retransmission or packet-lifetime limit). Exact duplicate offers
+are ignored; a different offer from a reused broker slot replaces the old
+connection so reloads can reconnect before its old channel reports closure.
+
+Call `transport.sendUnreliable(bytes, peerId)`. **True means queued, not
+delivered**; packets may be lost or arrive out of order. It returns false when
+the lane is unavailable, the send fails, or the message exceeds a limit:
+
+- At most **1,200 bytes** per message, also bounded by `pc.sctp.maxMessageSize`
+  when available (zero means no SCTP limit).
+- At most **16 KiB** for `bufferedAmount + bytes.byteLength`.
+
+It never falls back to the reliable channel. Received messages carry
+`event.detail.delivery === 'unreliable'`. Ordinary `send()` and NetSession traffic
+stay reliable and ordered. `supportsUnreliable` reports local opt-in, not a
+particular peer's negotiated readiness; a send can return false just after
+`peer-join` while the optional lane opens. BroadcastChannel provides a local test
+equivalent, while WebSocket does not.
 
 ### WebSocketTransport
 
