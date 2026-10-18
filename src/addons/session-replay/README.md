@@ -110,7 +110,7 @@ A recording is plain JSON, so it can be saved, diffed, and checked into a reposi
 
 All poses are in world space. Positions are in meters and rounded to five decimal places.
 
-Frames are sampled at 30 Hz by default. A frame is always written when a selection starts or ends, so short pinches are not lost between samples. Playback fires every recorded selection change in order, even when several fall between two rendered frames, and holds each one for at least a frame so interaction sees it. Pass `sampleIntervalMs` to change the rate:
+Frames are sampled at 30 Hz by default. A frame is always written when a selection starts or ends, so short pinches are not lost between samples. Playback fires every recorded selection change in order, even when several fall between two rendered frames, and holds each one for at least a frame so interaction sees it. Each change is fired from its own frame's pose rather than one blended with the next frame, so the ray points where it did when the user pinched. Pass `sampleIntervalMs` to change the rate:
 
 ```ts
 const recorder = new SessionRecorder({sampleIntervalMs: 1000 / 60});
@@ -118,7 +118,7 @@ const recorder = new SessionRecorder({sampleIntervalMs: 1000 / 60});
 
 A minute of both hands at 30 Hz is roughly 5 MB of JSON.
 
-During playback, positions are interpolated linearly and rotations with slerp. Select state and hand tracking switch on the earlier frame, so they never change between samples.
+During playback, positions are interpolated linearly and rotations with slerp. Select state and hand tracking switch on the earlier frame, so they never change between samples. Replay drives the user's input but not the app's clock, so anything you animate from `update(time)` will be in a different place on replay. Keep pinch targets still, or derive their motion from recorded state.
 
 Controllers are matched to the left and right slots by `inputSource.handedness`. A hand is recorded only when it is visible and every joint is tracked; otherwise that slot is `null` and the simulator hand is hidden during replay.
 

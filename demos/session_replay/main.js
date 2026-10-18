@@ -19,7 +19,8 @@ options.setAppTitle('Session Replay');
 
 // Add the player first so other scripts see replayed poses in the same frame.
 const player = new SessionPlayer();
-const recorder = new SessionRecorder();
+// Record every rendered frame so finger motion replays at full detail.
+const recorder = new SessionRecorder({sampleIntervalMs: 0});
 let recording;
 
 const COLORS = [0x4285f4, 0xea4335, 0xfbbc04, 0x34a853];
@@ -45,10 +46,6 @@ class ToggleCube extends xb.Script {
     // Only hands are recorded, so a mouse toggle would not replay.
     if (event.source.controller === xb.core.input.mouseController) return;
     this.setColor((this.colorIndex + 1) % COLORS.length);
-  }
-
-  update(time) {
-    this.rotation.y = time * 0.0004;
   }
 }
 

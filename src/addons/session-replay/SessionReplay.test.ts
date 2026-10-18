@@ -191,6 +191,32 @@ describe('session record and replay', () => {
     expect(target.ends).toEqual([1]);
   });
 
+  it('fires a pinch from its recorded pose, not one blended with the next frame', async () => {
+    const swung = parseSessionRecording(JSON.stringify(recording));
+    const pressedAt = swung.frames.findIndex(
+      (frame) => frame.controllers[1]?.selected
+    );
+    const pressed = swung.frames[pressedAt];
+    const away = structuredClone(pressed);
+    away.t = pressed.t + 1;
+    away.controllers[1]!.pose[0] += 3;
+    const released = structuredClone(away);
+    released.t = pressed.t + 200;
+    released.controllers[1]!.selected = false;
+    swung.frames = [...swung.frames.slice(0, pressedAt + 1), away, released];
+    target.starts = [];
+    target.ends = [];
+
+    const finished = player.play(swung);
+    await runner.actions.step({
+      durationMs: getSessionRecordingDuration(swung) + 100,
+    });
+    await finished;
+    await runner.actions.step({durationMs: 50});
+
+    expect(target.starts).toEqual([1]);
+  });
+
   it('switches to the recorded room before replaying', async () => {
     let roomLoaded!: () => void;
     const setEnvironment = vi

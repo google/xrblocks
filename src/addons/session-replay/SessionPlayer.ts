@@ -209,8 +209,9 @@ export class SessionPlayer extends Script {
     if (!this.recording || this.loadingRoomFor === this.recording) return;
     this.startTime ??= time;
     this.elapsed = Math.min(time - this.startTime, this.duration);
-    this.applyFrame(sampleSessionRecording(this.recording, this.elapsed));
-    this.applySelections(this.recording);
+    if (!this.applySelections(this.recording)) {
+      this.applyFrame(sampleSessionRecording(this.recording, this.elapsed));
+    }
     if (
       this.elapsed >= this.duration &&
       this.nextFrameIndex >= this.recording.frames.length
@@ -275,11 +276,14 @@ export class SessionPlayer extends Script {
    * Fires every selection change recorded since the last update, so a pinch
    * shorter than one playback frame is not skipped. Interaction samples the
    * selected state once per frame, so a second change on the same side waits
-   * for the next update.
+   * for the next update. Each change is fired from its frame's exact pose,
+   * since a pose blended with the next frame can aim the ray elsewhere.
+   * @returns Whether any selection changed, leaving that frame's pose applied.
    */
   private applySelections(recording: SessionRecording) {
     const {frames} = recording;
     const changed = [false, false];
+    let applied = false;
     while (
       this.nextFrameIndex < frames.length &&
       frames[this.nextFrameIndex].t <= this.elapsed
@@ -293,7 +297,11 @@ export class SessionPlayer extends Script {
           (selected, side) => changed[side] && selected !== this.selected[side]
         )
       ) {
-        return;
+        return applied;
+      }
+      if (next.some((selected, side) => selected !== this.selected[side])) {
+        this.applyFrame(frame);
+        applied = true;
       }
       for (let side = 0; side < SIDES.length; side++) {
         if (next[side] === this.selected[side]) continue;
@@ -302,6 +310,7 @@ export class SessionPlayer extends Script {
       }
       this.nextFrameIndex++;
     }
+    return applied;
   }
 
   private setHandVisible(side: number, visible: boolean) {
