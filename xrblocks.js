@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid ae74389
-* @builddate 2026-10-18T11:31:51.032Z
+* @commitid 68cf37a
+* @builddate 2026-10-18T12:13:14.440Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2875,7 +2875,8 @@ const COLOR_PROPERTIES = [
 	"disabledSurface",
 	"disabledText"
 ];
-const COLOR_PROPERTY_SET = new Set(COLOR_PROPERTIES);
+const OPTIONAL_COLOR_PROPERTIES = ["sliderTrack"];
+const COLOR_PROPERTY_SET = /* @__PURE__ */ new Set([...COLOR_PROPERTIES, ...OPTIONAL_COLOR_PROPERTIES]);
 const THEME_PROPERTIES = /* @__PURE__ */ new Set([
 	"colors",
 	"borderRadius",
@@ -3084,13 +3085,86 @@ const glimmerGreenTheme = createGlimmerTheme({
 	buttonActive: "#047857",
 	buttonDisabledSurface: "rgba(255, 255, 255, 0.08)"
 });
+const HIGH_CONTRAST_THEME_COLORS = Object.freeze({
+	surface: "#173a3a",
+	raisedSurface: "#245252",
+	accent: "#7ffff0",
+	sliderTrack: "#4f8f89",
+	buttonSurface: "#006b62",
+	buttonHover: "#007b70",
+	buttonActive: "#008579",
+	text: "#ffffff",
+	secondaryText: "#d5ffff",
+	disabledSurface: "#315858",
+	disabledText: "#c2d7d7",
+	buttonOutline: "#a2fff4"
+});
+const HIGH_CONTRAST_THEME_LAYOUT = Object.freeze({
+	borderRadius: 20,
+	surfaceBorderWidth: 2,
+	surfacePadding: 24,
+	surfaceGap: 16,
+	buttonHeight: 48,
+	buttonGap: 10,
+	buttonHorizontalPadding: 20,
+	buttonBorderWidth: 2,
+	buttonBorderRadius: 16
+});
+/** High-contrast surfaces for optical see-through displays. */
+const highContrastTheme = createThemeSnapshot({
+	colors: {
+		surface: HIGH_CONTRAST_THEME_COLORS.surface,
+		raisedSurface: HIGH_CONTRAST_THEME_COLORS.raisedSurface,
+		primary: HIGH_CONTRAST_THEME_COLORS.accent,
+		primaryText: HIGH_CONTRAST_THEME_COLORS.text,
+		text: HIGH_CONTRAST_THEME_COLORS.text,
+		secondaryText: HIGH_CONTRAST_THEME_COLORS.secondaryText,
+		outline: HIGH_CONTRAST_THEME_COLORS.accent,
+		sliderTrack: HIGH_CONTRAST_THEME_COLORS.sliderTrack,
+		disabledSurface: HIGH_CONTRAST_THEME_COLORS.disabledSurface,
+		disabledText: HIGH_CONTRAST_THEME_COLORS.disabledText
+	},
+	borderRadius: HIGH_CONTRAST_THEME_LAYOUT.borderRadius,
+	styles: {
+		surface: {
+			backgroundColor: HIGH_CONTRAST_THEME_COLORS.surface,
+			borderColor: HIGH_CONTRAST_THEME_COLORS.accent,
+			borderWidth: HIGH_CONTRAST_THEME_LAYOUT.surfaceBorderWidth,
+			borderRadius: HIGH_CONTRAST_THEME_LAYOUT.borderRadius,
+			padding: HIGH_CONTRAST_THEME_LAYOUT.surfacePadding,
+			gap: HIGH_CONTRAST_THEME_LAYOUT.surfaceGap
+		},
+		button: {
+			height: HIGH_CONTRAST_THEME_LAYOUT.buttonHeight,
+			flexDirection: "row",
+			justifyContent: "center",
+			alignItems: "center",
+			gap: HIGH_CONTRAST_THEME_LAYOUT.buttonGap,
+			paddingLeft: HIGH_CONTRAST_THEME_LAYOUT.buttonHorizontalPadding,
+			paddingRight: HIGH_CONTRAST_THEME_LAYOUT.buttonHorizontalPadding,
+			backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonSurface,
+			color: HIGH_CONTRAST_THEME_COLORS.text,
+			borderColor: HIGH_CONTRAST_THEME_COLORS.buttonOutline,
+			borderWidth: HIGH_CONTRAST_THEME_LAYOUT.buttonBorderWidth,
+			borderRadius: HIGH_CONTRAST_THEME_LAYOUT.buttonBorderRadius,
+			":hover": { backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonHover },
+			":active": { backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonActive },
+			":disabled": {
+				backgroundColor: HIGH_CONTRAST_THEME_COLORS.disabledSurface,
+				color: HIGH_CONTRAST_THEME_COLORS.disabledText
+			}
+		},
+		text: { color: HIGH_CONTRAST_THEME_COLORS.text }
+	}
+});
 const uiThemePresets = Object.freeze({
 	grayGlass: grayGlassTheme,
 	colorful: colorfulTheme,
 	glimmer: glimmerTheme,
 	glimmerOpaque: glimmerOpaqueTheme,
 	glimmerAmber: glimmerAmberTheme,
-	glimmerGreen: glimmerGreenTheme
+	glimmerGreen: glimmerGreenTheme,
+	highContrast: highContrastTheme
 });
 const defaultTheme = grayGlassTheme;
 /** Creates a detached, deeply frozen theme snapshot. */
@@ -4726,6 +4800,69 @@ var LoadingSpinnerManager = class {
 };
 const loadingSpinnerManager = new LoadingSpinnerManager();
 //#endregion
+//#region src/core/components/AdditiveDisplaySimulation.ts
+const NAME = "XR Blocks additive display simulation";
+const RADIUS = 1;
+const WIDTH_SEGMENTS = 8;
+const HEIGHT_SEGMENTS = 4;
+const RENDER_ORDER = Number.MAX_SAFE_INTEGER;
+const MIN_DIMMING = 0;
+const MAX_DIMMING = 1;
+/** Simulates additive output while an alpha-blend XR session is presenting. */
+var AdditiveDisplaySimulation = class extends THREE.Mesh {
+	constructor(scene, camera, options) {
+		super(new THREE.SphereGeometry(RADIUS, WIDTH_SEGMENTS, HEIGHT_SEGMENTS), new THREE.MeshBasicMaterial({
+			transparent: true,
+			premultipliedAlpha: true,
+			blending: THREE.CustomBlending,
+			blendEquation: THREE.AddEquation,
+			blendSrc: THREE.ZeroFactor,
+			blendDst: THREE.OneFactor,
+			blendEquationAlpha: THREE.AddEquation,
+			blendSrcAlpha: THREE.OneFactor,
+			blendDstAlpha: THREE.ZeroFactor,
+			depthTest: false,
+			depthWrite: false,
+			side: THREE.BackSide,
+			toneMapped: false
+		}));
+		this.scene = scene;
+		this.camera = camera;
+		this.options = options;
+		this.name = NAME;
+		this.renderOrder = RENDER_ORDER;
+		this.frustumCulled = false;
+		this.userData.xrblocksPrivate = true;
+		this.userData.xrblocksAdditiveDisplaySimulation = true;
+		this.raycast = () => {};
+	}
+	onXRSessionStarted(session) {
+		this.onXRSessionEnded();
+		if (!this.options.simulateAdditiveDisplay || session.environmentBlendMode !== "alpha-blend") return;
+		this.material.opacity = this.validateDimming();
+		this.position.setFromMatrixPosition(this.camera.matrixWorld);
+		this.scene.add(this);
+	}
+	onXRSessionEnded() {
+		this.removeFromParent();
+	}
+	update() {
+		if (!this.parent) return;
+		this.material.opacity = this.validateDimming();
+		this.position.setFromMatrixPosition(this.camera.matrixWorld);
+	}
+	validateDimming() {
+		const dimming = this.options.simulatedDimming;
+		if (!Number.isFinite(dimming) || dimming < MIN_DIMMING || dimming > MAX_DIMMING) throw new RangeError(`Options.simulatedDimming must be between ${MIN_DIMMING} and ${MAX_DIMMING}.`);
+		return dimming;
+	}
+	dispose() {
+		this.onXRSessionEnded();
+		this.geometry.dispose();
+		this.material.dispose();
+	}
+};
+//#endregion
 //#region src/core/components/XRTransition.ts
 /**
 * Manages smooth transitions between AR (transparent) and VR (colored)
@@ -5020,6 +5157,10 @@ var Core = class Core {
 	get elapsedTime() {
 		return this.simulationTimer.getElapsedMs() / 1e3;
 	}
+	/** The active XR session's environment blend mode, or undefined outside XR. */
+	get environmentBlendMode() {
+		return this._environmentBlendMode;
+	}
 	/** Current state of this terminal Core lifetime. */
 	get lifecycle() {
 		return this.lifecycleState;
@@ -5115,6 +5256,7 @@ var Core = class Core {
 			if (this.deviceCamera?.isUsingXRCameraAccess) this.deviceCamera.updateXRCamera(frame);
 			if (this.lighting) this.lighting.update();
 			if (this.renderer.xr.isPresenting) this.renderer.xr.updateCamera(this.camera);
+			this.additiveDisplaySimulation?.update();
 			this.input.sampleSources();
 			this.scriptsManager.syncScriptsWithScene(this.scene);
 			this.waitFrame.onFrame();
@@ -5171,6 +5313,8 @@ var Core = class Core {
 			}
 		};
 		this.onXRSessionEnded = () => {
+			this.additiveDisplaySimulation?.onXRSessionEnded();
+			this._environmentBlendMode = void 0;
 			if (!this.isLifecycleActive()) return;
 			this.deviceCamera?.onXRSessionEnded();
 			this.scriptsManager.onXRSessionEnded();
@@ -5227,6 +5371,11 @@ var Core = class Core {
 	async finishDisposal() {
 		let firstError;
 		const cleanups = [
+			() => {
+				this._environmentBlendMode = void 0;
+				this.additiveDisplaySimulation?.dispose();
+				this.additiveDisplaySimulation = void 0;
+			},
 			() => {
 				if (this.physicsInterval === void 0) return;
 				clearInterval(this.physicsInterval);
@@ -5407,6 +5556,7 @@ var Core = class Core {
 			this.rendererContainer.appendChild(this.renderer.domElement);
 		}
 		this.options = options;
+		this.additiveDisplaySimulation = new AdditiveDisplaySimulation(this.scene, this.camera, options);
 		this.reticleOptions.maxDistance = options.reticles.maxDistance;
 		this.reticleOptions.defaultRenderDistance = options.reticles.defaultRenderDistance;
 		this.scriptsManager.catchExceptions = options.catchScriptExceptions;
@@ -5525,6 +5675,8 @@ var Core = class Core {
 	*/
 	async onXRSessionStarted(session) {
 		if (!this.isLifecycleActive()) return;
+		this._environmentBlendMode = session.environmentBlendMode;
+		this.additiveDisplaySimulation?.onXRSessionStarted(session);
 		if (session.enabledFeatures?.includes("webgpu")) console.debug("WebXR session is using WebGPU");
 		this.xrReferenceSpaceCache.onXRSessionStart(session);
 		if (this.options.deviceCamera?.enabled) {

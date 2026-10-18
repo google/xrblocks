@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid ae74389
-* @builddate 2026-10-18T11:31:51.032Z
+* @commitid 68cf37a
+* @builddate 2026-10-18T12:13:14.440Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -4091,6 +4091,8 @@ var Options = class {
 		this.debugging = false;
 		this.stencil = false;
 		this.rendererBackend = "webgl";
+		this.simulateAdditiveDisplay = false;
+		this.simulatedDimming = 0;
 		this.webxrRequiredFeatures = [];
 		this.webxrOptionalFeatures = [...OPTIONAL_REFERENCE_SPACES];
 		this.referenceSpaceType = "local-floor";

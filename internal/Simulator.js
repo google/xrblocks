@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid ae74389
-* @builddate 2026-10-18T11:31:51.032Z
+* @commitid 68cf37a
+* @builddate 2026-10-18T12:13:14.440Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -961,6 +961,70 @@ var SimulatorControls = class {
 		if (!domElement) return;
 		if (pointerId === this.activePointerId) this.activePointerId = void 0;
 		if (domElement.hasPointerCapture?.(pointerId)) domElement.releasePointerCapture(pointerId);
+	}
+};
+//#endregion
+//#region src/simulator/SimulatorDisplayFov.ts
+/** Applies and restores a simulated display FOV across mono and stereo cameras. */
+var SimulatorDisplayFov = class {
+	constructor(mainCamera, stereoCameras, options) {
+		this.mainCamera = mainCamera;
+		this.stereoCameras = stereoCameras;
+		this.options = options;
+		if (mainCamera instanceof THREE.PerspectiveCamera) this.defaultCameraFov = mainCamera.fov;
+	}
+	apply() {
+		if (!(this.mainCamera instanceof THREE.PerspectiveCamera) || this.defaultCameraFov === void 0) return;
+		const diagonalFov = this.options.displayDiagonalFov;
+		const aspect = this.mainCamera.aspect;
+		if (diagonalFov === this.appliedDisplayDiagonalFov && (diagonalFov === void 0 || aspect === this.appliedDisplayAspect)) {
+			this.syncStereoCameraProjection();
+			return;
+		}
+		if (diagonalFov === void 0) {
+			this.restore();
+			this.syncStereoCameraProjection();
+			return;
+		}
+		if (!Number.isFinite(diagonalFov) || diagonalFov <= 0 || diagonalFov >= 180) throw new RangeError(`Simulator displayDiagonalFov must be greater than 0 and less than 180 degrees.`);
+		const aspectForDiagonal = aspect > 0 ? aspect : 1;
+		const verticalTangent = Math.tan(THREE.MathUtils.degToRad(diagonalFov / 2)) / Math.hypot(aspectForDiagonal, 1);
+		this.mainCamera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(verticalTangent));
+		this.mainCamera.updateProjectionMatrix();
+		this.appliedDisplayDiagonalFov = diagonalFov;
+		this.appliedDisplayAspect = aspect;
+		this.appliedCameraFov = this.mainCamera.fov;
+		this.appliedCameraProjection = this.mainCamera.projectionMatrix.clone();
+		this.syncStereoCameraProjection();
+	}
+	dispose() {
+		this.restore();
+	}
+	syncStereoCameraProjection() {
+		if (!(this.mainCamera instanceof THREE.PerspectiveCamera)) return;
+		for (const camera of this.stereoCameras) {
+			if (!(camera instanceof THREE.PerspectiveCamera)) continue;
+			camera.fov = this.mainCamera.fov;
+			camera.aspect = this.mainCamera.aspect;
+			camera.near = this.mainCamera.near;
+			camera.far = this.mainCamera.far;
+			camera.zoom = this.mainCamera.zoom;
+			camera.projectionMatrix.copy(this.mainCamera.projectionMatrix);
+			camera.projectionMatrixInverse.copy(this.mainCamera.projectionMatrixInverse);
+		}
+	}
+	restore() {
+		const camera = this.mainCamera;
+		const appliedCameraFov = this.appliedCameraFov;
+		const appliedCameraProjection = this.appliedCameraProjection;
+		this.appliedCameraFov = void 0;
+		this.appliedCameraProjection = void 0;
+		this.appliedDisplayDiagonalFov = void 0;
+		this.appliedDisplayAspect = void 0;
+		if (!(camera instanceof THREE.PerspectiveCamera) || this.defaultCameraFov === void 0 || appliedCameraFov === void 0 || appliedCameraProjection === void 0 || camera.fov !== appliedCameraFov || !camera.projectionMatrix.equals(appliedCameraProjection)) return;
+		camera.fov = this.defaultCameraFov;
+		camera.updateProjectionMatrix();
+		this.syncStereoCameraProjection();
 	}
 };
 //#endregion
@@ -3291,6 +3355,8 @@ var Simulator = class extends Script {
 		this.simulatorPhysics = physics && simulatorOptions.physics.enabled ? new SimulatorPhysics(physics, simulatorOptions.handPhysics) : void 0;
 		this.options = simulatorOptions;
 		this.mainCamera = camera;
+		this.displayFov = new SimulatorDisplayFov(camera, this.stereoCameras, simulatorOptions);
+		this.displayFov.apply();
 		this.mainScene = scene;
 		this.registry = registry;
 		this.world = world;
@@ -3428,6 +3494,11 @@ var Simulator = class extends Script {
 	dispose() {
 		let firstError;
 		const cleanups = [
+			() => {
+				const displayFov = this.displayFov;
+				this.displayFov = void 0;
+				displayFov?.dispose();
+			},
 			() => this.controls.dispose(),
 			() => this.userInterface.dispose(),
 			() => this.hands.dispose(),
@@ -3511,6 +3582,7 @@ var Simulator = class extends Script {
 	*/
 	renderFrame() {
 		if (!this.initialized || !this.compositor) return;
+		this.displayFov?.apply();
 		this.compositor.renderFrame(this.getRenderCamera(), this.mainCamera);
 	}
 	setVideoPath(path) {

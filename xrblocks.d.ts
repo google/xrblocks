@@ -2600,6 +2600,8 @@ export declare class SimulatorOptions {
   };
   renderToRenderTexture: boolean;
   blendingMode: 'normal' | 'screen';
+  /** Optional diagonal field of view in degrees for a glasses display. */
+  displayDiagonalFov?: number;
   /** Shoulder/chest origin of the left hand in local camera space. */
   leftHandOrigin: {
     x: number;
@@ -3150,6 +3152,17 @@ export declare class Options {
    * before the XR session starts.
    */
   framebufferScaleFactor?: FramebufferScaleFactor;
+  /**
+   * Makes an alpha-blend passthrough session composite like an additive
+   * display by preserving destination RGB while forcing output alpha to zero.
+   * Has no effect in opaque or additive sessions.
+   */
+  simulateAdditiveDisplay: boolean;
+  /**
+   * Constant alpha written by additive display simulation. `0` preserves all
+   * passthrough; `1` fully dims it. Read every frame while simulation is active.
+   */
+  simulatedDimming: number;
   /**
    * Any additional required features when initializing webxr.
    */
@@ -9187,6 +9200,7 @@ declare class Simulator extends Script {
   private objectDetectionSource?;
   private deviceCamera?;
   private useSimulatorObjectDetection;
+  private displayFov?;
   constructor(renderMainScene: (cameraOverride?: THREE.Camera) => void, renderer?: WebGLOrWebGPURenderer | undefined);
   get userMovementConstrained(): boolean;
   moveUser(desiredCameraPosition: THREE.Vector3): void;
@@ -9482,6 +9496,8 @@ export declare class Core {
   /** A shared texture loader. */
   textureLoader: THREE.TextureLoader;
   private webXRSettings;
+  private _environmentBlendMode?;
+  private additiveDisplaySimulation?;
   private shouldAutostartSimulator;
   /** Whether the XR simulator is currently active. */
   simulatorRunning: boolean;
@@ -9517,6 +9533,8 @@ export declare class Core {
   set renderer(renderer: SupportedRenderer);
   get isPaused(): boolean;
   get elapsedTime(): number;
+  /** The active XR session's environment blend mode, or undefined outside XR. */
+  get environmentBlendMode(): XRSession['environmentBlendMode'] | undefined;
   /** Current state of this terminal Core lifetime. */
   get lifecycle(): CoreLifecycleState;
   pause(): void;
@@ -10585,6 +10603,8 @@ interface UIThemeColors {
   readonly text: string;
   readonly secondaryText: string;
   readonly outline: string;
+  /** Unfilled slider track; falls back to outline when omitted. */
+  readonly sliderTrack?: string;
   readonly disabledSurface: string;
   readonly disabledText: string;
 }
@@ -10600,7 +10620,7 @@ interface UIThemeUpdate {
   readonly borderRadius?: number;
   readonly styles?: UIThemeStyles;
 }
-type UIThemePresetName = 'grayGlass' | 'colorful' | 'glimmer' | 'glimmerOpaque' | 'glimmerAmber' | 'glimmerGreen';
+type UIThemePresetName = 'grayGlass' | 'colorful' | 'glimmer' | 'glimmerOpaque' | 'glimmerAmber' | 'glimmerGreen' | 'highContrast';
 //#endregion
 //#region src/ui/UIValidation.d.ts
 type UIValidationCode = 'not-ready' | 'not-mounted' | 'invalid-layout' | 'content-overflow' | 'text-clipped' | 'outside-viewport';
